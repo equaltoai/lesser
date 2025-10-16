@@ -101,10 +101,14 @@ type Config struct {
 	ManifestTTLHours         int    // Default TTL for streaming manifests (hours)
 
 	// ML Moderation Configuration
-	ModerationTrainingBucketName string // S3 bucket for ML training datasets
-	ModerationModelMetadataTable string // DynamoDB table for model metadata
-	BedrockTrainingRegion        string // AWS region for Bedrock training jobs
-	BedrockInferenceModelID      string // Bedrock model ID for moderation inference
+	ModerationTrainingBucketName string   // S3 bucket for ML training datasets
+	ModerationModelMetadataTable string   // DynamoDB table for model metadata
+	BedrockTrainingRegion        string   // AWS region for Bedrock training jobs
+	BedrockInferenceModelID      string   // Bedrock model ID for moderation inference
+	BedrockGuardrailID           string   // Bedrock guardrail ID for inference safety
+	BedrockGuardrailVersion      string   // Bedrock guardrail version (defaults to "DRAFT")
+	ModerationMLEnabled          bool     // Feature flag to enable ML moderation
+	ModerationMLTenants          []string // List of tenant IDs allowed to use ML moderation
 
 	// Alerting & Monitoring
 	AlertSNSTopicArn          string // SNS topic ARN for alerts
@@ -328,6 +332,10 @@ func loadConfig() *Config {
 		ModerationModelMetadataTable: getEnvOrDefault("MODERATION_MODEL_METADATA_TABLE", ""),
 		BedrockTrainingRegion:        getEnvOrDefault("BEDROCK_TRAINING_REGION", "us-east-1"),
 		BedrockInferenceModelID:      getEnvOrDefault("BEDROCK_INFERENCE_MODEL_ID", ""),
+		BedrockGuardrailID:           getEnvOrDefault("BEDROCK_GUARDRAIL_ID", ""),
+		BedrockGuardrailVersion:      getEnvOrDefault("BEDROCK_GUARDRAIL_VERSION", "DRAFT"),
+		ModerationMLEnabled:          getEnvAsBoolOrDefault("MODERATION_ML_ENABLED", false),
+		ModerationMLTenants:          getEnvAsStringSliceOrDefault("MODERATION_ML_TENANTS", []string{}),
 
 		// Delivery & Processing
 		FederationDeliveryMode: getEnvOrDefault("FEDERATION_DELIVERY_MODE", ""),

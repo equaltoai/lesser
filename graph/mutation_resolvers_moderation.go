@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/services/moderationml"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
@@ -323,14 +324,82 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 }
 
 // TrainModerationModel implements MutationResolver.
-func (r *mutationResolver) TrainModerationModel(_ context.Context, _ []*model.ModerationSample) (*model.TrainingResult, error) {
-	// Train a moderation model with provided samples
+func (r *mutationResolver) TrainModerationModel(ctx context.Context, samples []*model.ModerationSampleInput, options *model.BedrockTrainingOptions) (*model.TrainingResult, error) {
+	// 1. Require authentication
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Check feature flag (admin permissions checked via feature flag)
+	if err := common.MustCheckModerationMLAccess(ctx, username); err != nil {
+		return nil, err
+	}
+
+	// 3. Get moderation ML service
+	mlService := r.Registry.ModerationML()
+	if mlService == nil {
+		return nil, errors.New("moderation ML service not available")
+	}
+
+	// 4. Convert GraphQL input to service input
+	svcSamples := make([]moderationml.SampleInput, len(samples))
+	for i, s := range samples {
+		svcSamples[i] = moderationml.SampleInput{
+			ObjectID:   s.ObjectID,
+			ObjectType: s.ObjectType,
+			Label:      s.Label,
+			ReviewerID: username,
+			Confidence: s.Confidence,
+			Metadata:   make(map[string]interface{}),
+		}
+	}
+
+	// 5. Queue samples and get their IDs
+	sampleIDs, err := mlService.QueueSamples(ctx, svcSamples)
+	if err != nil {
+		return nil, fmt.Errorf("failed to queue samples: %w", err)
+	}
+
+	// 6. Prepare training options
+	trainingOpts := moderationml.TrainingOptions{
+		BaseModelID: "anthropic.claude-3-haiku-20240307-v1:0", // Default
+	}
+
+	if options != nil {
+		if options.BaseModelID != nil {
+			trainingOpts.BaseModelID = *options.BaseModelID
+		}
+		if options.DatasetS3Path != nil {
+			trainingOpts.DatasetS3Path = *options.DatasetS3Path
+		}
+		if options.OutputS3Path != nil {
+			trainingOpts.OutputS3Path = *options.OutputS3Path
+		}
+		if options.MaxTrainingTime != nil {
+			trainingOpts.MaxTrainingTime = *options.MaxTrainingTime
+		}
+		if options.EarlyStoppingEnabled != nil {
+			trainingOpts.EarlyStoppingEnabled = *options.EarlyStoppingEnabled
+		}
+	}
+
+	// 7. Train model using the actual sample IDs from the repository
+	result, err := mlService.TrainModel(ctx, sampleIDs, trainingOpts)
+	if err != nil {
+		return nil, fmt.Errorf("model training failed: %w", err)
+	}
+
+	// 9. Convert service result to GraphQL result
 	return &model.TrainingResult{
-		Success:      true,
-		ModelVersion: fmt.Sprintf("v1.0.%d", time.Now().Unix()),
-		Accuracy:     0.95,
-		Precision:    0.93,
-		Recall:       0.97,
+		Success:      result.Success,
+		ModelVersion: result.ModelVersion,
+		Accuracy:     result.Accuracy,
+		Precision:    result.Precision,
+		Recall:       result.Recall,
+		SamplesUsed:  result.SamplesUsed,
+		TrainingTime: result.TrainingTime,
+		Improvements: result.Improvements,
 	}, nil
 }
 

@@ -81,6 +81,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/equaltoai/lesser/pkg/services/media/transcoding"
+	"github.com/equaltoai/lesser/pkg/services/moderationml"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
@@ -149,6 +150,7 @@ type Registry struct {
 	bulkService          *bulk.Service
 	threadsService       *threads.Service
 	severanceService     *severance.Service
+	moderationMLService  *moderationml.Service
 
 	// Event infrastructure
 	eventBus         EventBus
@@ -489,6 +491,60 @@ func (r *Registry) Severance() *severance.Service {
 	}
 
 	return r.severanceService
+}
+
+// ModerationML returns the moderation ML service, initializing it if necessary
+func (r *Registry) ModerationML() *moderationml.Service {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.moderationMLService == nil {
+		mlRepo := r.storage.ModerationML()
+
+		if mlRepo != nil {
+			// Get AWS config
+			awsCfg, err := r.getAWSConfig()
+			if err != nil {
+				if r.logger != nil {
+					r.logger.Warn("failed to load AWS config for moderation ML", zap.Error(err))
+				}
+				return nil
+			}
+
+			// Build service config
+			config := moderationml.Config{
+				TrainingBucket:   r.getConfigString(r.config.Config, "ModerationTrainingBucketName"),
+				TrainingRegion:   r.getConfigString(r.config.Config, "BedrockTrainingRegion"),
+				InferenceModelID: r.getConfigString(r.config.Config, "BedrockInferenceModelID"),
+				GuardrailID:      r.getConfigString(r.config.Config, "BedrockGuardrailID"),
+				GuardrailVersion: r.getConfigString(r.config.Config, "BedrockGuardrailVersion"),
+			}
+
+			// Set default guardrail version if not specified
+			if config.GuardrailVersion == "" {
+				config.GuardrailVersion = "DRAFT"
+			}
+
+			r.moderationMLService = moderationml.NewService(
+				mlRepo,
+				*awsCfg,
+				config,
+				r.logger,
+			)
+
+			if r.initialized != nil {
+				r.initialized["ModerationML"] = true
+			}
+
+			r.logger.Info("initialized moderation ML service",
+				zap.String("training_bucket", config.TrainingBucket),
+				zap.String("guardrail_id", config.GuardrailID))
+		} else if r.logger != nil {
+			r.logger.Warn("failed to initialize ModerationML service: repository not available")
+		}
+	}
+
+	return r.moderationMLService
 }
 
 // GetStorage returns the configured storage interface
@@ -982,6 +1038,16 @@ func (r *Registry) getConfigString(cfg interface{}, key string) string {
 			return cfgStruct.CloudFrontDomain
 		case "S3BucketName":
 			return cfgStruct.S3BucketName
+		case "ModerationTrainingBucketName":
+			return cfgStruct.ModerationTrainingBucketName
+		case "BedrockTrainingRegion":
+			return cfgStruct.BedrockTrainingRegion
+		case "BedrockInferenceModelID":
+			return cfgStruct.BedrockInferenceModelID
+		case "BedrockGuardrailID":
+			return cfgStruct.BedrockGuardrailID
+		case "BedrockGuardrailVersion":
+			return cfgStruct.BedrockGuardrailVersion
 		}
 	}
 	return ""

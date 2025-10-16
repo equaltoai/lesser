@@ -153,7 +153,7 @@ func (r *queryResolver) ModerationDashboard(ctx context.Context, _ *moderation.M
 }
 
 // ModerationEffectiveness returns moderation pattern effectiveness data
-func (r *queryResolver) ModerationEffectiveness(ctx context.Context, patternID string, period model.Period) (*model.ModerationEffectiveness, error) {
+func (r *queryResolver) ModerationEffectiveness(ctx context.Context, patternID string, period model.ModerationPeriod) (*model.ModerationEffectiveness, error) {
 	// Get moderation repository from storage
 	storage := r.Storage
 	if storage == nil {
@@ -169,16 +169,16 @@ func (r *queryResolver) ModerationEffectiveness(ctx context.Context, patternID s
 	now := time.Now()
 	var startTime time.Time
 	switch period {
-	case model.PeriodDay:
+	case model.ModerationPeriodHourly:
+		startTime = now.Add(-1 * time.Hour)
+	case model.ModerationPeriodDaily:
 		startTime = now.Add(-24 * time.Hour)
-	case model.PeriodWeek:
+	case model.ModerationPeriodWeekly:
 		startTime = now.Add(-7 * 24 * time.Hour)
-	case model.PeriodMonth:
+	case model.ModerationPeriodMonthly:
 		startTime = now.Add(-30 * 24 * time.Hour)
-	case model.PeriodYear:
-		startTime = now.Add(-365 * 24 * time.Hour)
 	default:
-		startTime = now.Add(-7 * 24 * time.Hour) // Default to week
+		startTime = now.Add(-24 * time.Hour) // Default to daily
 	}
 
 	// Calculate effectiveness metrics for the specific pattern

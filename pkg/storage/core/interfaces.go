@@ -60,6 +60,7 @@ type RepositoryStorage interface {
 	Filter() *repositories.FilterRepository
 	Thread() *repositories.ThreadRepository
 	Severance() *repositories.SeveranceRepository
+	ModerationML() *repositories.ModerationMLRepository
 
 	// Utility methods
 	GetDB() dynamormCore.DB

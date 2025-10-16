@@ -926,7 +926,7 @@ type ComplexityRoot struct {
 		ShareObject                func(childComplexity int, id string) int
 		SyncMissingReplies         func(childComplexity int, noteID string) int
 		SyncThread                 func(childComplexity int, noteURL string, depth *int) int
-		TrainModerationModel       func(childComplexity int, samples []*model.ModerationSample) int
+		TrainModerationModel       func(childComplexity int, samples []*model.ModerationSampleInput, options *model.BedrockTrainingOptions) int
 		UnblockActor               func(childComplexity int, id string) int
 		UnbookmarkObject           func(childComplexity int, id string) int
 		UnfollowActor              func(childComplexity int, id string) int
@@ -1165,7 +1165,7 @@ type ComplexityRoot struct {
 		Media                   func(childComplexity int, id string) int
 		MediaStreamURL          func(childComplexity int, mediaID string) int
 		ModerationDashboard     func(childComplexity int, filter *moderation.ModerationFilter) int
-		ModerationEffectiveness func(childComplexity int, patternID string, period model.Period) int
+		ModerationEffectiveness func(childComplexity int, patternID string, period model.ModerationPeriod) int
 		ModerationPatterns      func(childComplexity int, active *bool, severity *model.ModerationSeverity, first *int, after *string) int
 		ModerationQueue         func(childComplexity int, first *int, after *model.Cursor) int
 		ModeratorActivity       func(childComplexity int, moderatorID string, period model.TimePeriod) int
@@ -1728,7 +1728,7 @@ type MutationResolver interface {
 	CreateModerationPattern(ctx context.Context, input model.ModerationPatternInput) (*moderation.ModerationPattern, error)
 	UpdateModerationPattern(ctx context.Context, id string, input model.ModerationPatternInput) (*moderation.ModerationPattern, error)
 	DeleteModerationPattern(ctx context.Context, id string) (bool, error)
-	TrainModerationModel(ctx context.Context, samples []*model.ModerationSample) (*model.TrainingResult, error)
+	TrainModerationModel(ctx context.Context, samples []*model.ModerationSampleInput, options *model.BedrockTrainingOptions) (*model.TrainingResult, error)
 	SetFederationLimit(ctx context.Context, domain string, limit model.FederationLimitInput) (*model.FederationLimit, error)
 	PauseFederation(ctx context.Context, domain string, reason string, until *model.Time) (*model.FederationManagementStatus, error)
 	ResumeFederation(ctx context.Context, domain string) (*model.FederationManagementStatus, error)
@@ -1780,7 +1780,7 @@ type QueryResolver interface {
 	MediaStreamURL(ctx context.Context, mediaID string) (*model.MediaStream, error)
 	SupportedBitrates(ctx context.Context, mediaID string) ([]*model.Bitrate, error)
 	ModerationPatterns(ctx context.Context, active *bool, severity *model.ModerationSeverity, first *int, after *string) ([]*moderation.ModerationPattern, error)
-	ModerationEffectiveness(ctx context.Context, patternID string, period model.Period) (*model.ModerationEffectiveness, error)
+	ModerationEffectiveness(ctx context.Context, patternID string, period model.ModerationPeriod) (*model.ModerationEffectiveness, error)
 	FederationLimits(ctx context.Context, active *bool, first *int, after *string) ([]*model.FederationLimit, error)
 	InstanceBudgets(ctx context.Context, exceeded *bool) ([]*model.InstanceBudget, error)
 	FederationHealth(ctx context.Context, threshold *float64) ([]*model.FederationManagementStatus, error)
@@ -6141,7 +6141,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.TrainModerationModel(childComplexity, args["samples"].([]*model.ModerationSample)), true
+		return e.complexity.Mutation.TrainModerationModel(childComplexity, args["samples"].([]*model.ModerationSampleInput), args["options"].(*model.BedrockTrainingOptions)), true
 
 	case "Mutation.unblockActor":
 		if e.complexity.Mutation.UnblockActor == nil {
@@ -7555,7 +7555,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.ModerationEffectiveness(childComplexity, args["patternId"].(string), args["period"].(model.Period)), true
+		return e.complexity.Query.ModerationEffectiveness(childComplexity, args["patternId"].(string), args["period"].(model.ModerationPeriod)), true
 
 	case "Query.moderationPatterns":
 		if e.complexity.Query.ModerationPatterns == nil {
@@ -9803,6 +9803,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	ec := executionContext{opCtx, e, 0, 0, make(chan graphql.DeferredResult)}
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
+		ec.unmarshalInputBedrockTrainingOptions,
 		ec.unmarshalInputCommunityNoteInput,
 		ec.unmarshalInputContentMapInput,
 		ec.unmarshalInputCreateEmojiInput,
@@ -9816,7 +9817,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputHashtagNotificationSettingsInput,
 		ec.unmarshalInputModerationFilter,
 		ec.unmarshalInputModerationPatternInput,
-		ec.unmarshalInputModerationSample,
+		ec.unmarshalInputModerationSampleInput,
 		ec.unmarshalInputNotificationFilterInput,
 		ec.unmarshalInputPollParamsInput,
 		ec.unmarshalInputScheduleStatusInput,
@@ -10492,11 +10493,16 @@ func (ec *executionContext) field_Mutation_syncThread_args(ctx context.Context, 
 func (ec *executionContext) field_Mutation_trainModerationModel_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "samples", ec.unmarshalNModerationSample2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationSampleᚄ)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "samples", ec.unmarshalNModerationSampleInput2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationSampleInputᚄ)
 	if err != nil {
 		return nil, err
 	}
 	args["samples"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "options", ec.unmarshalOBedrockTrainingOptions2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐBedrockTrainingOptions)
+	if err != nil {
+		return nil, err
+	}
+	args["options"] = arg1
 	return args, nil
 }
 
@@ -11147,7 +11153,7 @@ func (ec *executionContext) field_Query_moderationEffectiveness_args(ctx context
 		return nil, err
 	}
 	args["patternId"] = arg0
-	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "period", ec.unmarshalNPeriod2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPeriod)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "period", ec.unmarshalNModerationPeriod2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationPeriod)
 	if err != nil {
 		return nil, err
 	}
@@ -40858,7 +40864,7 @@ func (ec *executionContext) _Mutation_trainModerationModel(ctx context.Context, 
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().TrainModerationModel(rctx, fc.Args["samples"].([]*model.ModerationSample))
+		return ec.resolvers.Mutation().TrainModerationModel(rctx, fc.Args["samples"].([]*model.ModerationSampleInput), fc.Args["options"].(*model.BedrockTrainingOptions))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -49948,7 +49954,7 @@ func (ec *executionContext) _Query_moderationEffectiveness(ctx context.Context, 
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().ModerationEffectiveness(rctx, fc.Args["patternId"].(string), fc.Args["period"].(model.Period))
+		return ec.resolvers.Query().ModerationEffectiveness(rctx, fc.Args["patternId"].(string), fc.Args["period"].(model.ModerationPeriod))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -66589,6 +66595,61 @@ func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field
 
 // region    **************************** input.gotpl *****************************
 
+func (ec *executionContext) unmarshalInputBedrockTrainingOptions(ctx context.Context, obj any) (model.BedrockTrainingOptions, error) {
+	var it model.BedrockTrainingOptions
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"baseModelId", "datasetS3Path", "outputS3Path", "maxTrainingTime", "earlyStoppingEnabled"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "baseModelId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("baseModelId"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.BaseModelID = data
+		case "datasetS3Path":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("datasetS3Path"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.DatasetS3Path = data
+		case "outputS3Path":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("outputS3Path"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OutputS3Path = data
+		case "maxTrainingTime":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("maxTrainingTime"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MaxTrainingTime = data
+		case "earlyStoppingEnabled":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("earlyStoppingEnabled"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.EarlyStoppingEnabled = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputCommunityNoteInput(ctx context.Context, obj any) (model.CommunityNoteInput, error) {
 	var it model.CommunityNoteInput
 	asMap := map[string]any{}
@@ -67228,30 +67289,37 @@ func (ec *executionContext) unmarshalInputModerationPatternInput(ctx context.Con
 	return it, nil
 }
 
-func (ec *executionContext) unmarshalInputModerationSample(ctx context.Context, obj any) (model.ModerationSample, error) {
-	var it model.ModerationSample
+func (ec *executionContext) unmarshalInputModerationSampleInput(ctx context.Context, obj any) (model.ModerationSampleInput, error) {
+	var it model.ModerationSampleInput
 	asMap := map[string]any{}
 	for k, v := range obj.(map[string]any) {
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"content", "label", "confidence"}
+	fieldsInOrder := [...]string{"objectId", "objectType", "label", "confidence"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
 			continue
 		}
 		switch k {
-		case "content":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("content"))
+		case "objectId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("objectId"))
+			data, err := ec.unmarshalNID2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ObjectID = data
+		case "objectType":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("objectType"))
 			data, err := ec.unmarshalNString2string(ctx, v)
 			if err != nil {
 				return it, err
 			}
-			it.Content = data
+			it.ObjectType = data
 		case "label":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("label"))
-			data, err := ec.unmarshalNModerationSeverity2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationSeverity(ctx, v)
+			data, err := ec.unmarshalNString2string(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -85116,14 +85184,24 @@ func (ec *executionContext) unmarshalNModerationPatternInput2githubᚗcomᚋequa
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
-func (ec *executionContext) unmarshalNModerationSample2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationSampleᚄ(ctx context.Context, v any) ([]*model.ModerationSample, error) {
+func (ec *executionContext) unmarshalNModerationPeriod2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationPeriod(ctx context.Context, v any) (model.ModerationPeriod, error) {
+	var res model.ModerationPeriod
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNModerationPeriod2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationPeriod(ctx context.Context, sel ast.SelectionSet, v model.ModerationPeriod) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) unmarshalNModerationSampleInput2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationSampleInputᚄ(ctx context.Context, v any) ([]*model.ModerationSampleInput, error) {
 	var vSlice []any
 	vSlice = graphql.CoerceList(v)
 	var err error
-	res := make([]*model.ModerationSample, len(vSlice))
+	res := make([]*model.ModerationSampleInput, len(vSlice))
 	for i := range vSlice {
 		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
-		res[i], err = ec.unmarshalNModerationSample2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationSample(ctx, vSlice[i])
+		res[i], err = ec.unmarshalNModerationSampleInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationSampleInput(ctx, vSlice[i])
 		if err != nil {
 			return nil, err
 		}
@@ -85131,8 +85209,8 @@ func (ec *executionContext) unmarshalNModerationSample2ᚕᚖgithubᚗcomᚋequa
 	return res, nil
 }
 
-func (ec *executionContext) unmarshalNModerationSample2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationSample(ctx context.Context, v any) (*model.ModerationSample, error) {
-	res, err := ec.unmarshalInputModerationSample(ctx, v)
+func (ec *executionContext) unmarshalNModerationSampleInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationSampleInput(ctx context.Context, v any) (*model.ModerationSampleInput, error) {
+	res, err := ec.unmarshalInputModerationSampleInput(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
@@ -87532,6 +87610,14 @@ func (ec *executionContext) marshalOActor2ᚖgithubᚗcomᚋequaltoaiᚋlesser�
 		return graphql.Null
 	}
 	return ec._Actor(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOBedrockTrainingOptions2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐBedrockTrainingOptions(ctx context.Context, v any) (*model.BedrockTrainingOptions, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputBedrockTrainingOptions(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalOBoolean2bool(ctx context.Context, v any) (bool, error) {

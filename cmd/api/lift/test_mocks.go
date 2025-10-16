@@ -455,6 +455,11 @@ func (m *MockRepositoryStorage) Severance() *repositories.SeveranceRepository {
 	return nil
 }
 
+// ModerationML returns a mock ModerationML repository for testing
+func (m *MockRepositoryStorage) ModerationML() *repositories.ModerationMLRepository {
+	return nil
+}
+
 // GetDB returns a mock database connection for testing
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB {
 	args := m.Called()
