@@ -119,6 +119,14 @@ type BandwidthReport struct {
 	Cost      float64             `json:"cost"`
 }
 
+type BedrockTrainingOptions struct {
+	BaseModelID          *string `json:"baseModelId,omitempty"`
+	DatasetS3Path        *string `json:"datasetS3Path,omitempty"`
+	OutputS3Path         *string `json:"outputS3Path,omitempty"`
+	MaxTrainingTime      *int    `json:"maxTrainingTime,omitempty"`
+	EarlyStoppingEnabled *bool   `json:"earlyStoppingEnabled,omitempty"`
+}
+
 type Bitrate struct {
 	Quality       StreamQuality `json:"quality"`
 	BitsPerSecond int           `json:"bitsPerSecond"`
@@ -815,10 +823,11 @@ type ModerationPatternInput struct {
 	Active   *bool              `json:"active,omitempty"`
 }
 
-type ModerationSample struct {
-	Content    string             `json:"content"`
-	Label      ModerationSeverity `json:"label"`
-	Confidence float64            `json:"confidence"`
+type ModerationSampleInput struct {
+	ObjectID   string  `json:"objectId"`
+	ObjectType string  `json:"objectType"`
+	Label      string  `json:"label"`
+	Confidence float64 `json:"confidence"`
 }
 
 type ModeratorStats struct {
@@ -2402,6 +2411,65 @@ func (e *ModerationAction) UnmarshalJSON(b []byte) error {
 }
 
 func (e ModerationAction) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ModerationPeriod string
+
+const (
+	ModerationPeriodHourly  ModerationPeriod = "HOURLY"
+	ModerationPeriodDaily   ModerationPeriod = "DAILY"
+	ModerationPeriodWeekly  ModerationPeriod = "WEEKLY"
+	ModerationPeriodMonthly ModerationPeriod = "MONTHLY"
+)
+
+var AllModerationPeriod = []ModerationPeriod{
+	ModerationPeriodHourly,
+	ModerationPeriodDaily,
+	ModerationPeriodWeekly,
+	ModerationPeriodMonthly,
+}
+
+func (e ModerationPeriod) IsValid() bool {
+	switch e {
+	case ModerationPeriodHourly, ModerationPeriodDaily, ModerationPeriodWeekly, ModerationPeriodMonthly:
+		return true
+	}
+	return false
+}
+
+func (e ModerationPeriod) String() string {
+	return string(e)
+}
+
+func (e *ModerationPeriod) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ModerationPeriod(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ModerationPeriod", str)
+	}
+	return nil
+}
+
+func (e ModerationPeriod) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ModerationPeriod) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ModerationPeriod) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

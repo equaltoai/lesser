@@ -17,7 +17,7 @@ func (r *Resolver) Driver() DriverResolver {
 
 // Type resolves the type field for a Driver
 // Maps from the Service and Operation fields
-func (r *driverResolver) Type(ctx context.Context, obj *cost.Driver) (string, error) {
+func (r *driverResolver) Type(_ context.Context, obj *cost.Driver) (string, error) {
 	if obj.Operation != "" && obj.Operation != "All" {
 		return obj.Service + " " + obj.Operation, nil
 	}
@@ -26,25 +26,25 @@ func (r *driverResolver) Type(ctx context.Context, obj *cost.Driver) (string, er
 
 // Domain resolves the domain field for a Driver
 // This is optional and typically nil for cost drivers
-func (r *driverResolver) Domain(ctx context.Context, obj *cost.Driver) (*string, error) {
+func (r *driverResolver) Domain(_ context.Context, _ *cost.Driver) (*string, error) {
 	return nil, nil
 }
 
 // Cost resolves the cost field for a Driver
 // Converts from microcents to dollars
-func (r *driverResolver) Cost(ctx context.Context, obj *cost.Driver) (float64, error) {
+func (r *driverResolver) Cost(_ context.Context, obj *cost.Driver) (float64, error) {
 	return float64(obj.CostMicroCents) / 1_000_000.0, nil
 }
 
 // PercentOfTotal resolves the percentOfTotal field for a Driver
 // Maps from PercentageOfTotal field
-func (r *driverResolver) PercentOfTotal(ctx context.Context, obj *cost.Driver) (float64, error) {
+func (r *driverResolver) PercentOfTotal(_ context.Context, obj *cost.Driver) (float64, error) {
 	return obj.PercentageOfTotal, nil
 }
 
 // Trend resolves the trend field for a Driver
 // Defaults to STABLE for now (could be enhanced with historical data)
-func (r *driverResolver) Trend(ctx context.Context, obj *cost.Driver) (model.Trend, error) {
+func (r *driverResolver) Trend(_ context.Context, _ *cost.Driver) (model.Trend, error) {
 	// TODO: Calculate actual trend based on historical data
 	return model.TrendStable, nil
 }

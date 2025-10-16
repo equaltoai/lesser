@@ -75,6 +75,7 @@ type RepositoryFactory struct {
 	filterRepo              *repositories.FilterRepository
 	threadRepo              *repositories.ThreadRepository
 	severanceRepo           *repositories.SeveranceRepository
+	moderationMLRepo        *repositories.ModerationMLRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -153,6 +154,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.mediaMetadataRepo = repositories.NewMediaMetadataRepository(f.db, f.tableName, f.logger, nil)
 	f.oauthRepo = repositories.NewOAuthRepository(f.db, f.logger)
 	f.dnsCacheRepo = repositories.NewDNSCacheRepository(f.db, f.tableName, f.logger, nil)
+	f.moderationMLRepo = repositories.NewModerationMLRepository(f.db, f.tableName, f.logger)
 
 	// All other repositories are nil until needed/implemented
 	// This allows the factory to be created without breaking the application
@@ -453,6 +455,11 @@ func (f *RepositoryFactory) Thread() *repositories.ThreadRepository {
 // Severance returns the Severance repository instance
 func (f *RepositoryFactory) Severance() *repositories.SeveranceRepository {
 	return f.severanceRepo
+}
+
+// ModerationML returns the ModerationML repository instance
+func (f *RepositoryFactory) ModerationML() *repositories.ModerationMLRepository {
+	return f.moderationMLRepo
 }
 
 // Additional repositories can be added here as needed

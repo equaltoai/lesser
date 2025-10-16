@@ -201,10 +201,19 @@ input ModerationPatternInput {
   active: Boolean
 }
 
-input ModerationSample {
-  content: String!
-  label: ModerationSeverity!
+input ModerationSampleInput {
+  objectId: ID!
+  objectType: String!
+  label: String!
   confidence: Float!
+}
+
+input BedrockTrainingOptions {
+  baseModelId: String
+  datasetS3Path: String
+  outputS3Path: String
+  maxTrainingTime: Int
+  earlyStoppingEnabled: Boolean
 }
 
 input FederationLimitInput {
@@ -227,7 +236,7 @@ extend type Query {
   
   # Advanced Moderation
   moderationPatterns(active: Boolean, severity: ModerationSeverity, first: Int, after: String): [ModerationPattern!]!
-  moderationEffectiveness(patternId: ID!, period: Period!): ModerationEffectiveness!
+  moderationEffectiveness(patternId: ID!, period: ModerationPeriod!): ModerationEffectiveness!
   
   # Federation Management
   federationLimits(active: Boolean, first: Int, after: String): [FederationLimit!]!
@@ -245,7 +254,7 @@ extend type Mutation {
   createModerationPattern(input: ModerationPatternInput!): ModerationPattern!
   updateModerationPattern(id: ID!, input: ModerationPatternInput!): ModerationPattern!
   deleteModerationPattern(id: ID!): Boolean!
-  trainModerationModel(samples: [ModerationSample!]!): TrainingResult!
+  trainModerationModel(samples: [ModerationSampleInput!]!, options: BedrockTrainingOptions): TrainingResult!
   
   # Federation Management
   setFederationLimit(domain: String!, limit: FederationLimitInput!): FederationLimit!
@@ -359,4 +368,11 @@ enum CostOrderBy {
   ERROR_RATE_DESC
   REQUEST_COUNT_DESC
   DOMAIN_ASC
+}
+
+enum ModerationPeriod {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
 } 
