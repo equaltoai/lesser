@@ -58,17 +58,9 @@ func (r *subscriptionResolver) InfrastructureEvent(ctx context.Context) (<-chan 
 		return nil, err
 	}
 
-	// Use SubscriptionManager for consistent subscription handling
 	sm := r.SubscriptionManager
-	if sm == nil {
-		r.Logger.Error("subscription manager not available for infrastructure events")
-		ch := make(chan *model.InfrastructureEvent)
-		close(ch)
-		return ch, ErrSubscriptionManagerNotRunning
-	}
-
-	if !sm.IsRunning() {
-		r.Logger.Error("subscription manager not running for infrastructure events")
+	if sm == nil || !sm.IsRunning() {
+		r.Logger.Error("subscription manager not available or not running")
 		ch := make(chan *model.InfrastructureEvent)
 		close(ch)
 		return ch, ErrSubscriptionManagerNotRunning
@@ -82,8 +74,6 @@ func (r *subscriptionResolver) InfrastructureEvent(ctx context.Context) (<-chan 
 		return nil, err
 	}
 
-	r.Logger.Info("Started infrastructure events subscription",
-		zap.String("user", username))
-
+	r.Logger.Info("started infrastructure events subscription", zap.String("user", username))
 	return eventChan, nil
 }

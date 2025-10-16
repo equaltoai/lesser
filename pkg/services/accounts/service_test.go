@@ -340,9 +340,10 @@ func (m *MockRepositoryStorage) OAuth() *repositories.OAuthRepository           
 func (m *MockRepositoryStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
 	return nil
 }
-func (m *MockRepositoryStorage) DNSCache() *repositories.DNSCacheRepository { return nil }
-func (m *MockRepositoryStorage) Thread() *repositories.ThreadRepository     { return m.threadRepo }
-func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository     { return nil }
+func (m *MockRepositoryStorage) DNSCache() *repositories.DNSCacheRepository   { return nil }
+func (m *MockRepositoryStorage) Thread() *repositories.ThreadRepository       { return m.threadRepo }
+func (m *MockRepositoryStorage) Severance() *repositories.SeveranceRepository { return nil }
+func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository       { return nil }
 
 // Utility methods
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB { return nil }

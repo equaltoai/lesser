@@ -59,6 +59,7 @@ type RepositoryStorage interface {
 	DNSCache() *repositories.DNSCacheRepository
 	Filter() *repositories.FilterRepository
 	Thread() *repositories.ThreadRepository
+	Severance() *repositories.SeveranceRepository
 
 	// Utility methods
 	GetDB() dynamormCore.DB

@@ -279,18 +279,6 @@ func (r *queryResolver) BandwidthUsage(ctx context.Context, period model.TimePer
 	_ = startTime
 	_ = costRepo
 	estimatedCost := 0.001
-	if err != nil {
-		// Return empty report if no data
-		return &model.BandwidthReport{
-			Period:    period,
-			TotalGb:   0,
-			PeakMbps:  0,
-			AvgMbps:   0,
-			ByQuality: []*model.QualityBandwidth{},
-			ByHour:    []*model.HourlyBandwidth{},
-			Cost:      0,
-		}, nil
-	}
 
 	// Get real bandwidth data from media repository
 	mediaRepo := r.Registry.GetStorage().Media()

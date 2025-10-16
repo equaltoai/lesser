@@ -55,17 +55,9 @@ func (r *subscriptionResolver) ThreatIntelligence(ctx context.Context) (<-chan *
 		return nil, err
 	}
 
-	// Use SubscriptionManager for consistent subscription handling
 	sm := r.SubscriptionManager
-	if sm == nil {
-		r.Logger.Error("subscription manager not available for threat intelligence")
-		ch := make(chan *model.ThreatAlert)
-		close(ch)
-		return ch, ErrSubscriptionManagerNotRunning
-	}
-
-	if !sm.IsRunning() {
-		r.Logger.Error("subscription manager not running for threat intelligence")
+	if sm == nil || !sm.IsRunning() {
+		r.Logger.Error("subscription manager not available or not running")
 		ch := make(chan *model.ThreatAlert)
 		close(ch)
 		return ch, ErrSubscriptionManagerNotRunning
@@ -79,8 +71,6 @@ func (r *subscriptionResolver) ThreatIntelligence(ctx context.Context) (<-chan *
 		return nil, err
 	}
 
-	r.Logger.Info("Started threat intelligence subscription",
-		zap.String("user", username))
-
+	r.Logger.Info("started threat intelligence subscription", zap.String("user", username))
 	return alertChan, nil
 }

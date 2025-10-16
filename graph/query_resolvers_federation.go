@@ -8,8 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/services/relationships"
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/services/severance"
 	"go.uber.org/zap"
 )
 
@@ -204,10 +203,10 @@ func (r *queryResolver) FederationMap(_ context.Context, _ *int) (*model.Federat
 
 // SeveredRelationships returns severed federation relationships
 func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *string, first *int, after *string) (*model.SeveredRelationshipConnection, error) {
-	// Get storage from resolver
-	storage := r.Storage
-	if storage == nil {
-		return nil, ErrStorageUnavailable
+	// Get severance service from registry
+	severanceService := r.Registry.Severance()
+	if severanceService == nil {
+		return nil, errors.New("severance service unavailable")
 	}
 
 	// Set default limit
@@ -231,8 +230,10 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 		instanceName = *instance
 	}
 
-	// Fetch severed relationships from federation repository
-	relationships, nextCursor, err := storage.Federation().GetSeveredRelationships(ctx, instanceName, limit, cursor)
+	// Fetch severed relationships from severance service
+	relationships, nextCursor, err := severanceService.GetSeveredRelationships(ctx, severance.GetSeveredRelationshipsFilters{
+		Instance: instanceName,
+	}, limit, cursor)
 	if err != nil {
 		r.Logger.Error("failed to get severed relationships",
 			zap.String("instance", instanceName),
@@ -240,61 +241,11 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 		return nil, errors.Join(errors.New("failed to get severed relationships"), err)
 	}
 
-	// Convert to GraphQL model
+	// Convert to GraphQL model using helper
 	edges := make([]*model.SeveredRelationshipEdge, 0, len(relationships))
 	for _, rel := range relationships {
-		// Count affected followers and following from affected follows
-		affectedFollowers := 0
-		affectedFollowing := 0
-		for _, affected := range rel.AffectedFollows {
-			switch affected.Direction {
-			case "follower":
-				affectedFollowers++
-			case RelationshipFollowing:
-				affectedFollowing++
-			case "mutual":
-				affectedFollowers++
-				affectedFollowing++
-			}
-		}
-
-		// Convert reason from storage model to GraphQL model
-		var graphqlReason model.SeveranceReason
-		switch string(rel.Reason) {
-		case "user_domain_block", "domain_block":
-			graphqlReason = model.SeveranceReasonDomainBlock
-		case "admin_action", "defederation":
-			graphqlReason = model.SeveranceReasonDefederation
-		case "federation_failure", "instance_down":
-			graphqlReason = model.SeveranceReasonInstanceDown
-		case "policy_violation":
-			graphqlReason = model.SeveranceReasonPolicyViolation
-		default:
-			graphqlReason = model.SeveranceReasonOther
-		}
-
-		// Create severance details if we have details
-		var details *model.SeveranceDetails
-		if rel.Details != "" {
-			details = &model.SeveranceDetails{
-				Description:  rel.Details,
-				Metadata:     []string{},
-				AutoDetected: false,
-			}
-		}
-
 		edge := &model.SeveredRelationshipEdge{
-			Node: &model.SeveredRelationship{
-				ID:                rel.ID,
-				LocalInstance:     rel.LocalInstance,
-				RemoteInstance:    rel.RemoteInstance,
-				Reason:            graphqlReason,
-				AffectedFollowers: affectedFollowers,
-				AffectedFollowing: affectedFollowing,
-				Timestamp:         model.Time(rel.Timestamp),
-				Reversible:        rel.Reversible,
-				Details:           details,
-			},
+			Node:   r.convertSeveredRelationshipToModel(ctx, rel),
 			Cursor: model.Cursor(rel.ID),
 		}
 		edges = append(edges, edge)
@@ -326,48 +277,52 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 
 // AffectedRelationships implements QueryResolver
 func (r *queryResolver) AffectedRelationships(ctx context.Context, severedRelationshipID string) (*model.AffectedRelationshipConnection, error) {
-	username, err := r.requireAuth(ctx)
-	if err != nil {
-		return nil, err
+	// Get severance service from registry
+	severanceService := r.Registry.Severance()
+	if severanceService == nil {
+		return nil, errors.New("severance service unavailable")
 	}
 
-	// Use the relationships service we already implemented
-	result, err := r.Registry.Relationships().GetAffectedRelationships(ctx, &relationships.GetAffectedRelationshipsQuery{
-		UserID:                username,
-		SeveredRelationshipID: severedRelationshipID,
-	})
+	// Set default limit (no pagination in schema)
+	limit := 100
+	cursor := ""
+
+	// Fetch affected relationships from severance service
+	relationships, nextCursor, err := severanceService.GetAffectedRelationships(ctx, severedRelationshipID, limit, cursor)
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to get affected relationships"), err)
 	}
 
-	// Convert service results to GraphQL model
-	edges := make([]*model.AffectedRelationshipEdge, len(result.Relationships))
-	for i, rel := range result.Relationships {
-		// Convert user to account then to actor
-		account := &storage.Account{
-			User: &rel.AffectedUser,
-		}
-		actor := r.convertAccountToActor(account)
-
-		// Since AffectedRelationship doesn't have CreatedAt, use a default
-		// In production, this would be fetched from the actual relationship record
-		establishedAt := time.Now().Add(-7 * 24 * time.Hour) // Default to 1 week ago
-
+	// Convert service results to GraphQL model using helper
+	edges := make([]*model.AffectedRelationshipEdge, len(relationships))
+	for i, rel := range relationships {
 		edges[i] = &model.AffectedRelationshipEdge{
-			Node: &model.AffectedRelationship{
-				Actor:            actor,
-				RelationshipType: rel.Type,
-				EstablishedAt:    model.Time(establishedAt),
-			},
+			Node:   r.convertAffectedRelationshipToModel(ctx, rel),
+			Cursor: model.Cursor(rel.ActorID),
 		}
+	}
+
+	// Determine pagination info
+	hasNextPage := nextCursor != ""
+	hasPreviousPage := cursor != ""
+
+	var startCursor, endCursor *model.Cursor
+	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {
+		sc := edges[0].Cursor
+		ec := edges[len(edges)-1].Cursor
+		startCursor = &sc
+		endCursor = &ec
 	}
 
 	return &model.AffectedRelationshipConnection{
 		Edges: edges,
 		PageInfo: &model.PageInfo{
-			HasNextPage:     result.HasNextPage,
-			HasPreviousPage: result.HasPreviousPage,
+			HasNextPage:     hasNextPage,
+			HasPreviousPage: hasPreviousPage,
+			StartCursor:     startCursor,
+			EndCursor:       endCursor,
 		},
+		TotalCount: len(edges),
 	}, nil
 }
 

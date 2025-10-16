@@ -74,6 +74,7 @@ type RepositoryFactory struct {
 	dnsCacheRepo            *repositories.DNSCacheRepository
 	filterRepo              *repositories.FilterRepository
 	threadRepo              *repositories.ThreadRepository
+	severanceRepo           *repositories.SeveranceRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -114,6 +115,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.moderationRepo = repositories.NewModerationRepository(f.db, f.tableName, f.logger)
 	f.filterRepo = repositories.NewFilterRepository(f.db, f.tableName, f.logger, nil)
 	f.threadRepo = repositories.NewThreadRepository(f.db, f.logger)
+	f.severanceRepo = repositories.NewSeveranceRepository(f.db, f.tableName, f.logger)
 	f.listRepo = repositories.NewListRepository(f.db, f.tableName, f.logger, nil)
 	f.mediaRepo = repositories.NewMediaRepository(f.db, f.tableName, f.logger, nil)
 	f.pollRepo = repositories.NewPollRepository(f.db, f.tableName, f.logger, nil)
@@ -446,6 +448,11 @@ func (f *RepositoryFactory) Filter() *repositories.FilterRepository {
 // Thread returns the Thread repository instance
 func (f *RepositoryFactory) Thread() *repositories.ThreadRepository {
 	return f.threadRepo
+}
+
+// Severance returns the Severance repository instance
+func (f *RepositoryFactory) Severance() *repositories.SeveranceRepository {
+	return f.severanceRepo
 }
 
 // Additional repositories can be added here as needed

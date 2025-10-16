@@ -80,9 +80,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/services/search"
+	"github.com/equaltoai/lesser/pkg/services/severance"
 	"github.com/equaltoai/lesser/pkg/services/threads"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
@@ -140,6 +142,7 @@ type Registry struct {
 	importExportService  *importexport.Service
 	bulkService          *bulk.Service
 	threadsService       *threads.Service
+	severanceService     *severance.Service
 
 	// Event infrastructure
 	eventBus         EventBus
@@ -444,6 +447,35 @@ func (r *Registry) Threads() *threads.Service {
 	}
 
 	return r.threadsService
+}
+
+// Severance returns the severance service, initializing it if necessary
+func (r *Registry) Severance() *severance.Service {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.severanceService == nil {
+		severanceRepo := r.storage.Severance()
+
+		if severanceRepo != nil {
+			domain := r.getDomainName()
+
+			r.severanceService = severance.NewService(
+				severanceRepo,
+				r.createSeveranceFederationAdapter(),
+				r.createSeveranceNotificationAdapter(),
+				r.logger,
+				domain,
+			)
+			if r.initialized != nil {
+				r.initialized["Severance"] = true
+			}
+		} else if r.logger != nil {
+			r.logger.Warn("failed to initialize Severance service: required repository not available")
+		}
+	}
+
+	return r.severanceService
 }
 
 // GetStorage returns the configured storage interface
@@ -1185,6 +1217,20 @@ func (r *Registry) createThreadsFederationAdapter() *queueFederationAdapter {
 	}
 }
 
+// createSeveranceFederationAdapter creates the federation adapter for the Severance service
+func (r *Registry) createSeveranceFederationAdapter() severance.FederationService {
+	return &severanceFederationAdapter{
+		federation: r.Federation(),
+	}
+}
+
+// createSeveranceNotificationAdapter creates the notification adapter for the Severance service
+func (r *Registry) createSeveranceNotificationAdapter() severance.NotificationService {
+	return &severanceNotificationAdapter{
+		notification: r.Notification(),
+	}
+}
+
 // EventBus returns the EventBus interface for GraphQL subscriptions
 func (r *Registry) EventBus() EventBus {
 	r.mu.Lock()
@@ -1495,6 +1541,43 @@ type queueFederationAdapter struct {
 	federation FederationService
 	storage    core.RepositoryStorage
 	logger     *zap.Logger
+}
+
+// severanceFederationAdapter adapts FederationService to severance.FederationService
+type severanceFederationAdapter struct {
+	federation FederationService
+}
+
+// CheckInstanceReachability checks if a remote instance is reachable
+func (a *severanceFederationAdapter) CheckInstanceReachability(_ context.Context, instance string) (bool, error) {
+	// For now, we'll use a simple check - in the future, this could use the federation service
+	// to perform actual HTTP requests to verify instance health
+	if instance == "" {
+		return false, fmt.Errorf("instance cannot be empty")
+	}
+	// TODO: Implement actual instance reachability check via federation service
+	return true, nil
+}
+
+// severanceNotificationAdapter adapts NotificationService to severance.NotificationService
+type severanceNotificationAdapter struct {
+	notification NotificationService
+}
+
+// SendSeveranceNotification sends a notification about a severed relationship
+func (a *severanceNotificationAdapter) SendSeveranceNotification(_ context.Context, userID, severanceID string, _ models.SeveranceReason) error {
+	// For now, this is a stub - in the future, this could use the notification service
+	// to send actual notifications to affected users
+	if userID == "" || severanceID == "" {
+		return fmt.Errorf("userID and severanceID cannot be empty")
+	}
+	// TODO: Implement actual notification sending via notification service
+	return nil
+}
+
+// NotifySeverance sends a notification about a severed relationship
+func (a *severanceNotificationAdapter) NotifySeverance(ctx context.Context, userID, severanceID string) error {
+	return a.SendSeveranceNotification(ctx, userID, severanceID, models.SeveranceReasonOther)
 }
 
 // FetchObject implements threads.FederationClient.FetchObject for fetching remote ActivityPub objects
