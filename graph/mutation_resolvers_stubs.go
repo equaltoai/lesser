@@ -61,46 +61,7 @@ func (r *mutationResolver) UnmuteActor(ctx context.Context, id string) (bool, er
 	return false, errors.New("UnmuteActor not yet implemented")
 }
 
-// UnfollowHashtag is the resolver for the unfollowHashtag field.
-func (r *mutationResolver) UnfollowHashtag(ctx context.Context, hashtag string) (*model.UnfollowHashtagPayload, error) {
-	username, err := r.requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	r.Logger.Warn("UnfollowHashtag not fully implemented yet",
-		zap.String("user", username),
-		zap.String("hashtag", hashtag))
-
-	// Track cost using centralized tracker
-	r.trackDynamoOperation(ctx, "write", 1)
-
-	return &model.UnfollowHashtagPayload{
-		Success: false,
-		Hashtag: nil,
-	}, errors.New("UnfollowHashtag not yet implemented")
-}
-
-// UpdateHashtagNotifications is the resolver for the updateHashtagNotifications field.
-func (r *mutationResolver) UpdateHashtagNotifications(ctx context.Context, hashtag string, _ model.HashtagNotificationSettingsInput) (*model.UpdateHashtagNotificationsPayload, error) {
-	username, err := r.requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	r.Logger.Warn("UpdateHashtagNotifications not fully implemented yet",
-		zap.String("user", username),
-		zap.String("hashtag", hashtag))
-
-	// Track cost using centralized tracker
-	r.trackDynamoOperation(ctx, "write", 1)
-
-	return &model.UpdateHashtagNotificationsPayload{
-		Success:  false,
-		Hashtag:  nil,
-		Settings: nil,
-	}, errors.New("UpdateHashtagNotifications not yet implemented")
-}
+// NOTE: UnfollowHashtag and UpdateHashtagNotifications are now implemented in mutation_resolvers_hashtags.go
 
 // UpdateStreamingPreferences is the resolver for the updateStreamingPreferences field.
 func (r *mutationResolver) UpdateStreamingPreferences(ctx context.Context, _ model.StreamingPreferencesInput) (*model.UserPreferences, error) {

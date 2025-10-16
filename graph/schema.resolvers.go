@@ -5587,52 +5587,6 @@ func (r *subscriptionResolver) convertEventToQuoteActivity(event *streaming.Inte
 	return update
 }
 
-// convertEventToHashtagActivity converts a streaming event to a HashtagActivityUpdate
-func (r *subscriptionResolver) convertEventToHashtagActivity(event *streaming.InternalEvent, _ []string) *model.HashtagActivityUpdate {
-	if event == nil {
-		return nil
-	}
-
-	// Create hashtag activity update
-	update := &model.HashtagActivityUpdate{
-		Timestamp: model.Time(event.Timestamp),
-	}
-
-	// Extract hashtag data from event
-	switch data := event.Data.(type) {
-	case map[string]interface{}:
-		if tag, ok := data["hashtag"].(string); ok {
-			update.Hashtag = tag
-		}
-
-		// Extract post if available
-		if postObj, ok := data["post"]; ok {
-			if postMap, ok := postObj.(map[string]interface{}); ok {
-				update.Post = &model.Object{
-					ID:      fmt.Sprintf("%v", postMap["id"]),
-					Type:    model.ObjectTypeNote,
-					Content: fmt.Sprintf("%v", postMap["content"]),
-				}
-			}
-		}
-
-		// Extract author if available
-		if authorID, ok := data["author_id"].(string); ok {
-			update.Author = &activitypub.Actor{
-				BaseObject: activitypub.BaseObject{
-					ID:   authorID,
-					Type: activitypub.PersonType,
-				},
-				PreferredUsername: authorID,
-				Inbox:             fmt.Sprintf("%s/inbox", authorID),
-				Outbox:            fmt.Sprintf("%s/outbox", authorID),
-			}
-		}
-	}
-
-	return update
-}
-
 // convertEventToModerationAlert converts a streaming event to a ModerationAlert
 func (r *subscriptionResolver) convertEventToModerationAlert(event *streaming.InternalEvent, severity *model.ModerationSeverity) *model.ModerationAlert {
 	if event == nil {

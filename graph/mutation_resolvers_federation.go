@@ -154,7 +154,7 @@ func (r *mutationResolver) AttemptReconnection(ctx context.Context, id string) (
 	var reconnectedCount int
 	var failedCount int
 
-	if id == "all" {
+	if id == QueryTypeAll {
 		// Attempt to reconnect all severed relationships for the user
 		severedRels, err := federationRepo.GetUserSeveredRelationships(ctx, username)
 		if err != nil {

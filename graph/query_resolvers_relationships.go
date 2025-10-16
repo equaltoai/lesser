@@ -86,7 +86,7 @@ func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category
 			if category != nil {
 				return string(*category)
 			}
-			return "all"
+			return QueryTypeAll
 		}()))
 
 	// Validate inputs
