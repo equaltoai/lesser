@@ -3636,16 +3636,16 @@ func (r *moderationFilterResolver) Unhandled(_ context.Context, obj *moderation.
 // Helper functions for cost calculation and analysis
 
 // calculateCurrentCostsFromRecent calculates current costs from recent cost records as fallback
-func (r *queryResolver) calculateCurrentCostsFromRecent(ctx context.Context, costRepo interface{}, startTime, endTime time.Time) (float64, []*model.Driver, []string) {
+func (r *queryResolver) calculateCurrentCostsFromRecent(ctx context.Context, costRepo interface{}, startTime, endTime time.Time) (float64, []*cost.Driver, []string) {
 	repo, ok := costRepo.(*repositories.TrackingRepository)
 	if !ok {
-		return 0.0, []*model.Driver{}, []string{"Cost repository not available"}
+		return 0.0, []*cost.Driver{}, []string{"Cost repository not available"}
 	}
 
 	// Get recent cost records
 	costRecords, err := repo.GetCostsByDateRange(ctx, startTime, endTime)
 	if err != nil || len(costRecords) == 0 {
-		return 0.0, []*model.Driver{}, []string{"Enable detailed cost tracking"}
+		return 0.0, []*cost.Driver{}, []string{"Enable detailed cost tracking"}
 	}
 
 	var totalCost float64
@@ -3674,17 +3674,17 @@ func (r *queryResolver) calculateCurrentCostsFromRecent(ctx context.Context, cos
 }
 
 // buildDriversFromDaily builds cost drivers from daily aggregate data
-func (r *queryResolver) buildDriversFromDaily(daily *repositories.DailyAggregate) []*model.Driver {
+func (r *queryResolver) buildDriversFromDaily(daily *repositories.DailyAggregate) []*cost.Driver {
 	return r.createReadWriteDrivers(daily.TotalReads, daily.TotalWrites, daily.TotalCostDollars)
 }
 
 // buildDriversFromMonthly builds cost drivers from monthly aggregate data
-func (r *queryResolver) buildDriversFromMonthly(monthly *repositories.MonthlyAggregate) []*model.Driver {
+func (r *queryResolver) buildDriversFromMonthly(monthly *repositories.MonthlyAggregate) []*cost.Driver {
 	return r.createReadWriteDrivers(monthly.TotalReads, monthly.TotalWrites, monthly.TotalCostDollars)
 }
 
 // buildWeeklyDriversFromDaily builds cost drivers from weekly daily aggregates
-func (r *queryResolver) buildWeeklyDriversFromDaily(dailies []*repositories.DailyAggregate) []*model.Driver {
+func (r *queryResolver) buildWeeklyDriversFromDaily(dailies []*repositories.DailyAggregate) []*cost.Driver {
 	var totalReads, totalWrites int64
 	var totalCost float64
 
@@ -3698,31 +3698,37 @@ func (r *queryResolver) buildWeeklyDriversFromDaily(dailies []*repositories.Dail
 }
 
 // buildDriversFromCostMaps builds drivers from service and operation cost maps
-func (r *queryResolver) buildDriversFromCostMaps(serviceCosts, operationCosts map[string]float64, totalCost float64) []*model.Driver {
-	drivers := []*model.Driver{}
+func (r *queryResolver) buildDriversFromCostMaps(serviceCosts, operationCosts map[string]float64, totalCost float64) []*cost.Driver {
+	drivers := []*cost.Driver{}
 
 	// Add service-based drivers
-	for service, cost := range serviceCosts {
-		if cost > 0 && totalCost > 0 {
-			percentage := (cost / totalCost) * 100
-			drivers = append(drivers, &model.Driver{
-				Type:           fmt.Sprintf("%s Service", service),
-				Cost:           cost,
-				PercentOfTotal: percentage,
-				Trend:          model.TrendStable,
+	for service, costDollars := range serviceCosts {
+		if costDollars > 0 && totalCost > 0 {
+			percentage := (costDollars / totalCost) * 100
+			costMicro := int64(costDollars * 1_000_000)
+			drivers = append(drivers, &cost.Driver{
+				Service:           service,
+				Operation:         "All",
+				CostMicroCents:    costMicro,
+				PercentageOfTotal: percentage,
+				OperationCount:    1,
+				AverageCost:       costMicro,
 			})
 		}
 	}
 
 	// Add operation-based drivers
-	for operation, cost := range operationCosts {
-		if cost > 0 && totalCost > 0 {
-			percentage := (cost / totalCost) * 100
-			drivers = append(drivers, &model.Driver{
-				Type:           fmt.Sprintf("%s Operations", operation),
-				Cost:           cost,
-				PercentOfTotal: percentage,
-				Trend:          model.TrendStable,
+	for operation, costDollars := range operationCosts {
+		if costDollars > 0 && totalCost > 0 {
+			percentage := (costDollars / totalCost) * 100
+			costMicro := int64(costDollars * 1_000_000)
+			drivers = append(drivers, &cost.Driver{
+				Service:           "All",
+				Operation:         operation,
+				CostMicroCents:    costMicro,
+				PercentageOfTotal: percentage,
+				OperationCount:    1,
+				AverageCost:       costMicro,
 			})
 		}
 	}
@@ -3904,13 +3910,16 @@ func (r *queryResolver) getExistingCostProjection(ctx context.Context, costRepo 
 
 // convertStorageProjectionToModel converts storage projection to GraphQL model
 func (r *queryResolver) convertStorageProjectionToModel(storageProjection *storage.CostProjection, period model.Period) *model.CostProjection {
-	topDrivers := make([]*model.Driver, 0, len(storageProjection.TopDrivers))
+	topDrivers := make([]*cost.Driver, 0, len(storageProjection.TopDrivers))
 	for _, driver := range storageProjection.TopDrivers {
-		topDrivers = append(topDrivers, &model.Driver{
-			Type:           driver.Type,
-			Cost:           driver.Cost,
-			PercentOfTotal: driver.PercentOfTotal,
-			Trend:          model.TrendStable, // Default to stable
+		costMicro := int64(driver.Cost * 1_000_000)
+		topDrivers = append(topDrivers, &cost.Driver{
+			Service:           driver.Type,
+			Operation:         "All",
+			CostMicroCents:    costMicro,
+			PercentageOfTotal: driver.PercentOfTotal,
+			OperationCount:    1,
+			AverageCost:       costMicro,
 		})
 	}
 
@@ -4010,7 +4019,7 @@ func (r *queryResolver) calculateMonthProjectionParams(now time.Time) (time.Time
 }
 
 // getCurrentCostData retrieves current cost data based on period
-func (r *queryResolver) getCurrentCostData(ctx context.Context, costRepo *repositories.TrackingRepository, period model.Period, now, startTime time.Time) (float64, []*model.Driver, []string) {
+func (r *queryResolver) getCurrentCostData(ctx context.Context, costRepo *repositories.TrackingRepository, period model.Period, now, startTime time.Time) (float64, []*cost.Driver, []string) {
 	switch period {
 	case model.PeriodDay:
 		return r.getDailyCostData(ctx, costRepo, startTime, now)
@@ -4024,7 +4033,7 @@ func (r *queryResolver) getCurrentCostData(ctx context.Context, costRepo *reposi
 }
 
 // getDailyCostData retrieves daily cost data
-func (r *queryResolver) getDailyCostData(ctx context.Context, costRepo *repositories.TrackingRepository, startTime, endTime time.Time) (float64, []*model.Driver, []string) {
+func (r *queryResolver) getDailyCostData(ctx context.Context, costRepo *repositories.TrackingRepository, startTime, endTime time.Time) (float64, []*cost.Driver, []string) {
 	dailyAggregates, err := costRepo.GetDailyAggregates(ctx, startTime, endTime)
 	if err == nil && len(dailyAggregates) > 0 {
 		return dailyAggregates[0].TotalCostDollars,
@@ -4036,7 +4045,7 @@ func (r *queryResolver) getDailyCostData(ctx context.Context, costRepo *reposito
 }
 
 // getWeeklyCostData retrieves weekly cost data
-func (r *queryResolver) getWeeklyCostData(ctx context.Context, costRepo *repositories.TrackingRepository, startTime, endTime time.Time) (float64, []*model.Driver, []string) {
+func (r *queryResolver) getWeeklyCostData(ctx context.Context, costRepo *repositories.TrackingRepository, startTime, endTime time.Time) (float64, []*cost.Driver, []string) {
 	dailyAggregates, err := costRepo.GetDailyAggregates(ctx, startTime, endTime)
 	if err != nil {
 		return r.calculateCurrentCostsFromRecent(ctx, costRepo, startTime, endTime)
@@ -4053,7 +4062,7 @@ func (r *queryResolver) getWeeklyCostData(ctx context.Context, costRepo *reposit
 }
 
 // getMonthlyCostData retrieves monthly cost data
-func (r *queryResolver) getMonthlyCostData(ctx context.Context, costRepo *repositories.TrackingRepository, now, startTime time.Time) (float64, []*model.Driver, []string) {
+func (r *queryResolver) getMonthlyCostData(ctx context.Context, costRepo *repositories.TrackingRepository, now, startTime time.Time) (float64, []*cost.Driver, []string) {
 	// Try monthly aggregate first
 	monthlyAggregate, err := costRepo.GetMonthlyAggregate(ctx, now.Year(), int(now.Month()))
 	if err == nil && monthlyAggregate != nil {
@@ -4067,7 +4076,7 @@ func (r *queryResolver) getMonthlyCostData(ctx context.Context, costRepo *reposi
 }
 
 // getMonthlyCostDataFromDaily retrieves monthly cost data from daily aggregates
-func (r *queryResolver) getMonthlyCostDataFromDaily(ctx context.Context, costRepo *repositories.TrackingRepository, now, startTime time.Time) (float64, []*model.Driver, []string) {
+func (r *queryResolver) getMonthlyCostDataFromDaily(ctx context.Context, costRepo *repositories.TrackingRepository, now, startTime time.Time) (float64, []*cost.Driver, []string) {
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	dailyAggregates, err := costRepo.GetDailyAggregates(ctx, monthStart, now)
 	if err != nil {
@@ -4095,7 +4104,7 @@ func (r *queryResolver) createMinimalProjection(period model.Period, username st
 		CurrentCost:     0.0,
 		ProjectedCost:   0.0,
 		Variance:        0.0,
-		TopDrivers:      []*model.Driver{},
+		TopDrivers:      []*cost.Driver{},
 		Recommendations: []string{"Enable cost tracking", "Monitor usage patterns"},
 	}
 }

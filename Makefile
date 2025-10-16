@@ -563,6 +563,8 @@ local-dynamodb:
 
 ## Generate GraphQL code
 gqlgen:
+	@echo "Bootstrapping gqlgen..."
+	@go get github.com/99designs/gqlgen@v0.17.78
 	@echo "Generating GraphQL code..."
 	@go run github.com/99designs/gqlgen generate
 
