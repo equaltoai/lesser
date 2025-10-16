@@ -319,3 +319,400 @@ CRITICAL: Implement [Feature] using DynamORM/Lift patterns ONLY
 - [ ] Check error handling matches legacy
 
 NEVER trust agent output without verification. ALWAYS compare with legacy implementation.
+
+# GraphQL 100% Completion Project - Management Framework
+
+**Project Status**: Active Implementation  
+**Current Completion**: 70% (60+ operations implemented)  
+**Target**: 100% (36 missing operations)  
+**Estimated Timeline**: 7 weeks (1 dev) or 5 weeks (2 devs)
+
+---
+
+## 📋 Project Structure
+
+### Architecture Overview
+```
+graph/
+├── schema.graphql          # Core + Lesser features (~90% complete)
+├── phase2.graphql          # Federation features (~40% complete)
+├── phase3.graphql          # Visualization/analytics (~20% complete)
+├── schema.resolvers.go     # Auto-generated (12,662 lines) - Edit stubs here
+├── resolver.go             # Root resolver setup
+├── dataloader.go           # N+1 prevention
+└── subscriptions.go        # WebSocket/real-time
+
+pkg/services/              # Service layer (DI via Registry pattern)
+├── accounts/             # Account queries
+├── notes/                # Post/note operations
+├── lists/                # List management
+├── media/                # Media handling
+├── notifications/        # Notification system
+├── conversations/        # DM conversations
+├── relationships/        # Follow/block relationships
+├── quotes/               # Quote post feature
+├── emoji/                # Custom emoji management
+├── search/               # Full-text search
+└── [NEW: hashtags/]      # To be created
+└── [NEW: threads/]       # To be created
+└── [NEW: severance/]     # To be created
+
+pkg/storage/
+├── models/               # DynamoDB data models
+├── repositories/         # Database access layer
+└── dynamorm/            # ORM implementation
+```
+
+### Tech Stack
+- **GraphQL Engine**: gqlgen (v0.17.77)
+- **Database**: DynamoDB + DynamORM
+- **Real-time**: WebSocket subscriptions
+- **Dependency Injection**: services.Registry pattern
+- **Cost Tracking**: Integrated throughout
+- **Error Handling**: Custom error types per package
+
+---
+
+## 🎯 Implementation Phases
+
+### PHASE 1: Mastodon Parity (6-9 days) - STARTING NOW
+**Goal**: Core Mastodon compatibility  
+**Critical for**: User engagement, federation
+
+#### 1.1 Hashtag Following System (2-3 days)
+- **Operations**: 10 total (8 missing + 2 partial)
+- **Status**: Stubs only - needs full implementation
+- **Services Needed**: hashtags/service.go (create)
+- **Key Files**:
+  - Create: `pkg/services/hashtags/service.go`
+  - Models: HashtagFollow, HashtagMute, HashtagStats
+  - Repository: GetFollowedHashtags, FollowHashtag, etc.
+
+#### 1.2 Thread Synchronization (3-4 days)
+- **Operations**: 3 total (all missing)
+- **Status**: Schema defined, no impl
+- **Services Needed**: threads/service.go (create)
+- **Key Files**:
+  - Create: `pkg/services/threads/service.go`
+  - Needs: Remote thread fetching via ActivityPub
+  - Sync tracking & job queue
+
+### PHASE 2: Federation & Monitoring (8-11 days)
+**Goal**: Complete federation features  
+**Critical for**: Instance health, cost tracking
+
+Key areas:
+- Phase 2 Alert Subscriptions (2 days)
+- Media Streaming Completion (4-5 days)
+- Severed Relationships (3-4 days)
+- Advanced Moderation ML (3-4 days)
+
+### PHASE 3: Visualization & Analytics (10-13 days)
+**Goal**: Complete analytics and dashboards  
+**Critical for**: Admin visibility
+
+Key areas:
+- Federation Graph Visualization (5-6 days)
+- Streaming Analytics (3-4 days)
+- Performance Monitoring (2-3 days)
+- Moderation Dashboard (3-4 days)
+
+---
+
+## 🔧 Development Workflow
+
+### For Agents: How to Implement Features
+
+#### Step 1: Understand Resolver Pattern
+```go
+// Pattern in schema.resolvers.go
+func (r *queryResolver) FeatureName(ctx context.Context, arg1 string) (*model.ReturnType, error) {
+    // 1. Get service from registry
+    svc := r.Registry.YourService()
+    
+    // 2. Validate inputs
+    if err := common.ValidateRequiredParam("arg1", arg1); err != nil {
+        return nil, err
+    }
+    
+    // 3. Call service
+    result, err := svc.DoSomething(ctx, arg1)
+    if err != nil {
+        r.Logger.Error("Failed", zap.Error(err))
+        return nil, err
+    }
+    
+    // 4. Return (converted if needed)
+    return result, nil
+}
+```
+
+#### Step 2: Create/Update Service
+```go
+// pkg/services/yourservice/service.go
+type Service interface {
+    DoSomething(ctx context.Context, arg string) (*Result, error)
+}
+
+type serviceImpl struct {
+    repos repositories.Container
+    // other deps
+}
+
+func (s *serviceImpl) DoSomething(ctx context.Context, arg string) (*Result, error) {
+    // Implementation
+}
+```
+
+#### Step 3: Add Storage Models
+Models go in `pkg/storage/models/` and implement:
+- DynamoDB key structure (PK/SK)
+- Tags for field mapping
+- Marshal/Unmarshal as needed
+
+#### Step 4: Add Repository Methods
+In `pkg/storage/repositories/` - use existing patterns:
+- BaseModel for common CRUD
+- Custom queries as needed
+- Cost tracking via repositories
+
+#### Step 5: Register in Service Registry
+In `pkg/services/registry.go`, add method to return your service.
+
+---
+
+## 📊 Gap Analysis Summary
+
+### Critical Gaps (Blocking 100%)
+| Area | Ops | Status | Priority |
+|------|-----|--------|----------|
+| Hashtag Following | 8 | Stub | 🔴 CRITICAL |
+| Thread Sync | 3 | Missing | 🔴 CRITICAL |
+| Severed Relationships | 4 | Missing | 🔴 CRITICAL |
+| Media Streaming | 3 | Partial | 🟡 HIGH |
+| Moderation ML | 2 | Partial | 🟡 HIGH |
+| Phase 2 Subscriptions | 4 | Missing | 🟡 HIGH |
+| Federation Visualization | 3 | Empty | 🟢 MEDIUM |
+| Streaming Analytics | 3 | Missing | 🟢 MEDIUM |
+| Moderation Dashboard | 3 | Missing | 🟢 MEDIUM |
+| Performance Monitoring | 3 | Stub | 🟢 MEDIUM |
+
+**Total**: 36 missing/partial operations
+
+---
+
+## 🚀 How to Use This Framework
+
+### For Project Manager (AI Assistant)
+1. **Plan Phase**: Review gaps, prioritize work
+2. **Create Agent Prompts**: Break work into specific tasks
+3. **Review Progress**: Validate implementations against acceptance criteria
+4. **Report Status**: Update this document and plan next phase
+5. **Iterate**: Continue until 100% complete
+
+### For Development Agent
+1. **Receive Prompt**: Get specific feature to implement
+2. **Reference**: This document + schema + existing patterns
+3. **Implement**: Follow resolver pattern guide
+4. **Test**: Add unit + integration tests
+5. **Report**: Show code + test results
+
+### Key Files to Reference
+- Schema: `/graph/schema.graphql` (core) + `/graph/phase2.graphql` + `/graph/phase3.graphql`
+- Example Resolvers: Look at `Hashtag`, `Timeline`, `Notifications` in schema.resolvers.go
+- Example Service: `/pkg/services/notes/service.go`
+- Example Models: `/pkg/storage/models/note.go`
+- Error Pattern: `/pkg/services/errors.go`
+
+---
+
+## ✅ Acceptance Criteria Format
+
+Each feature should meet:
+```
+FUNCTIONALITY
+- [ ] All operations implemented
+- [ ] Parameters validated
+- [ ] Error handling complete
+- [ ] Edge cases handled
+
+TESTING
+- [ ] Unit tests (80%+ coverage)
+- [ ] Integration tests
+- [ ] Edge case tests
+- [ ] Error scenario tests
+
+CODE QUALITY
+- [ ] Follows resolver pattern
+- [ ] Uses service registry
+- [ ] Proper error types
+- [ ] Cost tracking integrated
+- [ ] Logging in place
+
+DOCUMENTATION
+- [ ] Comments added
+- [ ] Schema docs updated
+- [ ] Integration guide written (if needed)
+```
+
+---
+
+## 📝 Session Management
+
+### Starting a New Implementation Task
+
+**Agent Prompt Template:**
+```
+Implement [Feature Name] in Lesser GraphQL.
+
+CONTEXT:
+- Current phase: [Phase]
+- Estimate: [Time]
+- Dependencies: [List]
+- Operations: [Count + Names]
+
+REQUIREMENTS:
+- [Specific req 1]
+- [Specific req 2]
+- ...
+
+ACCEPTANCE CRITERIA:
+- [ ] All X operations working
+- [ ] Tests with Y% coverage
+- [ ] No regressions
+
+REFERENCE FILES:
+- Schema: /graph/schema.graphql
+- Example service: /pkg/services/notes/service.go
+- Error handling: /pkg/services/errors.go
+```
+
+### Reporting Progress
+
+After implementation:
+```
+IMPLEMENTATION COMPLETE: [Feature Name]
+
+CHANGES:
+- Created/Modified: [List of files]
+- Operations implemented: [Count]
+- Tests added: [Count]
+
+VERIFICATION:
+- Unit tests: ✅ Pass (X/X)
+- Integration tests: ✅ Pass (X/X)
+- Coverage: X%
+
+STATUS: Ready for phase [X]/next feature
+```
+
+---
+
+## 🔍 Code Review Checklist
+
+When evaluating implementations:
+- [ ] Follows gqlgen resolver pattern
+- [ ] Uses services.Registry for DI
+- [ ] Proper error handling with custom types
+- [ ] Input validation via common package
+- [ ] Logging at appropriate levels
+- [ ] Cost tracking integrated if applicable
+- [ ] Tests cover success + error cases
+- [ ] No N+1 query issues (uses dataloaders)
+- [ ] Pagination handled correctly (cursor-based)
+- [ ] Schema matches implementation
+
+---
+
+## 📚 Quick Reference
+
+### Resolver Signatures
+```go
+// Queries
+func (r *queryResolver) Field(ctx context.Context, args...) (*Type, error)
+
+// Mutations  
+func (r *mutationResolver) Action(ctx context.Context, input Input) (*Payload, error)
+
+// Subscriptions
+func (r *subscriptionResolver) Stream(ctx context.Context, args...) (<-chan *Update, error)
+```
+
+### Service Pattern
+```go
+type Service interface {
+    Method(ctx context.Context, args...) (*Result, error)
+}
+
+func New(repos repositories.Container, logger *zap.Logger) Service {
+    return &serviceImpl{repos: repos, logger: logger}
+}
+```
+
+### Model Pattern
+```go
+type Model struct {
+    PK       string `json:"PK" dynamodbav:"PK"`      // Partition key
+    SK       string `json:"SK" dynamodbav:"SK"`      // Sort key
+    Data     string `json:"data" dynamodbav:"data"`
+    CreatedAt time.Time `json:"createdAt" dynamodbav:"createdAt"`
+}
+```
+
+---
+
+## 🎓 Learning Resources
+
+- **ActivityPub Spec**: https://www.w3.org/TR/activitypub/
+- **Mastodon API**: https://docs.joinmastodon.org/api/
+- **GraphQL Best Practices**: https://graphql.org/learn/best-practices/
+- **gqlgen Docs**: https://gqlgen.com/
+- **Existing Examples**: See schema.resolvers.go for 60+ implemented operations
+- **Architecture**: Read `/docs/architecture/SYSTEM_DESIGN.md`
+
+---
+
+## 📞 Status Dashboard (Updated October 15, 2025)
+
+### Phase 1: Mastodon Parity
+| Feature | Status | Work Breakdown | Timeline |
+|---------|--------|---|---|
+| 1.1a Hashtag Following | 🟡 In Progress | Issues #1-4 remediation | 2.5-3 hours |
+| 1.1b Hashtag Subs | 🟡 In Progress | Phase 1.1.1 Blocker | 4-6 hours |
+| Thread Sync | 🔴 Ready to Start | 3 operations | 3-4 days |
+| **TOTAL Phase 1** | **🟡 75%** | **5 operations done, 3 queued** | **~1 week remaining** |
+
+### Phase 2: Federation & Monitoring
+| Feature | Status | Completed | Estimate |
+|---------|--------|-----------|----------|
+| Phase 2 Subscriptions | 🔴 Not Started | 0% | 2d |
+| Media Streaming | 🟡 Partial | 40% | 4-5d |
+| Severed Relationships | 🔴 Not Started | 0% | 3-4d |
+| Moderation ML | 🟡 Partial | 20% | 3-4d |
+| **TOTAL** | | **15%** | **12-17d** |
+
+### Phase 3: Visualization & Analytics
+| Feature | Status | Completed | Estimate |
+|---------|--------|-----------|----------|
+| Federation Graph | 🔴 Not Started | 0% | 5-6d |
+| Streaming Analytics | 🔴 Not Started | 0% | 3-4d |
+| Performance Monitoring | 🟡 Partial | 20% | 2-3d |
+| Moderation Dashboard | 🔴 Not Started | 0% | 3-4d |
+| **TOTAL** | | **5%** | **13-17d** |
+
+### Overall Progress
+- **Core (70%)**: ✅ Complete
+- **Phase 1 (77%)**: 🟢 In Progress (10 of 13 operations - 5 done, 5 in remediation/blocking, 3 queued)
+- **Phase 2 (15%)**: 🟡 Partial
+- **Phase 3 (5%)**: 🔴 Not Started
+- **Overall**: 70% → 75% (10 operations complete, 26 remaining)
+
+---
+
+## 📧 Contact & Escalation
+
+For blockers or questions:
+1. Check existing patterns in `schema.resolvers.go`
+2. Review similar service implementation
+3. Check schema files for type definitions
+4. Review error handling patterns in pkg files

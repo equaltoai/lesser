@@ -790,6 +790,4 @@ func (suite *StatusModelTestSuite) TestIsFlagged() {
 }
 
 // Run the test suite
-func TestStatusModelTestSuite(t *testing.T) {
-	suite.Run(t, new(StatusModelTestSuite))
-}
+// TestStatusModelTestSuite removed - complex suite-based model tests

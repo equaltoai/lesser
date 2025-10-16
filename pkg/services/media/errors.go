@@ -1,6 +1,10 @@
 package media
 
-import "github.com/equaltoai/lesser/pkg/errors"
+import (
+	stdErrors "errors"
+
+	"github.com/equaltoai/lesser/pkg/errors"
+)
 
 // Media service specific errors
 var (
@@ -8,28 +12,28 @@ var (
 	ErrMediaNotFound = errors.NewAppError(errors.CodeNotFound, errors.CategoryMedia, "media not found")
 
 	// ErrMediaCreateFailed is returned when media creation fails
-	ErrMediaCreateFailed = errors.FailedToCreate("media", nil)
+	ErrMediaCreateFailed = errors.FailedToCreate("media", stdErrors.New("failed to create media"))
 
 	// ErrMediaUpdateFailed is returned when media update fails
-	ErrMediaUpdateFailed = errors.FailedToUpdate("media", nil)
+	ErrMediaUpdateFailed = errors.FailedToUpdate("media", stdErrors.New("failed to update media"))
 
 	// ErrMediaDeleteFailed is returned when media deletion fails
-	ErrMediaDeleteFailed = errors.FailedToDelete("media", nil)
+	ErrMediaDeleteFailed = errors.FailedToDelete("media", stdErrors.New("failed to delete media"))
 
 	// ErrMediaAccessDenied is returned when media access is denied
 	ErrMediaAccessDenied = errors.AccessDeniedForResource("media", "unknown")
 
 	// ErrMediaProcessingFailed is returned when media processing fails
-	ErrMediaProcessingFailed = errors.ProcessingFailed("media processing", nil)
+	ErrMediaProcessingFailed = errors.ProcessingFailed("media processing", stdErrors.New("media processing failed"))
 
 	// ErrDatabaseOperation is returned when database operations fail
 	ErrDatabaseOperation = errors.NewStorageError(errors.CodeInternal, "database error")
 
 	// ErrMediaStorageFailed is returned when media storage fails
-	ErrMediaStorageFailed = errors.FailedToStore("media record", nil)
+	ErrMediaStorageFailed = errors.FailedToStore("media record", stdErrors.New("failed to store media record"))
 
 	// ErrMediaRetrievalFailed is returned when media retrieval fails
-	ErrMediaRetrievalFailed = errors.FailedToGet("media", nil)
+	ErrMediaRetrievalFailed = errors.FailedToGet("media", stdErrors.New("failed to get media"))
 
 	// ErrMediaFileDataRequired is returned when file data is required but missing
 	ErrMediaFileDataRequired = errors.NewValidationError("file_data", "required")
@@ -47,7 +51,7 @@ var (
 	ErrMediaNotReady = errors.MediaAttachmentNotReady("unknown")
 
 	// ErrMediaProcessingQueueFailed is returned when media processing queue operation fails
-	ErrMediaProcessingQueueFailed = errors.ProcessingFailed("media processing queue", nil)
+	ErrMediaProcessingQueueFailed = errors.ProcessingFailed("media processing queue", stdErrors.New("media processing queue failed"))
 
 	// ErrMediaNotReadyForStreaming is returned when media is not ready for streaming
 	ErrMediaNotReadyForStreaming = errors.NewValidationError("media_streaming", "not ready for streaming")

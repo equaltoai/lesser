@@ -1,26 +1,30 @@
 package media
 
-import "github.com/equaltoai/lesser/pkg/errors"
+import (
+	stdErrors "errors"
+
+	"github.com/equaltoai/lesser/pkg/errors"
+)
 
 // CloudWatch Enhanced Streaming errors
 var (
 	ErrNoQualityMetrics    = errors.InsufficientHistoricalData(1)
 	ErrNoGeographicMetrics = errors.InsufficientHistoricalData(1)
-	ErrGetMetric           = errors.FailedToGet("metric", nil)
+	ErrGetMetric           = errors.FailedToGet("metric", stdErrors.New("failed to get metric"))
 	ErrNoDataPoints        = errors.InsufficientHistoricalData(1)
-	ErrGetMetricWithDim    = errors.FailedToGet("metric with dimension", nil)
+	ErrGetMetricWithDim    = errors.FailedToGet("metric with dimension", stdErrors.New("failed to get metric with dimension"))
 	ErrNoDataPointsWithDim = errors.InsufficientHistoricalData(1)
 )
 
 // Analytics errors
 var (
-	ErrAWSConfigLoad            = errors.ConnectionFailed("AWS config", nil)
-	ErrLogFilesListing          = errors.FailedToList("log files", nil)
-	ErrLogFileRetrieval         = errors.FailedToGet("log file", nil)
-	ErrMetricDataSubmission     = errors.ProcessingFailed("metric data submission", nil)
-	ErrBandwidthUsageRetrieval  = errors.FailedToGet("bandwidth usage", nil)
-	ErrBandwidthUsageStorage    = errors.FailedToStore("bandwidth usage", nil)
-	ErrRealtimeMetricSubmission = errors.ProcessingFailed("realtime metric submission", nil)
+	ErrAWSConfigLoad            = errors.ConnectionFailed("AWS config", stdErrors.New("failed to load AWS config"))
+	ErrLogFilesListing          = errors.FailedToList("log files", stdErrors.New("failed to list log files"))
+	ErrLogFileRetrieval         = errors.FailedToGet("log file", stdErrors.New("failed to retrieve log file"))
+	ErrMetricDataSubmission     = errors.ProcessingFailed("metric data submission", stdErrors.New("metric data submission failed"))
+	ErrBandwidthUsageRetrieval  = errors.FailedToGet("bandwidth usage", stdErrors.New("failed to retrieve bandwidth usage"))
+	ErrBandwidthUsageStorage    = errors.FailedToStore("bandwidth usage", stdErrors.New("failed to store bandwidth usage"))
+	ErrRealtimeMetricSubmission = errors.ProcessingFailed("realtime metric submission", stdErrors.New("realtime metric submission failed"))
 )
 
 // Video metadata parsing errors

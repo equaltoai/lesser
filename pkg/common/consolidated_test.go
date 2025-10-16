@@ -41,7 +41,7 @@ func TestErrorResponseConsolidation(t *testing.T) {
 			name:           "RespondNotFound",
 			function:       testRespondNotFound,
 			expectedStatus: 404,
-			defaultMessage: "Not Found",
+			defaultMessage: "resource not found",
 		},
 		{
 			name:           "RespondConflict",
@@ -342,7 +342,6 @@ func TestAuthHelperFunctions(t *testing.T) {
 			})
 		}
 	})
-
 
 	t.Run("ExtractAuthHeader", func(t *testing.T) {
 		// Test with Authorization header

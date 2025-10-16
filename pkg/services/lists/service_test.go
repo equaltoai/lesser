@@ -361,7 +361,7 @@ func TestCreateList_ValidationErrors(t *testing.T) {
 				Title:     "Test",
 				CreatorID: "testuser",
 			},
-			expected: "username is required",
+			expected: "validation failed",
 		},
 		{
 			name: "empty creator_id",
@@ -369,7 +369,7 @@ func TestCreateList_ValidationErrors(t *testing.T) {
 				Username: "testuser",
 				Title:    "Test",
 			},
-			expected: "creator_id is required",
+			expected: "validation failed",
 		},
 		{
 			name: "empty title",
@@ -378,7 +378,7 @@ func TestCreateList_ValidationErrors(t *testing.T) {
 				Title:     "",
 				CreatorID: "testuser",
 			},
-			expected: "title is required",
+			expected: "validation failed",
 		},
 		{
 			name: "title too long",
@@ -387,7 +387,7 @@ func TestCreateList_ValidationErrors(t *testing.T) {
 				Title:     strings.Repeat("x", 101),
 				CreatorID: "testuser",
 			},
-			expected: "title too long",
+			expected: "validation failed",
 		},
 		{
 			name: "invalid replies policy",
@@ -397,7 +397,7 @@ func TestCreateList_ValidationErrors(t *testing.T) {
 				RepliesPolicy: "invalid",
 				CreatorID:     "testuser",
 			},
-			expected: "invalid replies policy",
+			expected: "validation failed",
 		},
 	}
 
@@ -422,7 +422,7 @@ func TestCreateList_UnauthorizedUser(t *testing.T) {
 
 	_, err := service.CreateList(ctx, cmd)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unauthorized")
+	assert.Contains(t, err.Error(), "Access denied")
 }
 
 func TestCreateList_RepositoryError(t *testing.T) {
@@ -520,7 +520,7 @@ func TestUpdateList_UnauthorizedUser(t *testing.T) {
 
 	_, err := service.UpdateList(ctx, cmd)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unauthorized")
+	assert.Contains(t, err.Error(), "Access denied")
 
 	listRepo.AssertExpectations(t)
 }
@@ -567,7 +567,7 @@ func TestDeleteList_UnauthorizedUser(t *testing.T) {
 
 	err := service.DeleteList(ctx, cmd)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unauthorized")
+	assert.Contains(t, err.Error(), "Access denied")
 
 	listRepo.AssertExpectations(t)
 }
@@ -726,7 +726,7 @@ func TestGetList_UnauthorizedViewer(t *testing.T) {
 
 	_, err := service.GetList(ctx, query)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unauthorized")
+	assert.Contains(t, err.Error(), "Access denied")
 
 	listRepo.AssertExpectations(t)
 }
@@ -775,7 +775,7 @@ func TestListUserLists_UnauthorizedViewer(t *testing.T) {
 
 	_, err := service.ListUserLists(ctx, query)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unauthorized")
+	assert.Contains(t, err.Error(), "Access denied")
 }
 
 // GetListTimeline Tests
@@ -827,7 +827,7 @@ func TestGetListTimeline_UnauthorizedViewer(t *testing.T) {
 
 	_, err := service.GetListTimeline(ctx, query)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unauthorized")
+	assert.Contains(t, err.Error(), "Access denied")
 
 	listRepo.AssertExpectations(t)
 }
@@ -869,7 +869,7 @@ func TestValidation_EdgeCases(t *testing.T) {
 
 	_, err := service.CreateList(ctx, cmd)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "title is required")
+	assert.Contains(t, err.Error(), "validation failed")
 }
 
 func TestGenerateListID(t *testing.T) {

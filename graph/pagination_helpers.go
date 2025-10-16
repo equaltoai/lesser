@@ -47,7 +47,7 @@ func ParsePaginationArgs(first *int, after *model.Cursor, last *int, before *mod
 		if *first > 100 {
 			*first = 100 // Enforce maximum
 		}
-	} else if last == nil && first == nil {
+	} else if last == nil {
 		// Default to forward pagination with 20 items
 		defaultFirst := 20
 		opts.First = &defaultFirst

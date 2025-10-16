@@ -1,10 +1,14 @@
 package notifications
 
-import "github.com/equaltoai/lesser/pkg/errors"
+import (
+	stdErrors "errors"
+
+	"github.com/equaltoai/lesser/pkg/errors"
+)
 
 // Error constants for push notification operations
 var (
-	ErrLoadAWSConfig         = errors.ConnectionFailed("AWS config", nil)
-	ErrMarshalPushMessage    = errors.MarshalingFailed("push message", nil)
-	ErrQueuePushNotification = errors.ProcessingFailed("push notification queuing", nil)
+	ErrLoadAWSConfig         = errors.ConnectionFailed("AWS config", stdErrors.New("AWS config connection failed"))
+	ErrMarshalPushMessage    = errors.MarshalingFailed("push message", stdErrors.New("push message marshaling failed"))
+	ErrQueuePushNotification = errors.ProcessingFailed("push notification queuing", stdErrors.New("failed to queue push notification"))
 )

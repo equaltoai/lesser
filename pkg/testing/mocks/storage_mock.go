@@ -4133,6 +4133,7 @@ type MockRepositoryStorage struct {
 	exportRepo           *repositories.ExportRepository
 	importRepo           *repositories.ImportRepository
 	dlqRepo              *repositories.DLQRepository
+	threadRepo           *repositories.ThreadRepository
 }
 
 // NewMockRepositoryStorage creates a new mock repository storage with mock repositories
@@ -4181,6 +4182,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	dlqRepo := repositories.NewDLQRepositorySimple(nil, "test-table", logger)
 	emojiRepo := repositories.NewEmojiRepository(nil, "test-table", logger, nil)
 	rateLimitRepo := repositories.NewRateLimitRepository(nil, "test-table", logger, nil)
+	threadRepo := repositories.NewThreadRepository(nil, logger)
 
 	return &MockRepositoryStorage{
 		accountRepo:          accountRepo,
@@ -4222,6 +4224,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 		exportRepo:           exportRepo,
 		importRepo:           importRepo,
 		dlqRepo:              dlqRepo,
+		threadRepo:           threadRepo,
 	}
 }
 
@@ -4418,6 +4421,11 @@ func (m *MockRepositoryStorage) Export() *repositories.ExportRepository {
 // Import returns the mock import repository
 func (m *MockRepositoryStorage) Import() *repositories.ImportRepository {
 	return m.importRepo
+}
+
+// Thread returns the mock thread repository
+func (m *MockRepositoryStorage) Thread() *repositories.ThreadRepository {
+	return m.threadRepo
 }
 
 // DLQ returns the mock DLQ repository

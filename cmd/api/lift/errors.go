@@ -1,7 +1,11 @@
 // Package lift implements error handlers for the API Lambda function.
 package lift
 
-import "github.com/equaltoai/lesser/pkg/errors"
+import (
+	stdErrors "errors"
+
+	"github.com/equaltoai/lesser/pkg/errors"
+)
 
 // Account operations errors - using API/Auth domain functions
 
@@ -127,22 +131,22 @@ func failedToExtractBoundary() *errors.AppError {
 
 // searchFailed creates an error when search operation fails.
 func searchFailed() *errors.AppError {
-	return errors.ProcessingFailed("search", nil)
+	return errors.ProcessingFailed("search", stdErrors.New("search operation failed"))
 }
 
 // privacyAwareSearchFailed creates an error when privacy-aware search fails.
 func privacyAwareSearchFailed() *errors.AppError {
-	return errors.ProcessingFailed("privacy-aware search", nil)
+	return errors.ProcessingFailed("privacy-aware search", stdErrors.New("privacy-aware search failed"))
 }
 
 // statusSearchFailed creates an error when status search fails.
 func statusSearchFailed() *errors.AppError {
-	return errors.ProcessingFailed("status search", nil)
+	return errors.ProcessingFailed("status search", stdErrors.New("status search failed"))
 }
 
 // privacyAwareStatusSearchFailed creates an error when privacy-aware status search fails.
 func privacyAwareStatusSearchFailed() *errors.AppError {
-	return errors.ProcessingFailed("privacy-aware status search", nil)
+	return errors.ProcessingFailed("privacy-aware status search", stdErrors.New("privacy-aware status search failed"))
 }
 
 // OAuth operations errors - using Auth domain functions
@@ -186,7 +190,7 @@ func failedToGenerateVAPIDPrivateKey() *errors.AppError {
 
 // failedToConvertToECDHKey creates an error when ECDH key conversion fails.
 func failedToConvertToECDHKey() *errors.AppError {
-	return errors.ProcessingFailed("ECDH key conversion", nil)
+	return errors.ProcessingFailed("ECDH key conversion", stdErrors.New("failed to convert to ECDH key"))
 }
 
 // failedToStoreVAPIDKeys creates an error when VAPID key storage fails.
@@ -246,12 +250,12 @@ func failedToGetCostRecords() *errors.AppError {
 
 // failedToDetermineDeliveryRecipients creates an error when delivery recipients determination fails.
 func failedToDetermineDeliveryRecipients() *errors.AppError {
-	return errors.ProcessingFailed("delivery recipients determination", nil)
+	return errors.ProcessingFailed("delivery recipients determination", stdErrors.New("failed to determine delivery recipients"))
 }
 
 // Status conversion operations errors - using API domain functions
 
 // failedToConvertStatus creates an error when status conversion fails.
 func failedToConvertStatus() *errors.AppError {
-	return errors.ProcessingFailed("status conversion", nil)
+	return errors.ProcessingFailed("status conversion", stdErrors.New("failed to convert status"))
 }

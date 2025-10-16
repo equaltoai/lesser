@@ -71,6 +71,7 @@ func (m *mockStorage) OAuth() *repositories.OAuthRepository                     
 func (m *mockStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository { return nil }
 func (m *mockStorage) DNSCache() *repositories.DNSCacheRepository                       { return nil }
 func (m *mockStorage) Filter() *repositories.FilterRepository                           { return nil }
+func (m *mockStorage) Thread() *repositories.ThreadRepository                           { return nil }
 func (m *mockStorage) GetDB() dynamormCore.DB                                           { return nil }
 func (m *mockStorage) GetTableName() string                                             { return "test-table" }
 func (m *mockStorage) GetLogger() *zap.Logger                                           { return zap.NewNop() }

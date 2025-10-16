@@ -1482,7 +1482,9 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	if lambdaCtx.Repos != nil {
+		repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	}
 
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()

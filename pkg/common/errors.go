@@ -1,6 +1,7 @@
-package common
+package common // nolint:revive // "common" package name is acceptable for shared utilities
 
 import (
+	stdErrors "errors"
 	"fmt"
 
 	"github.com/equaltoai/lesser/pkg/errors"
@@ -51,7 +52,7 @@ var (
 	ErrResourceTypeRequiredForAccessValidation = errors.RequiredFieldMissing("resourceType")
 	ErrInvalidAccessLevel                      = errors.InvalidValue("access_level", []string{"read", "write", "admin"}, "")
 	ErrOperationValidationFailed               = errors.ValidationFailedWithField("operation")
-	ErrOperationExecutionFailed                = errors.ProcessingFailed("operation", nil)
+	ErrOperationExecutionFailed                = errors.ProcessingFailed("operation", stdErrors.New("operation execution failed"))
 )
 
 // ActorNotFoundError indicates an actor was not found
@@ -472,7 +473,7 @@ var (
 // Mastodon business logic errors
 var (
 	ErrMastodonOperationValidationFailed = errors.ValidationFailedWithField("mastodon operation")
-	ErrMastodonOperationExecutionFailed  = errors.ProcessingFailed("mastodon operation", nil)
+	ErrMastodonOperationExecutionFailed  = errors.ProcessingFailed("mastodon operation", stdErrors.New("mastodon operation execution failed"))
 	ErrMastodonAPIIncompatibility        = errors.BusinessRuleViolated("mastodon API compatibility", nil)
 	ErrInvalidBusinessRule               = errors.BusinessRuleViolated("business rule", nil)
 	ErrBusinessValidationFailed          = errors.ValidationFailedWithField("business rule")

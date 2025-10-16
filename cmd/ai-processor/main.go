@@ -278,7 +278,9 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	if lambdaCtx.Repos != nil {
+		repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	}
 
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
@@ -312,7 +314,7 @@ func main() {
 				err = fmt.Errorf("panic recovered in ai-processor: %v", r)
 			}
 		}()
-		
+
 		// Create a simple lift context with minimal setup
 		liftCtx := &lift.Context{
 			RequestID: fmt.Sprintf("ai-processor-%d", time.Now().UnixNano()),

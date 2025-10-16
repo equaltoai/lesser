@@ -311,6 +311,11 @@ func (r *ActorRepository) DeleteActor(ctx context.Context, username string) erro
 
 // SearchAccounts searches for actors by username or display name
 func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limit int, _ bool, _ int) ([]*activitypub.Actor, error) {
+	// Handle empty query gracefully
+	if query == "" {
+		return nil, nil
+	}
+
 	if err := common.ValidateRequiredParam("query", query); err != nil {
 		// For empty query, return recent active discoverable actors
 		return r.getRecentActiveActors(ctx, limit)

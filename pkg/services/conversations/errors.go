@@ -1,60 +1,64 @@
 package conversations
 
-import "github.com/equaltoai/lesser/pkg/errors"
+import (
+	"errors"
+
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
+)
 
 // Conversation service errors
 var (
 	// ErrConversationValidationFailed is returned when conversation validation fails
-	ErrConversationValidationFailed = errors.ValidationFailedWithField("conversation")
+	ErrConversationValidationFailed = apperrors.ValidationFailedWithField("conversation")
 
 	// ErrGetSenderAccount is returned when getting sender account fails
-	ErrGetSenderAccount = errors.FailedToGet("sender account", nil)
+	ErrGetSenderAccount = apperrors.FailedToGet("sender account", errors.New("failed to get sender account"))
 
 	// ErrInvalidRecipient is returned when recipient validation fails
-	ErrInvalidRecipient = errors.NewValidationError("recipient", "invalid")
+	ErrInvalidRecipient = apperrors.NewValidationError("recipient", "invalid")
 
 	// ErrLookupExistingConversation is returned when looking up existing conversation fails
-	ErrLookupExistingConversation = errors.FailedToQuery("existing conversation", nil)
+	ErrLookupExistingConversation = apperrors.FailedToQuery("existing conversation", errors.New("failed to lookup existing conversation"))
 
 	// ErrCreateConversation is returned when conversation creation fails
-	ErrCreateConversation = errors.FailedToCreate("conversation", nil)
+	ErrCreateConversation = apperrors.FailedToCreate("conversation", errors.New("failed to create conversation"))
 
 	// ErrCreateDirectMessage is returned when direct message creation fails
-	ErrCreateDirectMessage = errors.FailedToCreate("direct message", nil)
+	ErrCreateDirectMessage = apperrors.FailedToCreate("direct message", errors.New("failed to create direct message"))
 
 	// ErrGetConversation is returned when conversation retrieval fails
-	ErrGetConversation = errors.FailedToGet("conversation", nil)
+	ErrGetConversation = apperrors.FailedToGet("conversation", errors.New("failed to get conversation"))
 
 	// ErrNotConversationParticipant is returned when user is not a participant in conversation
-	ErrNotConversationParticipant = errors.AccessDeniedForResource("conversation", "participant")
+	ErrNotConversationParticipant = apperrors.AccessDeniedForResource("conversation", "participant")
 
 	// ErrMarkConversationRead is returned when marking conversation as read fails
-	ErrMarkConversationRead = errors.FailedToUpdate("conversation read status", nil)
+	ErrMarkConversationRead = apperrors.FailedToUpdate("conversation read status", errors.New("failed to mark conversation as read"))
 
 	// ErrGetUserConversations is returned when getting user conversations fails
-	ErrGetUserConversations = errors.FailedToList("user conversations", nil)
+	ErrGetUserConversations = apperrors.FailedToList("user conversations", errors.New("failed to get user conversations"))
 
 	// ErrGetConversationMessages is returned when getting conversation messages fails
-	ErrGetConversationMessages = errors.FailedToList("conversation messages", nil)
+	ErrGetConversationMessages = apperrors.FailedToList("conversation messages", errors.New("failed to get conversation messages"))
 
 	// ErrRecipientsRequired is returned when recipients list is required but empty
-	ErrRecipientsRequired = errors.NewValidationError("recipients", "required")
+	ErrRecipientsRequired = apperrors.NewValidationError("recipients", "required")
 
 	// ErrContentTooLongConversation is returned when conversation content is too long
-	ErrContentTooLongConversation = errors.NewValidationError("content", "too long (max 5000 characters)")
+	ErrContentTooLongConversation = apperrors.NewValidationError("content", "too long (max 5000 characters)")
 
 	// ErrInvalidInReplyToIDConversation is returned when in_reply_to_id is invalid for conversation
-	ErrInvalidInReplyToIDConversation = errors.NewValidationError("in_reply_to_id", "invalid")
+	ErrInvalidInReplyToIDConversation = apperrors.NewValidationError("in_reply_to_id", "invalid")
 
 	// ErrCanOnlyReplyToDirectMessages is returned when attempting to reply to non-direct message
-	ErrCanOnlyReplyToDirectMessages = errors.NewValidationError("reply_target", "can only reply to direct messages")
+	ErrCanOnlyReplyToDirectMessages = apperrors.NewValidationError("reply_target", "can only reply to direct messages")
 
 	// ErrConversationNotFound is returned when conversation is not found
-	ErrConversationNotFound = errors.NewAppError(errors.CodeNotFound, errors.CategoryBusiness, "conversation not found")
+	ErrConversationNotFound = apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "conversation not found")
 
 	// ErrGetAccount is returned when account retrieval fails
-	ErrGetAccount = errors.FailedToGet("account", nil)
+	ErrGetAccount = apperrors.FailedToGet("account", errors.New("failed to get account"))
 
 	// ErrDeleteConversation is returned when conversation deletion fails
-	ErrDeleteConversation = errors.FailedToDelete("conversation", nil)
+	ErrDeleteConversation = apperrors.FailedToDelete("conversation", errors.New("failed to delete conversation"))
 )

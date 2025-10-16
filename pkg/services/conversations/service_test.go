@@ -772,7 +772,7 @@ func TestService_SendDirectMessage_ValidationError(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "content cannot be empty")
+	assert.Contains(t, err.Error(), "is required")
 }
 
 func TestService_SendDirectMessage_InvalidSender(t *testing.T) {
@@ -792,7 +792,7 @@ func TestService_SendDirectMessage_InvalidSender(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "failed to get sender account")
+	assert.Contains(t, err.Error(), "Failed to retrieve sender account")
 
 	accountRepo.AssertExpectations(t)
 }
@@ -850,7 +850,7 @@ func TestService_MarkConversationRead_NotParticipant(t *testing.T) {
 	// Assertions
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "user is not a participant")
+	assert.Contains(t, err.Error(), "Access denied")
 
 	conversationRepo.AssertExpectations(t)
 }
@@ -999,7 +999,7 @@ func TestService_GetConversation_NotParticipant(t *testing.T) {
 	// Assertions
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "user is not a participant")
+	assert.Contains(t, err.Error(), "Access denied")
 
 	conversationRepo.AssertExpectations(t)
 }
@@ -1037,7 +1037,7 @@ func TestService_ValidateSendMessageCommandBasic_ContentTooLong(t *testing.T) {
 
 	// Assertions
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "content too long")
+	assert.Contains(t, err.Error(), "too long")
 }
 
 func TestService_IsParticipant(t *testing.T) {

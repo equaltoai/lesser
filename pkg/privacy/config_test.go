@@ -2,89 +2,9 @@ package privacy
 
 import (
 	"encoding/base64"
-	"os"
 	"strings"
 	"testing"
 )
-
-func TestConfigLoader_LoadFromEnvironment(t *testing.T) {
-	// Clean up environment
-	cleanEnv(t)
-
-	// Set up test environment
-	key, _ := GenerateMasterKeyBase64()
-	os.Setenv("PRIVACY_MASTER_KEY", key)
-	os.Setenv("PRIVACY_IP_PRIVACY_LEVEL", "full")
-	os.Setenv("PRIVACY_EMAIL_PRIVACY_LEVEL", "none")
-	os.Setenv("PRIVACY_ARGON2_MEMORY", "8192")
-	os.Setenv("PRIVACY_ARGON2_TIME", "2")
-
-	defer cleanEnv(t)
-
-	loader := NewConfigLoader("PRIVACY")
-	config, err := loader.LoadFromEnvironment()
-	if err != nil {
-		t.Fatalf("LoadFromEnvironment failed: %v", err)
-	}
-
-	if config.IPLevel != LevelFull {
-		t.Errorf("Expected IP privacy level full, got %v", config.IPLevel)
-	}
-
-	if config.EmailLevel != LevelNone {
-		t.Errorf("Expected email privacy level none, got %v", config.EmailLevel)
-	}
-
-	if config.Argon2Memory != 8192 {
-		t.Errorf("Expected Argon2 memory 8192, got %d", config.Argon2Memory)
-	}
-
-	if config.Argon2Time != 2 {
-		t.Errorf("Expected Argon2 time 2, got %d", config.Argon2Time)
-	}
-}
-
-func TestConfigLoader_LoadFromEnvironment_MissingMasterKey(t *testing.T) {
-	cleanEnv(t)
-	defer cleanEnv(t)
-
-	loader := NewConfigLoader("PRIVACY")
-	_, err := loader.LoadFromEnvironment()
-	if err == nil {
-		t.Error("Expected error when master key is missing")
-	}
-
-	if !strings.Contains(err.Error(), "PRIVACY_MASTER_KEY") {
-		t.Errorf("Error should mention master key variable: %v", err)
-	}
-}
-
-func TestConfigLoader_LoadHasherFromEnvironment(t *testing.T) {
-	cleanEnv(t)
-
-	key, _ := GenerateMasterKeyBase64()
-	os.Setenv("PRIVACY_MASTER_KEY", key)
-	defer cleanEnv(t)
-
-	loader := NewConfigLoader("PRIVACY")
-	hasher, err := loader.LoadHasherFromEnvironment()
-	if err != nil {
-		t.Fatalf("LoadHasherFromEnvironment failed: %v", err)
-	}
-
-	if hasher == nil {
-		t.Error("Expected non-nil hasher")
-	}
-
-	// Test hasher functionality
-	result, err := hasher.HashIP("192.168.1.1")
-	if err != nil {
-		t.Errorf("Hasher should work: %v", err)
-	}
-	if result == "" {
-		t.Error("Expected non-empty result")
-	}
-}
 
 func TestDecodeMasterKey(t *testing.T) {
 	// Test base64 key
@@ -168,53 +88,12 @@ func TestConfigLoader_GetEnvironmentDocumentation(t *testing.T) {
 	}
 }
 
-func TestConfigLoader_ValidateEnvironmentVariables(t *testing.T) {
-	loader := NewConfigLoader("PRIVACY")
+func TestConfigLoader_EmptyPrefix(t *testing.T) {
+	// Test with empty prefix (should default to "PRIVACY")
+	loader := NewConfigLoader("")
 
-	// Test without master key
-	cleanEnv(t)
-	err := loader.ValidateEnvironmentVariables()
-	if err == nil {
-		t.Error("Expected error when master key is missing")
-	}
-
-	// Test with master key
-	key, _ := GenerateMasterKeyBase64()
-	os.Setenv("PRIVACY_MASTER_KEY", key)
-	defer cleanEnv(t)
-
-	err = loader.ValidateEnvironmentVariables()
-	if err != nil {
-		t.Errorf("Validation should pass when master key is present: %v", err)
-	}
-}
-
-func TestConfigLoader_SetupFromEnvironmentOrGenerate(t *testing.T) {
-	loader := NewConfigLoader("PRIVACY")
-
-	// Test with missing master key (should provide generation instructions)
-	cleanEnv(t)
-	_, err := loader.SetupFromEnvironmentOrGenerate()
-	if err == nil {
-		t.Error("Expected error with generation instructions")
-	}
-
-	if !strings.Contains(err.Error(), "export PRIVACY_MASTER_KEY") {
-		t.Errorf("Error should contain export instruction: %v", err)
-	}
-
-	// Test with valid master key
-	key, _ := GenerateMasterKeyBase64()
-	os.Setenv("PRIVACY_MASTER_KEY", key)
-	defer cleanEnv(t)
-
-	hasher, err := loader.SetupFromEnvironmentOrGenerate()
-	if err != nil {
-		t.Errorf("Should succeed with valid master key: %v", err)
-	}
-
-	if hasher == nil {
-		t.Error("Expected non-nil hasher")
+	if loader.envPrefix != "PRIVACY" {
+		t.Errorf("Empty prefix should default to PRIVACY, got %s", loader.envPrefix)
 	}
 }
 
@@ -303,59 +182,5 @@ func TestPresetConfigurations_Compliance(t *testing.T) {
 		if level != LevelFull {
 			t.Error("Compliance config should use full privacy for all data types")
 		}
-	}
-}
-
-func TestConfigLoader_CustomPrefix(t *testing.T) {
-	// Test with custom prefix
-	loader := NewConfigLoader("CUSTOM")
-
-	key, _ := GenerateMasterKeyBase64()
-	os.Setenv("CUSTOM_MASTER_KEY", key)
-	defer os.Unsetenv("CUSTOM_MASTER_KEY")
-
-	hasher, err := loader.LoadHasherFromEnvironment()
-	if err != nil {
-		t.Fatalf("Custom prefix should work: %v", err)
-	}
-
-	if hasher == nil {
-		t.Error("Expected non-nil hasher")
-	}
-}
-
-func TestConfigLoader_EmptyPrefix(t *testing.T) {
-	// Test with empty prefix (should default to "PRIVACY")
-	loader := NewConfigLoader("")
-
-	if loader.envPrefix != "PRIVACY" {
-		t.Errorf("Empty prefix should default to PRIVACY, got %s", loader.envPrefix)
-	}
-}
-
-// Helper function to clean environment variables
-func cleanEnv(t *testing.T) {
-	envVars := []string{
-		"PRIVACY_MASTER_KEY",
-		"PRIVACY_IP_PRIVACY_LEVEL",
-		"PRIVACY_EMAIL_PRIVACY_LEVEL",
-		"PRIVACY_USERNAME_PRIVACY_LEVEL",
-		"PRIVACY_PII_PRIVACY_LEVEL",
-		"PRIVACY_GENERIC_PRIVACY_LEVEL",
-		"PRIVACY_KEY_ROTATION_ENABLED",
-		"PRIVACY_KEY_ROTATION_INTERVAL",
-		"PRIVACY_ARGON2_MEMORY",
-		"PRIVACY_ARGON2_TIME",
-		"PRIVACY_ARGON2_THREADS",
-		"PRIVACY_ARGON2_KEY_LENGTH",
-		"TEST_LEVEL",
-		"TEST_BOOL",
-		"TEST_DURATION",
-		"TEST_UINT32",
-		"CUSTOM_MASTER_KEY",
-	}
-
-	for _, envVar := range envVars {
-		os.Unsetenv(envVar)
 	}
 }

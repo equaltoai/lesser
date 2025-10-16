@@ -13,12 +13,12 @@ model:
   filename: graph/model/models_gen.go
   package: model
 
-# Where should the resolver implementations go?
-resolver:
-  package: graph
-  layout: follow-schema
-  dir: graph
-  filename_template: "{name}.resolvers.go"
+# Resolver generation is disabled while we manage resolver files manually
+# resolver:
+#   package: graph
+#   layout: follow-schema
+#   dir: graph
+#   filename_template: "{name}.resolvers.go"
 
 # Optional: turn on use `gqlgen:"fieldName"` tags in your models
 struct_tag: json

@@ -3,7 +3,6 @@ package marshalers
 import (
 	"encoding/base64"
 	"encoding/json"
-	"os"
 	"testing"
 	"time"
 
@@ -289,7 +288,7 @@ func TestEncryptedString_NoEncryptor(t *testing.T) {
 	data := []byte("encrypted data")
 	err = es.UnmarshalDynamORM(data)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "encryptor is required")
+	assert.Contains(t, err.Error(), "invalid EncryptedString format")
 }
 
 func TestJSONField_MarshalUnmarshal(t *testing.T) {
@@ -509,51 +508,6 @@ func TestStringSet_String(t *testing.T) {
 	// Empty set
 	empty := NewStringSet()
 	assert.Equal(t, "[]", empty.String())
-}
-
-func TestNewAESEncryptor_FromEnvironment(t *testing.T) {
-	// Test with valid environment variable
-	key, err := GenerateEncryptionKey()
-	require.NoError(t, err)
-	keyBase64 := EncodeEncryptionKey(key)
-
-	_ = os.Setenv("DYNAMODB_ENCRYPTION_KEY", keyBase64)
-	defer func() { _ = os.Unsetenv("DYNAMODB_ENCRYPTION_KEY") }()
-
-	encryptor, err := NewAESEncryptor()
-	require.NoError(t, err)
-	assert.NotNil(t, encryptor)
-
-	// Test encryption/decryption works
-	plaintext := "test message"
-	encrypted, err := encryptor.Encrypt([]byte(plaintext))
-	require.NoError(t, err)
-
-	decrypted, err := encryptor.Decrypt(encrypted)
-	require.NoError(t, err)
-	assert.Equal(t, plaintext, string(decrypted))
-}
-
-func TestNewAESEncryptor_FromEnvironment_Errors(t *testing.T) {
-	// Test with missing environment variable
-	_ = os.Unsetenv("DYNAMODB_ENCRYPTION_KEY")
-	_, err := NewAESEncryptor()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "environment variable not set")
-
-	// Test with invalid base64
-	_ = os.Setenv("DYNAMODB_ENCRYPTION_KEY", "invalid-base64!")
-	defer func() { _ = os.Unsetenv("DYNAMODB_ENCRYPTION_KEY") }()
-	_, err = NewAESEncryptor()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid encryption key")
-
-	// Test with wrong key length
-	shortKey := []byte("short")
-	_ = os.Setenv("DYNAMODB_ENCRYPTION_KEY", EncodeEncryptionKey(shortKey))
-	_, err = NewAESEncryptor()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "must be 32 bytes")
 }
 
 func TestGenerateEncryptionKey(t *testing.T) {

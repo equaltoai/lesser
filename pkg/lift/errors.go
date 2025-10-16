@@ -1,6 +1,7 @@
 package lift
 
 import (
+	stdErrors "errors"
 	"fmt"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -128,10 +129,10 @@ func TimeoutError(operation string) *lift.LiftError {
 
 // Testing-specific error constants - converted to centralized system
 var (
-	ErrTestSetupFailed          = liftErrors.ProcessingFailed("test setup", nil)
-	ErrIntegrationTestFailed    = liftErrors.ProcessingFailed("integration test execution", nil)
+	ErrTestSetupFailed          = liftErrors.ProcessingFailed("test setup", stdErrors.New("test setup failed"))
+	ErrIntegrationTestFailed    = liftErrors.ProcessingFailed("integration test execution", stdErrors.New("integration test execution failed"))
 	ErrTestValidationFailed     = liftErrors.ValidationFailedWithField("test")
-	ErrTestCleanupFailed        = liftErrors.ProcessingFailed("test cleanup", nil)
+	ErrTestCleanupFailed        = liftErrors.ProcessingFailed("test cleanup", stdErrors.New("test cleanup failed"))
 	ErrTestExpectedSuccess      = liftErrors.NewValidationError("test_response", "expected success response")
 	ErrTestUnexpectedStatusCode = liftErrors.NewValidationError("status_code", "unexpected")
 )

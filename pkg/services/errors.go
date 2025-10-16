@@ -1,6 +1,8 @@
 package services
 
 import (
+	stdErrors "errors"
+
 	"github.com/equaltoai/lesser/pkg/errors"
 )
 
@@ -240,7 +242,7 @@ var (
 	ErrExtractUsernameFromObjectID = func() error { return errors.UsernameExtractionFailed("object ID", nil) }()
 
 	// ErrPerformListOperation is returned when list operation fails
-	ErrPerformListOperation = func() error { return errors.ProcessingFailed("list operation", nil) }()
+	ErrPerformListOperation = func() error { return errors.ProcessingFailed("list operation", stdErrors.New("list operation failed")) }()
 
 	// Block activity errors
 	// ErrBlockMissingObjectID is returned when block activity object is missing id field
@@ -323,31 +325,41 @@ var (
 	ErrImportJobSerialization = func() error { return errors.MarshalingFailed("import job", nil) }()
 
 	// ErrImportJobQueue is returned when import job queuing fails
-	ErrImportJobQueue = func() error { return errors.ProcessingFailed("import job queue", nil) }()
+	ErrImportJobQueue = func() error {
+		return errors.ProcessingFailed("import job queue", stdErrors.New("import job queue processing failed"))
+	}()
 
 	// ErrExportJobSerialization is returned when export job serialization fails
 	ErrExportJobSerialization = func() error { return errors.MarshalingFailed("export job", nil) }()
 
 	// ErrExportJobQueue is returned when export job queuing fails
-	ErrExportJobQueue = func() error { return errors.ProcessingFailed("export job queue", nil) }()
+	ErrExportJobQueue = func() error {
+		return errors.ProcessingFailed("export job queue", stdErrors.New("export job queue processing failed"))
+	}()
 
 	// ErrMediaJobSerialization is returned when media job serialization fails
 	ErrMediaJobSerialization = func() error { return errors.MarshalingFailed("media job", nil) }()
 
 	// ErrMediaJobQueue is returned when media job queuing fails
-	ErrMediaJobQueue = func() error { return errors.ProcessingFailed("media job queue", nil) }()
+	ErrMediaJobQueue = func() error {
+		return errors.ProcessingFailed("media job queue", stdErrors.New("media job queue processing failed"))
+	}()
 
 	// ErrScheduledJobSerialization is returned when scheduled job serialization fails
 	ErrScheduledJobSerialization = func() error { return errors.MarshalingFailed("scheduled job", nil) }()
 
 	// ErrScheduledJobQueue is returned when scheduled job queuing fails
-	ErrScheduledJobQueue = func() error { return errors.ProcessingFailed("scheduled job queue", nil) }()
+	ErrScheduledJobQueue = func() error {
+		return errors.ProcessingFailed("scheduled job queue", stdErrors.New("scheduled job queue processing failed"))
+	}()
 
 	// ErrActivityJobSerialization is returned when activity job serialization fails
 	ErrActivityJobSerialization = func() error { return errors.MarshalingFailed("activity job", nil) }()
 
 	// ErrActivityJobQueue is returned when activity job queuing fails
-	ErrActivityJobQueue = func() error { return errors.ProcessingFailed("activity job queue", nil) }()
+	ErrActivityJobQueue = func() error {
+		return errors.ProcessingFailed("activity job queue", stdErrors.New("activity job queue processing failed"))
+	}()
 
 	// ErrQueueURLNotConfigured is returned when queue URL is not configured
 	ErrQueueURLNotConfigured = func() error { return errors.QueueURLNotConfigured("") }()
@@ -356,13 +368,19 @@ var (
 	ErrMessageSerialization = func() error { return errors.MessageMarshalingFailed("", nil) }()
 
 	// ErrDelayedJobQueue is returned when delayed job queuing fails
-	ErrDelayedJobQueue = func() error { return errors.ProcessingFailed("delayed job queue", nil) }()
+	ErrDelayedJobQueue = func() error {
+		return errors.ProcessingFailed("delayed job queue", stdErrors.New("delayed job queue processing failed"))
+	}()
 
 	// ErrBatchMessageSend is returned when batch message sending fails
-	ErrBatchMessageSend = func() error { return errors.ProcessingFailed("batch message send", nil) }()
+	ErrBatchMessageSend = func() error {
+		return errors.ProcessingFailed("batch message send", stdErrors.New("batch message send failed"))
+	}()
 
 	// ErrBatchOperation is returned when batch operation fails
-	ErrBatchOperation = func() error { return errors.ProcessingFailed("batch operation", nil) }()
+	ErrBatchOperation = func() error {
+		return errors.ProcessingFailed("batch operation", stdErrors.New("batch operation failed"))
+	}()
 
 	// ErrQueueAttributeQuery is returned when queue attribute query fails
 	ErrQueueAttributeQuery = func() error { return errors.FailedToQuery("queue attributes", nil) }()
@@ -403,10 +421,14 @@ var (
 	ErrStatusIDRequired = func() error { return errors.RequiredFieldMissing("status_id") }()
 
 	// ErrCheckViewPermissions is returned when checking view permissions fails
-	ErrCheckViewPermissions = func() error { return errors.ProcessingFailed("view permissions check", nil) }()
+	ErrCheckViewPermissions = func() error {
+		return errors.ProcessingFailed("view permissions check", stdErrors.New("view permissions check failed"))
+	}()
 
 	// ErrCheckFollowingRelationship is returned when checking following relationship fails
-	ErrCheckFollowingRelationship = func() error { return errors.ProcessingFailed("following relationship check", nil) }()
+	ErrCheckFollowingRelationship = func() error {
+		return errors.ProcessingFailed("following relationship check", stdErrors.New("following relationship check failed"))
+	}()
 
 	// ErrHomeTimelineRequiresViewerID is returned when home timeline requires viewer_id
 	ErrHomeTimelineRequiresViewerID = func() error { return errors.TimelineRequiresField("home", "viewer_id") }()
@@ -556,28 +578,38 @@ var (
 	ErrGetCommunityNotesByAuthor = func() error { return errors.FailedToGet("community notes by author", nil) }()
 
 	// ErrCountStatusesByAuthor is returned when counting statuses by author fails
-	ErrCountStatusesByAuthor = func() error { return errors.ProcessingFailed("status count by author", nil) }()
+	ErrCountStatusesByAuthor = func() error {
+		return errors.ProcessingFailed("status count by author", stdErrors.New("failed to count statuses by author"))
+	}()
 
 	// ErrGetUserTimeline is returned when getting user timeline fails
 	ErrGetUserTimeline = func() error { return errors.FailedToGet("user timeline", nil) }()
 
 	// ErrCountReplies is returned when counting replies fails
-	ErrCountReplies = func() error { return errors.ProcessingFailed("reply count", nil) }()
+	ErrCountReplies = func() error { return errors.ProcessingFailed("reply count", stdErrors.New("failed to count replies")) }()
 
 	// ErrGetBoostCount is returned when getting boost count fails
-	ErrGetBoostCount = func() error { return errors.ProcessingFailed("boost count", nil) }()
+	ErrGetBoostCount = func() error {
+		return errors.ProcessingFailed("boost count", stdErrors.New("failed to get boost count"))
+	}()
 
 	// ErrGetLikeCount is returned when getting like count fails
-	ErrGetLikeCount = func() error { return errors.ProcessingFailed("like count", nil) }()
+	ErrGetLikeCount = func() error { return errors.ProcessingFailed("like count", stdErrors.New("failed to get like count")) }()
 
 	// ErrCheckUserHasLiked is returned when checking if user has liked fails
-	ErrCheckUserHasLiked = func() error { return errors.ProcessingFailed("user has liked check", nil) }()
+	ErrCheckUserHasLiked = func() error {
+		return errors.ProcessingFailed("user has liked check", stdErrors.New("failed to verify if user has liked"))
+	}()
 
 	// ErrCheckUserHasReblogged is returned when checking if user has reblogged fails
-	ErrCheckUserHasReblogged = func() error { return errors.ProcessingFailed("user has reblogged check", nil) }()
+	ErrCheckUserHasReblogged = func() error {
+		return errors.ProcessingFailed("user has reblogged check", stdErrors.New("failed to verify if user has reblogged"))
+	}()
 
 	// ErrCheckUserHasBookmarked is returned when checking if user has bookmarked fails
-	ErrCheckUserHasBookmarked = func() error { return errors.ProcessingFailed("user has bookmarked check", nil) }()
+	ErrCheckUserHasBookmarked = func() error {
+		return errors.ProcessingFailed("user has bookmarked check", stdErrors.New("failed to verify if user has bookmarked"))
+	}()
 
 	// Account service errors
 	// ErrValidationFailed is returned when input validation fails
@@ -602,7 +634,7 @@ var (
 	ErrAccountNotFound = func() error { return errors.NotFound("account") }()
 
 	// ErrSearchAccounts is returned when account search fails
-	ErrSearchAccounts = func() error { return errors.ProcessingFailed("account search", nil) }()
+	ErrSearchAccounts = func() error { return errors.ProcessingFailed("account search", stdErrors.New("account search failed")) }()
 
 	// ErrEmptySearchQuery is returned when search query is empty
 	ErrEmptySearchQuery = func() error { return errors.RequiredFieldMissing("search query") }()
@@ -711,7 +743,9 @@ var (
 	ErrUserRepositoryNotAvailable = func() error { return errors.RepositoryNotAvailable("user repository") }()
 
 	// ErrCheckAccountPinned is returned when checking if account is pinned fails
-	ErrCheckAccountPinned = func() error { return errors.ProcessingFailed("account pin check", nil) }()
+	ErrCheckAccountPinned = func() error {
+		return errors.ProcessingFailed("account pin check", stdErrors.New("account pin check failed"))
+	}()
 
 	// ErrGetUser is returned when user retrieval fails
 	ErrGetUser = func() error { return errors.FailedToGet("user", nil) }()
@@ -723,7 +757,9 @@ var (
 	ErrDomainBlockRepositoryNotAvailable = func() error { return errors.RepositoryNotAvailable("domain block repository") }()
 
 	// ErrCheckDomainBlockedByUser is returned when checking if domain is blocked by user fails
-	ErrCheckDomainBlockedByUser = func() error { return errors.ProcessingFailed("domain block check", nil) }()
+	ErrCheckDomainBlockedByUser = func() error {
+		return errors.ProcessingFailed("domain block check", stdErrors.New("domain block check failed"))
+	}()
 
 	// ErrAccountRepositoryNotAvailable is returned when account repository is not available
 	ErrAccountRepositoryNotAvailable = func() error { return errors.RepositoryNotAvailable("account repository") }()
@@ -861,7 +897,9 @@ var (
 	ErrTargetStatusNotQuotable = func() error { return errors.BusinessRuleViolated("target status not quotable", nil) }()
 
 	// ErrCheckQuotePermissions is returned when checking quote permissions fails
-	ErrCheckQuotePermissions = func() error { return errors.ProcessingFailed("quote permissions check", nil) }()
+	ErrCheckQuotePermissions = func() error {
+		return errors.ProcessingFailed("quote permissions check", stdErrors.New("quote permissions check failed"))
+	}()
 
 	// ErrNotAuthorizedToQuote is returned when user is not authorized to quote status
 	ErrNotAuthorizedToQuote = func() error { return errors.InsufficientPermissions("quote status") }()
@@ -891,7 +929,9 @@ var (
 	ErrGetQuotePermissions = func() error { return errors.FailedToGet("quote permissions", nil) }()
 
 	// ErrCheckExistingPermissions is returned when checking existing permissions fails
-	ErrCheckExistingPermissions = func() error { return errors.ProcessingFailed("existing permissions check", nil) }()
+	ErrCheckExistingPermissions = func() error {
+		return errors.ProcessingFailed("existing permissions check", stdErrors.New("existing permissions check failed"))
+	}()
 
 	// ErrSaveQuotePermissions is returned when saving quote permissions fails
 	ErrSaveQuotePermissions = func() error { return errors.FailedToSave("quote permissions", nil) }()
@@ -928,10 +968,14 @@ var (
 	ErrFailedToGetUpdatedRelationship = func() error { return errors.FailedToGet("updated relationship", nil) }()
 
 	// ErrFailedToCheckBlockStatus is returned when checking block status fails
-	ErrFailedToCheckBlockStatus = func() error { return errors.ProcessingFailed("block status check", nil) }()
+	ErrFailedToCheckBlockStatus = func() error {
+		return errors.ProcessingFailed("block status check", stdErrors.New("block status check failed"))
+	}()
 
 	// ErrFailedToCheckMuteStatus is returned when checking mute status fails
-	ErrFailedToCheckMuteStatus = func() error { return errors.ProcessingFailed("mute status check", nil) }()
+	ErrFailedToCheckMuteStatus = func() error {
+		return errors.ProcessingFailed("mute status check", stdErrors.New("mute status check failed"))
+	}()
 
 	// ErrFailedToUnfollow is returned when unfollow operation fails
 	ErrFailedToUnfollow = func() error { return errors.FailedToDelete("follow relationship", nil) }()
@@ -949,13 +993,19 @@ var (
 	ErrFailedToUnmuteUser = func() error { return errors.FailedToDelete("user mute", nil) }()
 
 	// ErrFailedToBuildRelationshipData is returned when building relationship data fails
-	ErrFailedToBuildRelationshipData = func() error { return errors.ProcessingFailed("relationship data build", nil) }()
+	ErrFailedToBuildRelationshipData = func() error {
+		return errors.ProcessingFailed("relationship data build", stdErrors.New("relationship data build failed"))
+	}()
 
 	// ErrFailedToCountFollowers is returned when counting followers fails
-	ErrFailedToCountFollowers = func() error { return errors.ProcessingFailed("follower count", nil) }()
+	ErrFailedToCountFollowers = func() error {
+		return errors.ProcessingFailed("follower count", stdErrors.New("failed to count followers"))
+	}()
 
 	// ErrFailedToCountFollowing is returned when counting following fails
-	ErrFailedToCountFollowing = func() error { return errors.ProcessingFailed("following count", nil) }()
+	ErrFailedToCountFollowing = func() error {
+		return errors.ProcessingFailed("following count", stdErrors.New("failed to count following"))
+	}()
 
 	// ErrFollowRequestNotFound is returned when a follow request is not found
 	ErrFollowRequestNotFound = func() error { return errors.NotFound("follow request") }()
@@ -1049,7 +1099,9 @@ var (
 	ErrMediaNotReady = func() error { return errors.MediaAttachmentNotReady("") }()
 
 	// ErrMediaProcessingQueueFailed is returned when media processing queue operation fails
-	ErrMediaProcessingQueueFailed = func() error { return errors.ProcessingFailed("media processing queue", nil) }()
+	ErrMediaProcessingQueueFailed = func() error {
+		return errors.ProcessingFailed("media processing queue", stdErrors.New("media processing queue failed"))
+	}()
 
 	// ErrMediaNotReadyForStreaming is returned when media is not ready for streaming
 	ErrMediaNotReadyForStreaming = func() error { return errors.MediaAttachmentNotReady("") }()
@@ -1121,10 +1173,12 @@ var (
 	// Enhanced Media Processing errors
 	// Media Upload & Storage
 	// ErrUploadMedia is returned when media upload fails
-	ErrUploadMedia = func() error { return errors.ProcessingFailed("media upload", nil) }()
+	ErrUploadMedia = func() error { return errors.ProcessingFailed("media upload", stdErrors.New("media upload failed")) }()
 
 	// ErrProcessMedia is returned when media processing fails
-	ErrProcessMedia = func() error { return errors.ProcessingFailed("media processing", nil) }()
+	ErrProcessMedia = func() error {
+		return errors.ProcessingFailed("media processing", stdErrors.New("media processing failed"))
+	}()
 
 	// ErrStoreMedia is returned when media storage fails
 	ErrStoreMedia = func() error { return errors.FailedToStore("media", nil) }()
@@ -1147,40 +1201,50 @@ var (
 
 	// Media Processing
 	// ErrTranscodeMedia is returned when media transcoding fails
-	ErrTranscodeMedia = func() error { return errors.ProcessingFailed("media transcoding", nil) }()
+	ErrTranscodeMedia = func() error {
+		return errors.ProcessingFailed("media transcoding", stdErrors.New("media transcoding failed"))
+	}()
 
 	// ErrGenerateThumbnail is returned when thumbnail generation fails
-	ErrGenerateThumbnail = func() error { return errors.ProcessingFailed("thumbnail generation", nil) }()
+	ErrGenerateThumbnail = func() error {
+		return errors.ProcessingFailed("thumbnail generation", stdErrors.New("thumbnail generation failed"))
+	}()
 
 	// ErrExtractMetadata is returned when metadata extraction fails
-	ErrExtractMetadata = func() error { return errors.ProcessingFailed("metadata extraction", nil) }()
+	ErrExtractMetadata = func() error {
+		return errors.ProcessingFailed("metadata extraction", stdErrors.New("metadata extraction failed"))
+	}()
 
 	// ErrCompressionFailed is returned when media compression fails
-	ErrCompressionFailed = func() error { return errors.ProcessingFailed("media compression", nil) }()
+	ErrCompressionFailed = func() error {
+		return errors.ProcessingFailed("media compression", stdErrors.New("media compression failed"))
+	}()
 
 	// Enhanced Job Queue Management errors
 	// Job Submission
 	// ErrSubmitJob is returned when job submission fails
-	ErrSubmitJob = func() error { return errors.ProcessingFailed("job submission", nil) }()
+	ErrSubmitJob = func() error { return errors.ProcessingFailed("job submission", stdErrors.New("job submission failed")) }()
 
 	// ErrQueueJob is returned when job queuing fails
-	ErrQueueJob = func() error { return errors.ProcessingFailed("job queuing", nil) }()
+	ErrQueueJob = func() error { return errors.ProcessingFailed("job queuing", stdErrors.New("job queuing failed")) }()
 
 	// ErrScheduleJob is returned when job scheduling fails
-	ErrScheduleJob = func() error { return errors.ProcessingFailed("job scheduling", nil) }()
+	ErrScheduleJob = func() error { return errors.ProcessingFailed("job scheduling", stdErrors.New("job scheduling failed")) }()
 
 	// ErrCancelJob is returned when job cancellation fails
-	ErrCancelJob = func() error { return errors.ProcessingFailed("job cancellation", nil) }()
+	ErrCancelJob = func() error {
+		return errors.ProcessingFailed("job cancellation", stdErrors.New("job cancellation failed"))
+	}()
 
 	// Job Processing
 	// ErrProcessJob is returned when job processing fails
-	ErrProcessJob = func() error { return errors.ProcessingFailed("job processing", nil) }()
+	ErrProcessJob = func() error { return errors.ProcessingFailed("job processing", stdErrors.New("job processing failed")) }()
 
 	// ErrExecuteJob is returned when job execution fails
-	ErrExecuteJob = func() error { return errors.ProcessingFailed("job execution", nil) }()
+	ErrExecuteJob = func() error { return errors.ProcessingFailed("job execution", stdErrors.New("job execution failed")) }()
 
 	// ErrCompleteJob is returned when job completion fails
-	ErrCompleteJob = func() error { return errors.ProcessingFailed("job completion", nil) }()
+	ErrCompleteJob = func() error { return errors.ProcessingFailed("job completion", stdErrors.New("job completion failed")) }()
 
 	// ErrJobTimeout is returned when job times out
 	ErrJobTimeout = func() error { return errors.TimeoutError("job execution") }()
@@ -1249,7 +1313,7 @@ var (
 	ErrCreateLocalEmojiCopy = func() error { return errors.FailedToCreate("local emoji copy", nil) }()
 
 	// ErrSearchEmojis is returned when emoji search fails
-	ErrSearchEmojis = func() error { return errors.ProcessingFailed("emoji search", nil) }()
+	ErrSearchEmojis = func() error { return errors.ProcessingFailed("emoji search", stdErrors.New("emoji search failed")) }()
 
 	// ErrGetPopularEmojis is returned when getting popular emojis fails
 	ErrGetPopularEmojis = func() error { return errors.FailedToGet("popular emojis", nil) }()
@@ -1319,19 +1383,29 @@ var (
 
 	// Cost realtime aggregation service errors
 	// ErrStreamProcessingErrors is returned when stream processing completes with errors
-	ErrStreamProcessingErrors = func() error { return errors.ProcessingFailed("stream processing", nil) }()
+	ErrStreamProcessingErrors = func() error {
+		return errors.ProcessingFailed("stream processing", stdErrors.New("stream processing failed"))
+	}()
 
 	// ErrRecordProcessingFailed is returned when processing records fails
-	ErrRecordProcessingFailed = func() error { return errors.ProcessingFailed("record processing", nil) }()
+	ErrRecordProcessingFailed = func() error {
+		return errors.ProcessingFailed("record processing", stdErrors.New("record processing failed"))
+	}()
 
 	// ErrProcessAICostRecord is returned when processing AI cost record fails
-	ErrProcessAICostRecord = func() error { return errors.ProcessingFailed("AI cost record processing", nil) }()
+	ErrProcessAICostRecord = func() error {
+		return errors.ProcessingFailed("AI cost record processing", stdErrors.New("AI cost record processing failed"))
+	}()
 
 	// ErrProcessWebSocketCostRecord is returned when processing WebSocket cost record fails
-	ErrProcessWebSocketCostRecord = func() error { return errors.ProcessingFailed("WebSocket cost record processing", nil) }()
+	ErrProcessWebSocketCostRecord = func() error {
+		return errors.ProcessingFailed("WebSocket cost record processing", stdErrors.New("WebSocket cost record processing failed"))
+	}()
 
 	// ErrProcessFederationCostRecord is returned when processing federation cost record fails
-	ErrProcessFederationCostRecord = func() error { return errors.ProcessingFailed("federation cost record processing", nil) }()
+	ErrProcessFederationCostRecord = func() error {
+		return errors.ProcessingFailed("federation cost record processing", stdErrors.New("federation cost record processing failed"))
+	}()
 
 	// ErrUnmarshalAICostRecord is returned when unmarshaling AI cost record fails
 	ErrUnmarshalAICostRecord = func() error { return errors.UnmarshalingFailed("AI cost record", nil) }()
@@ -1368,14 +1442,18 @@ var (
 	ErrS3BucketAccessFailed = func() error { return errors.ConnectionFailed("S3 bucket", nil) }()
 
 	// ErrPresignedURLCreationFailed is returned when presigned URL creation fails
-	ErrPresignedURLCreationFailed = func() error { return errors.ProcessingFailed("presigned URL creation", nil) }()
+	ErrPresignedURLCreationFailed = func() error {
+		return errors.ProcessingFailed("presigned URL creation", stdErrors.New("presigned URL creation failed"))
+	}()
 
 	// ErrCannotUploadEmptyData is returned when attempting to upload empty data
 	ErrCannotUploadEmptyData = func() error { return errors.ValidationFailedWithField("cannot upload empty data") }()
 
 	// ErrS3UploadFailed is returned when S3 file upload fails
-	ErrS3UploadFailed = func() error { return errors.ProcessingFailed("S3 file upload", nil) }()
+	ErrS3UploadFailed = func() error { return errors.ProcessingFailed("S3 file upload", stdErrors.New("S3 file upload failed")) }()
 
 	// ErrS3DownloadFailed is returned when S3 file download fails
-	ErrS3DownloadFailed = func() error { return errors.ProcessingFailed("S3 file download", nil) }()
+	ErrS3DownloadFailed = func() error {
+		return errors.ProcessingFailed("S3 file download", stdErrors.New("S3 file download failed"))
+	}()
 )

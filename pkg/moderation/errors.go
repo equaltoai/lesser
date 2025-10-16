@@ -1,6 +1,10 @@
 package moderation
 
-import "github.com/equaltoai/lesser/pkg/errors"
+import (
+	stdErrors "errors"
+
+	"github.com/equaltoai/lesser/pkg/errors"
+)
 
 // Error constants for moderation package
 
@@ -14,9 +18,9 @@ var (
 
 // Pattern retrieval errors
 var (
-	ErrFailedToGetPatterns         = errors.PatternQueryFailed(nil)
-	ErrFailedToGetPattern          = errors.FailedToGet("pattern", nil)
-	ErrFailedToGetEnhancedPatterns = errors.FailedToGet("enhanced patterns", nil)
+	ErrFailedToGetPatterns         = errors.PatternQueryFailed(stdErrors.New("failed to get patterns"))
+	ErrFailedToGetPattern          = errors.FailedToGet("pattern", stdErrors.New("failed to get pattern"))
+	ErrFailedToGetEnhancedPatterns = errors.FailedToGet("enhanced patterns", stdErrors.New("failed to get enhanced patterns"))
 )
 
 // Enhanced pattern functionality errors
@@ -100,11 +104,11 @@ var (
 // Core moderation errors
 var (
 	// Content moderation process errors
-	ErrPatternModerationFailed     = errors.PatternAnalysisFailed(nil)
-	ErrAIAnalysisFailed            = errors.ProcessingFailed("AI analysis", nil)
-	ErrTextAnalysisFailed          = errors.ProcessingFailed("text analysis", nil)
-	ErrImageAnalysisFailed         = errors.ProcessingFailed("image analysis", nil)
-	ErrModerationDecisionFailed    = errors.ProcessingFailed("moderation decision", nil)
+	ErrPatternModerationFailed     = errors.PatternAnalysisFailed(stdErrors.New("pattern moderation failed"))
+	ErrAIAnalysisFailed            = errors.ProcessingFailed("AI analysis", stdErrors.New("AI analysis failed"))
+	ErrTextAnalysisFailed          = errors.ProcessingFailed("text analysis", stdErrors.New("text analysis failed"))
+	ErrImageAnalysisFailed         = errors.ProcessingFailed("image analysis", stdErrors.New("image analysis failed"))
+	ErrModerationDecisionFailed    = errors.ProcessingFailed("moderation decision", stdErrors.New("moderation decision failed"))
 	ErrModerationSystemUnavailable = errors.ServiceUnavailable("moderation system")
 
 	// Content assessment errors
@@ -113,7 +117,8 @@ var (
 	ErrModerationRuleNotFound     = errors.NewAppError(errors.CodeNotFound, errors.CategoryBusiness, "moderation rule not found")
 
 	// Storage and persistence errors
-	ErrFailedToUpdateModerationDecision = errors.FailedToUpdate("moderation decision", nil)
-	ErrFailedToStoreModerationDecision  = errors.FailedToStore("moderation decision", nil)
-	ErrFailedToRetrieveModerationQueue  = errors.FailedToGet("moderation queue", nil)
+	// Moderation Decision storage errors
+	ErrFailedToUpdateModerationDecision = errors.FailedToUpdate("moderation decision", stdErrors.New("failed to update moderation decision"))
+	ErrFailedToStoreModerationDecision  = errors.FailedToStore("moderation decision", stdErrors.New("failed to store moderation decision"))
+	ErrFailedToRetrieveModerationQueue  = errors.FailedToGet("moderation queue", stdErrors.New("failed to retrieve moderation queue"))
 )

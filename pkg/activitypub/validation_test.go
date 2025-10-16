@@ -38,13 +38,13 @@ func TestValidateUsername(t *testing.T) {
 			name:     "empty username",
 			username: "",
 			wantErr:  true,
-			errMsg:   "cannot be empty",
+			errMsg:   "cannot be blank",
 		},
 		{
 			name:     "too long",
 			username: strings.Repeat("a", 65),
 			wantErr:  true,
-			errMsg:   "too long",
+			errMsg:   "cannot be longer than 30 characters",
 		},
 		{
 			name:     "special characters",

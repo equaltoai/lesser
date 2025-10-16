@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	stdErrors "errors"
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/errors"
@@ -293,19 +294,19 @@ var ErrEntityAlreadyExists = errors.ItemAlreadyExists("entity")
 var ErrEntityNotFoundForUpdate = errors.ItemNotFound("entity")
 
 // ErrFailedToGet is deprecated. Use errors.FailedToGet() instead.
-var ErrFailedToGet = errors.FailedToGet("entity", nil)
+var ErrFailedToGet = errors.FailedToGet("entity", stdErrors.New("failed to get entity"))
 
 // ErrFailedToCreate is deprecated. Use errors.FailedToCreate() instead.
-var ErrFailedToCreate = errors.FailedToCreate("entity", nil)
+var ErrFailedToCreate = errors.FailedToCreate("entity", stdErrors.New("failed to create entity"))
 
 // ErrFailedToUpdate is deprecated. Use errors.FailedToUpdate() instead.
-var ErrFailedToUpdate = errors.FailedToUpdate("entity", nil)
+var ErrFailedToUpdate = errors.FailedToUpdate("entity", stdErrors.New("failed to update entity"))
 
 // ErrFailedToDelete is deprecated. Use errors.FailedToDelete() instead.
-var ErrFailedToDelete = errors.FailedToDelete("entity", nil)
+var ErrFailedToDelete = errors.FailedToDelete("entity", stdErrors.New("failed to delete entity"))
 
 // ErrFailedToQuery is deprecated. Use errors.FailedToQuery() instead.
-var ErrFailedToQuery = errors.FailedToQuery("entity", nil)
+var ErrFailedToQuery = errors.FailedToQuery("entity", stdErrors.New("failed to query entity"))
 
 // ErrDatabaseOperation is deprecated. Use specific error functions from the centralized system.
 var ErrDatabaseOperation = errors.NewStorageError(errors.CodeInternal, "Database error")
@@ -1121,9 +1122,9 @@ var (
 	ErrOAuthStateExpired         = OAuthStateExpired("unknown")
 
 	// Query utility errors
-	ErrQueryOperationFailed     = QueryOperationFailed("unknown", nil)
-	ErrQueryCollectionAddFailed = QueryCollectionAddFailed("unknown", nil)
-	ErrQueryExecutionFailed     = QueryExecutionFailed("unknown", nil)
+	ErrQueryOperationFailed     = QueryOperationFailed("unknown", stdErrors.New("unknown error"))
+	ErrQueryCollectionAddFailed = QueryCollectionAddFailed("unknown", stdErrors.New("unknown error"))
+	ErrQueryExecutionFailed     = QueryExecutionFailed("unknown", stdErrors.New("unknown error"))
 	ErrQueryValidationFailed    = QueryValidationFailed("unknown")
 
 	// Analytics errors
@@ -1133,55 +1134,55 @@ var (
 	ErrHashtagBatchUnknownModelType = HashtagBatchUnknownModelType("unknown")
 	ErrStatusRepoDependencyMissing  = StatusRepoDependencyMissing()
 	ErrInvalidQueryParameters       = InvalidQueryParameters("unknown")
-	ErrFailedIndexByEngagement      = FailedIndexByEngagement(nil)
-	ErrFailedRecordEngagement       = FailedRecordEngagement(nil)
-	ErrFailedGetEngagementMetrics   = FailedGetEngagementMetrics(nil)
-	ErrFailedGetEngagementByDate    = FailedGetEngagementByDate(nil)
-	ErrFailedGetTopContent          = FailedGetTopContent(nil)
-	ErrFailedUpdateTrendingTag      = FailedUpdateTrendingTag(nil)
-	ErrFailedGetTrendingTags        = FailedGetTrendingTags(nil)
-	ErrFailedQueryStaleTrends       = FailedQueryStaleTrends(nil)
-	ErrFailedRecordInstanceMetric   = FailedRecordInstanceMetric(nil)
-	ErrFailedGetInstanceMetrics     = FailedGetInstanceMetrics(nil)
-	ErrFailedGetStartMetric         = FailedGetStartMetric(nil)
-	ErrFailedGetEndMetric           = FailedGetEndMetric(nil)
-	ErrFailedRecordManifest         = FailedRecordManifest(nil)
-	ErrFailedRecordQualityChange    = FailedRecordQualityChange(nil)
-	ErrFailedRecordMediaEvent       = FailedRecordMediaEvent(nil)
-	ErrFailedQuerySessionEvents     = FailedQuerySessionEvents(nil)
-	ErrFailedGetModerationAnalytics = FailedGetModerationAnalytics(nil)
-	ErrFailedRecordModerationAction = FailedRecordModerationAction(nil)
-	ErrFailedGetModerationData      = FailedGetModerationData(nil)
+	ErrFailedIndexByEngagement      = FailedIndexByEngagement(stdErrors.New("unknown error"))
+	ErrFailedRecordEngagement       = FailedRecordEngagement(stdErrors.New("unknown error"))
+	ErrFailedGetEngagementMetrics   = FailedGetEngagementMetrics(stdErrors.New("unknown error"))
+	ErrFailedGetEngagementByDate    = FailedGetEngagementByDate(stdErrors.New("unknown error"))
+	ErrFailedGetTopContent          = FailedGetTopContent(stdErrors.New("unknown error"))
+	ErrFailedUpdateTrendingTag      = FailedUpdateTrendingTag(stdErrors.New("unknown error"))
+	ErrFailedGetTrendingTags        = FailedGetTrendingTags(stdErrors.New("unknown error"))
+	ErrFailedQueryStaleTrends       = FailedQueryStaleTrends(stdErrors.New("unknown error"))
+	ErrFailedRecordInstanceMetric   = FailedRecordInstanceMetric(stdErrors.New("unknown error"))
+	ErrFailedGetInstanceMetrics     = FailedGetInstanceMetrics(stdErrors.New("unknown error"))
+	ErrFailedGetStartMetric         = FailedGetStartMetric(stdErrors.New("unknown error"))
+	ErrFailedGetEndMetric           = FailedGetEndMetric(stdErrors.New("unknown error"))
+	ErrFailedRecordManifest         = FailedRecordManifest(stdErrors.New("unknown error"))
+	ErrFailedRecordQualityChange    = FailedRecordQualityChange(stdErrors.New("unknown error"))
+	ErrFailedRecordMediaEvent       = FailedRecordMediaEvent(stdErrors.New("unknown error"))
+	ErrFailedQuerySessionEvents     = FailedQuerySessionEvents(stdErrors.New("unknown error"))
+	ErrFailedGetModerationAnalytics = FailedGetModerationAnalytics(stdErrors.New("unknown error"))
+	ErrFailedRecordModerationAction = FailedRecordModerationAction(stdErrors.New("unknown error"))
+	ErrFailedGetModerationData      = FailedGetModerationData(stdErrors.New("unknown error"))
 	ErrInvalidQueryForCounting      = InvalidQueryForCounting("unknown")
 	ErrInvalidQueryForCount         = InvalidQueryForCount("unknown")
-	ErrFailedGetQueryCount          = FailedGetQueryCount(nil)
-	ErrFailedGetTopQueries          = FailedGetTopQueries(nil)
-	ErrFailedGetExistingCounter     = FailedGetExistingCounter(nil)
-	ErrFailedSaveCounter            = FailedSaveCounter(nil)
-	ErrFailedGetStats               = FailedGetStats(nil)
+	ErrFailedGetQueryCount          = FailedGetQueryCount(stdErrors.New("unknown error"))
+	ErrFailedGetTopQueries          = FailedGetTopQueries(stdErrors.New("unknown error"))
+	ErrFailedGetExistingCounter     = FailedGetExistingCounter(stdErrors.New("unknown error"))
+	ErrFailedSaveCounter            = FailedSaveCounter(stdErrors.New("unknown error"))
+	ErrFailedGetStats               = FailedGetStats(stdErrors.New("unknown error"))
 
 	// Federation cost errors
-	ErrFederationCostRecordFailed        = FederationCostRecordFailed(nil)
-	ErrFederationCostQueryFailed         = FederationCostQueryFailed(nil)
-	ErrFederationCostActivityQueryFailed = FederationCostActivityQueryFailed(nil)
-	ErrFederationBudgetCreateFailed      = FederationBudgetCreateFailed(nil)
+	ErrFederationCostRecordFailed        = FederationCostRecordFailed(stdErrors.New("unknown error"))
+	ErrFederationCostQueryFailed         = FederationCostQueryFailed(stdErrors.New("unknown error"))
+	ErrFederationCostActivityQueryFailed = FederationCostActivityQueryFailed(stdErrors.New("unknown error"))
+	ErrFederationBudgetCreateFailed      = FederationBudgetCreateFailed(stdErrors.New("unknown error"))
 	ErrFederationBudgetNotFound          = FederationBudgetNotFound("unknown")
-	ErrFederationBudgetQueryFailed       = FederationBudgetQueryFailed(nil)
-	ErrActiveBudgetsQueryFailed          = ActiveBudgetsQueryFailed(nil)
+	ErrFederationBudgetQueryFailed       = FederationBudgetQueryFailed(stdErrors.New("unknown error"))
+	ErrActiveBudgetsQueryFailed          = ActiveBudgetsQueryFailed(stdErrors.New("unknown error"))
 
 	// Federation instance errors
-	ErrFederationInstanceSearchFailed                 = FederationInstanceSearchFailed(nil)
-	ErrFederationInstanceHealthStoreFailed            = FederationInstanceHealthStoreFailed(nil)
-	ErrFederationInstanceHealthQueryFailed            = FederationInstanceHealthQueryFailed(nil)
-	ErrFederationInstanceBatchGetFailed               = FederationInstanceBatchGetFailed(nil)
-	ErrFederationInstanceBatchCreateFailed            = FederationInstanceBatchCreateFailed(nil)
-	ErrFederationInstanceBatchCreateChunkFailed       = FederationInstanceBatchCreateChunkFailed(nil)
-	ErrFederationInstanceBatchUpdateHealthFailed      = FederationInstanceBatchUpdateHealthFailed(nil)
-	ErrFederationInstanceBatchUpdateHealthChunkFailed = FederationInstanceBatchUpdateHealthChunkFailed(nil)
-	ErrFederationInstanceUsageUpdateFailed            = FederationInstanceUsageUpdateFailed(nil)
-	ErrFederationInstanceBatchUpdateUsageFailed       = FederationInstanceBatchUpdateUsageFailed(nil)
-	ErrFederationInstanceBatchUpdateUsageChunkFailed  = FederationInstanceBatchUpdateUsageChunkFailed(nil)
-	ErrFederationInstanceListFailed                   = FederationInstanceListFailed(nil)
+	ErrFederationInstanceSearchFailed                 = FederationInstanceSearchFailed(stdErrors.New("unknown error"))
+	ErrFederationInstanceHealthStoreFailed            = FederationInstanceHealthStoreFailed(stdErrors.New("unknown error"))
+	ErrFederationInstanceHealthQueryFailed            = FederationInstanceHealthQueryFailed(stdErrors.New("unknown error"))
+	ErrFederationInstanceBatchGetFailed               = FederationInstanceBatchGetFailed(stdErrors.New("unknown error"))
+	ErrFederationInstanceBatchCreateFailed            = FederationInstanceBatchCreateFailed(stdErrors.New("unknown error"))
+	ErrFederationInstanceBatchCreateChunkFailed       = FederationInstanceBatchCreateChunkFailed(stdErrors.New("unknown error"))
+	ErrFederationInstanceBatchUpdateHealthFailed      = FederationInstanceBatchUpdateHealthFailed(stdErrors.New("unknown error"))
+	ErrFederationInstanceBatchUpdateHealthChunkFailed = FederationInstanceBatchUpdateHealthChunkFailed(stdErrors.New("unknown error"))
+	ErrFederationInstanceUsageUpdateFailed            = FederationInstanceUsageUpdateFailed(stdErrors.New("unknown error"))
+	ErrFederationInstanceBatchUpdateUsageFailed       = FederationInstanceBatchUpdateUsageFailed(stdErrors.New("unknown error"))
+	ErrFederationInstanceBatchUpdateUsageChunkFailed  = FederationInstanceBatchUpdateUsageChunkFailed(stdErrors.New("unknown error"))
+	ErrFederationInstanceListFailed                   = FederationInstanceListFailed(stdErrors.New("unknown error"))
 	ErrFederationInstanceCursorTooLong                = FederationInstanceCursorTooLong(1025)
 	ErrFederationInstanceCursorInvalid                = FederationInstanceCursorInvalid("unknown")
 	ErrFederationInstanceLimitNegative                = FederationInstanceLimitNegative(-1)
@@ -1194,57 +1195,57 @@ var (
 	ErrCSRFTooManyTokens      = CSRFTooManyTokens("unknown", 11)
 
 	// Media metadata errors
-	ErrMediaMetadataPrepareFailed      = MediaMetadataPrepareFailed(nil)
+	ErrMediaMetadataPrepareFailed      = MediaMetadataPrepareFailed(stdErrors.New("unknown error"))
 	ErrMediaMetadataNotFound           = MediaMetadataNotFound("unknown")
-	ErrMediaMetadataQueryFailed        = MediaMetadataQueryFailed(nil)
-	ErrMediaMetadataStatusQueryFailed  = MediaMetadataStatusQueryFailed(nil)
-	ErrExpiredMediaMetadataQueryFailed = ExpiredMediaMetadataQueryFailed(nil)
+	ErrMediaMetadataQueryFailed        = MediaMetadataQueryFailed(stdErrors.New("unknown error"))
+	ErrMediaMetadataStatusQueryFailed  = MediaMetadataStatusQueryFailed(stdErrors.New("unknown error"))
+	ErrExpiredMediaMetadataQueryFailed = ExpiredMediaMetadataQueryFailed(stdErrors.New("unknown error"))
 
 	// DLQ errors
 	ErrDLQServiceRequired         = DLQServiceRequired()
 	ErrDLQMessageNotFound         = DLQMessageNotFound("unknown")
 	ErrDLQMessageNotReprocessable = DLQMessageNotReprocessable("unknown", "unknown")
-	ErrDLQBatchUpdateFailed       = DLQBatchUpdateFailed(nil)
+	ErrDLQBatchUpdateFailed       = DLQBatchUpdateFailed(stdErrors.New("unknown error"))
 
 	// Notification errors
 	ErrNotificationUnknownPreferenceType = NotificationUnknownPreferenceType("unknown")
 
 	// DNS cache errors
 	ErrDNSCacheEntryRequired    = DNSCacheEntryRequired()
-	ErrDNSCacheGetFailed        = DNSCacheGetFailed(nil)
-	ErrDNSCacheSetFailed        = DNSCacheSetFailed(nil)
-	ErrDNSCacheInvalidateFailed = DNSCacheInvalidateFailed(nil)
+	ErrDNSCacheGetFailed        = DNSCacheGetFailed(stdErrors.New("unknown error"))
+	ErrDNSCacheSetFailed        = DNSCacheSetFailed(stdErrors.New("unknown error"))
+	ErrDNSCacheInvalidateFailed = DNSCacheInvalidateFailed(stdErrors.New("unknown error"))
 
 	// Federation activity errors
 	ErrFederationActivityValidationFailed = FederationActivityValidationFailed("unknown")
 	ErrFederationActivityNotFound         = FederationActivityNotFound("unknown")
 
 	// Quote errors
-	ErrQuoteRelationshipCreateFailed = QuoteRelationshipCreateFailed(nil)
-	ErrQuoteRelationshipGetFailed    = QuoteRelationshipGetFailed(nil)
-	ErrQuoteRelationshipUpdateFailed = QuoteRelationshipUpdateFailed(nil)
-	ErrQuoteRelationshipDeleteFailed = QuoteRelationshipDeleteFailed(nil)
-	ErrQuoteRelationshipQueryFailed  = QuoteRelationshipQueryFailed(nil)
-	ErrQuotePermissionsCreateFailed  = QuotePermissionsCreateFailed(nil)
-	ErrQuotePermissionsGetFailed     = QuotePermissionsGetFailed(nil)
-	ErrQuotePermissionsUpdateFailed  = QuotePermissionsUpdateFailed(nil)
-	ErrQuotePermissionsDeleteFailed  = QuotePermissionsDeleteFailed(nil)
-	ErrQuoteCountQueryFailed         = QuoteCountQueryFailed(nil)
+	ErrQuoteRelationshipCreateFailed = QuoteRelationshipCreateFailed(stdErrors.New("unknown error"))
+	ErrQuoteRelationshipGetFailed    = QuoteRelationshipGetFailed(stdErrors.New("unknown error"))
+	ErrQuoteRelationshipUpdateFailed = QuoteRelationshipUpdateFailed(stdErrors.New("unknown error"))
+	ErrQuoteRelationshipDeleteFailed = QuoteRelationshipDeleteFailed(stdErrors.New("unknown error"))
+	ErrQuoteRelationshipQueryFailed  = QuoteRelationshipQueryFailed(stdErrors.New("unknown error"))
+	ErrQuotePermissionsCreateFailed  = QuotePermissionsCreateFailed(stdErrors.New("unknown error"))
+	ErrQuotePermissionsGetFailed     = QuotePermissionsGetFailed(stdErrors.New("unknown error"))
+	ErrQuotePermissionsUpdateFailed  = QuotePermissionsUpdateFailed(stdErrors.New("unknown error"))
+	ErrQuotePermissionsDeleteFailed  = QuotePermissionsDeleteFailed(stdErrors.New("unknown error"))
+	ErrQuoteCountQueryFailed         = QuoteCountQueryFailed(stdErrors.New("unknown error"))
 
 	// Marker errors
-	ErrMarkerSaveFailed = MarkerSaveFailed(nil)
+	ErrMarkerSaveFailed = MarkerSaveFailed(stdErrors.New("unknown error"))
 
 	// Scheduled job cost errors
 	ErrScheduledJobCostBeforeCreateFailed = ScheduledJobCostBeforeCreateFailed("unknown")
 	ErrScheduledJobCostBeforeUpdateFailed = ScheduledJobCostBeforeUpdateFailed("unknown")
 	ErrScheduledJobCostNotFound           = ScheduledJobCostNotFound("unknown")
-	ErrScheduledJobCostAggregationFailed  = ScheduledJobCostAggregationFailed(nil)
+	ErrScheduledJobCostAggregationFailed  = ScheduledJobCostAggregationFailed(stdErrors.New("unknown error"))
 
 	// Moderation metrics errors
-	ErrModerationMetricsFalsePositivesQueryFailed  = ModerationMetricsFalsePositivesQueryFailed(nil)
-	ErrModerationMetricsDecisionSamplesQueryFailed = ModerationMetricsDecisionSamplesQueryFailed(nil)
-	ErrModerationMetricsTopPatternsQueryFailed     = ModerationMetricsTopPatternsQueryFailed(nil)
-	ErrModerationMetricsEntriesQueryFailed         = ModerationMetricsEntriesQueryFailed(nil)
+	ErrModerationMetricsFalsePositivesQueryFailed  = ModerationMetricsFalsePositivesQueryFailed(stdErrors.New("unknown error"))
+	ErrModerationMetricsDecisionSamplesQueryFailed = ModerationMetricsDecisionSamplesQueryFailed(stdErrors.New("unknown error"))
+	ErrModerationMetricsTopPatternsQueryFailed     = ModerationMetricsTopPatternsQueryFailed(stdErrors.New("unknown error"))
+	ErrModerationMetricsEntriesQueryFailed         = ModerationMetricsEntriesQueryFailed(stdErrors.New("unknown error"))
 
 	// Pagination errors
 	ErrPaginationParametersInvalid = PaginationParametersInvalid("unknown")
@@ -1254,23 +1255,23 @@ var (
 
 	// Relationship pagination errors
 	ErrRelationshipPaginationModelTypeUnsupported = RelationshipPaginationModelTypeUnsupported("unknown")
-	ErrRelationshipPaginationQueryFailed          = RelationshipPaginationQueryFailed(nil)
+	ErrRelationshipPaginationQueryFailed          = RelationshipPaginationQueryFailed(stdErrors.New("unknown error"))
 
 	// Relay errors
 	ErrRelayNotFound = RelayNotFound("unknown")
 
 	// Timeline errors
-	ErrTimelineQueryFailed                    = TimelineQueryFailed(nil)
-	ErrTimelineEntriesByPostQueryFailed       = TimelineEntriesByPostQueryFailed(nil)
-	ErrTimelineEntriesByActorQueryFailed      = TimelineEntriesByActorQueryFailed(nil)
-	ErrTimelineEntriesByVisibilityQueryFailed = TimelineEntriesByVisibilityQueryFailed(nil)
-	ErrTimelineEntriesByLanguageQueryFailed   = TimelineEntriesByLanguageQueryFailed(nil)
-	ErrTimelineEntryQueryFailed               = TimelineEntryQueryFailed(nil)
-	ErrTimelineEntriesForDeletionQueryFailed  = TimelineEntriesForDeletionQueryFailed(nil)
-	ErrTimelineExpiredEntriesScanFailed       = TimelineExpiredEntriesScanFailed(nil)
-	ErrTimelineCountQueryFailed               = TimelineCountQueryFailed(nil)
-	ErrTimelineEntriesInRangeQueryFailed      = TimelineEntriesInRangeQueryFailed(nil)
-	ErrTimelineFilteredEntriesQueryFailed     = TimelineFilteredEntriesQueryFailed(nil)
+	ErrTimelineQueryFailed                    = TimelineQueryFailed(stdErrors.New("unknown error"))
+	ErrTimelineEntriesByPostQueryFailed       = TimelineEntriesByPostQueryFailed(stdErrors.New("unknown error"))
+	ErrTimelineEntriesByActorQueryFailed      = TimelineEntriesByActorQueryFailed(stdErrors.New("unknown error"))
+	ErrTimelineEntriesByVisibilityQueryFailed = TimelineEntriesByVisibilityQueryFailed(stdErrors.New("unknown error"))
+	ErrTimelineEntriesByLanguageQueryFailed   = TimelineEntriesByLanguageQueryFailed(stdErrors.New("unknown error"))
+	ErrTimelineEntryQueryFailed               = TimelineEntryQueryFailed(stdErrors.New("unknown error"))
+	ErrTimelineEntriesForDeletionQueryFailed  = TimelineEntriesForDeletionQueryFailed(stdErrors.New("unknown error"))
+	ErrTimelineExpiredEntriesScanFailed       = TimelineExpiredEntriesScanFailed(stdErrors.New("unknown error"))
+	ErrTimelineCountQueryFailed               = TimelineCountQueryFailed(stdErrors.New("unknown error"))
+	ErrTimelineEntriesInRangeQueryFailed      = TimelineEntriesInRangeQueryFailed(stdErrors.New("unknown error"))
+	ErrTimelineFilteredEntriesQueryFailed     = TimelineFilteredEntriesQueryFailed(stdErrors.New("unknown error"))
 	ErrTestMockError                          = TestMockError()
 
 	// Streaming connection errors
@@ -1283,5 +1284,5 @@ var (
 	// Streaming preferences errors
 	ErrStreamingUsernameRequired         = StreamingUsernameRequired()
 	ErrStreamingDeviceParamsRequired     = StreamingDeviceParamsRequired()
-	ErrStreamingConflictResolutionFailed = StreamingConflictResolutionFailed(nil)
+	ErrStreamingConflictResolutionFailed = StreamingConflictResolutionFailed(stdErrors.New("unknown error"))
 )

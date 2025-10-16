@@ -433,7 +433,7 @@ func TestService_CreateNotification_ValidationError(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "user_id is required")
+	assert.Contains(t, err.Error(), "Validation failed")
 }
 
 func TestService_CreateNotification_InvalidType(t *testing.T) {
@@ -450,7 +450,7 @@ func TestService_CreateNotification_InvalidType(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "invalid notification type")
+	assert.Contains(t, err.Error(), "Validation failed")
 }
 
 func TestService_CreateNotification_UserNotFound(t *testing.T) {
@@ -469,7 +469,7 @@ func TestService_CreateNotification_UserNotFound(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "recipient user not found")
+	assert.Contains(t, err.Error(), "Resource not found")
 
 	mockAccountRepo.AssertExpectations(t)
 }
@@ -557,7 +557,7 @@ func TestService_MarkAsRead_Unauthorized(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "unauthorized")
+	assert.Contains(t, err.Error(), "Access denied")
 
 	mockNotificationRepo.AssertExpectations(t)
 }
@@ -652,7 +652,7 @@ func TestService_ClearNotifications_ValidationError(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "at least one clear criteria must be specified")
+	assert.Contains(t, err.Error(), "Validation failed")
 }
 
 // Test GetNotification
@@ -699,7 +699,7 @@ func TestService_GetNotification_Unauthorized(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "notification not found")
+	assert.Contains(t, err.Error(), "Resource not found")
 
 	mockNotificationRepo.AssertExpectations(t)
 }
@@ -893,7 +893,7 @@ func TestService_CreateNotification_RepositoryError(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "failed to create notification")
+	assert.Contains(t, err.Error(), "Failed to create notification")
 
 	mockNotificationRepo.AssertExpectations(t)
 	mockAccountRepo.AssertExpectations(t)
@@ -914,7 +914,7 @@ func TestService_MarkAsRead_NotificationNotFound(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "failed to get notification")
+	assert.Contains(t, err.Error(), "notification not found")
 
 	mockNotificationRepo.AssertExpectations(t)
 }

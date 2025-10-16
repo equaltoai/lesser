@@ -1,6 +1,8 @@
 package models
 
 import (
+	stdErrors "errors"
+
 	centralErrors "github.com/equaltoai/lesser/pkg/errors"
 )
 
@@ -16,7 +18,7 @@ var (
 	ErrBudgetLimitsInvalid        = centralErrors.BudgetLimitsInvalid()
 	ErrModerationThresholdInvalid = centralErrors.ModerationThresholdInvalid()
 	ErrInvalidQualitySetting      = centralErrors.InvalidQualitySetting()
-	ErrPlanUpgradeFailed          = centralErrors.PlanUpgradeFailed(nil)
+	ErrPlanUpgradeFailed          = centralErrors.PlanUpgradeFailed(stdErrors.New("plan upgrade failed"))
 	ErrUserIDRequired             = centralErrors.UserIDRequired()
 
 	// Relay Cost errors
@@ -44,7 +46,7 @@ var (
 	ErrTimestampRequired         = centralErrors.RequiredFieldMissing("timestamp")
 	ErrAggregationLevelRequired  = centralErrors.RequiredFieldMissing("AggregationLevel")
 	ErrInvalidAggregationLevel   = centralErrors.NewValidationError("aggregation_level", "Invalid aggregation level")
-	ErrFailedToUpdateKeys        = centralErrors.FailedToUpdate("keys", nil)
+	ErrFailedToUpdateKeys        = centralErrors.FailedToUpdate("keys", stdErrors.New("failed to update keys"))
 
 	// MetricRecord validation errors
 	ErrMetricRecordTypeRequired    = centralErrors.RequiredFieldMissing("MetricType")
@@ -92,13 +94,13 @@ var (
 
 	// Reputation validation errors
 	ErrInvalidActorIDFormat          = centralErrors.InvalidFormat("actorID", "valid actor ID format")
-	ErrReputationMarshalFailed       = centralErrors.MarshalingFailed("reputation", nil)
+	ErrReputationMarshalFailed       = centralErrors.MarshalingFailed("reputation", stdErrors.New("reputation marshaling failed"))
 	ErrInvalidReputationJSON         = centralErrors.JSONFormatInvalid("invalid reputation structure")
-	ErrReputationUnmarshalFailed     = centralErrors.UnmarshalingFailed("reputation to map", nil)
+	ErrReputationUnmarshalFailed     = centralErrors.UnmarshalingFailed("reputation to map", stdErrors.New("reputation unmarshaling failed"))
 	ErrCalculatedAtFieldMissing      = centralErrors.RequiredFieldMissing("calculatedAt")
-	ErrCalculatedAtParseFailed       = centralErrors.ParsingFailed("calculatedAt", nil)
+	ErrCalculatedAtParseFailed       = centralErrors.ParsingFailed("calculatedAt", stdErrors.New("calculatedAt parsing failed"))
 	ErrInvalidReputationDataJSON     = centralErrors.JSONFormatInvalid("invalid reputation data structure")
-	ErrReputationDataUnmarshalFailed = centralErrors.UnmarshalingFailed("reputation data", nil)
+	ErrReputationDataUnmarshalFailed = centralErrors.UnmarshalingFailed("reputation data", stdErrors.New("reputation data unmarshaling failed"))
 
 	// CSRF Token validation errors
 	ErrCSRFTokenRequired     = centralErrors.RequiredFieldMissing("token")
@@ -114,8 +116,8 @@ var (
 	ErrInvalidDeliveryStatus  = centralErrors.NewValidationError("delivery_status", "Invalid delivery status")
 
 	// Session validation errors
-	ErrSessionIDGenerationFailed   = centralErrors.SessionIDGenerationFailed(nil)
-	ErrAccessTokenGenerationFailed = centralErrors.AccessTokenGenerationFailed(nil)
+	ErrSessionIDGenerationFailed   = centralErrors.SessionIDGenerationFailed(stdErrors.New("session ID generation failed"))
+	ErrAccessTokenGenerationFailed = centralErrors.AccessTokenGenerationFailed(stdErrors.New("access token generation failed"))
 	ErrExpiresAtRequired           = centralErrors.RequiredFieldMissing("ExpiresAt")
 
 	// Cost tracking validation errors
@@ -126,8 +128,8 @@ var (
 	ErrCostWindowEndBeforeStart = centralErrors.NewValidationError("window_end", "WindowEnd must be after WindowStart")
 
 	// OAuth Session validation errors
-	ErrOAuthSessionIDGenerationFailed = centralErrors.SessionIDGenerationFailed(nil)
-	ErrOAuthCSRFTokenGenerationFailed = centralErrors.CSRFTokenGenerationFailed(nil)
+	ErrOAuthSessionIDGenerationFailed = centralErrors.SessionIDGenerationFailed(stdErrors.New("OAuth session ID generation failed"))
+	ErrOAuthCSRFTokenGenerationFailed = centralErrors.CSRFTokenGenerationFailed(stdErrors.New("OAuth CSRF token generation failed"))
 
 	// Provider Account validation errors
 	ErrProviderIDRequired = centralErrors.RequiredFieldMissing("provider ID")
@@ -190,10 +192,10 @@ var (
 	ErrPushSubscriptionAuthRequired   = centralErrors.RequiredFieldMissing("auth secret")
 
 	// Block validation errors
-	ErrBlockUpdateKeysFailed = centralErrors.FailedToUpdate("block keys", nil)
+	ErrBlockUpdateKeysFailed = centralErrors.FailedToUpdate("block keys", stdErrors.New("failed to update block keys"))
 
 	// Mute validation errors
-	ErrMuteUpdateKeysFailed = centralErrors.FailedToUpdate("mute keys", nil)
+	ErrMuteUpdateKeysFailed = centralErrors.FailedToUpdate("mute keys", stdErrors.New("failed to update mute keys"))
 
 	// CloudWatch Metrics validation errors
 	ErrCloudWatchMetricServiceNameRequired = centralErrors.RequiredFieldMissing("ServiceName")

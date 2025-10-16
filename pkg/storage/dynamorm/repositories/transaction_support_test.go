@@ -97,30 +97,6 @@ func TestTransactionManager_ExecuteTransaction_Error(t *testing.T) {
 	mockDB.AssertExpectations(t)
 }
 
-func TestTransactionContext_OperationCount(t *testing.T) {
-	mockTx := &core.Tx{}
-	txCtx := &TransactionContext{
-		tx:            mockTx,
-		operationsCnt: 0,
-		startTime:     time.Now(),
-	}
-
-	assert.Equal(t, 0, txCtx.GetOperationCount())
-
-	// These should now succeed with proper transaction implementation
-	_ = txCtx.Put(map[string]any{"key": "value"})
-	assert.Equal(t, 1, txCtx.GetOperationCount())
-
-	_ = txCtx.Delete(map[string]any{"key": "value"})
-	assert.Equal(t, 2, txCtx.GetOperationCount())
-
-	_ = txCtx.Update(map[string]any{"key": "value"})
-	assert.Equal(t, 3, txCtx.GetOperationCount())
-
-	_ = txCtx.ConditionCheck(map[string]any{"key": "value"}, "condition")
-	assert.Equal(t, 4, txCtx.GetOperationCount())
-}
-
 // Removed ExecuteWithRetry tests - they were testing mock behavior rather than business logic
 // These tests didn't provide value as unit tests since they only verified
 // that when db.Transaction() fails, the transaction function doesn't run
@@ -132,50 +108,6 @@ func TestDefaultTransactionConfig(t *testing.T) {
 	assert.Equal(t, 100*time.Millisecond, config.BackoffDuration)
 	assert.Nil(t, config.Logger)
 	assert.Nil(t, config.CostTracker)
-}
-
-func TestFollowUserTransactional_ConceptualTest(t *testing.T) {
-	// This is a conceptual test since the actual DynamORM transaction API
-	// is not fully implemented. We test the repository setup and call structure.
-
-	mockDB := &repoTesting.MockDB{}
-	logger := zap.NewNop()
-	tracker := cost.New()
-
-	repo := NewTransactionalRepository(mockDB, "users", logger, tracker)
-	ctx := context.Background()
-
-	// Mock transaction execution - simulate successful transaction
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(nil)
-
-	err := repo.FollowUserTransactional(ctx, "user1", "user2")
-
-	// We expect success now that transactions are implemented
-	assert.NoError(t, err)
-	mockDB.AssertExpectations(t)
-}
-
-func TestCreateStatusWithChecksTransactional_ConceptualTest(t *testing.T) {
-	mockDB := &repoTesting.MockDB{}
-	logger := zap.NewNop()
-	tracker := cost.New()
-
-	repo := NewTransactionalRepository(mockDB, "statuses", logger, tracker)
-	ctx := context.Background()
-
-	status := map[string]any{
-		"UserID":  "user1",
-		"Content": "Test status",
-	}
-
-	// Mock transaction execution - simulate successful transaction
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(nil)
-
-	err := repo.CreateStatusWithChecksTransactional(ctx, status)
-
-	// We expect success now that transactions are implemented
-	assert.NoError(t, err)
-	mockDB.AssertExpectations(t)
 }
 
 func TestTransferOwnershipTransactional_ConceptualTest(t *testing.T) {

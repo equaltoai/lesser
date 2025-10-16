@@ -9,8 +9,10 @@ import (
 	apiLift "github.com/equaltoai/lesser/cmd/api/lift"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	liftapp "github.com/equaltoai/lesser/pkg/lift"
+	liftpkg "github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
 func TestWebFingerResponseStructure(t *testing.T) {
@@ -143,8 +145,13 @@ func TestNodeInfoWellKnownStructure(t *testing.T) {
 }
 
 func TestCORSMiddleware(t *testing.T) {
-	// Create CORS middleware
-	corsMiddleware := createCORSMiddleware()
+	// Create a test logger
+	logger, _ := zap.NewDevelopment()
+
+	// Create CORS middleware using the AppBuilder
+	config := liftapp.DefaultConfig()
+	builder := liftapp.NewAppBuilder(config, logger)
+	corsMiddleware := exposeCORSMiddleware(builder)
 
 	// Create mock handler
 	mockHandler := &activityPubMockHandler{}
@@ -153,9 +160,9 @@ func TestCORSMiddleware(t *testing.T) {
 	handler := corsMiddleware(mockHandler)
 
 	// Create context with headers
-	ctx := &lift.Context{
+	ctx := &liftpkg.Context{
 		Context: context.Background(),
-		Request: &lift.Request{
+		Request: &liftpkg.Request{
 			Method: "POST",
 			Path:   "/inbox",
 			Headers: map[string]string{
@@ -165,7 +172,7 @@ func TestCORSMiddleware(t *testing.T) {
 				common.ContentTypeHeader: common.ContentTypeActivityPubJSON,
 			},
 		},
-		Response: &lift.Response{
+		Response: &liftpkg.Response{
 			StatusCode: http.StatusOK,
 			Headers:    make(map[string]string),
 		},
@@ -198,8 +205,13 @@ func TestCORSMiddleware(t *testing.T) {
 }
 
 func TestCORSOptionsRequest(t *testing.T) {
-	// Create CORS middleware
-	corsMiddleware := createCORSMiddleware()
+	// Create a test logger
+	logger, _ := zap.NewDevelopment()
+
+	// Create CORS middleware using the AppBuilder
+	config := liftapp.DefaultConfig()
+	builder := liftapp.NewAppBuilder(config, logger)
+	corsMiddleware := exposeCORSMiddleware(builder)
 
 	// Create mock handler
 	mockHandler := &activityPubMockHandler{}
@@ -208,13 +220,13 @@ func TestCORSOptionsRequest(t *testing.T) {
 	handler := corsMiddleware(mockHandler)
 
 	// Create OPTIONS request context
-	ctx := &lift.Context{
+	ctx := &liftpkg.Context{
 		Context: context.Background(),
-		Request: &lift.Request{
+		Request: &liftpkg.Request{
 			Method: "OPTIONS",
 			Path:   "/inbox",
 		},
-		Response: &lift.Response{
+		Response: &liftpkg.Response{
 			StatusCode: http.StatusOK,
 			Headers:    make(map[string]string),
 		},
@@ -301,12 +313,19 @@ func TestCommonHeadersFunction(t *testing.T) {
 	assert.Contains(t, allowedMethods, "OPTIONS")
 }
 
+func exposeCORSMiddleware(builder *liftapp.AppBuilder) liftpkg.Middleware {
+	type corsBuilder interface {
+		createCORSMiddleware() liftpkg.Middleware
+	}
+	return interface{}(builder).(corsBuilder).createCORSMiddleware()
+}
+
 // Mock handler for testing ActivityPub endpoints
 type activityPubMockHandler struct {
 	called bool
 }
 
-func (m *activityPubMockHandler) Handle(_ *lift.Context) error {
+func (m *activityPubMockHandler) Handle(_ *liftpkg.Context) error {
 	m.called = true
 	return nil
 }
