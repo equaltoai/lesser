@@ -15,8 +15,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/ai"
+	"github.com/equaltoai/lesser/pkg/services/hashtags"
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"github.com/equaltoai/lesser/pkg/services/threads"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
@@ -413,4 +415,261 @@ func (r *Resolver) convertThreadContextResultToModel(_ context.Context, result *
 		LastActivity:     model.Time(result.LastActivity),
 		SyncStatus:       syncStatus,
 	}
+}
+
+// ====================================================================
+// HASHTAG HELPERS
+// ====================================================================
+
+// convertHashtagToModel converts service Hashtag to GraphQL model.Hashtag
+// This is THE converter used by all resolvers - consistency is critical
+func (r *Resolver) convertHashtagToModel(ctx context.Context, h *hashtags.Hashtag, viewerID string) *model.Hashtag {
+	if h == nil {
+		return nil
+	}
+
+	domain := r.getDomain()
+	url := r.buildHashtagURL(h, domain)
+	settings := r.convertHashtagNotificationSettingsFromService(ctx, h, viewerID)
+	relatedHashtags := r.convertRelatedHashtags(h.Related, domain)
+
+	result := &model.Hashtag{
+		Name:                 h.Name,
+		URL:                  url,
+		DisplayName:          "#" + h.Name,
+		PostCount:            h.PostCount,
+		FollowerCount:        h.FollowerCount,
+		TrendingScore:        h.TrendingScore,
+		IsFollowing:          h.IsFollowing,
+		NotificationSettings: settings,
+		RelatedHashtags:      relatedHashtags,
+	}
+
+	if h.FollowedAt != nil {
+		t := model.Time(*h.FollowedAt)
+		result.FollowedAt = &t
+	}
+
+	return result
+}
+
+// getDomain extracts the domain from the registry config
+func (r *Resolver) getDomain() string {
+	domain := "localhost"
+	if r.Registry != nil && r.Registry.GetConfig() != nil && r.Registry.GetConfig().BaseURL != "" {
+		baseURL := r.Registry.GetConfig().BaseURL
+		if strings.HasPrefix(baseURL, "https://") {
+			domain = strings.TrimPrefix(baseURL, "https://")
+		} else if strings.HasPrefix(baseURL, "http://") {
+			domain = strings.TrimPrefix(baseURL, "http://")
+		} else {
+			domain = baseURL
+		}
+		domain = strings.TrimSuffix(domain, "/")
+	}
+	return domain
+}
+
+// buildHashtagURL builds the URL for a hashtag
+func (r *Resolver) buildHashtagURL(h *hashtags.Hashtag, domain string) string {
+	if h.URL != "" {
+		return h.URL
+	}
+	if h.Name != "" {
+		return fmt.Sprintf("https://%s/tags/%s", domain, h.Name)
+	}
+	return ""
+}
+
+// convertHashtagNotificationSettingsFromService converts service notification settings
+func (r *Resolver) convertHashtagNotificationSettingsFromService(ctx context.Context, h *hashtags.Hashtag, viewerID string) *model.HashtagNotificationSettings {
+	if h.NotificationSettings != nil {
+		return r.convertStorageNotificationSettings(h.NotificationSettings)
+	}
+	if viewerID != "" {
+		return r.fetchHashtagNotificationSettings(ctx, h.Name, viewerID)
+	}
+	return nil
+}
+
+// convertStorageNotificationSettings converts storage notification settings to GraphQL model
+func (r *Resolver) convertStorageNotificationSettings(settings *storage.HashtagNotificationSettings) *model.HashtagNotificationSettings {
+	level := model.NotificationLevelAll
+	levelStr := strings.ToLower(settings.Level)
+	if levelStr == common.RelationshipFollowing || levelStr == "mutuals" {
+		level = model.NotificationLevelFollowing
+	}
+
+	result := &model.HashtagNotificationSettings{
+		Level:   level,
+		Muted:   settings.Muted,
+		Filters: r.convertNotificationFilters(settings.Filters),
+	}
+
+	if settings.MutedUntil != nil && !settings.MutedUntil.IsZero() {
+		t := model.Time(*settings.MutedUntil)
+		result.MutedUntil = &t
+	}
+
+	return result
+}
+
+// convertNotificationFilters converts storage filters to GraphQL model
+func (r *Resolver) convertNotificationFilters(filters []*storage.NotificationFilter) []*model.NotificationFilter {
+	if len(filters) == 0 {
+		return []*model.NotificationFilter{}
+	}
+
+	result := make([]*model.NotificationFilter, 0, len(filters))
+	for _, filter := range filters {
+		if filter != nil {
+			result = append(result, &model.NotificationFilter{
+				Type:  strings.Join(filter.Types, ","),
+				Value: strings.Join(filter.ExcludeTypes, ","),
+			})
+		}
+	}
+	return result
+}
+
+// convertRelatedHashtags converts related hashtag names to GraphQL models
+func (r *Resolver) convertRelatedHashtags(related []string, domain string) []*model.Hashtag {
+	if len(related) == 0 {
+		return nil
+	}
+
+	relatedHashtags := make([]*model.Hashtag, 0, len(related))
+	for _, relTag := range related {
+		if relTag != "" {
+			relatedHashtags = append(relatedHashtags, &model.Hashtag{
+				Name:        relTag,
+				URL:         fmt.Sprintf("https://%s/tags/%s", domain, relTag),
+				DisplayName: "#" + relTag,
+			})
+		}
+	}
+	return relatedHashtags
+}
+
+// fetchHashtagNotificationSettings retrieves notification settings from storage
+func (r *Resolver) fetchHashtagNotificationSettings(ctx context.Context, hashtag, userID string) *model.HashtagNotificationSettings {
+	defaultSettings := &model.HashtagNotificationSettings{
+		Level:   model.NotificationLevelNone,
+		Muted:   false,
+		Filters: []*model.NotificationFilter{},
+	}
+
+	if hashtag == "" || userID == "" {
+		return defaultSettings
+	}
+
+	if r.Storage == nil {
+		return defaultSettings
+	}
+
+	hashtagRepo := r.Storage.Hashtag()
+	if hashtagRepo == nil {
+		return defaultSettings
+	}
+
+	settings, err := hashtagRepo.GetHashtagNotificationSettings(ctx, userID, hashtag)
+	if err != nil || settings == nil {
+		return defaultSettings
+	}
+
+	return r.convertStorageNotificationSettings(settings)
+}
+
+// getRelatedHashtags returns related hashtags for a given hashtag
+//
+//nolint:unused // Used by tests and future features
+func (r *Resolver) getRelatedHashtags(ctx context.Context, hashtag string, limit int) []*model.Hashtag {
+	if hashtag == "" || limit <= 0 {
+		return []*model.Hashtag{}
+	}
+
+	// Get hashtag service
+	hashtagService := r.Registry.Hashtags()
+	if hashtagService == nil {
+		return []*model.Hashtag{}
+	}
+
+	// Get the full hashtag which includes related hashtags
+	fullHashtag, err := hashtagService.GetHashtag(ctx, hashtag, "")
+	if err != nil || fullHashtag == nil || len(fullHashtag.Related) == 0 {
+		return []*model.Hashtag{}
+	}
+
+	// Get domain
+	domain := "localhost"
+	if r.Registry.GetConfig() != nil && r.Registry.GetConfig().BaseURL != "" {
+		baseURL := r.Registry.GetConfig().BaseURL
+		if strings.HasPrefix(baseURL, "https://") {
+			domain = strings.TrimPrefix(baseURL, "https://")
+		} else if strings.HasPrefix(baseURL, "http://") {
+			domain = strings.TrimPrefix(baseURL, "http://")
+		} else {
+			domain = baseURL
+		}
+		domain = strings.TrimSuffix(domain, "/")
+	}
+
+	// Convert to GraphQL model
+	results := make([]*model.Hashtag, 0, len(fullHashtag.Related))
+	for i, relTag := range fullHashtag.Related {
+		if i >= limit {
+			break
+		}
+		if relTag != "" {
+			results = append(results, &model.Hashtag{
+				Name:        relTag,
+				URL:         fmt.Sprintf("https://%s/tags/%s", domain, relTag),
+				DisplayName: "#" + relTag,
+			})
+		}
+	}
+
+	return results
+}
+
+// isFollowingHashtag checks if the user is following a hashtag
+//
+//nolint:unused // Used by tests and future features
+func (r *Resolver) isFollowingHashtag(ctx context.Context, userID, hashtag string) bool {
+	if userID == "" || hashtag == "" {
+		return false
+	}
+
+	hashtagRepo := r.Storage.Hashtag()
+	if hashtagRepo == nil {
+		return false
+	}
+
+	following, err := hashtagRepo.IsFollowingHashtag(ctx, userID, hashtag)
+	if err != nil {
+		return false
+	}
+
+	return following
+}
+
+// isHashtagMuted checks if the user has muted a hashtag
+//
+//nolint:unused // Used by tests and future features
+func (r *Resolver) isHashtagMuted(ctx context.Context, userID, hashtag string) bool {
+	if userID == "" || hashtag == "" {
+		return false
+	}
+
+	hashtagRepo := r.Storage.Hashtag()
+	if hashtagRepo == nil {
+		return false
+	}
+
+	muted, err := hashtagRepo.IsHashtagMuted(ctx, userID, hashtag)
+	if err != nil {
+		return false
+	}
+
+	return muted
 }
