@@ -530,6 +530,7 @@ func TestAsyncCommandHandler_HandleBulkFollow_ValidationError(t *testing.T) {
 	assert.Equal(t, "command_error", response.Type)
 	assert.NotNil(t, response.Error)
 	assert.Equal(t, "VALIDATION_ERROR", response.Error.Code)
+	assert.Contains(t, response.Error.Message, "Required fields missing")
 }
 
 func TestAsyncCommandHandler_HandleBulkFollow_EmptyAccountIDs(t *testing.T) {
@@ -561,5 +562,5 @@ func TestAsyncCommandHandler_HandleBulkFollow_EmptyAccountIDs(t *testing.T) {
 	assert.Equal(t, "command_error", response.Type)
 	assert.NotNil(t, response.Error)
 	assert.Equal(t, "VALIDATION_ERROR", response.Error.Code)
-	assert.Contains(t, response.Error.Message, "No account IDs provided")
+	assert.Contains(t, response.Error.Message, "Invalid account_ids")
 }

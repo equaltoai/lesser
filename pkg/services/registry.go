@@ -70,6 +70,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/bulk"
 	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/equaltoai/lesser/pkg/services/emoji"
+	"github.com/equaltoai/lesser/pkg/services/hashtags"
 	"github.com/equaltoai/lesser/pkg/services/importexport"
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"github.com/equaltoai/lesser/pkg/services/media"
@@ -78,6 +79,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/services/search"
+	"github.com/equaltoai/lesser/pkg/services/threads"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -131,10 +133,12 @@ type Registry struct {
 	notificationsService *notifications.Service
 	aiService            *ai.Service
 	emojiService         *emoji.Service
+	hashtagsService      *hashtags.Service
 	scheduledService     *scheduled.Service
 	searchService        *search.Service
 	importExportService  *importexport.Service
 	bulkService          *bulk.Service
+	threadsService       *threads.Service
 
 	// Event infrastructure
 	eventBus         EventBus
@@ -233,13 +237,13 @@ func (r *Registry) validate() error {
 			r.logger.Fatal("JWT_SECRET environment variable is required")
 			panic("JWT_SECRET environment variable is required")
 		}
-		
+
 		// Validate JWT secret strength
 		if err := validateJWTSecret(jwtSecret); err != nil {
 			r.logger.Fatal("invalid JWT_SECRET", zap.Error(err))
 			panic(fmt.Sprintf("invalid JWT_SECRET: %v", err))
 		}
-		
+
 		r.config = &ServiceConfig{
 			BaseURL:   "https://" + DefaultLocalhost,
 			JWTSecret: jwtSecret,
@@ -397,6 +401,44 @@ func (r *Registry) Notification() NotificationService {
 	return r.notification
 }
 
+// Threads returns the threads service, initializing it if necessary
+func (r *Registry) Threads() *threads.Service {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.threadsService == nil {
+		threadRepo := r.storage.Thread()
+		statusRepo := r.storage.Status()
+		objectRepo := r.storage.Object()
+		actorRepo := r.storage.Actor()
+
+		if threadRepo != nil && statusRepo != nil {
+			domain := DefaultLocalhost
+			if r.config != nil && r.config.BaseURL != "" {
+				domain = r.config.BaseURL
+			}
+
+			r.threadsService = threads.NewService(
+				threadRepo,
+				statusRepo,
+				objectRepo,
+				actorRepo,
+				r.createThreadsFederationAdapter(),
+				r.publisher,
+				r.logger,
+				domain,
+			)
+			if r.initialized != nil {
+				r.initialized["Threads"] = true
+			}
+		} else if r.logger != nil {
+			r.logger.Warn("failed to initialize Threads service: required repositories not available")
+		}
+	}
+
+	return r.threadsService
+}
+
 // GetStorage returns the configured storage interface
 func (r *Registry) GetStorage() core.RepositoryStorage {
 	return r.storage
@@ -415,6 +457,20 @@ func (r *Registry) GetLogger() *zap.Logger {
 // GetConfig returns the service configuration
 func (r *Registry) GetConfig() *ServiceConfig {
 	return r.config
+}
+
+// getDomainName extracts the domain name from the registry configuration
+func (r *Registry) getDomainName() string {
+	domainName := DefaultLocalhost
+	if r.config != nil && r.config.BaseURL != "" {
+		// Extract domain from base URL
+		if strings.HasPrefix(r.config.BaseURL, "https://") {
+			domainName = strings.TrimPrefix(r.config.BaseURL, "https://")
+		} else if strings.HasPrefix(r.config.BaseURL, "http://") {
+			domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
+		}
+	}
+	return domainName
 }
 
 // GetInitializedServices returns a list of service names that have been initialized
@@ -800,6 +856,38 @@ func (r *Registry) Emoji() *emoji.Service {
 	return r.emojiService
 }
 
+// Hashtags returns the hashtags service, initializing it if necessary
+func (r *Registry) Hashtags() *hashtags.Service {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.hashtagsService == nil && r.storage != nil {
+		// Initialize the Hashtags service with repository interfaces
+		hashtagRepo := r.storage.Hashtag()
+		statusRepo := r.storage.Status()
+		relationshipRepo := r.storage.Relationship()
+
+		// Check if repositories are available
+		if hashtagRepo != nil && statusRepo != nil && relationshipRepo != nil {
+			r.hashtagsService = hashtags.NewService(
+				hashtagRepo,
+				statusRepo,
+				relationshipRepo,
+				r.publisher,
+				r.logger,
+				r.getDomainName(),
+			)
+			r.initialized["Hashtags"] = true
+		} else {
+			if r.logger != nil {
+				r.logger.Warn("failed to initialize Hashtags service: required repositories not available")
+			}
+		}
+	}
+
+	return r.hashtagsService
+}
+
 // Scheduled returns the scheduled status service, initializing it if necessary
 func (r *Registry) Scheduled() *scheduled.Service {
 	r.mu.Lock()
@@ -813,23 +901,13 @@ func (r *Registry) Scheduled() *scheduled.Service {
 
 		// Check if repositories are available
 		if scheduledRepo != nil && statusRepo != nil && mediaRepo != nil {
-			domainName := DefaultLocalhost
-			if r.config != nil && r.config.BaseURL != "" {
-				// Extract domain from base URL
-				if strings.HasPrefix(r.config.BaseURL, "https://") {
-					domainName = strings.TrimPrefix(r.config.BaseURL, "https://")
-				} else if strings.HasPrefix(r.config.BaseURL, "http://") {
-					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
-				}
-			}
-
 			r.scheduledService = scheduled.NewService(
 				scheduledRepo,
 				statusRepo,
 				mediaRepo,
 				r.publisher,
 				r.logger,
-				domainName,
+				r.getDomainName(),
 			)
 			r.initialized["Scheduled"] = true
 		} else {
@@ -1082,6 +1160,17 @@ func (r *Registry) createAccountsFederationAdapter() *queueFederationAdapter {
 // createRelationshipsFederationAdapter creates an adapter that implements relationships.FederationService
 // by wrapping the main FederationService
 func (r *Registry) createRelationshipsFederationAdapter() *queueFederationAdapter {
+	mainFederation := r.Federation()
+	return &queueFederationAdapter{
+		federation: mainFederation,
+		storage:    r.storage,
+		logger:     r.logger,
+	}
+}
+
+// createThreadsFederationAdapter creates an adapter that implements threads.FederationService
+// by wrapping the main FederationService
+func (r *Registry) createThreadsFederationAdapter() *queueFederationAdapter {
 	mainFederation := r.Federation()
 	return &queueFederationAdapter{
 		federation: mainFederation,
@@ -1402,6 +1491,21 @@ type queueFederationAdapter struct {
 	logger     *zap.Logger
 }
 
+// FetchObject implements threads.FederationClient.FetchObject for fetching remote ActivityPub objects
+func (a *queueFederationAdapter) FetchObject(ctx context.Context, objectURL string, signingActor *activitypub.Actor) (any, error) {
+	// This is a stub implementation - in a real system, this would:
+	// 1. Make an HTTP GET request to the objectURL with proper ActivityPub headers
+	// 2. Sign the request using the signingActor's keys (HTTP Signatures)
+	// 3. Parse and validate the response JSON-LD
+	// 4. Return the parsed ActivityPub object
+
+	a.logger.Warn("FetchObject not fully implemented yet - federation client needed",
+		zap.String("object_url", objectURL))
+
+	// For now, return an error indicating this needs to be implemented
+	return nil, errors.New("federation client not fully configured")
+}
+
 // QueueActivity implements the FederationService interface by using the main federation service
 func (a *queueFederationAdapter) QueueActivity(ctx context.Context, activity *activitypub.Activity) error {
 	if a.federation == nil {
@@ -1533,7 +1637,7 @@ func validateJWTSecret(secret string) error {
 	if len(secret) < 32 {
 		return errors.New("JWT_SECRET must be at least 32 characters long")
 	}
-	
+
 	// Check for common weak patterns
 	lowerSecret := strings.ToLower(secret)
 	weakPatterns := []string{
@@ -1547,18 +1651,18 @@ func validateJWTSecret(secret string) error {
 		"demo",
 		"example",
 	}
-	
+
 	for _, pattern := range weakPatterns {
 		if strings.Contains(lowerSecret, pattern) {
 			return fmt.Errorf("JWT_SECRET contains weak pattern '%s' - please use a strong, random secret", pattern)
 		}
 	}
-	
+
 	// Check for insufficient entropy (all same character, sequential, etc.)
 	if isLowEntropy(secret) {
 		return errors.New("JWT_SECRET has insufficient entropy - please use a random secret")
 	}
-	
+
 	return nil
 }
 
@@ -1567,7 +1671,7 @@ func isLowEntropy(s string) bool {
 	if len(s) == 0 {
 		return true
 	}
-	
+
 	// Check if all characters are the same
 	firstChar := s[0]
 	allSame := true
@@ -1580,7 +1684,7 @@ func isLowEntropy(s string) bool {
 	if allSame {
 		return true
 	}
-	
+
 	// Check for sequential patterns
 	sequential := true
 	for i := 1; i < len(s); i++ {
@@ -1589,6 +1693,6 @@ func isLowEntropy(s string) bool {
 			break
 		}
 	}
-	
+
 	return sequential
 }

@@ -1,4 +1,4 @@
-package common
+package common // nolint:revive // "common" package name is acceptable for shared utilities
 
 import (
 	"crypto/rand"

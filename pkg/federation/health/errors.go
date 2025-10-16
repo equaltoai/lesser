@@ -1,6 +1,10 @@
 package health
 
-import "github.com/equaltoai/lesser/pkg/errors"
+import (
+	stdErrors "errors"
+
+	"github.com/equaltoai/lesser/pkg/errors"
+)
 
 // Error constants for federation health package
 var (
@@ -25,6 +29,6 @@ var (
 
 	// Serverless health checker errors
 	ErrHealthCheckEventValidationFailed = errors.ValidationFailedWithField("health check event")
-	ErrServerlessHealthCheckFailed      = errors.ProcessingFailed("serverless health check", nil)
-	ErrHealthDataCleanupFailed          = errors.ProcessingFailed("health data cleanup", nil)
+	ErrServerlessHealthCheckFailed      = errors.ProcessingFailed("serverless health check", stdErrors.New("serverless health check failed"))
+	ErrHealthDataCleanupFailed          = errors.ProcessingFailed("health data cleanup", stdErrors.New("health data cleanup failed"))
 )

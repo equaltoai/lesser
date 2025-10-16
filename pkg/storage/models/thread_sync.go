@@ -42,9 +42,20 @@ func NewThreadSync(statusID string) *ThreadSync {
 }
 
 // UpdateKeys updates the primary key fields
-func (t *ThreadSync) UpdateKeys() {
+func (t *ThreadSync) UpdateKeys() error {
 	t.PK = fmt.Sprintf("THREAD_SYNC#%s", t.StatusID)
 	t.SK = SKMetadata
+	return nil
+}
+
+// GetPK returns the primary key
+func (t *ThreadSync) GetPK() string {
+	return t.PK
+}
+
+// GetSK returns the sort key
+func (t *ThreadSync) GetSK() string {
+	return t.SK
 }
 
 // MarkSyncing updates the sync status to "syncing"

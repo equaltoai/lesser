@@ -1,6 +1,10 @@
 package main
 
-import "github.com/equaltoai/lesser/pkg/errors"
+import (
+	stdErrors "errors"
+
+	"github.com/equaltoai/lesser/pkg/errors"
+)
 
 // Configuration error functions
 
@@ -199,7 +203,7 @@ func BudgetExceededError(cost, budget int64) *errors.AppError {
 
 // UnsupportedMediaTypeProcessingError creates an error indicating unsupported media type for processing.
 func UnsupportedMediaTypeProcessingError(mediaType string) *errors.AppError {
-	return errors.MediaProcessingFailed(mediaType, nil)
+	return errors.MediaProcessingFailed(mediaType, stdErrors.New("unsupported media type for processing"))
 }
 
 // FileTooLargeForTypeError creates an error indicating file is too large for its type.
@@ -214,7 +218,7 @@ func MimeTypeMismatchDetailedError(claimed, detected string) *errors.AppError {
 
 // UnknownFileTypeForProcessingError creates an error indicating unknown file type for processing.
 func UnknownFileTypeForProcessingError(fileType string) *errors.AppError {
-	return errors.MediaProcessingFailed(fileType, nil).WithMetadata("reason", "unknown_type")
+	return errors.MediaProcessingFailed(fileType, stdErrors.New("unknown file type for processing")).WithMetadata("reason", "unknown_type")
 }
 
 // FileSizeExceedsLimitError creates an error indicating file size exceeds limit.

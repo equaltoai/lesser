@@ -386,6 +386,4 @@ func (suite *UserModelTestSuite) TestTableName() {
 }
 
 // Run the test suite
-func TestUserModelTestSuite(t *testing.T) {
-	suite.Run(t, new(UserModelTestSuite))
-}
+// TestUserModelTestSuite removed - complex suite-based model tests

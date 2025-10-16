@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
 	"runtime/debug"
 	"time"
 
@@ -132,11 +131,6 @@ func addStandardMiddleware(app *liftPkg.App, config MainConfig, lambdaCtx *commo
 
 	// Logging middleware (using shared implementation from cmd/api/middleware.go)
 	app.Use(createLoggingMiddleware(lambdaCtx.Logger))
-
-	// CORS middleware if enabled
-	if config.EnableCORS {
-		app.Use(createCORSMiddleware())
-	}
 
 	// Cost tracking middleware
 	app.Use(createCostTrackingMiddleware(lambdaCtx.Logger))
@@ -289,33 +283,6 @@ func createLoggingMiddleware(logger *zap.Logger) liftPkg.Middleware {
 			)
 
 			return err
-		})
-	}
-}
-
-func createCORSMiddleware() liftPkg.Middleware {
-	return func(next liftPkg.Handler) liftPkg.Handler {
-		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
-			if ctx.Response != nil {
-				ctx.Response.Header("Access-Control-Allow-Origin", "*")
-				ctx.Response.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD")
-				ctx.Response.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept")
-				ctx.Response.Header("Vary", "Origin")
-			}
-
-			method := http.MethodGet
-			if ctx.Request != nil && ctx.Request.Method != "" {
-				method = ctx.Request.Method
-			}
-
-			if method == http.MethodOptions {
-				if ctx.Response != nil {
-					ctx.Response.StatusCode = http.StatusOK
-				}
-				return ctx.Status(http.StatusOK).Text("")
-			}
-
-			return next.Handle(ctx)
 		})
 	}
 }

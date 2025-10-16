@@ -1,6 +1,10 @@
 package dlq
 
-import "github.com/equaltoai/lesser/pkg/errors"
+import (
+	stdErrors "errors"
+
+	"github.com/equaltoai/lesser/pkg/errors"
+)
 
 // Legacy error variables for backwards compatibility
 // These are now wrappers around the centralized error system
@@ -9,7 +13,7 @@ var (
 	ErrBatchProcessingFailed = errors.BatchOperationFailed("DLQ processing", nil)
 
 	// ErrNoDLQMessagesProcessed indicates that all DLQ messages failed to process
-	ErrNoDLQMessagesProcessed = errors.ProcessingFailed("DLQ messages", nil)
+	ErrNoDLQMessagesProcessed = errors.ProcessingFailed("DLQ messages", stdErrors.New("no DLQ messages processed"))
 
 	// Validation errors
 	ErrMissingRequiredField         = errors.RequiredFieldMissing("field")

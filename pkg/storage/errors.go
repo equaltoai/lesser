@@ -1,6 +1,10 @@
 package storage
 
-import "github.com/equaltoai/lesser/pkg/errors"
+import (
+	stdErrors "errors"
+
+	"github.com/equaltoai/lesser/pkg/errors"
+)
 
 // Legacy error variables for backwards compatibility
 // These are now wrappers around the centralized error system
@@ -38,28 +42,28 @@ var (
 	ErrBudgetLimitsInvalid        = errors.BudgetLimitsInvalid()
 	ErrModerationThresholdInvalid = errors.ModerationThresholdInvalid()
 	ErrInvalidQualitySetting      = errors.InvalidQualitySetting()
-	ErrPlanUpgradeFailed          = errors.PlanUpgradeFailed(nil)
+	ErrPlanUpgradeFailed          = errors.PlanUpgradeFailed(stdErrors.New("plan upgrade failed"))
 	ErrUserIDRequired             = errors.UserIDRequired()
 
 	// Enhanced Pattern Repository specific errors
 	ErrPatternNotFound               = errors.PatternNotFound()
-	ErrPatternSaveFailed             = errors.PatternSaveFailed(nil)
-	ErrPatternCreateFailed           = errors.PatternCreateFailed(nil)
-	ErrPatternUpdateFailed           = errors.PatternUpdateFailed(nil)
-	ErrPatternDeleteFailed           = errors.PatternDeleteFailed(nil)
-	ErrPatternQueryFailed            = errors.PatternQueryFailed(nil)
+	ErrPatternSaveFailed             = errors.PatternSaveFailed(stdErrors.New("pattern save failed"))
+	ErrPatternCreateFailed           = errors.PatternCreateFailed(stdErrors.New("pattern create failed"))
+	ErrPatternUpdateFailed           = errors.PatternUpdateFailed(stdErrors.New("pattern update failed"))
+	ErrPatternDeleteFailed           = errors.PatternDeleteFailed(stdErrors.New("pattern delete failed"))
+	ErrPatternQueryFailed            = errors.PatternQueryFailed(stdErrors.New("pattern query failed"))
 	ErrPatternCacheNotFound          = errors.PatternCacheNotFound()
-	ErrPatternCacheCreateFailed      = errors.PatternCacheCreateFailed(nil)
-	ErrPatternCacheUpdateFailed      = errors.PatternCacheUpdateFailed(nil)
-	ErrPatternMetricsCreateFailed    = errors.PatternMetricsCreateFailed(nil)
-	ErrPatternMetricsUpdateFailed    = errors.PatternMetricsUpdateFailed(nil)
-	ErrPatternTestResultCreateFailed = errors.PatternTestResultCreateFailed(nil)
-	ErrPatternTestResultQueryFailed  = errors.PatternTestResultQueryFailed(nil)
+	ErrPatternCacheCreateFailed      = errors.PatternCacheCreateFailed(stdErrors.New("pattern cache create failed"))
+	ErrPatternCacheUpdateFailed      = errors.PatternCacheUpdateFailed(stdErrors.New("pattern cache update failed"))
+	ErrPatternMetricsCreateFailed    = errors.PatternMetricsCreateFailed(stdErrors.New("pattern metrics create failed"))
+	ErrPatternMetricsUpdateFailed    = errors.PatternMetricsUpdateFailed(stdErrors.New("pattern metrics update failed"))
+	ErrPatternTestResultCreateFailed = errors.PatternTestResultCreateFailed(stdErrors.New("pattern test result create failed"))
+	ErrPatternTestResultQueryFailed  = errors.PatternTestResultQueryFailed(stdErrors.New("pattern test result query failed"))
 	ErrPatternTestResultNotFound     = errors.PatternTestResultNotFound()
-	ErrPatternMetricsQueryFailed     = errors.PatternMetricsQueryFailed(nil)
-	ErrPatternAnalysisFailed         = errors.PatternAnalysisFailed(nil)
+	ErrPatternMetricsQueryFailed     = errors.PatternMetricsQueryFailed(stdErrors.New("pattern metrics query failed"))
+	ErrPatternAnalysisFailed         = errors.PatternAnalysisFailed(stdErrors.New("pattern analysis failed"))
 	ErrPatternValidationFailed       = errors.PatternValidationFailed("")
-	ErrDatabaseConnectionFailed      = errors.DatabaseConnectionFailed(nil)
+	ErrDatabaseConnectionFailed      = errors.DatabaseConnectionFailed(stdErrors.New("database connection failed"))
 	ErrNilPattern                    = errors.NilPattern()
 	ErrNilPatternCache               = errors.NilPatternCache()
 	ErrNilPatternMetric              = errors.NilPatternMetric()

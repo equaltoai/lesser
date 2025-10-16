@@ -770,6 +770,63 @@ func (r *HashtagRepository) IsFollowingHashtag(ctx context.Context, userID strin
 	return exists, nil
 }
 
+// GetHashtagFollow retrieves the hashtag follow record for a user
+func (r *HashtagRepository) GetHashtagFollow(ctx context.Context, userID string, hashtag string) (*models.HashtagFollow, error) {
+	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
+	pk := fmt.Sprintf("USER#%s", userID)
+	sk := fmt.Sprintf("HASHTAG_FOLLOW#%s", tagLower)
+
+	var follow models.HashtagFollow
+	err := r.db.WithContext(ctx).Model(&models.HashtagFollow{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&follow)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil // Not found is not an error - user just isn't following
+		}
+		r.logger.Error("failed to get hashtag follow record",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tagLower),
+			zap.Error(err))
+		return nil, ErrorHandler.HandleGetError(err, "hashtag follow", tagLower)
+	}
+
+	return &follow, nil
+}
+
+// GetHashtagMute retrieves the hashtag mute record for a user
+func (r *HashtagRepository) GetHashtagMute(ctx context.Context, userID string, hashtag string) (*models.HashtagMute, error) {
+	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
+	pk := fmt.Sprintf("USER#%s", userID)
+	sk := fmt.Sprintf("HASHTAG_MUTE#%s", tagLower)
+
+	var mute models.HashtagMute
+	err := r.db.WithContext(ctx).Model(&models.HashtagMute{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&mute)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil // Not found is not an error - hashtag just isn't muted
+		}
+		r.logger.Error("failed to get hashtag mute record",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tagLower),
+			zap.Error(err))
+		return nil, ErrorHandler.HandleGetError(err, "hashtag mute", tagLower)
+	}
+
+	// Check if TTL has expired
+	if mute.TTL > 0 && time.Now().Unix() > mute.TTL {
+		return nil, nil // Mute has expired
+	}
+
+	return &mute, nil
+}
+
 // GetFollowedHashtags retrieves hashtags followed by a user
 func (r *HashtagRepository) GetFollowedHashtags(_ context.Context, userID string, limit int, cursor string) ([]string, string, error) {
 	if limit <= 0 || limit > 100 {

@@ -58,6 +58,7 @@ type RepositoryStorage interface {
 	OAuth() *repositories.OAuthRepository
 	DNSCache() *repositories.DNSCacheRepository
 	Filter() *repositories.FilterRepository
+	Thread() *repositories.ThreadRepository
 
 	// Utility methods
 	GetDB() dynamormCore.DB

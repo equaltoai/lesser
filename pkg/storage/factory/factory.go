@@ -73,6 +73,7 @@ type RepositoryFactory struct {
 	oauthRepo               *repositories.OAuthRepository
 	dnsCacheRepo            *repositories.DNSCacheRepository
 	filterRepo              *repositories.FilterRepository
+	threadRepo              *repositories.ThreadRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -112,6 +113,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.likeRepo = repositories.NewLikeRepository(f.db, f.tableName, f.logger)
 	f.moderationRepo = repositories.NewModerationRepository(f.db, f.tableName, f.logger)
 	f.filterRepo = repositories.NewFilterRepository(f.db, f.tableName, f.logger, nil)
+	f.threadRepo = repositories.NewThreadRepository(f.db, f.logger)
 	f.listRepo = repositories.NewListRepository(f.db, f.tableName, f.logger, nil)
 	f.mediaRepo = repositories.NewMediaRepository(f.db, f.tableName, f.logger, nil)
 	f.pollRepo = repositories.NewPollRepository(f.db, f.tableName, f.logger, nil)
@@ -439,6 +441,11 @@ func (f *RepositoryFactory) DNSCache() *repositories.DNSCacheRepository {
 // Filter returns the Filter repository instance
 func (f *RepositoryFactory) Filter() *repositories.FilterRepository {
 	return f.filterRepo
+}
+
+// Thread returns the Thread repository instance
+func (f *RepositoryFactory) Thread() *repositories.ThreadRepository {
+	return f.threadRepo
 }
 
 // Additional repositories can be added here as needed

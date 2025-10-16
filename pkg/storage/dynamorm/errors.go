@@ -1,6 +1,7 @@
 package dynamorm
 
 import (
+	stdErrors "errors"
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/errors"
@@ -16,7 +17,7 @@ var (
 	ErrThrottling = errors.DynamoDBProvisionedThroughputExceeded()
 
 	// ErrResourceNotFound is returned when a DynamoDB resource is not found
-	ErrResourceNotFound = errors.DatabaseUnavailable(nil)
+	ErrResourceNotFound = errors.DatabaseUnavailable(stdErrors.New("database resource not found"))
 
 	// ErrInternal is returned for internal errors
 	ErrInternal = errors.NewStorageError(errors.CodeInternal, "internal error")
@@ -25,10 +26,10 @@ var (
 	ErrInvalidKey = errors.InvalidFormat("key", "valid key format")
 
 	// ErrBatchOperationFailed is returned when a batch operation fails
-	ErrBatchOperationFailed = errors.BatchOperationFailed("", nil)
+	ErrBatchOperationFailed = errors.BatchOperationFailed("batch operation", stdErrors.New("batch operation failed"))
 
 	// ErrTransactionCanceled is returned when a transaction is canceled
-	ErrTransactionCanceled = errors.TransactionFailed(nil)
+	ErrTransactionCanceled = errors.TransactionFailed(stdErrors.New("transaction was canceled"))
 
 	// ErrValidation is returned when validation fails
 	ErrValidation = errors.NewValidationError("", "validation failed")

@@ -404,6 +404,14 @@ func (m *MockRepoStorage) DNSCache() *repositories.DNSCacheRepository {
 	return args.Get(0).(*repositories.DNSCacheRepository)
 }
 
+func (m *MockRepoStorage) Thread() *repositories.ThreadRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.ThreadRepository)
+}
+
 func (m *MockRepoStorage) Filter() *repositories.FilterRepository {
 	args := m.Called()
 	if args.Get(0) == nil {

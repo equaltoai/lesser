@@ -1,6 +1,10 @@
 package main
 
-import "github.com/equaltoai/lesser/pkg/errors"
+import (
+	stdErrors "errors"
+
+	"github.com/equaltoai/lesser/pkg/errors"
+)
 
 // Stream router error functions using centralized error system
 
@@ -25,17 +29,17 @@ func HandlerNotInitialized() *errors.AppError {
 
 // AllRecordsFailedProcessing creates an error indicating all records in a batch failed processing.
 func AllRecordsFailedProcessing() *errors.AppError {
-	return errors.SQSBatchProcessingFailed(0, 0, nil).WithMetadata("reason", "all records failed")
+	return errors.SQSBatchProcessingFailed(0, 0, stdErrors.New("all records in batch failed to process")).WithMetadata("reason", "all records failed")
 }
 
 // BroadcastToAllFollowersFailed creates an error indicating broadcasting to all followers failed.
 func BroadcastToAllFollowersFailed() *errors.AppError {
-	return errors.StreamingEventProcessingFailed("follower_broadcast", nil)
+	return errors.StreamingEventProcessingFailed("follower_broadcast", stdErrors.New("failed to broadcast to followers"))
 }
 
 // SendToAllConnectionsFailed creates an error indicating sending to all connections failed.
 func SendToAllConnectionsFailed() *errors.AppError {
-	return errors.StreamingEventProcessingFailed("connection_broadcast", nil)
+	return errors.StreamingEventProcessingFailed("connection_broadcast", stdErrors.New("failed to send to all connections"))
 }
 
 // Data validation errors

@@ -264,56 +264,56 @@ func TestService_UploadMedia_ValidationErrors(t *testing.T) {
 			modifyCmd: func(cmd *UploadMediaCommand) {
 				cmd.UserID = ""
 			},
-			expectedErr: "user_id is required",
+			expectedErr: "validation failed for user_id",
 		},
 		{
 			name: "missing file name",
 			modifyCmd: func(cmd *UploadMediaCommand) {
 				cmd.FileName = ""
 			},
-			expectedErr: "file_name is required",
+			expectedErr: "validation failed for file_name",
 		},
 		{
 			name: "missing content type",
 			modifyCmd: func(cmd *UploadMediaCommand) {
 				cmd.ContentType = ""
 			},
-			expectedErr: "content_type is required",
+			expectedErr: "validation failed for content_type",
 		},
 		{
 			name: "empty file data",
 			modifyCmd: func(cmd *UploadMediaCommand) {
 				cmd.FileData = []byte{}
 			},
-			expectedErr: "file_data is required",
+			expectedErr: "required",
 		},
 		{
 			name: "file too large",
 			modifyCmd: func(cmd *UploadMediaCommand) {
 				cmd.FileData = make([]byte, 51*1024*1024) // 51MB
 			},
-			expectedErr: "file size",
+			expectedErr: "too large",
 		},
 		{
 			name: "unsupported content type",
 			modifyCmd: func(cmd *UploadMediaCommand) {
 				cmd.ContentType = "application/pdf"
 			},
-			expectedErr: "unsupported content type",
+			expectedErr: "Content type is not allowed",
 		},
 		{
 			name: "description too long",
 			modifyCmd: func(cmd *UploadMediaCommand) {
 				cmd.Description = strings.Repeat("a", 1501)
 			},
-			expectedErr: "description too long",
+			expectedErr: "cannot be longer than 1500 characters",
 		},
 		{
 			name: "invalid focus point",
 			modifyCmd: func(cmd *UploadMediaCommand) {
 				cmd.Focus = "invalid"
 			},
-			expectedErr: "invalid focus point format",
+			expectedErr: "Focus point format must be",
 		},
 	}
 
@@ -345,7 +345,7 @@ func TestService_UploadMedia_RepositoryError(t *testing.T) {
 	// Assertions
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "failed to store media record")
+	assert.Contains(t, err.Error(), "Failed to store media record")
 	assert.Contains(t, err.Error(), "database error")
 
 	mediaRepo.AssertExpectations(t)
@@ -398,28 +398,28 @@ func TestService_UpdateMedia_ValidationErrors(t *testing.T) {
 			modifyCmd: func(cmd *UpdateMediaCommand) {
 				cmd.MediaID = ""
 			},
-			expectedErr: "media_id is required",
+			expectedErr: "validation failed for media_id",
 		},
 		{
 			name: "missing user ID",
 			modifyCmd: func(cmd *UpdateMediaCommand) {
 				cmd.UserID = ""
 			},
-			expectedErr: "user_id is required",
+			expectedErr: "validation failed for user_id",
 		},
 		{
 			name: "description too long",
 			modifyCmd: func(cmd *UpdateMediaCommand) {
 				cmd.Description = strings.Repeat("a", 1501)
 			},
-			expectedErr: "description too long",
+			expectedErr: "cannot be longer than 1500 characters",
 		},
 		{
 			name: "invalid focus point",
 			modifyCmd: func(cmd *UpdateMediaCommand) {
 				cmd.Focus = "invalid"
 			},
-			expectedErr: "invalid focus point format",
+			expectedErr: "Focus point format must be",
 		},
 	}
 
@@ -451,7 +451,7 @@ func TestService_UpdateMedia_NotFound(t *testing.T) {
 	// Assertions
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "failed to get media")
+	assert.Contains(t, err.Error(), "Failed to retrieve media")
 
 	mediaRepo.AssertExpectations(t)
 }
@@ -473,7 +473,7 @@ func TestService_UpdateMedia_Unauthorized(t *testing.T) {
 	// Assertions
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "unauthorized")
+	assert.Contains(t, err.Error(), "Insufficient permissions")
 
 	mediaRepo.AssertExpectations(t)
 }
@@ -527,7 +527,7 @@ func TestService_GetMedia_NotReady(t *testing.T) {
 	// Assertions
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "media not ready for viewing")
+	assert.Contains(t, err.Error(), "Media attachment not ready")
 
 	mediaRepo.AssertExpectations(t)
 }

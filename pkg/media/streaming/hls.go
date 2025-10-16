@@ -660,7 +660,7 @@ type iFramePlaylistParser struct {
 func (g *HLSGenerator) newIFramePlaylistParser() *iFramePlaylistParser {
 	return &iFramePlaylistParser{
 		extinfRegex:    regexp.MustCompile(`#EXTINF:([0-9.]+),`),
-		byteRangeRegex: regexp.MustCompile(`#EXT-X-BYTERANGE:(\\d+)@(\\d+)`),
+		byteRangeRegex: regexp.MustCompile(`#EXT-X-BYTERANGE:(\d+)@(\d+)`),
 	}
 }
 

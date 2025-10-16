@@ -465,3 +465,12 @@ func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository {
 	}
 	return args.Get(0).(*repositories.FilterRepository)
 }
+
+// Thread returns a mock thread repository for testing
+func (m *MockRepositoryStorage) Thread() *repositories.ThreadRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.ThreadRepository)
+}

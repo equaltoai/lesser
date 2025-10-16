@@ -467,29 +467,29 @@ errors:
 ## Run all tests
 test:
 	@echo "Running tests..."
-	@go test -v ./...
+	@JWT_SECRET=$${JWT_SECRET:-dummy_value} DYNAMODB_ENCRYPTION_KEY=$${DYNAMODB_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef} go test -v ./...
 
 ## Run tests with coverage
 test-coverage:
 	@echo "Running tests with coverage..."
-	@go test -v -coverprofile=coverage.out ./...
+	@JWT_SECRET=$${JWT_SECRET:-dummy_value} DYNAMODB_ENCRYPTION_KEY=$${DYNAMODB_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef} go test -v -coverprofile=coverage.out ./...
 	@go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
 ## Run tests with race detection
 test-race:
 	@echo "Running tests with race detection..."
-	@go test -race -v ./...
+	@JWT_SECRET=$${JWT_SECRET:-dummy_value} go test -race -v ./...
 
 ## Run integration tests
 test-integration:
 	@echo "Running integration tests..."
-	@TEST_ENV=integration go test -tags=integration -v -timeout=30m ./pkg/testing/harness/...
+	@JWT_SECRET=$${JWT_SECRET:-dummy_value} TEST_ENV=integration go test -tags=integration -v -timeout=30m ./pkg/testing/harness/...
 
 ## Run unit tests only
 test-unit:
 	@echo "Running unit tests only..."
-	@go test -short -v ./...
+	@JWT_SECRET=$${JWT_SECRET:-dummy_value} go test -short -v ./...
 
 # =============================================================================
 # CODE QUALITY

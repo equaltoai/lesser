@@ -285,7 +285,7 @@ func TestSimpleValidation(t *testing.T) {
 	result, err := service.Follow(ctx, cmd)
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "follower_id is required")
+	assert.Contains(t, err.Error(), "validation failed for follower_id")
 
 	// Test self-follow
 	cmd = &FollowCommand{
@@ -296,5 +296,5 @@ func TestSimpleValidation(t *testing.T) {
 	result, err = service.Follow(ctx, cmd)
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "cannot follow themselves")
+	assert.Contains(t, err.Error(), "Cannot perform operation on self")
 }

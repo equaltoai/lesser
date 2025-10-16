@@ -585,7 +585,7 @@ func createTestService() (*Service, *MockNoteRepository, *MockAccountRepository,
 	// For testing, we'll use nil repositories since most tests focus on business logic
 	// The individual repository methods will need separate testing
 	service := NewService(
-		nil, // noteRepo - tests will need to be updated to not rely on repository mocking
+		nil, // StatusRepository - tests focus on business logic, not repository implementation
 		accountRepo,
 		relationshipRepo, // Add the concrete relationship repository
 		likeRepo,
@@ -707,7 +707,7 @@ func TestCreateNote_ValidationError(t *testing.T) {
 				Content:    "   ",
 				Visibility: models.VisibilityPublic,
 			},
-			wantErr: "content cannot be empty",
+			wantErr: "is required",
 		},
 		{
 			name: "content too long",
@@ -793,7 +793,7 @@ func TestUpdateNote_UnauthorizedUser(t *testing.T) {
 
 	// Assert
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unauthorized")
+	assert.Contains(t, err.Error(), "Access denied")
 
 	// Verify mocks
 	noteRepo.AssertExpectations(t)

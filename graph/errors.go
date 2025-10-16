@@ -1,6 +1,7 @@
 package graph
 
 import (
+	stdErrors "errors"
 	"fmt"
 
 	"github.com/equaltoai/lesser/pkg/errors"
@@ -73,22 +74,22 @@ var (
 	ErrNoDomainInURL                = errors.NewValidationError("url", "no domain found")
 
 	// Content processing errors
-	ErrUnableToConvertObject      = errors.ProcessingFailed("object conversion", nil)
+	ErrUnableToConvertObject      = errors.ProcessingFailed("object conversion", stdErrors.New("failed to convert object"))
 	ErrStatusIsNotNote            = errors.NewValidationError("status_type", "is not a note")
-	ErrCannotDetermineOwnership   = errors.ProcessingFailed("ownership determination", nil)
+	ErrCannotDetermineOwnership   = errors.ProcessingFailed("ownership determination", stdErrors.New("failed to determine ownership"))
 	ErrUnexpectedStatsType        = errors.NewValidationError("stats_type", "unexpected type from AI service")
 	ErrCacheMiss                  = errors.NewAppError(errors.CodeNotFound, errors.CategoryInternal, "cache miss")
-	ErrNoteCreationReturnedNoNote = errors.ProcessingFailed("note creation", nil)
+	ErrNoteCreationReturnedNoNote = errors.ProcessingFailed("note creation", stdErrors.New("note creation returned no note"))
 
 	// Federation errors
 	ErrFederationFetchRepliesUnavailable = errors.ServiceUnavailable("federation fetch replies")
 
 	// Helper operation errors
-	ErrSocialActionFailed   = errors.ProcessingFailed("social action", nil)
-	ErrSocialUndoFailed     = errors.ProcessingFailed("social undo action", nil)
-	ErrListMembershipFailed = errors.ProcessingFailed("list membership operation", nil)
-	ErrNoAccountsProcessed  = errors.ProcessingFailed("account processing", nil)
-	ErrGetUpdatedListFailed = errors.ProcessingFailed("get updated list", nil)
+	ErrSocialActionFailed   = errors.ProcessingFailed("social action", stdErrors.New("social action failed"))
+	ErrSocialUndoFailed     = errors.ProcessingFailed("social undo action", stdErrors.New("social undo action failed"))
+	ErrListMembershipFailed = errors.ProcessingFailed("list membership operation", stdErrors.New("list membership operation failed"))
+	ErrNoAccountsProcessed  = errors.ProcessingFailed("account processing", stdErrors.New("no accounts processed"))
+	ErrGetUpdatedListFailed = errors.ProcessingFailed("get updated list", stdErrors.New("failed to get updated list"))
 
 	// Subscription manager errors
 	ErrSubscriptionManagerAlreadyRunning    = errors.InvalidStateForOperation("not running", "start subscription manager")
@@ -152,7 +153,7 @@ func ErrSocialUndoFailedWithContext(actionName string, err error) *errors.AppErr
 
 // ErrListMembershipFailedWithAction returns an error for when list membership operations fail with a specific action.
 func ErrListMembershipFailedWithAction(actionName string) *errors.AppError {
-	return errors.ProcessingFailed("list membership operation", nil).WithMetadata("action", actionName)
+	return errors.ProcessingFailed("list membership operation", stdErrors.New("list membership operation failed")).WithMetadata("action", actionName)
 }
 
 // ErrGetUpdatedListFailedWithContext returns an error for when getting an updated list fails with additional context.

@@ -1,7 +1,11 @@
 // Package main implements error handlers for the inbox Lambda function.
 package main
 
-import "github.com/equaltoai/lesser/pkg/errors"
+import (
+	stdErrors "errors"
+
+	"github.com/equaltoai/lesser/pkg/errors"
+)
 
 // Database and initialization errors - using Lambda domain functions
 
@@ -63,14 +67,14 @@ func dmNoRecipientsError() *errors.AppError {
 //
 //nolint:unused
 func requestConversionError() *errors.AppError {
-	return errors.ProcessingFailed("HTTP request conversion", nil)
+	return errors.ProcessingFailed("HTTP request conversion", stdErrors.New("failed to convert HTTP request"))
 }
 
 // createRequestError creates an error when HTTP request creation fails.
 //
 //nolint:unused
 func createRequestError() *errors.AppError {
-	return errors.ProcessingFailed("HTTP request creation", nil)
+	return errors.ProcessingFailed("HTTP request creation", stdErrors.New("failed to create HTTP request"))
 }
 
 // fetchActorError creates an error when actor fetch fails.
@@ -267,7 +271,7 @@ func extractUsernameError() *errors.AppError {
 
 // verifyMoveAuthError creates an error when cannot verify move authorization via alsoKnownAs.
 func verifyMoveAuthError() *errors.AppError {
-	return errors.ProcessingFailed("move authorization verification", nil)
+	return errors.ProcessingFailed("move authorization verification", stdErrors.New("failed to verify move authorization"))
 }
 
 // moveNotAuthorizedError creates an error when move is not authorized.
