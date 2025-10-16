@@ -224,11 +224,11 @@ func (r *queryResolver) ModerationPatterns(ctx context.Context, activeOnly *bool
 		// Convert model.ModerationSeverity to string
 		switch *severity {
 		case model.ModerationSeverityLow:
-			severityStr = "low"
+			severityStr = SeverityLow
 		case model.ModerationSeverityMedium:
-			severityStr = "medium"
+			severityStr = SeverityMedium
 		case model.ModerationSeverityHigh:
-			severityStr = "high"
+			severityStr = SeverityHigh
 		case model.ModerationSeverityCritical:
 			severityStr = "critical"
 		}

@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
-	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/media"
 	"go.uber.org/zap"
 )
@@ -62,33 +63,90 @@ func (r *mutationResolver) RequestStreamingURL(ctx context.Context, mediaID stri
 		return nil, ErrMediaServiceUnavailable
 	}
 
-	// Get streaming URL from media service
-	stream, err := mediaSvc.GetStreamingURL(ctx, mediaID)
+	// Convert quality enum to string if provided
+	var qualityStr *string
+	if quality != nil {
+		str := strings.ToLower(string(*quality))
+		// Map enum values to quality strings
+		switch *quality {
+		case model.StreamQualityLow:
+			str = "480p"
+		case model.StreamQualityMedium:
+			str = "720p"
+		case model.StreamQualityHigh:
+			str = "1080p"
+		case model.StreamQualityUltra:
+			str = "2160p"
+		case model.StreamQualityAuto:
+			qualityStr = nil // Auto-select quality
+		}
+		if qualityStr == nil && *quality != model.StreamQualityAuto {
+			qualityStr = &str
+		}
+	}
+
+	// Generate signed streaming URL
+	session, err := mediaSvc.GenerateSignedStreamURL(ctx, mediaID, qualityStr)
 	if err != nil {
-		r.Logger.Error("failed to get streaming URL",
+		r.Logger.Error("failed to generate signed streaming URL",
 			zap.String("user", username),
 			zap.String("media_id", mediaID),
 			zap.Error(err))
-		return nil, errors.Join(errors.New("failed to get streaming URL"), err)
+		return nil, errors.Join(errors.New("failed to generate signed streaming URL"), err)
 	}
 
-	// Filter bitrates by requested quality if specified
-	if quality != nil && stream.Bitrates != nil {
-		var filteredBitrates []*model.Bitrate
-		for _, bitrate := range stream.Bitrates {
-			if bitrate.Quality == *quality {
-				filteredBitrates = append(filteredBitrates, bitrate)
-				break // Return only the matching quality
+	// Get media renditions for additional metadata
+	renditions, err := mediaSvc.GetMediaRenditions(ctx, mediaID)
+	if err != nil {
+		r.Logger.Warn("failed to get media renditions",
+			zap.String("media_id", mediaID),
+			zap.Error(err))
+		// Continue with session info only
+	}
+
+	// Build MediaStream response
+	stream := &model.MediaStream{
+		ID:        mediaID,
+		URL:       session.URL,
+		ExpiresAt: model.Time(session.ExpiresAt),
+	}
+
+	// Add thumbnail if available
+	if renditions != nil && len(renditions.ThumbnailURLs) > 0 {
+		stream.ThumbnailURL = renditions.ThumbnailURLs[0]
+	}
+
+	// Add bitrates
+	if renditions != nil {
+		bitrates := make([]*model.Bitrate, 0, len(renditions.Variants))
+		for _, variant := range renditions.Variants {
+			qualityEnum := mapQualityToEnum(variant.Quality)
+			// Filter by requested quality if specified
+			if quality != nil && qualityEnum != *quality {
+				continue
 			}
+			bitrate := &model.Bitrate{
+				Quality:       qualityEnum,
+				BitsPerSecond: variant.Bitrate,
+				Width:         variant.Width,
+				Height:        variant.Height,
+				Codec:         variant.Codec,
+			}
+			bitrates = append(bitrates, bitrate)
 		}
-		if err := common.ValidateSliceNotEmpty("filtered_bitrates", filteredBitrates); err == nil {
-			stream.Bitrates = filteredBitrates
-		}
+		stream.Bitrates = bitrates
+	}
+
+	// Get duration from media record
+	media, err := r.Storage.Media().GetMedia(ctx, mediaID)
+	if err == nil && media != nil {
+		stream.Duration = media.Duration
 	}
 
 	r.Logger.Info("streaming URL requested",
 		zap.String("user", username),
-		zap.String("media_id", mediaID))
+		zap.String("media_id", mediaID),
+		zap.Any("quality", quality))
 
 	return stream, nil
 }
@@ -106,37 +164,74 @@ func (r *mutationResolver) PreloadMedia(ctx context.Context, mediaIDs []string) 
 		return nil, ErrMediaServiceUnavailable
 	}
 
-	// Preload media for faster streaming
-	var streams []*model.MediaStream
-	var preloadErrors []error
-
-	for _, mediaID := range mediaIDs {
-		// Get streaming URL for each media
-		stream, err := mediaSvc.GetStreamingURL(ctx, mediaID)
-		if err != nil {
-			r.Logger.Warn("failed to preload media",
-				zap.String("user", username),
-				zap.String("media_id", mediaID),
-				zap.Error(err))
-			preloadErrors = append(preloadErrors, err)
-			// Continue processing other media items
-			continue
-		}
-		streams = append(streams, stream)
+	// Preload media manifests and prime CDN cache
+	successfulIDs, err := mediaSvc.PreloadMedia(ctx, mediaIDs)
+	if err != nil {
+		r.Logger.Error("failed to preload media",
+			zap.String("user", username),
+			zap.Int("requested", len(mediaIDs)),
+			zap.Error(err))
+		return nil, errors.Join(errors.New("failed to preload media"), err)
 	}
 
-	// If all preloads failed, return error
-	streamsEmpty := common.ValidateSliceNotEmpty("streams", streams) != nil
-	errorsNotEmpty := common.ValidateSliceNotEmpty("errors", preloadErrors) == nil
-	if streamsEmpty && errorsNotEmpty {
-		return nil, errors.Join(errors.New("failed to preload any media"), preloadErrors[0])
+	// Build response streams for successfully preloaded media
+	var streams []*model.MediaStream
+	for _, mediaID := range successfulIDs {
+		// Get renditions for each preloaded media
+		renditions, err := mediaSvc.GetMediaRenditions(ctx, mediaID)
+		if err != nil {
+			r.Logger.Warn("failed to get renditions for preloaded media",
+				zap.String("media_id", mediaID),
+				zap.Error(err))
+			continue
+		}
+
+		stream := &model.MediaStream{
+			ID:        mediaID,
+			URL:       renditions.HLSMasterURL,
+			ExpiresAt: model.Time(time.Now().Add(24 * time.Hour)),
+		}
+
+		// Set HLS and DASH URLs
+		if renditions.HLSMasterURL != "" {
+			stream.HlsPlaylistURL = &renditions.HLSMasterURL
+		}
+		if renditions.DASHManifestURL != "" {
+			stream.DashManifestURL = &renditions.DASHManifestURL
+		}
+
+		// Set thumbnail
+		if len(renditions.ThumbnailURLs) > 0 {
+			stream.ThumbnailURL = renditions.ThumbnailURLs[0]
+		}
+
+		// Convert variants to bitrates
+		bitrates := make([]*model.Bitrate, 0, len(renditions.Variants))
+		for _, variant := range renditions.Variants {
+			bitrate := &model.Bitrate{
+				Quality:       mapQualityToEnum(variant.Quality),
+				BitsPerSecond: variant.Bitrate,
+				Width:         variant.Width,
+				Height:        variant.Height,
+				Codec:         variant.Codec,
+			}
+			bitrates = append(bitrates, bitrate)
+		}
+		stream.Bitrates = bitrates
+
+		// Get duration
+		media, err := r.Storage.Media().GetMedia(ctx, mediaID)
+		if err == nil && media != nil {
+			stream.Duration = media.Duration
+		}
+
+		streams = append(streams, stream)
 	}
 
 	r.Logger.Info("media preloaded",
 		zap.String("user", username),
 		zap.Int("requested", len(mediaIDs)),
-		zap.Int("loaded", len(streams)),
-		zap.Int("failed", len(preloadErrors)))
+		zap.Int("loaded", len(streams)))
 
 	return streams, nil
 }

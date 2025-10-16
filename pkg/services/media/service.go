@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/common"
 	mediaprocessor "github.com/equaltoai/lesser/pkg/media"
+	"github.com/equaltoai/lesser/pkg/services/media/transcoding"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -25,14 +26,17 @@ import (
 
 // Service provides media operations
 type Service struct {
-	mediaRepo   interfaces.MediaRepository
-	accountRepo interfaces.AccountRepository
-	publisher   streaming.Publisher
-	jobQueue    JobQueueService
-	logger      *zap.Logger
-	s3Bucket    string
-	cdnDomain   string
-	maxFileSize int64 // Maximum file size in bytes
+	mediaRepo         interfaces.MediaRepository
+	accountRepo       interfaces.AccountRepository
+	publisher         streaming.Publisher
+	jobQueue          JobQueueService
+	logger            *zap.Logger
+	s3Bucket          string
+	cdnDomain         string
+	maxFileSize       int64 // Maximum file size in bytes
+	transcoder        *transcoding.Service
+	manifestService   *transcoding.ManifestService
+	cloudfrontService *transcoding.CloudFrontService
 }
 
 // S3Service defines the interface for S3 operations (for abstraction/mocking)
@@ -84,6 +88,21 @@ func NewService(
 		cdnDomain:   cdnDomain,
 		maxFileSize: 50 * 1024 * 1024, // 50MB default
 	}
+}
+
+// SetTranscodingService sets the transcoding service (optional)
+func (s *Service) SetTranscodingService(transcoder *transcoding.Service) {
+	s.transcoder = transcoder
+}
+
+// SetManifestService sets the manifest service (optional)
+func (s *Service) SetManifestService(manifestService *transcoding.ManifestService) {
+	s.manifestService = manifestService
+}
+
+// SetCloudFrontService sets the CloudFront service (optional)
+func (s *Service) SetCloudFrontService(cloudfrontService *transcoding.CloudFrontService) {
+	s.cloudfrontService = cloudfrontService
 }
 
 // SetMaxFileSize sets the maximum allowed file size

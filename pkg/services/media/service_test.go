@@ -136,6 +136,45 @@ func (m *MockMediaRepository) GetTotalStorageUsage(ctx context.Context) (int64, 
 	return args.Get(0).(int64), args.Error(1)
 }
 
+func (m *MockMediaRepository) CreateTranscodingJob(ctx context.Context, job *models.TranscodingJob) error {
+	args := m.Called(ctx, job)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) GetTranscodingJob(ctx context.Context, jobID string) (*models.TranscodingJob, error) {
+	args := m.Called(ctx, jobID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.TranscodingJob), args.Error(1)
+}
+
+func (m *MockMediaRepository) UpdateTranscodingJob(ctx context.Context, job *models.TranscodingJob) error {
+	args := m.Called(ctx, job)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) GetTranscodingJobsByUser(ctx context.Context, userID string, limit int) ([]*models.TranscodingJob, error) {
+	args := m.Called(ctx, userID, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.TranscodingJob), args.Error(1)
+}
+
+func (m *MockMediaRepository) GetTranscodingJobsByMedia(ctx context.Context, mediaID string, limit int) ([]*models.TranscodingJob, error) {
+	args := m.Called(ctx, mediaID, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.TranscodingJob), args.Error(1)
+}
+
+func (m *MockMediaRepository) DeleteTranscodingJob(ctx context.Context, jobID string) error {
+	args := m.Called(ctx, jobID)
+	return args.Error(0)
+}
+
 type MockJobQueueService struct {
 	mock.Mock
 }

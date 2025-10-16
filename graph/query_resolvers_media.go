@@ -45,13 +45,54 @@ func (r *queryResolver) MediaStreamURL(ctx context.Context, mediaID string) (*mo
 		return nil, ErrMediaServiceUnavailable
 	}
 
-	// Get media streaming information
-	stream, err := mediaService.GetStreamingURL(ctx, mediaID)
+	// Get media renditions (HLS/DASH manifests)
+	renditions, err := mediaService.GetMediaRenditions(ctx, mediaID)
 	if err != nil {
-		r.Logger.Error("Failed to get media streaming URL",
+		r.Logger.Error("Failed to get media renditions",
 			zap.String("media_id", mediaID),
 			zap.Error(err))
-		return nil, errors.Join(errors.New("failed to get media streaming URL"), err)
+		return nil, errors.Join(errors.New("failed to get media renditions"), err)
+	}
+
+	// Build MediaStream from renditions
+	stream := &model.MediaStream{
+		ID:        mediaID,
+		URL:       renditions.HLSMasterURL,
+		ExpiresAt: model.Time(time.Now().Add(24 * time.Hour)),
+	}
+
+	// Set HLS and DASH URLs
+	if renditions.HLSMasterURL != "" {
+		stream.HlsPlaylistURL = &renditions.HLSMasterURL
+	}
+	if renditions.DASHManifestURL != "" {
+		stream.DashManifestURL = &renditions.DASHManifestURL
+	}
+
+	// Set thumbnail URL
+	if len(renditions.ThumbnailURLs) > 0 {
+		stream.ThumbnailURL = renditions.ThumbnailURLs[0]
+	}
+
+	// Convert rendition variants to bitrates
+	bitrates := make([]*model.Bitrate, 0, len(renditions.Variants))
+	for _, variant := range renditions.Variants {
+		quality := mapQualityToEnum(variant.Quality)
+		bitrate := &model.Bitrate{
+			Quality:       quality,
+			BitsPerSecond: variant.Bitrate,
+			Width:         variant.Width,
+			Height:        variant.Height,
+			Codec:         variant.Codec,
+		}
+		bitrates = append(bitrates, bitrate)
+	}
+	stream.Bitrates = bitrates
+
+	// Set duration (get from media record)
+	media, err := r.Storage.Media().GetMedia(ctx, mediaID)
+	if err == nil && media != nil {
+		stream.Duration = media.Duration
 	}
 
 	return stream, nil
