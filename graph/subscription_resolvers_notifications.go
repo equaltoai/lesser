@@ -2,13 +2,8 @@ package graph
 
 import (
 	"context"
-	"fmt"
-	"time"
-
-	"errors"
 
 	"github.com/equaltoai/lesser/graph/model"
-	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
 
@@ -22,105 +17,73 @@ func (r *subscriptionResolver) NotificationStream(ctx context.Context, types []s
 		return nil, err
 	}
 
-	ch := make(chan *model.Notification, 100)
 	r.Logger.Info("Notification stream subscription started",
 		zap.String("user", username),
 		zap.Int("typeCount", len(types)))
 
-	internalEventBus, err := r.getEventBusForNotifications()
-	if err != nil {
+	// Use SubscriptionManager for consistent subscription handling
+	sm := r.SubscriptionManager
+	if sm == nil {
+		r.Logger.Error("subscription manager not available for notifications")
+		ch := make(chan *model.Notification)
 		close(ch)
-		return ch, err
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	filter := r.createNotificationFilter(username)
-	subscriber, err := r.subscribeToNotificationEvents(internalEventBus, username, filter)
-	if err != nil {
+	if !sm.IsRunning() {
+		r.Logger.Error("subscription manager not running for notifications")
+		ch := make(chan *model.Notification)
 		close(ch)
-		return ch, err
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	r.startNotificationEventForwarding(ctx, ch, subscriber, types)
-	return ch, nil
-}
-
-func (r *subscriptionResolver) getEventBusForNotifications() (*streaming.EventBus, error) {
-	registryEventBus := r.Registry.EventBus()
-	if registryEventBus == nil {
-		r.Logger.Error("EventBus not available for NotificationStream subscription")
-		return nil, ErrEventBusUnavailable
-	}
-
-	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
-	if internalEventBus == nil || !internalEventBus.IsRunning() {
-		r.Logger.Error("Internal EventBus not available or not running")
-		return nil, ErrInternalEventBusUnavailable
-	}
-
-	return internalEventBus, nil
-}
-
-func (r *subscriptionResolver) createNotificationFilter(username string) *streaming.EventFilter {
-	return &streaming.EventFilter{
-		Types:   []streaming.EventType{streaming.EventTypeNotification},
-		Streams: []string{fmt.Sprintf("user:notification:%s", username)},
-		UserID:  username,
-	}
-}
-
-func (r *subscriptionResolver) subscribeToNotificationEvents(eventBus *streaming.EventBus, username string, filter *streaming.EventFilter) (*streaming.Subscriber, error) {
-	subscriber, err := eventBus.Subscribe(fmt.Sprintf("notifications_%s_%d", username, time.Now().UnixNano()), filter, 100)
+	notificationChan, err := sm.SubscribeToNotifications(ctx, username)
 	if err != nil {
-		r.Logger.Error("Failed to subscribe to event bus for NotificationStream", zap.Error(err))
-		return nil, errors.Join(errors.New("failed to subscribe to event bus"), err)
+		r.Logger.Error("failed to create notification subscription",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, err
 	}
-	return subscriber, nil
+
+	// If type filtering is needed, wrap the channel
+	if len(types) > 0 {
+		filteredChan := make(chan *model.Notification, 100)
+		go r.filterNotificationsByType(ctx, notificationChan, filteredChan, types)
+		r.Logger.Info("started filtered notification subscription",
+			zap.String("user", username),
+			zap.Strings("types", types))
+		return filteredChan, nil
+	}
+
+	r.Logger.Info("started notification subscription",
+		zap.String("user", username))
+
+	return notificationChan, nil
 }
 
-func (r *subscriptionResolver) startNotificationEventForwarding(ctx context.Context, ch chan *model.Notification, subscriber *streaming.Subscriber, types []string) {
-	go func() {
-		defer func() {
-			close(ch)
-			if subscriber != nil {
-				subscriber.Close()
+// filterNotificationsByType filters notifications by type
+func (r *subscriptionResolver) filterNotificationsByType(ctx context.Context, input <-chan *model.Notification, output chan *model.Notification, types []string) {
+	defer close(output)
+
+	for {
+		select {
+		case notification, ok := <-input:
+			if !ok {
+				return
 			}
-		}()
 
-		for {
-			select {
-			case event := <-subscriber.Channel:
-				if event == nil {
+			if notification != nil && notificationMatchesTypes(notification, types) {
+				select {
+				case output <- notification:
+				case <-ctx.Done():
 					return
+				default:
+					r.Logger.Warn("Dropping notification event - filtered channel full")
 				}
-
-				notification := r.convertEventToNotification(ctx, event)
-				if notification != nil && r.shouldSendNotification(notification, types) {
-					r.sendNotification(ctx, ch, notification, event.ID)
-				}
-
-			case <-subscriber.Quit:
-				return
-			case <-ctx.Done():
-				return
 			}
+
+		case <-ctx.Done():
+			return
 		}
-	}()
-}
-
-// convertEventToNotification is now defined in schema.resolvers.go to avoid duplication
-
-func (r *subscriptionResolver) shouldSendNotification(notification *model.Notification, types []string) bool {
-	return len(types) == 0 || r.notificationMatchesTypes(notification, types)
-}
-
-func (r *subscriptionResolver) sendNotification(ctx context.Context, ch chan *model.Notification, notification *model.Notification, eventID string) {
-	select {
-	case ch <- notification:
-	case <-ctx.Done():
-		return
-	default:
-		r.Logger.Warn("Dropping notification event - channel full", zap.String("event_id", eventID))
 	}
 }
-
-// notificationMatchesTypes is now defined in schema.resolvers.go to avoid duplication

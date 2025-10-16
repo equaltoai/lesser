@@ -29,9 +29,19 @@ func generateID() string {
 	return hex.EncodeToString(b)
 }
 
-// stringPtr returns a pointer to a string
-func stringPtr(s string) *string {
-	return &s
+// notificationMatchesTypes checks if a notification matches one of the provided types
+func notificationMatchesTypes(notification *model.Notification, types []string) bool {
+	if len(types) == 0 {
+		return true
+	}
+
+	for _, t := range types {
+		if notification.Type == t {
+			return true
+		}
+	}
+
+	return false
 }
 
 // floatPtr returns a pointer to a float64
@@ -361,22 +371,6 @@ func (r *queryResolver) estimateStorageCost(obj any) float64 {
 	sizeBytes := float64(r.calculateObjectSize(obj))
 	sizeGB := sizeBytes / (1024 * 1024 * 1024)
 	return sizeGB * 0.25
-}
-
-// extractUsernameFromActorID extracts the username from an ActivityPub actor ID
-func extractUsernameFromActorID(actorID string) string {
-	parts := strings.Split(actorID, "/")
-	if len(parts) >= 2 && parts[len(parts)-2] == "users" {
-		return parts[len(parts)-1]
-	}
-	if len(parts) >= 1 && strings.HasPrefix(parts[len(parts)-1], "@") {
-		return strings.TrimPrefix(parts[len(parts)-1], "@")
-	}
-	parts = strings.Split(strings.TrimSuffix(actorID, "/"), "/")
-	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
-		return parts[len(parts)-1]
-	}
-	return ""
 }
 
 func (r *Resolver) convertThreadContextResultToModel(_ context.Context, result *threads.ThreadContextResult) *model.ThreadContext {

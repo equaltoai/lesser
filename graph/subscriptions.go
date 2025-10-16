@@ -126,6 +126,11 @@ func (sm *SubscriptionManager) SubscribeToTrustUpdates(ctx context.Context, acto
 	return sm.manager.SubscribeToTrustUpdates(ctx, actorID)
 }
 
+// SubscribeToNotifications creates a channel for notification updates using event bus
+func (sm *SubscriptionManager) SubscribeToNotifications(ctx context.Context, username string) (<-chan *model.Notification, error) {
+	return sm.manager.SubscribeToNotifications(ctx, username)
+}
+
 // SubscribeToAIAnalysisUpdates creates a channel for AI analysis updates using event bus
 func (sm *SubscriptionManager) SubscribeToAIAnalysisUpdates(ctx context.Context, objectID *string) (<-chan *model.AIAnalysis, error) {
 	return sm.manager.SubscribeToAIAnalysis(ctx, objectID)
@@ -144,6 +149,51 @@ func (sm *SubscriptionManager) SubscribeToMetricsUpdates(ctx context.Context, us
 // SubscribeToQuoteActivity creates a channel for quote activity updates using event bus
 func (sm *SubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string, noteObj any) (<-chan *model.QuoteActivityUpdate, error) {
 	return sm.manager.SubscribeToQuoteActivity(ctx, username, noteID, noteObj)
+}
+
+// SubscribeToListActivity creates a channel for list activity updates using event bus
+func (sm *SubscriptionManager) SubscribeToListActivity(ctx context.Context, username string, listID string) (<-chan *model.ListUpdate, error) {
+	return sm.manager.SubscribeToListActivity(ctx, username, listID)
+}
+
+// SubscribeToConversation creates a channel for conversation updates using event bus
+func (sm *SubscriptionManager) SubscribeToConversation(ctx context.Context, username string) (<-chan *model.Conversation, error) {
+	return sm.manager.SubscribeToConversation(ctx, username)
+}
+
+// SubscribeToFederationHealth creates a channel for federation health updates using event bus
+func (sm *SubscriptionManager) SubscribeToFederationHealth(ctx context.Context, username string, domain *string) (<-chan *model.FederationHealthUpdate, error) {
+	return sm.manager.SubscribeToFederationHealth(ctx, username, domain)
+}
+
+// SubscribeToRelationshipUpdates creates a channel for relationship updates using event bus
+func (sm *SubscriptionManager) SubscribeToRelationshipUpdates(ctx context.Context, username string, actorID *string) (<-chan *model.RelationshipUpdate, error) {
+	return sm.manager.SubscribeToRelationshipUpdates(ctx, username, actorID)
+}
+
+// SubscribeToBudgetAlerts creates a channel for budget alert updates using event bus
+func (sm *SubscriptionManager) SubscribeToBudgetAlerts(ctx context.Context, username string, domain *string) (<-chan *model.BudgetAlert, error) {
+	return sm.manager.SubscribeToBudgetAlerts(ctx, username, domain)
+}
+
+// SubscribeToCostAlerts creates a channel for cost alert updates using event bus
+func (sm *SubscriptionManager) SubscribeToCostAlerts(ctx context.Context, username string, thresholdUSD float64) (<-chan *model.CostAlert, error) {
+	return sm.manager.SubscribeToCostAlerts(ctx, username, thresholdUSD)
+}
+
+// SubscribeToPerformanceAlerts creates a channel for performance alert updates using event bus
+func (sm *SubscriptionManager) SubscribeToPerformanceAlerts(ctx context.Context, username string, severity model.AlertSeverity) (<-chan *model.PerformanceAlert, error) {
+	return sm.manager.SubscribeToPerformanceAlerts(ctx, username, severity)
+}
+
+// SubscribeToThreatIntelligence creates a channel for threat intelligence updates using event bus
+func (sm *SubscriptionManager) SubscribeToThreatIntelligence(ctx context.Context, username string) (<-chan *model.ThreatAlert, error) {
+	return sm.manager.SubscribeToThreatIntelligence(ctx, username)
+}
+
+// SubscribeToInfrastructureEvents creates a channel for infrastructure event updates using event bus
+func (sm *SubscriptionManager) SubscribeToInfrastructureEvents(ctx context.Context, username string) (<-chan *model.InfrastructureEvent, error) {
+	return sm.manager.SubscribeToInfrastructureEvents(ctx, username)
 }
 
 // GetStats returns statistics about active subscriptions

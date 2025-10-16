@@ -2,12 +2,8 @@ package graph
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
-	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
 
@@ -21,73 +17,35 @@ func (r *subscriptionResolver) ConversationUpdates(ctx context.Context) (<-chan 
 		return nil, err
 	}
 
-	// Create channel for streaming
-	ch := make(chan *model.Conversation, 100)
-
 	r.Logger.Info("Conversation updates subscription started",
 		zap.String("user", username))
 
-	// Get internal EventBus for real-time conversation updates
-	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
-	if internalEventBus == nil || !internalEventBus.IsRunning() {
-		r.Logger.Error("Internal EventBus not available for ConversationUpdates")
+	// Use SubscriptionManager for consistent subscription handling
+	sm := r.SubscriptionManager
+	if sm == nil {
+		r.Logger.Error("subscription manager not available for conversation updates")
+		ch := make(chan *model.Conversation)
 		close(ch)
-		return ch, ErrInternalEventBusUnavailable
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	// Subscribe to conversation events for this user
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			"conversation.update",
-			"conversation.create",
-		},
-		Streams: []string{fmt.Sprintf("user:%s", username)},
-		ActorID: username,
+	if !sm.IsRunning() {
+		r.Logger.Error("subscription manager not running for conversation updates")
+		ch := make(chan *model.Conversation)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	subscriber, err := internalEventBus.Subscribe(fmt.Sprintf("conv_%s_%d", username, time.Now().UnixNano()), filter, 100)
+	conversationChan, err := sm.SubscribeToConversation(ctx, username)
 	if err != nil {
-		r.Logger.Error("Failed to subscribe to event bus for ConversationUpdates", zap.Error(err))
-		close(ch)
-		return ch, errors.Join(errors.New("failed to subscribe to event bus"), err)
+		r.Logger.Error("failed to create conversation subscription",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, err
 	}
 
-	// Start forwarding events
-	go func() {
-		defer func() {
-			close(ch)
-			if subscriber != nil {
-				subscriber.Close()
-			}
-		}()
+	r.Logger.Info("started conversation subscription",
+		zap.String("user", username))
 
-		for {
-			select {
-			case event := <-subscriber.Channel:
-				if event == nil {
-					return
-				}
-
-				// Convert internal event to Conversation
-				conversation := r.convertEventToConversation(ctx, event)
-				if conversation != nil {
-					select {
-					case ch <- conversation:
-					case <-ctx.Done():
-						return
-					default:
-						// Drop event if channel is full
-						r.Logger.Warn("Dropping conversation event - channel full", zap.String("event_id", event.ID))
-					}
-				}
-
-			case <-subscriber.Quit:
-				return
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	return ch, nil
+	return conversationChan, nil
 }

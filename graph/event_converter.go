@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -689,4 +690,284 @@ func parseIntFromString(s string) (int64, error) {
 
 func parseFloatFromString(s string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
+}
+
+// ConvertToListUpdate converts a streaming event to a GraphQL ListUpdate
+func (ec *EventConverter) ConvertToListUpdate(event *streaming.InternalEvent) *model.ListUpdate {
+	if event == nil {
+		return nil
+	}
+
+	// For now, return a basic list update
+	// This would be enhanced based on the actual event payload structure
+	const defaultUpdateType = "updated"
+	updateType := extractStringFromData(event.Data, "update_type")
+	if updateType == "" {
+		updateType = defaultUpdateType
+	}
+
+	return &model.ListUpdate{
+		List: &model.List{
+			ID:    extractStringFromData(event.Data, "list_id"),
+			Title: extractStringFromData(event.Data, "list_title"),
+		},
+		Type:      updateType,
+		Timestamp: model.Time(event.Timestamp),
+	}
+}
+
+// ConvertToConversation converts a streaming event to a GraphQL Conversation
+func (ec *EventConverter) ConvertToConversation(event *streaming.InternalEvent) *model.Conversation {
+	if event == nil {
+		return nil
+	}
+
+	// For now, return a basic conversation
+	// This would be enhanced based on the actual event payload structure
+	return &model.Conversation{
+		ID:     extractStringFromData(event.Data, "conversation_id"),
+		Unread: extractBoolFromData(event.Data, "unread"),
+		LastStatus: &model.Object{
+			ID: extractStringFromData(event.Data, "last_status_id"),
+		},
+		Accounts:  []*activitypub.Actor{},
+		CreatedAt: model.Time(event.Timestamp),
+	}
+}
+
+// ConvertToFederationHealthUpdate converts a streaming event to a GraphQL FederationHealthUpdate
+func (ec *EventConverter) ConvertToFederationHealthUpdate(event *streaming.InternalEvent) *model.FederationHealthUpdate {
+	if event == nil {
+		return nil
+	}
+
+	// For now, return a basic health update
+	// This would be enhanced based on the actual event payload structure
+	domain := extractStringFromData(event.Data, "domain")
+	return &model.FederationHealthUpdate{
+		Domain:    domain,
+		Timestamp: model.Time(event.Timestamp),
+	}
+}
+
+// ConvertToRelationshipUpdate converts a streaming event to a GraphQL RelationshipUpdate
+func (ec *EventConverter) ConvertToRelationshipUpdate(event *streaming.InternalEvent) *model.RelationshipUpdate {
+	if event == nil {
+		return nil
+	}
+
+	// For now, return a basic relationship update
+	// This would be enhanced based on the actual event payload structure
+	const defaultUpdateType = "updated"
+	actorID := extractStringFromData(event.Data, "actor_id")
+	updateType := extractStringFromData(event.Data, "update_type")
+	if updateType == "" {
+		updateType = defaultUpdateType
+	}
+
+	return &model.RelationshipUpdate{
+		Actor: &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   actorID,
+				Type: "Person",
+			},
+			PreferredUsername: extractUsernameFromID(actorID),
+		},
+		Relationship: &model.Relationship{
+			ID:        extractStringFromData(event.Data, "relationship_id"),
+			Following: extractBoolFromData(event.Data, "following"),
+		},
+		Type:      updateType,
+		Timestamp: model.Time(event.Timestamp),
+	}
+}
+
+// Helper functions for extracting data from event payloads
+
+// extractStringFromData extracts a string value from event data
+func extractStringFromData(data interface{}, key string) string {
+	if dataMap, ok := data.(map[string]interface{}); ok {
+		if val, exists := dataMap[key]; exists {
+			if strVal, ok := val.(string); ok {
+				return strVal
+			}
+		}
+	}
+	return ""
+}
+
+// extractBoolFromData extracts a boolean value from event data
+func extractBoolFromData(data interface{}, key string) bool {
+	if dataMap, ok := data.(map[string]interface{}); ok {
+		if val, exists := dataMap[key]; exists {
+			if boolVal, ok := val.(bool); ok {
+				return boolVal
+			}
+		}
+	}
+	return false
+}
+
+// ConvertToBudgetAlert converts a streaming event to a GraphQL BudgetAlert
+func (ec *EventConverter) ConvertToBudgetAlert(event *streaming.InternalEvent) *model.BudgetAlert {
+	if event == nil {
+		return nil
+	}
+
+	data, ok := event.Data.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	// Extract budget alert data from event payload
+	alert := &model.BudgetAlert{
+		ID:         event.ID,
+		Domain:     extractStringFromData(data, "domain"),
+		SpentUsd:   extractFloatFromData(data, "spent_usd"),
+		BudgetUsd:  extractFloatFromData(data, "budget_usd"),
+		AlertLevel: model.AlertLevel(extractStringFromData(data, "alert_level")),
+	}
+
+	// Calculate percentage if not provided
+	if alert.BudgetUsd > 0 {
+		alert.PercentUsed = (alert.SpentUsd / alert.BudgetUsd) * 100
+	}
+
+	// Set timestamp
+	alert.Timestamp = model.Time(event.Timestamp)
+
+	return alert
+}
+
+// ConvertToCostAlert converts a streaming event to a GraphQL CostAlert
+func (ec *EventConverter) ConvertToCostAlert(event *streaming.InternalEvent, thresholdUSD float64) *model.CostAlert {
+	if event == nil {
+		return nil
+	}
+
+	data, ok := event.Data.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	// Extract cost from event payload
+	costUSD := extractFloatFromData(data, "cost_usd")
+
+	// Only create alert if cost exceeds threshold
+	if costUSD <= thresholdUSD {
+		return nil
+	}
+
+	// Extract service and tenant info
+	service := extractStringFromData(data, "service")
+	tenantID := extractStringFromData(data, "tenant_id")
+
+	alert := &model.CostAlert{
+		ID:        event.ID,
+		Type:      "service_threshold",
+		Amount:    costUSD,
+		Threshold: thresholdUSD,
+		Message: fmt.Sprintf("Cost alert for %s: $%.2f exceeded threshold $%.2f",
+			service, costUSD, thresholdUSD),
+		Timestamp: model.Time(event.Timestamp),
+	}
+
+	if tenantID != "" {
+		domain := tenantID
+		alert.Domain = &domain
+	}
+
+	return alert
+}
+
+// Helper to extract float from event data
+func extractFloatFromData(data map[string]interface{}, key string) float64 {
+	if val, ok := data[key]; ok {
+		switch v := val.(type) {
+		case float64:
+			return v
+		case float32:
+			return float64(v)
+		case int:
+			return float64(v)
+		case int64:
+			return float64(v)
+		}
+	}
+	return 0.0
+}
+
+// ConvertToPerformanceAlert converts a streaming event to a GraphQL PerformanceAlert
+func (ec *EventConverter) ConvertToPerformanceAlert(event *streaming.InternalEvent) *model.PerformanceAlert {
+	if event == nil {
+		return nil
+	}
+
+	data, ok := event.Data.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	// Extract performance alert data from event payload
+	alert := &model.PerformanceAlert{
+		ID:          event.ID,
+		Service:     model.ServiceCategory(extractStringFromData(data, "service")),
+		Metric:      extractStringFromData(data, "metric"),
+		Threshold:   extractFloatFromData(data, "threshold"),
+		ActualValue: extractFloatFromData(data, "actual_value"),
+		Severity:    model.AlertSeverity(extractStringFromData(data, "severity")),
+		Timestamp:   model.Time(event.Timestamp),
+	}
+
+	return alert
+}
+
+// ConvertToThreatAlert converts a streaming event to a GraphQL ThreatAlert
+func (ec *EventConverter) ConvertToThreatAlert(event *streaming.InternalEvent) *model.ThreatAlert {
+	if event == nil {
+		return nil
+	}
+
+	data, ok := event.Data.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	// Extract threat alert data from event payload
+	alert := &model.ThreatAlert{
+		ID:                event.ID,
+		Type:              extractStringFromData(data, "type"),
+		Severity:          model.ModerationSeverity(extractStringFromData(data, "severity")),
+		Source:            extractStringFromData(data, "source"),
+		Description:       extractStringFromData(data, "description"),
+		AffectedInstances: []string{},
+		MitigationSteps:   []string{},
+		Timestamp:         model.Time(event.Timestamp),
+	}
+
+	return alert
+}
+
+// ConvertToInfrastructureEvent converts a streaming event to a GraphQL InfrastructureEvent
+func (ec *EventConverter) ConvertToInfrastructureEvent(event *streaming.InternalEvent) *model.InfrastructureEvent {
+	if event == nil {
+		return nil
+	}
+
+	data, ok := event.Data.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	// Extract infrastructure event data from event payload
+	infraEvent := &model.InfrastructureEvent{
+		ID:          event.ID,
+		Type:        model.InfrastructureEventType(extractStringFromData(data, "event_type")),
+		Service:     extractStringFromData(data, "service"),
+		Description: extractStringFromData(data, "description"),
+		Impact:      extractStringFromData(data, "impact"),
+		Timestamp:   model.Time(event.Timestamp),
+	}
+
+	return infraEvent
 }

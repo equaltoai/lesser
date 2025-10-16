@@ -2,12 +2,8 @@ package graph
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
-	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
 
@@ -21,65 +17,29 @@ func (r *subscriptionResolver) BudgetAlerts(ctx context.Context, domain *string)
 		return nil, err
 	}
 
-	// Create channel for budget alerts
-	alertsChan := make(chan *model.BudgetAlert, 100)
-
-	// Use EventBus for real-time budget alerts - NO POLLING, REAL EVENTS ONLY
-	eventBus := r.Registry.EventBus()
-	if eventBus == nil {
-		return nil, ErrEventBusUnavailable
+	// Use SubscriptionManager for consistent subscription handling
+	sm := r.SubscriptionManager
+	if sm == nil {
+		r.Logger.Error("subscription manager not available for budget alerts")
+		ch := make(chan *model.BudgetAlert)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	// Subscribe to budget alert events via EventBus
-	var streamName string
-	if domain != nil {
-		streamName = fmt.Sprintf("budget_alerts:%s", *domain)
-	} else {
-		streamName = fmt.Sprintf("budget_alerts:%s", username)
+	if !sm.IsRunning() {
+		r.Logger.Error("subscription manager not running for budget alerts")
+		ch := make(chan *model.BudgetAlert)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	eventChan, err := eventBus.Subscribe(ctx, streamName)
+	alertsChan, err := sm.SubscribeToBudgetAlerts(ctx, username, domain)
 	if err != nil {
-		return nil, errors.Join(errors.New("failed to subscribe to budget alerts"), err)
+		r.Logger.Error("failed to create budget alerts subscription",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, err
 	}
-
-	// Forward events to GraphQL channel
-	go func() {
-		defer close(alertsChan)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case event, ok := <-eventChan:
-				if !ok {
-					return
-				}
-
-				// Convert event to BudgetAlert
-				if alert, ok := event.(*model.BudgetAlert); ok {
-					// Enhance alert with calculated level and message using helper functions
-					if alert.BudgetUsd > 0 && alert.SpentUsd >= 0 {
-						alert.AlertLevel = r.getBudgetAlertLevel(alert.SpentUsd, alert.BudgetUsd)
-						// Update percentage for consistency
-						alert.PercentUsed = (alert.SpentUsd / alert.BudgetUsd) * 100
-
-						// Generate descriptive message using helper function
-						alertMessage := r.getBudgetAlertMessage(alert.SpentUsd, alert.BudgetUsd)
-						r.Logger.Info("Processing budget alert",
-							zap.String("domain", alert.Domain),
-							zap.String("alert_level", string(alert.AlertLevel)),
-							zap.String("message", alertMessage))
-					}
-
-					select {
-					case alertsChan <- alert:
-					case <-ctx.Done():
-						return
-					}
-				}
-			}
-		}
-	}()
 
 	r.Logger.Info("Started budget alerts subscription",
 		zap.String("user", username),
@@ -95,60 +55,29 @@ func (r *subscriptionResolver) CostAlerts(ctx context.Context, thresholdUSD floa
 		return nil, err
 	}
 
-	// Create channel for cost alerts
-	alertsChan := make(chan *model.CostAlert, 100)
-
-	// Use EventBus to subscribe to cost events - NO POLLING, REAL EVENTS ONLY
-	eventBus := r.Registry.EventBus()
-	if eventBus == nil {
-		return nil, ErrEventBusUnavailable
+	// Use SubscriptionManager for consistent subscription handling
+	sm := r.SubscriptionManager
+	if sm == nil {
+		r.Logger.Error("subscription manager not available for cost alerts")
+		ch := make(chan *model.CostAlert)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	// Subscribe to cost events via EventBus
-	streamName := fmt.Sprintf("cost_events:%s", username)
-	eventChan, err := eventBus.Subscribe(ctx, streamName)
+	if !sm.IsRunning() {
+		r.Logger.Error("subscription manager not running for cost alerts")
+		ch := make(chan *model.CostAlert)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
+	}
+
+	alertsChan, err := sm.SubscribeToCostAlerts(ctx, username, thresholdUSD)
 	if err != nil {
-		return nil, errors.Join(errors.New("failed to subscribe to cost alerts"), err)
+		r.Logger.Error("failed to create cost alerts subscription",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, err
 	}
-
-	// Forward events to GraphQL channel
-	go func() {
-		defer close(alertsChan)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case event, ok := <-eventChan:
-				if !ok {
-					return
-				}
-
-				// The event is already the payload data (CostEventPayload) after conversion
-				// by the GraphQL EventBus adapter
-				if costPayload, ok := event.(*streaming.CostEventPayload); ok {
-					// Check if cost exceeds threshold
-					if costPayload.CostUSD > thresholdUSD {
-						alert := &model.CostAlert{
-							ID:        fmt.Sprintf("cost_alert_%d", time.Now().UnixNano()),
-							Type:      "service_threshold",
-							Amount:    costPayload.CostUSD,
-							Threshold: thresholdUSD,
-							Domain:    stringPtr(costPayload.TenantID),
-							Message: fmt.Sprintf("Cost alert for %s: $%.2f exceeded threshold $%.2f",
-								costPayload.Service, costPayload.CostUSD, thresholdUSD),
-							Timestamp: model.Time(costPayload.Timestamp),
-						}
-
-						select {
-						case alertsChan <- alert:
-						case <-ctx.Done():
-							return
-						}
-					}
-				}
-			}
-		}
-	}()
 
 	r.Logger.Info("Started cost alerts subscription",
 		zap.String("user", username),
@@ -158,21 +87,33 @@ func (r *subscriptionResolver) CostAlerts(ctx context.Context, thresholdUSD floa
 }
 
 // CostUpdates implements SubscriptionResolver
-func (r *subscriptionResolver) CostUpdates(ctx context.Context, _ *int) (<-chan *model.CostUpdate, error) {
+func (r *subscriptionResolver) CostUpdates(ctx context.Context, threshold *int) (<-chan *model.CostUpdate, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	updatesChan := make(chan *model.CostUpdate, 100)
-	eventBus := r.Registry.EventBus()
-
-	if eventBus == nil {
-		r.startFallbackCostTracking(ctx, updatesChan)
-		return updatesChan, nil
+	// Use SubscriptionManager for consistent subscription handling
+	sm := r.SubscriptionManager
+	if sm == nil {
+		r.Logger.Error("subscription manager not available for cost updates")
+		ch := make(chan *model.CostUpdate)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	if err := r.startEventBusCostTracking(ctx, eventBus, username, updatesChan); err != nil {
+	if !sm.IsRunning() {
+		r.Logger.Error("subscription manager not running for cost updates")
+		ch := make(chan *model.CostUpdate)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
+	}
+
+	updatesChan, err := sm.SubscribeToCostUpdates(ctx, username, threshold)
+	if err != nil {
+		r.Logger.Error("failed to create cost updates subscription",
+			zap.String("user", username),
+			zap.Error(err))
 		return nil, err
 	}
 
@@ -181,20 +122,35 @@ func (r *subscriptionResolver) CostUpdates(ctx context.Context, _ *int) (<-chan 
 }
 
 // MetricsUpdates implements SubscriptionResolver
-func (r *subscriptionResolver) MetricsUpdates(ctx context.Context, _ []string, _ []string, _ *float64) (<-chan *model.MetricsUpdate, error) {
+func (r *subscriptionResolver) MetricsUpdates(ctx context.Context, categories []string, services []string, threshold *float64) (<-chan *model.MetricsUpdate, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	updateChan := make(chan *model.MetricsUpdate, 100)
+	// Use SubscriptionManager for consistent subscription handling
+	sm := r.SubscriptionManager
+	if sm == nil {
+		r.Logger.Error("subscription manager not available for metrics updates")
+		ch := make(chan *model.MetricsUpdate)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
+	}
 
-	// For now, return empty channel
-	// This would be implemented with real metrics streaming
-	go func() {
-		<-ctx.Done()
-		close(updateChan)
-	}()
+	if !sm.IsRunning() {
+		r.Logger.Error("subscription manager not running for metrics updates")
+		ch := make(chan *model.MetricsUpdate)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
+	}
+
+	updateChan, err := sm.SubscribeToMetricsUpdates(ctx, username, categories, services, threshold)
+	if err != nil {
+		r.Logger.Error("failed to create metrics updates subscription",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, err
+	}
 
 	r.Logger.Info("Started metrics updates subscription",
 		zap.String("user", username))
@@ -209,14 +165,29 @@ func (r *subscriptionResolver) PerformanceAlert(ctx context.Context, severity mo
 		return nil, err
 	}
 
-	alertChan := make(chan *model.PerformanceAlert, 100)
+	// Use SubscriptionManager for consistent subscription handling
+	sm := r.SubscriptionManager
+	if sm == nil {
+		r.Logger.Error("subscription manager not available for performance alerts")
+		ch := make(chan *model.PerformanceAlert)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
+	}
 
-	// For now, return empty channel
-	// This would be implemented with real performance monitoring
-	go func() {
-		<-ctx.Done()
-		close(alertChan)
-	}()
+	if !sm.IsRunning() {
+		r.Logger.Error("subscription manager not running for performance alerts")
+		ch := make(chan *model.PerformanceAlert)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
+	}
+
+	alertChan, err := sm.SubscribeToPerformanceAlerts(ctx, username, severity)
+	if err != nil {
+		r.Logger.Error("failed to create performance alerts subscription",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, err
+	}
 
 	r.Logger.Info("Started performance alerts subscription",
 		zap.String("user", username),
