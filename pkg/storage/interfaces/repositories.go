@@ -206,6 +206,14 @@ type MediaRepository interface {
 	// Storage and CDN operations
 	GetMediaStorageUsage(ctx context.Context, userID string) (int64, error)
 	GetTotalStorageUsage(ctx context.Context) (int64, error)
+
+	// Transcoding job operations
+	CreateTranscodingJob(ctx context.Context, job *models.TranscodingJob) error
+	GetTranscodingJob(ctx context.Context, jobID string) (*models.TranscodingJob, error)
+	UpdateTranscodingJob(ctx context.Context, job *models.TranscodingJob) error
+	GetTranscodingJobsByUser(ctx context.Context, userID string, limit int) ([]*models.TranscodingJob, error)
+	GetTranscodingJobsByMedia(ctx context.Context, mediaID string, limit int) ([]*models.TranscodingJob, error)
+	DeleteTranscodingJob(ctx context.Context, jobID string) error
 }
 
 // ConversationRepository defines the interface for direct message conversation operations

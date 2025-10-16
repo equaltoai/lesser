@@ -258,83 +258,90 @@ Day 2: Subscription Implementations
 
 ---
 
-#### 2.2 Media Streaming Completion
-**Status**: 40% COMPLETE (needs HLS/DASH)  
-**Effort**: 4-5 days  
+#### 2.2 Media Streaming Completion ✅ COMPLETE
+**Status**: 100% COMPLETE  
+**Completed**: October 16, 2025  
 **Dependencies**: AWS MediaConvert, CloudFront
 
-**Missing/Incomplete Operations**:
-1. `Query.mediaStreamUrl(mediaId)` - needs HLS manifest
-2. `Query.supportedBitrates(mediaId)` - needs transcoding integration
-3. `Mutation.preloadMedia(mediaIds)` - NOT IMPLEMENTED
-4. `Mutation.requestStreamingUrl(mediaId, quality)` - incomplete
+**Implemented Operations**:
+1. ✅ `Query.mediaStreamUrl(mediaId)` - Returns HLS/DASH manifests with variants
+2. ✅ `Query.supportedBitrates(mediaId)` - Lists all transcoded quality levels
+3. ✅ `Mutation.preloadMedia(mediaIds)` - Preloads manifests and primes CDN cache
+4. ✅ `Mutation.requestStreamingUrl(mediaId, quality)` - Generates signed streaming URLs
 
-**Implementation Plan**:
+**Implementation Summary**:
 
-```
-Day 1: MediaConvert Integration
-├── Set up AWS MediaConvert job templates
-├── Create transcoding pipeline:
-│   ├── Input: S3 source video
-│   ├── Output: Multiple bitrates (480p, 720p, 1080p)
-│   ├── Format: HLS with adaptive bitrate
-│   └── Destination: S3 streaming bucket
-├── Add media processing job queue
-└── Create MediaConvert job submission service
+✅ **Completed Components**:
 
-Day 2: HLS/DASH Manifest Generation
-├── Generate HLS master playlist (.m3u8)
-├── Generate per-bitrate playlists
-├── Add DASH manifest support (.mpd)
-├── Configure segment duration (6-10 seconds)
-├── Add encryption support (optional)
-└── Store manifests in S3
+1. **AWS MediaConvert Integration** (`pkg/services/media/transcoding/service.go`)
+   - Job submission with multiple quality levels (240p-4K)
+   - HLS and DASH output generation
+   - Thumbnail generation (frame capture)
+   - Job status tracking and monitoring
+   - Cost estimation ($0.0075-$0.060/min based on quality)
+   - Duration estimation (1/5 of video length per quality)
 
-Day 3: CloudFront Distribution
-├── Create/configure CloudFront distribution
-├── Set up origin access identity
-├── Configure cache behaviors
-├── Add signed URLs for private content
-├── Configure streaming protocols
-└── Test CDN delivery
+2. **HLS/DASH Manifest Service** (`pkg/services/media/transcoding/manifest.go`)
+   - HLS master playlist generation
+   - Per-quality variant playlists
+   - DASH manifest generation (MPD format)
+   - 6-second segment duration
+   - S3 storage integration
+   - Manifest discovery and metadata
 
-Day 4: GraphQL Resolver Updates
-├── Update mediaStreamUrl resolver
-│   ├── Return HLS/DASH URLs
-│   ├── Return signed CloudFront URLs
-│   ├── Include available bitrates
-│   └── Set expiration times
-├── Implement supportedBitrates resolver
-│   ├── Get transcoded versions
-│   ├── Return quality options
-│   └── Include codec info
-├── Implement preloadMedia mutation
-│   ├── Prefetch manifests
-│   ├── Prime CDN cache
-│   └── Return preload status
-└── Update requestStreamingUrl mutation
-    ├── Generate streaming session
-    ├── Track user quality preference
-    └── Return optimized stream
+3. **CloudFront Signed URLs** (`pkg/services/media/transcoding/cloudfront.go`)
+   - RSA-based URL signing
+   - Policy generation and encoding
+   - Streaming URL generation (HLS/DASH)
+   - Batch signing for preload
+   - Configurable TTL (default 24h)
 
-Day 5: Analytics & Testing
-├── Add streaming event tracking:
-│   ├── Play events
-│   ├── Pause events
-│   ├── Quality changes
-│   ├── Buffering events
-│   └── Completion events
-├── Implement bandwidth tracking
-├── Add quality reporting
-└── Comprehensive testing
-```
+4. **Media Service Pipeline** (`pkg/services/media/streaming_pipeline.go`)
+   - `SubmitTranscodeJob()` - Queue transcoding with quality selection
+   - `GetMediaRenditions()` - Retrieve available transcoded variants
+   - `GenerateSignedStreamURL()` - Generate signed URLs with quality filter
+   - `PreloadMedia()` - Prime CDN cache for multiple media items
+   - Job state tracking in DynamoDB
+
+5. **GraphQL Resolvers** (Production-ready)
+   - `Query.mediaStreamUrl` - Returns HLS/DASH manifests with all variants
+   - `Query.supportedBitrates` - Lists actual transcoded quality levels
+   - `Mutation.requestStreamingUrl` - Signed URL with quality selection
+   - `Mutation.preloadMedia` - Batch preload with manifest priming
+
+6. **Storage & Repository**
+   - TranscodingJob model with cost tracking
+   - MediaSession model for streaming sessions
+   - Repository methods for job persistence
+   - GSI indexes for user/media queries
+
+7. **Testing**
+   - Unit tests for quality params, cost estimation, validation
+   - CloudFront URL signing tests (with test keys)
+   - Manifest generation logic tests
+   - Business logic coverage (no AWS dependencies)
+
+**Production Deployment Notes**:
+- AWS MediaConvert endpoint must be configured per region
+- CloudFront distribution and key pair required for signed URLs
+- Private key must be securely stored (AWS Secrets Manager recommended)
+- S3 buckets for source and streaming output must be configured
+- Repository methods already integrated with existing MediaRepository
+- Services are optional - can be enabled incrementally via service setters
+
+**Follow-up Work** (tracked separately):
+- MediaConvert job templates configuration in AWS
+- CloudFront distribution setup with origin access identity
+- Lambda function for processing MediaConvert job completion events
+- Streaming analytics collection (view tracking, quality metrics)
+- CDN cache invalidation on content updates
 
 ---
 
 #### 2.3 Advanced Moderation ML
 **Status**: PARTIAL (CRUD exists, ML missing)  
 **Effort**: 3-4 days  
-**Dependencies**: ML infrastructure
+**Dependencies**: AWS Bedrock (Titan), Guardrails, S3, DynamoDB
 
 **Missing Operations**:
 1. `Mutation.trainModerationModel(samples)` → TrainingResult
@@ -342,48 +349,29 @@ Day 5: Analytics & Testing
 
 **Implementation Plan**:
 
-```
-Day 1-2: ML Training Pipeline
-├── Create pkg/moderation/ml/trainer.go
-├── Implement training data collection:
-│   ├── Collect labeled samples
-│   ├── Balance positive/negative examples
-│   ├── Extract features
-│   └── Format for training
-├── Add model training:
-│   ├── Use AWS SageMaker or Bedrock
-│   ├── Train text classification model
-│   ├── Validate on test set
-│   └── Calculate accuracy metrics
-├── Implement model versioning
-└── Add model deployment
+**2.3.1 Feature Flag & Tenant Controls**
+- Add per-tenant configuration to enable moderation ML (config storage + resolver checks).
+- Ensure all training/inference paths short-circuit when disabled.
 
-Day 3: Effectiveness Tracking
-├── Track pattern match outcomes:
-│   ├── True positives
-│   ├── False positives
-│   ├── True negatives
-│   ├── False negatives
-├── Calculate effectiveness metrics:
-│   ├── Precision
-│   ├── Recall
-│   ├── F1 score
-│   ├── Accuracy
-└── Store historical effectiveness
+**2.3.2 Data Pipeline & Training (Bedrock Titan Text Lite)**
+- Aggregate labeled moderation decisions into S3 (clean/redact as needed).
+- Launch Bedrock Titan Text Lite fine-tuning jobs; track job IDs/status.
+- Persist model metadata (version, training date, dataset) in DynamoDB.
 
-Day 4: Resolver Implementation
-├── Implement trainModerationModel mutation
-│   ├── Validate training samples
-│   ├── Queue training job
-│   ├── Return training status
-│   └── Track model version
-├── Implement moderationEffectiveness query
-│   ├── Get pattern statistics
-│   ├── Calculate metrics
-│   ├── Show trend over time
-│   └── Compare to baseline
-└── Add tests
-```
+**2.3.3 Inference & Guardrails**
+- Create inference service that calls the fine-tuned Bedrock model.
+- Integrate Bedrock Guardrails for high-severity content gating.
+- Provide scoring API (`ScoreContent`) returning risk, recommended action.
+
+**2.3.4 GraphQL Integration**
+- `Mutation.trainModerationModel(samples)` → kick off training via the service, return job status.
+- `Query.moderationEffectiveness(patternId, period)` → fetch precision/recall metrics from storage.
+- Update resolvers/helpers to use the new service and respect tenant flags.
+
+**2.3.5 Metrics & Observability**
+- Track training duration, inference latency, accuracy in CloudWatch.
+- Feed results into dashboards; expose metrics via GraphQL for admins.
+- Document cost controls (rate limiting, per-tenant quotas).
 
 ---
 
