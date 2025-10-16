@@ -922,6 +922,58 @@ func (ec *EventConverter) ConvertToPerformanceAlert(event *streaming.InternalEve
 	return alert
 }
 
+// ConvertToModerationAlert converts a streaming event to a GraphQL ModerationAlert
+func (ec *EventConverter) ConvertToModerationAlert(event *streaming.InternalEvent, severity *model.ModerationSeverity) *model.ModerationAlert {
+	if event == nil {
+		return nil
+	}
+
+	// Create moderation alert
+	alert := &model.ModerationAlert{
+		ID:        fmt.Sprintf("alert_%d", event.Timestamp.UnixNano()),
+		Timestamp: model.Time(event.Timestamp),
+	}
+
+	// Extract alert data from event
+	data, ok := event.Data.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	if alertSeverity, ok := data["severity"].(string); ok {
+		// Convert string to ModerationSeverity
+		switch strings.ToUpper(alertSeverity) {
+		case "LOW":
+			alert.Severity = model.ModerationSeverityLow
+		case "MEDIUM":
+			alert.Severity = model.ModerationSeverityMedium
+		case "HIGH":
+			alert.Severity = model.ModerationSeverityHigh
+		case "CRITICAL":
+			alert.Severity = model.ModerationSeverityCritical
+		default:
+			alert.Severity = model.ModerationSeverityInfo
+		}
+	}
+
+	// Filter by severity if specified
+	if severity != nil && alert.Severity != *severity {
+		return nil
+	}
+
+	if matchedText, ok := data["matched_text"].(string); ok {
+		alert.MatchedText = matchedText
+	}
+	if confidence, ok := data["confidence"].(float64); ok {
+		alert.Confidence = confidence
+	}
+	if handled, ok := data["handled"].(bool); ok {
+		alert.Handled = handled
+	}
+
+	return alert
+}
+
 // ConvertToThreatAlert converts a streaming event to a GraphQL ThreatAlert
 func (ec *EventConverter) ConvertToThreatAlert(event *streaming.InternalEvent) *model.ThreatAlert {
 	if event == nil {

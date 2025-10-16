@@ -4751,54 +4751,6 @@ func (r *subscriptionResolver) convertEventToQuoteActivity(event *streaming.Inte
 	return update
 }
 
-// convertEventToModerationAlert converts a streaming event to a ModerationAlert
-func (r *subscriptionResolver) convertEventToModerationAlert(event *streaming.InternalEvent, severity *model.ModerationSeverity) *model.ModerationAlert {
-	if event == nil {
-		return nil
-	}
-
-	// Create moderation alert
-	alert := &model.ModerationAlert{
-		ID:        fmt.Sprintf("alert_%d", time.Now().UnixNano()),
-		Timestamp: model.Time(event.Timestamp),
-	}
-
-	// Extract alert data from event
-	switch data := event.Data.(type) {
-	case map[string]interface{}:
-		if alertSeverity, ok := data["severity"].(string); ok {
-			// Convert string to ModerationSeverity
-			switch strings.ToUpper(alertSeverity) {
-			case AlertLevelLow:
-				alert.Severity = model.ModerationSeverityLow
-			case AlertLevelMedium:
-				alert.Severity = model.ModerationSeverityMedium
-			case AlertLevelHigh:
-				alert.Severity = model.ModerationSeverityHigh
-			case AlertLevelCritical:
-				alert.Severity = model.ModerationSeverityCritical
-			}
-		}
-
-		// Filter by severity if specified
-		if severity != nil && alert.Severity != *severity {
-			return nil
-		}
-
-		if matchedText, ok := data["matched_text"].(string); ok {
-			alert.MatchedText = matchedText
-		}
-		if confidence, ok := data["confidence"].(float64); ok {
-			alert.Confidence = confidence
-		}
-		if handled, ok := data["handled"].(bool); ok {
-			alert.Handled = handled
-		}
-	}
-
-	return alert
-}
-
 // convertEventToModerationItem converts a streaming event to a ModerationItem
 func (r *subscriptionResolver) convertEventToModerationItem(event *streaming.InternalEvent, priority *model.Priority) *model.ModerationItem {
 	if event == nil {

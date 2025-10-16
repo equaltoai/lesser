@@ -913,6 +913,43 @@ func (sm *GraphQLSubscriptionManager) processBudgetAlertEvents(subscription *Gra
 }
 
 //nolint:unused // Helper for event processors
+func (sm *GraphQLSubscriptionManager) processModerationAlertEvents(subscription *GraphQLSubscription, ch chan *model.ModerationAlert) {
+	for {
+		select {
+		case event := <-subscription.Subscriber.Channel:
+			if event == nil {
+				return
+			}
+
+			// Extract severity filter from params
+			var severityFilter *model.ModerationSeverity
+			if s, ok := subscription.Params["severity"].(model.ModerationSeverity); ok {
+				severityFilter = &s
+			}
+
+			alert := sm.converter.ConvertToModerationAlert(event, severityFilter)
+			if alert != nil {
+				select {
+				case ch <- alert:
+					subscription.LastActivity = time.Now()
+				case <-subscription.Context.Done():
+					return
+				default:
+					sm.logger.Warn("moderation alert subscription channel full, dropping event",
+						zap.String("subscription_id", subscription.ID),
+						zap.String("event_id", event.ID))
+				}
+			}
+
+		case <-subscription.Subscriber.Quit:
+			return
+		case <-subscription.Context.Done():
+			return
+		}
+	}
+}
+
+//nolint:unused // Helper for event processors
 func (sm *GraphQLSubscriptionManager) processCostAlertEvents(subscription *GraphQLSubscription, ch chan *model.CostAlert) {
 	for {
 		select {
@@ -1054,6 +1091,33 @@ func (sm *GraphQLSubscriptionManager) createBudgetAlertEventBusSubscription(ctx 
 
 	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
 		sm.processBudgetAlertEvents(sub, out.(chan *model.BudgetAlert))
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
+
+// createModerationAlertEventBusSubscription handles moderation alert subscriptions via event bus
+func (sm *GraphQLSubscriptionManager) createModerationAlertEventBusSubscription(ctx context.Context, subscriptionID, username string, filter *streaming.EventFilter, ch chan *model.ModerationAlert, severity *model.ModerationSeverity) (<-chan *model.ModerationAlert, error) {
+	params := make(map[string]interface{})
+	if severity != nil {
+		params["severity"] = *severity
+	}
+
+	config := &SubscriptionConfig{
+		ID:            subscriptionID,
+		Type:          "moderation_alert",
+		UserID:        username,
+		Filter:        filter,
+		OutputChannel: ch,
+		BufferSize:    100,
+		Params:        params,
+	}
+
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processModerationAlertEvents(sub, out.(chan *model.ModerationAlert))
 	})
 
 	if err != nil {
