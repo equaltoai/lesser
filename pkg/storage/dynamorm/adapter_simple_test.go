@@ -105,8 +105,9 @@ func (s *SimpleRepositoryStorage) CloudWatchMetrics() *repositories.CloudWatchMe
 func (s *SimpleRepositoryStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
 	return nil
 }
-func (s *SimpleRepositoryStorage) Audit() *repositories.AuditRepository       { return nil }
-func (s *SimpleRepositoryStorage) OAuth() *repositories.OAuthRepository       { return nil }
-func (s *SimpleRepositoryStorage) DNSCache() *repositories.DNSCacheRepository { return nil }
-func (s *SimpleRepositoryStorage) Filter() *repositories.FilterRepository     { return nil }
-func (s *SimpleRepositoryStorage) Thread() *repositories.ThreadRepository     { return nil }
+func (s *SimpleRepositoryStorage) Audit() *repositories.AuditRepository         { return nil }
+func (s *SimpleRepositoryStorage) OAuth() *repositories.OAuthRepository         { return nil }
+func (s *SimpleRepositoryStorage) DNSCache() *repositories.DNSCacheRepository   { return nil }
+func (s *SimpleRepositoryStorage) Filter() *repositories.FilterRepository       { return nil }
+func (s *SimpleRepositoryStorage) Thread() *repositories.ThreadRepository       { return nil }
+func (s *SimpleRepositoryStorage) Severance() *repositories.SeveranceRepository { return nil }

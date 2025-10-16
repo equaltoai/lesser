@@ -3,13 +3,9 @@ package graph
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
-	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/services/relationships"
-	"go.uber.org/zap"
 )
 
 // NOTE: imports intentionally omitted. Run gofmt/goimports and add any
@@ -108,17 +104,20 @@ func (r *mutationResolver) AcknowledgeSeverance(ctx context.Context, id string) 
 		return nil, err
 	}
 
-	// Use the relationships service we already implemented
-	result, err := r.Registry.Relationships().AcknowledgeSeverance(ctx, &relationships.AcknowledgeSeveranceCommand{
-		UserID:      username,
-		SeveranceID: id,
-	})
+	// Get severance service from registry
+	severanceService := r.Registry.Severance()
+	if severanceService == nil {
+		return nil, errors.New("severance service unavailable")
+	}
+
+	// Acknowledge the severance
+	_, err = severanceService.AcknowledgeSeverance(ctx, id, username)
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to acknowledge severance"), err)
 	}
 
 	return &model.AcknowledgePayload{
-		Success: result.Success,
+		Success: true,
 	}, nil
 }
 
@@ -129,136 +128,26 @@ func (r *mutationResolver) AttemptReconnection(ctx context.Context, id string) (
 		return nil, err
 	}
 
-	storage := r.Registry.GetStorage()
-	federationRepo := storage.Federation()
-	relationshipRepo := storage.Relationship()
-
-	if federationRepo == nil {
-		r.Logger.Error("federation repository not available")
-		return &model.ReconnectionPayload{
-			Success: false,
-			Errors:  []string{"federation service not available"},
-		}, nil
+	// Get severance service from registry
+	severanceService := r.Registry.Severance()
+	if severanceService == nil {
+		return nil, errors.New("severance service unavailable")
 	}
 
-	if relationshipRepo == nil {
-		r.Logger.Error("relationship repository not available")
-		return &model.ReconnectionPayload{
-			Success: false,
-			Errors:  []string{"relationship service not available"},
-		}, nil
+	// Attempt reconnection
+	result, err := severanceService.AttemptReconnection(ctx, id, username)
+	if err != nil {
+		return nil, errors.Join(errors.New("failed to attempt reconnection"), err)
 	}
 
-	var reconResult *model.ReconnectionPayload
-	var errors []string
-	var reconnectedCount int
-	var failedCount int
-
-	if id == QueryTypeAll {
-		// Attempt to reconnect all severed relationships for the user
-		severedRels, err := federationRepo.GetUserSeveredRelationships(ctx, username)
-		if err != nil {
-			r.Logger.Error("failed to get severed relationships",
-				zap.String("username", username),
-				zap.Error(err))
-			return &model.ReconnectionPayload{
-				Success: false,
-				Errors:  []string{"failed to retrieve severed relationships"},
-			}, nil
-		}
-
-		r.Logger.Info("attempting to reconnect severed relationships",
-			zap.String("username", username),
-			zap.Int("severed_count", len(severedRels)))
-
-		// Attempt reconnection for each severed domain
-		for _, severedRel := range severedRels {
-			if err := common.ValidateRequiredParam("severedDomain", severedRel.Domain); err != nil {
-				continue
-			}
-
-			err := federationRepo.AttemptReconnection(ctx, username, severedRel.Domain)
-			if err != nil {
-				failedCount++
-				errorMsg := fmt.Sprintf("failed to reconnect to %s: %s", severedRel.Domain, err.Error())
-				errors = append(errors, errorMsg)
-				r.Logger.Warn("reconnection attempt failed",
-					zap.String("username", username),
-					zap.String("domain", severedRel.Domain),
-					zap.Error(err))
-			} else {
-				reconnectedCount++
-				r.Logger.Info("reconnection successful",
-					zap.String("username", username),
-					zap.String("domain", severedRel.Domain))
-			}
-		}
-
-		// Create a summary severed relationship for the response
-		summarySevered := &model.SeveredRelationship{
-			ID:                fmt.Sprintf("summary_%s_%d", username, time.Now().Unix()),
-			LocalInstance:     "local", // Current instance
-			RemoteInstance:    fmt.Sprintf("Multiple domains (%d total)", len(severedRels)),
-			Reason:            model.SeveranceReasonDefederation, // Generic reason for bulk operation
-			AffectedFollowers: 0,                                 // Would need additional queries to compute
-			AffectedFollowing: reconnectedCount + failedCount,
-			Timestamp:         model.Time(time.Now()),
-			Reversible:        true,
-			Details:           nil,
-		}
-
-		reconResult = &model.ReconnectionPayload{
-			Success:             reconnectedCount > 0,
-			SeveredRelationship: summarySevered,
-			Reconnected:         reconnectedCount,
-			Failed:              failedCount,
-			Errors:              errors,
-		}
-	} else {
-		// Attempt to reconnect to a specific domain/target
-		err := federationRepo.AttemptReconnection(ctx, username, id)
-		if err != nil {
-			failedCount = 1
-			errors = append(errors, fmt.Sprintf("failed to reconnect to %s: %s", id, err.Error()))
-			r.Logger.Warn("single reconnection attempt failed",
-				zap.String("username", username),
-				zap.String("target", id),
-				zap.Error(err))
-		} else {
-			reconnectedCount = 1
-			r.Logger.Info("single reconnection successful",
-				zap.String("username", username),
-				zap.String("target", id))
-		}
-
-		// Create a severed relationship for the specific target
-		targetSevered := &model.SeveredRelationship{
-			ID:                fmt.Sprintf("reconnect_%s_%s_%d", username, id, time.Now().Unix()),
-			LocalInstance:     "local", // Current instance
-			RemoteInstance:    id,
-			Reason:            model.SeveranceReasonDefederation, // Generic reason for reconnection
-			AffectedFollowers: 0,                                 // Would need additional queries to compute
-			AffectedFollowing: 1,
-			Timestamp:         model.Time(time.Now()),
-			Reversible:        true,
-			Details:           nil,
-		}
-
-		reconResult = &model.ReconnectionPayload{
-			Success:             reconnectedCount > 0,
-			SeveredRelationship: targetSevered,
-			Reconnected:         reconnectedCount,
-			Failed:              failedCount,
-			Errors:              errors,
-		}
+	// Build error messages from result
+	errorMessages := result.Errors
+	if len(errorMessages) == 0 && !result.Success {
+		errorMessages = []string{"reconnection failed for unknown reason"}
 	}
 
-	r.Logger.Info("reconnection attempt completed",
-		zap.String("username", username),
-		zap.String("target", id),
-		zap.Int("reconnected", reconnectedCount),
-		zap.Int("failed", failedCount),
-		zap.Bool("success", reconResult.Success))
-
-	return reconResult, nil
+	return &model.ReconnectionPayload{
+		Success: result.Success,
+		Errors:  errorMessages,
+	}, nil
 }

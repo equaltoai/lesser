@@ -1,5 +1,3 @@
-// Package lift provides the Lift framework handlers for the Lesser API.
-// This file contains test mocks for the repository storage interface.
 package lift
 
 import (
@@ -10,8 +8,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// MockRepositoryStorage implements core.RepositoryStorage for testing purposes.
-// It provides a mock implementation of all repository methods using testify/mock.
+// MockRepositoryStorage is a mock implementation of core.RepositoryStorage for testing
+// This struct implements all repository accessor methods required by the core.RepositoryStorage interface
+// Each method returns the result of m.Called() which can be mocked using testify/mock
 type MockRepositoryStorage struct {
 	mock.Mock
 }
@@ -127,7 +126,7 @@ func (m *MockRepositoryStorage) Poll() *repositories.PollRepository {
 	return args.Get(0).(*repositories.PollRepository)
 }
 
-// PushSubscription returns a mock pushsubscription repository for testing
+// PushSubscription returns a mock push subscription repository for testing
 func (m *MockRepositoryStorage) PushSubscription() *repositories.PushSubscriptionRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -145,7 +144,7 @@ func (m *MockRepositoryStorage) Hashtag() *repositories.HashtagRepository {
 	return args.Get(0).(*repositories.HashtagRepository)
 }
 
-// ScheduledStatus returns a mock scheduledstatus repository for testing
+// ScheduledStatus returns a mock scheduled status repository for testing
 func (m *MockRepositoryStorage) ScheduledStatus() *repositories.ScheduledStatusRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -253,7 +252,7 @@ func (m *MockRepositoryStorage) Cost() *repositories.TrackingRepository {
 	return args.Get(0).(*repositories.TrackingRepository)
 }
 
-// WebSocketCost returns a mock WebSocket cost repository for testing
+// WebSocketCost returns a mock websocket cost repository for testing
 func (m *MockRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -289,7 +288,7 @@ func (m *MockRepositoryStorage) Relay() *repositories.RelayRepository {
 	return args.Get(0).(*repositories.RelayRepository)
 }
 
-// CommunityNote returns a mock communitynote repository for testing
+// CommunityNote returns a mock community note repository for testing
 func (m *MockRepositoryStorage) CommunityNote() *repositories.CommunityNoteRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -334,7 +333,7 @@ func (m *MockRepositoryStorage) Marker() *repositories.MarkerRepository {
 	return args.Get(0).(*repositories.MarkerRepository)
 }
 
-// FeaturedTag returns a mock featuredtag repository for testing
+// FeaturedTag returns a mock featured tag repository for testing
 func (m *MockRepositoryStorage) FeaturedTag() *repositories.FeaturedTagRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -343,7 +342,7 @@ func (m *MockRepositoryStorage) FeaturedTag() *repositories.FeaturedTagRepositor
 	return args.Get(0).(*repositories.FeaturedTagRepository)
 }
 
-// AI returns a mock ai repository for testing
+// AI returns a mock AI repository for testing
 func (m *MockRepositoryStorage) AI() *repositories.AIRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -370,7 +369,7 @@ func (m *MockRepositoryStorage) Import() *repositories.ImportRepository {
 	return args.Get(0).(*repositories.ImportRepository)
 }
 
-// DLQ returns a mock dlq repository for testing
+// DLQ returns a mock DLQ repository for testing
 func (m *MockRepositoryStorage) DLQ() *repositories.DLQRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -379,31 +378,7 @@ func (m *MockRepositoryStorage) DLQ() *repositories.DLQRepository {
 	return args.Get(0).(*repositories.DLQRepository)
 }
 
-// GetDB returns a mock getdb repository for testing
-func (m *MockRepositoryStorage) GetDB() dynamormCore.DB {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(dynamormCore.DB)
-}
-
-// GetTableName returns a mock gettablename repository for testing
-func (m *MockRepositoryStorage) GetTableName() string {
-	args := m.Called()
-	return args.String(0)
-}
-
-// GetLogger returns a mock getlogger repository for testing
-func (m *MockRepositoryStorage) GetLogger() *zap.Logger {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(*zap.Logger)
-}
-
-// MetricRecord returns a mock metricrecord repository for testing
+// MetricRecord returns a mock metric record repository for testing
 func (m *MockRepositoryStorage) MetricRecord() *repositories.MetricRecordRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -412,13 +387,22 @@ func (m *MockRepositoryStorage) MetricRecord() *repositories.MetricRecordReposit
 	return args.Get(0).(*repositories.MetricRecordRepository)
 }
 
-// CloudWatchMetrics returns a mock cloudwatchmetrics repository for testing
+// CloudWatchMetrics returns a mock CloudWatch metrics repository for testing
 func (m *MockRepositoryStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
 	return args.Get(0).(*repositories.CloudWatchMetricsRepository)
+}
+
+// StreamingCloudWatch returns a mock streaming CloudWatch repository for testing
+func (m *MockRepositoryStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.StreamingCloudWatchRepository)
 }
 
 // Audit returns a mock audit repository for testing
@@ -430,7 +414,7 @@ func (m *MockRepositoryStorage) Audit() *repositories.AuditRepository {
 	return args.Get(0).(*repositories.AuditRepository)
 }
 
-// OAuth returns a mock oauth repository for testing
+// OAuth returns a mock OAuth repository for testing
 func (m *MockRepositoryStorage) OAuth() *repositories.OAuthRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -439,16 +423,7 @@ func (m *MockRepositoryStorage) OAuth() *repositories.OAuthRepository {
 	return args.Get(0).(*repositories.OAuthRepository)
 }
 
-// StreamingCloudWatch returns a mock streamingcloudwatch repository for testing
-func (m *MockRepositoryStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(*repositories.StreamingCloudWatchRepository)
-}
-
-// DNSCache returns a mock dnscache repository for testing
+// DNSCache returns a mock DNS cache repository for testing
 func (m *MockRepositoryStorage) DNSCache() *repositories.DNSCacheRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -473,4 +448,33 @@ func (m *MockRepositoryStorage) Thread() *repositories.ThreadRepository {
 		return nil
 	}
 	return args.Get(0).(*repositories.ThreadRepository)
+}
+
+// Severance returns a mock severance repository for testing
+func (m *MockRepositoryStorage) Severance() *repositories.SeveranceRepository {
+	return nil
+}
+
+// GetDB returns a mock database connection for testing
+func (m *MockRepositoryStorage) GetDB() dynamormCore.DB {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(dynamormCore.DB)
+}
+
+// GetTableName returns a mock table name for testing
+func (m *MockRepositoryStorage) GetTableName() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+// GetLogger returns a mock logger for testing
+func (m *MockRepositoryStorage) GetLogger() *zap.Logger {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*zap.Logger)
 }

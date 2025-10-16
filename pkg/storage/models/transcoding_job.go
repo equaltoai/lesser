@@ -225,7 +225,7 @@ func (tj *TranscodingJob) Validate() error {
 
 // SetCompleted marks the job as completed and sets completion time
 func (tj *TranscodingJob) SetCompleted() {
-	tj.Status = "completed"
+	tj.Status = StatusCompleted
 	now := time.Now()
 	tj.CompletedAt = &now
 	if !tj.StartedAt.IsZero() {
@@ -235,7 +235,7 @@ func (tj *TranscodingJob) SetCompleted() {
 
 // SetFailed marks the job as failed with an error message
 func (tj *TranscodingJob) SetFailed(errorMessage string) {
-	tj.Status = "failed"
+	tj.Status = StatusFailed
 	tj.ErrorMessage = errorMessage
 	now := time.Now()
 	tj.CompletedAt = &now

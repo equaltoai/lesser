@@ -17,8 +17,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/hashtags"
 	"github.com/equaltoai/lesser/pkg/services/lists"
+	"github.com/equaltoai/lesser/pkg/services/severance"
 	"github.com/equaltoai/lesser/pkg/services/threads"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
@@ -666,4 +668,135 @@ func (r *Resolver) isHashtagMuted(ctx context.Context, userID, hashtag string) b
 	}
 
 	return muted
+}
+
+// convertSeveredRelationshipToModel converts service SeveredRelationship to GraphQL model
+func (r *Resolver) convertSeveredRelationshipToModel(_ context.Context, sev *severance.SeveredRelationship) *model.SeveredRelationship {
+	if sev == nil {
+		return nil
+	}
+
+	// Convert reason to GraphQL enum
+	var reason model.SeveranceReason
+	switch sev.Reason {
+	case models.SeveranceReasonDomainBlock:
+		reason = model.SeveranceReasonDomainBlock
+	case models.SeveranceReasonInstanceDown:
+		reason = model.SeveranceReasonInstanceDown
+	case models.SeveranceReasonDefederation:
+		reason = model.SeveranceReasonDefederation
+	case models.SeveranceReasonPolicyViolation:
+		reason = model.SeveranceReasonPolicyViolation
+	default:
+		reason = model.SeveranceReasonOther
+	}
+
+	result := &model.SeveredRelationship{
+		ID:                sev.ID,
+		LocalInstance:     sev.LocalInstance,
+		RemoteInstance:    sev.RemoteInstance,
+		Reason:            reason,
+		AffectedFollowers: sev.AffectedFollowers,
+		AffectedFollowing: sev.AffectedFollowing,
+		Timestamp:         model.Time(sev.DetectedAt),
+		Reversible:        sev.Reversible,
+	}
+
+	// Add optional details
+	if sev.Details != "" || sev.AdminNotes != "" {
+		description := sev.Details
+		if sev.AdminNotes != "" {
+			if description != "" {
+				description += "\n"
+			}
+			description += sev.AdminNotes
+		}
+		result.Details = &model.SeveranceDetails{
+			Description:  description,
+			Metadata:     []string{},
+			AutoDetected: sev.AutoDetected,
+		}
+		if sev.AdminNotes != "" {
+			result.Details.AdminNotes = &sev.AdminNotes
+		}
+	}
+
+	return result
+}
+
+// convertAffectedRelationshipToModel converts service AffectedRelationship to GraphQL model
+func (r *Resolver) convertAffectedRelationshipToModel(ctx context.Context, aff *severance.AffectedRelationship) *model.AffectedRelationship {
+	if aff == nil {
+		return nil
+	}
+
+	// Try to fetch the full actor from storage
+	var actor *activitypub.Actor
+	if r.Registry != nil {
+		storage := r.Registry.GetStorage()
+		if storage != nil {
+			actorRepo := storage.Actor()
+			if actorRepo != nil && aff.ActorID != "" {
+				fetchedActor, err := actorRepo.GetActor(ctx, aff.ActorID)
+				if err == nil {
+					actor = fetchedActor
+				} else {
+					// If we can't fetch the actor, construct a minimal one from available fields
+					r.Logger.Debug("failed to fetch actor for affected relationship, using minimal actor",
+						zap.String("actor_id", aff.ActorID),
+						zap.Error(err))
+					actor = r.constructMinimalActor(aff.ActorID, aff.ActorHandle, aff.ActorDomain)
+				}
+			}
+		}
+	}
+
+	// If we still don't have an actor, construct a minimal one
+	if actor == nil {
+		actor = r.constructMinimalActor(aff.ActorID, aff.ActorHandle, aff.ActorDomain)
+	}
+
+	result := &model.AffectedRelationship{
+		Actor:            actor,
+		RelationshipType: aff.RelationshipType,
+		EstablishedAt:    model.Time(aff.EstablishedAt),
+	}
+
+	if aff.LastInteraction != nil {
+		t := model.Time(*aff.LastInteraction)
+		result.LastInteraction = &t
+	}
+
+	return result
+}
+
+// constructMinimalActor creates a minimal Actor from available fields
+func (r *Resolver) constructMinimalActor(actorID, actorHandle, actorDomain string) *activitypub.Actor {
+	// Parse handle to extract username if needed
+	username := actorID
+	if username == "" && actorHandle != "" {
+		// Handle is typically @user@domain.com, extract user part
+		username = strings.TrimPrefix(actorHandle, "@")
+		if idx := strings.Index(username, "@"); idx != -1 {
+			username = username[:idx]
+		}
+	}
+
+	// Construct a minimal actor with available information
+	actorURL := fmt.Sprintf("https://%s/@%s", actorDomain, username)
+	if actorDomain == "" {
+		actorDomain = "unknown.domain"
+		actorURL = fmt.Sprintf("https://%s/users/%s", actorDomain, username)
+	}
+
+	return &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   actorURL,
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: username,
+		Name:              actorHandle,
+		Inbox:             actorURL + "/inbox",
+		Outbox:            actorURL + "/outbox",
+	}
 }

@@ -1830,13 +1830,18 @@ func (r *FederationRepository) CreateSeveredRelationship(ctx context.Context, re
 		rel.ID = fmt.Sprintf("%s-%s-%d", rel.LocalInstance, rel.RemoteInstance, time.Now().Unix())
 	}
 
-	// Set timestamp if not provided
-	if rel.Timestamp.IsZero() {
-		rel.Timestamp = time.Now()
+	// Set detected timestamp if not provided
+	if rel.DetectedAt.IsZero() {
+		rel.DetectedAt = time.Now()
 	}
 
 	// Update keys
-	rel.UpdateKeys()
+	if err := rel.UpdateKeys(); err != nil {
+		r.logger.Error("Failed to update keys for severed relationship",
+			zap.String("id", rel.ID),
+			zap.Error(err))
+		return ErrorHandler.HandleCreateError(err, "severed relationship", "key generation")
+	}
 
 	// Store the relationship
 	err := r.db.WithContext(ctx).Model(rel).Create()
@@ -1856,7 +1861,8 @@ func (r *FederationRepository) CreateSeveredRelationship(ctx context.Context, re
 		zap.String("local", rel.LocalInstance),
 		zap.String("remote", rel.RemoteInstance),
 		zap.String("reason", string(rel.Reason)),
-		zap.Int("impact", rel.EstimatedImpact))
+		zap.Int("affected_followers", rel.AffectedFollowers),
+		zap.Int("affected_following", rel.AffectedFollowing))
 
 	return nil
 }
@@ -1926,10 +1932,14 @@ func (r *FederationRepository) GetSeveredRelationship(ctx context.Context, local
 func (r *FederationRepository) UpdateSeveredRelationship(ctx context.Context, rel *models.SeveredRelationship) error {
 	// Ensure keys are set
 	if err := common.ValidateRequiredParam("rel.PK", rel.PK); err != nil {
-		rel.UpdateKeys()
+		if keyErr := rel.UpdateKeys(); keyErr != nil {
+			return ErrorHandler.HandleUpdateError(keyErr, "severed relationship", "key generation")
+		}
 	}
 	if err := common.ValidateRequiredParam("rel.SK", rel.SK); err != nil {
-		rel.UpdateKeys()
+		if keyErr := rel.UpdateKeys(); keyErr != nil {
+			return ErrorHandler.HandleUpdateError(keyErr, "severed relationship", "key generation")
+		}
 	}
 
 	// Fetch, update, save pattern for DynamORM
@@ -1947,7 +1957,8 @@ func (r *FederationRepository) UpdateSeveredRelationship(ctx context.Context, re
 	existing.Reason = rel.Reason
 	existing.Reversible = rel.Reversible
 	existing.Details = rel.Details
-	existing.EstimatedImpact = rel.EstimatedImpact
+	existing.AffectedFollowers = rel.AffectedFollowers
+	existing.AffectedFollowing = rel.AffectedFollowing
 
 	// Save updated record
 	err = r.db.WithContext(ctx).Model(&existing).Update()
@@ -1957,42 +1968,6 @@ func (r *FederationRepository) UpdateSeveredRelationship(ctx context.Context, re
 			zap.String("sk", rel.SK),
 			zap.Error(err))
 		return ErrorHandler.HandleUpdateError(err, "severed relationship", "relationship status")
-	}
-
-	return nil
-}
-
-// GetAffectedFollows retrieves follow relationships affected by a severance
-func (r *FederationRepository) GetAffectedFollows(ctx context.Context, localInstance, remoteInstance string) ([]models.AffectedFollow, error) {
-	// Get the severed relationship
-	rel, err := r.GetSeveredRelationship(ctx, localInstance, remoteInstance)
-	if err != nil {
-		return nil, err
-	}
-
-	return rel.AffectedFollows, nil
-}
-
-// RecordAffectedFollow adds an affected follow to a severed relationship
-func (r *FederationRepository) RecordAffectedFollow(ctx context.Context, localInstance, remoteInstance string, follow models.AffectedFollow) error {
-	// Get the current relationship
-	rel, err := r.GetSeveredRelationship(ctx, localInstance, remoteInstance)
-	if err != nil {
-		return ErrorHandler.HandleGetError(err, "severed relationship", "acknowledgment lookup")
-	}
-
-	// Add the affected follow
-	rel.AffectedFollows = append(rel.AffectedFollows, follow)
-	rel.EstimatedImpact = len(rel.AffectedFollows)
-
-	// Update the relationship by creating a new version (DynamoDB pattern)
-	err = r.db.WithContext(ctx).Model(rel).Create()
-	if err != nil {
-		r.logger.Error("Failed to update severed relationship with affected follow",
-			zap.String("local", localInstance),
-			zap.String("remote", remoteInstance),
-			zap.Error(err))
-		return ErrorHandler.HandleUpdateError(err, "severed relationship", "acknowledgment update")
 	}
 
 	return nil
@@ -2012,19 +1987,25 @@ func (r *FederationRepository) ReverseSeverance(ctx context.Context, localInstan
 
 	// Create a new "restored" entry
 	restored := &models.SeveredRelationship{
-		ID:              fmt.Sprintf("%s-restored-%d", rel.ID, time.Now().Unix()),
-		LocalInstance:   localInstance,
-		RemoteInstance:  remoteInstance,
-		Reason:          models.SeveranceReasonRestored,
-		Timestamp:       time.Now(),
-		Reversible:      false,
-		Details:         fmt.Sprintf("Relationship restored after previous severance: %s", rel.Reason),
-		EstimatedImpact: 0,
-		AffectedFollows: []models.AffectedFollow{}, // Empty slice
+		ID:                fmt.Sprintf("%s-restored-%d", rel.ID, time.Now().Unix()),
+		LocalInstance:     localInstance,
+		RemoteInstance:    remoteInstance,
+		Reason:            models.SeveranceReasonOther,
+		DetectedAt:        time.Now(),
+		Reversible:        false,
+		Details:           fmt.Sprintf("Relationship restored after previous severance: %s", rel.Reason),
+		AffectedFollowers: 0,
+		AffectedFollowing: 0,
+		Status:            models.SeveranceStatusRestored,
 	}
 
 	// Update keys
-	restored.UpdateKeys()
+	if err := restored.UpdateKeys(); err != nil {
+		r.logger.Error("Failed to update keys for restored relationship",
+			zap.String("id", restored.ID),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, "severed relationship", "restored key generation")
+	}
 
 	// Store the restored entry
 	err = r.db.WithContext(ctx).Model(restored).Create()
@@ -2867,16 +2848,8 @@ func (r *FederationRepository) GetAffectedFollowersCount(ctx context.Context, us
 		return 0, err
 	}
 
-	// Count affected follows where the follower is from the severed domain
-	// and they were following this user (user lost followers from the severed domain)
-	count := 0
-	for _, affected := range rel.AffectedFollows {
-		if affected.Direction == "follower" && affected.LocalUser == userID {
-			count++
-		}
-	}
-
-	return count, nil
+	// Return the affected followers count from the new model
+	return rel.AffectedFollowers, nil
 }
 
 // GetAffectedFollowingCount returns the count of following relationships affected by a domain severance
@@ -2900,15 +2873,8 @@ func (r *FederationRepository) GetAffectedFollowingCount(ctx context.Context, us
 		return 0, err
 	}
 
-	// Count affected follows where this user was following someone on the severed domain
-	count := 0
-	for _, affected := range rel.AffectedFollows {
-		if affected.Direction == "following" && affected.LocalUser == userID {
-			count++
-		}
-	}
-
-	return count, nil
+	// Return the affected following count from the new model
+	return rel.AffectedFollowing, nil
 }
 
 // GetFederationCostsByUser returns federation costs for a specific user within a date range
