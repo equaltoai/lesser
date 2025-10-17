@@ -640,14 +640,15 @@ Day 4: Monitoring & Testing
 **Priority**: MEDIUM
 
 #### 3.1 Federation Graph Visualization
-**Status**: STUB (returns empty)  
-**Effort**: 5-6 days  
-**Dependencies**: Graph computation
+**Status**: ✅ COMPLETE  
+**Completed**: October 17, 2025  
+**Effort**: 1 day  
+**Dependencies**: Graph computation, Federation repository
 
-**Missing Operations**:
-1. `Query.federationMap(depth)` → FederationGraph
-2. `Query.instanceRelationships(domain)` → InstanceRelations
-3. `Query.federationFlow(period)` → FederationFlow
+**Implemented Operations**:
+1. ✅ `Query.federationMap(depth)` → FederationGraph - Returns nodes, edges, clusters with health scores
+2. ✅ `Query.instanceRelationships(domain)` → InstanceRelations - Returns connections, score, recommendations
+3. ✅ `Query.federationFlow(period)` → FederationFlow - Returns flow analysis with costs and volumes
 
 **Implementation Plan**:
 
@@ -716,16 +717,17 @@ Day 6: Optimization & Testing
 ---
 
 #### 3.2 Streaming Analytics
-**Status**: NOT STARTED  
-**Effort**: 3-4 days  
+**Status**: ✅ COMPLETE  
+**Completed**: October 17, 2025  
+**Effort**: 1 day  
 **Dependencies**: Media streaming (Phase 2.2)
 
-**Missing Operations**:
-1. `Query.streamingAnalytics(mediaId)` → StreamingAnalytics
-2. `Query.popularStreams(first, after)` → StreamConnection
-3. `Query.bandwidthUsage(period)` → BandwidthReport
+**Implemented Operations**:
+1. ✅ `Query.streamingAnalytics(mediaId)` → StreamingAnalytics - Real-time metrics aggregation
+2. ✅ `Query.popularStreams(first, after)` → StreamConnection - Cursor-paginated popular content
+3. ✅ `Query.bandwidthUsage(period)` → BandwidthReport - Time-windowed bandwidth analytics
 
-**Implementation Plan**:
+**Implementation Summary**:
 
 ```
 Day 1: Analytics Collection

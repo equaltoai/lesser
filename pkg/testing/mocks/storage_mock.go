@@ -4443,6 +4443,21 @@ func (m *MockRepositoryStorage) Quote() *repositories.QuoteRepository {
 	return nil // Mock can be implemented as needed
 }
 
+// MediaAnalytics returns the mock media analytics repository
+func (m *MockRepositoryStorage) MediaAnalytics() *repositories.MediaAnalyticsRepository {
+	return nil // Mock can be implemented as needed
+}
+
+// MediaPopularity returns the mock media popularity repository
+func (m *MockRepositoryStorage) MediaPopularity() *repositories.MediaPopularityRepository {
+	return nil // Mock can be implemented as needed
+}
+
+// MediaSession returns the mock media session repository
+func (m *MockRepositoryStorage) MediaSession() *repositories.MediaSessionRepository {
+	return nil // Mock can be implemented as needed
+}
+
 // DLQ returns the mock DLQ repository
 func (m *MockRepositoryStorage) DLQ() *repositories.DLQRepository {
 	return m.dlqRepo

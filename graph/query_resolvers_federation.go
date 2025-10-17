@@ -95,17 +95,29 @@ func (r *queryResolver) FederationStatus(ctx context.Context, domain string) (*m
 }
 
 // FederationFlow implements QueryResolver.
-func (r *queryResolver) FederationFlow(_ context.Context, _ model.TimePeriod) (*model.FederationFlow, error) {
-	// Get federation flow data for the period
-	// This would query federation activity statistics
+func (r *queryResolver) FederationFlow(ctx context.Context, period model.TimePeriod) (*model.FederationFlow, error) {
+	// Get federation graph service
+	federationGraph := r.Registry.FederationGraph()
+	if federationGraph == nil {
+		r.Logger.Warn("federation graph service unavailable, returning empty flow data")
+		return &model.FederationFlow{
+			TopSources:      []*model.FlowNode{},
+			TopDestinations: []*model.FlowNode{},
+			VolumeByHour:    []*model.HourlyVolume{},
+			CostByInstance:  []*model.InstanceCost{},
+		}, nil
+	}
 
-	// For now, return empty result
-	return &model.FederationFlow{
-		TopSources:      []*model.FlowNode{},
-		TopDestinations: []*model.FlowNode{},
-		VolumeByHour:    []*model.HourlyVolume{},
-		CostByInstance:  []*model.InstanceCost{},
-	}, nil
+	// Get flow data from service
+	flow, err := federationGraph.GetFederationFlow(ctx, period)
+	if err != nil {
+		r.Logger.Error("failed to get federation flow",
+			zap.String("period", string(period)),
+			zap.Error(err))
+		return nil, errors.Join(errors.New("failed to get federation flow"), err)
+	}
+
+	return flow, nil
 }
 
 // FederationHealth implements QueryResolver.
@@ -130,14 +142,14 @@ func (r *queryResolver) FederationLimits(_ context.Context, _ *bool, first *int,
 
 // InstanceRelationships implements QueryResolver.
 func (r *queryResolver) InstanceRelationships(ctx context.Context, domain string) (*model.InstanceRelations, error) {
-	// Use federation service to get real instance relationships
-	federation := r.Registry.Federation()
-	if federation == nil {
-		return nil, ErrFederationUnavailable
+	// Use federation graph service to get real instance relationships
+	federationGraph := r.Registry.FederationGraph()
+	if federationGraph == nil {
+		return nil, ErrFederationGraphUnavailable
 	}
 
-	// Get relationships from federation service
-	relationships, err := federation.GetInstanceRelationships(ctx, domain)
+	// Get relationships from federation graph service
+	relationships, err := federationGraph.GetInstanceRelationships(ctx, domain)
 	if err != nil {
 		r.Logger.Error("Failed to get instance relationships",
 			zap.String("domain", domain),
@@ -189,16 +201,35 @@ func (r *queryResolver) InstanceHealthReport(ctx context.Context, domain string)
 }
 
 // FederationMap implements QueryResolver.
-func (r *queryResolver) FederationMap(_ context.Context, _ *int) (*model.FederationGraph, error) {
-	// Generate a map of federation connections
-	// This would analyze federation relationships
+func (r *queryResolver) FederationMap(ctx context.Context, depth *int) (*model.FederationGraph, error) {
+	// Get federation graph service
+	federationGraph := r.Registry.FederationGraph()
+	if federationGraph == nil {
+		r.Logger.Warn("federation graph service unavailable, returning empty graph")
+		return &model.FederationGraph{
+			Nodes:       []*model.InstanceNode{},
+			Edges:       []*model.FederationEdge{},
+			Clusters:    []*model.InstanceCluster{},
+			HealthScore: 1.0,
+		}, nil
+	}
 
-	// For now, return empty graph
-	return &model.FederationGraph{
-		Nodes:    []*model.InstanceNode{},
-		Edges:    []*model.FederationEdge{},
-		Clusters: []*model.InstanceCluster{},
-	}, nil
+	// Use default depth of 2 if not specified
+	depthValue := 2
+	if depth != nil {
+		depthValue = *depth
+	}
+
+	// Get federation map from service
+	graph, err := federationGraph.GetFederationMap(ctx, depthValue)
+	if err != nil {
+		r.Logger.Error("failed to get federation map",
+			zap.Int("depth", depthValue),
+			zap.Error(err))
+		return nil, errors.Join(errors.New("failed to get federation map"), err)
+	}
+
+	return graph, nil
 }
 
 // SeveredRelationships returns severed federation relationships

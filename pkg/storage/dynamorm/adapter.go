@@ -547,6 +547,21 @@ func (s *StorageAdapter) GetLogger() interface{} {
 	return s.repos.GetLogger()
 }
 
+// MediaAnalytics returns the media analytics repository
+func (s *StorageAdapter) MediaAnalytics() interface{} {
+	return s.repos.MediaAnalytics()
+}
+
+// MediaPopularity returns the media popularity repository
+func (s *StorageAdapter) MediaPopularity() interface{} {
+	return s.repos.MediaPopularity()
+}
+
+// MediaSession returns the media session repository
+func (s *StorageAdapter) MediaSession() interface{} {
+	return s.repos.MediaSession()
+}
+
 // =======================================
 // ACTOR MANAGEMENT OPERATIONS (8 methods)
 // =======================================

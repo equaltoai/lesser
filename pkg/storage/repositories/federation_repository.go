@@ -2923,3 +2923,298 @@ func (r *FederationRepository) GetFederationCostsByUser(ctx context.Context, use
 
 	return result, nil
 }
+
+// ====================================================================
+// FEDERATION GRAPH VISUALIZATION METHODS (Phase 3.1)
+// ====================================================================
+
+// GetAllFederationEdges retrieves all federation edges across all domains with pagination
+func (r *FederationRepository) GetAllFederationEdges(ctx context.Context, limit int) ([]*storage.FederationEdge, error) {
+	if limit <= 0 {
+		limit = 1000 // Default limit
+	}
+
+	result := make([]*storage.FederationEdge, 0, limit)
+	cursor := ""
+	pageCount := 0
+
+	for {
+		// Check context cancellation
+		if err := ctx.Err(); err != nil {
+			r.logger.Warn("Context cancelled while fetching federation edges",
+				zap.Int("fetched", len(result)))
+			return result, err
+		}
+
+		pageCount++
+		remaining := limit - len(result)
+		if remaining <= 0 {
+			break
+		}
+
+		// Fetch one page of edges using cursor-based pagination
+		edges, nextCursor, err := r.fetchEdgePageWithCursor(ctx, cursor, remaining)
+		if err != nil {
+			r.logger.Error("Failed to query federation edges",
+				zap.Int("page", pageCount),
+				zap.String("cursor", cursor),
+				zap.Error(err))
+			return nil, err
+		}
+
+		// No more results
+		if len(edges) == 0 {
+			break
+		}
+
+		// Append to results
+		result = append(result, edges...)
+
+		// Check if we should continue
+		if nextCursor == "" || len(result) >= limit {
+			if nextCursor != "" && len(result) >= limit {
+				r.logger.Warn("Federation edges truncated at limit",
+					zap.Int("limit", limit),
+					zap.Int("fetched", len(result)))
+			}
+			break
+		}
+
+		cursor = nextCursor
+	}
+
+	r.logger.Debug("Retrieved all federation edges",
+		zap.Int("edge_count", len(result)),
+		zap.Int("pages", pageCount))
+
+	return result, nil
+}
+
+// fetchEdgePageWithCursor fetches a single page of federation edges using cursor
+func (r *FederationRepository) fetchEdgePageWithCursor(ctx context.Context, cursor string, pageLimit int) ([]*storage.FederationEdge, string, error) {
+	// Request one extra to detect if there are more pages
+	query := r.db.WithContext(ctx).Model(&models.FederationEdge{}).
+		Limit(pageLimit + 1)
+
+	// Apply cursor if we have one
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	var edges []models.FederationEdge
+	err := query.Scan(&edges)
+	if err != nil {
+		return nil, "", ErrorHandler.HandleQueryError(err, "federation_edge", "page")
+	}
+
+	// No results
+	if len(edges) == 0 {
+		return []*storage.FederationEdge{}, "", nil
+	}
+
+	// Check if we got more than requested (indicating more pages exist)
+	hasMore := len(edges) > pageLimit
+	nextCursor := ""
+	if hasMore {
+		// CRITICAL: Create cursor from the EXTRA item (at index pageLimit) BEFORE trimming
+		// This ensures the next page starts correctly and doesn't skip the extra item
+		extraEdge := edges[pageLimit]
+		nextCursor = Utils.Pagination.EncodeCursor(extraEdge.PK, extraEdge.SK)
+
+		// Now trim to requested page size for return
+		edges = edges[:pageLimit]
+	}
+
+	// Convert to storage types
+	result := make([]*storage.FederationEdge, len(edges))
+	for i, edge := range edges {
+		result[i] = &storage.FederationEdge{
+			SourceDomain:   edge.SourceDomain,
+			TargetDomain:   edge.TargetDomain,
+			ConnectionType: edge.ConnectionType,
+			Strength:       edge.Strength,
+			LastActivity:   edge.LastActivity,
+			VolumeIn:       edge.VolumeIn,
+			VolumeOut:      edge.VolumeOut,
+			SharedUsers:    edge.SharedUsers,
+			ErrorCount:     edge.ErrorCount,
+			SuccessRate:    edge.SuccessRate,
+		}
+	}
+
+	return result, nextCursor, nil
+}
+
+// GetFederationClusters retrieves instance clusters for graph visualization
+func (r *FederationRepository) GetFederationClusters(ctx context.Context, limit int) ([]*storage.InstanceCluster, error) {
+	query := r.db.WithContext(ctx).Model(&models.InstanceCluster{}).
+		Where("PK", "=", "FEDERATION_CLUSTER#CLUSTERS").
+		Limit(limit)
+
+	var clusters []models.InstanceCluster
+	err := query.Scan(&clusters)
+	if err != nil {
+		r.logger.Error("Failed to query federation clusters",
+			zap.Int("limit", limit),
+			zap.Error(err))
+		return nil, ErrorHandler.HandleQueryError(err, "instance_cluster", "clusters")
+	}
+
+	// Convert to storage types
+	result := make([]*storage.InstanceCluster, len(clusters))
+	for i, cluster := range clusters {
+		result[i] = &storage.InstanceCluster{
+			ClusterID:   cluster.ClusterID,
+			Name:        cluster.Name,
+			Instances:   cluster.Instances,
+			CenterNode:  cluster.CenterNode,
+			Cohesion:    cluster.Cohesion,
+			Size:        cluster.Size,
+			Description: cluster.Description,
+			UpdatedAt:   cluster.UpdatedAt,
+		}
+	}
+
+	r.logger.Debug("Retrieved federation clusters",
+		zap.Int("cluster_count", len(result)))
+
+	return result, nil
+}
+
+// GetFederationActivitiesByTimeRange retrieves federation activities within a time range
+// Queries day-by-day to ensure complete coverage across the time range
+func (r *FederationRepository) GetFederationActivitiesByTimeRange(ctx context.Context, startTime, endTime time.Time, limit int) ([]*models.FederationCostActivity, error) {
+	if limit <= 0 {
+		limit = 10000 // Default limit for flow analysis
+	}
+
+	result := make([]*models.FederationCostActivity, 0, limit)
+	totalFetched := 0
+
+	// Truncate times to day boundaries
+	startDay := time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 0, 0, 0, 0, startTime.Location())
+	endDay := time.Date(endTime.Year(), endTime.Month(), endTime.Day(), 23, 59, 59, 0, endTime.Location())
+
+	// Iterate day by day
+	currentDay := startDay
+	dayCount := 0
+
+	for currentDay.Before(endDay) || currentDay.Equal(endDay) {
+		// Check context cancellation
+		if err := ctx.Err(); err != nil {
+			r.logger.Warn("Context cancelled while fetching federation activities",
+				zap.Time("current_day", currentDay),
+				zap.Int("fetched", totalFetched))
+			return result, err
+		}
+
+		dayCount++
+		remaining := limit - totalFetched
+		if remaining <= 0 {
+			r.logger.Warn("Hit limit while fetching federation activities across time range",
+				zap.Int("limit", limit),
+				zap.Int("days_processed", dayCount),
+				zap.Time("stopped_at", currentDay))
+			break
+		}
+
+		// Process this day's activities
+		dayFetched := r.fetchActivitiesForDay(ctx, currentDay, startTime, endTime, remaining, &result, &totalFetched)
+		if dayFetched < 0 {
+			// Error occurred but we continue to next day
+			break
+		}
+
+		// Move to next day
+		currentDay = currentDay.AddDate(0, 0, 1)
+	}
+
+	r.logger.Debug("Retrieved federation activities by time range",
+		zap.Time("start", startTime),
+		zap.Time("end", endTime),
+		zap.Int("activity_count", len(result)),
+		zap.Int("days_queried", dayCount),
+		zap.Bool("truncated", len(result) >= limit))
+
+	return result, nil
+}
+
+// fetchActivitiesForDay fetches and filters activities for a single day
+func (r *FederationRepository) fetchActivitiesForDay(ctx context.Context, day, startTime, endTime time.Time, remaining int, result *[]*models.FederationCostActivity, totalFetched *int) int {
+	dayKey := fmt.Sprintf("FEDERATION_DAILY#%s", day.Format(common.DateFormat))
+	var lastSK string
+	pageCount := 0
+	dayTotal := 0
+
+	for remaining > 0 {
+		pageCount++
+		pageLimit := remaining
+		if pageLimit > 1000 {
+			pageLimit = 1000 // Cap per-page to 1000 for performance
+		}
+
+		// Fetch one page
+		activities, err := r.fetchActivityPage(ctx, dayKey, lastSK, pageLimit)
+		if err != nil {
+			r.logger.Error("Failed to query federation activities for day",
+				zap.String("day_key", dayKey),
+				zap.Int("page", pageCount),
+				zap.Error(err))
+			return -1 // Error indicator
+		}
+
+		// No more results for this day
+		if len(activities) == 0 {
+			break
+		}
+
+		// Process page
+		hasMore := len(activities) > pageLimit
+		if hasMore {
+			activities = activities[:pageLimit]
+		}
+
+		// Filter and append
+		for i := range activities {
+			if r.activityInTimeRange(&activities[i], startTime, endTime) && len(*result) < (*totalFetched+remaining) {
+				*result = append(*result, &activities[i])
+				*totalFetched++
+				dayTotal++
+				remaining--
+			}
+		}
+
+		// Check if we should continue
+		if !hasMore || remaining <= 0 {
+			break
+		}
+
+		// Set cursor for next page
+		if len(activities) > 0 {
+			lastSK = activities[len(activities)-1].GSI1SK
+		}
+	}
+
+	return dayTotal
+}
+
+// fetchActivityPage fetches a single page of activities for a day
+func (r *FederationRepository) fetchActivityPage(ctx context.Context, dayKey, lastSK string, pageLimit int) ([]models.FederationCostActivity, error) {
+	query := r.db.WithContext(ctx).Model(&models.FederationCostActivity{}).
+		Index("gsi1").
+		Where("GSI1PK", "=", dayKey).
+		Limit(pageLimit + 1) // Request one extra to detect more pages
+
+	if lastSK != "" {
+		query = query.Where("GSI1SK", ">", lastSK)
+	}
+
+	var activities []models.FederationCostActivity
+	err := query.Scan(&activities)
+	return activities, err
+}
+
+// activityInTimeRange checks if an activity falls within the specified time range
+func (r *FederationRepository) activityInTimeRange(activity *models.FederationCostActivity, startTime, endTime time.Time) bool {
+	return activity.Timestamp.After(startTime) && activity.Timestamp.Before(endTime)
+}

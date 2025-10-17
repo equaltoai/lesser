@@ -77,6 +77,9 @@ type RepositoryFactory struct {
 	severanceRepo           *repositories.SeveranceRepository
 	moderationMLRepo        *repositories.ModerationMLRepository
 	quoteRepo               *repositories.QuoteRepository
+	mediaAnalyticsRepo      *repositories.MediaAnalyticsRepository
+	mediaPopularityRepo     *repositories.MediaPopularityRepository
+	mediaSessionRepo        *repositories.MediaSessionRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -157,6 +160,9 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.oauthRepo = repositories.NewOAuthRepository(f.db, f.logger)
 	f.dnsCacheRepo = repositories.NewDNSCacheRepository(f.db, f.tableName, f.logger, nil)
 	f.moderationMLRepo = repositories.NewModerationMLRepository(f.db, f.tableName, f.logger)
+	f.mediaAnalyticsRepo = repositories.NewMediaAnalyticsRepository(f.db, f.tableName, f.logger, nil)
+	f.mediaPopularityRepo = repositories.NewMediaPopularityRepository(f.db, f.tableName, f.logger, nil)
+	f.mediaSessionRepo = repositories.NewMediaSessionRepository(f.db, f.logger, nil)
 
 	// All other repositories are nil until needed/implemented
 	// This allows the factory to be created without breaking the application
@@ -467,6 +473,21 @@ func (f *RepositoryFactory) ModerationML() *repositories.ModerationMLRepository 
 // Quote returns the Quote repository instance
 func (f *RepositoryFactory) Quote() *repositories.QuoteRepository {
 	return f.quoteRepo
+}
+
+// MediaAnalytics returns the MediaAnalytics repository instance
+func (f *RepositoryFactory) MediaAnalytics() *repositories.MediaAnalyticsRepository {
+	return f.mediaAnalyticsRepo
+}
+
+// MediaPopularity returns the MediaPopularity repository instance
+func (f *RepositoryFactory) MediaPopularity() *repositories.MediaPopularityRepository {
+	return f.mediaPopularityRepo
+}
+
+// MediaSession returns the MediaSession repository instance
+func (f *RepositoryFactory) MediaSession() *repositories.MediaSessionRepository {
+	return f.mediaSessionRepo
 }
 
 // Additional repositories can be added here as needed
