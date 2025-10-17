@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"go.uber.org/zap"
 )
 
 // NOTE: imports intentionally omitted. Run gofmt/goimports and add any
@@ -111,13 +112,18 @@ func (r *mutationResolver) AcknowledgeSeverance(ctx context.Context, id string) 
 	}
 
 	// Acknowledge the severance
-	_, err = severanceService.AcknowledgeSeverance(ctx, id, username)
+	severedRel, err := severanceService.AcknowledgeSeverance(ctx, id, username)
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to acknowledge severance"), err)
 	}
 
+	// Convert to GraphQL model
+	gqlSeverance := r.convertSeveredRelationshipToModel(ctx, severedRel)
+
 	return &model.AcknowledgePayload{
-		Success: true,
+		Success:             true,
+		SeveredRelationship: gqlSeverance,
+		Acknowledged:        true,
 	}, nil
 }
 
@@ -146,8 +152,30 @@ func (r *mutationResolver) AttemptReconnection(ctx context.Context, id string) (
 		errorMessages = []string{"reconnection failed for unknown reason"}
 	}
 
+	// Fetch the updated severance AFTER the reconnection attempt to get fresh data
+	// This ensures reconnectionAttempt flag and other fields reflect the latest state
+	severedRel, err := severanceService.GetSeveredRelationship(ctx, id)
+	if err != nil {
+		r.Logger.Warn("failed to fetch updated severance after reconnection, using basic response",
+			zap.String("severance_id", id),
+			zap.Error(err))
+		// Return payload without severance object rather than failing
+		return &model.ReconnectionPayload{
+			Success:     result.Success,
+			Reconnected: result.SuccessCount,
+			Failed:      result.FailureCount,
+			Errors:      errorMessages,
+		}, nil
+	}
+
+	// Convert to GraphQL model with fresh data
+	gqlSeverance := r.convertSeveredRelationshipToModel(ctx, severedRel)
+
 	return &model.ReconnectionPayload{
-		Success: result.Success,
-		Errors:  errorMessages,
+		Success:             result.Success,
+		SeveredRelationship: gqlSeverance,
+		Reconnected:         result.SuccessCount,
+		Failed:              result.FailureCount,
+		Errors:              errorMessages,
 	}, nil
 }

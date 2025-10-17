@@ -43,6 +43,7 @@ type LambdaFunctions struct {
 	ActivityProcessor     awslambda.Function
 	NotificationProcessor awslambda.Function
 	ModerationProcessor   awslambda.Function
+	SeveranceProcessor    awslambda.Function
 
 	// WebSocket Functions
 	StreamingFunction    awslambda.Function
@@ -163,6 +164,11 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	functions.ActivityProcessor = createFunction(stack, "activity-processor", props.Environment, &streamProps, "../../bin/activity-processor.zip", logRetention)
 	functions.NotificationProcessor = createFunction(stack, "push-delivery", props.Environment, &commonProps, "../../bin/push-delivery.zip", logRetention)
 	functions.ModerationProcessor = createFunction(stack, "moderation-processor", props.Environment, &commonProps, "../../bin/moderation-processor.zip", logRetention)
+
+	// Severance Processor - handles federation severance detection (Phase 2.4)
+	severanceProps := streamProps
+	severanceProps.Timeout = awscdk.Duration_Seconds(jsii.Number(30))
+	functions.SeveranceProcessor = createFunction(stack, "severance-processor", props.Environment, &severanceProps, "../../bin/severance-processor.zip", logRetention)
 
 	// ML Training Processor - handles ML model training job lifecycle (Phase 2.3)
 	mlTrainingProps := streamProps

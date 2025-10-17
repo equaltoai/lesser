@@ -107,4 +107,18 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 		// Filter for MODEL_TRAINING_JOB records handled in Lambda code
 	})
 	props.Functions.MLTrainingProcessor.AddEventSource(mlTrainingEventSource)
+
+	// Severance processor - handles federation severance detection (Phase 2.4)
+	severanceEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
+		StartingPosition:        awslambda.StartingPosition_LATEST,
+		BatchSize:               jsii.Number(10),
+		MaxBatchingWindow:       awscdk.Duration_Seconds(jsii.Number(5)),
+		ParallelizationFactor:   jsii.Number(2),
+		RetryAttempts:           jsii.Number(3),
+		BisectBatchOnError:      jsii.Bool(true),
+		ReportBatchItemFailures: jsii.Bool(true),
+		// Remove filters completely to fix deployment issue
+		// Filter for DOMAIN_BLOCK, FEDERATION_ISSUE, and FEDERATION_METRICS records handled in Lambda code
+	})
+	props.Functions.SeveranceProcessor.AddEventSource(severanceEventSource)
 }

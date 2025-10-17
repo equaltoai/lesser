@@ -46,11 +46,17 @@ type NotificationService interface {
 	NotifySeverance(ctx context.Context, userID string, severanceID string) error
 }
 
+// EventPublisher defines the interface for publishing streaming events
+type EventPublisher interface {
+	PublishEvent(ctx context.Context, event *models.StreamingEvent) error
+}
+
 // Service provides severed relationship operations
 type Service struct {
 	severanceRepo Repository
 	federation    FederationService
 	notification  NotificationService
+	publisher     EventPublisher
 	logger        *zap.Logger
 	domainName    string
 }
@@ -60,6 +66,7 @@ func NewService(
 	severanceRepo Repository,
 	federation FederationService,
 	notification NotificationService,
+	publisher EventPublisher,
 	logger *zap.Logger,
 	domainName string,
 ) *Service {
@@ -71,6 +78,7 @@ func NewService(
 		severanceRepo: severanceRepo,
 		federation:    federation,
 		notification:  notification,
+		publisher:     publisher,
 		logger:        logger,
 		domainName:    domainName,
 	}
@@ -248,6 +256,9 @@ func (s *Service) AcknowledgeSeverance(ctx context.Context, severanceID, userID 
 		zap.String("severance_id", severanceID),
 		zap.String("user_id", userID))
 
+	// Emit SEVERANCE_ACKNOWLEDGED event
+	s.emitSeveranceEvent(ctx, severanceID, "SEVERANCE_ACKNOWLEDGED", userID, severance.RemoteInstance)
+
 	// Get the updated severance
 	updatedSeverance, err := s.severanceRepo.GetSeveredRelationship(ctx, severanceID)
 	if err != nil {
@@ -380,6 +391,9 @@ func (s *Service) AttemptReconnection(ctx context.Context, severanceID, userID s
 		CompletedAt:  time.Now(),
 	}
 
+	// Emit RECONNECTION_ATTEMPTED event
+	s.emitSeveranceEvent(ctx, severanceID, "RECONNECTION_ATTEMPTED", userID, severance.RemoteInstance)
+
 	s.logger.Info("reconnection attempt completed",
 		zap.String("severance_id", severanceID),
 		zap.String("attempt_id", attempt.ID),
@@ -411,4 +425,93 @@ func (s *Service) convertModelToService(model *models.SeveredRelationship) *Seve
 		AutoDetected:      model.AutoDetected,
 		AdminNotes:        model.AdminNotes,
 	}
+}
+
+// emitSeveranceEvent emits a streaming event for severance-related actions
+func (s *Service) emitSeveranceEvent(ctx context.Context, severanceID, eventType, userID, remoteInstance string) {
+	if s.publisher == nil {
+		s.logger.Debug("no publisher available, skipping event emission")
+		return
+	}
+
+	now := time.Now()
+	eventID := fmt.Sprintf("%s_%d", severanceID, now.Unix())
+
+	event := &models.StreamingEvent{
+		EventID:    eventID,
+		EventType:  eventType,
+		TargetType: "severance",
+		TargetID:   severanceID,
+		Payload: map[string]interface{}{
+			"remote_instance": remoteInstance,
+			"severance_id":    severanceID,
+			"user_id":         userID,
+			"event_type":      eventType,
+		},
+		CreatedAt: now,
+		TTL:       now.Add(24 * time.Hour).Unix(), // Events expire after 24 hours
+	}
+
+	event.UpdateKeys()
+
+	if err := s.publisher.PublishEvent(ctx, event); err != nil {
+		s.logger.Error("failed to publish severance event",
+			zap.String("event_type", eventType),
+			zap.String("severance_id", severanceID),
+			zap.Error(err))
+	} else {
+		s.logger.Debug("published severance event",
+			zap.String("event_type", eventType),
+			zap.String("severance_id", severanceID))
+	}
+}
+
+// DetectSeverance creates a new severance record when federation issues are detected
+func (s *Service) DetectSeverance(ctx context.Context, remoteInstance string, reason models.SeveranceReason, affectedFollowers, affectedFollowing int, details string) (*SeveredRelationship, error) {
+	if err := common.ValidateRequiredParam("remoteInstance", remoteInstance); err != nil {
+		return nil, err
+	}
+
+	// Create new severance record
+	severance := models.NewSeveredRelationship(s.domainName, remoteInstance, reason)
+	severance.AffectedFollowers = affectedFollowers
+	severance.AffectedFollowing = affectedFollowing
+	severance.Details = details
+	severance.AutoDetected = true
+
+	// Determine severity based on impact
+	totalAffected := affectedFollowers + affectedFollowing
+	if totalAffected > 1000 {
+		severance.Severity = "high"
+	} else if totalAffected > 100 {
+		severance.Severity = "medium"
+	} else {
+		severance.Severity = "low"
+	}
+
+	// Update keys
+	if err := severance.UpdateKeys(); err != nil {
+		return nil, fmt.Errorf("failed to update severance keys: %w", err)
+	}
+
+	// Save to storage
+	if err := s.severanceRepo.CreateSeveredRelationship(ctx, severance); err != nil {
+		s.logger.Error("failed to create severance",
+			zap.String("remote_instance", remoteInstance),
+			zap.String("reason", string(reason)),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to create severance: %w", err)
+	}
+
+	s.logger.Info("detected federation severance",
+		zap.String("severance_id", severance.ID),
+		zap.String("remote_instance", remoteInstance),
+		zap.String("reason", string(reason)),
+		zap.Int("affected_followers", affectedFollowers),
+		zap.Int("affected_following", affectedFollowing))
+
+	// Emit SEVERANCE_DETECTED event
+	s.emitSeveranceEvent(ctx, severance.ID, "SEVERANCE_DETECTED", "system", remoteInstance)
+
+	return s.convertModelToService(severance), nil
 }
