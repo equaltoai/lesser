@@ -354,7 +354,7 @@ func (r *InstanceRepository) GetWeeklyActivity(ctx context.Context, weekTimestam
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "instance activity", fmt.Sprintf("week %d", weekTimestamp))
 		}
 		r.logger.Error("Failed to get weekly activity", zap.Error(err), zap.Int64("week", weekTimestamp))
 		return nil, ErrorHandler.HandleGetError(err, "instance activity", fmt.Sprintf("week %d", weekTimestamp))
@@ -421,8 +421,7 @@ func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.Ac
 	}
 
 	if err := common.ValidateSliceNotEmpty("users", users); err != nil {
-		// No admin users found, return nil (no contact account)
-		return nil, nil
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityActor, "admin contact")
 	}
 
 	user := users[0]
@@ -436,8 +435,7 @@ func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.Ac
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// Admin user exists but no actor profile - this is unusual but not an error
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityActor, user.Username)
 		}
 		r.logger.Error("Failed to get actor for contact account",
 			zap.String("username", user.Username),

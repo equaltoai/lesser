@@ -41,11 +41,11 @@ func TestUpdateActor_MissingUsername(t *testing.T) {
 func TestSearchAccounts_EmptyQuery(t *testing.T) {
 	repo := &ActorRepository{}
 
-	// With empty query, should return nil, nil (handled by guard clause)
-	results, err := repo.SearchAccounts(context.Background(), "", 10, false, 0)
+    // With empty query, should return an empty slice without error
+    results, err := repo.SearchAccounts(context.Background(), "", 10, false, 0)
 
-	assert.NoError(t, err)
-	assert.Nil(t, results)
+    assert.NoError(t, err)
+    assert.Empty(t, results)
 }
 
 func TestGetSearchSuggestions_ShortPrefix(t *testing.T) {

@@ -68,7 +68,7 @@ func (r *AuditRepository) GetAuditLogByID(ctx context.Context, id string, date t
 	}
 
 	if len(logs) == 0 {
-		return nil, nil // Not found
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityAudit, id)
 	}
 
 	return logs[0], nil

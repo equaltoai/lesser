@@ -101,6 +101,7 @@ type ActivityHandler struct {
 	DB               core.DB
 	TableName        string
 	Logger           *zap.Logger
+	ActivityRepo     *repositories.ActivityRepository
 	ObjectRepo       *repositories.ObjectRepository
 	ActorRepo        *repositories.ActorRepository
 	TimelineRepo     *repositories.TimelineRepository
@@ -124,6 +125,7 @@ func NewActivityHandler(db core.DB, tableName string) *ActivityHandler {
 		DB:               db,
 		TableName:        tableName,
 		Logger:           logger,
+		ActivityRepo:     repositories.NewActivityRepository(db, tableName, logger, nil),
 		ObjectRepo:       repositories.NewObjectRepository(db, tableName, domain, logger),
 		ActorRepo:        repositories.NewActorRepository(db, tableName, logger),
 		TimelineRepo:     repositories.NewTimelineRepository(db, tableName, logger, nil),
@@ -1233,12 +1235,14 @@ func (h *ActivityHandler) processUndoActivity(ctx context.Context, activity *act
 	switch obj := activity.Object.(type) {
 	case string:
 		// Object is just an ID - fetch the full activity
-		_, err := h.getActivityByID(ctx, obj)
-		// This function currently always returns an error as it's not fully implemented
-		h.Logger.Error("Failed to fetch original activity for undo",
-			zap.String("activity_id", obj),
-			zap.Error(err))
-		return originalActivityFetchFailed(obj, err)
+		fetchedActivity, err := h.getActivityByID(ctx, obj)
+		if err != nil {
+			h.Logger.Error("Failed to fetch original activity for undo",
+				zap.String("activity_id", obj),
+				zap.Error(err))
+			return originalActivityFetchFailed(obj, err)
+		}
+		undoTarget = fetchedActivity
 	case map[string]interface{}:
 		undoTarget = obj
 	default:
@@ -1294,11 +1298,7 @@ func (h *ActivityHandler) processUndoActivity(ctx context.Context, activity *act
 	case ActivityTypeRemove:
 		return h.processUndoRemove(ctx, activity, undoTarget, username)
 	case ActivityTypeReject:
-		// Undo reject is not currently implemented
-		h.Logger.Info("Undo reject activity received but not implemented",
-			zap.String("activity_id", activity.ID),
-			zap.String("username", username))
-		return nil
+		return h.processUndoReject(ctx, activity, undoTarget, username)
 	default:
 		h.Logger.Debug("Unsupported undo activity type - may be extension or custom type",
 			zap.String("activity_type", activityType),
@@ -1310,15 +1310,29 @@ func (h *ActivityHandler) processUndoActivity(ctx context.Context, activity *act
 // getActivityByID fetches an activity by its ID
 //
 //nolint:unused // Kept for future implementation
-func (h *ActivityHandler) getActivityByID(_ context.Context, activityID string) (*activitypub.Activity, error) {
-	// Try to get from our local storage first
-	// This is a simplified implementation - in practice you might need more sophisticated lookup
+func (h *ActivityHandler) getActivityByID(ctx context.Context, activityID string) (*activitypub.Activity, error) {
+	if err := common.ValidateRequiredParam("activityID", activityID); err != nil {
+		return nil, err
+	}
+
+	if h.ActivityRepo == nil {
+		h.Logger.Warn("Activity repository not configured",
+			zap.String("activity_id", activityID))
+		return nil, activityNotFoundLocally(activityID)
+	}
+
 	h.Logger.Debug("Fetching activity by ID",
 		zap.String("activity_id", activityID))
 
-	// For now, return an error indicating the activity wasn't found locally
-	// In a full implementation, this would check local storage and potentially fetch from remote
-	return nil, activityNotFoundLocally(activityID)
+	activity, err := h.ActivityRepo.GetActivity(ctx, activityID)
+	if err != nil {
+		h.Logger.Warn("Failed to fetch activity by ID",
+			zap.String("activity_id", activityID),
+			zap.Error(err))
+		return nil, err
+	}
+
+	return activity, nil
 }
 
 // extractActivityType extracts the type field from an activity object
@@ -1652,6 +1666,111 @@ func (h *ActivityHandler) processUndoAccept(_ context.Context, undoActivity *act
 	h.Logger.Info("Successfully processed Undo Accept",
 		zap.String("actor", actorURI),
 		zap.String("original_activity_id", originalActivityID))
+
+	return nil
+}
+
+// processUndoReject processes an undo of a Reject activity
+//
+//nolint:unused // Called from processUndoActivity but kept for full implementation
+func (h *ActivityHandler) processUndoReject(ctx context.Context, undoActivity *activitypub.Activity, rejectActivity interface{}, username string) error {
+	h.Logger.Info("Processing Undo Reject activity",
+		zap.String("undo_activity_id", undoActivity.ID),
+		zap.String("actor", undoActivity.Actor),
+		zap.String("username", username),
+	)
+
+	var rejectActor string
+	var followActivity interface{}
+
+	switch reject := rejectActivity.(type) {
+	case *activitypub.Activity:
+		rejectActor = reject.Actor
+		followActivity = reject.Object
+	case map[string]interface{}:
+		if actor, ok := reject["actor"].(string); ok {
+			rejectActor = actor
+		}
+		followActivity = reject["object"]
+	default:
+		h.Logger.Error("Undo Reject activity has invalid reject target type",
+			zap.Any("reject_activity", rejectActivity))
+		return services.ErrUndoInvalidObjectType
+	}
+
+	rejecter := h.extractUsernameFromActorURI(rejectActor)
+	if err := common.ValidateRequiredParam("rejecter", rejecter); err != nil {
+		h.Logger.Error("Failed to extract rejecter from Undo Reject activity",
+			zap.String("reject_actor", rejectActor))
+		return services.ErrExtractUsernamesFromReject
+	}
+
+	var follower string
+	var followActivityID string
+
+	resolveFollowActivity := func(activity *activitypub.Activity) {
+		if activity == nil {
+			return
+		}
+
+		if follower == "" && activity.Actor != "" {
+			follower = h.extractUsernameFromActorURI(activity.Actor)
+		}
+
+		if followActivityID == "" && activity.ID != "" {
+			followActivityID = activity.ID
+		}
+	}
+
+	switch follow := followActivity.(type) {
+	case string:
+		followActivityID = follow
+
+		if resolved, err := h.getActivityByID(ctx, follow); err == nil {
+			resolveFollowActivity(resolved)
+		} else {
+			h.Logger.Warn("Failed to resolve follow activity for Undo Reject",
+				zap.String("follow_activity_id", follow),
+				zap.Error(err))
+		}
+	case *activitypub.Activity:
+		resolveFollowActivity(follow)
+	case map[string]interface{}:
+		if actor, ok := follow["actor"].(string); ok {
+			follower = h.extractUsernameFromActorURI(actor)
+		}
+		if id, ok := follow["id"].(string); ok {
+			followActivityID = id
+		}
+	default:
+		h.Logger.Warn("Undo Reject follow activity has unexpected type",
+			zap.Any("follow_activity", follow))
+	}
+
+	if follower == "" {
+		follower = username
+	}
+
+	if err := common.ValidateRequiredParam("follower", follower); err != nil {
+		h.Logger.Error("Failed to resolve follower for Undo Reject",
+			zap.String("rejecter", rejecter),
+			zap.String("username_context", username))
+		return err
+	}
+
+	if err := h.RelationshipRepo.CreateRelationship(ctx, follower, rejecter, followActivityID); err != nil {
+		h.Logger.Error("Failed to recreate follow relationship after Undo Reject",
+			zap.String("follower", follower),
+			zap.String("rejecter", rejecter),
+			zap.String("follow_activity_id", followActivityID),
+			zap.Error(err))
+		return followRelationshipCreationFailed(err)
+	}
+
+	h.Logger.Info("Successfully processed Undo Reject activity",
+		zap.String("follower", follower),
+		zap.String("followee", rejecter),
+		zap.String("follow_activity_id", followActivityID))
 
 	return nil
 }

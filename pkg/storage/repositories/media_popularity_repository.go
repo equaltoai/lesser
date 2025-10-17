@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
@@ -181,7 +182,7 @@ func (r *MediaPopularityRepository) GetPopularityForMedia(ctx context.Context, m
 
 	if err != nil {
 		if dynamormErrors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityMedia, fmt.Sprintf("popularity %s#%s", mediaID, period))
 		}
 		return nil, ErrorHandler.HandleQueryError(err, EntityMedia, "media popularity")
 	}

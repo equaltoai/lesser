@@ -2,8 +2,8 @@ package repositories
 
 import (
 	"context"
-
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -32,9 +32,8 @@ func NewStreamingCloudWatchRepository(db core.DB, tableName string, logger *zap.
 
 // GetQualityBreakdown retrieves cached quality breakdown metrics for a media item
 func (r *StreamingCloudWatchRepository) GetQualityBreakdown(_ context.Context, _ string) (*models.StreamingCloudWatchMetrics, error) {
-	// For now, return nil to indicate no cached data - CloudWatch service will handle fallback
-	// This can be implemented later when DynamORM query patterns are established
-	return nil, nil
+	// No cached data available yet
+	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "streaming metrics", "quality breakdown")
 }
 
 // CacheQualityBreakdown stores quality breakdown metrics in cache
@@ -48,7 +47,7 @@ func (r *StreamingCloudWatchRepository) CacheQualityBreakdown(ctx context.Contex
 
 // GetGeographicData retrieves cached geographic distribution metrics
 func (r *StreamingCloudWatchRepository) GetGeographicData(_ context.Context, _ string) (*models.StreamingCloudWatchMetrics, error) {
-	return nil, nil
+	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "streaming metrics", "geographic data")
 }
 
 // CacheGeographicData stores geographic distribution metrics in cache
@@ -61,7 +60,7 @@ func (r *StreamingCloudWatchRepository) CacheGeographicData(_ context.Context, m
 
 // GetConcurrentViewers retrieves cached concurrent viewer metrics
 func (r *StreamingCloudWatchRepository) GetConcurrentViewers(_ context.Context, _ string) (*models.StreamingCloudWatchMetrics, error) {
-	return nil, nil
+	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "streaming metrics", "concurrent viewers")
 }
 
 // CacheConcurrentViewers stores concurrent viewer metrics in cache
@@ -74,7 +73,7 @@ func (r *StreamingCloudWatchRepository) CacheConcurrentViewers(_ context.Context
 
 // GetPerformanceMetrics retrieves cached performance metrics
 func (r *StreamingCloudWatchRepository) GetPerformanceMetrics(_ context.Context, _ string) (*models.StreamingCloudWatchMetrics, error) {
-	return nil, nil
+	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "streaming metrics", "performance")
 }
 
 // CachePerformanceMetrics stores performance metrics in cache

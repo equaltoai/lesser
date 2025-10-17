@@ -208,7 +208,7 @@ func (v *ValidationUtils) IsValidHashtag(tag string) bool {
 	return len(cleaned) > 0 && len(cleaned) <= 100
 }
 
-// PaginationUtils provides utilities for cursor-based pagination
+// PaginationUtils provides helpers for encoding, decoding, and validating cursors
 type PaginationUtils struct{}
 
 // NewPaginationUtils creates a new PaginationUtils instance

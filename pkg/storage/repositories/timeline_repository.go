@@ -84,7 +84,7 @@ func (r *TimelineRepository) GetPublicTimeline(_ context.Context, local bool, li
 		Where("GSI1PK", "=", gsi1pk).
 		OrderBy("GSI1SK", "ASC") // ASC because we use reverse timestamp
 
-	// Handle cursor-based pagination
+	// Resume from the supplied cursor value when available
 	if cursor != "" {
 		// With reverse timestamp, we use > for getting older entries
 		query = query.Where("GSI1SK", ">", cursor)
@@ -377,7 +377,7 @@ func (r *TimelineRepository) GetConversations(ctx context.Context, username stri
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC") // Most recent first (timestamp-based sorting)
 
-	// Handle cursor-based pagination
+	// Resume from the supplied cursor value when available
 	if cursor != "" {
 		query = query.Where("SK", "<", cursor) // < for getting older conversations
 	}

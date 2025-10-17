@@ -16,6 +16,14 @@ const (
 	projectionTypeKeysOnly = "KEYS_ONLY"
 )
 
+const (
+	gsiMigrationPKPrefix = "GSI_MIGRATION#"
+	gsiMigrationSKPrefix = "GSI#"
+
+	gsiStatusCreated = "CREATED"
+	gsiStatusDeleted = "DELETED"
+)
+
 // GSIMigrationRecord tracks GSI migration operations
 type GSIMigrationRecord struct {
 	PK             string    `dynamorm:"pk"`
@@ -75,7 +83,7 @@ type GSIDefinition struct {
 }
 
 // CreateGSI creates a new Global Secondary Index using DynamORM patterns
-func (h *GSIHelper) CreateGSI(_ context.Context, gsi GSIDefinition) error {
+func (h *GSIHelper) CreateGSI(ctx context.Context, gsi GSIDefinition) error {
 	h.logger.Info("Creating GSI with DynamORM",
 		zap.String("table", h.tableName),
 		zap.String("gsi", gsi.Name))
@@ -88,24 +96,45 @@ func (h *GSIHelper) CreateGSI(_ context.Context, gsi GSIDefinition) error {
 		return fmt.Errorf("invalid GSI definition: %w", err)
 	}
 
-	// Store the GSI definition record
-	// Note: This would typically use a repository method in a real implementation
-	h.logger.Info("GSI migration record created (storage not implemented in helper)",
-		zap.String("table", h.tableName),
-		zap.String("gsi", gsi.Name),
-		zap.String("hash_key", gsi.HashKey),
-		zap.String("projection", gsi.ProjectionType))
+	if gsi.ProjectionType == "" {
+		gsi.ProjectionType = projectionTypeAll
+	}
+
+	record := &GSIMigrationRecord{
+		PK:             h.partitionKey(),
+		SK:             h.sortKey(gsi.Name),
+		TableName:      h.tableName,
+		GSIName:        gsi.Name,
+		HashKey:        gsi.HashKey,
+		HashKeyType:    gsi.HashKeyType,
+		RangeKey:       gsi.RangeKey,
+		RangeKeyType:   gsi.RangeKeyType,
+		ProjectionType: gsi.ProjectionType,
+		IncludeFields:  append([]string(nil), gsi.IncludeFields...),
+		ReadCapacity:   gsi.ReadCapacity,
+		WriteCapacity:  gsi.WriteCapacity,
+		Status:         gsiStatusCreated,
+		CreatedAt:      time.Now().UTC(),
+	}
+
+	if err := h.db.WithContext(ctx).Model(record).Create(); err != nil {
+		return fmt.Errorf("failed to persist GSI migration record: %w", err)
+	}
 
 	h.logger.Info("GSI migration record created",
 		zap.String("table", h.tableName),
 		zap.String("gsi", gsi.Name),
-		zap.String("status", "CREATED"))
+		zap.String("status", gsiStatusCreated))
 
 	return nil
 }
 
 // DeleteGSI deletes a Global Secondary Index using DynamORM patterns
-func (h *GSIHelper) DeleteGSI(_ context.Context, gsiName string) error {
+func (h *GSIHelper) DeleteGSI(ctx context.Context, gsiName string) error {
+	if gsiName == "" {
+		return fmt.Errorf("GSI name is required")
+	}
+
 	h.logger.Info("Deleting GSI with DynamORM",
 		zap.String("table", h.tableName),
 		zap.String("gsi", gsiName))
@@ -114,16 +143,31 @@ func (h *GSIHelper) DeleteGSI(_ context.Context, gsiName string) error {
 	// GSI deletion should be handled via CDK/Terraform during deployment.
 	// This method records the deletion for migration tracking.
 
-	// Update the status in the migration record
-	// Note: This would typically use a repository method in a real implementation
-	h.logger.Info("GSI migration record updated (storage not implemented in helper)",
-		zap.String("gsi", gsiName),
-		zap.String("status", "DELETED"))
+	record := &GSIMigrationRecord{}
+	query := h.db.WithContext(ctx).Model(record).
+		Where("PK", "=", h.partitionKey()).
+		Where("SK", "=", h.sortKey(gsiName))
+
+	if err := query.First(record); err != nil {
+		return fmt.Errorf("failed to load GSI migration record: %w", err)
+	}
+
+	record.Status = gsiStatusDeleted
+	record.Error = ""
+	if record.TableName == "" {
+		record.TableName = h.tableName
+	}
+	record.PK = h.partitionKey()
+	record.SK = h.sortKey(gsiName)
+
+	if err := query.Update(); err != nil {
+		return fmt.Errorf("failed to update GSI migration record: %w", err)
+	}
 
 	h.logger.Info("GSI migration record updated for deletion",
 		zap.String("table", h.tableName),
 		zap.String("gsi", gsiName),
-		zap.String("status", "DELETED"))
+		zap.String("status", gsiStatusDeleted))
 
 	return nil
 }
@@ -172,28 +216,37 @@ func (h *GSIHelper) validateGSIDefinition(gsi GSIDefinition) error {
 }
 
 // GetGSIStatus retrieves the status of a GSI migration
-func (h *GSIHelper) GetGSIStatus(_ context.Context, gsiName string) (*GSIMigrationRecord, error) {
-	// Note: This would typically use a repository method in a real implementation
-	h.logger.Info("GetGSIStatus called (storage not implemented in helper)",
-		zap.String("gsi", gsiName))
+func (h *GSIHelper) GetGSIStatus(ctx context.Context, gsiName string) (*GSIMigrationRecord, error) {
+	if gsiName == "" {
+		return nil, fmt.Errorf("GSI name is required")
+	}
 
-	// Return mock record for demonstration
-	return &GSIMigrationRecord{
-		PK:        fmt.Sprintf("GSI_MIGRATION#%s", gsiName),
-		SK:        "DEFINITION",
-		GSIName:   gsiName,
-		Status:    "CREATED",
-		CreatedAt: time.Now(),
-	}, nil
+	record := &GSIMigrationRecord{}
+	query := h.db.WithContext(ctx).Model(record).
+		Where("PK", "=", h.partitionKey()).
+		Where("SK", "=", h.sortKey(gsiName))
+
+	if err := query.First(record); err != nil {
+		return nil, fmt.Errorf("failed to load GSI migration record: %w", err)
+	}
+
+	return record, nil
 }
 
 // ListGSIMigrations lists all GSI migration records
-func (h *GSIHelper) ListGSIMigrations(_ context.Context) ([]*GSIMigrationRecord, error) {
-	// Note: This would typically use a repository method in a real implementation
-	h.logger.Info("ListGSIMigrations called (storage not implemented in helper)")
+func (h *GSIHelper) ListGSIMigrations(ctx context.Context) ([]*GSIMigrationRecord, error) {
+	h.logger.Info("Listing GSI migrations",
+		zap.String("table", h.tableName))
 
-	// Return empty slice for demonstration
-	return []*GSIMigrationRecord{}, nil
+	var records []*GSIMigrationRecord
+	err := h.db.WithContext(ctx).Model(&GSIMigrationRecord{}).
+		Where("PK", "=", h.partitionKey()).
+		All(&records)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list GSI migration records: %w", err)
+	}
+
+	return records, nil
 }
 
 // GSIMigration is a helper base for GSI-related migrations
@@ -232,4 +285,12 @@ func (m GSIMigration) Down(ctx context.Context, db core.DB) error {
 	}
 
 	return helper.DeleteGSI(ctx, m.GSI.Name)
+}
+
+func (h *GSIHelper) partitionKey() string {
+	return fmt.Sprintf("%s%s", gsiMigrationPKPrefix, h.tableName)
+}
+
+func (h *GSIHelper) sortKey(gsiName string) string {
+	return fmt.Sprintf("%s%s", gsiMigrationSKPrefix, gsiName)
 }

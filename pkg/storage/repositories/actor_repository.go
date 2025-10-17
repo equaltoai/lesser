@@ -313,7 +313,7 @@ func (r *ActorRepository) DeleteActor(ctx context.Context, username string) erro
 func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limit int, _ bool, _ int) ([]*activitypub.Actor, error) {
 	// Handle empty query gracefully
 	if query == "" {
-		return nil, nil
+		return []*activitypub.Actor{}, nil
 	}
 
 	if err := common.ValidateRequiredParam("query", query); err != nil {

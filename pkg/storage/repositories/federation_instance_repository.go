@@ -744,7 +744,7 @@ func (r *FederationInstanceRepository) batchUpdateUsageInChunks(ctx context.Cont
 	return nil
 }
 
-// ListAllInstances returns all instances with backward compatible pagination
+// ListAllInstances returns instances while honoring legacy startKey-based pagination
 func (r *FederationInstanceRepository) ListAllInstances(ctx context.Context, limit int, startKey map[string]interface{}) ([]*types.Instance, map[string]interface{}, error) {
 	// Convert old startKey format to cursor if needed
 	cursor := ""
@@ -771,7 +771,7 @@ func (r *FederationInstanceRepository) ListAllInstances(ctx context.Context, lim
 	return instances, lastKey, nil
 }
 
-// ListAllInstancesWithCursor returns all instances with proper cursor-based pagination
+// ListAllInstancesWithCursor returns instances using internal cursor pagination
 func (r *FederationInstanceRepository) ListAllInstancesWithCursor(ctx context.Context, limit int, cursor string) ([]*types.Instance, string, error) {
 	var instances []models.FederationInstanceRegistry
 	// Validate pagination parameters

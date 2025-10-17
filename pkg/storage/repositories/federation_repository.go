@@ -2952,7 +2952,7 @@ func (r *FederationRepository) GetAllFederationEdges(ctx context.Context, limit 
 			break
 		}
 
-		// Fetch one page of edges using cursor-based pagination
+		// Retrieve the next page of edges using the cursor window
 		edges, nextCursor, err := r.fetchEdgePageWithCursor(ctx, cursor, remaining)
 		if err != nil {
 			r.logger.Error("Failed to query federation edges",

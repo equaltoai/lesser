@@ -13,6 +13,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
@@ -434,7 +435,7 @@ func (r *MediaRepository) GetUserMediaConfigByUsername(ctx context.Context, user
 
 	if err != nil {
 		if dynamormerrors.IsNotFound(err) {
-			return nil, nil // Config doesn't exist
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "user media config", username)
 		}
 		return nil, ErrorHandler.HandleGetError(err, "user media config", username)
 	}
@@ -1077,7 +1078,7 @@ func (r *MediaRepository) getMediaByStatus(ctx context.Context, status string, o
 		query = query.Limit(opts.Limit)
 	}
 
-	// Add cursor-based pagination if provided
+	// Resume from the provided cursor when present
 	if opts.Cursor != "" {
 		query = query.Where("GSI2SK", ">", opts.Cursor)
 	}
@@ -1122,7 +1123,7 @@ func (r *MediaRepository) getUserMediaWithOptions(ctx context.Context, userID st
 		query = query.Limit(opts.Limit)
 	}
 
-	// Add cursor-based pagination if provided
+	// Resume from the provided cursor when present
 	if opts.Cursor != "" {
 		query = query.Where("GSI1SK", ">", opts.Cursor)
 	}
@@ -1182,7 +1183,7 @@ func (r *MediaRepository) GetModerationPendingMedia(ctx context.Context, opts in
 		query = query.Limit(opts.Limit)
 	}
 
-	// Add cursor-based pagination if provided
+	// Resume from the provided cursor when present
 	if opts.Cursor != "" {
 		query = query.Where("CreatedAt", ">", opts.Cursor)
 	}

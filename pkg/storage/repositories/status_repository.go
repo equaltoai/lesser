@@ -675,7 +675,7 @@ func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gs
 		OrderBy(gsiSKField, orderDirection).
 		Limit(opts.Limit)
 
-	// Add cursor-based pagination if provided
+	// Resume from the supplied cursor value when available
 	if opts.Cursor != "" {
 		operator := "<"
 		if orderDirection == "ASC" {

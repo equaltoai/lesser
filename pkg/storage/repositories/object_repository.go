@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"encoding/json"
+	goerrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -881,13 +882,16 @@ func (r *ObjectRepository) GetMissingReplies(ctx context.Context, statusID strin
 	// Get the thread sync record
 	syncRecord, err := r.getThreadSyncRecord(ctx, statusID)
 	if err != nil {
+		if goerrors.Is(err, storage.ErrNotFound) {
+			return []*storage.StatusSearchResult{}, nil
+		}
 		r.logger.Error("failed to get thread sync record",
 			zap.String("status_id", statusID),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleGetError(err, EntityObject, "thread_sync")
 	}
 
-	if syncRecord == nil || len(syncRecord.MissingReplies) == 0 {
+	if len(syncRecord.MissingReplies) == 0 {
 		return []*storage.StatusSearchResult{}, nil
 	}
 
@@ -932,7 +936,7 @@ func (r *ObjectRepository) getThreadSyncRecord(ctx context.Context, statusID str
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, storage.ErrNotFound
 		}
 		return nil, ErrorHandler.HandleGetError(err, EntityObject, "thread_sync")
 	}
@@ -945,11 +949,14 @@ func (r *ObjectRepository) MarkThreadAsSynced(ctx context.Context, statusID stri
 	// Get existing sync record or create new one
 	syncRecord, err := r.getThreadSyncRecord(ctx, statusID)
 	if err != nil {
-		return ErrorHandler.HandleGetError(err, EntityObject, "thread_sync")
+		if goerrors.Is(err, storage.ErrNotFound) {
+			syncRecord = models.NewThreadSync(statusID)
+		} else {
+			return ErrorHandler.HandleGetError(err, EntityObject, "thread_sync")
+		}
 	}
 
 	if syncRecord == nil {
-		// Create new sync record
 		syncRecord = models.NewThreadSync(statusID)
 	}
 
@@ -1182,8 +1189,8 @@ func (r *ObjectRepository) SyncThreadFromRemote(ctx context.Context, statusID st
 	r.logger.Info("thread not found locally, background fetch initiated",
 		zap.String("status_id", statusID))
 
-	// Return nil to indicate "not available locally" but fetch was triggered
-	return nil, nil
+	// Indicate to callers that the status is not currently available
+	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityObject, statusID)
 }
 
 // SyncMissingRepliesFromRemote syncs missing replies from remote servers

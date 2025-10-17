@@ -336,9 +336,9 @@ func (r *SocialRepository) GetMute(ctx context.Context, actor, mutedActor string
 	err := r.muteRepo.Get(ctx, pk, sk, &mute)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityMute, fmt.Sprintf("%s->%s", actor, mutedActor))
 		}
-		return nil, ErrorHandler.HandleGetError(err, EntityMute, "get")
+		return nil, ErrorHandler.HandleGetError(err, EntityMute, fmt.Sprintf("%s->%s", actor, mutedActor))
 	}
 
 	return &storage.Mute{
@@ -725,7 +725,7 @@ func (r *SocialRepository) GetAccountPinsPaginated(ctx context.Context, username
 		Filter("SK", "BEGINS_WITH", "PIN#").
 		OrderBy("SK", "ASC")
 
-	// Handle cursor-based pagination
+	// Resume from the provided cursor when set
 	if cursor != "" {
 		query = query.Where("SK", ">", cursor)
 	}
@@ -860,13 +860,13 @@ func (r *SocialRepository) GetAccountNote(ctx context.Context, username, targetA
 	// Use BaseRepository Get method
 	var model models.AccountNote
 	err := r.accountNoteRepo.Get(ctx, pk, sk, &model)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, nil
-		}
-		r.logger.Error("failed to get account note", zap.Error(err))
-		return nil, err
-	}
+    if err != nil {
+        if errors.IsNotFound(err) {
+            return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityAccountNote, targetActorID)
+        }
+        r.logger.Error("failed to get account note", zap.Error(err))
+        return nil, ErrorHandler.HandleGetError(err, EntityAccountNote, targetActorID)
+    }
 
 	return &storage.AccountNote{
 		Username:      model.Username,
@@ -952,7 +952,7 @@ func (r *SocialRepository) GetStatusPinsPaginated(ctx context.Context, username 
 		Where("PK", "=", fmt.Sprintf(storage.UserPinsKey, username)).
 		OrderBy("SK", "ASC")
 
-	// Handle cursor-based pagination
+	// Resume from the provided cursor when set
 	if cursor != "" {
 		query = query.Where("SK", ">", cursor)
 	}

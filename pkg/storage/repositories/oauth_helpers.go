@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	stdErrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -78,7 +79,7 @@ func (h *OAuthHelper) GetOAuthStateGeneric(ctx context.Context, state string) (*
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityOAuthState, state)
 		}
 		h.logger.Error("failed to get OAuth state",
 			zap.String("state", state),
@@ -90,7 +91,7 @@ func (h *OAuthHelper) GetOAuthStateGeneric(ctx context.Context, state string) (*
 	if !model.ExpiresAt.IsZero() && model.ExpiresAt.Before(time.Now()) {
 		// Delete expired state
 		_ = h.DeleteOAuthStateGeneric(ctx, state)
-		return nil, nil
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityOAuthState, state)
 	}
 
 	// Convert to storage model
@@ -185,7 +186,7 @@ func (h *OAuthHelper) GetOAuthClientGeneric(ctx context.Context, clientID string
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityOAuthClient, clientID)
 		}
 		h.logger.Error("failed to get OAuth client",
 			zap.String("client_id", clientID),
@@ -215,10 +216,10 @@ func (h *OAuthHelper) UpdateOAuthClientGeneric(ctx context.Context, clientID str
 	// Get existing client
 	existing, err := h.GetOAuthClientGeneric(ctx, clientID)
 	if err != nil {
+		if stdErrors.Is(err, storage.ErrNotFound) {
+			return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityOAuthClient, clientID)
+		}
 		return err
-	}
-	if existing == nil {
-		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityOAuthClient, clientID)
 	}
 
 	// Apply updates

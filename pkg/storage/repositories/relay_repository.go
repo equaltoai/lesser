@@ -170,7 +170,7 @@ func (r *RelayRepository) GetAllRelays(ctx context.Context, limit int, cursor st
 		Filter("PK", "BEGINS_WITH", "RELAY#").
 		OrderBy("PK", "ASC")
 
-	// Handle cursor-based pagination
+	// Resume scanning after the last key when a cursor is provided
 	if cursor != "" {
 		// Decode cursor to get the last key
 		lastKey, err := decodeCursor(cursor)

@@ -21,6 +21,15 @@ const (
 	FieldScopes       = "scopes"
 )
 
+const (
+	oauthClientsIndexName       = "oauth-clients-index"
+	oauthClientsIndexPK         = "OAUTH_CLIENTS"
+	oauthClientsPartitionAttr   = "OAuthClientsPK"
+	oauthClientsSortAttr        = "OAuthClientsSK"
+	oauthClientsDefaultLimit    = 20
+	oauthClientsMaxAllowedLimit = 200
+)
+
 // ===== OAuth Methods =====
 // This file contains OAuth-related methods for the AccountRepository
 
@@ -399,31 +408,65 @@ func (r *AccountRepository) DeleteOAuthClient(ctx context.Context, clientID stri
 	return nil
 }
 
-// ListOAuthClients lists OAuth clients with pagination
+// ListOAuthClients lists OAuth clients with deterministic cursor-based pagination.
 //
 //nolint:dupl // OAuth client operations are shared between account and oauth repositories
-func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, _ string) ([]*storage.OAuthClient, string, error) {
-	// For now, implement a simple scan since DynamORM doesn't have great pagination support
-	// In production, you might want to add a GSI for listing clients
-	var clientModels []*models.OAuthClient
-
-	query := r.db.WithContext(ctx).Model(&models.OAuthClient{}).
-		Where("PK", "begins_with", "CLIENT#").
-		Where("SK", "=", models.SKMetadata)
-
-	if limit > 0 {
-		query = query.Limit(limit)
+func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, cursor string) ([]*storage.OAuthClient, string, error) {
+	// Normalize pagination parameters
+	switch {
+	case limit <= 0:
+		limit = oauthClientsDefaultLimit
+	case limit > oauthClientsMaxAllowedLimit:
+		limit = oauthClientsMaxAllowedLimit
 	}
 
-	// Note: Full cursor-based pagination would require GSI optimization
-	// Current implementation uses scan with limit
-	err := query.Scan(&clientModels)
-	if err != nil {
+	var startKey string
+	if cursor != "" {
+		pk, sk, err := Utils.Pagination.DecodeCursor(cursor)
+		if err != nil {
+			r.logger.Error("failed to decode OAuth client cursor",
+				zap.String("cursor", cursor),
+				zap.Error(err))
+			return nil, "", err
+		}
+		if pk != oauthClientsIndexPK {
+			err := PaginationCursorData(cursor, "unexpected partition key for OAuth client listing")
+			r.logger.Error("invalid OAuth client cursor partition key",
+				zap.String("cursor", cursor),
+				zap.Error(err))
+			return nil, "", err
+		}
+		if sk == "" {
+			err := PaginationCursorData(cursor, "missing sort key for OAuth client listing")
+			r.logger.Error("invalid OAuth client cursor sort key",
+				zap.String("cursor", cursor),
+				zap.Error(err))
+			return nil, "", err
+		}
+		startKey = sk
+	}
+
+	query := r.db.WithContext(ctx).Model(&models.OAuthClient{}).
+		Index(oauthClientsIndexName).
+		Where(oauthClientsPartitionAttr, "=", oauthClientsIndexPK).
+		OrderBy(oauthClientsSortAttr, "ASC").
+		Limit(limit + 1) // Fetch one extra to compute the next cursor
+
+	if startKey != "" {
+		query = query.Where(oauthClientsSortAttr, ">", startKey)
+	}
+
+	var clientModels []*models.OAuthClient
+	if err := query.All(&clientModels); err != nil {
 		r.logger.Error("failed to list OAuth clients", zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityOAuthClient, "list clients")
 	}
 
-	// Convert to storage models
+	hasMore := len(clientModels) > limit
+	if hasMore {
+		clientModels = clientModels[:limit]
+	}
+
 	clients := make([]*storage.OAuthClient, len(clientModels))
 	for i, model := range clientModels {
 		clients[i] = &storage.OAuthClient{
@@ -438,13 +481,15 @@ func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, _ s
 		}
 	}
 
-	// Simple pagination - in production you'd want proper cursor implementation
 	nextCursor := ""
-	if len(clientModels) == limit {
-		nextCursor = "has_more" // Simplified cursor
+	if hasMore && len(clientModels) > 0 {
+		last := clientModels[len(clientModels)-1]
+		nextCursor = Utils.Pagination.EncodeCursor(oauthClientsIndexPK, last.OAuthClientsSK)
 	}
 
-	r.logger.Debug("listed OAuth clients", zap.Int("count", len(clients)))
+	r.logger.Debug("listed OAuth clients",
+		zap.Int("count", len(clients)),
+		zap.Bool("has_more", hasMore))
 	return clients, nextCursor, nil
 }
 

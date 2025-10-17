@@ -70,6 +70,9 @@ temp/
 docs/api/openapi.json
 docs/api/swagger-ui/
 
+# Generated schema exports
+schema.graphql
+
 
 test-reports*
 

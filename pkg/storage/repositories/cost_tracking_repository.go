@@ -890,7 +890,7 @@ func (r *TrackingRepository) GetMonthlyAggregate(ctx context.Context, year, mont
 	}
 
 	if err := common.ValidateSliceNotEmpty("aggregations", aggregations); err != nil {
-		return nil, nil
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "cost aggregate", fmt.Sprintf("%d-%02d", year, month))
 	}
 
 	// Use the first (and should be only) aggregation for the month
@@ -1798,7 +1798,7 @@ func (r *TrackingRepository) GetActivityCost(ctx context.Context, activityID str
 		if errors.IsNotFound(err) {
 			r.logger.Debug("Activity cost not found",
 				zap.String("activity_id", activityID))
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "activity cost", activityID)
 		}
 		r.logger.Error("Failed to query activity cost",
 			zap.String("activity_id", activityID),

@@ -177,7 +177,7 @@ func (r *RecoveryRepository) GetRecoveryRequest(ctx context.Context, requestID s
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityRecoveryRequest, requestID)
 		}
 		return nil, ErrorHandler.HandleGetError(err, EntityRecoveryRequest, requestID)
 	}

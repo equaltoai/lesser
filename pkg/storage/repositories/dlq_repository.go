@@ -9,6 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -80,9 +81,9 @@ func (r *DLQRepository) GetDLQMessage(ctx context.Context, id string) (*models.D
 		First(&message)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityDLQMessage, id)
 		}
-		return nil, ErrorHandler.HandleGetError(err, "dlq", id)
+		return nil, ErrorHandler.HandleGetError(err, EntityDLQMessage, id)
 	}
 
 	return &message, nil
@@ -475,7 +476,7 @@ func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearch
 		query = query.Filter("FirstSeenAt", "<=", filter.EndTime.Unix())
 	}
 
-	// Handle cursor-based pagination
+	// Continue scanning from the previous page when a cursor is supplied
 	if filter.Cursor != "" {
 		query = query.Where("GSI3SK", "<", filter.Cursor)
 	}

@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"encoding/json"
+	stdErrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -650,10 +651,10 @@ func (r *UserRepository) GetAccountNote(ctx context.Context, username, targetAct
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityAccountNote, fmt.Sprintf("%s->%s", username, targetActorID))
 		}
 		r.logger.Error("failed to get account note", zap.Error(err))
-		return nil, err
+		return nil, ErrorHandler.HandleGetError(err, EntityAccountNote, fmt.Sprintf("%s->%s", username, targetActorID))
 	}
 
 	// Convert to storage model
@@ -734,12 +735,12 @@ func (r *UserRepository) StoreReputation(ctx context.Context, actorID string, re
 func (r *UserRepository) GetReputation(ctx context.Context, actorID string) (*storage.Reputation, error) {
 	// Validate and extract username from actorID
 	if err := common.ValidateEntityID(actorID, "actor"); err != nil {
-		return nil, nil // Return nil (not error) when invalid actorID for backward compatibility
+		return nil, ErrorHandler.HandleGetError(storage.ErrInvalidInput, "reputation", actorID)
 	}
 
 	username := extractUsernameFromActorID(actorID)
 	if err := common.ValidateEntityID(username, "user"); err != nil {
-		return nil, nil // Return nil (not error) when invalid actorID
+		return nil, ErrorHandler.HandleGetError(storage.ErrInvalidInput, "reputation", actorID)
 	}
 
 	// Build query for latest reputation
@@ -763,7 +764,7 @@ func (r *UserRepository) GetReputation(ctx context.Context, actorID string) (*st
 
 	// No reputation found
 	if err := common.ValidateSliceNotEmpty("reputations", reputations); err != nil {
-		return nil, nil // Return nil (not error) when not found
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "reputation", actorID)
 	}
 
 	// Convert to storage.Reputation
@@ -840,6 +841,9 @@ func (r *UserRepository) GetUserTrustScore(ctx context.Context, userID string) (
 	// Get the latest reputation
 	reputation, err := r.GetReputation(ctx, userID)
 	if err != nil {
+		if stdErrors.Is(err, storage.ErrNotFound) {
+			return 0.0, nil
+		}
 		return 0.0, err
 	}
 
@@ -918,14 +922,14 @@ func (r *UserRepository) GetVouch(_ context.Context, vouchID string) (*storage.V
 
 	// Return nil if not found
 	if err := common.ValidateSliceNotEmpty("vouch_models", vouchModels); err != nil {
-		return nil, nil
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "vouch", vouchID)
 	}
 
 	vouchModel := vouchModels[0]
 
 	// Unmarshal vouch data
 	if common.ValidateRequiredParam(vouchModel.VouchData, "vouchData") != nil {
-		return nil, nil
+		return nil, ErrorHandler.HandleGetError(storage.ErrInvalidInput, "vouch", vouchID)
 	}
 
 	var vouch storage.Vouch
@@ -1119,7 +1123,7 @@ func (r *UserRepository) GetTrustRelationship(_ context.Context, trusterID, trus
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil // Return nil when not found, not error
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "trust relationship", fmt.Sprintf("%s->%s#%s", trusterID, trusteeID, category))
 		}
 		return nil, ErrorHandler.HandleGetError(err, "trust relationship", "get")
 	}
@@ -1188,7 +1192,7 @@ func (r *UserRepository) GetTrustRelationships(_ context.Context, trusterID stri
 		}
 	}
 
-	// DynamORM doesn't support cursor-based pagination on scans
+	// Scans do not expose native cursors in DynamORM, so we stop here
 	nextCursor := ""
 
 	return relationships, nextCursor, nil
@@ -1225,7 +1229,7 @@ func (r *UserRepository) GetTrustedByRelationships(_ context.Context, trusteeID 
 		}
 	}
 
-	// DynamORM doesn't support cursor-based pagination on scans
+	// Scans do not expose native cursors in DynamORM, so we stop here
 	nextCursor := ""
 
 	return relationships, nextCursor, nil
@@ -2716,7 +2720,7 @@ func (r *UserRepository) getTimelineEntries(ctx context.Context, pk, errorContex
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC") // Most recent first
 
-	// Handle cursor-based pagination
+	// Resume from the supplied cursor value when available
 	if cursor != "" {
 		query = query.Where("SK", "<", cursor)
 	}
@@ -2919,10 +2923,10 @@ func (r *UserRepository) FanOutPost(ctx context.Context, activity *activitypub.A
 	// Extract and validate object from activity
 	object, tags, err := r.extractActivityObject(activity, log)
 	if err != nil {
+		if stdErrors.Is(err, storage.ErrInvalidInput) {
+			return nil
+		}
 		return err
-	}
-	if object == nil {
-		return nil // Unsupported object type
 	}
 
 	// Extract and validate metadata
@@ -2963,7 +2967,7 @@ func (r *UserRepository) extractActivityObject(activity *activitypub.Activity, l
 		tags = obj.Tag
 	default:
 		log.Warn("unsupported object type for fan-out", zap.Any("object", activity.Object))
-		return nil, nil, nil
+		return nil, nil, ErrorHandler.HandleGetError(storage.ErrInvalidInput, "activity object", fmt.Sprintf("type %T", activity.Object))
 	}
 
 	return object, tags, nil

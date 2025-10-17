@@ -1,11 +1,12 @@
 package repositories
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"strings"
-	"time"
+    stdErrors "errors"
+    "context"
+    "encoding/json"
+    "fmt"
+    "strings"
+    "time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/federation/types"
@@ -46,18 +47,19 @@ func (r *QueryCacheRepository) GetCachedValue(ctx context.Context, cacheKey stri
 	pk := fmt.Sprintf("CACHE#%s", cacheKey)
 	sk := "ENTRY"
 
-	err := r.Get(ctx, pk, sk, &entry)
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return nil, nil // Cache miss
-		}
-		return nil, ErrorHandler.HandleGetError(err, EntityQueryCache, cacheKey)
-	}
+    err := r.Get(ctx, pk, sk, &entry)
+    if err != nil {
+        if stdErrors.Is(err, storage.ErrNotFound) || strings.Contains(err.Error(), "not found") {
+            return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityQueryCache, cacheKey)
+        }
+        return nil, ErrorHandler.HandleGetError(err, EntityQueryCache, cacheKey)
+    }
 
-	// Check if expired
-	if entry.IsExpired() {
-		return nil, nil
-	}
+    // Check if expired
+    if entry.IsExpired() {
+        _ = r.Delete(ctx, entry.GetPK(), entry.GetSK())
+        return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityQueryCache, cacheKey)
+    }
 
 	// Deserialize the value based on cache key pattern
 	var result interface{}
@@ -137,13 +139,13 @@ func (r *QueryCacheRepository) invalidateCachePrefix(ctx context.Context, prefix
 // GetInstance retrieves a cached instance or nil if not found
 func (r *QueryCacheRepository) GetInstance(ctx context.Context, instanceID string) (*types.Instance, error) {
 	cacheKey := fmt.Sprintf("instance:%s", instanceID)
-	cached, err := r.GetCachedValue(ctx, cacheKey)
-	if err != nil {
-		return nil, err
-	}
-	if cached == nil {
-		return nil, nil
-	}
+    cached, err := r.GetCachedValue(ctx, cacheKey)
+    if err != nil {
+        if stdErrors.Is(err, storage.ErrNotFound) {
+            return nil, err
+        }
+        return nil, err
+    }
 
 	// Convert from generic interface to Instance
 	instanceMap, ok := cached.(map[string]interface{})
@@ -174,13 +176,14 @@ func (r *QueryCacheRepository) SetInstance(ctx context.Context, instance *types.
 // GetInstancesByStatus retrieves cached instances by status with database fallback
 func (r *QueryCacheRepository) GetInstancesByStatus(ctx context.Context, status types.InstanceStatus) ([]*types.Instance, error) {
 	cacheKey := fmt.Sprintf("status:%s", status)
-	cached, err := r.GetCachedValue(ctx, cacheKey)
-	if err != nil {
-		return nil, err
-	}
-	if cached != nil {
-		// Convert from generic interface to Instance slice
-		instanceSlice, ok := cached.([]interface{})
+    cached, err := r.GetCachedValue(ctx, cacheKey)
+    if err != nil {
+        if !stdErrors.Is(err, storage.ErrNotFound) {
+            return nil, err
+        }
+    } else if cached != nil {
+        // Convert from generic interface to Instance slice
+        instanceSlice, ok := cached.([]interface{})
 		if ok {
 			instances := make([]*types.Instance, 0, len(instanceSlice))
 			for _, item := range instanceSlice {

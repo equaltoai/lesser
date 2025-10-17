@@ -708,13 +708,13 @@ func (r *AccountRepository) GetAccountPin(ctx context.Context, username, targetA
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityAccountPin, fmt.Sprintf("%s->%s", username, targetActorID))
 		}
 		r.logger.Error("failed to get account pin",
 			zap.String("username", username),
 			zap.String("targetActorID", targetActorID),
 			zap.Error(err))
-		return nil, ErrorHandler.HandleGetError(err, EntityUser, fmt.Sprintf("%s pin %s", username, targetActorID))
+		return nil, ErrorHandler.HandleGetError(err, EntityAccountPin, fmt.Sprintf("%s->%s", username, targetActorID))
 	}
 
 	return &storage.AccountPin{

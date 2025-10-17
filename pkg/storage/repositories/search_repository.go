@@ -1063,7 +1063,7 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 		return nil, nil, ErrorHandler.HandleQueryError(err, "hashtag search", "cursor decoding")
 	}
 
-	// Use efficient cursor-based pagination with the hashtag search index
+	// Query the hashtag search index with cursor-aware pagination
 	var hashtags []models.Hashtag
 
 	// Build query with proper cursor handling
@@ -1073,7 +1073,7 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 		Filter("GSI3SK", "BEGINS_WITH", normalizedQuery).
 		OrderBy("GSI3SK", "ASC")
 
-	// Apply cursor if provided
+	// Resume from the last returned GSI value when a cursor is provided
 	if cursorData.LastID != "" {
 		hashtagQuery = hashtagQuery.Filter("GSI3SK", ">", cursorData.LastID)
 	}

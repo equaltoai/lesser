@@ -136,9 +136,9 @@ func (r *OAuthRepository) GetOAuthClient(ctx context.Context, clientID string) (
 	err := r.Get(ctx, pk, sk, &model)
 	if err != nil {
 		if err.Error() == fmt.Sprintf("item not found: pk=%s, sk=%s", pk, sk) {
-			return nil, nil // Return nil for not found, matching helper behavior
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityOAuthClient, clientID)
 		}
-		return nil, err
+		return nil, ErrorHandler.HandleGetError(err, EntityOAuthClient, clientID)
 	}
 
 	// Convert DynamORM model to storage model

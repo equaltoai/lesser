@@ -433,7 +433,7 @@ func GenericQuery[T any](ctx context.Context, q *QueryUtils, pk, sk string) (*T,
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil // Return nil without error for not found
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "generic query", fmt.Sprintf("%s#%s", pk, sk))
 		}
 		return nil, ErrorHandler.HandleQueryError(err, "generic query", fmt.Sprintf("%s#%s", pk, sk))
 	}
@@ -489,7 +489,7 @@ func GenericList[T any](ctx context.Context, q *QueryUtils, pk, skPrefix string,
 // BatchGet performs a batch get operation for multiple items
 func BatchGet[T any](ctx context.Context, q *QueryUtils, keys []struct{ PK, SK string }) ([]T, error) {
 	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
-		return nil, nil
+		return nil, ErrorHandler.HandleQueryError(err, "batch get", "keys")
 	}
 
 	results := make([]T, 0, len(keys))

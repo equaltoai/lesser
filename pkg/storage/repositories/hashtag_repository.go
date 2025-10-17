@@ -353,8 +353,8 @@ func (r *HashtagRepository) GetHashtagInfo(ctx context.Context, hashtag string) 
 	err := r.Get(ctx, pk, sk, &hashtagModel)
 
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return nil, nil
+		if errors.IsNotFound(err) || strings.Contains(err.Error(), "not found") {
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "hashtag", tagLower)
 		}
 		return nil, ErrorHandler.HandleGetError(err, "hashtag", tagLower)
 	}
@@ -449,7 +449,7 @@ func (r *HashtagRepository) GetHashtagStats(ctx context.Context, hashtag string)
 		return nil, err
 	}
 	if hashtagInfo == nil {
-		return nil, nil
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "hashtag", tagLower)
 	}
 
 	// Get usage history for the past 7 days
@@ -548,7 +548,7 @@ func (r *HashtagRepository) getHashtagTimelineFromIndex(ctx context.Context, has
 		Where("PK", "=", fmt.Sprintf("HASHTAG_TIMELINE#%s", hashtag)).
 		Where("SK", "BEGINS_WITH", "STATUS#")
 
-	// Add maxID filter if provided (cursor-based pagination)
+	// Apply the maxID cursor when provided
 	if maxID != nil && *maxID != "" {
 		// Convert maxID to timestamp-desc format for proper comparison
 		// This would need the actual timestamp of the maxID status
@@ -593,7 +593,7 @@ func (r *HashtagRepository) getHashtagTimelineByVisibility(ctx context.Context, 
 		Where("GSI2PK", "=", fmt.Sprintf("HASHTAG_VIS#%s#%s", hashtag, visibility)).
 		Where("GSI2SK", "BEGINS_WITH", "TIMELINE#")
 
-	// Add cursor-based pagination if maxID provided
+	// Apply the maxID cursor when provided
 	if maxID != nil && *maxID != "" {
 		query = query.Where("GSI2SK", "<", fmt.Sprintf("TIMELINE#%s", *maxID))
 	}
@@ -832,7 +832,7 @@ func (r *HashtagRepository) GetHashtagFollow(ctx context.Context, userID string,
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityHashtag, fmt.Sprintf("follow %s#%s", userID, tagLower))
 		}
 		r.logger.Error("failed to get hashtag follow record",
 			zap.String("user_id", userID),
@@ -862,7 +862,7 @@ func (r *HashtagRepository) GetHashtagMute(ctx context.Context, userID string, h
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityHashtag, fmt.Sprintf("mute %s#%s", userID, tagLower))
 		}
 		r.logger.Error("failed to get hashtag mute record",
 			zap.String("user_id", userID),
@@ -872,7 +872,8 @@ func (r *HashtagRepository) GetHashtagMute(ctx context.Context, userID string, h
 	}
 
 	if mute.TTL > 0 && time.Now().UTC().Unix() > mute.TTL {
-		return nil, nil
+		_ = r.UnmuteHashtag(ctx, userID, hashtag)
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityHashtag, fmt.Sprintf("mute %s#%s", userID, tagLower))
 	}
 
 	return &mute, nil
@@ -1105,7 +1106,7 @@ func (r *HashtagRepository) GetHashtagNotificationSettings(ctx context.Context, 
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityHashtag, fmt.Sprintf("settings %s#%s", userID, tagLower))
 		}
 		r.logger.Error("failed to get hashtag notification settings",
 			zap.String("user_id", userID),

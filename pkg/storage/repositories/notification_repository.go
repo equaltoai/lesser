@@ -114,7 +114,7 @@ func (r *NotificationRepository) GetUserNotifications(ctx context.Context, userI
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC") // Most recent first
 
-	// Handle cursor-based pagination
+	// Resume from the supplied cursor value when available
 	if opts.Cursor != "" {
 		query = query.Where("SK", "<", opts.Cursor)
 	}
@@ -164,7 +164,7 @@ func (r *NotificationRepository) GetUnreadNotifications(ctx context.Context, use
 		Filter("IsRead", "=", false).
 		OrderBy("SK", "DESC") // Most recent first
 
-	// Handle cursor-based pagination
+	// Resume from the supplied cursor value when available
 	if opts.Cursor != "" {
 		query = query.Where("SK", "<", opts.Cursor)
 	}
@@ -217,7 +217,7 @@ func (r *NotificationRepository) GetNotificationsByType(ctx context.Context, use
 		Filter("UserID", "=", userID).
 		OrderBy("GSI1SK", "DESC") // Most recent first
 
-	// Handle cursor-based pagination
+	// Resume from the supplied cursor value when available
 	if opts.Cursor != "" {
 		query = query.Where("GSI1SK", "<", opts.Cursor)
 	}
@@ -431,7 +431,7 @@ func (r *NotificationRepository) GetNotificationGroups(ctx context.Context, user
 	query := r.db.WithContext(ctx).Model(&models.Notification{}).
 		Index("group-index")
 
-	// Handle cursor-based pagination on GSI3SK
+	// Resume from the supplied cursor value when available
 	if opts.Cursor != "" {
 		query = query.Where("GSI3SK", "<", opts.Cursor)
 	}

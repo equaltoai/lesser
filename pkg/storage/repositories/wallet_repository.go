@@ -217,8 +217,7 @@ func (r *WalletRepository) GetWalletCredential(ctx context.Context, walletType, 
 	}
 
 	if err := common.ValidateSliceNotEmpty("indexes", indexes); err != nil {
-		// Legacy implementation returns nil for not found
-		return nil, nil
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityWalletCredential, address)
 	}
 
 	// Extract username from the index
@@ -236,14 +235,13 @@ func (r *WalletRepository) GetWalletCredential(ctx context.Context, walletType, 
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// Legacy implementation returns nil for not found
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityWalletCredential, address)
 		}
 		r.logger.Error("failed to get wallet credential",
 			zap.String("username", username),
 			zap.String("address", address),
 			zap.Error(err))
-		return nil, ErrorHandler.HandleGetError(err, "wallet credential", username)
+		return nil, ErrorHandler.HandleGetError(err, EntityWalletCredential, username)
 	}
 
 	// Track cost for wallet credential get
