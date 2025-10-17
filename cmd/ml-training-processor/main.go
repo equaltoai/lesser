@@ -31,12 +31,10 @@ import (
 const (
 	eventNameInsert = "INSERT"
 	eventNameModify = "MODIFY"
-	eventNameRemove = "REMOVE"
 )
 
 // Training job status constants
 const (
-	statusSubmitted  = "SUBMITTED"
 	statusInProgress = "IN_PROGRESS"
 	statusCompleted  = "COMPLETED"
 	statusFailed     = "FAILED"

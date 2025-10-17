@@ -1847,7 +1847,12 @@ func (r *UserRepository) updatePreferenceField(prefs *storage.UserPreferences, k
 	case PrefKeyReblogFilters:
 		return r.setReblogFiltersPreference(&prefs.ReblogFilters, value, key)
 	default:
-		return ErrorHandler.HandleUpdateError(common.ValidationError{Field: "preference key", Message: fmt.Sprintf("unknown key: %s", key)}, "user preferences", key)
+		// Store unknown preferences in the generic Preferences map
+		if prefs.Preferences == nil {
+			prefs.Preferences = make(map[string]string)
+		}
+		prefs.Preferences[key] = fmt.Sprintf("%v", value)
+		return nil
 	}
 }
 
@@ -1953,7 +1958,12 @@ func (r *UserRepository) updateSinglePreference(prefs *storage.UserPreferences, 
 	case PrefKeyReblogFilters:
 		return r.setReblogFiltersPreference(&prefs.ReblogFilters, value, key)
 	default:
-		r.logger.Warn("unknown preference key ignored",
+		// Store unknown preferences in the generic Preferences map
+		if prefs.Preferences == nil {
+			prefs.Preferences = make(map[string]string)
+		}
+		prefs.Preferences[key] = fmt.Sprintf("%v", value)
+		r.logger.Debug("stored custom preference",
 			zap.String("key", key),
 			zap.String("username", username))
 		return nil

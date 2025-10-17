@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -279,6 +280,61 @@ func (r *QuoteRepository) IncrementQuoteCount(_ context.Context, statusID string
 	r.logger.Info("incrementing quote count",
 		zap.String("status_id", statusID))
 	return nil
+}
+
+// WithdrawQuotes withdraws all quotes of a note created by a specific user
+func (r *QuoteRepository) WithdrawQuotes(ctx context.Context, noteID, userID string) (int, error) {
+	db := r.relationshipRepo.GetDB()
+
+	// Query all quotes by this user on this note
+	var quotes []models.QuoteRelationship
+	err := db.WithContext(ctx).Model(&models.QuoteRelationship{}).
+		Where("GSI2PK", "=", fmt.Sprintf("QUOTER#%s", userID)).
+		Filter("TargetNoteID", "=", noteID).
+		Filter("Withdrawn", "=", false).
+		All(&quotes)
+
+	if err != nil {
+		r.logger.Error("failed to query quotes for withdrawal",
+			zap.String("note_id", noteID),
+			zap.String("user_id", userID),
+			zap.Error(err))
+		return 0, fmt.Errorf("%w: %w", ErrQuoteRelationshipQueryFailed, err)
+	}
+
+	// Withdraw each quote
+	count := 0
+	now := time.Now()
+	for _, quote := range quotes {
+		quote.Withdrawn = true
+		quote.WithdrawnAt = &now
+
+		// Update keys to clear GSI entries
+		if err := quote.UpdateKeys(); err != nil {
+			r.logger.Error("failed to update quote keys",
+				zap.String("quote_id", quote.ID),
+				zap.Error(err))
+			continue
+		}
+
+		// Update the quote in the database
+		err = r.relationshipRepo.Update(ctx, &quote)
+		if err != nil {
+			r.logger.Error("failed to withdraw quote",
+				zap.String("quote_id", quote.ID),
+				zap.Error(err))
+			continue
+		}
+
+		count++
+	}
+
+	r.logger.Info("withdrew quotes",
+		zap.String("note_id", noteID),
+		zap.String("user_id", userID),
+		zap.Int("count", count))
+
+	return count, nil
 }
 
 // DecrementQuoteCount decrements the quote count for a status

@@ -1523,62 +1523,6 @@ func (r *mutationResolver) RequestAIAnalysis(ctx context.Context, objectID strin
 // All other stub resolvers for hashtag following, quote posts, thread sync, etc.
 // These will be implemented in future phases as the services are developed
 
-// Helper methods for converting AI analysis results
-//
-//nolint:unused // Used in AI resolver conversions
-func (r *Resolver) convertToTextAnalysis(results map[string]interface{}) *moderation.TextAnalysis {
-	if textData, ok := results["text"].(map[string]interface{}); ok {
-		analysis := &moderation.TextAnalysis{}
-		if sentiment, ok := textData["sentiment"].(string); ok {
-			analysis.Sentiment = &moderation.SentimentAnalysis{
-				Sentiment: sentiment,
-			}
-		}
-		if toxicity, ok := textData["toxicity"].(float64); ok {
-			analysis.ModerationScore = toxicity
-		}
-		return analysis
-	}
-	return nil
-}
-
-//nolint:unused // Used in AI resolver conversions
-func (r *Resolver) convertToImageAnalysis(results map[string]interface{}) *moderation.ImageAnalysis {
-	_, ok := results["image"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-
-	analysis := &moderation.ImageAnalysis{}
-	return analysis
-}
-
-//nolint:unused // Used in AI resolver conversions
-func (r *Resolver) convertToAIDetection(results map[string]interface{}) *model.AIDetection {
-	if aiData, ok := results["ai_detection"].(map[string]interface{}); ok {
-		detection := &model.AIDetection{}
-		if prob, ok := aiData["ai_generated"].(float64); ok {
-			detection.AiGeneratedProbability = prob
-		}
-		if consistency, ok := aiData["pattern_consistency"].(float64); ok {
-			detection.PatternConsistency = consistency
-		}
-		return detection
-	}
-	return nil
-}
-
-//nolint:unused // Used in AI resolver conversions
-func (r *Resolver) convertToSpamAnalysis(results map[string]interface{}) *model.SpamAnalysis {
-	_, ok := results["spam"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-
-	analysis := &model.SpamAnalysis{}
-	return analysis
-}
-
 // ModerationDashboard returns the moderation dashboard data
 
 // getRecentModerationDecisions retrieves recent moderation decisions

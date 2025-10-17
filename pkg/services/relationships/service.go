@@ -282,106 +282,29 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 		return nil, CannotFollowSelf()
 	}
 
-	// Check if users exist
-	var follower, following *storage.Account
-	var err error
-
-	if s.accountRepo != nil {
-		follower, err = s.accountRepo.GetAccount(ctx, cmd.FollowerID)
-		if err != nil {
-			return nil, err
-		}
-		following, err = s.accountRepo.GetAccount(ctx, cmd.FollowingID)
-		if err != nil {
-			return nil, err
-		}
-	} else if s.storage != nil {
-		// Get accounts via Actor repository (for now)
-		followerActor, err := s.storage.Actor().GetActor(ctx, cmd.FollowerID)
-		if err != nil {
-			return nil, err
-		}
-		followingActor, err := s.storage.Actor().GetActor(ctx, cmd.FollowingID)
-		if err != nil {
-			return nil, err
-		}
-
-		// Create account objects
-		follower = &storage.Account{
-			User:  &storage.User{Username: followerActor.PreferredUsername},
-			Actor: followerActor,
-		}
-		following = &storage.Account{
-			User:  &storage.User{Username: followingActor.PreferredUsername},
-			Actor: followingActor,
-		}
-	} else {
-		return nil, NoRepositoryOrStorage()
-	}
-
-	// Check if already following
-	isFollowing, err := s.relationshipRepo.IsFollowing(ctx, cmd.FollowerID, cmd.FollowingID)
+	// Get accounts
+	follower, following, err := s.getFollowAccounts(ctx, cmd.FollowerID, cmd.FollowingID)
 	if err != nil {
 		return nil, err
 	}
 
-	if isFollowing {
-		// Already following - return current relationship
-		relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.FollowingID)
-		if err != nil {
-			return nil, err
-		}
-
-		return &FollowResult{
-			Relationship: relationship,
-			IsFollowing:  true,
-			Events:       []*streaming.Event{},
-		}, nil
-	}
-
-	// Check if blocked
-	isBlocked, err := s.relationshipRepo.IsBlocked(ctx, cmd.FollowingID, cmd.FollowerID)
+	// Check prerequisites and handle if already following
+	existingResult, shouldReturn, err := s.checkFollowPrerequisites(ctx, cmd.FollowerID, cmd.FollowingID)
 	if err != nil {
 		return nil, err
 	}
-
-	if isBlocked {
-		return nil, ErrFollowWhileBlocked
+	if shouldReturn {
+		return existingResult, nil
 	}
 
-	// Create follow request
+	// Create and process the follow
 	activityID := uuid.New().String()
-
-	err = s.relationshipRepo.CreateFollowRequest(ctx, cmd.FollowerID, cmd.FollowingID)
-	if err != nil {
+	if err := s.createRelationship(ctx, cmd.FollowerID, cmd.FollowingID, activityID); err != nil {
 		return nil, err
 	}
 
-	// Determine if follow requires approval
-	requiresApproval := following.Actor != nil && following.Actor.ManuallyApprovesFollowers
-
-	var events []*streaming.Event
-	var requestID string
-	isFollowingNow := false
-
-	if requiresApproval {
-		// Follow request pending approval
-		requestID = activityID
-		events = s.emitFollowRequestedEvents(ctx, follower, following, activityID)
-		s.queueFederationFollowRequest(ctx, follower, following, activityID)
-	} else {
-		// Automatically accept follow
-		err = s.relationshipRepo.AcceptFollowRequest(ctx, cmd.FollowerID, cmd.FollowingID)
-		if err != nil {
-			return nil, err
-		}
-		isFollowingNow = true
-		events = s.emitFollowAcceptedEvents(ctx, follower, following, activityID)
-		s.queueFederationFollowDirectly(ctx, follower, following, activityID)
-	}
-
-	// Get updated relationship data
-	relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.FollowingID)
+	// Handle approval workflow
+	result, err := s.processFollowApproval(ctx, follower, following, activityID, cmd.FollowerID, cmd.FollowingID)
 	if err != nil {
 		return nil, err
 	}
@@ -389,8 +312,125 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 	s.logger.Info("follow request processed",
 		zap.String("follower_id", cmd.FollowerID),
 		zap.String("following_id", cmd.FollowingID),
-		zap.Bool("requires_approval", requiresApproval),
-		zap.Bool("is_following", isFollowingNow))
+		zap.Bool("requires_approval", result.RequestID != ""),
+		zap.Bool("is_following", result.IsFollowing))
+
+	return result, nil
+}
+
+// getFollowAccounts retrieves the follower and following accounts
+func (s *Service) getFollowAccounts(ctx context.Context, followerID, followingID string) (*storage.Account, *storage.Account, error) {
+	if s.accountRepo != nil {
+		follower, err := s.accountRepo.GetAccount(ctx, followerID)
+		if err != nil {
+			return nil, nil, err
+		}
+		following, err := s.accountRepo.GetAccount(ctx, followingID)
+		if err != nil {
+			return nil, nil, err
+		}
+		return follower, following, nil
+	}
+
+	if s.storage != nil {
+		followerActor, err := s.storage.Actor().GetActor(ctx, followerID)
+		if err != nil {
+			return nil, nil, err
+		}
+		followingActor, err := s.storage.Actor().GetActor(ctx, followingID)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		follower := &storage.Account{
+			User:  &storage.User{Username: followerActor.PreferredUsername},
+			Actor: followerActor,
+		}
+		following := &storage.Account{
+			User:  &storage.User{Username: followingActor.PreferredUsername},
+			Actor: followingActor,
+		}
+		return follower, following, nil
+	}
+
+	return nil, nil, NoRepositoryOrStorage()
+}
+
+// checkFollowPrerequisites checks if already following or blocked
+func (s *Service) checkFollowPrerequisites(ctx context.Context, followerID, followingID string) (*FollowResult, bool, error) {
+	repo := s.getRelationshipRepo()
+	if repo == nil {
+		return nil, false, RepositoryNotAvailable("relationship")
+	}
+
+	// Check if already following
+	isFollowing, err := repo.IsFollowing(ctx, followerID, followingID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if isFollowing {
+		relationship, err := s.GetRelationship(ctx, followerID, followingID)
+		if err != nil {
+			return nil, false, err
+		}
+		return &FollowResult{
+			Relationship: relationship,
+			IsFollowing:  true,
+			Events:       []*streaming.Event{},
+		}, true, nil
+	}
+
+	// Check if blocked
+	isBlocked, err := repo.IsBlocked(ctx, followingID, followerID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if isBlocked {
+		return nil, false, ErrFollowWhileBlocked
+	}
+
+	return nil, false, nil
+}
+
+// createRelationship creates the relationship record
+func (s *Service) createRelationship(ctx context.Context, followerID, followingID, activityID string) error {
+	if s.storage != nil {
+		return s.storage.Relationship().CreateRelationship(ctx, followerID, followingID, activityID)
+	}
+	if s.relationshipRepo != nil {
+		// Legacy interface only supports CreateFollowRequest (without activityID)
+		return s.relationshipRepo.CreateFollowRequest(ctx, followerID, followingID)
+	}
+	return NoRepositoryOrStorage()
+}
+
+// processFollowApproval handles the approval workflow and emits events
+func (s *Service) processFollowApproval(ctx context.Context, follower, following *storage.Account, activityID, followerID, followingID string) (*FollowResult, error) {
+	requiresApproval := following.Actor != nil && following.Actor.ManuallyApprovesFollowers
+
+	var events []*streaming.Event
+	var requestID string
+	isFollowingNow := false
+
+	if requiresApproval {
+		requestID = activityID
+		events = s.emitFollowRequestedEvents(ctx, follower, following, activityID)
+		s.queueFederationFollowRequest(ctx, follower, following, activityID)
+	} else {
+		if err := s.acceptFollowRequest(ctx, followerID, followingID); err != nil {
+			return nil, err
+		}
+		isFollowingNow = true
+		events = s.emitFollowAcceptedEvents(ctx, follower, following, activityID)
+		s.queueFederationFollowDirectly(ctx, follower, following, activityID)
+	}
+
+	relationship, err := s.GetRelationship(ctx, followerID, followingID)
+	if err != nil {
+		return nil, err
+	}
 
 	return &FollowResult{
 		Relationship: relationship,
@@ -398,6 +438,17 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 		IsFollowing:  isFollowingNow,
 		Events:       events,
 	}, nil
+}
+
+// acceptFollowRequest accepts a follow request
+func (s *Service) acceptFollowRequest(ctx context.Context, followerID, followingID string) error {
+	if s.relationshipRepo != nil {
+		return s.relationshipRepo.AcceptFollowRequest(ctx, followerID, followingID)
+	}
+	if s.storage != nil {
+		return s.storage.Relationship().AcceptFollowRequest(ctx, followerID, followingID)
+	}
+	return NoRepositoryOrStorage()
 }
 
 // removeRelationshipParams contains parameters for relationship removal
@@ -482,14 +533,20 @@ func (s *Service) Unfollow(ctx context.Context, cmd *UnfollowCommand) (*Relation
 		return nil, err
 	}
 
+	// Get relationship repository
+	repo := s.getRelationshipRepo()
+	if repo == nil {
+		return nil, RepositoryNotAvailable("relationship")
+	}
+
 	return s.removeRelationshipGeneric(ctx, removeRelationshipParams{
 		actorID:        cmd.FollowerID,
 		targetID:       cmd.FollowingID,
 		relationType:   "unfollow",
 		actorName:      "follower_id",
 		targetName:     "following_id",
-		checkExistsFn:  s.relationshipRepo.IsFollowing,
-		removeFn:       s.relationshipRepo.Unfollow,
+		checkExistsFn:  repo.IsFollowing,
+		removeFn:       repo.Unfollow,
 		emitEventsFn:   s.emitUnfollowEvents,
 		federationType: "Follow",
 	})
@@ -511,8 +568,14 @@ func (s *Service) Block(ctx context.Context, cmd *BlockCommand) (*RelationshipRe
 		return nil, CannotBlockSelf()
 	}
 
+	// Get relationship repository
+	repo := s.getRelationshipRepo()
+	if repo == nil {
+		return nil, RepositoryNotAvailable("relationship")
+	}
+
 	// Check if already blocked
-	isBlocked, err := s.relationshipRepo.IsBlocked(ctx, cmd.BlockerID, cmd.BlockedID)
+	isBlocked, err := repo.IsBlocked(ctx, cmd.BlockerID, cmd.BlockedID)
 	if err != nil {
 		return nil, err
 	}
@@ -531,38 +594,57 @@ func (s *Service) Block(ctx context.Context, cmd *BlockCommand) (*RelationshipRe
 	}
 
 	// Get accounts for events
-	blocker, err := s.accountRepo.GetAccount(ctx, cmd.BlockerID)
-	if err != nil {
-		return nil, err
-	}
-
-	blocked, err := s.accountRepo.GetAccount(ctx, cmd.BlockedID)
-	if err != nil {
-		return nil, err
+	var blocker, blocked *storage.Account
+	if s.accountRepo != nil {
+		blocker, err = s.accountRepo.GetAccount(ctx, cmd.BlockerID)
+		if err != nil {
+			return nil, err
+		}
+		blocked, err = s.accountRepo.GetAccount(ctx, cmd.BlockedID)
+		if err != nil {
+			return nil, err
+		}
+	} else if s.storage != nil {
+		blockerActor, err := s.storage.Actor().GetActor(ctx, cmd.BlockerID)
+		if err != nil {
+			return nil, err
+		}
+		blockedActor, err := s.storage.Actor().GetActor(ctx, cmd.BlockedID)
+		if err != nil {
+			return nil, err
+		}
+		blocker = &storage.Account{
+			User:  &storage.User{Username: blockerActor.PreferredUsername},
+			Actor: blockerActor,
+		}
+		blocked = &storage.Account{
+			User:  &storage.User{Username: blockedActor.PreferredUsername},
+			Actor: blockedActor,
+		}
 	}
 
 	// Automatically unfollow if currently following
-	isFollowing, err := s.relationshipRepo.IsFollowing(ctx, cmd.BlockerID, cmd.BlockedID)
+	isFollowing, err := repo.IsFollowing(ctx, cmd.BlockerID, cmd.BlockedID)
 	if err != nil {
 		s.logger.Warn("failed to check follow status during block", zap.Error(err))
 	} else if isFollowing {
-		if err := s.relationshipRepo.Unfollow(ctx, cmd.BlockerID, cmd.BlockedID); err != nil {
+		if err := repo.Unfollow(ctx, cmd.BlockerID, cmd.BlockedID); err != nil {
 			s.logger.Warn("failed to unfollow during block", zap.Error(err))
 		}
 	}
 
 	// Also unfollow reverse relationship
-	isFollowedBy, err := s.relationshipRepo.IsFollowing(ctx, cmd.BlockedID, cmd.BlockerID)
+	isFollowedBy, err := repo.IsFollowing(ctx, cmd.BlockedID, cmd.BlockerID)
 	if err != nil {
 		s.logger.Warn("failed to check reverse follow status during block", zap.Error(err))
 	} else if isFollowedBy {
-		if err := s.relationshipRepo.Unfollow(ctx, cmd.BlockedID, cmd.BlockerID); err != nil {
+		if err := repo.Unfollow(ctx, cmd.BlockedID, cmd.BlockerID); err != nil {
 			s.logger.Warn("failed to unfollow reverse during block", zap.Error(err))
 		}
 	}
 
 	// Create block
-	err = s.relationshipRepo.BlockUser(ctx, cmd.BlockerID, cmd.BlockedID)
+	err = repo.BlockUser(ctx, cmd.BlockerID, cmd.BlockedID)
 	if err != nil {
 		return nil, err
 	}
@@ -594,14 +676,20 @@ func (s *Service) Unblock(ctx context.Context, cmd *UnblockCommand) (*Relationsh
 		return nil, err
 	}
 
+	// Get relationship repository
+	repo := s.getRelationshipRepo()
+	if repo == nil {
+		return nil, RepositoryNotAvailable("relationship")
+	}
+
 	return s.removeRelationshipGeneric(ctx, removeRelationshipParams{
 		actorID:        cmd.BlockerID,
 		targetID:       cmd.BlockedID,
 		relationType:   "unblock",
 		actorName:      "blocker_id",
 		targetName:     "blocked_id",
-		checkExistsFn:  s.relationshipRepo.IsBlocked,
-		removeFn:       s.relationshipRepo.UnblockUser,
+		checkExistsFn:  repo.IsBlocked,
+		removeFn:       repo.UnblockUser,
 		emitEventsFn:   s.emitUnblockEvents,
 		federationType: "Block",
 	})
@@ -623,8 +711,14 @@ func (s *Service) Mute(ctx context.Context, cmd *MuteCommand) (*RelationshipResu
 		return nil, CannotMuteSelf()
 	}
 
+	// Get relationship repository
+	repo := s.getRelationshipRepo()
+	if repo == nil {
+		return nil, RepositoryNotAvailable("relationship")
+	}
+
 	// Check if already muted
-	isMuted, err := s.relationshipRepo.IsMuted(ctx, cmd.MuterID, cmd.MutedID)
+	isMuted, err := repo.IsMuted(ctx, cmd.MuterID, cmd.MutedID)
 	if err != nil {
 		return nil, err
 	}
@@ -643,18 +737,45 @@ func (s *Service) Mute(ctx context.Context, cmd *MuteCommand) (*RelationshipResu
 	}
 
 	// Get accounts for events
-	muter, err := s.accountRepo.GetAccount(ctx, cmd.MuterID)
-	if err != nil {
-		return nil, err
+	var muter, muted *storage.Account
+	if s.accountRepo != nil {
+		muter, err = s.accountRepo.GetAccount(ctx, cmd.MuterID)
+		if err != nil {
+			return nil, err
+		}
+		muted, err = s.accountRepo.GetAccount(ctx, cmd.MutedID)
+		if err != nil {
+			return nil, err
+		}
+	} else if s.storage != nil {
+		muterActor, err := s.storage.Actor().GetActor(ctx, cmd.MuterID)
+		if err != nil {
+			return nil, err
+		}
+		mutedActor, err := s.storage.Actor().GetActor(ctx, cmd.MutedID)
+		if err != nil {
+			return nil, err
+		}
+		muter = &storage.Account{
+			User:  &storage.User{Username: muterActor.PreferredUsername},
+			Actor: muterActor,
+		}
+		muted = &storage.Account{
+			User:  &storage.User{Username: mutedActor.PreferredUsername},
+			Actor: mutedActor,
+		}
 	}
 
-	muted, err := s.accountRepo.GetAccount(ctx, cmd.MutedID)
-	if err != nil {
-		return nil, err
+	// Create mute - need to use CreateMute which takes more parameters
+	activityIDMute := uuid.New().String()
+
+	// Always use storage for CreateMute since the interface doesn't include it
+	if s.storage != nil {
+		err = s.storage.Relationship().CreateMute(ctx, cmd.MuterID, cmd.MutedID, activityIDMute, cmd.MuteNotifications, cmd.Duration)
+	} else {
+		return nil, NoRepositoryOrStorage()
 	}
 
-	// Create mute
-	err = s.relationshipRepo.MuteUser(ctx, cmd.MuterID, cmd.MutedID)
 	if err != nil {
 		return nil, err
 	}
@@ -689,8 +810,14 @@ func (s *Service) Unmute(ctx context.Context, cmd *UnmuteCommand) (*Relationship
 		return nil, err
 	}
 
+	// Get relationship repository
+	repo := s.getRelationshipRepo()
+	if repo == nil {
+		return nil, RepositoryNotAvailable("relationship")
+	}
+
 	// Check if currently muted
-	isMuted, err := s.relationshipRepo.IsMuted(ctx, cmd.MuterID, cmd.MutedID)
+	isMuted, err := repo.IsMuted(ctx, cmd.MuterID, cmd.MutedID)
 	if err != nil {
 		return nil, err
 	}
@@ -709,18 +836,38 @@ func (s *Service) Unmute(ctx context.Context, cmd *UnmuteCommand) (*Relationship
 	}
 
 	// Get accounts for events
-	muter, err := s.accountRepo.GetAccount(ctx, cmd.MuterID)
-	if err != nil {
-		return nil, err
-	}
-
-	muted, err := s.accountRepo.GetAccount(ctx, cmd.MutedID)
-	if err != nil {
-		return nil, err
+	var muter, muted *storage.Account
+	if s.accountRepo != nil {
+		muter, err = s.accountRepo.GetAccount(ctx, cmd.MuterID)
+		if err != nil {
+			return nil, err
+		}
+		muted, err = s.accountRepo.GetAccount(ctx, cmd.MutedID)
+		if err != nil {
+			return nil, err
+		}
+	} else if s.storage != nil {
+		// Get accounts via Actor repository
+		muterActor, err := s.storage.Actor().GetActor(ctx, cmd.MuterID)
+		if err != nil {
+			return nil, err
+		}
+		mutedActor, err := s.storage.Actor().GetActor(ctx, cmd.MutedID)
+		if err != nil {
+			return nil, err
+		}
+		muter = &storage.Account{
+			User:  &storage.User{Username: muterActor.PreferredUsername},
+			Actor: muterActor,
+		}
+		muted = &storage.Account{
+			User:  &storage.User{Username: mutedActor.PreferredUsername},
+			Actor: mutedActor,
+		}
 	}
 
 	// Remove mute
-	err = s.relationshipRepo.UnmuteUser(ctx, cmd.MuterID, cmd.MutedID)
+	err = repo.UnmuteUser(ctx, cmd.MuterID, cmd.MutedID)
 	if err != nil {
 		return nil, err
 	}
@@ -2086,6 +2233,25 @@ func isLocalActor(actor *activitypub.Actor, domainName string) bool {
 	}
 	// Check if the actor ID contains our domain
 	return strings.Contains(actor.ID, domainName)
+}
+
+// getRelationshipRepo returns an object that has the basic relationship query and delete methods
+func (s *Service) getRelationshipRepo() interface {
+	IsFollowing(ctx context.Context, followerID, followingID string) (bool, error)
+	Unfollow(ctx context.Context, followerID, followingID string) error
+	IsBlocked(ctx context.Context, blockerID, blockedID string) (bool, error)
+	BlockUser(ctx context.Context, blockerID, blockedID string) error
+	UnblockUser(ctx context.Context, blockerID, blockedID string) error
+	IsMuted(ctx context.Context, muterID, mutedID string) (bool, error)
+	UnmuteUser(ctx context.Context, muterID, mutedID string) error
+} {
+	if s.relationshipRepo != nil {
+		return s.relationshipRepo
+	}
+	if s.storage != nil {
+		return s.storage.Relationship()
+	}
+	return nil
 }
 
 // IsBlocked checks if one user has blocked another

@@ -346,21 +346,6 @@ func createTestAccount(username string, locked bool) *storage.Account {
 	}
 }
 
-func createRemoteTestAccount(username, domain string, locked bool) *storage.Account {
-	return &storage.Account{
-		User: &storage.User{
-			Username: username,
-		},
-		Actor: &activitypub.Actor{
-			BaseObject: activitypub.BaseObject{
-				ID:   "https://" + domain + "/users/" + username,
-				Type: "Person",
-			},
-			ManuallyApprovesFollowers: locked,
-		},
-	}
-}
-
 func createTestService() (*Service, *MockRelationshipRepository, *MockAccountRepository, streaming.Publisher, *MockFederationService) {
 	relationshipRepo := &MockRelationshipRepository{}
 	accountRepo := &MockAccountRepository{}

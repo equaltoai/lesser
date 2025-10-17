@@ -93,14 +93,14 @@ func TestValidateUpdateRelationshipCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Validate follower ID
-			err := validateRequiredField("follower_id", tt.cmd.FollowerID)
+			err := validateRequiredField(tt.cmd.FollowerID)
 			if tt.shouldError && tt.cmd.FollowerID == "" {
 				assert.Error(t, err)
 				return
 			}
 
 			// Validate following ID
-			err = validateRequiredField("following_id", tt.cmd.FollowingID)
+			err = validateRequiredField(tt.cmd.FollowingID)
 			if tt.shouldError && tt.cmd.FollowingID == "" {
 				assert.Error(t, err)
 				return
@@ -207,7 +207,7 @@ func stringPtr(s string) *string {
 	return &s
 }
 
-func validateRequiredField(name, value string) error {
+func validateRequiredField(value string) error {
 	if value == "" {
 		return assert.AnError
 	}

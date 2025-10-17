@@ -13,7 +13,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/services/moderationml"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
@@ -504,66 +503,64 @@ func (r *mutationResolver) CreateModerationPattern(ctx context.Context, input mo
 		active = *input.Active
 	}
 
-	// Create the pattern
+	// Generate description from pattern
+	description := fmt.Sprintf("Pattern for %s", input.Pattern)
+
+	// Convert severity to string for storage
+	var severityStr string
+	switch input.Severity {
+	case model.ModerationSeverityLow:
+		severityStr = SeverityLow
+	case model.ModerationSeverityMedium:
+		severityStr = SeverityMedium
+	case model.ModerationSeverityHigh:
+		severityStr = SeverityHigh
+	case model.ModerationSeverityCritical:
+		severityStr = HealthStatusCritical
+	default:
+		severityStr = SeverityMedium
+	}
+
+	// Create the pattern ID
 	patternID := fmt.Sprintf("pattern_%d", time.Now().UnixNano())
-	pattern := &models.ModerationPattern{
-		PK:        fmt.Sprintf("PATTERN#%s", patternID),
-		SK:        "METADATA",
-		PatternID: patternID,
-		Name:      input.Pattern, // Use pattern as name
-		Pattern:   input.Pattern,
-		Type:      string(input.Type),
-		Severity:  float64(severityValue) / 100.0, // Convert to 0-1 range
-		Category:  "custom",
-		Active:    active,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+
+	// Create storage pattern with ALL fields properly mapped
+	storagePattern := &storage.ModerationPattern{
+		ID:          patternID,
+		Name:        input.Pattern, // Use pattern as name
+		Description: description,
+		Pattern:     input.Pattern,
+		Content:     input.Pattern, // Repository uses Content field for the pattern
+		Type:        string(input.Type),
+		Severity:    fmt.Sprintf("%.2f", severityValue),
+		Action:      "flag", // Default action
+		Active:      active,
+		CreatedBy:   username,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 
 	// Save the pattern
-	// Convert to storage.ModerationPattern for the repository
-	storagePattern := &storage.ModerationPattern{
-		ID:          pattern.PatternID,
-		Pattern:     pattern.Pattern,
-		Description: "",
-		Severity:    fmt.Sprintf("%.2f", pattern.Severity),
-		CreatedBy:   username,
-		CreatedAt:   pattern.CreatedAt,
-		UpdatedAt:   pattern.UpdatedAt,
-	}
 	err = modRepo.CreateModerationPattern(ctx, storagePattern)
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to create moderation pattern"), err)
 	}
 
-	// We don't need the account here since we already have the username
-
-	// Convert to moderation.ModerationPattern
-	severityStr := SeverityMedium
-	// input.Severity is not a pointer, it's a string type
-	switch input.Severity {
-	case model.ModerationSeverityLow:
-		severityStr = SeverityLow
-	case model.ModerationSeverityHigh:
-		severityStr = SeverityHigh
-	case model.ModerationSeverityCritical:
-		severityStr = HealthStatusCritical
-	}
-
+	// Return the created pattern
 	return &moderation.ModerationPattern{
 		ID:                 patternID,
-		Name:               pattern.Name,
-		Description:        fmt.Sprintf("Pattern for %s", input.Pattern),
-		Type:               string(input.Type),
-		Content:            pattern.Pattern,
+		Name:               storagePattern.Name,
+		Description:        storagePattern.Description,
+		Type:               storagePattern.Type,
+		Content:            storagePattern.Content,
 		Severity:           severityStr,
-		Action:             "flag", // Default action
-		Active:             pattern.Active,
+		Action:             storagePattern.Action,
+		Active:             storagePattern.Active,
 		MatchCount:         0,
 		FalsePositiveCount: 0,
 		Effectiveness:      0.0,
-		CreatedAt:          pattern.CreatedAt,
-		UpdatedAt:          pattern.UpdatedAt,
+		CreatedAt:          storagePattern.CreatedAt,
+		UpdatedAt:          storagePattern.UpdatedAt,
 		CreatedBy:          username,
 	}, nil
 }
