@@ -3,10 +3,8 @@ package graph
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
-	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -120,128 +118,46 @@ func (r *queryResolver) InfrastructureHealth(ctx context.Context) (*model.Infras
 }
 
 // SlowQueries implements QueryResolver.
-func (r *queryResolver) SlowQueries(_ context.Context, _ model.Duration) ([]*model.QueryPerformance, error) {
-	// Get slow database queries
-	return []*model.QueryPerformance{}, nil
+func (r *queryResolver) SlowQueries(ctx context.Context, threshold model.Duration) ([]*model.QueryPerformance, error) {
+	// Get query tracker from registry
+	queryTracker := r.Registry.QueryTracker()
+	if queryTracker == nil {
+		r.Logger.Warn("query tracker not available")
+		return []*model.QueryPerformance{}, nil
+	}
+
+	// Get slow queries above the threshold
+	slowQueries, err := queryTracker.GetSlowQueries(ctx, threshold)
+	if err != nil {
+		r.Logger.Error("Failed to get slow queries", zap.Error(err))
+		return nil, errors.Join(errors.New("failed to get slow queries"), err)
+	}
+
+	return slowQueries, nil
 }
 
 // PerformanceMetrics returns performance metrics for a service
 func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.ServiceCategory) (*model.PerformanceReport, error) {
-	// Get storage from resolver
-	storage := r.Storage
-	if storage == nil {
-		return nil, ErrStorageUnavailable
+	// Get performance service from registry
+	perfService := r.Registry.Performance()
+	if perfService == nil {
+		r.Logger.Warn("performance service not available")
+		return nil, errors.New("performance service not available")
 	}
 
-	// Calculate period for metrics
-	period := 24 * time.Hour // Last 24 hours for daily metrics
+	// Default to daily metrics
+	period := model.TimePeriodDay
 
-	// Fetch real performance metrics from CloudWatch metrics repository
-	// We use CloudWatchMetrics repository which provides service metrics
-	cwMetricsRepo := storage.CloudWatchMetrics()
-	if cwMetricsRepo == nil {
-		// Fallback to creating empty metrics if repository not available
-		return &model.PerformanceReport{
-			Service:    service,
-			P50Latency: model.Duration(0),
-			P95Latency: model.Duration(0),
-			P99Latency: model.Duration(0),
-			ErrorRate:  0.0,
-			Throughput: 0.0,
-			ColdStarts: 0,
-			Period:     model.TimePeriodDay,
-		}, nil
-	}
-
-	metrics, err := cwMetricsRepo.GetServiceMetrics(ctx, string(service), period)
+	// Fetch real performance metrics from CloudWatch via performance service
+	report, err := perfService.GetPerformanceMetrics(ctx, service, period)
 	if err != nil {
-		r.Logger.Error("failed to get service metrics",
+		r.Logger.Error("failed to get performance metrics",
 			zap.String("service", string(service)),
 			zap.Error(err))
-		// Return empty metrics on error rather than failing
-		return &model.PerformanceReport{
-			Service:    service,
-			P50Latency: model.Duration(0),
-			P95Latency: model.Duration(0),
-			P99Latency: model.Duration(0),
-			ErrorRate:  0.0,
-			Throughput: 0.0,
-			ColdStarts: 0,
-			Period:     model.TimePeriodDay,
-		}, nil
+		return nil, errors.Join(errors.New("failed to get performance metrics"), err)
 	}
 
-	// Extract metrics from CloudWatch response
-	var requestCount int64
-	var errorCount int64
-	var coldStarts int64
-	latencies := make([]int64, 0)
-
-	// Use the CloudWatch metrics data
-	if metrics != nil {
-		// Use latency percentiles directly from ServiceMetrics
-		if metrics.LatencyP50Ms > 0 {
-			latencies = append(latencies, int64(metrics.LatencyP50Ms))
-		}
-		if metrics.LatencyP90Ms > 0 {
-			latencies = append(latencies, int64(metrics.LatencyP90Ms))
-		}
-		if metrics.LatencyP99Ms > 0 {
-			latencies = append(latencies, int64(metrics.LatencyP99Ms))
-		}
-
-		// Use request and error counts
-		if metrics.RequestCount > 0 {
-			requestCount = metrics.RequestCount
-		}
-		if metrics.ErrorCount > 0 {
-			errorCount = metrics.ErrorCount
-		}
-
-		// Note: Average latency could be calculated from P50 if needed
-
-		// Note: ColdStarts is not tracked in ServiceMetrics
-		// We'd need to get this from Lambda-specific metrics
-		coldStarts = 0
-	}
-
-	// Calculate average latency (not used in current model)
-	// avgLatency := int64(0)
-	// if requestCount > 0 {
-	// 	avgLatency = totalLatency / requestCount
-	// }
-
-	// Calculate throughput (requests per second)
-	duration := period.Seconds()
-	throughput := float64(requestCount) / duration
-
-	// Calculate error rate
-	errorRate := 0.0
-	if requestCount > 0 {
-		errorRate = float64(errorCount) / float64(requestCount)
-	}
-
-	// Get percentile values directly from CloudWatch metrics if available
-	var p50, p95, p99 int64
-	if metrics != nil {
-		p50 = int64(metrics.LatencyP50Ms)
-		p95 = int64(metrics.LatencyP90Ms) // Using P90 as approximation for P95
-		p99 = int64(metrics.LatencyP99Ms)
-	} else if err := common.ValidateSliceNotEmpty("latencies", latencies); err == nil {
-		// Fallback to calculating from sample latencies if we have them
-		p50, _, p95, p99 = calculatePercentiles(latencies)
-	}
-
-	return &model.PerformanceReport{
-		Service:    service,
-		P50Latency: model.Duration(p50),
-		P95Latency: model.Duration(p95),
-		P99Latency: model.Duration(p99),
-		ErrorRate:  errorRate,
-		Throughput: throughput,
-		ColdStarts: int(coldStarts),
-		Period:     model.TimePeriodDay,
-	}, nil
+	return report, nil
 }
 
 // BandwidthUsage implements QueryResolver

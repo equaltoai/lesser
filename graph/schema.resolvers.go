@@ -2265,40 +2265,6 @@ func (r *queryResolver) getThreatTrends(ctx context.Context, moderationRepo inte
 // PerformanceMetrics returns performance metrics for a service
 
 // calculatePercentiles calculates percentile values from a slice of latencies
-func calculatePercentiles(latencies []int64) (p50, p90, p95, p99 int64) {
-	if err := common.ValidateSliceNotEmpty("latencies", latencies); err != nil {
-		return 0, 0, 0, 0
-	}
-
-	// Sort latencies
-	sort.Slice(latencies, func(i, j int) bool {
-		return latencies[i] < latencies[j]
-	})
-
-	// Calculate percentile indices
-	n := len(latencies)
-	p50Index := (n * 50) / 100
-	p90Index := (n * 90) / 100
-	p95Index := (n * 95) / 100
-	p99Index := (n * 99) / 100
-
-	// Ensure indices are within bounds
-	if p50Index >= n {
-		p50Index = n - 1
-	}
-	if p90Index >= n {
-		p90Index = n - 1
-	}
-	if p95Index >= n {
-		p95Index = n - 1
-	}
-	if p99Index >= n {
-		p99Index = n - 1
-	}
-
-	return latencies[p50Index], latencies[p90Index], latencies[p95Index], latencies[p99Index]
-}
-
 // SeveredRelationships returns severed federation relationships
 
 // PopularStreams returns popular streaming endpoints

@@ -66,6 +66,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -85,6 +86,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/moderationml"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
+	"github.com/equaltoai/lesser/pkg/services/performance"
 	"github.com/equaltoai/lesser/pkg/services/quotes"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
@@ -158,6 +160,8 @@ type Registry struct {
 	quotesService             *quotes.QuoteService
 	federationGraphService    *federationgraph.Service
 	streamingAnalyticsService *streaminganalytics.Service
+	performanceService        *performance.Service
+	queryTracker              *performance.QueryTracker
 
 	// Event infrastructure
 	eventBus         EventBus
@@ -629,6 +633,67 @@ func (r *Registry) ModerationML() *moderationml.Service {
 	}
 
 	return r.moderationMLService
+}
+
+// Performance returns the performance monitoring service, initializing it if necessary
+func (r *Registry) Performance() *performance.Service {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.performanceService == nil {
+		// Get AWS config for CloudWatch access
+		awsCfg, err := r.getAWSConfig()
+		if err != nil {
+			if r.logger != nil {
+				r.logger.Warn("failed to load AWS config for performance monitoring", zap.Error(err))
+			}
+			return nil
+		}
+
+		// Get environment name
+		environment := "production"
+		if r.config != nil && r.config.Config != nil {
+			if env := r.getConfigString(r.config.Config, "Environment"); env != "" {
+				environment = env
+			}
+		}
+
+		// Create CloudWatch client
+		cloudWatch := cloudwatch.NewFromConfig(*awsCfg)
+
+		r.performanceService = performance.NewService(
+			cloudWatch,
+			environment,
+			r.logger,
+		)
+
+		if r.initialized != nil {
+			r.initialized["Performance"] = true
+		}
+
+		r.logger.Info("initialized performance monitoring service",
+			zap.String("environment", environment))
+	}
+
+	return r.performanceService
+}
+
+// QueryTracker returns the query performance tracker, initializing it if necessary
+func (r *Registry) QueryTracker() *performance.QueryTracker {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.queryTracker == nil {
+		r.queryTracker = performance.NewQueryTracker(r.logger)
+
+		if r.initialized != nil {
+			r.initialized["QueryTracker"] = true
+		}
+
+		r.logger.Info("initialized query performance tracker")
+	}
+
+	return r.queryTracker
 }
 
 // GetStorage returns the configured storage interface
