@@ -9,6 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	dynamoerrors "github.com/pay-theory/dynamorm/pkg/errors"
@@ -373,7 +374,7 @@ func (r *InstanceHealthRepository) GetHealthSummary(ctx context.Context, domain 
 				zap.String("domain", domain),
 				zap.Duration("window", window),
 				zap.String("window_str", windowStr))
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityHealthSummary, fmt.Sprintf("%s@%s", domain, windowStr))
 		}
 		r.logger.Error("Failed to get health summary",
 			zap.String("domain", domain),

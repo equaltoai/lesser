@@ -556,7 +556,7 @@ func (r *ModerationRepository) GetModerationDecision(ctx context.Context, object
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil // No decision yet
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityModerationDecision, objectID)
 		}
 		return nil, ErrorHandler.HandleGetError(err, EntityModerationDecision, objectID)
 	}

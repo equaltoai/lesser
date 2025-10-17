@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -160,9 +161,9 @@ func (r *NotificationCostRepository) GetAggregation(ctx context.Context, period,
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "cost aggregation", fmt.Sprintf("%s#%s", period, deliveryMethod))
 		}
-		return nil, ErrorHandler.HandleGetError(err, "cost aggregation", period)
+		return nil, ErrorHandler.HandleGetError(err, "cost aggregation", fmt.Sprintf("%s#%s", period, deliveryMethod))
 	}
 
 	return &aggregation, nil
@@ -239,9 +240,9 @@ func (r *NotificationCostRepository) GetBudget(ctx context.Context, username, pe
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "notification budget", fmt.Sprintf("%s#%s", username, period))
 		}
-		return nil, ErrorHandler.HandleGetError(err, "notification budget", username)
+		return nil, ErrorHandler.HandleGetError(err, "notification budget", fmt.Sprintf("%s#%s", username, period))
 	}
 
 	return &budget, nil

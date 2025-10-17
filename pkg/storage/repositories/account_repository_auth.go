@@ -1032,14 +1032,13 @@ func (r *AccountRepository) GetRecoveryToken(ctx context.Context, key string) (m
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// Return nil for not found (matching legacy behavior)
 			r.logger.Debug("recovery token not found", zap.String("key", key))
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityRecoveryToken, key)
 		}
 		r.logger.Error("failed to get recovery token",
 			zap.String("key", key),
 			zap.Error(err))
-		return nil, err
+		return nil, ErrorHandler.HandleGetError(err, EntityRecoveryToken, key)
 	}
 
 	r.logger.Debug("retrieved recovery token", zap.String("key", key))

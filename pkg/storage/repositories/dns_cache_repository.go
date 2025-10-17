@@ -55,8 +55,7 @@ func (r *DNSCacheRepository) GetDNSCache(ctx context.Context, hostname string) (
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// Not found is not an error for caches, return nil
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityDNSCache, hostname)
 		}
 		r.logger.Error("failed to get DNS cache entry",
 			zap.String("hostname", hostname),
@@ -66,8 +65,8 @@ func (r *DNSCacheRepository) GetDNSCache(ctx context.Context, hostname string) (
 
 	// Check if the entry has expired
 	if dnsCache.ExpiresAt > 0 && time.Now().Unix() > dnsCache.ExpiresAt {
-		// Entry has expired, return nil (matching legacy behavior)
-		return nil, nil
+		_ = r.InvalidateDNSCache(ctx, hostname)
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityDNSCache, hostname)
 	}
 
 	// Convert to storage model

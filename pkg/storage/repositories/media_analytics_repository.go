@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -69,9 +70,8 @@ func (r *MediaAnalyticsRepository) GetMediaAnalyticsByID(ctx context.Context, fo
 	var analytics models.MediaAnalytics
 	err := r.Get(ctx, pk, sk, &analytics)
 	if err != nil {
-		// Check for not found error using our standardized pattern
 		if err.Error() == fmt.Sprintf("item not found: pk=%s, sk=%s", pk, sk) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityMedia, mediaID)
 		}
 		return nil, ErrorHandler.HandleGetError(err, EntityMedia, mediaID)
 	}

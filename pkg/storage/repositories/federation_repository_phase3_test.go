@@ -130,7 +130,6 @@ func TestActivityTimestampFiltering(t *testing.T) {
 	assert.Equal(t, time.Date(2025, 10, 1, 13, 30, 0, 0, time.UTC), filtered[2].Timestamp)
 }
 
-// TestGetAllFederationEdges_PaginationLogic tests cursor-based pagination handling
 func TestGetAllFederationEdges_PaginationLogic(t *testing.T) {
 	// Test pagination detection logic using limit+1 pattern
 	requestedLimit := 10

@@ -130,6 +130,7 @@ func TestSoftDeleteRepository_OnlyDeleted(t *testing.T) {
 
 func TestSoftDeleteRepository_HardDelete(t *testing.T) {
 	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
 	logger := zaptest.NewLogger(t)
 	repo := NewSoftDeleteRepository(db, logger)
 
@@ -139,12 +140,59 @@ func TestSoftDeleteRepository_HardDelete(t *testing.T) {
 		ID: "test-id",
 	}
 
-	// HardDelete only logs, doesn't actually delete
+	db.On("WithContext", mock.Anything).Return(db).Once()
+	db.On("Model", model).Return(query).Once()
+	query.On("Delete").Return(nil).Once()
+
 	err := repo.HardDelete(context.Background(), model)
 	assert.NoError(t, err)
+
+	db.AssertExpectations(t)
+	query.AssertExpectations(t)
 }
 
-// TestSoftDeleteRepository_Get removed - complex mock-based integration test
+func TestSoftDeleteRepository_SoftDelete(t *testing.T) {
+	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
+	logger := zaptest.NewLogger(t)
+	repo := NewSoftDeleteRepository(db, logger)
+
+	model := NewExampleModel("user-1", "Example User", "user@example.com")
+
+	db.On("WithContext", mock.Anything).Return(db).Once()
+	db.On("Model", model).Return(query).Once()
+	query.On("Update", mock.Anything).Return(nil).Once()
+
+	err := repo.SoftDelete(context.Background(), model, "admin")
+	assert.NoError(t, err)
+	assert.True(t, model.IsDeleted())
+	assert.Equal(t, "admin", model.GetDeletedBy())
+
+	db.AssertExpectations(t)
+	query.AssertExpectations(t)
+}
+
+func TestSoftDeleteRepository_Restore(t *testing.T) {
+	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
+	logger := zaptest.NewLogger(t)
+	repo := NewSoftDeleteRepository(db, logger)
+
+	model := NewExampleModel("user-1", "Example User", "user@example.com")
+	model.SoftDeleteBy("admin")
+
+	db.On("WithContext", mock.Anything).Return(db).Once()
+	db.On("Model", model).Return(query).Once()
+	query.On("Update", mock.Anything).Return(nil).Once()
+
+	err := repo.Restore(context.Background(), model)
+	assert.NoError(t, err)
+	assert.False(t, model.IsDeleted())
+	assert.Empty(t, model.GetDeletedBy())
+
+	db.AssertExpectations(t)
+	query.AssertExpectations(t)
+}
 
 // TestSoftDeleteRepository_Query tests query functionality with DynamORM
 func TestSoftDeleteRepository_Query(t *testing.T) {
@@ -203,25 +251,44 @@ func TestSoftDeleteRepository_Stats(t *testing.T) {
 func TestSoftDeleteRepository_Cleanup(t *testing.T) {
 	db := new(mocks.MockDB)
 	query := new(mocks.MockQuery)
+	deleteQuery := new(mocks.MockQuery)
 	logger := zaptest.NewLogger(t)
 	repo := NewSoftDeleteRepository(db, logger)
 
 	model := &ExampleModel{}
 
-	// Mock finding old deleted items
-	db.On("WithContext", mock.Anything).Return(db)
-	db.On("Model", model).Return(query)
-	query.On("Where", "deleted_at", "attribute_exists", interface{}(nil)).Return(query)
-	query.On("Where", "deleted_at", "<", mock.Anything).Return(query)
-	query.On("Limit", 25).Return(query)
-	query.On("Find", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-		// Simulate no items found (empty batch)
-		// In real scenario, this would populate the slice
-	})
+	oldItem := NewExampleModel("old-id", "Old User", "old@example.com")
+	oldItem.SoftDeleteBy("admin")
+	callCount := 0
+
+	db.On("WithContext", mock.Anything).Return(db).Maybe()
+	db.On("Model", model).Return(query).Maybe()
+	query.On("Where", "deleted_at", "attribute_exists", interface{}(nil)).Return(query).Maybe()
+	query.On("Where", "deleted_at", "<", mock.Anything).Return(query).Maybe()
+	query.On("Limit", 25).Return(query).Maybe()
+	query.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*ExampleModel)
+		if callCount == 0 {
+			*dest = append(*dest, oldItem)
+		} else {
+			*dest = (*dest)[:0]
+		}
+		callCount++
+	}).Twice()
+
+	db.On("Model", mock.MatchedBy(func(m any) bool {
+		em, ok := m.(*ExampleModel)
+		return ok && em != model
+	})).Return(deleteQuery).Once()
+	deleteQuery.On("Delete").Return(nil).Once()
 
 	deleted, err := repo.CleanupOldDeletes(context.Background(), model, 30*24*time.Hour, 25)
 	assert.NoError(t, err)
-	assert.Equal(t, 0, deleted) // No items to delete in this mock
+	assert.Equal(t, 1, deleted)
+
+	db.AssertExpectations(t)
+	query.AssertExpectations(t)
+	deleteQuery.AssertExpectations(t)
 }
 
 func TestSoftDeleteStats_String(t *testing.T) {
@@ -301,6 +368,32 @@ func TestConvenienceFunctions(t *testing.T) {
 		assert.Equal(t, "admin", deletedBy)
 		assert.True(t, isDeleted)
 	})
+}
+
+func TestSoftDeleteRepository_GetDeletedItemsOlderThan(t *testing.T) {
+	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
+	logger := zaptest.NewLogger(t)
+	repo := NewSoftDeleteRepository(db, logger)
+
+	model := &ExampleModel{}
+	var dest []*ExampleModel
+
+	db.On("WithContext", mock.Anything).Return(db).Once()
+	db.On("Model", model).Return(query).Once()
+	query.On("Where", "deleted_at", "attribute_exists", interface{}(nil)).Return(query).Once()
+	query.On("Where", "deleted_at", "<", mock.Anything).Return(query).Once()
+	query.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		ptr := args.Get(0).(*[]*ExampleModel)
+		*ptr = append(*ptr, NewExampleModel("old-id", "Old User", "old@example.com"))
+	}).Once()
+
+	err := repo.GetDeletedItemsOlderThan(context.Background(), model, &dest, 24*time.Hour)
+	assert.NoError(t, err)
+	assert.Len(t, dest, 1)
+
+	db.AssertExpectations(t)
+	query.AssertExpectations(t)
 }
 
 // TestSoftDeleteModel_Integration demonstrates the complete soft delete lifecycle with DynamORM

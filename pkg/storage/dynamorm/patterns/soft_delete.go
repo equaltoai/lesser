@@ -110,20 +110,23 @@ func (r *SoftDeleteRepository) OnlyDeleted() *SoftDeleteRepository {
 }
 
 // SoftDelete performs a soft delete operation
-func (r *SoftDeleteRepository) SoftDelete(_ context.Context, model SoftDeletable, userID string) error {
-	// Mark as soft deleted
+func (r *SoftDeleteRepository) SoftDelete(ctx context.Context, model SoftDeletable, userID string) error {
+	if model == nil {
+		return fmt.Errorf("model cannot be nil")
+	}
+
 	model.SoftDelete()
 	model.SetDeletedBy(userID)
 
-	// Update the item using DynamORM - Note: This would typically use a repository method
-	r.logger.Info("soft delete operation performed (storage not implemented in pattern)",
-		zap.String("type", reflect.TypeOf(model).String()),
-		zap.String("deleted_by", userID))
+	if err := r.db.WithContext(ctx).Model(model).Update(); err != nil {
+		return fmt.Errorf("failed to soft delete item: %w", err)
+	}
 
 	if r.logger != nil {
 		r.logger.Info("item_soft_deleted",
 			zap.String("type", reflect.TypeOf(model).String()),
 			zap.String("deleted_by", userID),
+			zap.Timep("deleted_at", model.GetDeletedAt()),
 		)
 	}
 
@@ -131,7 +134,10 @@ func (r *SoftDeleteRepository) SoftDelete(_ context.Context, model SoftDeletable
 }
 
 // Restore restores a soft-deleted item
-func (r *SoftDeleteRepository) Restore(_ context.Context, model SoftDeletable) error {
+func (r *SoftDeleteRepository) Restore(ctx context.Context, model SoftDeletable) error {
+	if model == nil {
+		return fmt.Errorf("model cannot be nil")
+	}
 	if !model.IsDeleted() {
 		return fmt.Errorf("item is not soft deleted")
 	}
@@ -139,24 +145,27 @@ func (r *SoftDeleteRepository) Restore(_ context.Context, model SoftDeletable) e
 	// Remove soft delete markers
 	model.Restore()
 
-	// Update the item using DynamORM - Note: This would typically use a repository method
-	r.logger.Info("restore operation performed (storage not implemented in pattern)",
-		zap.String("type", reflect.TypeOf(model).String()))
+	if err := r.db.WithContext(ctx).Model(model).Update(); err != nil {
+		return fmt.Errorf("failed to restore item: %w", err)
+	}
 
 	if r.logger != nil {
 		r.logger.Info("item_restored",
-			zap.String("type", reflect.TypeOf(model).String()),
-		)
+			zap.String("type", reflect.TypeOf(model).String()))
 	}
 
 	return nil
 }
 
 // HardDelete permanently deletes an item from DynamoDB using DynamORM
-func (r *SoftDeleteRepository) HardDelete(_ context.Context, model interface{}) error {
-	// Use DynamORM's delete method - Note: This would typically use a repository method
-	r.logger.Info("hard delete operation performed (storage not implemented in pattern)",
-		zap.String("type", reflect.TypeOf(model).String()))
+func (r *SoftDeleteRepository) HardDelete(ctx context.Context, model interface{}) error {
+	if model == nil {
+		return fmt.Errorf("model cannot be nil")
+	}
+
+	if err := r.db.WithContext(ctx).Model(model).Delete(); err != nil {
+		return fmt.Errorf("failed to hard delete item: %w", err)
+	}
 
 	if r.logger != nil {
 		r.logger.Info("item_hard_deleted",
@@ -237,35 +246,71 @@ func (r *SoftDeleteRepository) ScanOnlyDeleted(ctx context.Context, model interf
 }
 
 // CleanupOldDeletes permanently removes items that have been soft-deleted for longer than the specified duration
-func (r *SoftDeleteRepository) CleanupOldDeletes(_ context.Context, model interface{}, olderThan time.Duration, _ int) (int, error) {
+func (r *SoftDeleteRepository) CleanupOldDeletes(ctx context.Context, model interface{}, olderThan time.Duration, batchSize int) (int, error) {
+	if model == nil {
+		return 0, fmt.Errorf("model cannot be nil")
+	}
+
 	cutoff := time.Now().Add(-olderThan)
 	totalDeleted := 0
 
-	// Note: This would typically use a repository method to find and delete old items
-	r.logger.Info("cleanup operation performed (storage not implemented in pattern)",
-		zap.String("type", reflect.TypeOf(model).String()),
-		zap.Duration("older_than", olderThan),
-		zap.Time("cutoff", cutoff))
+	if batchSize <= 0 {
+		batchSize = 25
+	}
+
+	for {
+		items, err := r.fetchDeletedItems(ctx, model, cutoff, batchSize)
+		if err != nil {
+			return totalDeleted, err
+		}
+
+		if len(items) == 0 {
+			break
+		}
+
+		for _, item := range items {
+			if err := r.db.WithContext(ctx).Model(item).Delete(); err != nil {
+				return totalDeleted, fmt.Errorf("failed to hard delete item: %w", err)
+			}
+			totalDeleted++
+		}
+	}
 
 	if r.logger != nil {
 		r.logger.Info("cleanup_completed",
 			zap.Int("items_deleted", totalDeleted),
 			zap.Duration("older_than", olderThan),
-		)
+			zap.Time("cutoff", cutoff))
 	}
 
 	return totalDeleted, nil
 }
 
 // GetDeletedItemsOlderThan returns items that have been soft-deleted for longer than the specified duration
-func (r *SoftDeleteRepository) GetDeletedItemsOlderThan(_ context.Context, model interface{}, _ interface{}, olderThan time.Duration) error {
+func (r *SoftDeleteRepository) GetDeletedItemsOlderThan(ctx context.Context, model interface{}, dest interface{}, olderThan time.Duration) error {
+	if model == nil {
+		return fmt.Errorf("model cannot be nil")
+	}
+	if dest == nil {
+		return fmt.Errorf("destination cannot be nil")
+	}
+
 	cutoff := time.Now().Add(-olderThan)
 
-	// Note: This would typically use a repository method to find old deleted items
-	r.logger.Info("get deleted items operation performed (storage not implemented in pattern)",
-		zap.String("type", reflect.TypeOf(model).String()),
-		zap.Duration("older_than", olderThan),
-		zap.Time("cutoff", cutoff))
+	query := r.db.WithContext(ctx).Model(model).
+		Where("deleted_at", "attribute_exists", nil).
+		Where("deleted_at", "<", cutoff)
+
+	if err := query.All(dest); err != nil {
+		return fmt.Errorf("failed to query deleted items: %w", err)
+	}
+
+	if r.logger != nil {
+		r.logger.Info("old_deleted_items_loaded",
+			zap.String("type", reflect.TypeOf(model).String()),
+			zap.Duration("older_than", olderThan),
+			zap.Time("cutoff", cutoff))
+	}
 
 	return nil
 }
@@ -312,6 +357,43 @@ func (s SoftDeleteStats) GetDeletionPercentage() float64 {
 		return 0.0
 	}
 	return float64(s.DeletedItems) / float64(s.TotalItems) * 100.0
+}
+
+// fetchDeletedItems loads a batch of deleted items older than the cutoff.
+func (r *SoftDeleteRepository) fetchDeletedItems(ctx context.Context, model interface{}, cutoff time.Time, limit int) ([]interface{}, error) {
+	query := r.db.WithContext(ctx).Model(model).
+		Where("deleted_at", "attribute_exists", nil).
+		Where("deleted_at", "<", cutoff).
+		Limit(limit)
+
+	slicePtr, sliceVal, err := allocateSlice(model)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := query.All(slicePtr); err != nil {
+		return nil, fmt.Errorf("failed to load deleted items: %w", err)
+	}
+
+	resultSlice := sliceVal.Elem()
+	items := make([]interface{}, resultSlice.Len())
+	for i := 0; i < resultSlice.Len(); i++ {
+		items[i] = resultSlice.Index(i).Interface()
+	}
+
+	return items, nil
+}
+
+// allocateSlice creates a pointer to a slice of the provided model type.
+func allocateSlice(model interface{}) (interface{}, reflect.Value, error) {
+	modelType := reflect.TypeOf(model)
+	if modelType == nil {
+		return nil, reflect.Value{}, fmt.Errorf("model type cannot be nil")
+	}
+
+	sliceType := reflect.SliceOf(modelType)
+	slicePtr := reflect.New(sliceType)
+	return slicePtr.Interface(), slicePtr, nil
 }
 
 // Convenience functions for common soft delete patterns

@@ -570,6 +570,13 @@ gqlgen:
 	@echo "Generating GraphQL code..."
 	@go run github.com/99designs/gqlgen generate
 
+## Export combined GraphQL schema for web clients
+export-schema:
+	@echo "Exporting combined GraphQL schema..."
+	@cat graph/schema.graphql graph/phase2.graphql graph/phase3.graphql > schema.graphql
+	@echo "✓ Schema exported to schema.graphql"
+	@wc -l schema.graphql | awk '{print "  Total lines: " $$1}'
+
 ## Tidy Go modules
 tidy:
 	@echo "Tidying Go modules..."
@@ -714,6 +721,7 @@ help:
 	@echo "  dev                 Run local development server"
 	@echo "  local-dynamodb      Start local DynamoDB container"
 	@echo "  gqlgen              Generate GraphQL code"
+	@echo "  export-schema       Export combined GraphQL schema for web clients"
 	@echo "  tidy                Tidy Go modules"
 	@echo "  install-tools       Install development tools"
 	@echo ""

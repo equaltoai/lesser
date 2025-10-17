@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -75,13 +76,13 @@ func (r *QuoteRepository) GetQuoteRelationship(ctx context.Context, quoteStatusI
 	err := r.relationshipRepo.Get(ctx, pk, sk, relationship)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityQuoteRelationship, fmt.Sprintf("%s->%s", quoteStatusID, targetStatusID))
 		}
 		r.logger.Error("failed to get quote relationship",
 			zap.String("quote_status_id", quoteStatusID),
 			zap.String("target_status_id", targetStatusID),
 			zap.Error(err))
-		return nil, fmt.Errorf("%w: %w", ErrQuoteRelationshipGetFailed, err)
+		return nil, ErrorHandler.HandleGetError(err, EntityQuoteRelationship, fmt.Sprintf("%s->%s", quoteStatusID, targetStatusID))
 	}
 
 	return relationship, nil
@@ -208,12 +209,12 @@ func (r *QuoteRepository) GetQuotePermissions(ctx context.Context, username stri
 	err := r.permissionsRepo.Get(ctx, pk, sk, permissions)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityQuotePermissions, username)
 		}
 		r.logger.Error("failed to get quote permissions",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("%w: %w", ErrQuotePermissionsGetFailed, err)
+		return nil, ErrorHandler.HandleGetError(err, EntityQuotePermissions, username)
 	}
 
 	return permissions, nil

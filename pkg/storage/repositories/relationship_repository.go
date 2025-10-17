@@ -918,13 +918,13 @@ func (r *RelationshipRepository) GetRelationshipNote(ctx context.Context, userID
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil // Return nil for not found (matches legacy behavior)
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityAccountNote, targetID)
 		}
 		r.logger.Error("failed to get relationship note",
 			zap.String("user_id", userID),
 			zap.String("target_id", targetID),
 			zap.Error(err))
-		return nil, ErrorHandler.HandleGetError(err, "relationship note", targetID)
+		return nil, ErrorHandler.HandleGetError(err, EntityAccountNote, targetID)
 	}
 
 	// Convert to storage.AccountNote

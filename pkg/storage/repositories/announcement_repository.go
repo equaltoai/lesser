@@ -270,7 +270,7 @@ func (r *AnnouncementRepository) GetAnnouncementsPaginated(ctx context.Context, 
 		Where("GSI1PK", "=", fmt.Sprintf("ANNOUNCEMENT#%s", status)).
 		OrderBy("GSI1SK", "ASC") // ASC because we use reverse timestamps (newest first)
 
-	// Handle cursor-based pagination on GSI1SK
+	// Resume results from the provided cursor position when present
 	if cursor != "" {
 		query = query.Where("GSI1SK", ">", cursor)
 	}
@@ -347,7 +347,7 @@ func (r *AnnouncementRepository) GetAnnouncementsByAdmin(ctx context.Context, ad
 		Where("GSI2PK", "=", "ADMIN#"+adminUsername).
 		OrderBy("GSI2SK", "DESC") // Most recent first
 
-	// Handle cursor-based pagination on GSI2SK
+	// Resume results for the admin index when a cursor is provided
 	if cursor != "" {
 		query = query.Where("GSI2SK", "<", cursor)
 	}

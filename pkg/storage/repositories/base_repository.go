@@ -720,7 +720,7 @@ type GSIQueryConfig struct {
 	SKField   string // GSI SK field name (e.g., "GSI1SK", "GSI2SK")
 	PKValue   string // PK value for the GSI
 	SKPattern string // SK pattern (for BEGINS_WITH, range queries, etc.)
-	UseCursor bool   // Whether to support cursor-based pagination
+	UseCursor bool   // Enables cursor-based pagination on the configured sort key
 	OrderBy   string // Sort order (SortOrderAsc or SortOrderDesc)
 }
 

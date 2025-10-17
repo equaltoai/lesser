@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
@@ -148,11 +149,11 @@ func (r *RelationshipBase) GetRelationship(ctx context.Context, actor, object st
 	var model RelationshipModel
 	err := r.queryUtils.GetItemByPK(ctx, pk, sk, &model)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, nil // Not found is not an error for existence checks
-		}
 		entityType := r.getEntityType()
 		identifier := fmt.Sprintf("%s->%s", actor, object)
+		if errors.IsNotFound(err) {
+			return nil, r.errorHandler.HandleGetError(storage.ErrNotFound, entityType, identifier)
+		}
 		return nil, r.errorHandler.HandleGetError(err, entityType, identifier)
 	}
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -93,7 +94,7 @@ func (r *SeveranceRepository) GetSeveredRelationship(ctx context.Context, id str
 		r.logger.Error("failed to get severed relationship",
 			zap.String("id", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get severed relationship: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntitySeveredRelationship, id)
 	}
 
 	// Find the matching ID
@@ -103,7 +104,7 @@ func (r *SeveranceRepository) GetSeveredRelationship(ctx context.Context, id str
 		}
 	}
 
-	return nil, nil // Not found
+	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntitySeveredRelationship, id)
 }
 
 // ListSeveredRelationships retrieves severed relationships with filters and pagination
@@ -377,13 +378,13 @@ func (r *SeveranceRepository) GetReconnectionAttempt(ctx context.Context, severa
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntitySeveredRelationship, attemptID)
 		}
 		r.logger.Error("failed to get reconnection attempt",
 			zap.String("severance_id", severanceID),
 			zap.String("attempt_id", attemptID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get reconnection attempt: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntitySeveredRelationship, attemptID)
 	}
 
 	return &attempt, nil

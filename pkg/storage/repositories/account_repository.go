@@ -716,14 +716,14 @@ func (r *AccountRepository) GetFieldVerification(ctx context.Context, username, 
 
 	if err != nil {
 		if dynamormErrors.IsNotFound(err) {
-			return nil, nil // Return nil for not found, not an error
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "field verification", username)
 		}
 		return nil, ErrorHandler.HandleGetError(err, "field verification", username)
 	}
 
 	// Check if verification has expired
 	if verification.IsExpired() {
-		return nil, nil
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "field verification", username)
 	}
 
 	// Convert to storage.ActorField

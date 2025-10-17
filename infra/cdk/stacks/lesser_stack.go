@@ -152,6 +152,20 @@ func (s *LesserStack) createSharedResources() {
 	// GSI3: FOLLOWING_DOMAIN#{domain} → FOLLOWER#{username} (local users following remote)
 	// The generic loop above already creates these; attributes are defined via dynamorm tags
 
+	// Dedicated index for OAuth client pagination (global listing newest-first)
+	s.MainTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
+		IndexName: jsii.String("oauth-clients-index"),
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String("OAuthClientsPK"),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String("OAuthClientsSK"),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		ProjectionType: awsdynamodb.ProjectionType_ALL,
+	})
+
 	// Basic S3 bucket setup - CloudFront integration moved to createMediaInfrastructure
 	s.MediaBucket = awss3.NewBucket(s.Stack, jsii.String("MediaBucket"), &awss3.BucketProps{
 		BucketName:        jsii.String(fmt.Sprintf("lesser-media-%s", s.Environment)),

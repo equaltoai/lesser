@@ -2,8 +2,10 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -67,12 +69,12 @@ func (r *ThreadRepository) GetThreadSync(ctx context.Context, statusID string) (
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil // Not found is not an error
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "thread sync", statusID)
 		}
 		r.logger.Error("failed to get thread sync",
 			zap.String("status_id", statusID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get thread sync %s: %w", statusID, err)
+		return nil, ErrorHandler.HandleGetError(err, "thread sync", statusID)
 	}
 
 	return &sync, nil
@@ -145,13 +147,13 @@ func (r *ThreadRepository) GetThreadNode(ctx context.Context, rootStatusID, stat
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil // Not found is not an error
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "thread node", statusID)
 		}
 		r.logger.Error("failed to get thread node",
 			zap.String("status_id", statusID),
 			zap.String("root_status_id", rootStatusID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get thread node %s: %w", statusID, err)
+		return nil, ErrorHandler.HandleGetError(err, "thread node", statusID)
 	}
 
 	return &node, nil
@@ -171,12 +173,12 @@ func (r *ThreadRepository) GetThreadNodeByStatusID(ctx context.Context, statusID
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil // Not found is not an error
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "thread node", statusID)
 		}
 		r.logger.Error("failed to get thread node by status ID",
 			zap.String("status_id", statusID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get thread node by status ID %s: %w", statusID, err)
+		return nil, ErrorHandler.HandleGetError(err, "thread node", statusID)
 	}
 
 	return &node, nil
@@ -251,14 +253,12 @@ func (r *ThreadRepository) GetThreadContext(ctx context.Context, statusID string
 	// First, find the thread node for this status to get the root
 	node, err := r.GetThreadNodeByStatusID(ctx, statusID)
 	if err != nil {
+		if stdErrors.Is(err, storage.ErrNotFound) {
+			r.logger.Debug("no thread node found for status",
+				zap.String("status_id", statusID))
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "thread context", statusID)
+		}
 		return nil, err
-	}
-
-	if node == nil {
-		// No thread context exists for this status
-		r.logger.Debug("no thread node found for status",
-			zap.String("status_id", statusID))
-		return nil, nil
 	}
 
 	// Get all nodes in the thread

@@ -165,7 +165,7 @@ func (r *ScheduledStatusRepository) GetScheduledStatuses(ctx context.Context, us
 		Where("PK", "=", pk).
 		OrderBy("SK", "ASC") // Ordered by ID
 
-	// Handle cursor-based pagination
+	// Resume from the provided cursor when set
 	if cursor != "" {
 		query = query.Where("SK", ">", cursor)
 	}

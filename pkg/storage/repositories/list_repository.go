@@ -158,7 +158,7 @@ func (r *ListRepository) GetListsForUserPaginated(ctx context.Context, username 
 		Where("GSI1PK", "=", fmt.Sprintf("USER_LISTS#%s", username)).
 		OrderBy("GSI1SK", "ASC")
 
-	// Handle cursor-based pagination
+	// Resume from the provided cursor when set
 	if cursor != "" {
 		query = query.Where("GSI1SK", ">", cursor)
 	}
@@ -450,7 +450,7 @@ func (r *ListRepository) GetAccountListsPaginated(ctx context.Context, accountID
 		Where("GSI1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)).
 		OrderBy("GSI1SK", "ASC")
 
-	// Handle cursor-based pagination
+	// Resume from the provided cursor when set
 	if cursor != "" {
 		query = query.Where("GSI1SK", ">", cursor)
 	}

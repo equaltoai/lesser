@@ -844,12 +844,12 @@ func (r *TrendingRepository) GetEngagementMetrics(ctx context.Context, statusID 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			r.logger.Debug("no engagement metrics found", zap.String("statusID", statusID))
-			return nil, nil // Return nil without error for not found
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "engagement metrics", statusID)
 		}
 		r.logger.Error("failed to get engagement metrics",
 			zap.String("statusID", statusID),
 			zap.Error(err))
-		return nil, err
+		return nil, ErrorHandler.HandleGetError(err, "engagement metrics", statusID)
 	}
 
 	// Convert to storage model
@@ -1374,13 +1374,13 @@ func (r *TrendingRepository) GetEngagementMetricsData(ctx context.Context, metri
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil // Return nil without error for not found
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "engagement metrics", fmt.Sprintf("%s#%s", metricType, targetID))
 		}
 		r.logger.Error("failed to get engagement metrics",
 			zap.String("metricType", metricType),
 			zap.String("targetID", targetID),
 			zap.Error(err))
-		return nil, fmt.Errorf("%w: %w", ErrFailedGetEngagementMetrics, err)
+		return nil, ErrorHandler.HandleGetError(err, "engagement metrics", fmt.Sprintf("%s#%s", metricType, targetID))
 	}
 
 	return &storage.EngagementData{
@@ -1746,13 +1746,13 @@ func (r *TrendingRepository) GetInstanceMetrics(ctx context.Context, date, metri
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "instance metrics", fmt.Sprintf("%s#%s", date, metricType))
 		}
 		r.logger.Error("failed to get instance metrics",
 			zap.String("date", date),
 			zap.String("metricType", metricType),
 			zap.Error(err))
-		return nil, fmt.Errorf("%w: %w", ErrFailedGetInstanceMetrics, err)
+		return nil, ErrorHandler.HandleGetError(err, "instance metrics", fmt.Sprintf("%s#%s", date, metricType))
 	}
 
 	return &storage.InstanceMetricData{
@@ -2285,13 +2285,13 @@ func (r *TrendingRepository) GetModerationAnalytics(ctx context.Context, date, r
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "moderation analytics", fmt.Sprintf("%s#%s", date, reportType))
 		}
 		r.logger.Error("failed to get moderation analytics",
 			zap.String("date", date),
 			zap.String("reportType", reportType),
 			zap.Error(err))
-		return nil, fmt.Errorf("%w: %w", ErrFailedGetModerationData, err)
+		return nil, ErrorHandler.HandleGetError(err, "moderation analytics", fmt.Sprintf("%s#%s", date, reportType))
 	}
 
 	return &storage.ModerationAnalyticsData{
@@ -2727,7 +2727,7 @@ func (r *TrendingRepository) GetActorInteraction(ctx context.Context, actor1, ac
 	allEngagements := append(engagements, reverseEngagements...)
 
 	if err := common.ValidateSliceNotEmpty("allEngagements", allEngagements); err != nil {
-		return nil, nil // No interactions found
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "actor interaction", fmt.Sprintf("%s<->%s", actor1, actor2))
 	}
 
 	// Sort by engagement time to find the most recent

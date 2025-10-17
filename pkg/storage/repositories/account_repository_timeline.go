@@ -502,7 +502,7 @@ func (r *AccountRepository) getList(ctx context.Context, username, listID string
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityList, fmt.Sprintf("%s#%s", username, listID))
 		}
 		return nil, ErrorHandler.HandleGetError(err, EntityList, listID)
 	}

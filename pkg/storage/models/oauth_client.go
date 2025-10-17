@@ -2,16 +2,19 @@ package models
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
 // OAuthClient represents an OAuth 2.0 client application
 type OAuthClient struct {
 	// DynamoDB keys - MUST match legacy exactly
-	PK     string `dynamorm:"pk" json:"-"`     // CLIENT#clientID
-	SK     string `dynamorm:"sk" json:"-"`     // METADATA
-	GSI1PK string `dynamorm:"gsi1pk" json:"-"` // OWNER#ownerID (for owner index)
-	GSI1SK string `dynamorm:"gsi1sk" json:"-"` // CLIENT#clientID
+	PK             string `dynamorm:"pk" json:"-"`                           // CLIENT#clientID
+	SK             string `dynamorm:"sk" json:"-"`                           // METADATA
+	GSI1PK         string `dynamorm:"gsi1pk" json:"-"`                       // OWNER#ownerID (for owner index)
+	GSI1SK         string `dynamorm:"gsi1sk" json:"-"`                       // CLIENT#clientID
+	OAuthClientsPK string `dynamorm:"index:oauth-clients-index,pk" json:"-"` // OAUTH_CLIENTS
+	OAuthClientsSK string `dynamorm:"index:oauth-clients-index,sk" json:"-"` // CREATED_AT#{ts_desc}#CLIENT#{clientID}
 
 	// Core fields from legacy storage.OAuthClient
 	ID           string    `json:"id,omitempty"`
@@ -36,24 +39,24 @@ func (OAuthClient) TableName() string {
 
 // BeforeCreate sets up the keys before creating
 func (o *OAuthClient) BeforeCreate() error {
-	if err := o.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update keys: %w", err)
-	}
 	if o.CreatedAt.IsZero() {
-		o.CreatedAt = time.Now()
+		o.CreatedAt = time.Now().UTC()
 	}
 	if o.UpdatedAt.IsZero() {
 		o.UpdatedAt = o.CreatedAt
+	}
+	if err := o.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
 	}
 	return nil
 }
 
 // BeforeUpdate sets the updated timestamp
 func (o *OAuthClient) BeforeUpdate() error {
+	o.UpdatedAt = time.Now().UTC()
 	if err := o.UpdateKeys(); err != nil {
 		return fmt.Errorf("failed to update keys: %w", err)
 	}
-	o.UpdatedAt = time.Now()
 	return nil
 }
 
@@ -75,5 +78,15 @@ func (o *OAuthClient) UpdateKeys() error {
 		o.GSI1PK = "OWNER#" + o.OwnerID
 		o.GSI1SK = "CLIENT#" + o.ClientID
 	}
+	desc := encodeDescendingTimestamp(o.CreatedAt)
+	o.OAuthClientsPK = "OAUTH_CLIENTS"
+	o.OAuthClientsSK = fmt.Sprintf("CREATED_AT#%019d#CLIENT#%s", desc, o.ClientID)
 	return nil
+}
+
+func encodeDescendingTimestamp(timestamp time.Time) int64 {
+	if timestamp.IsZero() {
+		timestamp = time.Now().UTC()
+	}
+	return math.MaxInt64 - timestamp.UTC().UnixNano()
 }

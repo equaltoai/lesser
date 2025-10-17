@@ -50,7 +50,7 @@ func (h *NotificationQueryHelper) buildPaginatedNotificationQuery(ctx context.Co
 		query = query.Filter(key, "=", value)
 	}
 
-	// Handle cursor-based pagination
+	// Resume from the supplied cursor value when available
 	if opts.Cursor != "" {
 		query = query.Where("SK", "<", opts.Cursor)
 	}
