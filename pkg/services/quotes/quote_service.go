@@ -394,6 +394,46 @@ func (qs *QuoteService) updateQuoteCounts(_ context.Context, statusID string, de
 	return nil
 }
 
+// WithdrawFromQuotes withdraws all quotes of a note by a user
+func (qs *QuoteService) WithdrawFromQuotes(ctx context.Context, noteID, userID string) (*models.Status, int, error) {
+	// Validate inputs
+	if err := common.ValidateRequiredParam("note_id", noteID); err != nil {
+		return nil, 0, err
+	}
+	if err := common.ValidateRequiredParam("user_id", userID); err != nil {
+		return nil, 0, err
+	}
+
+	// Get the original note to return in the payload
+	note, err := qs.storage.Status().GetStatus(ctx, noteID)
+	if err != nil {
+		qs.logger.Error("failed to get note for withdrawal",
+			zap.String("note_id", noteID),
+			zap.Error(err))
+		return nil, 0, ErrGetTargetStatus(err)
+	}
+	if note == nil {
+		return nil, 0, ErrTargetStatusNotFound
+	}
+
+	// Withdraw all quotes
+	count, err := qs.storage.Quote().WithdrawQuotes(ctx, noteID, userID)
+	if err != nil {
+		qs.logger.Error("failed to withdraw quotes",
+			zap.String("note_id", noteID),
+			zap.String("user_id", userID),
+			zap.Error(err))
+		return nil, 0, fmt.Errorf("failed to withdraw quotes: %w", err)
+	}
+
+	qs.logger.Info("withdrew quotes from note",
+		zap.String("note_id", noteID),
+		zap.String("user_id", userID),
+		zap.Int("withdrawn_count", count))
+
+	return note, count, nil
+}
+
 func (qs *QuoteService) createQuoteNotification(_ context.Context, quoteStatus, targetStatus *models.Status) error {
 	// Placeholder implementation
 	// In reality, this would create a notification for the original author

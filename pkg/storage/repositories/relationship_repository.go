@@ -1105,6 +1105,21 @@ func (r *RelationshipRepository) DeleteBlock(ctx context.Context, blockerActor, 
 	return r.blockRepo.DeleteBlock(ctx, blockerActor, blockedActor)
 }
 
+// Unfollow removes a follow relationship (wrapper for DeleteRelationship)
+func (r *RelationshipRepository) Unfollow(ctx context.Context, followerID, followingID string) error {
+	return r.DeleteRelationship(ctx, followerID, followingID)
+}
+
+// UnblockUser removes a block relationship (wrapper for DeleteBlock)
+func (r *RelationshipRepository) UnblockUser(ctx context.Context, blockerID, blockedID string) error {
+	return r.DeleteBlock(ctx, blockerID, blockedID)
+}
+
+// UnmuteUser removes a mute relationship (wrapper for DeleteMute)
+func (r *RelationshipRepository) UnmuteUser(ctx context.Context, muterID, mutedID string) error {
+	return r.DeleteMute(ctx, muterID, mutedID)
+}
+
 // BlockUser blocks another user
 func (r *RelationshipRepository) BlockUser(ctx context.Context, blockerID, blockedID string) error {
 	// Validate the relationship using centralized validation

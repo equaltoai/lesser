@@ -689,58 +689,6 @@ func (r *Resolver) fetchHashtagNotificationSettings(ctx context.Context, hashtag
 	return r.convertStorageNotificationSettings(settings)
 }
 
-// getRelatedHashtags returns related hashtags for a given hashtag
-//
-//nolint:unused // Used by tests and future features
-func (r *Resolver) getRelatedHashtags(ctx context.Context, hashtag string, limit int) []*model.Hashtag {
-	if hashtag == "" || limit <= 0 {
-		return []*model.Hashtag{}
-	}
-
-	// Get hashtag service
-	hashtagService := r.Registry.Hashtags()
-	if hashtagService == nil {
-		return []*model.Hashtag{}
-	}
-
-	// Get the full hashtag which includes related hashtags
-	fullHashtag, err := hashtagService.GetHashtag(ctx, hashtag, "")
-	if err != nil || fullHashtag == nil || len(fullHashtag.Related) == 0 {
-		return []*model.Hashtag{}
-	}
-
-	// Get domain
-	domain := "localhost"
-	if r.Registry.GetConfig() != nil && r.Registry.GetConfig().BaseURL != "" {
-		baseURL := r.Registry.GetConfig().BaseURL
-		if strings.HasPrefix(baseURL, "https://") {
-			domain = strings.TrimPrefix(baseURL, "https://")
-		} else if strings.HasPrefix(baseURL, "http://") {
-			domain = strings.TrimPrefix(baseURL, "http://")
-		} else {
-			domain = baseURL
-		}
-		domain = strings.TrimSuffix(domain, "/")
-	}
-
-	// Convert to GraphQL model
-	results := make([]*model.Hashtag, 0, len(fullHashtag.Related))
-	for i, relTag := range fullHashtag.Related {
-		if i >= limit {
-			break
-		}
-		if relTag != "" {
-			results = append(results, &model.Hashtag{
-				Name:        relTag,
-				URL:         fmt.Sprintf("https://%s/tags/%s", domain, relTag),
-				DisplayName: "#" + relTag,
-			})
-		}
-	}
-
-	return results
-}
-
 // isFollowingHashtag checks if the user is following a hashtag
 //
 //nolint:unused // Used by tests and future features
