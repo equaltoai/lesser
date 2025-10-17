@@ -76,6 +76,7 @@ type RepositoryFactory struct {
 	threadRepo              *repositories.ThreadRepository
 	severanceRepo           *repositories.SeveranceRepository
 	moderationMLRepo        *repositories.ModerationMLRepository
+	quoteRepo               *repositories.QuoteRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -117,6 +118,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.filterRepo = repositories.NewFilterRepository(f.db, f.tableName, f.logger, nil)
 	f.threadRepo = repositories.NewThreadRepository(f.db, f.logger)
 	f.severanceRepo = repositories.NewSeveranceRepository(f.db, f.tableName, f.logger)
+	f.quoteRepo = repositories.NewQuoteRepository(f.db, f.tableName, f.logger, nil)
 	f.listRepo = repositories.NewListRepository(f.db, f.tableName, f.logger, nil)
 	f.mediaRepo = repositories.NewMediaRepository(f.db, f.tableName, f.logger, nil)
 	f.pollRepo = repositories.NewPollRepository(f.db, f.tableName, f.logger, nil)
@@ -460,6 +462,11 @@ func (f *RepositoryFactory) Severance() *repositories.SeveranceRepository {
 // ModerationML returns the ModerationML repository instance
 func (f *RepositoryFactory) ModerationML() *repositories.ModerationMLRepository {
 	return f.moderationMLRepo
+}
+
+// Quote returns the Quote repository instance
+func (f *RepositoryFactory) Quote() *repositories.QuoteRepository {
+	return f.quoteRepo
 }
 
 // Additional repositories can be added here as needed

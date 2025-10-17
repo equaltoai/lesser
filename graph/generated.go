@@ -1537,11 +1537,16 @@ type ComplexityRoot struct {
 
 	TrainingResult struct {
 		Accuracy     func(childComplexity int) int
+		DatasetS3Key func(childComplexity int) int
+		F1Score      func(childComplexity int) int
 		Improvements func(childComplexity int) int
+		JobID        func(childComplexity int) int
+		JobName      func(childComplexity int) int
 		ModelVersion func(childComplexity int) int
 		Precision    func(childComplexity int) int
 		Recall       func(childComplexity int) int
 		SamplesUsed  func(childComplexity int) int
+		Status       func(childComplexity int) int
 		Success      func(childComplexity int) int
 		TrainingTime func(childComplexity int) int
 	}
@@ -9529,12 +9534,40 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.TrainingResult.Accuracy(childComplexity), true
 
+	case "TrainingResult.datasetS3Key":
+		if e.complexity.TrainingResult.DatasetS3Key == nil {
+			break
+		}
+
+		return e.complexity.TrainingResult.DatasetS3Key(childComplexity), true
+
+	case "TrainingResult.f1Score":
+		if e.complexity.TrainingResult.F1Score == nil {
+			break
+		}
+
+		return e.complexity.TrainingResult.F1Score(childComplexity), true
+
 	case "TrainingResult.improvements":
 		if e.complexity.TrainingResult.Improvements == nil {
 			break
 		}
 
 		return e.complexity.TrainingResult.Improvements(childComplexity), true
+
+	case "TrainingResult.jobId":
+		if e.complexity.TrainingResult.JobID == nil {
+			break
+		}
+
+		return e.complexity.TrainingResult.JobID(childComplexity), true
+
+	case "TrainingResult.jobName":
+		if e.complexity.TrainingResult.JobName == nil {
+			break
+		}
+
+		return e.complexity.TrainingResult.JobName(childComplexity), true
 
 	case "TrainingResult.modelVersion":
 		if e.complexity.TrainingResult.ModelVersion == nil {
@@ -9563,6 +9596,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.TrainingResult.SamplesUsed(childComplexity), true
+
+	case "TrainingResult.status":
+		if e.complexity.TrainingResult.Status == nil {
+			break
+		}
+
+		return e.complexity.TrainingResult.Status(childComplexity), true
 
 	case "TrainingResult.success":
 		if e.complexity.TrainingResult.Success == nil {
@@ -40891,6 +40931,14 @@ func (ec *executionContext) fieldContext_Mutation_trainModerationModel(ctx conte
 			switch field.Name {
 			case "success":
 				return ec.fieldContext_TrainingResult_success(ctx, field)
+			case "status":
+				return ec.fieldContext_TrainingResult_status(ctx, field)
+			case "jobId":
+				return ec.fieldContext_TrainingResult_jobId(ctx, field)
+			case "jobName":
+				return ec.fieldContext_TrainingResult_jobName(ctx, field)
+			case "datasetS3Key":
+				return ec.fieldContext_TrainingResult_datasetS3Key(ctx, field)
 			case "modelVersion":
 				return ec.fieldContext_TrainingResult_modelVersion(ctx, field)
 			case "accuracy":
@@ -40899,6 +40947,8 @@ func (ec *executionContext) fieldContext_Mutation_trainModerationModel(ctx conte
 				return ec.fieldContext_TrainingResult_precision(ctx, field)
 			case "recall":
 				return ec.fieldContext_TrainingResult_recall(ctx, field)
+			case "f1Score":
+				return ec.fieldContext_TrainingResult_f1Score(ctx, field)
 			case "samplesUsed":
 				return ec.fieldContext_TrainingResult_samplesUsed(ctx, field)
 			case "trainingTime":
@@ -62625,6 +62675,182 @@ func (ec *executionContext) fieldContext_TrainingResult_success(_ context.Contex
 	return fc, nil
 }
 
+func (ec *executionContext) _TrainingResult_status(ctx context.Context, field graphql.CollectedField, obj *model.TrainingResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_TrainingResult_status(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Status, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_TrainingResult_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TrainingResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _TrainingResult_jobId(ctx context.Context, field graphql.CollectedField, obj *model.TrainingResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_TrainingResult_jobId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.JobID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_TrainingResult_jobId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TrainingResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _TrainingResult_jobName(ctx context.Context, field graphql.CollectedField, obj *model.TrainingResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_TrainingResult_jobName(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.JobName, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_TrainingResult_jobName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TrainingResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _TrainingResult_datasetS3Key(ctx context.Context, field graphql.CollectedField, obj *model.TrainingResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_TrainingResult_datasetS3Key(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DatasetS3Key, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_TrainingResult_datasetS3Key(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TrainingResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _TrainingResult_modelVersion(ctx context.Context, field graphql.CollectedField, obj *model.TrainingResult) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_TrainingResult_modelVersion(ctx, field)
 	if err != nil {
@@ -62789,6 +63015,50 @@ func (ec *executionContext) _TrainingResult_recall(ctx context.Context, field gr
 }
 
 func (ec *executionContext) fieldContext_TrainingResult_recall(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TrainingResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _TrainingResult_f1Score(ctx context.Context, field graphql.CollectedField, obj *model.TrainingResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_TrainingResult_f1Score(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.F1Score, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(float64)
+	fc.Result = res
+	return ec.marshalNFloat2float64(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_TrainingResult_f1Score(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "TrainingResult",
 		Field:      field,
@@ -80984,6 +81254,26 @@ func (ec *executionContext) _TrainingResult(ctx context.Context, sel ast.Selecti
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "status":
+			out.Values[i] = ec._TrainingResult_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "jobId":
+			out.Values[i] = ec._TrainingResult_jobId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "jobName":
+			out.Values[i] = ec._TrainingResult_jobName(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "datasetS3Key":
+			out.Values[i] = ec._TrainingResult_datasetS3Key(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "modelVersion":
 			out.Values[i] = ec._TrainingResult_modelVersion(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -81001,6 +81291,11 @@ func (ec *executionContext) _TrainingResult(ctx context.Context, sel ast.Selecti
 			}
 		case "recall":
 			out.Values[i] = ec._TrainingResult_recall(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "f1Score":
+			out.Values[i] = ec._TrainingResult_f1Score(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

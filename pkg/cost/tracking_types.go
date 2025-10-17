@@ -207,6 +207,7 @@ type Driver struct {
 	PercentageOfTotal float64 `json:"percentage_of_total"`
 	OperationCount    int64   `json:"operation_count"`
 	AverageCost       int64   `json:"average_cost"`
+	Trend             string  `json:"trend"` // "INCREASING", "DECREASING", or "STABLE"
 }
 
 // TrendPoint represents a point in cost trends over time for analysis

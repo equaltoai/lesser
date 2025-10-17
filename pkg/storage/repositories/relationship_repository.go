@@ -326,27 +326,7 @@ func (r *RelationshipRepository) UpdateRelationship(ctx context.Context, followe
 	}
 
 	// Apply updates based on the provided updates map
-	var hasChanges bool
-	for key, value := range updates {
-		switch key {
-		case "state", "State":
-			if strValue, ok := value.(string); ok && strValue != relationship.State {
-				relationship.State = strValue
-				hasChanges = true
-			}
-		case "activity_id", "ActivityID":
-			if strValue, ok := value.(string); ok && strValue != relationship.ActivityID {
-				relationship.ActivityID = strValue
-				hasChanges = true
-			}
-		default:
-			r.logger.Warn("unsupported relationship field update",
-				zap.String("field", key),
-				zap.Any("value", value),
-				zap.String("follower", followerUsername),
-				zap.String("following", followingUsername))
-		}
-	}
+	hasChanges := r.applyRelationshipUpdates(relationship, updates, followerUsername, followingUsername)
 
 	if !hasChanges {
 		r.logger.Debug("no changes to apply to relationship",
@@ -369,6 +349,87 @@ func (r *RelationshipRepository) UpdateRelationship(ctx context.Context, followe
 	}
 
 	return nil
+}
+
+// applyRelationshipUpdates applies updates to a relationship record and returns true if any changes were made
+func (r *RelationshipRepository) applyRelationshipUpdates(relationship *models.RelationshipRecord, updates map[string]interface{}, followerUsername, followingUsername string) bool {
+	var hasChanges bool
+
+	for key, value := range updates {
+		changed := r.applyFieldUpdate(relationship, key, value, followerUsername, followingUsername)
+		if changed {
+			hasChanges = true
+		}
+	}
+
+	return hasChanges
+}
+
+// applyFieldUpdate applies a single field update and returns true if the field was changed
+func (r *RelationshipRepository) applyFieldUpdate(relationship *models.RelationshipRecord, key string, value interface{}, followerUsername, followingUsername string) bool {
+	switch key {
+	case "state", "State":
+		return r.updateStringField(&relationship.State, value)
+	case "activity_id", "ActivityID":
+		return r.updateStringField(&relationship.ActivityID, value)
+	case "notifying", "Notifying":
+		return r.updateBoolField(&relationship.Notifying, value)
+	case "showing_reblogs", "ShowingReblogs":
+		return r.updateBoolField(&relationship.ShowingReblogs, value)
+	case "languages", "Languages":
+		return r.updateLanguagesField(&relationship.Languages, value)
+	case "note", "Note":
+		return r.updateStringField(&relationship.Note, value)
+	default:
+		r.logger.Warn("unsupported relationship field update",
+			zap.String("field", key),
+			zap.Any("value", value),
+			zap.String("follower", followerUsername),
+			zap.String("following", followingUsername))
+		return false
+	}
+}
+
+// updateStringField updates a string field if the value differs
+func (r *RelationshipRepository) updateStringField(field *string, value interface{}) bool {
+	if strValue, ok := value.(string); ok && strValue != *field {
+		*field = strValue
+		return true
+	}
+	return false
+}
+
+// updateBoolField updates a boolean field if the value differs
+func (r *RelationshipRepository) updateBoolField(field *bool, value interface{}) bool {
+	if boolValue, ok := value.(bool); ok && boolValue != *field {
+		*field = boolValue
+		return true
+	}
+	return false
+}
+
+// updateLanguagesField updates a languages slice field if the value differs
+func (r *RelationshipRepository) updateLanguagesField(field *[]string, value interface{}) bool {
+	langValue, ok := value.([]string)
+	if !ok {
+		return false
+	}
+
+	// Compare slices
+	if len(langValue) != len(*field) {
+		*field = langValue
+		return true
+	}
+
+	// Check if any elements differ
+	for i, lang := range langValue {
+		if i >= len(*field) || lang != (*field)[i] {
+			*field = langValue
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetPendingFollowRequests retrieves pending follow requests for a user

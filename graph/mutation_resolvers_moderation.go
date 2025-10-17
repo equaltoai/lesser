@@ -384,19 +384,36 @@ func (r *mutationResolver) TrainModerationModel(ctx context.Context, samples []*
 		}
 	}
 
-	// 7. Train model using the actual sample IDs from the repository
-	result, err := mlService.TrainModel(ctx, sampleIDs, trainingOpts)
+	// 7. Extract context for tracking
+	// Get user ID from context
+	userID := GetUserID(ctx)
+
+	// Get tenant ID - in this system, use domain from config as tenant identifier
+	tenantID := config.Get().Domain
+	if tenantID == "" {
+		tenantID = "default" // Fallback if domain not configured
+	}
+
+	// 8. Train model using the actual sample IDs from the repository with context
+	result, err := mlService.TrainModel(ctx, tenantID, userID, sampleIDs, trainingOpts)
 	if err != nil {
 		return nil, fmt.Errorf("model training failed: %w", err)
 	}
 
 	// 9. Convert service result to GraphQL result
+	// Note: TrainingResult now returns immediately with SUBMITTED status
+	// Metrics will be zero until job completes
 	return &model.TrainingResult{
 		Success:      result.Success,
+		Status:       result.Status,
+		JobID:        result.JobID,
+		JobName:      result.JobName,
+		DatasetS3Key: result.DatasetS3Key,
 		ModelVersion: result.ModelVersion,
 		Accuracy:     result.Accuracy,
 		Precision:    result.Precision,
 		Recall:       result.Recall,
+		F1Score:      result.F1Score,
 		SamplesUsed:  result.SamplesUsed,
 		TrainingTime: result.TrainingTime,
 		Improvements: result.Improvements,

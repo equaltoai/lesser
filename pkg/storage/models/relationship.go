@@ -21,6 +21,12 @@ type RelationshipRecord struct {
 	State      string    `json:"State"` // pending, accepted, rejected
 	CreatedAt  time.Time `json:"CreatedAt"`
 	UpdatedAt  time.Time `json:"UpdatedAt"`
+
+	// Relationship preferences
+	Notifying      bool     `json:"Notifying"`           // Receive notifications for this user's posts
+	ShowingReblogs bool     `json:"ShowingReblogs"`      // Show reblogs from this user in timeline
+	Languages      []string `json:"Languages,omitempty"` // Filter to specific languages (empty = all)
+	Note           string   `json:"Note,omitempty"`      // Private note about this relationship
 }
 
 // Follow relationship state constants (from legacy)

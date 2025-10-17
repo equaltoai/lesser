@@ -40,3 +40,8 @@ ml:
   bedrockRegion: us-east-1
   bedrockModelId: amazon.titan-text-lite-v1
   bedrockInferenceModelId: ""  # Custom trained model ID when available
+  bedrockCustomizationRoleArn: "arn:aws:iam::ACCOUNT_ID:role/LesserBedrockCustomizationRole"  # IAM role for Bedrock training jobs (REPLACE ACCOUNT_ID)
+  bedrockGuardrailId: ""  # Optional: Bedrock guardrail ID
+  bedrockGuardrailVersion: "1"  # Use versioned guardrail in production
+  moderationMLEnabled: "false"  # Feature flag for ML moderation - enable after testing
+  moderationMLTenants: ""  # Comma-separated tenant IDs allowed to use ML features

@@ -107,6 +107,7 @@ type Config struct {
 	BedrockInferenceModelID      string   // Bedrock model ID for moderation inference
 	BedrockGuardrailID           string   // Bedrock guardrail ID for inference safety
 	BedrockGuardrailVersion      string   // Bedrock guardrail version (defaults to "DRAFT")
+	BedrockCustomizationRoleARN  string   // IAM role ARN for Bedrock model customization jobs
 	ModerationMLEnabled          bool     // Feature flag to enable ML moderation
 	ModerationMLTenants          []string // List of tenant IDs allowed to use ML moderation
 
@@ -334,6 +335,7 @@ func loadConfig() *Config {
 		BedrockInferenceModelID:      getEnvOrDefault("BEDROCK_INFERENCE_MODEL_ID", ""),
 		BedrockGuardrailID:           getEnvOrDefault("BEDROCK_GUARDRAIL_ID", ""),
 		BedrockGuardrailVersion:      getEnvOrDefault("BEDROCK_GUARDRAIL_VERSION", "DRAFT"),
+		BedrockCustomizationRoleARN:  getEnvOrDefault("BEDROCK_CUSTOMIZATION_ROLE_ARN", ""),
 		ModerationMLEnabled:          getEnvAsBoolOrDefault("MODERATION_ML_ENABLED", false),
 		ModerationMLTenants:          getEnvAsStringSliceOrDefault("MODERATION_ML_TENANTS", []string{}),
 

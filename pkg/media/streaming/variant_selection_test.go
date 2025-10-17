@@ -107,6 +107,7 @@ func (m *MockAnalytics) Filter() *repositories.FilterRepository                 
 func (m *MockAnalytics) Thread() *repositories.ThreadRepository                           { return nil }
 func (m *MockAnalytics) Severance() *repositories.SeveranceRepository                     { return nil }
 func (m *MockAnalytics) ModerationML() *repositories.ModerationMLRepository               { return nil }
+func (m *MockAnalytics) Quote() *repositories.QuoteRepository                             { return nil }
 func (m *MockAnalytics) GetDB() dynamormCore.DB                                           { return nil }
 func (m *MockAnalytics) GetTableName() string                                             { return "test-table" }
 func (m *MockAnalytics) GetLogger() *zap.Logger                                           { return zap.NewNop() }

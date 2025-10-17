@@ -213,6 +213,16 @@ type GetRelationshipsQuery struct {
 	TargetIDs   []string `json:"target_ids" validate:"required,max=40"`
 }
 
+// UpdateRelationshipCommand contains data for updating relationship preferences
+type UpdateRelationshipCommand struct {
+	FollowerID  string    `json:"follower_id" validate:"required"`
+	FollowingID string    `json:"following_id" validate:"required"`
+	Notify      *bool     `json:"notify,omitempty"`       // Update notification settings
+	ShowReblogs *bool     `json:"show_reblogs,omitempty"` // Update reblog visibility
+	Languages   *[]string `json:"languages,omitempty"`    // Update language filter
+	Note        *string   `json:"note,omitempty"`         // Update private note
+}
+
 // Result structs for operations
 
 // RelationshipData contains comprehensive relationship information
@@ -792,6 +802,78 @@ func (s *Service) GetRelationships(ctx context.Context, query *GetRelationshipsQ
 		Relationships: relationships,
 		Events:        []*streaming.Event{}, // No events for read operations
 	}, nil
+}
+
+// UpdateRelationship updates preferences for an existing relationship
+func (s *Service) UpdateRelationship(ctx context.Context, cmd *UpdateRelationshipCommand) (*RelationshipData, error) {
+	s.logger.Info("updating relationship preferences",
+		zap.String("follower_id", cmd.FollowerID),
+		zap.String("following_id", cmd.FollowingID))
+
+	// Validate command
+	if err := common.ValidateRequiredParam("follower_id", cmd.FollowerID); err != nil {
+		return nil, err
+	}
+	if err := common.ValidateRequiredParam("following_id", cmd.FollowingID); err != nil {
+		return nil, err
+	}
+
+	// Get relationship repository from storage
+	if s.storage == nil {
+		return nil, StorageNotAvailable()
+	}
+
+	relationshipRepo := s.storage.Relationship()
+	if relationshipRepo == nil {
+		return nil, RepositoryNotAvailable("relationship")
+	}
+
+	// Check that relationship exists
+	isFollowing, err := relationshipRepo.IsFollowing(ctx, cmd.FollowerID, cmd.FollowingID)
+	if err != nil {
+		s.logger.Error("failed to check relationship status", zap.Error(err))
+		return nil, FailedToCheckFollowStatus(err)
+	}
+	if !isFollowing {
+		return nil, CheckFollowingRelationship(fmt.Errorf("not following"))
+	}
+
+	// Build updates map
+	updates := make(map[string]interface{})
+	if cmd.Notify != nil {
+		updates["Notifying"] = *cmd.Notify
+	}
+	if cmd.ShowReblogs != nil {
+		updates["ShowingReblogs"] = *cmd.ShowReblogs
+	}
+	if cmd.Languages != nil {
+		updates["Languages"] = *cmd.Languages
+	}
+	if cmd.Note != nil {
+		updates["Note"] = *cmd.Note
+	}
+
+	// Apply updates
+	if len(updates) > 0 {
+		err = relationshipRepo.UpdateRelationship(ctx, cmd.FollowerID, cmd.FollowingID, updates)
+		if err != nil {
+			s.logger.Error("failed to update relationship", zap.Error(err))
+			return nil, FailedToGetUpdatedRelationship(err)
+		}
+	}
+
+	// Get updated relationship data
+	relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.FollowingID)
+	if err != nil {
+		s.logger.Error("failed to get updated relationship", zap.Error(err))
+		return nil, FailedToGetUpdatedRelationship(err)
+	}
+
+	s.logger.Info("relationship preferences updated successfully",
+		zap.String("follower_id", cmd.FollowerID),
+		zap.String("following_id", cmd.FollowingID))
+
+	return relationship, nil
 }
 
 // Domain Block Commands and Queries
@@ -1655,6 +1737,21 @@ func (s *Service) buildRelationshipData(ctx context.Context, requesterID, target
 		s.logger.Warn("failed to check reverse follow request status", zap.Error(err))
 	} else {
 		data.RequestedBy = hasReversePendingRequest
+	}
+
+	// Get relationship preferences if following
+	if data.Following {
+		relationship, err := relationshipRepo.GetRelationship(ctx, requesterID, targetID)
+		if err != nil {
+			s.logger.Warn("failed to get relationship details", zap.Error(err))
+		} else if relationship != nil {
+			data.Notifying = relationship.Notifying
+			data.ShowingReblogs = relationship.ShowingReblogs
+			data.Languages = relationship.Languages
+			data.Note = relationship.Note
+			data.CreatedAt = relationship.CreatedAt
+			data.UpdatedAt = relationship.UpdatedAt
+		}
 	}
 
 	return data, nil

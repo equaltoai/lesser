@@ -22,6 +22,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/threads"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
@@ -258,6 +259,7 @@ func (r *queryResolver) createReadWriteDrivers(totalReads, totalWrites int64, to
 			PercentageOfTotal: readPercentage,
 			OperationCount:    totalReads,
 			AverageCost:       readCostMicro / totalReads,
+			Trend:             "STABLE", // Will be calculated by enrichDriversWithTrends
 		})
 	}
 
@@ -272,10 +274,109 @@ func (r *queryResolver) createReadWriteDrivers(totalReads, totalWrites int64, to
 			PercentageOfTotal: writePercentage,
 			OperationCount:    totalWrites,
 			AverageCost:       writeCostMicro / totalWrites,
+			Trend:             "STABLE", // Will be calculated by enrichDriversWithTrends
 		})
 	}
 
 	return r.buildAndSortDrivers(drivers)
+}
+
+// enrichDriversWithTrends calculates and sets trend for each driver based on historical data
+func (r *queryResolver) enrichDriversWithTrends(ctx context.Context, drivers []*cost.Driver, currentPeriodStart, currentPeriodEnd time.Time) []*cost.Driver {
+	if len(drivers) == 0 {
+		return drivers
+	}
+
+	// Get tracking repository
+	storage := r.Registry.GetStorage()
+	if storage == nil {
+		r.Logger.Warn("storage not available for trend calculation")
+		return drivers
+	}
+
+	costRepo := storage.Cost()
+	if costRepo == nil {
+		r.Logger.Warn("cost repository not available for trend calculation")
+		return drivers
+	}
+
+	// Calculate previous period (same duration as current period)
+	periodDuration := currentPeriodEnd.Sub(currentPeriodStart)
+	previousPeriodEnd := currentPeriodStart
+	previousPeriodStart := previousPeriodEnd.Add(-periodDuration)
+
+	// For each driver, calculate trend
+	for _, driver := range drivers {
+		// Get current period cost (already have it)
+		currentCost := float64(driver.CostMicroCents) / 1_000_000.0
+
+		// Get previous period cost for the same service/operation
+		previousCost := r.getPreviousPeriodCost(ctx, costRepo, driver.Service, driver.Operation, previousPeriodStart, previousPeriodEnd)
+
+		// Calculate trend
+		driver.Trend = r.calculateTrend(currentCost, previousCost)
+	}
+
+	return drivers
+}
+
+// getPreviousPeriodCost retrieves the cost for a specific service/operation in the previous period
+func (r *queryResolver) getPreviousPeriodCost(ctx context.Context, costRepo *repositories.TrackingRepository, service, operation string, start, end time.Time) float64 {
+	// Get cost records for the previous period
+	costRecords, err := costRepo.GetCostsByDateRange(ctx, start, end)
+	if err != nil {
+		r.Logger.Warn("failed to get previous period costs for trend calculation",
+			zap.String("service", service),
+			zap.String("operation", operation),
+			zap.Error(err))
+		return 0.0
+	}
+
+	var totalCost float64
+	for _, record := range costRecords {
+		// Match service (if not "All")
+		if service != "All" && record.ServiceName != service {
+			continue
+		}
+
+		// Match operation (if not "All")
+		if operation != "All" && record.OperationType != operation {
+			continue
+		}
+
+		// Special handling for DynamoDB operations
+		if service == "DynamoDB" {
+			if operation == "Read" && (record.OperationType == "Query" || record.OperationType == "GetItem" || record.OperationType == "Scan") {
+				totalCost += record.EstimatedCostDollars
+			} else if operation == "Write" && (record.OperationType == "PutItem" || record.OperationType == "UpdateItem" || record.OperationType == "DeleteItem") {
+				totalCost += record.EstimatedCostDollars
+			}
+		} else {
+			totalCost += record.EstimatedCostDollars
+		}
+	}
+
+	return totalCost
+}
+
+// calculateTrend determines trend classification based on cost comparison
+func (r *queryResolver) calculateTrend(currentCost, previousCost float64) string {
+	// If no previous data, return stable
+	if previousCost == 0 {
+		return "STABLE"
+	}
+
+	// Calculate percentage change
+	changePercent := ((currentCost - previousCost) / previousCost) * 100
+
+	// Classify trend based on thresholds
+	if changePercent > 10 {
+		return "INCREASING"
+	} else if changePercent < -10 {
+		return "DECREASING"
+	}
+
+	return "STABLE"
 }
 
 // generateAIExplanation creates an AI-powered explanation of the object

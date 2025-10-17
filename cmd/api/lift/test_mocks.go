@@ -460,6 +460,15 @@ func (m *MockRepositoryStorage) ModerationML() *repositories.ModerationMLReposit
 	return nil
 }
 
+// Quote returns a mock quote repository for testing
+func (m *MockRepositoryStorage) Quote() *repositories.QuoteRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.QuoteRepository)
+}
+
 // GetDB returns a mock database connection for testing
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB {
 	args := m.Called()

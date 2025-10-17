@@ -345,6 +345,7 @@ func (m *MockRepositoryStorage) Thread() *repositories.ThreadRepository         
 func (m *MockRepositoryStorage) Severance() *repositories.SeveranceRepository       { return nil }
 func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository             { return nil }
 func (m *MockRepositoryStorage) ModerationML() *repositories.ModerationMLRepository { return nil }
+func (m *MockRepositoryStorage) Quote() *repositories.QuoteRepository               { return nil }
 
 // Utility methods
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB { return nil }
