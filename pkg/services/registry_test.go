@@ -75,6 +75,7 @@ func (m *mockStorage) Filter() *repositories.FilterRepository                   
 func (m *mockStorage) Thread() *repositories.ThreadRepository                           { return nil }
 func (m *mockStorage) Severance() *repositories.SeveranceRepository                     { return nil }
 func (m *mockStorage) ModerationML() *repositories.ModerationMLRepository               { return nil }
+func (m *mockStorage) Quote() *repositories.QuoteRepository                             { return nil }
 func (m *mockStorage) GetDB() dynamormCore.DB                                           { return nil }
 func (m *mockStorage) GetTableName() string                                             { return "test-table" }
 func (m *mockStorage) GetLogger() *zap.Logger                                           { return zap.NewNop() }

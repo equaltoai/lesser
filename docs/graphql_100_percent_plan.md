@@ -469,22 +469,24 @@ Day 2: Subscription Implementations
 ---
 
 #### 2.3 Advanced Moderation ML
-**Status**: ✅ COMPLETE (Production-grade Bedrock integration)  
+**Status**: ✅ COMPLETE (Async/Event-Driven Architecture)  
 **Completed**: October 16, 2025  
-**Dependencies**: AWS Bedrock (Claude/Titan), Guardrails, S3, DynamoDB
+**Refactored**: October 16, 2025 (Async Model)  
+**Dependencies**: AWS Bedrock (Claude/Titan), Guardrails, S3, DynamoDB, EventBridge (optional)
 
 **Infrastructure** ✅ COMPLETE:
 - S3 bucket: `lesser-training-{env}` for ML training datasets
-- DynamoDB GSI3 added to main table for sample ID lookups
+- DynamoDB main table stores all training job state
 - Bedrock IAM policies extended:
   - `CreateModelCustomizationJob`, `GetModelCustomizationJob`, `ListModelCustomizationJobs`
   - `StopModelCustomizationJob`, `GetFoundationModel`, `ListFoundationModels`
   - `InvokeModel` with guardrail support
+- **Bedrock Customization Role ARN**: Configured via `BEDROCK_CUSTOMIZATION_ROLE_ARN` env var
 - Lambda role granted read/write access to training bucket
-- Environment configs include Bedrock region, model IDs, and guardrail configuration
+- Environment configs include Bedrock region, model IDs, guardrail configuration, and IAM role
 
 **Implemented Operations** ✅:
-1. `Mutation.trainModerationModel(samples, options)` → TrainingResult
+1. `Mutation.trainModerationModel(samples, options)` → TrainingResult (returns SUBMITTED status immediately)
 2. `Query.moderationEffectiveness(patternId, period)` → ModerationEffectiveness
 
 **Implementation Details**:
@@ -495,30 +497,39 @@ Day 2: Subscription Implementations
 - `pkg/common/feature_flags.go` - Centralized feature flag checking
 - Admin-only access enforced in GraphQL resolvers
 
-**2.3.2 Data Pipeline & Training** ✅
+**2.3.2 Async Training Pipeline** ✅ REFACTORED
 - **Sample Queuing**: `QueueSamples()` returns sample IDs after storing to DynamoDB
-- **Dataset Preparation**: `prepareTrainingDataset()` fetches samples, formats as JSONL for Bedrock
-- **S3 Upload**: Training datasets uploaded to configured S3 bucket with versioned paths
-- **Bedrock Training**: `launchBedrockTraining()` calls `CreateModelCustomizationJob` API
-- **Event-Driven Completion**: Training jobs emit Bedrock status events → EventBridge → completion Lambda/Step Function to update model metadata asynchronously (no long-lived polling in Lambdas)
-- **Model Versioning**: Training results stored in `ModerationModelVersion` with metrics
+- **Dataset Preparation**: `prepareTrainingDataset()` fetches samples, formats as JSONL for Bedrock, **returns S3 key**
+- **S3 Upload**: Training datasets uploaded to configured S3 bucket with unique timestamped+UUID paths
+- **Bedrock Training**: `launchBedrockTraining()` calls `CreateModelCustomizationJob`, **uses config role ARN**, returns job ARN + name
+- **Job Tracking**: `ModelTrainingJob` records created in DynamoDB with status SUBMITTED
+- **Event Publishing**: `MODEL_TRAINING_SUBMITTED` events published via EventPublisher interface
+- **No Polling**: Removed synchronous polling (`pollTrainingStatus` deprecated)
+- **Completion Handling**: Job completion tracked via:
+  - Option 1: DynamoDB Streams → Lambda → update job status to COMPLETED/FAILED
+  - Option 2: EventBridge scheduled polling → Lambda checks Bedrock status → updates DynamoDB
+  - Option 3: External workflow orchestration (Step Functions)
+- **Model Versioning**: Training results stored in `ModerationModelVersion` when job completes
 
 **2.3.3 Inference & Guardrails** ✅
 - **ScoreContent**: Invokes active model via `InvokeModel` API
 - **Guardrail Integration**: Bedrock guardrails applied when configured
-- **Guardrail Handling**: Blocked content returns max risk score with reason
+- **Guardrail Handling**: Blocked content returns max risk score with reason (detects guardrail rejection in error messages)
 - **Risk Scoring**: Label-based risk calculation (0.0=safe, 1.0=high risk)
 - **Model Selection**: Automatically uses active model from DynamoDB
 
 **2.3.4 GraphQL Integration** ✅
-- **trainModerationModel**: Queues samples, launches training, returns job status and metrics
+- **trainModerationModel**: Queues samples, launches training, **returns immediately with SUBMITTED status**
+- **TrainingResult**: Includes `Status`, `JobID`, `JobName`, `DatasetS3Key`, with metrics=0 when SUBMITTED
 - **moderationEffectiveness**: Computes TP/FP/TN/FN metrics, returns precision/recall/F1
 - **Sample ID Fix**: Resolvers now use repository-assigned IDs instead of ObjectIDs
 - **Authentication**: Both operations require admin authentication
 
 **2.3.5 Storage Models** ✅
 - **ModerationSample**: Stores labeled training samples with GSI for lookups by ID, label, reviewer
+- **MLPrediction**: Tracks ML predictions vs human labels for effectiveness metrics (created, TODO integration)
 - **ModerationModelVersion**: Tracks trained models, metrics, and active status
+- **ModelTrainingJob**: NEW - Tracks training job lifecycle with status, metrics, timestamps, and TTL (90 days)
 - **ModerationEffectivenessMetric**: Stores computed effectiveness metrics by period
 
 **2.3.6 Real Bedrock APIs** ✅
@@ -527,13 +538,17 @@ Day 2: Subscription Implementations
 - `InvokeModel` - Performs inference on content
 - Proper error handling for API failures and guardrail rejections
 
-**Production Considerations**:
-- ⚠️ IAM Role ARN currently placeholder - must be configured per environment
-- ⚠️ Training completion handled via EventBridge-driven workflow; ensure completion Lambda updates `ModerationModelVersion` and triggers notifications/Webhooks as needed
-- ⚠️ Training metrics (accuracy/precision/recall) are extracted from Bedrock responses
-- ⚠️ Effectiveness computation is simplified - production should track ML predictions separately
-- ⚠️ Content extraction uses metadata fallback - should integrate with Object/Status repositories
-- ⚠️ Cost tracking for Bedrock training/inference recommended
+**Production Considerations & Future Work**:
+- ✅ **Completion Handler**: Fully implemented using DynamoDB Streams on `ModelTrainingJob` + `MLPollRequest` for async polling
+  - `ml-training-processor` Lambda handles job status changes and poll requests
+  - Creates `ModerationModelVersion` on job completion with deactivation of previous versions
+- ⚠️ **IAM Role ARN**: Configure `BEDROCK_CUSTOMIZATION_ROLE_ARN` per environment (currently uses placeholder with warning)
+- ✅ **Training Metrics**: Real metrics extracted from Bedrock `GetModelCustomizationJob.TrainingMetrics` with S3 fallback and comprehensive tests
+- ✅ **Event Publisher**: Training events emitted via DynamoDB `StreamingEvent` records for stream processor consumption
+- ⚠️ **Effectiveness Computation**: Currently simplified - integrate `MLPrediction` model to track real predictions vs labels (deferred to Phase 2.4)
+- ⚠️ **Content Extraction**: Sample queuing uses metadata fallback - should fetch actual content from Object/Status repositories (TODO marked in code, deferred to Phase 2.4)
+- ⚠️ **Cost Tracking**: Track Bedrock API costs (training jobs, inference invocations) for budget monitoring (deferred to Phase 2.4)
+- ⚠️ **Job TTL**: Training jobs expire after 90 days - consider archiving to S3 for audit trail (deferred to Phase 2.4)
 
 ---
 

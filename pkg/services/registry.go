@@ -84,6 +84,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/moderationml"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
+	"github.com/equaltoai/lesser/pkg/services/quotes"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/services/search"
@@ -94,6 +95,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -151,6 +153,7 @@ type Registry struct {
 	threadsService       *threads.Service
 	severanceService     *severance.Service
 	moderationMLService  *moderationml.Service
+	quotesService        *quotes.QuoteService
 
 	// Event infrastructure
 	eventBus         EventBus
@@ -513,11 +516,12 @@ func (r *Registry) ModerationML() *moderationml.Service {
 
 			// Build service config
 			config := moderationml.Config{
-				TrainingBucket:   r.getConfigString(r.config.Config, "ModerationTrainingBucketName"),
-				TrainingRegion:   r.getConfigString(r.config.Config, "BedrockTrainingRegion"),
-				InferenceModelID: r.getConfigString(r.config.Config, "BedrockInferenceModelID"),
-				GuardrailID:      r.getConfigString(r.config.Config, "BedrockGuardrailID"),
-				GuardrailVersion: r.getConfigString(r.config.Config, "BedrockGuardrailVersion"),
+				TrainingBucket:       r.getConfigString(r.config.Config, "ModerationTrainingBucketName"),
+				TrainingRegion:       r.getConfigString(r.config.Config, "BedrockTrainingRegion"),
+				InferenceModelID:     r.getConfigString(r.config.Config, "BedrockInferenceModelID"),
+				GuardrailID:          r.getConfigString(r.config.Config, "BedrockGuardrailID"),
+				GuardrailVersion:     r.getConfigString(r.config.Config, "BedrockGuardrailVersion"),
+				CustomizationRoleARN: r.getConfigString(r.config.Config, "BedrockCustomizationRoleARN"),
 			}
 
 			// Set default guardrail version if not specified
@@ -525,20 +529,40 @@ func (r *Registry) ModerationML() *moderationml.Service {
 				config.GuardrailVersion = "DRAFT"
 			}
 
-			r.moderationMLService = moderationml.NewService(
+			service := moderationml.NewService(
 				mlRepo,
 				*awsCfg,
 				config,
 				r.logger,
 			)
 
+			// Inject DynamoDB for event emission
+			if r.storage != nil {
+				if db, ok := r.storage.(interface{ GetDB() dynamormcore.DB }); ok {
+					service.SetDB(db.GetDB())
+				}
+			}
+
+			// Inject status repository for content fetching
+			statusRepo := r.storage.Status()
+			if statusRepo != nil {
+				service.SetStatusRepository(statusRepo)
+			}
+
+			r.moderationMLService = service
+
 			if r.initialized != nil {
 				r.initialized["ModerationML"] = true
 			}
 
+			if config.CustomizationRoleARN == "" {
+				r.logger.Warn("BEDROCK_CUSTOMIZATION_ROLE_ARN not configured - ML training will fail")
+			}
+
 			r.logger.Info("initialized moderation ML service",
 				zap.String("training_bucket", config.TrainingBucket),
-				zap.String("guardrail_id", config.GuardrailID))
+				zap.String("guardrail_id", config.GuardrailID),
+				zap.String("customization_role", config.CustomizationRoleARN))
 		} else if r.logger != nil {
 			r.logger.Warn("failed to initialize ModerationML service: repository not available")
 		}
@@ -1048,6 +1072,8 @@ func (r *Registry) getConfigString(cfg interface{}, key string) string {
 			return cfgStruct.BedrockGuardrailID
 		case "BedrockGuardrailVersion":
 			return cfgStruct.BedrockGuardrailVersion
+		case "BedrockCustomizationRoleARN":
+			return cfgStruct.BedrockCustomizationRoleARN
 		}
 	}
 	return ""
@@ -1553,6 +1579,19 @@ func (r *Registry) Bulk() *bulk.Service {
 	}
 
 	return r.bulkService
+}
+
+// Quotes returns the quotes service, initializing it if necessary
+func (r *Registry) Quotes() *quotes.QuoteService {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.quotesService == nil && r.storage != nil {
+		r.quotesService = quotes.NewQuoteService(r.storage, r.logger)
+		r.initialized["Quotes"] = true
+	}
+
+	return r.quotesService
 }
 
 // createNotesFederationAdapter creates an adapter that implements notes.FederationService

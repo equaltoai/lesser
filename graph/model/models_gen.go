@@ -1366,10 +1366,15 @@ type ThreatTrend struct {
 
 type TrainingResult struct {
 	Success      bool     `json:"success"`
+	Status       string   `json:"status"`
+	JobID        string   `json:"jobId"`
+	JobName      string   `json:"jobName"`
+	DatasetS3Key string   `json:"datasetS3Key"`
 	ModelVersion string   `json:"modelVersion"`
 	Accuracy     float64  `json:"accuracy"`
 	Precision    float64  `json:"precision"`
 	Recall       float64  `json:"recall"`
+	F1Score      float64  `json:"f1Score"`
 	SamplesUsed  int      `json:"samplesUsed"`
 	TrainingTime int      `json:"trainingTime"`
 	Improvements []string `json:"improvements"`

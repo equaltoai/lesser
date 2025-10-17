@@ -112,3 +112,4 @@ func (s *SimpleRepositoryStorage) Filter() *repositories.FilterRepository       
 func (s *SimpleRepositoryStorage) Thread() *repositories.ThreadRepository             { return nil }
 func (s *SimpleRepositoryStorage) Severance() *repositories.SeveranceRepository       { return nil }
 func (s *SimpleRepositoryStorage) ModerationML() *repositories.ModerationMLRepository { return nil }
+func (s *SimpleRepositoryStorage) Quote() *repositories.QuoteRepository               { return nil }

@@ -240,3 +240,221 @@ func (m *ModerationEffectivenessMetric) CalculateMetrics() {
 
 	m.TotalReviewed = m.TruePositives + m.FalsePositives + m.TrueNegatives + m.FalseNegatives
 }
+
+// ModelTrainingJob tracks asynchronous ML model training jobs
+type ModelTrainingJob struct {
+	// Primary key - Training jobs
+	PK string `dynamorm:"pk" json:"pk"` // Format: "MLJOB#{job_id}"
+	SK string `dynamorm:"sk" json:"sk"` // Format: "JOB"
+
+	// GSI1 - Status queries
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "MLJOB#{status}"
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+
+	// GSI2 - Tenant queries
+	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk,omitempty"` // Format: "TENANT#{tenant_id}"
+	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // Format: "TIME#{RFC3339}"
+
+	// Type marker
+	Type string `json:"type"` // "ML_TRAINING_JOB"
+
+	// Job fields
+	JobID          string                 `json:"job_id"`             // Bedrock job ARN/ID
+	JobName        string                 `json:"job_name"`           // Human-readable job name
+	Status         string                 `json:"status"`             // SUBMITTED, IN_PROGRESS, COMPLETED, FAILED, STOPPED
+	TenantID       string                 `json:"tenant_id"`          // Tenant that initiated training
+	InitiatedBy    string                 `json:"initiated_by"`       // User who started the training
+	DatasetS3Key   string                 `json:"dataset_s3_key"`     // S3 key of training dataset
+	DatasetSamples int                    `json:"dataset_samples"`    // Number of samples in dataset
+	BaseModelID    string                 `json:"base_model_id"`      // Base Bedrock model
+	ModelARN       string                 `json:"model_arn"`          // Output model ARN (when completed)
+	ErrorMessage   string                 `json:"error_message"`      // Error details (when failed)
+	StartedAt      time.Time              `json:"started_at"`         // When job was submitted
+	CompletedAt    time.Time              `json:"completed_at"`       // When job finished
+	Metrics        TrainingMetrics        `json:"metrics"`            // Training metrics (when completed)
+	Metadata       map[string]interface{} `json:"metadata,omitempty"` // Additional context
+
+	// DynamoDB TTL (jobs can expire after 90 days)
+	TTL       int64     `json:"ttl,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TrainingMetrics holds training job metrics
+type TrainingMetrics struct {
+	Accuracy     float64 `json:"accuracy"`
+	Precision    float64 `json:"precision"`
+	Recall       float64 `json:"recall"`
+	F1Score      float64 `json:"f1_score"`
+	TrainingTime int     `json:"training_time"` // seconds
+}
+
+// TableName returns the DynamoDB table name
+func (ModelTrainingJob) TableName() string {
+	return MainTableName
+}
+
+// GetPK returns the primary partition key
+func (m *ModelTrainingJob) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the primary sort key
+func (m *ModelTrainingJob) GetSK() string {
+	return m.SK
+}
+
+// UpdateKeys updates the GSI keys based on current field values
+func (m *ModelTrainingJob) UpdateKeys() error {
+	// Primary key - training jobs
+	m.PK = fmt.Sprintf("MLJOB#%s", m.JobID)
+	m.SK = "JOB"
+
+	// GSI1 - Status queries (for polling pending/in-progress jobs)
+	m.GSI1PK = fmt.Sprintf("MLJOB#%s", m.Status)
+	m.GSI1SK = fmt.Sprintf("TIME#%s", m.StartedAt.Format(time.RFC3339))
+
+	// GSI2 - Tenant queries
+	if m.TenantID != "" {
+		m.GSI2PK = fmt.Sprintf("TENANT#%s", m.TenantID)
+		m.GSI2SK = fmt.Sprintf("TIME#%s", m.StartedAt.Format(time.RFC3339))
+	}
+
+	m.Type = "ML_TRAINING_JOB"
+	return nil
+}
+
+// MLPollRequest tracks pending status checks for training jobs
+type MLPollRequest struct {
+	// Primary key - Poll requests
+	PK string `dynamorm:"pk" json:"pk"` // Format: "MLPOLL#{job_id}"
+	SK string `dynamorm:"sk" json:"sk"` // Format: "REQUEST#{timestamp}"
+
+	// GSI1 - Status queries (for finding pending polls)
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "MLPOLL#PENDING"
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+
+	// Type marker
+	Type string `json:"type"` // "ML_POLL_REQUEST"
+
+	// Poll fields
+	JobID         string    `json:"job_id"`          // Bedrock job ARN
+	JobName       string    `json:"job_name"`        // Human-readable job name
+	Attempt       int       `json:"attempt"`         // Poll attempt number
+	MaxAttempts   int       `json:"max_attempts"`    // Maximum poll attempts
+	NextPollAfter time.Time `json:"next_poll_after"` // When to poll next
+	Status        string    `json:"status"`          // PENDING, PROCESSING, COMPLETED, FAILED
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+
+	// DynamoDB TTL (poll requests expire after completion or timeout)
+	TTL int64 `json:"ttl,omitempty"`
+}
+
+// TableName returns the DynamoDB table name
+func (MLPollRequest) TableName() string {
+	return MainTableName
+}
+
+// GetPK returns the primary partition key
+func (m *MLPollRequest) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the primary sort key
+func (m *MLPollRequest) GetSK() string {
+	return m.SK
+}
+
+// UpdateKeys updates the GSI keys based on current field values
+func (m *MLPollRequest) UpdateKeys() error {
+	// Primary key - poll requests by job
+	m.PK = fmt.Sprintf("MLPOLL#%s", m.JobID)
+	m.SK = fmt.Sprintf("REQUEST#%d", m.CreatedAt.UnixNano())
+
+	// GSI1 - Status queries (for finding pending polls)
+	if m.Status == "PENDING" {
+		m.GSI1PK = "MLPOLL#PENDING"
+		m.GSI1SK = fmt.Sprintf("TIME#%s", m.NextPollAfter.Format(time.RFC3339))
+	} else {
+		m.GSI1PK = ""
+		m.GSI1SK = ""
+	}
+
+	m.Type = "ML_POLL_REQUEST"
+	return nil
+}
+
+// MLPrediction tracks ML model inference predictions for effectiveness metrics
+type MLPrediction struct {
+	// Primary key - Predictions by object
+	PK string `dynamorm:"pk" json:"pk"` // Format: "MLPRED#{object_id}"
+	SK string `dynamorm:"sk" json:"sk"` // Format: "TIME#{RFC3339}#{prediction_id}"
+
+	// GSI1 - Model version queries
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "MODEL#{model_version}"
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+
+	// GSI2 - Human label queries (for validation)
+	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk,omitempty"` // Format: "REVIEW#{reviewed}"
+	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // Format: "TIME#{RFC3339}"
+
+	// Type marker
+	Type string `json:"type"` // "ML_PREDICTION"
+
+	// Prediction fields
+	PredictionID   string                 `json:"prediction_id"`
+	ObjectID       string                 `json:"object_id"`
+	ObjectType     string                 `json:"object_type"`
+	ModelVersion   string                 `json:"model_version"`
+	PredictedLabel string                 `json:"predicted_label"`
+	Confidence     float64                `json:"confidence"`
+	HumanLabel     string                 `json:"human_label"` // Set when human reviews
+	Reviewed       bool                   `json:"reviewed"`    // Whether human has reviewed
+	ReviewedBy     string                 `json:"reviewed_by"` // Who reviewed
+	ReviewedAt     time.Time              `json:"reviewed_at"` // When reviewed
+	Timestamp      time.Time              `json:"timestamp"`
+	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+
+	// DynamoDB TTL (predictions can expire after 90 days)
+	TTL       int64     `json:"ttl,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TableName returns the DynamoDB table name
+func (MLPrediction) TableName() string {
+	return MainTableName
+}
+
+// GetPK returns the primary partition key
+func (m *MLPrediction) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the primary sort key
+func (m *MLPrediction) GetSK() string {
+	return m.SK
+}
+
+// UpdateKeys updates the GSI keys based on current field values
+func (m *MLPrediction) UpdateKeys() error {
+	// Primary key - predictions by object
+	m.PK = fmt.Sprintf("MLPRED#%s", m.ObjectID)
+	m.SK = fmt.Sprintf("TIME#%s#%s", m.Timestamp.Format(time.RFC3339), m.PredictionID)
+
+	// GSI1 - Model version queries
+	m.GSI1PK = fmt.Sprintf("MODEL#%s", m.ModelVersion)
+	m.GSI1SK = fmt.Sprintf("TIME#%s", m.Timestamp.Format(time.RFC3339))
+
+	// GSI2 - Review status queries
+	if m.Reviewed {
+		m.GSI2PK = "REVIEW#true"
+	} else {
+		m.GSI2PK = "REVIEW#false"
+	}
+	m.GSI2SK = fmt.Sprintf("TIME#%s", m.Timestamp.Format(time.RFC3339))
+
+	m.Type = "ML_PREDICTION"
+	return nil
+}

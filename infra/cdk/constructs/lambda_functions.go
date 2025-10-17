@@ -54,6 +54,7 @@ type LambdaFunctions struct {
 	MediaProcessorFunction    awslambda.Function
 	EmailProcessorFunction    awslambda.Function
 	TimelineProcessorFunction awslambda.Function
+	MLTrainingProcessor       awslambda.Function
 	CleanupFunction           awslambda.Function
 	ConfigureInstanceFunction awslambda.Function
 	HealthFunction            awslambda.Function
@@ -119,6 +120,11 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		"MODERATION_MODEL_METADATA_TABLE": props.ModelMetadataTable,
 		"BEDROCK_TRAINING_REGION":         getConfigString("bedrockRegion", "us-east-1"),
 		"BEDROCK_INFERENCE_MODEL_ID":      getConfigString("bedrockInferenceModelId", ""),
+		"BEDROCK_CUSTOMIZATION_ROLE_ARN":  getConfigString("bedrockCustomizationRoleArn", ""),
+		"BEDROCK_GUARDRAIL_ID":            getConfigString("bedrockGuardrailId", ""),
+		"BEDROCK_GUARDRAIL_VERSION":       getConfigString("bedrockGuardrailVersion", "DRAFT"),
+		"MODERATION_ML_ENABLED":           getConfigString("moderationMLEnabled", "false"),
+		"MODERATION_ML_TENANTS":           getConfigString("moderationMLTenants", ""),
 	}
 
 	// Determine log retention based on environment
@@ -157,6 +163,11 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	functions.ActivityProcessor = createFunction(stack, "activity-processor", props.Environment, &streamProps, "../../bin/activity-processor.zip", logRetention)
 	functions.NotificationProcessor = createFunction(stack, "push-delivery", props.Environment, &commonProps, "../../bin/push-delivery.zip", logRetention)
 	functions.ModerationProcessor = createFunction(stack, "moderation-processor", props.Environment, &commonProps, "../../bin/moderation-processor.zip", logRetention)
+
+	// ML Training Processor - handles ML model training job lifecycle (Phase 2.3)
+	mlTrainingProps := streamProps
+	mlTrainingProps.Timeout = awscdk.Duration_Minutes(jsii.Number(15)) // Longer timeout for Bedrock polling
+	functions.MLTrainingProcessor = createFunction(stack, "ml-training-processor", props.Environment, &mlTrainingProps, "../../bin/ml-training-processor.zip", logRetention)
 
 	// Create WebSocket functions (Pulumi lines 945-954)
 	functions.StreamingFunction = createFunction(stack, "streaming", props.Environment, &commonProps, "../../bin/streaming.zip", logRetention)

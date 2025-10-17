@@ -93,4 +93,18 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 		// Remove filters completely to fix deployment issue
 	})
 	props.Functions.SearchIndexerFunction.AddEventSource(searchEventSource)
+
+	// ML Training processor - handles ML model training job lifecycle (Phase 2.3)
+	mlTrainingEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
+		StartingPosition:        awslambda.StartingPosition_LATEST,
+		BatchSize:               jsii.Number(5), // Small batch size for training jobs
+		MaxBatchingWindow:       awscdk.Duration_Seconds(jsii.Number(1)),
+		ParallelizationFactor:   jsii.Number(1), // Sequential processing for job lifecycle
+		RetryAttempts:           jsii.Number(3),
+		BisectBatchOnError:      jsii.Bool(true),
+		ReportBatchItemFailures: jsii.Bool(true),
+		// Remove filters completely to fix deployment issue
+		// Filter for MODEL_TRAINING_JOB records handled in Lambda code
+	})
+	props.Functions.MLTrainingProcessor.AddEventSource(mlTrainingEventSource)
 }

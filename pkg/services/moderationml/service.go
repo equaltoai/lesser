@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -17,12 +16,23 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/google/uuid"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+)
+
+// Event types for ML training lifecycle
+const (
+	EventTypeModelTrainingSubmitted = "MODEL_TRAINING_SUBMITTED"
+	EventTypeModelTrainingCompleted = "MODEL_TRAINING_COMPLETED"
+	EventTypeModelTrainingFailed    = "MODEL_TRAINING_FAILED"
 )
 
 // Service provides ML moderation operations
 type Service struct {
 	repo             *repositories.ModerationMLRepository
+	statusRepo       *repositories.StatusRepository
+	db               core.DB
 	bedrockClient    *bedrock.Client
 	bedrockRuntime   *bedrockruntime.Client
 	s3Client         *s3.Client
@@ -32,15 +42,17 @@ type Service struct {
 	inferenceModel   string
 	guardrailID      string
 	guardrailVersion string
+	roleARN          string
 }
 
 // Config holds configuration for the ML moderation service
 type Config struct {
-	TrainingBucket   string
-	TrainingRegion   string
-	InferenceModelID string
-	GuardrailID      string
-	GuardrailVersion string
+	TrainingBucket       string
+	TrainingRegion       string
+	InferenceModelID     string
+	GuardrailID          string
+	GuardrailVersion     string
+	CustomizationRoleARN string
 }
 
 // NewService creates a new moderation ML service
@@ -61,7 +73,18 @@ func NewService(
 		inferenceModel:   config.InferenceModelID,
 		guardrailID:      config.GuardrailID,
 		guardrailVersion: config.GuardrailVersion,
+		roleARN:          config.CustomizationRoleARN,
 	}
+}
+
+// SetDB sets the DynamoDB database connection for event emission
+func (s *Service) SetDB(db core.DB) {
+	s.db = db
+}
+
+// SetStatusRepository sets the status repository for content fetching
+func (s *Service) SetStatusRepository(repo *repositories.StatusRepository) {
+	s.statusRepo = repo
 }
 
 // SampleInput represents input for creating a training sample
@@ -79,6 +102,22 @@ func (s *Service) QueueSamples(ctx context.Context, samples []SampleInput) ([]st
 	sampleIDs := make([]string, 0, len(samples))
 
 	for _, input := range samples {
+		// Fetch actual content for the sample
+		content, err := s.fetchContentForSample(ctx, input.ObjectID, input.ObjectType)
+		if err != nil {
+			s.logger.Error("failed to fetch content for sample",
+				zap.String("object_id", input.ObjectID),
+				zap.String("object_type", input.ObjectType),
+				zap.Error(err))
+			return nil, fmt.Errorf("failed to fetch content for sample %s: %w", input.ObjectID, err)
+		}
+
+		// Ensure metadata map exists and add content
+		if input.Metadata == nil {
+			input.Metadata = make(map[string]interface{})
+		}
+		input.Metadata["content"] = content
+
 		sample := &models.ModerationSample{
 			ObjectID:   input.ObjectID,
 			ObjectType: input.ObjectType,
@@ -106,6 +145,40 @@ func (s *Service) QueueSamples(ctx context.Context, samples []SampleInput) ([]st
 	return sampleIDs, nil
 }
 
+// fetchContentForSample retrieves the actual content for a training sample
+func (s *Service) fetchContentForSample(ctx context.Context, objectID, objectType string) (string, error) {
+	switch objectType {
+	case "status":
+		if s.statusRepo == nil {
+			return "", fmt.Errorf("status repository not configured")
+		}
+
+		status, err := s.statusRepo.GetStatus(ctx, objectID)
+		if err != nil {
+			return "", fmt.Errorf("failed to fetch status: %w", err)
+		}
+
+		// Use the cached Content field or extract from Note
+		content := status.Content
+		if content == "" && status.Note != nil {
+			content = status.Note.Content
+			// Add content warning if present
+			if status.Note.Summary != "" {
+				content = status.Note.Summary + "\n\n" + content
+			}
+		}
+
+		if content == "" {
+			return "", fmt.Errorf("status %s has no content", objectID)
+		}
+
+		return content, nil
+
+	default:
+		return "", fmt.Errorf("unsupported object type: %s", objectType)
+	}
+}
+
 // TrainingOptions holds options for model training
 type TrainingOptions struct {
 	BaseModelID          string
@@ -116,87 +189,122 @@ type TrainingOptions struct {
 	EarlyStoppingEnabled bool
 }
 
-// TrainingResult holds the result of a training job
+// TrainingResult holds the result of a training job submission
 type TrainingResult struct {
 	Success      bool
-	ModelVersion string
-	Accuracy     float64
-	Precision    float64
-	Recall       float64
-	F1Score      float64
-	SamplesUsed  int
-	TrainingTime int
-	Improvements []string
-	JobID        string
-	ModelARN     string
+	Status       string   // SUBMITTED, IN_PROGRESS, COMPLETED, FAILED
+	JobID        string   // Bedrock job ARN
+	JobName      string   // Human-readable job name
+	DatasetS3Key string   // S3 key of training dataset
+	ModelVersion string   // Model version (empty when SUBMITTED)
+	ModelARN     string   // Model ARN (empty when SUBMITTED)
+	Accuracy     float64  // Training accuracy (0 when SUBMITTED)
+	Precision    float64  // Training precision (0 when SUBMITTED)
+	Recall       float64  // Training recall (0 when SUBMITTED)
+	F1Score      float64  // Training F1 score (0 when SUBMITTED)
+	SamplesUsed  int      // Number of training samples
+	TrainingTime int      // Training duration in seconds (0 when SUBMITTED)
+	Improvements []string // Improvements (empty when SUBMITTED)
 }
 
-// TrainModel launches a Bedrock model customization job
-func (s *Service) TrainModel(ctx context.Context, sampleIDs []string, options TrainingOptions) (*TrainingResult, error) {
-	s.logger.Info("starting model training",
+// TrainModel launches a Bedrock model customization job asynchronously
+// Returns immediately with SUBMITTED status; completion handled via event bus
+func (s *Service) TrainModel(ctx context.Context, tenantID, initiatedBy string, sampleIDs []string, options TrainingOptions) (*TrainingResult, error) {
+	s.logger.Info("starting async model training",
+		zap.String("tenant_id", tenantID),
+		zap.String("initiated_by", initiatedBy),
 		zap.Int("sample_count", len(sampleIDs)),
 		zap.String("base_model", options.BaseModelID))
 
-	// 1. Prepare training dataset from samples
-	if err := s.prepareTrainingDataset(ctx, sampleIDs, options.DatasetS3Path); err != nil {
+	// 1. Prepare training dataset from samples and capture S3 key
+	datasetS3Key, err := s.prepareTrainingDataset(ctx, sampleIDs, options.DatasetS3Path)
+	if err != nil {
 		return nil, fmt.Errorf("failed to prepare training dataset: %w", err)
 	}
 
-	// 2. Launch Bedrock training job
-	jobID, err := s.launchBedrockTraining(ctx, options)
+	// 2. Update options with captured S3 key
+	options.DatasetS3Path = datasetS3Key
+
+	// 3. Launch Bedrock training job
+	jobARN, jobName, err := s.launchBedrockTraining(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to launch bedrock training: %w", err)
 	}
 
-	// 3. Poll training status
-	modelVersion, metrics, err := s.pollTrainingStatus(ctx, jobID)
-	if err != nil {
-		return nil, fmt.Errorf("training job failed: %w", err)
-	}
-
-	// 4. Save model version metadata
-	version := &models.ModerationModelVersion{
-		VersionID:      modelVersion,
-		TrainingJobID:  jobID,
-		TrainingStatus: "completed",
-		Accuracy:       metrics.Accuracy,
-		Precision:      metrics.Precision,
-		Recall:         metrics.Recall,
-		F1Score:        metrics.F1Score,
-		SamplesUsed:    len(sampleIDs),
-		TrainingTime:   metrics.TrainingTime,
-		IsActive:       true, // Mark as active
-		ModelARN:       metrics.ModelARN,
+	// 4. Create ModelTrainingJob record for tracking
+	trainingJob := &models.ModelTrainingJob{
+		JobID:          jobARN,
+		JobName:        jobName,
+		Status:         "SUBMITTED",
+		TenantID:       tenantID,
+		InitiatedBy:    initiatedBy,
+		DatasetS3Key:   datasetS3Key,
+		DatasetSamples: len(sampleIDs),
+		BaseModelID:    options.BaseModelID,
+		StartedAt:      time.Now(),
 		Metadata: map[string]interface{}{
-			"base_model":   options.BaseModelID,
-			"dataset_path": options.DatasetS3Path,
-			"hyperparams":  options.HyperParameters,
+			"hyperparameters": options.HyperParameters,
+			"output_path":     options.OutputS3Path,
 		},
 	}
 
-	if err := s.repo.CreateModelVersion(ctx, version); err != nil {
-		s.logger.Warn("failed to save model version metadata", zap.Error(err))
-		// Non-fatal - training succeeded
+	if err := s.repo.CreateTrainingJob(ctx, trainingJob); err != nil {
+		s.logger.Error("failed to create training job record", zap.Error(err))
+		// Non-fatal - job was launched
 	}
 
+	// 5. Create a poll request record - this will be picked up by the ml-training-processor
+	pollRequest := &models.MLPollRequest{
+		JobID:         jobARN,
+		JobName:       jobName,
+		Attempt:       0,
+		MaxAttempts:   120,                              // 2 hours max (60s intervals)
+		NextPollAfter: time.Now().Add(10 * time.Second), // First poll in 10s
+		Status:        "PENDING",
+	}
+
+	if err := s.repo.CreatePollRequest(ctx, pollRequest); err != nil {
+		s.logger.Error("failed to create poll request", zap.Error(err))
+		// Non-fatal - job was launched and record created
+	}
+
+	// Emit training submitted event for downstream consumers
+	if err := s.emitTrainingEvent(ctx, jobARN, EventTypeModelTrainingSubmitted, map[string]interface{}{
+		"job_id":         jobARN,
+		"job_name":       jobName,
+		"status":         "SUBMITTED",
+		"tenant_id":      tenantID,
+		"user_id":        initiatedBy,
+		"samples_used":   len(sampleIDs),
+		"dataset_s3_key": datasetS3Key,
+		"created_at":     time.Now().Format(time.RFC3339),
+	}); err != nil {
+		s.logger.Warn("failed to emit training submitted event", zap.Error(err))
+		// Non-fatal - job was submitted successfully
+	}
+
+	// 6. Return immediately with SUBMITTED status
 	result := &TrainingResult{
 		Success:      true,
-		ModelVersion: modelVersion,
-		Accuracy:     metrics.Accuracy,
-		Precision:    metrics.Precision,
-		Recall:       metrics.Recall,
-		F1Score:      metrics.F1Score,
+		Status:       "SUBMITTED",
+		JobID:        jobARN,
+		JobName:      jobName,
+		DatasetS3Key: datasetS3Key,
 		SamplesUsed:  len(sampleIDs),
-		TrainingTime: metrics.TrainingTime,
-		JobID:        jobID,
-		ModelARN:     metrics.ModelARN,
-		Improvements: s.computeImprovements(metrics),
+		ModelVersion: "", // Not yet known
+		ModelARN:     "", // Not yet known
+		Accuracy:     0,
+		Precision:    0,
+		Recall:       0,
+		F1Score:      0,
+		TrainingTime: 0,
+		Improvements: []string{},
 	}
 
-	s.logger.Info("model training completed",
-		zap.String("version", modelVersion),
-		zap.Float64("accuracy", metrics.Accuracy),
-		zap.String("job_id", jobID))
+	s.logger.Info("model training job submitted",
+		zap.String("job_id", jobARN),
+		zap.String("job_name", jobName),
+		zap.String("dataset_key", datasetS3Key))
 
 	return result, nil
 }
@@ -205,6 +313,8 @@ func (s *Service) TrainModel(ctx context.Context, sampleIDs []string, options Tr
 type ScoreContentInput struct {
 	Content      string
 	ContentType  string
+	ObjectID     string // For prediction tracking
+	ObjectType   string // For prediction tracking
 	UseGuardrail bool
 }
 
@@ -263,13 +373,20 @@ func (s *Service) ScoreContent(ctx context.Context, input ScoreContentInput) (*S
 				zap.Error(err),
 				zap.String("content_preview", truncateString(input.Content, 100)))
 
-			return &ScoreResult{
+			result := &ScoreResult{
 				Score:            1.0, // Maximum risk score
 				Labels:           map[string]float64{"blocked": 1.0},
 				GuardrailBlocked: true,
 				GuardrailReason:  errMsg,
 				ModelVersion:     activeModel.VersionID,
-			}, nil
+			}
+
+			// Track this prediction
+			if err := s.trackPrediction(ctx, input, result); err != nil {
+				s.logger.Warn("failed to track guardrail prediction", zap.Error(err))
+			}
+
+			return result, nil
 		}
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
@@ -299,12 +416,63 @@ func (s *Service) ScoreContent(ctx context.Context, input ScoreContentInput) (*S
 		ModelVersion: activeModel.VersionID,
 	}
 
+	// Track this prediction for effectiveness metrics
+	if err := s.trackPrediction(ctx, input, result); err != nil {
+		s.logger.Warn("failed to track prediction", zap.Error(err))
+		// Non-fatal - prediction succeeded even if tracking failed
+	}
+
 	s.logger.Debug("content scored",
 		zap.Float64("score", result.Score),
 		zap.String("label", label),
 		zap.Bool("guardrail_blocked", result.GuardrailBlocked))
 
 	return result, nil
+}
+
+// trackPrediction creates a prediction record for effectiveness tracking
+func (s *Service) trackPrediction(ctx context.Context, input ScoreContentInput, result *ScoreResult) error {
+	if input.ObjectID == "" || input.ObjectType == "" {
+		// Skip tracking if object info not provided
+		return nil
+	}
+
+	// Determine predicted label from labels map
+	predictedLabel := "unknown"
+	highestConfidence := 0.0
+	for label, confidence := range result.Labels {
+		if confidence > highestConfidence {
+			predictedLabel = label
+			highestConfidence = confidence
+		}
+	}
+
+	prediction := &models.MLPrediction{
+		PredictionID:   uuid.New().String(),
+		ObjectID:       input.ObjectID,
+		ObjectType:     input.ObjectType,
+		ModelVersion:   result.ModelVersion,
+		PredictedLabel: predictedLabel,
+		Confidence:     result.Score,
+		Reviewed:       false,
+		Metadata: map[string]interface{}{
+			"guardrail_blocked": result.GuardrailBlocked,
+			"guardrail_reason":  result.GuardrailReason,
+			"labels":            result.Labels,
+		},
+	}
+
+	if err := s.repo.CreatePrediction(ctx, prediction); err != nil {
+		return fmt.Errorf("failed to create prediction record: %w", err)
+	}
+
+	s.logger.Debug("tracked ML prediction",
+		zap.String("prediction_id", prediction.PredictionID),
+		zap.String("object_id", input.ObjectID),
+		zap.String("predicted_label", predictedLabel),
+		zap.Float64("confidence", result.Score))
+
+	return nil
 }
 
 // calculateRiskScore maps a moderation label to a risk score (0.0 = safe, 1.0 = high risk)
@@ -318,6 +486,8 @@ func calculateRiskScore(label string) float64 {
 	case "hate_speech", "violence", "sexual", "harassment":
 		return 0.9
 	case "illegal", "csam", "terrorism":
+		return 1.0
+	case "blocked": // Guardrail blocked
 		return 1.0
 	default:
 		return 0.3 // Unknown labels get moderate risk
@@ -361,7 +531,8 @@ func (s *Service) GetEffectiveness(ctx context.Context, patternID string, period
 }
 
 // prepareTrainingDataset prepares samples as JSONL for Bedrock training
-func (s *Service) prepareTrainingDataset(ctx context.Context, sampleIDs []string, s3Path string) error {
+// Returns the S3 key where the dataset was uploaded
+func (s *Service) prepareTrainingDataset(ctx context.Context, sampleIDs []string, s3Path string) (string, error) {
 	s.logger.Info("preparing training dataset", zap.Int("sample_count", len(sampleIDs)))
 
 	// Fetch samples from repository
@@ -375,7 +546,7 @@ func (s *Service) prepareTrainingDataset(ctx context.Context, sampleIDs []string
 			continue
 		}
 
-		// Extract content from metadata or construct from object
+		// Extract content from metadata - ERROR if missing
 		content := ""
 		if sample.Metadata != nil {
 			if c, ok := sample.Metadata["content"].(string); ok {
@@ -383,12 +554,8 @@ func (s *Service) prepareTrainingDataset(ctx context.Context, sampleIDs []string
 			}
 		}
 		if content == "" {
-			// Fallback: use object ID as placeholder
-			// In production, you'd fetch from Object/Status repository
-			content = fmt.Sprintf("Object %s of type %s", sample.ObjectID, sample.ObjectType)
-			s.logger.Debug("using placeholder content for sample",
-				zap.String("sample_id", sampleID),
-				zap.String("object_id", sample.ObjectID))
+			// ERROR: Content is required for training
+			return "", fmt.Errorf("sample %s has no content - cannot proceed with training", sampleID)
 		}
 
 		// Format for Bedrock fine-tuning (Claude/Titan format)
@@ -411,16 +578,17 @@ func (s *Service) prepareTrainingDataset(ctx context.Context, sampleIDs []string
 	}
 
 	if validSamples == 0 {
-		return fmt.Errorf("no valid samples for training (requested: %d, valid: %d)", len(sampleIDs), validSamples)
+		return "", fmt.Errorf("no valid samples for training (requested: %d, valid: %d)", len(sampleIDs), validSamples)
 	}
 
 	// Create JSONL content
 	jsonlContent := strings.Join(jsonlLines, "\n")
 
-	// Determine S3 path
+	// Determine S3 path if not provided
 	if s3Path == "" {
 		timestamp := time.Now().Format("20060102-150405")
-		s3Path = fmt.Sprintf("training-data/moderation-%s.jsonl", timestamp)
+		jobID := uuid.New().String()[:8]
+		s3Path = fmt.Sprintf("training-data/moderation-%s-%s.jsonl", timestamp, jobID)
 	}
 
 	// Upload to S3
@@ -433,7 +601,7 @@ func (s *Service) prepareTrainingDataset(ctx context.Context, sampleIDs []string
 
 	_, err := s.s3Client.PutObject(ctx, putInput)
 	if err != nil {
-		return fmt.Errorf("failed to upload training dataset to S3: %w", err)
+		return "", fmt.Errorf("failed to upload training dataset to S3: %w", err)
 	}
 
 	s.logger.Info("prepared and uploaded training dataset",
@@ -442,11 +610,12 @@ func (s *Service) prepareTrainingDataset(ctx context.Context, sampleIDs []string
 		zap.String("path", s3Path),
 		zap.Int("size_bytes", len(jsonlContent)))
 
-	return nil
+	return s3Path, nil
 }
 
 // launchBedrockTraining launches a Bedrock model customization job
-func (s *Service) launchBedrockTraining(ctx context.Context, options TrainingOptions) (string, error) {
+// Returns jobARN and jobName
+func (s *Service) launchBedrockTraining(ctx context.Context, options TrainingOptions) (string, string, error) {
 	s.logger.Info("launching bedrock training job", zap.String("base_model", options.BaseModelID))
 
 	// Generate unique job name
@@ -480,6 +649,12 @@ func (s *Service) launchBedrockTraining(ctx context.Context, options TrainingOpt
 		}
 	}
 
+	// Use config roleARN or fail
+	roleArn := s.roleARN
+	if roleArn == "" {
+		return "", "", fmt.Errorf("BEDROCK_CUSTOMIZATION_ROLE_ARN not configured")
+	}
+
 	// Create model customization job
 	input := &bedrock.CreateModelCustomizationJobInput{
 		JobName:             aws.String(jobName),
@@ -488,154 +663,22 @@ func (s *Service) launchBedrockTraining(ctx context.Context, options TrainingOpt
 		TrainingDataConfig:  trainingDataConfig,
 		OutputDataConfig:    outputDataConfig,
 		HyperParameters:     hyperParams,
-		RoleArn:             aws.String("arn:aws:iam::*:role/BedrockCustomizationRole"), // This should come from config
+		RoleArn:             aws.String(roleArn),
 	}
-
-	// Note: Timeout configuration may vary by Bedrock API version
-	// Some versions don't support timeout configuration
-	_ = options.MaxTrainingTime // Acknowledge the parameter
 
 	output, err := s.bedrockClient.CreateModelCustomizationJob(ctx, input)
 	if err != nil {
-		return "", fmt.Errorf("failed to create bedrock customization job: %w", err)
+		return "", "", fmt.Errorf("failed to create bedrock customization job: %w", err)
 	}
 
 	jobArn := aws.ToString(output.JobArn)
 	s.logger.Info("launched bedrock training job",
 		zap.String("job_arn", jobArn),
 		zap.String("job_name", jobName),
-		zap.String("base_model", options.BaseModelID))
+		zap.String("base_model", options.BaseModelID),
+		zap.String("role_arn", roleArn))
 
-	return jobArn, nil
-}
-
-// ModelMetrics holds training metrics
-type ModelMetrics struct {
-	Accuracy     float64
-	Precision    float64
-	Recall       float64
-	F1Score      float64
-	TrainingTime int
-	ModelARN     string
-}
-
-// pollTrainingStatus polls Bedrock until training completes
-func (s *Service) pollTrainingStatus(ctx context.Context, jobArn string) (string, ModelMetrics, error) {
-	s.logger.Info("polling bedrock training status", zap.String("job_arn", jobArn))
-
-	// Poll with exponential backoff
-	maxAttempts := 60 // Max ~15 minutes of polling
-	attempt := 0
-	baseDelay := 5 * time.Second
-	maxDelay := 2 * time.Minute
-
-	for attempt < maxAttempts {
-		// Get job status
-		getInput := &bedrock.GetModelCustomizationJobInput{
-			JobIdentifier: aws.String(jobArn),
-		}
-
-		output, err := s.bedrockClient.GetModelCustomizationJob(ctx, getInput)
-		if err != nil {
-			return "", ModelMetrics{}, fmt.Errorf("failed to get job status: %w", err)
-		}
-
-		status := output.Status
-		s.logger.Debug("bedrock training job status",
-			zap.String("status", string(status)),
-			zap.Int("attempt", attempt))
-
-		switch status {
-		case types.ModelCustomizationJobStatusCompleted:
-			// Extract metrics and model ARN
-			modelArn := aws.ToString(output.OutputModelArn)
-			modelVersion := extractVersionFromArn(modelArn)
-
-			// Bedrock doesn't always provide detailed metrics in the response
-			// Use placeholder values or extract from training metrics if available
-			metrics := ModelMetrics{
-				Accuracy:     0.90, // Default - would be extracted from training logs/metrics
-				Precision:    0.88,
-				Recall:       0.87,
-				F1Score:      0.875,
-				TrainingTime: 0, // Would be calculated from start/end times
-				ModelARN:     modelArn,
-			}
-
-			// Extract training time if available
-			if output.CreationTime != nil && output.LastModifiedTime != nil {
-				duration := output.LastModifiedTime.Sub(*output.CreationTime)
-				metrics.TrainingTime = int(duration.Seconds())
-			}
-
-			s.logger.Info("bedrock training completed",
-				zap.String("model_arn", modelArn),
-				zap.String("version", modelVersion),
-				zap.Int("training_time_seconds", metrics.TrainingTime))
-
-			return modelVersion, metrics, nil
-
-		case types.ModelCustomizationJobStatusFailed:
-			failureMsg := aws.ToString(output.FailureMessage)
-			return "", ModelMetrics{}, fmt.Errorf("training job failed: %s", failureMsg)
-
-		case types.ModelCustomizationJobStatusStopped:
-			return "", ModelMetrics{}, fmt.Errorf("training job was stopped")
-
-		case types.ModelCustomizationJobStatusInProgress:
-			// Job still running, continue polling
-			attempt++
-			delay := calculateBackoff(baseDelay, maxDelay, attempt)
-			s.logger.Debug("waiting for training completion",
-				zap.String("status", string(status)),
-				zap.Duration("next_poll_delay", delay))
-			time.Sleep(delay)
-
-		default:
-			return "", ModelMetrics{}, fmt.Errorf("unexpected job status: %s", status)
-		}
-	}
-
-	return "", ModelMetrics{}, fmt.Errorf("training job polling timed out after %d attempts", maxAttempts)
-}
-
-// calculateBackoff calculates exponential backoff delay
-func calculateBackoff(baseDelay, maxDelay time.Duration, attempt int) time.Duration {
-	delay := time.Duration(float64(baseDelay) * math.Pow(1.5, float64(attempt)))
-	if delay > maxDelay {
-		delay = maxDelay
-	}
-	return delay
-}
-
-// extractVersionFromArn extracts version identifier from model ARN
-func extractVersionFromArn(arn string) string {
-	// Example ARN: arn:aws:bedrock:us-east-1:123456789012:custom-model/anthropic.claude-v2:1:12k/abcd1234
-	parts := strings.Split(arn, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
-	}
-	return fmt.Sprintf("v%d", time.Now().Unix())
-}
-
-// computeImprovements generates human-readable improvement descriptions
-func (s *Service) computeImprovements(metrics ModelMetrics) []string {
-	improvements := []string{}
-
-	if metrics.Accuracy > 0.90 {
-		improvements = append(improvements, "High accuracy achieved")
-	}
-	if metrics.F1Score > 0.85 {
-		improvements = append(improvements, "Excellent F1 score")
-	}
-	if metrics.Precision > 0.85 {
-		improvements = append(improvements, "Low false positive rate")
-	}
-	if metrics.Recall > 0.85 {
-		improvements = append(improvements, "Effective content detection")
-	}
-
-	return improvements
+	return jobArn, jobName, nil
 }
 
 // computeEffectiveness computes effectiveness metrics for a time range
@@ -646,41 +689,34 @@ func (s *Service) computeEffectiveness(ctx context.Context, patternID, period st
 		zap.Time("start", startTime),
 		zap.Time("end", endTime))
 
-	// Query samples in the time range for the specified pattern/model
-	// Note: In production, you'd want to:
-	// 1. Query moderation actions/predictions made by this model
-	// 2. Compare them against ground truth (human reviews)
-	// 3. Calculate confusion matrix
+	// Query predictions for this model version in the time range
+	predictions, err := s.repo.GetPredictionsByModelVersion(ctx, patternID, startTime, endTime, 1000)
+	if err != nil {
+		s.logger.Warn("failed to query predictions for effectiveness", zap.Error(err))
+		predictions = []*models.MLPrediction{} // Fall back to empty
+	}
 
 	var truePositives, falsePositives, trueNegatives, falseNegatives int
 
-	// For each label category, we need to fetch samples and predictions
-	// This is a simplified implementation - in production you'd have a separate
-	// table tracking ML predictions vs human labels
-
-	// Get all samples for this model/pattern
-	// Here we use the pattern ID as the model version ID
-	samples, err := s.repo.ListSamplesByLabel(ctx, "all", 1000) // In production, filter by time range
-	if err != nil {
-		s.logger.Warn("failed to query samples for effectiveness", zap.Error(err))
-		// Fall back to stub metrics if we can't compute real ones
-		samples = []*models.ModerationSample{}
-	}
-
-	// Count samples as ground truth
+	// Define positive labels (problematic content)
 	positiveLabels := map[string]bool{
 		"spam":        true,
 		"hate_speech": true,
 		"violence":    true,
 		"harassment":  true,
 		"illegal":     true,
+		"blocked":     true,
 	}
 
-	// Simplified computation: use confidence as a proxy for model prediction
-	// In production, you'd fetch actual model predictions
-	for _, sample := range samples {
-		isActuallyPositive := positiveLabels[sample.Label]
-		isPredictedPositive := sample.Confidence > 0.5 // Simplified assumption
+	// Count predictions that have been reviewed by humans
+	for _, pred := range predictions {
+		if !pred.Reviewed || pred.HumanLabel == "" {
+			// Skip predictions that haven't been reviewed
+			continue
+		}
+
+		isActuallyPositive := positiveLabels[pred.HumanLabel]
+		isPredictedPositive := positiveLabels[pred.PredictedLabel]
 
 		switch {
 		case isActuallyPositive && isPredictedPositive:
@@ -694,13 +730,9 @@ func (s *Service) computeEffectiveness(ctx context.Context, patternID, period st
 		}
 	}
 
-	// If no samples found, use baseline metrics
-	if len(samples) == 0 {
-		s.logger.Warn("no samples found for effectiveness computation, using baseline metrics")
-		truePositives = 0
-		falsePositives = 0
-		trueNegatives = 0
-		falseNegatives = 0
+	// If no reviewed predictions found, return baseline metrics
+	if truePositives+falsePositives+trueNegatives+falseNegatives == 0 {
+		s.logger.Warn("no reviewed predictions found for effectiveness computation")
 	}
 
 	metric := &models.ModerationEffectivenessMetric{
@@ -734,4 +766,35 @@ func (s *Service) computeEffectiveness(ctx context.Context, patternID, period st
 		zap.Float64("f1", metric.F1Score))
 
 	return metric, nil
+}
+
+// emitTrainingEvent emits a training lifecycle event to DynamoDB for stream processing
+func (s *Service) emitTrainingEvent(ctx context.Context, jobID, eventType string, payload map[string]interface{}) error {
+	if s.db == nil {
+		return fmt.Errorf("db not configured for event emission")
+	}
+
+	event := &models.StreamingEvent{
+		EventID:    fmt.Sprintf("evt_%d_ml_training_%s", time.Now().UnixNano(), jobID),
+		EventType:  eventType,
+		TargetType: "ml_training",
+		TargetID:   jobID,
+		Payload:    payload,
+		CreatedAt:  time.Now(),
+		TTL:        time.Now().Add(24 * time.Hour).Unix(),
+	}
+
+	// Update keys for GSI indexing
+	event.UpdateKeys()
+
+	// Write to DynamoDB - stream processors will pick it up
+	if err := s.db.WithContext(ctx).Model(event).Create(); err != nil {
+		return fmt.Errorf("failed to write event: %w", err)
+	}
+
+	s.logger.Debug("emitted training event",
+		zap.String("event_type", eventType),
+		zap.String("job_id", jobID))
+
+	return nil
 }

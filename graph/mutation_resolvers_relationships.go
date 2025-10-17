@@ -141,20 +141,52 @@ func (r *mutationResolver) MuteActor(ctx context.Context, id string, notificatio
 // UnmuteActor is the resolver for the unmuteActor field - implemented in schema.resolvers.go
 
 // UpdateRelationship is the resolver for the updateRelationship field.
-func (r *mutationResolver) UpdateRelationship(ctx context.Context, id string, _ model.UpdateRelationshipInput) (*model.Relationship, error) {
+func (r *mutationResolver) UpdateRelationship(ctx context.Context, id string, input model.UpdateRelationshipInput) (*model.Relationship, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO: Implement UpdateRelationship in the relationships service
-	// For now, return a stub response
-	r.Logger.Warn("UpdateRelationship not fully implemented yet",
-		zap.String("user", username),
-		zap.String("target_id", id))
+	// Get relationships service
+	relationshipsService := r.Registry.Relationships()
+	if relationshipsService == nil {
+		r.Logger.Error("relationships service not available")
+		return nil, ErrModerationUnavailable // Use existing error pattern from graph/errors.go
+	}
 
-	// Track cost using centralized tracker
+	// Build command from GraphQL input
+	cmd := &relationships.UpdateRelationshipCommand{
+		FollowerID:  username,
+		FollowingID: id, // The id parameter is the target user ID
+		Notify:      input.Notify,
+		ShowReblogs: input.ShowReblogs,
+		Note:        input.Note,
+	}
+
+	// Handle languages - convert from []string to *[]string if provided
+	if len(input.Languages) > 0 {
+		cmd.Languages = &input.Languages
+	}
+
+	// Update the relationship
+	relationshipData, err := relationshipsService.UpdateRelationship(ctx, cmd)
+	if err != nil {
+		r.Logger.Error("failed to update relationship",
+			zap.String("follower", username),
+			zap.String("following", id),
+			zap.Error(err))
+		return nil, err
+	}
+
+	// Track cost
 	r.trackDynamoOperation(ctx, "write", 1)
 
-	return nil, errors.New("UpdateRelationship not yet implemented - relationships service needs to be extended")
+	// Convert to GraphQL model
+	gqlRelationship := r.convertRelationshipToGraphQL(relationshipData)
+
+	r.Logger.Info("relationship updated successfully",
+		zap.String("follower", username),
+		zap.String("following", id))
+
+	return gqlRelationship, nil
 }

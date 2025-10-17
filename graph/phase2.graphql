@@ -124,13 +124,18 @@ enum ModerationSeverity {
 
 type TrainingResult {
   success: Boolean!
-  modelVersion: String!
-  accuracy: Float!
-  precision: Float!
-  recall: Float!
-  samplesUsed: Int!
-  trainingTime: Int!
-  improvements: [String!]!
+  status: String!          # SUBMITTED, IN_PROGRESS, COMPLETED, FAILED
+  jobId: String!           # Bedrock job ARN/ID
+  jobName: String!         # Human-readable job name
+  datasetS3Key: String!    # S3 key of training dataset
+  modelVersion: String!    # Model version (empty when SUBMITTED)
+  accuracy: Float!         # Training accuracy (0 when SUBMITTED)
+  precision: Float!        # Training precision (0 when SUBMITTED)
+  recall: Float!           # Training recall (0 when SUBMITTED)
+  f1Score: Float!          # Training F1 score (0 when SUBMITTED)
+  samplesUsed: Int!        # Number of training samples
+  trainingTime: Int!       # Training duration in seconds (0 when SUBMITTED)
+  improvements: [String!]! # Improvements (empty when SUBMITTED)
 }
 
 type ModerationAlert {

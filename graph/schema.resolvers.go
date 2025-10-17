@@ -3713,6 +3713,7 @@ func (r *queryResolver) buildDriversFromCostMaps(serviceCosts, operationCosts ma
 				PercentageOfTotal: percentage,
 				OperationCount:    1,
 				AverageCost:       costMicro,
+				Trend:             "STABLE", // Will be calculated by enrichDriversWithTrends
 			})
 		}
 	}
@@ -3729,6 +3730,7 @@ func (r *queryResolver) buildDriversFromCostMaps(serviceCosts, operationCosts ma
 				PercentageOfTotal: percentage,
 				OperationCount:    1,
 				AverageCost:       costMicro,
+				Trend:             "STABLE", // Will be calculated by enrichDriversWithTrends
 			})
 		}
 	}
@@ -3920,7 +3922,36 @@ func (r *queryResolver) convertStorageProjectionToModel(storageProjection *stora
 			PercentageOfTotal: driver.PercentOfTotal,
 			OperationCount:    1,
 			AverageCost:       costMicro,
+			Trend:             driver.Trend, // Preserve trend from storage if available
 		})
+	}
+
+	// Enrich with trends if not already populated (handles stored projections)
+	// Calculate period boundaries for trend enrichment
+	now := time.Now()
+	var startTime time.Time
+	switch period {
+	case model.PeriodDay:
+		startTime = now.Truncate(24 * time.Hour)
+	case model.PeriodWeek:
+		startTime = now.AddDate(0, 0, -7)
+	case model.PeriodMonth:
+		startTime = now.AddDate(0, -1, 0)
+	default:
+		startTime = now.Truncate(24 * time.Hour)
+	}
+
+	// Only enrich if trends are empty/missing
+	needsEnrichment := false
+	for _, driver := range topDrivers {
+		if driver.Trend == "" {
+			needsEnrichment = true
+			break
+		}
+	}
+
+	if needsEnrichment {
+		topDrivers = r.enrichDriversWithTrends(context.Background(), topDrivers, startTime, now)
 	}
 
 	return &model.CostProjection{
@@ -3945,6 +3976,9 @@ func (r *queryResolver) calculateNewCostProjection(ctx context.Context, costRepo
 	if currentCost == 0.0 {
 		return r.createMinimalProjection(period, username), nil
 	}
+
+	// Enrich drivers with real trend data from historical costs
+	topDrivers = r.enrichDriversWithTrends(ctx, topDrivers, startTime, now)
 
 	// Calculate projections and variance
 	projectedCost := currentCost * multiplier

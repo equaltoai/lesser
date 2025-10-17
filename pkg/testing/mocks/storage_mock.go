@@ -4438,6 +4438,11 @@ func (m *MockRepositoryStorage) ModerationML() *repositories.ModerationMLReposit
 	return nil // Mock can be implemented as needed
 }
 
+// Quote returns the mock Quote repository
+func (m *MockRepositoryStorage) Quote() *repositories.QuoteRepository {
+	return nil // Mock can be implemented as needed
+}
+
 // DLQ returns the mock DLQ repository
 func (m *MockRepositoryStorage) DLQ() *repositories.DLQRepository {
 	return m.dlqRepo

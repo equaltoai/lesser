@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -31,9 +32,9 @@ func (r *driverResolver) Domain(_ context.Context, _ *cost.Driver) (*string, err
 }
 
 // Cost resolves the cost field for a Driver
-// Converts from microcents to dollars
 func (r *driverResolver) Cost(_ context.Context, obj *cost.Driver) (float64, error) {
-	return float64(obj.CostMicroCents) / 1_000_000.0, nil
+	// Convert microcents to dollars
+	return float64(obj.CostMicroCents) / 1000000.0, nil
 }
 
 // PercentOfTotal resolves the percentOfTotal field for a Driver
@@ -43,8 +44,15 @@ func (r *driverResolver) PercentOfTotal(_ context.Context, obj *cost.Driver) (fl
 }
 
 // Trend resolves the trend field for a Driver
-// Defaults to STABLE for now (could be enhanced with historical data)
-func (r *driverResolver) Trend(_ context.Context, _ *cost.Driver) (model.Trend, error) {
-	// TODO: Calculate actual trend based on historical data
-	return model.TrendStable, nil
+// Reads the pre-calculated trend from the Driver object
+func (r *driverResolver) Trend(_ context.Context, obj *cost.Driver) (model.Trend, error) {
+	// Convert string trend to GraphQL enum
+	switch strings.ToUpper(obj.Trend) {
+	case "INCREASING":
+		return model.TrendIncreasing, nil
+	case "DECREASING":
+		return model.TrendDecreasing, nil
+	default:
+		return model.TrendStable, nil
+	}
 }
