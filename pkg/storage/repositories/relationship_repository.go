@@ -317,6 +317,55 @@ func (r *RelationshipRepository) GetFollowingCount(ctx context.Context, userID s
 	return int64(count), nil
 }
 
+// CountRelationshipsByDomain counts follower/following relationships involving a remote domain
+// Returns (followers from domain, following to domain, error)
+// Uses domain-aware GSIs (GSI2, GSI3) for O(1) indexed queries instead of full table scan
+func (r *RelationshipRepository) CountRelationshipsByDomain(ctx context.Context, domain string) (followers, following int, err error) {
+	if domain == "" {
+		return 0, 0, fmt.Errorf("domain cannot be empty")
+	}
+
+	followerKey := fmt.Sprintf("FOLLOWER_DOMAIN#%s", domain)
+	followingKey := fmt.Sprintf("FOLLOWING_DOMAIN#%s", domain)
+
+	// Count followers: remote users from this domain following local users
+	// Uses GSI2: FOLLOWER_DOMAIN#{domain} → FOLLOWING#{username}
+	followerCount, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+		Index("gsi2").
+		Where("GSI2PK", "=", followerKey).
+		Filter("State", "=", models.RelationshipAccepted).
+		Count()
+
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Error("failed to count followers by domain",
+			zap.String("domain", domain),
+			zap.Error(err))
+		return 0, 0, fmt.Errorf("count followers by domain: %w", err)
+	}
+
+	// Count following: local users following remote users from this domain
+	// Uses GSI3: FOLLOWING_DOMAIN#{domain} → FOLLOWER#{username}
+	followingCount, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+		Index("gsi3").
+		Where("GSI3PK", "=", followingKey).
+		Filter("State", "=", models.RelationshipAccepted).
+		Count()
+
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Error("failed to count following by domain",
+			zap.String("domain", domain),
+			zap.Error(err))
+		return 0, 0, fmt.Errorf("count following by domain: %w", err)
+	}
+
+	r.logger.Info("counted relationships by domain (GSI query)",
+		zap.String("domain", domain),
+		zap.Int("followers", int(followerCount)),
+		zap.Int("following", int(followingCount)))
+
+	return int(followerCount), int(followingCount), nil
+}
+
 // UpdateRelationship updates relationship settings using enhanced validation and events
 func (r *RelationshipRepository) UpdateRelationship(ctx context.Context, followerUsername, followingUsername string, updates map[string]interface{}) error {
 	// First get the relationship

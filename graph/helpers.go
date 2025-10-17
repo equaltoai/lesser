@@ -26,6 +26,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// allOperationsValue represents all operations for a service
+	allOperationsValue = "All"
+)
+
 // generateID generates a unique ID for objects
 func generateID() string {
 	b := make([]byte, 16)
@@ -335,12 +340,12 @@ func (r *queryResolver) getPreviousPeriodCost(ctx context.Context, costRepo *rep
 	var totalCost float64
 	for _, record := range costRecords {
 		// Match service (if not "All")
-		if service != "All" && record.ServiceName != service {
+		if service != allOperationsValue && record.ServiceName != service {
 			continue
 		}
 
 		// Match operation (if not "All")
-		if operation != "All" && record.OperationType != operation {
+		if operation != allOperationsValue && record.OperationType != operation {
 			continue
 		}
 

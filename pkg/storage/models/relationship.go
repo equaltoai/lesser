@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,14 @@ type RelationshipRecord struct {
 	// GSI1 for reverse lookups (who follows me)
 	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // FOLLOW#{followedUsername}
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // FOLLOWER#{followerUsername}
+
+	// GSI2 for follower domain queries (Phase 2.4 - severance detection)
+	GSI2PK string `dynamorm:"gsi2pk" json:"GSI2PK,omitempty"` // FOLLOWER_DOMAIN#{domain}
+	GSI2SK string `dynamorm:"gsi2sk" json:"GSI2SK,omitempty"` // FOLLOWING#{username}
+
+	// GSI3 for following domain queries (Phase 2.4 - severance detection)
+	GSI3PK string `dynamorm:"gsi3pk" json:"GSI3PK,omitempty"` // FOLLOWING_DOMAIN#{domain}
+	GSI3SK string `dynamorm:"gsi3sk" json:"GSI3SK,omitempty"` // FOLLOWER#{username}
 
 	// Core fields from legacy
 	ActivityID string    `json:"ActivityID"`
@@ -63,9 +72,39 @@ func (r *RelationshipRecord) BeforeUpdate() error {
 
 // UpdateKeys updates GSI keys based on primary keys
 func (r *RelationshipRecord) UpdateKeys() error {
-	// GSI keys are already set by repository methods
-	// This method ensures they stay in sync if needed
+	// GSI1 keys are set by repository methods
+	// Update domain-based GSI keys (GSI2, GSI3) for severance detection
+
+	// Extract follower username from PK: FOLLOW#{username}
+	followerUsername := strings.TrimPrefix(r.PK, "FOLLOW#")
+	if followerDomain, ok := extractRelationshipDomain(followerUsername); ok {
+		r.GSI2PK = fmt.Sprintf("FOLLOWER_DOMAIN#%s", followerDomain)
+		r.GSI2SK = r.SK // FOLLOWING#{username}
+	}
+
+	// Extract following username from SK: FOLLOWING#{username}
+	followingUsername := strings.TrimPrefix(r.SK, "FOLLOWING#")
+	if followingDomain, ok := extractRelationshipDomain(followingUsername); ok {
+		r.GSI3PK = fmt.Sprintf("FOLLOWING_DOMAIN#%s", followingDomain)
+		r.GSI3SK = r.GSI1SK // FOLLOWER#{username}
+	}
+
 	return nil
+}
+
+// extractRelationshipDomain extracts the domain from a federated handle (username@domain)
+// Specific to relationship records to avoid conflicts with other domain extractors
+func extractRelationshipDomain(handle string) (string, bool) {
+	parts := strings.Split(handle, "@")
+	if len(parts) < 2 {
+		// Local user, no domain
+		return "", false
+	}
+	domain := strings.ToLower(parts[len(parts)-1])
+	if domain == "" || domain == "localhost" {
+		return "", false
+	}
+	return domain, true
 }
 
 // GetPK returns the partition key

@@ -103,13 +103,22 @@ func (m *mockNotificationService) NotifySeverance(ctx context.Context, userID st
 	return args.Error(0)
 }
 
+type mockEventPublisher struct {
+	mock.Mock
+}
+
+func (m *mockEventPublisher) PublishEvent(ctx context.Context, event *models.StreamingEvent) error {
+	args := m.Called(ctx, event)
+	return args.Error(0)
+}
+
 func TestGetSeveredRelationships(t *testing.T) {
 	ctx := context.Background()
 	logger := zap.NewNop()
 
 	t.Run("returns severed relationships successfully", func(t *testing.T) {
 		mockRepo := new(mockSeveranceRepository)
-		service := NewService(mockRepo, nil, nil, logger, "example.com")
+		service := NewService(mockRepo, nil, nil, nil, logger, "example.com")
 
 		now := time.Now()
 		severances := []*models.SeveredRelationship{
@@ -140,7 +149,7 @@ func TestGetSeveredRelationships(t *testing.T) {
 
 	t.Run("filters by instance", func(t *testing.T) {
 		mockRepo := new(mockSeveranceRepository)
-		service := NewService(mockRepo, nil, nil, logger, "example.com")
+		service := NewService(mockRepo, nil, nil, nil, logger, "example.com")
 
 		mockRepo.On("ListSeveredRelationships", ctx, "example.com", mock.MatchedBy(func(f repositories.SeveranceFilters) bool {
 			return f.Instance == "remote.com"
@@ -162,7 +171,7 @@ func TestGetSeveredRelationship(t *testing.T) {
 
 	t.Run("returns single severed relationship", func(t *testing.T) {
 		mockRepo := new(mockSeveranceRepository)
-		service := NewService(mockRepo, nil, nil, logger, "example.com")
+		service := NewService(mockRepo, nil, nil, nil, logger, "example.com")
 
 		now := time.Now()
 		severance := &models.SeveredRelationship{
@@ -188,7 +197,7 @@ func TestGetSeveredRelationship(t *testing.T) {
 
 	t.Run("returns error for invalid ID", func(t *testing.T) {
 		mockRepo := new(mockSeveranceRepository)
-		service := NewService(mockRepo, nil, nil, logger, "example.com")
+		service := NewService(mockRepo, nil, nil, nil, logger, "example.com")
 
 		_, err := service.GetSeveredRelationship(ctx, "")
 
@@ -204,7 +213,7 @@ func TestAcknowledgeSeverance(t *testing.T) {
 
 	t.Run("acknowledges severance successfully", func(t *testing.T) {
 		mockRepo := new(mockSeveranceRepository)
-		service := NewService(mockRepo, nil, nil, logger, "example.com")
+		service := NewService(mockRepo, nil, nil, nil, logger, "example.com")
 
 		now := time.Now()
 		severance := &models.SeveredRelationship{
@@ -229,7 +238,7 @@ func TestAcknowledgeSeverance(t *testing.T) {
 
 	t.Run("returns error for non-existent severance", func(t *testing.T) {
 		mockRepo := new(mockSeveranceRepository)
-		service := NewService(mockRepo, nil, nil, logger, "example.com")
+		service := NewService(mockRepo, nil, nil, nil, logger, "example.com")
 
 		mockRepo.On("GetSeveredRelationship", ctx, "nonexistent").
 			Return(nil, nil)
@@ -249,7 +258,7 @@ func TestAttemptReconnection(t *testing.T) {
 	t.Run("attempts reconnection successfully", func(t *testing.T) {
 		mockRepo := new(mockSeveranceRepository)
 		mockFederation := new(mockFederationService)
-		service := NewService(mockRepo, mockFederation, nil, logger, "example.com")
+		service := NewService(mockRepo, mockFederation, nil, nil, logger, "example.com")
 
 		now := time.Now()
 		severance := &models.SeveredRelationship{
@@ -284,7 +293,7 @@ func TestAttemptReconnection(t *testing.T) {
 
 	t.Run("returns error for non-reversible severance", func(t *testing.T) {
 		mockRepo := new(mockSeveranceRepository)
-		service := NewService(mockRepo, nil, nil, logger, "example.com")
+		service := NewService(mockRepo, nil, nil, nil, logger, "example.com")
 
 		now := time.Now()
 		severance := &models.SeveredRelationship{
@@ -312,7 +321,7 @@ func TestGetAffectedRelationships(t *testing.T) {
 
 	t.Run("returns affected relationships successfully", func(t *testing.T) {
 		mockRepo := new(mockSeveranceRepository)
-		service := NewService(mockRepo, nil, nil, logger, "example.com")
+		service := NewService(mockRepo, nil, nil, nil, logger, "example.com")
 
 		now := time.Now()
 		affected := []*models.AffectedRelationship{

@@ -37,6 +37,7 @@ LAMBDAS := \
 	media-processor \
 	metrics-aggregator \
 	metrics-processor \
+	ml-training-processor \
 	moderation-processor \
 	note-processor \
 	notification-processor \
@@ -45,6 +46,7 @@ LAMBDAS := \
 	push-delivery \
 	report-trust-updater \
 	search-indexer \
+	severance-processor \
 	status-indexer \
 	stream-router \
 	streaming \

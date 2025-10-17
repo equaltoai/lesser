@@ -132,7 +132,7 @@ func (s *LesserStack) createSharedResources() {
 		RemovalPolicy:      getRemovalPolicy(isProd),
 	})
 
-	// Add GSIs
+	// Add GSI1-GSI8 (generic pattern-based GSIs)
 	for i := 1; i <= 8; i++ {
 		s.MainTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
 			IndexName: jsii.String(fmt.Sprintf("GSI%d", i)),
@@ -146,6 +146,11 @@ func (s *LesserStack) createSharedResources() {
 			},
 		})
 	}
+
+	// Note: GSI2 and GSI3 are now used for relationship domain queries (Phase 2.4)
+	// GSI2: FOLLOWER_DOMAIN#{domain} → FOLLOWING#{username} (remote users following local)
+	// GSI3: FOLLOWING_DOMAIN#{domain} → FOLLOWER#{username} (local users following remote)
+	// The generic loop above already creates these; attributes are defined via dynamorm tags
 
 	// Basic S3 bucket setup - CloudFront integration moved to createMediaInfrastructure
 	s.MediaBucket = awss3.NewBucket(s.Stack, jsii.String("MediaBucket"), &awss3.BucketProps{

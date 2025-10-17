@@ -19,7 +19,7 @@ func (r *Resolver) Driver() DriverResolver {
 // Type resolves the type field for a Driver
 // Maps from the Service and Operation fields
 func (r *driverResolver) Type(_ context.Context, obj *cost.Driver) (string, error) {
-	if obj.Operation != "" && obj.Operation != "All" {
+	if obj.Operation != "" && obj.Operation != allOperationsValue {
 		return obj.Service + " " + obj.Operation, nil
 	}
 	return obj.Service, nil

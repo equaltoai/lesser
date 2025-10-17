@@ -712,98 +712,89 @@ func (p *MLTrainingProcessor) parseMetricsFromS3(ctx context.Context, s3URI stri
 func (p *MLTrainingProcessor) extractMetricsFromBedrockOutput(trainingMetrics *types.TrainingMetrics) *models.TrainingMetrics {
 	metrics := &models.TrainingMetrics{}
 
-	// TrainingMetrics in AWS Bedrock SDK is a smithy-go Document type
-	// The structure varies by model provider, but typically contains validation metrics
 	if trainingMetrics == nil {
 		return metrics
 	}
 
-	// Convert the TrainingMetrics (Document type) to a map for easier access
-	// In AWS SDK v2, Document types can be marshaled/unmarshaled to extract data
-	// For now, we'll try to convert it to JSON and back to extract the values
+	rawMetrics, err := p.marshalToRawMetrics(trainingMetrics)
+	if err != nil {
+		return metrics
+	}
+
+	// Try extracting from different possible structures
+	p.extractDirectMetrics(rawMetrics, metrics)
+	p.extractNestedMetrics(rawMetrics, "validation_metrics", metrics)
+	p.extractNestedMetrics(rawMetrics, "evaluation", metrics)
+
+	return metrics
+}
+
+// marshalToRawMetrics converts TrainingMetrics to a raw map
+func (p *MLTrainingProcessor) marshalToRawMetrics(trainingMetrics *types.TrainingMetrics) (map[string]interface{}, error) {
 	metricsJSON, err := json.Marshal(trainingMetrics)
 	if err != nil {
 		p.logger.Warn("failed to marshal TrainingMetrics to JSON", zap.Error(err))
-		return metrics
+		return nil, err
 	}
 
-	// Parse the JSON to extract metrics
 	var rawMetrics map[string]interface{}
 	if err := json.Unmarshal(metricsJSON, &rawMetrics); err != nil {
 		p.logger.Warn("failed to unmarshal TrainingMetrics JSON", zap.Error(err))
-		return metrics
+		return nil, err
 	}
 
-	// Try to extract common metric fields
-	// Different model providers may use slightly different structures
+	return rawMetrics, nil
+}
 
-	// Try direct fields
-	if val, ok := rawMetrics["accuracy"]; ok {
-		if floatVal, ok := val.(float64); ok {
-			metrics.Accuracy = floatVal
-		}
+// extractDirectMetrics extracts metrics from top-level fields
+func (p *MLTrainingProcessor) extractDirectMetrics(rawMetrics map[string]interface{}, metrics *models.TrainingMetrics) {
+	p.extractFloatMetric(rawMetrics, "accuracy", &metrics.Accuracy)
+	p.extractFloatMetric(rawMetrics, "precision", &metrics.Precision)
+	p.extractFloatMetric(rawMetrics, "recall", &metrics.Recall)
+
+	// Try f1_score first, then f1
+	if !p.extractFloatMetric(rawMetrics, "f1_score", &metrics.F1Score) {
+		p.extractFloatMetric(rawMetrics, "f1", &metrics.F1Score)
 	}
-	if val, ok := rawMetrics["precision"]; ok {
-		if floatVal, ok := val.(float64); ok {
-			metrics.Precision = floatVal
-		}
-	}
-	if val, ok := rawMetrics["recall"]; ok {
-		if floatVal, ok := val.(float64); ok {
-			metrics.Recall = floatVal
-		}
-	}
-	if val, ok := rawMetrics["f1_score"]; ok {
-		if floatVal, ok := val.(float64); ok {
-			metrics.F1Score = floatVal
-		}
-	} else if val, ok := rawMetrics["f1"]; ok {
-		if floatVal, ok := val.(float64); ok {
-			metrics.F1Score = floatVal
-		}
+}
+
+// extractNestedMetrics extracts metrics from nested structures
+func (p *MLTrainingProcessor) extractNestedMetrics(rawMetrics map[string]interface{}, key string, metrics *models.TrainingMetrics) {
+	nested, ok := rawMetrics[key]
+	if !ok {
+		return
 	}
 
-	// Try nested validation_metrics structure (common in some providers)
-	if validationMetrics, ok := rawMetrics["validation_metrics"]; ok {
-		if metricsMap, ok := validationMetrics.(map[string]interface{}); ok {
-			if val, ok := metricsMap["accuracy"].(float64); ok {
-				metrics.Accuracy = val
-			}
-			if val, ok := metricsMap["precision"].(float64); ok {
-				metrics.Precision = val
-			}
-			if val, ok := metricsMap["recall"].(float64); ok {
-				metrics.Recall = val
-			}
-			if val, ok := metricsMap["f1_score"].(float64); ok {
-				metrics.F1Score = val
-			} else if val, ok := metricsMap["f1"].(float64); ok {
-				metrics.F1Score = val
-			}
-		}
+	metricsMap, ok := nested.(map[string]interface{})
+	if !ok {
+		return
 	}
 
-	// Try nested evaluation structure (alternative format)
-	if evaluation, ok := rawMetrics["evaluation"]; ok {
-		if evalMap, ok := evaluation.(map[string]interface{}); ok {
-			if val, ok := evalMap["accuracy"].(float64); ok {
-				metrics.Accuracy = val
-			}
-			if val, ok := evalMap["precision"].(float64); ok {
-				metrics.Precision = val
-			}
-			if val, ok := evalMap["recall"].(float64); ok {
-				metrics.Recall = val
-			}
-			if val, ok := evalMap["f1_score"].(float64); ok {
-				metrics.F1Score = val
-			} else if val, ok := evalMap["f1"].(float64); ok {
-				metrics.F1Score = val
-			}
-		}
+	p.extractFloatMetric(metricsMap, "accuracy", &metrics.Accuracy)
+	p.extractFloatMetric(metricsMap, "precision", &metrics.Precision)
+	p.extractFloatMetric(metricsMap, "recall", &metrics.Recall)
+
+	// Try f1_score first, then f1
+	if !p.extractFloatMetric(metricsMap, "f1_score", &metrics.F1Score) {
+		p.extractFloatMetric(metricsMap, "f1", &metrics.F1Score)
+	}
+}
+
+// extractFloatMetric extracts a float64 value from a map and assigns it to target
+// Returns true if extraction was successful
+func (p *MLTrainingProcessor) extractFloatMetric(data map[string]interface{}, key string, target *float64) bool {
+	val, ok := data[key]
+	if !ok {
+		return false
 	}
 
-	return metrics
+	floatVal, ok := val.(float64)
+	if !ok {
+		return false
+	}
+
+	*target = floatVal
+	return true
 }
 
 // parseBedrockMetricsJSON parses Bedrock training metrics JSON format
