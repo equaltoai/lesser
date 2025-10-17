@@ -56,6 +56,8 @@ var (
 	ErrActorRepositoryUnavailable      = errors.RepositoryNotAvailable("actor")
 	ErrTrustRepositoryUnavailable      = errors.RepositoryNotAvailable("trust")
 	ErrFederationRepositoryUnavailable = errors.RepositoryNotAvailable("federation")
+	ErrFederationGraphUnavailable      = errors.ServiceUnavailable("federation graph service")
+	ErrStreamingAnalyticsUnavailable   = errors.ServiceUnavailable("streaming analytics service")
 
 	// Not found errors
 	ErrObjectNotFound             = errors.NewAppError(errors.CodeNotFound, errors.CategoryBusiness, "object not found")

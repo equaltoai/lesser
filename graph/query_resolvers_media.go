@@ -3,7 +3,6 @@ package graph
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -100,66 +99,33 @@ func (r *queryResolver) MediaStreamURL(ctx context.Context, mediaID string) (*mo
 
 // PopularStreams returns popular streaming endpoints
 func (r *queryResolver) PopularStreams(ctx context.Context, first int, after *string) (*model.StreamConnection, error) {
-	// Set defaults for pagination
-	limit := 20
-	if first > 0 && first <= 100 {
-		limit = first
-	}
-
-	// For now, we'll implement popular streams by getting trending statuses with media attachments
-	// This represents popular streaming content until a dedicated streaming analytics service is implemented
-	trendingStatuses, err := r.Storage.Analytics().GetTrendingStatuses(ctx, time.Now().Add(-24*time.Hour), limit)
-	if err != nil {
-		r.Logger.Error("failed to get trending statuses for popular streams", zap.Error(err))
+	// Get streaming analytics service
+	service := r.Registry.StreamingAnalytics()
+	if service == nil {
+		r.Logger.Warn("streaming analytics service not available")
+		// Return empty connection for graceful degradation
 		return &model.StreamConnection{
 			Edges: []*model.StreamEdge{},
 			PageInfo: &model.PageInfo{
 				HasNextPage:     false,
 				HasPreviousPage: false,
+				StartCursor:     nil,
+				EndCursor:       nil,
 			},
 			TotalCount: 0,
 		}, nil
 	}
 
-	// Convert trending statuses to stream edges (simplified for now)
-	edges := make([]*model.StreamEdge, 0, len(trendingStatuses))
-	for _, status := range trendingStatuses {
-		if status == nil {
-			continue
-		}
-
-		// Create a stream representation based on the trending status
-		// Using repository analytics to calculate streaming metrics
-		stream := &model.Stream{
-			ID:        status.ID,
-			Title:     r.truncateText(status.Content, 100), // Use content as title, truncated
-			CreatedAt: model.Time(status.CreatedAt),
-		}
-
-		edge := &model.StreamEdge{
-			Cursor: model.Cursor(fmt.Sprintf("stream_%s", status.ID)),
-			Node:   stream,
-		}
-
-		edges = append(edges, edge)
-
-		// Stop if we have enough results
-		if len(edges) >= limit {
-			break
-		}
+	// Get popular streams from service
+	connection, err := service.GetPopularStreams(ctx, first, after)
+	if err != nil {
+		r.Logger.Error("failed to get popular streams",
+			zap.Int("first", first),
+			zap.Error(err))
+		return nil, err
 	}
 
-	// Determine if there are more pages
-	hasNextPage := len(trendingStatuses) == limit
-
-	return &model.StreamConnection{
-		Edges: edges,
-		PageInfo: &model.PageInfo{
-			HasNextPage:     hasNextPage,
-			HasPreviousPage: after != nil && *after != "",
-		},
-		TotalCount: len(edges),
-	}, nil
+	return connection, nil
 }
 
 // SupportedBitrates returns supported bitrates for a media item
@@ -199,25 +165,11 @@ func (r *queryResolver) SupportedBitrates(_ context.Context, mediaID string) ([]
 
 // StreamingAnalytics returns streaming analytics for a media item
 func (r *queryResolver) StreamingAnalytics(ctx context.Context, mediaID string) (*model.StreamingAnalytics, error) {
-	// Get storage from resolver
-	storage := r.Storage
-	if storage == nil {
-		return nil, ErrStorageUnavailable
-	}
-
-	// Get analytics repository
-	analyticsRepo := storage.Analytics()
-	if analyticsRepo == nil {
-		return nil, ErrAnalyticsRepositoryUnavailable
-	}
-
-	// Get real streaming analytics data
-	analyticsData, err := analyticsRepo.GetStreamingAnalytics(ctx, mediaID)
-	if err != nil {
-		r.Logger.Warn("Failed to get streaming analytics",
-			zap.String("mediaID", mediaID),
-			zap.Error(err))
-		// Return empty analytics instead of error to maintain API compatibility
+	// Get streaming analytics service
+	service := r.Registry.StreamingAnalytics()
+	if service == nil {
+		r.Logger.Warn("streaming analytics service not available")
+		// Return empty analytics for graceful degradation
 		return &model.StreamingAnalytics{
 			TotalViews:          0,
 			UniqueViewers:       0,
@@ -228,53 +180,14 @@ func (r *queryResolver) StreamingAnalytics(ctx context.Context, mediaID string) 
 		}, nil
 	}
 
-	// Convert storage analytics to GraphQL model
-	qualityDistribution := make([]*model.QualityStats, 0, len(analyticsData.QualityDistribution))
-	for _, stats := range analyticsData.QualityDistribution {
-		// Convert quality string to StreamQuality enum
-		var quality model.StreamQuality
-		switch strings.ToLower(stats.Quality) {
-		case "240p", "low":
-			quality = model.StreamQualityLow
-		case "360p", "480p", "medium":
-			quality = model.StreamQualityMedium
-		case "720p", "high":
-			quality = model.StreamQualityHigh
-		case "1080p", "4k", "2160p", "ultra":
-			quality = model.StreamQualityUltra
-		case "auto":
-			quality = model.StreamQualityAuto
-		default:
-			quality = model.StreamQualityMedium
-		}
-
-		qualityStats := &model.QualityStats{
-			Quality:      quality,
-			ViewCount:    stats.ViewCount,
-			Percentage:   stats.Percentage,
-			AvgBandwidth: stats.AverageBitrate,
-		}
-		qualityDistribution = append(qualityDistribution, qualityStats)
+	// Get analytics data from service
+	analytics, err := service.GetStreamingAnalytics(ctx, mediaID)
+	if err != nil {
+		r.Logger.Error("failed to get streaming analytics",
+			zap.String("mediaID", mediaID),
+			zap.Error(err))
+		return nil, err
 	}
 
-	// Convert average watch time from seconds to Duration
-	avgWatchTime := model.Duration(time.Duration(analyticsData.AverageWatchTime * float64(time.Second)))
-
-	// Log real-time metrics for debugging
-	r.Logger.Debug("Retrieved real-time streaming analytics",
-		zap.String("mediaID", mediaID),
-		zap.Int("totalViews", analyticsData.TotalViews),
-		zap.Int("uniqueViewers", analyticsData.UniqueViewers),
-		zap.Int("activeStreams", analyticsData.StreamingSessions),
-		zap.Float64("completionRate", analyticsData.CompletionRate),
-		zap.Any("recentMetrics", analyticsData.RecentMetrics))
-
-	return &model.StreamingAnalytics{
-		TotalViews:          analyticsData.TotalViews,
-		UniqueViewers:       analyticsData.UniqueViewers,
-		AverageWatchTime:    avgWatchTime,
-		QualityDistribution: qualityDistribution,
-		BufferingEvents:     analyticsData.BufferingEvents,
-		CompletionRate:      analyticsData.CompletionRate,
-	}, nil
+	return analytics, nil
 }

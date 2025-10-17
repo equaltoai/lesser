@@ -62,6 +62,9 @@ type RepositoryStorage interface {
 	Severance() *repositories.SeveranceRepository
 	ModerationML() *repositories.ModerationMLRepository
 	Quote() *repositories.QuoteRepository
+	MediaAnalytics() *repositories.MediaAnalyticsRepository
+	MediaPopularity() *repositories.MediaPopularityRepository
+	MediaSession() *repositories.MediaSessionRepository
 
 	// Utility methods
 	GetDB() dynamormCore.DB

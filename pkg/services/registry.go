@@ -76,6 +76,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/bulk"
 	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/equaltoai/lesser/pkg/services/emoji"
+	"github.com/equaltoai/lesser/pkg/services/federationgraph"
 	"github.com/equaltoai/lesser/pkg/services/hashtags"
 	"github.com/equaltoai/lesser/pkg/services/importexport"
 	"github.com/equaltoai/lesser/pkg/services/lists"
@@ -89,6 +90,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/services/search"
 	"github.com/equaltoai/lesser/pkg/services/severance"
+	"github.com/equaltoai/lesser/pkg/services/streaminganalytics"
 	"github.com/equaltoai/lesser/pkg/services/threads"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -136,24 +138,26 @@ type Registry struct {
 	notification   NotificationService
 
 	// Domain services (new service-first architecture)
-	notesService         *notes.Service
-	accountsService      *accounts.Service
-	relationshipsService *relationships.Service
-	conversationsService *conversations.Service
-	mediaService         *media.Service
-	listsService         *lists.Service
-	notificationsService *notifications.Service
-	aiService            *ai.Service
-	emojiService         *emoji.Service
-	hashtagsService      *hashtags.Service
-	scheduledService     *scheduled.Service
-	searchService        *search.Service
-	importExportService  *importexport.Service
-	bulkService          *bulk.Service
-	threadsService       *threads.Service
-	severanceService     *severance.Service
-	moderationMLService  *moderationml.Service
-	quotesService        *quotes.QuoteService
+	notesService              *notes.Service
+	accountsService           *accounts.Service
+	relationshipsService      *relationships.Service
+	conversationsService      *conversations.Service
+	mediaService              *media.Service
+	listsService              *lists.Service
+	notificationsService      *notifications.Service
+	aiService                 *ai.Service
+	emojiService              *emoji.Service
+	hashtagsService           *hashtags.Service
+	scheduledService          *scheduled.Service
+	searchService             *search.Service
+	importExportService       *importexport.Service
+	bulkService               *bulk.Service
+	threadsService            *threads.Service
+	severanceService          *severance.Service
+	moderationMLService       *moderationml.Service
+	quotesService             *quotes.QuoteService
+	federationGraphService    *federationgraph.Service
+	streamingAnalyticsService *streaminganalytics.Service
 
 	// Event infrastructure
 	eventBus         EventBus
@@ -495,6 +499,61 @@ func (r *Registry) Severance() *severance.Service {
 	}
 
 	return r.severanceService
+}
+
+// FederationGraph returns the FederationGraph service instance (lazy initialization)
+func (r *Registry) FederationGraph() *federationgraph.Service {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.federationGraphService == nil {
+		federationRepo := r.storage.Federation()
+
+		if federationRepo != nil {
+			domain := r.getDomainName()
+
+			r.federationGraphService = federationgraph.NewService(
+				federationRepo,
+				r.logger,
+				domain,
+			)
+			if r.initialized != nil {
+				r.initialized["FederationGraph"] = true
+			}
+		} else if r.logger != nil {
+			r.logger.Warn("failed to initialize FederationGraph service: required repository not available")
+		}
+	}
+
+	return r.federationGraphService
+}
+
+// StreamingAnalytics returns the streaming analytics service instance
+func (r *Registry) StreamingAnalytics() *streaminganalytics.Service {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.streamingAnalyticsService == nil {
+		analyticsRepo := r.storage.MediaAnalytics()
+		popularityRepo := r.storage.MediaPopularity()
+		sessionRepo := r.storage.MediaSession()
+
+		if analyticsRepo != nil && popularityRepo != nil && sessionRepo != nil {
+			r.streamingAnalyticsService = streaminganalytics.NewService(
+				analyticsRepo,
+				popularityRepo,
+				sessionRepo,
+				r.logger,
+			)
+			if r.initialized != nil {
+				r.initialized["StreamingAnalytics"] = true
+			}
+		} else if r.logger != nil {
+			r.logger.Warn("failed to initialize StreamingAnalytics service: required repositories not available")
+		}
+	}
+
+	return r.streamingAnalyticsService
 }
 
 // ModerationML returns the moderation ML service, initializing it if necessary

@@ -546,3 +546,173 @@ func (r *MediaAnalyticsRepository) CleanupOldAnalytics(ctx context.Context, olde
 
 	return nil
 }
+
+// GetMediaAnalyticsByTimeRange retrieves analytics for a specific media within time range
+func (r *MediaAnalyticsRepository) GetMediaAnalyticsByTimeRange(ctx context.Context, mediaID string, startTime, endTime time.Time, limit int) ([]*models.MediaAnalytics, error) {
+	if err := common.ValidateRequiredParam("mediaID", mediaID); err != nil {
+		return nil, err
+	}
+
+	var results []*models.MediaAnalytics
+
+	// Iterate day by day through the range
+	currentDate := startTime.Truncate(24 * time.Hour)
+	endDate := endTime.Truncate(24 * time.Hour)
+
+	for !currentDate.After(endDate) && len(results) < limit {
+		dateStr := currentDate.Format(common.DateFormat)
+		gsi1pk := fmt.Sprintf("DATE#%s", dateStr)
+
+		// Query this day's analytics
+		var dayAnalytics []*models.MediaAnalytics
+		err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).
+			Where("GSI1PK", "=", gsi1pk).
+			Scan(&dayAnalytics)
+
+		if err != nil {
+			r.logger.Error("Failed to get media analytics for day",
+				zap.String("date", dateStr),
+				zap.Error(err))
+			return nil, ErrorHandler.HandleQueryError(err, EntityMedia, "analytics by time range")
+		}
+
+		// Filter by media ID and time range
+		for _, analytics := range dayAnalytics {
+			if analytics.MediaID == mediaID &&
+				!analytics.Timestamp.Before(startTime) &&
+				!analytics.Timestamp.After(endTime) {
+				results = append(results, analytics)
+				if len(results) >= limit {
+					break
+				}
+			}
+		}
+
+		currentDate = currentDate.Add(24 * time.Hour)
+	}
+
+	// Track cost
+	if r.GetCostService() != nil {
+		if trackErr := r.TrackRead(ctx, "TimeRangeQuery", int64(len(results))); trackErr != nil {
+			r.logger.Warn("failed to track query cost", zap.Error(trackErr))
+		}
+	}
+
+	return results, nil
+}
+
+// GetAllMediaAnalyticsByTimeRange retrieves analytics for all media within time range
+func (r *MediaAnalyticsRepository) GetAllMediaAnalyticsByTimeRange(ctx context.Context, startTime, endTime time.Time, limit int) ([]*models.MediaAnalytics, error) {
+	var results []*models.MediaAnalytics
+
+	// Iterate day by day through the range
+	currentDate := startTime.Truncate(24 * time.Hour)
+	endDate := endTime.Truncate(24 * time.Hour)
+
+	for !currentDate.After(endDate) && len(results) < limit {
+		dateStr := currentDate.Format(common.DateFormat)
+		gsi1pk := fmt.Sprintf("DATE#%s", dateStr)
+
+		// Query this day's analytics
+		var dayAnalytics []*models.MediaAnalytics
+		err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).
+			Where("GSI1PK", "=", gsi1pk).
+			Scan(&dayAnalytics)
+
+		if err != nil {
+			r.logger.Error("Failed to get all media analytics for day",
+				zap.String("date", dateStr),
+				zap.Error(err))
+			return nil, ErrorHandler.HandleQueryError(err, EntityMedia, "all analytics by time range")
+		}
+
+		// Filter by time range
+		for _, analytics := range dayAnalytics {
+			if !analytics.Timestamp.Before(startTime) && !analytics.Timestamp.After(endTime) {
+				results = append(results, analytics)
+				if len(results) >= limit {
+					break
+				}
+			}
+		}
+
+		currentDate = currentDate.Add(24 * time.Hour)
+	}
+
+	// Track cost
+	if r.GetCostService() != nil {
+		if trackErr := r.TrackRead(ctx, "AllMediaTimeRangeQuery", int64(len(results))); trackErr != nil {
+			r.logger.Warn("failed to track query cost", zap.Error(trackErr))
+		}
+	}
+
+	return results, nil
+}
+
+// GetPopularMedia retrieves popular media sorted by view count with cursor pagination
+// NOTE: Deprecated in favor of service layer using GetPopularMediaByPeriod from PopularityRepository
+// This method is kept for backward compatibility but should not be used
+func (r *MediaAnalyticsRepository) GetPopularMedia(_ context.Context, _, _ time.Time, _ int, _ *string) ([]*models.MediaAnalytics, error) {
+	r.logger.Warn("GetPopularMedia is deprecated - use MediaPopularityRepository.GetPopularMediaByPeriod instead")
+
+	// Return empty results - this method should not be called
+	// The service layer should use MediaPopularityRepository directly
+	return []*models.MediaAnalytics{}, nil
+}
+
+// GetBandwidthByTimeRange retrieves bandwidth usage data within time range
+func (r *MediaAnalyticsRepository) GetBandwidthByTimeRange(ctx context.Context, startTime, endTime time.Time, limit int) ([]*models.MediaAnalytics, error) {
+	var results []*models.MediaAnalytics
+
+	// Iterate day by day through the range
+	currentDate := startTime.Truncate(24 * time.Hour)
+	endDate := endTime.Truncate(24 * time.Hour)
+
+	for !currentDate.After(endDate) && len(results) < limit {
+		dateStr := currentDate.Format(common.DateFormat)
+		gsi1pk := fmt.Sprintf("DATE#%s", dateStr)
+
+		// Query this day's analytics
+		var dayAnalytics []*models.MediaAnalytics
+		err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).
+			Where("GSI1PK", "=", gsi1pk).
+			Scan(&dayAnalytics)
+
+		if err != nil {
+			r.logger.Error("Failed to get bandwidth data for day",
+				zap.String("date", dateStr),
+				zap.Error(err))
+			return nil, ErrorHandler.HandleQueryError(err, EntityMedia, "bandwidth by time range")
+		}
+
+		// Filter by time range and bandwidth data
+		for _, analytics := range dayAnalytics {
+			if !analytics.Timestamp.Before(startTime) &&
+				!analytics.Timestamp.After(endTime) &&
+				analytics.TotalBandwidthBytes > 0 {
+				results = append(results, analytics)
+				if len(results) >= limit {
+					break
+				}
+			}
+		}
+
+		currentDate = currentDate.Add(24 * time.Hour)
+	}
+
+	// Track cost
+	if r.GetCostService() != nil {
+		if trackErr := r.TrackRead(ctx, "BandwidthTimeRangeQuery", int64(len(results))); trackErr != nil {
+			r.logger.Warn("failed to track query cost", zap.Error(trackErr))
+		}
+	}
+
+	return results, nil
+}
+
+// StoreMediaAnalytics stores a media analytics event
+// NOTE: Popularity updates are now handled by the service layer (RecordStreamingEvent)
+// which calls MediaPopularityRepository.IncrementViewCount directly
+func (r *MediaAnalyticsRepository) StoreMediaAnalytics(ctx context.Context, analytics *models.MediaAnalytics) error {
+	return r.RecordMediaAnalytics(ctx, analytics)
+}

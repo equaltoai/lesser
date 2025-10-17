@@ -469,6 +469,21 @@ func (m *MockRepositoryStorage) Quote() *repositories.QuoteRepository {
 	return args.Get(0).(*repositories.QuoteRepository)
 }
 
+// MediaAnalytics returns a mock media analytics repository for testing
+func (m *MockRepositoryStorage) MediaAnalytics() *repositories.MediaAnalyticsRepository {
+	return nil
+}
+
+// MediaPopularity returns a mock media popularity repository for testing
+func (m *MockRepositoryStorage) MediaPopularity() *repositories.MediaPopularityRepository {
+	return nil
+}
+
+// MediaSession returns a mock media session repository for testing
+func (m *MockRepositoryStorage) MediaSession() *repositories.MediaSessionRepository {
+	return nil
+}
+
 // GetDB returns a mock database connection for testing
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB {
 	args := m.Called()

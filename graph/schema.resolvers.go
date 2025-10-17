@@ -1579,81 +1579,6 @@ func (r *Resolver) convertToSpamAnalysis(results map[string]interface{}) *model.
 	return analysis
 }
 
-// convertQualityBandwidth converts quality bandwidth metrics to GraphQL model
-func (r *Resolver) convertQualityBandwidth(metrics map[string]interface{}) []*model.QualityBandwidth {
-	if metrics == nil {
-		return []*model.QualityBandwidth{}
-	}
-
-	result := make([]*model.QualityBandwidth, 0)
-	for qualityStr, data := range metrics {
-		if bandwidthData, ok := data.(map[string]interface{}); ok {
-			// Convert string quality to StreamQuality enum
-			var quality model.StreamQuality
-			switch strings.ToUpper(qualityStr) {
-			case "AUTO":
-				quality = model.StreamQualityAuto
-			case AlertLevelLow:
-				quality = model.StreamQualityLow
-			case AlertLevelMedium:
-				quality = model.StreamQualityMedium
-			case AlertLevelHigh:
-				quality = model.StreamQualityHigh
-			case "ULTRA":
-				quality = model.StreamQualityUltra
-			default:
-				quality = model.StreamQualityAuto
-			}
-
-			qb := &model.QualityBandwidth{
-				Quality: quality,
-			}
-
-			if totalGB, ok := bandwidthData["total_gb"].(float64); ok {
-				qb.TotalGb = totalGB
-			}
-			if percentage, ok := bandwidthData["percentage"].(float64); ok {
-				qb.Percentage = percentage
-			}
-
-			result = append(result, qb)
-		}
-	}
-
-	return result
-}
-
-// convertHourlyBandwidth converts hourly bandwidth metrics to GraphQL model
-func (r *Resolver) convertHourlyBandwidth(metrics []interface{}) []*model.HourlyBandwidth {
-	if metrics == nil {
-		return []*model.HourlyBandwidth{}
-	}
-
-	result := make([]*model.HourlyBandwidth, 0, len(metrics))
-	for _, item := range metrics {
-		if hourData, ok := item.(map[string]interface{}); ok {
-			hb := &model.HourlyBandwidth{}
-
-			if hour, ok := hourData["hour"].(string); ok {
-				if t, err := time.Parse(time.RFC3339, hour); err == nil {
-					hb.Hour = model.Time(t)
-				}
-			}
-			// Use TotalGb instead of InboundGb/OutboundGb
-			if totalGB, ok := hourData["total_gb"].(float64); ok {
-				hb.TotalGb = totalGB
-			}
-			if peakMbps, ok := hourData["peak_mbps"].(float64); ok {
-				hb.PeakMbps = peakMbps
-			}
-
-			result = append(result, hb)
-		}
-	}
-
-	return result
-}
-
 // ModerationDashboard returns the moderation dashboard data
 
 // getRecentModerationDecisions retrieves recent moderation decisions
@@ -2377,14 +2302,6 @@ func calculatePercentiles(latencies []int64) (p50, p90, p95, p99 int64) {
 // SeveredRelationships returns severed federation relationships
 
 // PopularStreams returns popular streaming endpoints
-
-// truncateText is a helper function to truncate text to a specified length
-func (r *Resolver) truncateText(text string, maxLength int) string {
-	if len(text) <= maxLength {
-		return text
-	}
-	return text[:maxLength-3] + "..."
-}
 
 // PatternEffectiveness returns pattern effectiveness statistics
 

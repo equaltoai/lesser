@@ -246,126 +246,37 @@ func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.Se
 
 // BandwidthUsage implements QueryResolver
 func (r *queryResolver) BandwidthUsage(ctx context.Context, period model.TimePeriod) (*model.BandwidthReport, error) {
-	username, err := r.requireAuth(ctx)
+	_, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get bandwidth data from cost tracking repository
-	costRepo := r.Registry.GetStorage().Cost()
-	if costRepo == nil {
-		return nil, ErrCostTrackingUnavailable
-	}
-
-	// Convert period to time range
-	now := time.Now()
-	var startTime time.Time
-	switch period {
-	case model.TimePeriodHour:
-		startTime = now.Add(-1 * time.Hour)
-	case model.TimePeriodDay:
-		startTime = now.Add(-24 * time.Hour)
-	case model.TimePeriodWeek:
-		startTime = now.Add(-7 * 24 * time.Hour)
-	case model.TimePeriodMonth:
-		startTime = now.AddDate(0, -1, 0)
-	default:
-		startTime = now.Add(-24 * time.Hour)
-	}
-
-	// Get cost tracking summary
-	// Using a simplified approach for now
-	_ = username
-	_ = startTime
-	_ = costRepo
-	estimatedCost := 0.001
-
-	// Get real bandwidth data from media repository
-	mediaRepo := r.Registry.GetStorage().Media()
-	if mediaRepo == nil {
-		// Fallback to cost-based estimation if media repo unavailable
-		estimatedGB := estimatedCost * 100
+	// Get streaming analytics service
+	service := r.Registry.StreamingAnalytics()
+	if service == nil {
+		r.Logger.Warn("streaming analytics service not available")
+		// Return empty report for graceful degradation
 		return &model.BandwidthReport{
 			Period:    period,
-			TotalGb:   estimatedGB,
-			PeakMbps:  estimatedGB * 10,
-			AvgMbps:   estimatedGB * 5,
+			TotalGb:   0.0,
+			PeakMbps:  0.0,
+			AvgMbps:   0.0,
 			ByQuality: []*model.QualityBandwidth{},
 			ByHour:    []*model.HourlyBandwidth{},
-			Cost:      estimatedCost,
+			Cost:      0.0,
 		}, nil
 	}
 
-	// Get real bandwidth usage data by aggregating media usage
-	var totalBytes int64
-	qualityBreakdown := make(map[string]int64)
-	var hourlyBreakdown []map[string]interface{}
-
-	// User authentication already handled by requireAuth above
-
-	// Query media usage for the time period
-	if username != "" {
-		storageUsage, err := mediaRepo.GetMediaStorageUsage(ctx, username)
-		if err == nil {
-			totalBytes = storageUsage
-		}
+	// Get bandwidth report from service
+	report, err := service.GetBandwidthUsage(ctx, period)
+	if err != nil {
+		r.Logger.Error("failed to get bandwidth usage",
+			zap.String("period", string(period)),
+			zap.Error(err))
+		return nil, err
 	}
 
-	// Create realistic quality breakdown based on actual usage
-	if totalBytes > 0 {
-		qualityBreakdown["high"] = int64(float64(totalBytes) * 0.4)    // 40% high quality
-		qualityBreakdown["medium"] = int64(float64(totalBytes) * 0.45) // 45% medium quality
-		qualityBreakdown["low"] = int64(float64(totalBytes) * 0.15)    // 15% low quality
-	}
-
-	// Create hourly breakdown based on period
-	hoursInPeriod := 24 // default for day
-	switch period {
-	case model.TimePeriodHour:
-		hoursInPeriod = 1
-	case model.TimePeriodWeek:
-		hoursInPeriod = 168
-	case model.TimePeriodMonth:
-		hoursInPeriod = 720
-	}
-
-	bytesPerHour := totalBytes / int64(hoursInPeriod)
-	for i := 0; i < hoursInPeriod; i += hoursInPeriod / 8 { // 8 data points max
-		hourTime := startTime.Add(time.Duration(i) * time.Hour)
-		hourlyBreakdown = append(hourlyBreakdown, map[string]interface{}{
-			"hour":  hourTime.Format(time.RFC3339),
-			"bytes": bytesPerHour,
-		})
-	}
-
-	// Convert to GB and calculate speeds
-	totalGB := float64(totalBytes) / (1024 * 1024 * 1024)
-
-	// Calculate realistic peak and average based on total usage
-	peakMbps := float64(0)
-	avgMbps := float64(0)
-	if totalGB > 0 {
-		hoursFloat := float64(hoursInPeriod)
-		avgMbps = (totalGB * 8 * 1024) / hoursFloat // Convert GB to Mbps average
-		peakMbps = avgMbps * 2.5                    // Peak is typically 2.5x average
-	}
-
-	// Convert quality breakdown to GraphQL format
-	qualityMetrics := map[string]interface{}{
-		"high":   map[string]interface{}{"bytes": qualityBreakdown["high"]},
-		"medium": map[string]interface{}{"bytes": qualityBreakdown["medium"]},
-		"low":    map[string]interface{}{"bytes": qualityBreakdown["low"]},
-	}
-
-	return &model.BandwidthReport{
-		Period:    period,
-		TotalGb:   totalGB,
-		PeakMbps:  peakMbps,
-		AvgMbps:   avgMbps,
-		ByQuality: r.convertQualityBandwidth(qualityMetrics),
-		ByHour:    r.convertHourlyBandwidth(convertToInterfaceSlice(hourlyBreakdown)),
-		Cost:      estimatedCost,
-	}, nil
+	return report, nil
 }
 
 // CostProjections implements QueryResolver
@@ -387,12 +298,4 @@ func (r *queryResolver) CostProjections(ctx context.Context, period model.Period
 
 	// Calculate new projection
 	return r.calculateNewCostProjection(ctx, costRepo, period, username)
-}
-
-func convertToInterfaceSlice(input []map[string]interface{}) []interface{} {
-	result := make([]interface{}, len(input))
-	for i, v := range input {
-		result[i] = v
-	}
-	return result
 }

@@ -113,3 +113,10 @@ func (s *SimpleRepositoryStorage) Thread() *repositories.ThreadRepository       
 func (s *SimpleRepositoryStorage) Severance() *repositories.SeveranceRepository       { return nil }
 func (s *SimpleRepositoryStorage) ModerationML() *repositories.ModerationMLRepository { return nil }
 func (s *SimpleRepositoryStorage) Quote() *repositories.QuoteRepository               { return nil }
+func (s *SimpleRepositoryStorage) MediaAnalytics() *repositories.MediaAnalyticsRepository {
+	return nil
+}
+func (s *SimpleRepositoryStorage) MediaPopularity() *repositories.MediaPopularityRepository {
+	return nil
+}
+func (s *SimpleRepositoryStorage) MediaSession() *repositories.MediaSessionRepository { return nil }
