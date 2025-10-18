@@ -18,7 +18,7 @@ HTTP Signatures provide a way to authenticate HTTP requests between ActivityPub 
 ```go
 import (
     "net/http"
-    "github.com/aron23/lesser/pkg/federation"
+    "github.com/equaltoai/lesser/pkg/federation"
 )
 
 func handleInbox(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +49,7 @@ func handleInbox(w http.ResponseWriter, r *http.Request) {
 ### Signing Outgoing Requests
 
 ```go
-func sendActivity(activity interface{}, recipientInbox string) error {
+func sendActivity(activity any, recipientInbox string) error {
     // Serialize the activity
     body, _ := json.Marshal(activity)
     

@@ -4,24 +4,26 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
 // SocialRecoveryService handles account recovery through trusted contacts
 type SocialRecoveryService struct {
-	store      storage.Storage
+	repos      StorageProvider
 	logger     *zap.Logger
 	fedService *RecoveryFederationService
 }
 
 // NewSocialRecoveryService creates a new social recovery service
-func NewSocialRecoveryService(store storage.Storage, logger *zap.Logger) *SocialRecoveryService {
+func NewSocialRecoveryService(repos StorageProvider, logger *zap.Logger) *SocialRecoveryService {
 	return &SocialRecoveryService{
-		store:  store,
+		repos:  repos,
 		logger: logger,
 		// fedService is optional and can be set separately
 	}
@@ -37,8 +39,8 @@ func (s *SocialRecoveryService) SetFederationService(fedService *RecoveryFederat
 // AddTrustee adds a trusted contact for social recovery
 func (s *SocialRecoveryService) AddTrustee(ctx context.Context, username, trusteeActorID string) error {
 	// Validate trustee exists (could be remote actor)
-	if trusteeActorID == "" {
-		return fmt.Errorf("trustee actor ID required")
+	if err := common.ValidateRequiredParam("trusteeActorID", trusteeActorID); err != nil {
+		return ErrTrusteeActorIDRequired
 	}
 
 	// Store trustee configuration
@@ -50,8 +52,12 @@ func (s *SocialRecoveryService) AddTrustee(ctx context.Context, username, truste
 	}
 
 	// Store in DynamoDB
-	if err := s.store.StoreTrustee(ctx, username, trustee); err != nil {
-		return fmt.Errorf("failed to store trustee: %w", err)
+	if err := s.repos.Recovery().StoreTrustee(ctx, username, trustee); err != nil {
+		s.logger.Error("failed to store trustee",
+			zap.String("username", username),
+			zap.String("trustee", trusteeActorID),
+			zap.Error(err))
+		return errors.Join(ErrTrusteeStorage, err)
 	}
 
 	s.logger.Info("adding recovery trustee",
@@ -65,8 +71,12 @@ func (s *SocialRecoveryService) AddTrustee(ctx context.Context, username, truste
 // RemoveTrustee removes a trusted contact
 func (s *SocialRecoveryService) RemoveTrustee(ctx context.Context, username, trusteeActorID string) error {
 	// Delete from DynamoDB
-	if err := s.store.DeleteTrustee(ctx, username, trusteeActorID); err != nil {
-		return fmt.Errorf("failed to delete trustee: %w", err)
+	if err := s.repos.Recovery().DeleteTrustee(ctx, username, trusteeActorID); err != nil {
+		s.logger.Error("failed to delete trustee",
+			zap.String("username", username),
+			zap.String("trustee", trusteeActorID),
+			zap.Error(err))
+		return errors.Join(ErrTrusteeDeletion, err)
 	}
 
 	s.logger.Info("removing recovery trustee",
@@ -78,7 +88,7 @@ func (s *SocialRecoveryService) RemoveTrustee(ctx context.Context, username, tru
 
 // GetTrustees returns all trustees for a user
 func (s *SocialRecoveryService) GetTrustees(ctx context.Context, username string) ([]*storage.TrusteeConfig, error) {
-	return s.store.GetTrustees(ctx, username)
+	return s.repos.Recovery().GetTrustees(ctx, username)
 }
 
 // InitiateRecovery starts the social recovery process
@@ -86,11 +96,14 @@ func (s *SocialRecoveryService) InitiateRecovery(ctx context.Context, username s
 	// Get user's trustees
 	trustees, err := s.GetTrustees(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get trustees: %w", err)
+		s.logger.Error("failed to get trustees",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, errors.Join(ErrTrusteeRetrieval, err)
 	}
 
 	if len(trustees) < 2 {
-		return nil, fmt.Errorf("insufficient trustees configured (minimum 2 required)")
+		return nil, ErrInsufficientTrustees
 	}
 
 	// Generate recovery request ID
@@ -99,7 +112,10 @@ func (s *SocialRecoveryService) InitiateRecovery(ctx context.Context, username s
 	// Generate recovery token (used after approval)
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		return nil, fmt.Errorf("failed to generate recovery token: %w", err)
+		s.logger.Error("failed to generate recovery token",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, errors.Join(ErrRecoveryTokenGeneration, err)
 	}
 	recoveryToken := base64.URLEncoding.EncodeToString(tokenBytes)
 
@@ -116,14 +132,19 @@ func (s *SocialRecoveryService) InitiateRecovery(ctx context.Context, username s
 		InitiatedAt:   time.Now(),
 		ExpiresAt:     time.Now().Add(48 * time.Hour), // 48 hour window
 		RequiredVotes: requiredVotes,
-		ReceivedVotes: make(map[string]bool),
+		ReceivedVotes: 0,
+		TrusteeVotes:  []string{},
 		RecoveryToken: recoveryToken,
 		Status:        "pending",
 	}
 
 	// Store recovery request
-	if err := s.store.StoreRecoveryRequest(ctx, request); err != nil {
-		return nil, fmt.Errorf("failed to store recovery request: %w", err)
+	if err := s.repos.Recovery().StoreRecoveryRequest(ctx, request); err != nil {
+		s.logger.Error("failed to store recovery request",
+			zap.String("username", username),
+			zap.String("request_id", requestID),
+			zap.Error(err))
+		return nil, errors.Join(ErrRecoveryRequestStorage, err)
 	}
 
 	// Notify all trustees
@@ -149,54 +170,77 @@ func (s *SocialRecoveryService) InitiateRecovery(ctx context.Context, username s
 // ConfirmRecovery processes a trustee's confirmation
 func (s *SocialRecoveryService) ConfirmRecovery(ctx context.Context, requestID, trusteeActorID string) error {
 	// Get recovery request
-	request, err := s.store.GetRecoveryRequest(ctx, requestID)
+	request, err := s.repos.Recovery().GetRecoveryRequest(ctx, requestID)
 	if err != nil {
-		return fmt.Errorf("failed to get recovery request: %w", err)
+		s.logger.Error("failed to get recovery request",
+			zap.String("request_id", requestID),
+			zap.String("trustee", trusteeActorID),
+			zap.Error(err))
+		return errors.Join(ErrRecoveryRequestRetrieval, err)
 	}
 
 	if request == nil {
-		return fmt.Errorf("recovery request not found")
+		return ErrRecoveryRequestNotFound
 	}
 
 	if request.Status != "pending" {
-		return fmt.Errorf("recovery request is not pending")
+		return ErrRecoveryRequestNotPending
 	}
 
 	if time.Now().After(request.ExpiresAt) {
 		request.Status = "expired"
-		s.store.UpdateRecoveryRequest(ctx, request)
-		return fmt.Errorf("recovery request expired")
+		if updateErr := s.repos.Recovery().UpdateRecoveryRequest(ctx, request); updateErr != nil {
+			// Log the error but still return the expiration error as primary
+			s.logger.Error("failed to update expired recovery request",
+				zap.String("request_id", requestID),
+				zap.Error(updateErr))
+		}
+		return ErrRecoveryRequestExpired
+	}
+
+	// Check if trustee already voted
+	for _, voter := range request.TrusteeVotes {
+		if voter == trusteeActorID {
+			return ErrTrusteeAlreadyVoted
+		}
 	}
 
 	// Record vote
-	if request.ReceivedVotes[trusteeActorID] {
-		return fmt.Errorf("trustee already voted")
-	}
-
-	request.ReceivedVotes[trusteeActorID] = true
+	request.TrusteeVotes = append(request.TrusteeVotes, trusteeActorID)
+	request.ReceivedVotes++
 
 	// Check if we have enough votes
-	if len(request.ReceivedVotes) >= request.RequiredVotes {
+	if request.ReceivedVotes >= request.RequiredVotes {
 		request.Status = "approved"
 
 		// Enable recovery token for password reset
 		if err := s.enableRecoveryToken(ctx, request); err != nil {
-			return fmt.Errorf("failed to enable recovery token: %w", err)
+			s.logger.Error("failed to enable recovery token",
+				zap.String("request_id", requestID),
+				zap.String("username", request.Username),
+				zap.Error(err))
+			return errors.Join(ErrRecoveryTokenStorage, err)
 		}
 
 		// Notify user (if they have other auth methods)
-		s.notifyRecoveryApproved(ctx, request)
+		if err := s.notifyRecoveryApproved(ctx, request); err != nil {
+			s.logger.Warn("failed to send recovery approval notification", zap.Error(err))
+		}
 	}
 
 	// Update request in DynamoDB
-	if err := s.store.UpdateRecoveryRequest(ctx, request); err != nil {
-		return fmt.Errorf("failed to update recovery request: %w", err)
+	if err := s.repos.Recovery().UpdateRecoveryRequest(ctx, request); err != nil {
+		s.logger.Error("failed to update recovery request",
+			zap.String("request_id", requestID),
+			zap.String("trustee", trusteeActorID),
+			zap.Error(err))
+		return errors.Join(ErrRecoveryRequestUpdate, err)
 	}
 
 	s.logger.Info("recovery vote recorded",
 		zap.String("request_id", requestID),
 		zap.String("trustee", trusteeActorID),
-		zap.Int("votes", len(request.ReceivedVotes)),
+		zap.Int("votes", request.ReceivedVotes),
 		zap.Int("required", request.RequiredVotes))
 
 	return nil
@@ -206,7 +250,10 @@ func (s *SocialRecoveryService) ConfirmRecovery(ctx context.Context, requestID, 
 
 func (s *SocialRecoveryService) generateRecoveryID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to time-based ID on crypto error (should not happen)
+		return fmt.Sprintf("recovery_%d", time.Now().UnixNano())
+	}
 	return base64.URLEncoding.EncodeToString(b)
 }
 
@@ -241,7 +288,7 @@ func (s *SocialRecoveryService) sendRecoveryRequest(ctx context.Context, request
 
 func (s *SocialRecoveryService) enableRecoveryToken(ctx context.Context, request *storage.SocialRecoveryRequest) error {
 	// Store recovery token with 24 hour expiration
-	recoveryData := map[string]interface{}{
+	recoveryData := map[string]any{
 		"username":  request.Username,
 		"token":     request.RecoveryToken,
 		"type":      "social_recovery",
@@ -252,7 +299,7 @@ func (s *SocialRecoveryService) enableRecoveryToken(ctx context.Context, request
 	recoveryKey := fmt.Sprintf("RECOVERY#%s", request.RecoveryToken)
 
 	// Store recovery token using existing recovery token storage
-	return s.store.StoreRecoveryToken(ctx, recoveryKey, recoveryData)
+	return s.repos.Recovery().StoreRecoveryToken(ctx, recoveryKey, recoveryData)
 }
 
 func (s *SocialRecoveryService) notifyRecoveryApproved(ctx context.Context, request *storage.SocialRecoveryRequest) error {

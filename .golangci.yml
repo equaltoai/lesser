@@ -1,0 +1,254 @@
+# golangci-lint configuration for Lesser project
+# Based on best practices for 2024-2025
+version: "2"
+
+run:
+  # Timeout for analysis
+  timeout: 10m
+  
+  # Exclude test files from analysis
+  tests: false
+  
+  # Build tags to apply
+  build-tags:
+    - integration
+  
+  # Directories to exclude (use absolute patterns)
+  skip-dirs:
+    - docs
+    - examples
+    - infra
+    - tests
+    - build
+    - bin
+    - dist
+    - vendor
+    - .git
+    - scripts
+    
+  # Files to exclude (patterns)
+  skip-files:
+    - ".*_generated\\.go$"
+    - "^scripts/.*\\.go$"
+
+output:
+  # Format: colored-line-number, line-number, json, checkstyle, code-climate
+  format: colored-line-number
+  
+  # Print lines of code with issue
+  print-issued-lines: true
+  
+  # Print linter name in the end
+  print-linter-name: true
+
+linters:
+  enable:
+    # Critical - bugs, errors, security
+    - govet         # Suspicious constructs
+    - staticcheck   # Advanced static analysis
+    - errcheck      # Unchecked errors
+    - bodyclose     # HTTP response body closure
+    - gosec         # Security problems
+    
+    # Code correctness
+    - ineffassign   # Unused assignments
+    - unused        # Unused code
+    
+    # Style and maintainability
+    - goconst       # Repeated strings
+    - misspell      # Spelling
+    - revive        # Style and convention enforcement
+    
+    # Complexity
+    - gocyclo       # Cyclomatic complexity
+    - gocognit      # Cognitive complexity
+    - dupl          # Code duplication
+    
+  disable:
+    # Too strict or noisy
+    - godox         # TODO/FIXME comments are OK
+    - wsl           # Whitespace rules too pedantic
+    - nlreturn      # Newline before return too pedantic
+    - exhaustive    # Not all switches need to be exhaustive
+    - exhaustruct   # Not all structs need all fields
+    - varnamelen    # Variable name length
+    - funlen        # Function length
+    - lll           # Line length
+    
+    # Documentation linters - enable later
+    - godot         # Comment periods
+
+linters-settings:
+  errcheck:
+    # Check type assertions
+    check-type-assertions: true
+    # Check for blank assignments
+    check-blank: false
+    
+  goconst:
+    # Minimum length of string constant
+    min-len: 3
+    # Minimum occurrences
+    min-occurrences: 3
+    
+  gocyclo:
+    # Minimal complexity to report
+    min-complexity: 15
+    
+  gocognit:
+    # Minimal cognitive complexity to report
+    min-complexity: 20
+    
+  gosec:
+    # Exclude specific rules
+    excludes:
+      - G104  # Unhandled errors (use errcheck instead)
+      - G101  # Hardcoded credentials (too many false positives)
+    
+  govet:
+    # Enable shadow checking
+    enable:
+      - shadow
+    settings:
+      shadow:
+        strict: false
+        
+  misspell:
+    # Locale to use
+    locale: US
+    
+  unused:
+    # Check exported fields
+    check-exported: true
+    
+  staticcheck:
+    # Go version
+    go: "1.21"
+    # Checks to run
+    checks: ["all"]
+  
+  revive:
+    # Disable some overly strict rules
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
+        arguments:
+          - "disableStutteringCheck"
+      - name: var-naming
+        severity: warning
+        disabled: false
+      - name: package-comments
+        severity: warning
+        disabled: true  # Too many false positives for Lambda handlers
+      - name: comment-spacings
+        severity: warning
+        disabled: true
+      - name: line-length-limit
+        severity: warning
+        disabled: true
+      - name: function-result-limit
+        severity: warning
+        disabled: true
+      - name: max-public-structs
+        severity: warning
+        disabled: true
+      - name: cognitive-complexity
+        severity: warning
+        disabled: true  # We're using gocognit for this
+      - name: cyclomatic
+        severity: warning
+        disabled: true  # We're using gocyclo for this
+      - name: confusing-naming
+        severity: warning
+        disabled: true
+      - name: add-constant
+        severity: warning
+        disabled: true  # We're using goconst for this
+
+  dupl:
+    # Token threshold to report duplication
+    threshold: 150
+
+issues:
+  # Maximum issues to report
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  
+  # Show only new issues
+  new: false
+  
+  # Use default excludes (vendor, etc) and add our own
+  exclude-dirs-use-default: true
+  exclude-dirs:
+    - scripts
+    - "^scripts/"
+  
+  # Exclude known false positives
+  exclude-rules:
+    # Scripts directory - development tools - exclude all linters
+    - path: scripts/
+      linters:
+        - gocognit
+        - revive
+        - goconst
+        - gocyclo
+        - gosec
+        - errcheck
+        - ineffassign
+        - unused
+        - staticcheck
+        - bodyclose
+        - govet
+        - misspell
+    
+    # Test files
+    - path: "_test\\.go"
+      linters:
+        - gocyclo
+        - gocognit
+        - errcheck
+        - gosec
+        - goconst
+    
+    # Generated files
+    - path: "generated\\.go"
+      linters:
+        - gocyclo
+        - gocognit
+        - errcheck
+        - gosec
+        - goconst
+        - gofmt
+        - goimports
+    
+    # Lambda main files - often have initialization complexity
+    - path: "cmd/.*/main\\.go"
+      linters:
+        - gocyclo
+        - gocognit
+      text: "cyclomatic complexity|cognitive complexity"
+    
+    # GraphQL generated
+    - path: "graph/generated"
+      linters:
+        - all
+    
+    # Exclude common false positives
+    - text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*print(f|ln)?|os\\.(Un)?Setenv). is not checked"
+      linters:
+        - errcheck
+    
+    # Exclude defer in loop - often intentional
+    - text: "defer in a loop"
+      linters:
+        - gocritic
+    
+    # G104: Errors unhandled - too many false positives
+    - text: "G104"
+      linters:
+        - gosec
+    
+severity:
+  # Default severity for all linters
+  default-severity: warning

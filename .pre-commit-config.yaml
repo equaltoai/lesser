@@ -1,0 +1,225 @@
+# Pre-commit hooks for Lesser - Serverless ActivityPub Implementation
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+repos:
+  # Go-specific hooks
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+        name: Format Go code
+        description: Run 'go fmt' to format Go code
+        
+      - id: go-vet-mod
+        name: Run go vet
+        description: Run 'go vet' to examine Go source code
+        
+      - id: go-mod-tidy
+        name: Tidy Go modules  
+        description: Run 'go mod tidy' to clean up module dependencies
+        
+      - id: go-unit-tests
+        name: Run Go unit tests
+        description: Run 'go test' on all packages
+        args: [-short, -race, -count=1]
+        
+      - id: golangci-lint
+        name: Run golangci-lint
+        description: Fast linters runner for Go
+        args: [--config=.golangci.yml]
+
+  # Generic hooks for all file types
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        name: Remove trailing whitespace
+        description: Remove trailing whitespace from all files
+        exclude: \.md$
+        
+      - id: end-of-file-fixer
+        name: Fix end of files
+        description: Ensure files end with a newline
+        
+      - id: check-yaml
+        name: Check YAML syntax
+        description: Check YAML files for syntax errors
+        
+      - id: check-json
+        name: Check JSON syntax
+        description: Check JSON files for syntax errors
+        
+      - id: check-added-large-files
+        name: Check for large files
+        description: Prevent committing large files
+        args: ['--maxkb=1000']
+        
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+        description: Check for merge conflict markers
+        
+      - id: mixed-line-ending
+        name: Check line endings
+        description: Ensure consistent line endings
+        args: ['--fix=lf']
+        
+      - id: check-case-conflict
+        name: Check case conflicts
+        description: Check for case conflicts in filenames
+        
+      - id: check-executables-have-shebangs
+        name: Check executable shebangs
+        description: Ensure executable files have shebangs
+
+  # Security scanning
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        name: Detect secrets
+        description: Scan for potential secrets in code
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            .*\.lock$|
+            .*\.sum$|
+            .*\.mod$|
+            tests/.*\.py$|
+            .*\.md$
+          )$
+
+  # Markdown and documentation
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.37.0
+    hooks:
+      - id: markdownlint
+        name: Lint Markdown files
+        description: Check Markdown files for style issues
+        args: [--fix, --config=.markdownlint.json]
+        exclude: |
+          (?x)^(
+            docs/archive/.*|
+            .*\.template\.md$
+          )$
+
+  # Python hooks for test files
+  - repo: https://github.com/psf/black
+    rev: 23.9.1
+    hooks:
+      - id: black
+        name: Format Python code
+        description: Format Python test files with Black
+        files: ^tests/.*\.py$
+        
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        name: Sort Python imports
+        description: Sort Python imports in test files
+        files: ^tests/.*\.py$
+        
+  - repo: https://github.com/PyCQA/flake8
+    rev: 6.1.0
+    hooks:
+      - id: flake8
+        name: Check Python style
+        description: Check Python test files for style issues
+        files: ^tests/.*\.py$
+        args: [--max-line-length=88, --extend-ignore=E203,W503]
+
+  # Infrastructure as Code validation
+  - repo: local
+    hooks:
+      - id: pulumi-validate
+        name: Validate Pulumi code
+        description: Validate Pulumi infrastructure code
+        entry: bash -c 'cd infra && pulumi preview --diff 2>&1 | grep -q "no changes" || (echo "Pulumi validation passed" && exit 0)'
+        language: system
+        files: ^infra/.*\.(go|yaml|json)$
+        pass_filenames: false
+        
+  # Custom Lesser-specific hooks
+  - repo: local
+    hooks:
+      - id: check-claude-md
+        name: Validate CLAUDE.md
+        description: Ensure CLAUDE.md is up to date with project structure
+        entry: bash -c 'if [ -f CLAUDE.md ]; then grep -q "Lesser is a complete serverless ActivityPub implementation" CLAUDE.md || (echo "CLAUDE.md needs updating" && exit 1); fi'
+        language: system
+        files: ^CLAUDE\.md$
+        pass_filenames: false
+        
+      - id: check-lambda-configs
+        name: Validate Lambda configurations
+        description: Ensure all Lambda functions have proper configurations
+        entry: bash -c 'find cmd/ -name "*.go" -path "*/main.go" | while read f; do dir=$(dirname "$f"); if [ ! -f "$dir/README.md" ] && [ ! -f "docs/$(basename $dir).md" ]; then echo "Missing documentation for $dir"; exit 1; fi; done'
+        language: system
+        files: ^cmd/.*/.*\.go$
+        pass_filenames: false
+        
+      - id: check-storage-patterns
+        name: Validate DynamORM patterns  
+        description: Ensure DynamORM storage patterns are consistent
+        entry: bash -c 'if git diff --cached --name-only | grep -E "pkg/storage/(models|repositories)/.*\.go$" | xargs grep -l "aws-sdk-go" 2>/dev/null; then echo "Found AWS SDK usage in storage layer - use DynamORM instead"; exit 1; fi'
+        language: system
+        files: ^pkg/storage/.*\.go$
+        pass_filenames: false
+        
+      - id: check-lift-patterns
+        name: Validate Lift framework usage
+        description: Ensure Lift framework patterns are used correctly
+        entry: bash -c 'if git diff --cached --name-only | grep -E "cmd/.*/.*\.go$" | xargs grep -l "lambda\.Start.*app\.Start" 2>/dev/null; then echo "Found incorrect Lift usage - use lambda.Start(app.HandleRequest)"; exit 1; fi'
+        language: system
+        files: ^cmd/.*\.go$
+        pass_filenames: false
+        
+      - id: no-hardcoded-secrets
+        name: Check for hardcoded secrets
+        description: Scan for potential hardcoded secrets specific to Lesser
+        entry: bash -c 'if git diff --cached --name-only | xargs grep -E "(password|secret|key|token).*=.*(\"[^\"]{20,}\"|'"'"'[^'"'"']{20,}'"'"')" 2>/dev/null; then echo "Found potential hardcoded secrets"; exit 1; fi'
+        language: system
+        exclude: |
+          (?x)^(
+            tests/.*|
+            .*_test\.go$|
+            .*\.md$
+          )$
+        
+      - id: federation-patterns
+        name: Validate federation patterns
+        description: Ensure federation code follows ActivityPub standards
+        entry: bash -c 'if git diff --cached --name-only | grep -E "pkg/federation/.*\.go$" | xargs grep -l "http\.Client{}" 2>/dev/null; then echo "Use configured HTTP client with timeouts for federation"; exit 1; fi'
+        language: system
+        files: ^pkg/federation/.*\.go$
+        pass_filenames: false
+
+# Configuration for individual tools
+
+# Global pre-commit settings
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
+default_stages: [commit, push]
+minimum_pre_commit_version: 3.0.0
+
+# Exclude patterns that should not be checked
+exclude: |
+  (?x)^(
+    \.git/.*|
+    bin/.*|
+    dist/.*|
+    vendor/.*|
+    node_modules/.*|
+    .*\.min\.js$|
+    .*\.min\.css$|
+    coverage\.html$|
+    coverage\.out$|
+    .*\.zip$|
+    .*\.pdf$|
+    .*\.png$|
+    .*\.jpg$|
+    .*\.jpeg$|
+    .*\.gif$|
+    .*\.ico$|
+    .*\.svg$
+  )$

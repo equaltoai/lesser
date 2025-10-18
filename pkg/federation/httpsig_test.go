@@ -34,9 +34,9 @@ func TestParseSignatureHeader(t *testing.T) {
 		},
 		{
 			name:   "minimal signature header",
-			header: `keyId="test-key",signature="dGVzdA=="`,
+			header: `keyId="https://example.com/actor#main-key",signature="dGVzdA=="`,
 			want: &HTTPSignature{
-				KeyID:     "test-key",
+				KeyID:     "https://example.com/actor#main-key",
 				Algorithm: "rsa-sha256",     // default
 				Headers:   []string{"date"}, // default
 				Signature: []byte("test"),
@@ -63,7 +63,7 @@ func TestParseSignatureHeader(t *testing.T) {
 		},
 		{
 			name:    "invalid base64 signature",
-			header:  `keyId="test-key",signature="invalid!!!base64"`,
+			header:  `keyId="https://example.com/actor#main-key",signature="invalid!!!base64"`,
 			want:    nil,
 			wantErr: true,
 		},
@@ -447,8 +447,144 @@ func TestInteroperability(t *testing.T) {
 	sig, err := ParseSignatureHeader(req.Header.Get("Signature"))
 	require.NoError(t, err)
 	assert.Equal(t, "https://example.com/users/bob#main-key", sig.KeyID)
-	assert.Equal(t, "rsa-sha256", sig.Algorithm)
+	// With enhanced signing, RSA keys now default to hs2019 for maximum compatibility
+	// but maintain backwards compatibility with rsa-sha256
+	assert.Contains(t, []string{"rsa-sha256", "hs2019"}, sig.Algorithm)
 	assert.Contains(t, sig.Headers, "(request-target)")
 	assert.Contains(t, sig.Headers, "host")
 	assert.Contains(t, sig.Headers, "date")
+}
+
+// Test backwards compatibility with RSA-SHA256
+func TestBackwardsCompatibilityRSASHA256(t *testing.T) {
+	privateKey, err := GenerateRSAKeyPair(2048)
+	require.NoError(t, err)
+	publicKey := &privateKey.PublicKey
+
+	// Create a test request
+	req := httptest.NewRequest("POST", "https://example.com/inbox", strings.NewReader(`{"type":"Note"}`))
+	req.Header.Set("Date", time.Now().UTC().Format(time.RFC1123))
+	req.Header.Set("Content-Type", "application/activity+json")
+	req.Host = "example.com"
+
+	// Test that legacy rsa-sha256 signatures are still verifiable
+	err = SignHTTPRequestWithAlgorithm(req, privateKey, "https://example.com/users/alice#main-key", "rsa-sha256")
+	require.NoError(t, err)
+
+	// Verify with enhanced verification
+	err = VerifyHTTPSignature(req, publicKey)
+	assert.NoError(t, err)
+
+	// Parse and check algorithm
+	sig, err := ParseSignatureHeader(req.Header.Get("Signature"))
+	require.NoError(t, err)
+	assert.Equal(t, "rsa-sha256", sig.Algorithm)
+}
+
+// Test enhanced algorithm support
+func TestEnhancedAlgorithmSupport(t *testing.T) {
+	privateKey, err := GenerateRSAKeyPair(2048)
+	require.NoError(t, err)
+	publicKey := &privateKey.PublicKey
+
+	algorithms := []string{
+		AlgorithmRSASHA256,
+		AlgorithmHS2019,
+		AlgorithmRSASHA512,
+	}
+
+	for _, algorithm := range algorithms {
+		t.Run(algorithm, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "https://example.com/inbox", strings.NewReader(`{"type":"Note"}`))
+			req.Header.Set("Date", time.Now().UTC().Format(time.RFC1123))
+			req.Header.Set("Content-Type", "application/activity+json")
+			req.Host = "example.com"
+
+			// Sign with specific algorithm
+			err = SignHTTPRequestWithAlgorithm(req, privateKey, "https://example.com/users/alice#main-key", algorithm)
+			require.NoError(t, err)
+
+			// Verify signature
+			err = VerifyHTTPSignature(req, publicKey)
+			assert.NoError(t, err)
+
+			// Check algorithm is preserved
+			sig, err := ParseSignatureHeader(req.Header.Get("Signature"))
+			require.NoError(t, err)
+			assert.Equal(t, algorithm, sig.Algorithm)
+		})
+	}
+}
+
+// Test key type detection
+func TestKeyTypeDetection(t *testing.T) {
+	privateKey, err := GenerateRSAKeyPair(2048)
+	require.NoError(t, err)
+	publicKey := &privateKey.PublicKey
+
+	// Test key type detection
+	assert.Equal(t, "RSA", DetectKeyType(privateKey))
+	assert.Equal(t, "RSA", DetectKeyType(publicKey))
+
+	// Test algorithm determination
+	algorithm := DetermineSigningAlgorithm(privateKey, false)
+	assert.Equal(t, AlgorithmHS2019, algorithm)
+
+	// Test legacy preference
+	legacyAlgorithm := DetermineSigningAlgorithm(privateKey, true)
+	assert.Equal(t, AlgorithmRSASHA256, legacyAlgorithm)
+}
+
+// Test interoperability with different server implementations
+func TestServerInteroperability(t *testing.T) {
+	privateKey, err := GenerateRSAKeyPair(2048)
+	require.NoError(t, err)
+	publicKey := &privateKey.PublicKey
+
+	testCases := []struct {
+		name      string
+		algorithm string
+		headers   []string
+	}{
+		{
+			name:      "Mastodon style",
+			algorithm: AlgorithmHS2019,
+			headers:   []string{"(request-target)", "host", "date", "digest"},
+		},
+		{
+			name:      "Pleroma style",
+			algorithm: AlgorithmRSASHA256,
+			headers:   []string{"(request-target)", "host", "date"},
+		},
+		{
+			name:      "Modern ActivityPub",
+			algorithm: AlgorithmHS2019,
+			headers:   []string{"(request-target)", "host", "date", "digest", "content-type"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"type":"Create","object":{"type":"Note","content":"Hello World"}}`
+			req := httptest.NewRequest("POST", "https://example.com/inbox", strings.NewReader(body))
+			req.Header.Set("Date", time.Now().UTC().Format(time.RFC1123))
+			req.Header.Set("Content-Type", "application/activity+json")
+			req.Header.Set("Digest", calculateDigest([]byte(body)))
+			req.Host = "example.com"
+
+			// Sign with specific algorithm
+			err = SignHTTPRequestWithAlgorithm(req, privateKey, "https://example.com/users/test#main-key", tc.algorithm)
+			require.NoError(t, err)
+
+			// Verify signature works
+			err = VerifyHTTPSignature(req, publicKey)
+			assert.NoError(t, err)
+
+			// Check signature format
+			sig, err := ParseSignatureHeader(req.Header.Get("Signature"))
+			require.NoError(t, err)
+			assert.Equal(t, tc.algorithm, sig.Algorithm)
+			assert.NotEmpty(t, sig.Signature)
+		})
+	}
 }

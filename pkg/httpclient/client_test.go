@@ -49,6 +49,9 @@ func TestSecureClient_BlocksPrivateIPs(t *testing.T) {
 	for _, url := range blockedURLs {
 		t.Run(url, func(t *testing.T) {
 			resp, err := client.Get(url)
+			if resp != nil {
+				defer func() { _ = resp.Body.Close() }()
+			}
 			assert.Error(t, err, "Expected error for URL: %s", url)
 			assert.Nil(t, resp, "Expected nil response for blocked URL: %s", url)
 			assert.Contains(t, err.Error(), "blocked", "Error should indicate request was blocked")
@@ -64,7 +67,7 @@ func TestSecureClient_AllowsPublicURLs(t *testing.T) {
 	// For now, let's verify that the client correctly blocks localhost
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	}))
 	defer server.Close()
 
@@ -72,6 +75,9 @@ func TestSecureClient_AllowsPublicURLs(t *testing.T) {
 
 	// Test that localhost URLs are blocked (as they should be)
 	resp, err := client.Get(server.URL)
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	assert.Error(t, err, "Should block localhost URLs")
 	assert.Contains(t, err.Error(), "private IP address not allowed")
 	assert.Nil(t, resp, "Should not return response for blocked URLs")
@@ -91,6 +97,9 @@ func TestSecureClient_BlocksRedirectsToPrivateIPs(t *testing.T) {
 	// The initial request to the test server will be blocked because
 	// httptest servers use localhost
 	resp, err := client.Get(server.URL)
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	assert.Error(t, err, "Should block localhost URLs")
 	assert.Contains(t, err.Error(), "blocked")
 	assert.Nil(t, resp, "Should not return response for blocked URL")
@@ -113,8 +122,10 @@ func TestSecureClient_WithContext(t *testing.T) {
 	// Try to make a request with canceled context
 	// Even though the URL would be blocked, context should be checked first
 	resp, err := client.GetWithContext(ctx, "http://example.com")
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	assert.Error(t, err, "Should error on canceled context")
-	_ = resp
 }
 
 func TestSecureClient_BlocksDNSRebinding(t *testing.T) {
@@ -133,10 +144,12 @@ func TestSecureClient_BlocksDNSRebinding(t *testing.T) {
 			// This test might pass or fail depending on actual DNS resolution
 			// The important thing is that if it resolves to a private IP, it should be blocked
 			resp, err := client.Get(url)
+			if resp != nil {
+				defer func() { _ = resp.Body.Close() }()
+			}
 			if err != nil {
 				assert.Contains(t, err.Error(), "blocked", "If blocked, should indicate security reason")
 			}
-			_ = resp
 		})
 	}
 }

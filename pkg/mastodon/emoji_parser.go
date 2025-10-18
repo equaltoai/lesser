@@ -6,7 +6,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 )
 
 // EmojiRegex matches emoji shortcodes in text
@@ -15,11 +17,11 @@ var EmojiRegex = regexp.MustCompile(`:([a-zA-Z0-9_]+):`)
 
 // EmojiParser handles parsing and replacing emoji shortcodes in content
 type EmojiParser struct {
-	store storage.Storage
+	store core.RepositoryStorage
 }
 
 // NewEmojiParser creates a new emoji parser
-func NewEmojiParser(store storage.Storage) *EmojiParser {
+func NewEmojiParser(store core.RepositoryStorage) *EmojiParser {
 	return &EmojiParser{
 		store: store,
 	}
@@ -34,7 +36,7 @@ type ParsedEmoji struct {
 // ParseEmojis extracts emoji shortcodes from content and looks them up
 func (p *EmojiParser) ParseEmojis(ctx context.Context, content string) ([]ParsedEmoji, error) {
 	matches := EmojiRegex.FindAllStringSubmatch(content, -1)
-	if len(matches) == 0 {
+	if err := common.ValidateSliceNotEmpty("matches", matches); err != nil {
 		return nil, nil
 	}
 
@@ -51,7 +53,7 @@ func (p *EmojiParser) ParseEmojis(ctx context.Context, content string) ([]Parsed
 			}
 
 			// Look up emoji in storage
-			emoji, err := p.store.GetCustomEmoji(ctx, shortcode)
+			emoji, err := p.store.Emoji().GetCustomEmoji(ctx, shortcode)
 			if err != nil {
 				// If emoji not found, skip it (leave as plain text)
 				if err == storage.ErrNotFound {
@@ -125,7 +127,7 @@ func (p *EmojiParser) ProcessContent(ctx context.Context, content string) (strin
 // Useful for validation or when you just need the shortcode list
 func ExtractShortcodes(content string) []string {
 	matches := EmojiRegex.FindAllStringSubmatch(content, -1)
-	if len(matches) == 0 {
+	if err := common.ValidateSliceNotEmpty("matches", matches); err != nil {
 		return nil
 	}
 

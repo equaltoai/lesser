@@ -6,12 +6,18 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/equaltoai/lesser/pkg/common"
+)
+
+const (
+	// HTTPScheme represents the HTTP URL scheme
+	HTTPScheme = "http"
+	// HTTPSScheme represents the HTTPS URL scheme
+	HTTPSScheme = "https"
 )
 
 var (
-	// Username: 1-30 chars, alphanumeric + underscore, no double underscore
-	usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9_]{0,28}[a-zA-Z0-9])?$`)
-
 	// Domain: valid hostname
 	domainRegex = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`)
 
@@ -19,92 +25,81 @@ var (
 	webfingerRegex = regexp.MustCompile(`^acct:([^@]+)@([^@]+)$`)
 )
 
+// ValidateUsername validates an ActivityPub username format
 func ValidateUsername(username string) error {
-	if username == "" {
-		return fmt.Errorf("username cannot be empty")
+	// Use the common validation function which includes all the same checks
+	if err := common.ValidateUsername(username); err != nil {
+		return err
 	}
 
-	if len(username) > 30 {
-		return fmt.Errorf("username too long (max 30 characters)")
-	}
-
-	if !usernameRegex.MatchString(username) {
-		return fmt.Errorf("username can only contain letters, numbers, and underscores")
-	}
-
-	// Check for reserved usernames
-	reserved := []string{"admin", "root", "system", "api", "well-known"}
-	lowerUsername := strings.ToLower(username)
-	for _, r := range reserved {
-		if lowerUsername == r {
-			return fmt.Errorf("username '%s' is reserved", username)
-		}
-	}
-
+	// Additional ActivityPub-specific validation can be added here if needed
 	return nil
 }
 
+// ValidateDomain validates a domain name format
 func ValidateDomain(domain string) error {
-	if domain == "" {
-		return fmt.Errorf("domain cannot be empty")
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return ErrEmptyDomain
 	}
 
 	// Check IP addresses are not used as domains
 	if net.ParseIP(domain) != nil {
-		return fmt.Errorf("IP addresses cannot be used as domains")
+		return ErrIPAddressAsDomain
 	}
 
 	if !domainRegex.MatchString(domain) {
-		return fmt.Errorf("invalid domain format")
+		return ErrInvalidDomainFormat
 	}
 
 	// Additional checks
 	if strings.Contains(domain, "..") {
-		return fmt.Errorf("invalid domain: consecutive dots")
+		return ErrConsecutiveDots
 	}
 
 	return nil
 }
 
+// ValidateActorID validates an ActivityPub actor ID URL
 func ValidateActorID(actorID string) error {
 	u, err := url.Parse(actorID)
 	if err != nil {
-		return fmt.Errorf("invalid actor ID URL: %w", err)
+		return fmt.Errorf("%w: %s", ErrInvalidActorIDURL, err.Error())
 	}
 
 	// Must be HTTPS in production
-	if u.Scheme != "https" && u.Scheme != "http" {
-		return fmt.Errorf("actor ID must use HTTP(S)")
+	if u.Scheme != HTTPSScheme && u.Scheme != HTTPScheme {
+		return ErrActorIDScheme
 	}
 
 	// Validate domain part
 	if err := ValidateDomain(u.Hostname()); err != nil {
-		return fmt.Errorf("invalid domain in actor ID: %w", err)
+		return fmt.Errorf("%w: %w", ErrInvalidDomainInActorID, err)
 	}
 
 	// Path must not be empty
 	if u.Path == "" || u.Path == "/" {
-		return fmt.Errorf("actor ID must have a path")
+		return ErrActorIDMissingPath
 	}
 
 	return nil
 }
 
+// ValidateWebfinger validates a WebFinger resource identifier
 func ValidateWebfinger(resource string) error {
 	matches := webfingerRegex.FindStringSubmatch(resource)
 	if len(matches) != 3 {
-		return fmt.Errorf("invalid webfinger format (expected acct:user@domain)")
+		return ErrInvalidWebfingerFormat
 	}
 
 	username := matches[1]
 	domain := matches[2]
 
 	if err := ValidateUsername(username); err != nil {
-		return fmt.Errorf("invalid username in webfinger: %w", err)
+		return fmt.Errorf("%w: %w", ErrInvalidUsernameInWebfinger, err)
 	}
 
 	if err := ValidateDomain(domain); err != nil {
-		return fmt.Errorf("invalid domain in webfinger: %w", err)
+		return fmt.Errorf("%w: %w", ErrInvalidDomainInWebfinger, err)
 	}
 
 	return nil

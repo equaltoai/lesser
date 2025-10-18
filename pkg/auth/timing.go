@@ -72,12 +72,12 @@ func padToLength(s string, length int) string {
 }
 
 // secureRandInt generates a cryptographically secure random integer up to max
-func secureRandInt(max int) int {
-	if max <= 0 {
+func secureRandInt(maxVal int) int {
+	if maxVal <= 0 {
 		return 0
 	}
 
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(maxVal)))
 	if err != nil {
 		// Fallback to 0 on error
 		return 0

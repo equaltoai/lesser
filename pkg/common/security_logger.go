@@ -1,4 +1,4 @@
-package common
+package common // nolint:revive // "common" package name is acceptable for shared utilities
 
 import (
 	"time"
@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// SecurityLogger is the global logger for security-related events
 var SecurityLogger *zap.Logger
 
 // Security event types
@@ -20,6 +21,8 @@ const (
 	EventPasswordFailure    = "password_failure"
 	EventAccountLocked      = "account_locked"
 	EventTokenRevoked       = "token_revoked"
+	EventTokenFamilyRevoked = "token_family_revoked" // #nosec G101 - not a credential
+	EventUserTokensRevoked  = "user_tokens_revoked"  // #nosec G101 - not a credential
 	EventSecurityAlert      = "security_alert"
 )
 
@@ -29,7 +32,7 @@ func InitSecurityLogger() {
 	config.OutputPaths = []string{"stdout"}
 
 	// Add security-specific fields
-	config.InitialFields = map[string]interface{}{
+	config.InitialFields = map[string]any{
 		"service": "lesser",
 		"type":    "security",
 	}
@@ -100,7 +103,7 @@ func LogRateLimit(userID string, ip string, endpoint string, limit int) {
 }
 
 // LogSuspiciousActivity logs general suspicious activity
-func LogSuspiciousActivity(activity string, userID string, ip string, details map[string]interface{}) {
+func LogSuspiciousActivity(activity string, userID string, ip string, details map[string]any) {
 	fields := []zap.Field{
 		zap.String("activity", activity),
 		zap.String("user_id", userID),

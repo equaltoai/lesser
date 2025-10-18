@@ -37,8 +37,8 @@ type FederationBudget struct {
 	InstanceOverrides    map[string]float64 `json:"instance_overrides"`
 }
 
-// CostThresholds defines alerting thresholds
-type CostThresholds struct {
+// Thresholds defines alerting thresholds
+type Thresholds struct {
 	WarnThresholdPercent  float64 `json:"warn_threshold_percent"`  // e.g., 80
 	BlockThresholdPercent float64 `json:"block_threshold_percent"` // e.g., 95
 }
@@ -46,6 +46,7 @@ type CostThresholds struct {
 // FederationTier represents different service tiers for federated instances
 type FederationTier string
 
+// Federation tier constants
 const (
 	TierPremium  FederationTier = "premium"  // Unlimited, priority processing
 	TierStandard FederationTier = "standard" // Normal limits
@@ -73,6 +74,8 @@ type RetryPolicy struct {
 }
 
 // CostMetrics holds aggregated cost metrics
+//
+//nolint:revive // Cost prefix clarifies this is for cost metrics
 type CostMetrics struct {
 	Period         string             `json:"period" dynamodbav:"Period"` // YYYY-MM-DD
 	TotalCostUSD   float64            `json:"total_cost_usd" dynamodbav:"TotalCostUSD"`
@@ -117,36 +120,10 @@ type Controller interface {
 	IsHealthy(ctx context.Context, instance string) (bool, error)
 }
 
-// CostCalculator provides cost estimation
-type CostCalculator interface {
-	EstimateDataTransferCost(bytes int64, region string) float64
-	EstimateLambdaCost(invocations int, durationMs int64) float64
-	EstimateDynamoDBCost(readUnits, writeUnits int) float64
-	EstimateS3Cost(storageGB, requestCount int64) float64
-}
-
-// Default retry policy
+// DefaultRetryPolicy defines the default retry configuration
 var DefaultRetryPolicy = &RetryPolicy{
 	MaxRetries:     3,
 	InitialBackoff: 1 * time.Second,
 	MaxBackoff:     30 * time.Second,
 	BackoffFactor:  2.0,
 }
-
-// AWS pricing constants (us-east-1)
-const (
-	// Data transfer costs per GB
-	DataTransferCostPerGB = 0.09
-
-	// Lambda costs
-	LambdaCostPerMillionRequests = 0.20
-	LambdaCostPerGBSecond        = 0.0000166667
-
-	// DynamoDB costs
-	DynamoDBReadCostPerMillion  = 0.25
-	DynamoDBWriteCostPerMillion = 1.25
-
-	// S3 costs
-	S3StorageCostPerGB       = 0.023
-	S3RequestCostPerThousand = 0.0004
-)

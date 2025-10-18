@@ -8,7 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/pay-theory/dynamorm/pkg/core"
+	"go.uber.org/zap"
 )
 
 // CSRF-related errors
@@ -45,13 +47,7 @@ func NewMemoryCSRFStore() *MemoryCSRFStore {
 		tokens: make(map[string]CSRFToken),
 	}
 
-	// Start cleanup goroutine
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		for range ticker.C {
-			store.CleanExpired()
-		}
-	}()
+	// Note: Removed polling goroutine - cleanup is now handled manually or by TTL in production stores
 
 	return store
 }
@@ -139,12 +135,12 @@ func (m *CSRFManager) GenerateToken(userID string) (string, error) {
 
 // ValidateToken checks if a CSRF token is valid for a user
 func (m *CSRFManager) ValidateToken(token string, userID string) error {
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return ErrMissingCSRF
 	}
 
-	// For DynamoDB store, use ValidateAndConsume for atomic operation
-	if dynamoStore, ok := m.store.(*DynamoDBCSRFStore); ok {
+	// For DynamORM store, use ValidateAndConsume for atomic operation
+	if dynamoStore, ok := m.store.(*DynamORMCSRFStore); ok {
 		return dynamoStore.ValidateAndConsume(token, userID)
 	}
 
@@ -160,7 +156,7 @@ func (m *CSRFManager) ValidateToken(token string, userID string) error {
 	}
 
 	// Single use - delete after validation
-	m.store.Delete(token)
+	_ = m.store.Delete(token)
 
 	return nil
 }
@@ -177,11 +173,11 @@ func CSRFMiddleware(manager *CSRFManager) func(http.HandlerFunc) http.HandlerFun
 
 			// Extract CSRF token from header or form
 			csrfToken := r.Header.Get("X-CSRF-Token")
-			if csrfToken == "" {
+			if err := common.ValidateRequiredParam("csrfToken", csrfToken); err != nil {
 				csrfToken = r.FormValue("csrf_token")
 			}
 
-			if csrfToken == "" {
+			if err := common.ValidateRequiredParam("csrfToken", csrfToken); err != nil {
 				// Log CSRF failure
 				claims, _ := GetClaims(r.Context())
 				userID := ""
@@ -238,12 +234,18 @@ func GenerateCSRFTokenHandler(manager *CSRFManager) http.HandlerFunc {
 		if err != nil {
 			statusCode, message := common.HandleError(nil, common.ErrInternal(err))
 			w.WriteHeader(statusCode)
-			w.Write([]byte(message))
+			_, _ = w.Write([]byte(message))
 			return
 		}
 
 		// Return token
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"csrf_token": "` + token + `"}`))
+		_, _ = w.Write([]byte(`{"csrf_token": "` + token + `"}`))
 	}
+}
+
+// NewCSRFManagerWithDynamORM creates a CSRF manager with DynamORM store
+func NewCSRFManagerWithDynamORM(db core.DB, tableName string, logger *zap.Logger) *CSRFManager {
+	store := NewDynamORMCSRFStore(db, tableName, logger)
+	return &CSRFManager{store: store}
 }

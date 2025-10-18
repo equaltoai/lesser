@@ -2,11 +2,27 @@ package moderation
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
+	"go.uber.org/zap"
+)
+
+// Moderation action constants
+const (
+	actionAllow    = "allow"
+	actionFlag     = "flag"
+	actionHide     = "hide"
+	actionEscalate = "escalate"
+	actionBlock    = "block"
 )
 
 // ModerationStorage defines storage operations needed by the moderator
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific storage
 type ModerationStorage interface {
 	StoreModerationDecision(ctx context.Context, decision *ModerationResult) error
 	UpdateModerationDecision(ctx context.Context, contentID string, review *ModerationReview) error
@@ -37,14 +53,14 @@ func (m *Moderator) ModerateContent(ctx context.Context, content *ContentSubmiss
 		ContentType: content.Type,
 		SubmittedAt: content.SubmittedAt,
 		ProcessedAt: time.Now(),
-		Action:      "allow", // Default to allow
+		Action:      actionAllow, // Default to allow
 		Confidence:  0.0,
 	}
 
 	// Step 1: Pattern matching
 	patternMatches, err := m.moderateWithPatterns(ctx, content)
 	if err != nil {
-		return nil, fmt.Errorf("pattern moderation failed: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrPatternModerationFailed, err)
 	}
 	result.PatternMatches = patternMatches
 
@@ -52,7 +68,9 @@ func (m *Moderator) ModerateContent(ctx context.Context, content *ContentSubmiss
 	aiAnalysis, err := m.moderateWithAI(ctx, content)
 	if err != nil {
 		// AI failure shouldn't block moderation, log and continue
-		fmt.Printf("AI moderation failed for %s: %v\n", content.ID, err)
+		zap.L().Error("AI moderation failed",
+			zap.String("content_id", content.ID),
+			zap.Error(err))
 	} else {
 		result.AIAnalysis = aiAnalysis
 	}
@@ -62,7 +80,7 @@ func (m *Moderator) ModerateContent(ctx context.Context, content *ContentSubmiss
 
 	// Step 4: Record moderation decision
 	if err := m.recordModerationDecision(ctx, result); err != nil {
-		fmt.Printf("Failed to record moderation decision: %v\n", err)
+		zap.L().Error("failed to record moderation decision", zap.Error(err))
 	}
 
 	return result, nil
@@ -79,7 +97,7 @@ func (m *Moderator) moderateWithPatterns(ctx context.Context, content *ContentSu
 	}
 
 	// Generate content hashes if not provided
-	if contentToModerate.TextHash == "" && content.Text != "" {
+	if err := common.ValidateRequiredParam("contentToModerate.TextHash", contentToModerate.TextHash); err != nil && content.Text != "" {
 		contentToModerate.TextHash = generateTextHash(content.Text)
 	}
 
@@ -99,7 +117,7 @@ func (m *Moderator) moderateWithAI(ctx context.Context, content *ContentSubmissi
 
 		textAnalysis, err := m.aiAnalyzer.AnalyzeText(ctx, textContent)
 		if err != nil {
-			return nil, fmt.Errorf("text analysis failed: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrTextAnalysisFailed, err)
 		}
 		analysis.TextAnalysis = textAnalysis
 	}
@@ -114,7 +132,7 @@ func (m *Moderator) moderateWithAI(ctx context.Context, content *ContentSubmissi
 
 		imageAnalysis, err := m.aiAnalyzer.AnalyzeImage(ctx, imageContent)
 		if err != nil {
-			return nil, fmt.Errorf("image analysis failed: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrImageAnalysisFailed, err)
 		}
 		analysis.ImageAnalysis = imageAnalysis
 	}
@@ -129,7 +147,7 @@ func (m *Moderator) calculateFinalDecision(result *ModerationResult) {
 	var reasons []string
 
 	// Pattern matching contribution
-	if len(result.PatternMatches) > 0 {
+	if err := common.ValidateSliceNotEmpty("result.PatternMatches", result.PatternMatches); err == nil {
 		patternScore, patternAction := m.evaluatePatternMatches(result.PatternMatches)
 		scores = append(scores, patternScore)
 		actions = append(actions, patternAction)
@@ -159,7 +177,7 @@ func (m *Moderator) calculateFinalDecision(result *ModerationResult) {
 	}
 
 	// Calculate final score (weighted average)
-	if len(scores) > 0 {
+	if err := common.ValidateSliceNotEmpty("scores", scores); err == nil {
 		var totalWeight float64
 		var weightedSum float64
 
@@ -190,8 +208,8 @@ func (m *Moderator) calculateFinalDecision(result *ModerationResult) {
 
 // evaluatePatternMatches evaluates pattern match results
 func (m *Moderator) evaluatePatternMatches(matches []*PatternMatch) (float64, string) {
-	if len(matches) == 0 {
-		return 0.0, "allow"
+	if err := common.ValidateSliceNotEmpty("matches", matches); err != nil {
+		return 0.0, actionAllow
 	}
 
 	var maxScore float64
@@ -217,7 +235,7 @@ func (m *Moderator) evaluatePatternMatches(matches []*PatternMatch) (float64, st
 // evaluateAIAnalysis evaluates AI analysis results
 func (m *Moderator) evaluateAIAnalysis(analysis *AIAnalysisResult) (float64, string) {
 	var maxScore float64
-	action := "allow"
+	action := actionAllow
 
 	if analysis.TextAnalysis != nil {
 		score := analysis.TextAnalysis.ModerationScore
@@ -235,11 +253,11 @@ func (m *Moderator) evaluateAIAnalysis(analysis *AIAnalysisResult) (float64, str
 
 	// Determine action based on score
 	if maxScore >= 80 {
-		action = "block"
+		action = actionBlock
 	} else if maxScore >= 60 {
-		action = "escalate"
+		action = actionEscalate
 	} else if maxScore >= 40 {
-		action = "flag"
+		action = actionFlag
 	}
 
 	return maxScore, action
@@ -247,20 +265,20 @@ func (m *Moderator) evaluateAIAnalysis(analysis *AIAnalysisResult) (float64, str
 
 // determineHighestSeverityAction determines the most restrictive action
 func (m *Moderator) determineHighestSeverityAction(actions []string) string {
-	if len(actions) == 0 {
-		return "allow"
+	if err := common.ValidateSliceNotEmpty("actions", actions); err != nil {
+		return actionAllow
 	}
 
 	actionSeverity := map[string]int{
-		"allow":    0,
-		"flag":     1,
-		"hide":     2,
-		"escalate": 3,
-		"block":    4,
+		actionAllow:    0,
+		actionFlag:     1,
+		actionHide:     2,
+		actionEscalate: 3,
+		actionBlock:    4,
 	}
 
 	highestSeverity := 0
-	result := "allow"
+	result := actionAllow
 
 	for _, action := range actions {
 		if severity, exists := actionSeverity[action]; exists && severity > highestSeverity {
@@ -280,7 +298,7 @@ func (m *Moderator) calculateConfidence(actions []string, scores []float64) floa
 
 	// Check action agreement
 	actionAgreement := true
-	if len(actions) > 1 {
+	if err := common.ValidateSliceNotEmpty("actions", actions); err == nil && len(actions) > 1 {
 		firstAction := actions[0]
 		for _, action := range actions[1:] {
 			if action != firstAction {
@@ -292,7 +310,7 @@ func (m *Moderator) calculateConfidence(actions []string, scores []float64) floa
 
 	// Check score similarity
 	scoreAgreement := true
-	if len(scores) > 1 {
+	if err := common.ValidateSliceNotEmpty("scores", scores); err == nil && len(scores) > 1 {
 		var scoreVariance float64
 		var scoreMean float64
 
@@ -328,16 +346,16 @@ func (m *Moderator) generateRecommendations(result *ModerationResult) []string {
 	var recommendations []string
 
 	switch result.Action {
-	case "block":
+	case actionBlock:
 		recommendations = append(recommendations, "Content blocked - remove immediately")
 		recommendations = append(recommendations, "Consider user suspension if repeat offense")
-	case "escalate":
+	case actionEscalate:
 		recommendations = append(recommendations, "Escalate to human moderator for review")
 		recommendations = append(recommendations, "Monitor user activity closely")
-	case "flag":
+	case actionFlag:
 		recommendations = append(recommendations, "Flag for moderator attention")
 		recommendations = append(recommendations, "Consider content warning")
-	case "hide":
+	case actionHide:
 		recommendations = append(recommendations, "Hide content from public view")
 		recommendations = append(recommendations, "Allow appeal process")
 	}
@@ -376,7 +394,7 @@ func (m *Moderator) recordModerationDecision(ctx context.Context, result *Modera
 		Recommendations: result.Recommendations,
 	}
 
-	// Store decision (this would need to be implemented in storage layer)
+	// Store decision in the database for audit trail and effectiveness tracking
 	return m.storage.StoreModerationDecision(ctx, decision)
 }
 
@@ -391,13 +409,15 @@ func (m *Moderator) GetModerationQueue(ctx context.Context, filter *ModerationFi
 func (m *Moderator) ReviewModerationDecision(ctx context.Context, review *ModerationReview) error {
 	// Update the original decision
 	if err := m.storage.UpdateModerationDecision(ctx, review.ContentID, review); err != nil {
-		return fmt.Errorf("failed to update moderation decision: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToUpdateModerationDecision, err)
 	}
 
 	// Update pattern effectiveness if pattern was involved
 	for patternID, feedback := range review.PatternFeedback {
 		if err := m.patternManager.UpdatePatternStats(ctx, patternID, feedback.WasMatch, feedback.WasFalsePositive); err != nil {
-			fmt.Printf("Failed to update pattern stats for %s: %v\n", patternID, err)
+			zap.L().Error("failed to update pattern stats",
+				zap.String("pattern_id", patternID),
+				zap.Error(err))
 		}
 	}
 
@@ -407,23 +427,29 @@ func (m *Moderator) ReviewModerationDecision(ctx context.Context, review *Modera
 // Helper functions
 
 func generateTextHash(text string) string {
-	// Simple hash generation - in production, use a proper hash function
-	return fmt.Sprintf("hash_%d", len(text))
+	// Use SHA-256 to create a cryptographically secure hash of the text
+	hash := sha256.Sum256([]byte(text))
+	// Return hex-encoded hash for content identification and deduplication
+	return hex.EncodeToString(hash[:])
 }
 
 // Types for moderation system
 
+// ContentSubmission represents content submitted for moderation
 type ContentSubmission struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"` // post/comment/message/profile
-	Text        string                 `json:"text,omitempty"`
-	ImageURL    string                 `json:"image_url,omitempty"`
-	ImageBytes  []byte                 `json:"-"`
-	Author      string                 `json:"author"`
-	SubmittedAt time.Time              `json:"submitted_at"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	ID          string         `json:"id"`
+	Type        string         `json:"type"` // post/comment/message/profile
+	Text        string         `json:"text,omitempty"`
+	ImageURL    string         `json:"image_url,omitempty"`
+	ImageBytes  []byte         `json:"-"`
+	Author      string         `json:"author"`
+	SubmittedAt time.Time      `json:"submitted_at"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
+// ModerationResult represents the result of content moderation
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific result
 type ModerationResult struct {
 	ContentID       string            `json:"content_id"`
 	ContentType     string            `json:"content_type"`
@@ -438,11 +464,15 @@ type ModerationResult struct {
 	ProcessedAt     time.Time         `json:"processed_at"`
 }
 
+// AIAnalysisResult represents AI analysis results for moderation
 type AIAnalysisResult struct {
 	TextAnalysis  *TextAnalysis  `json:"text_analysis,omitempty"`
 	ImageAnalysis *ImageAnalysis `json:"image_analysis,omitempty"`
 }
 
+// ModerationFilter represents filters for querying moderation results
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific filter
 type ModerationFilter struct {
 	Action      string    `json:"action,omitempty"`
 	MinScore    float64   `json:"min_score,omitempty"`
@@ -453,6 +483,9 @@ type ModerationFilter struct {
 	Limit       int       `json:"limit,omitempty"`
 }
 
+// ModerationQueueItem represents an item in the moderation queue
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific queue item
 type ModerationQueueItem struct {
 	ContentID   string    `json:"content_id"`
 	ContentType string    `json:"content_type"`
@@ -463,6 +496,9 @@ type ModerationQueueItem struct {
 	Priority    string    `json:"priority"`
 }
 
+// ModerationReview represents a human review of moderated content
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific review
 type ModerationReview struct {
 	ContentID       string                      `json:"content_id"`
 	ReviewerID      string                      `json:"reviewer_id"`
@@ -473,6 +509,7 @@ type ModerationReview struct {
 	ReviewedAt      time.Time                   `json:"reviewed_at"`
 }
 
+// PatternFeedback represents feedback on pattern match accuracy
 type PatternFeedback struct {
 	WasMatch         bool `json:"was_match"`
 	WasFalsePositive bool `json:"was_false_positive"`

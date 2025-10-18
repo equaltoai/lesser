@@ -1,46 +1,50 @@
+// Package main implements the streaming Lambda function for handling WebSocket connections and real-time streaming.
 package main
+
+/*
+Streaming Service - WebSocket Handler
+
+This Lambda function handles WebSocket connections for real-time streaming.
+It manages WebSocket connection lifecycle and stream subscriptions.
+
+Migrated to use standardized Lambda initialization and Lift framework.
+*/
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/middleware"
+	"github.com/equaltoai/lesser/pkg/services"
+	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/equaltoai/lesser/pkg/streaming/handlers"
 )
-
-// StreamConnection represents a WebSocket connection with user context
-type StreamConnection struct {
-	PK           string    `json:"PK" dynamodbav:"PK"`
-	SK           string    `json:"SK" dynamodbav:"SK"`
-	ConnectionID string    `json:"ConnectionId" dynamodbav:"ConnectionId"`
-	UserID       string    `json:"UserId" dynamodbav:"UserId"`
-	Username     string    `json:"Username" dynamodbav:"Username"`
-	Streams      []string  `json:"Streams" dynamodbav:"Streams"` // subscribed streams
-	Established  time.Time `json:"Established" dynamodbav:"Established"`
-	LastActivity time.Time `json:"LastActivity" dynamodbav:"LastActivity"`
-	TTL          int64     `json:"TTL" dynamodbav:"TTL"`
-}
 
 // StreamMessage represents a message sent over WebSocket
 type StreamMessage struct {
-	Type    string                 `json:"type"`
-	Stream  string                 `json:"stream,omitempty"`
-	Event   string                 `json:"event,omitempty"`
-	Payload map[string]interface{} `json:"payload,omitempty"`
+	Type    string         `json:"type"`
+	Stream  string         `json:"stream,omitempty"`
+	Event   string         `json:"event,omitempty"`
+	Payload map[string]any `json:"payload,omitempty"`
 }
 
 // StreamEvent represents an event to be streamed
@@ -50,84 +54,184 @@ type StreamEvent struct {
 	Stream  []string        `json:"stream"` // streams this event should go to
 }
 
+// StreamingHandler handles WebSocket streaming connections using DynamORM and Lift
+type StreamingHandler struct {
+	userRepo        *repositories.UserRepository
+	connectionRepo  *repositories.StreamingConnectionRepository
+	costTracker     *repositories.WebSocketCostTracker
+	logger          *zap.Logger
+	cfg             *config.Config
+	awsConfig       aws.Config
+	apiClient       *apigatewaymanagementapi.Client
+	commandRouter   *streaming.CommandRouter
+	serviceRegistry *services.Registry
+	storageFactory  core.RepositoryStorage
+}
+
+// Global variables for standardized Lambda initialization
 var (
-	dynamoClient       *dynamodb.Client
-	apiClient          *apigatewaymanagementapi.Client
-	globalCfg          aws.Config
-	connectionsTable   string
-	subscriptionsTable string
-	log                *zap.Logger
-	domain             string
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     core.RepositoryStorage
+	handler   *StreamingHandler
 )
 
 func init() {
-	// Initialize logger
-	log = common.Logger()
+	if common.RunningUnitTests() {
+		return
+	}
+	// Standardized Lambda initialization for streaming API
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "streaming",
+		LambdaType:  common.LambdaTypeAPI, // WebSocket/HTTP streaming endpoints
+	})
 
-	// Initialize AWS clients
-	var err error
-	globalCfg, err = config.LoadDefaultConfig(context.Background())
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+
+	// Initialize with API-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		log.Fatal("failed to load AWS config", zap.Error(err))
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
-	dynamoClient = dynamodb.NewFromConfig(globalCfg)
+	// Streaming-specific initialization
+	db := lambdaCtx.DynamoDB.(dynamormCore.DB)
+	tableName := cfg.DynamoTableName
 
-	// Get environment variables
-	connectionsTable = os.Getenv("CONNECTIONS_TABLE")
-	if connectionsTable == "" {
+	connectionsTable := cfg.ConnectionsTable
+	if err := common.ValidateRequiredParam("connections_table", connectionsTable); err != nil {
 		connectionsTable = "lesser-streaming-connections"
 	}
 
-	subscriptionsTable = os.Getenv("SUBSCRIPTIONS_TABLE")
-	if subscriptionsTable == "" {
+	subscriptionsTable := cfg.SubscriptionsTable
+	if err := common.ValidateRequiredParam("subscriptions_table", subscriptionsTable); err != nil {
 		subscriptionsTable = "lesser-streaming-subscriptions"
 	}
 
-	domain = os.Getenv("DOMAIN")
-	if domain == "" {
-		log.Fatal("DOMAIN environment variable not set")
+	userRepo := repositories.NewUserRepository(db, tableName, logger)
+	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, logger, nil)
+
+	// Initialize WebSocket cost tracking
+	costRepo := repositories.NewWebSocketCostRepository(db, tableName, logger, nil)
+	costTracker := repositories.NewWebSocketCostTracker(costRepo, logger)
+
+	// Initialize service registry
+	publisher := streaming.NewMockPublisher() // Use mock publisher for Lambda
+
+	// Convert config to ServiceConfig
+	serviceConfig := &services.ServiceConfig{
+		BaseURL:   cfg.Domain,
+		JWTSecret: cfg.JWTSecret,
+	}
+
+	serviceRegistry, err := services.NewRegistry(
+		services.WithStorage(repos),
+		services.WithPublisher(publisher),
+		services.WithLogger(logger),
+		services.WithConfig(serviceConfig),
+	)
+	if err != nil {
+		logger.Fatal("failed to create service registry", zap.Error(err))
+	}
+
+	// Initialize command router and register handlers
+	commandRouter := streaming.NewCommandRouter(logger)
+
+	// Register command handlers
+	statusHandler := handlers.NewStatusCommandHandlerV2(serviceRegistry.Notes(), logger)
+	accountHandler := handlers.NewAccountCommandHandler(serviceRegistry.Accounts(), logger)
+	relationshipHandler := handlers.NewRelationshipCommandHandler(serviceRegistry.Relationships(), serviceRegistry.Accounts(), logger)
+	systemHandler := handlers.NewSystemCommandHandler(
+		serviceRegistry.Notes(),
+		serviceRegistry.Lists(),
+		serviceRegistry.Media(),
+		serviceRegistry.Notifications(),
+		logger,
+	)
+
+	commandRouter.RegisterHandler(statusHandler)
+	commandRouter.RegisterHandler(accountHandler)
+	commandRouter.RegisterHandler(relationshipHandler)
+	commandRouter.RegisterHandler(systemHandler)
+
+	// Create handler instance
+	handler = &StreamingHandler{
+		userRepo:        userRepo,
+		connectionRepo:  connectionRepo,
+		costTracker:     costTracker,
+		logger:          logger,
+		cfg:             cfg,
+		awsConfig:       lambdaCtx.AWSServices.Config,
+		commandRouter:   commandRouter,
+		serviceRegistry: serviceRegistry,
+		storageFactory:  repos,
 	}
 }
 
-func handler(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
-	log := log.With(
+// HandleWebSocketEvent handles WebSocket events using Lift patterns (connect, disconnect, message)
+func (sh *StreamingHandler) HandleWebSocketEvent(ctx *lift.Context) error {
+	// Extract WebSocket event from Lift context
+	if ctx.Request.RawEvent == nil {
+		return lift.NewLiftError("MISSING_EVENT", "no WebSocket event in request", 400)
+	}
+
+	// Parse the raw event as WebSocket event
+	var event events.APIGatewayWebsocketProxyRequest
+	if wsEvent, ok := ctx.Request.RawEvent.(events.APIGatewayWebsocketProxyRequest); ok {
+		event = wsEvent
+	} else {
+		// Try to parse from interface if it's a map
+		eventBytes, err := json.Marshal(ctx.Request.RawEvent)
+		if err != nil {
+			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500)
+		}
+
+		if err := json.Unmarshal(eventBytes, &event); err != nil {
+			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse WebSocket event", 500)
+		}
+	}
+
+	logger := sh.logger.With(
+		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("connectionID", event.RequestContext.ConnectionID),
 		zap.String("routeKey", event.RequestContext.RouteKey),
 	)
 
 	// Construct the API Gateway Management Endpoint
-	managementApiEndpoint := fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/%s",
+	managementAPIEndpoint := fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/%s",
 		event.RequestContext.APIID,
-		globalCfg.Region,
+		sh.awsConfig.Region,
 		event.RequestContext.Stage,
 	)
 
 	// Initialize API Gateway Management API client for this connection
-	currentApiClient := apigatewaymanagementapi.NewFromConfig(globalCfg, func(o *apigatewaymanagementapi.Options) {
-		o.BaseEndpoint = aws.String(managementApiEndpoint)
+	currentAPIClient := apigatewaymanagementapi.NewFromConfig(sh.awsConfig, func(o *apigatewaymanagementapi.Options) {
+		o.BaseEndpoint = aws.String(managementAPIEndpoint)
 	})
-	apiClient = currentApiClient
+
+	// Store the API client for this request
+	sh.apiClient = currentAPIClient
 
 	switch event.RequestContext.RouteKey {
 	case "$connect":
-		return handleConnect(ctx, event)
+		return sh.handleConnect(ctx.Request.Context(), event)
 	case "$disconnect":
-		return handleDisconnect(ctx, event)
+		return sh.handleDisconnect(ctx.Request.Context(), event)
 	case "$default":
-		return handleMessage(ctx, event)
+		return sh.handleMessage(ctx.Request.Context(), event)
 	default:
-		log.Warn("unknown route key", zap.String("routeKey", event.RequestContext.RouteKey))
-		return events.APIGatewayProxyResponse{StatusCode: 400}, nil
+		logger.Warn("unknown route key", zap.String("routeKey", event.RequestContext.RouteKey))
+		return lift.NewLiftError("UNKNOWN_ROUTE", pkgErrors.StreamingUnknownRoute().Error(), 400)
 	}
 }
 
-func handleConnect(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
-	log := log.With(
-		zap.String("connectionID", event.RequestContext.ConnectionID),
-		zap.String("operation", "connect"),
-	)
-
+// handleConnect handles WebSocket connection events
+func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) error {
+	startTime := time.Now()
 	// Extract token from query parameters or headers
 	token := ""
 	if event.QueryStringParameters != nil {
@@ -150,80 +254,102 @@ func handleConnect(ctx context.Context, event events.APIGatewayWebsocketProxyReq
 	var userID, username string
 	authSuccess := false
 
-	if token != "" {
+	if err := common.ValidateRequiredParam("token", token); err == nil {
 		// Validate OAuth token with auth middleware
 		// Since we can't use RequireAuth (it expects APIGatewayV2HTTPRequest),
 		// we'll extract the token and validate directly
-		authService := auth.NewOAuthService(os.Getenv("JWT_SECRET"), nil)
+		// Create minimal audit logger for OAuth service
+		// Use storageFactory from the handler
+		auditLogger := auth.NewAuditLogger(sh.storageFactory, sh.logger, auth.DefaultAuditConfig())
+		authService := auth.NewOAuthService(sh.cfg.JWTSecret, sh.cfg, sh.storageFactory, auditLogger)
 		claims, err := authService.ValidateAccessToken(token)
 		if err != nil {
-			log.Warn("invalid token", zap.Error(err))
+			sh.logger.Warn("invalid token", zap.Error(err))
 			// Don't reject connection, allow anonymous access for public streams
 		} else {
 			userID = claims.Subject
 			username = claims.Username
 			authSuccess = true
-			log.Info("user authenticated",
+			sh.logger.Info("user authenticated",
 				zap.String("userID", userID),
 				zap.String("username", username),
 				zap.Strings("scopes", claims.Scopes))
 		}
 	} else {
-		log.Info("anonymous connection allowed")
+		sh.logger.Info("anonymous connection allowed")
 	}
 
-	// Create connection record
-	connection := &StreamConnection{
-		PK:           "CONN#" + event.RequestContext.ConnectionID,
-		SK:           "CONN#" + event.RequestContext.ConnectionID,
-		ConnectionID: event.RequestContext.ConnectionID,
-		UserID:       userID,
-		Username:     username,
-		Streams:      []string{}, // No streams subscribed initially
-		Established:  time.Now(),
-		LastActivity: time.Now(),
-		TTL:          time.Now().Add(24 * time.Hour).Unix(),
-	}
-
-	if err := writeConnection(ctx, connection); err != nil {
-		log.Error("failed to write connection", zap.Error(err))
-		return events.APIGatewayProxyResponse{StatusCode: 500}, err
+	// Create connection record using DynamORM repository
+	if err := sh.connectionRepo.WriteConnection(ctx, event.RequestContext.ConnectionID, userID, username, []string{}); err != nil {
+		sh.logger.Error("failed to write connection", zap.Error(err))
+		return errors.Join(streaming.ErrConnectionWriteFailed, err)
 	}
 
 	// IMPORTANT: Do not send any messages during $connect
 	// API Gateway doesn't allow this and it causes errors
-	log.Info("connection established",
+	sh.logger.Info("connection established",
 		zap.String("userID", userID),
 		zap.Bool("authSuccess", authSuccess),
 	)
 
-	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+	// Track connection establishment cost
+	go func() {
+		trackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		opCtx := &repositories.WebSocketOperationContext{
+			ConnectionID:     event.RequestContext.ConnectionID,
+			UserID:           userID,
+			Username:         username,
+			OperationType:    "connect",
+			StartTime:        startTime,
+			RequestID:        fmt.Sprintf("connect-%s", event.RequestContext.ConnectionID),
+			ConnectionSource: "web", // Default, could be enhanced
+			AuthMethod:       getAuthMethodFromEvent(event, token),
+		}
+
+		result := &repositories.WebSocketOperationResult{
+			Success:          true,
+			ProcessingTimeMs: time.Since(startTime).Milliseconds(),
+		}
+
+		if err := sh.costTracker.TrackWebSocketOperation(trackCtx, opCtx, result); err != nil {
+			sh.logger.Error("failed to track connection cost",
+				zap.String("connection_id", event.RequestContext.ConnectionID),
+				zap.Error(err))
+		}
+	}()
+
+	return nil
 }
 
-func handleDisconnect(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
-	log := log.With(
+// handleDisconnect handles WebSocket disconnection events
+func (sh *StreamingHandler) handleDisconnect(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) error {
+	logger := sh.logger.With(
 		zap.String("connectionID", event.RequestContext.ConnectionID),
 		zap.String("operation", "disconnect"),
 	)
 
-	// Delete connection from DynamoDB
-	if err := deleteConnection(ctx, event.RequestContext.ConnectionID); err != nil {
-		log.Error("failed to delete connection", zap.Error(err))
-		return events.APIGatewayProxyResponse{StatusCode: 500}, err
+	// Delete connection using DynamORM repository
+	if err := sh.connectionRepo.DeleteConnection(ctx, event.RequestContext.ConnectionID); err != nil {
+		logger.Error("failed to delete connection", zap.Error(err))
+		return errors.Join(streaming.ErrConnectionDeleteFailed, err)
 	}
 
 	// Clean up any subscriptions
-	if err := deleteSubscriptions(ctx, event.RequestContext.ConnectionID); err != nil {
-		log.Error("failed to delete subscriptions", zap.Error(err))
-		// Don't fail the disconnect
+	if err := sh.connectionRepo.DeleteAllSubscriptions(ctx, event.RequestContext.ConnectionID); err != nil {
+		logger.Error("failed to delete subscriptions", zap.Error(err))
+		// Don't fail the disconnect - this is cleanup
 	}
 
-	log.Info("connection closed")
-	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+	logger.Info("connection closed")
+	return nil
 }
 
-func handleMessage(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
-	log := log.With(
+// handleMessage handles WebSocket messages
+func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) error {
+	startTime := time.Now()
+	logger := sh.logger.With(
 		zap.String("connectionID", event.RequestContext.ConnectionID),
 		zap.String("operation", "message"),
 	)
@@ -231,39 +357,73 @@ func handleMessage(ctx context.Context, event events.APIGatewayWebsocketProxyReq
 	// Parse incoming message
 	var message StreamMessage
 	if err := common.ParseRequestBody([]byte(event.Body), &message); err != nil {
-		log.Error("failed to parse message", zap.Error(err))
-		return sendError(event.RequestContext.ConnectionID, "Invalid message format")
+		logger.Error("failed to parse message", zap.Error(err))
+		return sh.sendError(event.RequestContext.ConnectionID, pkgErrors.StreamingInvalidMessageFormat().Error())
 	}
 
-	// Get connection details
-	connection, err := getConnection(ctx, event.RequestContext.ConnectionID)
+	// Get connection details using DynamORM repository
+	connection, err := sh.connectionRepo.GetConnection(ctx, event.RequestContext.ConnectionID)
 	if err != nil {
-		log.Error("failed to get connection", zap.Error(err))
-		return sendError(event.RequestContext.ConnectionID, "Connection not found")
+		logger.Error("failed to get connection", zap.Error(err))
+		return sh.sendError(event.RequestContext.ConnectionID, pkgErrors.StreamingConnectionNotFound().Error())
 	}
 
 	// Update last activity
 	connection.LastActivity = time.Now()
-	if err := writeConnection(ctx, connection); err != nil {
-		log.Error("failed to update connection", zap.Error(err))
+	if err := sh.connectionRepo.UpdateConnection(ctx, connection); err != nil {
+		logger.Error("failed to update connection", zap.Error(err))
 	}
 
 	// Handle different message types
 	switch message.Type {
 	case "subscribe":
-		return handleSubscribe(ctx, connection, message)
+		err = sh.handleSubscribe(ctx, connection, message)
 	case "unsubscribe":
-		return handleUnsubscribe(ctx, connection, message)
+		err = sh.handleUnsubscribe(ctx, connection, message)
 	case "ping":
-		return handlePing(event.RequestContext.ConnectionID)
+		err = sh.handlePing(event.RequestContext.ConnectionID)
+	case "command":
+		err = sh.handleCommand(ctx, connection, message)
 	default:
-		log.Warn("unknown message type", zap.String("type", message.Type))
-		return sendError(event.RequestContext.ConnectionID, "Unknown message type")
+		logger.Warn("unknown message type", zap.String("type", message.Type))
+		err = sh.sendError(event.RequestContext.ConnectionID, pkgErrors.StreamingUnknownMessageType().Error())
 	}
+
+	// Track message processing cost
+	go func() {
+		trackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		opCtx := &repositories.WebSocketOperationContext{
+			ConnectionID:  event.RequestContext.ConnectionID,
+			UserID:        connection.UserID,
+			Username:      connection.Username,
+			OperationType: "message_in",
+			StartTime:     startTime,
+			RequestID:     fmt.Sprintf("message-%s-%d", event.RequestContext.ConnectionID, time.Now().UnixNano()),
+			ActiveStreams: connection.Streams,
+		}
+
+		result := &repositories.WebSocketOperationResult{
+			Success:          err == nil,
+			ProcessingTimeMs: time.Since(startTime).Milliseconds(),
+			MessageCount:     1,
+			MessageSizeBytes: int64(len(event.Body)),
+			Error:            err,
+		}
+
+		if trackErr := sh.costTracker.TrackWebSocketOperation(trackCtx, opCtx, result); trackErr != nil {
+			sh.logger.Error("failed to track message cost",
+				zap.String("connection_id", event.RequestContext.ConnectionID),
+				zap.Error(trackErr))
+		}
+	}()
+
+	return err
 }
 
-func handleSubscribe(ctx context.Context, connection *StreamConnection, message StreamMessage) (events.APIGatewayProxyResponse, error) {
-	log := log.With(
+func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *models.WebSocketConnection, message StreamMessage) error {
+	logger := sh.logger.With(
 		zap.String("connectionID", connection.ConnectionID),
 		zap.String("operation", "subscribe"),
 		zap.String("stream", message.Stream),
@@ -280,53 +440,55 @@ func handleSubscribe(ctx context.Context, connection *StreamConnection, message 
 	}
 
 	if !isValid {
-		return sendError(connection.ConnectionID, "Invalid stream: "+message.Stream)
+		logger.Error("invalid stream name", zap.String("stream", message.Stream))
+		return sh.sendError(connection.ConnectionID, pkgErrors.StreamingInvalidStream().Error())
 	}
 
 	// Check authorization for stream
 	if message.Stream == "user" || strings.HasPrefix(message.Stream, "user:") ||
 		message.Stream == "direct" || strings.HasPrefix(message.Stream, "list:") {
 		// These streams require authentication
-		if connection.UserID == "" {
-			return sendError(connection.ConnectionID, "Authentication required for stream: "+message.Stream)
+		if err := common.ValidateRequiredParam("user_id", connection.UserID); err != nil {
+			logger.Error("authentication required for stream", zap.String("stream", message.Stream))
+			return sh.sendError(connection.ConnectionID, pkgErrors.StreamingAuthenticationRequired().Error())
 		}
 	}
 
 	// Add stream to connection's subscriptions
 	if !contains(connection.Streams, message.Stream) {
 		connection.Streams = append(connection.Streams, message.Stream)
-		if err := writeConnection(ctx, connection); err != nil {
-			log.Error("failed to update connection streams", zap.Error(err))
-			return sendError(connection.ConnectionID, "Failed to subscribe")
+		if err := sh.connectionRepo.UpdateConnection(ctx, connection); err != nil {
+			logger.Error("failed to update connection streams", zap.Error(err))
+			return sh.sendError(connection.ConnectionID, pkgErrors.StreamingFailedToSubscribe().Error())
 		}
 	}
 
-	// Store subscription in subscriptions table for efficient lookup
-	if err := writeSubscription(ctx, connection.ConnectionID, connection.UserID, message.Stream); err != nil {
-		log.Error("failed to write subscription", zap.Error(err))
-		return sendError(connection.ConnectionID, "Failed to subscribe")
+	// Store subscription using DynamORM repository
+	if err := sh.connectionRepo.WriteSubscription(ctx, connection.ConnectionID, connection.UserID, message.Stream); err != nil {
+		logger.Error("failed to write subscription", zap.Error(err))
+		return sh.sendError(connection.ConnectionID, pkgErrors.StreamingFailedToSubscribe().Error())
 	}
 
 	// Send confirmation
 	confirmMsg := StreamMessage{
 		Type:   "subscribed",
 		Stream: message.Stream,
-		Payload: map[string]interface{}{
+		Payload: map[string]any{
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		},
 	}
 
-	if err := sendMessageToConnection(connection.ConnectionID, confirmMsg); err != nil {
-		log.Error("failed to send confirmation", zap.Error(err))
-		return events.APIGatewayProxyResponse{StatusCode: 500}, err
+	if err := sh.sendMessageToConnection(connection.ConnectionID, confirmMsg); err != nil {
+		logger.Error("failed to send confirmation", zap.Error(err))
+		return errors.Join(streaming.ErrConfirmationSendFailed, err)
 	}
 
-	log.Info("subscribed to stream")
-	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+	logger.Info("subscribed to stream")
+	return nil
 }
 
-func handleUnsubscribe(ctx context.Context, connection *StreamConnection, message StreamMessage) (events.APIGatewayProxyResponse, error) {
-	log := log.With(
+func (sh *StreamingHandler) handleUnsubscribe(ctx context.Context, connection *models.WebSocketConnection, message StreamMessage) error {
+	logger := sh.logger.With(
 		zap.String("connectionID", connection.ConnectionID),
 		zap.String("operation", "unsubscribe"),
 		zap.String("stream", message.Stream),
@@ -341,14 +503,14 @@ func handleUnsubscribe(ctx context.Context, connection *StreamConnection, messag
 	}
 	connection.Streams = newStreams
 
-	if err := writeConnection(ctx, connection); err != nil {
-		log.Error("failed to update connection streams", zap.Error(err))
-		return sendError(connection.ConnectionID, "Failed to unsubscribe")
+	if err := sh.connectionRepo.UpdateConnection(ctx, connection); err != nil {
+		logger.Error("failed to update connection streams", zap.Error(err))
+		return sh.sendError(connection.ConnectionID, pkgErrors.StreamingFailedToUnsubscribe().Error())
 	}
 
-	// Remove subscription from subscriptions table
-	if err := deleteSubscription(ctx, connection.ConnectionID, message.Stream); err != nil {
-		log.Error("failed to delete subscription", zap.Error(err))
+	// Remove subscription using DynamORM repository
+	if err := sh.connectionRepo.DeleteSubscription(ctx, connection.ConnectionID, message.Stream); err != nil {
+		logger.Error("failed to delete subscription", zap.Error(err))
 		// Don't fail the unsubscribe
 	}
 
@@ -356,122 +518,153 @@ func handleUnsubscribe(ctx context.Context, connection *StreamConnection, messag
 	confirmMsg := StreamMessage{
 		Type:   "unsubscribed",
 		Stream: message.Stream,
-		Payload: map[string]interface{}{
+		Payload: map[string]any{
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		},
 	}
 
-	if err := sendMessageToConnection(connection.ConnectionID, confirmMsg); err != nil {
-		log.Error("failed to send confirmation", zap.Error(err))
-		return events.APIGatewayProxyResponse{StatusCode: 500}, err
+	if err := sh.sendMessageToConnection(connection.ConnectionID, confirmMsg); err != nil {
+		logger.Error("failed to send confirmation", zap.Error(err))
+		return errors.Join(streaming.ErrConfirmationSendFailed, err)
 	}
 
-	log.Info("unsubscribed from stream")
-	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+	logger.Info("unsubscribed from stream")
+	return nil
 }
 
-func handlePing(connectionID string) (events.APIGatewayProxyResponse, error) {
+func (sh *StreamingHandler) handlePing(connectionID string) error {
 	pongMessage := StreamMessage{
 		Type: "pong",
-		Payload: map[string]interface{}{
+		Payload: map[string]any{
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		},
 	}
 
-	if err := sendMessageToConnection(connectionID, pongMessage); err != nil {
-		log.Error("failed to send pong", zap.Error(err))
-		return events.APIGatewayProxyResponse{StatusCode: 500}, err
+	if err := sh.sendMessageToConnection(connectionID, pongMessage); err != nil {
+		sh.logger.Error("failed to send pong", zap.Error(err))
+		return errors.Join(streaming.ErrPongSendFailed, err)
 	}
 
-	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
-}
-
-// Database operations
-
-func writeConnection(ctx context.Context, connection *StreamConnection) error {
-	item, err := attributevalue.MarshalMap(connection)
-	if err != nil {
-		return err
-	}
-
-	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: &connectionsTable,
-		Item:      item,
-	})
-	return err
-}
-
-func getConnection(ctx context.Context, connectionID string) (*StreamConnection, error) {
-	result, err := dynamoClient.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: &connectionsTable,
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: "CONN#" + connectionID},
-			"SK": &types.AttributeValueMemberS{Value: "CONN#" + connectionID},
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var connection StreamConnection
-	if err := attributevalue.UnmarshalMap(result.Item, &connection); err != nil {
-		return nil, err
-	}
-
-	return &connection, nil
-}
-
-func deleteConnection(ctx context.Context, connectionID string) error {
-	_, err := dynamoClient.DeleteItem(ctx, &dynamodb.DeleteItemInput{
-		TableName: &connectionsTable,
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: "CONN#" + connectionID},
-			"SK": &types.AttributeValueMemberS{Value: "CONN#" + connectionID},
-		},
-	})
-	return err
-}
-
-func writeSubscription(ctx context.Context, connectionID, userID, stream string) error {
-	item := map[string]types.AttributeValue{
-		"PK":           &types.AttributeValueMemberS{Value: "SUB#" + stream},
-		"SK":           &types.AttributeValueMemberS{Value: "CONN#" + connectionID},
-		"ConnectionID": &types.AttributeValueMemberS{Value: connectionID},
-		"UserID":       &types.AttributeValueMemberS{Value: userID},
-		"Stream":       &types.AttributeValueMemberS{Value: stream},
-		"TTL":          &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Add(24*time.Hour).Unix())},
-	}
-
-	_, err := dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: &subscriptionsTable,
-		Item:      item,
-	})
-	return err
-}
-
-func deleteSubscription(ctx context.Context, connectionID, stream string) error {
-	_, err := dynamoClient.DeleteItem(ctx, &dynamodb.DeleteItemInput{
-		TableName: &subscriptionsTable,
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: "SUB#" + stream},
-			"SK": &types.AttributeValueMemberS{Value: "CONN#" + connectionID},
-		},
-	})
-	return err
-}
-
-func deleteSubscriptions(ctx context.Context, connectionID string) error {
-	// This would need to query all subscriptions for a connection
-	// For now, we'll rely on TTL to clean these up
-	// In production, you'd want to implement a GSI to query by connectionID
 	return nil
+}
+
+func (sh *StreamingHandler) handleCommand(ctx context.Context, connection *models.WebSocketConnection, message StreamMessage) error {
+	logger := sh.logger.With(
+		zap.String("connectionID", connection.ConnectionID),
+		zap.String("operation", "command"),
+		zap.String("command_type", sh.getCommandType(message)),
+	)
+
+	// Parse the command from the message payload
+	command, err := sh.parseCommand(message)
+	if err != nil {
+		logger.Error("failed to parse command", zap.Error(err))
+		return sh.sendError(connection.ConnectionID, pkgErrors.StreamingInvalidCommandFormat().Error())
+	}
+
+	// Create connection info for the command handler
+	connInfo := &streaming.ConnectionInfo{
+		ConnectionID:    connection.ConnectionID,
+		UserID:          connection.UserID,
+		Username:        connection.Username,
+		Streams:         connection.Streams,
+		IsAuthenticated: connection.UserID != "",
+	}
+
+	// Route and execute the command
+	response, err := sh.commandRouter.HandleCommand(ctx, connInfo, command)
+	if err != nil {
+		logger.Error("command execution failed", zap.Error(err))
+		return sh.sendError(connection.ConnectionID, pkgErrors.StreamingCommandExecutionFailed().Error())
+	}
+
+	// Send the response back to the client
+	if response != nil {
+		return sh.sendCommandResponse(connection.ConnectionID, response)
+	}
+
+	return nil
+}
+
+func (sh *StreamingHandler) parseCommand(message StreamMessage) (*streaming.Command, error) {
+	// Extract command details from message payload
+	var command streaming.Command
+
+	// Get command ID (required for request/response matching)
+	if id, exists := message.Payload["id"]; exists {
+		if idStr, ok := id.(string); ok {
+			command.ID = idStr
+		} else {
+			return nil, streaming.ErrCommandIDMustBeString
+		}
+	} else {
+		return nil, streaming.ErrCommandIDRequired
+	}
+
+	// Get command type (required)
+	if cmdType, exists := message.Payload["command"]; exists {
+		if cmdTypeStr, ok := cmdType.(string); ok {
+			command.Type = cmdTypeStr
+		} else {
+			return nil, streaming.ErrCommandTypeMustBeString
+		}
+	} else {
+		return nil, streaming.ErrCommandTypeRequired
+	}
+
+	// Get command payload (optional)
+	if payload, exists := message.Payload["data"]; exists {
+		if payloadMap, ok := payload.(map[string]interface{}); ok {
+			command.Payload = payloadMap
+		} else {
+			// Try to convert to map
+			command.Payload = map[string]interface{}{"data": payload}
+		}
+	} else {
+		command.Payload = make(map[string]interface{})
+	}
+
+	return &command, nil
+}
+
+func (sh *StreamingHandler) getCommandType(message StreamMessage) string {
+	if cmdType, exists := message.Payload["command"]; exists {
+		if cmdTypeStr, ok := cmdType.(string); ok {
+			return cmdTypeStr
+		}
+	}
+	return "unknown"
+}
+
+func (sh *StreamingHandler) sendCommandResponse(connectionID string, response *streaming.CommandResponse) error {
+	// Convert response to StreamMessage format
+	responseMsg := StreamMessage{
+		Type: "command_response",
+		Payload: map[string]any{
+			"id":      response.ID,
+			"type":    response.Type,
+			"success": response.Success,
+			"data":    response.Data,
+		},
+	}
+
+	// Add error information if present
+	if response.Error != nil {
+		responseMsg.Payload["error"] = map[string]any{
+			"code":    response.Error.Code,
+			"message": response.Error.Message,
+			"details": response.Error.Details,
+		}
+	}
+
+	return sh.sendMessageToConnection(connectionID, responseMsg)
 }
 
 // Messaging functions
 
-func sendMessageToConnection(connectionID string, message StreamMessage) error {
-	if apiClient == nil {
-		return fmt.Errorf("API Gateway client not initialized")
+func (sh *StreamingHandler) sendMessageToConnection(connectionID string, message StreamMessage) error {
+	if sh.apiClient == nil {
+		return streaming.ErrAPIGatewayClientNotInit
 	}
 
 	messageBytes, err := json.Marshal(message)
@@ -479,7 +672,7 @@ func sendMessageToConnection(connectionID string, message StreamMessage) error {
 		return err
 	}
 
-	_, err = apiClient.PostToConnection(context.Background(), &apigatewaymanagementapi.PostToConnectionInput{
+	_, err = sh.apiClient.PostToConnection(context.Background(), &apigatewaymanagementapi.PostToConnectionInput{
 		ConnectionId: &connectionID,
 		Data:         messageBytes,
 	})
@@ -487,20 +680,20 @@ func sendMessageToConnection(connectionID string, message StreamMessage) error {
 	return err
 }
 
-func sendError(connectionID string, errorMessage string) (events.APIGatewayProxyResponse, error) {
+func (sh *StreamingHandler) sendError(connectionID string, errorMessage string) error {
 	errMsg := StreamMessage{
 		Type: "error",
-		Payload: map[string]interface{}{
+		Payload: map[string]any{
 			"error":     errorMessage,
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		},
 	}
 
-	if err := sendMessageToConnection(connectionID, errMsg); err != nil {
-		return events.APIGatewayProxyResponse{StatusCode: 500}, err
+	if err := sh.sendMessageToConnection(connectionID, errMsg); err != nil {
+		return errors.Join(streaming.ErrErrorMessageSendFailed, err)
 	}
 
-	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+	return nil
 }
 
 // Helper functions
@@ -514,6 +707,117 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
+// getAuthMethodFromEvent determines the authentication method used
+func getAuthMethodFromEvent(event events.APIGatewayWebsocketProxyRequest, token string) string {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		return "anonymous"
+	}
+
+	// Check query parameters
+	if event.QueryStringParameters != nil {
+		if event.QueryStringParameters["access_token"] != "" {
+			return "oauth"
+		}
+	}
+
+	// Check headers
+	if event.Headers != nil {
+		if auth := event.Headers["Authorization"]; auth != "" {
+			if strings.HasPrefix(auth, "Bearer ") {
+				return "bearer"
+			}
+			if strings.HasPrefix(auth, "Basic ") {
+				return "basic"
+			}
+		}
+		if auth := event.Headers["authorization"]; auth != "" {
+			if strings.HasPrefix(auth, "Bearer ") {
+				return "bearer"
+			}
+		}
+	}
+
+	return "oauth" // Default if token exists but method is unclear
+}
+
 func main() {
-	lambda.Start(handler)
+	// Create a new Lift application
+	app := lift.New()
+
+	// Panic recovery middleware (MUST be first to catch all panics)
+	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+
+	// Apply WebSocket-compatible security middleware
+	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeWebSocket, lambdaCtx.Logger)
+
+	// Add request ID middleware
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			requestID := fmt.Sprintf("streaming-%d", time.Now().UnixNano())
+			ctx.Set("requestID", requestID)
+			return next.Handle(ctx)
+		})
+	})
+
+	// Add logging middleware (second - logs with request ID)
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			start := time.Now()
+			requestID := ctx.Get("requestID")
+
+			handler.logger.Info("processing WebSocket event",
+				zap.Any("request_id", requestID),
+			)
+
+			err := next.Handle(ctx)
+			duration := time.Since(start)
+
+			if err != nil {
+				handler.logger.Error("failed to process WebSocket event",
+					zap.Any("request_id", requestID),
+					zap.Error(err),
+					zap.Duration("duration", duration),
+				)
+			} else {
+				handler.logger.Info("successfully processed WebSocket event",
+					zap.Any("request_id", requestID),
+					zap.Duration("duration", duration),
+				)
+			}
+
+			return err
+		})
+	})
+
+	// Add recovery middleware (third - catches panics)
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			defer func() {
+				if r := recover(); r != nil {
+					requestID := ctx.Get("requestID")
+					handler.logger.Error("panic recovered in WebSocket handler",
+						zap.Any("request_id", requestID),
+						zap.Any("panic", r),
+					)
+					// For WebSocket events, we can't return an HTTP response
+					// The panic will be logged and the connection will be terminated
+				}
+			}()
+			return next.Handle(ctx)
+		})
+	})
+
+	// Add WebSocket cost tracking middleware (fourth - tracks costs)
+	app.Use(repositories.WebSocketCostMiddleware(handler.costTracker))
+
+	// Set up WebSocket event handler
+	app.Use(func(_ lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			// This is our main WebSocket handler
+			return handler.HandleWebSocketEvent(ctx)
+		})
+	})
+
+	// Start the Lambda handler with Lift
+	lambda.Start(app.HandleRequest)
 }

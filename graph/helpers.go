@@ -4,95 +4,75 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/graph/model"
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/auth"
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/services/ai"
+	"github.com/equaltoai/lesser/pkg/services/hashtags"
+	"github.com/equaltoai/lesser/pkg/services/lists"
+	"github.com/equaltoai/lesser/pkg/services/severance"
+	"github.com/equaltoai/lesser/pkg/services/threads"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
-// deriveVisibility determines the visibility level based on To and CC fields
-func deriveVisibility(to, cc []string) model.Visibility {
-	// Check for public visibility
-	publicURI := "https://www.w3.org/ns/activitystreams#Public"
-	for _, t := range to {
-		if t == publicURI {
-			return model.VisibilityPublic
-		}
-	}
-	for _, c := range cc {
-		if c == publicURI {
-			return model.VisibilityUnlisted
-		}
-	}
+const (
+	// allOperationsValue represents all operations for a service
+	allOperationsValue = "All"
+)
 
-	// If it has followers collection, it's followers-only
-	for _, t := range to {
-		if strings.Contains(t, "/followers") {
-			return model.VisibilityFollowers
-		}
-	}
-
-	// Otherwise it's direct
-	return model.VisibilityDirect
+// generateID generates a unique ID for objects
+func generateID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
+
+// notificationMatchesTypes checks if a notification matches one of the provided types
+func notificationMatchesTypes(notification *model.Notification, types []string) bool {
+	if len(types) == 0 {
+		return true
+	}
+
+	for _, t := range types {
+		if notification.Type == t {
+			return true
+		}
+	}
+
+	return false
+}
+
+// floatPtr returns a pointer to a float64
+
+// intPtr returns a pointer to an int
+
+// boolPtr returns a pointer to a bool
+
+// deriveVisibility determines the visibility level based on To and CC fields
 
 // convertMentions extracts mentions from tags
-func convertMentions(tags []activitypub.Tag) []*model.Mention {
-	mentions := make([]*model.Mention, 0)
-	for _, tag := range tags {
-		if tag.Type == "Mention" {
-			mention := &model.Mention{
-				ID:  tag.Href,
-				URL: tag.Href,
-			}
-			// Extract username from href if possible
-			if tag.Name != "" {
-				mention.Username = strings.TrimPrefix(tag.Name, "@")
-			}
-			mentions = append(mentions, mention)
-		}
-	}
-	return mentions
-}
 
 // convertTags filters tags to exclude mentions
-func convertTags(tags []activitypub.Tag) []*activitypub.Tag {
-	result := make([]*activitypub.Tag, 0, len(tags))
-	for i := range tags {
-		// Filter out mentions, keep only hashtags
-		if tags[i].Type != "Mention" {
-			result = append(result, &tags[i])
-		}
-	}
-	return result
-}
 
 // convertAttachments converts attachment slice to pointer slice
-func convertAttachments(attachments []activitypub.Attachment) []*activitypub.Attachment {
-	result := make([]*activitypub.Attachment, 0, len(attachments))
-	for i := range attachments {
-		result = append(result, &attachments[i])
-	}
-	return result
-}
 
 // getTimeOrNow returns the time or current time if nil
-func getTimeOrNow(t *time.Time) time.Time {
-	if t != nil {
-		return *t
-	}
-	return time.Now()
-}
 
 // getUsernameFromContext extracts username from authentication context
 func getUsernameFromContext(ctx context.Context) string {
 	// Extract claims from context
-	if claims, ok := ctx.Value(auth.ContextKeyClaims).(*auth.Claims); ok && claims != nil {
+	if claims, ok := ctx.Value(common.ContextKeyClaims).(*auth.Claims); ok && claims != nil {
 		return claims.Username
 	}
 	return ""
@@ -101,461 +81,783 @@ func getUsernameFromContext(ctx context.Context) string {
 // GetUserID extracts user ID from authentication context
 func GetUserID(ctx context.Context) string {
 	// Try to get claims from context
-	if claims, ok := ctx.Value(auth.ContextKeyClaims).(*auth.Claims); ok && claims != nil {
+	if claims, ok := ctx.Value(common.ContextKeyClaims).(*auth.Claims); ok && claims != nil {
 		return claims.Username // In this system, username is used as user ID
 	}
 	return ""
 }
 
 // convertToGraphQLObject converts storage objects to GraphQL model objects
-func (r *queryResolver) convertToGraphQLObject(ctx context.Context, obj interface{}) *model.Object {
-	// Reuse logic from Object resolver
-	switch o := obj.(type) {
-	case *activitypub.Note:
-		result := &model.Object{
-			ID:          o.ID,
-			Type:        model.ObjectTypeNote,
-			Content:     o.Content,
-			Visibility:  deriveVisibility(o.To, o.CC),
-			Sensitive:   o.Sensitive,
-			Attachments: convertAttachments(o.Attachment),
-			Tags:        convertTags(o.Tag),
-			Mentions:    convertMentions(o.Tag),
-			CreatedAt:   model.Time(getTimeOrNow(o.Published)),
-			UpdatedAt:   model.Time(getTimeOrNow(o.Updated)),
-			// Get interaction counts from storage
-			RepliesCount: r.getObjectReplyCount(ctx, o.ID),
-			LikesCount:   r.getObjectLikeCount(ctx, o.ID),
-			SharesCount:  r.getObjectShareCount(ctx, o.ID),
+
+// validateNoteInput validates the input for creating a note
+
+// extractDomainFromActorID extracts the domain from an actor ID
+
+// generateUniqueID generates a unique ID for objects
+
+// determineAudience determines the To field based on visibility
+
+// determineCCAudience determines the CC field based on visibility
+
+// getSensitive safely extracts the sensitive flag
+
+// getSpoilerText safely extracts the spoiler text
+
+// buildTags builds tag array from hashtags and mentions
+
+// buildAttachments builds attachment objects from media IDs
+
+// shouldFederate determines if an activity should be federated based on visibility
+
+// convertToGraphQLObject converts an ActivityPub object to GraphQL Object type
+
+// getObjectActorID extracts the actor ID from an object
+
+// determineModerationCategory categorizes the moderation reason
+
+// Helper methods for getting object interaction counts
+
+// calculateMissingPosts calculates the number of missing posts in a thread
+
+// calculateAverageEngagement calculates average engagement for posts in the thread
+
+// executeSocialAction executes a social action (like, share) and returns the ActivityPub activity
+func (r *mutationResolver) executeSocialAction(
+	ctx context.Context,
+	objectID string,
+	actionType string,
+	actionName string,
+	serviceCall func(context.Context, string, string) error,
+) (*activitypub.Activity, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Execute the service call
+	err = serviceCall(ctx, objectID, username)
+	if err != nil {
+		r.Logger.Error(fmt.Sprintf("Failed to %s object", actionName),
+			zap.String("user", username),
+			zap.String("object", objectID),
+			zap.Error(err))
+		return nil, ErrSocialActionFailedWithContext(actionName, err)
+	}
+
+	// Track costs
+	r.trackDynamoOperation(ctx, "write", 1)
+
+	// Return activity
+	now := time.Now()
+	return &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			ID:        generateID(),
+			Type:      actionType,
+			Published: &now,
+		},
+		Actor:  username,
+		Object: objectID,
+	}, nil
+}
+
+// executeSocialUndo executes a social undo action (unlike, unshare) and returns success
+func (r *mutationResolver) executeSocialUndo(
+	ctx context.Context,
+	objectID string,
+	actionName string,
+	serviceCall func(context.Context, string, string) error,
+) (bool, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	// Execute the service call
+	err = serviceCall(ctx, objectID, username)
+	if err != nil {
+		r.Logger.Error(fmt.Sprintf("Failed to %s object", actionName),
+			zap.String("user", username),
+			zap.String("object", objectID),
+			zap.Error(err))
+		return false, ErrSocialUndoFailedWithContext(actionName, err)
+	}
+
+	// Track costs
+	r.trackDynamoOperation(ctx, "write", 1)
+
+	return true, nil
+}
+
+// executeListMembershipOperation executes a list membership operation (add/remove accounts)
+func (r *mutationResolver) executeListMembershipOperation(
+	ctx context.Context,
+	listID string,
+	accountIDs []string,
+	actionName string,
+	serviceCall func(ctx context.Context, listID, accountID, username string) (*lists.MembershipResult, error),
+) (*model.List, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Process each account individually
+	var lastResult *lists.MembershipResult
+	for _, accountID := range accountIDs {
+		result, err := serviceCall(ctx, listID, accountID, username)
+		if err != nil {
+			r.Logger.Error(fmt.Sprintf("Failed to %s account to list", actionName),
+				zap.String("user", username),
+				zap.String("list", listID),
+				zap.String("account", accountID),
+				zap.Error(err))
+			// Continue with other accounts even if one fails
+			continue
+		}
+		lastResult = result
+	}
+
+	if lastResult == nil {
+		return nil, ErrListMembershipFailedWithAction(actionName)
+	}
+
+	// Get the updated list
+	list, err := r.Registry.Lists().GetList(ctx, &lists.GetListQuery{
+		ListID:   listID,
+		ViewerID: username,
+	})
+	if err != nil {
+		return nil, ErrGetUpdatedListFailedWithContext(err)
+	}
+
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", int64(len(accountIDs)))
+	return r.convertListToGraphQL(ctx, list), nil
+}
+
+// buildAndSortDrivers creates, sorts, and limits cost drivers
+func (r *queryResolver) buildAndSortDrivers(drivers []*cost.Driver) []*cost.Driver {
+	// Sort by cost percentage
+	sort.Slice(drivers, func(i, j int) bool {
+		return drivers[i].PercentageOfTotal > drivers[j].PercentageOfTotal
+	})
+
+	// Return top 5 drivers
+	if len(drivers) > 5 {
+		return drivers[:5]
+	}
+	return drivers
+}
+
+// createReadWriteDrivers creates standard DynamoDB read/write cost drivers
+func (r *queryResolver) createReadWriteDrivers(totalReads, totalWrites int64, totalCost float64) []*cost.Driver {
+	drivers := []*cost.Driver{}
+
+	if totalReads > 0 && totalCost > 0 {
+		readCost := float64(totalReads) * 0.00025 // Approximate DynamoDB read cost
+		readPercentage := (readCost / totalCost) * 100
+		readCostMicro := int64(readCost * 1_000_000)
+		drivers = append(drivers, &cost.Driver{
+			Service:           "DynamoDB",
+			Operation:         "Read",
+			CostMicroCents:    readCostMicro,
+			PercentageOfTotal: readPercentage,
+			OperationCount:    totalReads,
+			AverageCost:       readCostMicro / totalReads,
+			Trend:             "STABLE", // Will be calculated by enrichDriversWithTrends
+		})
+	}
+
+	if totalWrites > 0 && totalCost > 0 {
+		writeCost := float64(totalWrites) * 0.00125 // Approximate DynamoDB write cost
+		writePercentage := (writeCost / totalCost) * 100
+		writeCostMicro := int64(writeCost * 1_000_000)
+		drivers = append(drivers, &cost.Driver{
+			Service:           "DynamoDB",
+			Operation:         "Write",
+			CostMicroCents:    writeCostMicro,
+			PercentageOfTotal: writePercentage,
+			OperationCount:    totalWrites,
+			AverageCost:       writeCostMicro / totalWrites,
+			Trend:             "STABLE", // Will be calculated by enrichDriversWithTrends
+		})
+	}
+
+	return r.buildAndSortDrivers(drivers)
+}
+
+// enrichDriversWithTrends calculates and sets trend for each driver based on historical data
+func (r *queryResolver) enrichDriversWithTrends(ctx context.Context, drivers []*cost.Driver, currentPeriodStart, currentPeriodEnd time.Time) []*cost.Driver {
+	if len(drivers) == 0 {
+		return drivers
+	}
+
+	// Get tracking repository
+	storage := r.Registry.GetStorage()
+	if storage == nil {
+		r.Logger.Warn("storage not available for trend calculation")
+		return drivers
+	}
+
+	costRepo := storage.Cost()
+	if costRepo == nil {
+		r.Logger.Warn("cost repository not available for trend calculation")
+		return drivers
+	}
+
+	// Calculate previous period (same duration as current period)
+	periodDuration := currentPeriodEnd.Sub(currentPeriodStart)
+	previousPeriodEnd := currentPeriodStart
+	previousPeriodStart := previousPeriodEnd.Add(-periodDuration)
+
+	// For each driver, calculate trend
+	for _, driver := range drivers {
+		// Get current period cost (already have it)
+		currentCost := float64(driver.CostMicroCents) / 1_000_000.0
+
+		// Get previous period cost for the same service/operation
+		previousCost := r.getPreviousPeriodCost(ctx, costRepo, driver.Service, driver.Operation, previousPeriodStart, previousPeriodEnd)
+
+		// Calculate trend
+		driver.Trend = r.calculateTrend(currentCost, previousCost)
+	}
+
+	return drivers
+}
+
+// getPreviousPeriodCost retrieves the cost for a specific service/operation in the previous period
+func (r *queryResolver) getPreviousPeriodCost(ctx context.Context, costRepo *repositories.TrackingRepository, service, operation string, start, end time.Time) float64 {
+	// Get cost records for the previous period
+	costRecords, err := costRepo.GetCostsByDateRange(ctx, start, end)
+	if err != nil {
+		r.Logger.Warn("failed to get previous period costs for trend calculation",
+			zap.String("service", service),
+			zap.String("operation", operation),
+			zap.Error(err))
+		return 0.0
+	}
+
+	var totalCost float64
+	for _, record := range costRecords {
+		// Match service (if not "All")
+		if service != allOperationsValue && record.ServiceName != service {
+			continue
 		}
 
-		// Handle spoiler text (content warning)
-		if o.Summary != "" {
-			result.SpoilerText = &o.Summary
+		// Match operation (if not "All")
+		if operation != allOperationsValue && record.OperationType != operation {
+			continue
 		}
 
-		// Load actor using DataLoader
-		if o.AttributedTo != "" {
-			actor, err := LoadActor(ctx, o.AttributedTo)
-			if err == nil {
-				result.Actor = actor
+		// Special handling for DynamoDB operations
+		if service == "DynamoDB" {
+			if operation == "Read" && (record.OperationType == "Query" || record.OperationType == "GetItem" || record.OperationType == "Scan") {
+				totalCost += record.EstimatedCostDollars
+			} else if operation == "Write" && (record.OperationType == "PutItem" || record.OperationType == "UpdateItem" || record.OperationType == "DeleteItem") {
+				totalCost += record.EstimatedCostDollars
 			}
+		} else {
+			totalCost += record.EstimatedCostDollars
 		}
-		return result
+	}
 
-	case *activitypub.Article:
-		result := &model.Object{
-			ID:          o.ID,
-			Type:        model.ObjectTypeArticle,
-			Content:     o.Content,
-			Visibility:  deriveVisibility(o.To, o.CC),
-			Sensitive:   o.Sensitive,
-			Attachments: convertAttachments(o.Attachment),
-			Tags:        convertTags(o.Tag),
-			Mentions:    convertMentions(o.Tag),
-			CreatedAt:   model.Time(getTimeOrNow(o.Published)),
-			UpdatedAt:   model.Time(getTimeOrNow(o.Updated)),
-			// Get interaction counts from storage
-			RepliesCount: r.getObjectReplyCount(ctx, o.ID),
-			LikesCount:   r.getObjectLikeCount(ctx, o.ID),
-			SharesCount:  r.getObjectShareCount(ctx, o.ID),
+	return totalCost
+}
+
+// calculateTrend determines trend classification based on cost comparison
+func (r *queryResolver) calculateTrend(currentCost, previousCost float64) string {
+	// If no previous data, return stable
+	if previousCost == 0 {
+		return "STABLE"
+	}
+
+	// Calculate percentage change
+	changePercent := ((currentCost - previousCost) / previousCost) * 100
+
+	// Classify trend based on thresholds
+	if changePercent > 10 {
+		return "INCREASING"
+	} else if changePercent < -10 {
+		return "DECREASING"
+	}
+
+	return "STABLE"
+}
+
+// generateAIExplanation creates an AI-powered explanation of the object
+func (r *queryResolver) generateAIExplanation(ctx context.Context, aiSvc *ai.Service, objectID string, modelObject *model.Object, obj any) *model.ObjectExplanation {
+	if result, err := aiSvc.GetAnalysis(ctx, &ai.GetAnalysisQuery{ObjectID: objectID}); err == nil && result.Analysis != nil {
+		analysis := result.Analysis
+		explanation := &model.ObjectExplanation{
+			Object:          modelObject,
+			StorageLocation: fmt.Sprintf("DynamoDB Table: main, PK: object#%s, SK: object#%s", objectID, objectID),
+			SizeBytes:       r.calculateObjectSize(obj),
+			StorageCost:     r.estimateStorageCost(obj),
+			AccessPattern:   []*model.AccessLog{},
 		}
+		explanation.AccessPattern = append(explanation.AccessPattern, &model.AccessLog{
+			Timestamp: model.Time(analysis.AnalyzedAt),
+			Operation: "AI_Analysis",
+			Cost:      5,
+		})
+		return explanation
+	}
 
-		// Articles use Name for title
-		if o.Name != "" {
-			result.SpoilerText = &o.Name
-		}
+	if _, err := aiSvc.QueueForAnalysis(ctx, &ai.QueueAnalysisCommand{
+		ObjectID:   objectID,
+		ObjectType: string(modelObject.Type),
+		Force:      false,
+	}); err != nil {
+		r.Logger.Warn("failed to queue object for AI analysis",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+	}
 
-		// Load actor using DataLoader
-		if o.AttributedTo != "" {
-			actor, err := LoadActor(ctx, o.AttributedTo)
-			if err == nil {
-				result.Actor = actor
-			}
-		}
-		return result
+	return r.generateFallbackExplanation(objectID, modelObject, obj)
+}
 
-	case *activitypub.Image:
-		result := &model.Object{
-			ID:         o.ID,
-			Type:       model.ObjectTypeImage,
-			Content:    o.Summary, // Images use summary for description
-			Visibility: deriveVisibility(o.To, o.CC),
-			Sensitive:  o.Sensitive,
-			Attachments: []*activitypub.Attachment{
-				{
-					Type:      "Image",
-					MediaType: o.MediaType,
-					URL:       o.URL,
-					Width:     o.Width,
-					Height:    o.Height,
-				},
-			},
-			Tags:      []*activitypub.Tag{},
-			Mentions:  []*model.Mention{},
-			CreatedAt: model.Time(getTimeOrNow(o.Published)),
-			UpdatedAt: model.Time(getTimeOrNow(o.Updated)),
-			// Get interaction counts from storage
-			RepliesCount: r.getObjectReplyCount(ctx, o.ID),
-			LikesCount:   r.getObjectLikeCount(ctx, o.ID),
-			SharesCount:  r.getObjectShareCount(ctx, o.ID),
-		}
-		return result
-
-	default:
-		// Log unsupported type and return nil
-		r.Logger.Warn("Unsupported object type in timeline",
-			zap.String("type", fmt.Sprintf("%T", obj)))
-		return nil
+// generateFallbackExplanation creates a structural analysis when AI is unavailable
+func (r *queryResolver) generateFallbackExplanation(objectID string, modelObject *model.Object, obj any) *model.ObjectExplanation {
+	return &model.ObjectExplanation{
+		Object:          modelObject,
+		StorageLocation: fmt.Sprintf("DynamoDB Table: main, PK: object#%s, SK: object#%s", objectID, objectID),
+		SizeBytes:       r.calculateObjectSize(obj),
+		StorageCost:     r.estimateStorageCost(obj),
+		AccessPattern:   []*model.AccessLog{},
 	}
 }
 
-// validateNoteInput validates the input for creating a note
-func validateNoteInput(input model.CreateNoteInput) error {
-	if strings.TrimSpace(input.Content) == "" {
-		return fmt.Errorf("content cannot be empty")
-	}
-
-	if len(input.Content) > 5000 {
-		return fmt.Errorf("content exceeds maximum length of 5000 characters")
-	}
-
-	// Validate mentions format
-	for _, mention := range input.Mentions {
-		if !strings.HasPrefix(mention, "@") {
-			return fmt.Errorf("invalid mention format: %s", mention)
+// enrichWithStorageAnalysis adds storage cost and access pattern information
+func (r *queryResolver) enrichWithStorageAnalysis(ctx context.Context, explanation *model.ObjectExplanation, objectID string) {
+	if costRepo := r.Registry.GetStorage().Cost(); costRepo != nil {
+		if activityCost, err := costRepo.GetActivityCost(ctx, objectID); err == nil && activityCost != nil {
+			explanation.StorageCost = float64(activityCost.TotalCostMicroCents) / 1_000_000.0
+			explanation.AccessPattern = append(explanation.AccessPattern, &model.AccessLog{
+				Timestamp: model.Time(activityCost.Timestamp),
+				Operation: "GetItem",
+				Cost:      int(activityCost.ReadCapacityUnits),
+			})
 		}
 	}
 
-	// Validate tags format
-	for _, tag := range input.Tags {
-		if strings.ContainsAny(tag, " \t\n\r") {
-			return fmt.Errorf("invalid tag format: %s", tag)
+	if err := common.ValidateSliceNotEmpty("access_pattern", explanation.AccessPattern); err != nil {
+		explanation.AccessPattern = []*model.AccessLog{
+			{
+				Timestamp: model.Time(time.Now().Add(-time.Hour)),
+				Operation: "GetItem",
+				Cost:      1,
+			},
+			{
+				Timestamp: model.Time(time.Now().Add(-30 * time.Minute)),
+				Operation: "Query",
+				Cost:      2,
+			},
+		}
+	}
+}
+
+// calculateObjectSize estimates the storage size of an object in bytes
+func (r *queryResolver) calculateObjectSize(obj any) int {
+	switch o := obj.(type) {
+	case *activitypub.Note:
+		size := len(o.ID) + len(o.Content) + len(o.Type)
+		if o.Summary != "" {
+			size += len(o.Summary)
+		}
+		return size + 100
+	case *activitypub.Article:
+		size := len(o.ID) + len(o.Content) + len(o.Type)
+		if o.Name != "" {
+			size += len(o.Name)
+		}
+		return size + 100
+	case map[string]interface{}:
+		if jsonBytes, err := json.Marshal(obj); err == nil {
+			return len(jsonBytes) + 100
+		}
+		return 500
+	default:
+		return 300
+	}
+}
+
+// estimateStorageCost calculates the estimated monthly storage cost
+func (r *queryResolver) estimateStorageCost(obj any) float64 {
+	sizeBytes := float64(r.calculateObjectSize(obj))
+	sizeGB := sizeBytes / (1024 * 1024 * 1024)
+	return sizeGB * 0.25
+}
+
+func (r *Resolver) convertThreadContextResultToModel(_ context.Context, result *threads.ThreadContextResult) *model.ThreadContext {
+	if result == nil {
+		return nil
+	}
+
+	// Convert the root note to a GraphQL Object
+	var rootNoteObj *model.Object
+	if result.RootNote != nil {
+		rootNoteObj = &model.Object{
+			ID:        result.RootNote.ID,
+			Type:      model.ObjectTypeNote,
+			Content:   result.RootNote.Content,
+			CreatedAt: model.Time(*result.RootNote.Published),
 		}
 	}
 
+	syncStatus := model.SyncStatus("NONE")
+	switch result.SyncStatus {
+	case threads.SyncStatusComplete:
+		syncStatus = model.SyncStatus("COMPLETE")
+	case threads.SyncStatusPartial:
+		syncStatus = model.SyncStatus("PARTIAL")
+	case threads.SyncStatusFailed:
+		syncStatus = model.SyncStatus("FAILED")
+	case threads.SyncStatusSyncing:
+		syncStatus = model.SyncStatus("SYNCING")
+	}
+
+	return &model.ThreadContext{
+		RootNote:         rootNoteObj,
+		ReplyCount:       result.ReplyCount,
+		ParticipantCount: result.ParticipantCount,
+		MissingPosts:     result.MissingCount,
+		LastActivity:     model.Time(result.LastActivity),
+		SyncStatus:       syncStatus,
+	}
+}
+
+// ====================================================================
+// HASHTAG HELPERS
+// ====================================================================
+
+// convertHashtagToModel converts service Hashtag to GraphQL model.Hashtag
+// This is THE converter used by all resolvers - consistency is critical
+func (r *Resolver) convertHashtagToModel(ctx context.Context, h *hashtags.Hashtag, viewerID string) *model.Hashtag {
+	if h == nil {
+		return nil
+	}
+
+	domain := r.getDomain()
+	url := r.buildHashtagURL(h, domain)
+	settings := r.convertHashtagNotificationSettingsFromService(ctx, h, viewerID)
+	relatedHashtags := r.convertRelatedHashtags(h.Related, domain)
+
+	result := &model.Hashtag{
+		Name:                 h.Name,
+		URL:                  url,
+		DisplayName:          "#" + h.Name,
+		PostCount:            h.PostCount,
+		FollowerCount:        h.FollowerCount,
+		TrendingScore:        h.TrendingScore,
+		IsFollowing:          h.IsFollowing,
+		NotificationSettings: settings,
+		RelatedHashtags:      relatedHashtags,
+	}
+
+	if h.FollowedAt != nil {
+		t := model.Time(*h.FollowedAt)
+		result.FollowedAt = &t
+	}
+
+	return result
+}
+
+// getDomain extracts the domain from the registry config
+func (r *Resolver) getDomain() string {
+	domain := "localhost"
+	if r.Registry != nil && r.Registry.GetConfig() != nil && r.Registry.GetConfig().BaseURL != "" {
+		baseURL := r.Registry.GetConfig().BaseURL
+		if strings.HasPrefix(baseURL, "https://") {
+			domain = strings.TrimPrefix(baseURL, "https://")
+		} else if strings.HasPrefix(baseURL, "http://") {
+			domain = strings.TrimPrefix(baseURL, "http://")
+		} else {
+			domain = baseURL
+		}
+		domain = strings.TrimSuffix(domain, "/")
+	}
+	return domain
+}
+
+// buildHashtagURL builds the URL for a hashtag
+func (r *Resolver) buildHashtagURL(h *hashtags.Hashtag, domain string) string {
+	if h.URL != "" {
+		return h.URL
+	}
+	if h.Name != "" {
+		return fmt.Sprintf("https://%s/tags/%s", domain, h.Name)
+	}
+	return ""
+}
+
+// convertHashtagNotificationSettingsFromService converts service notification settings
+func (r *Resolver) convertHashtagNotificationSettingsFromService(ctx context.Context, h *hashtags.Hashtag, viewerID string) *model.HashtagNotificationSettings {
+	if h.NotificationSettings != nil {
+		return r.convertStorageNotificationSettings(h.NotificationSettings)
+	}
+	if viewerID != "" {
+		return r.fetchHashtagNotificationSettings(ctx, h.Name, viewerID)
+	}
 	return nil
 }
 
-// extractDomainFromActorID extracts the domain from an actor ID
-func extractDomainFromActorID(actorID string) string {
-	// Format: https://domain.com/users/username
-	if !strings.HasPrefix(actorID, "https://") && !strings.HasPrefix(actorID, "http://") {
-		return ""
+// convertStorageNotificationSettings converts storage notification settings to GraphQL model
+func (r *Resolver) convertStorageNotificationSettings(settings *storage.HashtagNotificationSettings) *model.HashtagNotificationSettings {
+	level := model.NotificationLevelAll
+	levelStr := strings.ToLower(settings.Level)
+	if levelStr == common.RelationshipFollowing || levelStr == "mutuals" {
+		level = model.NotificationLevelFollowing
 	}
 
-	// Remove protocol
-	url := actorID
-	if strings.HasPrefix(url, "https://") {
-		url = url[8:]
-	} else if strings.HasPrefix(url, "http://") {
-		url = url[7:]
+	result := &model.HashtagNotificationSettings{
+		Level:   level,
+		Muted:   settings.Muted,
+		Filters: r.convertNotificationFilters(settings.Filters),
 	}
 
-	// Extract domain
-	parts := strings.Split(url, "/")
-	if len(parts) > 0 {
-		domain := parts[0]
-		// Remove port if present
-		if idx := strings.Index(domain, ":"); idx != -1 {
-			domain = domain[:idx]
-		}
-		return domain
+	if settings.MutedUntil != nil && !settings.MutedUntil.IsZero() {
+		t := model.Time(*settings.MutedUntil)
+		result.MutedUntil = &t
 	}
 
-	return ""
+	return result
 }
 
-// generateUniqueID generates a unique ID for objects
-func generateUniqueID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		// Fallback to timestamp-based ID if crypto/rand fails
-		return fmt.Sprintf("%d", time.Now().UnixNano())
+// convertNotificationFilters converts storage filters to GraphQL model
+func (r *Resolver) convertNotificationFilters(filters []*storage.NotificationFilter) []*model.NotificationFilter {
+	if len(filters) == 0 {
+		return []*model.NotificationFilter{}
 	}
-	return hex.EncodeToString(b)
-}
 
-// determineAudience determines the To field based on visibility
-func determineAudience(visibility model.Visibility, actorID string, mentions []string) []string {
-	audience := []string{}
-
-	switch visibility {
-	case model.VisibilityPublic:
-		audience = append(audience, activitypub.PublicAddress)
-	case model.VisibilityUnlisted:
-		// Unlisted posts go to followers in To field
-		audience = append(audience, actorID+"/followers")
-	case model.VisibilityFollowers:
-		audience = append(audience, actorID+"/followers")
-	case model.VisibilityDirect:
-		// Direct messages only go to mentioned users
-		for _, mention := range mentions {
-			// Convert mention to actor ID (simplified - in real implementation would need to resolve)
-			// For now, just add as-is if it looks like an actor ID
-			if strings.Contains(mention, "@") && !strings.HasPrefix(mention, "https://") {
-				// Skip @username format for now
-				continue
-			}
-			audience = append(audience, mention)
+	result := make([]*model.NotificationFilter, 0, len(filters))
+	for _, filter := range filters {
+		if filter != nil {
+			result = append(result, &model.NotificationFilter{
+				Type:  strings.Join(filter.Types, ","),
+				Value: strings.Join(filter.ExcludeTypes, ","),
+			})
 		}
 	}
-
-	return audience
+	return result
 }
 
-// determineCCAudience determines the CC field based on visibility
-func determineCCAudience(visibility model.Visibility, actorID string) []string {
-	cc := []string{}
-
-	switch visibility {
-	case model.VisibilityPublic:
-		// Public posts CC followers
-		cc = append(cc, actorID+"/followers")
-	case model.VisibilityUnlisted:
-		// Unlisted posts CC public
-		cc = append(cc, activitypub.PublicAddress)
+// convertRelatedHashtags converts related hashtag names to GraphQL models
+func (r *Resolver) convertRelatedHashtags(related []string, domain string) []*model.Hashtag {
+	if len(related) == 0 {
+		return nil
 	}
 
-	return cc
-}
-
-// getSensitive safely extracts the sensitive flag
-func getSensitive(sensitive *bool) bool {
-	if sensitive != nil {
-		return *sensitive
-	}
-	return false
-}
-
-// getSpoilerText safely extracts the spoiler text
-func getSpoilerText(spoilerText *string) string {
-	if spoilerText != nil {
-		return *spoilerText
-	}
-	return ""
-}
-
-// buildTags builds tag array from hashtags and mentions
-func buildTags(hashtags []string, mentions []string) []activitypub.Tag {
-	tags := []activitypub.Tag{}
-
-	// Add hashtags
-	for _, tag := range hashtags {
-		// Ensure tag starts with #
-		if !strings.HasPrefix(tag, "#") {
-			tag = "#" + tag
+	relatedHashtags := make([]*model.Hashtag, 0, len(related))
+	for _, relTag := range related {
+		if relTag != "" {
+			relatedHashtags = append(relatedHashtags, &model.Hashtag{
+				Name:        relTag,
+				URL:         fmt.Sprintf("https://%s/tags/%s", domain, relTag),
+				DisplayName: "#" + relTag,
+			})
 		}
+	}
+	return relatedHashtags
+}
 
-		tags = append(tags, activitypub.Tag{
-			Type: "Hashtag",
-			Name: tag,
-			Href: fmt.Sprintf("https://localhost/tags/%s", strings.TrimPrefix(tag, "#")),
-		})
+// fetchHashtagNotificationSettings retrieves notification settings from storage
+func (r *Resolver) fetchHashtagNotificationSettings(ctx context.Context, hashtag, userID string) *model.HashtagNotificationSettings {
+	defaultSettings := &model.HashtagNotificationSettings{
+		Level:   model.NotificationLevelNone,
+		Muted:   false,
+		Filters: []*model.NotificationFilter{},
 	}
 
-	// Add mentions
-	for _, mention := range mentions {
-		// For now, create basic mention tags
-		// In real implementation, would need to resolve the mention to get proper href
-		tags = append(tags, activitypub.Tag{
-			Type: "Mention",
-			Name: mention,
-			Href: mention, // This should be the actor ID
-		})
+	if hashtag == "" || userID == "" {
+		return defaultSettings
 	}
 
-	return tags
-}
-
-// buildAttachments builds attachment objects from media IDs
-func (r *mutationResolver) buildAttachments(_ context.Context, attachmentIDs []string) ([]activitypub.Attachment, error) {
-	attachments := []activitypub.Attachment{}
-
-	for _, id := range attachmentIDs {
-		// In a real implementation, would fetch media details from storage
-		// For now, create a basic attachment
-		attachments = append(attachments, activitypub.Attachment{
-			Type:      "Document",
-			MediaType: "image/jpeg", // Would be determined from actual media
-			URL:       fmt.Sprintf("https://localhost/media/%s", id),
-		})
+	if r.Storage == nil {
+		return defaultSettings
 	}
 
-	return attachments, nil
+	hashtagRepo := r.Storage.Hashtag()
+	if hashtagRepo == nil {
+		return defaultSettings
+	}
+
+	settings, err := hashtagRepo.GetHashtagNotificationSettings(ctx, userID, hashtag)
+	if err != nil || settings == nil {
+		return defaultSettings
+	}
+
+	return r.convertStorageNotificationSettings(settings)
 }
 
-// shouldFederate determines if an activity should be federated based on visibility
-func shouldFederate(_ model.Visibility) bool {
-	// Direct messages and followers-only posts should still be federated to the right recipients
-	// Only truly local content wouldn't be federated (but we don't have that visibility level)
-	return true
+// isFollowingHashtag checks if the user is following a hashtag
+//
+//nolint:unused // Used by tests and future features
+func (r *Resolver) isFollowingHashtag(ctx context.Context, userID, hashtag string) bool {
+	if userID == "" || hashtag == "" {
+		return false
+	}
+
+	hashtagRepo := r.Storage.Hashtag()
+	if hashtagRepo == nil {
+		return false
+	}
+
+	following, err := hashtagRepo.IsFollowingHashtag(ctx, userID, hashtag)
+	if err != nil {
+		return false
+	}
+
+	return following
 }
 
-// convertToGraphQLObject converts an ActivityPub object to GraphQL Object type
-func (r *mutationResolver) convertToGraphQLObject(ctx context.Context, obj interface{}) *model.Object {
-	// Reuse the query resolver's method
-	qr := &queryResolver{r.Resolver}
-	return qr.convertToGraphQLObject(ctx, obj)
+// isHashtagMuted checks if the user has muted a hashtag
+//
+//nolint:unused // Used by tests and future features
+func (r *Resolver) isHashtagMuted(ctx context.Context, userID, hashtag string) bool {
+	if userID == "" || hashtag == "" {
+		return false
+	}
+
+	hashtagRepo := r.Storage.Hashtag()
+	if hashtagRepo == nil {
+		return false
+	}
+
+	muted, err := hashtagRepo.IsHashtagMuted(ctx, userID, hashtag)
+	if err != nil {
+		return false
+	}
+
+	return muted
 }
 
-// getObjectActorID extracts the actor ID from an object
-func getObjectActorID(obj interface{}) string {
-	switch o := obj.(type) {
-	case *activitypub.Note:
-		return o.AttributedTo
-	case *activitypub.Article:
-		return o.AttributedTo
-	case *activitypub.Image:
-		// Images don't have AttributedTo, they're usually attachments
-		return ""
-	case *activitypub.Activity:
-		return o.Actor
+// convertSeveredRelationshipToModel converts service SeveredRelationship to GraphQL model
+func (r *Resolver) convertSeveredRelationshipToModel(_ context.Context, sev *severance.SeveredRelationship) *model.SeveredRelationship {
+	if sev == nil {
+		return nil
+	}
+
+	// Convert reason to GraphQL enum
+	var reason model.SeveranceReason
+	switch sev.Reason {
+	case models.SeveranceReasonDomainBlock:
+		reason = model.SeveranceReasonDomainBlock
+	case models.SeveranceReasonInstanceDown:
+		reason = model.SeveranceReasonInstanceDown
+	case models.SeveranceReasonDefederation:
+		reason = model.SeveranceReasonDefederation
+	case models.SeveranceReasonPolicyViolation:
+		reason = model.SeveranceReasonPolicyViolation
 	default:
-		return ""
+		reason = model.SeveranceReasonOther
 	}
+
+	result := &model.SeveredRelationship{
+		ID:                sev.ID,
+		LocalInstance:     sev.LocalInstance,
+		RemoteInstance:    sev.RemoteInstance,
+		Reason:            reason,
+		AffectedFollowers: sev.AffectedFollowers,
+		AffectedFollowing: sev.AffectedFollowing,
+		Timestamp:         model.Time(sev.DetectedAt),
+		Reversible:        sev.Reversible,
+	}
+
+	// Add optional details
+	if sev.Details != "" || sev.AdminNotes != "" {
+		description := sev.Details
+		if sev.AdminNotes != "" {
+			if description != "" {
+				description += "\n"
+			}
+			description += sev.AdminNotes
+		}
+		result.Details = &model.SeveranceDetails{
+			Description:  description,
+			Metadata:     []string{},
+			AutoDetected: sev.AutoDetected,
+		}
+		if sev.AdminNotes != "" {
+			result.Details.AdminNotes = &sev.AdminNotes
+		}
+	}
+
+	return result
 }
 
-// determineModerationCategory categorizes the moderation reason
-func determineModerationCategory(reason string) string {
-	lowerReason := strings.ToLower(reason)
-
-	if strings.Contains(lowerReason, "spam") {
-		return "spam"
-	}
-	if strings.Contains(lowerReason, "violence") || strings.Contains(lowerReason, "hate") ||
-		strings.Contains(lowerReason, "harassment") || strings.Contains(lowerReason, "abuse") {
-		return "abuse"
-	}
-	if strings.Contains(lowerReason, "illegal") || strings.Contains(lowerReason, "law") {
-		return "illegal"
-	}
-	if strings.Contains(lowerReason, "nsfw") || strings.Contains(lowerReason, "adult") ||
-		strings.Contains(lowerReason, "sexual") {
-		return "nsfw"
-	}
-	if strings.Contains(lowerReason, "misinformation") || strings.Contains(lowerReason, "fake") {
-		return "misinformation"
+// convertAffectedRelationshipToModel converts service AffectedRelationship to GraphQL model
+func (r *Resolver) convertAffectedRelationshipToModel(ctx context.Context, aff *severance.AffectedRelationship) *model.AffectedRelationship {
+	if aff == nil {
+		return nil
 	}
 
-	return "other"
-}
-
-// Helper methods for getting object interaction counts
-func (r *queryResolver) getObjectReplyCount(ctx context.Context, objectID string) int {
-	count, err := r.Storage.CountObjectReplies(ctx, objectID)
-	if err != nil {
-		r.Logger.Error("failed to get reply count", zap.Error(err), zap.String("objectID", objectID))
-		return 0
-	}
-	return count
-}
-
-func (r *queryResolver) getObjectLikeCount(ctx context.Context, objectID string) int {
-	count, err := r.Storage.CountObjectLikes(ctx, objectID)
-	if err != nil {
-		r.Logger.Error("failed to get like count", zap.Error(err), zap.String("objectID", objectID))
-		return 0
-	}
-	return count
-}
-
-func (r *queryResolver) getObjectShareCount(ctx context.Context, objectID string) int {
-	count, err := r.Storage.CountObjectAnnounces(ctx, objectID)
-	if err != nil {
-		r.Logger.Error("failed to get share count", zap.Error(err), zap.String("objectID", objectID))
-		return 0
-	}
-	return count
-}
-
-// calculateMissingPosts calculates the number of missing posts in a thread
-func (r *Resolver) calculateMissingPosts(ctx context.Context, threadContext *storage.ThreadContext) int {
-	if threadContext == nil {
-		return 0
-	}
-
-	// Count gaps in the thread by looking for missing replies
-	// This is a simplified implementation - a more sophisticated version would:
-	// 1. Analyze reply chains for gaps
-	// 2. Check for orphaned replies (replies without visible parents)
-	// 3. Compare with known reply counts from remote servers
-
-	missingCount := 0
-
-	// Check if we have ancestors/descendants that reference missing posts
-	// StatusSearchResult doesn't have Object field, so we check if we can retrieve the actual object
-	for _, ancestor := range threadContext.Ancestors {
-		if ancestor.StatusID != "" {
-			if _, err := r.Storage.GetObject(ctx, ancestor.StatusID); err != nil {
-				missingCount++
+	// Try to fetch the full actor from storage
+	var actor *activitypub.Actor
+	if r.Registry != nil {
+		storage := r.Registry.GetStorage()
+		if storage != nil {
+			actorRepo := storage.Actor()
+			if actorRepo != nil && aff.ActorID != "" {
+				fetchedActor, err := actorRepo.GetActor(ctx, aff.ActorID)
+				if err == nil {
+					actor = fetchedActor
+				} else {
+					// If we can't fetch the actor, construct a minimal one from available fields
+					r.Logger.Debug("failed to fetch actor for affected relationship, using minimal actor",
+						zap.String("actor_id", aff.ActorID),
+						zap.Error(err))
+					actor = r.constructMinimalActor(aff.ActorID, aff.ActorHandle, aff.ActorDomain)
+				}
 			}
 		}
 	}
 
-	for _, descendant := range threadContext.Descendants {
-		if descendant.StatusID != "" {
-			if _, err := r.Storage.GetObject(ctx, descendant.StatusID); err != nil {
-				missingCount++
-			}
-		}
+	// If we still don't have an actor, construct a minimal one
+	if actor == nil {
+		actor = r.constructMinimalActor(aff.ActorID, aff.ActorHandle, aff.ActorDomain)
 	}
 
-	// Additional heuristic: if we have very few replies but the post seems popular
-	// (based on likes/shares), there might be missing replies
-	totalPosts := len(threadContext.Ancestors) + len(threadContext.Descendants)
-	if totalPosts < 3 {
-		// For small threads, estimate missing posts based on engagement
-		// This is a rough heuristic and could be improved with more sophisticated analysis
-		avgEngagement := r.calculateAverageEngagement(ctx, threadContext)
-		if avgEngagement > 10 { // High engagement suggests missing replies
-			missingCount += int(avgEngagement / 20) // Rough estimate
-		}
+	result := &model.AffectedRelationship{
+		Actor:            actor,
+		RelationshipType: aff.RelationshipType,
+		EstablishedAt:    model.Time(aff.EstablishedAt),
 	}
 
-	return missingCount
+	if aff.LastInteraction != nil {
+		t := model.Time(*aff.LastInteraction)
+		result.LastInteraction = &t
+	}
+
+	return result
 }
 
-// calculateAverageEngagement calculates average engagement for posts in the thread
-func (r *Resolver) calculateAverageEngagement(ctx context.Context, threadContext *storage.ThreadContext) float64 {
-	if threadContext == nil {
-		return 0
-	}
-
-	totalEngagement := 0
-	postCount := 0
-
-	// Sum engagement from all posts in the thread
-	allPosts := append(threadContext.Ancestors, threadContext.Descendants...)
-	for _, post := range allPosts {
-		if post.StatusID != "" {
-			// Get engagement metrics for this post using StatusID
-			likes, _ := r.Storage.CountObjectLikes(ctx, post.StatusID)
-			shares, _ := r.Storage.CountObjectAnnounces(ctx, post.StatusID)
-			replies, _ := r.Storage.CountObjectReplies(ctx, post.StatusID)
-
-			totalEngagement += likes + shares + replies
-			postCount++
+// constructMinimalActor creates a minimal Actor from available fields
+func (r *Resolver) constructMinimalActor(actorID, actorHandle, actorDomain string) *activitypub.Actor {
+	// Parse handle to extract username if needed
+	username := actorID
+	if username == "" && actorHandle != "" {
+		// Handle is typically @user@domain.com, extract user part
+		username = strings.TrimPrefix(actorHandle, "@")
+		if idx := strings.Index(username, "@"); idx != -1 {
+			username = username[:idx]
 		}
 	}
 
-	if postCount == 0 {
-		return 0
+	// Construct a minimal actor with available information
+	actorURL := fmt.Sprintf("https://%s/@%s", actorDomain, username)
+	if actorDomain == "" {
+		actorDomain = "unknown.domain"
+		actorURL = fmt.Sprintf("https://%s/users/%s", actorDomain, username)
 	}
 
-	return float64(totalEngagement) / float64(postCount)
-}
-
-// getObjectID extracts the ID from an ActivityPub object
-func (r *Resolver) getObjectID(obj interface{}) string {
-	switch o := obj.(type) {
-	case *activitypub.Note:
-		return o.ID
-	case *activitypub.Article:
-		return o.ID
-	case *activitypub.Image:
-		return o.ID
-	default:
-		return ""
+	return &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   actorURL,
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: username,
+		Name:              actorHandle,
+		Inbox:             actorURL + "/inbox",
+		Outbox:            actorURL + "/outbox",
 	}
 }

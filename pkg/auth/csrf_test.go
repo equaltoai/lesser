@@ -121,7 +121,7 @@ func TestCSRFTokenExpiration(t *testing.T) {
 	// Manually expire the token
 	csrf, _ := store.Get(token)
 	csrf.ExpiresAt = time.Now().Add(-1 * time.Hour)
-	store.Store(token, *csrf)
+	_ = store.Store(token, *csrf)
 
 	// Validation should fail
 	err := manager.ValidateToken(token, userID)
@@ -138,7 +138,7 @@ func TestCSRFMiddleware(t *testing.T) {
 	// Mock handler
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Success"))
+		_, _ = w.Write([]byte("Success"))
 	})
 
 	tests := []struct {
@@ -209,7 +209,7 @@ func TestMemoryCSRFStoreCleanup(t *testing.T) {
 		ExpiresAt: time.Now().Add(-1 * time.Hour),
 		UserID:    "user1",
 	}
-	store.Store("expired", expiredToken)
+	_ = store.Store("expired", expiredToken)
 
 	// Add valid token
 	validToken := CSRFToken{
@@ -217,7 +217,7 @@ func TestMemoryCSRFStoreCleanup(t *testing.T) {
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 		UserID:    "user2",
 	}
-	store.Store("valid", validToken)
+	_ = store.Store("valid", validToken)
 
 	// Clean expired
 	err := store.CleanExpired()

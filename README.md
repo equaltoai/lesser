@@ -1,255 +1,234 @@
 # Lesser
 
-A **100% complete** serverless ActivityPub implementation that makes federated social media essentially free to operate. Built with Go, AWS Lambda, and DynamoDB. **Created in just 5 days using AI assistance.**
-
-## 🎉 MVP Complete!
-
-Lesser has achieved complete MVP status with full ActivityPub federation and Mastodon API compatibility. See our **[MVP Complete Summary](docs/MVP_COMPLETE_SUMMARY.md)** for a comprehensive feature list.
+A serverless, cost-optimized ActivityPub implementation built with Go, AWS Lambda, and the Lift framework.
 
 ## Overview
 
-Lesser proves that federated social media can cost pennies instead of hundreds of dollars per month. By leveraging serverless architecture and innovative features like AI-powered search, reactive moderation, and real-time cost tracking, Lesser enables anyone to run their own social media instance for $1-10/month.
+Lesser is a Mastodon-compatible federated social media platform that runs entirely on AWS serverless infrastructure. It provides full ActivityPub federation while maintaining costs at a fraction of traditional server-based implementations.
 
-## 🚀 What Makes Lesser Revolutionary
+## Key Features
 
-- **💰 1/100th the Cost** - $1-10/month for hundreds of users (compare to $50-500 for traditional hosting)
-- **🤖 AI-Powered Search** - 13 search strategies including semantic understanding via AWS Bedrock
-- **📊 Real-Time Cost Tracking** - See the cost of every action down to the micro-cent
-- **🧠 Reactive Moderation Mesh** - Community-driven moderation with trust propagation
-- **🔐 Modern Authentication** - WebAuthn, OAuth 2.0, and Web3 wallet support
-- **🌐 100% ActivityPub** - Full federation with 10M+ Fediverse users
-- **⚡ True Serverless** - Scales to zero, scales to millions, no servers to manage
-
-## Current Status: 100% MVP Complete! ✅
-
-Built in just 5 days using AI assistance (Cursor), Lesser now includes more features than many established ActivityPub implementations:
-
-- ✅ **Full ActivityPub Protocol** - Complete federation implementation
-- ✅ **100% Mastodon API** - All v1 endpoints implemented
-- ✅ **60/60 GraphQL Operations** - Modern API with DataLoader optimization
-- ✅ **AI-Powered Search** - Semantic search with AWS Bedrock Titan embeddings
-- ✅ **Push Notifications** - Web Push Protocol with encryption
-- ✅ **Media Processing** - AWS MediaConvert integration
-- ✅ **Advanced Features** - Polls, filters, lists, scheduled posts, hashtag following
-- ✅ **Enterprise Ready** - Cost tracking, audit logging, trust system
-
-## ⚠️ Security Status
-
-A comprehensive security audit has been conducted on the Lesser prototype. We are actively addressing all findings:
-
-- **33 security findings** identified and documented
-- **5-week remediation plan** in progress
-- **Critical issues** being addressed first
-- See [SECURITY_UPDATE_PLAN.md](SECURITY_UPDATE_PLAN.md) for details
-
-**Important**: Lesser is currently in prototype phase. Do not deploy to production until security remediation is complete.
+- **Full ActivityPub Support**: Complete federation with Mastodon and other ActivityPub servers
+- **Serverless Architecture**: 23 Lambda functions handling all operations
+- **Cost Optimization**: Built-in cost tracking and budget controls for sustainable operation
+- **Multi-Tenant Support**: Run multiple instances from a single deployment
+- **GraphQL API**: Modern API with 60+ operations alongside Mastodon REST compatibility
+- **WebSocket Streaming**: Real-time updates for timelines and notifications
+- **AI Integration**: Optional semantic search and content moderation via AWS Bedrock
+- **Enterprise Monitoring**: CloudWatch dashboards, EMF metrics, and comprehensive alerting
 
 ## Architecture
 
-### Serverless-Native Design
-- **Compute**: AWS Lambda (23 specialized functions)
-- **Storage**: DynamoDB (single-table design with 8 GSIs)
-- **Media**: S3 + CloudFront CDN
-- **Search**: Multi-strategy with AI embeddings
-- **Queue**: SQS for reliable async processing
-- **Deploy**: Pulumi (infrastructure as code)
+Lesser uses AWS CDK with the Lift framework for infrastructure:
 
-### Cost Breakdown (Monthly)
-
-| Users | Traditional (Mastodon) | Lesser Serverless | Savings |
-|-------|------------------------|-------------------|---------|
-| 100   | $50-100               | $1-3              | 97%     |
-| 1,000 | $200-500              | $10-30            | 94%     |
-| 10,000| $1,000-5,000          | $100-300          | 90%     |
-
-## 🎯 Key Innovations
-
-### 1. Multi-Strategy Search System
-Lesser implements 13 different search strategies across accounts, statuses, and hashtags:
-- **Semantic search** using AWS Bedrock Titan embeddings (1536-dimensional)
-- **Exact, prefix, fuzzy matching** with intelligent fallbacks
-- **Language detection** via AWS Comprehend
-- **Personalized results** based on social graph
-- **Real-time indexing** with 90-day TTL
-
-### 2. Cost-Aware Infrastructure
-Every API response includes detailed cost breakdowns:
-```json
-{
-  "data": { ... },
-  "cost": {
-    "total_cost_micros": 234,  // $0.000234
-    "breakdown": {
-      "dynamodb_reads": 2,
-      "lambda_ms": 45,
-      "bedrock_tokens": 150
-    }
-  }
-}
-```
-
-### 3. Complete Developer Experience
-- **GraphQL + REST APIs** - Use your preferred approach
-- **WebSocket streaming** - Real-time updates
-- **Comprehensive documentation** - Every endpoint documented
-- **Postman collection** - Import and start testing
+- **Lambda Functions**: Event-driven compute for all operations
+- **DynamoDB**: Single-table design with 8 GSIs for efficient queries
+- **S3 + CloudFront**: Global CDN for media delivery
+- **API Gateway**: HTTP API with custom domain support
+- **SQS**: Reliable message queuing for federation and async processing
+- **EventBridge**: Scheduled tasks for aggregation and maintenance
 
 ## Quick Start
 
 ### Prerequisites
-- AWS Account
-- Go 1.21+
-- Node.js 18+ (for frontend)
-- Pulumi CLI
-- A domain name
 
-### Deploy Your Instance
+- AWS Account with credentials configured (`aws configure`)
+- AWS CDK v2 installed (`npm install -g aws-cdk`)
+- Go 1.24 or later
+- Make installed for build automation
+
+### Basic Deployment
 
 ```bash
-# 1. Clone and configure
-git clone https://github.com/yourusername/lesser.git
+# Clone the repository
+git clone https://github.com/equaltoai/lesser.git
 cd lesser
-cp .env.example .env
-# Edit .env with your settings
 
-# 2. Deploy infrastructure
-cd infra
-pulumi config set domain yourdomain.com
-pulumi config set aws:region us-east-1
-pulumi up
+# Build Lambda functions
+make build-lambdas
 
-# 3. Your instance is live!
-✅ WebFinger: https://yourdomain.com/.well-known/webfinger
-✅ Your handle: @you@yourdomain.com
-✅ Mastodon API: https://yourdomain.com/api/v1/
-✅ GraphQL: https://yourdomain.com/graphql
-✅ Cost so far: ~$0.10
+# Deploy infrastructure
+cd infra/cdk
+cdk bootstrap  # First time only
+cdk deploy --all
 ```
 
-### Connect with Apps
-Lesser works with all Mastodon clients:
-- **iOS**: Ivory, Toot!, Ice Cubes, Mammoth
-- **Android**: Tusky, Fedilab, Megalodon
-- **Web**: Elk, Phanpy, Semaphore
-- **Desktop**: Whalebird, Hyperspace
+### Production Deployment
+
+For production, you'll need a domain and SSL certificate:
+
+```bash
+# Deploy with custom domain and required production settings
+cdk deploy --all \
+  --context environment=production \
+  --context domain=yourdomain.com \
+  --context certificateArn=arn:aws:acm:us-east-1:xxx:certificate/xxx \
+  --context jwtSecret=your-secure-secret
+```
+
+## Project Structure
+
+```
+lesser/
+├── cmd/                    # Lambda function entry points
+│   ├── api/               # Main REST API handler
+│   ├── graphql/           # GraphQL API handler
+│   ├── federation-delivery/ # ActivityPub delivery
+│   ├── inbox/             # ActivityPub inbox
+│   ├── outbox/            # ActivityPub outbox
+│   └── ...                # 18 more specialized functions
+├── pkg/                    # Core packages
+│   ├── activitypub/       # ActivityPub protocol implementation
+│   ├── auth/              # Authentication (WebAuthn, OAuth, crypto wallets)
+│   ├── federation/        # Federation routing and optimization
+│   ├── lift/              # Lift framework extensions
+│   ├── services/          # Domain services (accounts, lists, etc.)
+│   ├── storage/           # DynamoDB repositories and models
+│   └── streaming/         # WebSocket and real-time updates
+├── infra/
+│   └── cdk/               # AWS CDK infrastructure
+│       ├── stacks/        # CDK stack definitions
+│       ├── constructs/    # Reusable CDK constructs
+│       └── config/        # Environment configurations
+└── graph/                  # GraphQL schema and resolvers
+```
+
+## Configuration
+
+Environment-specific settings are in `infra/cdk/config/`:
+
+- **dev.yaml**: Development environment (512MB RAM, DEBUG logging)
+- **staging.yaml**: Staging environment (1GB RAM, INFO logging)
+- **prod.yaml**: Production environment (3GB RAM, full monitoring)
+
+### Environment Variables
+
+Key configuration options:
+
+```bash
+INSTANCE_TITLE="My Lesser Instance"
+INSTANCE_ADMIN_EMAIL="admin@yourdomain.com"
+FEDERATION_ENABLED=true
+REGISTRATIONS_OPEN=false
+MAX_STATUS_CHARS=5000
+```
+
+## Cost Management
+
+Lesser includes comprehensive cost tracking:
+
+- **Real-time cost calculation** for every operation
+- **Per-instance budgets** with automatic enforcement
+- **Cost aggregation** via scheduled Lambda functions
+- **Budget alerts** through SNS and CloudWatch
+
+Typical monthly costs:
+- Development: < $5
+- Small instance (100 users): $10-20
+- Medium instance (1000 users): $50-100
+- Large instance (10000 users): $200-500
+
+## Monitoring
+
+Built-in observability features:
+
+- **CloudWatch Dashboards**: Comprehensive metrics for all components
+- **EMF Metrics**: Structured metrics with dimensions
+- **X-Ray Tracing**: Distributed tracing for debugging
+- **Custom Alarms**: Automatic alerting for errors and performance issues
+
+Access your dashboard at:
+```
+https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=lesser-{environment}
+```
+
+## API Documentation
+
+Lesser provides three API interfaces:
+
+### REST API (Mastodon-compatible)
+- Full Mastodon v1 API compatibility
+- Additional Lesser-specific endpoints
+- OAuth 2.0 authentication
+
+### GraphQL API
+- 60+ operations for queries, mutations, and subscriptions
+- DataLoader for N+1 query prevention
+- Real-time subscriptions via WebSocket
+
+### WebSocket Streaming
+- Real-time timeline updates
+- Notification streaming
+- Presence and typing indicators
 
 ## Development
 
-### Project Structure
-```
-lesser/
-├── cmd/                    # Lambda functions
-│   ├── api/               # REST API handlers
-│   ├── graphql/           # GraphQL server
-│   ├── federation/        # ActivityPub endpoints
-│   └── processors/        # Async workers
-├── pkg/                    # Core packages
-│   ├── activitypub/       # Protocol implementation
-│   ├── storage/           # DynamoDB interface
-│   ├── search/            # Multi-strategy search
-│   ├── ai/                # AWS AI integrations
-│   └── cost/              # Cost tracking
-├── infra/                  # Pulumi IaC
-├── docs/                   # Documentation
-└── tests/                  # Test suites
+### Building Locally
+
+```bash
+# Install dependencies
+go mod download
+
+# Run tests
+make test
+
+# Build all Lambda functions
+make build-lambdas
+
+# Run specific function locally
+cd cmd/api
+go run main.go
 ```
 
-### Running Tests
+### Testing
+
 ```bash
 # Unit tests
 make test
 
-# Integration tests  
+# Integration tests
 make test-integration
 
-# GraphQL tests
-python tests/test_graphql.py
-
-# Full suite
-make test-all
+# Load tests
+make test-load
 ```
 
-## Documentation
+## Federation
 
-### 📚 Essential Reading
-- **[MVP Complete Summary](docs/MVP_COMPLETE_SUMMARY.md)** - All implemented features
-- **[Documentation Index](docs/DOCUMENTATION_INDEX.md)** - Complete navigation guide
-- **[Quick Start Guide](docs/deployment/QUICK_START.md)** - Deploy in 15 minutes
-- **[Architecture Overview](docs/architecture/OVERVIEW.md)** - System design
+Lesser implements the full ActivityPub protocol:
 
-### 🏗️ Technical Deep Dives
-- **[API Reference](docs/api/API_REFERENCE.md)** - Complete REST API
-- **[GraphQL API](docs/api/GRAPHQL_API.md)** - GraphQL schema and operations
-- **[Search Design](docs/architecture/SEARCH_DESIGN.md)** - Multi-strategy search system
-- **[Storage Architecture](docs/architecture/STORAGE_ARCHITECTURE.md)** - DynamoDB patterns
+- **Inbox/Outbox**: Complete activity processing
+- **WebFinger**: User discovery
+- **HTTP Signatures**: Secure federation
+- **Relay Support**: Optional relay configuration
+- **Instance Blocks**: Moderation tools
 
-### 🚀 For Businesses
-- **[Use Cases](docs/use-cases/)** - Community, government, research platforms
-- **[PayTheory Partnership](paytheory-partnership/)** - Social commerce integration
-- **[Pitch Deck](docs/PITCH.md)** - Lesser value proposition
+## Security
 
-## Why Lesser?
-
-### For Individuals
-- **Own your social presence** - No platform lock-in
-- **Costs less than coffee** - $1-3/month typical
-- **Privacy first** - No ads, no tracking
-- **Full features** - Everything Mastodon has and more
-
-### For Communities  
-- **Sustainable** - Low costs = long-term viability
-- **Transparent** - See exactly what everything costs
-- **Safe** - AI-assisted moderation + community consensus
-- **Connected** - Federate with 10M+ users
-
-### For Developers
-- **Modern stack** - Go, GraphQL, WebSockets
-- **Well documented** - Every endpoint, every feature
-- **Cost aware** - Build with economics in mind
-- **Open source** - AGPL-3.0 license
-
-## The 5-Day Build Story
-
-Lesser was built in just 5 days using AI assistance (Cursor/Claude), proving that:
-- Modern AI tools can accelerate development dramatically
-- Serverless architecture enables rapid implementation
-- Complex protocols like ActivityPub can be implemented quickly
-- A single developer with AI can outpace traditional teams
-
-Read the [full story](paytheory-partnership/pitch-materials/lesser_5_days_with_cursor_story.md) of how Lesser was built.
+- **Multi-factor Authentication**: WebAuthn, TOTP, backup codes
+- **OAuth 2.0**: Secure third-party app access
+- **Rate Limiting**: DDoS protection via AWS WAF
+- **Encryption**: At-rest and in-transit encryption
+- **Audit Logging**: Comprehensive security event tracking
 
 ## Contributing
 
-With the MVP complete, we're looking for contributors to help with:
-- **Frontend Development** - Build beautiful UIs on top of Lesser
-- **Mobile Apps** - Native iOS/Android clients
-- **Feature Extensions** - Live streaming, voice spaces, e2e encryption
-- **Language Support** - Internationalization
-- **Documentation** - Tutorials, guides, videos
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-[GNU AGPL-3.0](LICENSE) - Free as in freedom, copyleft for the community
+Lesser is licensed under the GNU Affero General Public License v3.0. See [LICENSE](LICENSE) for details.
+
+## Support
+
+- **Documentation**: See the [docs](docs/) directory
+- **Issues**: [GitHub Issues](https://github.com/equaltoai/lesser/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/equaltoai/lesser/discussions)
 
 ## Acknowledgments
 
-Lesser stands on the shoulders of giants:
-- The ActivityPub W3C working group
-- Mastodon and the broader Fediverse community  
-- AWS for making serverless accessible
-- Anthropic's Claude for AI assistance
-- Everyone who believes social media should be free and open
-
----
-
-<div align="center">
-
-**Lesser: Social Media Infrastructure for Everyone**
-
-*Proving that federated social media doesn't need to be expensive. It just needs to be built differently.*
-
-[Deploy Now](docs/deployment/QUICK_START.md) • [View Features](docs/MVP_COMPLETE_SUMMARY.md) • [Read Docs](docs/DOCUMENTATION_INDEX.md)
-
-</div>
+Lesser is built on:
+- [Lift Framework](https://github.com/pay-theory/lift) for Lambda patterns
+- [DynamORM](https://github.com/pay-theory/dynamorm) for DynamoDB operations
+- [gqlgen](https://github.com/99designs/gqlgen) for GraphQL
+- The ActivityPub community for protocol specifications

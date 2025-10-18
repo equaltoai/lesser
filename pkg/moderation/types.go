@@ -8,32 +8,47 @@ import (
 type EventType string
 
 const (
-	EventTypeFlagged  EventType = "flagged"
+	// EventTypeFlagged represents a flagged content event
+	EventTypeFlagged EventType = "flagged"
+	// EventTypeReviewed represents a reviewed content event
 	EventTypeReviewed EventType = "reviewed"
+	// EventTypeAppealed represents an appealed content event
 	EventTypeAppealed EventType = "appealed"
-	EventTypeExpired  EventType = "expired"
+	// EventTypeExpired represents an expired content event
+	EventTypeExpired EventType = "expired"
 )
 
 // Category represents the category of moderation
 type Category string
 
 const (
-	CategorySpam           Category = "spam"
-	CategoryHateSpeech     Category = "hate_speech"
-	CategoryHarassment     Category = "harassment"
+	// CategorySpam represents spam content category
+	CategorySpam Category = "spam"
+	// CategoryHateSpeech represents hate speech content category
+	CategoryHateSpeech Category = "hate_speech"
+	// CategoryHarassment represents harassment content category
+	CategoryHarassment Category = "harassment"
+	// CategoryMisinformation represents misinformation content category
 	CategoryMisinformation Category = "misinformation"
-	CategoryNSFW           Category = "nsfw"
-	CategoryViolence       Category = "violence"
-	CategoryOther          Category = "other"
+	// CategoryNSFW represents NSFW content category
+	CategoryNSFW Category = "nsfw"
+	// CategoryViolence represents violence-related content
+	CategoryViolence Category = "violence"
+	// CategoryOther represents other content categories
+	CategoryOther Category = "other"
 )
 
 // Severity represents the severity level
 type Severity int
 
 const (
-	SeverityLow      Severity = 1
-	SeverityMedium   Severity = 2
-	SeverityHigh     Severity = 3
+	// SeverityLow represents low severity level
+	SeverityLow Severity = 1
+	// SeverityMedium represents medium severity level
+	SeverityMedium Severity = 2
+	// SeverityHigh represents high severity level
+	SeverityHigh Severity = 3
+	// SeverityCritical represents critical severity level
 	SeverityCritical Severity = 4
 )
 
@@ -41,23 +56,30 @@ const (
 type ActionType string
 
 const (
-	ActionTypeNone    ActionType = "none"
+	// ActionTypeNone represents no action taken
+	ActionTypeNone ActionType = "none"
+	// ActionTypeWarning represents a warning action
 	ActionTypeWarning ActionType = "warning"
+	// ActionTypeSilence represents a silence action
 	ActionTypeSilence ActionType = "silence"
+	// ActionTypeSuspend represents a suspend action
 	ActionTypeSuspend ActionType = "suspend"
-	ActionTypeRemove  ActionType = "remove"
+	// ActionTypeRemove represents a remove action
+	ActionTypeRemove ActionType = "remove"
 )
 
 // Evidence represents supporting evidence for a moderation event
 type Evidence struct {
-	Type        string                 `json:"type"`        // ai_detection, user_report, pattern_match, etc.
-	Score       float64                `json:"score"`       // Confidence score 0.0-1.0
-	Description string                 `json:"description"` // Human-readable description
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
-	Timestamp   time.Time              `json:"timestamp"`
+	Type        string         `json:"type"`        // ai_detection, user_report, pattern_match, etc.
+	Score       float64        `json:"score"`       // Confidence score 0.0-1.0
+	Description string         `json:"description"` // Human-readable description
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	Timestamp   time.Time      `json:"timestamp"`
 }
 
 // ModerationEvent represents a moderation event in the system
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific event
 type ModerationEvent struct {
 	ID              string     `json:"id"`
 	EventType       EventType  `json:"event_type"`
@@ -89,6 +111,8 @@ type Review struct {
 }
 
 // ModerationDecision represents the consensus decision
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific decision
 type ModerationDecision struct {
 	ID               string     `json:"id"`
 	EventID          string     `json:"event_id"`
@@ -113,6 +137,8 @@ type QueueItem struct {
 }
 
 // ModerationHistory represents the complete history for an object
+//
+//nolint:revive // Moderation prefix clarifies this is moderation-specific history
 type ModerationHistory struct {
 	ObjectID      string               `json:"object_id"`
 	Events        []ModerationEvent    `json:"events"`
@@ -123,11 +149,11 @@ type ModerationHistory struct {
 
 // TimelineEntry represents an entry in the moderation timeline
 type TimelineEntry struct {
-	Timestamp   time.Time              `json:"timestamp"`
-	Type        string                 `json:"type"` // event, review, decision, appeal
-	ActorID     string                 `json:"actor_id"`
-	Description string                 `json:"description"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	Timestamp   time.Time      `json:"timestamp"`
+	Type        string         `json:"type"` // event, review, decision, appeal
+	ActorID     string         `json:"actor_id"`
+	Description string         `json:"description"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
 // ConsensusConfig represents the configuration for consensus calculation

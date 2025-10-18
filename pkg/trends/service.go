@@ -1,3 +1,4 @@
+// Package trends provides trending content analysis and aggregation services.
 package trends
 
 import (
@@ -6,7 +7,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage" // Used for TrendingHashtag, TrendingStatus, TrendingLink types
+	"github.com/equaltoai/lesser/pkg/storage/core"
 )
 
 // TrendingAlgorithm defines the interface for different trending algorithms
@@ -37,19 +39,22 @@ type TrendScore struct {
 type TrendType string
 
 const (
+	// TrendTypeHashtag represents hashtag trend type
 	TrendTypeHashtag TrendType = "hashtag"
-	TrendTypeStatus  TrendType = "status"
-	TrendTypeLink    TrendType = "link"
+	// TrendTypeStatus represents status/post trend type
+	TrendTypeStatus TrendType = "status"
+	// TrendTypeLink represents link/URL trend type
+	TrendTypeLink TrendType = "link"
 )
 
 // Service provides trending functionality
 type Service struct {
-	storage   storage.Storage
+	storage   core.RepositoryStorage
 	algorithm TrendingAlgorithm
 }
 
 // NewService creates a new trending service
-func NewService(storage storage.Storage) *Service {
+func NewService(storage core.RepositoryStorage) *Service {
 	return &Service{
 		storage:   storage,
 		algorithm: NewDefaultAlgorithm(),
@@ -109,7 +114,8 @@ func (s *Service) GetTrends(ctx context.Context, limit int) ([]Trend, error) {
 // GetTrendingHashtags returns trending hashtags
 func (s *Service) GetTrendingHashtags(ctx context.Context, limit int) ([]HashtagTrend, error) {
 	// Get hashtag usage data from storage
-	trends, err := s.storage.GetTrendingHashtags(ctx, time.Now().Add(-24*time.Hour), limit)
+	var trends []*storage.TrendingHashtag
+	trends, err := s.storage.Analytics().GetTrendingHashtags(ctx, time.Now().Add(-24*time.Hour), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +123,7 @@ func (s *Service) GetTrendingHashtags(ctx context.Context, limit int) ([]Hashtag
 	result := make([]HashtagTrend, len(trends))
 	for i, t := range trends {
 		// Get historical data for sparkline
-		history, _ := s.storage.GetHashtagUsageHistory(ctx, t.Name, 7)
+		history, _ := s.storage.Hashtag().GetHashtagUsageHistory(ctx, t.Name, 7)
 
 		result[i] = HashtagTrend{
 			Name:     t.Name,
@@ -134,7 +140,8 @@ func (s *Service) GetTrendingHashtags(ctx context.Context, limit int) ([]Hashtag
 // GetTrendingStatuses returns trending statuses
 func (s *Service) GetTrendingStatuses(ctx context.Context, limit int) ([]StatusTrend, error) {
 	// Get trending statuses from storage
-	trends, err := s.storage.GetTrendingStatuses(ctx, time.Now().Add(-24*time.Hour), limit)
+	var trends []*storage.TrendingStatus
+	trends, err := s.storage.Analytics().GetTrendingStatuses(ctx, time.Now().Add(-24*time.Hour), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +164,8 @@ func (s *Service) GetTrendingStatuses(ctx context.Context, limit int) ([]StatusT
 // GetTrendingLinks returns trending links
 func (s *Service) GetTrendingLinks(ctx context.Context, limit int) ([]LinkTrend, error) {
 	// Get trending links from storage
-	trends, err := s.storage.GetTrendingLinks(ctx, time.Now().Add(-24*time.Hour), limit)
+	var trends []*storage.TrendingLink
+	trends, err := s.storage.Analytics().GetTrendingLinks(ctx, time.Now().Add(-24*time.Hour), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -180,23 +188,28 @@ func (s *Service) GetTrendingLinks(ctx context.Context, limit int) ([]LinkTrend,
 
 // RecordHashtagUsage records hashtag usage for trending calculation
 func (s *Service) RecordHashtagUsage(ctx context.Context, hashtag string, statusID string, authorID string) error {
-	return s.storage.RecordHashtagUsage(ctx, hashtag, statusID, authorID)
+	return s.storage.Analytics().RecordHashtagUsage(ctx, hashtag, statusID, authorID)
 }
 
 // RecordStatusEngagement records engagement for trending calculation
 func (s *Service) RecordStatusEngagement(ctx context.Context, statusID string, engagementType string, userID string) error {
-	return s.storage.RecordStatusEngagement(ctx, statusID, engagementType, userID)
+	return s.storage.Analytics().RecordStatusEngagement(ctx, statusID, engagementType, userID)
 }
 
 // RecordLinkShare records link sharing for trending calculation
 func (s *Service) RecordLinkShare(ctx context.Context, url string, statusID string, authorID string) error {
-	return s.storage.RecordLinkShare(ctx, url, statusID, authorID)
+	return s.storage.Analytics().RecordLinkShare(ctx, url, statusID, authorID)
+}
+
+// GetStatusesByLink returns statuses that contain a specific link
+func (s *Service) GetStatusesByLink(ctx context.Context, url string, limit int) ([]interface{}, error) {
+	return s.storage.Analytics().GetStatusesByLink(ctx, url, limit)
 }
 
 // Trend represents a general trend
 type Trend struct {
-	Type  string      `json:"type"`
-	Value interface{} `json:"value"`
+	Type  string `json:"type"`
+	Value any    `json:"value"`
 }
 
 // HashtagTrend represents a trending hashtag

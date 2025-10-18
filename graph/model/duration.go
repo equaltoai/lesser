@@ -1,18 +1,20 @@
+// Package model contains GraphQL model definitions and custom scalar types.
 package model
 
 import (
 	"fmt"
 	"io"
-	"log"
 	"strconv"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // Duration represents a time duration in seconds
 type Duration int
 
 // UnmarshalGQL implements the graphql.Unmarshaler interface
-func (d *Duration) UnmarshalGQL(v interface{}) error {
+func (d *Duration) UnmarshalGQL(v any) error {
 	switch v := v.(type) {
 	case int:
 		*d = Duration(v)
@@ -30,7 +32,7 @@ func (d *Duration) UnmarshalGQL(v interface{}) error {
 			// Try to parse as a duration string (e.g., "5m30s")
 			duration, err := time.ParseDuration(v)
 			if err != nil {
-				return fmt.Errorf("Duration must be an integer (seconds) or a duration string")
+				return ErrInvalidDurationType
 			}
 			*d = Duration(int(duration.Seconds()))
 			return nil
@@ -38,7 +40,7 @@ func (d *Duration) UnmarshalGQL(v interface{}) error {
 		*d = Duration(seconds)
 		return nil
 	default:
-		return fmt.Errorf("Duration must be an integer (seconds) or a duration string")
+		return ErrInvalidDurationType
 	}
 }
 
@@ -47,7 +49,7 @@ func (d Duration) MarshalGQL(w io.Writer) {
 	if _, err := fmt.Fprintf(w, "%d", d); err != nil {
 		// Log error but don't return it as the interface doesn't support it
 		// This is typical for GraphQL marshalers
-		log.Printf("Warning: failed to write duration to GraphQL response: %v", err)
+		zap.L().Warn("failed to write duration to GraphQL response", zap.Error(err))
 	}
 }
 

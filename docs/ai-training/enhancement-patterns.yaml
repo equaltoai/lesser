@@ -1,0 +1,467 @@
+# Enhancement Patterns for Lesser
+# Version: 1.0.0
+# Purpose: Train AI on how to add features and enhance Lesser
+
+context:
+  description: "Patterns for adding new features to Lesser"
+  principles:
+    - maintain_serverless: "All features must be serverless-compatible"
+    - cost_aware: "Consider cost implications of every feature"
+    - federation_compatible: "Ensure ActivityPub compliance"
+    - lift_patterns: "Use Lift framework conventions"
+    - single_table: "Maintain DynamoDB single-table design"
+
+feature_addition_patterns:
+  
+  adding_new_api_endpoint:
+    pattern_name: "Add REST API Endpoint"
+    
+    steps:
+      - location: "cmd/api/lift/handlers.go"
+        action: "Add handler function"
+        example: |
+          func (h *Handler) HandleNewFeature(ctx *lift.Context) error {
+              // Validate input
+              var req NewFeatureRequest
+              if err := ctx.ValidateAndBind(&req); err != nil {
+                  return err
+              }
+              
+              // Call service layer
+              result, err := h.services.NewFeature.Execute(ctx.Context(), req)
+              if err != nil {
+                  return lift.NewLiftError("FEATURE_ERROR", err.Error(), 500)
+              }
+              
+              // Return response
+              return ctx.JSON(200, result)
+          }
+          
+      - location: "cmd/api/lift/routes.go"
+        action: "Register route"
+        example: |
+          app.POST("/api/v1/new-feature", h.HandleNewFeature)
+          
+      - location: "pkg/services/newfeature/service.go"
+        action: "Create service"
+        example: |
+          type NewFeatureService struct {
+              repo     *repositories.NewFeatureRepository
+              publisher *streaming.Publisher
+              cost     *cost.Tracker
+          }
+          
+          func (s *NewFeatureService) Execute(ctx context.Context, req Request) (*Response, error) {
+              // Business logic
+              // Emit events
+              // Track costs
+          }
+          
+      - location: "pkg/storage/models/new_feature.go"
+        action: "Define DynamoDB model"
+        example: |
+          type NewFeature struct {
+              PK        string `dynamorm:"pk"`
+              SK        string `dynamorm:"sk"`
+              ID        string `dynamorm:"id"`
+              UserID    string `dynamorm:"user_id"`
+              CreatedAt time.Time `dynamorm:"created_at"`
+          }
+
+  adding_graphql_operation:
+    pattern_name: "Add GraphQL Query/Mutation"
+    
+    steps:
+      - location: "graph/schema.graphql"
+        action: "Update schema"
+        example: |
+          type Query {
+              newFeature(id: ID!): NewFeature
+              newFeatures(limit: Int): [NewFeature!]!
+          }
+          
+          type Mutation {
+              createNewFeature(input: NewFeatureInput!): NewFeature!
+              updateNewFeature(id: ID!, input: UpdateNewFeatureInput!): NewFeature!
+          }
+          
+          type NewFeature {
+              id: ID!
+              title: String!
+              createdAt: Time!
+          }
+          
+      - location: "graph/resolver.go"
+        action: "Implement resolver"
+        example: |
+          func (r *queryResolver) NewFeature(ctx context.Context, id string) (*model.NewFeature, error) {
+              // Check auth
+              user := auth.UserFromContext(ctx)
+              if user == nil {
+                  return nil, errors.New("unauthorized")
+              }
+              
+              // Call service
+              return r.services.NewFeature.Get(ctx, id)
+          }
+          
+      - location: "graph/dataloader.go"
+        action: "Add DataLoader if needed"
+        example: |
+          func NewFeatureLoader(repo *repositories.NewFeatureRepository) *dataloader.Loader {
+              return dataloader.NewBatchedLoader(func(ctx context.Context, keys []string) []*dataloader.Result {
+                  // Batch load implementation
+              })
+          }
+
+  adding_lambda_function:
+    pattern_name: "Add New Lambda Function"
+    
+    steps:
+      - location: "cmd/new-function/main.go"
+        action: "Create Lambda handler"
+        example: |
+          package main
+          
+          import (
+              "context"
+              "github.com/aws/aws-lambda-go/lambda"
+              "github.com/equaltoai/lesser/pkg/common"
+              "github.com/pay-theory/lift/pkg/lift"
+          )
+          
+          func main() {
+              logger := common.Logger()
+              
+              app := lift.NewApp(lift.AppConfig{
+                  Logger: logger,
+                  Name:   "new-function",
+              })
+              
+              app.SQS("process", handleSQSEvent)
+              
+              lambda.Start(app.Handler())
+          }
+          
+      - location: "Makefile"
+        action: "Add to build targets"
+        example: |
+          build-new-function:
+              cd cmd/new-function && GOOS=linux GOARCH=arm64 go build -o ../../bin/new-function
+              
+      - location: "infra/cdk/constructs/lambda_functions.go"
+        action: "Add Lambda definition"
+        example: |
+          NewFunction: lift.NewFunction(stack, jsii.String("NewFunction"), &lift.FunctionProps{
+              CodePath:    jsii.String("../../bin/new-function"),
+              Handler:     jsii.String("bootstrap"),
+              Runtime:     lambda.Runtime_PROVIDED_AL2(),
+              Architecture: lambda.Architecture_ARM_64(),
+              MemorySize:  jsii.Number(256),
+              Timeout:     awscdk.Duration_Seconds(jsii.Number(30)),
+              Environment: environment,
+          })
+
+  adding_websocket_feature:
+    pattern_name: "Add WebSocket Stream"
+    
+    steps:
+      - location: "cmd/streaming/handlers.go"
+        action: "Add stream handler"
+        example: |
+          func handleNewStream(ctx *lift.Context, message WebSocketMessage) error {
+              // Validate subscription
+              if message.Stream != "new-feature" {
+                  return nil
+              }
+              
+              // Subscribe user to stream
+              subscription := Subscription{
+                  ConnectionID: ctx.Request.RequestContext.ConnectionID,
+                  UserID:      message.UserID,
+                  Stream:      "new-feature",
+              }
+              
+              return repo.SaveSubscription(subscription)
+          }
+          
+      - location: "pkg/streaming/publisher.go"
+        action: "Add event routing"
+        example: |
+          case "new-feature.created":
+              return p.publishToStream("new-feature", event)
+
+  adding_federation_support:
+    pattern_name: "Add ActivityPub Activity Type"
+    
+    steps:
+      - location: "pkg/activitypub/types.go"
+        action: "Define activity type"
+        example: |
+          type CustomActivity struct {
+              Context   []string `json:"@context"`
+              Type      string   `json:"type"`
+              Actor     string   `json:"actor"`
+              Object    Object   `json:"object"`
+              Published string   `json:"published"`
+          }
+          
+      - location: "cmd/inbox/handler.go"
+        action: "Handle incoming activity"
+        example: |
+          case "CustomActivity":
+              return h.handleCustomActivity(ctx, activity)
+              
+      - location: "cmd/outbox/handler.go"
+        action: "Handle outgoing activity"
+        example: |
+          func (h *Handler) deliverCustomActivity(ctx context.Context, activity CustomActivity) error {
+              // Sign and deliver to followers
+          }
+
+  adding_ai_feature:
+    pattern_name: "Add AI-Powered Feature"
+    
+    steps:
+      - location: "pkg/ai/service.go"
+        action: "Add AI service method"
+        example: |
+          func (s *AIService) AnalyzeContent(ctx context.Context, content string) (*Analysis, error) {
+              // Check budget
+              if err := s.costTracker.CheckBudget(ctx, "ai-analysis", 0.002); err != nil {
+                  return nil, err
+              }
+              
+              // Call Bedrock
+              response, err := s.bedrock.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
+                  ModelId:     aws.String("anthropic.claude-v2"),
+                  ContentType: aws.String("application/json"),
+                  Body:        []byte(prompt),
+              })
+              
+              // Track cost
+              s.costTracker.Track(ctx, "ai-analysis", 0.002)
+              
+              return parseResponse(response)
+          }
+          
+      - location: "cmd/ai-processor/main.go"
+        action: "Process AI requests"
+        example: |
+          func handleAIRequest(ctx *lift.Context) error {
+              var req AIRequest
+              if err := ctx.ValidateAndBind(&req); err != nil {
+                  return err
+              }
+              
+              result, err := aiService.Process(ctx.Context(), req)
+              if err != nil {
+                  return err
+              }
+              
+              return ctx.JSON(200, result)
+          }
+
+database_schema_patterns:
+  
+  adding_entity:
+    pattern_name: "Add New Entity Type"
+    
+    key_design:
+      primary_key: "ENTITY#entityId"
+      sort_key: "METADATA"
+      
+    gsi_mapping:
+      by_user: 
+        gsi: "GSI1"
+        pk: "USER#userId"
+        sk: "ENTITY#timestamp"
+        
+      by_type:
+        gsi: "GSI3"
+        pk: "ENTITYTYPE#type"
+        sk: "ENTITY#timestamp"
+        
+    example_model: |
+      type Entity struct {
+          PK          string    `dynamorm:"pk"`
+          SK          string    `dynamorm:"sk"`
+          ID          string    `dynamorm:"id"`
+          UserID      string    `dynamorm:"user_id"`
+          Type        string    `dynamorm:"type"`
+          Data        map[string]interface{} `dynamorm:"data"`
+          CreatedAt   time.Time `dynamorm:"created_at"`
+          
+          // GSI projections
+          GSI1PK      string    `dynamorm:"gsi1pk"`
+          GSI1SK      string    `dynamorm:"gsi1sk"`
+      }
+
+  adding_relationship:
+    pattern_name: "Add Entity Relationship"
+    
+    key_design:
+      primary_key: "ENTITY1#id1"
+      sort_key: "RELATIONSHIP#ENTITY2#id2"
+      
+    bidirectional:
+      forward: "USER#alice -> FOLLOWS#USER#bob"
+      reverse: "USER#bob -> FOLLOWER#USER#alice"
+
+testing_patterns:
+  
+  unit_testing:
+    location: "pkg/services/newfeature/service_test.go"
+    pattern: |
+      func TestNewFeatureService_Execute(t *testing.T) {
+          // Setup
+          repo := &mocks.MockRepository{}
+          publisher := &mocks.MockPublisher{}
+          service := NewFeatureService{repo, publisher}
+          
+          // Test
+          result, err := service.Execute(context.Background(), request)
+          
+          // Assert
+          assert.NoError(t, err)
+          assert.NotNil(t, result)
+          repo.AssertExpectations(t)
+      }
+      
+  integration_testing:
+    location: "tests/integration/new_feature_test.go"
+    pattern: |
+      func TestNewFeatureIntegration(t *testing.T) {
+          // Deploy test stack
+          // Create test data
+          // Execute feature
+          // Verify results
+          // Clean up
+      }
+
+migration_patterns:
+  
+  data_migration:
+    pattern_name: "Migrate Existing Data"
+    
+    approach: "Lambda-based migration"
+    steps:
+      - "Create migration Lambda"
+      - "Scan existing data"
+      - "Transform and write"
+      - "Verify migration"
+      
+    example: |
+      func migrateDat() error {
+          paginator := dynamodb.NewScanPaginator(client, &dynamodb.ScanInput{
+              TableName: aws.String("lesser-main"),
+              FilterExpression: aws.String("begins_with(PK, :prefix)"),
+          })
+          
+          for paginator.HasMorePages() {
+              page, err := paginator.NextPage(ctx)
+              // Process items
+              // Write transformed data
+          }
+      }
+
+  schema_evolution:
+    pattern_name: "Evolve Schema"
+    
+    backwards_compatible:
+      - "Add optional fields"
+      - "Create new GSI"
+      - "Add new access patterns"
+      
+    breaking_changes:
+      - "Use versioned entities"
+      - "Maintain compatibility layer"
+      - "Gradual migration"
+
+performance_optimization_patterns:
+  
+  caching:
+    pattern_name: "Add Caching Layer"
+    
+    locations:
+      - "CloudFront for static content"
+      - "DynamoDB DAX for hot data"
+      - "Lambda memory for warm starts"
+      
+    implementation: |
+      type CachedService struct {
+          service Service
+          cache   *cache.Cache
+      }
+      
+      func (c *CachedService) Get(id string) (*Entity, error) {
+          if cached, ok := c.cache.Get(id); ok {
+              return cached.(*Entity), nil
+          }
+          
+          entity, err := c.service.Get(id)
+          if err == nil {
+              c.cache.Set(id, entity, 5*time.Minute)
+          }
+          return entity, err
+      }
+
+  batch_processing:
+    pattern_name: "Batch Operations"
+    
+    use_cases:
+      - "Bulk imports"
+      - "Timeline updates"
+      - "Notification delivery"
+      
+    implementation: |
+      func processBatch(items []Item) error {
+          // Group items by operation
+          batches := groupIntoBatches(items, 25)
+          
+          for _, batch := range batches {
+              writeRequests := make([]types.WriteRequest, 0, len(batch))
+              for _, item := range batch {
+                  writeRequests = append(writeRequests, types.WriteRequest{
+                      PutRequest: &types.PutRequest{Item: item},
+                  })
+              }
+              
+              _, err := client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+                  RequestItems: map[string][]types.WriteRequest{
+                      "lesser-main": writeRequests,
+                  },
+              })
+          }
+      }
+
+monitoring_additions:
+  
+  custom_metrics:
+    pattern_name: "Add Custom Metrics"
+    
+    location: "pkg/observability/metrics.go"
+    example: |
+      func EmitFeatureMetric(ctx context.Context, metricName string, value float64) {
+          emf.Emit(emf.Metric{
+              Namespace: "Lesser/Features",
+              Name:      metricName,
+              Value:     value,
+              Unit:      emf.Count,
+              Dimensions: map[string]string{
+                  "Feature": "NewFeature",
+                  "Environment": os.Getenv("ENVIRONMENT"),
+              },
+          })
+      }
+      
+  alarms:
+    pattern_name: "Add CloudWatch Alarms"
+    
+    location: "infra/cdk/constructs/monitoring.go"
+    example: |
+      NewFeatureErrorAlarm: cloudwatch.NewAlarm(stack, jsii.String("NewFeatureErrors"), &cloudwatch.AlarmProps{
+          Metric: NewFeatureFunction.MetricErrors(),
+          Threshold: jsii.Number(10),
+          EvaluationPeriods: jsii.Number(2),
+      })

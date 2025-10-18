@@ -4,6 +4,13 @@ import (
 	"time"
 )
 
+// Moderation outcome constants
+const (
+	OutcomeUpheld    = "upheld"
+	OutcomeDismissed = "dismissed"
+	OutcomePending   = "pending"
+)
+
 // Reputation represents a user's reputation score and evidence
 type Reputation struct {
 	// Identity

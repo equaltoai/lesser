@@ -1,19 +1,21 @@
+// Package sync provides thread synchronization utilities for ActivityPub conversation management.
 package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
 // ThreadSyncer handles synchronization of conversation threads across instances
 type ThreadSyncer struct {
-	storage    storage.Storage
+	storage    core.RepositoryStorage
 	federation FederationClient
 	cache      ThreadCache
 	logger     *zap.Logger
@@ -21,7 +23,7 @@ type ThreadSyncer struct {
 
 // FederationClient interface for making federation requests
 type FederationClient interface {
-	FetchObject(ctx context.Context, url string) (interface{}, error)
+	FetchObject(ctx context.Context, url string) (any, error)
 	FetchReplies(ctx context.Context, noteURL string) ([]*activitypub.Note, error)
 	FetchContext(ctx context.Context, noteURL string) (*ThreadContext, error)
 }
@@ -63,7 +65,7 @@ type ThreadContext struct {
 }
 
 // NewThreadSyncer creates a new thread synchronization service
-func NewThreadSyncer(storage storage.Storage, federation FederationClient, cache ThreadCache) *ThreadSyncer {
+func NewThreadSyncer(storage core.RepositoryStorage, federation FederationClient, cache ThreadCache) *ThreadSyncer {
 	return &ThreadSyncer{
 		storage:    storage,
 		federation: federation,
@@ -95,7 +97,13 @@ func (t *ThreadSyncer) SyncThread(ctx context.Context, req ThreadSyncRequest) er
 	// Fetch thread context from origin
 	threadCtx, err := t.federation.FetchContext(ctx, fmt.Sprintf("https://%s/conversations/%s", req.OriginServer, req.ConversationID))
 	if err != nil {
-		return fmt.Errorf("failed to fetch thread context: %w", err)
+		t.logger.Error("failed to fetch thread context",
+			zap.String("conversation_id", req.ConversationID),
+			zap.String("origin_server", req.OriginServer),
+			zap.String("operation", "fetch_thread_context"),
+			zap.Int("thread_depth", req.Depth),
+			zap.Error(err))
+		return errors.Join(ErrFetchThreadContext, err)
 	}
 
 	// Initialize thread structure
@@ -109,12 +117,18 @@ func (t *ThreadSyncer) SyncThread(ctx context.Context, req ThreadSyncRequest) er
 	// Fetch root note
 	rootObj, err := t.federation.FetchObject(ctx, threadCtx.RootURL)
 	if err != nil {
-		return fmt.Errorf("failed to fetch root note: %w", err)
+		t.logger.Error("failed to fetch root note",
+			zap.String("conversation_id", req.ConversationID),
+			zap.String("root_url", threadCtx.RootURL),
+			zap.String("operation", "fetch_root_note"),
+			zap.Int("participant_count", len(threadCtx.Participants)),
+			zap.Error(err))
+		return errors.Join(ErrFetchRootNote, err)
 	}
 
 	rootNote, ok := rootObj.(*activitypub.Note)
 	if !ok {
-		return fmt.Errorf("root object is not a Note")
+		return ErrInvalidRootObject
 	}
 	thread.RootNote = rootNote
 
@@ -197,12 +211,12 @@ func (t *ThreadSyncer) fetchRepliesRecursive(ctx context.Context, noteURL string
 
 // storeNote stores a note in the local storage
 func (t *ThreadSyncer) storeNote(ctx context.Context, note *activitypub.Note) error {
-	// The storage layer accepts interface{}, so we can pass the note directly
-	return t.storage.CreateObject(ctx, note)
+	// The storage layer accepts any, so we can pass the note directly
+	return t.storage.Object().CreateObject(ctx, note)
 }
 
 // updateConversationMetadata updates the conversation metadata in storage
-func (t *ThreadSyncer) updateConversationMetadata(ctx context.Context, thread *Thread) error {
+func (t *ThreadSyncer) updateConversationMetadata(_ context.Context, _ *Thread) error {
 	// This would update conversation stats, participant list, etc.
 	// Implementation depends on your storage schema
 	return nil
@@ -211,15 +225,23 @@ func (t *ThreadSyncer) updateConversationMetadata(ctx context.Context, thread *T
 // SyncMissingContext fetches missing context for existing notes
 func (t *ThreadSyncer) SyncMissingContext(ctx context.Context, noteID string) error {
 	// Fetch the note from storage
-	obj, err := t.storage.GetObject(ctx, noteID)
+	obj, err := t.storage.Object().GetObject(ctx, noteID)
 	if err != nil {
-		return fmt.Errorf("failed to get note: %w", err)
+		t.logger.Error("failed to get note from storage",
+			zap.String("note_id", noteID),
+			zap.String("operation", "get_note"),
+			zap.Error(err))
+		return errors.Join(ErrGetNote, err)
 	}
 
 	// Type assert to Note
 	note, ok := obj.(*activitypub.Note)
 	if !ok {
-		return fmt.Errorf("object %s is not a Note", noteID)
+		t.logger.Error("invalid note type",
+			zap.String("note_id", noteID),
+			zap.String("operation", "type_assert_note"),
+			zap.String("actual_type", fmt.Sprintf("%T", obj)))
+		return ErrInvalidNoteType
 	}
 
 	// If it has a conversation ID, sync the whole thread
@@ -242,12 +264,25 @@ func (t *ThreadSyncer) SyncMissingContext(ctx context.Context, noteID string) er
 	if note.InReplyTo != "" {
 		parentObj, err := t.federation.FetchObject(ctx, note.InReplyTo)
 		if err != nil {
-			return fmt.Errorf("failed to fetch parent: %w", err)
+			t.logger.Error("failed to fetch parent note",
+				zap.String("note_id", noteID),
+				zap.String("parent_id", note.InReplyTo),
+				zap.String("operation", "fetch_parent"),
+				zap.String("conversation_id", note.ConversationID),
+				zap.Error(err))
+			return errors.Join(ErrFetchParent, err)
 		}
 
 		if parentNote, ok := parentObj.(*activitypub.Note); ok {
 			if err := t.storeNote(ctx, parentNote); err != nil {
-				return fmt.Errorf("failed to store parent note: %w", err)
+				t.logger.Error("failed to store parent note",
+					zap.String("note_id", noteID),
+					zap.String("parent_id", note.InReplyTo),
+					zap.String("parent_note_id", parentNote.ID),
+					zap.String("operation", "store_parent_note"),
+					zap.String("conversation_id", note.ConversationID),
+					zap.Error(err))
+				return errors.Join(ErrStoreParentNote, err)
 			}
 		}
 	}

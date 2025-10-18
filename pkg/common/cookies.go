@@ -1,3 +1,4 @@
+// Package common provides secure cookie configuration and utilities for HTTP session management.
 package common
 
 import (
@@ -10,7 +11,7 @@ type CookieConfig struct {
 	Domain   string // Leave empty to let browser handle
 	Path     string
 	Secure   bool // HTTPS only
-	HttpOnly bool // No JavaScript access
+	HTTPOnly bool // No JavaScript access
 	SameSite http.SameSite
 }
 
@@ -19,7 +20,7 @@ var DefaultCookieConfig = CookieConfig{
 	Domain:   "", // Browser handles domain
 	Path:     "/",
 	Secure:   true,
-	HttpOnly: true,
+	HTTPOnly: true,
 	SameSite: http.SameSiteStrictMode, // Maximum CSRF protection
 }
 
@@ -37,7 +38,7 @@ func SetSecureCookieWithConfig(w http.ResponseWriter, name, value string, maxAge
 		Domain:   config.Domain,
 		MaxAge:   maxAge,
 		Secure:   config.Secure,
-		HttpOnly: config.HttpOnly,
+		HttpOnly: config.HTTPOnly,
 		SameSite: config.SameSite,
 	}
 

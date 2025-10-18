@@ -1,241 +1,45 @@
 package routing
 
 import (
-	"net/url"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/federation/types"
 )
 
 // RouteManager manages federation message routing
 type RouteManager interface {
 	// Route selection
-	SelectRoute(destination string, messageType MessageType) (*Route, error)
-	GetRoutes(destination string) ([]*Route, error)
+	SelectRoute(destination string, messageType types.MessageType) (*types.Route, error)
+	GetRoutes(destination string) ([]*types.Route, error)
 
 	// Instance management
-	RegisterInstance(instance *Instance) error
-	UpdateInstanceHealth(instanceID string, health *HealthStatus) error
-	GetInstance(instanceID string) (*Instance, error)
-	ListHealthyInstances() ([]*Instance, error)
+	RegisterInstance(instance *types.Instance) error
+	UpdateInstanceHealth(instanceID string, health *types.HealthStatus) error
+	GetInstance(instanceID string) (*types.Instance, error)
+	ListHealthyInstances() ([]*types.Instance, error)
 
 	// Route optimization
 	OptimizeRoutes() error
-	GetRouteMetrics(destination string) (*RouteMetrics, error)
+	GetRouteMetrics(destination string) (*types.RouteMetrics, error)
 
 	// Circuit breaker
 	OpenCircuit(instanceID string, reason string) error
 	CloseCircuit(instanceID string) error
-	GetCircuitStatus(instanceID string) CircuitStatus
-}
-
-// MessageType represents the type of federation message
-type MessageType string
-
-const (
-	MessageTypeActivity MessageType = "activity"
-	MessageTypeFollow   MessageType = "follow"
-	MessageTypeAnnounce MessageType = "announce"
-	MessageTypeLike     MessageType = "like"
-	MessageTypeCreate   MessageType = "create"
-	MessageTypeUpdate   MessageType = "update"
-	MessageTypeDelete   MessageType = "delete"
-	MessageTypeUndo     MessageType = "undo"
-	MessageTypeBlock    MessageType = "block"
-	MessageTypeFlag     MessageType = "flag"
-)
-
-// Instance represents a federated instance
-type Instance struct {
-	ID             string
-	Domain         string
-	InboxURL       string
-	SharedInboxURL string
-	PublicKeyPEM   string
-
-	// Capabilities
-	SupportedTypes []MessageType
-	MaxMessageSize int64
-	RateLimits     RateLimits
-
-	// Status
-	Status       InstanceStatus
-	LastSeen     time.Time
-	RegisteredAt time.Time
-
-	// Performance metrics
-	AvgResponseTime time.Duration
-	SuccessRate     float64
-	ErrorRate       float64
-
-	// Cost tracking
-	TierLevel    TierLevel
-	MonthlyQuota int64
-	CurrentUsage int64
-}
-
-// InstanceStatus represents the status of an instance
-type InstanceStatus string
-
-const (
-	InstanceStatusActive      InstanceStatus = "active"
-	InstanceStatusDegraded    InstanceStatus = "degraded"
-	InstanceStatusUnreachable InstanceStatus = "unreachable"
-	InstanceStatusBlocked     InstanceStatus = "blocked"
-	InstanceStatusUnknown     InstanceStatus = "unknown"
-)
-
-// TierLevel represents the service tier of an instance
-type TierLevel string
-
-const (
-	TierPremium  TierLevel = "premium"
-	TierStandard TierLevel = "standard"
-	TierLimited  TierLevel = "limited"
-	TierBlocked  TierLevel = "blocked"
-)
-
-// Route represents a delivery route to an instance
-type Route struct {
-	ID         string
-	InstanceID string
-	Domain     string
-	Endpoint   *url.URL
-	Priority   int // Lower is higher priority
-
-	// Performance
-	Latency    time.Duration
-	Bandwidth  int64 // bytes per second
-	PacketLoss float64
-
-	// Reliability
-	SuccessRate      float64
-	LastSuccess      time.Time
-	LastFailure      time.Time
-	ConsecutiveFails int
-
-	// Circuit breaker
-	CircuitStatus   CircuitStatus
-	CircuitOpenedAt time.Time
-
-	// Cost
-	CostPerMessage float64
-	CostPerByte    float64
-}
-
-// CircuitStatus represents circuit breaker status
-type CircuitStatus string
-
-const (
-	CircuitClosed   CircuitStatus = "closed"
-	CircuitOpen     CircuitStatus = "open"
-	CircuitHalfOpen CircuitStatus = "half_open"
-)
-
-// HealthStatus represents instance health metrics
-type HealthStatus struct {
-	Timestamp    time.Time
-	Reachable    bool
-	ResponseTime time.Duration
-	StatusCode   int
-	ErrorMessage string
-
-	// Resource usage
-	CPUUsage    float64
-	MemoryUsage float64
-	DiskUsage   float64
-
-	// Federation metrics
-	InboxBacklog    int
-	ProcessingDelay time.Duration
-	ErrorRate       float64
-}
-
-// RateLimits defines rate limiting configuration
-type RateLimits struct {
-	MessagesPerMinute int
-	MessagesPerHour   int
-	BytesPerMinute    int64
-	BytesPerHour      int64
-	BurstSize         int
-}
-
-// RouteMetrics contains routing performance metrics
-type RouteMetrics struct {
-	TotalMessages   int64
-	SuccessfulCount int64
-	FailedCount     int64
-	RetryCount      int64
-
-	AvgLatency time.Duration
-	P95Latency time.Duration
-	P99Latency time.Duration
-
-	TotalBytes int64
-	TotalCost  float64
-
-	LastUpdated time.Time
-}
-
-// DeliveryOptions configures message delivery
-type DeliveryOptions struct {
-	Priority         DeliveryPriority
-	MaxRetries       int
-	RetryBackoff     time.Duration
-	Timeout          time.Duration
-	RequireSignature bool
-	CompressPayload  bool
-}
-
-// DeliveryPriority defines message priority levels
-type DeliveryPriority int
-
-const (
-	PriorityUrgent DeliveryPriority = 1
-	PriorityHigh   DeliveryPriority = 2
-	PriorityNormal DeliveryPriority = 3
-	PriorityLow    DeliveryPriority = 4
-	PriorityBulk   DeliveryPriority = 5
-)
-
-// DeliveryResult represents the result of a delivery attempt
-type DeliveryResult struct {
-	MessageID  string
-	InstanceID string
-	RouteID    string
-
-	Success      bool
-	StatusCode   int
-	ErrorMessage string
-
-	Attempts  int
-	Duration  time.Duration
-	BytesSent int64
-	Cost      float64
-
-	Timestamp time.Time
+	GetCircuitStatus(instanceID string) types.CircuitStatus
 }
 
 // RouteSelector implements routing algorithms
 type RouteSelector interface {
-	SelectBestRoute(routes []*Route, options SelectionOptions) (*Route, error)
-	RankRoutes(routes []*Route) []*Route
-}
-
-// SelectionOptions configures route selection
-type SelectionOptions struct {
-	PreferReliability bool
-	PreferSpeed       bool
-	PreferCost        bool
-	MaxLatency        time.Duration
-	MaxCost           float64
-	RequiredTier      TierLevel
+	SelectBestRoute(routes []*types.Route, options types.SelectionOptions) (*types.Route, error)
+	RankRoutes(routes []*types.Route) []*types.Route
 }
 
 // HealthChecker monitors instance health
 type HealthChecker interface {
-	CheckHealth(instance *Instance) (*HealthStatus, error)
-	StartMonitoring(instance *Instance) error
+	CheckHealth(instance *types.Instance) (*types.HealthStatus, error)
+	StartMonitoring(instance *types.Instance) error
 	StopMonitoring(instanceID string) error
-	GetHealthHistory(instanceID string, duration time.Duration) ([]*HealthStatus, error)
+	GetHealthHistory(instanceID string, duration time.Duration) ([]*types.HealthStatus, error)
 }
 
 // CircuitBreaker implements circuit breaker pattern
@@ -258,141 +62,33 @@ type CircuitBreaker interface {
 
 // DeliveryQueue manages message delivery
 type DeliveryQueue interface {
-	Enqueue(message *FederationMessage, options DeliveryOptions) error
-	Dequeue(count int) ([]*QueuedMessage, error)
+	Enqueue(message *types.FederationMessage, options types.DeliveryOptions) error
+	Dequeue(count int) ([]*types.QueuedMessage, error)
 
 	// Retry management
 	ScheduleRetry(messageID string, after time.Duration) error
-	GetRetryMessages() ([]*QueuedMessage, error)
+	GetRetryMessages() ([]*types.QueuedMessage, error)
 
 	// Dead letter queue
 	MoveToDLQ(messageID string, reason string) error
-	GetDLQMessages(limit int) ([]*QueuedMessage, error)
+	GetDLQMessages(limit int) ([]*types.QueuedMessage, error)
 
 	// Metrics
 	GetQueueDepth() (int64, error)
-	GetQueueMetrics() (*QueueMetrics, error)
-}
-
-// FederationMessage represents a message to be delivered
-type FederationMessage struct {
-	ID     string
-	Type   MessageType
-	Actor  string
-	Object interface{}
-	Target []string
-
-	Payload     []byte
-	PayloadSize int64
-	ContentType string
-
-	CreatedAt time.Time
-	ExpiresAt time.Time
-}
-
-// QueuedMessage represents a message in the delivery queue
-type QueuedMessage struct {
-	Message *FederationMessage
-	Options DeliveryOptions
-
-	QueuedAt    time.Time
-	Attempts    int
-	LastAttempt time.Time
-	NextRetry   time.Time
-
-	RouteID string
-	Status  QueueStatus
-}
-
-// QueueStatus represents message queue status
-type QueueStatus string
-
-const (
-	QueueStatusPending    QueueStatus = "pending"
-	QueueStatusProcessing QueueStatus = "processing"
-	QueueStatusRetrying   QueueStatus = "retrying"
-	QueueStatusFailed     QueueStatus = "failed"
-	QueueStatusDelivered  QueueStatus = "delivered"
-	QueueStatusExpired    QueueStatus = "expired"
-)
-
-// QueueMetrics contains queue performance metrics
-type QueueMetrics struct {
-	Depth           int64
-	ProcessingCount int64
-	RetryCount      int64
-	DLQCount        int64
-
-	EnqueueRate float64
-	DequeueRate float64
-	SuccessRate float64
-
-	AvgWaitTime    time.Duration
-	AvgProcessTime time.Duration
+	GetQueueMetrics() (*types.QueueMetrics, error)
 }
 
 // RouteOptimizer optimizes routing decisions
 type RouteOptimizer interface {
-	Optimize(routes []*Route, history []*DeliveryResult) ([]*Route, error)
-	PredictLatency(route *Route, messageSize int64) time.Duration
-	EstimateCost(route *Route, messageSize int64) float64
-	RecommendBatchSize(route *Route) int
+	Optimize(routes []*types.Route, history []*types.DeliveryResult) ([]*types.Route, error)
+	PredictLatency(route *types.Route, messageSize int64) time.Duration
+	EstimateCost(route *types.Route, messageSize int64) float64
+	RecommendBatchSize(route *types.Route) int
 }
 
 // LoadBalancer distributes load across routes
 type LoadBalancer interface {
-	Balance(routes []*Route, load int) map[string]int
-	UpdateWeights(metrics map[string]*RouteMetrics) error
+	Balance(routes []*types.Route, load int) map[string]int
+	UpdateWeights(metrics map[string]*types.RouteMetrics) error
 	GetCurrentWeights() map[string]float64
-}
-
-// RoutingConfig configures the routing system
-type RoutingConfig struct {
-	// Health checking
-	HealthCheckInterval time.Duration
-	HealthCheckTimeout  time.Duration
-	UnhealthyThreshold  int
-	HealthyThreshold    int
-
-	// Circuit breaker
-	CircuitBreakerThreshold int
-	CircuitBreakerTimeout   time.Duration
-	HalfOpenMaxAttempts     int
-
-	// Routing
-	MaxRoutesPerInstance    int
-	RouteSelectionAlgorithm string
-	EnableLoadBalancing     bool
-	EnableCostOptimization  bool
-
-	// Delivery
-	DefaultTimeout time.Duration
-	MaxRetries     int
-	RetryBackoff   time.Duration
-	MaxQueueDepth  int64
-
-	// Performance
-	EnableCompression  bool
-	BatchDeliverySize  int
-	ParallelDeliveries int
-}
-
-// Errors
-var (
-	ErrNoHealthyRoutes = &RoutingError{Code: "NO_HEALTHY_ROUTES", Message: "No healthy routes available"}
-	ErrCircuitOpen     = &RoutingError{Code: "CIRCUIT_OPEN", Message: "Circuit breaker is open"}
-	ErrQuotaExceeded   = &RoutingError{Code: "QUOTA_EXCEEDED", Message: "Instance quota exceeded"}
-	ErrInstanceBlocked = &RoutingError{Code: "INSTANCE_BLOCKED", Message: "Instance is blocked"}
-	ErrMessageExpired  = &RoutingError{Code: "MESSAGE_EXPIRED", Message: "Message has expired"}
-)
-
-// RoutingError represents a routing error
-type RoutingError struct {
-	Code    string
-	Message string
-	Details map[string]interface{}
-}
-
-func (e *RoutingError) Error() string {
-	return e.Message
 }

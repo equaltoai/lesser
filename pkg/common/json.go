@@ -1,43 +1,42 @@
-package common
+// Package common provides shared JSON utilities for ActivityPub operations.
+package common //nolint:revive // Standard utility package name
 
 import (
+	"encoding/json"
 	"io"
-
-	"github.com/bytedance/sonic"
 )
 
-// jsonConfig is optimized for ActivityPub JSON processing
-var jsonConfig = sonic.Config{
-	EscapeHTML:       false, // ActivityPub doesn't need HTML escaping
-	SortMapKeys:      false, // Preserve order for signatures
-	CompactMarshaler: true,  // Smaller output for network efficiency
-	CopyString:       false, // Avoid string copies on ARM
-	UseNumber:        false, // Use float64 for numbers (ActivityPub standard)
-}.Froze()
-
 // Marshal serializes v to JSON with ActivityPub optimizations
-func Marshal(v interface{}) ([]byte, error) {
-	return jsonConfig.Marshal(v)
+// Using standard library json for now (will upgrade to json/v2 when stable)
+func Marshal(v any) ([]byte, error) {
+	return json.Marshal(v)
 }
 
 // Unmarshal deserializes JSON data with ActivityPub optimizations
-func Unmarshal(data []byte, v interface{}) error {
-	return jsonConfig.Unmarshal(data, v)
+func Unmarshal(data []byte, v any) error {
+	return json.Unmarshal(data, v)
 }
 
 // MarshalString is optimized for string output
-func MarshalString(v interface{}) (string, error) {
-	return jsonConfig.MarshalToString(v)
+func MarshalString(v any) (string, error) {
+	bytes, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
 }
 
 // NewEncoder creates a streaming JSON encoder
-func NewEncoder(w io.Writer) sonic.Encoder {
-	return jsonConfig.NewEncoder(w)
+func NewEncoder(w io.Writer) *json.Encoder {
+	encoder := json.NewEncoder(w)
+	// Disable HTML escaping for ActivityPub
+	encoder.SetEscapeHTML(false)
+	return encoder
 }
 
 // NewDecoder creates a streaming JSON decoder
-func NewDecoder(r io.Reader) sonic.Decoder {
-	return jsonConfig.NewDecoder(r)
+func NewDecoder(r io.Reader) *json.Decoder {
+	return json.NewDecoder(r)
 }
 
 // Benchmark comparisons:

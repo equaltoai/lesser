@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"go.uber.org/zap"
 )
 
 // Rate limiting errors
@@ -36,35 +36,41 @@ const (
 
 // RateLimiter handles authentication rate limiting
 type RateLimiter struct {
-	storage storage.Storage
+	repos StorageProvider
 }
 
 // NewRateLimiter creates a new rate limiter
-func NewRateLimiter(storage storage.Storage) *RateLimiter {
+func NewRateLimiter(repos StorageProvider) *RateLimiter {
 	return &RateLimiter{
-		storage: storage,
+		repos: repos,
 	}
 }
 
 // CheckRateLimit checks if an authentication attempt should be allowed
 func (rl *RateLimiter) CheckRateLimit(ctx context.Context, username, ipAddress string) error {
 	// Check IP rate limit first (broader protection)
-	ipLimited, ipUnlockTime, err := rl.storage.IsRateLimited(ctx, rl.ipKey(ipAddress))
+	ipLimited, ipUnlockTime, err := rl.repos.Account().IsRateLimited(ctx, rl.ipKey(ipAddress))
 	if err != nil {
-		return fmt.Errorf("failed to check IP rate limit: %w", err)
+		return errors.Join(ErrIPRateLimitCheck, err)
 	}
 	if ipLimited {
-		return fmt.Errorf("%w: try again after %s", ErrIPRateLimited, ipUnlockTime.Format(time.RFC3339))
+		zap.L().Error("IP rate limited",
+			zap.String("ip_address", ipAddress),
+			zap.String("unlock_time", ipUnlockTime.Format(time.RFC3339)))
+		return ErrIPRateLimited
 	}
 
 	// Check account rate limit if username provided
 	if username != "" {
-		accountLimited, accountUnlockTime, err := rl.storage.IsRateLimited(ctx, rl.accountKey(username))
+		accountLimited, accountUnlockTime, err := rl.repos.Account().IsRateLimited(ctx, rl.accountKey(username))
 		if err != nil {
-			return fmt.Errorf("failed to check account rate limit: %w", err)
+			return errors.Join(ErrAccountRateLimitCheck, err)
 		}
 		if accountLimited {
-			return fmt.Errorf("%w: try again after %s", ErrAccountLocked, accountUnlockTime.Format(time.RFC3339))
+			zap.L().Error("Account rate limited",
+				zap.String("username", username),
+				zap.String("unlock_time", accountUnlockTime.Format(time.RFC3339)))
+			return ErrAccountLocked
 		}
 	}
 
@@ -74,21 +80,21 @@ func (rl *RateLimiter) CheckRateLimit(ctx context.Context, username, ipAddress s
 // RecordAttempt records a login attempt and enforces rate limits
 func (rl *RateLimiter) RecordAttempt(ctx context.Context, username, ipAddress string, success bool) error {
 	// Always record IP attempt
-	if err := rl.storage.RecordLoginAttempt(ctx, rl.ipKey(ipAddress), success); err != nil {
-		return fmt.Errorf("failed to record IP attempt: %w", err)
+	if err := rl.repos.Account().RecordLoginAttempt(ctx, rl.ipKey(ipAddress), success); err != nil {
+		return errors.Join(ErrRecordIPAttempt, err)
 	}
 
 	// Record account attempt if username provided
 	if username != "" {
-		if err := rl.storage.RecordLoginAttempt(ctx, rl.accountKey(username), success); err != nil {
-			return fmt.Errorf("failed to record account attempt: %w", err)
+		if err := rl.repos.Account().RecordLoginAttempt(ctx, rl.accountKey(username), success); err != nil {
+			return errors.Join(ErrRecordAccountAttempt, err)
 		}
 	}
 
 	// If successful, clear attempts
 	if success {
 		if username != "" {
-			_ = rl.storage.ClearLoginAttempts(ctx, rl.accountKey(username))
+			_ = rl.repos.Account().ClearLoginAttempts(ctx, rl.accountKey(username))
 		}
 		// Don't clear IP attempts on success - prevents distributed attacks
 		return nil
@@ -101,30 +107,30 @@ func (rl *RateLimiter) RecordAttempt(ctx context.Context, username, ipAddress st
 // enforceRateLimits checks attempt counts and imposes rate limits if needed
 func (rl *RateLimiter) enforceRateLimits(ctx context.Context, username, ipAddress string) error {
 	// Check IP attempts
-	ipAttempts, err := rl.storage.GetLoginAttemptCount(ctx, rl.ipKey(ipAddress), time.Now().Add(-AttemptWindow))
+	ipAttempts, err := rl.repos.Account().GetLoginAttemptCount(ctx, rl.ipKey(ipAddress), time.Now().Add(-AttemptWindow))
 	if err != nil {
-		return fmt.Errorf("failed to get IP attempt count: %w", err)
+		return errors.Join(ErrGetIPAttemptCount, err)
 	}
 
 	if ipAttempts >= MaxIPAttempts {
 		// Impose IP rate limit
 		if err := rl.imposeLockout(ctx, rl.ipKey(ipAddress), IPLockoutDuration); err != nil {
-			return fmt.Errorf("failed to impose IP lockout: %w", err)
+			return errors.Join(ErrImposeIPLockout, err)
 		}
 		return ErrIPRateLimited
 	}
 
 	// Check account attempts
 	if username != "" {
-		accountAttempts, err := rl.storage.GetLoginAttemptCount(ctx, rl.accountKey(username), time.Now().Add(-AttemptWindow))
+		accountAttempts, err := rl.repos.Account().GetLoginAttemptCount(ctx, rl.accountKey(username), time.Now().Add(-AttemptWindow))
 		if err != nil {
-			return fmt.Errorf("failed to get account attempt count: %w", err)
+			return errors.Join(ErrGetAccountAttemptCount, err)
 		}
 
 		if accountAttempts >= MaxLoginAttempts {
 			// Impose account lockout
 			if err := rl.imposeLockout(ctx, rl.accountKey(username), AccountLockoutDuration); err != nil {
-				return fmt.Errorf("failed to impose account lockout: %w", err)
+				return errors.Join(ErrImposeAccountLockout, err)
 			}
 			return ErrAccountLocked
 		}
@@ -132,15 +138,18 @@ func (rl *RateLimiter) enforceRateLimits(ctx context.Context, username, ipAddres
 		// Return remaining attempts info
 		remainingAttempts := MaxLoginAttempts - accountAttempts
 		if remainingAttempts <= 2 {
-			return fmt.Errorf("invalid credentials, %d attempts remaining before lockout", remainingAttempts)
+			zap.L().Warn("Low remaining login attempts",
+				zap.String("username", username),
+				zap.Int("remaining_attempts", remainingAttempts))
+			return ErrInvalidCredentials
 		}
 	}
 
-	return errors.New("invalid credentials")
+	return ErrInvalidCredentials
 }
 
 // imposeLockout creates a rate limit entry
-func (rl *RateLimiter) imposeLockout(ctx context.Context, key string, duration time.Duration) error {
+func (rl *RateLimiter) imposeLockout(_ context.Context, _ string, _ time.Duration) error {
 	// This would typically create a rate limit entry in storage
 	// The storage layer would handle the expiration
 	// For now, we'll rely on the attempt count mechanism
@@ -149,19 +158,19 @@ func (rl *RateLimiter) imposeLockout(ctx context.Context, key string, duration t
 
 // ClearAccountLockout clears rate limiting for a specific account (admin action)
 func (rl *RateLimiter) ClearAccountLockout(ctx context.Context, username string) error {
-	return rl.storage.ClearLoginAttempts(ctx, rl.accountKey(username))
+	return rl.repos.Account().ClearLoginAttempts(ctx, rl.accountKey(username))
 }
 
 // GetAccountStatus returns the current rate limit status for an account
 func (rl *RateLimiter) GetAccountStatus(ctx context.Context, username string) (*RateLimitStatus, error) {
 	// Check if currently rate limited
-	limited, unlockTime, err := rl.storage.IsRateLimited(ctx, rl.accountKey(username))
+	limited, unlockTime, err := rl.repos.Account().IsRateLimited(ctx, rl.accountKey(username))
 	if err != nil {
 		return nil, err
 	}
 
 	// Get recent attempt count
-	attempts, err := rl.storage.GetLoginAttemptCount(ctx, rl.accountKey(username), time.Now().Add(-AttemptWindow))
+	attempts, err := rl.repos.Account().GetLoginAttemptCount(ctx, rl.accountKey(username), time.Now().Add(-AttemptWindow))
 	if err != nil {
 		return nil, err
 	}
@@ -180,6 +189,16 @@ func (rl *RateLimiter) GetAccountStatus(ctx context.Context, username string) (*
 	}
 
 	return status, nil
+}
+
+// GetFailedAttempts returns the number of failed login attempts for a user
+func (rl *RateLimiter) GetFailedAttempts(ctx context.Context, username string) (int, error) {
+	// Get recent attempt count within the time window
+	attempts, err := rl.repos.Account().GetLoginAttemptCount(ctx, rl.accountKey(username), time.Now().Add(-AttemptWindow))
+	if err != nil {
+		return 0, err
+	}
+	return attempts, nil
 }
 
 // Helper methods

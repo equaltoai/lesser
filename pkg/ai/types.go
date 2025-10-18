@@ -5,6 +5,8 @@ import (
 )
 
 // AIAnalysis represents comprehensive AI analysis of content
+//
+//nolint:revive // AI prefix clarifies this is AI-related analysis
 type AIAnalysis struct {
 	// Identity
 	ID         string `json:"id" dynamodbav:"ID"`
@@ -84,6 +86,8 @@ type ImageAnalysis struct {
 }
 
 // AIDetection using AWS Bedrock
+//
+//nolint:revive // AI prefix clarifies this is AI-generated content detection
 type AIDetection struct {
 	// AI-Generated Content Detection
 	AIGeneratedProbability float64 `json:"ai_generated_probability" dynamodbav:"AIGeneratedProbability"`
@@ -117,12 +121,13 @@ type SpamAnalysis struct {
 	AccountAge      int     `json:"account_age_days" dynamodbav:"AccountAgeDays"`
 }
 
-// Supporting types
+// ContentCategory represents a content classification category
 type ContentCategory struct {
 	Name  string  `json:"name" dynamodbav:"Name"`
 	Score float64 `json:"score" dynamodbav:"Score"`
 }
 
+// PIIEntity represents personally identifiable information detected in content
 type PIIEntity struct {
 	Type        string  `json:"type" dynamodbav:"Type"`
 	Text        string  `json:"text" dynamodbav:"Text"`
@@ -131,29 +136,34 @@ type PIIEntity struct {
 	EndOffset   int     `json:"end_offset" dynamodbav:"EndOffset"`
 }
 
+// Entity represents a named entity detected in text
 type Entity struct {
 	Type  string  `json:"type" dynamodbav:"Type"`
 	Text  string  `json:"text" dynamodbav:"Text"`
 	Score float64 `json:"score" dynamodbav:"Score"`
 }
 
+// ModerationLabel represents a content moderation label from image analysis
 type ModerationLabel struct {
 	Name       string  `json:"name" dynamodbav:"Name"`
 	Confidence float64 `json:"confidence" dynamodbav:"Confidence"`
 	ParentName string  `json:"parent_name,omitempty" dynamodbav:"ParentName,omitempty"`
 }
 
+// Celebrity represents a detected celebrity face in an image
 type Celebrity struct {
 	Name       string   `json:"name" dynamodbav:"Name"`
 	Confidence float64  `json:"confidence" dynamodbav:"Confidence"`
 	URLs       []string `json:"urls,omitempty" dynamodbav:"URLs,omitempty"`
 }
 
+// Logo represents a detected logo in an image
 type Logo struct {
 	Name       string  `json:"name" dynamodbav:"Name"`
 	Confidence float64 `json:"confidence" dynamodbav:"Confidence"`
 }
 
+// SpamIndicator represents an indicator of spam content
 type SpamIndicator struct {
 	Type        string  `json:"type" dynamodbav:"Type"`
 	Description string  `json:"description" dynamodbav:"Description"`
@@ -214,4 +224,43 @@ const (
 	PiiPassport      = "PASSPORT"
 	PiiName          = "NAME"
 	PiiAge           = "AGE"
+)
+
+// AnalysisRequest represents a queued AI analysis request
+type AnalysisRequest struct {
+	ID            string     `json:"id" dynamodbav:"ID"`
+	ObjectID      string     `json:"object_id" dynamodbav:"ObjectID"`
+	ObjectType    string     `json:"object_type" dynamodbav:"ObjectType"`
+	ForceAnalysis bool       `json:"force_analysis" dynamodbav:"ForceAnalysis"`
+	RequestedAt   time.Time  `json:"requested_at" dynamodbav:"RequestedAt"`
+	Status        string     `json:"status" dynamodbav:"Status"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty" dynamodbav:"CompletedAt,omitempty"`
+	Error         *string    `json:"error,omitempty" dynamodbav:"Error,omitempty"`
+	ResultID      *string    `json:"result_id,omitempty" dynamodbav:"ResultID,omitempty"`
+}
+
+// AIStats represents aggregated AI analysis statistics
+//
+//nolint:revive // AI prefix clarifies this is AI-related statistics
+type AIStats struct {
+	Period            string         `json:"period"`
+	TotalAnalyses     int            `json:"total_analyses"`
+	ToxicContent      int            `json:"toxic_content"`
+	SpamDetected      int            `json:"spam_detected"`
+	AIGenerated       int            `json:"ai_generated"`
+	NSFWContent       int            `json:"nsfw_content"`
+	PIIDetected       int            `json:"pii_detected"`
+	ToxicityRate      float64        `json:"toxicity_rate"`
+	SpamRate          float64        `json:"spam_rate"`
+	AIContentRate     float64        `json:"ai_content_rate"`
+	NSFWRate          float64        `json:"nsfw_rate"`
+	ModerationActions map[string]int `json:"moderation_actions"`
+}
+
+// Analysis request statuses
+const (
+	StatusPending    = "pending"
+	StatusInProgress = "in_progress"
+	StatusCompleted  = "completed"
+	StatusFailed     = "failed"
 )

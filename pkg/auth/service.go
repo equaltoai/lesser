@@ -6,52 +6,52 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"os"
+	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage"
+
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )
 
 // AuthService provides comprehensive authentication functionality
+//
+//nolint:revive // Auth prefix clarifies this is the authentication service
 type AuthService struct {
-	storage         storage.Storage
+	repos           StorageProvider
 	oauthService    *OAuthService
 	sessionManager  *SessionManager
 	rateLimiter     *RateLimiter
 	webAuthnService *WebAuthnService
 	walletService   *WalletService
+	auditLogger     *AuditLogger
 	jwtSecret       []byte
+	config          *config.Config
 }
 
-// Authentication errors
-var (
-	ErrInvalidCredentials = errors.New("invalid username or password")
-	ErrUserNotFound       = errors.New("user not found")
-	ErrUserSuspended      = errors.New("user account is suspended")
-	ErrUserNotApproved    = errors.New("user account is not approved")
-)
-
 // NewAuthService creates a comprehensive auth service
-func NewAuthService(storage storage.Storage) (*AuthService, error) {
-	jwtSecret := os.Getenv("JWT_SECRET")
+func NewAuthService(cfg *config.Config, repos StorageProvider) (*AuthService, error) {
+	jwtSecret := cfg.JWTSecret
 	if jwtSecret == "" {
-		jwtSecret = "development-secret-change-me"
-		if os.Getenv("GO_ENV") != "test" {
-			common.Logger().Warn("using default JWT secret - not secure for production")
-		}
+		return nil, fmt.Errorf("JWT_SECRET is required")
+	}
+
+	// Validate JWT secret strength
+	if err := validateJWTSecretStrength(jwtSecret); err != nil {
+		return nil, fmt.Errorf("invalid JWT_SECRET: %w", err)
 	}
 
 	// Get domain for WebAuthn configuration
-	domain := os.Getenv("DOMAIN")
+	domain := cfg.Domain
 	if domain == "" {
 		domain = "lesser.app"
 	}
 
 	// Initialize WebAuthn service
-	webAuthnService, err := NewWebAuthnService(storage, domain, "Lesser")
+	webAuthnService, err := NewWebAuthnService(repos, domain, "Lesser")
 	if err != nil {
 		common.Logger().Warn("failed to initialize WebAuthn service", zap.Error(err))
 		// Continue without WebAuthn support
@@ -59,16 +59,21 @@ func NewAuthService(storage storage.Storage) (*AuthService, error) {
 	}
 
 	// Initialize Wallet service
-	walletService := NewWalletService(storage)
+	walletService := NewWalletService(repos)
+
+	// Initialize Audit Logger
+	auditLogger := NewAuditLogger(repos, common.Logger(), DefaultAuditConfig())
 
 	return &AuthService{
-		storage:         storage,
-		oauthService:    NewOAuthService(jwtSecret, storage),
-		sessionManager:  NewSessionManager(storage),
-		rateLimiter:     NewRateLimiter(storage),
+		repos:           repos,
+		oauthService:    NewOAuthService(jwtSecret, cfg, repos, auditLogger),
+		sessionManager:  NewSessionManager(repos),
+		rateLimiter:     NewRateLimiter(repos),
 		webAuthnService: webAuthnService,
 		walletService:   walletService,
+		auditLogger:     auditLogger,
 		jwtSecret:       []byte(jwtSecret),
+		config:          cfg,
 	}, nil
 }
 
@@ -76,24 +81,54 @@ func NewAuthService(storage storage.Storage) (*AuthService, error) {
 func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, password, deviceName, userAgent, ipAddress string) (*AuthResponse, error) {
 	// Check rate limits first
 	if err := as.rateLimiter.CheckRateLimit(ctx, username, ipAddress); err != nil {
+		// Log rate limited attempt
+		as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, false, "rate limited")
 		return nil, err
 	}
 
 	// Get user from storage
-	user, err := as.storage.GetUser(ctx, username)
+	user, err := as.repos.Account().GetUser(ctx, username)
 	if err != nil {
 		// Record failed attempt
 		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
+		// Log failed login - user not found
+		as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, false, "user not found")
 		return nil, ErrInvalidCredentials
 	}
 
 	// Check if user is active
 	if user.Suspended {
 		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
+		// Log suspended account attempt
+		if err := as.auditLogger.LogEvent(ctx, &AuditEvent{
+			EventType:     AuditLoginSuspended,
+			Username:      username,
+			IPAddress:     ipAddress,
+			UserAgent:     userAgent,
+			DeviceName:    deviceName,
+			Success:       false,
+			FailureReason: "account suspended",
+		}); err != nil {
+			// Log audit error but continue
+			as.auditLogger.logger.Warn("Failed to log audit event", zap.Error(err))
+		}
 		return nil, ErrUserSuspended
 	}
 	if !user.Approved {
 		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
+		// Log unapproved account attempt
+		if err := as.auditLogger.LogEvent(ctx, &AuditEvent{
+			EventType:     AuditLoginNotApproved,
+			Username:      username,
+			IPAddress:     ipAddress,
+			UserAgent:     userAgent,
+			DeviceName:    deviceName,
+			Success:       false,
+			FailureReason: "account not approved",
+		}); err != nil {
+			// Log audit error but continue
+			as.auditLogger.logger.Warn("Failed to log audit event", zap.Error(err))
+		}
 		return nil, ErrUserNotApproved
 	}
 
@@ -101,6 +136,15 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 	if err := VerifyPassword(password, user.PasswordHash); err != nil {
 		// Record failed attempt
 		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
+		// Log failed login - wrong password
+		as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, false, "invalid password")
+
+		// Check if this might be a brute force attempt
+		if count, _ := as.rateLimiter.GetFailedAttempts(ctx, username); count >= 5 {
+			as.auditLogger.LogSecurityEvent(ctx, AuditBruteForceDetected, username, ipAddress, map[string]interface{}{
+				"failed_attempts": count,
+			})
+		}
 		return nil, ErrInvalidCredentials
 	}
 
@@ -109,14 +153,17 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 		common.Logger().Error("failed to record successful login", zap.Error(err))
 	}
 
+	// Log successful login
+	as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, true, "")
+
 	// Get actor ID for activity recording
-	actor, err := as.storage.GetActor(ctx, username)
+	actor, err := as.repos.Account().GetActor(ctx, username)
 	if err != nil {
 		// Log but don't fail login
 		common.Logger().Warn("failed to get actor for activity recording", zap.Error(err))
 	} else {
 		// Record login activity for metrics
-		if err := as.storage.RecordActivity(ctx, "login", actor.ID, time.Now()); err != nil {
+		if err := as.repos.Activity().RecordActivity(ctx, "login", actor.ID, time.Now()); err != nil {
 			// Log the error but don't fail the login
 			common.Logger().Warn("failed to record login activity", zap.Error(err))
 		}
@@ -125,13 +172,13 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 	// Create session
 	session, err := as.sessionManager.CreateSession(ctx, username, deviceName, userAgent, ipAddress, "password")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		return nil, errors.Join(ErrSessionCreationFailed, err)
 	}
 
 	// Generate tokens with shorter access token duration
 	accessToken, err := as.generateShortLivedAccessToken(username, session.SessionID, session.DeviceID, DefaultScopes())
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
+		return nil, errors.Join(ErrAccessTokenGenerationFailed, err)
 	}
 
 	return &AuthResponse{
@@ -140,7 +187,7 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 		ExpiresIn:    int(ShortAccessTokenDuration.Seconds()),
 		RefreshToken: session.RefreshToken,
 		Scope:        "read write",
-		CreatedAt:    int(time.Now().Unix()),
+		CreatedAt:    time.Now().Unix(),
 		Me:           username,
 	}, nil
 }
@@ -169,7 +216,7 @@ func (as *AuthService) RefreshAccessToken(ctx context.Context, refreshToken, ipA
 	// Generate new short-lived access token
 	accessToken, err := as.generateShortLivedAccessToken(session.Username, session.SessionID, session.DeviceID, DefaultScopes())
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
+		return nil, errors.Join(ErrAccessTokenGenerationFailed, err)
 	}
 
 	return &AuthResponse{
@@ -178,7 +225,7 @@ func (as *AuthService) RefreshAccessToken(ctx context.Context, refreshToken, ipA
 		ExpiresIn:    int(ShortAccessTokenDuration.Seconds()),
 		RefreshToken: newRefreshToken,
 		Scope:        "read write",
-		CreatedAt:    int(time.Now().Unix()),
+		CreatedAt:    time.Now().Unix(),
 		Me:           session.Username,
 	}, nil
 }
@@ -201,12 +248,12 @@ func (as *AuthService) GetUserDevices(ctx context.Context, username string) ([]*
 // TrustDevice marks a device as trusted
 func (as *AuthService) TrustDevice(ctx context.Context, username, deviceID string) error {
 	// Verify the device belongs to the user
-	device, err := as.storage.GetDevice(ctx, deviceID)
+	device, err := as.repos.Account().GetDevice(ctx, deviceID)
 	if err != nil {
 		return err
 	}
 	if device.Username != username {
-		return errors.New("device does not belong to user")
+		return ErrDeviceOwnershipMismatch
 	}
 
 	return as.sessionManager.TrustDevice(ctx, deviceID)
@@ -215,18 +262,16 @@ func (as *AuthService) TrustDevice(ctx context.Context, username, deviceID strin
 // generateShortLivedAccessToken creates a JWT with enhanced claims
 func (as *AuthService) generateShortLivedAccessToken(username, sessionID, deviceID string, scopes []string) (string, error) {
 	now := time.Now()
-	claims := EnhancedClaims{
-		Claims: Claims{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Subject:   username,
-				IssuedAt:  jwt.NewNumericDate(now),
-				ExpiresAt: jwt.NewNumericDate(now.Add(ShortAccessTokenDuration)),
-				NotBefore: jwt.NewNumericDate(now),
-			},
-			Username: username,
-			ClientID: "web", // Can be extended for different clients
-			Scopes:   scopes,
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   username,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ShortAccessTokenDuration)),
+			NotBefore: jwt.NewNumericDate(now),
 		},
+		Username:  username,
+		ClientID:  "web", // Can be extended for different clients
+		Scopes:    scopes,
 		SessionID: sessionID,
 		DeviceID:  deviceID,
 	}
@@ -237,20 +282,20 @@ func (as *AuthService) generateShortLivedAccessToken(username, sessionID, device
 
 // ValidateAccessToken validates and parses an enhanced JWT access token
 func (as *AuthService) ValidateAccessToken(tokenString string) (*EnhancedClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &EnhancedClaims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &EnhancedClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			common.Logger().Error("unexpected JWT signing method", zap.Any("method", token.Header["alg"]))
+			return nil, ErrJWTUnexpectedSigningMethod
 		}
 		return as.jwtSecret, nil
 	})
-
 	if err != nil {
 		return nil, ErrInvalidToken
 	}
 
 	if claims, ok := token.Claims.(*EnhancedClaims); ok && token.Valid {
 		// Verify session is still valid
-		session, err := as.storage.GetSession(context.Background(), claims.SessionID)
+		session, err := as.repos.Account().GetSession(context.Background(), claims.SessionID)
 		if err != nil || time.Now().After(session.ExpiresAt) {
 			return nil, ErrInvalidToken
 		}
@@ -264,7 +309,7 @@ func (as *AuthService) ValidateAccessToken(tokenString string) (*EnhancedClaims,
 // ChangePassword changes a user's password
 func (as *AuthService) ChangePassword(ctx context.Context, username, oldPassword, newPassword string) error {
 	// Get user
-	user, err := as.storage.GetUser(ctx, username)
+	user, err := as.repos.Account().GetUser(ctx, username)
 	if err != nil {
 		return ErrUserNotFound
 	}
@@ -277,17 +322,17 @@ func (as *AuthService) ChangePassword(ctx context.Context, username, oldPassword
 	// Hash new password
 	newHash, err := HashPassword(newPassword)
 	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
+		return errors.Join(ErrPasswordHashingFailed, err)
 	}
 
 	// Update user
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"password_hash": newHash,
 		"updated_at":    time.Now(),
 	}
 
-	if err := as.storage.UpdateUser(ctx, username, updates); err != nil {
-		return fmt.Errorf("failed to update password: %w", err)
+	if err := as.repos.Account().UpdateUser(ctx, username, updates); err != nil {
+		return errors.Join(ErrPasswordUpdateFailed, err)
 	}
 
 	// Revoke all sessions to force re-authentication
@@ -326,7 +371,7 @@ func (as *AuthService) GenerateAuthorizationCode() (string, error) {
 // WebAuthn methods
 
 // BeginWebAuthnRegistration starts the WebAuthn registration process
-func (as *AuthService) BeginWebAuthnRegistration(ctx context.Context, username string) (interface{}, string, error) {
+func (as *AuthService) BeginWebAuthnRegistration(ctx context.Context, username string) (any, string, error) {
 	if as.webAuthnService == nil {
 		return nil, "", ErrWebAuthnNotConfigured
 	}
@@ -342,7 +387,7 @@ func (as *AuthService) FinishWebAuthnRegistration(ctx context.Context, username 
 }
 
 // BeginWebAuthnLogin starts the WebAuthn login process
-func (as *AuthService) BeginWebAuthnLogin(ctx context.Context, username string) (interface{}, string, error) {
+func (as *AuthService) BeginWebAuthnLogin(ctx context.Context, username string) (any, string, error) {
 	if as.webAuthnService == nil {
 		return nil, "", ErrWebAuthnNotConfigured
 	}
@@ -364,13 +409,13 @@ func (as *AuthService) FinishWebAuthnLogin(ctx context.Context, username string,
 	// Create session with WebAuthn auth method
 	session, err := as.sessionManager.CreateSession(ctx, username, deviceName, userAgent, ipAddress, "passkey")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		return nil, errors.Join(ErrSessionCreationFailed, err)
 	}
 
 	// Generate tokens
 	accessToken, err := as.generateShortLivedAccessToken(username, session.SessionID, session.DeviceID, DefaultScopes())
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
+		return nil, errors.Join(ErrAccessTokenGenerationFailed, err)
 	}
 
 	return &AuthResponse{
@@ -379,7 +424,7 @@ func (as *AuthService) FinishWebAuthnLogin(ctx context.Context, username string,
 		ExpiresIn:    int(ShortAccessTokenDuration.Seconds()),
 		RefreshToken: session.RefreshToken,
 		Scope:        "read write",
-		CreatedAt:    int(time.Now().Unix()),
+		CreatedAt:    time.Now().Unix(),
 		Me:           username,
 		CredentialID: credential.ID, // Include credential ID in response
 	}, nil
@@ -421,26 +466,26 @@ func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVer
 	// Verify signature and get username
 	username, err := as.walletService.VerifySignature(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("signature verification failed: %w", err)
+		return nil, errors.Join(ErrSignatureVerificationFailed, err)
 	}
 
 	// If no username returned, this is a new wallet
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return &AuthResponse{
 			AccessToken:  "", // No token for unlinked wallet
 			TokenType:    "Bearer",
 			ExpiresIn:    0,
 			RefreshToken: "",
 			Scope:        "",
-			CreatedAt:    int(time.Now().Unix()),
+			CreatedAt:    time.Now().Unix(),
 			Me:           "", // No username yet
 		}, nil
 	}
 
 	// Check if user is active
-	user, err := as.storage.GetUser(ctx, username)
+	user, err := as.repos.Account().GetUser(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, errors.Join(ErrUserRetrievalFailed, err)
 	}
 	if user.Suspended {
 		return nil, ErrUserSuspended
@@ -452,13 +497,13 @@ func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVer
 	// Create session with wallet auth method
 	session, err := as.sessionManager.CreateSession(ctx, username, deviceName, userAgent, ipAddress, "wallet")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		return nil, errors.Join(ErrSessionCreationFailed, err)
 	}
 
 	// Generate tokens
 	accessToken, err := as.generateShortLivedAccessToken(username, session.SessionID, session.DeviceID, DefaultScopes())
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
+		return nil, errors.Join(ErrAccessTokenGenerationFailed, err)
 	}
 
 	return &AuthResponse{
@@ -467,7 +512,7 @@ func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVer
 		ExpiresIn:    int(ShortAccessTokenDuration.Seconds()),
 		RefreshToken: session.RefreshToken,
 		Scope:        "read write",
-		CreatedAt:    int(time.Now().Unix()),
+		CreatedAt:    time.Now().Unix(),
 		Me:           username,
 	}, nil
 }
@@ -487,33 +532,33 @@ func (as *AuthService) GetUserWallets(ctx context.Context, username string) ([]*
 	return as.walletService.GetUserWallets(ctx, username)
 }
 
-// GetStore returns the storage instance (for handlers that need direct access)
-func (as *AuthService) GetStore() storage.Storage {
-	return as.storage
+// GetStore returns the repository storage instance (for handlers that need direct access)
+func (as *AuthService) GetStore() StorageProvider {
+	return as.repos
 }
 
 // GetConfig returns configuration (for handlers that need environment info)
-func (as *AuthService) GetConfig() *Config {
-	env := os.Getenv("GO_ENV")
+func (as *AuthService) GetConfig() *ServiceConfig {
+	env := as.config.Stage
 	if env == "" {
 		env = "development"
 	}
-	return &Config{
+	return &ServiceConfig{
 		Environment: env,
 	}
 }
 
-// GenerateRecoveryToken generates a recovery token for email-free recovery
+// GenerateRecoveryToken generates a recovery token for WebAuthn/federation-based recovery
 func (as *AuthService) GenerateRecoveryToken(ctx context.Context, username string, recoveryMethod string) (string, error) {
 	// Generate a secure random token
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		return "", fmt.Errorf("failed to generate token: %w", err)
+		return "", errors.Join(ErrRecoveryTokenGenerationFailed, err)
 	}
 	token := base64.URLEncoding.EncodeToString(tokenBytes)
 
 	// Store recovery token with metadata
-	recoveryData := map[string]interface{}{
+	recoveryData := map[string]any{
 		"username":        username,
 		"token":           token,
 		"recovery_method": recoveryMethod,
@@ -522,35 +567,63 @@ func (as *AuthService) GenerateRecoveryToken(ctx context.Context, username strin
 	}
 
 	recoveryKey := fmt.Sprintf("RECOVERY#%s", token)
-	if err := as.storage.StoreRecoveryToken(ctx, recoveryKey, recoveryData); err != nil {
-		return "", fmt.Errorf("failed to store recovery token: %w", err)
+	if err := as.repos.Account().StoreRecoveryToken(ctx, recoveryKey, recoveryData); err != nil {
+		return "", errors.Join(ErrRecoveryTokenStorageFailed, err)
 	}
 
 	return token, nil
 }
 
-// Config represents auth service configuration
-type Config struct {
+// ServiceConfig represents auth service configuration
+type ServiceConfig struct {
 	Environment string
 }
 
 // Response types
 
 // AuthResponse represents an authentication response
+//
+//nolint:revive // Auth prefix clarifies this is an authentication response
 type AuthResponse struct {
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in"`
 	RefreshToken string `json:"refresh_token"`
 	Scope        string `json:"scope"`
-	CreatedAt    int    `json:"created_at"`
+	CreatedAt    int64  `json:"created_at"`
 	Me           string `json:"me,omitempty"`            // Username for Mastodon compatibility
 	CredentialID string `json:"credential_id,omitempty"` // WebAuthn credential ID (if applicable)
 }
 
-// EnhancedClaims extends the basic JWT claims with session information
-type EnhancedClaims struct {
-	Claims
-	SessionID string `json:"session_id"`
-	DeviceID  string `json:"device_id"`
+// EnhancedClaims is now an alias for the improved Claims struct
+type EnhancedClaims = Claims
+
+// validateJWTSecretStrength validates that the JWT secret meets security requirements
+func validateJWTSecretStrength(secret string) error {
+	// Check minimum length (32 characters for 256-bit security)
+	if len(secret) < 32 {
+		return fmt.Errorf("must be at least 32 characters long")
+	}
+
+	// Check for common weak patterns
+	lowerSecret := strings.ToLower(secret)
+	weakPatterns := []string{
+		"default",
+		"change",
+		"secret",
+		"password",
+		"12345",
+		"admin",
+		"test",
+		"demo",
+		"example",
+	}
+
+	for _, pattern := range weakPatterns {
+		if strings.Contains(lowerSecret, pattern) {
+			return fmt.Errorf("contains weak pattern '%s'", pattern)
+		}
+	}
+
+	return nil
 }

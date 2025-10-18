@@ -2,21 +2,30 @@ package federation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
+)
+
+// Trend direction constants
+const (
+	trendStable     = "stable"
+	trendIncreasing = "increasing"
+	trendDecreasing = "decreasing"
 )
 
 // TrendAnalyzer analyzes federation flow trends and patterns
 type TrendAnalyzer struct {
-	storage storage.Storage
+	storage core.RepositoryStorage
 }
 
 // NewTrendAnalyzer creates a new trend analyzer
-func NewTrendAnalyzer(store storage.Storage) *TrendAnalyzer {
+func NewTrendAnalyzer(store core.RepositoryStorage) *TrendAnalyzer {
 	return &TrendAnalyzer{
 		storage: store,
 	}
@@ -30,9 +39,9 @@ func (ta *TrendAnalyzer) AnalyzeTrends(ctx context.Context, domain string, perio
 
 	// This would require implementing GetFederationTimeSeriesRange
 	// For now, we'll work with available connection data
-	connections, err := ta.storage.GetInstanceConnections(ctx, domain, "")
+	connections, err := ta.storage.Federation().GetInstanceConnections(ctx, domain, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get connections: %w", err)
+		return nil, errors.Join(ErrGetConnectionsFailed, err)
 	}
 
 	// Filter connections within the time period
@@ -72,7 +81,7 @@ func (ta *TrendAnalyzer) AnalyzeTrends(ctx context.Context, domain string, perio
 }
 
 // analyzeVolumeTrend analyzes the volume trend over time
-func (ta *TrendAnalyzer) analyzeVolumeTrend(connections []*storage.InstanceConnection, startTime, endTime time.Time) *VolumeTrend {
+func (ta *TrendAnalyzer) analyzeVolumeTrend(connections []*storage.InstanceConnection, _, _ time.Time) *VolumeTrend {
 	// Group connections by time buckets (e.g., hourly)
 	bucketSize := time.Hour
 	buckets := make(map[time.Time]int64)
@@ -83,8 +92,8 @@ func (ta *TrendAnalyzer) analyzeVolumeTrend(connections []*storage.InstanceConne
 	}
 
 	// Convert to sorted time series
-	var times []time.Time
-	var volumes []int64
+	times := make([]time.Time, 0, len(buckets))
+	volumes := make([]int64, 0, len(buckets))
 
 	for t := range buckets {
 		times = append(times, t)
@@ -100,7 +109,7 @@ func (ta *TrendAnalyzer) analyzeVolumeTrend(connections []*storage.InstanceConne
 	// Calculate trend metrics
 	trend := &VolumeTrend{
 		DataPoints: make([]VolumeDataPoint, len(times)),
-		Direction:  "stable",
+		Direction:  trendStable,
 		Slope:      0,
 		R2:         0,
 	}
@@ -119,9 +128,9 @@ func (ta *TrendAnalyzer) analyzeVolumeTrend(connections []*storage.InstanceConne
 
 		// Determine direction based on slope
 		if slope > 0.1 {
-			trend.Direction = "increasing"
+			trend.Direction = trendIncreasing
 		} else if slope < -0.1 {
-			trend.Direction = "decreasing"
+			trend.Direction = trendDecreasing
 		}
 
 		// Calculate peak and total volume
@@ -140,7 +149,7 @@ func (ta *TrendAnalyzer) analyzeVolumeTrend(connections []*storage.InstanceConne
 }
 
 // analyzeResponseTimeTrend analyzes response time trends
-func (ta *TrendAnalyzer) analyzeResponseTimeTrend(connections []*storage.InstanceConnection, startTime, endTime time.Time) *ResponseTimeTrend {
+func (ta *TrendAnalyzer) analyzeResponseTimeTrend(connections []*storage.InstanceConnection, _, _ time.Time) *ResponseTimeTrend {
 	// Group by time buckets and calculate average response times
 	bucketSize := time.Hour
 	buckets := make(map[time.Time][]float64)
@@ -153,7 +162,7 @@ func (ta *TrendAnalyzer) analyzeResponseTimeTrend(connections []*storage.Instanc
 	}
 
 	// Calculate averages
-	var times []time.Time
+	times := make([]time.Time, 0, len(buckets))
 	var avgResponseTimes []float64
 
 	for t := range buckets {
@@ -178,7 +187,7 @@ func (ta *TrendAnalyzer) analyzeResponseTimeTrend(connections []*storage.Instanc
 
 	trend := &ResponseTimeTrend{
 		DataPoints: make([]ResponseTimeDataPoint, len(times)),
-		Direction:  "stable",
+		Direction:  trendStable,
 	}
 
 	for i, t := range times {
@@ -198,30 +207,30 @@ func (ta *TrendAnalyzer) analyzeResponseTimeTrend(connections []*storage.Instanc
 		}
 
 		// Calculate statistics
-		var sum, min, max float64
-		min = math.Inf(1)
-		max = math.Inf(-1)
+		var sum, minRT, maxRT float64
+		minRT = math.Inf(1)
+		maxRT = math.Inf(-1)
 
 		for _, rt := range avgResponseTimes {
 			sum += rt
-			if rt < min {
-				min = rt
+			if rt < minRT {
+				minRT = rt
 			}
-			if rt > max {
-				max = rt
+			if rt > maxRT {
+				maxRT = rt
 			}
 		}
 
 		trend.AverageResponseTime = sum / float64(len(avgResponseTimes))
-		trend.MinResponseTime = min
-		trend.MaxResponseTime = max
+		trend.MinResponseTime = minRT
+		trend.MaxResponseTime = maxRT
 	}
 
 	return trend
 }
 
 // analyzeErrorRateTrend analyzes error rate trends
-func (ta *TrendAnalyzer) analyzeErrorRateTrend(connections []*storage.InstanceConnection, startTime, endTime time.Time) *ErrorRateTrend {
+func (ta *TrendAnalyzer) analyzeErrorRateTrend(connections []*storage.InstanceConnection, _, _ time.Time) *ErrorRateTrend {
 	// Group by time buckets and calculate error rates
 	bucketSize := time.Hour
 	successBuckets := make(map[time.Time]int64)
@@ -236,7 +245,7 @@ func (ta *TrendAnalyzer) analyzeErrorRateTrend(connections []*storage.InstanceCo
 	}
 
 	// Calculate error rates
-	var times []time.Time
+	times := make([]time.Time, 0, len(totalBuckets))
 	var errorRates []float64
 
 	for t := range totalBuckets {
@@ -259,7 +268,7 @@ func (ta *TrendAnalyzer) analyzeErrorRateTrend(connections []*storage.InstanceCo
 
 	trend := &ErrorRateTrend{
 		DataPoints: make([]ErrorRateDataPoint, len(times)),
-		Direction:  "stable",
+		Direction:  trendStable,
 	}
 
 	for i, t := range times {
@@ -273,29 +282,29 @@ func (ta *TrendAnalyzer) analyzeErrorRateTrend(connections []*storage.InstanceCo
 		slope, _ := ta.calculateLinearRegression(ta.convertToInt64(errorRates))
 
 		if slope > 0.01 { // 1% increase per hour
-			trend.Direction = "increasing"
+			trend.Direction = trendIncreasing
 		} else if slope < -0.01 {
-			trend.Direction = "decreasing"
+			trend.Direction = trendDecreasing
 		}
 
 		// Calculate statistics
-		var sum, min, max float64
-		min = math.Inf(1)
-		max = math.Inf(-1)
+		var sum, minER, maxER float64
+		minER = math.Inf(1)
+		maxER = math.Inf(-1)
 
 		for _, er := range errorRates {
 			sum += er
-			if er < min {
-				min = er
+			if er < minER {
+				minER = er
 			}
-			if er > max {
-				max = er
+			if er > maxER {
+				maxER = er
 			}
 		}
 
 		trend.AverageErrorRate = sum / float64(len(errorRates))
-		trend.MinErrorRate = min
-		trend.MaxErrorRate = max
+		trend.MinErrorRate = minER
+		trend.MaxErrorRate = maxER
 	}
 
 	return trend
@@ -408,7 +417,7 @@ func (ta *TrendAnalyzer) detectPatterns(connections []*storage.InstanceConnectio
 			Type:        "daily_peak",
 			Description: fmt.Sprintf("Peak activity at hour %d with %d total volume", peakHour, peakVolume),
 			Confidence:  0.8,
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"peak_hour":   peakHour,
 				"peak_volume": peakVolume,
 			},
@@ -438,7 +447,7 @@ func (ta *TrendAnalyzer) detectPatterns(connections []*storage.InstanceConnectio
 				Type:        "weekly_peak",
 				Description: fmt.Sprintf("Peak activity on %s with %d total volume", peakWeekday.String(), peakWeekdayVolume),
 				Confidence:  0.7,
-				Metadata: map[string]interface{}{
+				Metadata: map[string]any{
 					"peak_weekday": peakWeekday.String(),
 					"peak_volume":  peakWeekdayVolume,
 				},
@@ -513,23 +522,26 @@ func (ta *TrendAnalyzer) calculateOverallTrendScore(analysis *TrendAnalysis) flo
 	score := 5.0 // Baseline score
 
 	// Adjust based on volume trend
-	if analysis.VolumeTrend.Direction == "increasing" {
+	switch analysis.VolumeTrend.Direction {
+	case trendIncreasing:
 		score += 2.0
-	} else if analysis.VolumeTrend.Direction == "decreasing" {
+	case trendDecreasing:
 		score -= 1.0
 	}
 
 	// Adjust based on response time trend
-	if analysis.ResponseTimeTrend.Direction == "improving" {
+	switch analysis.ResponseTimeTrend.Direction {
+	case "improving":
 		score += 1.0
-	} else if analysis.ResponseTimeTrend.Direction == "degrading" {
+	case "degrading":
 		score -= 2.0
 	}
 
 	// Adjust based on error rate trend
-	if analysis.ErrorRateTrend.Direction == "decreasing" {
+	switch analysis.ErrorRateTrend.Direction {
+	case trendDecreasing:
 		score += 1.0
-	} else if analysis.ErrorRateTrend.Direction == "increasing" {
+	case trendIncreasing:
 		score -= 2.0
 	}
 
@@ -546,7 +558,7 @@ func (ta *TrendAnalyzer) calculateOverallTrendScore(analysis *TrendAnalysis) flo
 	return score
 }
 
-func (ta *TrendAnalyzer) determineTrendReason(stats *DomainStats, score float64) string {
+func (ta *TrendAnalyzer) determineTrendReason(stats *DomainStats, _ float64) string {
 	if stats.TotalVolume > 1000 {
 		return "high_volume"
 	}
@@ -561,6 +573,7 @@ func (ta *TrendAnalyzer) determineTrendReason(stats *DomainStats, score float64)
 
 // Types for trend analysis
 
+// TrendAnalysis represents comprehensive trend analysis for a federation domain
 type TrendAnalysis struct {
 	Domain            string              `json:"domain"`
 	Period            time.Duration       `json:"period"`
@@ -574,6 +587,7 @@ type TrendAnalysis struct {
 	OverallTrendScore float64             `json:"overall_trend_score"`
 }
 
+// VolumeTrend represents volume trend analysis
 type VolumeTrend struct {
 	DataPoints  []VolumeDataPoint `json:"data_points"`
 	Direction   string            `json:"direction"` // increasing/decreasing/stable
@@ -583,11 +597,13 @@ type VolumeTrend struct {
 	PeakVolume  int64             `json:"peak_volume"`
 }
 
+// VolumeDataPoint represents a single volume data point
 type VolumeDataPoint struct {
 	Timestamp time.Time `json:"timestamp"`
 	Volume    int64     `json:"volume"`
 }
 
+// ResponseTimeTrend represents response time trend analysis
 type ResponseTimeTrend struct {
 	DataPoints          []ResponseTimeDataPoint `json:"data_points"`
 	Direction           string                  `json:"direction"` // improving/degrading/stable
@@ -596,11 +612,13 @@ type ResponseTimeTrend struct {
 	MaxResponseTime     float64                 `json:"max_response_time"`
 }
 
+// ResponseTimeDataPoint represents a single response time data point
 type ResponseTimeDataPoint struct {
 	Timestamp    time.Time `json:"timestamp"`
 	ResponseTime float64   `json:"response_time"`
 }
 
+// ErrorRateTrend represents error rate trend analysis
 type ErrorRateTrend struct {
 	DataPoints       []ErrorRateDataPoint `json:"data_points"`
 	Direction        string               `json:"direction"` // increasing/decreasing/stable
@@ -609,11 +627,13 @@ type ErrorRateTrend struct {
 	MaxErrorRate     float64              `json:"max_error_rate"`
 }
 
+// ErrorRateDataPoint represents a single error rate data point
 type ErrorRateDataPoint struct {
 	Timestamp time.Time `json:"timestamp"`
 	ErrorRate float64   `json:"error_rate"`
 }
 
+// TrendingInstance represents a trending federated instance
 type TrendingInstance struct {
 	Domain       string    `json:"domain"`
 	TrendScore   float64   `json:"trend_score"`
@@ -624,13 +644,15 @@ type TrendingInstance struct {
 	TrendReason  string    `json:"trend_reason"`
 }
 
+// ActivityPattern represents a detected activity pattern
 type ActivityPattern struct {
-	Type        string                 `json:"type"`
-	Description string                 `json:"description"`
-	Confidence  float64                `json:"confidence"`
-	Metadata    map[string]interface{} `json:"metadata"`
+	Type        string         `json:"type"`
+	Description string         `json:"description"`
+	Confidence  float64        `json:"confidence"`
+	Metadata    map[string]any `json:"metadata"`
 }
 
+// DomainStats represents statistics for a domain
 type DomainStats struct {
 	Domain            string
 	TotalVolume       int64

@@ -35,7 +35,7 @@ Authentication middleware that:
 ### Basic Setup
 
 ```go
-import "github.com/aron23/lesser/pkg/auth"
+import "github.com/equaltoai/lesser/pkg/auth"
 
 // Create OAuth service
 oauthSvc := auth.NewOAuthService("your-jwt-secret")

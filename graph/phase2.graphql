@@ -124,13 +124,18 @@ enum ModerationSeverity {
 
 type TrainingResult {
   success: Boolean!
-  modelVersion: String!
-  accuracy: Float!
-  precision: Float!
-  recall: Float!
-  samplesUsed: Int!
-  trainingTime: Int!
-  improvements: [String!]!
+  status: String!          # SUBMITTED, IN_PROGRESS, COMPLETED, FAILED
+  jobId: String!           # Bedrock job ARN/ID
+  jobName: String!         # Human-readable job name
+  datasetS3Key: String!    # S3 key of training dataset
+  modelVersion: String!    # Model version (empty when SUBMITTED)
+  accuracy: Float!         # Training accuracy (0 when SUBMITTED)
+  precision: Float!        # Training precision (0 when SUBMITTED)
+  recall: Float!           # Training recall (0 when SUBMITTED)
+  f1Score: Float!          # Training F1 score (0 when SUBMITTED)
+  samplesUsed: Int!        # Number of training samples
+  trainingTime: Int!       # Training duration in seconds (0 when SUBMITTED)
+  improvements: [String!]! # Improvements (empty when SUBMITTED)
 }
 
 type ModerationAlert {
@@ -201,10 +206,19 @@ input ModerationPatternInput {
   active: Boolean
 }
 
-input ModerationSample {
-  content: String!
-  label: ModerationSeverity!
+input ModerationSampleInput {
+  objectId: ID!
+  objectType: String!
+  label: String!
   confidence: Float!
+}
+
+input BedrockTrainingOptions {
+  baseModelId: String
+  datasetS3Path: String
+  outputS3Path: String
+  maxTrainingTime: Int
+  earlyStoppingEnabled: Boolean
 }
 
 input FederationLimitInput {
@@ -227,7 +241,7 @@ extend type Query {
   
   # Advanced Moderation
   moderationPatterns(active: Boolean, severity: ModerationSeverity, first: Int, after: String): [ModerationPattern!]!
-  moderationEffectiveness(patternId: ID!, period: Period!): ModerationEffectiveness!
+  moderationEffectiveness(patternId: ID!, period: ModerationPeriod!): ModerationEffectiveness!
   
   # Federation Management
   federationLimits(active: Boolean, first: Int, after: String): [FederationLimit!]!
@@ -245,7 +259,7 @@ extend type Mutation {
   createModerationPattern(input: ModerationPatternInput!): ModerationPattern!
   updateModerationPattern(id: ID!, input: ModerationPatternInput!): ModerationPattern!
   deleteModerationPattern(id: ID!): Boolean!
-  trainModerationModel(samples: [ModerationSample!]!): TrainingResult!
+  trainModerationModel(samples: [ModerationSampleInput!]!, options: BedrockTrainingOptions): TrainingResult!
   
   # Federation Management
   setFederationLimit(domain: String!, limit: FederationLimitInput!): FederationLimit!
@@ -276,11 +290,11 @@ type CostProjection {
   currentCost: Float!
   projectedCost: Float!
   variance: Float!
-  topCostDrivers: [CostDriver!]!
+  topDrivers: [Driver!]!
   recommendations: [String!]!
 }
 
-type CostDriver {
+type Driver {
   type: String!
   domain: String
   cost: Float!
@@ -359,4 +373,11 @@ enum CostOrderBy {
   ERROR_RATE_DESC
   REQUEST_COUNT_DESC
   DOMAIN_ASC
+}
+
+enum ModerationPeriod {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
 } 
