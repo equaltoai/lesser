@@ -119,9 +119,12 @@ build:
 build-cloudfront-keygen:
 	@echo "Building CloudFront key generation Lambda..."
 	@mkdir -p bin
-	@GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
-		go build -tags lambda.norpc -ldflags="-s -w" -o bin/cloudfront-keygen ./cmd/cloudfront-keygen
-	@echo "✓ Built bin/cloudfront-keygen ($(shell ls -lh bin/cloudfront-keygen 2>/dev/null | awk '{print $$5}'))"
+	@TMPDIR=$$(mktemp -d bin/cloudfront-keygen.XXXXXX); \
+		GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
+		go build -tags lambda.norpc -ldflags="-s -w" -o $$TMPDIR/bootstrap ./cmd/cloudfront-keygen && \
+		(cd $$TMPDIR && zip -q ../cloudfront-keygen.zip bootstrap) && \
+		rm -rf $$TMPDIR
+	@echo "✓ Built bin/cloudfront-keygen.zip ($(shell ls -lh bin/cloudfront-keygen.zip 2>/dev/null | awk '{print $$5}'))"
 
 ## Clean build artifacts
 clean:
