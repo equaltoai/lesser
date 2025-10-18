@@ -2,26 +2,53 @@ package mastodon
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/cmd/api/models"
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/notes"
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/mastodon/transformers"
+	"github.com/equaltoai/lesser/pkg/storage"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/transformations"
 )
 
-// converterImpl implements the Converter interface
+const (
+	// VisibilityPublic represents public visibility for posts
+	VisibilityPublic = "public"
+)
+
+// converterImpl implements the Converter interface with caching support
 type converterImpl struct {
-	baseURL string
+	baseURL           string
+	emojiRepo         *repositories.EmojiRepository
+	transformer       *transformers.MastodonTransformer
+	cachedTransformer *transformers.CachedTransformer
+	batchProcessor    *transformers.BatchProcessor
 }
 
-// NewConverter creates a new converter instance
+// NewConverter creates a new converter instance with optimizations
 func NewConverter(baseURL string) Converter {
-	return &converterImpl{baseURL: baseURL}
+	return &converterImpl{
+		baseURL:           baseURL,
+		transformer:       transformers.NewMastodonTransformer(baseURL),
+		cachedTransformer: transformers.NewCachedTransformer(baseURL),
+		batchProcessor:    transformers.NewBatchProcessor(baseURL),
+	}
+}
+
+// NewConverterWithEmojis creates a new converter instance with emoji repository access and optimizations
+func NewConverterWithEmojis(baseURL string, emojiRepo *repositories.EmojiRepository) Converter {
+	return &converterImpl{
+		baseURL:           baseURL,
+		emojiRepo:         emojiRepo,
+		transformer:       transformers.NewMastodonTransformer(baseURL),
+		cachedTransformer: transformers.NewCachedTransformer(baseURL),
+		batchProcessor:    transformers.NewBatchProcessor(baseURL),
+	}
 }
 
 // ActorToAccount converts an ActivityPub Actor to a Mastodon Account
@@ -31,173 +58,113 @@ func (c *converterImpl) ActorToAccount(actor *activitypub.Actor) models.Account 
 
 // ActorToAccountWithCounts converts an Actor to Account with follower/following/status counts
 func (c *converterImpl) ActorToAccountWithCounts(actor *activitypub.Actor, followers, following, statuses int) models.Account {
-	account := models.Account{
-		ID:             GenerateNumericID(actor.PreferredUsername), // Generate stable numeric ID
-		Username:       actor.PreferredUsername,
-		Acct:           actor.PreferredUsername,
-		DisplayName:    actor.Name,
-		URL:            actor.URL,
-		Note:           actor.Summary,
-		Locked:         actor.ManuallyApprovesFollowers,
-		Bot:            actor.Type == "Service",
-		Group:          actor.Type == "Group",
-		Discoverable:   actor.Discoverable,
-		CreatedAt:      time.Now().Format(time.RFC3339), // Default creation time
-		FollowersCount: followers,
-		FollowingCount: following,
-		StatusesCount:  statuses,
-		LastStatusAt:   "", // Will be populated if metadata available
-		Emojis:         []interface{}{},
-		Fields:         []interface{}{}, // Use ActorToAccountWithMetadata for field support
+	// Use centralized transformation framework with counts - ELIMINATES 40+ LINES OF DUPLICATE CODE
+	account := transformations.ActorToAccountWithCounts(actor, c.baseURL, followers, following, statuses)
+
+	// Add implementation-specific fields that aren't in the base transformation
+	if actor != nil {
+		account.Group = actor.Type == "Group"
 	}
 
-	// Set avatar
-	if actor.Icon != nil {
-		account.Avatar = actor.Icon.URL
-		account.AvatarStatic = actor.Icon.URL
-	} else {
-		// Default avatar
-		account.Avatar = fmt.Sprintf("%s/avatars/default.png", c.baseURL)
-		account.AvatarStatic = account.Avatar
-	}
-
-	// Set header
-	if actor.Image != nil {
-		account.Header = actor.Image.URL
-		account.HeaderStatic = actor.Image.URL
-	} else {
-		account.Header = ""
-		account.HeaderStatic = ""
-	}
+	// Set default last status timestamp
+	account.LastStatusAt = "" // Will be populated if metadata available
 
 	return account
 }
 
 // ActorToAccountWithMetadata converts an Actor to Account with metadata
 func (c *converterImpl) ActorToAccountWithMetadata(actor *activitypub.Actor, metadata *storage.ActorMetadata, followers, following, statuses int) models.Account {
-	account := models.Account{
-		ID:             GenerateNumericID(actor.PreferredUsername), // Generate stable numeric ID
-		Username:       actor.PreferredUsername,
-		Acct:           actor.PreferredUsername,
-		DisplayName:    actor.Name,
-		URL:            actor.URL,
-		Note:           actor.Summary,
-		Locked:         actor.ManuallyApprovesFollowers,
-		Bot:            actor.Type == "Service",
-		Group:          actor.Type == "Group",
-		Discoverable:   actor.Discoverable,
-		CreatedAt:      metadata.CreatedAt.Format(time.RFC3339), // Use actual creation time
-		FollowersCount: followers,
-		FollowingCount: following,
-		StatusesCount:  statuses,
-		LastStatusAt:   "", // Default empty
-		Emojis:         []interface{}{},
-		Fields:         []interface{}{}, // Default empty
+	// Use centralized transformation framework with counts - ELIMINATES 50+ LINES OF DUPLICATE CODE
+	account := transformations.ActorToAccountWithCounts(actor, c.baseURL, followers, following, statuses)
+
+	// Add metadata-specific fields
+	if actor != nil {
+		account.Group = actor.Type == "Group"
 	}
 
-	// Set last status time if available
-	if metadata.LastStatusAt != nil {
-		account.LastStatusAt = metadata.LastStatusAt.Format("2006-01-02") // Mastodon uses date only
-	}
+	if metadata != nil {
+		// Override creation time with actual metadata
+		account.CreatedAt = metadata.CreatedAt.Format(time.RFC3339)
 
-	// Convert actor fields to Mastodon format
-	if len(metadata.Fields) > 0 {
-		fields := make([]interface{}, 0, len(metadata.Fields))
-		for _, field := range metadata.Fields {
-			fieldMap := map[string]interface{}{
-				"name":        field.Name,
-				"value":       field.Value,
-				"verified_at": nil,
-			}
-			if field.VerifiedAt != nil {
-				fieldMap["verified_at"] = field.VerifiedAt.Format(time.RFC3339)
-			}
-			fields = append(fields, fieldMap)
+		// Set last status time if available
+		if metadata.LastStatusAt != nil {
+			account.LastStatusAt = metadata.LastStatusAt.Format(common.DateFormat) // Mastodon uses date only
 		}
-		account.Fields = fields
-	}
 
-	// Set avatar
-	if actor.Icon != nil {
-		account.Avatar = actor.Icon.URL
-		account.AvatarStatic = actor.Icon.URL
-	} else {
-		// Default avatar
-		account.Avatar = fmt.Sprintf("%s/avatars/default.png", c.baseURL)
-		account.AvatarStatic = account.Avatar
-	}
-
-	// Set header
-	if actor.Image != nil {
-		account.Header = actor.Image.URL
-		account.HeaderStatic = actor.Image.URL
-	} else {
-		account.Header = ""
-		account.HeaderStatic = ""
+		// Convert actor fields to Mastodon format
+		if err := common.ValidateSliceNotEmpty("metadata fields", metadata.Fields); err == nil {
+			fields := make([]any, 0, len(metadata.Fields))
+			for _, field := range metadata.Fields {
+				fieldMap := map[string]any{
+					"name":        field.Name,
+					"value":       field.Value,
+					"verified_at": nil,
+				}
+				if !field.VerifiedAt.IsZero() {
+					fieldMap["verified_at"] = field.VerifiedAt.Format(time.RFC3339)
+				}
+				fields = append(fields, fieldMap)
+			}
+			account.Fields = fields
+		}
 	}
 
 	return account
 }
 
 // ObjectToStatus converts an ActivityPub object to a Mastodon status
-func (c *converterImpl) ObjectToStatus(obj interface{}, actor *activitypub.Actor) models.Status {
+func (c *converterImpl) ObjectToStatus(obj any, actor *activitypub.Actor) models.Status {
 	return c.ObjectToStatusWithContext(context.Background(), obj, actor, 0, 0, false, false, false)
 }
 
 // ObjectToStatusWithContext converts an object with additional context
-func (c *converterImpl) ObjectToStatusWithContext(ctx context.Context, obj interface{}, actor *activitypub.Actor, likeCount, reblogCount int, favorited, reblogged, bookmarked bool) models.Status {
-	status := models.Status{
-		MediaAttachments: []interface{}{},
-		Mentions:         []interface{}{},
-		Tags:             []interface{}{},
-		Emojis:           []interface{}{},
-		Visibility:       "public", // Default
-		Language:         "en",     // Default
-		FavouritesCount:  likeCount,
-		ReblogsCount:     reblogCount,
-		Favourited:       favorited,
-		Reblogged:        reblogged,
-		Bookmarked:       bookmarked,
-		RepliesCount:     0,
-		Muted:            false,
-		Pinned:           false,
-	}
+func (c *converterImpl) ObjectToStatusWithContext(ctx context.Context, obj any, actor *activitypub.Actor, likeCount, reblogCount int, favorited, reblogged, bookmarked bool) models.Status {
+	// Use centralized transformation framework with counts and user state - ELIMINATES 40+ LINES OF DUPLICATE CODE
+	status := transformations.ObjectToStatusWithContextAndCounts(ctx, obj, actor, likeCount, reblogCount, favorited, reblogged, bookmarked, c.baseURL)
 
-	// Handle different object types
-	switch o := obj.(type) {
-	case *activitypub.Note:
-		c.populateStatusFromNote(&status, o)
-	case map[string]interface{}:
-		c.populateStatusFromMap(&status, o)
-	default:
-		// If we get an unexpected type, try to handle it gracefully
-		// Set some default values
-		status.ID = fmt.Sprintf("unknown-%d", time.Now().Unix())
-		status.CreatedAt = time.Now().Format("2006-01-02T15:04:05.000Z")
-		status.Content = ""
-		status.URI = ""
-		status.URL = ""
-	}
+	// Set additional fields not handled by centralized transformation
+	status.RepliesCount = 0
+	status.Muted = false
+	status.Pinned = false
 
-	// Set account information if actor is provided
-	if actor != nil {
-		status.Account = c.ActorToAccount(actor)
+	// Apply visibility determination if not already set by transformation
+	if status.Visibility == VisibilityPublic {
+		// Let the centralized transformation handle visibility unless we need custom logic
+		objMap := c.convertObjectToMap(obj)
+		if to, ok := objMap["to"].([]interface{}); ok {
+			toStrs := make([]string, 0, len(to))
+			for _, t := range to {
+				if str, ok := t.(string); ok {
+					toStrs = append(toStrs, str)
+				}
+			}
+			if cc, ok := objMap["cc"].([]interface{}); ok {
+				ccStrs := make([]string, 0, len(cc))
+				for _, c := range cc {
+					if str, ok := c.(string); ok {
+						ccStrs = append(ccStrs, str)
+					}
+				}
+				status.Visibility = c.determineVisibility(toStrs, ccStrs)
+			}
+		}
 	}
 
 	return status
 }
 
 // ConversationToAPI converts a storage Conversation to API format
-func (c *converterImpl) ConversationToAPI(conv *storage.Conversation, participants []*activitypub.Actor, lastStatus interface{}, unread bool) models.Conversation {
+func (c *converterImpl) ConversationToAPI(conv *storagemodels.Conversation, participants []*activitypub.Actor, lastStatus any, unread bool) models.Conversation {
+	// Use centralized transformation for participants - ELIMINATES 5+ LINES OF DUPLICATE CODE
 	accounts := make([]models.Account, 0, len(participants))
 	for _, actor := range participants {
-		accounts = append(accounts, c.ActorToAccount(actor))
+		accounts = append(accounts, transformations.ActorToAccountBase(actor, c.baseURL))
 	}
 
 	var lastStatusModel *models.Status
 	if lastStatus != nil && conv.LastStatusID != "" {
-		// Convert last status (without actor to avoid recursion)
-		status := c.ObjectToStatus(lastStatus, nil)
+		// Use centralized status transformation with minimal actor
+		status := transformations.ObjectToStatusAny(lastStatus, nil, c.baseURL)
 		status.ID = conv.LastStatusID
 		status.CreatedAt = conv.UpdatedAt.Format("2006-01-02T15:04:05.000Z")
 		lastStatusModel = &status
@@ -214,7 +181,7 @@ func (c *converterImpl) ConversationToAPI(conv *storage.Conversation, participan
 // ExtractUsernameFromActorID extracts the username from an actor ID URL
 func (c *converterImpl) ExtractUsernameFromActorID(actorID string) string {
 	parts := strings.Split(actorID, "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("actor ID parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
 	return ""
@@ -223,172 +190,67 @@ func (c *converterImpl) ExtractUsernameFromActorID(actorID string) string {
 // ExtractIDFromURL extracts the ID portion from a full URL
 func (c *converterImpl) ExtractIDFromURL(url string) string {
 	parts := strings.Split(url, "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("URL parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
 	return url
 }
 
-// Helper methods
-
-func (c *converterImpl) populateStatusFromNote(status *models.Status, note *activitypub.Note) {
-	status.ID = c.ExtractIDFromURL(note.ID)
-	status.URI = note.ID
-	status.URL = note.ID // Note doesn't have URL field, use ID
-	status.Content = note.Content
-	status.SpoilerText = note.Summary
-	status.Sensitive = note.Sensitive
-	if note.Published != nil {
-		status.CreatedAt = note.Published.Format("2006-01-02T15:04:05.000Z")
-	}
-	if note.InReplyTo != "" {
-		inReplyToID := c.ExtractIDFromURL(note.InReplyTo)
-		status.InReplyToID = &inReplyToID
-	}
-
-	// Process attachments
-	if len(note.Attachment) > 0 {
-		status.MediaAttachments = c.processAttachments(note.Attachment)
-	}
-
-	// Use explicit visibility if available, otherwise determine from To/CC
-	if note.Visibility != "" {
-		status.Visibility = note.Visibility
-	} else {
-		status.Visibility = c.determineVisibility(note.To, note.CC)
-	}
-}
-
-func (c *converterImpl) populateStatusFromMap(status *models.Status, obj map[string]interface{}) {
-	if id, ok := obj["id"].(string); ok && id != "" {
-		status.ID = c.ExtractIDFromURL(id)
-		status.URI = id
-		status.URL = id
-	}
-	if url, ok := obj["url"].(string); ok && url != "" {
-		status.URL = url
-	}
-	if content, ok := obj["content"].(string); ok {
-		status.Content = content
-	}
-	if summary, ok := obj["summary"].(string); ok {
-		status.SpoilerText = summary
-	}
-	if sensitive, ok := obj["sensitive"].(bool); ok {
-		status.Sensitive = sensitive
-	}
-	if published, ok := obj["published"].(string); ok && published != "" {
-		status.CreatedAt = published
-	} else {
-		// Fallback to current time if published is missing
-		status.CreatedAt = time.Now().Format("2006-01-02T15:04:05.000Z")
-	}
-	if inReplyTo, ok := obj["inReplyTo"].(string); ok && inReplyTo != "" {
-		inReplyToID := c.ExtractIDFromURL(inReplyTo)
-		status.InReplyToID = &inReplyToID
-	}
-
-	// Process attachments from map
-	if attachments, ok := obj["attachment"].([]interface{}); ok && len(attachments) > 0 {
-		status.MediaAttachments = c.processAttachmentsFromMap(attachments)
-	}
-
-	// Check for explicit visibility field first
-	if visibility, ok := obj["visibility"].(string); ok && visibility != "" {
-		status.Visibility = visibility
-	} else {
-		// Fallback to determining visibility from to/cc fields
-		var to, cc []string
-		if toField, ok := obj["to"].([]interface{}); ok {
-			for _, t := range toField {
-				if str, ok := t.(string); ok {
-					to = append(to, str)
-				}
-			}
+// convertObjectToMap converts various object types to map[string]interface{} for transformation framework
+func (c *converterImpl) convertObjectToMap(obj any) map[string]interface{} {
+	switch o := obj.(type) {
+	case *activitypub.Note:
+		objMap := map[string]interface{}{
+			"id":        o.ID,
+			"content":   o.Content,
+			"summary":   o.Summary,
+			"sensitive": o.Sensitive,
 		}
-		if ccField, ok := obj["cc"].([]interface{}); ok {
-			for _, c := range ccField {
-				if str, ok := c.(string); ok {
-					cc = append(cc, str)
-				}
-			}
+		if o.Published != nil {
+			objMap["published"] = o.Published.Format(time.RFC3339)
 		}
-		status.Visibility = c.determineVisibility(to, cc)
-	}
-}
-
-func (c *converterImpl) processAttachments(attachments []activitypub.Attachment) []interface{} {
-	result := make([]interface{}, 0, len(attachments))
-	for _, att := range attachments {
-		attachment := map[string]interface{}{
-			"id":          c.generateRandomString(8),
-			"type":        c.getAttachmentType(att.MediaType),
-			"url":         att.URL,
-			"preview_url": att.URL,
-			"text_url":    att.URL,
-			"description": att.Name,
+		if o.InReplyTo != "" {
+			objMap["inReplyTo"] = o.InReplyTo
 		}
-		result = append(result, attachment)
-	}
-	return result
-}
-
-func (c *converterImpl) processAttachmentsFromMap(attachments []interface{}) []interface{} {
-	result := make([]interface{}, 0, len(attachments))
-	for _, att := range attachments {
-		if attMap, ok := att.(map[string]interface{}); ok {
-			attachment := map[string]interface{}{
-				"id":          c.generateRandomString(8),
-				"type":        "image",
-				"url":         c.getStringFromMap(attMap, "url", ""),
-				"preview_url": c.getStringFromMap(attMap, "url", ""),
-				"text_url":    c.getStringFromMap(attMap, "url", ""),
-				"description": c.getStringFromMap(attMap, "name", ""),
-			}
-			if mediaType := c.getStringFromMap(attMap, "mediaType", ""); mediaType != "" {
-				attachment["type"] = c.getAttachmentType(mediaType)
-			}
-			result = append(result, attachment)
+		if err := common.ValidateSliceNotEmpty("o.To", o.To); err == nil {
+			objMap["to"] = o.To
+		}
+		if err := common.ValidateSliceNotEmpty("o.CC", o.CC); err == nil {
+			objMap["cc"] = o.CC
+		}
+		if err := common.ValidateSliceNotEmpty("o.Attachment", o.Attachment); err == nil {
+			objMap["attachment"] = o.Attachment
+		}
+		return objMap
+	case map[string]any:
+		// Since map[string]any is equivalent to map[string]interface{}, convert
+		result := make(map[string]interface{})
+		for k, v := range o {
+			result[k] = v
+		}
+		return result
+	default:
+		// Fallback for unknown types
+		return map[string]interface{}{
+			"content": fmt.Sprint(obj),
+			"id":      fmt.Sprintf("unknown-%d", time.Now().Unix()),
 		}
 	}
-	return result
 }
 
-func (c *converterImpl) getAttachmentType(mediaType string) string {
-	if strings.HasPrefix(mediaType, "video/") {
-		return "video"
-	} else if strings.HasPrefix(mediaType, "audio/") {
-		return "audio"
-	}
-	return "image"
-}
+// Helper methods (streamlined to use centralized transformations)
+
+// getAttachmentType is now handled by centralized transformer
 
 func (c *converterImpl) determineVisibility(to, cc []string) string {
 	if c.contains(to, activitypub.PublicAddress) {
-		return "public"
+		return VisibilityPublic
 	} else if c.contains(cc, activitypub.PublicAddress) {
 		return "unlisted"
-	} else if len(to) > 0 && strings.Contains(to[0], "/followers") {
+	} else if err := common.ValidateSliceNotEmpty("to addressees", to); err == nil && strings.Contains(to[0], "/followers") {
 		return "private"
 	}
 	return "direct"
-}
-
-func (c *converterImpl) generateRandomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, length)
-	for i := range b {
-		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
-		b[i] = charset[n.Int64()]
-	}
-	return string(b)
-}
-
-func (c *converterImpl) getStringFromMap(m map[string]interface{}, key, defaultValue string) string {
-	if val, ok := m[key].(string); ok {
-		return val
-	}
-	return defaultValue
 }
 
 func (c *converterImpl) contains(slice []string, item string) bool {
@@ -401,111 +263,143 @@ func (c *converterImpl) contains(slice []string, item string) bool {
 }
 
 // NotesToStatus converts a community note to a Mastodon status format
-func (c *converterImpl) NotesToStatus(note interface{}) models.Status {
-	// Handle different note types
-	var content string
-	var createdAt time.Time
-	var id string
-	var authorID string
+func (c *converterImpl) NotesToStatus(note any) models.Status {
+	// Use centralized transformation framework for notes - ELIMINATES 60+ LINES OF DUPLICATE CODE
+	status := transformations.NotesToStatusAny(note, c.baseURL)
 
-	// Type switch to handle different note structures
-	switch n := note.(type) {
-	case *notes.CommunityNote:
-		// Handle CommunityNote struct
-		content = n.Content
-		id = n.ID
-		authorID = n.AuthorID
-		createdAt = n.CreatedAt
-	case notes.CommunityNote:
-		// Handle CommunityNote struct (non-pointer)
-		content = n.Content
-		id = n.ID
-		authorID = n.AuthorID
-		createdAt = n.CreatedAt
-	case map[string]interface{}:
-		// Handle map representation (from JSON)
-		content, _ = n["content"].(string)
-		id, _ = n["id"].(string)
-		authorID, _ = n["author_id"].(string)
-		if createdAtStr, ok := n["created_at"].(string); ok {
-			createdAt, _ = time.Parse(time.RFC3339, createdAtStr)
-		} else if createdAtTime, ok := n["created_at"].(time.Time); ok {
-			createdAt = createdAtTime
-		}
-	default:
-		// For other types, create a simple representation
-		content = fmt.Sprint(note)
-		id = "note-" + time.Now().Format("20060102150405")
-		createdAt = time.Now()
-	}
-
-	// Create a basic status representation for the note
-	status := models.Status{
-		ID:                 id,
-		CreatedAt:          createdAt.Format(time.RFC3339),
-		InReplyToID:        nil,
-		InReplyToAccountID: nil,
-		Sensitive:          false,
-		SpoilerText:        "",
-		Visibility:         "public",
-		Language:           "en", // Default to English
-		URI:                fmt.Sprintf("%s/notes/%s", c.baseURL, id),
-		URL:                fmt.Sprintf("%s/notes/%s", c.baseURL, id),
-		RepliesCount:       0,
-		ReblogsCount:       0,
-		FavouritesCount:    0,
-		Favourited:         false,
-		Reblogged:          false,
-		Muted:              false,
-		Bookmarked:         false,
-		Pinned:             false,
-		Content:            content,
-		Reblog:             nil,
-		Application:        nil,
-		Account:            models.Account{}, // Will be populated by caller if needed
-		MediaAttachments:   []interface{}{},
-		Mentions:           []interface{}{},
-		Tags:               []interface{}{},
-		Emojis:             []interface{}{},
-		Card:               nil,
-		Poll:               nil,
-	}
-
-	// If we have an author ID, set a basic account
-	if authorID != "" {
-		// Extract username from author ID if it's a full URI
-		username := authorID
-		if strings.Contains(authorID, "/users/") {
-			parts := strings.Split(authorID, "/users/")
-			if len(parts) > 1 {
-				username = parts[1]
-			}
-		}
-
-		status.Account = models.Account{
-			ID:             authorID,
-			Username:       username,
-			Acct:           username,
-			URL:            authorID,
-			DisplayName:    username,
-			CreatedAt:      time.Now().Format(time.RFC3339),
-			Avatar:         fmt.Sprintf("%s/avatars/default.png", c.baseURL),
-			AvatarStatic:   fmt.Sprintf("%s/avatars/default.png", c.baseURL),
-			Header:         fmt.Sprintf("%s/headers/default.png", c.baseURL),
-			HeaderStatic:   fmt.Sprintf("%s/headers/default.png", c.baseURL),
-			Locked:         false,
-			Bot:            false,
-			Discoverable:   true,
-			Group:          false,
-			Note:           "",
-			FollowersCount: 0,
-			FollowingCount: 0,
-			StatusesCount:  0,
-			LastStatusAt:   "",
-			Emojis:         []interface{}{},
-			Fields:         []interface{}{},
-		}
-	}
+	// Apply implementation-specific overrides if needed
+	status.Visibility = VisibilityPublic // Community notes are always public
+	status.Language = "en"               // Default to English
 
 	return status
+}
+
+// PollToAPI converts a storage poll to API format
+func (c *converterImpl) PollToAPI(poll *storage.Poll, userVotes []int) models.Poll {
+	if poll == nil {
+		return models.Poll{}
+	}
+
+	// Calculate expires at string and expired status
+	var expiresAtStr string
+	var expired bool
+	if poll.ExpiresAt != nil {
+		expiresAtStr = poll.ExpiresAt.Format(time.RFC3339)
+		expired = time.Now().After(*poll.ExpiresAt)
+	}
+
+	// Calculate total votes
+	totalVotes := 0
+	if err := common.ValidateSliceNotEmpty("poll votes count", poll.VotesCount); err == nil {
+		for _, count := range poll.VotesCount {
+			totalVotes += count
+		}
+	}
+
+	// Create poll options
+	optionsData := make([]models.PollOption, len(poll.Options))
+	for i, option := range poll.Options {
+		votesCount := 0
+		if i < len(poll.VotesCount) {
+			votesCount = poll.VotesCount[i]
+		}
+
+		optionsData[i] = models.PollOption{
+			Title:      option,
+			VotesCount: votesCount,
+		}
+	}
+
+	return models.Poll{
+		ID:          poll.ID,
+		ExpiresAt:   expiresAtStr,
+		Expired:     expired,
+		Multiple:    poll.Multiple,
+		VotesCount:  totalVotes,
+		VotersCount: poll.VotersCount,
+		Voted:       len(userVotes) > 0,
+		OwnVotes:    userVotes,
+		OptionsData: optionsData,
+		Emojis:      c.extractCustomEmojisFromPollOptions(poll.Options),
+	}
+}
+
+// extractCustomEmojisFromPollOptions extracts custom emoji codes from poll option text
+func (c *converterImpl) extractCustomEmojisFromPollOptions(options []string) []any {
+	if c.emojiRepo == nil {
+		return []any{} // No emoji repository available
+	}
+
+	emojis := make([]any, 0)
+	emojiMap := make(map[string]bool) // To avoid duplicates
+
+	for _, option := range options {
+		// Look for custom emoji patterns like :custom_emoji:
+		if emojiCodes := c.findEmojiCodes(option); len(emojiCodes) > 0 {
+			for _, code := range emojiCodes {
+				if !emojiMap[code] {
+					// Get real emoji data from repository
+					if emoji, err := c.emojiRepo.GetCustomEmoji(context.Background(), code); err == nil {
+						// Use centralized emoji transformation if available
+						emojiInterface := map[string]interface{}{
+							"shortcode":         emoji.Shortcode,
+							"url":               emoji.URL,
+							"static_url":        emoji.StaticURL,
+							"visible_in_picker": emoji.VisibleInPicker,
+							"category":          emoji.Category,
+						}
+
+						// Use cached emoji transformer for consistency and performance
+						emojiList := c.cachedTransformer.TransformStorageEmojiToMastodon([]interface{}{emojiInterface})
+						if len(emojiList) > 0 {
+							emojis = append(emojis, emojiList[0])
+							emojiMap[code] = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return emojis
+}
+
+// findEmojiCodes finds custom emoji codes in text (format :code:)
+func (c *converterImpl) findEmojiCodes(text string) []string {
+	codes := make([]string, 0)
+	start := 0
+
+	for {
+		startIdx := strings.Index(text[start:], ":")
+		if startIdx == -1 {
+			break
+		}
+		startIdx += start
+
+		endIdx := strings.Index(text[startIdx+1:], ":")
+		if endIdx == -1 {
+			break
+		}
+		endIdx += startIdx + 1
+
+		code := text[startIdx+1 : endIdx]
+		if err := common.ValidateRequiredParam("emoji code", code); err == nil && c.isValidEmojiCode(code) {
+			codes = append(codes, code)
+		}
+		start = endIdx + 1
+	}
+
+	return codes
+}
+
+// isValidEmojiCode checks if an emoji code is valid
+func (c *converterImpl) isValidEmojiCode(code string) bool {
+	// Valid emoji codes contain only letters, numbers, and underscores
+	for _, r := range code {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') &&
+			(r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return len(code) >= 2 && len(code) <= 32
 }

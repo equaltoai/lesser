@@ -4,24 +4,26 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base32"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage"
+
 	"go.uber.org/zap"
 )
 
 // RecoveryCodeService handles backup recovery codes
 type RecoveryCodeService struct {
-	store  storage.Storage
+	repos  StorageProvider
 	logger *zap.Logger
 }
 
 // NewRecoveryCodeService creates a new recovery code service
-func NewRecoveryCodeService(store storage.Storage, logger *zap.Logger) *RecoveryCodeService {
+func NewRecoveryCodeService(repos StorageProvider, logger *zap.Logger) *RecoveryCodeService {
 	return &RecoveryCodeService{
-		store:  store,
+		repos:  repos,
 		logger: logger,
 	}
 }
@@ -39,14 +41,14 @@ func (s *RecoveryCodeService) GenerateRecoveryCodes(ctx context.Context, usernam
 	for i := 0; i < count; i++ {
 		code, err := s.generateCode()
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate recovery code: %w", err)
+			return nil, errors.Join(ErrRecoveryCodeGeneration, err)
 		}
 		codes[i] = code
 
 		// Store hashed version
 		hashedCode, err := HashPassword(code)
 		if err != nil {
-			return nil, fmt.Errorf("failed to hash recovery code: %w", err)
+			return nil, errors.Join(ErrRecoveryCodeHashing, err)
 		}
 
 		// Store in DynamoDB
@@ -58,13 +60,16 @@ func (s *RecoveryCodeService) GenerateRecoveryCodes(ctx context.Context, usernam
 		}
 
 		// Store in DynamoDB
-		if err := s.store.StoreRecoveryCode(ctx, username, recoveryCode); err != nil {
-			return nil, fmt.Errorf("failed to store recovery code: %w", err)
+		if err := s.repos.Recovery().StoreRecoveryCode(ctx, username, recoveryCode); err != nil {
+			return nil, errors.Join(ErrRecoveryCodeStorage, err)
 		}
 	}
 
 	// Clear any existing codes first
-	s.clearExistingCodes(ctx, username)
+	if err := s.clearExistingCodes(ctx, username); err != nil {
+		s.logger.Error("failed to clear existing codes", zap.String("username", username), zap.Error(err))
+		return nil, errors.Join(ErrRecoveryCodeClear, err)
+	}
 
 	s.logger.Info("generated recovery codes",
 		zap.String("username", username),
@@ -81,9 +86,9 @@ func (s *RecoveryCodeService) ValidateRecoveryCode(ctx context.Context, username
 	code = strings.ToUpper(code)
 
 	// Get all recovery codes for user
-	codes, err := s.store.GetRecoveryCodes(ctx, username)
+	codes, err := s.repos.Recovery().GetRecoveryCodes(ctx, username)
 	if err != nil {
-		return false, fmt.Errorf("failed to get recovery codes: %w", err)
+		return false, errors.Join(ErrRecoveryCodeRetrieval, err)
 	}
 
 	// For each stored code:
@@ -96,8 +101,8 @@ func (s *RecoveryCodeService) ValidateRecoveryCode(ctx context.Context, username
 		// 2. Verify hash matches
 		if err := VerifyPassword(code, storedCode.CodeHash); err == nil {
 			// 3. Mark as used if valid
-			if err := s.store.MarkRecoveryCodeUsed(ctx, username, storedCode.CodeHash); err != nil {
-				return false, fmt.Errorf("failed to mark recovery code as used: %w", err)
+			if err := s.repos.Recovery().MarkRecoveryCodeUsed(ctx, username, storedCode.CodeHash); err != nil {
+				return false, errors.Join(ErrRecoveryCodeMarkUsed, err)
 			}
 
 			s.logger.Info("recovery code used successfully",
@@ -116,7 +121,7 @@ func (s *RecoveryCodeService) ValidateRecoveryCode(ctx context.Context, username
 
 // GetRecoveryCodeCount returns the number of unused recovery codes
 func (s *RecoveryCodeService) GetRecoveryCodeCount(ctx context.Context, username string) (int, error) {
-	return s.store.CountUnusedRecoveryCodes(ctx, username)
+	return s.repos.Recovery().CountUnusedRecoveryCodes(ctx, username)
 }
 
 // ClearRecoveryCodes removes all recovery codes for a user
@@ -150,5 +155,5 @@ func (s *RecoveryCodeService) clearExistingCodes(ctx context.Context, username s
 	s.logger.Info("clearing existing recovery codes",
 		zap.String("username", username))
 
-	return s.store.DeleteAllRecoveryCodes(ctx, username)
+	return s.repos.Recovery().DeleteAllRecoveryCodes(ctx, username)
 }

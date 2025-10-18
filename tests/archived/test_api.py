@@ -93,7 +93,7 @@ def test_app_registration():
             'lesser-test-manual',
             api_base_url=INSTANCE_URL,
             scopes=['read', 'write', 'follow', 'push'],
-            website='https://github.com/aron23/lesser'
+            website='https://github.com/equaltoai/lesser'
         )
         log_test(True, "POST /api/v1/apps", 
                 f"Client ID: {client_id[:20]}...")

@@ -13,6 +13,17 @@ import (
 	"go.uber.org/zap"
 )
 
+// Risk level constants
+const (
+	riskLevelHigh     = "HIGH"
+	riskLevelCritical = "CRITICAL"
+)
+
+// Moderation label constants
+const (
+	labelViolence = "Violence"
+)
+
 // ImageAnalyzer handles image content analysis using AWS Rekognition
 type ImageAnalyzer struct {
 	client      *rekognition.Client
@@ -23,6 +34,11 @@ type ImageAnalyzer struct {
 	// Cache for results
 	resultCache sync.Map
 	cacheTTL    time.Duration
+}
+
+// GetClient returns the Rekognition client for use by video analyzer
+func (ia *ImageAnalyzer) GetClient() *rekognition.Client {
+	return ia.client
 }
 
 // RekognitionCostTracker interface for tracking AWS Rekognition costs
@@ -42,7 +58,7 @@ func NewImageAnalyzer(client *rekognition.Client, logger *zap.Logger, config *Mo
 }
 
 // AnalyzeImage performs comprehensive image analysis
-func (ia *ImageAnalyzer) AnalyzeImage(ctx context.Context, imageURL string, metadata ContentMetadata) (*ImageAnalysis, error) {
+func (ia *ImageAnalyzer) AnalyzeImage(ctx context.Context, imageURL string, _ ContentMetadata) (*ImageAnalysis, error) {
 	startTime := time.Now()
 
 	// Check cache
@@ -225,7 +241,7 @@ func (ia *ImageAnalyzer) detectModerationLabels(ctx context.Context, image *type
 		case "Suggestive":
 			modResult.explicit.SuggestiveScore = maxFloat64(modResult.explicit.SuggestiveScore, confidence)
 
-		case "Violence":
+		case labelViolence:
 			modResult.violence.HasViolence = true
 			modResult.violence.ViolenceScore = maxFloat64(modResult.violence.ViolenceScore, confidence)
 			modResult.violence.Confidence = maxFloat64(modResult.violence.Confidence, confidence)
@@ -241,7 +257,7 @@ func (ia *ImageAnalyzer) detectModerationLabels(ctx context.Context, image *type
 		// Check parent labels too
 		if label.ParentName != nil {
 			parentName := aws.ToString(label.ParentName)
-			if parentName == "Violence" {
+			if parentName == labelViolence {
 				modResult.violence.HasViolence = true
 			}
 		}
@@ -484,12 +500,12 @@ func (ia *ImageAnalyzer) AnalyzeImageContent(ctx context.Context, imageURL strin
 	// Check for concerning combinations
 	if imageAnalysis.Violence.HasViolence && containsThreatLanguage(textContent) {
 		combined.Flags = append(combined.Flags, "VIOLENT_THREAT")
-		combined.RiskLevel = "HIGH"
+		combined.RiskLevel = riskLevelHigh
 	}
 
 	if imageAnalysis.Explicit.IsExplicit && isTargetedAtMinors(textContent) {
 		combined.Flags = append(combined.Flags, "CHILD_SAFETY_CONCERN")
-		combined.RiskLevel = "CRITICAL"
+		combined.RiskLevel = riskLevelCritical
 	}
 
 	// Check for doxxing
@@ -497,7 +513,7 @@ func (ia *ImageAnalyzer) AnalyzeImageContent(ctx context.Context, imageURL strin
 		for _, text := range imageAnalysis.Text {
 			if looksLikeAddress(text.Text) || looksLikePhoneNumber(text.Text) {
 				combined.Flags = append(combined.Flags, "POSSIBLE_DOXXING")
-				combined.RiskLevel = "HIGH"
+				combined.RiskLevel = riskLevelHigh
 				break
 			}
 		}
@@ -506,7 +522,7 @@ func (ia *ImageAnalyzer) AnalyzeImageContent(ctx context.Context, imageURL strin
 	// Check for harassment
 	if len(imageAnalysis.Faces) > 0 && containsHarassmentLanguage(textContent) {
 		combined.Flags = append(combined.Flags, "TARGETED_HARASSMENT")
-		combined.RiskLevel = "HIGH"
+		combined.RiskLevel = riskLevelHigh
 	}
 
 	return combined, nil
@@ -529,6 +545,7 @@ type labelResult struct {
 	customLabels []CustomLabel
 }
 
+// CombinedAnalysis represents combined image and text analysis results
 type CombinedAnalysis struct {
 	ImageAnalysis *ImageAnalysis
 	TextAnalysis  *ContentAnalysis

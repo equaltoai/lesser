@@ -32,7 +32,7 @@ This package implements intelligent cost tracking and management for federation 
 
 ```go
 import (
-    "github.com/aron23/lesser/pkg/federation/cost"
+    "github.com/equaltoai/lesser/pkg/federation/cost"
     "github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
@@ -55,7 +55,7 @@ budget := &cost.FederationBudget{
 }
 
 // Set thresholds
-thresholds := &cost.CostThresholds{
+thresholds := &cost.Thresholds{
     WarnThresholdPercent:  80,  // Warn at 80% budget
     BlockThresholdPercent: 95,  // Block at 95% budget
 }

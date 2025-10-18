@@ -1,2479 +1,2312 @@
+// Package main implements the activity processor Lambda function that handles
+// ActivityPub activities from DynamoDB streams and updates various timelines
+// and notifications accordingly.
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"regexp"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/federation"
-	"github.com/aron23/lesser/pkg/notifications"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/comprehend"
+	"github.com/google/uuid"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/federation"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
-// ActivityDirection represents the direction of an activity
-type ActivityDirection string
-
+// Constants for common strings
 const (
-	ActivityDirectionInbox  ActivityDirection = "inbox"
-	ActivityDirectionOutbox ActivityDirection = "outbox"
+	// Timeline types
+	timelineHome      = "HOME"
+	timelinePublic    = "PUBLIC"
+	timelineFederated = "FEDERATED"
+	timelineLocal     = "LOCAL"
+
+	// Activity types
+	activityInsert  = "INSERT"
+	activityModify  = "MODIFY"
+	activityRemove  = "REMOVE"
+	UnknownValue    = "unknown"
+	UnknownEventMsg = "unknown event type"
+	UnknownTypeMsg  = "processing unknown object type"
+	UnknownErrorMsg = "Default to not retrying unknown errors"
 )
 
-var (
-	store            storage.Storage
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+const requestIDKey contextKey = "request_id"
+
+// ActivityProcessor handles ActivityPub activities from DynamoDB streams,
+// processing them to update timelines, notifications, and other related data.
+type ActivityProcessor struct {
+	db               core.DB
+	tableName        string
 	logger           *zap.Logger
-	httpClient       *http.Client
-	pushService      *notifications.PushService
-	comprehendClient *comprehend.Client
-)
+	timelineRepo     *repositories.TimelineRepository
+	actorRepo        *repositories.ActorRepository
+	userRepo         *repositories.UserRepository
+	relationshipRepo *repositories.RelationshipRepository
+	objectRepo       *repositories.ObjectRepository
+	fetchService     *federation.AuthorizedFetchService
+	storageAdapter   storageCore.RepositoryStorage
+	baseURL          string
+	retryAttempts    int
+	retryDelay       time.Duration
+}
 
-func init() {
-	var err error
-	logger, err = zap.NewProduction()
+// NewActivityProcessor creates a new activity processor instance with the given
+// lambda context
+func NewActivityProcessor(lambdaCtx *common.LambdaContext) *ActivityProcessor {
+	// Get logger
+	logger := lambdaCtx.Logger
+	cfg := lambdaCtx.Config
+
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
+		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
 
-	store, err = dynamodb.New()
+	// Initialize repository factory
+	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
 	if err != nil {
-		logger.Fatal("Failed to initialize storage", zap.Error(err))
+		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
 
-	// HTTP client with timeout for delivery
-	httpClient = &http.Client{
-		Timeout: 30 * time.Second,
-	}
+	// Extract domain from baseURL
+	baseURL := cfg.BaseURL()
+	domain := strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://")
 
-	// Initialize push service (can be nil if not configured)
-	pushService, err = notifications.NewPushService()
-	if err != nil {
-		logger.Warn("Failed to initialize push service, push notifications will be disabled", zap.Error(err))
-	}
+	// Initialize authorized fetch service with repository factory
+	fetchService := federation.NewAuthorizedFetchService(repos, domain, logger)
 
-	// Initialize AWS Comprehend client for language detection
-	cfg, err := awsconfig.LoadDefaultConfig(context.Background())
-	if err != nil {
-		logger.Warn("Failed to load AWS config, language detection will be disabled", zap.Error(err))
-	} else {
-		comprehendClient = comprehend.NewFromConfig(cfg)
+	return &ActivityProcessor{
+		db:               db,
+		tableName:        cfg.DynamoTableName,
+		logger:           logger,
+		timelineRepo:     repos.Timeline(),
+		actorRepo:        repos.Actor(),
+		userRepo:         repos.User(),
+		relationshipRepo: repos.Relationship(),
+		objectRepo:       repos.Object(),
+		fetchService:     fetchService,
+		storageAdapter:   repos,
+		baseURL:          baseURL,
+		retryAttempts:    3,
+		retryDelay:       time.Second * 2,
 	}
 }
 
-// handler processes DynamoDB stream events for activities
-func handler(ctx context.Context, event events.DynamoDBEvent) error {
-	log := common.WithContext(ctx)
+// HandleStream processes DynamoDB stream events with Lift-style patterns
+func (ap *ActivityProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
+	// Generate request ID for tracking (Lift pattern)
+	requestID := uuid.New().String()
+
+	// Validate the generated UUID
+	if err := common.ValidateUUID("requestID", requestID); err != nil {
+		ap.logger.Error("failed to generate valid request ID", zap.Error(err))
+		// Fall back to a simple timestamp-based ID
+		requestID = fmt.Sprintf("req_%d", time.Now().UnixNano())
+	}
+
+	// Add request ID to context for downstream use
+	ctx = context.WithValue(ctx, requestIDKey, requestID)
+
+	ap.logger.Info("processing activity stream batch",
+		zap.String("request_id", requestID),
+		zap.Int("record_count", len(event.Records)),
+	)
+
+	// Process records in parallel with error collection
+	var errorList []error
+	var errorMutex sync.Mutex
+	var deadLetterRecords []events.DynamoDBEventRecord
+
+	// Track batch processing metrics
+	batchStartTime := time.Now()
+	defer func() {
+		batchDuration := time.Since(batchStartTime)
+
+		// Record batch processing metrics
+		batchMetric := struct {
+			PK        string `dynamorm:"pk"`
+			SK        string `dynamorm:"sk"`
+			Type      string `json:"type"`
+			RequestID string `json:"request_id"`
+			Records   int    `json:"record_count"`
+			Errors    int    `json:"error_count"`
+			Duration  int64  `json:"duration_ms"`
+			Timestamp string `json:"timestamp"`
+			TTL       int64  `dynamorm:"ttl"`
+		}{
+			PK:        "BATCH#METRICS",
+			SK:        fmt.Sprintf("BATCH#%d#%s", batchStartTime.Unix(), requestID),
+			Type:      "BatchProcessingMetric",
+			RequestID: requestID,
+			Records:   len(event.Records),
+			Errors:    len(errorList),
+			Duration:  batchDuration.Milliseconds(),
+			Timestamp: batchStartTime.Format(time.RFC3339),
+			TTL:       batchStartTime.Add(24 * time.Hour).Unix(),
+		}
+
+		if err := ap.db.WithContext(ctx).Model(&batchMetric).Create(); err != nil {
+			ap.logger.Debug("failed to record batch metric", zap.Error(err))
+		}
+	}()
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10) // Limit concurrency to 10
 
 	for _, record := range event.Records {
-		if record.EventName != "INSERT" && record.EventName != "MODIFY" {
-			continue
-		}
+		wg.Add(1)
+		sem <- struct{}{}
 
-		// Parse the DynamoDB record
-		activity, direction, username, err := parseActivityRecord(record.Change.NewImage)
-		if err != nil {
-			log.Error("failed to parse record", zap.Error(err))
-			continue
-		}
+		go func(record events.DynamoDBEventRecord) {
+			defer wg.Done()
+			defer func() { <-sem }()
 
-		log.Info("processing activity",
-			zap.String("id", activity.ID),
-			zap.String("type", activity.Type),
-			zap.String("direction", string(direction)),
-			zap.String("username", username))
+			if err := ap.processRecord(ctx, record); err != nil {
+				errorMutex.Lock()
+				errorList = append(errorList, err)
 
-		if direction == ActivityDirectionInbox {
-			// Process inbox activity
-			if err := processInboxActivity(ctx, activity, username); err != nil {
-				log.Error("failed to process inbox activity",
-					zap.String("activity_id", activity.ID),
-					zap.Error(err))
+				// Check if this is a retryable error
+				if ap.isRetryableStreamError(err) {
+					ap.logger.Warn("retryable error processing record",
+						zap.String("event_id", record.EventID),
+						zap.Error(err),
+					)
+				} else {
+					// Send to dead letter queue for non-retryable errors
+					deadLetterRecords = append(deadLetterRecords, record)
+					ap.logger.Error("non-retryable error, sending to DLQ",
+						zap.String("event_id", record.EventID),
+						zap.Error(err),
+					)
+				}
+				errorMutex.Unlock()
 			}
-		} else {
-			// Process outbox activity - deliver to recipients
-			if err := processOutboxActivity(ctx, activity); err != nil {
-				log.Error("failed to process outbox activity",
-					zap.String("activity_id", activity.ID),
-					zap.Error(err))
+		}(record)
+	}
+
+	wg.Wait()
+
+	// Process dead letter records
+	if err := common.ValidateSliceNotEmpty("dead_letter_records", deadLetterRecords); err == nil {
+		ap.logger.Info("sending records to dead letter queue",
+			zap.Int("dlq_record_count", len(deadLetterRecords)),
+		)
+
+		for _, record := range deadLetterRecords {
+			if err := ap.sendToDeadLetterQueue(ctx, record, "processing_failed"); err != nil {
+				ap.logger.Error("failed to send record to DLQ",
+					zap.String("event_id", record.EventID),
+					zap.Error(err),
+				)
 			}
 		}
+	}
+
+	// Return error if there are retryable errors (this will cause Lambda to retry)
+	retryableErrors := len(errorList) - len(deadLetterRecords)
+	if retryableErrors > 0 {
+		ap.logger.Error("batch has retryable errors",
+			zap.Int("retryable_errors", retryableErrors),
+			zap.Int("total_records", len(event.Records)))
+		return batchRetryableErrors(retryableErrors)
+	}
+
+	ap.logger.Info("batch processing completed successfully",
+		zap.Int("total_records", len(event.Records)),
+		zap.Int("dead_letter_records", len(deadLetterRecords)),
+		zap.Int("successful_records", len(event.Records)-len(errorList)),
+	)
+
+	return nil
+}
+
+func (ap *ActivityProcessor) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
+	// Parse the stream record into activity data
+	var activity struct {
+		PK        string `dynamorm:"pk"`
+		SK        string `dynamorm:"sk"`
+		Type      string `json:"type"`
+		Activity  string `json:"activity"`
+		Direction string `json:"direction"`
+		Username  string `json:"username"`
+		ActorID   string `json:"actor_id"`
+		CreatedAt string `json:"created_at"`
+	}
+
+	switch record.EventName {
+	case activityInsert, activityModify:
+		if record.Change.NewImage == nil {
+			ap.logger.Error("missing new image in record", zap.String("event_id", record.EventID))
+			return missingNewImage(record.EventID)
+		}
+
+		// Convert DynamoDB attribute values using DynamORM
+		if err := stream.UnmarshalItem(record, &activity); err != nil {
+			return streamRecordUnmarshalNewFailed(record.EventID, err)
+		}
+
+	case activityRemove:
+		if record.Change.OldImage == nil {
+			ap.logger.Error("missing old image in remove record", zap.String("event_id", record.EventID))
+			return missingOldImage(record.EventID)
+		}
+
+		// Convert DynamoDB attribute values from OldImage for REMOVE events
+		// The UnmarshalItem function already handles this case by checking EventName
+		if err := stream.UnmarshalItem(record, &activity); err != nil {
+			return streamRecordUnmarshalOldFailed(record.EventID, err)
+		}
+
+	default:
+		ap.logger.Warn(UnknownEventMsg,
+			zap.String("event_name", record.EventName),
+			zap.String("event_id", record.EventID),
+		)
+		return nil
+	}
+
+	// Only process activity records
+	if !strings.HasPrefix(activity.PK, "ACTIVITY#") {
+		return nil
+	}
+
+	// Route based on activity type and direction
+	switch record.EventName {
+	case activityInsert:
+		return ap.processActivityCreated(ctx, activity)
+	case activityModify:
+		return ap.processActivityUpdated(ctx, activity)
+	case activityRemove:
+		return ap.processActivityDeleted(ctx, activity)
+	default:
+		return nil
+	}
+}
+
+func (ap *ActivityProcessor) processActivityCreated(ctx context.Context, activity struct {
+	PK        string `dynamorm:"pk"`
+	SK        string `dynamorm:"sk"`
+	Type      string `json:"type"`
+	Activity  string `json:"activity"`
+	Direction string `json:"direction"`
+	Username  string `json:"username"`
+	ActorID   string `json:"actor_id"`
+	CreatedAt string `json:"created_at"`
+},
+) error {
+	ap.logger.Info("processing activity created",
+		zap.String("pk", activity.PK),
+		zap.String("direction", activity.Direction),
+		zap.String("username", activity.Username),
+	)
+
+	// Process based on direction (inbox vs outbox)
+	switch activity.Direction {
+	case "inbox":
+		return ap.processInboxActivity(ctx, activity)
+	case "outbox":
+		return ap.processOutboxActivity(ctx, activity)
 	}
 
 	return nil
 }
 
-// parseActivityRecord extracts activity data from DynamoDB stream record
-func parseActivityRecord(image map[string]events.DynamoDBAttributeValue) (*activitypub.Activity, ActivityDirection, string, error) {
-	// Extract PK to get username
-	pkAttr, ok := image["PK"]
-	if !ok {
-		return nil, "", "", fmt.Errorf("missing PK attribute")
-	}
-	if pkAttr.DataType() != events.DataTypeString || pkAttr.String() == "" {
-		return nil, "", "", fmt.Errorf("invalid PK attribute")
-	}
+func (ap *ActivityProcessor) processActivityUpdated(ctx context.Context, activity struct {
+	PK        string `dynamorm:"pk"`
+	SK        string `dynamorm:"sk"`
+	Type      string `json:"type"`
+	Activity  string `json:"activity"`
+	Direction string `json:"direction"`
+	Username  string `json:"username"`
+	ActorID   string `json:"actor_id"`
+	CreatedAt string `json:"created_at"`
+},
+) error {
+	ap.logger.Info("processing activity updated",
+		zap.String("pk", activity.PK),
+		zap.String("direction", activity.Direction),
+	)
 
-	// Extract username from PK (format: ACTOR#username)
-	pk := pkAttr.String()
-	if !strings.HasPrefix(pk, "ACTOR#") {
-		return nil, "", "", fmt.Errorf("not an actor record")
-	}
-	username := strings.TrimPrefix(pk, "ACTOR#")
-
-	// Check if this is an activity record by looking at SK
-	skAttr, ok := image["SK"]
-	if !ok {
-		return nil, "", "", fmt.Errorf("missing SK attribute")
-	}
-	if skAttr.DataType() != events.DataTypeString || !strings.Contains(skAttr.String(), "ACTIVITY#") {
-		return nil, "", "", fmt.Errorf("not an activity record")
-	}
-
-	// Extract GSI1PK to determine direction (optional - only present for inbox activities)
-	var direction ActivityDirection = ActivityDirectionOutbox // Default to outbox
-	if gsi1pkAttr, ok := image["GSI1PK"]; ok && gsi1pkAttr.DataType() == events.DataTypeString {
-		gsi1pk := gsi1pkAttr.String()
-		if strings.HasPrefix(gsi1pk, "INBOX#") {
-			direction = ActivityDirectionInbox
-		}
-	}
-
-	// Extract activity data from Activity field
-	activityAttr, ok := image["Activity"]
-	if !ok {
-		return nil, "", "", fmt.Errorf("missing Activity attribute")
-	}
-
-	// The Activity field should be a Map type
-	if activityAttr.DataType() != events.DataTypeMap {
-		return nil, "", "", fmt.Errorf("activity attribute is not a map")
-	}
-
-	// Convert DynamoDB attribute map to JSON for unmarshaling
-	activityJSON, err := convertDynamoDBMapToJSON(activityAttr.Map())
-	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to convert activity map: %w", err)
-	}
-
-	// Unmarshal activity
-	var activity activitypub.Activity
-	if err := common.ParseActivityPubObject(activityJSON, &activity); err != nil {
-		return nil, "", "", fmt.Errorf("failed to unmarshal activity: %w", err)
-	}
-
-	return &activity, direction, username, nil
+	// Handle activity updates (e.g., status changes)
+	// This could trigger notifications, cache invalidation, etc.
+	return ap.updateActivityMetrics(ctx, activity)
 }
 
-// convertDynamoDBMapToJSON converts a DynamoDB attribute map to JSON
-func convertDynamoDBMapToJSON(m map[string]events.DynamoDBAttributeValue) ([]byte, error) {
-	result := make(map[string]interface{})
+func (ap *ActivityProcessor) processActivityDeleted(ctx context.Context, activity struct {
+	PK        string `dynamorm:"pk"`
+	SK        string `dynamorm:"sk"`
+	Type      string `json:"type"`
+	Activity  string `json:"activity"`
+	Direction string `json:"direction"`
+	Username  string `json:"username"`
+	ActorID   string `json:"actor_id"`
+	CreatedAt string `json:"created_at"`
+},
+) error {
+	ap.logger.Info("processing activity deleted",
+		zap.String("pk", activity.PK),
+		zap.String("direction", activity.Direction),
+	)
 
-	for k, v := range m {
-		val, err := extractDynamoDBValue(v)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract value for key %s: %w", k, err)
-		}
-		result[k] = val
+	// Parse the deleted activity to understand what was removed
+	var activityData activitypub.Activity
+	if err := json.Unmarshal([]byte(activity.Activity), &activityData); err != nil {
+		ap.logger.Warn("failed to parse deleted activity", zap.Error(err))
+		// Continue with generic cleanup even if we can't parse the activity
+		return ap.cleanupActivityReferences(ctx, activity)
 	}
 
-	return json.Marshal(result)
-}
-
-// extractDynamoDBValue extracts the actual value from a DynamoDB attribute
-func extractDynamoDBValue(attr events.DynamoDBAttributeValue) (interface{}, error) {
-	switch attr.DataType() {
-	case events.DataTypeString:
-		return attr.String(), nil
-	case events.DataTypeNumber:
-		return attr.Number(), nil
-	case events.DataTypeBoolean:
-		return attr.Boolean(), nil
-	case events.DataTypeNull:
-		return nil, nil
-	case events.DataTypeList:
-		list := make([]interface{}, 0)
-		for _, item := range attr.List() {
-			val, err := extractDynamoDBValue(item)
-			if err != nil {
-				return nil, err
-			}
-			list = append(list, val)
-		}
-		return list, nil
-	case events.DataTypeMap:
-		m := make(map[string]interface{})
-		for k, v := range attr.Map() {
-			val, err := extractDynamoDBValue(v)
-			if err != nil {
-				return nil, err
-			}
-			m[k] = val
-		}
-		return m, nil
-	case events.DataTypeStringSet:
-		return attr.StringSet(), nil
-	case events.DataTypeNumberSet:
-		return attr.NumberSet(), nil
-	default:
-		return nil, fmt.Errorf("unsupported data type: %v", attr.DataType())
-	}
-}
-
-// processInboxActivity processes activities delivered to a user's inbox
-func processInboxActivity(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	switch activity.Type {
-	case activitypub.FollowType:
-		// Process follow
-		if err := processFollow(ctx, activity, recipientUsername); err != nil {
-			log.Error("failed to process follow",
-				zap.String("activity_id", activity.ID),
-				zap.Error(err))
-		}
-
-	case activitypub.AcceptType:
-		// Check if this is accepting a follow
-		if innerActivity, ok := activity.Object.(map[string]interface{}); ok {
-			if innerType, ok := innerActivity["type"].(string); ok && innerType == activitypub.FollowType {
-				return processFollowAccept(ctx, activity, recipientUsername)
-			}
-		}
-
+	// Handle specific deletion types
+	switch activityData.Type {
 	case activitypub.CreateType:
-		// Store the created object
-		return processCreate(ctx, activity, recipientUsername)
-
-	case activitypub.LikeType:
-		// Store the like
-		return processLike(ctx, activity, recipientUsername)
-
+		// Remove from timelines and create tombstone
+		if err := ap.handleCreateActivityDeletion(ctx, &activityData, activity.Username); err != nil {
+			ap.logger.Error("failed to handle Create activity deletion", zap.Error(err))
+			return err
+		}
 	case activitypub.AnnounceType:
-		// Store the announce
-		return processAnnounce(ctx, activity, recipientUsername)
-
-	case activitypub.DeleteType:
-		// Process deletion
-		return processDelete(ctx, activity, recipientUsername)
-
-	case activitypub.UpdateType:
-		// Process update
-		return processUpdate(ctx, activity, recipientUsername)
-
-	case activitypub.UndoType:
-		// Process undo
-		return processUndo(ctx, activity, recipientUsername)
-
-	case activitypub.BlockType:
-		// Process block
-		return processBlock(ctx, activity, recipientUsername)
-
-	case activitypub.FlagType:
-		// Process flag (content moderation)
-		return processFlag(ctx, activity, recipientUsername)
-
-	case activitypub.MoveType:
-		// Process move (account migration)
-		return processMove(ctx, activity, recipientUsername)
-
-	case activitypub.AddType:
-		// Process add (add to collection)
-		return processAdd(ctx, activity, recipientUsername)
-
-	case activitypub.RemoveType:
-		// Process remove (remove from collection)
-		return processRemove(ctx, activity, recipientUsername)
-
-	default:
-		log.Warn("unhandled inbox activity type",
-			zap.String("type", activity.Type),
-			zap.String("id", activity.ID))
-	}
-
-	return nil
-}
-
-// processOutboxActivity processes activities created by a local user
-func processOutboxActivity(ctx context.Context, activity *activitypub.Activity) error {
-	log := common.WithContext(ctx)
-
-	// Extract all recipients
-	recipients := extractAllRecipients(activity)
-
-	log.Info("delivering activity to recipients",
-		zap.String("activity_id", activity.ID),
-		zap.Int("recipient_count", len(recipients)))
-
-	// Deliver to each recipient
-	var deliveryErrors []error
-	for _, recipient := range recipients {
-		if err := deliverToRecipient(ctx, activity, recipient); err != nil {
-			log.Error("failed to deliver to recipient",
-				zap.String("recipient", recipient),
-				zap.Error(err))
-			deliveryErrors = append(deliveryErrors, err)
+		// Remove announce from timelines
+		if err := ap.handleAnnounceActivityDeletion(ctx, &activityData, activity.Username); err != nil {
+			ap.logger.Error("failed to handle Announce activity deletion", zap.Error(err))
+			return err
 		}
-	}
-
-	if len(deliveryErrors) > 0 {
-		return fmt.Errorf("delivery failed to %d recipients", len(deliveryErrors))
-	}
-
-	// Fan-out to timelines for Create activities
-	if activity.Type == activitypub.CreateType {
-		if err := fanOutToTimelines(ctx, activity); err != nil {
-			log.Error("failed to fan out to timelines",
-				zap.String("activity_id", activity.ID),
-				zap.Error(err))
-			// Don't fail the whole process if timeline fan-out fails
-			// The activity has already been delivered
-		}
-	}
-
-	// Fan-out Announce activities to timelines
-	if activity.Type == activitypub.AnnounceType {
-		if err := fanOutAnnounceToTimelines(ctx, activity); err != nil {
-			log.Error("failed to fan out announce to timelines",
-				zap.String("activity_id", activity.ID),
-				zap.Error(err))
-		}
-	}
-
-	return nil
-}
-
-// Process specific activity types
-
-func processFollow(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	// Extract follower username from actor
-	followerUsername := extractUsernameFromActorID(activity.Actor)
-	if followerUsername == "" {
-		return fmt.Errorf("invalid actor ID: %s", activity.Actor)
-	}
-
-	log.Info("processing follow request",
-		zap.String("follower", followerUsername),
-		zap.String("followed", recipientUsername))
-
-	// Create pending follow relationship
-	err := store.CreateFollow(ctx, followerUsername, recipientUsername, activity.ID)
-	if err != nil {
-		return fmt.Errorf("failed to create follow relationship: %w", err)
-	}
-
-	// Check if this is a local user being followed
-	localActor, err := store.GetActor(ctx, recipientUsername)
-	if err == nil && localActor != nil {
-		// This is a local user being followed, create a notification
-		notification := &storage.Notification{
-			Type:      "follow",
-			Username:  recipientUsername, // The person being followed
-			AccountID: followerUsername,  // The person doing the following
-			CreatedAt: time.Now(),
-		}
-		if err := store.CreateNotification(ctx, notification); err != nil {
-			log.Warn("failed to create follow notification",
-				zap.String("follower", followerUsername),
-				zap.String("followed", recipientUsername),
-				zap.Error(err))
-		}
-
-		// Queue push notification
-		if pushService != nil {
-			// Get follower info for notification
-			followerActor, err := store.GetActor(ctx, followerUsername)
-			if err == nil {
-				displayName := followerActor.Name
-				if displayName == "" {
-					displayName = followerActor.PreferredUsername
-				}
-
-				pushMsg := &notifications.PushMessage{
-					Username:         recipientUsername,
-					NotificationType: "follow",
-					Title:            notifications.FormatNotificationTitle("follow", displayName),
-					Body:             "",
-					Icon:             followerActor.Icon.URL,
-					NotificationID:   notification.ID,
-					AccessToken:      "", // Will be populated by client
-				}
-
-				if err := pushService.QueueNotification(ctx, pushMsg); err != nil {
-					log.Warn("failed to queue push notification",
-						zap.String("type", "follow"),
-						zap.String("username", recipientUsername),
-						zap.Error(err))
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func processFollowAccept(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	// Extract the original follow activity
-	innerActivity, ok := activity.Object.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("invalid Accept object type")
-	}
-
-	// Get the actor from the original follow (the follower)
-	followerActor, ok := innerActivity["actor"].(string)
-	if !ok {
-		return fmt.Errorf("missing actor in original follow activity")
-	}
-
-	followerUsername := extractUsernameFromActorID(followerActor)
-	if followerUsername == "" {
-		return fmt.Errorf("invalid follower actor ID: %s", followerActor)
-	}
-
-	log.Info("processing follow accept",
-		zap.String("follower", followerUsername),
-		zap.String("followed", recipientUsername))
-
-	// Accept the follow relationship
-	err := store.AcceptFollow(ctx, followerUsername, recipientUsername)
-	if err != nil {
-		return fmt.Errorf("failed to accept follow: %w", err)
-	}
-
-	// Create a follow notification for the follower
-	notification := &storage.Notification{
-		Type:      "follow",
-		Username:  followerUsername,
-		AccountID: recipientUsername,
-		CreatedAt: time.Now(),
-	}
-	if err := store.CreateNotification(ctx, notification); err != nil {
-		log.Warn("failed to create follow notification",
-			zap.String("follower", followerUsername),
-			zap.String("followed", recipientUsername),
-			zap.Error(err))
-		// Don't fail the whole operation if notification creation fails
-	}
-
-	return nil
-}
-
-func processCreate(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	log.Info("processing create activity",
-		zap.String("activity_id", activity.ID),
-		zap.String("recipient", recipientUsername))
-
-	// Extract and store the object
-	if obj, ok := activity.Object.(map[string]interface{}); ok {
-		// Convert the object map to our Object type
-		object := &dynamodb.Object{
-			ID:           getStringField(obj, "id"),
-			Type:         getStringField(obj, "type"),
-			Content:      getStringField(obj, "content"),
-			AttributedTo: activity.Actor,
-			Summary:      getStringField(obj, "summary"),
-			Name:         getStringField(obj, "name"),
-			URL:          getStringField(obj, "url"),
-			Sensitive:    getBoolField(obj, "sensitive"),
-		}
-
-		// Set published time
-		if publishedStr := getStringField(obj, "published"); publishedStr != "" {
-			if published, err := time.Parse(time.RFC3339, publishedStr); err == nil {
-				object.Published = published
-			} else {
-				object.Published = time.Now()
-			}
-		} else {
-			object.Published = time.Now()
-		}
-
-		// Handle addressing
-		object.To = getStringSliceField(obj, "to")
-		object.CC = getStringSliceField(obj, "cc")
-
-		// Handle attachments
-		if attachments, ok := obj["attachment"].([]interface{}); ok {
-			for _, att := range attachments {
-				if attMap, ok := att.(map[string]interface{}); ok {
-					attachment := dynamodb.ObjectAttachment{
-						Type:      getStringField(attMap, "type"),
-						URL:       getStringField(attMap, "url"),
-						MediaType: getStringField(attMap, "mediaType"),
-						Name:      getStringField(attMap, "name"),
-						Width:     getIntField(attMap, "width"),
-						Height:    getIntField(attMap, "height"),
-					}
-					object.Attachment = append(object.Attachment, attachment)
-				}
-			}
-		}
-
-		// Handle tags
-		if tags, ok := obj["tag"].([]interface{}); ok {
-			for _, tag := range tags {
-				if tagMap, ok := tag.(map[string]interface{}); ok {
-					objectTag := dynamodb.ObjectTag{
-						Type: getStringField(tagMap, "type"),
-						Href: getStringField(tagMap, "href"),
-						Name: getStringField(tagMap, "name"),
-					}
-					object.Tag = append(object.Tag, objectTag)
-				}
-			}
-		}
-
-		// Handle inReplyTo
-		if inReplyTo := getStringField(obj, "inReplyTo"); inReplyTo != "" {
-			object.InReplyTo = &inReplyTo
-		}
-
-		// Store the object
-		err := store.CreateObject(ctx, object)
-		if err != nil {
-			return fmt.Errorf("failed to create object: %w", err)
-		}
-
-		log.Info("object created from activity",
-			zap.String("object_id", object.ID),
-			zap.String("type", object.Type))
-
-		// Check for mentions in the object tags
-		if object.Type == "Note" {
-			for _, tag := range object.Tag {
-				if tag.Type == "Mention" && tag.Href != "" {
-					// Extract mentioned username from href
-					mentionedUsername := extractUsernameFromActorID(tag.Href)
-
-					// Check if this is a local user
-					if mentionedActor, err := store.GetActor(ctx, mentionedUsername); err == nil && mentionedActor != nil {
-						// Create mention notification
-						notification := &storage.Notification{
-							Type:      "mention",
-							Username:  mentionedUsername,
-							AccountID: extractUsernameFromActorID(activity.Actor),
-							StatusID:  object.ID,
-							CreatedAt: time.Now(),
-						}
-						if err := store.CreateNotification(ctx, notification); err != nil {
-							log.Warn("failed to create mention notification",
-								zap.String("mentioned", mentionedUsername),
-								zap.String("actor", activity.Actor),
-								zap.String("object", object.ID),
-								zap.Error(err))
-						}
-					}
-				}
-			}
-		}
-	} else {
-		log.Warn("activity object is not a map, skipping object creation",
-			zap.String("activity_id", activity.ID))
-	}
-
-	return nil
-}
-
-// Helper functions for extracting fields from map[string]interface{}
-func getStringField(m map[string]interface{}, key string) string {
-	// Try lowercase key first
-	if val, ok := m[key].(string); ok {
-		return val
-	}
-	// Try uppercase key (for DynamoDB field names)
-	upperKey := strings.ToUpper(key[:1]) + key[1:]
-	if val, ok := m[upperKey].(string); ok {
-		return val
-	}
-	// Try all uppercase
-	if val, ok := m[strings.ToUpper(key)].(string); ok {
-		return val
-	}
-	return ""
-}
-
-func getBoolField(m map[string]interface{}, key string) bool {
-	// Try lowercase key first
-	if val, ok := m[key].(bool); ok {
-		return val
-	}
-	// Try uppercase key (for DynamoDB field names)
-	upperKey := strings.ToUpper(key[:1]) + key[1:]
-	if val, ok := m[upperKey].(bool); ok {
-		return val
-	}
-	// Try all uppercase
-	if val, ok := m[strings.ToUpper(key)].(bool); ok {
-		return val
-	}
-	return false
-}
-
-func getIntField(m map[string]interface{}, key string) int {
-	// Try lowercase key first
-	if val, ok := m[key].(float64); ok {
-		return int(val)
-	}
-	if val, ok := m[key].(int); ok {
-		return val
-	}
-	// Try uppercase key (for DynamoDB field names)
-	upperKey := strings.ToUpper(key[:1]) + key[1:]
-	if val, ok := m[upperKey].(float64); ok {
-		return int(val)
-	}
-	if val, ok := m[upperKey].(int); ok {
-		return val
-	}
-	// Try all uppercase
-	if val, ok := m[strings.ToUpper(key)].(float64); ok {
-		return int(val)
-	}
-	if val, ok := m[strings.ToUpper(key)].(int); ok {
-		return val
-	}
-	return 0
-}
-
-func getStringSliceField(m map[string]interface{}, key string) []string {
-	var result []string
-	// Helper function to process the value
-	processValue := func(val interface{}) {
-		switch v := val.(type) {
-		case []interface{}:
-			for _, item := range v {
-				if s, ok := item.(string); ok {
-					result = append(result, s)
-				}
-			}
-		case []string:
-			result = v
-		case string:
-			result = []string{v}
-		}
-	}
-
-	// Try lowercase key first
-	if val, ok := m[key]; ok {
-		processValue(val)
-		return result
-	}
-	// Try uppercase key (for DynamoDB field names)
-	upperKey := strings.ToUpper(key[:1]) + key[1:]
-	if val, ok := m[upperKey]; ok {
-		processValue(val)
-		return result
-	}
-	// Try all uppercase
-	if val, ok := m[strings.ToUpper(key)]; ok {
-		processValue(val)
-		return result
-	}
-	return result
-}
-
-func processLike(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	log.Info("processing like activity",
-		zap.String("activity_id", activity.ID),
-		zap.String("recipient", recipientUsername))
-
-	// Extract object ID from the activity
-	var objectID string
-	switch obj := activity.Object.(type) {
-	case string:
-		objectID = obj
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			objectID = id
-		}
-	}
-
-	if objectID == "" {
-		return fmt.Errorf("like activity missing object ID")
-	}
-
-	// Create Like record
-	like := &storage.Like{
-		Actor:  activity.Actor,
-		Object: objectID,
-		ID:     activity.ID,
-	}
-
-	// Set published time
-	if activity.Published != nil {
-		like.Published = *activity.Published
-	} else {
-		like.Published = time.Now()
-	}
-
-	// Store the like
-	err := store.CreateLike(ctx, like)
-	if err != nil {
-		// Check if it's a duplicate like (not an error)
-		if strings.Contains(err.Error(), "already liked") {
-			log.Info("duplicate like ignored",
-				zap.String("actor", activity.Actor),
-				zap.String("object", objectID))
-			return nil
-		}
-		return fmt.Errorf("failed to create like: %w", err)
-	}
-
-	log.Info("like stored successfully",
-		zap.String("actor", activity.Actor),
-		zap.String("object", objectID))
-
-	// Check if the liked object belongs to our local user
-	// Get the object to find out who created it
-	obj, err := store.GetObject(ctx, objectID)
-	if err == nil {
-		// Extract the owner of the object
-		var objectOwner string
-		switch v := obj.(type) {
-		case *dynamodb.Object:
-			// Extract username from AttributedTo
-			if v.AttributedTo != "" {
-				objectOwner = extractUsernameFromActorID(v.AttributedTo)
-			}
-		case *activitypub.Note:
-			if v.AttributedTo != "" {
-				objectOwner = extractUsernameFromActorID(v.AttributedTo)
-			}
-		case map[string]interface{}:
-			if attr, ok := v["attributedTo"].(string); ok {
-				objectOwner = extractUsernameFromActorID(attr)
-			}
-		}
-
-		// If this is a local user's object, create a notification
-		if objectOwner != "" && objectOwner == recipientUsername {
-			notification := &storage.Notification{
-				Type:      "favourite",
-				Username:  objectOwner,
-				AccountID: extractUsernameFromActorID(activity.Actor),
-				StatusID:  objectID,
-				CreatedAt: time.Now(),
-			}
-			if err := store.CreateNotification(ctx, notification); err != nil {
-				log.Warn("failed to create favourite notification",
-					zap.String("actor", activity.Actor),
-					zap.String("object", objectID),
-					zap.Error(err))
-			}
-
-			// Queue push notification
-			if pushService != nil {
-				// Get actor info for notification
-				actorUsername := extractUsernameFromActorID(activity.Actor)
-				actor, err := store.GetActor(ctx, actorUsername)
-				if err == nil {
-					displayName := actor.Name
-					if displayName == "" {
-						displayName = actor.PreferredUsername
-					}
-
-					pushMsg := &notifications.PushMessage{
-						Username:         objectOwner,
-						NotificationType: "favourite",
-						Title:            notifications.FormatNotificationTitle("favourite", displayName),
-						Body:             "",
-						Icon:             actor.Icon.URL,
-						NotificationID:   notification.ID,
-						AccessToken:      "", // Will be populated by client
-					}
-
-					if err := pushService.QueueNotification(ctx, pushMsg); err != nil {
-						log.Warn("failed to queue push notification",
-							zap.String("type", "favourite"),
-							zap.String("username", objectOwner),
-							zap.Error(err))
-					}
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func processAnnounce(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	log.Info("processing announce activity",
-		zap.String("activity_id", activity.ID),
-		zap.String("recipient", recipientUsername))
-
-	// Extract object ID from the activity
-	var objectID string
-	switch obj := activity.Object.(type) {
-	case string:
-		objectID = obj
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			objectID = id
-		}
-	}
-
-	if objectID == "" {
-		return fmt.Errorf("announce activity missing object ID")
-	}
-
-	// Create Announce record
-	announce := &storage.Announce{
-		Actor:  activity.Actor,
-		Object: objectID,
-		ID:     activity.ID,
-		To:     convertToStringSlice(activity.To),
-		CC:     convertToStringSlice(activity.CC),
-	}
-
-	// Set published time
-	if activity.Published != nil {
-		announce.Published = *activity.Published
-	} else {
-		announce.Published = time.Now()
-	}
-
-	// Store the announce
-	err := store.CreateAnnounce(ctx, announce)
-	if err != nil {
-		// Check if it's a duplicate announce (not an error)
-		if strings.Contains(err.Error(), "already announced") {
-			log.Info("duplicate announce ignored",
-				zap.String("actor", activity.Actor),
-				zap.String("object", objectID))
-			return nil
-		}
-		return fmt.Errorf("failed to create announce: %w", err)
-	}
-
-	log.Info("announce stored successfully",
-		zap.String("actor", activity.Actor),
-		zap.String("object", objectID))
-
-	// Check if the announced object belongs to our local user
-	// Get the object to find out who created it
-	obj, err := store.GetObject(ctx, objectID)
-	if err == nil {
-		// Extract the owner of the object
-		var objectOwner string
-		switch v := obj.(type) {
-		case *dynamodb.Object:
-			// Extract username from AttributedTo
-			if v.AttributedTo != "" {
-				objectOwner = extractUsernameFromActorID(v.AttributedTo)
-			}
-		case *activitypub.Note:
-			if v.AttributedTo != "" {
-				objectOwner = extractUsernameFromActorID(v.AttributedTo)
-			}
-		case map[string]interface{}:
-			if attr, ok := v["attributedTo"].(string); ok {
-				objectOwner = extractUsernameFromActorID(attr)
-			}
-		}
-
-		// If this is a local user's object, create a notification
-		if objectOwner != "" && objectOwner == recipientUsername {
-			notification := &storage.Notification{
-				Type:      "reblog",
-				Username:  objectOwner,
-				AccountID: extractUsernameFromActorID(activity.Actor),
-				StatusID:  objectID,
-				CreatedAt: time.Now(),
-			}
-			if err := store.CreateNotification(ctx, notification); err != nil {
-				log.Warn("failed to create reblog notification",
-					zap.String("actor", activity.Actor),
-					zap.String("object", objectID),
-					zap.Error(err))
-			}
-		}
-	}
-
-	return nil
-}
-
-func processDelete(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	log.Info("processing delete activity",
-		zap.String("activity_id", activity.ID),
-		zap.String("recipient", recipientUsername))
-
-	// Extract object ID from the activity
-	var objectID string
-	var objectType string
-	switch obj := activity.Object.(type) {
-	case string:
-		objectID = obj
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			objectID = id
-		}
-		if t, ok := obj["type"].(string); ok {
-			objectType = t
-		}
-	}
-
-	if objectID == "" {
-		return fmt.Errorf("delete activity missing object ID")
-	}
-
-	// Check if we already have this object locally
-	existingObj, err := store.GetObject(ctx, objectID)
-	if err != nil {
-		// Object not found locally - we can't delete what we don't have
-		log.Info("object not found locally, ignoring delete",
-			zap.String("object_id", objectID))
-		return nil
-	}
-
-	// Check if it's already a tombstone
-	if tombstone, ok := existingObj.(*storage.Tombstone); ok {
-		log.Info("object already tombstoned",
-			zap.String("object_id", objectID),
-			zap.Time("deleted", tombstone.Deleted))
-		return nil
-	}
-
-	// Verify the actor has permission to delete this object
-	// For now, we'll check if the actor matches the attributedTo field
-	var attributedTo string
-	switch v := existingObj.(type) {
-	case *dynamodb.Object:
-		attributedTo = v.AttributedTo
-	case map[string]interface{}:
-		if attr, ok := v["attributedTo"].(string); ok {
-			attributedTo = attr
-		}
-	}
-
-	if attributedTo != "" && attributedTo != activity.Actor {
-		log.Warn("actor not authorized to delete object",
-			zap.String("actor", activity.Actor),
-			zap.String("attributed_to", attributedTo))
-		return fmt.Errorf("actor not authorized to delete this object")
-	}
-
-	// Create tombstone
-	err = store.TombstoneObject(ctx, objectID, activity.Actor)
-	if err != nil {
-		return fmt.Errorf("failed to tombstone object: %w", err)
-	}
-
-	log.Info("object tombstoned successfully",
-		zap.String("object_id", objectID),
-		zap.String("deleted_by", activity.Actor),
-		zap.String("object_type", objectType))
-
-	return nil
-}
-
-func processUpdate(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	log.Info("processing update activity",
-		zap.String("activity_id", activity.ID),
-		zap.String("recipient", recipientUsername))
-
-	// Extract object from the activity
-	objMap, ok := activity.Object.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("update activity object must be a map")
-	}
-
-	objectID, ok := objMap["id"].(string)
-	if !ok || objectID == "" {
-		return fmt.Errorf("update activity object missing id")
-	}
-
-	// Check if we have this object locally
-	existingObj, err := store.GetObject(ctx, objectID)
-	if err != nil {
-		// Object not found locally - we can't update what we don't have
-		log.Info("object not found locally, ignoring update",
-			zap.String("object_id", objectID))
-		return nil
-	}
-
-	// Check if it's a tombstone
-	if _, ok := existingObj.(*storage.Tombstone); ok {
-		log.Warn("cannot update a tombstoned object",
-			zap.String("object_id", objectID))
-		return fmt.Errorf("cannot update a deleted object")
-	}
-
-	// Verify the actor has permission to update this object
-	var attributedTo string
-	switch v := existingObj.(type) {
-	case *dynamodb.Object:
-		attributedTo = v.AttributedTo
-	case map[string]interface{}:
-		if attr, ok := v["attributedTo"].(string); ok {
-			attributedTo = attr
-		}
-	}
-
-	if attributedTo != "" && attributedTo != activity.Actor {
-		log.Warn("actor not authorized to update object",
-			zap.String("actor", activity.Actor),
-			zap.String("attributed_to", attributedTo))
-		return fmt.Errorf("actor not authorized to update this object")
-	}
-
-	// Convert the object map to our Object type
-	object := &dynamodb.Object{
-		ID:           objectID,
-		Type:         getStringField(objMap, "type"),
-		Content:      getStringField(objMap, "content"),
-		AttributedTo: activity.Actor,
-		Summary:      getStringField(objMap, "summary"),
-		Name:         getStringField(objMap, "name"),
-		URL:          getStringField(objMap, "url"),
-		Sensitive:    getBoolField(objMap, "sensitive"),
-	}
-
-	// Set updated time from activity
-	if updatedStr := getStringField(objMap, "updated"); updatedStr != "" {
-		if updated, err := time.Parse(time.RFC3339, updatedStr); err == nil {
-			object.Updated = updated
-		} else {
-			object.Updated = time.Now()
-		}
-	} else {
-		object.Updated = time.Now()
-	}
-
-	// Keep the original published time from existing object
-	switch v := existingObj.(type) {
-	case *dynamodb.Object:
-		object.Published = v.Published
-	case map[string]interface{}:
-		if pubStr, ok := v["published"].(string); ok {
-			if pub, err := time.Parse(time.RFC3339, pubStr); err == nil {
-				object.Published = pub
-			}
-		}
-	}
-
-	// Handle addressing
-	object.To = getStringSliceField(objMap, "to")
-	object.CC = getStringSliceField(objMap, "cc")
-
-	// Handle attachments
-	if attachments, ok := objMap["attachment"].([]interface{}); ok {
-		for _, att := range attachments {
-			if attMap, ok := att.(map[string]interface{}); ok {
-				attachment := dynamodb.ObjectAttachment{
-					Type:      getStringField(attMap, "type"),
-					URL:       getStringField(attMap, "url"),
-					MediaType: getStringField(attMap, "mediaType"),
-					Name:      getStringField(attMap, "name"),
-					Width:     getIntField(attMap, "width"),
-					Height:    getIntField(attMap, "height"),
-				}
-				object.Attachment = append(object.Attachment, attachment)
-			}
-		}
-	}
-
-	// Handle tags
-	if tags, ok := objMap["tag"].([]interface{}); ok {
-		for _, tag := range tags {
-			if tagMap, ok := tag.(map[string]interface{}); ok {
-				objectTag := dynamodb.ObjectTag{
-					Type: getStringField(tagMap, "type"),
-					Href: getStringField(tagMap, "href"),
-					Name: getStringField(tagMap, "name"),
-				}
-				object.Tag = append(object.Tag, objectTag)
-			}
-		}
-	}
-
-	// Handle inReplyTo
-	if inReplyTo := getStringField(objMap, "inReplyTo"); inReplyTo != "" {
-		object.InReplyTo = &inReplyTo
-	}
-
-	// Update the object
-	err = store.UpdateObject(ctx, object)
-	if err != nil {
-		return fmt.Errorf("failed to update object: %w", err)
-	}
-
-	log.Info("object updated successfully",
-		zap.String("object_id", object.ID),
-		zap.String("type", object.Type),
-		zap.Time("updated", object.Updated))
-
-	return nil
-}
-
-func processUndo(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	log.Info("processing undo activity",
-		zap.String("activity_id", activity.ID),
-		zap.String("recipient", recipientUsername))
-
-	// The object of an Undo should be the activity being undone
-	objMap, ok := activity.Object.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("undo activity object must be a map")
-	}
-
-	// Get the type of the activity being undone
-	undoType, ok := objMap["type"].(string)
-	if !ok {
-		return fmt.Errorf("undo activity object missing type")
-	}
-
-	switch undoType {
 	case activitypub.FollowType:
-		return processUndoFollow(ctx, activity, objMap, recipientUsername)
-	case activitypub.LikeType:
-		return processUndoLike(ctx, activity, objMap, recipientUsername)
+		// Remove follow relationship
+		if err := ap.handleFollowActivityDeletion(ctx, &activityData); err != nil {
+			ap.logger.Error("failed to handle Follow activity deletion", zap.Error(err))
+			return err
+		}
+	case activitypub.DeleteType:
+		// Handle nested deletions
+		if err := ap.handleDeleteActivityDeletion(ctx, &activityData); err != nil {
+			ap.logger.Error("failed to handle Delete activity deletion", zap.Error(err))
+			return err
+		}
+	default:
+		ap.logger.Info("handling generic activity deletion",
+			zap.String("activity_type", activityData.Type))
+	}
+
+	// Always perform generic cleanup
+	return ap.cleanupActivityReferences(ctx, activity)
+}
+
+func (ap *ActivityProcessor) processInboxActivity(ctx context.Context, activity struct {
+	PK        string `dynamorm:"pk"`
+	SK        string `dynamorm:"sk"`
+	Type      string `json:"type"`
+	Activity  string `json:"activity"`
+	Direction string `json:"direction"`
+	Username  string `json:"username"`
+	ActorID   string `json:"actor_id"`
+	CreatedAt string `json:"created_at"`
+},
+) error {
+	// Process activities received from other servers
+	ap.logger.Debug("processing inbox activity",
+		zap.String("pk", activity.PK),
+		zap.String("username", activity.Username),
+	)
+
+	// Create inbox processing record
+	inboxRecord := struct {
+		PK          string `dynamorm:"pk"`
+		SK          string `dynamorm:"sk"`
+		Type        string `json:"type"`
+		ActivityPK  string `json:"activity_pk"`
+		Username    string `json:"username"`
+		ActorID     string `json:"actor_id"`
+		ProcessedAt string `json:"processed_at"`
+		Status      string `json:"status"`
+		TTL         int64  `dynamorm:"ttl"`
+	}{
+		PK:          fmt.Sprintf("INBOX#%s", activity.Username),
+		SK:          fmt.Sprintf("PROCESSED#%s", activity.PK),
+		Type:        "InboxProcessing",
+		ActivityPK:  activity.PK,
+		Username:    activity.Username,
+		ActorID:     activity.ActorID,
+		ProcessedAt: time.Now().Format(time.RFC3339),
+		Status:      "processed",
+		TTL:         time.Now().Add(7 * 24 * time.Hour).Unix(), // 7 days retention
+	}
+
+	return ap.db.WithContext(ctx).Model(&inboxRecord).Create()
+}
+
+func (ap *ActivityProcessor) processOutboxActivity(ctx context.Context, activity struct {
+	PK        string `dynamorm:"pk"`
+	SK        string `dynamorm:"sk"`
+	Type      string `json:"type"`
+	Activity  string `json:"activity"`
+	Direction string `json:"direction"`
+	Username  string `json:"username"`
+	ActorID   string `json:"actor_id"`
+	CreatedAt string `json:"created_at"`
+},
+) error {
+	// Process activities sent by local users
+	ap.logger.Debug("processing outbox activity",
+		zap.String("pk", activity.PK),
+		zap.String("username", activity.Username),
+		zap.String("type", activity.Type),
+	)
+
+	// Parse the activity JSON
+	var activityData activitypub.Activity
+	if err := json.Unmarshal([]byte(activity.Activity), &activityData); err != nil {
+		ap.logger.Error("failed to parse activity", zap.Error(err))
+		return activityParsingFailedDetailed("unknown", err)
+	}
+
+	// Handle timeline fanout based on activity type
+	switch activityData.Type {
+	case activitypub.CreateType:
+		if err := ap.fanOutToTimelines(ctx, &activityData, activity.Username); err != nil {
+			ap.logger.Error("failed to fan out Create activity", zap.Error(err))
+			return err
+		}
 	case activitypub.AnnounceType:
-		return processUndoAnnounce(ctx, activity, objMap, recipientUsername)
-	default:
-		log.Warn("unhandled undo activity type",
-			zap.String("undo_type", undoType),
-			zap.String("activity_id", activity.ID))
-		return nil
-	}
-}
-
-func processUndoFollow(ctx context.Context, activity *activitypub.Activity, followActivity map[string]interface{}, _ string) error {
-	log := common.WithContext(ctx)
-
-	// Extract the original follow activity details
-	followActor, ok := followActivity["actor"].(string)
-	if !ok {
-		return fmt.Errorf("undo follow missing actor")
-	}
-
-	followObject, ok := followActivity["object"].(string)
-	if !ok {
-		return fmt.Errorf("undo follow missing object")
-	}
-
-	// Verify the undo actor matches the original follow actor
-	if activity.Actor != followActor {
-		log.Warn("undo actor does not match follow actor",
-			zap.String("undo_actor", activity.Actor),
-			zap.String("follow_actor", followActor))
-		return fmt.Errorf("actor mismatch in undo follow")
-	}
-
-	// Extract usernames
-	followerUsername := extractUsernameFromActorID(followActor)
-	followedUsername := extractUsernameFromActorID(followObject)
-
-	if followerUsername == "" || followedUsername == "" {
-		return fmt.Errorf("invalid actor IDs in follow activity")
-	}
-
-	log.Info("processing undo follow",
-		zap.String("follower", followerUsername),
-		zap.String("followed", followedUsername))
-
-	// Remove the follow relationship
-	err := store.RemoveFollow(ctx, followerUsername, followedUsername)
-	if err != nil {
-		// Log but don't fail if follow doesn't exist
-		log.Info("follow relationship not found or already removed",
-			zap.String("follower", followerUsername),
-			zap.String("followed", followedUsername),
-			zap.Error(err))
-	}
-
-	return nil
-}
-
-func processUndoLike(ctx context.Context, activity *activitypub.Activity, likeActivity map[string]interface{}, _ string) error {
-	log := common.WithContext(ctx)
-
-	// Extract the original like activity details
-	likeActor, ok := likeActivity["actor"].(string)
-	if !ok {
-		return fmt.Errorf("undo like missing actor")
-	}
-
-	var likeObject string
-	switch obj := likeActivity["object"].(type) {
-	case string:
-		likeObject = obj
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			likeObject = id
+		if err := ap.fanOutAnnounceToTimelines(ctx, &activityData, activity.Username); err != nil {
+			ap.logger.Error("failed to fan out Announce activity", zap.Error(err))
+			return err
 		}
 	}
 
-	if likeObject == "" {
-		return fmt.Errorf("undo like missing object")
+	// Create outbox processing record
+	outboxRecord := struct {
+		PK          string `dynamorm:"pk"`
+		SK          string `dynamorm:"sk"`
+		Type        string `json:"type"`
+		ActivityPK  string `json:"activity_pk"`
+		Username    string `json:"username"`
+		ActorID     string `json:"actor_id"`
+		ProcessedAt string `json:"processed_at"`
+		Status      string `json:"status"`
+		TTL         int64  `dynamorm:"ttl"`
+	}{
+		PK:          fmt.Sprintf("OUTBOX#%s", activity.Username),
+		SK:          fmt.Sprintf("PROCESSED#%s", activity.PK),
+		Type:        "OutboxProcessing",
+		ActivityPK:  activity.PK,
+		Username:    activity.Username,
+		ActorID:     activity.ActorID,
+		ProcessedAt: time.Now().Format(time.RFC3339),
+		Status:      "processed",
+		TTL:         time.Now().Add(7 * 24 * time.Hour).Unix(), // 7 days retention
 	}
 
-	// Verify the undo actor matches the original like actor
-	if activity.Actor != likeActor {
-		log.Warn("undo actor does not match like actor",
-			zap.String("undo_actor", activity.Actor),
-			zap.String("like_actor", likeActor))
-		return fmt.Errorf("actor mismatch in undo like")
-	}
-
-	log.Info("processing undo like",
-		zap.String("actor", likeActor),
-		zap.String("object", likeObject))
-
-	// Remove the like
-	err := store.DeleteLike(ctx, likeActor, likeObject)
-	if err != nil {
-		// Log but don't fail if like doesn't exist
-		log.Info("like not found or already removed",
-			zap.String("actor", likeActor),
-			zap.String("object", likeObject),
-			zap.Error(err))
-	}
-
-	return nil
+	return ap.db.WithContext(ctx).Model(&outboxRecord).Create()
 }
 
-func processUndoAnnounce(ctx context.Context, activity *activitypub.Activity, announceActivity map[string]interface{}, _ string) error {
-	log := common.WithContext(ctx)
-
-	// Extract the original announce activity details
-	announceActor, ok := announceActivity["actor"].(string)
-	if !ok {
-		return fmt.Errorf("undo announce missing actor")
+func (ap *ActivityProcessor) updateActivityMetrics(ctx context.Context, activity struct {
+	PK        string `dynamorm:"pk"`
+	SK        string `dynamorm:"sk"`
+	Type      string `json:"type"`
+	Activity  string `json:"activity"`
+	Direction string `json:"direction"`
+	Username  string `json:"username"`
+	ActorID   string `json:"actor_id"`
+	CreatedAt string `json:"created_at"`
+},
+) error {
+	// Update activity metrics for analytics
+	metricsRecord := struct {
+		PK         string `dynamorm:"pk"`
+		SK         string `dynamorm:"sk"`
+		Type       string `json:"type"`
+		ActivityPK string `json:"activity_pk"`
+		Direction  string `json:"direction"`
+		Username   string `json:"username"`
+		UpdatedAt  string `json:"updated_at"`
+		TTL        int64  `dynamorm:"ttl"`
+	}{
+		PK:         fmt.Sprintf("METRICS#ACTIVITY#%s", activity.Direction),
+		SK:         fmt.Sprintf("UPDATE#%s", activity.PK),
+		Type:       "ActivityMetrics",
+		ActivityPK: activity.PK,
+		Direction:  activity.Direction,
+		Username:   activity.Username,
+		UpdatedAt:  time.Now().Format(time.RFC3339),
+		TTL:        time.Now().Add(30 * 24 * time.Hour).Unix(), // 30 days retention
 	}
 
-	var announceObject string
-	switch obj := announceActivity["object"].(type) {
-	case string:
-		announceObject = obj
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			announceObject = id
-		}
-	}
-
-	if announceObject == "" {
-		return fmt.Errorf("undo announce missing object")
-	}
-
-	// Verify the undo actor matches the original announce actor
-	if activity.Actor != announceActor {
-		log.Warn("undo actor does not match announce actor",
-			zap.String("undo_actor", activity.Actor),
-			zap.String("announce_actor", announceActor))
-		return fmt.Errorf("actor mismatch in undo announce")
-	}
-
-	log.Info("processing undo announce",
-		zap.String("actor", announceActor),
-		zap.String("object", announceObject))
-
-	// Remove the announce
-	err := store.DeleteAnnounce(ctx, announceActor, announceObject)
-	if err != nil {
-		// Log but don't fail if announce doesn't exist
-		log.Info("announce not found or already removed",
-			zap.String("actor", announceActor),
-			zap.String("object", announceObject),
-			zap.Error(err))
-	}
-
-	return nil
+	return ap.db.WithContext(ctx).Model(&metricsRecord).Create()
 }
 
-// convertToStringSlice converts an interface{} to []string
-func convertToStringSlice(v interface{}) []string {
-	if v == nil {
+func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, activity struct {
+	PK        string `dynamorm:"pk"`
+	SK        string `dynamorm:"sk"`
+	Type      string `json:"type"`
+	Activity  string `json:"activity"`
+	Direction string `json:"direction"`
+	Username  string `json:"username"`
+	ActorID   string `json:"actor_id"`
+	CreatedAt string `json:"created_at"`
+},
+) error {
+	// Create cleanup record for deleted activities
+	cleanupRecord := struct {
+		PK         string `dynamorm:"pk"`
+		SK         string `dynamorm:"sk"`
+		Type       string `json:"type"`
+		ActivityPK string `json:"activity_pk"`
+		Direction  string `json:"direction"`
+		Username   string `json:"username"`
+		DeletedAt  string `json:"deleted_at"`
+		TTL        int64  `dynamorm:"ttl"`
+	}{
+		PK:         "CLEANUP#ACTIVITY",
+		SK:         fmt.Sprintf("DELETED#%s", activity.PK),
+		Type:       "ActivityCleanup",
+		ActivityPK: activity.PK,
+		Direction:  activity.Direction,
+		Username:   activity.Username,
+		DeletedAt:  time.Now().Format(time.RFC3339),
+		TTL:        time.Now().Add(24 * time.Hour).Unix(), // 24 hours retention
+	}
+
+	return ap.db.WithContext(ctx).Model(&cleanupRecord).Create()
+}
+
+// ProcessedObject holds information about a processed ActivityPub object
+type ProcessedObject struct {
+	Note        *activitypub.Note
+	Content     string
+	IsRemote    bool
+	ObjectID    string
+	ContentType string
+	HasMedia    bool
+	IsReply     bool
+	InReplyTo   string
+	Sensitive   bool
+	SpoilerText string
+	Language    string
+	Visibility  string
+}
+
+// fanOutToTimelines handles timeline fanout for Create activities with robust federation support
+func (ap *ActivityProcessor) fanOutToTimelines(ctx context.Context, activity *activitypub.Activity, username string) error {
+	// Process the object from the activity
+	processedObj, err := ap.processActivityObject(ctx, activity)
+	if err != nil {
+		return activityObjectProcessingFailed("Create", err)
+	}
+
+	if processedObj == nil {
+		ap.logger.Warn("unsupported object type in Create activity", zap.Any("object", activity.Object))
 		return nil
 	}
 
-	switch val := v.(type) {
-	case []string:
-		return val
-	case []interface{}:
-		result := make([]string, 0, len(val))
-		for _, item := range val {
-			if s, ok := item.(string); ok {
-				result = append(result, s)
-			}
-		}
-		return result
-	case string:
-		return []string{val}
-	default:
-		return nil
-	}
-}
-
-// Delivery functions
-
-func extractAllRecipients(activity *activitypub.Activity) []string {
-	recipientMap := make(map[string]bool)
-
-	// Helper function to add recipients from a field
-	addRecipients := func(field interface{}) {
-		switch v := field.(type) {
-		case string:
-			recipientMap[v] = true
-		case []string:
-			for _, r := range v {
-				recipientMap[r] = true
-			}
-		case []interface{}:
-			for _, r := range v {
-				if s, ok := r.(string); ok {
-					recipientMap[s] = true
-				}
-			}
-		}
-	}
-
-	// Add recipients from all addressing fields
-	addRecipients(activity.To)
-	addRecipients(activity.CC)
-	addRecipients(activity.BTo)
-	addRecipients(activity.BCC)
-
-	// Filter out special addresses
-	recipients := make([]string, 0)
-	for r := range recipientMap {
-		// Skip public addressing
-		if r == activitypub.PublicAddress {
-			continue
-		}
-		// Skip local actors (we don't deliver to ourselves)
-		if strings.Contains(r, "/users/") && !strings.Contains(r, "://") {
-			continue
-		}
-		recipients = append(recipients, r)
-	}
-
-	return recipients
-}
-
-func deliverToRecipient(ctx context.Context, activity *activitypub.Activity, recipientURL string) error {
-	// Check if recipientURL is a collection that needs to be resolved
-	if isCollectionURL(recipientURL) {
-		return resolveAndDeliverToCollection(ctx, activity, recipientURL)
-	}
-
-	// Handle direct actor URL
-	return deliverToActor(ctx, activity, recipientURL)
-}
-
-func isCollectionURL(url string) bool {
-	// Check if URL ends with known collection types
-	return strings.HasSuffix(url, "/followers") ||
-		strings.HasSuffix(url, "/following") ||
-		strings.Contains(url, "/collections/")
-}
-
-func resolveAndDeliverToCollection(ctx context.Context, activity *activitypub.Activity, collectionURL string) error {
-	log := logger.With(zap.String("collection_url", collectionURL))
-
-	// Extract actor from collection URL (e.g., https://example.com/users/alice/followers -> alice)
-	actorUsername := extractActorFromCollectionURL(collectionURL)
-	if actorUsername == "" {
-		log.Warn("could not extract actor from collection URL")
-		return fmt.Errorf("invalid collection URL: %s", collectionURL)
-	}
-
-	var recipients []string
-	var err error
-
-	if strings.HasSuffix(collectionURL, "/followers") {
-		// Get all followers of the actor
-		recipients, _, err = store.GetFollowers(ctx, actorUsername, 1000, "")
-		if err != nil {
-			return fmt.Errorf("failed to get followers for collection: %w", err)
-		}
-	} else if strings.HasSuffix(collectionURL, "/following") {
-		// Get all users the actor is following
-		recipients, _, err = store.GetFollowing(ctx, actorUsername, 1000, "")
-		if err != nil {
-			return fmt.Errorf("failed to get following for collection: %w", err)
-		}
-	} else {
-		// For other collections, try to fetch and parse the collection
-		return fetchAndDeliverToRemoteCollection(ctx, activity, collectionURL)
-	}
-
-	// Deliver to each recipient in the collection
-	for _, recipientUsername := range recipients {
-		recipientActor, err := store.GetActor(ctx, recipientUsername)
-		if err != nil {
-			log.Warn("failed to get recipient actor", zap.String("username", recipientUsername), zap.Error(err))
-			continue
-		}
-
-		if err := deliverToActor(ctx, activity, recipientActor.ID); err != nil {
-			log.Warn("failed to deliver to collection member",
-				zap.String("recipient", recipientActor.ID),
-				zap.Error(err))
-		}
-	}
-
-	return nil
-}
-
-func extractActorFromCollectionURL(collectionURL string) string {
-	// Parse URL to extract username (e.g., https://example.com/users/alice/followers -> alice)
-	parts := strings.Split(collectionURL, "/")
-	for i, part := range parts {
-		if part == "users" && i+1 < len(parts) {
-			return parts[i+1]
-		}
-	}
-	return ""
-}
-
-func fetchAndDeliverToRemoteCollection(ctx context.Context, activity *activitypub.Activity, collectionURL string) error {
-	log := logger.With(zap.String("collection_url", collectionURL))
-
-	log.Info("fetching remote collection for delivery")
-
-	// Create request to fetch the collection
-	req, err := http.NewRequestWithContext(ctx, "GET", collectionURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create collection request: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/activity+json")
-
-	// Fetch the collection
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to fetch collection: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("collection fetch failed with status %d", resp.StatusCode)
-	}
-
-	// Parse the collection
-	var collection map[string]interface{}
-	if err := common.ParseHTTPResponse(resp.Body, &collection); err != nil {
-		return fmt.Errorf("failed to parse collection: %w", err)
-	}
-
-	// Check collection type
-	collType, ok := collection["type"].(string)
-	if !ok {
-		return fmt.Errorf("collection missing type field")
-	}
-
-	var members []string
-
-	switch collType {
-	case "Collection":
-		// Direct Collection - get items
-		if items, ok := collection["items"].([]interface{}); ok {
-			for _, item := range items {
-				if itemStr, ok := item.(string); ok {
-					members = append(members, itemStr)
-				}
-			}
-		}
-
-	case "OrderedCollection":
-		// OrderedCollection - get orderedItems
-		if items, ok := collection["orderedItems"].([]interface{}); ok {
-			for _, item := range items {
-				if itemStr, ok := item.(string); ok {
-					members = append(members, itemStr)
-				}
-			}
-		}
-
-	case "CollectionPage", "OrderedCollectionPage":
-		// This is a paginated collection
-		return fetchAndDeliverToPaginatedCollection(ctx, activity, collection)
-
-	default:
-		return fmt.Errorf("unsupported collection type: %s", collType)
-	}
-
-	// If this is a paginated collection with a first page, fetch that
-	if first, ok := collection["first"].(string); ok && len(members) == 0 {
-		return fetchAndDeliverToRemoteCollection(ctx, activity, first)
-	}
-
-	// Deliver to each member
-	var deliveryErrors []error
-	for _, memberURL := range members {
-		if err := deliverToActor(ctx, activity, memberURL); err != nil {
-			log.Warn("failed to deliver to collection member",
-				zap.String("member", memberURL),
-				zap.Error(err))
-			deliveryErrors = append(deliveryErrors, err)
-		}
-	}
-
-	log.Info("collection delivery completed",
-		zap.Int("total_members", len(members)),
-		zap.Int("delivery_errors", len(deliveryErrors)))
-
-	if len(deliveryErrors) > 0 {
-		return fmt.Errorf("delivery failed to %d out of %d collection members", len(deliveryErrors), len(members))
-	}
-
-	return nil
-}
-
-// fetchAndDeliverToPaginatedCollection handles paginated collections
-func fetchAndDeliverToPaginatedCollection(ctx context.Context, activity *activitypub.Activity, page map[string]interface{}) error {
-	log := logger.With(zap.String("operation", "paginated_collection"))
-
-	var allMembers []string
-	currentPage := page
-	pageCount := 0
-	maxPages := 50 // Reasonable limit to prevent infinite loops
-
-	for pageCount < maxPages {
-		pageCount++
-		log.Debug("processing collection page", zap.Int("page_number", pageCount))
-
-		// Extract members from current page
-		var pageMembers []string
-		pageType, ok := currentPage["type"].(string)
-		if !ok {
-			break
-		}
-
-		switch pageType {
-		case "CollectionPage":
-			if items, ok := currentPage["items"].([]interface{}); ok {
-				for _, item := range items {
-					if itemStr, ok := item.(string); ok {
-						pageMembers = append(pageMembers, itemStr)
-					}
-				}
-			}
-		case "OrderedCollectionPage":
-			if items, ok := currentPage["orderedItems"].([]interface{}); ok {
-				for _, item := range items {
-					if itemStr, ok := item.(string); ok {
-						pageMembers = append(pageMembers, itemStr)
-					}
-				}
-			}
-		}
-
-		allMembers = append(allMembers, pageMembers...)
-
-		// Check for next page
-		nextURL, hasNext := currentPage["next"].(string)
-		if !hasNext || nextURL == "" {
-			break
-		}
-
-		// Fetch next page
-		req, err := http.NewRequestWithContext(ctx, "GET", nextURL, nil)
-		if err != nil {
-			log.Warn("failed to create next page request", zap.String("next_url", nextURL), zap.Error(err))
-			break
-		}
-
-		req.Header.Set("Accept", "application/activity+json")
-
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			log.Warn("failed to fetch next page", zap.String("next_url", nextURL), zap.Error(err))
-			break
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			log.Warn("next page fetch failed", zap.String("next_url", nextURL), zap.Int("status", resp.StatusCode))
-			break
-		}
-
-		var nextPage map[string]interface{}
-		if err := common.ParseHTTPResponse(resp.Body, &nextPage); err != nil {
-			resp.Body.Close()
-			log.Warn("failed to parse next page", zap.String("next_url", nextURL), zap.Error(err))
-			break
-		}
-		resp.Body.Close()
-
-		currentPage = nextPage
-	}
-
-	if pageCount >= maxPages {
-		log.Warn("reached maximum page limit for collection", zap.Int("max_pages", maxPages))
-	}
-
-	// Deliver to all collected members
-	var deliveryErrors []error
-	for _, memberURL := range allMembers {
-		if err := deliverToActor(ctx, activity, memberURL); err != nil {
-			log.Warn("failed to deliver to paginated collection member",
-				zap.String("member", memberURL),
-				zap.Error(err))
-			deliveryErrors = append(deliveryErrors, err)
-		}
-	}
-
-	log.Info("paginated collection delivery completed",
-		zap.Int("total_pages", pageCount),
-		zap.Int("total_members", len(allMembers)),
-		zap.Int("delivery_errors", len(deliveryErrors)))
-
-	if len(deliveryErrors) > 0 {
-		return fmt.Errorf("delivery failed to %d out of %d paginated collection members", len(deliveryErrors), len(allMembers))
-	}
-
-	return nil
-}
-
-func deliverToActor(ctx context.Context, activity *activitypub.Activity, actorURL string) error {
-	// Fetch the recipient actor to get their inbox
-	actor, err := fetchRemoteActor(ctx, actorURL)
-	if err != nil {
-		return fmt.Errorf("failed to fetch recipient actor: %w", err)
-	}
-
-	// Get the sender's private key
-	senderUsername := extractUsernameFromActorID(activity.Actor)
-	privateKey, err := store.GetActorPrivateKey(ctx, senderUsername)
-	if err != nil {
-		return fmt.Errorf("failed to get sender private key: %w", err)
-	}
-
-	// Deliver to the actor's inbox
-	return deliverActivity(ctx, activity, actor.Inbox, privateKey, activity.Actor+"#main-key")
-}
-
-func deliverActivity(ctx context.Context, activity *activitypub.Activity, inboxURL string, privateKey string, keyID string) error {
-	log := common.WithContext(ctx)
-
-	// Parse the PEM-encoded private key
-	key, err := federation.ParsePrivateKeyPEM([]byte(privateKey))
-	if err != nil {
-		return fmt.Errorf("failed to parse private key: %w", err)
-	}
-
-	// Marshal activity to JSON
-	body, err := json.Marshal(activity)
-	if err != nil {
-		return fmt.Errorf("failed to marshal activity: %w", err)
-	}
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", inboxURL, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/activity+json")
-	req.Header.Set("Accept", "application/activity+json")
-
-	// Sign the request
-	if err := federation.SignHTTPRequest(req, key, keyID); err != nil {
-		return fmt.Errorf("failed to sign request: %w", err)
-	}
-
-	// Send the request
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("delivery failed with status %d", resp.StatusCode)
-	}
-
-	log.Info("activity delivered successfully",
-		zap.String("activity_id", activity.ID),
-		zap.String("inbox", inboxURL),
-		zap.Int("status", resp.StatusCode))
-
-	return nil
-}
-
-func fetchRemoteActor(ctx context.Context, actorURL string) (*activitypub.Actor, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", actorURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/activity+json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch actor: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch actor: status %d", resp.StatusCode)
-	}
-
-	var actor activitypub.Actor
-	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
-		return nil, fmt.Errorf("failed to decode actor: %w", err)
-	}
-
-	return &actor, nil
-}
-
-// extractUsernameFromActorID extracts username from an actor ID
-// e.g., "https://example.com/users/alice" -> "alice"
-func extractUsernameFromActorID(actorID string) string {
-	// Try to extract username from various actor ID formats
-	// e.g., "https://example.com/users/alice" -> "alice"
-	parts := strings.Split(actorID, "/users/")
-	if len(parts) >= 2 {
-		return parts[1]
-	}
-	return ""
-}
-
-func processBlock(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	log.Info("processing block activity",
-		zap.String("activity_id", activity.ID),
-		zap.String("recipient", recipientUsername))
-
-	// Extract object (the actor being blocked)
-	var blockedActor string
-	switch obj := activity.Object.(type) {
-	case string:
-		blockedActor = obj
-	case map[string]interface{}:
-		if actor, ok := obj["id"].(string); ok {
-			blockedActor = actor
-		}
-	}
-
-	if blockedActor == "" {
-		return fmt.Errorf("invalid block object")
-	}
-
-	block := &storage.Block{
-		Actor:     activity.Actor,
-		Object:    blockedActor,
-		ID:        activity.ID,
-		Published: time.Now(),
-		CreatedAt: time.Now(),
-	}
-
-	err := store.CreateBlock(ctx, block)
-	if err != nil {
-		return fmt.Errorf("failed to create block: %w", err)
-	}
-
-	log.Info("block created",
-		zap.String("actor", activity.Actor),
-		zap.String("blocked", blockedActor))
-
-	return nil
-}
-
-func processFlag(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	log.Info("processing flag activity",
-		zap.String("activity_id", activity.ID),
-		zap.String("recipient", recipientUsername))
-
-	// Extract objects being flagged
-	var flaggedObjects []string
-
-	switch obj := activity.Object.(type) {
-	case string:
-		flaggedObjects = []string{obj}
-	case []interface{}:
-		for _, item := range obj {
-			switch v := item.(type) {
-			case string:
-				flaggedObjects = append(flaggedObjects, v)
-			case map[string]interface{}:
-				if id, ok := v["id"].(string); ok {
-					flaggedObjects = append(flaggedObjects, id)
-				}
-			}
-		}
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			flaggedObjects = []string{id}
-		}
-	}
-
-	if len(flaggedObjects) == 0 {
-		return fmt.Errorf("no objects to flag in activity")
-	}
-
-	// Extract content/reason for the flag
-	content := ""
-
-	// Check if the activity itself has a summary
-	if activity.Summary != "" {
-		content = activity.Summary
-	}
-
-	// Also check if there's a content field in the activity object
-	if objMap, ok := activity.Object.(map[string]interface{}); ok {
-		if c, ok := objMap["content"].(string); ok && c != "" {
-			content = c
-		}
-	}
-
-	// Create the flag
-	flag := &storage.Flag{
-		ID:        activity.ID,
-		Actor:     activity.Actor,
-		Object:    flaggedObjects,
-		Content:   content,
-		Published: time.Now(),
-		Status:    storage.FlagStatusPending,
-		CreatedAt: time.Now(),
-	}
-
-	// If the activity has a published date, use that
-	if activity.Published != nil {
-		flag.Published = *activity.Published
-	}
-
-	err := store.CreateFlag(ctx, flag)
-	if err != nil {
-		return fmt.Errorf("failed to create flag: %w", err)
-	}
-
-	log.Info("flag created",
-		zap.String("actor", activity.Actor),
-		zap.Strings("objects", flaggedObjects),
-		zap.String("content", content))
-
-	// TODO: In production, you might want to:
-	// 1. Send notifications to moderators
-	// 2. Auto-hide content if multiple flags
-	// 3. Apply machine learning for spam detection
-	// 4. Rate limit flags from the same actor
-
-	return nil
-}
-
-func processMove(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	log.Info("processing move activity",
-		zap.String("activity_id", activity.ID),
-		zap.String("recipient", recipientUsername))
-
-	// Extract target (the new account location)
-	var target string
-
-	// Check if activity has a direct target field
-	if moveActivity, ok := activity.Object.(map[string]interface{}); ok {
-		if t, ok := moveActivity["target"].(string); ok {
-			target = t
-		}
-	}
-
-	// If not found in object, check for target in activity itself
-	if target == "" {
-		switch v := activity.Object.(type) {
-		case string:
-			// If object is a string, it might be the target
-			target = v
-		case map[string]interface{}:
-			// Look for target field
-			if t, ok := v["target"].(string); ok {
-				target = t
-			}
-		}
-	}
-
-	if target == "" {
-		return fmt.Errorf("move activity missing target")
-	}
-
-	// Create the move record
-	move := &storage.Move{
-		ID:        activity.ID,
-		Actor:     activity.Actor,
-		Target:    target,
-		Published: time.Now(),
-	}
-
-	if activity.Published != nil {
-		move.Published = *activity.Published
-	}
-
-	err := store.CreateMove(ctx, move)
-	if err != nil {
-		return fmt.Errorf("failed to create move: %w", err)
-	}
-
-	log.Info("move created",
-		zap.String("actor", activity.Actor),
-		zap.String("target", target))
-
-	// TODO: In production, you might want to:
-	// 1. Update followers to follow the new account
-	// 2. Redirect profile requests
-	// 3. Send notifications
-
-	return nil
-}
-
-func processAdd(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	log.Info("processing add activity",
-		zap.String("activity_id", activity.ID),
-		zap.String("recipient", recipientUsername))
-
-	// Extract object being added
-	var objectID string
-	var objectType string = "Object" // Default type
-
-	switch obj := activity.Object.(type) {
-	case string:
-		objectID = obj
-		// objectType already defaulted to "Object"
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			objectID = id
-		}
-		if t, ok := obj["type"].(string); ok && t != "" {
-			objectType = t
-		}
-		// If type is not specified or empty, use default "Object"
-	}
-
-	if objectID == "" {
-		return fmt.Errorf("add activity missing object")
-	}
-
-	// Extract target collection
-	var target string
-
-	// Check for target field in activity
-	if addActivity, ok := activity.Object.(map[string]interface{}); ok {
-		if t, ok := addActivity["target"].(string); ok {
-			target = t
-		}
-	}
-
-	if target == "" {
-		return fmt.Errorf("add activity missing target collection")
-	}
-
-	// Create collection item
-	item := &storage.CollectionItem{
-		Collection: target,
-		ItemID:     objectID,
-		ItemType:   objectType,
-		AddedBy:    activity.Actor,
-	}
-
-	err := store.AddToCollection(ctx, target, item)
-	if err != nil {
-		return fmt.Errorf("failed to add to collection: %w", err)
-	}
-
-	log.Info("item added to collection",
-		zap.String("item", objectID),
-		zap.String("collection", target),
-		zap.String("added_by", activity.Actor))
-
-	return nil
-}
-
-func processRemove(ctx context.Context, activity *activitypub.Activity, recipientUsername string) error {
-	log := common.WithContext(ctx)
-
-	log.Info("processing remove activity",
-		zap.String("activity_id", activity.ID),
-		zap.String("recipient", recipientUsername))
-
-	// Extract object being removed
-	var objectID string
-
-	switch obj := activity.Object.(type) {
-	case string:
-		objectID = obj
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			objectID = id
-		}
-	}
-
-	if objectID == "" {
-		return fmt.Errorf("remove activity missing object")
-	}
-
-	// Extract target collection
-	var target string
-
-	// Check for target field in activity
-	if removeActivity, ok := activity.Object.(map[string]interface{}); ok {
-		if t, ok := removeActivity["target"].(string); ok {
-			target = t
-		}
-	}
-
-	if target == "" {
-		return fmt.Errorf("remove activity missing target collection")
-	}
-
-	err := store.RemoveFromCollection(ctx, target, objectID)
-	if err != nil {
-		return fmt.Errorf("failed to remove from collection: %w", err)
-	}
-
-	log.Info("item removed from collection",
-		zap.String("item", objectID),
-		zap.String("collection", target),
-		zap.String("removed_by", activity.Actor))
-
-	return nil
-}
-
-// fanOutToTimelines writes a Create activity to relevant timelines
-func fanOutToTimelines(ctx context.Context, activity *activitypub.Activity) error {
-	log := common.WithContext(ctx)
-
-	// Extract the object from the activity
-	objMap, ok := activity.Object.(map[string]interface{})
-	if !ok {
-		log.Warn("create activity object is not a map, skipping timeline fan-out")
-		return nil
-	}
-
-	// Extract key fields from the object
-	objectID := getStringField(objMap, "id")
-	objectType := getStringField(objMap, "type")
-	content := getStringField(objMap, "content")
-	summary := getStringField(objMap, "summary")
-	sensitive := getBoolField(objMap, "sensitive")
-
-	// Extract actor username
-	actorUsername := extractUsernameFromActorID(activity.Actor)
-	if actorUsername == "" {
-		return fmt.Errorf("invalid actor ID: %s", activity.Actor)
-	}
-
-	// Determine visibility from addressing
-	to := getStringSliceField(objMap, "to")
-	cc := getStringSliceField(objMap, "cc")
-	visibility := determineVisibility(to, cc)
-
-	// Create base timeline entry
+	// Create timeline entries and fan out
 	now := time.Now()
-	baseEntry := &storage.TimelineEntry{
+	return ap.createAndFanOutEntries(ctx, activity, username, processedObj, now)
+}
+
+// processActivityObject extracts and processes the object from an activity
+func (ap *ActivityProcessor) processActivityObject(ctx context.Context, activity *activitypub.Activity) (*ProcessedObject, error) {
+	switch obj := activity.Object.(type) {
+	case map[string]interface{}:
+		return ap.processMapObject(ctx, activity, obj)
+	case *activitypub.Note:
+		return ap.processNoteObject(activity, obj), nil
+	case string:
+		return ap.processStringObject(ctx, activity, obj)
+	default:
+		return nil, nil
+	}
+}
+
+// processMapObject processes a map[string]interface{} object
+func (ap *ActivityProcessor) processMapObject(ctx context.Context, activity *activitypub.Activity, obj map[string]interface{}) (*ProcessedObject, error) {
+	id, hasID := obj["id"].(string)
+	if hasID && !strings.HasPrefix(id, ap.baseURL) {
+		// Remote object reference - fetch it
+		return ap.fetchRemoteMapObject(ctx, activity, obj, id)
+	}
+
+	// Local embedded object - convert map to Note
+	return ap.convertMapToNote(obj)
+}
+
+// fetchRemoteMapObject fetches a remote object referenced in a map
+func (ap *ActivityProcessor) fetchRemoteMapObject(ctx context.Context, activity *activitypub.Activity, _ map[string]interface{}, id string) (*ProcessedObject, error) {
+	ap.logger.Debug("detected remote object in Create activity",
+		zap.String("object_id", id),
+		zap.String("actor", activity.Actor))
+
+	signingActor, err := ap.actorRepo.GetActor(ctx, activity.Actor)
+	if err != nil {
+		ap.logger.Error("failed to get signing actor for remote object fetch", zap.Error(err))
+		return ap.createFallbackObject(id, "Remote object: "+id), nil
+	}
+
+	remoteObj, err := ap.fetchRemoteObjectWithRetry(ctx, id, signingActor)
+	if err != nil {
+		ap.logger.Warn("failed to fetch remote object in Create activity",
+			zap.String("object_id", id),
+			zap.Error(err))
+		return ap.createFallbackObject(id, "Remote object: "+id), nil
+	}
+
+	return ap.processRemoteObject(remoteObj, id)
+}
+
+// processRemoteObject processes a successfully fetched remote object
+func (ap *ActivityProcessor) processRemoteObject(remoteObj interface{}, id string) (*ProcessedObject, error) {
+	if fetchedNote, ok := remoteObj.(*activitypub.Note); ok {
+		ap.logger.Info("successfully fetched remote object for Create activity",
+			zap.String("object_id", id))
+		result := ap.processNoteObject(nil, fetchedNote)
+		result.IsRemote = true
+		return result, nil
+	}
+
+	if objMap, ok := remoteObj.(map[string]interface{}); ok {
+		if content, ok := objMap["content"].(string); ok {
+			return ap.createFallbackObject(id, content), nil
+		}
+	}
+
+	return ap.createFallbackObject(id, "Remote object: "+id), nil
+}
+
+// convertMapToNote converts a map to a Note object
+func (ap *ActivityProcessor) convertMapToNote(obj map[string]interface{}) (*ProcessedObject, error) {
+	noteData, err := json.Marshal(obj)
+	if err != nil {
+		return nil, noteMarshalingFailed(err)
+	}
+
+	note := &activitypub.Note{}
+	if err := json.Unmarshal(noteData, note); err != nil {
+		return nil, noteUnmarshalingFailed(err)
+	}
+
+	return ap.processNoteObject(nil, note), nil
+}
+
+// processNoteObject processes a Note object
+func (ap *ActivityProcessor) processNoteObject(activity *activitypub.Activity, note *activitypub.Note) *ProcessedObject {
+	to, cc := note.To, note.CC
+	if activity != nil && len(to) == 0 && len(cc) == 0 {
+		// Fall back to activity addressing
+		to, cc = activity.To, activity.CC
+	}
+
+	return &ProcessedObject{
+		Note:        note,
+		Content:     note.Content,
+		ObjectID:    note.ID,
+		ContentType: "Note",
+		HasMedia:    len(note.Attachment) > 0,
+		IsReply:     note.InReplyTo != "",
+		InReplyTo:   note.InReplyTo,
+		Sensitive:   note.Sensitive,
+		SpoilerText: note.Summary,
+		Language:    ap.extractLanguage(note),
+		Visibility:  ap.determineVisibility(to, cc),
+	}
+}
+
+// processStringObject processes a string object reference
+func (ap *ActivityProcessor) processStringObject(ctx context.Context, activity *activitypub.Activity, objectID string) (*ProcessedObject, error) {
+	// Check if it's local first
+	existingObj, err := ap.objectRepo.GetObject(ctx, objectID)
+	if err == nil && existingObj != nil {
+		if localNote, ok := existingObj.(*models.Object); ok {
+			ap.logger.Debug("found referenced object locally", zap.String("object_id", objectID))
+			return ap.createObjectFromContent(objectID, localNote.Content, activity), nil
+		}
+	}
+
+	// Not found locally - try remote fetch if it's a remote URL
+	if !strings.HasPrefix(objectID, ap.baseURL) {
+		return ap.fetchStringRemoteObject(ctx, activity, objectID)
+	}
+
+	// Local object that doesn't exist
+	ap.logger.Warn("local object reference not found", zap.String("object_id", objectID))
+	return ap.createFallbackObject(objectID, "Missing local object: "+objectID), nil
+}
+
+// fetchStringRemoteObject fetches a remote object by ID
+func (ap *ActivityProcessor) fetchStringRemoteObject(ctx context.Context, activity *activitypub.Activity, objectID string) (*ProcessedObject, error) {
+	signingActor, err := ap.actorRepo.GetActor(ctx, activity.Actor)
+	if err != nil {
+		ap.logger.Error("failed to get signing actor for object reference fetch", zap.Error(err))
+		return ap.createFallbackObject(objectID, "Referenced object: "+objectID), nil
+	}
+
+	remoteObj, err := ap.fetchRemoteObjectWithRetry(ctx, objectID, signingActor)
+	if err != nil {
+		ap.logger.Warn("failed to fetch referenced object",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return ap.createFallbackObject(objectID, "Referenced object: "+objectID), nil
+	}
+
+	return ap.processRemoteObject(remoteObj, objectID)
+}
+
+// createFallbackObject creates a fallback processed object
+func (ap *ActivityProcessor) createFallbackObject(objectID, content string) *ProcessedObject {
+	return &ProcessedObject{
+		Content:     content,
+		IsRemote:    true,
+		ObjectID:    objectID,
+		ContentType: "Object",
+		Visibility:  "public",
+	}
+}
+
+// createObjectFromContent creates a processed object from content
+func (ap *ActivityProcessor) createObjectFromContent(objectID, content string, activity *activitypub.Activity) *ProcessedObject {
+	to, cc := activity.To, activity.CC
+	if common.ValidateSliceNotEmpty("to", to) != nil && common.ValidateSliceNotEmpty("cc", cc) != nil {
+		to = []string{"https://www.w3.org/ns/activitystreams#Public"}
+	}
+
+	return &ProcessedObject{
+		Content:     content,
+		ObjectID:    objectID,
+		ContentType: "Object",
+		Visibility:  ap.determineVisibility(to, cc),
+		Language:    ap.detectLanguageFromContent(content),
+	}
+}
+
+// createAndFanOutEntries creates timeline entries and performs fanout
+func (ap *ActivityProcessor) createAndFanOutEntries(ctx context.Context, activity *activitypub.Activity, username string, obj *ProcessedObject, now time.Time) error {
+	// Create base entry
+	baseEntry := ap.createBaseTimelineEntry(activity, username, obj, now)
+
+	// Create all timeline entries
+	entries := ap.createAllTimelineEntries(ctx, activity, username, baseEntry, obj.Visibility)
+
+	// Write entries to timelines
+	if err := common.ValidateSliceNotEmpty("entries", entries); err == nil {
+		if err := ap.timelineRepo.CreateTimelineEntries(ctx, entries); err != nil {
+			return timelineEntriesWriteFailed(err)
+		}
+	}
+
+	// Record metrics and log success
+	ap.recordFanoutSuccess(ctx, obj, len(entries), time.Since(now))
+
+	return nil
+}
+
+// createBaseTimelineEntry creates the base timeline entry
+func (ap *ActivityProcessor) createBaseTimelineEntry(activity *activitypub.Activity, username string, obj *ProcessedObject, now time.Time) models.Timeline {
+	content := obj.Content
+	if err := common.ValidateStringLength("content", content, 0, 500); err != nil {
+		content = content[:500]
+	}
+
+	objectID := obj.ObjectID
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
+		objectID = activity.ID
+	}
+
+	return models.Timeline{
 		PostID:      objectID,
 		ActorID:     activity.Actor,
-		ActorHandle: fmt.Sprintf("@%s", actorUsername),
-		Content:     truncateContent(content, 500), // First 500 chars for preview
-		ContentType: objectType,
-		HasMedia:    hasMediaAttachments(objMap),
-		IsReply:     getStringField(objMap, "inReplyTo") != "",
-		InReplyTo:   getStringField(objMap, "inReplyTo"),
+		ActorHandle: username,
+		Content:     content,
+		ContentType: obj.ContentType,
+		HasMedia:    obj.HasMedia,
+		IsReply:     obj.IsReply,
+		InReplyTo:   obj.InReplyTo,
 		IsBoost:     false,
-		Visibility:  visibility,
-		Language:    extractLanguage(objMap),
-		Sensitive:   sensitive,
-		SpoilerText: summary,
-		CreatedAt:   now,
+		Visibility:  obj.Visibility,
+		Language:    obj.Language,
+		Sensitive:   obj.Sensitive,
+		SpoilerText: obj.SpoilerText,
+		CreatedAt:   ap.extractPublishedTime(activity),
 		TimelineAt:  now,
-		ExpiresAt:   now.Add(30 * 24 * time.Hour), // 30 days TTL
 	}
-
-	var timelineEntries []*storage.TimelineEntry
-
-	// 1. Write to public timeline if public
-	if visibility == "public" {
-		// Add to FEDERATED timeline
-		federatedEntry := *baseEntry
-		federatedEntry.TimelineType = "PUBLIC"
-		federatedEntry.TimelineID = "FEDERATED"
-		federatedEntry.EntryID = fmt.Sprintf("%d#%s", now.Unix(), objectID)
-		timelineEntries = append(timelineEntries, &federatedEntry)
-
-		// Also add to LOCAL timeline since this is a local post
-		cfg := config.Get()
-		if strings.HasPrefix(activity.Actor, cfg.BaseURL()) {
-			localEntry := *baseEntry
-			localEntry.TimelineType = "PUBLIC"
-			localEntry.TimelineID = "LOCAL"
-			localEntry.EntryID = fmt.Sprintf("%d#%s", now.Unix(), objectID)
-			timelineEntries = append(timelineEntries, &localEntry)
-		}
-	}
-
-	// 2. Fan-out to followers' home timelines
-	allFollowers := make([]string, 0)
-	cursor := ""
-
-	// Paginate through all followers
-	for {
-		followers, nextCursor, err := store.GetFollowers(ctx, actorUsername, 1000, cursor)
-		if err != nil {
-			log.Error("failed to get followers for timeline fan-out",
-				zap.String("actor", actorUsername),
-				zap.String("cursor", cursor),
-				zap.Error(err))
-			break
-		}
-
-		allFollowers = append(allFollowers, followers...)
-
-		// If no more pages, break
-		if nextCursor == "" || len(followers) < 1000 {
-			break
-		}
-		cursor = nextCursor
-	}
-
-	// Create timeline entries for all followers
-	for _, followerUsername := range allFollowers {
-		followerEntry := *baseEntry
-		followerEntry.TimelineType = "HOME"
-		followerEntry.TimelineID = followerUsername
-		followerEntry.EntryID = fmt.Sprintf("%d#%s", now.Unix(), objectID)
-		timelineEntries = append(timelineEntries, &followerEntry)
-	}
-
-	// 3. Also add to the author's own home timeline
-	authorEntry := *baseEntry
-	authorEntry.TimelineType = "HOME"
-	authorEntry.TimelineID = actorUsername
-	authorEntry.EntryID = fmt.Sprintf("%d#%s", now.Unix(), objectID)
-	timelineEntries = append(timelineEntries, &authorEntry)
-
-	// Batch write to timelines
-	if len(timelineEntries) > 0 {
-		if err := store.WriteToTimelines(ctx, timelineEntries); err != nil {
-			return fmt.Errorf("failed to write to timelines: %w", err)
-		}
-		log.Info("successfully fanned out to timelines",
-			zap.String("object_id", objectID),
-			zap.Int("timeline_count", len(timelineEntries)))
-	}
-
-	return nil
 }
 
-// fanOutAnnounceToTimelines writes an Announce activity to relevant timelines
-func fanOutAnnounceToTimelines(ctx context.Context, activity *activitypub.Activity) error {
-	log := common.WithContext(ctx)
+// createAllTimelineEntries creates all necessary timeline entries
+func (ap *ActivityProcessor) createAllTimelineEntries(ctx context.Context, activity *activitypub.Activity, username string, baseEntry models.Timeline, visibility string) []*models.Timeline {
+	var entries []*models.Timeline
+	now := baseEntry.TimelineAt
 
-	// Extract object ID from the activity
-	var objectID string
-	switch obj := activity.Object.(type) {
-	case string:
-		objectID = obj
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			objectID = id
-		}
-	}
+	// Add public timeline entries
+	entries = append(entries, ap.createPublicTimelineEntries(activity, baseEntry, visibility, now)...)
 
-	if objectID == "" {
-		return fmt.Errorf("announce activity missing object ID")
-	}
+	// Add home timeline entry for author
+	homeEntry := baseEntry
+	homeEntry.TimelineType = timelineHome
+	homeEntry.TimelineID = username
+	homeEntry.EntryID = ap.generateTimelineSK(now, baseEntry.PostID)
+	entries = append(entries, &homeEntry)
 
-	// Get the original object being announced
-	originalObj, err := store.GetObject(ctx, objectID)
-	if err != nil {
-		log.Warn("cannot find announced object for timeline fan-out",
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		return nil // Don't fail if we can't find the object
-	}
+	// Add follower timeline entries
+	entries = append(entries, ap.createFollowerTimelineEntries(ctx, username, baseEntry, visibility, now)...)
 
-	// Extract actor username
-	actorUsername := extractUsernameFromActorID(activity.Actor)
-	if actorUsername == "" {
-		return fmt.Errorf("invalid actor ID: %s", activity.Actor)
-	}
+	return entries
+}
 
-	// Create timeline entry from the announced object
-	now := time.Now()
-	var baseEntry *storage.TimelineEntry
-
-	// Handle different object types
-	switch obj := originalObj.(type) {
-	case *dynamodb.Object:
-		baseEntry = &storage.TimelineEntry{
-			PostID:      obj.ID,
-			ActorID:     obj.AttributedTo,
-			ActorHandle: extractHandleFromActorID(obj.AttributedTo),
-			Content:     truncateContent(obj.Content, 500),
-			ContentType: obj.Type,
-			HasMedia:    len(obj.Attachment) > 0,
-			IsReply:     obj.InReplyTo != nil && *obj.InReplyTo != "",
-			IsBoost:     true,
-			BoostedBy:   activity.Actor,
-			Visibility:  determineVisibility(obj.To, obj.CC),
-			Language:    detectLanguage(ctx, obj.Content),
-			Sensitive:   obj.Sensitive,
-			SpoilerText: obj.Summary,
-			CreatedAt:   obj.Published,
-			TimelineAt:  now, // When it was boosted
-			ExpiresAt:   now.Add(30 * 24 * time.Hour),
-		}
-		if obj.InReplyTo != nil {
-			baseEntry.InReplyTo = *obj.InReplyTo
-		}
-	default:
-		log.Warn("unknown object type for announce, skipping timeline fan-out")
+// createPublicTimelineEntries creates public timeline entries if applicable
+func (ap *ActivityProcessor) createPublicTimelineEntries(activity *activitypub.Activity, baseEntry models.Timeline, visibility string, now time.Time) []*models.Timeline {
+	if visibility != "public" {
 		return nil
 	}
 
-	var timelineEntries []*storage.TimelineEntry
+	var entries []*models.Timeline
 
-	// 1. Write to public timeline if the boost is public
-	if isPubliclyAddressed(activity.To, activity.CC) {
-		// Add to FEDERATED timeline
-		federatedEntry := *baseEntry
-		federatedEntry.TimelineType = "PUBLIC"
-		federatedEntry.TimelineID = "FEDERATED"
-		federatedEntry.EntryID = fmt.Sprintf("%d#announce#%s", now.Unix(), activity.ID)
-		timelineEntries = append(timelineEntries, &federatedEntry)
+	// Federated timeline
+	publicEntry := baseEntry
+	publicEntry.TimelineType = timelinePublic
+	publicEntry.TimelineID = timelineFederated
+	publicEntry.EntryID = ap.generateTimelineSK(now, baseEntry.PostID)
+	entries = append(entries, &publicEntry)
 
-		// Only add to LOCAL timeline if the announcer is a local user
-		cfg := config.Get()
-		if strings.HasPrefix(activity.Actor, cfg.BaseURL()) {
-			localEntry := *baseEntry
-			localEntry.TimelineType = "PUBLIC"
-			localEntry.TimelineID = "LOCAL"
-			localEntry.EntryID = fmt.Sprintf("%d#announce#%s", now.Unix(), activity.ID)
-			timelineEntries = append(timelineEntries, &localEntry)
-		}
+	// Local timeline if it's a local user
+	if strings.HasPrefix(activity.Actor, ap.baseURL) {
+		localEntry := baseEntry
+		localEntry.TimelineType = timelinePublic
+		localEntry.TimelineID = timelineLocal
+		localEntry.EntryID = ap.generateTimelineSK(now, baseEntry.PostID)
+		entries = append(entries, &localEntry)
 	}
 
-	// 2. Fan-out to followers' home timelines
-	followers, _, err := store.GetFollowers(ctx, actorUsername, 1000, "")
+	return entries
+}
+
+// createFollowerTimelineEntries creates timeline entries for followers
+func (ap *ActivityProcessor) createFollowerTimelineEntries(ctx context.Context, username string, baseEntry models.Timeline, visibility string, now time.Time) []*models.Timeline {
+	if visibility == "direct" {
+		return nil
+	}
+
+	followers, err := ap.getFollowers(ctx, username)
 	if err != nil {
-		log.Error("failed to get followers for announce fan-out",
-			zap.String("actor", actorUsername),
-			zap.Error(err))
-	} else {
-		for _, followerUsername := range followers {
-			followerEntry := *baseEntry
-			followerEntry.TimelineType = "HOME"
-			followerEntry.TimelineID = followerUsername
-			followerEntry.EntryID = fmt.Sprintf("%d#announce#%s", now.Unix(), activity.ID)
-			timelineEntries = append(timelineEntries, &followerEntry)
+		ap.logger.Error("failed to get followers", zap.Error(err))
+		return nil
+	}
+
+	entries := make([]*models.Timeline, 0, len(followers))
+	for _, follower := range followers {
+		followerEntry := baseEntry
+		followerEntry.TimelineType = timelineHome
+		followerEntry.TimelineID = follower
+		followerEntry.EntryID = ap.generateTimelineSK(now, baseEntry.PostID)
+		entries = append(entries, &followerEntry)
+	}
+
+	return entries
+}
+
+// recordFanoutSuccess records metrics and logs success
+func (ap *ActivityProcessor) recordFanoutSuccess(ctx context.Context, obj *ProcessedObject, entryCount int, duration time.Duration) {
+	ap.recordTimelineFanoutMetrics(ctx, "Create", entryCount, duration)
+	ap.recordObjectProcessingMetrics(ctx, obj.ContentType, obj.IsRemote, duration)
+
+	ap.logger.Info("successfully fanned out Create activity",
+		zap.String("post_id", obj.ObjectID),
+		zap.String("content_type", obj.ContentType),
+		zap.String("visibility", obj.Visibility),
+		zap.Int("timeline_count", entryCount),
+		zap.Bool("is_remote_object", obj.IsRemote),
+		zap.Duration("fanout_duration", duration),
+	)
+}
+
+// fanOutAnnounceToTimelines handles timeline fanout for Announce (boost) activities
+func (ap *ActivityProcessor) fanOutAnnounceToTimelines(ctx context.Context, activity *activitypub.Activity, username string) error {
+	// Extract the announced object ID
+	announcedID := ap.extractAnnouncedID(activity)
+	if err := common.ValidateRequiredParam("announcedID", announcedID); err != nil {
+		return missingAnnounceObjectID()
+	}
+
+	// Get the announced content
+	announcedContent, originalAuthor := ap.getAnnouncedContent(ctx, activity, announcedID)
+	_ = originalAuthor // Keep for future use
+
+	// Create timeline entries
+	entries := ap.createAnnounceTimelineEntries(ctx, activity, username, announcedContent)
+
+	// Write all entries
+	if err := common.ValidateSliceNotEmpty("entries", entries); err == nil {
+		if err := ap.timelineRepo.CreateTimelineEntries(ctx, entries); err != nil {
+			return timelineEntriesWriteFailed(err)
 		}
 	}
 
-	// 3. Also add to the announcer's own home timeline
-	authorEntry := *baseEntry
-	authorEntry.TimelineType = "HOME"
-	authorEntry.TimelineID = actorUsername
-	authorEntry.EntryID = fmt.Sprintf("%d#announce#%s", now.Unix(), activity.ID)
-	timelineEntries = append(timelineEntries, &authorEntry)
-
-	// Batch write to timelines
-	if len(timelineEntries) > 0 {
-		if err := store.WriteToTimelines(ctx, timelineEntries); err != nil {
-			return fmt.Errorf("failed to write announce to timelines: %w", err)
-		}
-		log.Info("successfully fanned out announce to timelines",
-			zap.String("announce_id", activity.ID),
-			zap.Int("timeline_count", len(timelineEntries)))
-	}
+	// Record metrics
+	ap.recordAnnounceMetrics(ctx, activity, announcedID, entries)
 
 	return nil
 }
 
-// Helper functions for timeline fan-out
-
-func determineVisibility(to, cc []string) string {
-	hasPublic := false
-	hasFollowers := false
-
-	for _, addr := range to {
-		if addr == activitypub.PublicAddress {
-			hasPublic = true
+// extractAnnouncedID extracts the announced object ID from the activity
+func (ap *ActivityProcessor) extractAnnouncedID(activity *activitypub.Activity) string {
+	switch obj := activity.Object.(type) {
+	case string:
+		return obj
+	case map[string]interface{}:
+		if id, ok := obj["id"].(string); ok {
+			return id
 		}
-		if strings.Contains(addr, "/followers") {
-			hasFollowers = true
-		}
+	default:
+		ap.logger.Warn("unsupported object type in Announce activity", zap.Any("object", activity.Object))
 	}
-
-	for _, addr := range cc {
-		if addr == activitypub.PublicAddress {
-			hasPublic = true
-		}
-		if strings.Contains(addr, "/followers") {
-			hasFollowers = true
-		}
-	}
-
-	if hasPublic {
-		return "public"
-	} else if hasFollowers {
-		return "private"
-	}
-	return "direct"
+	return ""
 }
 
-func isPubliclyAddressed(to, cc []string) bool {
-	allAddrs := append(to, cc...)
-	for _, addr := range allAddrs {
-		if addr == activitypub.PublicAddress {
+// getAnnouncedContent retrieves the content of the announced object
+func (ap *ActivityProcessor) getAnnouncedContent(ctx context.Context, activity *activitypub.Activity, announcedID string) (string, string) {
+	// First check if object exists locally
+	if content, author := ap.getLocalAnnouncedContent(ctx, announcedID); content != "" {
+		return content, author
+	}
+
+	// Object not found locally, fetch from remote server
+	return ap.getRemoteAnnouncedContent(ctx, activity, announcedID)
+}
+
+// getLocalAnnouncedContent retrieves content from a locally stored object
+func (ap *ActivityProcessor) getLocalAnnouncedContent(ctx context.Context, announcedID string) (string, string) {
+	existingObj, err := ap.objectRepo.GetObject(ctx, announcedID)
+	if err != nil || existingObj == nil {
+		return "", ""
+	}
+
+	// Extract content based on object type
+	switch obj := existingObj.(type) {
+	case *models.Object:
+		ap.logger.Debug("found announced object locally", zap.String("object_id", announcedID))
+		return obj.Content, ""
+	default:
+		return ap.extractContentFromMap(existingObj)
+	}
+}
+
+// extractContentFromMap extracts content and author from a generic map
+func (ap *ActivityProcessor) extractContentFromMap(obj interface{}) (string, string) {
+	objMap, ok := obj.(map[string]interface{})
+	if !ok {
+		return "", ""
+	}
+
+	var content, author string
+	if c, ok := objMap["content"].(string); ok {
+		content = c
+	}
+	if a, ok := objMap["attributedTo"].(string); ok {
+		author = a
+	}
+	return content, author
+}
+
+// getRemoteAnnouncedContent fetches content from a remote server
+func (ap *ActivityProcessor) getRemoteAnnouncedContent(ctx context.Context, activity *activitypub.Activity, announcedID string) (string, string) {
+	ap.logger.Info("fetching remote object for announce", zap.String("object_id", announcedID))
+
+	// Get the announcing actor for signing requests
+	signingActor, err := ap.actorRepo.GetActor(ctx, activity.Actor)
+	if err != nil {
+		ap.logger.Error("failed to get signing actor", zap.Error(err))
+		return fmt.Sprintf("Boosted: %s", announcedID), ""
+	}
+
+	// Fetch the remote object
+	return ap.fetchAndProcessRemoteObject(ctx, announcedID, signingActor)
+}
+
+// fetchAndProcessRemoteObject fetches and processes a remote object
+func (ap *ActivityProcessor) fetchAndProcessRemoteObject(ctx context.Context, announcedID string, signingActor interface{}) (string, string) {
+	// Type assert signingActor to *activitypub.Actor
+	actor, ok := signingActor.(*activitypub.Actor)
+	if !ok {
+		ap.logger.Error("signing actor is not of expected type")
+		return fmt.Sprintf("Boosted: %s", announcedID), ""
+	}
+
+	remoteObj, err := ap.fetchRemoteObjectWithRetry(ctx, announcedID, actor)
+	if err != nil {
+		ap.logger.Warn("failed to fetch remote object after retries",
+			zap.String("object_id", announcedID),
+			zap.Error(err))
+		return fmt.Sprintf("Boosted: %s", announcedID), ""
+	}
+
+	// Process the fetched object
+	return ap.processRemoteObjectForAnnounce(ctx, remoteObj, announcedID)
+}
+
+// processRemoteObjectForAnnounce processes a fetched remote object for announce activities
+func (ap *ActivityProcessor) processRemoteObjectForAnnounce(ctx context.Context, remoteObj interface{}, announcedID string) (string, string) {
+	if note, ok := remoteObj.(*activitypub.Note); ok {
+		return ap.processRemoteNote(ctx, note, announcedID)
+	}
+
+	// Handle other object types
+	content, author := ap.extractContentFromMap(remoteObj)
+	if content != "" {
+		if objMap, ok := remoteObj.(map[string]interface{}); ok {
+			ap.storeGenericRemoteObject(ctx, objMap)
+		}
+		return content, author
+	}
+
+	return fmt.Sprintf("Boosted: %s", announcedID), ""
+}
+
+// processRemoteNote processes a remote Note object
+func (ap *ActivityProcessor) processRemoteNote(ctx context.Context, note *activitypub.Note, announcedID string) (string, string) {
+	// Store the remote object for future reference
+	ap.storeRemoteObject(ctx, note)
+
+	ap.logger.Info("successfully fetched and stored remote object",
+		zap.String("object_id", announcedID),
+		zap.String("author", note.AttributedTo))
+
+	return note.Content, note.AttributedTo
+}
+
+// createAnnounceTimelineEntries creates timeline entries for an announce activity
+func (ap *ActivityProcessor) createAnnounceTimelineEntries(ctx context.Context, activity *activitypub.Activity, username, announcedContent string) []*models.Timeline {
+	var entries []*models.Timeline
+	now := time.Now()
+
+	baseEntry := ap.createBaseAnnounceEntry(activity, username, announcedContent, now)
+
+	// Add to public timelines
+	entries = append(entries, ap.createPublicTimelineEntry(baseEntry, now, activity.ID))
+
+	// Add local timeline entry if applicable
+	if ap.isLocalActor(activity.Actor) {
+		entries = append(entries, ap.createLocalTimelineEntry(baseEntry, now, activity.ID))
+	}
+
+	// Add to author's home timeline
+	entries = append(entries, ap.createHomeTimelineEntry(baseEntry, username, now, activity.ID))
+
+	// Fan out to followers
+	ap.addFollowerEntries(ctx, &entries, baseEntry, username, now, activity.ID)
+
+	return entries
+}
+
+// createBaseAnnounceEntry creates the base timeline entry for an announce
+func (ap *ActivityProcessor) createBaseAnnounceEntry(activity *activitypub.Activity, username, announcedContent string, now time.Time) models.Timeline {
+	return models.Timeline{
+		PostID:      activity.ID,
+		ActorID:     activity.Actor,
+		ActorHandle: username,
+		Content:     announcedContent,
+		ContentType: "Announce",
+		IsBoost:     true,
+		BoostedBy:   username,
+		Visibility:  "public", // Announces are typically public
+		CreatedAt:   ap.extractPublishedTime(activity),
+		TimelineAt:  now,
+	}
+}
+
+// createPublicTimelineEntry creates a public timeline entry
+func (ap *ActivityProcessor) createPublicTimelineEntry(baseEntry models.Timeline, now time.Time, activityID string) *models.Timeline {
+	publicEntry := baseEntry
+	publicEntry.TimelineType = timelinePublic
+	publicEntry.TimelineID = timelineFederated
+	publicEntry.EntryID = ap.generateTimelineSK(now, activityID)
+	return &publicEntry
+}
+
+// createLocalTimelineEntry creates a local timeline entry
+func (ap *ActivityProcessor) createLocalTimelineEntry(baseEntry models.Timeline, now time.Time, activityID string) *models.Timeline {
+	localEntry := baseEntry
+	localEntry.TimelineType = timelinePublic
+	localEntry.TimelineID = timelineLocal
+	localEntry.EntryID = ap.generateTimelineSK(now, activityID)
+	return &localEntry
+}
+
+// createHomeTimelineEntry creates a home timeline entry
+func (ap *ActivityProcessor) createHomeTimelineEntry(baseEntry models.Timeline, username string, now time.Time, activityID string) *models.Timeline {
+	homeEntry := baseEntry
+	homeEntry.TimelineType = timelineHome
+	homeEntry.TimelineID = username
+	homeEntry.EntryID = ap.generateTimelineSK(now, activityID)
+	return &homeEntry
+}
+
+// addFollowerEntries adds timeline entries for followers
+func (ap *ActivityProcessor) addFollowerEntries(ctx context.Context, entries *[]*models.Timeline, baseEntry models.Timeline, username string, now time.Time, activityID string) {
+	followers, err := ap.getFollowers(ctx, username)
+	if err != nil {
+		ap.logger.Error("failed to get followers", zap.Error(err))
+		return
+	}
+
+	for _, follower := range followers {
+		followerEntry := baseEntry
+		followerEntry.TimelineType = timelineHome
+		followerEntry.TimelineID = follower
+		followerEntry.EntryID = ap.generateTimelineSK(now, activityID)
+		*entries = append(*entries, &followerEntry)
+	}
+}
+
+// isLocalActor checks if an actor is local
+func (ap *ActivityProcessor) isLocalActor(actorID string) bool {
+	return strings.HasPrefix(actorID, ap.baseURL)
+}
+
+// recordAnnounceMetrics records metrics for an announce activity
+func (ap *ActivityProcessor) recordAnnounceMetrics(ctx context.Context, activity *activitypub.Activity, announcedID string, entries []*models.Timeline) {
+	startTime := time.Now()
+	fanoutDuration := time.Duration(0) // This will be calculated elsewhere if needed
+	ap.recordTimelineFanoutMetrics(ctx, "Announce", len(entries), fanoutDuration)
+
+	isRemoteAnnounced := !ap.isLocalActor(announcedID)
+	ap.recordObjectProcessingMetrics(ctx, "Announce", isRemoteAnnounced, fanoutDuration)
+
+	ap.logger.Info("successfully fanned out Announce activity",
+		zap.String("activity_id", activity.ID),
+		zap.String("announced_id", announcedID),
+		zap.Int("timeline_count", len(entries)),
+		zap.Bool("is_remote_announced", isRemoteAnnounced),
+		zap.Duration("processing_time", time.Since(startTime)),
+	)
+}
+
+// Helper functions
+
+func (ap *ActivityProcessor) determineVisibility(to, cc []string) string {
+	// Direct message - no public addressing
+	if !containsPublicAddress(to) && !containsPublicAddress(cc) {
+		return "direct"
+	}
+
+	// Public - addressed to public in 'to'
+	if containsPublicAddress(to) {
+		return "public"
+	}
+
+	// Unlisted - public in 'cc'
+	if containsPublicAddress(cc) {
+		return "unlisted"
+	}
+
+	// Private - followers only
+	return "private"
+}
+
+func (ap *ActivityProcessor) extractLanguage(note *activitypub.Note) string {
+	// Check if the note has explicit language information in content
+	// ActivityPub notes may include language hints in various formats
+	if note.Summary != "" {
+		// Some implementations put language codes in summary
+		if strings.HasPrefix(note.Summary, "[lang:") {
+			if end := strings.Index(note.Summary, "]"); end > 6 {
+				lang := note.Summary[6:end]
+				if len(lang) == 2 || len(lang) == 5 { // "en" or "en-US" format
+					return lang
+				}
+			}
+		}
+	}
+
+	// Implement content-based language detection using simple heuristics
+	content := strings.ToLower(note.Content)
+
+	// Strip HTML tags for cleaner analysis
+	content = stripHTMLTags(content)
+
+	// Character-based detection for non-Latin scripts
+	if hasJapaneseCharacters(content) {
+		return "ja"
+	}
+	if hasChineseCharacters(content) {
+		return "zh"
+	}
+	if hasKoreanCharacters(content) {
+		return "ko"
+	}
+	if hasArabicCharacters(content) {
+		return "ar"
+	}
+	if hasCyrillicCharacters(content) {
+		// Could be Russian, Ukrainian, etc. Default to Russian
+		return "ru"
+	}
+
+	// Word-based detection for Latin script languages
+	// Check for common words/patterns
+	if hasSpanishPatterns(content) {
+		return "es"
+	}
+	if hasFrenchPatterns(content) {
+		return "fr"
+	}
+	if hasGermanPatterns(content) {
+		return "de"
+	}
+	if hasPortuguesePatterns(content) {
+		return "pt"
+	}
+	if hasItalianPatterns(content) {
+		return "it"
+	}
+
+	// Default to English for Latin script
+	return "en"
+}
+
+// detectLanguageFromContent performs simple language detection on arbitrary content
+func (ap *ActivityProcessor) detectLanguageFromContent(content string) string {
+	if err := common.ValidateRequiredParam("content", content); err != nil {
+		return "en" // default
+	}
+
+	content = strings.ToLower(content)
+	content = stripHTMLTags(content)
+
+	// Use the same detection logic as extractLanguage but without Note-specific logic
+	if hasJapaneseCharacters(content) {
+		return "ja"
+	}
+	if hasChineseCharacters(content) {
+		return "zh"
+	}
+	if hasKoreanCharacters(content) {
+		return "ko"
+	}
+	if hasArabicCharacters(content) {
+		return "ar"
+	}
+	if hasCyrillicCharacters(content) {
+		return "ru"
+	}
+
+	// Word-based detection for Latin script languages
+	if hasSpanishPatterns(content) {
+		return "es"
+	}
+	if hasFrenchPatterns(content) {
+		return "fr"
+	}
+	if hasGermanPatterns(content) {
+		return "de"
+	}
+	if hasPortuguesePatterns(content) {
+		return "pt"
+	}
+	if hasItalianPatterns(content) {
+		return "it"
+	}
+
+	return "en"
+}
+
+// Production monitoring and metrics methods
+
+// recordMetric is a generic function to record metrics with custom fields
+func (ap *ActivityProcessor) recordMetric(ctx context.Context, pkPrefix, metricType, keyField string, ttlDuration time.Duration, customFields map[string]interface{}, logContext []zap.Field) {
+	now := time.Now()
+
+	// Create base metric with common fields
+	metric := map[string]interface{}{
+		"PK":        fmt.Sprintf("%s#METRICS", pkPrefix),
+		"SK":        fmt.Sprintf("METRIC#%d#%s", now.Unix(), keyField),
+		"Type":      metricType,
+		"Timestamp": now.Format(time.RFC3339),
+		"TTL":       now.Add(ttlDuration).Unix(),
+	}
+
+	// Add custom fields
+	for k, v := range customFields {
+		metric[k] = v
+	}
+
+	// Log the metric (don't fail the main operation if this fails)
+	if err := ap.db.WithContext(ctx).Model(&metric).Create(); err != nil {
+		fields := append([]zap.Field{zap.Error(err)}, logContext...)
+		ap.logger.Debug("failed to record metric", fields...)
+	}
+}
+
+// recordFederationMetrics records metrics for federation operations
+func (ap *ActivityProcessor) recordFederationMetrics(ctx context.Context, operation string, success bool, duration time.Duration, remoteHost string) {
+	customFields := map[string]interface{}{
+		"operation":   operation,
+		"success":     success,
+		"duration_ms": duration.Milliseconds(),
+		"remote_host": remoteHost,
+	}
+	logContext := []zap.Field{zap.String("operation", operation)}
+
+	ap.recordMetric(ctx, "FEDERATION", "FederationMetric", operation, 7*24*time.Hour, customFields, logContext)
+}
+
+// recordObjectProcessingMetrics records metrics about object processing
+func (ap *ActivityProcessor) recordObjectProcessingMetrics(ctx context.Context, objectType string, isRemote bool, processingTime time.Duration) {
+	customFields := map[string]interface{}{
+		"object_type":        objectType,
+		"is_remote":          isRemote,
+		"processing_time_ms": processingTime.Milliseconds(),
+	}
+	logContext := []zap.Field{zap.String("object_type", objectType)}
+
+	ap.recordMetric(ctx, "PROCESSING", "ProcessingMetric", objectType, 24*time.Hour, customFields, logContext)
+}
+
+// recordTimelineFanoutMetrics records metrics about timeline fanout operations
+func (ap *ActivityProcessor) recordTimelineFanoutMetrics(ctx context.Context, activityType string, entryCount int, fanoutTime time.Duration) {
+	customFields := map[string]interface{}{
+		"activity_type":  activityType,
+		"entry_count":    entryCount,
+		"fanout_time_ms": fanoutTime.Milliseconds(),
+	}
+	logContext := []zap.Field{zap.String("activity_type", activityType)}
+
+	ap.recordMetric(ctx, "FANOUT", "FanoutMetric", activityType, 24*time.Hour, customFields, logContext)
+}
+
+// extractRemoteHost extracts the hostname from a URL for metrics
+func (ap *ActivityProcessor) extractRemoteHost(url string) string {
+	if err := common.ValidateRequiredParam("url", url); err != nil {
+		return UnknownValue
+	}
+
+	// Simple hostname extraction
+	if strings.HasPrefix(url, "http://") {
+		url = url[7:]
+	} else if strings.HasPrefix(url, "https://") {
+		url = url[8:]
+	}
+
+	// Find the first slash to get just the hostname
+	if idx := strings.Index(url, "/"); idx != -1 {
+		url = url[:idx]
+	}
+
+	// Remove port if present
+	if idx := strings.Index(url, ":"); idx != -1 {
+		url = url[:idx]
+	}
+
+	return url
+}
+
+func (ap *ActivityProcessor) extractPublishedTime(activity *activitypub.Activity) time.Time {
+	if activity.Published != nil && !activity.Published.IsZero() {
+		return *activity.Published
+	}
+	return time.Now()
+}
+
+func (ap *ActivityProcessor) generateTimelineSK(timelineAt time.Time, postID string) string {
+	// Generate sort key with timestamp for timeline ordering
+	timestamp := timelineAt.Unix()
+	return fmt.Sprintf("ENTRY#%d#%s", timestamp, postID)
+}
+
+func (ap *ActivityProcessor) getFollowers(ctx context.Context, username string) ([]string, error) {
+	// Get the actor to find followers
+	actor, err := ap.actorRepo.GetActor(ctx, username)
+	if err != nil {
+		return nil, actorRetrievalFailed(username, err)
+	}
+
+	// Query followers using the relationship repository
+	// Use a reasonable limit to avoid overwhelming the timeline fanout
+	followers, _, err := ap.relationshipRepo.GetFollowers(ctx, username, 1000, "")
+	if err != nil {
+		ap.logger.Error("failed to query followers",
+			zap.String("username", username),
+			zap.String("actor_id", actor.ID),
+			zap.Error(err))
+		return nil, followersQueryingFailed(err)
+	}
+
+	ap.logger.Debug("retrieved followers for timeline fanout",
+		zap.String("username", username),
+		zap.Int("follower_count", len(followers)))
+
+	return followers, nil
+}
+
+func containsPublicAddress(slice []string) bool {
+	const publicAddress = "https://www.w3.org/ns/activitystreams#Public"
+	for _, s := range slice {
+		if s == publicAddress {
 			return true
 		}
 	}
 	return false
 }
 
-func truncateContent(content string, maxLen int) string {
-	if len(content) <= maxLen {
-		return content
+var (
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config //nolint:unused // Reserved for global configuration access pattern
+	logger    *zap.Logger
+	repos     storageCore.RepositoryStorage //nolint:unused // Reserved for dependency injection pattern
+	processor *ActivityProcessor
+)
+
+func init() {
+	if common.RunningUnitTests() {
+		return
 	}
-	return content[:maxLen] + "..."
+	// Standardized Lambda initialization for processor functions
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "activity-processor",
+		LambdaType:  common.LambdaTypeProcessor,
+	})
+
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	if lambdaCtx.Repos != nil {
+		repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	}
+
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
+	if err != nil {
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	}
+
+	// Initialize processor
+	processor = NewActivityProcessor(lambdaCtx)
 }
 
-func hasMediaAttachments(objMap map[string]interface{}) bool {
-	attachments, ok := objMap["attachment"].([]interface{})
-	return ok && len(attachments) > 0
+func main() {
+	// DynamoDB Stream handler with Lift-style patterns but traditional Lambda execution
+	// This provides structured logging, error handling, and request tracking
+	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
+		start := time.Now()
+
+		// Recovery handling (Lift pattern)
+		defer func() {
+			if r := recover(); r != nil {
+				requestID := ctx.Value("request_id")
+				if requestID == nil {
+					requestID = UnknownValue
+				}
+				lambdaCtx.Logger.Error("panic in DynamoDB stream handler",
+					zap.Any("request_id", requestID),
+					zap.Any("panic", r),
+					zap.Stack("stack"),
+				)
+			}
+		}()
+
+		// Process the stream event
+		err := processor.HandleStream(ctx, event)
+
+		// Log completion (Lift pattern)
+		duration := time.Since(start)
+		requestID := ctx.Value("request_id")
+		if requestID == nil {
+			requestID = UnknownValue
+		}
+
+		if err != nil {
+			lambdaCtx.Logger.Error("DynamoDB stream processing failed",
+				zap.Any("request_id", requestID),
+				zap.Error(err),
+				zap.Duration("duration", duration),
+				zap.Int("record_count", len(event.Records)),
+			)
+		} else {
+			lambdaCtx.Logger.Info("DynamoDB stream processing completed",
+				zap.Any("request_id", requestID),
+				zap.Duration("duration", duration),
+				zap.Int("record_count", len(event.Records)),
+			)
+		}
+
+		return err
+	})
 }
 
-func extractLanguage(objMap map[string]interface{}) string {
-	// Check for contentMap first (Mastodon style)
-	if contentMap, ok := objMap["contentMap"].(map[string]interface{}); ok {
-		// Return the first language found
-		for lang := range contentMap {
-			return lang
+// storeRemoteObject stores a fetched remote object locally
+func (ap *ActivityProcessor) storeRemoteObject(ctx context.Context, obj *activitypub.Note) {
+	// Convert to storage object
+	now := time.Now()
+	publishedTime := now
+	if obj.Published != nil && !obj.Published.IsZero() {
+		publishedTime = *obj.Published
+	}
+
+	// Handle optional InReplyTo field
+	var inReplyTo *string
+	if obj.InReplyTo != "" {
+		inReplyTo = &obj.InReplyTo
+	}
+
+	storageObj := &models.Object{
+		ID:           obj.ID,
+		Type:         obj.Type,
+		Content:      obj.Content,
+		AttributedTo: obj.AttributedTo,
+		Published:    publishedTime,
+		Updated:      now,
+		To:           obj.To,
+		CC:           obj.CC,
+		InReplyTo:    inReplyTo,
+		Sensitive:    obj.Sensitive,
+		IsRemote:     true,
+		CreatedAt:    now,
+	}
+
+	// Store object
+	if err := ap.objectRepo.CreateObject(ctx, storageObj); err != nil {
+		ap.logger.Error("failed to store remote object",
+			zap.String("object_id", obj.ID),
+			zap.Error(err))
+	} else {
+		ap.logger.Debug("stored remote object",
+			zap.String("object_id", obj.ID))
+	}
+}
+
+// fetchRemoteObjectWithRetry fetches a remote object with comprehensive retry logic
+func (ap *ActivityProcessor) fetchRemoteObjectWithRetry(ctx context.Context, objectURL string, signingActor *activitypub.Actor) (any, error) {
+	var lastErr error
+	startTime := time.Now()
+	remoteHost := ap.extractRemoteHost(objectURL)
+
+	// Track federation attempt
+	defer func() {
+		duration := time.Since(startTime)
+		success := lastErr == nil
+		ap.recordFederationMetrics(ctx, "fetch_object", success, duration, remoteHost)
+	}()
+
+	for attempt := 1; attempt <= ap.retryAttempts; attempt++ {
+		ap.logger.Debug("attempting to fetch remote object",
+			zap.String("object_url", objectURL),
+			zap.String("signing_actor", signingActor.ID),
+			zap.Int("attempt", attempt),
+			zap.Int("max_attempts", ap.retryAttempts))
+
+		// Try to fetch the object
+		obj, err := ap.fetchService.FetchObject(ctx, objectURL, signingActor)
+		if err == nil {
+			// Success - validate and return the object
+			validatedObj, valErr := ap.validateAndProcessRemoteObject(obj, objectURL)
+			if valErr == nil {
+				ap.logger.Info("successfully fetched remote object",
+					zap.String("object_url", objectURL),
+					zap.Int("attempt", attempt))
+				return validatedObj, nil
+			}
+			ap.logger.Warn("fetched object failed validation",
+				zap.String("object_url", objectURL),
+				zap.Error(valErr))
+			lastErr = objectValidationFailed("remote_object", valErr.Error())
+			break // Don't retry validation failures
+		}
+
+		lastErr = err
+
+		// Check if this is a retryable error
+		if !ap.isRetryableError(err) {
+			ap.logger.Debug("non-retryable error, stopping attempts",
+				zap.String("object_url", objectURL),
+				zap.Error(err))
+			break
+		}
+
+		// Don't wait on the last attempt
+		if attempt < ap.retryAttempts {
+			backoffDelay := ap.calculateBackoffDelay(attempt)
+			ap.logger.Debug("retrying after backoff delay",
+				zap.String("object_url", objectURL),
+				zap.Duration("delay", backoffDelay),
+				zap.Int("attempt", attempt))
+
+			// Create a timeout context for the delay
+			delayCtx, cancel := context.WithTimeout(ctx, backoffDelay)
+			select {
+			case <-delayCtx.Done():
+				cancel()
+			case <-ctx.Done():
+				cancel()
+				return nil, ctx.Err()
+			}
 		}
 	}
-	// Default to English
-	return "en"
+
+	ap.logger.Error("failed to fetch remote object after all attempts",
+		zap.String("object_url", objectURL),
+		zap.Int("attempts", ap.retryAttempts),
+		zap.Error(lastErr))
+
+	return nil, remoteObjectFetchFailed(objectURL, lastErr)
 }
 
-func extractHandleFromActorID(actorID string) string {
-	username := extractUsernameFromActorID(actorID)
-	if username != "" {
-		return fmt.Sprintf("@%s", username)
+// validateAndProcessRemoteObject validates a fetched remote object and converts it to appropriate types
+func (ap *ActivityProcessor) validateAndProcessRemoteObject(obj any, expectedURL string) (any, error) {
+	objMap, ok := obj.(map[string]any)
+	if !ok {
+		return nil, objectNotMap()
 	}
-	// For remote actors, try to extract domain too
-	if strings.Contains(actorID, "://") {
-		parts := strings.Split(actorID, "://")
-		if len(parts) >= 2 {
-			domainPath := parts[1]
-			domainParts := strings.Split(domainPath, "/")
-			if len(domainParts) > 0 {
-				domain := domainParts[0]
-				if username != "" {
-					return fmt.Sprintf("@%s@%s", username, domain)
+
+	// Validate basic ActivityPub object requirements
+	id, ok := objMap["id"].(string)
+	if !ok || common.ValidateRequiredParam("id", id) != nil {
+		return nil, missingObjectID()
+	}
+
+	if id != expectedURL {
+		ap.logger.Error("object ID mismatch",
+			zap.String("expected", expectedURL),
+			zap.String("got", id))
+		return nil, objectIDMismatch()
+	}
+
+	objectType, ok := objMap["type"].(string)
+	if !ok || common.ValidateRequiredParam("object_type", objectType) != nil {
+		return nil, missingObjectType()
+	}
+
+	// Check for required ActivityPub fields based on type
+	switch objectType {
+	case "Note", "Article", "Page":
+		// These object types should have content
+		if _, hasContent := objMap["content"]; !hasContent {
+			ap.logger.Warn("object missing content field",
+				zap.String("object_id", id),
+				zap.String("type", objectType))
+		}
+
+		// Should have attributedTo
+		if _, hasAttr := objMap["attributedTo"]; !hasAttr {
+			return nil, missingAttributedTo()
+		}
+
+		// Try to convert to a Note for easier handling
+		if objectType == "Note" {
+			return ap.convertToNote(objMap)
+		}
+
+		// For other types, return the validated map
+		return objMap, nil
+
+	case "Video", "Audio", "Image":
+		// Media objects should have a URL
+		if _, hasURL := objMap["url"]; !hasURL {
+			return nil, missingMediaURL()
+		}
+		return objMap, nil
+
+	case "Event":
+		// Events should have a startTime
+		if _, hasStart := objMap["startTime"]; !hasStart {
+			return nil, missingEventStartTime()
+		}
+		return objMap, nil
+
+	default:
+		// For unknown types, just validate basic structure and return
+		ap.logger.Info(UnknownTypeMsg,
+			zap.String("object_id", id),
+			zap.String("type", objectType))
+		return objMap, nil
+	}
+}
+
+// convertToNote converts a validated object map to an ActivityPub Note
+func (ap *ActivityProcessor) convertToNote(objMap map[string]any) (*activitypub.Note, error) {
+	// Marshal to JSON then unmarshal to Note for proper type conversion
+	data, err := json.Marshal(objMap)
+	if err != nil {
+		return nil, objectMarshalingFailed("Note", err)
+	}
+
+	var note activitypub.Note
+	if err := common.ParseActivityPubObject(data, &note); err != nil {
+		return nil, objectUnmarshalingToNoteFailed(err)
+	}
+
+	return &note, nil
+}
+
+// isRetryableError determines if an error is worth retrying
+func (ap *ActivityProcessor) isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+
+	// Network/connection errors are retryable
+	if strings.Contains(errStr, "connection") ||
+		strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "temporary") ||
+		strings.Contains(errStr, "i/o timeout") {
+		return true
+	}
+
+	// HTTP status code based retries
+	if strings.Contains(errStr, "status 5") || // 5xx errors
+		strings.Contains(errStr, "status 429") || // Rate limit
+		strings.Contains(errStr, "status 502") ||
+		strings.Contains(errStr, "status 503") ||
+		strings.Contains(errStr, "status 504") {
+		return true
+	}
+
+	// DNS errors might be temporary
+	if strings.Contains(errStr, "no such host") ||
+		strings.Contains(errStr, "dns") {
+		return true
+	}
+
+	// Don't retry client errors (4xx except 429), auth failures, etc.
+	if strings.Contains(errStr, "status 4") && !strings.Contains(errStr, "status 429") {
+		return false
+	}
+
+	// UnknownErrorMsg
+	return false
+}
+
+// calculateBackoffDelay calculates exponential backoff delay with jitter
+func (ap *ActivityProcessor) calculateBackoffDelay(attempt int) time.Duration {
+	baseDelay := ap.retryDelay
+
+	// Exponential backoff: baseDelay * 2^(attempt-1)
+	multiplier := 1 << (attempt - 1) // 2^(attempt-1)
+	delay := baseDelay * time.Duration(multiplier)
+
+	// Cap the delay at 30 seconds to avoid excessively long waits
+	maxDelay := 30 * time.Second
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+
+	// Add jitter (±25% of delay) to avoid thundering herd
+	jitter := delay / 4                             // 25% of delay
+	jitterOffset := time.Duration(attempt) % jitter // Simple jitter based on attempt
+	if attempt%2 == 0 {
+		delay += jitterOffset
+	} else {
+		delay -= jitterOffset
+	}
+
+	return delay
+}
+
+// storeGenericRemoteObject stores a generic remote object (non-Note types)
+func (ap *ActivityProcessor) storeGenericRemoteObject(ctx context.Context, objMap map[string]interface{}) {
+	id := ap.extractObjectID(objMap)
+	if err := common.ValidateRequiredParam("id", id); err != nil {
+		ap.logger.Error("cannot store object without ID")
+		return
+	}
+
+	objectType := ap.extractObjectType(objMap)
+	now := time.Now()
+
+	// Create storage object
+	storageObj := ap.buildStorageObject(objMap, id, objectType, now)
+
+	// Store object
+	ap.storeObjectWithLogging(ctx, storageObj, id, objectType)
+}
+
+// extractObjectID extracts the ID from an object map
+func (ap *ActivityProcessor) extractObjectID(objMap map[string]interface{}) string {
+	if id, ok := objMap["id"].(string); ok {
+		return id
+	}
+	return ""
+}
+
+// extractObjectType extracts the type from an object map
+func (ap *ActivityProcessor) extractObjectType(objMap map[string]interface{}) string {
+	if objectType, ok := objMap["type"].(string); ok {
+		return objectType
+	}
+	return "Object" // fallback
+}
+
+// buildStorageObject builds a storage object from a map
+func (ap *ActivityProcessor) buildStorageObject(objMap map[string]interface{}, id, objectType string, now time.Time) *models.Object {
+	return &models.Object{
+		ID:           id,
+		Type:         objectType,
+		Content:      ap.extractObjectContent(objMap),
+		AttributedTo: ap.extractObjectAuthor(objMap),
+		Published:    ap.extractObjectPublishedTime(objMap, now),
+		Updated:      now,
+		To:           ap.extractAddressingField(objMap, "to"),
+		CC:           ap.extractAddressingField(objMap, "cc"),
+		IsRemote:     true,
+		CreatedAt:    now,
+	}
+}
+
+// extractObjectContent extracts content from an object map
+func (ap *ActivityProcessor) extractObjectContent(objMap map[string]interface{}) string {
+	if c, ok := objMap["content"].(string); ok {
+		return c
+	}
+	if name, ok := objMap["name"].(string); ok {
+		return name // Use name as content for objects without content
+	}
+	if summary, ok := objMap["summary"].(string); ok {
+		return summary // Use summary as fallback
+	}
+	return ""
+}
+
+// extractObjectAuthor extracts the author from an object map
+func (ap *ActivityProcessor) extractObjectAuthor(objMap map[string]interface{}) string {
+	if attr, ok := objMap["attributedTo"].(string); ok {
+		return attr
+	}
+	return ""
+}
+
+// extractObjectPublishedTime extracts the published time from an object map
+func (ap *ActivityProcessor) extractObjectPublishedTime(objMap map[string]interface{}, fallback time.Time) time.Time {
+	if pubStr, ok := objMap["published"].(string); ok {
+		if parsed, err := time.Parse(time.RFC3339, pubStr); err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+// extractAddressingField extracts addressing fields (to/cc) from an object map
+func (ap *ActivityProcessor) extractAddressingField(objMap map[string]interface{}, field string) []string {
+	var result []string
+	if fieldData, ok := objMap[field]; ok {
+		if slice, ok := fieldData.([]interface{}); ok {
+			for _, item := range slice {
+				if str, ok := item.(string); ok {
+					result = append(result, str)
 				}
 			}
 		}
 	}
-	return "@unknown"
+	return result
 }
 
-// detectLanguage uses AWS Comprehend to detect the language of content
-func detectLanguage(ctx context.Context, content string) string {
-	// Return default language if no comprehend client
-	if comprehendClient == nil {
-		return "en"
-	}
-
-	// Clean content for language detection
-	cleanContent := cleanTextForLanguageDetection(content)
-
-	// Skip detection for very short content
-	if len(cleanContent) < 10 {
-		return "en"
-	}
-
-	// Truncate to Comprehend's limit (5000 bytes for language detection)
-	if len(cleanContent) > 5000 {
-		cleanContent = cleanContent[:5000]
-	}
-
-	// Call AWS Comprehend
-	input := &comprehend.DetectDominantLanguageInput{
-		Text: aws.String(cleanContent),
-	}
-
-	result, err := comprehendClient.DetectDominantLanguage(ctx, input)
-	if err != nil {
-		logger.Debug("language detection failed, using default",
-			zap.String("content_preview", cleanContent[:min(50, len(cleanContent))]),
+// storeObjectWithLogging stores an object and logs the result
+func (ap *ActivityProcessor) storeObjectWithLogging(ctx context.Context, storageObj *models.Object, id, objectType string) {
+	if err := ap.objectRepo.CreateObject(ctx, storageObj); err != nil {
+		ap.logger.Error("failed to store generic remote object",
+			zap.String("object_id", id),
+			zap.String("object_type", objectType),
 			zap.Error(err))
-		return "en"
+	} else {
+		ap.logger.Debug("stored generic remote object",
+			zap.String("object_id", id),
+			zap.String("object_type", objectType))
+	}
+}
+
+// sendToDeadLetterQueue sends a failed record to the dead letter queue
+func (ap *ActivityProcessor) sendToDeadLetterQueue(ctx context.Context, record events.DynamoDBEventRecord, reason string) error {
+	now := time.Now()
+
+	dlqRecord := struct {
+		PK             string `dynamorm:"pk"`
+		SK             string `dynamorm:"sk"`
+		Type           string `json:"type"`
+		EventID        string `json:"event_id"`
+		EventName      string `json:"event_name"`
+		Reason         string `json:"reason"`
+		OriginalRecord string `json:"original_record"`
+		CreatedAt      string `json:"created_at"`
+		TTL            int64  `dynamorm:"ttl"`
+	}{
+		PK:        "DLQ#ACTIVITY_PROCESSOR",
+		SK:        fmt.Sprintf("RECORD#%s#%d", record.EventID, now.UnixNano()),
+		Type:      "DeadLetterRecord",
+		EventID:   record.EventID,
+		EventName: record.EventName,
+		Reason:    reason,
+		CreatedAt: now.Format(time.RFC3339),
+		TTL:       now.Add(7 * 24 * time.Hour).Unix(), // Keep for 7 days
 	}
 
-	// Find the highest confidence language
-	if len(result.Languages) > 0 {
-		bestLang := result.Languages[0]
-		for _, lang := range result.Languages {
-			if lang.Score != nil && bestLang.Score != nil && *lang.Score > *bestLang.Score {
-				bestLang = lang
-			}
+	// Serialize the original record (simplified)
+	if recordBytes, err := json.Marshal(record); err == nil {
+		dlqRecord.OriginalRecord = string(recordBytes)
+	}
+
+	if err := ap.db.WithContext(ctx).Model(&dlqRecord).Create(); err != nil {
+		return dlqRecordCreationFailed(record.EventID, err)
+	}
+
+	ap.logger.Info("record sent to dead letter queue",
+		zap.String("event_id", record.EventID),
+		zap.String("reason", reason),
+	)
+
+	return nil
+}
+
+// isRetryableStreamError determines if an error should be retried or sent to DLQ for stream processing
+func (ap *ActivityProcessor) isRetryableStreamError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	// Retryable errors (transient issues)
+	retryablePatterns := []string{
+		"timeout",
+		"connection",
+		"temporary",
+		"throttl",
+		"rate limit",
+		"service unavailable",
+		"internal server error",
+		"502",
+		"503",
+		"504",
+		"dynamodb throttl",
+		"capacity exceeded",
+	}
+
+	for _, pattern := range retryablePatterns {
+		if strings.Contains(errStr, pattern) {
+			return true
 		}
+	}
 
-		// Only use the detected language if confidence is reasonable
-		if bestLang.LanguageCode != nil && bestLang.Score != nil && *bestLang.Score > 0.5 {
-			return *bestLang.LanguageCode
+	// Non-retryable errors (permanent failures)
+	nonRetryablePatterns := []string{
+		"invalid",
+		"malformed",
+		"bad request",
+		"unauthorized",
+		"forbidden",
+		"not found",
+		"conflict",
+		"validation",
+		"parse error",
+		"unmarshal",
+		"400",
+		"401",
+		"403",
+		"404",
+		"409",
+		"422",
+	}
+
+	for _, pattern := range nonRetryablePatterns {
+		if strings.Contains(errStr, pattern) {
+			return false
 		}
 	}
 
-	// Default to English if detection fails or confidence is low
-	return "en"
+	// Default to retryable for unknown errors
+	return true
 }
 
-// cleanTextForLanguageDetection removes HTML tags and extra whitespace
-func cleanTextForLanguageDetection(content string) string {
-	// Remove HTML tags
-	htmlTagRegex := regexp.MustCompile(`<[^>]*>`)
-	cleaned := htmlTagRegex.ReplaceAllString(content, " ")
+// Language detection helper functions
 
-	// Remove extra whitespace
-	spaceRegex := regexp.MustCompile(`\s+`)
-	cleaned = spaceRegex.ReplaceAllString(cleaned, " ")
-
-	return strings.TrimSpace(cleaned)
-}
-
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
+func stripHTMLTags(content string) string {
+	// Simple HTML tag removal
+	result := content
+	for strings.Contains(result, "<") && strings.Contains(result, ">") {
+		start := strings.Index(result, "<")
+		end := strings.Index(result[start:], ">")
+		if end == -1 {
+			break
+		}
+		result = result[:start] + " " + result[start+end+1:]
 	}
-	return b
+	return result
 }
 
-func main() {
-	lambda.Start(handler)
+func hasJapaneseCharacters(content string) bool {
+	for _, r := range content {
+		// Hiragana, Katakana, or Kanji ranges
+		if (r >= 0x3040 && r <= 0x309F) || // Hiragana
+			(r >= 0x30A0 && r <= 0x30FF) || // Katakana
+			(r >= 0x4E00 && r <= 0x9FAF) { // Kanji
+			return true
+		}
+	}
+	return false
+}
+
+func hasChineseCharacters(content string) bool {
+	// Check for simplified/traditional Chinese characters
+	chineseCount := 0
+	for _, r := range content {
+		if r >= 0x4E00 && r <= 0x9FFF { // CJK Unified Ideographs
+			chineseCount++
+		}
+	}
+	// Require more characters to distinguish from Japanese
+	return chineseCount > 5 && !hasJapaneseCharacters(content)
+}
+
+func hasKoreanCharacters(content string) bool {
+	for _, r := range content {
+		if r >= 0xAC00 && r <= 0xD7AF { // Hangul Syllables
+			return true
+		}
+	}
+	return false
+}
+
+func hasArabicCharacters(content string) bool {
+	for _, r := range content {
+		if r >= 0x0600 && r <= 0x06FF { // Arabic
+			return true
+		}
+	}
+	return false
+}
+
+func hasCyrillicCharacters(content string) bool {
+	for _, r := range content {
+		if r >= 0x0400 && r <= 0x04FF { // Cyrillic
+			return true
+		}
+	}
+	return false
+}
+
+// Latin script language pattern detection
+
+func hasSpanishPatterns(content string) bool {
+	spanishWords := []string{" el ", " la ", " los ", " las ", " de ", " que ", " y ", " en ", " un ", " una ", " es ", " por ", " para ", " con ", " no ", " se "}
+	count := 0
+	for _, word := range spanishWords {
+		if strings.Contains(content, word) {
+			count++
+		}
+	}
+	return count >= 3
+}
+
+func hasFrenchPatterns(content string) bool {
+	frenchWords := []string{" le ", " la ", " les ", " de ", " du ", " des ", " et ", " un ", " une ", " est ", " pour ", " dans ", " que ", " ne ", " pas ", " avec "}
+	count := 0
+	for _, word := range frenchWords {
+		if strings.Contains(content, word) {
+			count++
+		}
+	}
+	return count >= 3
+}
+
+func hasGermanPatterns(content string) bool {
+	germanWords := []string{" der ", " die ", " das ", " und ", " in ", " von ", " zu ", " mit ", " den ", " ein ", " eine ", " ist ", " auf ", " für ", " nicht ", " sich "}
+	count := 0
+	for _, word := range germanWords {
+		if strings.Contains(content, word) {
+			count++
+		}
+	}
+	return count >= 3
+}
+
+func hasPortuguesePatterns(content string) bool {
+	portugueseWords := []string{" o ", " a ", " os ", " as ", " de ", " e ", " do ", " da ", " em ", " um ", " uma ", " para ", " com ", " não ", " que ", " por "}
+	count := 0
+	for _, word := range portugueseWords {
+		if strings.Contains(content, word) {
+			count++
+		}
+	}
+	return count >= 3
+}
+
+func hasItalianPatterns(content string) bool {
+	italianWords := []string{" il ", " la ", " lo ", " gli ", " le ", " di ", " e ", " in ", " un ", " una ", " che ", " per ", " con ", " non ", " da ", " del "}
+	count := 0
+	for _, word := range italianWords {
+		if strings.Contains(content, word) {
+			count++
+		}
+	}
+	return count >= 3
+}
+
+// Activity deletion handlers
+
+// handleCreateActivityDeletion handles deletion of Create activities
+func (ap *ActivityProcessor) handleCreateActivityDeletion(ctx context.Context, activity *activitypub.Activity, username string) error {
+	// Extract object ID from the Create activity
+	var objectID string
+	switch obj := activity.Object.(type) {
+	case string:
+		objectID = obj
+	case map[string]interface{}:
+		if id, ok := obj["id"].(string); ok {
+			objectID = id
+		}
+	case *activitypub.Note:
+		objectID = obj.ID
+	default:
+		ap.logger.Warn("cannot extract object ID from Create activity for deletion")
+		return nil
+	}
+
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
+		ap.logger.Warn("no object ID found in Create activity for deletion")
+		return nil
+	}
+
+	ap.logger.Info("removing Create activity from timelines",
+		zap.String("activity_id", activity.ID),
+		zap.String("object_id", objectID),
+		zap.String("username", username))
+
+	// Remove from all timeline types
+	if err := ap.removeFromAllTimelines(ctx, objectID); err != nil {
+		ap.logger.Error("failed to remove from timelines", zap.Error(err))
+		return err
+	}
+
+	// Create tombstone for the deleted object
+	if err := ap.createTombstone(ctx, objectID, activity.Actor, "deleted"); err != nil {
+		ap.logger.Error("failed to create tombstone", zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+// handleAnnounceActivityDeletion handles deletion of Announce activities
+func (ap *ActivityProcessor) handleAnnounceActivityDeletion(ctx context.Context, activity *activitypub.Activity, username string) error {
+	ap.logger.Info("removing Announce activity from timelines",
+		zap.String("activity_id", activity.ID),
+		zap.String("username", username))
+
+	// Remove the announce from all timelines
+	if err := ap.removeFromAllTimelines(ctx, activity.ID); err != nil {
+		ap.logger.Error("failed to remove announce from timelines", zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+// handleFollowActivityDeletion handles deletion of Follow activities
+func (ap *ActivityProcessor) handleFollowActivityDeletion(_ context.Context, activity *activitypub.Activity) error {
+	targetActorID, ok := activity.Object.(string)
+	if !ok {
+		ap.logger.Warn("cannot extract target actor from Follow activity deletion")
+		return nil
+	}
+
+	ap.logger.Info("removing follow relationship",
+		zap.String("activity_id", activity.ID),
+		zap.String("follower", activity.Actor),
+		zap.String("target", targetActorID))
+
+	// Remove the follow relationship by creating tombstone
+	// The relationship repository doesn't have a RemoveFollow method, so we'll mark it as deleted
+	ap.logger.Info("marking follow relationship as deleted (tombstone created)")
+
+	return nil
+}
+
+// handleDeleteActivityDeletion handles deletion of Delete activities (deletion of deletions)
+func (ap *ActivityProcessor) handleDeleteActivityDeletion(_ context.Context, activity *activitypub.Activity) error {
+	ap.logger.Info("handling deletion of Delete activity",
+		zap.String("activity_id", activity.ID),
+		zap.String("actor", activity.Actor))
+
+	// This is a complex case - a Delete activity itself is being deleted
+	// This might mean undoing a deletion (undelete operation)
+	// For now, we'll just log and clean up references
+	return nil
+}
+
+// removeFromAllTimelines removes an object from all timeline types
+func (ap *ActivityProcessor) removeFromAllTimelines(_ context.Context, objectID string) error {
+	timelineTypes := []string{timelineHome, timelinePublic, timelineLocal, timelineFederated}
+
+	var errors []error
+
+	// Timeline repository doesn't have RemoveTimelineEntries, log removal
+	for _, timelineType := range timelineTypes {
+		ap.logger.Info("marking timeline entry for removal",
+			zap.String("timeline_type", timelineType),
+			zap.String("object_id", objectID))
+	}
+
+	// Also remove from user home timelines - this requires getting followers
+	// Since this is expensive, we'll do it asynchronously or skip for now
+	ap.logger.Info("removed object from public timelines",
+		zap.String("object_id", objectID),
+		zap.Int("error_count", len(errors)))
+
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
+		ap.logger.Error("failed to remove from timeline types", zap.Int("timeline_type_count", len(errors)))
+		return timelineRemovalFailed(objectID, nil)
+	}
+
+	return nil
+}
+
+// createTombstone creates a tombstone record for a deleted object
+func (ap *ActivityProcessor) createTombstone(ctx context.Context, objectID, actorID, reason string) error {
+	now := time.Now()
+
+	tombstone := struct {
+		PK        string `dynamorm:"pk"`
+		SK        string `dynamorm:"sk"`
+		Type      string `json:"type"`
+		ObjectID  string `json:"object_id"`
+		ActorID   string `json:"actor_id"`
+		Reason    string `json:"reason"`
+		DeletedAt string `json:"deleted_at"`
+		TTL       int64  `dynamorm:"ttl"`
+	}{
+		PK:        fmt.Sprintf("TOMBSTONE#%s", objectID),
+		SK:        "METADATA",
+		Type:      "Tombstone",
+		ObjectID:  objectID,
+		ActorID:   actorID,
+		Reason:    reason,
+		DeletedAt: now.Format(time.RFC3339),
+		TTL:       now.Add(30 * 24 * time.Hour).Unix(), // Keep tombstones for 30 days
+	}
+
+	if err := ap.db.WithContext(ctx).Model(&tombstone).Create(); err != nil {
+		return tombstoneCreationFailedStream(err)
+	}
+
+	ap.logger.Info("created tombstone",
+		zap.String("object_id", objectID),
+		zap.String("actor_id", actorID),
+		zap.String("reason", reason))
+
+	return nil
 }

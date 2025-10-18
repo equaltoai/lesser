@@ -2,10 +2,12 @@ package cost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -34,25 +36,36 @@ func (m *DeliveryMiddleware) WrapDelivery(
 		// Extract domain from instance URL
 		domain, err := extractDomain(instanceURL)
 		if err != nil {
-			m.logger.Error("failed to extract domain",
-				zap.String("url", instanceURL),
+			m.logger.Error("failed to extract domain from federation URL",
+				zap.String("instance_url", instanceURL),
+				zap.Int64("activity_size", activitySize),
+				zap.String("operation", "delivery"),
 				zap.Error(err))
-			return fmt.Errorf("extract domain: %w", err)
+			return errors.Join(ErrDomainExtractionFailed, err)
 		}
 
 		// Check if we should federate
 		shouldFederate, err := m.controller.ShouldFederate(ctx, domain)
 		if err != nil {
-			m.logger.Error("failed to check federation status",
+			m.logger.Error("failed to check federation status for cost-aware delivery",
 				zap.String("domain", domain),
+				zap.String("instance_url", instanceURL),
+				zap.Int64("activity_size", activitySize),
+				zap.String("operation", "delivery"),
+				zap.String("cost_check", "federation_allowed"),
 				zap.Error(err))
-			return fmt.Errorf("check federation: %w", err)
+			return errors.Join(ErrFederationCheckFailed, err)
 		}
 
 		if !shouldFederate {
-			m.logger.Info("federation blocked or limited",
-				zap.String("domain", domain))
-			return fmt.Errorf("federation not allowed for %s", domain)
+			m.logger.Error("federation blocked or limited for cost optimization",
+				zap.String("domain", domain),
+				zap.String("instance_url", instanceURL),
+				zap.Int64("activity_size", activitySize),
+				zap.String("operation", "delivery"),
+				zap.String("cost_decision", "blocked"),
+				zap.String("reason", "federation_not_allowed"))
+			return ErrFederationNotAllowed
 		}
 
 		// Track the activity
@@ -128,10 +141,14 @@ func (m *RetryMiddleware) RetryWithPolicy(
 					zap.String("domain", domain),
 					zap.Error(err))
 			} else if !healthy {
-				m.logger.Info("skipping retry for unhealthy instance",
+				m.logger.Error("skipping retry for unhealthy instance in cost-aware policy",
 					zap.String("domain", domain),
-					zap.Int("attempt", attempt))
-				return fmt.Errorf("instance unhealthy: %s", domain)
+					zap.Int("attempt", attempt),
+					zap.String("operation", "retry"),
+					zap.String("cost_decision", "skip_unhealthy"),
+					zap.Duration("backoff_duration", backoff),
+					zap.String("health_status", "unhealthy"))
+				return ErrInstanceUnhealthy
 			}
 
 			// Apply backoff
@@ -159,7 +176,17 @@ func (m *RetryMiddleware) RetryWithPolicy(
 			zap.Error(lastErr))
 	}
 
-	return fmt.Errorf("operation failed after %d attempts: %w", policy.MaxRetries+1, lastErr)
+	m.logger.Error("federation operation failed after all retry attempts",
+		zap.String("domain", domain),
+		zap.Int("total_attempts", policy.MaxRetries+1),
+		zap.Duration("final_backoff", backoff),
+		zap.Duration("initial_backoff", policy.InitialBackoff),
+		zap.Float64("backoff_factor", policy.BackoffFactor),
+		zap.Duration("max_backoff", policy.MaxBackoff),
+		zap.String("operation", "retry_with_policy"),
+		zap.String("cost_impact", "retry_exhausted"),
+		zap.Error(lastErr))
+	return errors.Join(ErrOperationFailedAfterRetries, lastErr)
 }
 
 // HTTPTransportWrapper wraps HTTP transport with cost-aware headers
@@ -208,7 +235,10 @@ func (t *HTTPTransportWrapper) RoundTrip(req *http.Request) (*http.Response, err
 
 	if err != nil {
 		// Record failure
-		t.controller.RecordFailure(ctx, domain, err)
+		if recordErr := t.controller.RecordFailure(ctx, domain, err); recordErr != nil {
+			// Log but don't fail the original request
+			zap.L().Warn("failed to record federation failure", zap.Error(recordErr))
+		}
 		return nil, err
 	}
 
@@ -245,8 +275,8 @@ func (t *HTTPTransportWrapper) RoundTrip(req *http.Request) (*http.Response, err
 
 func extractDomain(instanceURL string) (string, error) {
 	// Simple domain extraction - can be enhanced
-	if instanceURL == "" {
-		return "", fmt.Errorf("empty instance URL")
+	if err := common.ValidateRequiredParam("instanceURL", instanceURL); err != nil {
+		return "", ErrEmptyInstanceURL
 	}
 
 	// Remove protocol if present

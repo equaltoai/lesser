@@ -100,7 +100,7 @@ Unsure where to begin? Look for these labels:
 
 1. **Fork and clone the repository**
    ```bash
-   git clone https://github.com/yourusername/lesser.git
+   git clone https://github.com/equaltoai/lesser.git
    cd lesser
    ```
 

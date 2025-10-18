@@ -8,20 +8,29 @@ import (
 type ContentType string
 
 const (
-	ContentTypeText  ContentType = "text"
+	// ContentTypeText represents text-based content
+	ContentTypeText ContentType = "text"
+	// ContentTypeImage represents image content
 	ContentTypeImage ContentType = "image"
+	// ContentTypeVideo represents video content
 	ContentTypeVideo ContentType = "video"
+	// ContentTypeAudio represents audio content
 	ContentTypeAudio ContentType = "audio"
-	ContentTypeLink  ContentType = "link"
+	// ContentTypeLink represents link content
+	ContentTypeLink ContentType = "link"
 )
 
 // Severity represents the severity level of a moderation issue
 type Severity string
 
 const (
-	SeverityLow      Severity = "low"
-	SeverityMedium   Severity = "medium"
-	SeverityHigh     Severity = "high"
+	// SeverityLow represents low severity issues
+	SeverityLow Severity = "low"
+	// SeverityMedium represents medium severity issues
+	SeverityMedium Severity = "medium"
+	// SeverityHigh represents high severity issues
+	SeverityHigh Severity = "high"
+	// SeverityCritical represents critical severity issues
 	SeverityCritical Severity = "critical"
 )
 
@@ -29,11 +38,17 @@ const (
 type ModerationAction string
 
 const (
-	ActionAllow        ModerationAction = "allow"
-	ActionFlag         ModerationAction = "flag"
-	ActionQuarantine   ModerationAction = "quarantine"
-	ActionRemove       ModerationAction = "remove"
-	ActionShadowBan    ModerationAction = "shadow_ban"
+	// ActionAllow represents allowing content to pass through
+	ActionAllow ModerationAction = "allow"
+	// ActionFlag represents flagging content for review
+	ActionFlag ModerationAction = "flag"
+	// ActionQuarantine represents quarantining content temporarily
+	ActionQuarantine ModerationAction = "quarantine"
+	// ActionRemove represents removing content entirely
+	ActionRemove ModerationAction = "remove"
+	// ActionShadowBan represents shadow banning the content author
+	ActionShadowBan ModerationAction = "shadow_ban"
+	// ActionReportToAuth represents reporting content to authorities
 	ActionReportToAuth ModerationAction = "report_to_authorities"
 )
 
@@ -200,16 +215,18 @@ type ModerationPattern struct {
 	ID          string
 	Name        string
 	Description string
-	Pattern     string // Regex or keyword pattern
-	PatternType string // "regex", "keyword", "phrase"
-	Severity    Severity
+	Pattern     string  // Regex or keyword pattern
+	Type        string  // "regex", "keyword", "phrase"
+	Category    string  // Primary category
+	Severity    float64 // 0.0 to 1.0
 	Action      ModerationAction
-	Categories  []string
+	Flags       []string // Additional flags or categories
 	CreatedBy   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	Active      bool
 	HitCount    int64
+	LastHit     time.Time
 }
 
 // ReputationScore represents an actor's reputation
@@ -301,7 +318,7 @@ type DecisionReason struct {
 	Type        string // "toxicity", "explicit", "pattern", "reputation", etc.
 	Severity    Severity
 	Description string
-	Evidence    interface{} // Can be various types of evidence
+	Evidence    any // Can be various types of evidence
 }
 
 // ModerationStats contains moderation statistics
@@ -325,13 +342,36 @@ type TimeRange struct {
 
 // PatternFilter for filtering patterns
 type PatternFilter struct {
-	Categories []string
-	Severity   Severity
-	Active     *bool
-	CreatedBy  string
+	Category    string  // Single category filter
+	Type        string  // Pattern type filter
+	Active      *bool   // Active status filter
+	MinSeverity float64 // Minimum severity filter
+	Limit       int     // Result limit
+	CreatedBy   string  // Filter by creator
 }
 
-// Configuration for the moderation engine
+// RealtimeStats represents current real-time statistics
+type RealtimeStats struct {
+	Uptime          time.Duration
+	TotalAnalyzed   int64
+	AnalysisRate    float64 // per second
+	AllowRate       float64
+	FlagRate        float64
+	RemoveRate      float64
+	QuarantineRate  float64
+	AvgResponseTime time.Duration
+	P95ResponseTime time.Duration
+}
+
+// PatternStats represents pattern matching statistics
+type PatternStats struct {
+	PatternID   string
+	PatternName string
+	HitCount    int64
+	LastHit     time.Time
+}
+
+// ModerationConfig contains configuration for the moderation engine
 type ModerationConfig struct {
 	// Thresholds
 	ToxicityThreshold   float64
@@ -372,25 +412,28 @@ type ModerationConfig struct {
 	EnableCostTracking bool
 }
 
-// Errors
+// ModerationError represents an error in moderation operations
 type ModerationError struct {
 	Code    string
 	Message string
-	Details map[string]interface{}
+	Details map[string]any
 }
 
+// Error returns the error message for ModerationError
 func (e *ModerationError) Error() string {
 	return e.Message
 }
 
 // Helper types for complex analysis
 
+// TextInImage represents text detected in an image
 type TextInImage struct {
 	Text        string
 	Confidence  float64
 	BoundingBox BoundingBox
 }
 
+// ObjectDetection represents an object detected in an image
 type ObjectDetection struct {
 	Name        string
 	Confidence  float64
@@ -398,6 +441,7 @@ type ObjectDetection struct {
 	Parents     []string
 }
 
+// FaceAnalysis represents analysis of a detected face
 type FaceAnalysis struct {
 	BoundingBox BoundingBox
 	Emotions    []Emotion
@@ -406,6 +450,7 @@ type FaceAnalysis struct {
 	Confidence  float64
 }
 
+// CelebrityMatch represents a detected celebrity in content
 type CelebrityMatch struct {
 	Name        string
 	Confidence  float64
@@ -413,6 +458,7 @@ type CelebrityMatch struct {
 	URLs        []string
 }
 
+// BoundingBox represents the location of a detected element
 type BoundingBox struct {
 	Left   float64
 	Top    float64
@@ -420,38 +466,45 @@ type BoundingBox struct {
 	Height float64
 }
 
+// Emotion represents a detected emotion in a face
 type Emotion struct {
 	Type       string // "HAPPY", "SAD", "ANGRY", etc.
 	Confidence float64
 }
 
+// AgeRange represents an estimated age range
 type AgeRange struct {
 	Low  int
 	High int
 }
 
+// Gender represents detected gender information
 type Gender struct {
 	Value      string // "Male", "Female"
 	Confidence float64
 }
 
+// FrameAnalysis represents analysis of a single video frame
 type FrameAnalysis struct {
 	Timestamp     time.Duration
 	ImageAnalysis ImageAnalysis
 }
 
+// AudioAnalysis represents analysis of audio content
 type AudioAnalysis struct {
 	Transcription string
 	Language      string
 	TextAnalysis  *ContentAnalysis
 }
 
+// CustomFlag represents a custom moderation flag
 type CustomFlag struct {
 	Name       string
-	Value      interface{}
+	Value      any
 	Confidence float64
 }
 
+// CustomLabel represents a custom detected label
 type CustomLabel struct {
 	Name       string
 	Confidence float64

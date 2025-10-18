@@ -1,0 +1,473 @@
+# Cost Optimization Patterns for Lesser
+# Version: 1.0.0
+# Purpose: Train AI on cost reduction and optimization strategies
+
+context:
+  description: "Cost optimization patterns for serverless ActivityPub"
+  cost_drivers:
+    - lambda_invocations: "$0.20 per million requests"
+    - lambda_duration: "$0.0000166667 per GB-second"
+    - dynamodb_requests: "$0.25 per million reads, $1.25 per million writes"
+    - s3_storage: "$0.023 per GB/month"
+    - data_transfer: "$0.09 per GB out"
+    - cloudfront: "$0.085 per GB transfer"
+  optimization_goals:
+    - reduce_invocations: "Minimize unnecessary function calls"
+    - optimize_duration: "Reduce execution time"
+    - batch_operations: "Combine multiple operations"
+    - cache_effectively: "Reduce repeated computations"
+    - compress_data: "Minimize storage and transfer"
+
+lambda_optimization:
+  
+  memory_optimization:
+    pattern_name: "Right-Size Lambda Memory"
+    
+    analysis_method: |
+      # Check memory utilization
+      aws logs insights query:
+      fields @timestamp, @memorySize, @maxMemoryUsed
+      | filter @type = "REPORT"
+      | stats avg(@maxMemoryUsed/@memorySize) as avg_utilization by bin(5m)
+      
+    optimization_rules:
+      under_utilized: 
+        condition: "avg_utilization < 50%"
+        action: "Reduce memory by 25%"
+        benefit: "Lower cost per invocation"
+        
+      over_utilized:
+        condition: "avg_utilization > 90%"
+        action: "Increase memory"
+        benefit: "Faster execution, potentially lower total cost"
+        
+      sweet_spot:
+        condition: "avg_utilization 60-80%"
+        action: "Keep current setting"
+        
+    memory_settings:
+      api_functions:
+        current: 512
+        optimized: 384
+        savings: "25% reduction in memory cost"
+        
+      processing_functions:
+        current: 1024
+        optimized: 768
+        savings: "25% reduction, faster due to better CPU"
+        
+      ai_functions:
+        current: 3008
+        optimized: 2048
+        savings: "32% reduction, still sufficient"
+
+  cold_start_reduction:
+    pattern_name: "Minimize Cold Starts"
+    
+    techniques:
+      provisioned_concurrency:
+        when_to_use: "High-traffic, latency-sensitive endpoints"
+        configuration: |
+          ApiFunction:
+            ProvisionedConcurrentExecutions: 5
+            AutoScalingConfiguration:
+              MinCapacity: 2
+              MaxCapacity: 10
+              TargetUtilization: 0.7
+        cost_impact: "$0.000004167 per GB-second"
+        
+      keep_warm:
+        pattern: "CloudWatch Events trigger"
+        implementation: |
+          KeepWarmRule:
+            ScheduleExpression: "rate(5 minutes)"
+            Target: ApiFunction
+            Input: '{"keepWarm": true}'
+        cost: "$8.64/month per function"
+        
+      connection_pooling:
+        pattern: "Reuse connections across invocations"
+        implementation: |
+          var dbConnection *sql.DB
+          
+          func init() {
+              // Initialize connection pool once
+              dbConnection = createConnectionPool()
+          }
+          
+          func handler(ctx context.Context) error {
+              // Reuse existing connection
+              return dbConnection.Query(ctx, query)
+          }
+
+  arm64_migration:
+    pattern_name: "Use ARM64 Architecture"
+    
+    benefits:
+      cost_reduction: "20% lower price"
+      performance: "Better price-performance ratio"
+      
+    migration: |
+      # Update build commands
+      GOOS=linux GOARCH=arm64 go build
+      
+      # Update CDK configuration
+      Architecture: lambda.Architecture_ARM_64()
+      
+    estimated_savings:
+      monthly_invocations: 10000000
+      x86_cost: "$200"
+      arm64_cost: "$160"
+      savings: "$40/month (20%)"
+
+dynamodb_optimization:
+  
+  single_table_design:
+    pattern_name: "Optimize with Single Table"
+    
+    benefits:
+      - "Reduce number of tables (cost per table)"
+      - "Efficient queries with GSIs"
+      - "Batch operations across entities"
+      
+    access_patterns:
+      optimized_queries: |
+        # Instead of multiple queries
+        userTable.get(userId)
+        postsTable.query(userId)
+        followersTable.query(userId)
+        
+        # Single query with composite key
+        table.query(
+          PK: "USER#userId",
+          SK: ["PROFILE", "POST#", "FOLLOWER#"]
+        )
+        
+    cost_comparison:
+      multiple_tables:
+        read_cost: "$0.25 * 3 = $0.75 per million"
+        write_cost: "$1.25 * 3 = $3.75 per million"
+        
+      single_table:
+        read_cost: "$0.25 per million"
+        write_cost: "$1.25 per million"
+        savings: "67% reduction"
+
+  batch_operations:
+    pattern_name: "Use Batch Operations"
+    
+    batch_write:
+      implementation: |
+        func batchWriteItems(items []Item) error {
+            // Group into batches of 25
+            for i := 0; i < len(items); i += 25 {
+                batch := items[i:min(i+25, len(items))]
+                
+                writeRequests := make([]types.WriteRequest, len(batch))
+                for j, item := range batch {
+                    writeRequests[j] = types.WriteRequest{
+                        PutRequest: &types.PutRequest{
+                            Item: item.ToAttributeMap(),
+                        },
+                    }
+                }
+                
+                _, err := dynamoClient.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+                    RequestItems: map[string][]types.WriteRequest{
+                        tableName: writeRequests,
+                    },
+                })
+            }
+        }
+        
+      cost_reduction:
+        individual_writes: "1000 writes = 1000 WCU"
+        batch_writes: "1000 writes = 40 batch requests"
+        savings: "96% reduction in request count"
+
+  on_demand_vs_provisioned:
+    pattern_name: "Billing Mode Optimization"
+    
+    decision_matrix:
+      use_on_demand:
+        - "Unpredictable traffic"
+        - "New applications"
+        - "Cost < $100/month"
+        
+      use_provisioned:
+        - "Predictable traffic"
+        - "Cost > $100/month"
+        - "Need reserved capacity discount"
+        
+    auto_scaling_config: |
+      TableAutoScaling:
+        ReadCapacity:
+          MinCapacity: 5
+          MaxCapacity: 100
+          TargetUtilization: 70
+        WriteCapacity:
+          MinCapacity: 5
+          MaxCapacity: 100
+          TargetUtilization: 70
+
+s3_optimization:
+  
+  storage_classes:
+    pattern_name: "Lifecycle Policies"
+    
+    media_lifecycle: |
+      LifecycleRules:
+        - Id: "ArchiveOldMedia"
+          Status: Enabled
+          Transitions:
+            - Days: 30
+              StorageClass: STANDARD_IA    # $0.0125/GB
+            - Days: 90
+              StorageClass: GLACIER_IR     # $0.004/GB
+            - Days: 365
+              StorageClass: DEEP_ARCHIVE   # $0.001/GB
+          Expiration:
+            Days: 730  # Delete after 2 years
+            
+    cost_impact:
+      standard: "$0.023/GB/month"
+      after_30_days: "$0.0125/GB/month (46% savings)"
+      after_90_days: "$0.004/GB/month (83% savings)"
+      after_365_days: "$0.001/GB/month (96% savings)"
+
+  compression:
+    pattern_name: "Compress Before Storage"
+    
+    implementation: |
+      func uploadMedia(data []byte, contentType string) error {
+          // Compress if beneficial
+          if shouldCompress(contentType) {
+              compressed := gzipCompress(data)
+              if len(compressed) < len(data)*0.9 {
+                  data = compressed
+                  contentType = "application/gzip"
+              }
+          }
+          
+          return s3Client.PutObject(ctx, &s3.PutObjectInput{
+              Bucket:      bucket,
+              Key:         key,
+              Body:        bytes.NewReader(data),
+              ContentType: &contentType,
+          })
+      }
+      
+    compression_ratios:
+      json: "70-90% reduction"
+      text: "60-80% reduction"
+      images: "Already compressed, skip"
+      videos: "Transcode to efficient format"
+
+cloudfront_optimization:
+  
+  caching_strategy:
+    pattern_name: "Maximize Cache Hit Ratio"
+    
+    cache_behaviors:
+      static_assets:
+        path_pattern: "/static/*"
+        ttl: 31536000  # 1 year
+        compress: true
+        
+      media_files:
+        path_pattern: "/media/*"
+        ttl: 86400  # 1 day
+        compress: false
+        
+      api_responses:
+        path_pattern: "/api/v1/instance"
+        ttl: 3600  # 1 hour
+        forward_headers: ["Accept", "Authorization"]
+        
+    cost_impact:
+      origin_requests: "$0.0075 per 10,000"
+      cache_hits: "$0 (free)"
+      target_hit_ratio: ">90%"
+
+  origin_shield:
+    pattern_name: "Use Origin Shield"
+    
+    benefits:
+      - "Additional caching layer"
+      - "Reduce origin load"
+      - "Lower data transfer costs"
+      
+    configuration: |
+      OriginShield:
+        Enabled: true
+        OriginShieldRegion: "us-east-1"
+        
+    cost: "$0.001 per 10,000 requests"
+    savings: "50-80% reduction in origin requests"
+
+data_transfer_optimization:
+  
+  regional_deployment:
+    pattern_name: "Minimize Cross-Region Transfer"
+    
+    strategy:
+      - "Deploy in user's primary region"
+      - "Use CloudFront for global distribution"
+      - "Replicate only critical data"
+      
+    cost_comparison:
+      cross_region: "$0.02/GB"
+      same_region: "$0.00/GB"
+      cloudfront: "$0.085/GB (but cached)"
+
+  request_batching:
+    pattern_name: "Batch API Requests"
+    
+    graphql_batching: |
+      # Instead of multiple requests
+      query GetUser { user(id: "1") { name } }
+      query GetPosts { posts(userId: "1") { title } }
+      
+      # Single batched request
+      query GetUserData {
+        user(id: "1") {
+          name
+          posts {
+            title
+          }
+        }
+      }
+      
+    websocket_aggregation: |
+      // Buffer and batch updates
+      const updates = [];
+      const batchInterval = setInterval(() => {
+        if (updates.length > 0) {
+          ws.send(JSON.stringify({
+            type: 'batch',
+            updates: updates.splice(0)
+          }));
+        }
+      }, 100);  // Send every 100ms
+
+cost_tracking:
+  
+  operation_level_tracking:
+    pattern_name: "Track Costs Per Operation"
+    
+    implementation: |
+      type CostTracker struct {
+          metrics *cloudwatch.Client
+      }
+      
+      func (ct *CostTracker) TrackOperation(ctx context.Context, operation string, cost float64) {
+          ct.metrics.PutMetricData(ctx, &cloudwatch.PutMetricDataInput{
+              Namespace: aws.String("Lesser/Costs"),
+              MetricData: []types.MetricDatum{
+                  {
+                      MetricName: aws.String("OperationCost"),
+                      Value:      aws.Float64(cost),
+                      Unit:       types.StandardUnitNone,
+                      Dimensions: []types.Dimension{
+                          {Name: aws.String("Operation"), Value: aws.String(operation)},
+                          {Name: aws.String("Environment"), Value: aws.String(env)},
+                      },
+                  },
+              },
+          })
+      }
+      
+    cost_calculation: |
+      func calculateOperationCost(operation string) float64 {
+          costs := map[string]float64{
+              "lambda_invocation": 0.0000002,      // $0.20 per million
+              "dynamodb_read":     0.00000025,     // $0.25 per million
+              "dynamodb_write":    0.00000125,     // $1.25 per million
+              "s3_put":           0.000005,        // $5 per million
+              "s3_get":           0.0000004,       // $0.40 per million
+          }
+          
+          // Calculate based on operation type
+          switch operation {
+          case "create_status":
+              return costs["lambda_invocation"] + costs["dynamodb_write"]*3
+          case "get_timeline":
+              return costs["lambda_invocation"] + costs["dynamodb_read"]*20
+          case "upload_media":
+              return costs["lambda_invocation"] + costs["s3_put"]
+          default:
+              return costs["lambda_invocation"]
+          }
+      }
+
+  budget_enforcement:
+    pattern_name: "Automatic Cost Controls"
+    
+    implementation: |
+      func checkBudget(ctx context.Context, operation string) error {
+          dailySpend := getDailySpend(ctx)
+          dailyBudget := getDailyBudget()
+          
+          if dailySpend > dailyBudget {
+              // Disable expensive features
+              if isExpensiveOperation(operation) {
+                  return errors.New("budget exceeded, operation disabled")
+              }
+          }
+          
+          if dailySpend > dailyBudget * 0.8 {
+              // Warning mode - log but allow
+              logger.Warn("Approaching daily budget", 
+                  zap.Float64("spend", dailySpend),
+                  zap.Float64("budget", dailyBudget))
+          }
+          
+          return nil
+      }
+      
+    thresholds:
+      warning: "80% of budget"
+      throttle: "90% of budget"
+      disable: "100% of budget"
+
+optimization_checklist:
+  
+  immediate_optimizations:
+    - switch_to_arm64: "20% cost reduction"
+    - enable_compression: "Reduce storage 50-80%"
+    - implement_caching: "Reduce repeated operations"
+    - batch_operations: "Reduce request count 90%"
+    
+  medium_term:
+    - single_table_design: "Reduce DynamoDB costs 67%"
+    - lifecycle_policies: "Reduce storage costs 96%"
+    - provisioned_capacity: "Save with reservations"
+    - optimize_memory: "Right-size Lambda functions"
+    
+  long_term:
+    - reserved_capacity: "1-3 year commitments"
+    - savings_plans: "Compute savings plans"
+    - spot_instances: "For batch processing"
+    - architecture_review: "Identify inefficiencies"
+
+cost_monitoring:
+  
+  dashboards:
+    daily_spend: |
+      SELECT 
+        DATE(line_item_usage_start_date) as date,
+        SUM(line_item_unblended_cost) as daily_cost
+      FROM cost_and_usage_report
+      WHERE line_item_product_code = 'AWSLambda'
+      GROUP BY DATE(line_item_usage_start_date)
+      ORDER BY date DESC
+      
+    top_functions: |
+      SELECT 
+        line_item_resource_id as function,
+        SUM(line_item_unblended_cost) as total_cost
+      FROM cost_and_usage_report
+      WHERE line_item_product_code = 'AWSLambda'
+      GROUP BY line_item_resource_id
+      ORDER BY total_cost DESC
+      LIMIT 10

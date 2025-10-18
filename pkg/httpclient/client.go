@@ -1,3 +1,4 @@
+// Package httpclient provides HTTP client utilities with DNS caching and security features for federation requests.
 package httpclient
 
 import (
@@ -12,7 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
@@ -69,7 +72,7 @@ type SecureClient struct {
 	client       *http.Client
 	logger       *zap.Logger
 	maxRedirects int
-	store        storage.Storage
+	store        core.RepositoryStorage
 	dnsCache     *dnsCacheManager
 }
 
@@ -91,14 +94,14 @@ func WithLogger(logger *zap.Logger) Option {
 }
 
 // WithMaxRedirects sets the maximum number of redirects to follow
-func WithMaxRedirects(max int) Option {
+func WithMaxRedirects(maxVal int) Option {
 	return func(c *SecureClient) {
-		c.maxRedirects = max
+		c.maxRedirects = maxVal
 	}
 }
 
 // WithStorage sets the storage backend for DNS caching
-func WithStorage(store storage.Storage) Option {
+func WithStorage(store core.RepositoryStorage) Option {
 	return func(c *SecureClient) {
 		c.store = store
 		if c.dnsCache != nil {
@@ -144,7 +147,7 @@ func NewSecureClient(opts ...Option) *SecureClient {
 
 // dnsCacheManager handles DNS caching with DynamoDB backend
 type dnsCacheManager struct {
-	store  storage.Storage
+	store  core.RepositoryStorage
 	logger *zap.Logger
 	mu     sync.RWMutex
 	local  map[string]*storage.DNSCacheEntry // local cache for current Lambda invocation
@@ -168,7 +171,7 @@ func (d *dnsCacheManager) getCachedIPs(ctx context.Context, hostname string) ([]
 
 	// Check DynamoDB if we have a store
 	if d.store != nil {
-		entry, err := d.store.GetDNSCache(ctx, hostname)
+		entry, err := d.store.DNSCache().GetDNSCache(ctx, hostname)
 		if err == nil && entry != nil {
 			// Check if cache is still valid
 			if time.Since(entry.ResolvedAt) < dnsCacheTTL {
@@ -195,7 +198,7 @@ func (d *dnsCacheManager) setCachedIPs(ctx context.Context, hostname string, ips
 		Hostname:   hostname,
 		IPs:        make([]string, len(ips)),
 		ResolvedAt: time.Now(),
-		TTL:        int(dnsCacheTTL.Seconds()),
+		TTL:        int64(dnsCacheTTL.Seconds()),
 	}
 
 	for i, ip := range ips {
@@ -209,7 +212,7 @@ func (d *dnsCacheManager) setCachedIPs(ctx context.Context, hostname string, ips
 
 	// Store in DynamoDB if available
 	if d.store != nil {
-		if err := d.store.SetDNSCache(ctx, entry); err != nil {
+		if err := d.store.DNSCache().SetDNSCache(ctx, entry); err != nil {
 			d.logger.Warn("failed to cache DNS lookup",
 				zap.String("hostname", hostname),
 				zap.Error(err))
@@ -269,7 +272,7 @@ func (t *secureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				zap.String("resolved_ip", ip.String()),
 				zap.String("url", req.URL.String()),
 				zap.Bool("from_cache", fromCache))
-			return nil, fmt.Errorf("%w: %s resolves to private IP %s", ErrDNSRebindingDetected, hostname, ip)
+			return nil, fmt.Errorf("request blocked: %w", ErrPrivateIPAddress)
 		}
 	}
 
@@ -311,10 +314,10 @@ func (c *SecureClient) checkRedirect(req *http.Request, via []*http.Request) err
 }
 
 // validateURL checks if a URL is safe to request
-func validateURL(u *url.URL, logger *zap.Logger) error {
+func validateURL(u *url.URL, _ *zap.Logger) error {
 	// Check scheme
 	scheme := strings.ToLower(u.Scheme)
-	if scheme != "http" && scheme != "https" {
+	if err := common.ValidateHTTPScheme(scheme); err != nil {
 		if blockedSchemes[scheme] {
 			return fmt.Errorf("%w: %s", ErrInvalidScheme, scheme)
 		}
@@ -323,7 +326,7 @@ func validateURL(u *url.URL, logger *zap.Logger) error {
 
 	// Get hostname
 	hostname := u.Hostname()
-	if hostname == "" {
+	if err := common.ValidateRequiredParam("hostname", hostname); err != nil {
 		return errors.New("empty hostname")
 	}
 

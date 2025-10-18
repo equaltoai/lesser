@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -9,17 +10,19 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	fedTypes "github.com/equaltoai/lesser/pkg/federation/types"
 	"go.uber.org/zap"
 )
 
 // RoutingMetrics tracks and aggregates routing performance metrics
+//
+//nolint:revive // Routing prefix clarifies this is routing-specific metrics
 type RoutingMetrics struct {
 	db        *dynamodb.Client
 	tableName string
 	logger    *zap.Logger
 
-	// Local aggregation
-	buffer     chan *metricEvent
+	// Local aggregation (synchronous)
 	aggregator *metricsAggregator
 }
 
@@ -27,7 +30,7 @@ type metricEvent struct {
 	eventType   MetricEventType
 	routeID     string
 	destination string
-	messageType MessageType
+	messageType fedTypes.MessageType
 	timestamp   time.Time
 
 	// Event-specific data
@@ -38,8 +41,10 @@ type metricEvent struct {
 	errorType string
 }
 
+// MetricEventType represents the type of metric event
 type MetricEventType string
 
+// Metric event types
 const (
 	EventRouteSelected  MetricEventType = "route_selected"
 	EventDeliveryResult MetricEventType = "delivery_result"
@@ -88,7 +93,7 @@ type aggregatedInstanceMetrics struct {
 	Availability  float64
 
 	// Message type distribution
-	MessageTypes map[MessageType]int64
+	MessageTypes map[fedTypes.MessageType]int64
 }
 
 type aggregatedGlobalMetrics struct {
@@ -112,7 +117,6 @@ func NewRoutingMetrics(db *dynamodb.Client, tableName string, logger *zap.Logger
 		db:        db,
 		tableName: tableName,
 		logger:    logger,
-		buffer:    make(chan *metricEvent, 10000),
 		aggregator: &metricsAggregator{
 			windowStart:     time.Now(),
 			windowSize:      5 * time.Minute,
@@ -122,27 +126,24 @@ func NewRoutingMetrics(db *dynamodb.Client, tableName string, logger *zap.Logger
 		},
 	}
 
-	// Start background processors
-	go rm.processEvents()
-	go rm.periodicFlush()
-
 	return rm
 }
 
 // RecordRouteSelection records a route selection event
-func (rm *RoutingMetrics) RecordRouteSelection(routeID, destination string, messageType MessageType) {
-	rm.buffer <- &metricEvent{
+func (rm *RoutingMetrics) RecordRouteSelection(routeID, destination string, messageType fedTypes.MessageType) {
+	event := &metricEvent{
 		eventType:   EventRouteSelected,
 		routeID:     routeID,
 		destination: destination,
 		messageType: messageType,
 		timestamp:   time.Now(),
 	}
+	rm.processEventSync(event)
 }
 
 // RecordDelivery records a delivery result
-func (rm *RoutingMetrics) RecordDelivery(result *DeliveryResult) {
-	rm.buffer <- &metricEvent{
+func (rm *RoutingMetrics) RecordDelivery(result *fedTypes.DeliveryResult) {
+	event := &metricEvent{
 		eventType: EventDeliveryResult,
 		routeID:   result.RouteID,
 		timestamp: result.Timestamp,
@@ -152,31 +153,34 @@ func (rm *RoutingMetrics) RecordDelivery(result *DeliveryResult) {
 		cost:      result.Cost,
 		errorType: result.ErrorMessage,
 	}
+	rm.processEventSync(event)
 }
 
 // RecordCircuitChange records a circuit breaker state change
-func (rm *RoutingMetrics) RecordCircuitChange(instanceID string, oldState, newState CircuitStatus) {
-	rm.buffer <- &metricEvent{
+func (rm *RoutingMetrics) RecordCircuitChange(instanceID string, oldState, newState fedTypes.CircuitStatus) {
+	event := &metricEvent{
 		eventType: EventCircuitChange,
 		routeID:   instanceID,
 		timestamp: time.Now(),
 		errorType: fmt.Sprintf("%s->%s", oldState, newState),
 	}
+	rm.processEventSync(event)
 }
 
 // RecordHealthCheck records a health check result
-func (rm *RoutingMetrics) RecordHealthCheck(instanceID string, health *HealthStatus) {
-	rm.buffer <- &metricEvent{
+func (rm *RoutingMetrics) RecordHealthCheck(instanceID string, health *fedTypes.HealthStatus) {
+	event := &metricEvent{
 		eventType: EventHealthCheck,
 		routeID:   instanceID,
 		timestamp: health.Timestamp,
 		success:   health.Reachable,
 		latency:   health.ResponseTime,
 	}
+	rm.processEventSync(event)
 }
 
 // GetRouteMetrics retrieves metrics for a specific route
-func (rm *RoutingMetrics) GetRouteMetrics(ctx context.Context, routeID string, window time.Duration) (*RouteMetrics, error) {
+func (rm *RoutingMetrics) GetRouteMetrics(ctx context.Context, routeID string, window time.Duration) (*fedTypes.RouteMetrics, error) {
 	// Query from DynamoDB
 	since := time.Now().Add(-window)
 
@@ -192,11 +196,16 @@ func (rm *RoutingMetrics) GetRouteMetrics(ctx context.Context, routeID string, w
 
 	result, err := rm.db.Query(ctx, queryInput)
 	if err != nil {
-		return nil, fmt.Errorf("query route metrics: %w", err)
+		rm.logger.Error("query route metrics failed",
+			zap.String("route_id", routeID),
+			zap.Duration("window", window),
+			zap.String("operation", "query_route_metrics"),
+			zap.Error(err))
+		return nil, errors.Join(ErrQueryRouteMetricsFailed, err)
 	}
 
 	// Aggregate results
-	metrics := &RouteMetrics{
+	metrics := &fedTypes.RouteMetrics{
 		LastUpdated: time.Now(),
 	}
 
@@ -239,14 +248,19 @@ func (rm *RoutingMetrics) GetInstanceMetrics(ctx context.Context, instanceID str
 
 	result, err := rm.db.Query(ctx, queryInput)
 	if err != nil {
-		return nil, fmt.Errorf("query instance metrics: %w", err)
+		rm.logger.Error("query instance metrics failed",
+			zap.String("instance_id", instanceID),
+			zap.Duration("window", window),
+			zap.String("operation", "query_instance_metrics"),
+			zap.Error(err))
+		return nil, errors.Join(ErrQueryInstanceMetricsFailed, err)
 	}
 
 	metrics := &InstanceMetrics{
 		InstanceID:   instanceID,
 		Window:       window,
 		LastUpdated:  time.Now(),
-		MessageTypes: make(map[MessageType]int64),
+		MessageTypes: make(map[fedTypes.MessageType]int64),
 	}
 
 	for _, item := range result.Items {
@@ -274,7 +288,12 @@ func (rm *RoutingMetrics) GetGlobalMetrics(ctx context.Context, window time.Dura
 
 	result, err := rm.db.Query(ctx, queryInput)
 	if err != nil {
-		return nil, fmt.Errorf("query global metrics: %w", err)
+		rm.logger.Error("query global metrics failed",
+			zap.Duration("window", window),
+			zap.String("operation", "query_global_metrics"),
+			zap.Time("since", since),
+			zap.Error(err))
+		return nil, errors.Join(ErrQueryGlobalMetricsFailed, err)
 	}
 
 	metrics := &GlobalMetrics{
@@ -297,27 +316,54 @@ func (rm *RoutingMetrics) GetGlobalMetrics(ctx context.Context, window time.Dura
 	return metrics, nil
 }
 
-// Private methods
+// Flush manually flushes accumulated metrics to DynamoDB
+// This should be called at the end of Lambda invocations
+func (rm *RoutingMetrics) Flush(ctx context.Context) error {
+	rm.aggregator.mu.Lock()
+	defer rm.aggregator.mu.Unlock()
 
-func (rm *RoutingMetrics) processEvents() {
-	for event := range rm.buffer {
-		rm.aggregator.mu.Lock()
-
-		switch event.eventType {
-		case EventRouteSelected:
-			rm.processRouteSelection(event)
-
-		case EventDeliveryResult:
-			rm.processDeliveryResult(event)
-
-		case EventCircuitChange:
-			rm.processCircuitChange(event)
-
-		case EventHealthCheck:
-			rm.processHealthCheck(event)
+	// Check if window should rotate
+	if time.Since(rm.aggregator.windowStart) > rm.aggregator.windowSize {
+		// Persist current window to DynamoDB
+		if err := rm.persistWindow(ctx); err != nil {
+			rm.logger.Error("persist metrics window failed",
+				zap.Time("window_start", rm.aggregator.windowStart),
+				zap.Duration("window_size", rm.aggregator.windowSize),
+				zap.Int("route_metrics_count", len(rm.aggregator.routeMetrics)),
+				zap.Int("instance_metrics_count", len(rm.aggregator.instanceMetrics)),
+				zap.String("operation", "persist_metrics_window"),
+				zap.Error(err))
+			return errors.Join(ErrPersistMetricsWindowFailed, err)
 		}
 
-		rm.aggregator.mu.Unlock()
+		// Reset aggregator
+		rm.aggregator.windowStart = time.Now()
+		rm.aggregator.routeMetrics = make(map[string]*aggregatedRouteMetrics)
+		rm.aggregator.instanceMetrics = make(map[string]*aggregatedInstanceMetrics)
+		rm.aggregator.globalMetrics = &aggregatedGlobalMetrics{}
+	}
+
+	return nil
+}
+
+// Private methods
+
+func (rm *RoutingMetrics) processEventSync(event *metricEvent) {
+	rm.aggregator.mu.Lock()
+	defer rm.aggregator.mu.Unlock()
+
+	switch event.eventType {
+	case EventRouteSelected:
+		rm.processRouteSelection(event)
+
+	case EventDeliveryResult:
+		rm.processDeliveryResult(event)
+
+	case EventCircuitChange:
+		rm.processCircuitChange(event)
+
+	case EventHealthCheck:
+		rm.processHealthCheck(event)
 	}
 }
 
@@ -386,7 +432,7 @@ func (rm *RoutingMetrics) processHealthCheck(event *metricEvent) {
 	if !ok {
 		instanceMetrics = &aggregatedInstanceMetrics{
 			InstanceID:   event.routeID,
-			MessageTypes: make(map[MessageType]int64),
+			MessageTypes: make(map[fedTypes.MessageType]int64),
 		}
 		rm.aggregator.instanceMetrics[event.routeID] = instanceMetrics
 	}
@@ -400,34 +446,7 @@ func (rm *RoutingMetrics) processHealthCheck(event *metricEvent) {
 	}
 }
 
-func (rm *RoutingMetrics) periodicFlush() {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		rm.flushMetrics()
-	}
-}
-
-func (rm *RoutingMetrics) flushMetrics() {
-	rm.aggregator.mu.Lock()
-	defer rm.aggregator.mu.Unlock()
-
-	// Check if window should rotate
-	if time.Since(rm.aggregator.windowStart) > rm.aggregator.windowSize {
-		// Persist current window to DynamoDB
-		rm.persistWindow()
-
-		// Reset aggregator
-		rm.aggregator.windowStart = time.Now()
-		rm.aggregator.routeMetrics = make(map[string]*aggregatedRouteMetrics)
-		rm.aggregator.instanceMetrics = make(map[string]*aggregatedInstanceMetrics)
-		rm.aggregator.globalMetrics = &aggregatedGlobalMetrics{}
-	}
-}
-
-func (rm *RoutingMetrics) persistWindow() {
-	ctx := context.Background()
+func (rm *RoutingMetrics) persistWindow(ctx context.Context) error {
 	windowID := rm.aggregator.windowStart.Unix()
 
 	// Batch write all metrics
@@ -466,7 +485,9 @@ func (rm *RoutingMetrics) persistWindow() {
 
 		// Flush batch if full
 		if len(writeRequests) >= 25 {
-			rm.writeBatch(ctx, writeRequests)
+			if err := rm.writeBatch(ctx, writeRequests); err != nil {
+				return err
+			}
 			writeRequests = writeRequests[:0]
 		}
 	}
@@ -495,16 +516,20 @@ func (rm *RoutingMetrics) persistWindow() {
 
 	// Write remaining batch
 	if len(writeRequests) > 0 {
-		rm.writeBatch(ctx, writeRequests)
+		if err := rm.writeBatch(ctx, writeRequests); err != nil {
+			return err
+		}
 	}
 
 	rm.logger.Info("flushed metrics window",
 		zap.Time("windowStart", rm.aggregator.windowStart),
 		zap.Int("routeMetrics", len(rm.aggregator.routeMetrics)),
 		zap.Int("instanceMetrics", len(rm.aggregator.instanceMetrics)))
+
+	return nil
 }
 
-func (rm *RoutingMetrics) writeBatch(ctx context.Context, requests []types.WriteRequest) {
+func (rm *RoutingMetrics) writeBatch(ctx context.Context, requests []types.WriteRequest) error {
 	batchInput := &dynamodb.BatchWriteItemInput{
 		RequestItems: map[string][]types.WriteRequest{
 			rm.tableName: requests,
@@ -513,11 +538,17 @@ func (rm *RoutingMetrics) writeBatch(ctx context.Context, requests []types.Write
 
 	_, err := rm.db.BatchWriteItem(ctx, batchInput)
 	if err != nil {
-		rm.logger.Error("failed to write metrics batch", zap.Error(err))
+		rm.logger.Error("batch write metrics failed",
+			zap.Int("batch_size", len(requests)),
+			zap.String("table_name", rm.tableName),
+			zap.String("operation", "batch_write_metrics"),
+			zap.Error(err))
+		return errors.Join(ErrBatchWriteMetricsFailed, err)
 	}
+	return nil
 }
 
-func (rm *RoutingMetrics) aggregateRouteMetric(metrics *RouteMetrics, item map[string]types.AttributeValue) {
+func (rm *RoutingMetrics) aggregateRouteMetric(metrics *fedTypes.RouteMetrics, item map[string]types.AttributeValue) {
 	// Parse and aggregate stored metrics
 	if v, ok := item["MessageCount"].(*types.AttributeValueMemberN); ok {
 		var count int64
@@ -612,7 +643,7 @@ type InstanceMetrics struct {
 	TotalBytes    int64
 	TotalCost     float64
 	Availability  float64
-	MessageTypes  map[MessageType]int64
+	MessageTypes  map[fedTypes.MessageType]int64
 	LastUpdated   time.Time
 }
 

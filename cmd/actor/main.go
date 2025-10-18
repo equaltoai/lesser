@@ -1,91 +1,197 @@
+// Package main implements the actor service Lambda function that handles
+// ActivityPub actor operations, federation lookups, and actor profile management.
 package main
+
+/*
+Actor Service - ActivityPub Federation Handler
+
+This Lambda function handles ActivityPub federation requests for actor profiles.
+It serves ActivityPub JSON to other ActivityPub servers and HTML to browsers.
+
+This is NOT the Mastodon client API - that's handled by the /cmd/api service.
+This service handles federation requests from other ActivityPub servers.
+*/
 
 import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
+
 	"strings"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/config"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
-	"github.com/aws/aws-lambda-go/events"
+	appErrors "github.com/equaltoai/lesser/pkg/errors"
+
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/federation"
+	liftErrors "github.com/equaltoai/lesser/pkg/lift"
+	"github.com/equaltoai/lesser/pkg/middleware"
+	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 var (
-	cfg    *config.Config
-	store  storage.Storage
-	logger *zap.Logger
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     core.RepositoryStorage
 )
 
 func init() {
-	cfg = config.Get()
-	logger = common.Logger()
+	if common.RunningUnitTests() {
+		return
+	}
+	// Standardized Lambda initialization with automatic service detection
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "actor",
+		LambdaType:  common.LambdaTypeAPI,
+	})
 
-	// Initialize storage
-	var err error
-	store, err = dynamodb.New()
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+
+	// Initialize with default options for API Lambda type
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		logger.Fatal("failed to initialize storage", zap.Error(err))
+		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
 	}
 }
 
-func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
-	log := common.WithContext(ctx)
+// Handler contains dependencies for the actor service
+type Handler struct {
+	actorRepo              *repositories.ActorRepository
+	authorizedFetchService *federation.AuthorizedFetchService
+}
 
-	// Extract username from path
-	username := request.PathParameters["username"]
-	if username == "" {
-		return common.BadRequest(common.ValidationError{Field: "username", Message: "missing username"}), nil
+// NewHandler creates a new handler instance using standardized services
+func NewHandler() *Handler {
+	// Initialize actor repository
+	actorRepo := repositories.NewActorRepository(
+		repos.GetDB(),
+		repos.GetTableName(),
+		logger)
+
+	// Initialize authorized fetch service
+	authorizedFetchService := federation.NewAuthorizedFetchService(
+		repos,
+		cfg.Domain,
+		logger)
+
+	return &Handler{
+		actorRepo:              actorRepo,
+		authorizedFetchService: authorizedFetchService,
+	}
+}
+
+// HandleActorProfile handles ActivityPub actor profile requests
+func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
+	// Extract username from path parameters
+	username := ctx.Param("username")
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return liftErrors.ValidationErrorWithField("username", "missing username")
 	}
 
-	log.Info("fetching actor profile",
-		zap.String("username", username),
-		zap.String("accept", request.Headers["Accept"]))
+	// Get request ID from context
+	requestID := ctx.Get("requestID")
+	if requestID == nil {
+		requestID = "unknown"
+	}
 
-	// Get actor from storage
-	actor, err := store.GetActor(ctx, username)
+	logger.Info("fetching actor profile",
+		zap.String("username", username),
+		zap.String("accept", ctx.Header("Accept")),
+		zap.Any("request_id", requestID))
+
+	// Get actor from repository
+	actor, err := h.actorRepo.GetActorByUsername(ctx.Context, username)
 	if err != nil {
 		if common.IsNotFound(err) {
-			return common.NotFound(err), nil
+			return liftErrors.NotFoundError("actor")
 		}
-		log.Error("failed to get actor", zap.Error(err))
-		return common.InternalServerError(err), nil
+		logger.Error("failed to get actor",
+			zap.Error(err),
+			zap.String("username", username),
+			zap.Any("request_id", requestID))
+		return appErrors.FailedToGet("actor", err)
 	}
 
 	// Content negotiation
-	accept := request.Headers["Accept"]
-	if accept == "" {
-		accept = request.Headers["accept"] // Try lowercase
+	accept := ctx.Header("Accept")
+	if err := common.ValidateRequiredParam("accept", accept); err != nil {
+		accept = ctx.Header("accept") // Try lowercase
 	}
 
 	// Check if client wants ActivityStreams JSON
 	if strings.Contains(accept, "application/activity+json") ||
 		strings.Contains(accept, "application/ld+json") ||
 		strings.Contains(accept, "application/json") {
+		// Check if authorized fetch is enabled for ActivityPub JSON requests
+		if h.authorizedFetchService.IsAuthorizedFetchEnabled(ctx.Context) {
+			logger.Debug("authorized fetch enabled, verifying request",
+				zap.String("username", username),
+				zap.Any("request_id", requestID),
+			)
+
+			// Convert lift.Context to http.Request for signature verification
+			httpReq, err := h.convertLiftRequest(ctx)
+			if err != nil {
+				logger.Error("failed to convert request for authorized fetch",
+					zap.String("username", username),
+					zap.Any("request_id", requestID),
+					zap.Error(err),
+				)
+				return lift.NewLiftError("REQUEST_CONVERSION_ERROR", "malformed request", 400).WithCause(err)
+			}
+
+			// Verify authorized fetch
+			_, err = h.authorizedFetchService.VerifyAuthorizedFetch(ctx.Context, httpReq)
+			if err != nil {
+				// Check if signature is missing vs invalid
+				if strings.Contains(err.Error(), "missing signature") {
+					logger.Debug("unauthorized request - missing signature",
+						zap.String("username", username),
+						zap.Any("request_id", requestID),
+					)
+					return lift.NewLiftError("UNAUTHORIZED", "signature required for authorized fetch", 401)
+				}
+				logger.Debug("authorized fetch verification failed",
+					zap.String("username", username),
+					zap.Any("request_id", requestID),
+					zap.Error(err),
+				)
+				return lift.NewLiftError("FORBIDDEN", "signature verification failed", 403).WithCause(err)
+			}
+
+			logger.Debug("authorized fetch verification successful",
+				zap.String("username", username),
+				zap.Any("request_id", requestID),
+			)
+		}
+
 		// Return ActivityStreams JSON
-		return common.ActivityPubResponse(http.StatusOK, actor), nil
+		ctx.Response.Headers["Content-Type"] = "application/activity+json"
+		return ctx.JSON(actor)
 	}
 
 	// Return HTML for browsers
-	html := generateHTMLProfile(actor)
-	return &events.APIGatewayV2HTTPResponse{
-		StatusCode: http.StatusOK,
-		Headers: map[string]string{
-			"Content-Type": "text/html; charset=utf-8",
-		},
-		Body: html,
-	}, nil
+	html := h.generateHTMLProfile(actor)
+	ctx.Response.Headers["Content-Type"] = "text/html; charset=utf-8"
+	ctx.Response.StatusCode = http.StatusOK
+	ctx.Response.Body = html
+	return nil
 }
 
-func generateHTMLProfile(actor *activitypub.Actor) string {
+func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) string {
 	// Extract display name or fall back to username
 	displayName := actor.Name
-	if displayName == "" {
+	if err := common.ValidateRequiredParam("displayName", displayName); err != nil {
 		displayName = actor.PreferredUsername
 	}
 
@@ -97,7 +203,7 @@ func generateHTMLProfile(actor *activitypub.Actor) string {
 		<meta property="og:url" content="%s">`,
 		displayName,
 		actor.BaseObject.Summary,
-		actor.BaseObject.ID)
+		actor.ID)
 
 	if actor.Icon != nil && actor.Icon.URL != "" {
 		metaTags += fmt.Sprintf(`
@@ -186,7 +292,7 @@ func generateHTMLProfile(actor *activitypub.Actor) string {
 	<div class="profile">`,
 		displayName, actor.PreferredUsername, cfg.Domain,
 		metaTags,
-		actor.BaseObject.ID)
+		actor.ID)
 
 	// Add avatar if available
 	if actor.Icon != nil && actor.Icon.URL != "" {
@@ -213,7 +319,7 @@ func generateHTMLProfile(actor *activitypub.Actor) string {
 		<div class="meta">
 			<p>This is an ActivityPub profile. You can follow @%s@%s from any compatible server.</p>
 			<p><a href="%s" type="application/activity+json">View ActivityPub data</a></p>
-		</div>`, actor.PreferredUsername, cfg.Domain, actor.BaseObject.ID)
+		</div>`, actor.PreferredUsername, cfg.Domain, actor.ID)
 
 	html += `
 	</div>
@@ -223,6 +329,55 @@ func generateHTMLProfile(actor *activitypub.Actor) string {
 	return html
 }
 
+// convertLiftRequest converts a Lift request to an http.Request for signature verification
+func (h *Handler) convertLiftRequest(ctx *lift.Context) (*http.Request, error) {
+	// Build URL
+	u := &url.URL{
+		Scheme: "https",
+		Host:   ctx.Header("Host"),
+		Path:   ctx.Request.Path,
+	}
+	if ctx.Request.QueryParams != nil {
+		q := u.Query()
+		for k, v := range ctx.Request.QueryParams {
+			q.Set(k, v)
+		}
+		u.RawQuery = q.Encode()
+	}
+
+	// Create request with context (no body for GET requests)
+	req, err := http.NewRequestWithContext(ctx.Context, ctx.Request.Method, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Copy headers
+	for k, v := range ctx.Request.Headers {
+		req.Header.Set(k, v)
+	}
+
+	// Set host header if not present
+	if err := common.ValidateRequiredParam("host", req.Header.Get("Host")); err != nil && ctx.Header("Host") != "" {
+		req.Host = ctx.Header("Host")
+	}
+
+	return req, nil
+}
+
 func main() {
-	lambda.Start(handler)
+	// Create a new Lift application
+	app := lift.New()
+
+	// Panic recovery middleware (MUST be first to catch all panics)
+	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+
+	// Apply federation security middleware
+	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, lambdaCtx.Logger)
+
+	// Use standardized Lambda handler wrapper with observability
+	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
+		return app.HandleRequest(ctx, event)
+	})
+
+	lambda.Start(standardHandler)
 }

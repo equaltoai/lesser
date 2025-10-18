@@ -1,26 +1,27 @@
+// Package api provides federation analytics API endpoints and handlers.
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
-	"github.com/aron23/lesser/pkg/federation"
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/gorilla/mux"
 )
 
 // FederationAnalyticsHandler handles federation analytics API endpoints
 type FederationAnalyticsHandler struct {
-	storage storage.Storage
+	storage core.RepositoryStorage
 	hooks   *federation.FederationHooks
 }
 
 // NewFederationAnalyticsHandler creates a new federation analytics handler
-func NewFederationAnalyticsHandler(store storage.Storage, hooks *federation.FederationHooks) *FederationAnalyticsHandler {
+func NewFederationAnalyticsHandler(store core.RepositoryStorage, hooks *federation.FederationHooks) *FederationAnalyticsHandler {
 	return &FederationAnalyticsHandler{
 		storage: store,
 		hooks:   hooks,
@@ -43,39 +44,21 @@ func (fah *FederationAnalyticsHandler) RegisterRoutes(r *mux.Router) {
 // GetFederationNodes returns federation graph nodes
 func (fah *FederationAnalyticsHandler) GetFederationNodes(w http.ResponseWriter, r *http.Request) {
 	depthStr := r.URL.Query().Get("depth")
-	depth := 1
-	if depthStr != "" {
-		if d, err := strconv.Atoi(depthStr); err == nil {
-			depth = d
-		}
+	depth, err := common.ParseAndValidateIntWithBounds("depth", depthStr, 0, 10, 1)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid depth parameter: %v", err), http.StatusBadRequest)
+		return
 	}
 
 	healthFilter := r.URL.Query().Get("health")
 
 	var nodes []*storage.FederationNode
-	var err error
 
 	if healthFilter != "" {
-		// Get nodes filtered by health
-		if healthGetter, ok := fah.storage.(interface {
-			GetFederationNodesByHealth(ctx context.Context, health string) ([]*storage.FederationNode, error)
-		}); ok {
-			nodes, err = healthGetter.GetFederationNodesByHealth(r.Context(), healthFilter)
-		} else {
-			// Fallback to all nodes and filter
-			nodes, err = fah.storage.GetFederationNodes(r.Context(), depth)
-			if err == nil {
-				filtered := make([]*storage.FederationNode, 0)
-				for _, node := range nodes {
-					if node.Health == healthFilter {
-						filtered = append(filtered, node)
-					}
-				}
-				nodes = filtered
-			}
-		}
+		// Use the dedicated method for health-filtered queries
+		nodes, err = fah.storage.Federation().GetFederationNodesByHealth(r.Context(), healthFilter, 100)
 	} else {
-		nodes, err = fah.storage.GetFederationNodes(r.Context(), depth)
+		nodes, err = fah.storage.Federation().GetFederationNodes(r.Context(), depth)
 	}
 
 	if err != nil {
@@ -84,7 +67,7 @@ func (fah *FederationAnalyticsHandler) GetFederationNodes(w http.ResponseWriter,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"nodes": nodes,
 		"count": len(nodes),
 	}); err != nil {
@@ -103,14 +86,17 @@ func (fah *FederationAnalyticsHandler) GetFederationEdges(w http.ResponseWriter,
 	var err error
 
 	if connectionType != "" && limitStr != "" {
-		if limit, parseErr := strconv.Atoi(limitStr); parseErr == nil {
-			edges, err = fah.storage.GetStrongestConnectionsByType(r.Context(), connectionType, limit)
+		if limit, parseErr := common.ParseFederationLimit(limitStr); parseErr == nil {
+			edges, err = fah.storage.Federation().GetStrongestConnectionsByType(r.Context(), connectionType, limit)
+		} else {
+			http.Error(w, fmt.Sprintf("Invalid limit parameter: %v", parseErr), http.StatusBadRequest)
+			return
 		}
 	} else if len(domains) > 0 {
-		edges, err = fah.storage.GetFederationEdges(r.Context(), domains)
+		edges, err = fah.storage.Federation().GetFederationEdges(r.Context(), domains)
 	} else {
 		// Get strongest connections overall
-		edges, err = fah.storage.GetStrongestConnectionsByType(r.Context(), "all", 100)
+		edges, err = fah.storage.Federation().GetStrongestConnectionsByType(r.Context(), "all", 100)
 	}
 
 	if err != nil {
@@ -119,7 +105,7 @@ func (fah *FederationAnalyticsHandler) GetFederationEdges(w http.ResponseWriter,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"edges": edges,
 		"count": len(edges),
 	}); err != nil {
@@ -130,14 +116,14 @@ func (fah *FederationAnalyticsHandler) GetFederationEdges(w http.ResponseWriter,
 
 // GetFederationClusters returns federation clusters
 func (fah *FederationAnalyticsHandler) GetFederationClusters(w http.ResponseWriter, r *http.Request) {
-	clusters, err := fah.storage.CalculateFederationClusters(r.Context())
+	clusters, err := fah.storage.Federation().CalculateFederationClusters(r.Context())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to get federation clusters: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"clusters": clusters,
 		"count":    len(clusters),
 	}); err != nil {
@@ -152,8 +138,12 @@ func (fah *FederationAnalyticsHandler) GetRelationshipAnalysis(w http.ResponseWr
 	source := vars["source"]
 	target := vars["target"]
 
-	if source == "" || target == "" {
-		http.Error(w, "Source and target domains are required", http.StatusBadRequest)
+	if err := common.ValidateRequiredParam("source", source); err != nil {
+		http.Error(w, "Source domain is required", http.StatusBadRequest)
+		return
+	}
+	if err := common.ValidateRequiredParam("target", target); err != nil {
+		http.Error(w, "Target domain is required", http.StatusBadRequest)
 		return
 	}
 
@@ -164,7 +154,7 @@ func (fah *FederationAnalyticsHandler) GetRelationshipAnalysis(w http.ResponseWr
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(analysis)
+	_ = json.NewEncoder(w).Encode(analysis)
 }
 
 // GetRecommendations returns federation recommendations for a domain
@@ -172,7 +162,7 @@ func (fah *FederationAnalyticsHandler) GetRecommendations(w http.ResponseWriter,
 	vars := mux.Vars(r)
 	domain := vars["domain"]
 
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		http.Error(w, "Domain is required", http.StatusBadRequest)
 		return
 	}
@@ -184,7 +174,7 @@ func (fah *FederationAnalyticsHandler) GetRecommendations(w http.ResponseWriter,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"recommendations": recommendations,
 		"count":           len(recommendations),
 		"domain":          domain,
@@ -197,12 +187,12 @@ func (fah *FederationAnalyticsHandler) GetInstanceMetadata(w http.ResponseWriter
 	vars := mux.Vars(r)
 	domain := vars["domain"]
 
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		http.Error(w, "Domain is required", http.StatusBadRequest)
 		return
 	}
 
-	metadata, err := fah.storage.GetInstanceMetadata(r.Context(), domain)
+	metadata, err := fah.storage.Federation().GetInstanceMetadata(r.Context(), domain)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			http.Error(w, "Instance not found", http.StatusNotFound)
@@ -213,14 +203,14 @@ func (fah *FederationAnalyticsHandler) GetInstanceMetadata(w http.ResponseWriter
 	}
 
 	// Also get connection information
-	connections, err := fah.storage.GetInstanceConnections(r.Context(), domain, "")
+	connections, err := fah.storage.Federation().GetInstanceConnections(r.Context(), domain, "")
 	if err != nil {
 		// Don't fail if connections can't be retrieved
 		connections = []*storage.InstanceConnection{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"metadata":     metadata,
 		"connections":  connections,
 		"retrieved_at": time.Now(),
@@ -232,13 +222,13 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 	vars := mux.Vars(r)
 	domain := vars["domain"]
 
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		http.Error(w, "Domain is required", http.StatusBadRequest)
 		return
 	}
 
 	period := r.URL.Query().Get("period")
-	if period == "" {
+	if err := common.ValidateRequiredParam("period", period); err != nil {
 		period = "daily"
 	}
 
@@ -270,15 +260,96 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 		endTime = time.Now()
 	}
 
-	// This would require implementing GetFederationTimeSeries in storage
-	// For now, return a placeholder response
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	// Get detailed time series data from federation repository
+	timeSeries, err := fah.storage.Federation().GetDetailedFederationMetrics(r.Context(), domain, period, startTime, endTime)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get time series data: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate summary statistics
+	var totalActivities, totalErrors int64
+	var avgHealthScore, avgLatency float64
+	var recentHealthScore float64
+	healthScores := make([]float64, 0, len(timeSeries))
+
+	for _, metric := range timeSeries {
+		totalActivities += metric.ActivityCount
+		totalErrors += metric.FailedActivities
+		healthScores = append(healthScores, metric.HealthScore)
+		avgLatency += float64(metric.InboxDeliveryP95)
+
+		// Track most recent health score
+		if metric.Timestamp.After(time.Now().Add(-10 * time.Minute)) {
+			recentHealthScore = metric.HealthScore
+		}
+	}
+
+	if len(timeSeries) > 0 {
+		for _, score := range healthScores {
+			avgHealthScore += score
+		}
+		avgHealthScore /= float64(len(healthScores))
+		avgLatency /= float64(len(timeSeries))
+	}
+
+	// Calculate error rate
+	var errorRate float64
+	if totalActivities > 0 {
+		errorRate = float64(totalErrors) / float64(totalActivities)
+	}
+
+	// Determine health status based on recent health score
+	healthStatus := "HEALTHY"
+	if recentHealthScore < 40 {
+		healthStatus = "CRITICAL"
+	} else if recentHealthScore < 60 {
+		healthStatus = "UNHEALTHY"
+	} else if recentHealthScore < 80 {
+		healthStatus = "DEGRADED"
+	}
+
+	// Format response following federation analytics guidance
+	response := map[string]any{
 		"domain":     domain,
 		"period":     period,
 		"start_time": startTime,
 		"end_time":   endTime,
-		"data":       []interface{}{}, // Placeholder
-		"message":    "Time series data not yet implemented",
-	})
+		"data":       timeSeries,
+		"summary": map[string]any{
+			"total_data_points":   len(timeSeries),
+			"total_activities":    totalActivities,
+			"total_errors":        totalErrors,
+			"error_rate":          errorRate,
+			"avg_health_score":    avgHealthScore,
+			"recent_health_score": recentHealthScore,
+			"health_status":       healthStatus,
+			"avg_p95_latency_ms":  avgLatency,
+			"aggregation_level":   period,
+		},
+		"health_thresholds": map[string]any{
+			"healthy":   80.0,
+			"degraded":  60.0,
+			"unhealthy": 40.0,
+			"critical":  0.0,
+		},
+		"alert_conditions": map[string]any{
+			"reachability_critical": "< 50%",
+			"latency_warning":       "> 5s P95",
+			"queue_depth_warning":   "> 10,000",
+		},
+		"data_retention": map[string]any{
+			"5min":    "24 hours",
+			"hourly":  "7 days",
+			"daily":   "90 days",
+			"monthly": "2 years",
+		},
+		"generated_at": time.Now(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
 }

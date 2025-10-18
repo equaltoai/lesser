@@ -1,13 +1,21 @@
 # Binaries
 bin/
+build/
 *.exe
 *.dll
 *.so
 *.dylib
 *.test
-main
-auth-api
-activity-processor.test
+
+# Go compiled binaries (prevent accidental commits)
+/auth
+/streaming
+/api
+/graphql
+**/main
+**/*.test
+**/*.bin
+
 
 # Go
 vendor/
@@ -38,11 +46,12 @@ Thumbs.db
 .aws/
 .aws-sam/
 
-# Terraform/Pulumi
-*.tfstate
-*.tfstate.*
-.terraform/
-Pulumi.*.yaml
+
+# CDK
+infra/cdk/cdk
+infra/cdk/cdk.out/
+infra/cdk/cdk.context.json
+node_modules/
 
 # Test outputs
 *.log
@@ -61,7 +70,21 @@ temp/
 docs/api/openapi.json
 docs/api/swagger-ui/
 
+# Generated schema exports
+schema.graphql
+
 
 test-reports*
 
 .env.k6
+
+reference/
+
+
+# Exclude example binaries that end with _example
+*_example
+
+# But explicitly allow Go source files
+!*.go
+!cmd/
+!pkg/

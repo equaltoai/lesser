@@ -1,3 +1,4 @@
+// Package models contains data models used by the API Lambda function.
 package models
 
 // Conversation represents a direct message conversation

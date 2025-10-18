@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // QueryAnalyzer tracks and analyzes query performance
@@ -39,7 +41,7 @@ type SlowQuery struct {
 	QueryPattern string
 	Duration     time.Duration
 	Timestamp    time.Time
-	Parameters   map[string]interface{}
+	Parameters   map[string]any
 	ConsumedRCU  float64
 	ConsumedWCU  float64
 }
@@ -62,11 +64,11 @@ type QueryExecution struct {
 	analyzer     *QueryAnalyzer
 	queryPattern string
 	startTime    time.Time
-	parameters   map[string]interface{}
+	parameters   map[string]any
 }
 
 // StartQuery begins tracking a query execution
-func (qa *QueryAnalyzer) StartQuery(queryPattern string, parameters map[string]interface{}) *QueryExecution {
+func (qa *QueryAnalyzer) StartQuery(queryPattern string, parameters map[string]any) *QueryExecution {
 	return &QueryExecution{
 		analyzer:     qa,
 		queryPattern: queryPattern,
@@ -83,10 +85,14 @@ func (qe *QueryExecution) End(ctx context.Context, consumedRCU, consumedWCU floa
 	qe.analyzer.updateStats(qe.queryPattern, duration, err != nil)
 
 	// Record metrics
-	qe.analyzer.monitor.RecordLatency(ctx, "DynamoDBQuery."+qe.queryPattern, float64(duration.Milliseconds()))
+	if err := qe.analyzer.monitor.RecordLatency(ctx, "DynamoDBQuery."+qe.queryPattern, float64(duration.Milliseconds())); err != nil {
+		zap.L().Warn("failed to record query latency", zap.Error(err))
+	}
 
 	if consumedRCU > 0 || consumedWCU > 0 {
-		qe.analyzer.monitor.RecordDynamoDBConsumedCapacity(ctx, "main", qe.queryPattern, consumedRCU, consumedWCU)
+		if err := qe.analyzer.monitor.RecordDynamoDBConsumedCapacity(ctx, "main", qe.queryPattern, consumedRCU, consumedWCU); err != nil {
+			zap.L().Warn("failed to record DynamoDB consumed capacity", zap.Error(err))
+		}
 	}
 
 	// Check if this is a slow query
@@ -101,11 +107,15 @@ func (qe *QueryExecution) End(ctx context.Context, consumedRCU, consumedWCU floa
 		})
 
 		// Record slow query metric
-		qe.analyzer.monitor.RecordError(ctx, "DynamoDBQuery."+qe.queryPattern, "SlowQuery")
+		if err := qe.analyzer.monitor.RecordError(ctx, "DynamoDBQuery."+qe.queryPattern, "SlowQuery"); err != nil {
+			zap.L().Warn("failed to record slow query metric", zap.Error(err))
+		}
 	}
 
 	if err != nil {
-		qe.analyzer.monitor.RecordError(ctx, "DynamoDBQuery."+qe.queryPattern, "QueryError")
+		if recordErr := qe.analyzer.monitor.RecordError(ctx, "DynamoDBQuery."+qe.queryPattern, "QueryError"); recordErr != nil {
+			zap.L().Warn("failed to record query error metric", zap.Error(recordErr))
+		}
 	}
 }
 
@@ -244,7 +254,7 @@ func (qa *QueryAnalyzer) ResetStats() {
 }
 
 // AnalyzeQueryComplexity calculates the complexity score for a query
-func AnalyzeQueryComplexity(queryType string, filters map[string]interface{}, limit int) int {
+func AnalyzeQueryComplexity(queryType string, filters map[string]any, limit int) int {
 	complexity := 1 // Base complexity
 
 	// Add complexity based on query type
@@ -278,7 +288,7 @@ type QueryPlan struct {
 }
 
 // AnalyzeQueryPlan analyzes a query and provides optimization suggestions
-func AnalyzeQueryPlan(tableName, queryType, indexName string, keyConditions map[string]interface{}) QueryPlan {
+func AnalyzeQueryPlan(_, queryType, indexName string, _ map[string]any) QueryPlan {
 	plan := QueryPlan{
 		QueryType: queryType,
 		IndexUsed: indexName,

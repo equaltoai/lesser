@@ -1,8 +1,7 @@
-package common
+package common // nolint:revive // "common" package name is acceptable for shared utilities
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 	"strconv"
 	"sync"
@@ -18,6 +17,7 @@ type LambdaResourceMonitor struct {
 	checkpoints   []ResourceCheckpoint
 }
 
+// ResourceCheckpoint represents a point-in-time snapshot of resource usage
 type ResourceCheckpoint struct {
 	Timestamp   time.Time
 	MemoryUsed  uint64
@@ -29,7 +29,7 @@ type ResourceCheckpoint struct {
 func NewLambdaResourceMonitor() *LambdaResourceMonitor {
 	// Get Lambda memory limit from environment
 	memoryMB := 512 // default
-	if envMem := os.Getenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE"); envMem != "" {
+	if envMem := GetLambdaMemorySize(); envMem != "" {
 		if parsed, err := strconv.Atoi(envMem); err == nil {
 			memoryMB = parsed
 		}
@@ -53,7 +53,7 @@ func (m *LambdaResourceMonitor) CheckResources(operation string) error {
 	// Check duration
 	elapsed := time.Since(m.startTime)
 	if elapsed.Milliseconds() > int64(m.maxDurationMS) {
-		return fmt.Errorf("operation %s approaching Lambda timeout: %v", operation, elapsed)
+		return fmt.Errorf("%w: operation %s, elapsed %v", ErrLambdaTimeoutApproaching, operation, elapsed)
 	}
 
 	// Check memory
@@ -68,8 +68,8 @@ func (m *LambdaResourceMonitor) CheckResources(operation string) error {
 		usedMB = memStats.Alloc / 1024 / 1024
 
 		if usedMB > m.maxMemoryMB {
-			return fmt.Errorf("memory limit exceeded for %s: %dMB > %dMB",
-				operation, usedMB, m.maxMemoryMB)
+			return fmt.Errorf("%w: operation %s, used %dMB > limit %dMB",
+				ErrMemoryLimitExceeded, operation, usedMB, m.maxMemoryMB)
 		}
 	}
 

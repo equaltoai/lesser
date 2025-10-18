@@ -5,62 +5,86 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"go.uber.org/zap"
 )
 
-// Session errors
-var (
-	ErrSessionNotFound = errors.New("session not found")
-	ErrSessionExpired  = errors.New("session expired")
-	ErrDeviceNotFound  = errors.New("device not found")
-)
-
-// Session constants
+// Session constants - enhanced security
 const (
-	SessionDuration            = 30 * 24 * time.Hour // 30 days
-	ShortAccessTokenDuration   = 15 * time.Minute    // 15 minutes (from modern auth plan)
-	RefreshTokenRotationWindow = 24 * time.Hour      // Allow old refresh token for 24h after rotation
+	SessionDuration               = 7 * 24 * time.Hour // 7 days (reduced from 30)
+	ShortAccessTokenDuration      = 15 * time.Minute   // 15 minutes
+	RefreshTokenRotationWindow    = 1 * time.Hour      // Reduced grace period (from 24h)
+	MaxSessionsPerUser            = 10                 // Limit concurrent sessions
+	SessionInactivityTimeout      = 24 * time.Hour     // Auto-logout after inactivity
+	DeviceTrustPromotionThreshold = 7 * 24 * time.Hour // Days until device can be trusted
+
+	// Device trust levels
+	TrustLevelTrusted   = "trusted"
+	TrustLevelUntrusted = "untrusted"
 )
 
-// Type aliases for convenience
+// Session is a type alias for storage.Session
 type Session = storage.Session
+
+// Device is a type alias for storage.Device
 type Device = storage.Device
 
-// SessionManager handles session operations
+// SessionManager handles session operations with enhanced security
 type SessionManager struct {
-	storage storage.Storage
+	repos         StorageProvider
+	tokenVersions map[string]int // Track token versions per user
+	mu            sync.RWMutex   // Protect token versions map
 }
 
-// NewSessionManager creates a new session manager
-func NewSessionManager(storage storage.Storage) *SessionManager {
+// SessionSecurityConfig holds security configuration for sessions
+type SessionSecurityConfig struct {
+	EnableIPBinding       bool
+	EnableDeviceBinding   bool
+	EnableGeoValidation   bool
+	Require2FA            bool
+	MaxConcurrentSessions int
+}
+
+// NewSessionManager creates a new session manager with enhanced security
+func NewSessionManager(repos StorageProvider) *SessionManager {
 	return &SessionManager{
-		storage: storage,
+		repos:         repos,
+		tokenVersions: make(map[string]int),
 	}
 }
 
-// CreateSession creates a new session for a user
+// CreateSession creates a new session for a user with enhanced security
 func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceName, userAgent, ipAddress, authMethod string) (*Session, error) {
+	// Check session limits
+	if err := sm.enforceSessionLimits(ctx, username); err != nil {
+		return nil, err
+	}
+
 	// Generate session ID
 	sessionID, err := generateSecureToken()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate session ID: %w", err)
+		return nil, errors.Join(ErrSessionIDGeneration, err)
 	}
 
 	// Generate refresh token
 	refreshToken, err := generateSecureToken()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
+		return nil, errors.Join(ErrRefreshTokenGeneration, err)
 	}
 
-	// Generate device ID
-	deviceID, err := generateSecureToken()
+	// Generate device ID if new device
+	deviceID, err := sm.getOrCreateDeviceID(ctx, username, userAgent, ipAddress)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate device ID: %w", err)
+		return nil, errors.Join(ErrDeviceIDRetrieval, err)
 	}
+
+	// Token version tracking (for future use)
+	_ = sm.incrementTokenVersion(username)
 
 	now := time.Now()
 	session := &Session{
@@ -78,26 +102,15 @@ func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceNam
 	}
 
 	// Store session
-	if err := sm.storage.CreateSession(ctx, session); err != nil {
-		return nil, fmt.Errorf("failed to store session: %w", err)
+	_, err = sm.repos.Account().CreateSession(ctx, session.Username, session.IPAddress, session.UserAgent)
+	if err != nil {
+		return nil, errors.Join(ErrSessionStorage, err)
 	}
 
-	// Create device record
-	device := &Device{
-		DeviceID:      deviceID,
-		Username:      username,
-		DeviceName:    deviceName,
-		DeviceType:    detectDeviceType(userAgent),
-		LastIPAddress: ipAddress,
-		LastUserAgent: userAgent,
-		CreatedAt:     now,
-		LastSeenAt:    now,
-		TrustLevel:    "untrusted", // New devices start as untrusted
-	}
-
-	if err := sm.storage.CreateDevice(ctx, device); err != nil {
+	// Update device record
+	if err := sm.updateDeviceRecord(ctx, deviceID, username, deviceName, userAgent, ipAddress); err != nil {
 		// Non-fatal error, log but continue
-		fmt.Printf("Failed to create device record: %v\n", err)
+		zap.L().Error("failed to update device record", zap.Error(err))
 	}
 
 	return session, nil
@@ -106,7 +119,7 @@ func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceNam
 // ValidateRefreshToken validates a refresh token and returns the session
 func (sm *SessionManager) ValidateRefreshToken(ctx context.Context, refreshToken string) (*Session, error) {
 	// Get session by refresh token
-	session, err := sm.storage.GetSessionByRefreshToken(ctx, refreshToken)
+	session, err := sm.repos.Account().GetSessionByRefreshToken(ctx, refreshToken)
 	if err != nil {
 		return nil, ErrInvalidRefreshToken
 	}
@@ -132,7 +145,7 @@ func (sm *SessionManager) RotateRefreshToken(ctx context.Context, session *Sessi
 	// Generate new refresh token
 	newRefreshToken, err := generateSecureToken()
 	if err != nil {
-		return "", fmt.Errorf("failed to generate new refresh token: %w", err)
+		return "", errors.Join(ErrNewRefreshTokenGeneration, err)
 	}
 
 	// Update session with new token
@@ -147,8 +160,8 @@ func (sm *SessionManager) RotateRefreshToken(ctx context.Context, session *Sessi
 	}
 
 	// Update in storage
-	if err := sm.storage.UpdateSession(ctx, session); err != nil {
-		return "", fmt.Errorf("failed to update session: %w", err)
+	if err := sm.repos.Account().UpdateSession(ctx, session.SessionID, session.RefreshToken, session.IPAddress, session.LastActivity, session.ExpiresAt); err != nil {
+		return "", errors.Join(ErrSessionUpdate, err)
 	}
 
 	return newRefreshToken, nil
@@ -156,7 +169,7 @@ func (sm *SessionManager) RotateRefreshToken(ctx context.Context, session *Sessi
 
 // UpdateSessionActivity updates the last activity timestamp
 func (sm *SessionManager) UpdateSessionActivity(ctx context.Context, sessionID, ipAddress string) error {
-	session, err := sm.storage.GetSession(ctx, sessionID)
+	session, err := sm.repos.Account().GetSession(ctx, sessionID)
 	if err != nil {
 		return err
 	}
@@ -169,25 +182,27 @@ func (sm *SessionManager) UpdateSessionActivity(ctx context.Context, sessionID, 
 		session.ExpiresAt = time.Now().Add(SessionDuration)
 	}
 
-	return sm.storage.UpdateSession(ctx, session)
+	return sm.repos.Account().UpdateSession(ctx, session.SessionID, session.RefreshToken, session.IPAddress, session.LastActivity, session.ExpiresAt)
 }
 
 // RevokeSession revokes a specific session
 func (sm *SessionManager) RevokeSession(ctx context.Context, sessionID string) error {
-	return sm.storage.DeleteSession(ctx, sessionID)
+	return sm.repos.Account().DeleteSession(ctx, sessionID)
 }
 
 // RevokeAllUserSessions revokes all sessions for a user
 func (sm *SessionManager) RevokeAllUserSessions(ctx context.Context, username string) error {
-	sessions, err := sm.storage.GetUserSessions(ctx, username)
+	sessions, err := sm.repos.Account().GetUserSessions(ctx, username)
 	if err != nil {
 		return err
 	}
 
 	for _, session := range sessions {
-		if err := sm.storage.DeleteSession(ctx, session.SessionID); err != nil {
+		if err := sm.repos.Account().DeleteSession(ctx, session.SessionID); err != nil {
 			// Log error but continue
-			fmt.Printf("Failed to delete session %s: %v\n", session.SessionID, err)
+			zap.L().Error("failed to delete session",
+				zap.String("session_id", session.SessionID),
+				zap.Error(err))
 		}
 	}
 
@@ -196,18 +211,18 @@ func (sm *SessionManager) RevokeAllUserSessions(ctx context.Context, username st
 
 // GetUserDevices returns all devices for a user
 func (sm *SessionManager) GetUserDevices(ctx context.Context, username string) ([]*Device, error) {
-	return sm.storage.GetUserDevices(ctx, username)
+	return sm.repos.Account().GetUserDevices(ctx, username)
 }
 
 // TrustDevice marks a device as trusted
 func (sm *SessionManager) TrustDevice(ctx context.Context, deviceID string) error {
-	device, err := sm.storage.GetDevice(ctx, deviceID)
+	device, err := sm.repos.Account().GetDevice(ctx, deviceID)
 	if err != nil {
 		return err
 	}
 
-	device.TrustLevel = "trusted"
-	return sm.storage.UpdateDevice(ctx, device)
+	device.TrustLevel = TrustLevelTrusted
+	return sm.repos.Account().UpdateDevice(ctx, device)
 }
 
 // Helper functions
@@ -240,4 +255,172 @@ func contains(s, substr string) bool {
 		(s == substr ||
 			len(s) > 0 && len(substr) > 0 &&
 				strings.Contains(strings.ToLower(s), strings.ToLower(substr)))
+}
+
+// Enhanced security helper methods
+
+// enforceSessionLimits checks and enforces session limits per user
+func (sm *SessionManager) enforceSessionLimits(ctx context.Context, username string) error {
+	sessions, err := sm.repos.Account().GetUserSessions(ctx, username)
+	if err != nil {
+		return errors.Join(ErrUserSessionsRetrieval, err)
+	}
+
+	// Count active sessions
+	activeCount := 0
+	now := time.Now()
+	for _, session := range sessions {
+		if now.Before(session.ExpiresAt) {
+			activeCount++
+		}
+	}
+
+	// If at limit, remove oldest session
+	if activeCount >= MaxSessionsPerUser {
+		if err := sm.removeOldestSession(ctx, username, sessions); err != nil {
+			return errors.Join(ErrOldestSessionRemoval, err)
+		}
+	}
+
+	return nil
+}
+
+// removeOldestSession removes the oldest session for a user
+func (sm *SessionManager) removeOldestSession(ctx context.Context, _ string, sessions []*Session) error {
+	if err := common.ValidateSliceNotEmpty("sessions", sessions); err != nil {
+		return nil
+	}
+
+	// Find oldest session
+	oldest := sessions[0]
+	for _, session := range sessions {
+		if session.CreatedAt.Before(oldest.CreatedAt) {
+			oldest = session
+		}
+	}
+
+	return sm.repos.Account().DeleteSession(ctx, oldest.SessionID)
+}
+
+// getOrCreateDeviceID gets existing device ID or creates new one
+func (sm *SessionManager) getOrCreateDeviceID(ctx context.Context, username, userAgent, _ string) (string, error) {
+	// Try to find existing device by fingerprint
+	devices, err := sm.repos.Account().GetUserDevices(ctx, username)
+	if err != nil {
+		return "", err
+	}
+
+	// Simple device fingerprinting (can be enhanced)
+	for _, device := range devices {
+		if device.LastUserAgent == userAgent {
+			return device.DeviceID, nil
+		}
+	}
+
+	// Create new device ID
+	return generateSecureToken()
+}
+
+// incrementTokenVersion increments and returns the token version for a user
+func (sm *SessionManager) incrementTokenVersion(username string) int {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.tokenVersions[username]++
+	return sm.tokenVersions[username]
+}
+
+// GetTokenVersion returns the current token version for a user
+func (sm *SessionManager) GetTokenVersion(username string) int {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	return sm.tokenVersions[username]
+}
+
+// InvalidateAllUserTokens increments token version to invalidate all tokens
+func (sm *SessionManager) InvalidateAllUserTokens(username string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.tokenVersions[username] += 100 // Large increment to invalidate all tokens
+}
+
+// calculateSecurityFlags determines security flags based on auth method and context
+
+// isTrustedNetwork checks if an IP address is from a trusted network
+func (sm *SessionManager) isTrustedNetwork(ipAddress string) bool {
+	// Simple implementation - can be enhanced with actual network ranges
+	trustedRanges := []string{
+		"192.168.",  // Private networks
+		"10.",       // Private networks
+		"172.16.",   // Private networks
+		"127.0.0.1", // Localhost
+	}
+
+	for _, trusted := range trustedRanges {
+		if strings.HasPrefix(ipAddress, trusted) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// updateDeviceRecord updates or creates a device record
+func (sm *SessionManager) updateDeviceRecord(ctx context.Context, deviceID, username, deviceName, userAgent, ipAddress string) error {
+	now := time.Now()
+
+	// Try to get existing device
+	existingDevice, err := sm.repos.Account().GetDevice(ctx, deviceID)
+	if err != nil {
+		// Create new device
+		device := &Device{
+			DeviceID:      deviceID,
+			Username:      username,
+			DeviceName:    deviceName,
+			DeviceType:    detectDeviceType(userAgent),
+			LastIPAddress: ipAddress,
+			LastUserAgent: userAgent,
+			CreatedAt:     now,
+			LastSeenAt:    now,
+			TrustLevel:    TrustLevelUntrusted,
+		}
+		return sm.repos.Account().CreateDevice(ctx, device)
+	}
+
+	// Update existing device
+	existingDevice.LastIPAddress = ipAddress
+	existingDevice.LastUserAgent = userAgent
+	existingDevice.LastSeenAt = now
+
+	// Promote to trusted if device has been used long enough
+	if existingDevice.TrustLevel == TrustLevelUntrusted && time.Since(existingDevice.CreatedAt) > DeviceTrustPromotionThreshold {
+		existingDevice.TrustLevel = TrustLevelTrusted
+	}
+
+	return sm.repos.Account().UpdateDevice(ctx, existingDevice)
+}
+
+// CleanupInactiveSessions removes sessions that have been inactive too long
+func (sm *SessionManager) CleanupInactiveSessions(_ context.Context) error {
+	// This would typically be called by a background job
+	// Implementation depends on storage capabilities
+	return nil
+}
+
+// DetectAnomalousSession checks for suspicious session activity
+func (sm *SessionManager) DetectAnomalousSession(_ context.Context, session *Session, currentIP string) (bool, string) {
+	// Check for IP address changes
+	if session.IPAddress != currentIP && !sm.isTrustedNetwork(currentIP) {
+		return true, "IP address changed from " + TrustLevelUntrusted + " network"
+	}
+
+	// Check for session age
+	if time.Since(session.LastActivity) > SessionInactivityTimeout {
+		return true, "Session inactive for too long"
+	}
+
+	// Additional anomaly detection can be added here
+	return false, ""
 }

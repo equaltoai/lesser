@@ -42,7 +42,7 @@ func ProcessImage(data []byte, mimeType string) (map[string]*ProcessedImage, err
 	// Decode the original image
 	img, format, err := decodeImage(bytes.NewReader(data), mimeType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode image: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrImageDecodeProcess, err)
 	}
 
 	// Generate blurhash from original
@@ -82,7 +82,7 @@ func decodeImage(r io.Reader, mimeType string) (image.Image, string, error) {
 	switch mimeType {
 	case "image/jpeg":
 		img, err := jpeg.Decode(r)
-		return img, "jpeg", err
+		return img, FormatJPEG, err
 	case "image/png":
 		img, err := png.Decode(r)
 		return img, "png", err
@@ -160,7 +160,7 @@ func encodeImage(img image.Image, format string, quality int) (*ProcessedImage, 
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode image: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrImageEncode, err)
 	}
 
 	return &ProcessedImage{

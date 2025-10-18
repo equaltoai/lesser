@@ -13,12 +13,12 @@ model:
   filename: graph/model/models_gen.go
   package: model
 
-# Where should the resolver implementations go?
-resolver:
-  package: graph
-  layout: follow-schema
-  dir: graph
-  filename_template: "{name}.resolvers.go"
+# Resolver generation is disabled while we manage resolver files manually
+# resolver:
+#   package: graph
+#   layout: follow-schema
+#   dir: graph
+#   filename_template: "{name}.resolvers.go"
 
 # Optional: turn on use `gqlgen:"fieldName"` tags in your models
 struct_tag: json
@@ -26,20 +26,20 @@ struct_tag: json
 # gqlgen will search for any type names in the schema in these go packages
 # if they match it will use them, otherwise it will generate them.
 autobind:
-  - "github.com/aron23/lesser/pkg/activitypub"
-  - "github.com/aron23/lesser/pkg/mastodon"
-  - "github.com/aron23/lesser/pkg/moderation"
-  - "github.com/aron23/lesser/pkg/trust"
-  - "github.com/aron23/lesser/pkg/cost"
+  - "github.com/equaltoai/lesser/pkg/activitypub"
+  - "github.com/equaltoai/lesser/pkg/mastodon"
+  - "github.com/equaltoai/lesser/pkg/moderation"
+  - "github.com/equaltoai/lesser/pkg/trust"
+  - "github.com/equaltoai/lesser/pkg/cost"
 
 # This section declares type mapping between the GraphQL and go type systems
 models:
   Time:
     model:
-      - github.com/aron23/lesser/graph/model.Time
+      - github.com/equaltoai/lesser/graph/model.Time
   Cursor:
     model:
-      - github.com/aron23/lesser/graph/model.Cursor
+      - github.com/equaltoai/lesser/graph/model.Cursor
   Duration:
     model:
-      - github.com/aron23/lesser/graph/model.Duration
+      - github.com/equaltoai/lesser/graph/model.Duration

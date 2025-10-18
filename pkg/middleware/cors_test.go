@@ -60,7 +60,7 @@ func TestCORSMiddleware(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a simple handler
-			handler := func(req events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
+			handler := func(_ events.APIGatewayV2HTTPRequest) (*events.APIGatewayV2HTTPResponse, error) {
 				return &events.APIGatewayV2HTTPResponse{
 					StatusCode: http.StatusOK,
 					Headers:    map[string]string{},

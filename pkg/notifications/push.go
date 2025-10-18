@@ -1,15 +1,16 @@
+// Package notifications provides push notification services using SQS for message queuing and delivery.
 package notifications
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
-	"github.com/aron23/lesser/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/equaltoai/lesser/pkg/common"
+	appConfig "github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"
 )
 
@@ -32,16 +33,16 @@ type PushMessage struct {
 }
 
 // NewPushService creates a new push notification service
-func NewPushService() (*PushService, error) {
-	cfg, err := config.LoadDefaultConfig(context.Background())
+func NewPushService(cfg *appConfig.Config) (*PushService, error) {
+	awsConfig, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrLoadAWSConfig, err)
 	}
 
-	sqsClient := sqs.NewFromConfig(cfg)
+	sqsClient := sqs.NewFromConfig(awsConfig)
 
-	queueURL := os.Getenv("PUSH_NOTIFICATION_QUEUE_URL")
-	if queueURL == "" {
+	queueURL := cfg.PushNotificationQueueURL
+	if err := common.ValidateRequiredParam("queueURL", queueURL); err != nil {
 		// Queue might not be configured, return nil service
 		return nil, nil
 	}
@@ -64,7 +65,7 @@ func (s *PushService) QueueNotification(ctx context.Context, msg *PushMessage) e
 
 	messageBody, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal push message: %w", err)
+		return fmt.Errorf("%w: %w", ErrMarshalPushMessage, err)
 	}
 
 	input := &sqs.SendMessageInput{
@@ -78,7 +79,7 @@ func (s *PushService) QueueNotification(ctx context.Context, msg *PushMessage) e
 			zap.String("username", msg.Username),
 			zap.String("type", msg.NotificationType),
 			zap.Error(err))
-		return fmt.Errorf("failed to queue push notification: %w", err)
+		return fmt.Errorf("%w: %w", ErrQueuePushNotification, err)
 	}
 
 	s.logger.Info("queued push notification",

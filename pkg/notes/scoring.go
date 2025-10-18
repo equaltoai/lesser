@@ -1,8 +1,12 @@
+// Package notes provides community note scoring algorithms and visibility calculations for content annotation.
 package notes
 
 import (
 	"math"
+	"sort"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CalculateNoteScore computes visibility score based on multiple factors
@@ -129,7 +133,7 @@ func CalculateNoteLimit(reputation float64) int {
 }
 
 // RankNotesByTrust adjusts note ordering based on viewer's trust relationships
-func RankNotesByTrust(notes []CommunityNote, viewerID string, trustScores map[string]float64) []CommunityNote {
+func RankNotesByTrust(notes []CommunityNote, _ string, trustScores map[string]float64) []CommunityNote {
 	// Create a copy to avoid modifying original
 	rankedNotes := make([]CommunityNote, len(notes))
 	copy(rankedNotes, notes)
@@ -149,23 +153,19 @@ func RankNotesByTrust(notes []CommunityNote, viewerID string, trustScores map[st
 	return rankedNotes
 }
 
-// sortNotesByScore sorts notes by score in descending order
+// sortNotesByScore sorts notes by score in descending order using Go's optimized sort
 func sortNotesByScore(notes []CommunityNote) {
-	// Simple bubble sort for now (can optimize later)
-	n := len(notes)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			if notes[j].Score < notes[j+1].Score {
-				notes[j], notes[j+1] = notes[j+1], notes[j]
-			}
-		}
-	}
+	// Use Go's optimized sort.Slice for O(n log n) performance
+	// This is a stable sort that maintains relative order for equal scores
+	sort.Slice(notes, func(i, j int) bool {
+		return notes[i].Score > notes[j].Score // Descending order
+	})
 }
 
 // CalculateStats generates statistics for a set of notes
-func CalculateStats(notes []CommunityNote) map[string]interface{} {
-	if len(notes) == 0 {
-		return map[string]interface{}{
+func CalculateStats(notes []CommunityNote) map[string]any {
+	if err := common.ValidateSliceNotEmpty("notes", notes); err != nil {
+		return map[string]any{
 			"total":         0,
 			"visible":       0,
 			"disputed":      0,
@@ -186,7 +186,7 @@ func CalculateStats(notes []CommunityNote) map[string]interface{} {
 		}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"total":         len(notes),
 		"visible":       visible,
 		"disputed":      disputed,

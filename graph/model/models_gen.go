@@ -8,24 +8,25 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/moderation"
-	"github.com/aron23/lesser/pkg/trust"
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // AI Analysis types
 type AIAnalysis struct {
-	ID               string           `json:"id"`
-	ObjectID         string           `json:"objectId"`
-	ObjectType       string           `json:"objectType"`
-	TextAnalysis     *TextAnalysis    `json:"textAnalysis,omitempty"`
-	ImageAnalysis    *ImageAnalysis   `json:"imageAnalysis,omitempty"`
-	AiDetection      *AIDetection     `json:"aiDetection,omitempty"`
-	SpamAnalysis     *SpamAnalysis    `json:"spamAnalysis,omitempty"`
-	OverallRisk      float64          `json:"overallRisk"`
-	ModerationAction ModerationAction `json:"moderationAction"`
-	Confidence       float64          `json:"confidence"`
-	AnalyzedAt       Time             `json:"analyzedAt"`
+	ID               string                    `json:"id"`
+	ObjectID         string                    `json:"objectId"`
+	ObjectType       string                    `json:"objectType"`
+	TextAnalysis     *moderation.TextAnalysis  `json:"textAnalysis,omitempty"`
+	ImageAnalysis    *moderation.ImageAnalysis `json:"imageAnalysis,omitempty"`
+	AiDetection      *AIDetection              `json:"aiDetection,omitempty"`
+	SpamAnalysis     *SpamAnalysis             `json:"spamAnalysis,omitempty"`
+	OverallRisk      float64                   `json:"overallRisk"`
+	ModerationAction ModerationAction          `json:"moderationAction"`
+	Confidence       float64                   `json:"confidence"`
+	AnalyzedAt       Time                      `json:"analyzedAt"`
 }
 
 type AIAnalysisRequest struct {
@@ -78,6 +79,12 @@ type AccessLog struct {
 	Cost      int    `json:"cost"`
 }
 
+type AccountSuggestion struct {
+	Account *activitypub.Actor `json:"account"`
+	Source  SuggestionSource   `json:"source"`
+	Reason  *string            `json:"reason,omitempty"`
+}
+
 type AcknowledgePayload struct {
 	Success             bool                 `json:"success"`
 	SeveredRelationship *SeveredRelationship `json:"severedRelationship"`
@@ -110,6 +117,14 @@ type BandwidthReport struct {
 	ByQuality []*QualityBandwidth `json:"byQuality"`
 	ByHour    []*HourlyBandwidth  `json:"byHour"`
 	Cost      float64             `json:"cost"`
+}
+
+type BedrockTrainingOptions struct {
+	BaseModelID          *string `json:"baseModelId,omitempty"`
+	DatasetS3Path        *string `json:"datasetS3Path,omitempty"`
+	OutputS3Path         *string `json:"outputS3Path,omitempty"`
+	MaxTrainingTime      *int    `json:"maxTrainingTime,omitempty"`
+	EarlyStoppingEnabled *bool   `json:"earlyStoppingEnabled,omitempty"`
 }
 
 type Bitrate struct {
@@ -172,6 +187,15 @@ type ContentMapInput struct {
 	Content  string `json:"content"`
 }
 
+type Conversation struct {
+	ID         string               `json:"id"`
+	LastStatus *Object              `json:"lastStatus,omitempty"`
+	Unread     bool                 `json:"unread"`
+	Accounts   []*activitypub.Actor `json:"accounts"`
+	CreatedAt  Time                 `json:"createdAt"`
+	UpdatedAt  Time                 `json:"updatedAt"`
+}
+
 type Coordinates struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
@@ -197,14 +221,6 @@ type CostBreakdown struct {
 	Breakdown        []*CostItem `json:"breakdown"`
 }
 
-type CostDriver struct {
-	Type           string  `json:"type"`
-	Domain         *string `json:"domain,omitempty"`
-	Cost           float64 `json:"cost"`
-	PercentOfTotal float64 `json:"percentOfTotal"`
-	Trend          Trend   `json:"trend"`
-}
-
 type CostItem struct {
 	Operation string  `json:"operation"`
 	Count     int     `json:"count"`
@@ -218,18 +234,31 @@ type CostOptimizationResult struct {
 }
 
 type CostProjection struct {
-	Period          Period        `json:"period"`
-	CurrentCost     float64       `json:"currentCost"`
-	ProjectedCost   float64       `json:"projectedCost"`
-	Variance        float64       `json:"variance"`
-	TopCostDrivers  []*CostDriver `json:"topCostDrivers"`
-	Recommendations []string      `json:"recommendations"`
+	Period          Period         `json:"period"`
+	CurrentCost     float64        `json:"currentCost"`
+	ProjectedCost   float64        `json:"projectedCost"`
+	Variance        float64        `json:"variance"`
+	TopDrivers      []*cost.Driver `json:"topDrivers"`
+	Recommendations []string       `json:"recommendations"`
 }
 
 type CostUpdate struct {
 	OperationCost     int     `json:"operationCost"`
 	DailyTotal        float64 `json:"dailyTotal"`
 	MonthlyProjection float64 `json:"monthlyProjection"`
+}
+
+type CreateEmojiInput struct {
+	Shortcode       string  `json:"shortcode"`
+	Image           string  `json:"image"`
+	Category        *string `json:"category,omitempty"`
+	VisibleInPicker *bool   `json:"visibleInPicker,omitempty"`
+}
+
+type CreateListInput struct {
+	Title         string         `json:"title"`
+	RepliesPolicy *RepliesPolicy `json:"repliesPolicy,omitempty"`
+	Exclusive     *bool          `json:"exclusive,omitempty"`
 }
 
 type CreateNoteInput struct {
@@ -261,6 +290,18 @@ type CreateQuoteNoteInput struct {
 	MediaIds    []string    `json:"mediaIds,omitempty"`
 }
 
+type CustomEmoji struct {
+	ID              string  `json:"id"`
+	Shortcode       string  `json:"shortcode"`
+	URL             string  `json:"url"`
+	StaticURL       string  `json:"staticUrl"`
+	VisibleInPicker bool    `json:"visibleInPicker"`
+	Category        *string `json:"category,omitempty"`
+	Domain          *string `json:"domain,omitempty"`
+	CreatedAt       Time    `json:"createdAt"`
+	UpdatedAt       Time    `json:"updatedAt"`
+}
+
 type DatabaseStatus struct {
 	Name        string       `json:"name"`
 	Type        string       `json:"type"`
@@ -268,6 +309,13 @@ type DatabaseStatus struct {
 	Connections int          `json:"connections"`
 	Latency     Duration     `json:"latency"`
 	Throughput  float64      `json:"throughput"`
+}
+
+type DirectoryFiltersInput struct {
+	Local  *bool           `json:"local,omitempty"`
+	Remote *bool           `json:"remote,omitempty"`
+	Active *bool           `json:"active,omitempty"`
+	Order  *DirectoryOrder `json:"order,omitempty"`
 }
 
 type Entity struct {
@@ -412,6 +460,11 @@ type FlowNode struct {
 	AvgMessageSize int     `json:"avgMessageSize"`
 }
 
+type FocusInput struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
 type Hashtag struct {
 	Name                 string                       `json:"name"`
 	DisplayName          string                       `json:"displayName"`
@@ -498,18 +551,6 @@ type HourlyVolume struct {
 	Outbound   int     `json:"outbound"`
 	Errors     int     `json:"errors"`
 	AvgLatency float64 `json:"avgLatency"`
-}
-
-type ImageAnalysis struct {
-	ModerationLabels []*ModerationLabel `json:"moderationLabels"`
-	IsNsfw           bool               `json:"isNSFW"`
-	NsfwConfidence   float64            `json:"nsfwConfidence"`
-	ViolenceScore    float64            `json:"violenceScore"`
-	WeaponsDetected  bool               `json:"weaponsDetected"`
-	DetectedText     []string           `json:"detectedText"`
-	TextToxicity     float64            `json:"textToxicity"`
-	CelebrityFaces   []*Celebrity       `json:"celebrityFaces"`
-	DeepfakeScore    float64            `json:"deepfakeScore"`
 }
 
 type ImageAnalysisCapabilities struct {
@@ -643,6 +684,40 @@ type InstanceRelations struct {
 	Recommendations     []*FederationRecommendation `json:"recommendations"`
 }
 
+type List struct {
+	ID            string               `json:"id"`
+	Title         string               `json:"title"`
+	RepliesPolicy RepliesPolicy        `json:"repliesPolicy"`
+	Exclusive     bool                 `json:"exclusive"`
+	AccountCount  int                  `json:"accountCount"`
+	Accounts      []*activitypub.Actor `json:"accounts"`
+	CreatedAt     Time                 `json:"createdAt"`
+	UpdatedAt     Time                 `json:"updatedAt"`
+}
+
+type ListUpdate struct {
+	Type      string             `json:"type"`
+	List      *List              `json:"list"`
+	Account   *activitypub.Actor `json:"account,omitempty"`
+	Timestamp Time               `json:"timestamp"`
+}
+
+type Media struct {
+	ID          string             `json:"id"`
+	Type        MediaType          `json:"type"`
+	URL         string             `json:"url"`
+	PreviewURL  *string            `json:"previewUrl,omitempty"`
+	Description *string            `json:"description,omitempty"`
+	Blurhash    *string            `json:"blurhash,omitempty"`
+	Width       *int               `json:"width,omitempty"`
+	Height      *int               `json:"height,omitempty"`
+	Duration    *float64           `json:"duration,omitempty"`
+	Size        int                `json:"size"`
+	MimeType    string             `json:"mimeType"`
+	UploadedBy  *activitypub.Actor `json:"uploadedBy"`
+	CreatedAt   Time               `json:"createdAt"`
+}
+
 type MediaStream struct {
 	ID              string     `json:"id"`
 	URL             string     `json:"url"`
@@ -661,6 +736,35 @@ type Mention struct {
 	URL      string  `json:"url"`
 }
 
+type MetricsDimension struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type MetricsUpdate struct {
+	MetricID             string              `json:"metricId"`
+	ServiceName          string              `json:"serviceName"`
+	MetricType           string              `json:"metricType"`
+	SubscriptionCategory string              `json:"subscriptionCategory"`
+	AggregationLevel     string              `json:"aggregationLevel"`
+	Timestamp            Time                `json:"timestamp"`
+	Count                int                 `json:"count"`
+	Sum                  float64             `json:"sum"`
+	Min                  float64             `json:"min"`
+	Max                  float64             `json:"max"`
+	Average              float64             `json:"average"`
+	P50                  *float64            `json:"p50,omitempty"`
+	P95                  *float64            `json:"p95,omitempty"`
+	P99                  *float64            `json:"p99,omitempty"`
+	Unit                 *string             `json:"unit,omitempty"`
+	UserCostMicrocents   *int                `json:"userCostMicrocents,omitempty"`
+	TotalCostMicrocents  *int                `json:"totalCostMicrocents,omitempty"`
+	Dimensions           []*MetricsDimension `json:"dimensions"`
+	UserID               *string             `json:"userId,omitempty"`
+	TenantID             *string             `json:"tenantId,omitempty"`
+	InstanceDomain       *string             `json:"instanceDomain,omitempty"`
+}
+
 type ModerationActionCounts struct {
 	None      int `json:"none"`
 	Flag      int `json:"flag"`
@@ -671,15 +775,15 @@ type ModerationActionCounts struct {
 }
 
 type ModerationAlert struct {
-	ID              string             `json:"id"`
-	Severity        ModerationSeverity `json:"severity"`
-	Pattern         *ModerationPattern `json:"pattern,omitempty"`
-	Content         *Object            `json:"content"`
-	MatchedText     string             `json:"matchedText"`
-	Confidence      float64            `json:"confidence"`
-	SuggestedAction ModerationAction   `json:"suggestedAction"`
-	Timestamp       Time               `json:"timestamp"`
-	Handled         bool               `json:"handled"`
+	ID              string                        `json:"id"`
+	Severity        ModerationSeverity            `json:"severity"`
+	Pattern         *moderation.ModerationPattern `json:"pattern,omitempty"`
+	Content         *Object                       `json:"content"`
+	MatchedText     string                        `json:"matchedText"`
+	Confidence      float64                       `json:"confidence"`
+	SuggestedAction ModerationAction              `json:"suggestedAction"`
+	Timestamp       Time                          `json:"timestamp"`
+	Handled         bool                          `json:"handled"`
 }
 
 type ModerationDashboard struct {
@@ -702,13 +806,6 @@ type ModerationEffectiveness struct {
 	F1Score        float64 `json:"f1Score"`
 }
 
-type ModerationFilter struct {
-	Severity   *ModerationSeverity `json:"severity,omitempty"`
-	AssignedTo *string             `json:"assignedTo,omitempty"`
-	Priority   *Priority           `json:"priority,omitempty"`
-	Unhandled  *bool               `json:"unhandled,omitempty"`
-}
-
 type ModerationItem struct {
 	ID          string             `json:"id"`
 	Content     *Object            `json:"content"`
@@ -719,25 +816,6 @@ type ModerationItem struct {
 	Deadline    Time               `json:"deadline"`
 }
 
-type ModerationLabel struct {
-	Name       string  `json:"name"`
-	Confidence float64 `json:"confidence"`
-	ParentName *string `json:"parentName,omitempty"`
-}
-
-type ModerationPattern struct {
-	ID                string             `json:"id"`
-	Pattern           string             `json:"pattern"`
-	Type              PatternType        `json:"type"`
-	Severity          ModerationSeverity `json:"severity"`
-	MatchCount        int                `json:"matchCount"`
-	FalsePositiveRate float64            `json:"falsePositiveRate"`
-	CreatedAt         Time               `json:"createdAt"`
-	UpdatedAt         Time               `json:"updatedAt"`
-	CreatedBy         *activitypub.Actor `json:"createdBy"`
-	Active            bool               `json:"active"`
-}
-
 type ModerationPatternInput struct {
 	Pattern  string             `json:"pattern"`
 	Type     PatternType        `json:"type"`
@@ -745,10 +823,11 @@ type ModerationPatternInput struct {
 	Active   *bool              `json:"active,omitempty"`
 }
 
-type ModerationSample struct {
-	Content    string             `json:"content"`
-	Label      ModerationSeverity `json:"label"`
-	Confidence float64            `json:"confidence"`
+type ModerationSampleInput struct {
+	ObjectID   string  `json:"objectId"`
+	ObjectType string  `json:"objectType"`
+	Label      string  `json:"label"`
+	Confidence float64 `json:"confidence"`
 }
 
 type ModeratorStats struct {
@@ -870,11 +949,11 @@ type PageInfo struct {
 }
 
 type PatternStats struct {
-	Pattern    *ModerationPattern `json:"pattern"`
-	MatchCount int                `json:"matchCount"`
-	Accuracy   float64            `json:"accuracy"`
-	LastMatch  Time               `json:"lastMatch"`
-	Trend      Trend              `json:"trend"`
+	Pattern    *moderation.ModerationPattern `json:"pattern"`
+	MatchCount int                           `json:"matchCount"`
+	Accuracy   float64                       `json:"accuracy"`
+	LastMatch  Time                          `json:"lastMatch"`
+	Trend      Trend                         `json:"trend"`
 }
 
 type PerformanceAlert struct {
@@ -896,6 +975,20 @@ type PerformanceReport struct {
 	Throughput float64         `json:"throughput"`
 	ColdStarts int             `json:"coldStarts"`
 	Period     TimePeriod      `json:"period"`
+}
+
+type PollParams struct {
+	Options    []string `json:"options"`
+	ExpiresIn  int      `json:"expiresIn"`
+	Multiple   *bool    `json:"multiple,omitempty"`
+	HideTotals *bool    `json:"hideTotals,omitempty"`
+}
+
+type PollParamsInput struct {
+	Options    []string `json:"options"`
+	ExpiresIn  int      `json:"expiresIn"`
+	Multiple   *bool    `json:"multiple,omitempty"`
+	HideTotals *bool    `json:"hideTotals,omitempty"`
 }
 
 type PortableReputation struct {
@@ -925,6 +1018,11 @@ type PrivacyPreferences struct {
 	DefaultVisibility Visibility `json:"defaultVisibility"`
 	Indexable         bool       `json:"indexable"`
 	ShowOnlineStatus  bool       `json:"showOnlineStatus"`
+}
+
+type ProfileDirectory struct {
+	Accounts   []*activitypub.Actor `json:"accounts"`
+	TotalCount int                  `json:"totalCount"`
 }
 
 type QualityBandwidth struct {
@@ -986,6 +1084,29 @@ type ReconnectionPayload struct {
 	Errors              []string             `json:"errors,omitempty"`
 }
 
+type Relationship struct {
+	ID                  string   `json:"id"`
+	Following           bool     `json:"following"`
+	FollowedBy          bool     `json:"followedBy"`
+	Blocking            bool     `json:"blocking"`
+	BlockedBy           bool     `json:"blockedBy"`
+	Muting              bool     `json:"muting"`
+	MutingNotifications bool     `json:"mutingNotifications"`
+	Requested           bool     `json:"requested"`
+	DomainBlocking      bool     `json:"domainBlocking"`
+	ShowingReblogs      bool     `json:"showingReblogs"`
+	Notifying           bool     `json:"notifying"`
+	Languages           []string `json:"languages,omitempty"`
+	Note                *string  `json:"note,omitempty"`
+}
+
+type RelationshipUpdate struct {
+	Type         string             `json:"type"`
+	Relationship *Relationship      `json:"relationship"`
+	Actor        *activitypub.Actor `json:"actor"`
+	Timestamp    Time               `json:"timestamp"`
+}
+
 type Reputation struct {
 	ActorID         string              `json:"actorId"`
 	Instance        string              `json:"instance"`
@@ -1029,6 +1150,32 @@ type ReputationVerificationResult struct {
 	NotExpired     bool    `json:"notExpired"`
 	IssuerTrusted  bool    `json:"issuerTrusted"`
 	Error          *string `json:"error,omitempty"`
+}
+
+type ScheduleStatusInput struct {
+	Text        string           `json:"text"`
+	ScheduledAt Time             `json:"scheduledAt"`
+	Visibility  *Visibility      `json:"visibility,omitempty"`
+	Sensitive   *bool            `json:"sensitive,omitempty"`
+	SpoilerText *string          `json:"spoilerText,omitempty"`
+	InReplyToID *string          `json:"inReplyToId,omitempty"`
+	Language    *string          `json:"language,omitempty"`
+	MediaIds    []string         `json:"mediaIds,omitempty"`
+	Poll        *PollParamsInput `json:"poll,omitempty"`
+}
+
+type ScheduledStatus struct {
+	ID               string        `json:"id"`
+	ScheduledAt      Time          `json:"scheduledAt"`
+	Params           *StatusParams `json:"params"`
+	MediaAttachments []*Media      `json:"mediaAttachments"`
+	CreatedAt        Time          `json:"createdAt"`
+}
+
+type SearchResult struct {
+	Accounts []*activitypub.Actor `json:"accounts"`
+	Statuses []*Object            `json:"statuses"`
+	Hashtags []*activitypub.Tag   `json:"hashtags"`
 }
 
 type SentimentScores struct {
@@ -1092,6 +1239,16 @@ type SpamIndicator struct {
 	Type        string  `json:"type"`
 	Description string  `json:"description"`
 	Severity    float64 `json:"severity"`
+}
+
+type StatusParams struct {
+	Text        string      `json:"text"`
+	Visibility  Visibility  `json:"visibility"`
+	Sensitive   bool        `json:"sensitive"`
+	SpoilerText *string     `json:"spoilerText,omitempty"`
+	InReplyToID *string     `json:"inReplyToId,omitempty"`
+	Language    *string     `json:"language,omitempty"`
+	Poll        *PollParams `json:"poll,omitempty"`
 }
 
 type Stream struct {
@@ -1170,17 +1327,6 @@ type SyncThreadPayload struct {
 	Errors      []string       `json:"errors,omitempty"`
 }
 
-type TextAnalysis struct {
-	Sentiment        Sentiment        `json:"sentiment"`
-	SentimentScores  *SentimentScores `json:"sentimentScores"`
-	ToxicityScore    float64          `json:"toxicityScore"`
-	ToxicityLabels   []string         `json:"toxicityLabels"`
-	ContainsPii      bool             `json:"containsPII"`
-	DominantLanguage string           `json:"dominantLanguage"`
-	Entities         []*Entity        `json:"entities"`
-	KeyPhrases       []string         `json:"keyPhrases"`
-}
-
 type TextAnalysisCapabilities struct {
 	SentimentAnalysis bool `json:"sentimentAnalysis"`
 	ToxicityDetection bool `json:"toxicityDetection"`
@@ -1220,24 +1366,34 @@ type ThreatTrend struct {
 
 type TrainingResult struct {
 	Success      bool     `json:"success"`
+	Status       string   `json:"status"`
+	JobID        string   `json:"jobId"`
+	JobName      string   `json:"jobName"`
+	DatasetS3Key string   `json:"datasetS3Key"`
 	ModelVersion string   `json:"modelVersion"`
 	Accuracy     float64  `json:"accuracy"`
 	Precision    float64  `json:"precision"`
 	Recall       float64  `json:"recall"`
+	F1Score      float64  `json:"f1Score"`
 	SamplesUsed  int      `json:"samplesUsed"`
 	TrainingTime int      `json:"trainingTime"`
 	Improvements []string `json:"improvements"`
 }
 
 type TrustInput struct {
-	TargetActorID string              `json:"targetActorId"`
-	Category      trust.TrustCategory `json:"category"`
-	Score         float64             `json:"score"`
+	TargetActorID string               `json:"targetActorId"`
+	Category      models.TrustCategory `json:"category"`
+	Score         float64              `json:"score"`
 }
 
 type UnfollowHashtagPayload struct {
 	Success bool     `json:"success"`
 	Hashtag *Hashtag `json:"hashtag"`
+}
+
+type UpdateEmojiInput struct {
+	Category        *string `json:"category,omitempty"`
+	VisibleInPicker *bool   `json:"visibleInPicker,omitempty"`
 }
 
 type UpdateHashtagNotificationsPayload struct {
@@ -1246,10 +1402,32 @@ type UpdateHashtagNotificationsPayload struct {
 	Settings *HashtagNotificationSettings `json:"settings"`
 }
 
+type UpdateListInput struct {
+	Title         *string        `json:"title,omitempty"`
+	RepliesPolicy *RepliesPolicy `json:"repliesPolicy,omitempty"`
+	Exclusive     *bool          `json:"exclusive,omitempty"`
+}
+
+type UpdateMediaInput struct {
+	Description *string     `json:"description,omitempty"`
+	Focus       *FocusInput `json:"focus,omitempty"`
+}
+
 type UpdateQuotePermissionsPayload struct {
 	Success        bool    `json:"success"`
 	Note           *Object `json:"note"`
 	AffectedQuotes int     `json:"affectedQuotes"`
+}
+
+type UpdateRelationshipInput struct {
+	Notify      *bool    `json:"notify,omitempty"`
+	ShowReblogs *bool    `json:"showReblogs,omitempty"`
+	Languages   []string `json:"languages,omitempty"`
+	Note        *string  `json:"note,omitempty"`
+}
+
+type UpdateScheduledStatusInput struct {
+	ScheduledAt Time `json:"scheduledAt"`
 }
 
 type UserPreferences struct {
@@ -1710,6 +1888,61 @@ func (e DigestFrequency) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type DirectoryOrder string
+
+const (
+	DirectoryOrderActive DirectoryOrder = "ACTIVE"
+	DirectoryOrderNew    DirectoryOrder = "NEW"
+)
+
+var AllDirectoryOrder = []DirectoryOrder{
+	DirectoryOrderActive,
+	DirectoryOrderNew,
+}
+
+func (e DirectoryOrder) IsValid() bool {
+	switch e {
+	case DirectoryOrderActive, DirectoryOrderNew:
+		return true
+	}
+	return false
+}
+
+func (e DirectoryOrder) String() string {
+	return string(e)
+}
+
+func (e *DirectoryOrder) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = DirectoryOrder(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid DirectoryOrder", str)
+	}
+	return nil
+}
+
+func (e DirectoryOrder) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *DirectoryOrder) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e DirectoryOrder) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type FederationState string
 
 const (
@@ -2066,6 +2299,65 @@ func (e IssueSeverity) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type MediaType string
+
+const (
+	MediaTypeImage   MediaType = "IMAGE"
+	MediaTypeVideo   MediaType = "VIDEO"
+	MediaTypeAudio   MediaType = "AUDIO"
+	MediaTypeUnknown MediaType = "UNKNOWN"
+)
+
+var AllMediaType = []MediaType{
+	MediaTypeImage,
+	MediaTypeVideo,
+	MediaTypeAudio,
+	MediaTypeUnknown,
+}
+
+func (e MediaType) IsValid() bool {
+	switch e {
+	case MediaTypeImage, MediaTypeVideo, MediaTypeAudio, MediaTypeUnknown:
+		return true
+	}
+	return false
+}
+
+func (e MediaType) String() string {
+	return string(e)
+}
+
+func (e *MediaType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = MediaType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid MediaType", str)
+	}
+	return nil
+}
+
+func (e MediaType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *MediaType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e MediaType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type ModerationAction string
 
 const (
@@ -2124,6 +2416,65 @@ func (e *ModerationAction) UnmarshalJSON(b []byte) error {
 }
 
 func (e ModerationAction) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ModerationPeriod string
+
+const (
+	ModerationPeriodHourly  ModerationPeriod = "HOURLY"
+	ModerationPeriodDaily   ModerationPeriod = "DAILY"
+	ModerationPeriodWeekly  ModerationPeriod = "WEEKLY"
+	ModerationPeriodMonthly ModerationPeriod = "MONTHLY"
+)
+
+var AllModerationPeriod = []ModerationPeriod{
+	ModerationPeriodHourly,
+	ModerationPeriodDaily,
+	ModerationPeriodWeekly,
+	ModerationPeriodMonthly,
+}
+
+func (e ModerationPeriod) IsValid() bool {
+	switch e {
+	case ModerationPeriodHourly, ModerationPeriodDaily, ModerationPeriodWeekly, ModerationPeriodMonthly:
+		return true
+	}
+	return false
+}
+
+func (e ModerationPeriod) String() string {
+	return string(e)
+}
+
+func (e *ModerationPeriod) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ModerationPeriod(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ModerationPeriod", str)
+	}
+	return nil
+}
+
+func (e ModerationPeriod) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ModerationPeriod) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ModerationPeriod) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
@@ -2670,6 +3021,63 @@ func (e RecommendationType) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type RepliesPolicy string
+
+const (
+	RepliesPolicyFollowed RepliesPolicy = "FOLLOWED"
+	RepliesPolicyList     RepliesPolicy = "LIST"
+	RepliesPolicyNone     RepliesPolicy = "NONE"
+)
+
+var AllRepliesPolicy = []RepliesPolicy{
+	RepliesPolicyFollowed,
+	RepliesPolicyList,
+	RepliesPolicyNone,
+}
+
+func (e RepliesPolicy) IsValid() bool {
+	switch e {
+	case RepliesPolicyFollowed, RepliesPolicyList, RepliesPolicyNone:
+		return true
+	}
+	return false
+}
+
+func (e RepliesPolicy) String() string {
+	return string(e)
+}
+
+func (e *RepliesPolicy) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = RepliesPolicy(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid RepliesPolicy", str)
+	}
+	return nil
+}
+
+func (e RepliesPolicy) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *RepliesPolicy) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e RepliesPolicy) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type Sentiment string
 
 const (
@@ -2909,6 +3317,65 @@ func (e *StreamQuality) UnmarshalJSON(b []byte) error {
 }
 
 func (e StreamQuality) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type SuggestionSource string
+
+const (
+	SuggestionSourceStaff            SuggestionSource = "STAFF"
+	SuggestionSourcePastInteractions SuggestionSource = "PAST_INTERACTIONS"
+	SuggestionSourceGlobal           SuggestionSource = "GLOBAL"
+	SuggestionSourceSimilarProfiles  SuggestionSource = "SIMILAR_PROFILES"
+)
+
+var AllSuggestionSource = []SuggestionSource{
+	SuggestionSourceStaff,
+	SuggestionSourcePastInteractions,
+	SuggestionSourceGlobal,
+	SuggestionSourceSimilarProfiles,
+}
+
+func (e SuggestionSource) IsValid() bool {
+	switch e {
+	case SuggestionSourceStaff, SuggestionSourcePastInteractions, SuggestionSourceGlobal, SuggestionSourceSimilarProfiles:
+		return true
+	}
+	return false
+}
+
+func (e SuggestionSource) String() string {
+	return string(e)
+}
+
+func (e *SuggestionSource) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SuggestionSource(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SuggestionSource", str)
+	}
+	return nil
+}
+
+func (e SuggestionSource) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SuggestionSource) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SuggestionSource) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

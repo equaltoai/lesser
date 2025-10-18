@@ -3,21 +3,15 @@ package auth
 import (
 	"context"
 	"errors"
-	"os"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
-	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	// "github.com/equaltoai/lesser/pkg/storage/dynamodb"
+	// "go.uber.org/zap"
 )
 
-// ContextKey is a type for context keys
-type ContextKey string
-
-const (
-	// ContextKeyClaims is the context key for JWT claims
-	ContextKeyClaims ContextKey = "claims"
-)
+// Use ContextKey and ContextKeyClaims from common package
 
 var (
 	// ErrMissingAuthHeader is returned when Authorization header is missing
@@ -31,10 +25,8 @@ type Middleware struct {
 	oauthService *OAuthService
 }
 
-var (
-	// globalMiddleware is reused across Lambda invocations
-	globalMiddleware *Middleware
-)
+// globalMiddleware is reused across Lambda invocations
+var globalMiddleware *Middleware
 
 // GetMiddleware returns a singleton middleware instance
 func GetMiddleware() (*Middleware, error) {
@@ -42,34 +34,25 @@ func GetMiddleware() (*Middleware, error) {
 		return globalMiddleware, nil
 	}
 
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		jwtSecret = "development-secret-change-me"
-	}
-
-	// Initialize storage
-	store, err := dynamodb.New()
-	if err != nil {
-		common.Logger().Error("failed to initialize storage for middleware", zap.Error(err))
-		return nil, err
-	}
-
-	globalMiddleware = &Middleware{
-		oauthService: NewOAuthService(jwtSecret, store),
-	}
-
-	return globalMiddleware, nil
+	return nil, errors.New("GetMiddleware needs storage - use handler's auth middleware instead")
 }
 
 // NewMiddleware creates a new auth middleware (deprecated - use GetMiddleware)
 func NewMiddleware() *Middleware {
 	m, err := GetMiddleware()
 	if err != nil {
+		// JWT secret is required - no fallback to default
+		cfg := config.Get()
+		jwtSecret := cfg.JWTSecret
+		if jwtSecret == "" {
+			panic("JWT_SECRET environment variable is required")
+		}
+
 		// Fallback for backward compatibility, but this won't work properly
 		// without storage
 		return &Middleware{
 			oauthService: &OAuthService{
-				jwtSecret: []byte("development-secret-change-me"),
+				jwtSecret: []byte(jwtSecret),
 			},
 		}
 	}
@@ -77,14 +60,14 @@ func NewMiddleware() *Middleware {
 }
 
 // RequireAuth validates the Bearer token from the request and returns the claims
-func (m *Middleware) RequireAuth(ctx context.Context, request events.APIGatewayV2HTTPRequest) (*Claims, error) {
+func (m *Middleware) RequireAuth(_ context.Context, request events.APIGatewayV2HTTPRequest) (*Claims, error) {
 	// Extract token from Authorization header
 	authHeader := request.Headers["Authorization"]
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("Authorization", authHeader); err != nil {
 		authHeader = request.Headers["authorization"]
 	}
 
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		return nil, ErrMissingAuthHeader
 	}
 
@@ -99,7 +82,7 @@ func (m *Middleware) RequireAuth(ctx context.Context, request events.APIGatewayV
 	if err != nil {
 		// Log authentication failure
 		ip := request.Headers["X-Forwarded-For"]
-		if ip == "" {
+		if err := common.ValidateRequiredParam("ip", ip); err != nil {
 			ip = request.RequestContext.HTTP.SourceIP
 		}
 		userAgent := request.Headers["User-Agent"]
@@ -129,11 +112,11 @@ func (m *Middleware) RequireUser(claims *Claims, username string) error {
 
 // WithClaims adds claims to the context
 func WithClaims(ctx context.Context, claims *Claims) context.Context {
-	return context.WithValue(ctx, ContextKeyClaims, claims)
+	return context.WithValue(ctx, common.ContextKeyClaims, claims)
 }
 
 // GetClaims retrieves claims from the context
 func GetClaims(ctx context.Context) (*Claims, bool) {
-	claims, ok := ctx.Value(ContextKeyClaims).(*Claims)
+	claims, ok := ctx.Value(common.ContextKeyClaims).(*Claims)
 	return claims, ok
 }

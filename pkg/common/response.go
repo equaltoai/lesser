@@ -1,6 +1,7 @@
 //go:build !production
 // +build !production
 
+// Package common provides shared utilities for the Lesser application.
 package common
 
 import (
@@ -36,7 +37,7 @@ func ActivityPubHeaders() map[string]string {
 }
 
 // JSONResponse creates a successful JSON response
-func JSONResponse(statusCode int, body interface{}) *events.APIGatewayV2HTTPResponse {
+func JSONResponse(statusCode int, body any) *events.APIGatewayV2HTTPResponse {
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		Logger().Error("failed to marshal response body", zap.Error(err))
@@ -51,7 +52,7 @@ func JSONResponse(statusCode int, body interface{}) *events.APIGatewayV2HTTPResp
 }
 
 // ActivityPubResponse creates a successful ActivityPub response
-func ActivityPubResponse(statusCode int, body interface{}) *events.APIGatewayV2HTTPResponse {
+func ActivityPubResponse(statusCode int, body any) *events.APIGatewayV2HTTPResponse {
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		Logger().Error("failed to marshal ActivityPub response", zap.Error(err))
@@ -169,17 +170,17 @@ func ErrorFromType(err error) *events.APIGatewayV2HTTPResponse {
 // Success response helpers
 
 // OK returns a 200 OK response
-func OK(body interface{}) *events.APIGatewayV2HTTPResponse {
+func OK(body any) *events.APIGatewayV2HTTPResponse {
 	return JSONResponse(http.StatusOK, body)
 }
 
 // Created returns a 201 Created response
-func Created(body interface{}) *events.APIGatewayV2HTTPResponse {
+func Created(body any) *events.APIGatewayV2HTTPResponse {
 	return JSONResponse(http.StatusCreated, body)
 }
 
 // Accepted returns a 202 Accepted response
-func Accepted(body interface{}) *events.APIGatewayV2HTTPResponse {
+func Accepted(body any) *events.APIGatewayV2HTTPResponse {
 	return JSONResponse(http.StatusAccepted, body)
 }
 

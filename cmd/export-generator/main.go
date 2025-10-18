@@ -1,3 +1,4 @@
+// Package main implements the export-generator Lambda function for generating user data exports.
 package main
 
 import (
@@ -8,44 +9,55 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/aron23/lesser/pkg/activitypub"
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/storage"
-	"github.com/aron23/lesser/pkg/storage/dynamodb"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	dynamodbsdk "github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/services"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
+// ExportProcessor handles data export generation from SQS messages
+type ExportProcessor struct {
+	db               core.DB
+	repos            storageCore.RepositoryStorage
+	exportRepo       *repositories.ExportRepository
+	costTrackingRepo *repositories.TrackingRepository
+	s3Client         *s3.Client
+	logger           *zap.Logger
+	tableName        string
+	bucketName       string
+	baseURL          string
+}
+
 var (
-	logger        *zap.Logger
-	s3Client      *s3.Client
-	dynamoClient  *dynamodbsdk.Client
-	storageClient storage.Storage
-	tableName     string
-	bucketName    string
-	baseURL       string
+	processor *ExportProcessor
 )
 
 // ExportGeneratorEvent represents the event triggered for export generation
 type ExportGeneratorEvent struct {
-	ExportID     string                 `json:"export_id"`
-	Username     string                 `json:"username"`
-	Type         string                 `json:"type"`   // archive, followers, following, etc.
-	Format       string                 `json:"format"` // activitypub, mastodon, csv
-	Options      map[string]interface{} `json:"options"`
-	IncludeMedia bool                   `json:"include_media"`
-	DateRange    *DateRange             `json:"date_range"`
+	ExportID     string         `json:"export_id"`
+	Username     string         `json:"username"`
+	Type         string         `json:"type"`   // archive, followers, following, etc.
+	Format       string         `json:"format"` // activitypub, mastodon, csv
+	Options      map[string]any `json:"options"`
+	IncludeMedia bool           `json:"include_media"`
+	DateRange    *DateRange     `json:"date_range"`
 }
 
 // DateRange for filtering exports
@@ -54,98 +66,232 @@ type DateRange struct {
 	End   time.Time `json:"end"`
 }
 
-func init() {
-	// Initialize logger
-	cfg := zap.NewProductionConfig()
-	cfg.EncoderConfig.TimeKey = "timestamp"
-	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-
-	var err error
-	logger, err = cfg.Build()
-	if err != nil {
-		panic(fmt.Sprintf("failed to initialize logger: %v", err))
-	}
-
-	// Get configuration from environment
-	bucketName = os.Getenv("S3_BUCKET_NAME")
-	if bucketName == "" {
-		logger.Fatal("S3_BUCKET_NAME environment variable not set")
-	}
-
-	tableName = os.Getenv("DYNAMODB_TABLE_NAME")
-	if tableName == "" {
-		logger.Fatal("DYNAMODB_TABLE_NAME environment variable not set")
-	}
-
-	baseURL = os.Getenv("BASE_URL")
-	if baseURL == "" {
-		baseURL = "https://example.com" // Default
-	}
-}
-
 func main() {
-	lambda.Start(handleExportGeneration)
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "export-generator",
+		LambdaType:  common.LambdaTypeProcessor,
+		Version:     "1.0.0",
+	})
+
+	// AWS config no longer needed - DynamORM handles configuration internally
+
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
+	if err != nil {
+		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+	}
+
+	// Initialize repository factory
+	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	if err != nil {
+		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
+
+	// Initialize export repository
+	exportRepo := repositories.NewExportRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+
+	// Initialize cost tracking repository
+	costTrackingRepo := repositories.NewTrackingRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger, nil)
+
+	// Create processor instance
+	processor = &ExportProcessor{
+		db:               db,
+		repos:            repos,
+		exportRepo:       exportRepo,
+		costTrackingRepo: costTrackingRepo,
+		logger:           lambdaCtx.Logger,
+		tableName:        lambdaCtx.Config.DynamoTableName,
+		bucketName:       lambdaCtx.Config.S3BucketName,
+		baseURL:          lambdaCtx.Config.BaseURL(),
+	}
+
+	if err := common.ValidateRequiredParam("bucketName", processor.bucketName); err != nil {
+		lambdaCtx.Logger.Fatal("S3_BUCKET_NAME configuration not set")
+	}
+	if common.ValidateRequiredParam("baseURL", processor.baseURL) != nil {
+		processor.baseURL = "https://example.com" // Default
+	}
+
+	lambda.Start(func(ctx context.Context, event events.SQSEvent) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				requestID := fmt.Sprintf("export-%d", time.Now().UnixNano())
+				processor.logger.Error("panic in export generator handler",
+					zap.String("request_id", requestID),
+					zap.Any("panic", r),
+					zap.Stack("stack"))
+				err = fmt.Errorf("panic recovered in export-generator: %v", r)
+			}
+		}()
+
+		liftCtx := &lift.Context{
+			Request:   &lift.Request{},
+			RequestID: fmt.Sprintf("export-%d", time.Now().UnixNano()),
+		}
+		return processor.HandleSQSWithContext(ctx, liftCtx, event)
+	})
 }
 
-func handleExportGeneration(ctx context.Context, sqsEvent events.SQSEvent) error {
+// HandleSQSWithContext implements the SQS handler interface for Lift with explicit context
+func (ep *ExportProcessor) HandleSQSWithContext(ctx context.Context, liftCtx *lift.Context, event events.SQSEvent) error {
 	// Initialize AWS clients
-	if err := initializeAWSClients(ctx); err != nil {
-		logger.Error("failed to initialize AWS clients", zap.Error(err))
-		return err
+	if err := ep.initializeAWSClients(ctx); err != nil {
+		ep.logger.Error("failed to initialize AWS clients", zap.Error(err))
+		return lift.NewLiftError("AWS_INIT_FAILED", "failed to initialize AWS clients", 500).WithCause(err)
 	}
+
+	ep.logger.Info("processing export generation batch",
+		zap.String("request_id", liftCtx.GetRequestID()),
+		zap.Int("message_count", len(event.Records)))
 
 	// Process each message
-	for _, message := range sqsEvent.Records {
-		var event ExportGeneratorEvent
-		if err := common.ParseRequestBody([]byte(message.Body), &event); err != nil {
-			logger.Error("failed to unmarshal event",
+	for _, message := range event.Records {
+		// Try parsing as services.ExportJobMessage first (new format)
+		var exportMsg services.ExportJobMessage
+		if err := common.ParseRequestBody([]byte(message.Body), &exportMsg); err == nil {
+			// Convert to legacy format for processing
+			var dateRange *DateRange
+			if exportMsg.DateRange != nil {
+				dateRange = &DateRange{
+					Start: exportMsg.DateRange.Start,
+					End:   exportMsg.DateRange.End,
+				}
+			}
+
+			exportEvent := ExportGeneratorEvent{
+				ExportID:     exportMsg.ExportID,
+				Username:     exportMsg.Username,
+				Type:         exportMsg.Type,
+				Format:       exportMsg.Format,
+				Options:      exportMsg.Options,
+				IncludeMedia: exportMsg.IncludeMedia,
+				DateRange:    dateRange,
+			}
+			if err := ep.processExportJob(ctx, exportEvent); err != nil {
+				ep.logger.Error("failed to process export job",
+					zap.String("export_id", exportEvent.ExportID),
+					zap.String("username", exportEvent.Username),
+					zap.String("request_id", liftCtx.GetRequestID()),
+					zap.Error(err))
+				// Update job status as failed
+				if updateErr := ep.exportRepo.UpdateExportStatus(ctx, exportEvent.ExportID, "failed", nil, err.Error()); updateErr != nil {
+					ep.logger.Error("failed to update export status to failed",
+						zap.String("export_id", exportEvent.ExportID),
+						zap.Error(updateErr))
+				}
+			}
+			continue
+		}
+
+		// Fallback to legacy format
+		var exportEvent ExportGeneratorEvent
+		if err := common.ParseRequestBody([]byte(message.Body), &exportEvent); err != nil {
+			ep.logger.Error("failed to unmarshal event",
 				zap.String("message_id", message.MessageId),
+				zap.String("request_id", liftCtx.GetRequestID()),
 				zap.Error(err))
 			continue
 		}
 
-		if err := processExportJob(ctx, event); err != nil {
-			logger.Error("failed to process export job",
-				zap.String("export_id", event.ExportID),
-				zap.String("username", event.Username),
+		if err := ep.processExportJob(ctx, exportEvent); err != nil {
+			ep.logger.Error("failed to process export job",
+				zap.String("export_id", exportEvent.ExportID),
+				zap.String("username", exportEvent.Username),
+				zap.String("request_id", liftCtx.GetRequestID()),
 				zap.Error(err))
 			// Update job status as failed
-			updateExportStatus(ctx, event.ExportID, "failed", nil, err.Error())
+			if updateErr := ep.exportRepo.UpdateExportStatus(ctx, exportEvent.ExportID, "failed", nil, err.Error()); updateErr != nil {
+				ep.logger.Error("failed to update export status to failed",
+					zap.String("export_id", exportEvent.ExportID),
+					zap.Error(updateErr))
+			}
 		}
 	}
 
 	return nil
 }
 
-func initializeAWSClients(ctx context.Context) error {
+func (ep *ExportProcessor) initializeAWSClients(ctx context.Context) error {
 	// Load AWS configuration
-	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to load AWS config: %w", err)
+		return ErrAWSConfigLoad(err)
 	}
 
 	// Initialize S3 client
-	s3Client = s3.NewFromConfig(cfg)
-
-	// Initialize DynamoDB client
-	dynamoClient = dynamodbsdk.NewFromConfig(cfg)
-
-	// Initialize storage client
-	storageClient = dynamodb.NewWithClient(dynamoClient, tableName)
+	ep.s3Client = s3.NewFromConfig(awsCfg)
 
 	return nil
 }
 
-func processExportJob(ctx context.Context, event ExportGeneratorEvent) error {
-	logger.Info("processing export job",
+func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGeneratorEvent) error {
+	ep.logger.Info("processing export job",
 		zap.String("export_id", event.ExportID),
 		zap.String("username", event.Username),
 		zap.String("type", event.Type),
 		zap.String("format", event.Format))
 
+	// Initialize cost tracking
+	startTime := time.Now()
+	exportCostTracking := &models.ExportCostTracking{
+		ExportID:     event.ExportID,
+		Username:     event.Username,
+		Type:         event.Type,
+		Format:       event.Format,
+		IncludeMedia: event.IncludeMedia,
+		Status:       "processing",
+		StartedAt:    startTime,
+	}
+
+	// Note: Budget enforcement should be implemented at the API level before jobs are queued
+	// This ensures users cannot exceed limits even if multiple exports are processed simultaneously
+
+	// Track the export job completion
+	defer func() {
+		if exportCostTracking.CompletedAt == nil {
+			completedAt := time.Now()
+			exportCostTracking.CompletedAt = &completedAt
+		}
+
+		// Calculate Lambda execution cost
+		exportCostTracking.LambdaDurationMs = time.Since(startTime).Milliseconds()
+		exportCostTracking.LambdaExecutionCost = ep.calculateLambdaCost(exportCostTracking.LambdaDurationMs)
+
+		// Calculate total cost
+		exportCostTracking.CalculateTotalCost()
+
+		// Save cost tracking record
+		if err := ep.costTrackingRepo.Create(ctx, &models.DynamoDBCostRecord{
+			Table:                ep.tableName,
+			OperationType:        "ExportGeneration",
+			EstimatedCostDollars: exportCostTracking.GetTotalCostDollars(),
+			TotalCostMicroCents:  exportCostTracking.TotalCostMicroCents,
+			ServiceName:          "export-generator",
+			RequestDuration:      time.Since(startTime).Milliseconds(),
+			Properties: map[string]interface{}{
+				"username":  event.Username,
+				"export_id": event.ExportID,
+			},
+		}); err != nil {
+			ep.logger.Error("failed to save export cost tracking",
+				zap.String("export_id", event.ExportID),
+				zap.Error(err))
+		}
+
+		// Create a dedicated ImportRepository instance to update budget usage
+		// This tracks actual costs against user budgets
+		importRepo := repositories.NewImportRepository(ep.db, ep.tableName, ep.logger)
+		if err := importRepo.UpdateBudgetUsage(ctx, event.Username, "daily", 0, exportCostTracking.TotalCostMicroCents); err != nil {
+			ep.logger.Warn("failed to update budget usage",
+				zap.String("export_id", event.ExportID),
+				zap.String("username", event.Username),
+				zap.Error(err))
+		}
+	}()
+
 	// Update job status to processing
-	if err := updateExportStatus(ctx, event.ExportID, "processing", nil, ""); err != nil {
-		logger.Warn("failed to update export status", zap.Error(err))
+	if err := ep.exportRepo.UpdateExportStatus(ctx, event.ExportID, "processing", nil, ""); err != nil {
+		ep.logger.Warn("failed to update export status", zap.Error(err))
 	}
 
 	// Generate export based on type and format
@@ -157,46 +303,52 @@ func processExportJob(ctx context.Context, event ExportGeneratorEvent) error {
 
 	switch event.Format {
 	case "csv":
-		exportData, recordCount, err = generateCSVExport(ctx, event)
+		exportData, recordCount, err = ep.generateCSVExport(ctx, event, exportCostTracking)
 		filename = fmt.Sprintf("%s_%s.csv", event.Username, event.Type)
 		contentType = "text/csv"
 
 	case "activitypub":
-		exportData, recordCount, err = generateActivityPubExport(ctx, event)
+		exportData, recordCount, err = ep.generateActivityPubExport(ctx, event, exportCostTracking)
 		filename = fmt.Sprintf("%s_activitypub_archive.zip", event.Username)
 		contentType = "application/zip"
 
 	case "mastodon":
-		exportData, recordCount, err = generateMastodonExport(ctx, event)
+		exportData, recordCount, err = ep.generateMastodonExport(ctx, event, exportCostTracking)
 		filename = fmt.Sprintf("%s_mastodon_archive.zip", event.Username)
 		contentType = "application/zip"
 
 	default:
-		return fmt.Errorf("unsupported export format: %s", event.Format)
+		ep.logger.Error("unsupported export format", zap.String("format", event.Format))
+		return ErrUnsupportedExportFormat()
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to generate export: %w", err)
+		return ErrGenerateExport(err)
 	}
 
-	// Upload to S3
+	// Upload to S3 and track costs
 	s3Key := fmt.Sprintf("exports/%s/%s/%s", event.Username, event.ExportID, filename)
-	if err := uploadToS3(ctx, s3Key, exportData, contentType); err != nil {
-		return fmt.Errorf("failed to upload export: %w", err)
+	if err := ep.uploadToS3(ctx, s3Key, exportData, contentType, exportCostTracking); err != nil {
+		return ErrS3Upload(err)
 	}
+
+	// Update export cost tracking with file metrics
+	exportCostTracking.FileSize = int64(len(exportData))
+	exportCostTracking.RecordCount = int64(recordCount)
+	exportCostTracking.Status = "completed"
 
 	// Generate pre-signed URL (24 hour expiry)
-	presignClient := s3.NewPresignClient(s3Client)
+	presignClient := s3.NewPresignClient(ep.s3Client)
 	presignReq, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(bucketName),
+		Bucket: aws.String(ep.bucketName),
 		Key:    aws.String(s3Key),
 	}, s3.WithPresignExpires(24*time.Hour))
 	if err != nil {
-		return fmt.Errorf("failed to generate pre-signed URL: %w", err)
+		return ErrS3PresignedURL(err)
 	}
 
 	// Update export job as completed
-	completionData := map[string]interface{}{
+	completionData := map[string]any{
 		"download_url": presignReq.URL,
 		"expires_at":   time.Now().Add(24 * time.Hour),
 		"file_size":    len(exportData),
@@ -204,11 +356,11 @@ func processExportJob(ctx context.Context, event ExportGeneratorEvent) error {
 		"s3_key":       s3Key,
 	}
 
-	if err := updateExportStatus(ctx, event.ExportID, "completed", completionData, ""); err != nil {
-		return fmt.Errorf("failed to update export status: %w", err)
+	if err := ep.exportRepo.UpdateExportStatus(ctx, event.ExportID, "completed", completionData, ""); err != nil {
+		return ErrUpdateStatus(err)
 	}
 
-	logger.Info("export completed",
+	ep.logger.Info("export completed",
 		zap.String("export_id", event.ExportID),
 		zap.String("s3_key", s3Key),
 		zap.Int("file_size", len(exportData)),
@@ -217,151 +369,229 @@ func processExportJob(ctx context.Context, event ExportGeneratorEvent) error {
 	return nil
 }
 
-func generateCSVExport(ctx context.Context, event ExportGeneratorEvent) ([]byte, int, error) {
+func (ep *ExportProcessor) generateCSVExport(ctx context.Context, event ExportGeneratorEvent, costTracking *models.ExportCostTracking) ([]byte, int, error) {
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
-	recordCount := 0
 
-	switch event.Type {
-	case "followers":
-		// Write header
-		writer.Write([]string{"Account address", "Show boosts", "Notify on new posts", "Languages"})
-
-		// Get followers
-		followers, err := getFollowers(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, follower := range followers {
-			writer.Write([]string{
-				follower,
-				"true",  // Show boosts default
-				"false", // Notify default
-				"",      // Languages default
-			})
-			recordCount++
-		}
-
-	case "following":
-		// Write header
-		writer.Write([]string{"Account address", "Show boosts", "Notify on new posts", "Languages"})
-
-		// Get following
-		following, err := getFollowing(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, follow := range following {
-			writer.Write([]string{
-				follow,
-				"true",  // Show boosts default
-				"false", // Notify default
-				"",      // Languages default
-			})
-			recordCount++
-		}
-
-	case "blocks":
-		// Write header
-		writer.Write([]string{"Account address"})
-
-		// Get blocks
-		blocks, err := getBlocks(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, block := range blocks {
-			writer.Write([]string{block})
-			recordCount++
-		}
-
-	case "mutes":
-		// Write header
-		writer.Write([]string{"Account address", "Hide notifications"})
-
-		// Get mutes
-		mutes, err := getMutes(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, mute := range mutes {
-			writer.Write([]string{
-				mute.AccountID,
-				fmt.Sprintf("%t", mute.HideNotifications),
-			})
-			recordCount++
-		}
-
-	case "lists":
-		// Write header
-		writer.Write([]string{"List name", "Account address"})
-
-		// Get lists with members
-		lists, err := getListsWithMembers(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for listName, members := range lists {
-			for _, member := range members {
-				writer.Write([]string{listName, member})
-				recordCount++
-			}
-		}
-
-	case "bookmarks":
-		// Write header
-		writer.Write([]string{"Status URL", "Bookmarked at"})
-
-		// Get bookmarks
-		bookmarks, err := getBookmarks(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, bookmark := range bookmarks {
-			writer.Write([]string{
-				bookmark.StatusURL,
-				bookmark.CreatedAt.Format(time.RFC3339),
-			})
-			recordCount++
-		}
-
-	case "domain_blocks":
-		// Write header
-		writer.Write([]string{"Domain"})
-
-		// Get domain blocks
-		domainBlocks, err := getDomainBlocks(ctx, event.Username)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, domain := range domainBlocks {
-			writer.Write([]string{domain})
-			recordCount++
-		}
-
-	default:
-		return nil, 0, fmt.Errorf("CSV export not supported for type: %s", event.Type)
+	recordCount, err := ep.writeCSVData(ctx, writer, event, costTracking)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return nil, 0, ErrCSVWriter(err)
+	}
 	return buf.Bytes(), recordCount, nil
 }
 
-func generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent) ([]byte, int, error) {
+// writeCSVData writes the appropriate CSV data based on export type
+func (ep *ExportProcessor) writeCSVData(ctx context.Context, writer *csv.Writer, event ExportGeneratorEvent, costTracking *models.ExportCostTracking) (int, error) {
+	switch event.Type {
+	case "followers":
+		return ep.writeFollowersCSV(ctx, writer, event.Username, costTracking)
+	case "following":
+		return ep.writeFollowingCSV(ctx, writer, event.Username, costTracking)
+	case "blocks":
+		return ep.writeBlocksCSV(ctx, writer, event.Username)
+	case "mutes":
+		return ep.writeMutesCSV(ctx, writer, event.Username)
+	case "lists":
+		return ep.writeListsCSV(ctx, writer, event.Username)
+	case "bookmarks":
+		return ep.writeBookmarksCSV(ctx, writer, event.Username)
+	case "domain_blocks":
+		return ep.writeDomainBlocksCSV(ctx, writer, event.Username)
+	default:
+		ep.logger.Error("CSV export not supported for type", zap.String("type", event.Type))
+		return 0, ErrCSVExportNotSupported()
+	}
+}
+
+// writeFollowersCSV writes followers data to CSV
+func (ep *ExportProcessor) writeFollowersCSV(ctx context.Context, writer *csv.Writer, username string, costTracking *models.ExportCostTracking) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"Account address", "Show boosts", "Notify on new posts", "Languages"})
+
+	// Get followers
+	followers, err := ep.getFollowers(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Track costs
+	ep.trackReadCosts(costTracking, len(followers))
+
+	// Write data
+	return ep.writeAccountRows(writer, followers)
+}
+
+// writeFollowingCSV writes following data to CSV
+func (ep *ExportProcessor) writeFollowingCSV(ctx context.Context, writer *csv.Writer, username string, costTracking *models.ExportCostTracking) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"Account address", "Show boosts", "Notify on new posts", "Languages"})
+
+	// Get following
+	following, err := ep.getFollowing(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Track costs
+	ep.trackReadCosts(costTracking, len(following))
+
+	// Write data
+	return ep.writeAccountRows(writer, following)
+}
+
+// writeAccountRows writes account data rows with default values
+func (ep *ExportProcessor) writeAccountRows(writer *csv.Writer, accounts []string) (int, error) {
+	recordCount := 0
+	for _, account := range accounts {
+		_ = writer.Write([]string{
+			account,
+			"true",  // Show boosts default
+			"false", // Notify default
+			"",      // Languages default
+		})
+		recordCount++
+	}
+	return recordCount, nil
+}
+
+// writeBlocksCSV writes blocks data to CSV
+func (ep *ExportProcessor) writeBlocksCSV(ctx context.Context, writer *csv.Writer, username string) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"Account address"})
+
+	// Get blocks
+	blocks, err := ep.getBlocks(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Write data
+	recordCount := 0
+	for _, block := range blocks {
+		_ = writer.Write([]string{block})
+		recordCount++
+	}
+	return recordCount, nil
+}
+
+// writeMutesCSV writes mutes data to CSV
+func (ep *ExportProcessor) writeMutesCSV(ctx context.Context, writer *csv.Writer, username string) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"Account address", "Hide notifications"})
+
+	// Get mutes
+	mutes, err := ep.getMutes(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Write data
+	recordCount := 0
+	for _, mute := range mutes {
+		_ = writer.Write([]string{
+			mute.AccountID,
+			fmt.Sprintf("%t", mute.HideNotifications),
+		})
+		recordCount++
+	}
+	return recordCount, nil
+}
+
+// writeListsCSV writes lists data to CSV
+func (ep *ExportProcessor) writeListsCSV(ctx context.Context, writer *csv.Writer, username string) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"List name", "Account address"})
+
+	// Get lists with members
+	lists, err := ep.getListsWithMembers(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Write data
+	recordCount := 0
+	for listName, members := range lists {
+		for _, member := range members {
+			_ = writer.Write([]string{listName, member})
+			recordCount++
+		}
+	}
+	return recordCount, nil
+}
+
+// writeBookmarksCSV writes bookmarks data to CSV
+func (ep *ExportProcessor) writeBookmarksCSV(ctx context.Context, writer *csv.Writer, username string) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"Status URL", "Bookmarked at"})
+
+	// Get bookmarks
+	bookmarks, err := ep.getBookmarks(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Write data
+	recordCount := 0
+	for _, bookmark := range bookmarks {
+		_ = writer.Write([]string{
+			bookmark.StatusURL,
+			bookmark.CreatedAt.Format(time.RFC3339),
+		})
+		recordCount++
+	}
+	return recordCount, nil
+}
+
+// writeDomainBlocksCSV writes domain blocks data to CSV
+func (ep *ExportProcessor) writeDomainBlocksCSV(ctx context.Context, writer *csv.Writer, username string) (int, error) {
+	// Write header
+	_ = writer.Write([]string{"Domain"})
+
+	// Get domain blocks
+	domainBlocks, err := ep.getDomainBlocks(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	// Write data
+	recordCount := 0
+	for _, domain := range domainBlocks {
+		_ = writer.Write([]string{domain})
+		recordCount++
+	}
+	return recordCount, nil
+}
+
+// trackReadCosts tracks DynamoDB read costs for export operations
+func (ep *ExportProcessor) trackReadCosts(costTracking *models.ExportCostTracking, itemCount int) {
+	if costTracking == nil {
+		return
+	}
+
+	// Estimate read capacity units (1 RCU per item, pagination queries)
+	estimatedRCU := float64(itemCount) / 1000 * 5 // 5 RCU per 1000 items (pagination overhead)
+	if estimatedRCU < 1 {
+		estimatedRCU = 1
+	}
+
+	costTracking.DynamoDBReadUnits += estimatedRCU
+	costTracking.DynamoDBOperations++
+	costTracking.DynamoDBReadCost += ep.calculateDynamoDBReadCost(estimatedRCU)
+}
+
+func (ep *ExportProcessor) generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent, costTracking *models.ExportCostTracking) ([]byte, int, error) {
 	// Create ZIP archive
 	var buf bytes.Buffer
 	zipWriter := zip.NewWriter(&buf)
 	recordCount := 0
 
 	// Get actor data
-	actor, err := getActor(ctx, event.Username)
+	actor, err := ep.getActor(ctx, event.Username)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -377,15 +607,15 @@ func generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent) 
 		// Export everything for archive type
 
 		// Outbox (posts)
-		outbox, count, err := getOutbox(ctx, event.Username, event.DateRange)
+		outbox, count, err := ep.getOutbox(ctx, event.Username, event.DateRange)
 		if err != nil {
 			return nil, 0, err
 		}
 		recordCount += count
 
-		outboxJSON, _ := json.MarshalIndent(map[string]interface{}{
+		outboxJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
-			"id":           fmt.Sprintf("%s/users/%s/outbox", baseURL, event.Username),
+			"id":           fmt.Sprintf("%s/users/%s/outbox", ep.baseURL, event.Username),
 			"type":         "OrderedCollection",
 			"totalItems":   count,
 			"orderedItems": outbox,
@@ -395,14 +625,14 @@ func generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent) 
 		}
 
 		// Following collection
-		following, err := getFollowingActors(ctx, event.Username)
+		following, err := ep.getFollowingActors(ctx, event.Username)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		followingJSON, _ := json.MarshalIndent(map[string]interface{}{
+		followingJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
-			"id":           fmt.Sprintf("%s/users/%s/following", baseURL, event.Username),
+			"id":           fmt.Sprintf("%s/users/%s/following", ep.baseURL, event.Username),
 			"type":         "OrderedCollection",
 			"totalItems":   len(following),
 			"orderedItems": following,
@@ -412,14 +642,14 @@ func generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent) 
 		}
 
 		// Followers collection
-		followers, err := getFollowersActors(ctx, event.Username)
+		followers, err := ep.getFollowersActors(ctx, event.Username)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		followersJSON, _ := json.MarshalIndent(map[string]interface{}{
+		followersJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
-			"id":           fmt.Sprintf("%s/users/%s/followers", baseURL, event.Username),
+			"id":           fmt.Sprintf("%s/users/%s/followers", ep.baseURL, event.Username),
 			"type":         "OrderedCollection",
 			"totalItems":   len(followers),
 			"orderedItems": followers,
@@ -429,14 +659,14 @@ func generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent) 
 		}
 
 		// Likes collection
-		likes, err := getLikes(ctx, event.Username)
+		likes, err := ep.getLikes(ctx, event.Username)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		likesJSON, _ := json.MarshalIndent(map[string]interface{}{
+		likesJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
-			"id":           fmt.Sprintf("%s/users/%s/likes", baseURL, event.Username),
+			"id":           fmt.Sprintf("%s/users/%s/likes", ep.baseURL, event.Username),
 			"type":         "OrderedCollection",
 			"totalItems":   len(likes),
 			"orderedItems": likes,
@@ -447,35 +677,50 @@ func generateActivityPubExport(ctx context.Context, event ExportGeneratorEvent) 
 
 		// Add media files if IncludeMedia is true
 		if event.IncludeMedia {
-			mediaCount, err := includeMediaFiles(ctx, zipWriter, event.Username, event.DateRange)
+			mediaCount, err := ep.includeMediaFiles(ctx, zipWriter, event.Username, event.DateRange)
 			if err != nil {
-				logger.Error("failed to include media files", zap.Error(err))
+				ep.logger.Error("failed to include media files", zap.Error(err))
 				// Don't fail the export, just log the error
 			} else {
-				logger.Info("included media files in export", zap.Int("count", mediaCount))
+				ep.logger.Info("included media files in export", zap.Int("count", mediaCount))
+
+				// Track media file costs (estimate based on media count)
+				if costTracking != nil {
+					costTracking.MediaFilesIncluded = int64(mediaCount)
+					costTracking.S3GetRequests += int64(mediaCount)
+					costTracking.S3GetRequestCost += ep.calculateS3GetCost(int64(mediaCount))
+
+					// Estimate media size (approximate 2MB per file)
+					estimatedMediaSize := int64(mediaCount) * 2 * 1024 * 1024 // 2MB per file
+					costTracking.MediaSizeBytes = estimatedMediaSize
+					costTracking.S3DataTransferCost += ep.calculateS3DataTransferCost(estimatedMediaSize)
+				}
 			}
 		}
 	}
 
-	zipWriter.Close()
+	if err := zipWriter.Close(); err != nil {
+		ep.logger.Error("failed to close zip writer", zap.Error(err))
+		return nil, 0, ErrZipWriter(err)
+	}
 	return buf.Bytes(), recordCount, nil
 }
 
-func generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]byte, int, error) {
+func (ep *ExportProcessor) generateMastodonExport(ctx context.Context, event ExportGeneratorEvent, costTracking *models.ExportCostTracking) ([]byte, int, error) {
 	// Create ZIP archive
 	var buf bytes.Buffer
 	zipWriter := zip.NewWriter(&buf)
 	recordCount := 0
 
 	// Get actor data and convert to Mastodon format
-	actor, err := getActor(ctx, event.Username)
+	actor, err := ep.getActor(ctx, event.Username)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	// Create Mastodon-compatible actor.json
-	mastodonActor := map[string]interface{}{
-		"@context": []interface{}{
+	mastodonActor := map[string]any{
+		"@context": []any{
 			"https://www.w3.org/ns/activitystreams",
 			"https://w3id.org/security/v1",
 		},
@@ -500,15 +745,15 @@ func generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]
 
 	if event.Type == "archive" {
 		// Create outbox.json with all posts
-		outbox, count, err := getOutbox(ctx, event.Username, event.DateRange)
+		outbox, count, err := ep.getOutbox(ctx, event.Username, event.DateRange)
 		if err != nil {
 			return nil, 0, err
 		}
 		recordCount += count
 
-		outboxJSON, _ := json.MarshalIndent(map[string]interface{}{
+		outboxJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
-			"id":           fmt.Sprintf("%s/users/%s/outbox", baseURL, event.Username),
+			"id":           fmt.Sprintf("%s/users/%s/outbox", ep.baseURL, event.Username),
 			"type":         "OrderedCollection",
 			"totalItems":   count,
 			"orderedItems": outbox,
@@ -518,12 +763,12 @@ func generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]
 		}
 
 		// Create likes.json
-		likes, err := getLikes(ctx, event.Username)
+		likes, err := ep.getLikes(ctx, event.Username)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		likesJSON, _ := json.MarshalIndent(map[string]interface{}{
+		likesJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
 			"type":         "OrderedCollection",
 			"orderedItems": likes,
@@ -533,12 +778,12 @@ func generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]
 		}
 
 		// Create bookmarks.json
-		bookmarks, err := getBookmarksForExport(ctx, event.Username)
+		bookmarks, err := ep.getBookmarksForExport(ctx, event.Username)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		bookmarksJSON, _ := json.MarshalIndent(map[string]interface{}{
+		bookmarksJSON, _ := json.MarshalIndent(map[string]any{
 			"@context":     activitypub.Context,
 			"type":         "OrderedCollection",
 			"orderedItems": bookmarks,
@@ -548,7 +793,7 @@ func generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]
 		}
 
 		// Create lists.json
-		lists, err := getListsForExport(ctx, event.Username)
+		lists, err := ep.getListsForExport(ctx, event.Username)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -560,77 +805,65 @@ func generateMastodonExport(ctx context.Context, event ExportGeneratorEvent) ([]
 
 		// Add media_attachments directory if IncludeMedia is true
 		if event.IncludeMedia {
-			mediaCount, err := includeMediaFiles(ctx, zipWriter, event.Username, event.DateRange)
+			mediaCount, err := ep.includeMediaFiles(ctx, zipWriter, event.Username, event.DateRange)
 			if err != nil {
-				logger.Error("failed to include media files", zap.Error(err))
+				ep.logger.Error("failed to include media files", zap.Error(err))
 				// Don't fail the export, just log the error
 			} else {
-				logger.Info("included media files in export", zap.Int("count", mediaCount))
+				ep.logger.Info("included media files in export", zap.Int("count", mediaCount))
+
+				// Track media file costs (estimate based on media count)
+				if costTracking != nil {
+					costTracking.MediaFilesIncluded = int64(mediaCount)
+					costTracking.S3GetRequests += int64(mediaCount)
+					costTracking.S3GetRequestCost += ep.calculateS3GetCost(int64(mediaCount))
+
+					// Estimate media size (approximate 2MB per file)
+					estimatedMediaSize := int64(mediaCount) * 2 * 1024 * 1024 // 2MB per file
+					costTracking.MediaSizeBytes = estimatedMediaSize
+					costTracking.S3DataTransferCost += ep.calculateS3DataTransferCost(estimatedMediaSize)
+				}
 			}
 		}
 	}
 
-	zipWriter.Close()
+	if err := zipWriter.Close(); err != nil {
+		ep.logger.Error("failed to close zip writer", zap.Error(err))
+		return nil, 0, ErrZipWriter(err)
+	}
 	return buf.Bytes(), recordCount, nil
 }
 
 // Helper functions for data retrieval
-func getActor(ctx context.Context, username string) (*activitypub.Actor, error) {
-	// Get actor from DynamoDB
-	result, err := dynamoClient.GetItem(ctx, &dynamodbsdk.GetItemInput{
-		TableName: aws.String(tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", username)},
-			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", username)},
-		},
-	})
+func (ep *ExportProcessor) getActor(ctx context.Context, username string) (*activitypub.Actor, error) {
+	// Get actor using storage client (already migrated to DynamORM)
+	actor, err := ep.repos.Account().GetActor(ctx, username)
 	if err != nil {
-		return nil, err
+		return nil, ErrGetActor(err)
 	}
-
-	if result.Item == nil {
-		return nil, fmt.Errorf("actor not found: %s", username)
-	}
-
-	// Convert to Actor struct
-	// This is a simplified version - in production would use proper unmarshaling
-	actor := &activitypub.Actor{
-		BaseObject: activitypub.BaseObject{
-			Context: activitypub.Context,
-			Type:    "Person",
-			ID:      fmt.Sprintf("%s/users/%s", baseURL, username),
-		},
-		PreferredUsername: username,
-		Inbox:             fmt.Sprintf("%s/users/%s/inbox", baseURL, username),
-		Outbox:            fmt.Sprintf("%s/users/%s/outbox", baseURL, username),
-		Followers:         fmt.Sprintf("%s/users/%s/followers", baseURL, username),
-		Following:         fmt.Sprintf("%s/users/%s/following", baseURL, username),
-	}
-
-	// TODO: Populate other fields from DynamoDB result using result.Item
 
 	return actor, nil
 }
 
-func getFollowers(ctx context.Context, username string) ([]string, error) {
+func (ep *ExportProcessor) getFollowers(ctx context.Context, username string) ([]string, error) {
 	// Query followers from DynamoDB using storage client
 	var allFollowers []string
 	cursor := ""
 
 	for {
-		followers, nextCursor, err := storageClient.GetFollowers(ctx, username, 1000, cursor)
+		followers, nextCursor, err := ep.repos.Relationship().GetFollowers(ctx, username, 1000, cursor)
 		if err != nil {
-			logger.Error("failed to get followers", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get followers: %w", err)
+			ep.logger.Error("failed to get followers", zap.String("username", username), zap.Error(err))
+			return nil, ErrGetFollowers(err)
 		}
 
 		// Convert actor IDs to Mastodon handles for CSV export
 		for _, follower := range followers {
-			handle := convertActorIDToHandle(follower)
+			handle := ep.convertActorIDToHandle(follower)
 			allFollowers = append(allFollowers, handle)
 		}
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -639,25 +872,25 @@ func getFollowers(ctx context.Context, username string) ([]string, error) {
 	return allFollowers, nil
 }
 
-func getFollowing(ctx context.Context, username string) ([]string, error) {
+func (ep *ExportProcessor) getFollowing(ctx context.Context, username string) ([]string, error) {
 	// Query following from DynamoDB using storage client
 	var allFollowing []string
 	cursor := ""
 
 	for {
-		following, nextCursor, err := storageClient.GetFollowing(ctx, username, 1000, cursor)
+		following, nextCursor, err := ep.repos.Relationship().GetFollowing(ctx, username, 1000, cursor)
 		if err != nil {
-			logger.Error("failed to get following", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get following: %w", err)
+			ep.logger.Error("failed to get following", zap.String("username", username), zap.Error(err))
+			return nil, ErrGetFollowing(err)
 		}
 
 		// Convert actor IDs to Mastodon handles for CSV export
 		for _, follow := range following {
-			handle := convertActorIDToHandle(follow)
+			handle := ep.convertActorIDToHandle(follow)
 			allFollowing = append(allFollowing, handle)
 		}
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -666,24 +899,24 @@ func getFollowing(ctx context.Context, username string) ([]string, error) {
 	return allFollowing, nil
 }
 
-func getBlocks(ctx context.Context, username string) ([]string, error) {
+func (ep *ExportProcessor) getBlocks(ctx context.Context, username string) ([]string, error) {
 	// Query blocks from DynamoDB using storage client
 	var allBlocks []string
 	cursor := ""
 
 	for {
-		blocks, nextCursor, err := storageClient.GetBlockedActors(ctx, username, 1000, cursor)
+		blocks, nextCursor, err := ep.repos.Social().GetBlockedUsers(ctx, username, 1000, cursor)
 		if err != nil {
-			logger.Error("failed to get blocked actors", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get blocked actors: %w", err)
+			ep.logger.Error("failed to get blocked actors", zap.String("username", username), zap.Error(err))
+			return nil, ErrGetBlocks(err)
 		}
 
 		for _, block := range blocks {
-			handle := convertActorIDToHandle(block.Object)
+			handle := ep.convertActorIDToHandle(block.Object)
 			allBlocks = append(allBlocks, handle)
 		}
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -692,31 +925,32 @@ func getBlocks(ctx context.Context, username string) ([]string, error) {
 	return allBlocks, nil
 }
 
+// MuteInfo contains information about a muted account
 type MuteInfo struct {
 	AccountID         string
 	HideNotifications bool
 }
 
-func getMutes(ctx context.Context, username string) ([]MuteInfo, error) {
+func (ep *ExportProcessor) getMutes(ctx context.Context, username string) ([]MuteInfo, error) {
 	// Query mutes from DynamoDB using storage client
 	var allMutes []MuteInfo
 	cursor := ""
 
 	for {
-		mutes, nextCursor, err := storageClient.GetMutedActors(ctx, username, 1000, cursor)
+		mutes, nextCursor, err := ep.repos.Social().GetMutedUsers(ctx, username, 1000, cursor)
 		if err != nil {
-			logger.Error("failed to get muted actors", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get muted actors: %w", err)
+			ep.logger.Error("failed to get muted actors", zap.String("username", username), zap.Error(err))
+			return nil, ErrGetMutes(err)
 		}
 
 		for _, mute := range mutes {
 			allMutes = append(allMutes, MuteInfo{
-				AccountID:         convertActorIDToHandle(mute.Object),
+				AccountID:         ep.convertActorIDToHandle(mute.Object),
 				HideNotifications: mute.HideNotifications,
 			})
 		}
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -725,20 +959,20 @@ func getMutes(ctx context.Context, username string) ([]MuteInfo, error) {
 	return allMutes, nil
 }
 
-func getListsWithMembers(ctx context.Context, username string) (map[string][]string, error) {
+func (ep *ExportProcessor) getListsWithMembers(ctx context.Context, username string) (map[string][]string, error) {
 	// Query lists and their members from DynamoDB using storage client
-	lists, err := storageClient.GetListsForUser(ctx, username)
+	lists, err := ep.repos.List().GetListsForUser(ctx, username)
 	if err != nil {
-		logger.Error("failed to get lists", zap.String("username", username), zap.Error(err))
-		return nil, fmt.Errorf("get lists: %w", err)
+		ep.logger.Error("failed to get lists", zap.String("username", username), zap.Error(err))
+		return nil, ErrGetLists(err)
 	}
 
 	result := make(map[string][]string)
 
 	for _, list := range lists {
-		members, err := storageClient.GetListAccounts(ctx, list.ID)
+		members, err := ep.repos.List().GetListAccounts(ctx, list.ID)
 		if err != nil {
-			logger.Error("failed to get list members",
+			ep.logger.Error("failed to get list members",
 				zap.String("list_id", list.ID),
 				zap.String("list_title", list.Title),
 				zap.Error(err))
@@ -749,7 +983,7 @@ func getListsWithMembers(ctx context.Context, username string) (map[string][]str
 		// Convert member IDs to Mastodon handles
 		var handleMembers []string
 		for _, member := range members {
-			handleMembers = append(handleMembers, convertActorIDToHandle(member))
+			handleMembers = append(handleMembers, ep.convertActorIDToHandle(member))
 		}
 
 		result[list.Title] = handleMembers
@@ -758,86 +992,27 @@ func getListsWithMembers(ctx context.Context, username string) (map[string][]str
 	return result, nil
 }
 
+// BookmarkInfo contains information about a bookmarked status
 type BookmarkInfo struct {
 	StatusURL string
 	CreatedAt time.Time
 }
 
-func getBookmarks(ctx context.Context, username string) ([]BookmarkInfo, error) {
-	// Query bookmarks from DynamoDB using storage client
+func (ep *ExportProcessor) getBookmarks(ctx context.Context, username string) ([]BookmarkInfo, error) {
 	var allBookmarks []BookmarkInfo
 	cursor := ""
 
 	for {
-		bookmarkIDs, nextCursor, err := storageClient.GetBookmarks(ctx, username, 1000, cursor)
+		bookmarkIDs, nextCursor, err := ep.fetchBookmarkBatch(ctx, username, cursor)
 		if err != nil {
-			logger.Error("failed to get bookmarks", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get bookmarks: %w", err)
+			return nil, err
 		}
 
 		// Convert bookmark IDs to BookmarkInfo
-		// Note: We need to get the actual status objects to get their URLs
-		for _, bookmarkID := range bookmarkIDs {
-			obj, err := storageClient.GetObject(ctx, bookmarkID)
-			if err != nil {
-				logger.Warn("failed to get bookmarked object",
-					zap.String("bookmark_id", bookmarkID),
-					zap.Error(err))
-				continue
-			}
+		bookmarks := ep.convertBookmarkIDsToInfo(ctx, bookmarkIDs)
+		allBookmarks = append(allBookmarks, bookmarks...)
 
-			// Extract URL from the object
-			var statusURL string
-			var createdAt time.Time
-
-			// Handle different object types
-			switch v := obj.(type) {
-			case map[string]interface{}:
-				if url, ok := v["url"].(string); ok {
-					statusURL = url
-				} else if id, ok := v["id"].(string); ok {
-					statusURL = id // Fallback to ID if no URL
-				}
-				if published, ok := v["published"].(string); ok {
-					createdAt, _ = time.Parse(time.RFC3339, published)
-				}
-			case *activitypub.Note:
-				// Notes have ID from BaseObject
-				statusURL = v.ID
-				if v.Published != nil {
-					createdAt = *v.Published
-				} else {
-					createdAt = time.Now()
-				}
-			case *activitypub.Article:
-				// Articles have ID from BaseObject
-				statusURL = v.ID
-				if v.Published != nil {
-					createdAt = *v.Published
-				} else {
-					createdAt = time.Now()
-				}
-			default:
-				// For any other type, try to extract ID
-				if baseObj, ok := v.(*activitypub.BaseObject); ok {
-					statusURL = baseObj.ID
-					if baseObj.Published != nil {
-						createdAt = *baseObj.Published
-					} else {
-						createdAt = time.Now()
-					}
-				}
-			}
-
-			if statusURL != "" {
-				allBookmarks = append(allBookmarks, BookmarkInfo{
-					StatusURL: statusURL,
-					CreatedAt: createdAt,
-				})
-			}
-		}
-
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -846,16 +1021,136 @@ func getBookmarks(ctx context.Context, username string) ([]BookmarkInfo, error) 
 	return allBookmarks, nil
 }
 
-func getOutbox(ctx context.Context, username string, dateRange *DateRange) ([]interface{}, int, error) {
+// fetchBookmarkBatch fetches a batch of bookmark IDs from the repository
+func (ep *ExportProcessor) fetchBookmarkBatch(ctx context.Context, username, cursor string) ([]string, string, error) {
+	bookmarkIDs, nextCursor, err := ep.repos.User().GetBookmarks(ctx, username, 1000, cursor)
+	if err != nil {
+		ep.logger.Error("failed to get bookmarks",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, "", ErrGetBookmarks(err)
+	}
+	return bookmarkIDs, nextCursor, nil
+}
+
+// convertBookmarkIDsToInfo converts bookmark IDs to BookmarkInfo objects
+func (ep *ExportProcessor) convertBookmarkIDsToInfo(ctx context.Context, bookmarkIDs []string) []BookmarkInfo {
+	var bookmarks []BookmarkInfo
+
+	for _, bookmarkID := range bookmarkIDs {
+		info := ep.convertSingleBookmark(ctx, bookmarkID)
+		if info != nil {
+			bookmarks = append(bookmarks, *info)
+		}
+	}
+
+	return bookmarks
+}
+
+// convertSingleBookmark converts a single bookmark ID to BookmarkInfo
+func (ep *ExportProcessor) convertSingleBookmark(ctx context.Context, bookmarkID string) *BookmarkInfo {
+	obj, err := ep.repos.Object().GetObject(ctx, bookmarkID)
+	if err != nil {
+		ep.logger.Warn("failed to get bookmarked object",
+			zap.String("bookmark_id", bookmarkID),
+			zap.Error(err))
+		return nil
+	}
+
+	statusURL, createdAt := ep.extractBookmarkData(obj)
+	if err := common.ValidateRequiredParam("statusURL", statusURL); err != nil {
+		return nil
+	}
+
+	return &BookmarkInfo{
+		StatusURL: statusURL,
+		CreatedAt: createdAt,
+	}
+}
+
+// extractBookmarkData extracts URL and creation time from an object
+func (ep *ExportProcessor) extractBookmarkData(obj any) (string, time.Time) {
+	switch v := obj.(type) {
+	case map[string]any:
+		return ep.extractBookmarkFromMap(v)
+	case *activitypub.Note:
+		return ep.extractBookmarkFromNote(v)
+	case *activitypub.Article:
+		return ep.extractBookmarkFromArticle(v)
+	default:
+		return ep.extractBookmarkFromBaseObject(v)
+	}
+}
+
+// extractBookmarkFromMap extracts bookmark data from a map
+func (ep *ExportProcessor) extractBookmarkFromMap(v map[string]any) (string, time.Time) {
+	var statusURL string
+	var createdAt time.Time
+
+	if url, ok := v["url"].(string); ok {
+		statusURL = url
+	} else if id, ok := v["id"].(string); ok {
+		statusURL = id // Fallback to ID if no URL
+	}
+
+	if published, ok := v["published"].(string); ok {
+		createdAt, _ = time.Parse(time.RFC3339, published)
+	}
+
+	return statusURL, createdAt
+}
+
+// extractBookmarkFromNote extracts bookmark data from a Note
+func (ep *ExportProcessor) extractBookmarkFromNote(v *activitypub.Note) (string, time.Time) {
+	statusURL := v.ID
+	createdAt := time.Now()
+
+	if v.Published != nil {
+		createdAt = *v.Published
+	}
+
+	return statusURL, createdAt
+}
+
+// extractBookmarkFromArticle extracts bookmark data from an Article
+func (ep *ExportProcessor) extractBookmarkFromArticle(v *activitypub.Article) (string, time.Time) {
+	statusURL := v.ID
+	createdAt := time.Now()
+
+	if v.Published != nil {
+		createdAt = *v.Published
+	}
+
+	return statusURL, createdAt
+}
+
+// extractBookmarkFromBaseObject tries to extract bookmark data from a BaseObject
+func (ep *ExportProcessor) extractBookmarkFromBaseObject(v any) (string, time.Time) {
+	baseObj, ok := v.(*activitypub.BaseObject)
+	if !ok {
+		return "", time.Time{}
+	}
+
+	statusURL := baseObj.ID
+	createdAt := time.Now()
+
+	if baseObj.Published != nil {
+		createdAt = *baseObj.Published
+	}
+
+	return statusURL, createdAt
+}
+
+func (ep *ExportProcessor) getOutbox(ctx context.Context, username string, dateRange *DateRange) ([]any, int, error) {
 	// Query user's posts from DynamoDB using storage client
-	var allActivities []interface{}
+	var allActivities []any
 	cursor := ""
 
 	for {
-		activities, nextCursor, err := storageClient.GetOutboxActivities(ctx, username, 1000, cursor)
+		activities, nextCursor, err := ep.repos.Activity().GetOutboxActivities(ctx, username, 1000, cursor)
 		if err != nil {
-			logger.Error("failed to get outbox activities", zap.String("username", username), zap.Error(err))
-			return nil, 0, fmt.Errorf("get outbox activities: %w", err)
+			ep.logger.Error("failed to get outbox activities", zap.String("username", username), zap.Error(err))
+			return nil, 0, ErrGetOutbox(err)
 		}
 
 		// Filter by date range if specified
@@ -872,7 +1167,7 @@ func getOutbox(ctx context.Context, username string, dateRange *DateRange) ([]in
 			allActivities = append(allActivities, activity)
 		}
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -881,23 +1176,23 @@ func getOutbox(ctx context.Context, username string, dateRange *DateRange) ([]in
 	return allActivities, len(allActivities), nil
 }
 
-func getFollowingActors(ctx context.Context, username string) ([]string, error) {
+func (ep *ExportProcessor) getFollowingActors(ctx context.Context, username string) ([]string, error) {
 	// Get full actor IDs for following (for ActivityPub export)
 	// This returns the raw actor IDs without conversion to handles
 	var allFollowing []string
 	cursor := ""
 
 	for {
-		following, nextCursor, err := storageClient.GetFollowing(ctx, username, 1000, cursor)
+		following, nextCursor, err := ep.repos.Relationship().GetFollowing(ctx, username, 1000, cursor)
 		if err != nil {
-			logger.Error("failed to get following actors", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get following actors: %w", err)
+			ep.logger.Error("failed to get following actors", zap.String("username", username), zap.Error(err))
+			return nil, ErrGetFollowingActors(err)
 		}
 
 		// Keep raw actor IDs for ActivityPub format
 		allFollowing = append(allFollowing, following...)
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -906,23 +1201,23 @@ func getFollowingActors(ctx context.Context, username string) ([]string, error) 
 	return allFollowing, nil
 }
 
-func getFollowersActors(ctx context.Context, username string) ([]string, error) {
+func (ep *ExportProcessor) getFollowersActors(ctx context.Context, username string) ([]string, error) {
 	// Get full actor IDs for followers (for ActivityPub export)
 	// This returns the raw actor IDs without conversion to handles
 	var allFollowers []string
 	cursor := ""
 
 	for {
-		followers, nextCursor, err := storageClient.GetFollowers(ctx, username, 1000, cursor)
+		followers, nextCursor, err := ep.repos.Relationship().GetFollowers(ctx, username, 1000, cursor)
 		if err != nil {
-			logger.Error("failed to get follower actors", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get follower actors: %w", err)
+			ep.logger.Error("failed to get follower actors", zap.String("username", username), zap.Error(err))
+			return nil, ErrGetFollowerActors(err)
 		}
 
 		// Keep raw actor IDs for ActivityPub format
 		allFollowers = append(allFollowers, followers...)
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -931,31 +1226,31 @@ func getFollowersActors(ctx context.Context, username string) ([]string, error) 
 	return allFollowers, nil
 }
 
-func getLikes(ctx context.Context, username string) ([]interface{}, error) {
+func (ep *ExportProcessor) getLikes(ctx context.Context, username string) ([]any, error) {
 	// Query user's likes from DynamoDB using storage client
-	var allLikes []interface{}
+	var allLikes []any
 	cursor := ""
 
 	// First get the actor ID for the username
-	actor, err := storageClient.GetActor(ctx, username)
+	actor, err := ep.repos.Account().GetActor(ctx, username)
 	if err != nil {
-		logger.Error("failed to get actor", zap.String("username", username), zap.Error(err))
-		return nil, fmt.Errorf("get actor: %w", err)
+		ep.logger.Error("failed to get actor", zap.String("username", username), zap.Error(err))
+		return nil, ErrGetActor(err)
 	}
 
 	for {
-		likes, nextCursor, err := storageClient.GetActorLikes(ctx, actor.ID, 1000, cursor)
+		likes, nextCursor, err := ep.repos.Like().GetActorLikes(ctx, actor.ID, 1000, cursor)
 		if err != nil {
-			logger.Error("failed to get actor likes",
+			ep.logger.Error("failed to get actor likes",
 				zap.String("username", username),
 				zap.String("actor_id", actor.ID),
 				zap.Error(err))
-			return nil, fmt.Errorf("get actor likes: %w", err)
+			return nil, ErrGetActorLikes(err)
 		}
 
 		// Convert likes to Like activities
 		for _, like := range likes {
-			likeActivity := map[string]interface{}{
+			likeActivity := map[string]any{
 				"@context":  activitypub.Context,
 				"type":      "Like",
 				"id":        like.ID,
@@ -966,7 +1261,7 @@ func getLikes(ctx context.Context, username string) ([]interface{}, error) {
 			allLikes = append(allLikes, likeActivity)
 		}
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -975,22 +1270,22 @@ func getLikes(ctx context.Context, username string) ([]interface{}, error) {
 	return allLikes, nil
 }
 
-func getBookmarksForExport(ctx context.Context, username string) ([]interface{}, error) {
+func (ep *ExportProcessor) getBookmarksForExport(ctx context.Context, username string) ([]any, error) {
 	// Query bookmarks and convert to ActivityPub format
-	bookmarks, err := getBookmarks(ctx, username)
+	bookmarks, err := ep.getBookmarks(ctx, username)
 	if err != nil {
 		return nil, err
 	}
 
 	// Convert to ActivityPub bookmark activities
-	var result []interface{}
+	result := make([]any, 0, len(bookmarks))
 	for _, bookmark := range bookmarks {
-		bookmarkActivity := map[string]interface{}{
+		bookmarkActivity := map[string]any{
 			"@context":  activitypub.Context,
 			"type":      "Add",
-			"actor":     fmt.Sprintf("%s/users/%s", baseURL, username),
+			"actor":     fmt.Sprintf("%s/users/%s", ep.baseURL, username),
 			"object":    bookmark.StatusURL,
-			"target":    fmt.Sprintf("%s/users/%s/bookmarks", baseURL, username),
+			"target":    fmt.Sprintf("%s/users/%s/bookmarks", ep.baseURL, username),
 			"published": bookmark.CreatedAt.Format(time.RFC3339),
 		}
 		result = append(result, bookmarkActivity)
@@ -999,28 +1294,28 @@ func getBookmarksForExport(ctx context.Context, username string) ([]interface{},
 	return result, nil
 }
 
-func getListsForExport(ctx context.Context, username string) ([]interface{}, error) {
+func (ep *ExportProcessor) getListsForExport(ctx context.Context, username string) ([]any, error) {
 	// Query lists and convert to export format
-	lists, err := storageClient.GetListsForUser(ctx, username)
+	lists, err := ep.repos.List().GetListsForUser(ctx, username)
 	if err != nil {
-		logger.Error("failed to get lists", zap.String("username", username), zap.Error(err))
-		return nil, fmt.Errorf("get lists: %w", err)
+		ep.logger.Error("failed to get lists", zap.String("username", username), zap.Error(err))
+		return nil, ErrGetLists(err)
 	}
 
 	// Convert to export format
-	var result []interface{}
+	result := make([]any, 0, len(lists))
 	for _, list := range lists {
 		// Get members for each list
-		members, err := storageClient.GetListAccounts(ctx, list.ID)
+		members, err := ep.repos.List().GetListAccounts(ctx, list.ID)
 		if err != nil {
-			logger.Warn("failed to get list members",
+			ep.logger.Warn("failed to get list members",
 				zap.String("list_id", list.ID),
 				zap.String("list_title", list.Title),
 				zap.Error(err))
 			members = []string{} // Empty array if error
 		}
 
-		listExport := map[string]interface{}{
+		listExport := map[string]any{
 			"id":             list.ID,
 			"title":          list.Title,
 			"replies_policy": list.RepliesPolicy,
@@ -1047,7 +1342,7 @@ func addFileToZip(w *zip.Writer, filename string, data []byte) error {
 
 // convertActorIDToHandle converts an actor ID like "https://example.com/users/alice"
 // to a Mastodon handle like "@alice@example.com"
-func convertActorIDToHandle(actorID string) string {
+func (ep *ExportProcessor) convertActorIDToHandle(actorID string) string {
 	// Handle local actors (simple usernames)
 	if !strings.Contains(actorID, "://") {
 		return actorID // Already in simple format
@@ -1081,87 +1376,45 @@ func convertActorIDToHandle(actorID string) string {
 	return actorID // Fallback to original
 }
 
-func uploadToS3(ctx context.Context, key string, data []byte, contentType string) error {
+func (ep *ExportProcessor) uploadToS3(ctx context.Context, key string, data []byte, contentType string, costTracking *models.ExportCostTracking) error {
 	input := &s3.PutObjectInput{
-		Bucket:      aws.String(bucketName),
+		Bucket:      aws.String(ep.bucketName),
 		Key:         aws.String(key),
 		Body:        bytes.NewReader(data),
 		ContentType: aws.String(contentType),
 	}
 
-	_, err := s3Client.PutObject(ctx, input)
-	return err
-}
+	_, err := ep.s3Client.PutObject(ctx, input)
 
-func updateExportStatus(ctx context.Context, exportID, status string, completionData map[string]interface{}, errorMsg string) error {
-	updateExpr := "SET #status = :status, UpdatedAt = :updated"
-	exprAttrNames := map[string]string{
-		"#status": "Status",
+	// Track S3 costs
+	if costTracking != nil {
+		costTracking.S3PutRequests = 1
+		costTracking.S3PutRequestCost = ep.calculateS3PutCost(1)
+		costTracking.S3StorageCost = ep.calculateS3StorageCost(int64(len(data)))
+		costTracking.DataTransferBytes = int64(len(data))
+		costTracking.S3DataTransferCost = ep.calculateS3DataTransferCost(int64(len(data)))
 	}
-	exprAttrValues := map[string]types.AttributeValue{
-		":status":  &types.AttributeValueMemberS{Value: status},
-		":updated": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-	}
-
-	if completionData != nil {
-		if url, ok := completionData["download_url"].(string); ok {
-			updateExpr += ", DownloadURL = :url"
-			exprAttrValues[":url"] = &types.AttributeValueMemberS{Value: url}
-		}
-		if expiresAt, ok := completionData["expires_at"].(time.Time); ok {
-			updateExpr += ", ExpiresAt = :expires"
-			exprAttrValues[":expires"] = &types.AttributeValueMemberS{Value: expiresAt.Format(time.RFC3339)}
-		}
-		if size, ok := completionData["file_size"].(int); ok {
-			updateExpr += ", FileSize = :size"
-			exprAttrValues[":size"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", size)}
-		}
-		if count, ok := completionData["record_count"].(int); ok {
-			updateExpr += ", RecordCount = :count"
-			exprAttrValues[":count"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", count)}
-		}
-		if s3Key, ok := completionData["s3_key"].(string); ok {
-			updateExpr += ", S3Key = :s3key"
-			exprAttrValues[":s3key"] = &types.AttributeValueMemberS{Value: s3Key}
-		}
-		updateExpr += ", CompletedAt = :completed"
-		exprAttrValues[":completed"] = &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)}
-	}
-
-	if errorMsg != "" {
-		updateExpr += ", Error = :error"
-		exprAttrValues[":error"] = &types.AttributeValueMemberS{Value: errorMsg}
-	}
-
-	_, err := dynamoClient.UpdateItem(ctx, &dynamodbsdk.UpdateItemInput{
-		TableName: aws.String(tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("EXPORT#%s", exportID)},
-			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("EXPORT#%s", exportID)},
-		},
-		UpdateExpression:          aws.String(updateExpr),
-		ExpressionAttributeNames:  exprAttrNames,
-		ExpressionAttributeValues: exprAttrValues,
-	})
 
 	return err
 }
 
-func getDomainBlocks(ctx context.Context, username string) ([]string, error) {
+// updateExportStatus is deprecated - use ep.exportRepo.UpdateExportStatus instead
+
+func (ep *ExportProcessor) getDomainBlocks(ctx context.Context, username string) ([]string, error) {
 	// Query domain blocks from DynamoDB using storage client
 	var allDomainBlocks []string
 	cursor := ""
 
 	for {
-		domains, nextCursor, err := storageClient.GetUserDomainBlocks(ctx, username, 1000, cursor)
+		domains, nextCursor, err := ep.repos.DomainBlock().GetUserDomainBlocks(ctx, username, 1000, cursor)
 		if err != nil {
-			logger.Error("failed to get domain blocks", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get domain blocks: %w", err)
+			ep.logger.Error("failed to get domain blocks", zap.String("username", username), zap.Error(err))
+			return nil, ErrGetDomainBlocks(err)
 		}
 
 		allDomainBlocks = append(allDomainBlocks, domains...)
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -1171,129 +1424,314 @@ func getDomainBlocks(ctx context.Context, username string) ([]string, error) {
 }
 
 // includeMediaFiles downloads and includes user's media files in the export ZIP
-func includeMediaFiles(ctx context.Context, zipWriter *zip.Writer, username string, dateRange *DateRange) (int, error) {
-	// Query user's media files from DynamoDB
-	var allMediaKeys []string
-	cursor := ""
-
-	for {
-		// Query media files for the user
-		queryInput := &dynamodbsdk.QueryInput{
-			TableName:              aws.String(tableName),
-			IndexName:              aws.String("GSI1"), // Assuming GSI1 is used for media queries
-			KeyConditionExpression: aws.String("GSI1PK = :pk"),
-			ExpressionAttributeValues: map[string]types.AttributeValue{
-				":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("MEDIA_USER#%s", username)},
-			},
-			Limit: aws.Int32(100),
-		}
-
-		if cursor != "" {
-			// Add cursor for pagination
-			queryInput.ExclusiveStartKey = map[string]types.AttributeValue{
-				"GSI1PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("MEDIA_USER#%s", username)},
-				"GSI1SK": &types.AttributeValueMemberS{Value: cursor},
-			}
-		}
-
-		result, err := dynamoClient.Query(ctx, queryInput)
-		if err != nil {
-			logger.Error("failed to query media files", zap.String("username", username), zap.Error(err))
-			return 0, fmt.Errorf("query media files: %w", err)
-		}
-
-		// Process each media item
-		for _, item := range result.Items {
-			// Extract S3 key from the media item
-			if s3KeyAttr, exists := item["S3Key"]; exists {
-				if s3Key, ok := s3KeyAttr.(*types.AttributeValueMemberS); ok {
-					// Check date range if specified
-					if dateRange != nil {
-						if createdAtAttr, exists := item["CreatedAt"]; exists {
-							if createdAt, ok := createdAtAttr.(*types.AttributeValueMemberS); ok {
-								mediaDate, err := time.Parse(time.RFC3339, createdAt.Value)
-								if err == nil {
-									if mediaDate.Before(dateRange.Start) || mediaDate.After(dateRange.End) {
-										continue // Skip media outside date range
-									}
-								}
-							}
-						}
-					}
-
-					allMediaKeys = append(allMediaKeys, s3Key.Value)
-				}
-			}
-		}
-
-		// Check for more results
-		if result.LastEvaluatedKey == nil {
-			break
-		}
-
-		// Extract cursor for next iteration
-		if cursorAttr, exists := result.LastEvaluatedKey["GSI1SK"]; exists {
-			if cursorVal, ok := cursorAttr.(*types.AttributeValueMemberS); ok {
-				cursor = cursorVal.Value
-			} else {
-				break
-			}
-		} else {
-			break
-		}
-	}
-
-	logger.Info("found media files for export",
+func (ep *ExportProcessor) includeMediaFiles(ctx context.Context, zipWriter *zip.Writer, username string, dateRange *DateRange) (int, error) {
+	// Note: This function now tracks S3 GET costs for media file downloads
+	// The costs will be accumulated in the calling function's cost tracking
+	ep.logger.Info("including media files in export",
 		zap.String("username", username),
-		zap.Int("count", len(allMediaKeys)))
+		zap.Bool("has_date_range", dateRange != nil))
 
-	// Download and add each media file to the ZIP
-	mediaCount := 0
+	// Get user's media files
+	userMedia, err := ep.fetchUserMedia(ctx, username)
+	if err != nil {
+		return 0, err
+	}
+
+	ep.logger.Info("found user media files",
+		zap.String("username", username),
+		zap.Int("total_count", len(userMedia)))
+
+	// Collect all media keys to download
+	allMediaKeys := ep.collectMediaKeys(userMedia, dateRange)
+
+	ep.logger.Info("downloading media files",
+		zap.String("username", username),
+		zap.Int("files_to_download", len(allMediaKeys)))
+
+	// Download and add media files to ZIP
+	totalDownloaded := ep.downloadMediaFilesToZip(ctx, zipWriter, allMediaKeys)
+
+	ep.logger.Info("completed media files export",
+		zap.String("username", username),
+		zap.Int("files_downloaded", totalDownloaded),
+		zap.Int("files_requested", len(allMediaKeys)))
+
+	return totalDownloaded, nil
+}
+
+// fetchUserMedia retrieves and converts user media from the repository
+func (ep *ExportProcessor) fetchUserMedia(ctx context.Context, username string) ([]map[string]any, error) {
+	userMediaResult, err := ep.repos.Media().GetUserMedia(ctx, username, interfaces.PaginationOptions{Limit: 1000})
+	if err != nil {
+		ep.logger.Error("failed to get user media",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, ErrGetUserMedia(err)
+	}
+
+	// Convert to proper media type
+	userMedia := make([]map[string]any, 0, len(userMediaResult.Items))
+	for _, mediaItem := range userMediaResult.Items {
+		if mediaItem == nil {
+			continue
+		}
+
+		// Convert models.Media to map[string]any for export compatibility
+		mediaMap := map[string]any{
+			"ID":          mediaItem.MediaID,
+			"UserID":      mediaItem.UserID,
+			"Filename":    mediaItem.FileName,
+			"ContentType": mediaItem.ContentType,
+			"FileSize":    mediaItem.FileSize,
+			"S3Key":       mediaItem.S3Key,
+			"CDNUrl":      mediaItem.CDNUrl,
+			"Status":      mediaItem.Status,
+			"CreatedAt":   mediaItem.CreatedAt,
+			"UpdatedAt":   mediaItem.UpdatedAt,
+		}
+		userMedia = append(userMedia, mediaMap)
+	}
+
+	return userMedia, nil
+}
+
+// collectMediaKeys collects all S3 keys from media items within the date range
+func (ep *ExportProcessor) collectMediaKeys(userMedia []map[string]any, dateRange *DateRange) []string {
+	var allMediaKeys []string
+
+	for _, mediaItem := range userMedia {
+		// Check if media is within date range
+		if !ep.isMediaInDateRange(mediaItem, dateRange) {
+			continue
+		}
+
+		// Extract main S3 key
+		if s3Key := ep.extractS3Key(mediaItem); s3Key != "" {
+			allMediaKeys = append(allMediaKeys, s3Key)
+		}
+
+		// Extract variant S3 keys
+		variantKeys := ep.extractVariantKeys(mediaItem)
+		allMediaKeys = append(allMediaKeys, variantKeys...)
+	}
+
+	return allMediaKeys
+}
+
+// isMediaInDateRange checks if a media item falls within the specified date range
+func (ep *ExportProcessor) isMediaInDateRange(mediaItem map[string]any, dateRange *DateRange) bool {
+	if dateRange == nil {
+		return true
+	}
+
+	createdAtAny, exists := mediaItem["CreatedAt"]
+	if !exists {
+		return true
+	}
+
+	createdAtStr, ok := createdAtAny.(string)
+	if !ok {
+		return true
+	}
+
+	mediaDate, err := time.Parse(time.RFC3339, createdAtStr)
+	if err != nil {
+		return true
+	}
+
+	return !mediaDate.Before(dateRange.Start) && !mediaDate.After(dateRange.End)
+}
+
+// extractS3Key extracts the main S3 key from a media item
+func (ep *ExportProcessor) extractS3Key(mediaItem map[string]any) string {
+	s3KeyAny, exists := mediaItem["S3Key"]
+	if !exists {
+		return ""
+	}
+
+	s3Key, ok := s3KeyAny.(string)
+	if !ok {
+		return ""
+	}
+
+	return s3Key
+}
+
+// extractVariantKeys extracts all variant S3 keys from a media item
+func (ep *ExportProcessor) extractVariantKeys(mediaItem map[string]any) []string {
+	var keys []string
+
+	variantsAny, exists := mediaItem["Variants"]
+	if !exists {
+		return keys
+	}
+
+	variants, ok := variantsAny.(map[string]any)
+	if !ok {
+		return keys
+	}
+
+	for variantName, variantAny := range variants {
+		variant, ok := variantAny.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		variantS3Key, exists := variant["S3Key"]
+		if !exists {
+			continue
+		}
+
+		s3Key, ok := variantS3Key.(string)
+		if !ok || common.ValidateRequiredParam("s3Key", s3Key) != nil {
+			continue
+		}
+
+		keys = append(keys, s3Key)
+		ep.logger.Debug("added variant to export",
+			zap.String("variant_name", variantName),
+			zap.String("s3_key", s3Key))
+	}
+
+	return keys
+}
+
+// downloadMediaFilesToZip downloads media files from S3 and adds them to the ZIP
+func (ep *ExportProcessor) downloadMediaFilesToZip(ctx context.Context, zipWriter *zip.Writer, allMediaKeys []string) int {
+	var totalDownloaded int
+
 	for _, s3Key := range allMediaKeys {
-		// Download from S3
-		getObjectInput := &s3.GetObjectInput{
-			Bucket: aws.String(bucketName),
-			Key:    aws.String(s3Key),
-		}
-
-		getObjectResult, err := s3Client.GetObject(ctx, getObjectInput)
-		if err != nil {
-			logger.Warn("failed to download media file",
-				zap.String("s3_key", s3Key),
-				zap.Error(err))
-			continue // Skip this file and continue
-		}
-
-		// Read the file content
-		defer getObjectResult.Body.Close()
-		mediaData, err := io.ReadAll(getObjectResult.Body)
-		if err != nil {
-			logger.Warn("failed to read media file content",
-				zap.String("s3_key", s3Key),
-				zap.Error(err))
-			continue
-		}
-
-		// Extract filename from S3 key (media/username/filename.ext)
-		pathParts := strings.Split(s3Key, "/")
-		filename := pathParts[len(pathParts)-1]
-
-		// Add to ZIP under media_attachments directory
-		zipPath := fmt.Sprintf("media_attachments/%s", filename)
-		if err := addFileToZip(zipWriter, zipPath, mediaData); err != nil {
-			logger.Warn("failed to add media file to ZIP",
-				zap.String("zip_path", zipPath),
-				zap.Error(err))
-			continue
-		}
-
-		mediaCount++
-
-		// Add a small delay to avoid overwhelming S3
-		if mediaCount%10 == 0 {
-			time.Sleep(100 * time.Millisecond)
+		if ep.downloadSingleMediaFile(ctx, zipWriter, s3Key) {
+			totalDownloaded++
 		}
 	}
 
-	return mediaCount, nil
+	return totalDownloaded
+}
+
+// downloadSingleMediaFile downloads a single media file and adds it to the ZIP
+func (ep *ExportProcessor) downloadSingleMediaFile(ctx context.Context, zipWriter *zip.Writer, s3Key string) bool {
+	// Download file from S3
+	result, err := ep.downloadFromS3(ctx, s3Key)
+	if err != nil {
+		ep.logger.Warn("failed to download media file",
+			zap.String("s3_key", s3Key),
+			zap.Error(err))
+		return false
+	}
+	defer func() { _ = result.Body.Close() }()
+
+	// Add to ZIP
+	fileName := fmt.Sprintf("media/%s", strings.TrimPrefix(s3Key, "media/"))
+	if err := ep.addFileToZip(zipWriter, fileName, result.Body); err != nil {
+		ep.logger.Warn("failed to add media to ZIP",
+			zap.String("s3_key", s3Key),
+			zap.String("file_name", fileName),
+			zap.Error(err))
+		return false
+	}
+
+	ep.logger.Debug("added media file to export",
+		zap.String("s3_key", s3Key),
+		zap.String("zip_path", fileName))
+
+	return true
+}
+
+// downloadFromS3 downloads a file from S3
+func (ep *ExportProcessor) downloadFromS3(ctx context.Context, s3Key string) (*s3.GetObjectOutput, error) {
+	getObjectInput := &s3.GetObjectInput{
+		Bucket: &ep.bucketName,
+		Key:    &s3Key,
+	}
+
+	return ep.s3Client.GetObject(ctx, getObjectInput)
+}
+
+// addFileToZip adds a file to the ZIP archive
+func (ep *ExportProcessor) addFileToZip(zipWriter *zip.Writer, fileName string, content io.Reader) error {
+	zipFile, err := zipWriter.Create(fileName)
+	if err != nil {
+		return ErrZipEntryCreate(err)
+	}
+
+	if _, err := io.Copy(zipFile, content); err != nil {
+		return ErrZipCopy(err)
+	}
+
+	return nil
+}
+
+// Cost calculation helper functions
+
+// calculateLambdaCost calculates the cost of Lambda execution
+// Lambda pricing: $0.0000166667 per GB-second (assumes 512MB memory)
+func (ep *ExportProcessor) calculateLambdaCost(durationMs int64) int64 {
+	const memoryGB = 0.5                 // 512MB = 0.5GB
+	const costPerGBSecond = 0.0000166667 // USD per GB-second
+
+	durationSeconds := float64(durationMs) / 1000.0
+	costDollars := memoryGB * durationSeconds * costPerGBSecond
+
+	// Convert to microcents (1 dollar = 1,000,000 microcents)
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateS3PutCost calculates the cost of S3 PUT requests
+// S3 PUT pricing: $0.005 per 1,000 requests
+func (ep *ExportProcessor) calculateS3PutCost(requestCount int64) int64 {
+	const costPer1000Requests = 0.005 // USD per 1,000 requests
+
+	costDollars := float64(requestCount) * costPer1000Requests / 1000.0
+
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateS3GetCost calculates the cost of S3 GET requests
+// S3 GET pricing: $0.0004 per 1,000 requests
+func (ep *ExportProcessor) calculateS3GetCost(requestCount int64) int64 {
+	const costPer1000Requests = 0.0004 // USD per 1,000 requests
+
+	costDollars := float64(requestCount) * costPer1000Requests / 1000.0
+
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateS3StorageCost calculates the cost of S3 storage
+// S3 storage pricing: $0.023 per GB per month (prorated)
+func (ep *ExportProcessor) calculateS3StorageCost(sizeBytes int64) int64 {
+	const costPerGBMonth = 0.023 // USD per GB per month
+
+	sizeGB := float64(sizeBytes) / (1024 * 1024 * 1024) // Convert bytes to GB
+
+	// Assume storage for 30 days (1 month)
+	costDollars := sizeGB * costPerGBMonth
+
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateS3DataTransferCost calculates the cost of S3 data transfer
+// S3 data transfer pricing: $0.09 per GB (outbound)
+func (ep *ExportProcessor) calculateS3DataTransferCost(transferBytes int64) int64 {
+	const costPerGB = 0.09 // USD per GB
+
+	transferGB := float64(transferBytes) / (1024 * 1024 * 1024) // Convert bytes to GB
+	costDollars := transferGB * costPerGB
+
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
+}
+
+// calculateDynamoDBReadCost calculates the cost of DynamoDB read operations
+// DynamoDB pricing: $0.25 per million read requests
+func (ep *ExportProcessor) calculateDynamoDBReadCost(readUnits float64) int64 {
+	const costPerMillionReads = 0.25 // USD per million read requests
+
+	costDollars := (readUnits / 1_000_000) * costPerMillionReads
+
+	// Convert to microcents
+	return int64(costDollars * 1_000_000)
 }

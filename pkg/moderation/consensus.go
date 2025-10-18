@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aron23/lesser/pkg/common"
-	"github.com/aron23/lesser/pkg/trust"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
@@ -17,8 +17,8 @@ type StorageInterface interface {
 	GetModerationReviews(ctx context.Context, eventID string) ([]*Review, error)
 	CreateModerationDecision(ctx context.Context, decision *ModerationDecision) error
 	GetModerationQueue(ctx context.Context, limit int, cursor string) ([]*QueueItem, string, error)
-	GetTrustScore(ctx context.Context, actorID, category string) (*trust.TrustScore, error)
-	RecordTrustUpdate(ctx context.Context, update *trust.TrustUpdate) error
+	GetTrustScore(ctx context.Context, actorID, category string) (*models.TrustScore, error)
+	RecordTrustUpdate(ctx context.Context, update *models.TrustUpdate) error
 }
 
 // ConsensusEngine handles consensus calculation for moderation decisions
@@ -41,7 +41,7 @@ func NewConsensusEngine(storage StorageInterface, config *ConsensusConfig) *Cons
 // CalculateConsensus calculates consensus from reviews with trust weighting
 func (e *ConsensusEngine) CalculateConsensus(ctx context.Context, event *ModerationEvent, reviews []*Review) (*ModerationDecision, error) {
 	if len(reviews) < e.config.MinReviewers {
-		return nil, fmt.Errorf("insufficient reviewers: %d < %d", len(reviews), e.config.MinReviewers)
+		return nil, fmt.Errorf("%w: %d < %d", ErrInsufficientReviewers, len(reviews), e.config.MinReviewers)
 	}
 
 	// Get trust scores for all reviewers
@@ -50,10 +50,10 @@ func (e *ConsensusEngine) CalculateConsensus(ctx context.Context, event *Moderat
 
 	for _, review := range reviews {
 		// Get reviewer's trust score
-		trustScore, err := e.storage.GetTrustScore(ctx, review.ReviewerID, string(trust.TrustCategoryContent))
+		trustScore, err := e.storage.GetTrustScore(ctx, review.ReviewerID, string(models.TrustCategoryContent))
 		if err != nil {
 			// If we can't get trust score, use default
-			trustScore = &trust.TrustScore{
+			trustScore = &models.TrustScore{
 				Score:      0.5,
 				Confidence: 0.1,
 			}
@@ -69,7 +69,7 @@ func (e *ConsensusEngine) CalculateConsensus(ctx context.Context, event *Moderat
 	}
 
 	if totalTrustWeight < e.config.MinTrustWeight {
-		return nil, fmt.Errorf("insufficient trust weight: %.2f < %.2f", totalTrustWeight, e.config.MinTrustWeight)
+		return nil, fmt.Errorf("%w: %.2f < %.2f", ErrInsufficientTrustWeight, totalTrustWeight, e.config.MinTrustWeight)
 	}
 
 	// Calculate weighted consensus
@@ -107,13 +107,13 @@ func (e *ConsensusEngine) CalculateConsensus(ctx context.Context, event *Moderat
 
 	// Check if consensus meets thresholds
 	if decision.ConsensusScore < e.config.ConsensusThreshold {
-		return nil, fmt.Errorf("insufficient consensus: %.2f < %.2f",
+		return nil, fmt.Errorf("%w: %.2f < %.2f", ErrConsensusNotReached,
 			decision.ConsensusScore, e.config.ConsensusThreshold)
 	}
 
 	// For critical actions, require higher consensus
 	if isCriticalAction(bestAction) && decision.ConsensusScore < e.config.CriticalThreshold {
-		return nil, fmt.Errorf("insufficient consensus for critical action: %.2f < %.2f",
+		return nil, fmt.Errorf("%w: %.2f < %.2f", ErrInsufficientConsensus,
 			decision.ConsensusScore, e.config.CriticalThreshold)
 	}
 
@@ -132,19 +132,19 @@ func (e *ConsensusEngine) ProcessReview(ctx context.Context, eventID string, rev
 	// Get the event
 	event, err := e.storage.GetModerationEvent(ctx, eventID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get moderation event: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrModerationEventRetrievalFailed, err)
 	}
 
 	// Add the review
 	err = e.storage.AddModerationReview(ctx, review)
 	if err != nil {
-		return nil, fmt.Errorf("failed to add review: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrModerationReviewAddFailed, err)
 	}
 
 	// Get all reviews
 	reviews, err := e.storage.GetModerationReviews(ctx, eventID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get reviews: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrModerationReviewsRetrievalFailed, err)
 	}
 
 	// Check if we have enough reviews
@@ -162,7 +162,7 @@ func (e *ConsensusEngine) ProcessReview(ctx context.Context, eventID string, rev
 	// Store the decision
 	err = e.storage.CreateModerationDecision(ctx, decision)
 	if err != nil {
-		return nil, fmt.Errorf("failed to store decision: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrModerationDecisionStorageFailed, err)
 	}
 
 	// Update trust scores based on consensus outcome
@@ -190,9 +190,9 @@ func (e *ConsensusEngine) updateTrustScores(ctx context.Context, decision *Moder
 			delta *= 2.0
 		}
 
-		update := &trust.TrustUpdate{
+		update := &models.TrustUpdate{
 			ActorID:  review.ReviewerID,
-			Category: trust.TrustCategoryContent,
+			Category: models.TrustCategoryContent,
 			Delta:    delta,
 			Reason:   fmt.Sprintf("Moderation consensus alignment for event %s", decision.EventID),
 			EventID:  decision.EventID,
@@ -211,12 +211,12 @@ func (e *ConsensusEngine) updateTrustScores(ctx context.Context, decision *Moder
 // ReviewWithTrust combines a review with trust information
 type ReviewWithTrust struct {
 	Review *Review
-	Trust  *trust.TrustScore
+	Trust  *models.TrustScore
 	Weight float64
 }
 
 // calculateReviewWeight calculates the weight of a review based on trust
-func calculateReviewWeight(trust *trust.TrustScore, review *Review) float64 {
+func calculateReviewWeight(trust *models.TrustScore, review *Review) float64 {
 	// Base weight from trust score (0-1 range)
 	baseWeight := (trust.Score + 1.0) / 2.0 // Convert from -1..1 to 0..1
 
@@ -261,7 +261,7 @@ func (e *ConsensusEngine) CheckTimeouts(ctx context.Context) error {
 
 	queue, _, err := e.storage.GetModerationQueue(ctx, 100, "")
 	if err != nil {
-		return fmt.Errorf("failed to get moderation queue: %w", err)
+		return fmt.Errorf("%w: %w", ErrModerationQueueRetrievalFailed, err)
 	}
 
 	now := time.Now()
@@ -304,7 +304,7 @@ func (e *ConsensusEngine) getDefaultAction(event *ModerationEvent) ActionType {
 }
 
 // GetConsensusStats returns statistics about consensus decisions
-func (e *ConsensusEngine) GetConsensusStats(ctx context.Context, startTime, endTime time.Time) (*ConsensusStats, error) {
+func (e *ConsensusEngine) GetConsensusStats(_ context.Context, _, _ time.Time) (*ConsensusStats, error) {
 	// This would query stored decisions and calculate statistics
 	// Implementation depends on specific requirements
 	return &ConsensusStats{

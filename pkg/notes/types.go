@@ -64,22 +64,29 @@ type Vote struct {
 type VoteType string
 
 const (
-	VoteHelpful    VoteType = "helpful"
+	// VoteHelpful represents a helpful vote
+	VoteHelpful VoteType = "helpful"
+	// VoteNotHelpful represents a not helpful vote
 	VoteNotHelpful VoteType = "not_helpful"
-	VoteNeutral    VoteType = "neutral"
+	// VoteNeutral represents a neutral vote
+	VoteNeutral VoteType = "neutral"
 )
 
 // VisibilityStatus represents the visibility state of a note
 type VisibilityStatus string
 
 const (
-	VisibilityPending  VisibilityStatus = "pending"
-	VisibilityVisible  VisibilityStatus = "visible"
-	VisibilityHidden   VisibilityStatus = "hidden"
+	// VisibilityPending represents pending visibility status
+	VisibilityPending VisibilityStatus = "pending"
+	// VisibilityVisible represents visible visibility status
+	VisibilityVisible VisibilityStatus = "visible"
+	// VisibilityHidden represents hidden visibility status
+	VisibilityHidden VisibilityStatus = "hidden"
+	// VisibilityDisputed represents disputed visibility status
 	VisibilityDisputed VisibilityStatus = "disputed"
 )
 
-// Request/Response types
+// CreateNoteRequest represents a request to create a community note
 type CreateNoteRequest struct {
 	ObjectID   string   `json:"object_id" validate:"required"`
 	ObjectType string   `json:"object_type" validate:"required"`
@@ -88,14 +95,18 @@ type CreateNoteRequest struct {
 	Sources    []Source `json:"sources" validate:"max=5"`
 }
 
+// VoteRequest represents a request to vote on a community note
 type VoteRequest struct {
 	VoteType VoteType `json:"vote_type" validate:"required,oneof=helpful not_helpful neutral"`
 	Reason   string   `json:"reason" validate:"max=200"`
 }
 
+// NotesResponse represents a response containing community notes
+//
+//nolint:revive // Notes prefix clarifies this is notes-specific response
 type NotesResponse struct {
-	Notes []CommunityNote        `json:"notes"`
-	Stats map[string]interface{} `json:"stats"`
+	Notes []CommunityNote `json:"notes"`
+	Stats map[string]any  `json:"stats"`
 }
 
 // Constants for thresholds and limits

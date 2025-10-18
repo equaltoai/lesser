@@ -1,0 +1,234 @@
+package models
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
+)
+
+// LoginAttempt represents a login attempt record for rate limiting
+type LoginAttempt struct {
+	// Primary keys
+	PK string `dynamorm:"pk" json:"pk"` // RATELIMIT#{identifier}
+	SK string `dynamorm:"sk" json:"sk"` // timestamp in RFC3339Nano format
+
+	// Attributes
+	Type      string    `json:"type"`               // "LoginAttempt"
+	Success   bool      `json:"success"`            // whether the login was successful
+	Timestamp time.Time `json:"timestamp"`          // when the attempt occurred
+	TTL       int64     `json:"ttl" dynamorm:"ttl"` // automatic cleanup after 24 hours
+}
+
+// UpdateKeys updates the DynamoDB keys for the LoginAttempt model
+func (la *LoginAttempt) UpdateKeys() error {
+	// PK is set when creating the record (RATELIMIT#{identifier})
+	// SK is set when creating the record (timestamp in RFC3339Nano)
+	if err := common.ValidateRequiredParam("type", la.Type); err != nil {
+		la.Type = "LoginAttempt"
+	}
+	return nil
+}
+
+// GetPK returns the partition key - required for BaseModel interface
+func (la *LoginAttempt) GetPK() string {
+	return la.PK
+}
+
+// GetSK returns the sort key - required for BaseModel interface
+func (la *LoginAttempt) GetSK() string {
+	return la.SK
+}
+
+// NewLoginAttempt creates a new LoginAttempt record
+func NewLoginAttempt(identifier string, success bool) *LoginAttempt {
+	now := time.Now()
+	return &LoginAttempt{
+		PK:        fmt.Sprintf("RATELIMIT#%s", identifier),
+		SK:        now.Format(time.RFC3339Nano),
+		Type:      "LoginAttempt",
+		Success:   success,
+		Timestamp: now,
+		TTL:       now.Add(24 * time.Hour).Unix(), // TTL for automatic cleanup
+	}
+}
+
+// RateLimitLockout represents an active rate limit lockout
+type RateLimitLockout struct {
+	// Primary keys
+	PK string `dynamorm:"pk" json:"pk"` // RATELIMIT#{identifier}
+	SK string `dynamorm:"sk" json:"sk"` // "LOCKOUT"
+
+	// Attributes
+	Type       string    `json:"type"`               // "RateLimitLockout"
+	UnlockTime time.Time `json:"unlock_time"`        // when the lockout expires
+	TTL        int64     `json:"ttl" dynamorm:"ttl"` // automatic cleanup
+}
+
+// UpdateKeys updates the DynamoDB keys for the RateLimitLockout model
+func (rll *RateLimitLockout) UpdateKeys() error {
+	// PK and SK are set when creating the record
+	if err := common.ValidateRequiredParam("type", rll.Type); err != nil {
+		rll.Type = "RateLimitLockout"
+	}
+	return nil
+}
+
+// GetPK returns the partition key - required for BaseModel interface
+func (rll *RateLimitLockout) GetPK() string {
+	return rll.PK
+}
+
+// GetSK returns the sort key - required for BaseModel interface
+func (rll *RateLimitLockout) GetSK() string {
+	return rll.SK
+}
+
+// NewRateLimitLockout creates a new RateLimitLockout record
+func NewRateLimitLockout(identifier string, unlockTime time.Time) *RateLimitLockout {
+	return &RateLimitLockout{
+		PK:         fmt.Sprintf("RATELIMIT#%s", identifier),
+		SK:         "LOCKOUT",
+		Type:       "RateLimitLockout",
+		UnlockTime: unlockTime,
+		TTL:        unlockTime.Unix(), // TTL matches unlock time
+	}
+}
+
+// APIRateLimit represents a rate limit counter for API endpoints
+type APIRateLimit struct {
+	// Primary keys
+	PK string `dynamorm:"pk" json:"pk"` // RATELIMIT#{userID|domain}#{endpoint}
+	SK string `dynamorm:"sk" json:"sk"` // WINDOW#{window_start}
+
+	// Attributes
+	Type         string    `json:"type"`               // "APIRateLimit"
+	UserID       string    `json:"user_id"`            // User identifier
+	Domain       string    `json:"domain,omitempty"`   // Domain for federation limits
+	Endpoint     string    `json:"endpoint"`           // API endpoint pattern
+	Count        int       `json:"count"`              // Current request count
+	Window       time.Time `json:"window"`             // Window start time
+	Blocked      bool      `json:"blocked"`            // Whether user is blocked
+	BlockedUntil time.Time `json:"blocked_until"`      // When block expires
+	UpdatedAt    time.Time `json:"updated_at"`         // Last update time
+	TTL          int64     `json:"ttl" dynamorm:"ttl"` // Automatic cleanup
+
+	// Escalating penalty tracking
+	ViolationCount int       `json:"violation_count"` // Number of violations
+	FirstViolation time.Time `json:"first_violation"` // When first violation occurred
+	LastViolation  time.Time `json:"last_violation"`  // Most recent violation
+}
+
+// UpdateKeys updates the DynamoDB keys for the APIRateLimit model
+func (arl *APIRateLimit) UpdateKeys() error {
+	// PK and SK are set when creating/updating the record
+	if err := common.ValidateRequiredParam("type", arl.Type); err != nil {
+		arl.Type = "APIRateLimit"
+	}
+	return nil
+}
+
+// GetPK returns the partition key - required for BaseModel interface
+func (arl *APIRateLimit) GetPK() string {
+	return arl.PK
+}
+
+// GetSK returns the sort key - required for BaseModel interface
+func (arl *APIRateLimit) GetSK() string {
+	return arl.SK
+}
+
+// NewAPIRateLimit creates a new APIRateLimit record
+func NewAPIRateLimit(userID, endpoint string, windowStart time.Time) *APIRateLimit {
+	now := time.Now()
+	key := fmt.Sprintf("%s:%s", userID, endpoint)
+
+	return &APIRateLimit{
+		PK:        fmt.Sprintf("RATELIMIT#%s", key),
+		SK:        fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339)),
+		Type:      "APIRateLimit",
+		UserID:    userID,
+		Endpoint:  endpoint,
+		Count:     0,
+		Window:    windowStart,
+		Blocked:   false,
+		UpdatedAt: now,
+		TTL:       windowStart.Add(25 * time.Hour).Unix(), // TTL after window + 1 day
+	}
+}
+
+// NewFederationRateLimit creates a new rate limit record for federation domains
+func NewFederationRateLimit(domain, endpoint string, windowStart time.Time) *APIRateLimit {
+	now := time.Now()
+	key := fmt.Sprintf("DOMAIN#%s:%s", domain, endpoint)
+
+	return &APIRateLimit{
+		PK:        fmt.Sprintf("RATELIMIT#%s", key),
+		SK:        fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339)),
+		Type:      "FederationRateLimit",
+		Domain:    domain,
+		Endpoint:  endpoint,
+		Count:     0,
+		Window:    windowStart,
+		Blocked:   false,
+		UpdatedAt: now,
+		TTL:       windowStart.Add(25 * time.Hour).Unix(), // TTL after window + 1 day
+	}
+}
+
+// RateLimitViolation represents a rate limit violation for escalating penalties
+type RateLimitViolation struct {
+	// Primary keys
+	PK string `dynamorm:"pk" json:"pk"` // RATELIMIT_VIOLATION#{userID|domain}
+	SK string `dynamorm:"sk" json:"sk"` // timestamp of violation
+
+	// Attributes
+	Type           string    `json:"type"`               // "RateLimitViolation"
+	UserID         string    `json:"user_id"`            // User identifier
+	Domain         string    `json:"domain,omitempty"`   // Domain for federation violations
+	Endpoint       string    `json:"endpoint"`           // Endpoint that was rate limited
+	ViolationType  string    `json:"violation_type"`     // "api" or "federation"
+	Timestamp      time.Time `json:"timestamp"`          // When violation occurred
+	PenaltyMinutes int       `json:"penalty_minutes"`    // Minutes of penalty applied
+	TTL            int64     `json:"ttl" dynamorm:"ttl"` // Cleanup after 7 days
+}
+
+// UpdateKeys updates the DynamoDB keys for the RateLimitViolation model
+func (rlv *RateLimitViolation) UpdateKeys() error {
+	if err := common.ValidateRequiredParam("type", rlv.Type); err != nil {
+		rlv.Type = "RateLimitViolation"
+	}
+	return nil
+}
+
+// GetPK returns the partition key - required for BaseModel interface
+func (rlv *RateLimitViolation) GetPK() string {
+	return rlv.PK
+}
+
+// GetSK returns the sort key - required for BaseModel interface
+func (rlv *RateLimitViolation) GetSK() string {
+	return rlv.SK
+}
+
+// NewRateLimitViolation creates a new rate limit violation record
+func NewRateLimitViolation(userID, domain, endpoint, violationType string, penaltyMinutes int) *RateLimitViolation {
+	now := time.Now()
+	identifier := userID
+	if domain != "" {
+		identifier = fmt.Sprintf("DOMAIN#%s", domain)
+	}
+
+	return &RateLimitViolation{
+		PK:             fmt.Sprintf("RATELIMIT_VIOLATION#%s", identifier),
+		SK:             now.Format(time.RFC3339Nano),
+		Type:           "RateLimitViolation",
+		UserID:         userID,
+		Domain:         domain,
+		Endpoint:       endpoint,
+		ViolationType:  violationType,
+		Timestamp:      now,
+		PenaltyMinutes: penaltyMinutes,
+		TTL:            now.Add(7 * 24 * time.Hour).Unix(), // TTL for 7 days
+	}
+}

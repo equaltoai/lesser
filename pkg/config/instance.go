@@ -1,11 +1,5 @@
 package config
 
-import (
-	"os"
-	"strconv"
-	"strings"
-)
-
 // InstanceConfig holds static instance configuration
 type InstanceConfig struct {
 	// From environment variables
@@ -31,81 +25,27 @@ type InstanceConfig struct {
 
 // GetInstanceConfig returns the instance configuration
 func GetInstanceConfig() *InstanceConfig {
+	cfg := Get() // Get centralized config
+
 	return &InstanceConfig{
-		// From environment
-		Title:            getInstanceEnv("INSTANCE_TITLE", "Lesser Instance"),
-		ShortDescription: getInstanceEnv("INSTANCE_SHORT_DESC", "A personal ActivityPub server"),
-		Description:      getInstanceEnv("INSTANCE_DESCRIPTION", "A lightweight, serverless ActivityPub implementation"),
-		Email:            getInstanceEnv("INSTANCE_ADMIN_EMAIL", "admin@"+Get().Domain),
+		// From centralized config
+		Title:            cfg.InstanceTitle,
+		ShortDescription: cfg.InstanceShortDesc,
+		Description:      cfg.InstanceDescription,
+		Email:            cfg.InstanceAdminEmail,
 
 		// Static defaults
 		Version:        "4.0.0 (compatible; Lesser 0.1.0)",
 		Software:       "lesser",
-		MaxStatusChars: getInstanceEnvInt("MAX_STATUS_CHARS", 5000),
-		MaxMediaSize:   getInstanceEnvInt64("MAX_MEDIA_SIZE", 10*1024*1024), // 10MB
-		MaxVideoSize:   getInstanceEnvInt64("MAX_VIDEO_SIZE", 40*1024*1024), // 40MB
-		Languages:      getInstanceEnvLanguages("INSTANCE_LANGUAGES", []string{"en"}),
+		MaxStatusChars: int(cfg.MaxStatusChars),
+		MaxMediaSize:   cfg.MaxMediaSize,
+		MaxVideoSize:   cfg.MaxVideoSize,
+		Languages:      cfg.InstanceLanguages,
 
-		// Feature flags
-		RegistrationsOpen: getInstanceEnvBool("REGISTRATIONS_OPEN", false),
-		ApprovalRequired:  getInstanceEnvBool("APPROVAL_REQUIRED", true),
-		InvitesEnabled:    getInstanceEnvBool("INVITES_ENABLED", false),
-		FederationEnabled: getInstanceEnvBool("FEDERATION_ENABLED", true),
+		// Feature flags from centralized config
+		RegistrationsOpen: cfg.RegistrationsOpen,
+		ApprovalRequired:  cfg.ApprovalRequired,
+		InvitesEnabled:    cfg.InvitesEnabled,
+		FederationEnabled: cfg.FederationEnabled,
 	}
-}
-
-func getInstanceEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func getInstanceEnvInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if i, err := strconv.Atoi(value); err == nil {
-			return i
-		}
-	}
-	return defaultValue
-}
-
-func getInstanceEnvInt64(key string, defaultValue int64) int64 {
-	if value := os.Getenv(key); value != "" {
-		if i, err := strconv.ParseInt(value, 10, 64); err == nil {
-			return i
-		}
-	}
-	return defaultValue
-}
-
-func getInstanceEnvBool(key string, defaultValue bool) bool {
-	if value := os.Getenv(key); value != "" {
-		if b, err := strconv.ParseBool(value); err == nil {
-			return b
-		}
-	}
-	return defaultValue
-}
-
-func getInstanceEnvLanguages(key string, defaultValue []string) []string {
-	if value := os.Getenv(key); value != "" {
-		// Parse comma-separated list of languages
-		languages := strings.Split(value, ",")
-		// Trim whitespace from each language
-		for i := range languages {
-			languages[i] = strings.TrimSpace(languages[i])
-		}
-		// Filter out empty strings
-		var filtered []string
-		for _, lang := range languages {
-			if lang != "" {
-				filtered = append(filtered, lang)
-			}
-		}
-		if len(filtered) > 0 {
-			return filtered
-		}
-	}
-	return defaultValue
 }

@@ -1,3 +1,4 @@
+// Package reputation provides actor reputation calculation algorithms based on activity history and trust metrics.
 package reputation
 
 import (
@@ -5,19 +6,20 @@ import (
 	"math"
 	"time"
 
-	"github.com/aron23/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
 // Calculator computes reputation scores for actors
 type Calculator struct {
-	store       storage.Storage
+	store       core.RepositoryStorage
 	logger      *zap.Logger
 	instanceURL string
 }
 
 // NewCalculator creates a new reputation calculator
-func NewCalculator(store storage.Storage, instanceURL string, logger *zap.Logger) *Calculator {
+func NewCalculator(store core.RepositoryStorage, instanceURL string, logger *zap.Logger) *Calculator {
 	return &Calculator{
 		store:       store,
 		logger:      logger,
@@ -26,7 +28,7 @@ func NewCalculator(store storage.Storage, instanceURL string, logger *zap.Logger
 }
 
 // Calculate computes a reputation score for an actor
-func (c *Calculator) Calculate(ctx context.Context, input *CalculationInput) (*Reputation, error) {
+func (c *Calculator) Calculate(_ context.Context, input *CalculationInput) (*Reputation, error) {
 	rep := &Reputation{
 		ActorID:      input.ActorID,
 		InstanceURL:  c.instanceURL, // Use configured instance URL
@@ -62,7 +64,7 @@ func (c *Calculator) Calculate(ctx context.Context, input *CalculationInput) (*R
 
 // calculateTrustScore computes trust score based on trust graph (0-250)
 func (c *Calculator) calculateTrustScore(input *CalculationInput) int {
-	if len(input.TrustRelationships) == 0 {
+	if err := common.ValidateSliceNotEmpty("input.TrustRelationships", input.TrustRelationships); err != nil {
 		return 0
 	}
 
@@ -175,11 +177,12 @@ func (c *Calculator) calculateModerationScore(input *CalculationInput) int {
 	for _, event := range input.ModerationHistory {
 		switch event.Type {
 		case "report":
-			if event.Outcome == "upheld" {
+			switch event.Outcome {
+			case OutcomeUpheld:
 				reportsUpheld++
 				// Deduct based on severity
 				score -= event.Severity * 10
-			} else if event.Outcome == "dismissed" {
+			case OutcomeDismissed:
 				reportsDismissed++
 				// Bonus for false reports
 				score += 5
