@@ -50,19 +50,19 @@ func CreateCloudFrontKeyPair(scope constructs.Construct, id string, props *Cloud
 		},
 	}))
 
-	// Path to the compiled binary
+	// Path to the packaged Lambda asset (.zip containing bootstrap binary)
 	// CDK app runs from infra/cdk directory (see Makefile: cd infra/cdk && cdk deploy)
 	// Asset paths are resolved relative to the working directory where cdk runs
-	// Binary is at <repo_root>/bin/cloudfront-keygen, cdk runs from <repo_root>/infra/cdk
+	// Zip is at <repo_root>/bin/cloudfront-keygen.zip, cdk runs from <repo_root>/infra/cdk
 	// Therefore: infra/cdk -> (up) -> infra -> (up) -> repo_root -> (down) -> bin
-	binaryPath := filepath.Join("..", "..", "bin", "cloudfront-keygen")
+	assetPath := filepath.Join("..", "..", "bin", "cloudfront-keygen.zip")
 
 	// Create Lambda function from pre-built Go binary
 	keyGenFunction := awslambda.NewFunction(scope, jsii.String(id+"Function"), &awslambda.FunctionProps{
 		Runtime:      awslambda.Runtime_PROVIDED_AL2023(),
 		Architecture: awslambda.Architecture_ARM_64(),
 		Handler:      jsii.String("bootstrap"),
-		Code:         awslambda.Code_FromAsset(jsii.String(binaryPath), nil),
+		Code:         awslambda.Code_FromAsset(jsii.String(assetPath), nil),
 		Role:         lambdaRole,
 		Timeout:      awscdk.Duration_Minutes(jsii.Number(5)),
 		MemorySize:   jsii.Number(256),
