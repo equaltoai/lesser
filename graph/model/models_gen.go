@@ -8,6 +8,7 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/moderation"
@@ -703,19 +704,42 @@ type ListUpdate struct {
 }
 
 type Media struct {
-	ID          string             `json:"id"`
-	Type        MediaType          `json:"type"`
-	URL         string             `json:"url"`
-	PreviewURL  *string            `json:"previewUrl,omitempty"`
-	Description *string            `json:"description,omitempty"`
-	Blurhash    *string            `json:"blurhash,omitempty"`
-	Width       *int               `json:"width,omitempty"`
-	Height      *int               `json:"height,omitempty"`
-	Duration    *float64           `json:"duration,omitempty"`
-	Size        int                `json:"size"`
-	MimeType    string             `json:"mimeType"`
-	UploadedBy  *activitypub.Actor `json:"uploadedBy"`
-	CreatedAt   Time               `json:"createdAt"`
+	ID            string             `json:"id"`
+	Type          MediaType          `json:"type"`
+	URL           string             `json:"url"`
+	PreviewURL    *string            `json:"previewUrl,omitempty"`
+	Description   *string            `json:"description,omitempty"`
+	Sensitive     bool               `json:"sensitive"`
+	SpoilerText   *string            `json:"spoilerText,omitempty"`
+	MediaCategory MediaCategory      `json:"mediaCategory"`
+	Blurhash      *string            `json:"blurhash,omitempty"`
+	Width         *int               `json:"width,omitempty"`
+	Height        *int               `json:"height,omitempty"`
+	Duration      *float64           `json:"duration,omitempty"`
+	Size          int                `json:"size"`
+	MimeType      string             `json:"mimeType"`
+	UploadedBy    *activitypub.Actor `json:"uploadedBy"`
+	CreatedAt     Time               `json:"createdAt"`
+}
+
+type MediaConnection struct {
+	Edges      []*MediaEdge `json:"edges"`
+	PageInfo   *PageInfo    `json:"pageInfo"`
+	TotalCount int          `json:"totalCount"`
+}
+
+type MediaEdge struct {
+	Node   *Media `json:"node"`
+	Cursor Cursor `json:"cursor"`
+}
+
+type MediaFilterInput struct {
+	OwnerID       *string    `json:"ownerId,omitempty"`
+	OwnerUsername *string    `json:"ownerUsername,omitempty"`
+	MediaType     *MediaType `json:"mediaType,omitempty"`
+	MimeType      *string    `json:"mimeType,omitempty"`
+	Since         *Time      `json:"since,omitempty"`
+	Until         *Time      `json:"until,omitempty"`
 }
 
 type MediaStream struct {
@@ -1428,6 +1452,22 @@ type UpdateRelationshipInput struct {
 
 type UpdateScheduledStatusInput struct {
 	ScheduledAt Time `json:"scheduledAt"`
+}
+
+type UploadMediaInput struct {
+	File        graphql.Upload `json:"file"`
+	Filename    *string        `json:"filename,omitempty"`
+	Description *string        `json:"description,omitempty"`
+	Focus       *FocusInput    `json:"focus,omitempty"`
+	Sensitive   *bool          `json:"sensitive,omitempty"`
+	SpoilerText *string        `json:"spoilerText,omitempty"`
+	MediaType   *MediaCategory `json:"mediaType,omitempty"`
+}
+
+type UploadMediaPayload struct {
+	Media    *Media   `json:"media"`
+	UploadID string   `json:"uploadId"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type UserPreferences struct {
@@ -2294,6 +2334,69 @@ func (e *IssueSeverity) UnmarshalJSON(b []byte) error {
 }
 
 func (e IssueSeverity) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type MediaCategory string
+
+const (
+	MediaCategoryImage    MediaCategory = "IMAGE"
+	MediaCategoryVideo    MediaCategory = "VIDEO"
+	MediaCategoryAudio    MediaCategory = "AUDIO"
+	MediaCategoryGifv     MediaCategory = "GIFV"
+	MediaCategoryDocument MediaCategory = "DOCUMENT"
+	MediaCategoryUnknown  MediaCategory = "UNKNOWN"
+)
+
+var AllMediaCategory = []MediaCategory{
+	MediaCategoryImage,
+	MediaCategoryVideo,
+	MediaCategoryAudio,
+	MediaCategoryGifv,
+	MediaCategoryDocument,
+	MediaCategoryUnknown,
+}
+
+func (e MediaCategory) IsValid() bool {
+	switch e {
+	case MediaCategoryImage, MediaCategoryVideo, MediaCategoryAudio, MediaCategoryGifv, MediaCategoryDocument, MediaCategoryUnknown:
+		return true
+	}
+	return false
+}
+
+func (e MediaCategory) String() string {
+	return string(e)
+}
+
+func (e *MediaCategory) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = MediaCategory(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid MediaCategory", str)
+	}
+	return nil
+}
+
+func (e MediaCategory) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *MediaCategory) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e MediaCategory) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

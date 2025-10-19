@@ -36,6 +36,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const mediaPathPrefix = "media"
+
 // ====================================================================
 // QUERY RESOLVERS
 // ====================================================================
@@ -320,6 +322,20 @@ func (r *Resolver) requireAdmin(ctx context.Context) (string, error) {
 	return username, nil
 }
 
+func (r *Resolver) isAdmin(ctx context.Context, username string) bool {
+	accountsService := r.Registry.Accounts()
+	if accountsService == nil {
+		return false
+	}
+
+	account, err := accountsService.GetAccount(ctx, username)
+	if err != nil || account == nil || account.User == nil {
+		return false
+	}
+
+	return strings.EqualFold(account.User.Role, "admin")
+}
+
 // ====================================================================
 // CONVERTER HELPERS - Include all converters from service_converters.go
 // ====================================================================
@@ -457,15 +473,17 @@ func (r *Resolver) convertMediaToGraphQL(media *models.Media) *model.Media {
 	}
 
 	m := &model.Media{
-		ID:          media.MediaID,
-		Type:        mediaType,
-		URL:         media.CDNUrl,
-		PreviewURL:  &media.CDNUrl, // Could generate a thumbnail URL
-		Description: &media.Description,
-		Blurhash:    &media.Blurhash,
-		Size:        int(media.FileSize),
-		MimeType:    media.ContentType,
-		CreatedAt:   model.Time(media.CreatedAt),
+		ID:            media.MediaID,
+		Type:          mediaType,
+		URL:           media.CDNUrl,
+		PreviewURL:    &media.CDNUrl, // Could generate a thumbnail URL
+		Description:   &media.Description,
+		Blurhash:      &media.Blurhash,
+		Size:          int(media.FileSize),
+		MimeType:      media.ContentType,
+		CreatedAt:     model.Time(media.CreatedAt),
+		Sensitive:     media.IsNSFW,
+		MediaCategory: mapMediaCategoryToGraphQL(media.MediaCategory, media.ContentType),
 	}
 
 	if media.Width > 0 {
@@ -481,8 +499,38 @@ func (r *Resolver) convertMediaToGraphQL(media *models.Media) *model.Media {
 	if uploadedBy != nil {
 		m.UploadedBy = uploadedBy
 	}
+	if media.SpoilerText != "" {
+		m.SpoilerText = &media.SpoilerText
+	}
 
 	return m
+}
+
+func mapMediaCategoryToGraphQL(category models.MediaCategory, contentType string) model.MediaCategory {
+	value := strings.TrimSpace(string(category))
+	if value == "" {
+		category = models.DetermineMediaCategory(contentType)
+	} else {
+		normalized, ok := models.NormalizeMediaCategory(value)
+		if ok {
+			category = normalized
+		}
+	}
+
+	switch category {
+	case models.MediaCategoryImage:
+		return model.MediaCategoryImage
+	case models.MediaCategoryVideo:
+		return model.MediaCategoryVideo
+	case models.MediaCategoryAudio:
+		return model.MediaCategoryAudio
+	case models.MediaCategoryGifv:
+		return model.MediaCategoryGifv
+	case models.MediaCategoryDocument:
+		return model.MediaCategoryDocument
+	default:
+		return model.MediaCategoryUnknown
+	}
 }
 
 func (r *Resolver) convertEmojiToGraphQL(emoji *storage.CustomEmoji) *model.CustomEmoji {
@@ -2447,7 +2495,7 @@ func (r *attachmentResolver) extractMediaIDFromURL(url string) (string, error) {
 	}
 
 	// Check if the first segment is "media"
-	if segments[0] != "media" {
+	if segments[0] != mediaPathPrefix {
 		return "", ErrInvalidMediaURLMissingPrefix
 	}
 

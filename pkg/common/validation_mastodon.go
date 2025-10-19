@@ -402,6 +402,18 @@ func ValidateMediaParams(params map[string]interface{}) error {
 		}
 	}
 
+	// Validate spoiler text
+	if spoiler, exists := params["spoiler_text"]; exists {
+		if spoilerStr, ok := spoiler.(string); ok {
+			trimmed := strings.TrimSpace(spoilerStr)
+			if trimmed != "" {
+				if err := ValidateSpoilerText(trimmed); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
 	// Validate focus (for images)
 	if focus, exists := params["focus"]; exists {
 		if focusStr, ok := focus.(string); ok {

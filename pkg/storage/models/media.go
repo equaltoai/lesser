@@ -9,6 +9,27 @@ import (
 	"github.com/google/uuid"
 )
 
+// MediaCategory represents the high-level category for a media attachment.
+type MediaCategory string
+
+const (
+	MediaCategoryImage    MediaCategory = "image"
+	MediaCategoryVideo    MediaCategory = "video"
+	MediaCategoryAudio    MediaCategory = "audio"
+	MediaCategoryGifv     MediaCategory = "gifv"
+	MediaCategoryDocument MediaCategory = "document"
+	MediaCategoryUnknown  MediaCategory = "unknown"
+)
+
+var validMediaCategories = map[MediaCategory]struct{}{
+	MediaCategoryImage:    {},
+	MediaCategoryVideo:    {},
+	MediaCategoryAudio:    {},
+	MediaCategoryGifv:     {},
+	MediaCategoryDocument: {},
+	MediaCategoryUnknown:  {},
+}
+
 // Media represents a media file (image, video, audio) stored in the system
 type Media struct {
 	// Primary key - using media ID as partition key with version as sort key
@@ -57,11 +78,15 @@ type Media struct {
 	// Media metadata for Mastodon API compatibility
 	Description string `json:"description,omitempty"` // Alt text description
 	Focus       string `json:"focus,omitempty"`       // Focus point for cropping (x,y)
+	SpoilerText string `json:"spoiler_text,omitempty"`
 
 	// Content moderation
 	IsNSFW          bool     `json:"is_nsfw"`
 	ModerationScore float64  `json:"moderation_score"` // 0.0 - 1.0
 	Labels          []string `json:"labels,omitempty"` // Content labels from moderation
+
+	// Client-provided classification (image/video/gifv/etc.)
+	MediaCategory MediaCategory `json:"media_category,omitempty"`
 
 	// Usage tracking
 	UsageCount int        `json:"usage_count"`
@@ -101,6 +126,7 @@ func (m *Media) BeforeCreate() error {
 	m.CreatedAt = now
 	m.UpdatedAt = now
 	m.UploadedAt = now
+	m.SpoilerText = strings.TrimSpace(m.SpoilerText)
 
 	// Generate media ID if not provided
 	if err := common.ValidateRequiredParam("MediaID", m.MediaID); err != nil {
@@ -115,6 +141,13 @@ func (m *Media) BeforeCreate() error {
 	// Set default status
 	if err := common.ValidateRequiredParam("Status", m.Status); err != nil {
 		m.Status = StatusPending
+	}
+
+	categoryValue := strings.TrimSpace(string(m.MediaCategory))
+	if categoryValue == "" {
+		m.MediaCategory = DetermineMediaCategory(m.ContentType)
+	} else {
+		m.MediaCategory = MediaCategory(strings.ToLower(categoryValue))
 	}
 
 	// Initialize usage count
@@ -139,6 +172,12 @@ func (m *Media) BeforeCreate() error {
 // BeforeUpdate sets up the model before update
 func (m *Media) BeforeUpdate() error {
 	m.UpdatedAt = time.Now()
+	m.SpoilerText = strings.TrimSpace(m.SpoilerText)
+	if strings.TrimSpace(string(m.MediaCategory)) == "" {
+		m.MediaCategory = DetermineMediaCategory(m.ContentType)
+	} else {
+		m.MediaCategory = MediaCategory(strings.ToLower(strings.TrimSpace(string(m.MediaCategory))))
+	}
 
 	// Update GSI keys in case status or other indexed fields changed
 	m.setupGSIKeys()
@@ -174,6 +213,12 @@ func (m *Media) setupGSIKeys() {
 
 // Validate performs validation on the Media
 func (m *Media) Validate() error {
+	if strings.TrimSpace(string(m.MediaCategory)) == "" {
+		m.MediaCategory = DetermineMediaCategory(m.ContentType)
+	} else {
+		m.MediaCategory = MediaCategory(strings.ToLower(strings.TrimSpace(string(m.MediaCategory))))
+	}
+
 	if err := common.ValidateRequiredParam("MediaID", strings.TrimSpace(m.MediaID)); err != nil {
 		return err
 	}
@@ -201,6 +246,16 @@ func (m *Media) Validate() error {
 	// Validate status
 	if !isValidMediaStatus(m.Status) {
 		return fmt.Errorf("%w: %s", ErrInvalidMediaStatus, m.Status)
+	}
+
+	if m.SpoilerText != "" {
+		if err := common.ValidateSpoilerText(m.SpoilerText); err != nil {
+			return err
+		}
+	}
+
+	if !IsValidMediaCategory(m.MediaCategory) {
+		return fmt.Errorf("%w: %s", ErrInvalidMediaCategory, m.MediaCategory)
 	}
 
 	return nil
@@ -347,6 +402,52 @@ func (m *Media) IsVideo() bool {
 // IsAudio returns true if the media is audio
 func (m *Media) IsAudio() bool {
 	return strings.HasPrefix(m.ContentType, "audio/")
+}
+
+// DetermineMediaCategory derives a category from the MIME type when none is provided.
+func DetermineMediaCategory(contentType string) MediaCategory {
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	if idx := strings.Index(contentType, ";"); idx != -1 {
+		contentType = strings.TrimSpace(contentType[:idx])
+	}
+
+	switch {
+	case contentType == "image/gif":
+		return MediaCategoryGifv
+	case strings.HasPrefix(contentType, "image/"):
+		return MediaCategoryImage
+	case strings.HasPrefix(contentType, "video/"):
+		return MediaCategoryVideo
+	case strings.HasPrefix(contentType, "audio/"):
+		return MediaCategoryAudio
+	default:
+		return MediaCategoryUnknown
+	}
+}
+
+// IsValidMediaCategory reports whether the provided category is supported.
+func IsValidMediaCategory(category MediaCategory) bool {
+	if category == "" {
+		return true
+	}
+	normalized := MediaCategory(strings.ToLower(strings.TrimSpace(string(category))))
+	_, ok := validMediaCategories[normalized]
+	return ok
+}
+
+// NormalizeMediaCategory converts arbitrary input into a canonical media category value.
+// The boolean return indicates whether the provided category was recognized.
+func NormalizeMediaCategory(category string) (MediaCategory, bool) {
+	if strings.TrimSpace(category) == "" {
+		return "", false
+	}
+
+	normalized := MediaCategory(strings.ToLower(strings.TrimSpace(category)))
+	if _, ok := validMediaCategories[normalized]; !ok {
+		return MediaCategoryUnknown, false
+	}
+
+	return normalized, true
 }
 
 // GetTotalSize returns the total size including all variants

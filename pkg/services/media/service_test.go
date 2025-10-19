@@ -205,14 +205,82 @@ func createTestService(t *testing.T) (*Service, *MockMediaRepository, *MockJobQu
 	return service, mediaRepo, jobQueue, publisher
 }
 
+func TestService_ListMedia_Defaults(t *testing.T) {
+	service, mediaRepo, _, _ := createTestService(t)
+	ctx := context.Background()
+
+	items := []*models.Media{
+		{MediaID: "media1", UserID: "alice", ContentType: "image/jpeg"},
+	}
+	mediaRepo.On("GetUserMedia", ctx, "alice", mock.MatchedBy(func(opts interfaces.PaginationOptions) bool {
+		return opts.Limit == 20 && opts.Cursor == "" && opts.Since == nil && opts.Until == nil
+	})).Return(&interfaces.PaginatedResult[*models.Media]{
+		Items:      items,
+		NextCursor: "cursor#1",
+		HasMore:    true,
+		Total:      10,
+	}, nil)
+
+	result, err := service.ListMedia(ctx, &ListMediaQuery{Owner: "alice"})
+	assert.NoError(t, err)
+	assert.Equal(t, items, result.Items)
+	assert.Equal(t, "cursor#1", result.NextCursor)
+	assert.True(t, result.HasMore)
+	assert.Equal(t, int64(10), result.Total)
+	mediaRepo.AssertExpectations(t)
+}
+
+func TestService_ListMedia_WithFilters(t *testing.T) {
+	service, mediaRepo, _, _ := createTestService(t)
+	ctx := context.Background()
+
+	since := time.Now().Add(-24 * time.Hour)
+	until := time.Now()
+
+	items := []*models.Media{{MediaID: "media2", UserID: "alice", ContentType: "video/mp4"}}
+	mediaRepo.On("GetUserMediaByType", ctx, "alice", "video", mock.MatchedBy(func(opts interfaces.PaginationOptions) bool {
+		return opts.Limit == 50 && opts.Cursor == "token" && opts.Since == &since && opts.Until == &until
+	})).Return(&interfaces.PaginatedResult[*models.Media]{
+		Items:      items,
+		NextCursor: "next",
+		HasMore:    false,
+		Total:      -1,
+	}, nil)
+
+	result, err := service.ListMedia(ctx, &ListMediaQuery{
+		Owner:     "alice",
+		MediaType: "video",
+		Cursor:    "token",
+		Limit:     50,
+		Since:     &since,
+		Until:     &until,
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, items, result.Items)
+	assert.Equal(t, "next", result.NextCursor)
+	assert.False(t, result.HasMore)
+	mediaRepo.AssertExpectations(t)
+}
+
+func TestService_ListMedia_InvalidOwner(t *testing.T) {
+	service, _, _, _ := createTestService(t)
+	ctx := context.Background()
+
+	_, err := service.ListMedia(ctx, &ListMediaQuery{})
+	assert.Error(t, err)
+}
+
 func createValidUploadCommand() *UploadMediaCommand {
 	return &UploadMediaCommand{
-		UserID:      "user123",
-		FileName:    "test.jpg",
-		ContentType: "image/jpeg",
-		FileData:    []byte("fake image data"),
-		Description: "A test image",
-		Focus:       "0.5,0.5",
+		UserID:        "user123",
+		FileName:      "test.jpg",
+		ContentType:   "image/jpeg",
+		FileData:      []byte("fake image data"),
+		Description:   "A test image",
+		Focus:         "0.5,0.5",
+		Sensitive:     true,
+		SpoilerText:   "Content warning",
+		MediaCategory: models.MediaCategoryImage,
 	}
 }
 
@@ -273,6 +341,9 @@ func TestService_UploadMedia_Success(t *testing.T) {
 	assert.Equal(t, int64(len(cmd.FileData)), result.Media.FileSize)
 	assert.Equal(t, cmd.Description, result.Media.Description)
 	assert.Equal(t, cmd.Focus, result.Media.Focus)
+	assert.Equal(t, cmd.Sensitive, result.Media.IsNSFW)
+	assert.Equal(t, strings.TrimSpace(cmd.SpoilerText), result.Media.SpoilerText)
+	assert.Equal(t, cmd.MediaCategory, result.Media.MediaCategory)
 	assert.Equal(t, models.StatusPending, result.Media.Status)
 	assert.Equal(t, "test-bucket", result.Media.S3Bucket)
 	assert.NotEmpty(t, result.Media.S3Key)
@@ -353,6 +424,20 @@ func TestService_UploadMedia_ValidationErrors(t *testing.T) {
 				cmd.Focus = "invalid"
 			},
 			expectedErr: "Focus point format must be",
+		},
+		{
+			name: "spoiler text too long",
+			modifyCmd: func(cmd *UploadMediaCommand) {
+				cmd.SpoilerText = strings.Repeat("a", 600)
+			},
+			expectedErr: "spoiler",
+		},
+		{
+			name: "invalid media category",
+			modifyCmd: func(cmd *UploadMediaCommand) {
+				cmd.MediaCategory = models.MediaCategory("unsupported")
+			},
+			expectedErr: "invalid media category",
 		},
 	}
 

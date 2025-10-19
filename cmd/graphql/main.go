@@ -167,6 +167,7 @@ func initializeGraphQLSpecificServices() {
 	serviceConfig := &services.ServiceConfig{
 		BaseURL:   cfg.BaseURL(),
 		JWTSecret: cfg.JWTSecret,
+		Config:    cfg,
 	}
 
 	registry, err := services.NewRegistry(
@@ -186,6 +187,7 @@ func initializeGraphQLSpecificServices() {
 	resolver := &graph.Resolver{
 		Registry:       registry,
 		Storage:        repos, // Keep for legacy resolvers
+		Config:         cfg,
 		CostTracker:    costTracker,
 		UnifiedTracker: unifiedTracker,
 		TableName:      cfg.DynamoTableName,
@@ -208,7 +210,10 @@ func initializeGraphQLSpecificServices() {
 	graphQLHandler.AddTransport(transport.Options{})
 	graphQLHandler.AddTransport(transport.GET{})
 	graphQLHandler.AddTransport(transport.POST{})
-	graphQLHandler.AddTransport(transport.MultipartForm{})
+	graphQLHandler.AddTransport(transport.MultipartForm{
+		MaxUploadSize: cfg.MaxUploadSize,
+		MaxMemory:     cfg.MaxUploadSize,
+	})
 
 	// Add extensions
 	graphQLHandler.Use(extension.Introspection{})

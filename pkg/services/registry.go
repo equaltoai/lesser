@@ -986,6 +986,10 @@ func (r *Registry) Media() *media.Service {
 			// Wire up optional streaming services if config is available
 			r.wireMediaStreamingServices(r.mediaService)
 
+			if r.config != nil && r.config.Config != nil && r.config.Config.MaxUploadSize > 0 {
+				r.mediaService.SetMaxFileSize(r.config.Config.MaxUploadSize)
+			}
+
 			r.initialized["Media"] = true
 		} else {
 			if r.logger != nil {

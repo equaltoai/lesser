@@ -72,6 +72,7 @@ var (
 	ErrFileSizeZero           = centralErrors.ValueOutOfRange("FileSize", 1, int64(^uint64(0)>>1), 0)
 	ErrUnsupportedContentType = centralErrors.ContentTypeNotAllowed("unknown")
 	ErrInvalidMediaStatus     = centralErrors.NewValidationError("media_status", "Invalid media status")
+	ErrInvalidMediaCategory   = centralErrors.NewValidationError("media_category", "Invalid media category")
 	ErrMediaIDRequired        = centralErrors.RequiredFieldMissing("MediaID")
 
 	// Media Metadata validation errors

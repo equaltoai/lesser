@@ -214,6 +214,77 @@ mutation CreatePost {
 }
 ```
 
+#### Upload Media
+GraphQL uploads use the `Upload` scalar following the [`graphql-multipart-request-spec`](https://github.com/jaydenseric/graphql-multipart-request-spec).
+
+```graphql
+mutation UploadMedia($file: Upload!, $description: String, $spoiler: String) {
+  uploadMedia(
+    input: {
+      file: $file
+      description: $description
+      sensitive: true
+      spoilerText: $spoiler
+      mediaType: IMAGE
+    }
+  ) {
+    uploadId
+    warnings
+    media {
+      id
+      url
+      mimeType
+      size
+      sensitive
+      spoilerText
+      mediaCategory
+      createdAt
+    }
+  }
+}
+```
+
+Include optional moderation metadata (`sensitive`, `spoilerText`, `mediaType`) to keep uploads aligned with REST behavior. The response echoes the persisted values so clients can render content warnings immediately.
+
+Example `curl` request:
+
+```bash
+curl \
+  -H "Authorization: Bearer $TOKEN" \
+  -F operations='{"query":"mutation ($file: Upload!, $spoiler: String) { uploadMedia(input: { file: $file, mediaType: IMAGE, sensitive: true, spoilerText: $spoiler }) { uploadId media { id url mimeType sensitive mediaCategory spoilerText } } }","variables":{"file":null,"spoiler":"Content warning"}}' \
+  -F map='{ "0": ["variables.file"] }' \
+  -F 0=@/path/to/image.jpg \
+  https://yourdomain.com/graphql
+```
+
+#### Browse Media Library
+
+```graphql
+query MediaLibrary($cursor: Cursor) {
+  mediaLibrary(first: 25, after: $cursor, filter: { mediaType: IMAGE }) {
+    edges {
+      cursor
+      node {
+        id
+        url
+        mimeType
+        sensitive
+        spoilerText
+        mediaCategory
+        createdAt
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    totalCount
+  }
+}
+```
+
+The `MediaFilterInput` supports `ownerUsername`, `ownerId`, `mediaType`, `mimeType`, `since`, and `until` to refine results while keeping pagination stable.
+
 #### Subscribe to Timeline
 ```graphql
 subscription TimelineUpdates {
@@ -284,6 +355,51 @@ ws.onmessage = (event) => {
 {
   "event": "filters_changed",
   "payload": null
+}
+```
+
+### Commands
+
+WebSocket clients can execute commands by sending `type: "command"` payloads. Media uploads are now handled without falling back to REST.
+
+```json
+{
+  "id": "upload-1",
+  "type": "upload_media",
+  "payload": {
+    "file_data": "BASE64_ENCODED_BYTES",
+    "file_name": "clip.mp4",
+    "mime_type": "video/mp4",
+    "description": "Launch teaser",
+    "sensitive": true,
+    "spoiler_text": "Spoilers ahead",
+    "media_type": "video"
+  }
+}
+```
+
+- `file_data` must contain base64-encoded binary data (data-URI prefixes are stripped automatically).
+- Optional metadata (`file_name`, `mime_type`, `description`, `focus`, `sensitive`, `spoiler_text`, `media_type`) mirrors the GraphQL mutation and feeds moderation workflows.
+
+Successful uploads return:
+
+```json
+{
+  "id": "upload-1",
+  "type": "command_result",
+  "success": true,
+  "data": {
+    "upload_id": "media123",
+    "media": {
+      "id": "media123",
+      "url": "https://cdn.yourdomain.com/media123",
+      "mime_type": "video/mp4",
+      "sensitive": true,
+      "spoiler_text": "Spoilers ahead",
+      "media_category": "video"
+    },
+    "warnings": []
+  }
 }
 ```
 
