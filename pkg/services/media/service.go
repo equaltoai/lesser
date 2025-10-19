@@ -114,12 +114,15 @@ func (s *Service) SetMaxFileSize(maxSize int64) {
 
 // UploadMediaCommand contains all data needed to upload a media file
 type UploadMediaCommand struct {
-	UserID      string `json:"user_id" validate:"required"`
-	FileName    string `json:"file_name" validate:"required"`
-	ContentType string `json:"content_type" validate:"required"`
-	FileData    []byte `json:"file_data" validate:"required"`
-	Description string `json:"description" validate:"max=1500"` // Alt text
-	Focus       string `json:"focus"`                           // Focus point for cropping (x,y)
+	UserID        string               `json:"user_id" validate:"required"`
+	FileName      string               `json:"file_name" validate:"required"`
+	ContentType   string               `json:"content_type" validate:"required"`
+	FileData      []byte               `json:"file_data" validate:"required"`
+	Description   string               `json:"description" validate:"max=1500"` // Alt text
+	Focus         string               `json:"focus"`                           // Focus point for cropping (x,y)
+	Sensitive     bool                 `json:"sensitive"`
+	SpoilerText   string               `json:"spoiler_text"`
+	MediaCategory models.MediaCategory `json:"media_category"`
 }
 
 // UpdateMediaCommand contains all data needed to update media metadata
@@ -134,6 +137,26 @@ type UpdateMediaCommand struct {
 type GetMediaQuery struct {
 	MediaID  string `json:"media_id" validate:"required"`
 	ViewerID string `json:"viewer_id"` // User requesting the media (for privacy checks)
+}
+
+// ListMediaQuery contains parameters for listing media with filters
+type ListMediaQuery struct {
+	Owner     string     `json:"owner"`
+	Requester string     `json:"requester"`
+	MediaType string     `json:"media_type"`
+	MimeType  string     `json:"mime_type"`
+	Cursor    string     `json:"cursor"`
+	Limit     int        `json:"limit"`
+	Since     *time.Time `json:"since"`
+	Until     *time.Time `json:"until"`
+}
+
+// ListMediaResult contains paginated media results
+type ListMediaResult struct {
+	Items      []*models.Media `json:"items"`
+	NextCursor string          `json:"next_cursor"`
+	HasMore    bool            `json:"has_more"`
+	Total      int64           `json:"total"`
 }
 
 // Result structs for operations
@@ -166,14 +189,17 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 
 	// Create media record
 	media := &models.Media{
-		MediaID:     uuid.New().String(),
-		UserID:      cmd.UserID,
-		FileName:    cmd.FileName,
-		ContentType: cmd.ContentType,
-		FileSize:    int64(len(cmd.FileData)),
-		Description: cmd.Description,
-		Focus:       cmd.Focus,
-		Status:      models.StatusPending,
+		MediaID:       uuid.New().String(),
+		UserID:        cmd.UserID,
+		FileName:      cmd.FileName,
+		ContentType:   cmd.ContentType,
+		FileSize:      int64(len(cmd.FileData)),
+		Description:   cmd.Description,
+		Focus:         cmd.Focus,
+		IsNSFW:        cmd.Sensitive,
+		SpoilerText:   strings.TrimSpace(cmd.SpoilerText),
+		MediaCategory: cmd.MediaCategory,
+		Status:        models.StatusPending,
 	}
 
 	// Generate S3 key and simulate upload
@@ -312,6 +338,73 @@ func (s *Service) GetMedia(ctx context.Context, query *GetMediaQuery) (*models.M
 	return media, nil
 }
 
+// ListMedia returns paginated media filtered by owner and type
+func (s *Service) ListMedia(ctx context.Context, query *ListMediaQuery) (*ListMediaResult, error) {
+	if query == nil {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("list media query cannot be nil"))
+	}
+
+	owner := strings.TrimSpace(query.Owner)
+	if owner == "" {
+		return nil, errors.Join(ErrMediaValidationFailed, common.ErrValidation("owner", "owner is required").InternalError)
+	}
+
+	// Clamp limit to reasonable bounds (1 - 100)
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	if query.Since != nil && query.Until != nil && query.Since.After(*query.Until) {
+		return nil, errors.Join(ErrMediaValidationFailed, common.ErrValidation("since", "since must be before until").InternalError)
+	}
+
+	opts := interfaces.PaginationOptions{
+		Limit:  limit,
+		Cursor: strings.TrimSpace(query.Cursor),
+		Since:  query.Since,
+		Until:  query.Until,
+	}
+
+	mediaTypeFilter := strings.TrimSpace(query.MimeType)
+	if mediaTypeFilter == "" && query.MediaType != "" {
+		mediaTypeFilter = strings.ToLower(query.MediaType)
+	}
+
+	var (
+		result *interfaces.PaginatedResult[*models.Media]
+		err    error
+	)
+
+	if mediaTypeFilter != "" {
+		result, err = s.mediaRepo.GetUserMediaByType(ctx, owner, mediaTypeFilter, opts)
+	} else {
+		result, err = s.mediaRepo.GetUserMedia(ctx, owner, opts)
+	}
+	if err != nil {
+		return nil, errors.Join(ErrMediaRetrievalFailed, err)
+	}
+
+	if result == nil {
+		return &ListMediaResult{
+			Items:      []*models.Media{},
+			NextCursor: "",
+			HasMore:    false,
+			Total:      0,
+		}, nil
+	}
+
+	return &ListMediaResult{
+		Items:      result.Items,
+		NextCursor: result.NextCursor,
+		HasMore:    result.HasMore,
+		Total:      result.Total,
+	}, nil
+}
+
 // Private helper methods
 
 func (s *Service) validateUploadCommand(_ context.Context, cmd *UploadMediaCommand) error {
@@ -354,6 +447,24 @@ func (s *Service) validateUploadCommand(_ context.Context, cmd *UploadMediaComma
 	// Validate focus point format if provided
 	if cmd.Focus != "" && !s.isValidFocusPoint(cmd.Focus) {
 		return common.ErrValidation("focus", "Focus point format must be 'x,y' where x,y are between -1.0 and 1.0").InternalError
+	}
+
+	cmd.SpoilerText = strings.TrimSpace(cmd.SpoilerText)
+	if cmd.SpoilerText != "" {
+		if err := common.ValidateSpoilerText(cmd.SpoilerText); err != nil {
+			return common.ErrValidation("spoilerText", err.Error()).InternalError
+		}
+	}
+
+	categoryValue := strings.TrimSpace(string(cmd.MediaCategory))
+	if categoryValue == "" {
+		cmd.MediaCategory = models.DetermineMediaCategory(cmd.ContentType)
+	} else {
+		normalized, ok := models.NormalizeMediaCategory(categoryValue)
+		if !ok {
+			return common.ErrValidation("mediaType", "invalid media category").InternalError
+		}
+		cmd.MediaCategory = normalized
 	}
 
 	return nil

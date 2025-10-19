@@ -200,6 +200,11 @@ func NewBaseCommandHandler(logger *zap.Logger) *BaseCommandHandler {
 	}
 }
 
+// Logger returns the handler logger instance
+func (bch *BaseCommandHandler) Logger() *zap.Logger {
+	return bch.logger
+}
+
 // CreateSuccessResponse creates a successful command response
 func (bch *BaseCommandHandler) CreateSuccessResponse(commandID string, data map[string]interface{}) *CommandResponse {
 	return &CommandResponse{

@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"mime/multipart"
+	"strconv"
+	"strings"
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/media"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -19,6 +22,9 @@ type MediaUploadRequest struct {
 	FileData    []byte
 	Description string
 	Focus       string
+	Sensitive   bool
+	SpoilerText string
+	MediaType   string
 }
 
 // Media type constants
@@ -55,9 +61,12 @@ func (h *Handler) HandleUploadMediaLift(ctx *lift.Context) error {
 
 	// Validate media parameters
 	params := map[string]interface{}{
-		"file":        mediaData.FileName,
-		"description": mediaData.Description,
-		"focus":       mediaData.Focus,
+		"file":         mediaData.FileName,
+		"description":  mediaData.Description,
+		"focus":        mediaData.Focus,
+		"spoiler_text": mediaData.SpoilerText,
+		"sensitive":    mediaData.Sensitive,
+		"media_type":   mediaData.MediaType,
 	}
 	if err := common.ValidateMediaParams(params); err != nil {
 		h.logger.Error("media validation failed", zap.Error(err))
@@ -66,12 +75,15 @@ func (h *Handler) HandleUploadMediaLift(ctx *lift.Context) error {
 
 	// Call Media service
 	result, err := h.registry.Media().UploadMedia(ctx.Context, &media.UploadMediaCommand{
-		UserID:      claims.Username,
-		FileName:    mediaData.FileName,
-		ContentType: mediaData.MimeType,
-		FileData:    mediaData.FileData,
-		Description: mediaData.Description,
-		Focus:       mediaData.Focus,
+		UserID:        claims.Username,
+		FileName:      mediaData.FileName,
+		ContentType:   mediaData.MimeType,
+		FileData:      mediaData.FileData,
+		Description:   mediaData.Description,
+		Focus:         mediaData.Focus,
+		Sensitive:     mediaData.Sensitive,
+		SpoilerText:   strings.TrimSpace(mediaData.SpoilerText),
+		MediaCategory: models.MediaCategory(strings.TrimSpace(mediaData.MediaType)),
 	})
 	if err != nil {
 		h.logger.Error("failed to upload media", zap.String("user", claims.Username), zap.Error(err))
@@ -226,6 +238,15 @@ func (h *Handler) processMediaPart(part *multipart.Part, mediaData *MediaUploadR
 		mediaData.Description = buf.String()
 	case "focus":
 		mediaData.Focus = buf.String()
+	case "sensitive":
+		value := strings.TrimSpace(buf.String())
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			mediaData.Sensitive = parsed
+		}
+	case "spoiler_text", "spoilerText":
+		mediaData.SpoilerText = buf.String()
+	case "media_type", "mediaType":
+		mediaData.MediaType = buf.String()
 	}
 
 	return nil

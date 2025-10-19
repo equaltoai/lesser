@@ -732,19 +732,33 @@ type ComplexityRoot struct {
 	}
 
 	Media struct {
-		Blurhash    func(childComplexity int) int
-		CreatedAt   func(childComplexity int) int
-		Description func(childComplexity int) int
-		Duration    func(childComplexity int) int
-		Height      func(childComplexity int) int
-		ID          func(childComplexity int) int
-		MimeType    func(childComplexity int) int
-		PreviewURL  func(childComplexity int) int
-		Size        func(childComplexity int) int
-		Type        func(childComplexity int) int
-		URL         func(childComplexity int) int
-		UploadedBy  func(childComplexity int) int
-		Width       func(childComplexity int) int
+		Blurhash      func(childComplexity int) int
+		CreatedAt     func(childComplexity int) int
+		Description   func(childComplexity int) int
+		Duration      func(childComplexity int) int
+		Height        func(childComplexity int) int
+		ID            func(childComplexity int) int
+		MediaCategory func(childComplexity int) int
+		MimeType      func(childComplexity int) int
+		PreviewURL    func(childComplexity int) int
+		Sensitive     func(childComplexity int) int
+		Size          func(childComplexity int) int
+		SpoilerText   func(childComplexity int) int
+		Type          func(childComplexity int) int
+		URL           func(childComplexity int) int
+		UploadedBy    func(childComplexity int) int
+		Width         func(childComplexity int) int
+	}
+
+	MediaConnection struct {
+		Edges      func(childComplexity int) int
+		PageInfo   func(childComplexity int) int
+		TotalCount func(childComplexity int) int
+	}
+
+	MediaEdge struct {
+		Cursor func(childComplexity int) int
+		Node   func(childComplexity int) int
 	}
 
 	MediaStream struct {
@@ -945,6 +959,7 @@ type ComplexityRoot struct {
 		UpdateScheduledStatus      func(childComplexity int, id string, input model.UpdateScheduledStatusInput) int
 		UpdateStreamingPreferences func(childComplexity int, input model.StreamingPreferencesInput) int
 		UpdateTrust                func(childComplexity int, input model.TrustInput) int
+		UploadMedia                func(childComplexity int, input model.UploadMediaInput) int
 		VoteCommunityNote          func(childComplexity int, id string, helpful bool) int
 		WithdrawFromQuotes         func(childComplexity int, noteID string) int
 	}
@@ -1163,6 +1178,7 @@ type ComplexityRoot struct {
 		ListAccounts            func(childComplexity int, id string) int
 		Lists                   func(childComplexity int) int
 		Media                   func(childComplexity int, id string) int
+		MediaLibrary            func(childComplexity int, filter *model.MediaFilterInput, first *int, after *model.Cursor) int
 		MediaStreamURL          func(childComplexity int, mediaID string) int
 		ModerationDashboard     func(childComplexity int, filter *moderation.ModerationFilter) int
 		ModerationEffectiveness func(childComplexity int, patternID string, period model.ModerationPeriod) int
@@ -1576,6 +1592,12 @@ type ComplexityRoot struct {
 		Success        func(childComplexity int) int
 	}
 
+	UploadMediaPayload struct {
+		Media    func(childComplexity int) int
+		UploadID func(childComplexity int) int
+		Warnings func(childComplexity int) int
+	}
+
 	UserPreferences struct {
 		ActorID       func(childComplexity int) int
 		Notifications func(childComplexity int) int
@@ -1703,6 +1725,7 @@ type MutationResolver interface {
 	RemoveAccountsFromList(ctx context.Context, id string, accountIds []string) (*model.List, error)
 	MarkConversationAsRead(ctx context.Context, id string) (*model.Conversation, error)
 	DeleteConversation(ctx context.Context, id string) (bool, error)
+	UploadMedia(ctx context.Context, input model.UploadMediaInput) (*model.UploadMediaPayload, error)
 	UpdateMedia(ctx context.Context, id string, input model.UpdateMediaInput) (*model.Media, error)
 	DismissNotification(ctx context.Context, id string) (bool, error)
 	ClearNotifications(ctx context.Context) (bool, error)
@@ -1754,6 +1777,7 @@ type QueryResolver interface {
 	List(ctx context.Context, id string) (*model.List, error)
 	ListAccounts(ctx context.Context, id string) ([]*activitypub.Actor, error)
 	Media(ctx context.Context, id string) (*model.Media, error)
+	MediaLibrary(ctx context.Context, filter *model.MediaFilterInput, first *int, after *model.Cursor) (*model.MediaConnection, error)
 	CustomEmojis(ctx context.Context) ([]*model.CustomEmoji, error)
 	ScheduledStatuses(ctx context.Context, first *int, after *model.Cursor) ([]*model.ScheduledStatus, error)
 	ScheduledStatus(ctx context.Context, id string) (*model.ScheduledStatus, error)
@@ -4914,6 +4938,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Media.ID(childComplexity), true
 
+	case "Media.mediaCategory":
+		if e.complexity.Media.MediaCategory == nil {
+			break
+		}
+
+		return e.complexity.Media.MediaCategory(childComplexity), true
+
 	case "Media.mimeType":
 		if e.complexity.Media.MimeType == nil {
 			break
@@ -4928,12 +4959,26 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Media.PreviewURL(childComplexity), true
 
+	case "Media.sensitive":
+		if e.complexity.Media.Sensitive == nil {
+			break
+		}
+
+		return e.complexity.Media.Sensitive(childComplexity), true
+
 	case "Media.size":
 		if e.complexity.Media.Size == nil {
 			break
 		}
 
 		return e.complexity.Media.Size(childComplexity), true
+
+	case "Media.spoilerText":
+		if e.complexity.Media.SpoilerText == nil {
+			break
+		}
+
+		return e.complexity.Media.SpoilerText(childComplexity), true
 
 	case "Media.type":
 		if e.complexity.Media.Type == nil {
@@ -4962,6 +5007,41 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Media.Width(childComplexity), true
+
+	case "MediaConnection.edges":
+		if e.complexity.MediaConnection.Edges == nil {
+			break
+		}
+
+		return e.complexity.MediaConnection.Edges(childComplexity), true
+
+	case "MediaConnection.pageInfo":
+		if e.complexity.MediaConnection.PageInfo == nil {
+			break
+		}
+
+		return e.complexity.MediaConnection.PageInfo(childComplexity), true
+
+	case "MediaConnection.totalCount":
+		if e.complexity.MediaConnection.TotalCount == nil {
+			break
+		}
+
+		return e.complexity.MediaConnection.TotalCount(childComplexity), true
+
+	case "MediaEdge.cursor":
+		if e.complexity.MediaEdge.Cursor == nil {
+			break
+		}
+
+		return e.complexity.MediaEdge.Cursor(childComplexity), true
+
+	case "MediaEdge.node":
+		if e.complexity.MediaEdge.Node == nil {
+			break
+		}
+
+		return e.complexity.MediaEdge.Node(childComplexity), true
 
 	case "MediaStream.bitrates":
 		if e.complexity.MediaStream.Bitrates == nil {
@@ -6364,6 +6444,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.UpdateTrust(childComplexity, args["input"].(model.TrustInput)), true
 
+	case "Mutation.uploadMedia":
+		if e.complexity.Mutation.UploadMedia == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_uploadMedia_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UploadMedia(childComplexity, args["input"].(model.UploadMediaInput)), true
+
 	case "Mutation.voteCommunityNote":
 		if e.complexity.Mutation.VoteCommunityNote == nil {
 			break
@@ -7525,6 +7617,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.Media(childComplexity, args["id"].(string)), true
+
+	case "Query.mediaLibrary":
+		if e.complexity.Query.MediaLibrary == nil {
+			break
+		}
+
+		args, err := ec.field_Query_mediaLibrary_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.MediaLibrary(childComplexity, args["filter"].(*model.MediaFilterInput), args["first"].(*int), args["after"].(*model.Cursor)), true
 
 	case "Query.mediaStreamUrl":
 		if e.complexity.Query.MediaStreamURL == nil {
@@ -9709,6 +9813,27 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.UpdateQuotePermissionsPayload.Success(childComplexity), true
 
+	case "UploadMediaPayload.media":
+		if e.complexity.UploadMediaPayload.Media == nil {
+			break
+		}
+
+		return e.complexity.UploadMediaPayload.Media(childComplexity), true
+
+	case "UploadMediaPayload.uploadId":
+		if e.complexity.UploadMediaPayload.UploadID == nil {
+			break
+		}
+
+		return e.complexity.UploadMediaPayload.UploadID(childComplexity), true
+
+	case "UploadMediaPayload.warnings":
+		if e.complexity.UploadMediaPayload.Warnings == nil {
+			break
+		}
+
+		return e.complexity.UploadMediaPayload.Warnings(childComplexity), true
+
 	case "UserPreferences.actorId":
 		if e.complexity.UserPreferences.ActorID == nil {
 			break
@@ -9855,6 +9980,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputFlagInput,
 		ec.unmarshalInputFocusInput,
 		ec.unmarshalInputHashtagNotificationSettingsInput,
+		ec.unmarshalInputMediaFilterInput,
 		ec.unmarshalInputModerationFilter,
 		ec.unmarshalInputModerationPatternInput,
 		ec.unmarshalInputModerationSampleInput,
@@ -9869,6 +9995,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputUpdateMediaInput,
 		ec.unmarshalInputUpdateRelationshipInput,
 		ec.unmarshalInputUpdateScheduledStatusInput,
+		ec.unmarshalInputUploadMediaInput,
 	)
 	first := true
 
@@ -10789,6 +10916,17 @@ func (ec *executionContext) field_Mutation_updateTrust_args(ctx context.Context,
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_uploadMedia_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNUploadMediaInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadMediaInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_voteCommunityNote_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -11149,6 +11287,27 @@ func (ec *executionContext) field_Query_list_args(ctx context.Context, rawArgs m
 		return nil, err
 	}
 	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_mediaLibrary_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "filter", ec.unmarshalOMediaFilterInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaFilterInput)
+	if err != nil {
+		return nil, err
+	}
+	args["filter"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg2
 	return args, nil
 }
 
@@ -32280,6 +32439,135 @@ func (ec *executionContext) fieldContext_Media_description(_ context.Context, fi
 	return fc, nil
 }
 
+func (ec *executionContext) _Media_sensitive(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Media_sensitive(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Sensitive, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Media_sensitive(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Media",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Media_spoilerText(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Media_spoilerText(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SpoilerText, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Media_spoilerText(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Media",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Media_mediaCategory(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Media_mediaCategory(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MediaCategory, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.MediaCategory)
+	fc.Result = res
+	return ec.marshalNMediaCategory2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaCategory(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Media_mediaCategory(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Media",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type MediaCategory does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Media_blurhash(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Media_blurhash(ctx, field)
 	if err != nil {
@@ -32653,6 +32941,276 @@ func (ec *executionContext) fieldContext_Media_createdAt(_ context.Context, fiel
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MediaConnection_edges(ctx context.Context, field graphql.CollectedField, obj *model.MediaConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_MediaConnection_edges(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Edges, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.MediaEdge)
+	fc.Result = res
+	return ec.marshalNMediaEdge2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaEdgeᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_MediaConnection_edges(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MediaConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "node":
+				return ec.fieldContext_MediaEdge_node(ctx, field)
+			case "cursor":
+				return ec.fieldContext_MediaEdge_cursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type MediaEdge", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MediaConnection_pageInfo(ctx context.Context, field graphql.CollectedField, obj *model.MediaConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_MediaConnection_pageInfo(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PageInfo, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PageInfo)
+	fc.Result = res
+	return ec.marshalNPageInfo2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPageInfo(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_MediaConnection_pageInfo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MediaConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "hasNextPage":
+				return ec.fieldContext_PageInfo_hasNextPage(ctx, field)
+			case "hasPreviousPage":
+				return ec.fieldContext_PageInfo_hasPreviousPage(ctx, field)
+			case "startCursor":
+				return ec.fieldContext_PageInfo_startCursor(ctx, field)
+			case "endCursor":
+				return ec.fieldContext_PageInfo_endCursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MediaConnection_totalCount(ctx context.Context, field graphql.CollectedField, obj *model.MediaConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_MediaConnection_totalCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TotalCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_MediaConnection_totalCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MediaConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MediaEdge_node(ctx context.Context, field graphql.CollectedField, obj *model.MediaEdge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_MediaEdge_node(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Node, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Media)
+	fc.Result = res
+	return ec.marshalNMedia2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMedia(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_MediaEdge_node(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MediaEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Media_id(ctx, field)
+			case "type":
+				return ec.fieldContext_Media_type(ctx, field)
+			case "url":
+				return ec.fieldContext_Media_url(ctx, field)
+			case "previewUrl":
+				return ec.fieldContext_Media_previewUrl(ctx, field)
+			case "description":
+				return ec.fieldContext_Media_description(ctx, field)
+			case "sensitive":
+				return ec.fieldContext_Media_sensitive(ctx, field)
+			case "spoilerText":
+				return ec.fieldContext_Media_spoilerText(ctx, field)
+			case "mediaCategory":
+				return ec.fieldContext_Media_mediaCategory(ctx, field)
+			case "blurhash":
+				return ec.fieldContext_Media_blurhash(ctx, field)
+			case "width":
+				return ec.fieldContext_Media_width(ctx, field)
+			case "height":
+				return ec.fieldContext_Media_height(ctx, field)
+			case "duration":
+				return ec.fieldContext_Media_duration(ctx, field)
+			case "size":
+				return ec.fieldContext_Media_size(ctx, field)
+			case "mimeType":
+				return ec.fieldContext_Media_mimeType(ctx, field)
+			case "uploadedBy":
+				return ec.fieldContext_Media_uploadedBy(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Media_createdAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Media", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MediaEdge_cursor(ctx context.Context, field graphql.CollectedField, obj *model.MediaEdge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_MediaEdge_cursor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Cursor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Cursor)
+	fc.Result = res
+	return ec.marshalNCursor2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_MediaEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MediaEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Cursor does not have child fields")
 		},
 	}
 	return fc, nil
@@ -38943,6 +39501,69 @@ func (ec *executionContext) fieldContext_Mutation_deleteConversation(ctx context
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_uploadMedia(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_uploadMedia(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().UploadMedia(rctx, fc.Args["input"].(model.UploadMediaInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.UploadMediaPayload)
+	fc.Result = res
+	return ec.marshalNUploadMediaPayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadMediaPayload(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_uploadMedia(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "media":
+				return ec.fieldContext_UploadMediaPayload_media(ctx, field)
+			case "uploadId":
+				return ec.fieldContext_UploadMediaPayload_uploadId(ctx, field)
+			case "warnings":
+				return ec.fieldContext_UploadMediaPayload_warnings(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UploadMediaPayload", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_uploadMedia_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_updateMedia(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_updateMedia(ctx, field)
 	if err != nil {
@@ -38992,6 +39613,12 @@ func (ec *executionContext) fieldContext_Mutation_updateMedia(ctx context.Contex
 				return ec.fieldContext_Media_previewUrl(ctx, field)
 			case "description":
 				return ec.fieldContext_Media_description(ctx, field)
+			case "sensitive":
+				return ec.fieldContext_Media_sensitive(ctx, field)
+			case "spoilerText":
+				return ec.fieldContext_Media_spoilerText(ctx, field)
+			case "mediaCategory":
+				return ec.fieldContext_Media_mediaCategory(ctx, field)
 			case "blurhash":
 				return ec.fieldContext_Media_blurhash(ctx, field)
 			case "width":
@@ -47861,6 +48488,12 @@ func (ec *executionContext) fieldContext_Query_media(ctx context.Context, field 
 				return ec.fieldContext_Media_previewUrl(ctx, field)
 			case "description":
 				return ec.fieldContext_Media_description(ctx, field)
+			case "sensitive":
+				return ec.fieldContext_Media_sensitive(ctx, field)
+			case "spoilerText":
+				return ec.fieldContext_Media_spoilerText(ctx, field)
+			case "mediaCategory":
+				return ec.fieldContext_Media_mediaCategory(ctx, field)
 			case "blurhash":
 				return ec.fieldContext_Media_blurhash(ctx, field)
 			case "width":
@@ -47889,6 +48522,69 @@ func (ec *executionContext) fieldContext_Query_media(ctx context.Context, field 
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_media_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_mediaLibrary(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_mediaLibrary(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().MediaLibrary(rctx, fc.Args["filter"].(*model.MediaFilterInput), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.MediaConnection)
+	fc.Result = res
+	return ec.marshalNMediaConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaConnection(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_mediaLibrary(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "edges":
+				return ec.fieldContext_MediaConnection_edges(ctx, field)
+			case "pageInfo":
+				return ec.fieldContext_MediaConnection_pageInfo(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_MediaConnection_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type MediaConnection", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_mediaLibrary_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -55256,6 +55952,12 @@ func (ec *executionContext) fieldContext_ScheduledStatus_mediaAttachments(_ cont
 				return ec.fieldContext_Media_previewUrl(ctx, field)
 			case "description":
 				return ec.fieldContext_Media_description(ctx, field)
+			case "sensitive":
+				return ec.fieldContext_Media_sensitive(ctx, field)
+			case "spoilerText":
+				return ec.fieldContext_Media_spoilerText(ctx, field)
+			case "mediaCategory":
+				return ec.fieldContext_Media_mediaCategory(ctx, field)
 			case "blurhash":
 				return ec.fieldContext_Media_blurhash(ctx, field)
 			case "width":
@@ -63967,6 +64669,169 @@ func (ec *executionContext) fieldContext_UpdateQuotePermissionsPayload_affectedQ
 	return fc, nil
 }
 
+func (ec *executionContext) _UploadMediaPayload_media(ctx context.Context, field graphql.CollectedField, obj *model.UploadMediaPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadMediaPayload_media(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Media, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Media)
+	fc.Result = res
+	return ec.marshalNMedia2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMedia(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadMediaPayload_media(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadMediaPayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Media_id(ctx, field)
+			case "type":
+				return ec.fieldContext_Media_type(ctx, field)
+			case "url":
+				return ec.fieldContext_Media_url(ctx, field)
+			case "previewUrl":
+				return ec.fieldContext_Media_previewUrl(ctx, field)
+			case "description":
+				return ec.fieldContext_Media_description(ctx, field)
+			case "sensitive":
+				return ec.fieldContext_Media_sensitive(ctx, field)
+			case "spoilerText":
+				return ec.fieldContext_Media_spoilerText(ctx, field)
+			case "mediaCategory":
+				return ec.fieldContext_Media_mediaCategory(ctx, field)
+			case "blurhash":
+				return ec.fieldContext_Media_blurhash(ctx, field)
+			case "width":
+				return ec.fieldContext_Media_width(ctx, field)
+			case "height":
+				return ec.fieldContext_Media_height(ctx, field)
+			case "duration":
+				return ec.fieldContext_Media_duration(ctx, field)
+			case "size":
+				return ec.fieldContext_Media_size(ctx, field)
+			case "mimeType":
+				return ec.fieldContext_Media_mimeType(ctx, field)
+			case "uploadedBy":
+				return ec.fieldContext_Media_uploadedBy(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Media_createdAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Media", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadMediaPayload_uploadId(ctx context.Context, field graphql.CollectedField, obj *model.UploadMediaPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadMediaPayload_uploadId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UploadID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadMediaPayload_uploadId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadMediaPayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadMediaPayload_warnings(ctx context.Context, field graphql.CollectedField, obj *model.UploadMediaPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadMediaPayload_warnings(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Warnings, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalOString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadMediaPayload_warnings(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadMediaPayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _UserPreferences_actorId(ctx context.Context, field graphql.CollectedField, obj *model.UserPreferences) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_UserPreferences_actorId(ctx, field)
 	if err != nil {
@@ -67455,6 +68320,68 @@ func (ec *executionContext) unmarshalInputHashtagNotificationSettingsInput(ctx c
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputMediaFilterInput(ctx context.Context, obj any) (model.MediaFilterInput, error) {
+	var it model.MediaFilterInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"ownerId", "ownerUsername", "mediaType", "mimeType", "since", "until"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "ownerId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("ownerId"))
+			data, err := ec.unmarshalOID2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OwnerID = data
+		case "ownerUsername":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("ownerUsername"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OwnerUsername = data
+		case "mediaType":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("mediaType"))
+			data, err := ec.unmarshalOMediaType2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaType(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MediaType = data
+		case "mimeType":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("mimeType"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MimeType = data
+		case "since":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("since"))
+			data, err := ec.unmarshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Since = data
+		case "until":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("until"))
+			data, err := ec.unmarshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Until = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputModerationFilter(ctx context.Context, obj any) (moderation.ModerationFilter, error) {
 	var it moderation.ModerationFilter
 	asMap := map[string]any{}
@@ -68087,6 +69014,75 @@ func (ec *executionContext) unmarshalInputUpdateScheduledStatusInput(ctx context
 				return it, err
 			}
 			it.ScheduledAt = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputUploadMediaInput(ctx context.Context, obj any) (model.UploadMediaInput, error) {
+	var it model.UploadMediaInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"file", "filename", "description", "focus", "sensitive", "spoilerText", "mediaType"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "file":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("file"))
+			data, err := ec.unmarshalNUpload2githubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚐUpload(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.File = data
+		case "filename":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("filename"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Filename = data
+		case "description":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("description"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Description = data
+		case "focus":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("focus"))
+			data, err := ec.unmarshalOFocusInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐFocusInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Focus = data
+		case "sensitive":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sensitive"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Sensitive = data
+		case "spoilerText":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("spoilerText"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SpoilerText = data
+		case "mediaType":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("mediaType"))
+			data, err := ec.unmarshalOMediaCategory2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaCategory(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MediaType = data
 		}
 	}
 
@@ -74026,6 +75022,18 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 			out.Values[i] = ec._Media_previewUrl(ctx, field, obj)
 		case "description":
 			out.Values[i] = ec._Media_description(ctx, field, obj)
+		case "sensitive":
+			out.Values[i] = ec._Media_sensitive(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "spoilerText":
+			out.Values[i] = ec._Media_spoilerText(ctx, field, obj)
+		case "mediaCategory":
+			out.Values[i] = ec._Media_mediaCategory(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "blurhash":
 			out.Values[i] = ec._Media_blurhash(ctx, field, obj)
 		case "width":
@@ -74051,6 +75059,99 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 			}
 		case "createdAt":
 			out.Values[i] = ec._Media_createdAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var mediaConnectionImplementors = []string{"MediaConnection"}
+
+func (ec *executionContext) _MediaConnection(ctx context.Context, sel ast.SelectionSet, obj *model.MediaConnection) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, mediaConnectionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MediaConnection")
+		case "edges":
+			out.Values[i] = ec._MediaConnection_edges(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pageInfo":
+			out.Values[i] = ec._MediaConnection_pageInfo(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalCount":
+			out.Values[i] = ec._MediaConnection_totalCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var mediaEdgeImplementors = []string{"MediaEdge"}
+
+func (ec *executionContext) _MediaEdge(ctx context.Context, sel ast.SelectionSet, obj *model.MediaEdge) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, mediaEdgeImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MediaEdge")
+		case "node":
+			out.Values[i] = ec._MediaEdge_node(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cursor":
+			out.Values[i] = ec._MediaEdge_cursor(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -75581,6 +76682,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "deleteConversation":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_deleteConversation(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "uploadMedia":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_uploadMedia(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -77430,6 +78538,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_media(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "mediaLibrary":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_mediaLibrary(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
 				return res
 			}
 
@@ -81631,6 +82761,52 @@ func (ec *executionContext) _UpdateQuotePermissionsPayload(ctx context.Context, 
 	return out
 }
 
+var uploadMediaPayloadImplementors = []string{"UploadMediaPayload"}
+
+func (ec *executionContext) _UploadMediaPayload(ctx context.Context, sel ast.SelectionSet, obj *model.UploadMediaPayload) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, uploadMediaPayloadImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("UploadMediaPayload")
+		case "media":
+			out.Values[i] = ec._UploadMediaPayload_media(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "uploadId":
+			out.Values[i] = ec._UploadMediaPayload_uploadId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "warnings":
+			out.Values[i] = ec._UploadMediaPayload_warnings(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var userPreferencesImplementors = []string{"UserPreferences"}
 
 func (ec *executionContext) _UserPreferences(ctx context.Context, sel ast.SelectionSet, obj *model.UserPreferences) graphql.Marshaler {
@@ -85038,6 +86214,84 @@ func (ec *executionContext) marshalNMedia2ᚖgithubᚗcomᚋequaltoaiᚋlesser�
 	return ec._Media(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalNMediaCategory2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaCategory(ctx context.Context, v any) (model.MediaCategory, error) {
+	var res model.MediaCategory
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNMediaCategory2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaCategory(ctx context.Context, sel ast.SelectionSet, v model.MediaCategory) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNMediaConnection2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaConnection(ctx context.Context, sel ast.SelectionSet, v model.MediaConnection) graphql.Marshaler {
+	return ec._MediaConnection(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNMediaConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaConnection(ctx context.Context, sel ast.SelectionSet, v *model.MediaConnection) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MediaConnection(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNMediaEdge2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaEdgeᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.MediaEdge) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNMediaEdge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaEdge(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNMediaEdge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaEdge(ctx context.Context, sel ast.SelectionSet, v *model.MediaEdge) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MediaEdge(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNMediaStream2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaStream(ctx context.Context, sel ast.SelectionSet, v model.MediaStream) graphql.Marshaler {
 	return ec._MediaStream(ctx, sel, &v)
 }
@@ -87476,6 +88730,41 @@ func (ec *executionContext) unmarshalNUpdateScheduledStatusInput2githubᚗcomᚋ
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) unmarshalNUpload2githubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚐUpload(ctx context.Context, v any) (graphql.Upload, error) {
+	res, err := graphql.UnmarshalUpload(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNUpload2githubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚐUpload(ctx context.Context, sel ast.SelectionSet, v graphql.Upload) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalUpload(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return res
+}
+
+func (ec *executionContext) unmarshalNUploadMediaInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadMediaInput(ctx context.Context, v any) (model.UploadMediaInput, error) {
+	res, err := ec.unmarshalInputUploadMediaInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNUploadMediaPayload2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadMediaPayload(ctx context.Context, sel ast.SelectionSet, v model.UploadMediaPayload) graphql.Marshaler {
+	return ec._UploadMediaPayload(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNUploadMediaPayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadMediaPayload(ctx context.Context, sel ast.SelectionSet, v *model.UploadMediaPayload) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._UploadMediaPayload(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNUserPreferences2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUserPreferences(ctx context.Context, sel ast.SelectionSet, v model.UserPreferences) graphql.Marshaler {
 	return ec._UserPreferences(ctx, sel, &v)
 }
@@ -88175,6 +89464,46 @@ func (ec *executionContext) marshalOMedia2ᚖgithubᚗcomᚋequaltoaiᚋlesser�
 		return graphql.Null
 	}
 	return ec._Media(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOMediaCategory2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaCategory(ctx context.Context, v any) (*model.MediaCategory, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(model.MediaCategory)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOMediaCategory2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaCategory(ctx context.Context, sel ast.SelectionSet, v *model.MediaCategory) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
+}
+
+func (ec *executionContext) unmarshalOMediaFilterInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaFilterInput(ctx context.Context, v any) (*model.MediaFilterInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputMediaFilterInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) unmarshalOMediaType2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaType(ctx context.Context, v any) (*model.MediaType, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(model.MediaType)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOMediaType2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMediaType(ctx context.Context, sel ast.SelectionSet, v *model.MediaType) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
 }
 
 func (ec *executionContext) unmarshalOModerationFilter2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋmoderationᚐModerationFilter(ctx context.Context, v any) (*moderation.ModerationFilter, error) {

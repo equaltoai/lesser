@@ -3,14 +3,21 @@ package handlers
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	mediatools "github.com/equaltoai/lesser/pkg/media"
 	"github.com/equaltoai/lesser/pkg/services/lists"
-	"github.com/equaltoai/lesser/pkg/services/media"
+	mediasvc "github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
@@ -20,15 +27,30 @@ type SystemCommandHandler struct {
 	*streaming.BaseCommandHandler
 	notesService         *notes.Service
 	listsService         *lists.Service
-	mediaService         *media.Service
+	mediaService         mediaUploader
 	notificationsService *notifications.Service
+}
+
+type mediaUploader interface {
+	UploadMedia(ctx context.Context, cmd *mediasvc.UploadMediaCommand) (*mediasvc.Result, error)
+}
+
+type wsUploadPayload struct {
+	Data        []byte
+	Filename    string
+	MimeType    string
+	Description string
+	Focus       string
+	Sensitive   bool
+	SpoilerText string
+	Category    models.MediaCategory
 }
 
 // NewSystemCommandHandler creates a new system command handler
 func NewSystemCommandHandler(
 	notesService *notes.Service,
 	listsService *lists.Service,
-	mediaService *media.Service,
+	mediaService mediaUploader,
 	notificationsService *notifications.Service,
 	logger *zap.Logger,
 ) *SystemCommandHandler {
@@ -279,24 +301,266 @@ func (sch *SystemCommandHandler) handleRemoveFromList(ctx context.Context, conn 
 
 // Media Command Handlers
 
-// handleUploadMedia handles media upload (returns not supported for WebSocket)
-func (sch *SystemCommandHandler) handleUploadMedia(_ context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+// handleUploadMedia handles media uploads via WebSocket commands.
+func (sch *SystemCommandHandler) handleUploadMedia(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
 		return authErr, nil
 	}
 
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"file_data", "file_name"}, cmd.ID); validationErr != nil {
+	if sch.mediaService == nil {
+		return sch.CreateErrorResponse(cmd.ID, "UPLOAD_MEDIA_UNAVAILABLE",
+			"Media service unavailable",
+			"Upload service is not configured"), nil
+	}
+
+	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"file_data"}, cmd.ID); validationErr != nil {
 		return validationErr, nil
 	}
 
-	// Note: In a real WebSocket implementation, file_data would likely be base64 encoded
-	// This is a simplified example
+	payload, errResp := sch.parseUploadPayload(cmd.Payload, cmd.ID)
+	if errResp != nil {
+		return errResp, nil
+	}
 
-	// For this example, we'll return an error since actual file upload via WebSocket
-	// would require more complex handling
-	return sch.CreateErrorResponse(cmd.ID, "UPLOAD_NOT_SUPPORTED",
-		"Media upload via WebSocket not currently supported",
-		"Use the REST API or GraphQL for media uploads"), nil
+	userID := conn.UserID
+	if userID == "" {
+		userID = conn.Username
+	}
+
+	result, err := sch.mediaService.UploadMedia(ctx, &mediasvc.UploadMediaCommand{
+		UserID:        userID,
+		FileName:      payload.Filename,
+		ContentType:   payload.MimeType,
+		FileData:      payload.Data,
+		Description:   payload.Description,
+		Focus:         payload.Focus,
+		Sensitive:     payload.Sensitive,
+		SpoilerText:   payload.SpoilerText,
+		MediaCategory: payload.Category,
+	})
+	if err != nil {
+		sch.Logger().Error("media upload failed",
+			zap.String("user", userID),
+			zap.String("filename", payload.Filename),
+			zap.Error(err))
+		return sch.CreateErrorResponse(cmd.ID, "UPLOAD_MEDIA_FAILED",
+			"Failed to upload media",
+			err.Error()), nil
+	}
+
+	if result == nil || result.Media == nil {
+		sch.Logger().Error("media upload returned empty result",
+			zap.String("user", userID))
+		return sch.CreateErrorResponse(cmd.ID, "UPLOAD_MEDIA_FAILED",
+			"Failed to upload media",
+			"empty result"), nil
+	}
+
+	sch.Logger().Info("media uploaded via websocket",
+		zap.String("user", userID),
+		zap.String("media_id", result.Media.MediaID),
+		zap.String("filename", payload.Filename),
+		zap.String("content_type", payload.MimeType),
+		zap.Int64("size", result.Media.FileSize))
+
+	return sch.CreateSuccessResponse(cmd.ID, buildWebSocketMediaResponse(result.Media)), nil
+}
+
+func (sch *SystemCommandHandler) parseUploadPayload(payload map[string]interface{}, commandID string) (*wsUploadPayload, *streaming.CommandResponse) {
+	fileData := sch.GetString(payload, "file_data", "")
+	if fileData == "" {
+		return nil, sch.CreateErrorResponse(commandID, "UPLOAD_MEDIA_INVALID",
+			"File data is required",
+			"Provide base64-encoded file data")
+	}
+
+	if comma := strings.Index(fileData, ","); comma != -1 {
+		fileData = fileData[comma+1:]
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(fileData)
+	if err != nil {
+		sch.Logger().Warn("failed to decode media payload", zap.Error(err))
+		return nil, sch.CreateErrorResponse(commandID, "UPLOAD_MEDIA_INVALID",
+			"Invalid media payload",
+			err.Error())
+	}
+
+	if len(decoded) == 0 {
+		return nil, sch.CreateErrorResponse(commandID, "UPLOAD_MEDIA_INVALID",
+			"Uploaded file is empty",
+			"Ensure the media payload contains data")
+	}
+
+	filename := sch.GetString(payload, "file_name", "")
+	if filename == "" {
+		filename = sch.GetString(payload, "filename", "")
+	}
+	if strings.TrimSpace(filename) == "" {
+		filename = fmt.Sprintf("upload-%d", time.Now().Unix())
+	}
+
+	mimeType := strings.TrimSpace(sch.GetString(payload, "mime_type", ""))
+	if mimeType == "" {
+		sniff := len(decoded)
+		if sniff > 512 {
+			sniff = 512
+		}
+		mimeType = http.DetectContentType(decoded[:sniff])
+	}
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+
+	description := strings.TrimSpace(sch.GetString(payload, "description", ""))
+	if description != "" {
+		if err := common.ValidateMediaDescription(description); err != nil {
+			sch.Logger().Warn("invalid media description", zap.Error(err))
+			return nil, sch.CreateErrorResponse(commandID, "UPLOAD_MEDIA_INVALID",
+				"Invalid media description",
+				err.Error())
+		}
+	}
+
+	spoilerText := strings.TrimSpace(sch.GetString(payload, "spoiler_text", ""))
+	if spoilerText == "" {
+		spoilerText = strings.TrimSpace(sch.GetString(payload, "spoilerText", ""))
+	}
+	if spoilerText != "" {
+		if err := common.ValidateSpoilerText(spoilerText); err != nil {
+			sch.Logger().Warn("invalid media spoiler text", zap.Error(err))
+			return nil, sch.CreateErrorResponse(commandID, "UPLOAD_MEDIA_INVALID",
+				"Invalid spoiler text",
+				err.Error())
+		}
+	}
+
+	mediaTypeValue := sch.GetString(payload, "media_type", "")
+	if mediaTypeValue == "" {
+		mediaTypeValue = sch.GetString(payload, "mediaType", "")
+	}
+	category, categoryErr := resolveMediaCategory(mediaTypeValue, mimeType)
+	if categoryErr != nil {
+		sch.Logger().Warn("invalid media category", zap.Error(categoryErr))
+		return nil, sch.CreateErrorResponse(commandID, "UPLOAD_MEDIA_INVALID",
+			"Invalid media category",
+			categoryErr.Error())
+	}
+
+	sensitive := sch.GetBool(payload, "sensitive", false)
+
+	filename, err = ensureFilenameForMime(filename, mimeType)
+	if err != nil {
+		return nil, sch.CreateErrorResponse(commandID, "UPLOAD_MEDIA_INVALID",
+			"Invalid filename",
+			err.Error())
+	}
+
+	focus, focusErr := parseFocusValue(payload["focus"])
+	if focusErr != nil {
+		sch.Logger().Warn("invalid media focus", zap.Error(focusErr))
+		return nil, sch.CreateErrorResponse(commandID, "UPLOAD_MEDIA_INVALID",
+			"Invalid media focus",
+			focusErr.Error())
+	}
+
+	return &wsUploadPayload{
+		Data:        decoded,
+		Filename:    filename,
+		MimeType:    mimeType,
+		Description: description,
+		Focus:       focus,
+		Sensitive:   sensitive,
+		SpoilerText: spoilerText,
+		Category:    category,
+	}, nil
+}
+
+func parseFocusValue(value interface{}) (string, error) {
+	if value == nil {
+		return "", nil
+	}
+
+	switch v := value.(type) {
+	case string:
+		focus := strings.TrimSpace(v)
+		if focus == "" {
+			return "", nil
+		}
+		if err := common.ValidateMediaFocus(focus); err != nil {
+			return "", err
+		}
+		return focus, nil
+	case map[string]interface{}:
+		xVal, xOK := v["x"].(float64)
+		yVal, yOK := v["y"].(float64)
+		if !xOK || !yOK {
+			return "", errors.New("focus requires x and y coordinates")
+		}
+		focus := fmt.Sprintf("%.2f,%.2f", xVal, yVal)
+		if err := common.ValidateMediaFocus(focus); err != nil {
+			return "", err
+		}
+		return focus, nil
+	default:
+		return "", errors.New("focus must be a string or {x,y} object")
+	}
+}
+
+func resolveMediaCategory(category string, mimeType string) (models.MediaCategory, error) {
+	category = strings.TrimSpace(category)
+	if category == "" {
+		return models.DetermineMediaCategory(mimeType), nil
+	}
+
+	if normalized, ok := models.NormalizeMediaCategory(category); ok {
+		return normalized, nil
+	}
+
+	return "", fmt.Errorf("unsupported media category '%s'", category)
+}
+
+func ensureFilenameForMime(filename, mimeType string) (string, error) {
+	trimmed := strings.TrimSpace(filename)
+
+	result, err := mediatools.EnsureFilenameHasExtension(trimmed, mimeType)
+	if err != nil {
+		return "", err
+	}
+
+	return result, nil
+}
+
+func buildWebSocketMediaResponse(record *models.Media) map[string]interface{} {
+	mediaData := map[string]interface{}{
+		"id":             record.MediaID,
+		"url":            record.CDNUrl,
+		"mime_type":      record.ContentType,
+		"size":           record.FileSize,
+		"description":    record.Description,
+		"created_at":     record.CreatedAt.Format(time.RFC3339),
+		"sensitive":      record.IsNSFW,
+		"media_category": string(record.MediaCategory),
+	}
+
+	if record.Blurhash != "" {
+		mediaData["blurhash"] = record.Blurhash
+	}
+	if record.Focus != "" {
+		mediaData["focus"] = record.Focus
+	}
+	if record.CDNUrl != "" {
+		mediaData["preview_url"] = record.CDNUrl
+	}
+	if record.SpoilerText != "" {
+		mediaData["spoiler_text"] = record.SpoilerText
+	}
+
+	return map[string]interface{}{
+		"media":     mediaData,
+		"upload_id": record.MediaID,
+		"warnings":  []string{},
+	}
 }
 
 // Notification Command Handlers

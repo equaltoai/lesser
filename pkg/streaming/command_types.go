@@ -291,8 +291,8 @@ func GetCommandInfo() map[string]CommandInfo {
 			Category:       CategoryMedia,
 			Description:    "Upload media file",
 			RequiresAuth:   true,
-			RequiredFields: []string{"file_data", "file_name"},
-			OptionalFields: []string{"description", "focus"},
+			RequiredFields: []string{"file_data"},
+			OptionalFields: []string{"file_name", "mime_type", "description", "focus", "sensitive", "spoiler_text", "media_type"},
 		},
 
 		// Notification Commands

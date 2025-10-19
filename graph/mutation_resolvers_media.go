@@ -4,11 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/equaltoai/lesser/graph/model"
-	"github.com/equaltoai/lesser/pkg/services/media"
+	"github.com/equaltoai/lesser/pkg/common"
+	mediatools "github.com/equaltoai/lesser/pkg/media"
+	mediasvc "github.com/equaltoai/lesser/pkg/services/media"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
@@ -22,7 +28,7 @@ func (r *mutationResolver) UpdateMedia(ctx context.Context, id string, input mod
 		return nil, err
 	}
 
-	cmd := &media.UpdateMediaCommand{
+	cmd := &mediasvc.UpdateMediaCommand{
 		UserID:  username,
 		MediaID: id,
 	}
@@ -48,6 +54,250 @@ func (r *mutationResolver) UpdateMedia(ctx context.Context, id string, input mod
 	// Track cost using centralized tracker
 	r.trackDynamoOperation(ctx, "write", 1)
 	return r.convertMediaToGraphQL(result.Media), nil
+}
+
+// UploadMedia is the resolver for the uploadMedia field.
+func (r *mutationResolver) UploadMedia(ctx context.Context, input model.UploadMediaInput) (*model.UploadMediaPayload, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	maxUploadSize := r.getMaxUploadSize()
+	fileBytes, err := r.readUploadFile(input.File, maxUploadSize)
+	if err != nil {
+		r.Logger.Error("failed to process upload stream",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, err
+	}
+
+	contentType := detectUploadContentType(input.File, fileBytes)
+	filename, err := normalizeUploadFilename(input.File, input.Filename, contentType)
+	if err != nil {
+		return nil, err
+	}
+	description, err := validateUploadDescription(input.Description)
+	if err != nil {
+		return nil, err
+	}
+	focus, err := normalizeUploadFocus(input.Focus)
+	if err != nil {
+		return nil, err
+	}
+	sensitive := false
+	if input.Sensitive != nil {
+		sensitive = *input.Sensitive
+	}
+	spoilerText, err := validateUploadSpoilerText(input.SpoilerText)
+	if err != nil {
+		return nil, err
+	}
+	mediaCategory, err := normalizeUploadMediaCategory(input.MediaType, contentType)
+	if err != nil {
+		return nil, err
+	}
+
+	mediaService := r.Registry.Media()
+	if mediaService == nil {
+		return nil, ErrMediaServiceUnavailable
+	}
+
+	result, err := mediaService.UploadMedia(ctx, &mediasvc.UploadMediaCommand{
+		UserID:        username,
+		FileName:      filename,
+		ContentType:   contentType,
+		FileData:      fileBytes,
+		Description:   description,
+		Focus:         focus,
+		Sensitive:     sensitive,
+		SpoilerText:   spoilerText,
+		MediaCategory: mediaCategory,
+	})
+	if err != nil {
+		r.Logger.Error("failed to upload media via GraphQL",
+			zap.String("user", username),
+			zap.String("filename", filename),
+			zap.Error(err))
+		return nil, errors.Join(errors.New("failed to upload media"), err)
+	}
+
+	if result == nil || result.Media == nil {
+		return nil, errors.New("failed to upload media: empty result")
+	}
+
+	r.trackDynamoOperation(ctx, "write", 1)
+	r.trackS3Operation(ctx, "put", 1)
+
+	graphQLMedia := r.convertMediaToGraphQL(result.Media)
+	if graphQLMedia == nil {
+		return nil, errors.New("failed to convert media result")
+	}
+
+	r.Logger.Info("media uploaded via GraphQL",
+		zap.String("user", username),
+		zap.String("media_id", result.Media.MediaID),
+		zap.String("filename", filename),
+		zap.String("content_type", contentType),
+		zap.Int("file_size", len(fileBytes)))
+
+	payload := &model.UploadMediaPayload{
+		Media:    graphQLMedia,
+		UploadID: result.Media.MediaID,
+	}
+
+	return payload, nil
+}
+
+func (r *mutationResolver) getMaxUploadSize() int64 {
+	const defaultMaxUploadSize int64 = 10 * 1024 * 1024 // 10MB
+
+	if r.Config != nil && r.Config.MaxUploadSize > 0 {
+		return r.Config.MaxUploadSize
+	}
+
+	if registryConfig := r.Registry.GetConfig(); registryConfig != nil && registryConfig.Config != nil && registryConfig.Config.MaxUploadSize > 0 {
+		return registryConfig.Config.MaxUploadSize
+	}
+
+	return defaultMaxUploadSize
+}
+
+func (r *mutationResolver) readUploadFile(upload graphql.Upload, maxSize int64) ([]byte, error) {
+	if upload.File == nil {
+		return nil, common.ErrValidation("file", "media file is required").InternalError
+	}
+
+	reader := io.LimitReader(upload.File, maxSize+1)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, errors.Join(errors.New("failed to read upload"), err)
+	}
+
+	if int64(len(data)) > maxSize {
+		return nil, common.ErrValidation("file", fmt.Sprintf("file exceeds maximum size of %d bytes", maxSize)).InternalError
+	}
+
+	if len(data) == 0 {
+		return nil, common.ErrValidation("file", "uploaded file is empty").InternalError
+	}
+
+	if closer, ok := upload.File.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			r.Logger.Debug("failed to close upload stream", zap.Error(err))
+		}
+	}
+
+	return data, nil
+}
+
+func normalizeUploadFilename(upload graphql.Upload, override *string, contentType string) (string, error) {
+	var name string
+	if override != nil && strings.TrimSpace(*override) != "" {
+		name = strings.TrimSpace(*override)
+	} else if strings.TrimSpace(upload.Filename) != "" {
+		name = strings.TrimSpace(upload.Filename)
+	} else {
+		name = fmt.Sprintf("upload-%d", time.Now().Unix())
+	}
+
+	return ensureFilenameExtension(name, contentType)
+}
+
+func detectUploadContentType(upload graphql.Upload, data []byte) string {
+	if contentType := strings.TrimSpace(upload.ContentType); contentType != "" {
+		return contentType
+	}
+
+	sniffLength := len(data)
+	if sniffLength > 512 {
+		sniffLength = 512
+	}
+
+	contentType := http.DetectContentType(data[:sniffLength])
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	return contentType
+}
+
+func validateUploadDescription(description *string) (string, error) {
+	if description == nil {
+		return "", nil
+	}
+
+	trimmed := strings.TrimSpace(*description)
+	if trimmed == "" {
+		return "", nil
+	}
+
+	if err := common.ValidateMediaDescription(trimmed); err != nil {
+		return "", common.ErrValidation("description", err.Error()).InternalError
+	}
+
+	return trimmed, nil
+}
+
+func normalizeUploadFocus(focusInput *model.FocusInput) (string, error) {
+	if focusInput == nil {
+		return "", nil
+	}
+
+	focus := fmt.Sprintf("%.2f,%.2f", focusInput.X, focusInput.Y)
+	if err := common.ValidateMediaFocus(focus); err != nil {
+		return "", common.ErrValidation("focus", err.Error()).InternalError
+	}
+
+	return focus, nil
+}
+
+func validateUploadSpoilerText(spoiler *string) (string, error) {
+	if spoiler == nil {
+		return "", nil
+	}
+
+	trimmed := strings.TrimSpace(*spoiler)
+	if trimmed == "" {
+		return "", nil
+	}
+
+	if err := common.ValidateSpoilerText(trimmed); err != nil {
+		return "", common.ErrValidation("spoilerText", err.Error()).InternalError
+	}
+
+	return trimmed, nil
+}
+
+func normalizeUploadMediaCategory(category *model.MediaCategory, contentType string) (models.MediaCategory, error) {
+	if category == nil {
+		return models.DetermineMediaCategory(contentType), nil
+	}
+
+	value := strings.TrimSpace(string(*category))
+	if value == "" {
+		return models.DetermineMediaCategory(contentType), nil
+	}
+
+	if normalized, ok := models.NormalizeMediaCategory(value); ok {
+		return normalized, nil
+	}
+
+	return "", common.ErrValidation("mediaType", fmt.Sprintf("unsupported media category '%s'", value)).InternalError
+}
+
+func ensureFilenameExtension(filename, contentType string) (string, error) {
+	trimmed := strings.TrimSpace(filename)
+	if trimmed == "" {
+		return "", common.ErrValidation("filename", "filename cannot be blank").InternalError
+	}
+
+	filenameWithExt, err := mediatools.EnsureFilenameHasExtension(trimmed, contentType)
+	if err != nil {
+		return "", common.ErrValidation("filename", err.Error()).InternalError
+	}
+
+	return filenameWithExt, nil
 }
 
 // RequestStreamingURL implements MutationResolver

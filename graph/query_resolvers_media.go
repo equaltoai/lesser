@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/common"
 	mediaStreaming "github.com/equaltoai/lesser/pkg/media/streaming"
 	"github.com/equaltoai/lesser/pkg/services/media"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
@@ -95,6 +97,164 @@ func (r *queryResolver) MediaStreamURL(ctx context.Context, mediaID string) (*mo
 	}
 
 	return stream, nil
+}
+
+// MediaLibrary is the resolver for the mediaLibrary field.
+func (r *queryResolver) MediaLibrary(ctx context.Context, filter *model.MediaFilterInput, first *int, after *model.Cursor) (*model.MediaConnection, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	args, err := r.buildMediaLibraryArgs(ctx, username, filter, first, after)
+	if err != nil {
+		return nil, err
+	}
+
+	mediaService := r.Registry.Media()
+	if mediaService == nil {
+		return nil, ErrMediaServiceUnavailable
+	}
+
+	result, err := mediaService.ListMedia(ctx, args.query)
+	if err != nil {
+		r.Logger.Error("Failed to list media",
+			zap.String("owner", args.query.Owner),
+			zap.Error(err))
+		return nil, errors.Join(errors.New("failed to list media"), err)
+	}
+
+	edges := r.buildMediaEdges(result.Items)
+	startCursor, endCursor := computeMediaCursors(edges)
+	hasNext := result.HasMore || result.NextCursor != ""
+	totalCount := computeMediaTotalCount(result, edges)
+
+	r.trackDynamoOperation(ctx, DynamoOperationQuery, int64(len(result.Items)))
+
+	return &model.MediaConnection{
+		Edges: edges,
+		PageInfo: &model.PageInfo{
+			HasNextPage:     hasNext,
+			HasPreviousPage: args.hasPrevious,
+			StartCursor:     startCursor,
+			EndCursor:       endCursor,
+		},
+		TotalCount: totalCount,
+	}, nil
+}
+
+type mediaLibraryArgs struct {
+	query       *media.ListMediaQuery
+	hasPrevious bool
+}
+
+func (r *queryResolver) buildMediaLibraryArgs(ctx context.Context, username string, filter *model.MediaFilterInput, first *int, after *model.Cursor) (*mediaLibraryArgs, error) {
+	limit := 20
+	if first != nil {
+		limit = *first
+	}
+	if limit <= 0 {
+		limit = 1
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	owner := strings.TrimSpace(username)
+	mediaType := ""
+	mimeType := ""
+	var sincePtr, untilPtr *time.Time
+
+	if filter != nil {
+		if filter.OwnerID != nil && strings.TrimSpace(*filter.OwnerID) != "" {
+			owner = strings.TrimSpace(*filter.OwnerID)
+		}
+		if filter.OwnerUsername != nil && strings.TrimSpace(*filter.OwnerUsername) != "" {
+			owner = strings.TrimSpace(*filter.OwnerUsername)
+		}
+		if filter.MediaType != nil {
+			mediaType = strings.ToLower(string(*filter.MediaType))
+		}
+		if filter.MimeType != nil {
+			mimeType = strings.TrimSpace(*filter.MimeType)
+		}
+		if filter.Since != nil {
+			s := time.Time(*filter.Since)
+			sincePtr = &s
+		}
+		if filter.Until != nil {
+			u := time.Time(*filter.Until)
+			untilPtr = &u
+		}
+	}
+
+	if owner == "" {
+		return nil, common.ErrValidation("owner", "owner is required").InternalError
+	}
+
+	if !strings.EqualFold(owner, username) && !r.isAdmin(ctx, username) {
+		return nil, ErrAdminPrivilegesRequired
+	}
+
+	cursor := ""
+	hasPrev := false
+	if after != nil && *after != "" {
+		cursor = string(*after)
+		hasPrev = true
+	}
+
+	return &mediaLibraryArgs{
+		query: &media.ListMediaQuery{
+			Owner:     owner,
+			Requester: username,
+			MediaType: mediaType,
+			MimeType:  mimeType,
+			Cursor:    cursor,
+			Limit:     limit,
+			Since:     sincePtr,
+			Until:     untilPtr,
+		},
+		hasPrevious: hasPrev,
+	}, nil
+}
+
+func (r *queryResolver) buildMediaEdges(items []*models.Media) []*model.MediaEdge {
+	edges := make([]*model.MediaEdge, 0, len(items))
+	for _, item := range items {
+		node := r.convertMediaToGraphQL(item)
+		if node == nil {
+			continue
+		}
+
+		cursorValue := item.GSI1SK
+		if cursorValue == "" {
+			cursorValue = item.MediaID
+		}
+
+		cursor := model.Cursor(cursorValue)
+		edges = append(edges, &model.MediaEdge{
+			Node:   node,
+			Cursor: cursor,
+		})
+	}
+	return edges
+}
+
+func computeMediaCursors(edges []*model.MediaEdge) (*model.Cursor, *model.Cursor) {
+	if len(edges) == 0 {
+		return nil, nil
+	}
+
+	start := edges[0].Cursor
+	end := edges[len(edges)-1].Cursor
+	return &start, &end
+}
+
+func computeMediaTotalCount(result *media.ListMediaResult, edges []*model.MediaEdge) int {
+	if result.Total < 0 {
+		return len(edges)
+	}
+	return int(result.Total)
 }
 
 // PopularStreams returns popular streaming endpoints

@@ -5,6 +5,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/equaltoai/lesser/pkg/ai"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/services"
@@ -23,6 +24,7 @@ type Resolver struct {
 	Registry *services.Registry
 
 	// Legacy fields (to be phased out)
+	Config              *config.Config
 	Storage             core.RepositoryStorage
 	CostTracker         *cost.Tracker
 	UnifiedTracker      *cost.UnifiedTracker // Centralized cost tracking

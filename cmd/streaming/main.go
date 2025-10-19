@@ -126,6 +126,7 @@ func init() {
 	serviceConfig := &services.ServiceConfig{
 		BaseURL:   cfg.Domain,
 		JWTSecret: cfg.JWTSecret,
+		Config:    cfg,
 	}
 
 	serviceRegistry, err := services.NewRegistry(

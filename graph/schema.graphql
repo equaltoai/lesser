@@ -2,6 +2,7 @@
 
 scalar Time
 scalar Cursor
+scalar Upload
 
 # Enums
 enum TimelineType {
@@ -347,6 +348,9 @@ type Media {
   url: String!
   previewUrl: String
   description: String
+  sensitive: Boolean!
+  spoilerText: String
+  mediaCategory: MediaCategory!
   blurhash: String
   width: Int
   height: Int
@@ -362,6 +366,35 @@ enum MediaType {
   VIDEO
   AUDIO
   UNKNOWN
+}
+
+enum MediaCategory {
+  IMAGE
+  VIDEO
+  AUDIO
+  GIFV
+  DOCUMENT
+  UNKNOWN
+}
+
+type MediaEdge {
+  node: Media!
+  cursor: Cursor!
+}
+
+type MediaConnection {
+  edges: [MediaEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input MediaFilterInput {
+  ownerId: ID
+  ownerUsername: String
+  mediaType: MediaType
+  mimeType: String
+  since: Time
+  until: Time
 }
 
 # Custom Emoji type
@@ -506,6 +539,16 @@ input UpdateListInput {
 }
 
 # Media inputs
+input UploadMediaInput {
+  file: Upload!
+  filename: String
+  description: String
+  focus: FocusInput
+  sensitive: Boolean
+  spoilerText: String
+  mediaType: MediaCategory
+}
+
 input UpdateMediaInput {
   description: String
   focus: FocusInput
@@ -618,6 +661,7 @@ type Query {
   
   # Media
   media(id: ID!): Media
+  mediaLibrary(filter: MediaFilterInput, first: Int = 20, after: Cursor): MediaConnection!
   
   # Custom Emojis
   customEmojis: [CustomEmoji!]!
@@ -712,6 +756,7 @@ type Mutation {
   deleteConversation(id: ID!): Boolean!
   
   # Media operations
+  uploadMedia(input: UploadMediaInput!): UploadMediaPayload!
   updateMedia(id: ID!, input: UpdateMediaInput!): Media!
   
   # Notification operations
@@ -762,6 +807,12 @@ type Mutation {
   # Severed Relationships mutations
   acknowledgeSeverance(id: ID!): AcknowledgePayload!
   attemptReconnection(id: ID!): ReconnectionPayload!
+}
+
+type UploadMediaPayload {
+  media: Media!
+  uploadId: ID!
+  warnings: [String!]
 }
 
 # Subscriptions (via WebSocket Lambda)

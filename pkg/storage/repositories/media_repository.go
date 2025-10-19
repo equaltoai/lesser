@@ -351,6 +351,12 @@ func (r *MediaRepository) UpdateMediaAttachment(ctx context.Context, mediaID str
 					zap.String("media_id", mediaID),
 					zap.Bool("is_nsfw", sensitive))
 			}
+		case "spoiler_text":
+			if spoiler, ok := value.(string); ok {
+				media.SpoilerText = strings.TrimSpace(spoiler)
+				r.logger.Debug("updated media spoiler",
+					zap.String("media_id", mediaID))
+			}
 		}
 	}
 
@@ -1078,6 +1084,14 @@ func (r *MediaRepository) getMediaByStatus(ctx context.Context, status string, o
 		query = query.Limit(opts.Limit)
 	}
 
+	if opts.Since != nil {
+		query = query.Filter("UploadedAt", ">=", opts.Since.UTC())
+	}
+
+	if opts.Until != nil {
+		query = query.Filter("UploadedAt", "<=", opts.Until.UTC())
+	}
+
 	// Resume from the provided cursor when present
 	if opts.Cursor != "" {
 		query = query.Where("GSI2SK", ">", opts.Cursor)
@@ -1121,6 +1135,14 @@ func (r *MediaRepository) getUserMediaWithOptions(ctx context.Context, userID st
 
 	if opts.Limit > 0 {
 		query = query.Limit(opts.Limit)
+	}
+
+	if opts.Since != nil {
+		query = query.Filter("UploadedAt", ">=", opts.Since.UTC())
+	}
+
+	if opts.Until != nil {
+		query = query.Filter("UploadedAt", "<=", opts.Until.UTC())
 	}
 
 	// Resume from the provided cursor when present
