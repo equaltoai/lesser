@@ -1,4 +1,5 @@
 // Package common provides secure cookie configuration and utilities for HTTP session management.
+// revive:disable-next-line:var-naming - package name is a longstanding public import path
 package common
 
 import (

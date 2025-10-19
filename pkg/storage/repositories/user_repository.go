@@ -1703,11 +1703,26 @@ func (r *UserRepository) SetUserLanguagePreference(ctx context.Context, username
 	prefs, err := r.GetUserPreferences(ctx, username)
 	if err != nil {
 		// If preferences don't exist, create new ones with defaults
+		defaultPrefs := models.GetDefaultPreferences()
 		prefs = &storage.UserPreferences{
-			Username:    username,
-			Language:    language,
-			Preferences: make(map[string]string),
-			UpdatedAt:   time.Now(),
+			Username:                  username,
+			Language:                  language,
+			DefaultPostingVisibility:  defaultPrefs.DefaultPostingVisibility,
+			DefaultMediaSensitive:     defaultPrefs.DefaultMediaSensitive,
+			ExpandSpoilers:            defaultPrefs.ExpandSpoilers,
+			ExpandMedia:               defaultPrefs.ExpandMedia,
+			AutoplayGifs:              defaultPrefs.AutoplayGifs,
+			ShowFollowCounts:          defaultPrefs.ShowFollowCounts,
+			PreferredTimelineOrder:    defaultPrefs.PreferredTimelineOrder,
+			SearchSuggestionsEnabled:  defaultPrefs.SearchSuggestionsEnabled,
+			PersonalizedSearchEnabled: defaultPrefs.PersonalizedSearchEnabled,
+			ReblogFilters:             defaultPrefs.ReblogFilters,
+			StreamingDefaultQuality:   defaultPrefs.StreamingDefaultQuality,
+			StreamingAutoQuality:      defaultPrefs.StreamingAutoQuality,
+			StreamingPreloadNext:      defaultPrefs.StreamingPreloadNext,
+			StreamingDataSaver:        defaultPrefs.StreamingDataSaver,
+			Preferences:               make(map[string]string),
+			UpdatedAt:                 time.Now(),
 		}
 	}
 
@@ -1746,6 +1761,10 @@ func (r *UserRepository) GetUserPreferences(ctx context.Context, username string
 				SearchSuggestionsEnabled:  defaultModelStorage.SearchSuggestionsEnabled,
 				PersonalizedSearchEnabled: defaultModelStorage.PersonalizedSearchEnabled,
 				ReblogFilters:             defaultModelStorage.ReblogFilters,
+				StreamingDefaultQuality:   defaultModelStorage.StreamingDefaultQuality,
+				StreamingAutoQuality:      defaultModelStorage.StreamingAutoQuality,
+				StreamingPreloadNext:      defaultModelStorage.StreamingPreloadNext,
+				StreamingDataSaver:        defaultModelStorage.StreamingDataSaver,
 			}, nil
 		}
 		r.logger.Error("failed to get user preferences",
@@ -1768,6 +1787,10 @@ func (r *UserRepository) GetUserPreferences(ctx context.Context, username string
 		SearchSuggestionsEnabled:  modelStorage.SearchSuggestionsEnabled,
 		PersonalizedSearchEnabled: modelStorage.PersonalizedSearchEnabled,
 		ReblogFilters:             modelStorage.ReblogFilters,
+		StreamingDefaultQuality:   modelStorage.StreamingDefaultQuality,
+		StreamingAutoQuality:      modelStorage.StreamingAutoQuality,
+		StreamingPreloadNext:      modelStorage.StreamingPreloadNext,
+		StreamingDataSaver:        modelStorage.StreamingDataSaver,
 	}, nil
 }
 
@@ -1786,6 +1809,10 @@ func (r *UserRepository) UpdateUserPreferences(ctx context.Context, username str
 		SearchSuggestionsEnabled:  preferences.SearchSuggestionsEnabled,
 		PersonalizedSearchEnabled: preferences.PersonalizedSearchEnabled,
 		ReblogFilters:             preferences.ReblogFilters,
+		StreamingDefaultQuality:   preferences.StreamingDefaultQuality,
+		StreamingAutoQuality:      preferences.StreamingAutoQuality,
+		StreamingPreloadNext:      preferences.StreamingPreloadNext,
+		StreamingDataSaver:        preferences.StreamingDataSaver,
 	}
 
 	// Create DynamORM model from storage preferences
@@ -1850,6 +1877,14 @@ func (r *UserRepository) updatePreferenceField(prefs *storage.UserPreferences, k
 		return r.setBoolPreference(&prefs.PersonalizedSearchEnabled, value, key)
 	case PrefKeyReblogFilters:
 		return r.setReblogFiltersPreference(&prefs.ReblogFilters, value, key)
+	case PrefKeyStreamingDefaultQuality:
+		return r.setStringPreference(&prefs.StreamingDefaultQuality, value, key)
+	case PrefKeyStreamingAutoQuality:
+		return r.setBoolPreference(&prefs.StreamingAutoQuality, value, key)
+	case PrefKeyStreamingPreloadNext:
+		return r.setBoolPreference(&prefs.StreamingPreloadNext, value, key)
+	case PrefKeyStreamingDataSaver:
+		return r.setBoolPreference(&prefs.StreamingDataSaver, value, key)
 	default:
 		// Store unknown preferences in the generic Preferences map
 		if prefs.Preferences == nil {
@@ -1914,6 +1949,10 @@ func (r *UserRepository) GetAllPreferences(ctx context.Context, username string)
 		"search_suggestions_enabled":  prefs.SearchSuggestionsEnabled,
 		"personalized_search_enabled": prefs.PersonalizedSearchEnabled,
 		"reblog_filters":              prefs.ReblogFilters,
+		"streaming_default_quality":   prefs.StreamingDefaultQuality,
+		"streaming_auto_quality":      prefs.StreamingAutoQuality,
+		"streaming_preload_next":      prefs.StreamingPreloadNext,
+		"streaming_data_saver":        prefs.StreamingDataSaver,
 	}, nil
 }
 
@@ -1961,6 +2000,14 @@ func (r *UserRepository) updateSinglePreference(prefs *storage.UserPreferences, 
 		return r.setBoolPreference(&prefs.PersonalizedSearchEnabled, value, key)
 	case PrefKeyReblogFilters:
 		return r.setReblogFiltersPreference(&prefs.ReblogFilters, value, key)
+	case PrefKeyStreamingDefaultQuality:
+		return r.setStringPreference(&prefs.StreamingDefaultQuality, value, key)
+	case PrefKeyStreamingAutoQuality:
+		return r.setBoolPreference(&prefs.StreamingAutoQuality, value, key)
+	case PrefKeyStreamingPreloadNext:
+		return r.setBoolPreference(&prefs.StreamingPreloadNext, value, key)
+	case PrefKeyStreamingDataSaver:
+		return r.setBoolPreference(&prefs.StreamingDataSaver, value, key)
 	default:
 		// Store unknown preferences in the generic Preferences map
 		if prefs.Preferences == nil {

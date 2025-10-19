@@ -146,6 +146,10 @@ type UserPreferences struct {
 	SearchSuggestionsEnabled  bool              `json:"search_suggestions_enabled"`
 	PersonalizedSearchEnabled bool              `json:"personalized_search_enabled"`
 	ReblogFilters             map[string]bool   `json:"reblog_filters,omitempty"`
+	StreamingDefaultQuality   string            `json:"streaming_default_quality"`
+	StreamingAutoQuality      bool              `json:"streaming_auto_quality"`
+	StreamingPreloadNext      bool              `json:"streaming_preload_next"`
+	StreamingDataSaver        bool              `json:"streaming_data_saver"`
 }
 
 // Device represents a push notification device

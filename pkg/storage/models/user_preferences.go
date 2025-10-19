@@ -22,6 +22,10 @@ type UserPreferences struct {
 	SearchSuggestionsEnabled  bool            `json:"search_suggestions_enabled" dynamorm:"search_suggestions_enabled"`
 	PersonalizedSearchEnabled bool            `json:"personalized_search_enabled" dynamorm:"personalized_search_enabled"`
 	ReblogFilters             map[string]bool `json:"reblog_filters,omitempty" dynamorm:"reblog_filters,omitempty"`
+	StreamingDefaultQuality   string          `json:"streaming_default_quality" dynamorm:"streaming_default_quality"`
+	StreamingAutoQuality      bool            `json:"streaming_auto_quality" dynamorm:"streaming_auto_quality"`
+	StreamingPreloadNext      bool            `json:"streaming_preload_next" dynamorm:"streaming_preload_next"`
+	StreamingDataSaver        bool            `json:"streaming_data_saver" dynamorm:"streaming_data_saver"`
 
 	// Metadata
 	UpdatedAt time.Time `json:"updated_at" dynamorm:"updated_at"`
@@ -50,6 +54,10 @@ type UserPreferencesStorage struct {
 	SearchSuggestionsEnabled  bool            `json:"search_suggestions_enabled"`
 	PersonalizedSearchEnabled bool            `json:"personalized_search_enabled"`
 	ReblogFilters             map[string]bool `json:"reblog_filters,omitempty"`
+	StreamingDefaultQuality   string          `json:"streaming_default_quality"`
+	StreamingAutoQuality      bool            `json:"streaming_auto_quality"`
+	StreamingPreloadNext      bool            `json:"streaming_preload_next"`
+	StreamingDataSaver        bool            `json:"streaming_data_saver"`
 }
 
 // ToStorage converts the DynamORM model to UserPreferencesStorage
@@ -66,6 +74,10 @@ func (up *UserPreferences) ToStorage() *UserPreferencesStorage {
 		SearchSuggestionsEnabled:  up.SearchSuggestionsEnabled,
 		PersonalizedSearchEnabled: up.PersonalizedSearchEnabled,
 		ReblogFilters:             up.ReblogFilters,
+		StreamingDefaultQuality:   up.StreamingDefaultQuality,
+		StreamingAutoQuality:      up.StreamingAutoQuality,
+		StreamingPreloadNext:      up.StreamingPreloadNext,
+		StreamingDataSaver:        up.StreamingDataSaver,
 	}
 }
 
@@ -83,6 +95,10 @@ func (up *UserPreferences) FromStorage(username string, prefs *UserPreferencesSt
 	up.SearchSuggestionsEnabled = prefs.SearchSuggestionsEnabled
 	up.PersonalizedSearchEnabled = prefs.PersonalizedSearchEnabled
 	up.ReblogFilters = prefs.ReblogFilters
+	up.StreamingDefaultQuality = prefs.StreamingDefaultQuality
+	up.StreamingAutoQuality = prefs.StreamingAutoQuality
+	up.StreamingPreloadNext = prefs.StreamingPreloadNext
+	up.StreamingDataSaver = prefs.StreamingDataSaver
 	up.UpdatedAt = time.Now()
 	up.UpdateKeys()
 }
@@ -101,5 +117,9 @@ func GetDefaultPreferences() *UserPreferencesStorage {
 		SearchSuggestionsEnabled:  true,
 		PersonalizedSearchEnabled: true,
 		ReblogFilters:             make(map[string]bool),
+		StreamingDefaultQuality:   "AUTO",
+		StreamingAutoQuality:      true,
+		StreamingPreloadNext:      true,
+		StreamingDataSaver:        false,
 	}
 }

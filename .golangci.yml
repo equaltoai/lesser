@@ -249,6 +249,11 @@ issues:
       linters:
         - gosec
     
+    # Common package name is part of public API; suppress revive var-naming warnings there
+    - path: "pkg/common/.*\\.go$"
+      linters:
+        - revive
+    
 severity:
   # Default severity for all linters
   default-severity: warning

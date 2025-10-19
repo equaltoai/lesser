@@ -397,10 +397,30 @@ input StreamingQualityInput {
 }
 
 input StreamingPreferencesInput {
-  defaultQuality: StreamQuality!
-  autoQuality: Boolean!
-  preloadNext: Boolean!
-  dataSaver: Boolean!
+  defaultQuality: StreamQuality
+  autoQuality: Boolean
+  preloadNext: Boolean
+  dataSaver: Boolean
+}
+
+input ReblogFilterInput {
+  key: String!
+  enabled: Boolean!
+}
+
+input UpdateUserPreferencesInput {
+  language: String
+  defaultPostingVisibility: Visibility
+  defaultMediaSensitive: Boolean
+  expandSpoilers: Boolean
+  expandMedia: ExpandMediaPreference
+  autoplayGifs: Boolean
+  showFollowCounts: Boolean
+  preferredTimelineOrder: TimelineOrder
+  searchSuggestionsEnabled: Boolean
+  personalizedSearchEnabled: Boolean
+  reblogFilters: [ReblogFilterInput!]
+  streaming: StreamingPreferencesInput
 }
 
 input ModerationFilter {
@@ -437,7 +457,6 @@ extend type Query {
 extend type Mutation {
   # Streaming Quality
   reportStreamingQuality(input: StreamingQualityInput!): StreamingQualityReport!
-  updateStreamingPreferences(input: StreamingPreferencesInput!): UserPreferences!
 }
 
 # Phase 3 Subscription Extensions
@@ -461,9 +480,32 @@ type StreamingQualityReport {
 
 type UserPreferences {
   actorId: ID!
+  posting: PostingPreferences!
+  reading: ReadingPreferences!
+  discovery: DiscoveryPreferences!
   streaming: StreamingPreferences!
   notifications: NotificationPreferences!
   privacy: PrivacyPreferences!
+  reblogFilters: [ReblogFilter!]!
+}
+
+type PostingPreferences {
+  defaultVisibility: Visibility!
+  defaultSensitive: Boolean!
+  defaultLanguage: String!
+}
+
+type ReadingPreferences {
+  expandSpoilers: Boolean!
+  expandMedia: ExpandMediaPreference!
+  autoplayGifs: Boolean!
+  timelineOrder: TimelineOrder!
+}
+
+type DiscoveryPreferences {
+  showFollowCounts: Boolean!
+  searchSuggestionsEnabled: Boolean!
+  personalizedSearchEnabled: Boolean!
 }
 
 type StreamingPreferences {
@@ -491,4 +533,20 @@ type PrivacyPreferences {
   defaultVisibility: Visibility!
   indexable: Boolean!
   showOnlineStatus: Boolean!
-} 
+}
+
+type ReblogFilter {
+  key: String!
+  enabled: Boolean!
+}
+
+enum ExpandMediaPreference {
+  DEFAULT
+  SHOW_ALL
+  HIDE_ALL
+}
+
+enum TimelineOrder {
+  NEWEST
+  OLDEST
+}

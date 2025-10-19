@@ -82,5 +82,9 @@ const (
 	PrefKeySearchSuggestionsEnabled  = "search_suggestions_enabled"
 	PrefKeyPersonalizedSearchEnabled = "personalized_search_enabled"
 	PrefKeyReblogFilters             = "reblog_filters"
+	PrefKeyStreamingDefaultQuality   = "streaming_default_quality"
+	PrefKeyStreamingAutoQuality      = "streaming_auto_quality"
+	PrefKeyStreamingPreloadNext      = "streaming_preload_next"
+	PrefKeyStreamingDataSaver        = "streaming_data_saver"
 	PrefKeyDirect                    = "direct"
 )

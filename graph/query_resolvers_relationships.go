@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -64,6 +65,106 @@ func (r *queryResolver) Relationships(ctx context.Context, ids []string) ([]*mod
 	}
 
 	return rels, nil
+}
+
+// Followers is the resolver for the followers field.
+func (r *queryResolver) Followers(ctx context.Context, username string, limit *int, cursor *model.Cursor) (*model.ActorListPage, error) {
+	service := r.Registry.Relationships()
+	if service == nil {
+		return nil, errors.New("relationships service is not available")
+	}
+
+	return r.resolveActorRelationshipPage(ctx, username, limit, cursor, service.GetFollowers, service.CountFollowers)
+}
+
+// Following is the resolver for the following field.
+func (r *queryResolver) Following(ctx context.Context, username string, limit *int, cursor *model.Cursor) (*model.ActorListPage, error) {
+	service := r.Registry.Relationships()
+	if service == nil {
+		return nil, errors.New("relationships service is not available")
+	}
+
+	return r.resolveActorRelationshipPage(ctx, username, limit, cursor, service.GetFollowing, service.CountFollowing)
+}
+
+type relationshipPageFetcher func(ctx context.Context, username string, limit int, cursor string) ([]*storage.Account, string, error)
+type relationshipCountFetcher func(ctx context.Context, username string) (int64, error)
+
+func (r *queryResolver) resolveActorRelationshipPage(
+	ctx context.Context,
+	username string,
+	limit *int,
+	cursor *model.Cursor,
+	fetch relationshipPageFetcher,
+	count relationshipCountFetcher,
+) (*model.ActorListPage, error) {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, err
+	}
+
+	if fetch == nil || count == nil {
+		return nil, errors.New("relationships service is not available")
+	}
+
+	pageSize := clampLimit(limit)
+	after := cursorToString(cursor)
+
+	accounts, nextCursor, err := fetch(ctx, username, pageSize, after)
+	if err != nil {
+		r.Logger.Error("Failed to list relationships",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, errors.Join(errors.New("failed to list relationships"), err)
+	}
+
+	actors := make([]*activitypub.Actor, 0, len(accounts))
+	for _, account := range accounts {
+		actor := r.convertAccountToActor(account)
+		if actor != nil {
+			actors = append(actors, actor)
+		}
+	}
+
+	totalCount, err := count(ctx, username)
+	if err != nil {
+		r.Logger.Warn("Failed to count relationships",
+			zap.String("username", username),
+			zap.Error(err))
+		totalCount = int64(len(actors))
+	}
+
+	return &model.ActorListPage{
+		Actors:     actors,
+		NextCursor: stringToCursor(nextCursor),
+		TotalCount: int(totalCount),
+	}, nil
+}
+
+func clampLimit(limit *int) int {
+	pageSize := 40
+	if limit != nil && *limit > 0 {
+		if *limit > 80 {
+			pageSize = 80
+		} else {
+			pageSize = *limit
+		}
+	}
+	return pageSize
+}
+
+func cursorToString(cursor *model.Cursor) string {
+	if cursor == nil {
+		return ""
+	}
+	return string(*cursor)
+}
+
+func stringToCursor(value string) *model.Cursor {
+	if value == "" {
+		return nil
+	}
+	c := model.Cursor(value)
+	return &c
 }
 
 // ====================================================================

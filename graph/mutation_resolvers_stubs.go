@@ -121,66 +121,6 @@ func (r *mutationResolver) UnmuteActor(ctx context.Context, id string) (bool, er
 
 // NOTE: UnfollowHashtag and UpdateHashtagNotifications are now implemented in mutation_resolvers_hashtags.go
 
-// UpdateStreamingPreferences is the resolver for the updateStreamingPreferences field.
-func (r *mutationResolver) UpdateStreamingPreferences(ctx context.Context, input model.StreamingPreferencesInput) (*model.UserPreferences, error) {
-	username, err := r.requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the user repository
-	userRepo := r.Registry.GetStorage().User()
-	if userRepo == nil {
-		return nil, errors.New("user repository is not available")
-	}
-
-	// Create preferences map from input
-	preferencesMap := map[string]interface{}{
-		"streaming_default_quality": string(input.DefaultQuality),
-		"streaming_auto_quality":    input.AutoQuality,
-		"streaming_preload_next":    input.PreloadNext,
-		"streaming_data_saver":      input.DataSaver,
-	}
-
-	// Update preferences
-	err = userRepo.UpdatePreferences(ctx, username, preferencesMap)
-	if err != nil {
-		r.Logger.Error("Failed to update streaming preferences",
-			zap.String("user", username),
-			zap.Error(err))
-		return nil, err
-	}
-
-	// Track cost using centralized tracker
-	r.trackDynamoOperation(ctx, "write", 1)
-
-	r.Logger.Info("streaming preferences updated successfully",
-		zap.String("user", username))
-
-	// Return updated preferences
-	return &model.UserPreferences{
-		ActorID: username,
-		Streaming: &model.StreamingPreferences{
-			DefaultQuality: input.DefaultQuality,
-			AutoQuality:    input.AutoQuality,
-			PreloadNext:    input.PreloadNext,
-			DataSaver:      input.DataSaver,
-		},
-		// Return default values for other preference groups
-		Notifications: &model.NotificationPreferences{
-			Email:  false, // Email notifications not supported by Lesser
-			Push:   true,
-			InApp:  true,
-			Digest: model.DigestFrequencyNever,
-		},
-		Privacy: &model.PrivacyPreferences{
-			DefaultVisibility: model.VisibilityPublic,
-			Indexable:         true,
-			ShowOnlineStatus:  true,
-		},
-	}, nil
-}
-
 // WithdrawFromQuotes is the resolver for the withdrawFromQuotes field.
 func (r *mutationResolver) WithdrawFromQuotes(ctx context.Context, noteID string) (*model.WithdrawQuotePayload, error) {
 	username, err := r.requireAuth(ctx)
