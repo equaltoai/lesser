@@ -191,6 +191,12 @@ type PageInfo {
   endCursor: Cursor
 }
 
+type ActorListPage {
+  actors: [Actor!]!
+  nextCursor: Cursor
+  totalCount: Int!
+}
+
 # Instance Metrics
 type InstanceMetrics {
   activeUsers: Int!
@@ -265,6 +271,35 @@ type NotificationConnection {
 type NotificationEdge {
   node: Notification!
   cursor: Cursor!
+}
+
+type PushSubscription {
+  id: ID!
+  endpoint: String!
+  keys: PushSubscriptionKeys!
+  alerts: PushSubscriptionAlerts!
+  policy: String!
+  serverKey: String
+  createdAt: Time
+  updatedAt: Time
+}
+
+type PushSubscriptionKeys {
+  auth: String!
+  p256dh: String!
+}
+
+type PushSubscriptionAlerts {
+  follow: Boolean!
+  favourite: Boolean!
+  reblog: Boolean!
+  mention: Boolean!
+  poll: Boolean!
+  followRequest: Boolean!
+  status: Boolean!
+  update: Boolean!
+  adminSignUp: Boolean!
+  adminReport: Boolean!
 }
 
 # Quote Posts types
@@ -591,6 +626,54 @@ input UpdateRelationshipInput {
   note: String
 }
 
+input ProfileFieldInput {
+  name: String!
+  value: String!
+  verifiedAt: Time
+}
+
+input UpdateProfileInput {
+  displayName: String
+  bio: String
+  avatar: String
+  header: String
+  locked: Boolean
+  bot: Boolean
+  discoverable: Boolean
+  noIndex: Boolean
+  sensitive: Boolean
+  language: String
+  fields: [ProfileFieldInput!]
+}
+
+input PushSubscriptionKeysInput {
+  auth: String!
+  p256dh: String!
+}
+
+input PushSubscriptionAlertsInput {
+  follow: Boolean
+  favourite: Boolean
+  reblog: Boolean
+  mention: Boolean
+  poll: Boolean
+  followRequest: Boolean
+  status: Boolean
+  update: Boolean
+  adminSignUp: Boolean
+  adminReport: Boolean
+}
+
+input RegisterPushSubscriptionInput {
+  endpoint: String!
+  keys: PushSubscriptionKeysInput!
+  alerts: PushSubscriptionAlertsInput!
+}
+
+input UpdatePushSubscriptionInput {
+  alerts: PushSubscriptionAlertsInput!
+}
+
 # Emoji inputs
 input CreateEmojiInput {
   shortcode: String!
@@ -673,6 +756,10 @@ type Query {
   # Relationships
   relationship(id: ID!): Relationship
   relationships(ids: [ID!]!): [Relationship!]!
+  followers(username: String!, limit: Int = 40, cursor: Cursor): ActorListPage!
+  following(username: String!, limit: Int = 40, cursor: Cursor): ActorListPage!
+  userPreferences: UserPreferences!
+  pushSubscription: PushSubscription
   
   # Discovery
   profileDirectory(filters: DirectoryFiltersInput, first: Int = 40, after: Cursor): ProfileDirectory!
@@ -743,6 +830,7 @@ type Mutation {
   muteActor(id: ID!, notifications: Boolean): Relationship!
   unmuteActor(id: ID!): Boolean!
   updateRelationship(id: ID!, input: UpdateRelationshipInput!): Relationship!
+  updateProfile(input: UpdateProfileInput!): Actor!
   
   # List operations
   createList(input: CreateListInput!): List!
@@ -762,6 +850,11 @@ type Mutation {
   # Notification operations
   dismissNotification(id: ID!): Boolean!
   clearNotifications: Boolean!
+  updateUserPreferences(input: UpdateUserPreferencesInput!): UserPreferences!
+  updateStreamingPreferences(input: StreamingPreferencesInput!): UserPreferences!
+  registerPushSubscription(input: RegisterPushSubscriptionInput!): PushSubscription!
+  updatePushSubscription(input: UpdatePushSubscriptionInput!): PushSubscription!
+  deletePushSubscription: Boolean!
   
   # Scheduled status operations
   scheduleStatus(input: ScheduleStatusInput!): ScheduledStatus!

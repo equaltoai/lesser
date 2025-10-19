@@ -92,6 +92,12 @@ type AcknowledgePayload struct {
 	Acknowledged        bool                 `json:"acknowledged"`
 }
 
+type ActorListPage struct {
+	Actors     []*activitypub.Actor `json:"actors"`
+	NextCursor *Cursor              `json:"nextCursor,omitempty"`
+	TotalCount int                  `json:"totalCount"`
+}
+
 type AffectedRelationship struct {
 	Actor            *activitypub.Actor `json:"actor"`
 	RelationshipType string             `json:"relationshipType"`
@@ -317,6 +323,12 @@ type DirectoryFiltersInput struct {
 	Remote *bool           `json:"remote,omitempty"`
 	Active *bool           `json:"active,omitempty"`
 	Order  *DirectoryOrder `json:"order,omitempty"`
+}
+
+type DiscoveryPreferences struct {
+	ShowFollowCounts          bool `json:"showFollowCounts"`
+	SearchSuggestionsEnabled  bool `json:"searchSuggestionsEnabled"`
+	PersonalizedSearchEnabled bool `json:"personalizedSearchEnabled"`
 }
 
 type Entity struct {
@@ -1038,6 +1050,12 @@ type PostEdge struct {
 	Cursor Cursor  `json:"cursor"`
 }
 
+type PostingPreferences struct {
+	DefaultVisibility Visibility `json:"defaultVisibility"`
+	DefaultSensitive  bool       `json:"defaultSensitive"`
+	DefaultLanguage   string     `json:"defaultLanguage"`
+}
+
 type PrivacyPreferences struct {
 	DefaultVisibility Visibility `json:"defaultVisibility"`
 	Indexable         bool       `json:"indexable"`
@@ -1047,6 +1065,59 @@ type PrivacyPreferences struct {
 type ProfileDirectory struct {
 	Accounts   []*activitypub.Actor `json:"accounts"`
 	TotalCount int                  `json:"totalCount"`
+}
+
+type ProfileFieldInput struct {
+	Name       string `json:"name"`
+	Value      string `json:"value"`
+	VerifiedAt *Time  `json:"verifiedAt,omitempty"`
+}
+
+type PushSubscription struct {
+	ID        string                  `json:"id"`
+	Endpoint  string                  `json:"endpoint"`
+	Keys      *PushSubscriptionKeys   `json:"keys"`
+	Alerts    *PushSubscriptionAlerts `json:"alerts"`
+	Policy    string                  `json:"policy"`
+	ServerKey *string                 `json:"serverKey,omitempty"`
+	CreatedAt *Time                   `json:"createdAt,omitempty"`
+	UpdatedAt *Time                   `json:"updatedAt,omitempty"`
+}
+
+type PushSubscriptionAlerts struct {
+	Follow        bool `json:"follow"`
+	Favourite     bool `json:"favourite"`
+	Reblog        bool `json:"reblog"`
+	Mention       bool `json:"mention"`
+	Poll          bool `json:"poll"`
+	FollowRequest bool `json:"followRequest"`
+	Status        bool `json:"status"`
+	Update        bool `json:"update"`
+	AdminSignUp   bool `json:"adminSignUp"`
+	AdminReport   bool `json:"adminReport"`
+}
+
+type PushSubscriptionAlertsInput struct {
+	Follow        *bool `json:"follow,omitempty"`
+	Favourite     *bool `json:"favourite,omitempty"`
+	Reblog        *bool `json:"reblog,omitempty"`
+	Mention       *bool `json:"mention,omitempty"`
+	Poll          *bool `json:"poll,omitempty"`
+	FollowRequest *bool `json:"followRequest,omitempty"`
+	Status        *bool `json:"status,omitempty"`
+	Update        *bool `json:"update,omitempty"`
+	AdminSignUp   *bool `json:"adminSignUp,omitempty"`
+	AdminReport   *bool `json:"adminReport,omitempty"`
+}
+
+type PushSubscriptionKeys struct {
+	Auth   string `json:"auth"`
+	P256dh string `json:"p256dh"`
+}
+
+type PushSubscriptionKeysInput struct {
+	Auth   string `json:"auth"`
+	P256dh string `json:"p256dh"`
 }
 
 type QualityBandwidth struct {
@@ -1100,12 +1171,35 @@ type QuoteEdge struct {
 	Cursor Cursor  `json:"cursor"`
 }
 
+type ReadingPreferences struct {
+	ExpandSpoilers bool                  `json:"expandSpoilers"`
+	ExpandMedia    ExpandMediaPreference `json:"expandMedia"`
+	AutoplayGifs   bool                  `json:"autoplayGifs"`
+	TimelineOrder  TimelineOrder         `json:"timelineOrder"`
+}
+
+type ReblogFilter struct {
+	Key     string `json:"key"`
+	Enabled bool   `json:"enabled"`
+}
+
+type ReblogFilterInput struct {
+	Key     string `json:"key"`
+	Enabled bool   `json:"enabled"`
+}
+
 type ReconnectionPayload struct {
 	Success             bool                 `json:"success"`
 	SeveredRelationship *SeveredRelationship `json:"severedRelationship"`
 	Reconnected         int                  `json:"reconnected"`
 	Failed              int                  `json:"failed"`
 	Errors              []string             `json:"errors,omitempty"`
+}
+
+type RegisterPushSubscriptionInput struct {
+	Endpoint string                       `json:"endpoint"`
+	Keys     *PushSubscriptionKeysInput   `json:"keys"`
+	Alerts   *PushSubscriptionAlertsInput `json:"alerts"`
 }
 
 type Relationship struct {
@@ -1315,10 +1409,10 @@ type StreamingPreferences struct {
 }
 
 type StreamingPreferencesInput struct {
-	DefaultQuality StreamQuality `json:"defaultQuality"`
-	AutoQuality    bool          `json:"autoQuality"`
-	PreloadNext    bool          `json:"preloadNext"`
-	DataSaver      bool          `json:"dataSaver"`
+	DefaultQuality *StreamQuality `json:"defaultQuality,omitempty"`
+	AutoQuality    *bool          `json:"autoQuality,omitempty"`
+	PreloadNext    *bool          `json:"preloadNext,omitempty"`
+	DataSaver      *bool          `json:"dataSaver,omitempty"`
 }
 
 type StreamingQualityInput struct {
@@ -1437,6 +1531,24 @@ type UpdateMediaInput struct {
 	Focus       *FocusInput `json:"focus,omitempty"`
 }
 
+type UpdateProfileInput struct {
+	DisplayName  *string              `json:"displayName,omitempty"`
+	Bio          *string              `json:"bio,omitempty"`
+	Avatar       *string              `json:"avatar,omitempty"`
+	Header       *string              `json:"header,omitempty"`
+	Locked       *bool                `json:"locked,omitempty"`
+	Bot          *bool                `json:"bot,omitempty"`
+	Discoverable *bool                `json:"discoverable,omitempty"`
+	NoIndex      *bool                `json:"noIndex,omitempty"`
+	Sensitive    *bool                `json:"sensitive,omitempty"`
+	Language     *string              `json:"language,omitempty"`
+	Fields       []*ProfileFieldInput `json:"fields,omitempty"`
+}
+
+type UpdatePushSubscriptionInput struct {
+	Alerts *PushSubscriptionAlertsInput `json:"alerts"`
+}
+
 type UpdateQuotePermissionsPayload struct {
 	Success        bool    `json:"success"`
 	Note           *Object `json:"note"`
@@ -1452,6 +1564,21 @@ type UpdateRelationshipInput struct {
 
 type UpdateScheduledStatusInput struct {
 	ScheduledAt Time `json:"scheduledAt"`
+}
+
+type UpdateUserPreferencesInput struct {
+	Language                  *string                    `json:"language,omitempty"`
+	DefaultPostingVisibility  *Visibility                `json:"defaultPostingVisibility,omitempty"`
+	DefaultMediaSensitive     *bool                      `json:"defaultMediaSensitive,omitempty"`
+	ExpandSpoilers            *bool                      `json:"expandSpoilers,omitempty"`
+	ExpandMedia               *ExpandMediaPreference     `json:"expandMedia,omitempty"`
+	AutoplayGifs              *bool                      `json:"autoplayGifs,omitempty"`
+	ShowFollowCounts          *bool                      `json:"showFollowCounts,omitempty"`
+	PreferredTimelineOrder    *TimelineOrder             `json:"preferredTimelineOrder,omitempty"`
+	SearchSuggestionsEnabled  *bool                      `json:"searchSuggestionsEnabled,omitempty"`
+	PersonalizedSearchEnabled *bool                      `json:"personalizedSearchEnabled,omitempty"`
+	ReblogFilters             []*ReblogFilterInput       `json:"reblogFilters,omitempty"`
+	Streaming                 *StreamingPreferencesInput `json:"streaming,omitempty"`
 }
 
 type UploadMediaInput struct {
@@ -1472,9 +1599,13 @@ type UploadMediaPayload struct {
 
 type UserPreferences struct {
 	ActorID       string                   `json:"actorId"`
+	Posting       *PostingPreferences      `json:"posting"`
+	Reading       *ReadingPreferences      `json:"reading"`
+	Discovery     *DiscoveryPreferences    `json:"discovery"`
 	Streaming     *StreamingPreferences    `json:"streaming"`
 	Notifications *NotificationPreferences `json:"notifications"`
 	Privacy       *PrivacyPreferences      `json:"privacy"`
+	ReblogFilters []*ReblogFilter          `json:"reblogFilters"`
 }
 
 type Vouch struct {
@@ -1978,6 +2109,63 @@ func (e *DirectoryOrder) UnmarshalJSON(b []byte) error {
 }
 
 func (e DirectoryOrder) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ExpandMediaPreference string
+
+const (
+	ExpandMediaPreferenceDefault ExpandMediaPreference = "DEFAULT"
+	ExpandMediaPreferenceShowAll ExpandMediaPreference = "SHOW_ALL"
+	ExpandMediaPreferenceHideAll ExpandMediaPreference = "HIDE_ALL"
+)
+
+var AllExpandMediaPreference = []ExpandMediaPreference{
+	ExpandMediaPreferenceDefault,
+	ExpandMediaPreferenceShowAll,
+	ExpandMediaPreferenceHideAll,
+}
+
+func (e ExpandMediaPreference) IsValid() bool {
+	switch e {
+	case ExpandMediaPreferenceDefault, ExpandMediaPreferenceShowAll, ExpandMediaPreferenceHideAll:
+		return true
+	}
+	return false
+}
+
+func (e ExpandMediaPreference) String() string {
+	return string(e)
+}
+
+func (e *ExpandMediaPreference) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ExpandMediaPreference(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ExpandMediaPreference", str)
+	}
+	return nil
+}
+
+func (e ExpandMediaPreference) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ExpandMediaPreference) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ExpandMediaPreference) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
@@ -3597,6 +3785,61 @@ func (e *TimePeriod) UnmarshalJSON(b []byte) error {
 }
 
 func (e TimePeriod) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type TimelineOrder string
+
+const (
+	TimelineOrderNewest TimelineOrder = "NEWEST"
+	TimelineOrderOldest TimelineOrder = "OLDEST"
+)
+
+var AllTimelineOrder = []TimelineOrder{
+	TimelineOrderNewest,
+	TimelineOrderOldest,
+}
+
+func (e TimelineOrder) IsValid() bool {
+	switch e {
+	case TimelineOrderNewest, TimelineOrderOldest:
+		return true
+	}
+	return false
+}
+
+func (e TimelineOrder) String() string {
+	return string(e)
+}
+
+func (e *TimelineOrder) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = TimelineOrder(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid TimelineOrder", str)
+	}
+	return nil
+}
+
+func (e TimelineOrder) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *TimelineOrder) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e TimelineOrder) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

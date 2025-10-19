@@ -159,6 +159,10 @@ func (h *Handler) getOrCreateUserPreferences(ctx *lift.Context, username string)
 		PreferredTimelineOrder:    h.getStringPreference(result.Preferences, "preferred_timeline_order", "newest"),
 		SearchSuggestionsEnabled:  h.getBoolPreference(result.Preferences, "search_suggestions_enabled", true),
 		PersonalizedSearchEnabled: h.getBoolPreference(result.Preferences, "personalized_search_enabled", true),
+		StreamingDefaultQuality:   h.getStringPreference(result.Preferences, "streaming_default_quality", "AUTO"),
+		StreamingAutoQuality:      h.getBoolPreference(result.Preferences, "streaming_auto_quality", true),
+		StreamingPreloadNext:      h.getBoolPreference(result.Preferences, "streaming_preload_next", true),
+		StreamingDataSaver:        h.getBoolPreference(result.Preferences, "streaming_data_saver", false),
 	}
 	return prefs
 }
@@ -170,10 +174,16 @@ func (h *Handler) createDefaultPreferences() *storage.UserPreferences {
 		DefaultPostingVisibility:  "public",
 		DefaultMediaSensitive:     false,
 		ExpandSpoilers:            false,
+		ExpandMedia:               "default",
+		AutoplayGifs:              false,
 		ShowFollowCounts:          true,
 		PreferredTimelineOrder:    "newest",
 		SearchSuggestionsEnabled:  true,
 		PersonalizedSearchEnabled: true,
+		StreamingDefaultQuality:   "AUTO",
+		StreamingAutoQuality:      true,
+		StreamingPreloadNext:      true,
+		StreamingDataSaver:        false,
 	}
 }
 

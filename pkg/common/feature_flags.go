@@ -1,4 +1,5 @@
 // Package common provides common utilities and helpers for the Lesser application.
+// revive:disable-next-line:var-naming - package name is a longstanding public import path
 package common
 
 import (

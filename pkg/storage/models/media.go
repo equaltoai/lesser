@@ -12,6 +12,7 @@ import (
 // MediaCategory represents the high-level category for a media attachment.
 type MediaCategory string
 
+// Media category constants define the canonical classifications for stored media.
 const (
 	MediaCategoryImage    MediaCategory = "image"
 	MediaCategoryVideo    MediaCategory = "video"
