@@ -1,9 +1,0 @@
-schema:
-  - "testdata/schema_omit_root_models.graphql"
-
-exec:
-  filename: out/ignored.go
-model:
-  filename: out/generated_omit_root_models.go
-
-omit_root_models: true

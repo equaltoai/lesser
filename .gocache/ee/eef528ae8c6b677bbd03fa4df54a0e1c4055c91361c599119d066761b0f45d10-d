@@ -1,6 +1,0 @@
-./account_types.go
-./analytics_types.go
-./cache.go
-./constants.go
-./errors.go
-./types.go

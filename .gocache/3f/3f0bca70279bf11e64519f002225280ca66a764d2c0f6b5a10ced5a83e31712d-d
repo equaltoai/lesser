@@ -1,9 +1,0 @@
-./centralized.go
-./centralized_sampling_rule_manifest.go
-./localized.go
-./proxy.go
-./reservoir.go
-./sampling_attributes.go
-./sampling_rule.go
-./sampling_rule_manifest.go
-./sampling_strategy.go

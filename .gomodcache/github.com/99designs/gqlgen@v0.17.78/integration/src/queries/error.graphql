@@ -1,3 +1,0 @@
-query error($type: ErrorType) {
-    error(type: $type)
-}

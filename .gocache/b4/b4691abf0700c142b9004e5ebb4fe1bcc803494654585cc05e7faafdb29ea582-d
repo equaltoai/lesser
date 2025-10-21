@@ -1,4 +1,0 @@
-./operations.go
-./sqs_processor.go
-./operations_test.go
-./sqs_processor_test.go

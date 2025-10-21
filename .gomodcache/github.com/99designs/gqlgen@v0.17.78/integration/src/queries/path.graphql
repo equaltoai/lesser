@@ -1,7 +1,0 @@
-query path {
-    path {
-        cc:child {
-            error
-        }
-    }
-}

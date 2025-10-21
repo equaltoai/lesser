@@ -1,6 +1,0 @@
-./batch_repository.go
-./cost_aware_repository.go
-./transaction_support.go
-./batch_repository_test.go
-./cost_aware_repository_test.go
-./transaction_support_test.go

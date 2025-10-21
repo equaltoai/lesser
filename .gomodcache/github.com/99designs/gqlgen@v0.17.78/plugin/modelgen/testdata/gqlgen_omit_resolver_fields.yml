@@ -1,9 +1,0 @@
-schema:
-  - "testdata/schema_omit_resolver_fields.graphql"
-
-exec:
-  filename: out_omit_resolver_fields/ignored.go
-model:
-  filename: out_omit_resolver_fields/generated.go
-
-omit_resolver_fields: true

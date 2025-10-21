@@ -1,7 +1,0 @@
-extend type Query {
-    variadicModel: VariadicModel
-}
-
-type VariadicModel {
-    value(rank: Int!): String
-}

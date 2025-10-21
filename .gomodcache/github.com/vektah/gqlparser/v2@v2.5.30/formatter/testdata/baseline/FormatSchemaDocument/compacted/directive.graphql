@@ -1,2 +1,0 @@
-directive @foo on FIELD | OBJECT
-directive @bar repeatable on FIELD | OBJECT

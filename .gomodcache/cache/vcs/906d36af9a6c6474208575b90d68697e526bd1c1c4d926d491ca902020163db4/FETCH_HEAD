@@ -1,9 +1,0 @@
-595cf05a5a7a218df35c6a145c9f971000164c23	not-for-merge	branch 'embedded-struct-handling' of https://github.com/pay-theory/dynamorm
-856dc76d5c20dce79df0f51a044087effd3b1de0	not-for-merge	branch 'feature/consistency-support' of https://github.com/pay-theory/dynamorm
-cf2ae3334b0b30673d04f67a309d10b1a0712e2e	not-for-merge	branch 'feature/custom-type-converter' of https://github.com/pay-theory/dynamorm
-4e153cd6aa780c36f7013f0b3340dcc1ea10e7e3	not-for-merge	branch 'fix/updatebuilder-json-fields' of https://github.com/pay-theory/dynamorm
-31d9af10a1de34dd0fa517d5a5e948156044d73a	not-for-merge	branch 'fix/with-retry-gsi-queries' of https://github.com/pay-theory/dynamorm
-07609be84b81398de7aaf1a76f89c059044b8939	not-for-merge	branch 'jeff_changes' of https://github.com/pay-theory/dynamorm
-8ec50ce3269cbaea9411309bcb85982f3966d1b4	not-for-merge	branch 'main' of https://github.com/pay-theory/dynamorm
-0674bce1b513d69804c889df5e9763874cb00f3e	not-for-merge	branch 'premain' of https://github.com/pay-theory/dynamorm
-9a544cb4f82dcbb9d064c5da865e2f9c82708e24	not-for-merge	branch 'v1.0.0' of https://github.com/pay-theory/dynamorm

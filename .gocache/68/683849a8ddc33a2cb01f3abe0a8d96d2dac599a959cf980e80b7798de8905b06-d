@@ -1,7 +1,0 @@
-./aws_dynamodb.go
-./db.go
-./extended_db.go
-./mocks.go
-./query.go
-./simple_example.go
-./update_builder.go

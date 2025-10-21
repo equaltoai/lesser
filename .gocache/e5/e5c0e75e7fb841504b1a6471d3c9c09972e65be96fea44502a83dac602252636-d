@@ -1,8 +1,0 @@
-./aggregates.go
-./batch_operations.go
-./cursor.go
-./executor.go
-./optimizer.go
-./query.go
-./types.go
-./update_builder.go

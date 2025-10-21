@@ -1,3 +1,0 @@
-# Ignore all YAML files due to https://github.com/prettier/prettier/issues/9355
-*.yml
-*.yaml

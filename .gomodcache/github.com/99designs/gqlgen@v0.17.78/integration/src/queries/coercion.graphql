@@ -1,3 +1,0 @@
-query coercion($value: [ListCoercion!]){
-    coercion(value: $value )
-}

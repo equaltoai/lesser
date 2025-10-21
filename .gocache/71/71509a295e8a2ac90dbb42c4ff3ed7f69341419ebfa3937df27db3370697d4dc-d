@@ -1,5 +1,0 @@
-./bedrock_client.go
-./config.go
-./errors.go
-./service.go
-./types.go

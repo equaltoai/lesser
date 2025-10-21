@@ -1,8 +1,0 @@
-./adapter.go
-./api_gateway.go
-./api_gateway_v2.go
-./doc.go
-./eventbridge.go
-./s3.go
-./sqs.go
-./websocket.go
