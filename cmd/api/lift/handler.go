@@ -77,14 +77,14 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 	authService := serviceFactory.CreateAuthenticationService()
 
 	// Initialize service registry
-	// Note: Registry still expects Publisher interface, but we're using StreamQueueService
-	// This is fine as the registry is for future service-first architecture
-	registry, err := services.NewRegistry(
+	// Only supply dependencies we actually have to avoid validation failures
+	registryOpts := []services.RegistryOption{
 		services.WithStorage(repos),
-		services.WithPublisher(nil), // Publisher will be handled by stream-router, not API
 		services.WithLogger(logger),
 		services.WithConfig(serviceConfig),
-	)
+	}
+
+	registry, err := services.NewRegistry(registryOpts...)
 	if err != nil {
 		logger.Error("failed to initialize service registry", zap.Error(err))
 		// Continue with nil registry for now - will be handled gracefully
@@ -144,28 +144,33 @@ func (h *Handler) getBearerTokenLift(ctx *lift.Context) string {
 func (h *Handler) authenticateWithScope(ctx *lift.Context, requiredScope string) (*auth.Claims, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return nil, common.RespondMissingAuth(ctx)
+		_ = common.RespondMissingAuth(ctx)
+		return nil, auth.ErrInvalidToken
 	}
 
 	// Validate required scope format using centralized validation
 	if err := common.ValidateApplicationScopes(requiredScope); err != nil {
-		return nil, common.RespondBadRequest(ctx, fmt.Sprintf("invalid required scope: %v", err))
+		_ = common.RespondBadRequest(ctx, fmt.Sprintf("invalid required scope: %v", err))
+		return nil, fmt.Errorf("invalid required scope: %w", err)
 	}
 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return nil, common.RespondUnauthorized(ctx, err.Error())
+		_ = common.RespondUnauthorized(ctx, err.Error())
+		return nil, err
 	}
 
 	// Validate token scopes using centralized validation
 	tokenScopes := strings.Join(claims.Scopes, " ")
 	if err := common.ValidateApplicationScopes(tokenScopes); err != nil {
-		return nil, common.RespondForbidden(ctx, fmt.Sprintf("invalid token scopes: %v", err))
+		_ = common.RespondForbidden(ctx, fmt.Sprintf("invalid token scopes: %v", err))
+		return nil, fmt.Errorf("invalid token scopes: %w", err)
 	}
 
 	if !claims.HasScope(requiredScope) {
-		return nil, common.RespondInsufficientScope(ctx, requiredScope)
+		_ = common.RespondInsufficientScope(ctx, requiredScope)
+		return nil, fmt.Errorf("insufficient scope: requires %s", requiredScope)
 	}
 
 	return claims, nil

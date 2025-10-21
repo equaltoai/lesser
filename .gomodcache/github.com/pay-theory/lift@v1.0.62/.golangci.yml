@@ -1,0 +1,203 @@
+version: "2"
+
+run:
+  # Lambda-optimized settings
+  timeout: 10m
+  concurrency: 4
+  tests: false # Exclude test files from linting
+  issues-exit-code: 1
+  modules-download-mode: readonly
+
+output:
+  formats:
+    text:
+      path: stdout
+      print-issued-lines: true
+      print-linter-name: true
+
+linters:
+  default: none
+  enable:
+    # Essential for Lambda/serverless
+    - errcheck # Critical for Lambda error handling
+    - govet # Catch common mistakes
+    - ineffassign # Detect inefficient assignments
+    - staticcheck # Comprehensive static analysis
+    - unused # Remove dead code for smaller binaries
+
+    # Performance-critical for Lambda
+    - bodyclose # Prevent resource leaks
+    - noctx # Ensure context usage (important for Lambda)
+    - prealloc # Pre-allocate slices for performance
+    - unconvert # Remove unnecessary conversions
+
+    # Code quality & maintainability
+    - misspell # Catch typos
+    - revive # Comprehensive style guide
+    - gocognit # Cognitive complexity
+    - gocyclo # Cyclomatic complexity
+    - dupl # Duplicate code detection
+
+    # Security & best practices
+    - gosec # Security issues
+    - copyloopvar # Loop variable issues
+
+    # API/Framework specific
+    - godox # TODO/FIXME tracking
+    - gocritic # Opinionated best practices
+    - goconst # Extract constants
+
+  exclusions:
+    paths:
+      - examples
+      - testdata
+      - ".*_test\\.go$"
+
+    rules:
+      # Test files can be more relaxed
+      - path: _test\.go
+        linters:
+          - dupl
+          - gosec
+          - goconst
+          - errcheck
+          - gocritic
+          - revive # Test naming can be different
+          - unused # Test helpers might look unused
+
+      # Example files might have different patterns
+      - path: examples/
+        linters:
+          - godox
+          - gocyclo
+          - revive # Examples can have different naming
+          - gocritic # Examples can be less optimal
+          - unused # Example code might have unused parts
+
+      # Allow TODO/FIXME in specific files
+      - path: "(.*)?_test\\.go"
+        text: "TODO|FIXME"
+        linters:
+          - godox
+
+      # Context methods are ok to not use all params
+      - path: pkg/lift/context\.go
+        text: "unused-parameter"
+        linters:
+          - revive
+
+      # Type assertions in middleware are expected
+      - path: pkg/middleware/
+        text: "type assertion"
+        linters:
+          - forcetypeassert
+
+      # Don't enforce naming changes on exported APIs (breaking changes)
+      - text: "(exported|should have comment|should not use underscores|should be|receiver name)"
+        linters:
+          - revive
+          - golint
+          - stylecheck
+
+      # Don't require package comments for internal packages
+      - path: pkg/testing/
+        text: "package comment"
+        linters:
+          - revive
+          - golint
+
+      # CDK code has different patterns due to jsii constraints
+      - path: pkg/cdk/
+        linters:
+          - revive # CDK naming follows different conventions
+          - gocritic # CDK patterns can be repetitive
+          - unused # CDK structs might have unused exported fields
+
+  settings:
+    errcheck:
+      # Lambda functions must handle errors properly
+      check-type-assertions: true
+      check-blank: true
+      # Exclude test files from defer checks
+      exclude-functions:
+        - (*github.com/stretchr/testify/assert.Assertions).NotNil
+        - (*github.com/stretchr/testify/assert.Assertions).Nil
+
+    govet:
+      enable-all: true
+      # Lambda context handling is critical
+      settings:
+        printf:
+          funcs:
+            - (github.com/pay-theory/lift/pkg/lift.Context).Logger.Info
+            - (github.com/pay-theory/lift/pkg/lift.Context).Logger.Error
+            - (github.com/pay-theory/lift/pkg/lift.Context).Logger.Warn
+            - (github.com/pay-theory/lift/pkg/lift.Context).Logger.Debug
+
+    gocyclo:
+      # Lambda handlers should be simple
+      min-complexity: 15
+
+    dupl:
+      threshold: 100
+
+    misspell:
+      locale: US
+
+    revive:
+      # Conservative rules that don't require breaking changes
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        # DISABLED: exported - causes breaking changes to public APIs
+        # - name: exported
+        - name: if-return
+        - name: increment-decrement
+        # DISABLED: var-naming - can cause breaking changes to exported vars
+        # - name: var-naming
+        - name: var-declaration
+        # DISABLED: package-comments - can require public API documentation changes
+        # - name: package-comments
+        - name: range
+        # DISABLED: receiver-naming - can cause breaking changes to method sets
+        # - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
+    gosec:
+      # Lambda-specific security settings
+      excludes:
+        - G104 # We use errcheck for this
+      config:
+        global:
+          audit: true
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/pay-theory/lift
+
+issues:
+  max-same-issues: 0

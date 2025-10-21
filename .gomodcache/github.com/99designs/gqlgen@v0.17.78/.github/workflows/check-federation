@@ -1,0 +1,23 @@
+#!/bin/bash
+
+set -euo pipefail
+export GO111MODULE=on
+cd _examples/federation
+
+./start.sh &
+
+sleep 5
+curl -s --connect-timeout 5 \
+    --max-time 10 \
+    --retry 5 \
+    --retry-delay 5 \
+    --retry-max-time 40 \
+    --retry-connrefused \
+    localhost:4003 > /dev/null
+
+sleep 1
+
+echo "### running jest integration spec"
+export NODE_OPTIONS="--experimental-vm-modules"
+npx jest --color
+

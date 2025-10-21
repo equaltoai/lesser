@@ -65,16 +65,13 @@ func (s *RecoveryFederationService) SendTrusteeInvitation(ctx context.Context, f
 	now := time.Now()
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: []any{
-				"https://www.w3.org/ns/activitystreams",
-				map[string]any{
-					"lesser": "https://lesser.social/ns#",
-					"TrusteeInvitation": map[string]string{
-						"@id":   "lesser:TrusteeInvitation",
-						"@type": "@id",
-					},
+			Context: activitypub.Context.With(map[string]any{
+				"lesser": "https://lesser.social/ns#",
+				"TrusteeInvitation": map[string]string{
+					"@id":   "lesser:TrusteeInvitation",
+					"@type": "@id",
 				},
-			},
+			}),
 			Type:      "Create",
 			ID:        fmt.Sprintf("https://%s/activities/%s", s.domain, generateActivityID()),
 			To:        []string{trusteeActorID},
@@ -128,16 +125,13 @@ func (s *RecoveryFederationService) SendRecoveryRequest(ctx context.Context, req
 	now := time.Now()
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: []any{
-				"https://www.w3.org/ns/activitystreams",
-				map[string]any{
-					"lesser": "https://lesser.social/ns#",
-					"RecoveryRequest": map[string]string{
-						"@id":   "lesser:RecoveryRequest",
-						"@type": "@id",
-					},
+			Context: activitypub.Context.With(map[string]any{
+				"lesser": "https://lesser.social/ns#",
+				"RecoveryRequest": map[string]string{
+					"@id":   "lesser:RecoveryRequest",
+					"@type": "@id",
 				},
-			},
+			}),
 			Type:      "Create",
 			ID:        fmt.Sprintf("https://%s/activities/%s", s.domain, generateActivityID()),
 			To:        []string{trusteeActorID},

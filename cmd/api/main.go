@@ -26,7 +26,6 @@ import (
 	liftAuth "github.com/equaltoai/lesser/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/observability"
-	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -151,8 +150,13 @@ func initializeManualServices() {
 
 	// Manual DynamORM initialization
 	tableName := cfg.DynamoTableName
+	logger.Info("manual initialization: configured DynamoDB table",
+		zap.String("table_name", tableName))
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main" // fallback
+		logger.Warn("manual initialization: missing table name, falling back to default",
+			zap.String("table_name", tableName),
+			zap.Error(err))
 	}
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		logger.Fatal("DYNAMODB_TABLE environment variable is required")
@@ -329,11 +333,8 @@ func main() {
 	// Add comprehensive latency tracking middleware
 	app.Use(createLatencyTrackingMiddleware())
 
-	// Add rate limiting middleware (before routes)
-	if !cfg.DisableRateLimiting {
-		app.Use(ratelimit.Middleware(repos, nil)) // Use default config
-		logger.Info("enabled rate limiting middleware")
-	}
+	// Note: Rate limiting is now applied per-endpoint in routes_lift.go
+	// Not using global middleware to avoid incorrectly rate limiting read endpoints
 
 	// Configure native Lift routes
 	configureLiftRoutes(app)

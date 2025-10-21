@@ -406,6 +406,11 @@ func (r *Registry) Analytics() AnalyticsService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	return r.ensureAnalyticsLocked()
+}
+
+// ensureAnalyticsLocked initializes the analytics service when the registry mutex is already held.
+func (r *Registry) ensureAnalyticsLocked() AnalyticsService {
 	if r.analytics == nil {
 		deps := &ServiceDependencies{
 			Repos:  r.storage,
@@ -413,7 +418,9 @@ func (r *Registry) Analytics() AnalyticsService {
 			Logger: r.logger,
 		}
 		r.analytics = NewAnalyticsService(deps)
-		r.initialized["Analytics"] = true
+		if r.initialized != nil {
+			r.initialized["Analytics"] = true
+		}
 	}
 
 	return r.analytics
@@ -459,7 +466,7 @@ func (r *Registry) Threads() *threads.Service {
 				statusRepo,
 				objectRepo,
 				actorRepo,
-				r.createThreadsFederationAdapter(),
+				r.createThreadsFederationAdapterUnlocked(),
 				r.publisher,
 				r.logger,
 				domain,
@@ -822,6 +829,8 @@ func (r *Registry) Notes() *notes.Service {
 				}
 			}
 
+			analyticsService := r.ensureAnalyticsLocked()
+
 			r.notesService = notes.NewService(
 				statusRepo,
 				accountRepo,
@@ -835,8 +844,8 @@ func (r *Registry) Notes() *notes.Service {
 				userRepo,
 				pollRepo, // Add poll repository
 				r.publisher,
-				r.Analytics(),                    // Analytics service
-				r.createNotesFederationAdapter(), // Federation service adapter
+				analyticsService,                         // Analytics service
+				r.createNotesFederationAdapterUnlocked(), // Federation service adapter
 				r.logger,
 				domainName,
 			)
@@ -857,20 +866,29 @@ func (r *Registry) Accounts() *accounts.Service {
 	defer r.mu.Unlock()
 
 	if r.accountsService == nil {
+		if r.logger != nil {
+			r.logger.Info("registry: initializing Accounts service")
+		}
 		// Create adapter services for crypto and auth
 		cryptoAdapter := NewCryptoAdapter()
 		authAdapter := NewAuthAdapter(r.config.JWTSecret, r.storage)
 
+		// Create federation adapter using unlocked helper to avoid deadlock
+		federationAdapter := r.createAccountsFederationAdapterUnlocked()
+
 		r.accountsService = accounts.NewService(
 			r.storage,
 			r.publisher,
-			r.createAccountsFederationAdapter(), // federation service adapter
+			federationAdapter,
 			cryptoAdapter,
 			authAdapter,
 			r.logger,
 			r.config.BaseURL,
 		)
 		r.initialized["Accounts"] = true
+		if r.logger != nil {
+			r.logger.Info("registry: Accounts service initialized")
+		}
 	}
 
 	return r.accountsService
@@ -895,7 +913,7 @@ func (r *Registry) Relationships() *relationships.Service {
 		r.relationshipsService = relationships.NewServiceWithStorage(
 			r.storage,
 			r.publisher,
-			r.createRelationshipsFederationAdapter(), // federation service adapter
+			r.createRelationshipsFederationAdapterUnlocked(), // federation service adapter
 			r.logger,
 			domainName,
 		)
@@ -1732,6 +1750,44 @@ func (r *Registry) createNotesFederationAdapter() *queueFederationAdapter {
 		storage:    r.storage,
 		logger:     r.logger,
 	}
+}
+
+// createFederationAdapterUnlocked creates federation adapter without locking mutex
+// This is used internally when already holding the lock to avoid deadlock
+func (r *Registry) createFederationAdapterUnlocked() *queueFederationAdapter {
+	// Initialize federation service inline without locking
+	if r.federation == nil {
+		deps := &ServiceDependencies{
+			Repos:  r.storage,
+			Config: r.config,
+			Logger: r.logger,
+		}
+		r.federation = NewFederationService(deps)
+		r.initialized["Federation"] = true
+	}
+
+	return &queueFederationAdapter{
+		federation: r.federation,
+		storage:    r.storage,
+		logger:     r.logger,
+	}
+}
+
+// Convenience methods that use the unlocked version
+func (r *Registry) createAccountsFederationAdapterUnlocked() *queueFederationAdapter {
+	return r.createFederationAdapterUnlocked()
+}
+
+func (r *Registry) createNotesFederationAdapterUnlocked() *queueFederationAdapter {
+	return r.createFederationAdapterUnlocked()
+}
+
+func (r *Registry) createRelationshipsFederationAdapterUnlocked() *queueFederationAdapter {
+	return r.createFederationAdapterUnlocked()
+}
+
+func (r *Registry) createThreadsFederationAdapterUnlocked() *queueFederationAdapter {
+	return r.createFederationAdapterUnlocked()
 }
 
 // createAccountsFederationAdapter creates an adapter that implements accounts.FederationService

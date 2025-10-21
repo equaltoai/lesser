@@ -3,8 +3,10 @@ package repositories
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	neturl "net/url"
 	"sort"
 	"strings"
 	"time"
@@ -234,15 +236,92 @@ func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Ac
 		return ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
-	// Update the actor data
-	actorModel.Actor = actor
+	if actorModel.Version == 0 {
+		seedBuilder := r.db.WithContext(ctx).
+			Model(&models.Actor{}).
+			Where("PK", "=", actorModel.PK).
+			Where("SK", "=", actorModel.SK).
+			UpdateBuilder()
 
-	// Update using BaseRepository
-	err = r.Update(ctx, actorModel)
+		if err := seedBuilder.SetIfNotExists("Version", nil, 1).Execute(); err != nil && !strings.Contains(strings.ToLower(err.Error()), "conditionalcheckfailed") {
+			r.logger.Warn("failed to seed actor version attribute",
+				zap.String("username", username),
+				zap.Error(err))
+		}
+
+		// Assume version 1 after seeding (or existing attribute)
+		actorModel.Version = 1
+	}
+
+	now := time.Now()
+	actorModel.Actor = actor
+	actorModel.UpdatedAt = now
+
+	updateBuilder := r.db.WithContext(ctx).
+		Model(&models.Actor{}).
+		Where("PK", "=", actorModel.PK).
+		Where("SK", "=", actorModel.SK).
+		UpdateBuilder()
+
+	actorBytes, err := json.Marshal(actor)
 	if err != nil {
+		return fmt.Errorf("failed to marshal actor: %w", err)
+	}
+
+	var actorMap map[string]interface{}
+	if err := json.Unmarshal(actorBytes, &actorMap); err != nil {
+		return fmt.Errorf("failed to unmarshal actor into map: %w", err)
+	}
+
+	updateBuilder.Set("Actor", actorMap)
+	updateBuilder.Set("UpdatedAt", now)
+
+	gsi1PK, gsi1SK := buildActorGSI1Keys(username)
+	updateBuilder.Set("GSI1PK", gsi1PK)
+	updateBuilder.Set("GSI1SK", gsi1SK)
+
+	displayName := strings.TrimSpace(actor.Name)
+	if displayName != "" {
+		gsi2PK, gsi2SK := buildActorGSI2Keys(displayName, username)
+		updateBuilder.Set("GSI2PK", gsi2PK)
+		updateBuilder.Set("GSI2SK", gsi2SK)
+	} else {
+		updateBuilder.Remove("GSI2PK")
+		updateBuilder.Remove("GSI2SK")
+	}
+
+	domainName := r.resolveActorDomain(actor)
+	if domainName != "" {
+		updateBuilder.Set("GSI3PK", fmt.Sprintf("DOMAIN#%s", domainName))
+		updateBuilder.Set("GSI3SK", username)
+	} else {
+		updateBuilder.Remove("GSI3PK")
+		updateBuilder.Remove("GSI3SK")
+	}
+
+	gsi4PK, gsi4SK := buildActorGSI4Keys(actorModel.FollowerCount, username)
+	updateBuilder.Set("GSI4PK", gsi4PK)
+	updateBuilder.Set("GSI4SK", gsi4SK)
+
+	gsi5PK, gsi5SK := buildActorGSI5Keys(now, username)
+	updateBuilder.Set("GSI5PK", gsi5PK)
+	updateBuilder.Set("GSI5SK", gsi5SK)
+
+	if actorModel.Version > 0 {
+		updateBuilder.ConditionVersion(int64(actorModel.Version))
+		updateBuilder.Set("Version", actorModel.Version+1)
+	} else {
+		updateBuilder.SetIfNotExists("Version", nil, 1)
+	}
+
+	if err := updateBuilder.Execute(); err != nil {
+		r.logger.Error("failed to update actor record",
+			zap.String("username", username),
+			zap.Error(err))
 		return ErrorHandler.HandleUpdateError(err, EntityActor, username)
 	}
 
+	actorModel.Version++
 	return nil
 }
 
@@ -431,6 +510,75 @@ func convertStorageActorFields(fields []storage.ActorField) []models.ActorField 
 		}
 	}
 	return result
+}
+
+func (r *ActorRepository) resolveActorDomain(actor *activitypub.Actor) string {
+	if actor == nil {
+		return ""
+	}
+
+	scrub := func(raw string) string {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return ""
+		}
+		parsed, err := neturl.Parse(raw)
+		if err != nil {
+			return ""
+		}
+		return parsed.Host
+	}
+
+	if host := scrub(actor.URL); host != "" {
+		return host
+	}
+	if host := scrub(actor.ID); host != "" {
+		return host
+	}
+
+	return ""
+}
+
+func buildActorGSI1Keys(username string) (string, string) {
+	lower := strings.ToLower(username)
+	prefix := lower
+	if len(prefix) >= 2 {
+		prefix = prefix[:2]
+	}
+	return "USERNAME_SEARCH#" + prefix, lower
+}
+
+func buildActorGSI2Keys(displayName, username string) (string, string) {
+	lower := strings.ToLower(displayName)
+	prefix := lower
+	if len(prefix) >= 2 {
+		prefix = prefix[:2]
+	}
+	return "NAME_SEARCH#" + prefix, lower + "#" + username
+}
+
+func buildActorGSI4Keys(followerCount int, username string) (string, string) {
+	bucket := followerCountBucket(followerCount)
+	return "ACTOR_RANK#" + bucket, fmt.Sprintf("%010d#%s", followerCount, username)
+}
+
+func buildActorGSI5Keys(ts time.Time, username string) (string, string) {
+	return "ACTIVE#" + ts.Format(common.DateFormat), fmt.Sprintf("%d#%s", ts.Unix(), username)
+}
+
+func followerCountBucket(count int) string {
+	switch {
+	case count >= 10000:
+		return "10K+"
+	case count >= 1000:
+		return "1K+"
+	case count >= 100:
+		return "100+"
+	case count >= 10:
+		return "10+"
+	default:
+		return "0-9"
+	}
 }
 
 // getEncryptor returns an encryptor for private key encryption using DynamORM AES encryption

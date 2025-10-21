@@ -88,18 +88,35 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 
 // HandleVerifyCredentialsLift returns the current user's information
 func (h *Handler) HandleVerifyCredentialsLift(ctx *lift.Context) error {
+	h.logger.Info("handle verify_credentials: start")
+
 	// Authenticate user
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
+		h.logger.Warn("handle verify_credentials: authentication failed", zap.Error(err))
 		return err
+	}
+
+	h.logger.Info("handle verify_credentials: authentication succeeded",
+		zap.String("username", claims.Username))
+
+	// Check if registry is available
+	if h.registry == nil {
+		h.logger.Error("handle verify_credentials: service registry not initialized")
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Call Accounts service
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
-		h.logger.Error("failed to get account", zap.Error(err))
+		h.logger.Error("handle verify_credentials: failed to get account",
+			zap.String("username", claims.Username),
+			zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
+
+	h.logger.Info("handle verify_credentials: account retrieved",
+		zap.String("username", claims.Username))
 
 	return h.respondOK(ctx, account)
 }

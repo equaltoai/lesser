@@ -57,7 +57,7 @@ func (f *ActorFactory) CreateActor(opts ActorOptions) *activitypub.Actor {
 
 	actor := &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
-			Context: []string{
+			Context: activitypub.ContextValue{
 				"https://www.w3.org/ns/activitystreams",
 				"https://w3id.org/security/v1",
 			},

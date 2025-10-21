@@ -82,6 +82,13 @@ func ServiceUnavailable(serviceName string) *AppError {
 
 // ProcessingFailed creates an error indicating processing failed.
 func ProcessingFailed(processType string, err error) *AppError {
+	if err == nil {
+		return NewLambdaError(CodeEventProcessingFailed, "Processing failed").
+			WithMetadata("process_type", processType).
+			WithInternalMessage("no inner error provided").
+			AsRetryable()
+	}
+
 	return NewLambdaInternalError(CodeEventProcessingFailed, "Processing failed", err).
 		WithMetadata("process_type", processType).AsRetryable()
 }

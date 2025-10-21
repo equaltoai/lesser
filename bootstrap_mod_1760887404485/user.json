@@ -1,0 +1,80 @@
+{
+  "PK": {
+    "S": "USER#mod"
+  },
+  "SK": {
+    "S": "METADATA"
+  },
+  "GSI1PK": {
+    "S": "USERS"
+  },
+  "GSI1SK": {
+    "S": "2025-10-19T15:23:24.485Z#mod"
+  },
+  "GSI2PK": {
+    "S": "EMAIL#mod@dev.lesser.host"
+  },
+  "GSI2SK": {
+    "S": "USERNAME#mod"
+  },
+  "GSI3PK": {
+    "S": "ROLE#moderator"
+  },
+  "GSI3SK": {
+    "S": "mod"
+  },
+  "GSI4PK": {
+    "S": "STATUS#active"
+  },
+  "GSI4SK": {
+    "S": "mod"
+  },
+  "Username": {
+    "S": "mod"
+  },
+  "Email": {
+    "S": "mod@dev.lesser.host"
+  },
+  "DisplayName": {
+    "S": "Community Moderator"
+  },
+  "CreatedAt": {
+    "S": "2025-10-19T15:23:24.485Z"
+  },
+  "UpdatedAt": {
+    "S": "2025-10-19T15:23:24.485Z"
+  },
+  "Approved": {
+    "BOOL": true
+  },
+  "Suspended": {
+    "BOOL": false
+  },
+  "Silenced": {
+    "BOOL": false
+  },
+  "Role": {
+    "S": "moderator"
+  },
+  "AllowNSFW": {
+    "BOOL": false
+  },
+  "RequireNSFWWarning": {
+    "BOOL": true
+  },
+  "Locked": {
+    "BOOL": false
+  },
+  "Discoverable": {
+    "BOOL": true
+  },
+  "Metadata": {
+    "M": {}
+  },
+  "PasswordHash": {
+    "S": "$2b$12$zSAIF0Wt.N1bs6B.yfJVC.eORWNxZiDQAJhrsKTjk9Hu3mIWe5jDm"
+  },
+  "Version": {
+    "N": "1"
+  }
+}

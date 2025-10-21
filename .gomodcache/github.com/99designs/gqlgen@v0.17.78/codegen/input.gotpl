@@ -1,0 +1,118 @@
+{{ $useFunctionSyntaxForExecutionContext := .Config.UseFunctionSyntaxForExecutionContext }}
+
+{{- range $input := .Inputs }}
+	{{- if not .HasUnmarshal }}
+	{{- $it := "it" }}
+	{{- if .PointersInUnmarshalInput }}
+	  {{- $it = "&it" }}
+	{{- end }}
+	{{ if $useFunctionSyntaxForExecutionContext -}}
+	func unmarshalInput{{ .Name }}(ctx context.Context, ec *executionContext, obj any) ({{ if .PointersInUnmarshalInput }}*{{ end }}{{.Type | ref}}, error) {
+	{{- else -}}
+	func (ec *executionContext) unmarshalInput{{ .Name }}(ctx context.Context, obj any) ({{ if .PointersInUnmarshalInput }}*{{ end }}{{.Type | ref}}, error) {
+	{{- end }}
+		{{- if $input.IsMap }}
+			it := make(map[string]any, len(obj.(map[string]any)))
+		{{- else }}
+			var it {{.Type | ref}}
+		{{- end }}
+		asMap := map[string]any{}
+		for k, v := range obj.(map[string]any) {
+			asMap[k] = v
+		}
+		{{ range $field := .Fields}}
+			{{- if notNil "Default" $field }}
+				if _, present := asMap[{{$field.Name|quote}}] ; !present {
+					asMap[{{$field.Name|quote}}] = {{ $field.Default | dump }}
+				}
+			{{- end}}
+		{{- end }}
+
+		fieldsInOrder := [...]string{ {{ range .Fields }}{{ quote .Name }},{{ end }} }
+		for _, k := range fieldsInOrder {
+			v, ok := asMap[k]
+			if !ok {
+				continue
+			}
+			switch k {
+			{{- range $field := .Fields }}
+			case {{$field.Name|quote}}:
+				{{- $lhs := (printf "it.%s" $field.GoFieldName) }}
+				{{- if $input.IsMap }}
+					{{- $lhs = (printf "it[%q]" $field.Name) }}
+				{{- end }}
+				ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField({{$field.Name|quote}}))
+				{{- if $field.ImplDirectives }}
+					{{ if $useFunctionSyntaxForExecutionContext -}}
+					directive0 := func(ctx context.Context) (any, error) { return {{ $field.TypeReference.UnmarshalFunc }}(ctx, ec, v) }
+					{{- else -}}
+					directive0 := func(ctx context.Context) (any, error) { return ec.{{ $field.TypeReference.UnmarshalFunc }}(ctx, v) }
+					{{- end }}
+					{{ template "implDirectives" (dict "Field" $field "UseFunctionSyntaxForExecutionContext" $useFunctionSyntaxForExecutionContext) }}
+					tmp, err := directive{{$field.ImplDirectives|len}}(ctx)
+					if err != nil {
+						return {{$it}}, graphql.ErrorOnPath(ctx, err)
+					}
+					if data, ok := tmp.({{ $field.TypeReference.GO | ref }}) ; ok {
+						{{- if $field.IsResolver }}
+							if err = ec.resolvers.{{ $field.ShortInvocation }}; err != nil {
+								return {{$it}}, err
+							}
+						{{- else }}
+							{{- if $field.TypeReference.IsOmittable }}
+								{{ $lhs }} = graphql.OmittableOf(data)
+							{{- else }}
+								{{ $lhs }} = data
+							{{- end }}
+						{{- end }}
+					{{- if $field.TypeReference.IsNilable }}
+						{{- if not $field.IsResolver }}
+						} else if tmp == nil {
+							{{- if $field.TypeReference.IsOmittable }}
+								{{ $lhs }} = graphql.OmittableOf[{{ $field.TypeReference.GO | ref }}](nil)
+							{{- else }}
+								{{ $lhs }} = nil
+							{{- end }}
+						{{- end }}
+					{{- end }}
+					} else {
+						err := fmt.Errorf(`unexpected type %T from directive, should be {{ $field.TypeReference.GO }}`, tmp)
+						return {{$it}}, graphql.ErrorOnPath(ctx, err)
+					}
+				{{- else }}
+					{{- if $field.IsResolver }}
+						{{ if $useFunctionSyntaxForExecutionContext -}}
+						data, err := {{ $field.TypeReference.UnmarshalFunc }}(ctx, ec, v)
+						{{- else -}}
+						data, err := ec.{{ $field.TypeReference.UnmarshalFunc }}(ctx, v)
+						{{- end }}
+						if err != nil {
+							return {{$it}}, err
+						}
+						if err = ec.resolvers.{{ $field.ShortInvocation }}; err != nil {
+							return {{$it}}, err
+						}
+					{{- else }}
+						{{ if $useFunctionSyntaxForExecutionContext -}}
+						data, err := {{ $field.TypeReference.UnmarshalFunc }}(ctx, ec, v)
+						{{- else -}}
+						data, err := ec.{{ $field.TypeReference.UnmarshalFunc }}(ctx, v)
+						{{- end }}
+						if err != nil {
+							return {{$it}}, err
+						}
+						{{- if $field.TypeReference.IsOmittable }}
+							{{ $lhs }} = graphql.OmittableOf(data)
+						{{- else }}
+							{{ $lhs }} = data
+						{{- end }}
+					{{- end }}
+				{{- end }}
+			{{- end }}
+			}
+		}
+
+		return {{$it}}, nil
+	}
+	{{- end }}
+{{ end }}

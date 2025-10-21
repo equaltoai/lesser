@@ -109,5 +109,5 @@ func (e *EngagementMetrics) GetSK() string {
 
 // TableName returns the DynamoDB table name
 func (e *EngagementMetrics) TableName() string {
-	return DefaultTableName // Replace with actual table name
+	return MainTableName
 }

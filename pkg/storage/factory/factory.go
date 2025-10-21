@@ -3,8 +3,10 @@ package factory
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage/converters"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -85,6 +87,10 @@ type RepositoryFactory struct {
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
 func NewRepositoryFactory(db dynamormCore.DB, tableName string, logger *zap.Logger) (*RepositoryFactory, error) {
 	cfg := config.Get()
+
+	if err := registerStorageConverters(db); err != nil {
+		return nil, err
+	}
 
 	factory := &RepositoryFactory{
 		db:        db,
@@ -189,7 +195,24 @@ func (f *RepositoryFactory) setupDependencies() {
 		f.accountRepo.SetStatusRepository(f.statusRepo)
 	}
 
+	// Set up status repository dependency on relationship repository for home timeline queries
+	if f.statusRepo != nil && f.relationshipRepo != nil {
+		f.statusRepo.SetRelationshipRepository(f.relationshipRepo)
+	}
+
 	// Additional repository dependencies can be configured here as needed.
+}
+
+func registerStorageConverters(db dynamormCore.DB) error {
+	if db == nil {
+		return fmt.Errorf("dynamorm DB is nil")
+	}
+
+	if err := converters.RegisterContextConverters(db); err != nil {
+		return fmt.Errorf("register context converter: %w", err)
+	}
+
+	return nil
 }
 
 // searchRepositoryDeps implements SearchRepositoryDeps interface

@@ -1,0 +1,32 @@
+# directive @extends comment
+directive @extends on OBJECT
+# directive @key comment
+directive @key(fields: String!) on OBJECT | INTERFACE
+# directive @persmission comment
+directive @permission(permission: String!) on FIELD_DEFINITION
+# Dog comment
+type Dog {
+	# Dog name comment
+	name: String!
+	# Dog owner comment
+	owner: Person! @permission(permission: "admin")
+	# end of type comment
+}
+# Person comment
+type Person @key(fields: "name") {
+	# Person name comment
+	name: String!
+	# end of type comment
+}
+# query extends comment
+type Query @extends {
+	# dogs comment
+	dogs: [Dog!]!
+	# end of type comment
+}
+# subscription comment
+type Subscription {
+	# dogEvents comment
+	dogEvents: [Dog!]!
+	# end of type comment
+}

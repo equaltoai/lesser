@@ -2,10 +2,17 @@
 package config
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
+
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 )
 
 // Config holds the application configuration
@@ -29,6 +36,7 @@ type Config struct {
 
 	// Security
 	JWTSecret            string // For client authentication
+	JWTSecretARN         string // ARN pointing to stored secret (optional)
 	KMSKeyID             string // AWS KMS key ID for encryption (optional)
 	ReputationPrivateKey string // Private key for reputation system
 	VAPIDPublicKey       string // VAPID public key for push notifications
@@ -218,7 +226,8 @@ func loadConfig() *Config {
 		ReputationTableName:     getEnvOrDefault("REPUTATION_TABLE_NAME", "lesser-reputation"),
 		AWSAccountID:            getEnvOrDefault("AWS_ACCOUNT_ID", ""),
 
-		JWTSecret:            getEnvOrPanic("JWT_SECRET"),
+		JWTSecret:            mustGetJWTSecret(),
+		JWTSecretARN:         getEnvOrDefault("JWT_SECRET_ARN", ""),
 		KMSKeyID:             getEnvOrDefault("KMS_KEY_ID", ""), // Optional - defaults to AWS managed key
 		ReputationPrivateKey: getEnvOrDefault("REPUTATION_PRIVATE_KEY", ""),
 		VAPIDPublicKey:       getEnvOrDefault("VAPID_PUBLIC_KEY", ""),
@@ -409,6 +418,67 @@ func getEnvOrPanic(key string) string {
 		panic(fmt.Sprintf("Required environment variable %s is not set", key))
 	}
 	return value
+}
+
+var jwtSecretLoader struct {
+	once  sync.Once
+	value string
+	err   error
+}
+
+func mustGetJWTSecret() string {
+	// Check for plain text secret (not recommended for production)
+	if secret := os.Getenv("JWT_SECRET"); secret != "" {
+		return secret
+	}
+
+	// Get ARN from environment
+	arn := os.Getenv("JWT_SECRET_ARN")
+	if arn == "" {
+		// Default to secret name (will be looked up in the region)
+		arn = "lesser/jwt-secret"
+	}
+
+	// Load secret from AWS Secrets Manager (once)
+	jwtSecretLoader.once.Do(func() {
+		jwtSecretLoader.value, jwtSecretLoader.err = fetchSecretValue(arn)
+	})
+
+	if jwtSecretLoader.err != nil {
+		panic(fmt.Sprintf("Failed to resolve JWT secret from %s: %v", arn, jwtSecretLoader.err))
+	}
+
+	return jwtSecretLoader.value
+}
+
+func fetchSecretValue(arn string) (string, error) {
+	ctx := context.Background()
+	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("load AWS config: %w", err)
+	}
+
+	sm := secretsmanager.NewFromConfig(cfg)
+	output, err := sm.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: &arn})
+	if err != nil {
+		return "", fmt.Errorf("get secret value: %w", err)
+	}
+
+	if output.SecretString == nil {
+		return "", errors.New("secret does not contain SecretString")
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal([]byte(*output.SecretString), &payload); err != nil {
+		return "", fmt.Errorf("unmarshal secret string: %w", err)
+	}
+
+	val, ok := payload["secret"]
+	if !ok || val == "" {
+		return "", errors.New("secret payload missing 'secret' key")
+	}
+
+	return val, nil
 }
 
 func getEnvAsIntOrDefault(key string, defaultValue int) int {

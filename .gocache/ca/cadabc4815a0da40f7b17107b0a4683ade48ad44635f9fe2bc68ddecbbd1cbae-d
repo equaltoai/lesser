@@ -1,0 +1,9 @@
+./convert.go
+./decode.go
+./doc.go
+./encode.go
+./field.go
+./field_cache.go
+./go_module_metadata.go
+./serde_json.go
+./tag.go

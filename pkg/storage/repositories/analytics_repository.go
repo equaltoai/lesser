@@ -1721,16 +1721,54 @@ func (r *TrendingRepository) RecordInstanceMetric(ctx context.Context, date, met
 	_ = metrics.UpdateKeys() // Ignore error as this is internal model operation
 
 	err = r.db.WithContext(ctx).Model(metrics).Create()
-	if err != nil {
-		r.logger.Error("failed to record instance metric",
-			zap.String("metricType", metricType),
-			zap.String("date", date),
-			zap.Int64("value", value),
-			zap.Error(err))
-		return fmt.Errorf("%w: %w", ErrFailedRecordInstanceMetric, err)
+	if err == nil {
+		return nil
 	}
 
-	return nil
+	if errors.IsConditionFailed(err) || strings.Contains(strings.ToLower(err.Error()), "conditionalcheckfailed") || strings.Contains(strings.ToLower(err.Error()), "same key already exists") {
+		// Record already exists for this day; increment the value instead of failing
+		current, getErr := r.GetInstanceMetrics(ctx, date, metricType)
+		if getErr != nil {
+			r.logger.Error("failed to load existing instance metric after conditional check",
+				zap.String("metricType", metricType),
+				zap.String("date", date),
+				zap.Error(getErr))
+			return fmt.Errorf("%w: %w", ErrFailedRecordInstanceMetric, getErr)
+		}
+
+		newValue := current.Value + value
+		newDelta := newValue - previousValue
+
+		updateBuilder := r.db.WithContext(ctx).
+			Model(&models.InstanceMetrics{}).
+			Where("PK", "=", metrics.PK).
+			Where("SK", "=", metrics.SK).
+			UpdateBuilder()
+
+		updateBuilder.
+			Set("Value", newValue).
+			Set("Delta", newDelta).
+			Set("UpdatedAt", now).
+			Set("TTL", metrics.TTL)
+
+		if updateErr := updateBuilder.Execute(); updateErr != nil {
+			r.logger.Error("failed to update existing instance metric",
+				zap.String("metricType", metricType),
+				zap.String("date", date),
+				zap.Int64("value", newValue),
+				zap.Error(updateErr))
+			return fmt.Errorf("%w: %w", ErrFailedRecordInstanceMetric, updateErr)
+		}
+
+		return nil
+	}
+
+	r.logger.Error("failed to record instance metric",
+		zap.String("metricType", metricType),
+		zap.String("date", date),
+		zap.Int64("value", value),
+		zap.Error(err))
+	return fmt.Errorf("%w: %w", ErrFailedRecordInstanceMetric, err)
 }
 
 // GetInstanceMetrics retrieves instance metrics for a specific date and type

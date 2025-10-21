@@ -42,7 +42,7 @@ type InstanceMetrics struct {
 
 // TableName returns the DynamoDB table name
 func (i *InstanceMetrics) TableName() string {
-	return DefaultTableName // Replace with actual table name
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys when the primary keys change

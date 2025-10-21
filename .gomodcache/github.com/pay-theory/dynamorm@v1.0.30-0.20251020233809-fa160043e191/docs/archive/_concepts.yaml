@@ -1,0 +1,310 @@
+# DynamORM Semantic Knowledge Base - Concepts
+# This file provides machine-readable concept definitions for AI assistants
+
+concepts:
+  dynamorm:
+    type: library
+    category: orm
+    purpose: "Type-safe DynamoDB operations in Go"
+    description: "Lambda-native ORM that provides 91% faster cold starts than AWS SDK"
+    language: go
+    database: dynamodb
+    
+    key_benefits:
+      - type_safety
+      - lambda_optimization
+      - testing_support
+      - performance_improvement
+      - code_reduction
+    
+    use_when:
+      - building_dynamodb_applications
+      - need_type_safety
+      - using_aws_lambda
+      - want_reduced_boilerplate
+      - need_testable_code
+    
+    dont_use_when:
+      - non_dynamodb_databases
+      - need_sql_joins
+      - require_raw_aws_sdk_control
+      - using_other_nosql_databases
+    
+    replaces:
+      - aws_sdk_go_dynamodb
+      - raw_dynamodb_operations
+      - custom_marshaling_code
+      - manual_connection_management
+
+  model_definition:
+    type: pattern
+    purpose: "Define DynamoDB table structure in Go structs"
+    description: "Use struct tags to map Go fields to DynamoDB attributes and indexes"
+    
+    critical_warning: "AI assistants MUST use exact canonical patterns to prevent hallucinations"
+    
+    required_elements:
+      - partition_key: "dynamorm:\"pk\""
+      - sort_key: "dynamorm:\"sk\"" # optional
+      - json_tags: "json:\"field_name\""
+    
+    optional_elements:
+      - global_secondary_index: "dynamorm:\"index:name,pk|sk\""
+      - local_secondary_index: "dynamorm:\"index:name,sk\""
+      - custom_attribute_name: "dynamorm:\"custom_name\""
+    
+    canonical_patterns:
+      simple_entity: |
+        type User struct {
+            ID        string    `dynamorm:"pk" json:"id"`
+            Name      string    `json:"name"`
+            Email     string    `json:"email"`
+            CreatedAt time.Time `json:"created_at"`
+        }
+      
+      hierarchical_entity: |
+        type Note struct {
+            UserID    string    `dynamorm:"pk" json:"user_id"`
+            NoteID    string    `dynamorm:"sk" json:"note_id"`
+            Title     string    `json:"title"`
+            Content   string    `json:"content"`
+        }
+      
+      entity_with_gsi: |
+        type Product struct {
+            ID       string `dynamorm:"pk" json:"id"`
+            SKU      string `dynamorm:"sk" json:"sku"`
+            Category string `dynamorm:"index:category-index,pk" json:"category"`
+            Price    int64  `dynamorm:"index:category-index,sk" json:"price"`
+            Name     string `json:"name"`
+        }
+    
+    forbidden_patterns:
+      - "dynamorm:\"partition_key\"" # WRONG: Use "pk"
+      - "dynamorm:\"hash_key\"" # WRONG: Use "pk"  
+      - "dynamorm:\"sort_key\"" # WRONG: Use "sk"
+      - "dynamorm:\"range_key\"" # WRONG: Use "sk"
+      - "dynamorm:\"gsi:name\"" # WRONG: Use "index:name,pk"
+      - "dynamorm:\"lsi:name\"" # WRONG: Use "index:name,sk"
+      - "dynamorm:\"attribute\"" # WRONG: No such tag
+    
+    ai_hallucination_prevention:
+      - validate_tag_format_exactly
+      - use_only_canonical_patterns
+      - never_invent_new_tag_formats
+      - verify_against_official_documentation
+    
+    best_practices:
+      - always_use_pk_tag
+      - use_sk_for_hierarchical_data
+      - design_indexes_for_query_patterns
+      - avoid_too_many_gsis
+      - use_consistent_naming
+      - follow_go_naming_conventions
+
+  query_builder:
+    type: pattern
+    purpose: "Fluent API for building DynamoDB queries"
+    description: "Chainable methods that automatically optimize and execute queries"
+    
+    core_methods:
+      - Model: "Start query with entity type"
+      - Where: "Add filter conditions"
+      - Index: "Use specific index"
+      - OrderBy: "Sort results"
+      - Limit: "Restrict result count"
+      - All: "Execute and return slice"
+      - First: "Execute and return single item"
+    
+    optimization_features:
+      - automatic_index_selection
+      - query_vs_scan_optimization
+      - type_safe_conditions
+      - expression_building
+    
+    anti_patterns:
+      - scanning_without_indexes
+      - missing_partition_key_conditions
+      - inefficient_filter_expressions
+
+  lambda_optimization:
+    type: feature
+    purpose: "Optimize DynamORM for AWS Lambda environments"
+    description: "Reduces cold start time by 91% through connection reuse and optimizations"
+    
+    key_techniques:
+      - connection_pooling
+      - initialization_in_init
+      - memory_optimization
+      - timeout_configuration
+      - reduced_allocations
+    
+    implementation:
+      - use_WithLambdaOptimizations
+      - initialize_in_init_function
+      - reuse_across_invocations
+      - avoid_handler_initialization
+    
+    benefits:
+      cold_start_reduction: "11ms vs 127ms"
+      memory_usage_reduction: "18MB vs 42MB"
+      performance_improvement: "67% more operations/sec"
+
+  testing_strategy:
+    type: pattern
+    purpose: "Write testable code with DynamORM"
+    description: "Interface-based design enables comprehensive testing without DynamoDB"
+    
+    core_interfaces:
+      - core.DB: "Main database interface"
+      - core.Query: "Query building interface"
+      - core.Tx: "Transaction interface"
+    
+    testing_approaches:
+      - unit_testing_with_mocks
+      - integration_testing_with_dynamodb_local
+      - performance_testing
+      - contract_testing
+    
+    mock_packages:
+      - mocks.MockDB
+      - mocks.MockQuery
+      - mocks.MockTx
+    
+    best_practices:
+      - use_interfaces_in_services
+      - test_business_logic_separately
+      - use_provided_mocks
+      - test_error_scenarios
+      - avoid_real_aws_in_unit_tests
+
+  transaction_pattern:
+    type: pattern
+    purpose: "Ensure data consistency across multiple operations"
+    description: "ACID-compliant operations that succeed or fail atomically"
+    
+    use_cases:
+      - financial_transfers
+      - inventory_updates
+      - multi_table_consistency
+      - conditional_operations
+    
+    implementation:
+      - wrap_operations_in_transaction_function
+      - return_error_for_rollback
+      - use_conditional_expressions
+      - handle_conditional_failures
+    
+    limitations:
+      - max_25_items_per_transaction
+      - no_cross_account_transactions
+      - increased_latency
+      - higher_cost
+
+  consistency_patterns:
+    type: concept
+    purpose: "Handle DynamoDB's eventual consistency model"
+    description: "Strategies for dealing with eventual consistency in GSIs and reads"
+    
+    consistency_types:
+      strong_consistency:
+        - available_on_main_table
+        - use_ConsistentRead
+        - higher_cost
+        - not_available_on_gsi
+      
+      eventual_consistency:
+        - default_for_gsi
+        - lower_cost
+        - may_have_delays
+        - requires_retry_logic
+    
+    strategies:
+      - retry_with_backoff
+      - read_after_write_verification
+      - design_for_eventual_consistency
+      - use_main_table_for_immediate_reads
+
+  error_handling:
+    type: pattern
+    purpose: "Properly handle DynamoDB errors and edge cases"
+    description: "Comprehensive error handling for production applications"
+    
+    common_errors:
+      ValidationException:
+        cause: "Struct tags don't match table schema"
+        solution: "Verify model definition matches table"
+      
+      ResourceNotFoundException:
+        cause: "Table doesn't exist"
+        solution: "Create table or check configuration"
+      
+      ConditionalCheckFailedException:
+        cause: "Conditional update/delete failed"
+        solution: "Implement retry logic or handle conflict"
+      
+      ThrottlingException:
+        cause: "Rate limits exceeded"
+        solution: "Implement exponential backoff"
+    
+    best_practices:
+      - always_check_errors
+      - implement_retry_logic
+      - use_specific_error_types
+      - log_errors_with_context
+      - handle_partial_failures
+
+  performance_optimization:
+    type: concept
+    purpose: "Maximize DynamORM performance in production"
+    description: "Techniques for optimal query performance and cost efficiency"
+    
+    query_optimization:
+      - use_proper_indexes
+      - avoid_scanning_large_tables
+      - use_pagination_for_large_results
+      - prefer_query_over_scan
+      - optimize_filter_expressions
+    
+    connection_optimization:
+      - use_connection_pooling
+      - reuse_connections
+      - configure_appropriate_timeouts
+      - use_lambda_optimizations
+    
+    cost_optimization:
+      - design_efficient_indexes
+      - use_on_demand_billing_when_appropriate
+      - minimize_data_transfer
+      - use_projection_to_reduce_reads
+      - batch_operations_when_possible
+
+  multi_tenancy:
+    type: pattern
+    purpose: "Build multi-tenant applications with proper data isolation"
+    description: "Strategies for isolating tenant data while maintaining performance"
+    
+    isolation_strategies:
+      partition_key_isolation:
+        - use_tenant_id_as_partition_key
+        - automatic_query_isolation
+        - efficient_for_tenant_queries
+        - may_create_hot_partitions
+      
+      table_isolation:
+        - separate_table_per_tenant
+        - complete_isolation
+        - complex_management
+        - higher_costs
+      
+      hybrid_approach:
+        - tenant_prefix_in_keys
+        - shared_infrastructure
+        - balanced_isolation
+        - requires_careful_design
+    
+    considerations:
+      - data_isolation_requirements
+      - performance_characteristics
+      - cost_implications
+      - operational_complexity

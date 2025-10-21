@@ -40,6 +40,11 @@ func (la *LoginAttempt) GetSK() string {
 	return la.SK
 }
 
+// TableName returns the DynamoDB table name for login attempts
+func (LoginAttempt) TableName() string {
+	return MainTableName
+}
+
 // NewLoginAttempt creates a new LoginAttempt record
 func NewLoginAttempt(identifier string, success bool) *LoginAttempt {
 	now := time.Now()
@@ -82,6 +87,11 @@ func (rll *RateLimitLockout) GetPK() string {
 // GetSK returns the sort key - required for BaseModel interface
 func (rll *RateLimitLockout) GetSK() string {
 	return rll.SK
+}
+
+// TableName returns the DynamoDB table name for rate limit lockouts
+func (RateLimitLockout) TableName() string {
+	return MainTableName
 }
 
 // NewRateLimitLockout creates a new RateLimitLockout record
@@ -136,6 +146,11 @@ func (arl *APIRateLimit) GetPK() string {
 // GetSK returns the sort key - required for BaseModel interface
 func (arl *APIRateLimit) GetSK() string {
 	return arl.SK
+}
+
+// TableName returns the DynamoDB table name for API rate limits
+func (APIRateLimit) TableName() string {
+	return MainTableName
 }
 
 // NewAPIRateLimit creates a new APIRateLimit record
@@ -209,6 +224,11 @@ func (rlv *RateLimitViolation) GetPK() string {
 // GetSK returns the sort key - required for BaseModel interface
 func (rlv *RateLimitViolation) GetSK() string {
 	return rlv.SK
+}
+
+// TableName returns the DynamoDB table name for rate limit violations
+func (RateLimitViolation) TableName() string {
+	return MainTableName
 }
 
 // NewRateLimitViolation creates a new rate limit violation record

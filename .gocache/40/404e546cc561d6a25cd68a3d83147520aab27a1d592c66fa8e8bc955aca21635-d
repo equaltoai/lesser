@@ -1,0 +1,3 @@
+./automigrate.go
+./manager.go
+./transform.go

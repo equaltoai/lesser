@@ -1,0 +1,73 @@
+"""
+Directs the executor to defer this fragment when the `if` argument is true or undefined.
+"""
+directive @defer(
+  """Deferred when true or undefined."""
+  if: Boolean = true
+
+  """Unique name"""
+  label: String
+) on FRAGMENT_SPREAD | INLINE_FRAGMENT
+
+"""This directive does magical things"""
+directive @magic(kind: Int) on FIELD_DEFINITION
+
+enum DATE_FILTER_OP {
+  EQ
+  GT
+  GTE
+  LT
+  LTE
+  NEQ
+}
+
+input DateFilter {
+  op: DATE_FILTER_OP = EQ
+  timezone: String = "UTC"
+  value: String!
+}
+
+type Element {
+  child: Element!
+  error: Boolean!
+  mismatched: [Boolean!]
+}
+
+enum ErrorType {
+  CUSTOM
+  NORMAL
+}
+
+input ListCoercion {
+  enumVal: [ErrorType]
+  intVal: [Int]
+  scalarVal: [Map]
+  strVal: [String]
+}
+
+scalar Map
+
+type Query {
+  coercion(value: [ListCoercion!]): Boolean!
+  complexity(value: Int!): Boolean!
+  date(filter: DateFilter!): Boolean!
+  error(type: ErrorType = NORMAL): Boolean!
+  jsonEncoding: String!
+  path: [Element]
+  viewer: Viewer
+}
+
+type RemoteModelWithOmitempty {
+  newDesc: String
+}
+
+type User {
+  likes: [String!]!
+  name: String!
+  phoneNumber: String @deprecated
+  query: Query!
+}
+
+type Viewer {
+  user: User
+}

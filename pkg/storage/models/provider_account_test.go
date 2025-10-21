@@ -9,7 +9,7 @@ import (
 
 func TestProviderAccount_TableName(t *testing.T) {
 	pa := &ProviderAccount{}
-	assert.Equal(t, "lesser-main", pa.TableName())
+	assert.Equal(t, MainTableName, pa.TableName())
 }
 
 func TestProviderAccount_BeforeUpdate(t *testing.T) {

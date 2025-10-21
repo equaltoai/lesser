@@ -1,0 +1,96 @@
+{
+  "PK": {
+    "S": "ACTOR#bot"
+  },
+  "SK": {
+    "S": "PROFILE"
+  },
+  "Actor": {
+    "M": {
+      "@context": {
+        "L": [
+          {
+            "S": "https://www.w3.org/ns/activitystreams"
+          },
+          {
+            "S": "https://w3id.org/security/v1"
+          }
+        ]
+      },
+      "type": {
+        "S": "Service"
+      },
+      "id": {
+        "S": "https://dev.lesser.host/users/bot"
+      },
+      "inbox": {
+        "S": "https://dev.lesser.host/users/bot/inbox"
+      },
+      "outbox": {
+        "S": "https://dev.lesser.host/users/bot/outbox"
+      },
+      "following": {
+        "S": "https://dev.lesser.host/users/bot/following"
+      },
+      "followers": {
+        "S": "https://dev.lesser.host/users/bot/followers"
+      },
+      "liked": {
+        "S": "https://dev.lesser.host/users/bot/liked"
+      },
+      "preferredUsername": {
+        "S": "bot"
+      },
+      "name": {
+        "S": "Automation Bot"
+      },
+      "summary": {
+        "S": "Automated bot account"
+      },
+      "url": {
+        "S": "https://dev.lesser.host/@bot"
+      },
+      "manuallyApprovesFollowers": {
+        "BOOL": false
+      },
+      "discoverable": {
+        "BOOL": true
+      },
+      "publicKey": {
+        "M": {
+          "id": {
+            "S": "https://dev.lesser.host/users/bot#main-key"
+          },
+          "owner": {
+            "S": "https://dev.lesser.host/users/bot"
+          },
+          "publicKeyPem": {
+            "S": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvJgA7K/llJSdu90dxuXW\n+/RkHNlI9XA9mI2zdioBdxdvAR6g1zSxMdcDFPCUeoBNg5VWruqERHLP1i4dxIwI\nbFpxrimi6Q5PvPbfp7s+tH2nrCqTgmbZeOD/URMFDo/IhhNIvKevP9VWGTJoIuN6\nesZ9LMFyWkD3jZ0NtcqDRJ/guNA2xRlgH6jwukogD0S9mbo9XBgum5Otkre7ljWT\n1Aw9Og5BQTN0xwI9toluSAmyFYM5mx7culO0qItJHBIouHXkT16lUkHpVlDMHdF5\nMBUUjL3k/Uhske2LZhZWktWM51ft3VVp/XbZ242/+/X6qo0pPkR7884koZEWgjAQ\nMwIDAQAB\n-----END PUBLIC KEY-----\n"
+          }
+        }
+      },
+      "endpoints": {
+        "M": {
+          "sharedInbox": {
+            "S": "https://dev.lesser.host/inbox"
+          }
+        }
+      }
+    }
+  },
+  "PrivateKey": {
+    "S": "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEAvJgA7K/llJSdu90dxuXW+/RkHNlI9XA9mI2zdioBdxdvAR6g\n1zSxMdcDFPCUeoBNg5VWruqERHLP1i4dxIwIbFpxrimi6Q5PvPbfp7s+tH2nrCqT\ngmbZeOD/URMFDo/IhhNIvKevP9VWGTJoIuN6esZ9LMFyWkD3jZ0NtcqDRJ/guNA2\nxRlgH6jwukogD0S9mbo9XBgum5Otkre7ljWT1Aw9Og5BQTN0xwI9toluSAmyFYM5\nmx7culO0qItJHBIouHXkT16lUkHpVlDMHdF5MBUUjL3k/Uhske2LZhZWktWM51ft\n3VVp/XbZ242/+/X6qo0pPkR7884koZEWgjAQMwIDAQABAoIBAEP8I7EvA3rZTDcx\n0Y8mwaYYBpLjvUpFCN9ajYwWPmr49poXuXF63DmUQdclltDGOasqhZIOllm6bbPO\n8gotVMgCnqJi/gg3kYUUFbH4bPVRqsUEoCJNAy5xJXjLe3IxYN78Sqc/Z4yCUkRJ\nCIMzL67cqLkejyN78gGJ0SxscX+l6EKYr+Ff9p38l6n6v8hOWWOKuyjPUlHBckR1\nzJP+zPg9wsqCEv4+v3fkGU1gT21mrG2I1HWFTHHFjL5QUun0tnDpRoy9csjH7M0m\ndXeKe/fdJ9M6GNzIwB5W1GyJb+AB544mub32twGC4GmHMM9/sxPIe6M/gtlbp6QJ\nA8L8D1ECgYEA34FBSxL5Wxhohr2QmneEZCsfU/NUOc6xayPHcjkZOxfXLAW9W1Pv\n5PzeB9C00k9Viq94W1vwap6sbKXPpZVbrwFyZE7FHcw9BcrfxvuobLY4e35Vv6Kd\nKLBkXvTLjvcs53PhBq4UwWXdg10C60I1e2JtsrIZQWOlVPOm+Ka+hQkCgYEA2ANf\nbqilMaP95U4nELnk5D37l/XNJM2JWZzOfR5bAClUGeGNYRA8AxljwCjjQvqOOtYK\nU5Br4BIeKwaiGI1APWJdtyK45NRjVvrEe5/3cmrJmxQV8XZC+EyQODTZu/yvv6QX\n4i6FiEmlboCgiudHeYiO8yzPhdeS6stZSP7IFlsCgYEAh+VndeZLh4AHziVkzwbs\nkJtHqRvCkoOCjMpscp8VIEEWq8WxpN4cdvbpaYcU6ush7/lRDPuR6sIfxM/suZle\n7cHLdAIRCFUupV79QVeyyKbjIPNn3+VX+W2HGdVuD7dqrjBfGliudgkh7sWXCMRx\nEFyApq5zfLbByC190KJSJUECgYBE3vZrUquwoweNN5iu9YXr23M+5OiuJjX3c05G\niAodiA+/XLF10/Y+SrcKCj9DGJ2GVr3eHLq4Ky6hKzE9QLPNnnIgtJpcova1Qaip\nfbwoJ7H1lrbUUI9TmR2WPgt5qzvhjxDqVUjPxiNPkwUcpFaeghKJp6zWkH/QCluC\nMXFb5wKBgQDH0FPIJe9Bs51VzCSBb3rdGbT3XvydWmfxFW/pFCFJ1mLW2t5fexhR\nKiBt1E8g9D5U5hA4u5MP/5A27yGOg3lcYqUy2uYm5CldH9e9W+cXiC5Pm9fpylQL\nT62XiOfht+KlAp9daEEibs6NOCsZMD0zohEATS+UFpDWPecyqcSfpA==\n-----END RSA PRIVATE KEY-----\n"
+  },
+  "CreatedAt": {
+    "S": "2025-10-19T15:25:01.118Z"
+  },
+  "UpdatedAt": {
+    "S": "2025-10-19T15:25:01.118Z"
+  },
+  "Username": {
+    "S": "bot"
+  },
+  "NumericID": {
+    "S": "000000000005"
+  }
+}

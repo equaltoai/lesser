@@ -24,27 +24,30 @@ const (
 
 // User represents a user account
 type User struct {
-	ID              string                 `json:"id"`
-	Username        string                 `json:"username"`
-	Email           string                 `json:"email,omitempty"`
-	PasswordHash    string                 `json:"password_hash,omitempty"`
-	DisplayName     string                 `json:"display_name,omitempty"`
-	Note            string                 `json:"note,omitempty"`   // Bio/description
-	Avatar          string                 `json:"avatar,omitempty"` // Avatar image URL
-	Header          string                 `json:"header,omitempty"` // Header image URL
-	URL             string                 `json:"url,omitempty"`    // Profile URL
-	Locked          bool                   `json:"locked"`           // Requires approval for follows
-	Discoverable    bool                   `json:"discoverable"`     // Appears in directory
-	Fields          []map[string]string    `json:"fields,omitempty"` // Profile metadata fields
-	CreatedAt       time.Time              `json:"created_at"`
-	UpdatedAt       time.Time              `json:"updated_at"`
-	Approved        bool                   `json:"approved"`
-	Suspended       bool                   `json:"suspended"`
-	Silenced        bool                   `json:"silenced"`
-	Role            string                 `json:"role"`
-	Locale          string                 `json:"locale,omitempty"`
-	RecoveryMethods []string               `json:"recovery_methods,omitempty"`
-	Metadata        map[string]interface{} `json:"metadata,omitempty"`
+	ID                 string                 `json:"id"`
+	Username           string                 `json:"username"`
+	Email              string                 `json:"email,omitempty"`
+	PasswordHash       string                 `json:"password_hash,omitempty"`
+	DisplayName        string                 `json:"display_name,omitempty"`
+	Note               string                 `json:"note,omitempty"`   // Bio/description
+	Avatar             string                 `json:"avatar,omitempty"` // Avatar image URL
+	Header             string                 `json:"header,omitempty"` // Header image URL
+	URL                string                 `json:"url,omitempty"`    // Profile URL
+	Locked             bool                   `json:"locked"`           // Requires approval for follows
+	Discoverable       bool                   `json:"discoverable"`     // Appears in directory
+	AllowNSFW          bool                   `json:"allow_nsfw"`
+	RequireNSFWWarning bool                   `json:"require_nsfw_warning"`
+	Fields             []map[string]string    `json:"fields,omitempty"` // Profile metadata fields
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
+	Approved           bool                   `json:"approved"`
+	Suspended          bool                   `json:"suspended"`
+	Silenced           bool                   `json:"silenced"`
+	Role               string                 `json:"role"`
+	Locale             string                 `json:"locale,omitempty"`
+	RecoveryMethods    []string               `json:"recovery_methods,omitempty"`
+	Metadata           map[string]interface{} `json:"metadata,omitempty"`
+	Version            int                    `json:"version"`
 }
 
 // AccountPin represents a pinned account relationship

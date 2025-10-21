@@ -1,0 +1,61 @@
+# CDK-specific linting configuration
+# This extends the root configuration with CDK-specific rules
+
+run:
+  timeout: 5m
+
+linters-settings:
+  # CDK stacks can be complex
+  funlen:
+    lines: 150      # Allow longer functions for stack definitions
+    statements: 80
+    
+  gocyclo:
+    min-complexity: 20  # Higher complexity allowed for CDK
+    
+  gocognit:
+    min-complexity: 25  # CDK stack logic can be complex
+    
+  # CDK uses long method chains
+  lll:
+    line-length: 140
+    
+  # CDK patterns often repeat
+  dupl:
+    threshold: 200
+
+issues:
+  exclude-rules:
+    # CDK-specific exclusions
+    - path: \.go
+      text: "Function 'New.*Stack' has too many lines"
+      linters:
+        - funlen
+        
+    - path: \.go
+      text: "cyclomatic complexity .* of func `New.*Stack`"
+      linters:
+        - gocyclo
+        
+    # Allow globals for CDK app entry points
+    - path: main\.go
+      linters:
+        - gochecknoglobals
+        
+    # CDK constructs use specific naming
+    - path: \.go
+      text: "var-naming: don't use ALL_CAPS in Go names"
+      linters:
+        - revive
+        
+    # CDK often needs error variables
+    - path: \.go
+      text: "error strings should not be capitalized"
+      linters:
+        - goerr113
+        
+    # Long lines are common in CDK with jsii
+    - path: \.go
+      source: "jsii\\.(String|Number|Bool)"
+      linters:
+        - lll

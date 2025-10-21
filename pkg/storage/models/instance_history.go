@@ -45,7 +45,7 @@ type InstanceHistory struct {
 
 // TableName returns the DynamoDB table name
 func (i *InstanceHistory) TableName() string {
-	return DefaultTableName
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys when the primary keys change

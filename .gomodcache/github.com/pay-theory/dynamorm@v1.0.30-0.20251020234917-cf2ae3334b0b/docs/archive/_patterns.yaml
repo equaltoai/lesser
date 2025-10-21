@@ -1,0 +1,540 @@
+# DynamORM Semantic Knowledge Base - Patterns
+# This file provides machine-readable pattern definitions for AI assistants
+
+patterns:
+  ai_struct_hallucination_prevention:
+    name: "AI Struct Hallucination Prevention"
+    category: ai_guidance
+    problem: "AI assistants often invent non-existent struct tag formats"
+    solution: "Use ONLY the exact canonical patterns documented"
+    
+    critical_importance: "This is the #1 source of DynamORM errors from AI assistance"
+    
+    forbidden_hallucinations:
+      partition_key_variations:
+        - "dynamorm:\"partition_key\"" # NEVER EXISTS
+        - "dynamorm:\"hash_key\"" # NEVER EXISTS
+        - "dynamorm:\"primary_key\"" # NEVER EXISTS
+        - "pk:\"true\"" # WRONG FORMAT
+      
+      sort_key_variations:
+        - "dynamorm:\"sort_key\"" # NEVER EXISTS
+        - "dynamorm:\"range_key\"" # NEVER EXISTS
+        - "sk:\"true\"" # WRONG FORMAT
+        
+      index_variations:
+        - "dynamorm:\"gsi:name\"" # NEVER EXISTS
+        - "dynamorm:\"lsi:name\"" # NEVER EXISTS
+        - "gsi:\"name\"" # WRONG FORMAT
+        - "index:\"name\"" # MISSING pk/sk
+        - "dynamorm:\"index:name\"" # MISSING pk/sk
+      
+      attribute_variations:
+        - "dynamorm:\"attribute\"" # NEVER EXISTS
+        - "attribute:\"name\"" # NEVER EXISTS
+        - "dynamodb:\"field\"" # WRONG PACKAGE
+    
+    correct_patterns_only:
+      partition_key: "dynamorm:\"pk\""
+      sort_key: "dynamorm:\"sk\""
+      gsi_partition: "dynamorm:\"index:index-name,pk\""
+      gsi_sort: "dynamorm:\"index:index-name,sk\""
+      custom_name: "dynamorm:\"custom_name\""
+      json_tag: "json:\"field_name\""
+    
+    validation_checklist:
+      - starts_with_dynamorm_colon
+      - uses_exact_tag_names_pk_sk_index
+      - index_format_includes_comma_and_pk_or_sk
+      - no_invented_tag_formats
+      - follows_canonical_examples_exactly
+    
+    when_to_use:
+      - every_time_suggesting_struct_definition
+      - when_ai_needs_to_define_models
+      - before_any_dynamorm_code_generation
+    
+    ai_instructions:
+      - copy_exact_patterns_from_documentation
+      - never_modify_tag_formats
+      - validate_against_canonical_examples
+      - if_unsure_use_simplest_pattern
+
+  basic_model_definition:
+    name: "Basic DynamORM Model"
+    category: model_definition
+    problem: "Need to define DynamoDB table structure in Go"
+    solution: "Use struct with proper DynamORM tags"
+    
+    correct_example: |
+      type User struct {
+          ID        string    `dynamorm:"pk" json:"id"`
+          Email     string    `dynamorm:"sk" json:"email"`
+          Name      string    `json:"name"`
+          CreatedAt time.Time `json:"created_at"`
+      }
+    
+    incorrect_example: |
+      type User struct {
+          ID   string  // Missing pk tag - will cause runtime errors
+          Name string  // No DynamoDB mapping
+      }
+    
+    when_to_use:
+      - defining_dynamodb_entities
+      - need_type_safe_operations
+      - building_new_models
+    
+    when_not_to_use:
+      - working_with_existing_non_dynamodb_data
+      - need_sql_style_relationships
+    
+    key_principles:
+      - always_define_partition_key
+      - use_sort_key_for_hierarchical_data
+      - include_json_tags_for_api_responses
+      - design_for_query_patterns
+
+  lambda_handler_pattern:
+    name: "Lambda Handler with DynamORM"
+    category: serverless
+    problem: "Lambda functions have slow cold starts with DynamoDB"
+    solution: "Initialize DynamORM once in init(), reuse across invocations"
+    
+    correct_example: |
+      var db *dynamorm.DB
+
+      func init() {
+          // Initialize once, reuse across invocations
+          db = dynamorm.New(dynamorm.WithLambdaOptimizations())
+      }
+
+      func handler(ctx context.Context, event Event) error {
+          // Use pre-initialized connection
+          return db.Model(&Entity{}).Create()
+      }
+    
+    incorrect_example: |
+      func handler(ctx context.Context, event Event) error {
+          db := dynamorm.New(...)  // Creates new connection every time
+          return db.Model(&Entity{}).Create()
+      }
+    
+    benefits:
+      - cold_start_reduction: "91% faster (11ms vs 127ms)"
+      - memory_efficiency: "57% less memory usage"
+      - connection_reuse: "Persistent connections"
+    
+    when_to_use:
+      - aws_lambda_functions
+      - serverless_applications
+      - event_driven_architectures
+    
+    anti_patterns:
+      - initializing_in_handler
+      - creating_new_connections_per_request
+      - not_using_lambda_optimizations
+
+  testable_service_pattern:
+    name: "Testable Service with Interfaces"
+    category: testing
+    problem: "Need to test business logic without DynamoDB dependency"
+    solution: "Use core.DB interface and dependency injection"
+    
+    correct_example: |
+      type PaymentService struct {
+          db core.DB  // Interface allows mocking
+      }
+
+      func NewPaymentService(db core.DB) *PaymentService {
+          return &PaymentService{db: db}
+      }
+
+      func (s *PaymentService) CreatePayment(payment *Payment) error {
+          return s.db.Model(payment).Create()
+      }
+    
+    test_example: |
+      func TestPaymentService(t *testing.T) {
+          mockDB := new(mocks.MockDB)
+          mockQuery := new(mocks.MockQuery)
+          
+          mockDB.On("Model", mock.Anything).Return(mockQuery)
+          mockQuery.On("Create").Return(nil)
+          
+          service := NewPaymentService(mockDB)
+          err := service.CreatePayment(&Payment{})
+          
+          assert.NoError(t, err)
+          mockDB.AssertExpectations(t)
+      }
+    
+    incorrect_example: |
+      type PaymentService struct {
+          db *dynamorm.DB  // Concrete type - hard to mock
+      }
+    
+    when_to_use:
+      - building_business_services
+      - need_comprehensive_testing
+      - want_fast_unit_tests
+    
+    benefits:
+      - testable_without_database
+      - fast_test_execution
+      - isolated_business_logic
+      - easy_mocking
+
+  transaction_pattern:
+    name: "Transaction Operations"
+    category: data_consistency
+    problem: "Multiple operations must succeed or fail together"
+    solution: "Use DynamORM transaction function with proper error handling"
+    
+    correct_example: |
+      err := db.Transaction(func(tx *dynamorm.Tx) error {
+          // Debit account
+          account.Balance -= amount
+          if err := tx.Model(account).Update(); err != nil {
+              return err // Automatic rollback
+          }
+          
+          // Create payment record
+          payment.Status = "completed"
+          if err := tx.Model(payment).Create(); err != nil {
+              return err // Automatic rollback
+          }
+          
+          return nil // Commit
+      })
+    
+    incorrect_example: |
+      // Separate operations - can leave inconsistent state
+      db.Model(account).Update()  // Might succeed
+      db.Model(payment).Create()  // Might fail - inconsistent!
+    
+    when_to_use:
+      - financial_operations
+      - multi_item_consistency_required
+      - inventory_management
+      - audit_trail_requirements
+    
+    limitations:
+      - max_25_items_per_transaction
+      - increased_latency
+      - higher_cost
+      - no_cross_account_support
+    
+    error_handling:
+      - handle_conditional_check_failures
+      - implement_retry_logic_for_conflicts
+      - validate_before_transaction
+      - log_transaction_failures
+
+  gsi_query_pattern:
+    name: "Global Secondary Index Queries"
+    category: querying
+    problem: "Need to query data by attributes other than primary key"
+    solution: "Define GSIs in model and use Index() method in queries"
+    
+    model_definition: |
+      type Order struct {
+          ID         string    `dynamorm:"pk" json:"id"`
+          OrderNum   string    `dynamorm:"sk" json:"order_number"`
+          
+          // GSI for customer queries
+          CustomerID string    `dynamorm:"index:customer-index,pk" json:"customer_id"`
+          Status     string    `dynamorm:"index:customer-index,sk" json:"status"`
+          
+          // GSI for status queries
+          Status     string    `dynamorm:"index:status-index,pk" json:"status"`
+          CreatedAt  time.Time `dynamorm:"index:status-index,sk" json:"created_at"`
+      }
+    
+    correct_usage: |
+      // Query by customer, sorted by status
+      var orders []Order
+      err := db.Model(&Order{}).
+          Index("customer-index").
+          Where("CustomerID", "=", "cust123").
+          OrderBy("Status", "ASC").
+          All(&orders)
+    
+    incorrect_usage: |
+      // Scanning without index - expensive!
+      var orders []Order
+      err := db.Model(&Order{}).
+          Where("CustomerID", "=", "cust123").  // Scans entire table
+          All(&orders)
+    
+    design_principles:
+      - design_indexes_for_query_patterns
+      - use_composite_keys_for_sorting
+      - consider_eventual_consistency
+      - limit_number_of_gsis
+    
+    when_to_use:
+      - need_alternate_query_patterns
+      - query_by_non_primary_attributes
+      - need_sorted_results
+    
+    performance_considerations:
+      - gsi_eventual_consistency
+      - additional_read_write_costs
+      - storage_overhead
+      - query_vs_scan_performance
+
+  batch_operations_pattern:
+    name: "Batch Operations"
+    category: performance
+    problem: "Need to process multiple items efficiently"
+    solution: "Use BatchWrite and BatchGet for multiple item operations"
+    
+    batch_write_example: |
+      items := []User{
+          {ID: "user1", Name: "John"},
+          {ID: "user2", Name: "Jane"},
+          {ID: "user3", Name: "Bob"},
+      }
+      
+      err := db.BatchWrite().
+          Add(items...).
+          Execute()
+    
+    batch_get_example: |
+      keys := []struct {
+          ID string `dynamorm:"pk"`
+      }{
+          {ID: "user1"},
+          {ID: "user2"},
+          {ID: "user3"},
+      }
+      
+      var users []User
+      err := db.BatchGet().
+          Keys(keys...).
+          Results(&users)
+    
+    when_to_use:
+      - processing_multiple_items
+      - bulk_data_operations
+      - performance_optimization
+      - reducing_api_calls
+    
+    limitations:
+      - max_25_items_per_batch
+      - no_transaction_semantics
+      - partial_failure_possible
+      - eventual_consistency
+    
+    best_practices:
+      - handle_partial_failures
+      - implement_retry_logic
+      - batch_by_table
+      - monitor_consumed_capacity
+
+  error_handling_pattern:
+    name: "Comprehensive Error Handling"
+    category: reliability
+    problem: "Need robust error handling for production applications"
+    solution: "Handle specific DynamoDB errors with appropriate responses"
+    
+    error_handling_example: |
+      func CreateUser(db *dynamorm.DB, user *User) error {
+          err := db.Model(user).Create()
+          if err != nil {
+              switch {
+              case strings.Contains(err.Error(), "ValidationException"):
+                  return fmt.Errorf("invalid user data: %w", err)
+              case strings.Contains(err.Error(), "ConditionalCheckFailed"):
+                  return fmt.Errorf("user already exists: %w", err)
+              case strings.Contains(err.Error(), "ResourceNotFound"):
+                  return fmt.Errorf("table not found: %w", err)
+              case strings.Contains(err.Error(), "ThrottlingException"):
+                  return fmt.Errorf("rate limited, retry: %w", err)
+              default:
+                  return fmt.Errorf("create user failed: %w", err)
+              }
+          }
+          return nil
+      }
+    
+    retry_pattern_example: |
+      func CreateUserWithRetry(db *dynamorm.DB, user *User) error {
+          backoff := time.Millisecond * 100
+          maxRetries := 3
+          
+          for i := 0; i < maxRetries; i++ {
+              err := db.Model(user).Create()
+              if err == nil {
+                  return nil
+              }
+              
+              if strings.Contains(err.Error(), "ThrottlingException") {
+                  time.Sleep(backoff)
+                  backoff *= 2  // Exponential backoff
+                  continue
+              }
+              
+              return err  // Non-retryable error
+          }
+          
+          return errors.New("max retries exceeded")
+      }
+    
+    common_errors:
+      ValidationException: "Check model definition matches table schema"
+      ResourceNotFoundException: "Ensure table exists and correct region"
+      ConditionalCheckFailedException: "Handle optimistic locking conflicts"
+      ThrottlingException: "Implement exponential backoff retry"
+      AccessDeniedException: "Check AWS credentials and IAM permissions"
+    
+    best_practices:
+      - always_check_errors
+      - use_specific_error_handling
+      - implement_retry_logic
+      - log_errors_with_context
+      - return_meaningful_messages
+
+  pagination_pattern:
+    name: "Efficient Pagination"
+    category: performance
+    problem: "Need to handle large result sets efficiently"
+    solution: "Use Limit and pagination with last evaluated key"
+    
+    basic_pagination: |
+      func GetUsersPaginated(db *dynamorm.DB, limit int, lastKey string) ([]User, string, error) {
+          query := db.Model(&User{}).Limit(limit)
+          
+          if lastKey != "" {
+              query = query.StartFrom(lastKey)
+          }
+          
+          var users []User
+          err := query.All(&users)
+          if err != nil {
+              return nil, "", err
+          }
+          
+          var nextKey string
+          if len(users) == limit {
+              nextKey = users[len(users)-1].ID  // Use last item's key
+          }
+          
+          return users, nextKey, nil
+      }
+    
+    cursor_based_pagination: |
+      type PaginationResult struct {
+          Items    []User `json:"items"`
+          NextKey  string `json:"next_key,omitempty"`
+          HasMore  bool   `json:"has_more"`
+      }
+      
+      func GetUsersWithCursor(db *dynamorm.DB, cursor string, limit int) (*PaginationResult, error) {
+          query := db.Model(&User{}).Limit(limit + 1)  // Request one extra
+          
+          if cursor != "" {
+              query = query.StartFrom(cursor)
+          }
+          
+          var users []User
+          err := query.All(&users)
+          if err != nil {
+              return nil, err
+          }
+          
+          hasMore := len(users) > limit
+          if hasMore {
+              users = users[:limit]  // Remove the extra item
+          }
+          
+          var nextKey string
+          if hasMore {
+              nextKey = users[len(users)-1].ID
+          }
+          
+          return &PaginationResult{
+              Items:   users,
+              NextKey: nextKey,
+              HasMore: hasMore,
+          }, nil
+      }
+    
+    when_to_use:
+      - large_result_sets
+      - api_endpoints_returning_lists
+      - memory_constrained_environments
+      - improved_user_experience
+    
+    best_practices:
+      - always_use_limit
+      - provide_next_page_tokens
+      - handle_empty_results
+      - validate_pagination_parameters
+      - consider_consistent_reads_for_accuracy
+
+  multi_tenant_pattern:
+    name: "Multi-Tenant Data Isolation"
+    category: architecture
+    problem: "Need to isolate tenant data in shared infrastructure"
+    solution: "Use tenant ID as partition key for automatic isolation"
+    
+    tenant_isolation_model: |
+      type TenantResource struct {
+          TenantID   string `dynamorm:"pk" json:"tenant_id"`
+          ResourceID string `dynamorm:"sk" json:"resource_id"`
+          
+          // Optional GSI for cross-tenant queries (admin only)
+          Type       string    `dynamorm:"index:type-index,pk" json:"type"`
+          CreatedAt  time.Time `dynamorm:"index:type-index,sk" json:"created_at"`
+          
+          Data       map[string]interface{} `json:"data"`
+          CreatedBy  string                 `json:"created_by"`
+      }
+    
+    tenant_scoped_service: |
+      type TenantService struct {
+          db       core.DB
+          tenantID string
+      }
+      
+      func NewTenantService(db core.DB, tenantID string) *TenantService {
+          return &TenantService{
+              db:       db,
+              tenantID: tenantID,
+          }
+      }
+      
+      func (s *TenantService) CreateResource(resource *TenantResource) error {
+          // Automatically set tenant ID for isolation
+          resource.TenantID = s.tenantID
+          resource.CreatedAt = time.Now()
+          
+          return s.db.Model(resource).Create()
+      }
+      
+      func (s *TenantService) GetTenantResources() ([]TenantResource, error) {
+          var resources []TenantResource
+          // Queries are automatically tenant-scoped
+          return resources, s.db.Model(&TenantResource{}).
+              Where("TenantID", "=", s.tenantID).
+              All(&resources)
+      }
+    
+    benefits:
+      - automatic_data_isolation
+      - efficient_tenant_queries
+      - shared_infrastructure
+      - simplified_access_control
+    
+    considerations:
+      - hot_partition_risk_with_large_tenants
+      - cross_tenant_queries_complexity
+      - backup_and_restore_granularity
+      - monitoring_per_tenant_usage
+    
+    alternatives:
+      table_per_tenant: "Complete isolation but operational complexity"
+      row_level_security: "Application-level filtering"
+      database_per_tenant: "Maximum isolation but highest cost"

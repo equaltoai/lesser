@@ -1,0 +1,198 @@
+{
+    "widgets": [
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 0,
+            "width": 24,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "PayTheory/Lift", "requests.total", "Environment", "production", "TenantID", "tenant-001" ],
+                    [ "...", "tenant-002" ],
+                    [ "...", "tenant-003" ],
+                    [ "...", "tenant-004" ],
+                    [ "...", "tenant-005" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "title": "Request Volume by Tenant",
+                "period": 300,
+                "stat": "Sum",
+                "yAxis": {
+                    "left": {
+                        "min": 0
+                    }
+                }
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 6,
+            "width": 12,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "PayTheory/Lift", "requests.duration", "Environment", "production", "TenantID", "tenant-001" ],
+                    [ "...", "tenant-002" ],
+                    [ "...", "tenant-003" ],
+                    [ "...", "tenant-004" ],
+                    [ "...", "tenant-005" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "title": "Response Time by Tenant",
+                "period": 300,
+                "stat": "Average",
+                "yAxis": {
+                    "left": {
+                        "min": 0,
+                        "label": "Milliseconds"
+                    }
+                }
+            }
+        },
+        {
+            "type": "metric",
+            "x": 12,
+            "y": 6,
+            "width": 12,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "PayTheory/Lift", "requests.errors", "Environment", "production", "TenantID", "tenant-001" ],
+                    [ "...", "tenant-002" ],
+                    [ "...", "tenant-003" ],
+                    [ "...", "tenant-004" ],
+                    [ "...", "tenant-005" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "title": "Error Count by Tenant",
+                "period": 300,
+                "stat": "Sum",
+                "yAxis": {
+                    "left": {
+                        "min": 0
+                    }
+                }
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 12,
+            "width": 8,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "PayTheory/Lift", "requests.total", "Environment", "production" ]
+                ],
+                "view": "pie",
+                "region": "us-east-1",
+                "title": "Request Distribution by Tenant",
+                "period": 3600,
+                "stat": "Sum"
+            }
+        },
+        {
+            "type": "metric",
+            "x": 8,
+            "y": 12,
+            "width": 8,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ { "expression": "SEARCH('{PayTheory/Lift,TenantID} MetricName=\"requests.total\"', 'Sum', 300)", "id": "e1", "label": "Top 10 Tenants by Volume" } ]
+                ],
+                "view": "table",
+                "region": "us-east-1",
+                "title": "Top Tenants by Request Volume",
+                "period": 300,
+                "stat": "Sum"
+            }
+        },
+        {
+            "type": "metric",
+            "x": 16,
+            "y": 12,
+            "width": 8,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ { "expression": "SEARCH('{PayTheory/Lift,TenantID} MetricName=\"requests.errors\"', 'Sum', 300)", "id": "e1", "label": "Tenants with Errors" } ]
+                ],
+                "view": "table",
+                "region": "us-east-1",
+                "title": "Tenants with Errors",
+                "period": 300,
+                "stat": "Sum"
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 18,
+            "width": 12,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "PayTheory/Lift", "response.size", "Environment", "production", "TenantID", "tenant-001" ],
+                    [ "...", "tenant-002" ],
+                    [ "...", "tenant-003" ],
+                    [ "...", "tenant-004" ],
+                    [ "...", "tenant-005" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "title": "Response Size by Tenant",
+                "period": 300,
+                "stat": "Average",
+                "yAxis": {
+                    "left": {
+                        "min": 0,
+                        "label": "Bytes"
+                    }
+                }
+            }
+        },
+        {
+            "type": "metric",
+            "x": 12,
+            "y": 18,
+            "width": 12,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ { "expression": "m1/m2*100", "label": "tenant-001 Error Rate %", "id": "e1" } ],
+                    [ { "expression": "m3/m4*100", "label": "tenant-002 Error Rate %", "id": "e2" } ],
+                    [ { "expression": "m5/m6*100", "label": "tenant-003 Error Rate %", "id": "e3" } ],
+                    [ "PayTheory/Lift", "requests.errors", "Environment", "production", "TenantID", "tenant-001", { "id": "m1", "visible": false } ],
+                    [ ".", "requests.total", ".", ".", ".", ".", { "id": "m2", "visible": false } ],
+                    [ ".", "requests.errors", ".", ".", ".", "tenant-002", { "id": "m3", "visible": false } ],
+                    [ ".", "requests.total", ".", ".", ".", ".", { "id": "m4", "visible": false } ],
+                    [ ".", "requests.errors", ".", ".", ".", "tenant-003", { "id": "m5", "visible": false } ],
+                    [ ".", "requests.total", ".", ".", ".", ".", { "id": "m6", "visible": false } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "title": "Error Rate by Tenant",
+                "period": 300,
+                "stat": "Sum",
+                "yAxis": {
+                    "left": {
+                        "min": 0,
+                        "max": 100,
+                        "label": "Percentage"
+                    }
+                }
+            }
+        }
+    ]
+} 

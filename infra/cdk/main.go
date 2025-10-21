@@ -20,7 +20,11 @@ type Config struct {
 	MemorySize  int    `yaml:"memorySize"`
 	Timeout     int    `yaml:"timeout"`
 	LogLevel    string `yaml:"logLevel"`
-	Features    struct {
+	DNS         struct {
+		RootDomain   string `yaml:"rootDomain"`
+		HostedZoneID string `yaml:"hostedZoneId"`
+	} `yaml:"dns"`
+	Features struct {
 		EnableMultiTenant         bool `yaml:"enableMultiTenant"`
 		EnableRateLimiting        bool `yaml:"enableRateLimiting"`
 		EnableMonitoring          bool `yaml:"enableMonitoring"`
@@ -45,6 +49,14 @@ type Config struct {
 		Optimized           bool `yaml:"optimized"`
 		ReservedConcurrency int  `yaml:"reservedConcurrency"`
 	} `yaml:"cost"`
+	Media struct {
+		CloudfrontDomain           string `yaml:"cloudfrontDomain"`
+		CloudfrontKeyPairId        string `yaml:"cloudfrontKeyPairId"`
+		CloudfrontPrivateKeySecret string `yaml:"cloudfrontPrivateKeySecret"`
+		MediaConvertEndpoint       string `yaml:"mediaConvertEndpoint"`
+		MediaConvertRole           string `yaml:"mediaConvertRole"`
+		ManifestTTLHours           int    `yaml:"manifestTTLHours"`
+	} `yaml:"media"`
 }
 
 // loadEnvironmentConfig loads environment-specific configuration
@@ -97,6 +109,12 @@ func configToMap(config *Config) map[string]interface{} {
 			"optimized":           config.Cost.Optimized,
 			"reservedConcurrency": float64(config.Cost.ReservedConcurrency),
 		},
+		"cloudfrontDomain":           config.Media.CloudfrontDomain,
+		"cloudfrontKeyPairId":        config.Media.CloudfrontKeyPairId,
+		"cloudfrontPrivateKeySecret": config.Media.CloudfrontPrivateKeySecret,
+		"mediaConvertEndpoint":       config.Media.MediaConvertEndpoint,
+		"mediaConvertRole":           config.Media.MediaConvertRole,
+		"manifestTTLHours":           fmt.Sprintf("%d", config.Media.ManifestTTLHours),
 	}
 }
 
@@ -104,6 +122,9 @@ func main() {
 	defer jsii.Close()
 
 	app := awscdk.NewApp(nil)
+
+	defaultRootDomain := "lesser.host"
+	defaultZones := []string{"dev", "staging", "live"}
 
 	// Get environment from context
 	environment := app.Node().TryGetContext(jsii.String("environment"))
@@ -120,13 +141,27 @@ func main() {
 	}
 
 	// Override domain from context if provided
-	domain := app.Node().TryGetContext(jsii.String("domain"))
-	if domain != nil {
-		config.Domain = domain.(string)
+	if domainCtx := app.Node().TryGetContext(jsii.String("domain")); domainCtx != nil {
+		config.Domain = fmt.Sprintf("%v", domainCtx)
+	}
+
+	if secretCtx := app.Node().TryGetContext(jsii.String("cdnPrivateKeySecret")); secretCtx != nil {
+		config.Media.CloudfrontPrivateKeySecret = fmt.Sprintf("%v", secretCtx)
+	}
+
+	if keyPairCtx := app.Node().TryGetContext(jsii.String("cdnKeyPairId")); keyPairCtx != nil {
+		config.Media.CloudfrontKeyPairId = fmt.Sprintf("%v", keyPairCtx)
 	}
 
 	// JWT secret is now auto-generated in SharedStack and retrieved by Lambda functions
 	// No need to pass it via context anymore
+
+	rootDomain := config.DNS.RootDomain
+	if rootDomain == "" {
+		rootDomain = defaultRootDomain
+	}
+
+	stages := defaultZones
 
 	// Create shared stack (only once per account)
 	sharedStack := stacks.NewSharedStack(app, "LesserSharedStack", &stacks.SharedStackProps{
@@ -134,7 +169,11 @@ func main() {
 			Env:         getEnv(config),
 			Description: jsii.String("Lesser shared resources - KMS keys, secrets"),
 		},
-		AppName: config.AppName,
+		AppName:        config.AppName,
+		RootDomain:     rootDomain,
+		HostedZoneId:   config.DNS.HostedZoneID,
+		HostedZoneName: rootDomain,
+		Stages:         stages,
 	})
 
 	// Create monitoring stack
@@ -154,20 +193,29 @@ func main() {
 		AlertEmail:  alertEmail,
 	})
 
+	configMap := configToMap(config)
+
 	// Create main application stack (creates its own certificate like Pulumi did)
-	lesserStack := stacks.NewLesserStack(app, fmt.Sprintf("LesserStack-%s", env), &stacks.LesserStackProps{
+	lesserApiStack := stacks.NewLesserApiStack(app, fmt.Sprintf("LesserApiStack-%s", env), &stacks.LesserApiStackProps{
 		StackProps: awscdk.StackProps{
 			Env:         getEnv(config),
 			Description: jsii.String(fmt.Sprintf("Lesser serverless application - %s", env)),
 		},
-		Environment: env,
-		Domain:      config.Domain,
-		Config:      configToMap(config),
+		Environment:      env,
+		Domain:           config.Domain,
+		Config:           configMap,
+		HostedZoneDomain: rootDomain,
+		HostedZoneId:     config.DNS.HostedZoneID,
+		CloudFrontDomain: config.Media.CloudfrontDomain,
+		APICertificate:   sharedStack.APICertificate,
+		CDNCertificate:   sharedStack.CDNCertificate,
+		JWTSecret:        sharedStack.JWTSecret,
+		ActorPrivateKey:  sharedStack.ActorPrivateKey,
 	})
 
 	// Add dependencies
-	lesserStack.AddDependency(sharedStack.Stack, jsii.String("Shared resources must be created first"))
-	lesserStack.AddDependency(monitoringStack.Stack, jsii.String("Monitoring must be set up before application"))
+	lesserApiStack.AddDependency(sharedStack.Stack, jsii.String("Shared resources must be created first"))
+	lesserApiStack.AddDependency(monitoringStack.Stack, jsii.String("Monitoring must be set up before application"))
 
 	app.Synth(nil)
 }

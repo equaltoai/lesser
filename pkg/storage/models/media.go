@@ -99,7 +99,7 @@ type Media struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 
 	// TTL for unused media (30 days)
-	ExpiresAt *int64 `dynamorm:"ttl" json:"expires_at,omitempty"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at,omitempty"` // Unix timestamp
 
 	// Version for optimistic locking
 	ModelVersion int `dynamorm:"version" json:"model_version"`
@@ -155,9 +155,8 @@ func (m *Media) BeforeCreate() error {
 	m.UsageCount = 0
 
 	// Set expiry for unused media (30 days)
-	if m.ExpiresAt == nil {
-		expires := now.Add(30 * 24 * time.Hour).Unix()
-		m.ExpiresAt = &expires
+	if m.ExpiresAt <= 0 {
+		m.ExpiresAt = now.Add(30 * 24 * time.Hour).Unix()
 	}
 
 	// Set up primary key
@@ -267,7 +266,7 @@ func (m *Media) MarkUsed() {
 	m.UsageCount++
 	now := time.Now()
 	m.LastUsedAt = &now
-	m.ExpiresAt = nil // Remove expiry for used media
+	m.ExpiresAt = 0 // Remove expiry for used media
 }
 
 // SetProcessed marks the media as successfully processed

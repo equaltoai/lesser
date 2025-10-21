@@ -1,0 +1,15 @@
+./argmap.go
+./collections.go
+./comment.go
+./decode.go
+./definition.go
+./directive.go
+./document.go
+./dumper.go
+./fragment.go
+./operation.go
+./path.go
+./selection.go
+./source.go
+./type.go
+./value.go

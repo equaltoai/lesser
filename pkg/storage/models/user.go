@@ -31,24 +31,32 @@ type User struct {
 	GSI4SK string `dynamorm:"index:status-index,sk" json:"gsi4_sk"` // Format: "{username}"
 
 	// Core user data
-	Username     string    `json:"username"`
-	Email        string    `json:"email,omitempty"`         // Optional - not required for email-free auth
-	PasswordHash string    `json:"password_hash,omitempty"` // Optional - not required for passkey/wallet auth
-	DisplayName  string    `json:"display_name,omitempty"`  // Display name for the user
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	Approved     bool      `json:"approved"`
-	Suspended    bool      `json:"suspended"`
-	Silenced     bool      `json:"silenced"`
-	Role         string    `json:"role"` // user, moderator, admin
-	Locale       string    `json:"locale,omitempty"`
+	Username     string              `json:"username"`
+	Email        string              `json:"email,omitempty"`         // Optional - not required for email-free auth
+	PasswordHash string              `json:"password_hash,omitempty"` // Optional - not required for passkey/wallet auth
+	DisplayName  string              `json:"display_name,omitempty"`  // Display name for the user
+	Note         string              `json:"note,omitempty"`          // Profile bio / summary
+	Avatar       string              `json:"avatar,omitempty"`        // Avatar image URL
+	Header       string              `json:"header,omitempty"`        // Header image URL
+	URL          string              `json:"url,omitempty"`           // Profile URL
+	Locked       bool                `json:"locked"`
+	Discoverable bool                `json:"discoverable"`
+	Fields       []map[string]string `json:"fields,omitempty"` // Custom profile metadata fields
+	CreatedAt    time.Time           `json:"created_at"`
+	UpdatedAt    time.Time           `json:"updated_at"`
+	Approved     bool                `json:"approved"`
+	Suspended    bool                `json:"suspended"`
+	Silenced     bool                `json:"silenced"`
+	Role         string              `json:"role"` // user, moderator, admin
+	Locale       string              `json:"locale,omitempty"`
 
 	// Recovery options (email-free)
 	RecoveryMethods []string `json:"recovery_methods,omitempty"` // ["passkey", "wallet", "social", "recovery_code"]
 
 	// NSFW Content Preferences
-	AllowNSFW          bool `json:"allow_nsfw"`           // Whether user allows viewing NSFW content
-	RequireNSFWWarning bool `json:"require_nsfw_warning"` // Whether user wants warnings before showing NSFW content
+	AllowNSFW          bool                   `json:"allow_nsfw"`           // Whether user allows viewing NSFW content
+	RequireNSFWWarning bool                   `json:"require_nsfw_warning"` // Whether user wants warnings before showing NSFW content
+	Metadata           map[string]interface{} `json:"metadata,omitempty"`
 
 	// Version for optimistic locking
 	Version int `dynamorm:"version" json:"version"`
@@ -74,7 +82,6 @@ func (u *User) BeforeCreate() error {
 	// Users can opt-in to NSFW content after registration
 	u.AllowNSFW = false         // Default: block NSFW content
 	u.RequireNSFWWarning = true // Default: show warnings even when NSFW is allowed
-
 	// Set up primary key - matches legacy exactly
 	u.PK = "USER#" + u.Username
 	u.SK = SKMetadata

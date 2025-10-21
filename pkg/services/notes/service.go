@@ -269,6 +269,9 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	// Create ActivityPub Note
 	note := s.buildActivityPubNote(cmd, statusID, author)
 
+	publishedAt := time.Now()
+	note.Published = &publishedAt
+
 	// Create Status model
 	status := &models.Status{
 		StatusID:       statusID,
@@ -285,7 +288,9 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		CcRecipients:   cmd.CcRecipients,
 		BtoRecipients:  cmd.BtoRecipients,
 		BccRecipients:  cmd.BccRecipients,
-		PublishedAt:    time.Now(),
+		PublishedAt:    publishedAt,
+		CreatedAt:      publishedAt,
+		ModifiedAt:     publishedAt,
 	}
 
 	// Handle conversation ID - create new conversation if not provided and it's a top-level post
@@ -761,7 +766,7 @@ func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, 
 
 	note := &activitypub.Note{
 		BaseObject: activitypub.BaseObject{
-			Context:   "https://www.w3.org/ns/activitystreams",
+			Context:   activitypub.Context,
 			Type:      "Note",
 			ID:        fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, author.User.Username, statusID),
 			Published: &now,
@@ -906,10 +911,15 @@ func (s *Service) queueFederationDelivery(ctx context.Context, status *models.St
 		return
 	}
 
+	if strings.TrimSpace(s.domainName) == "" {
+		s.logger.Debug("domain name not configured, skipping delivery")
+		return
+	}
+
 	// Create ActivityPub Create activity
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: "https://www.w3.org/ns/activitystreams",
+			Context: activitypub.Context,
 			Type:    activityType,
 			ID:      fmt.Sprintf("%s#%s", status.Note.ID, strings.ToLower(activityType)),
 			To:      status.ToRecipients,
@@ -920,6 +930,15 @@ func (s *Service) queueFederationDelivery(ctx context.Context, status *models.St
 		Actor:  status.Note.AttributedTo,
 		Object: status.Note,
 	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Warn("federation queue panic suppressed during delivery",
+				zap.String("status_id", status.StatusID),
+				zap.String("activity_type", activityType),
+				zap.Any("reason", r))
+		}
+	}()
 
 	if err := s.federation.QueueActivity(ctx, activity); err != nil {
 		s.logger.Error("failed to queue federation delivery",
@@ -943,7 +962,7 @@ func (s *Service) queueFederationTombstone(ctx context.Context, status *models.S
 
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: "https://www.w3.org/ns/activitystreams",
+			Context: activitypub.Context,
 			Type:    "Delete",
 			ID:      fmt.Sprintf("%s#delete", status.Note.ID),
 			To:      status.ToRecipients,

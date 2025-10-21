@@ -38,7 +38,7 @@ deployment_patterns:
         
       - action: "Deploy development environment"
         command: "cdk deploy --all"
-        validation: "aws cloudformation describe-stacks --stack-name LesserStack-development"
+        validation: "aws cloudformation describe-stacks --stack-name LesserApiStack-development"
         duration: "5-10 minutes"
 
   environment_specific_deployment:
@@ -113,7 +113,7 @@ deployment_patterns:
     list_stacks:
       command: "cdk list"
       expected_output: |
-        LesserStack-development
+        LesserApiStack-development
         LesserMonitoringStack-development
         LesserSecurityStack-development
         
@@ -123,7 +123,7 @@ deployment_patterns:
       when_to_use: "Before any production deployment"
       
     deploy_specific_stack:
-      command: "cdk deploy LesserStack-production"
+      command: "cdk deploy LesserApiStack-production"
       description: "Deploy only specific stack"
       
     destroy_stack:
@@ -188,7 +188,7 @@ rollback_procedures:
       
   full_rollback:
     pattern_name: "Complete Environment Rollback"
-    command: "aws cloudformation cancel-update-stack --stack-name LesserStack-production"
+    command: "aws cloudformation cancel-update-stack --stack-name LesserApiStack-production"
     alternative: "Deploy previous git tag"
 
 validation_checks:

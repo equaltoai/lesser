@@ -1,0 +1,80 @@
+{
+  "PK": {
+    "S": "USER#admin"
+  },
+  "SK": {
+    "S": "METADATA"
+  },
+  "GSI1PK": {
+    "S": "USERS"
+  },
+  "GSI1SK": {
+    "S": "2025-10-19T15:22:50.251Z#admin"
+  },
+  "GSI2PK": {
+    "S": "EMAIL#admin@dev.lesser.host"
+  },
+  "GSI2SK": {
+    "S": "USERNAME#admin"
+  },
+  "GSI3PK": {
+    "S": "ROLE#admin"
+  },
+  "GSI3SK": {
+    "S": "admin"
+  },
+  "GSI4PK": {
+    "S": "STATUS#active"
+  },
+  "GSI4SK": {
+    "S": "admin"
+  },
+  "Username": {
+    "S": "admin"
+  },
+  "Email": {
+    "S": "admin@dev.lesser.host"
+  },
+  "DisplayName": {
+    "S": "Administrator"
+  },
+  "CreatedAt": {
+    "S": "2025-10-19T15:22:50.251Z"
+  },
+  "UpdatedAt": {
+    "S": "2025-10-19T15:22:50.251Z"
+  },
+  "Approved": {
+    "BOOL": true
+  },
+  "Suspended": {
+    "BOOL": false
+  },
+  "Silenced": {
+    "BOOL": false
+  },
+  "Role": {
+    "S": "admin"
+  },
+  "AllowNSFW": {
+    "BOOL": false
+  },
+  "RequireNSFWWarning": {
+    "BOOL": true
+  },
+  "Locked": {
+    "BOOL": false
+  },
+  "Discoverable": {
+    "BOOL": true
+  },
+  "Metadata": {
+    "M": {}
+  },
+  "PasswordHash": {
+    "S": "$2b$12$ygQJP9PtopglD2FjeDvKj.nP1Z7PGggPt2y6Htxz1Q1JEuQTpJOki"
+  },
+  "Version": {
+    "N": "1"
+  }
+}

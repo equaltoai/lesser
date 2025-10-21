@@ -1,0 +1,10 @@
+./auth.go
+./categories.go
+./codes.go
+./common.go
+./context.go
+./federation.go
+./lambda.go
+./services.go
+./storage.go
+./validation.go

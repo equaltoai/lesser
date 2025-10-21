@@ -318,6 +318,16 @@ func (ts *TrackingService) flushMetrics(ctx context.Context) error {
 	ts.metricsBatch = ts.metricsBatch[:0]
 	ts.batchMu.Unlock()
 
+	// Skip flush when CloudWatch client is unavailable (e.g., local tests or sandboxed Lambdas)
+	if ts.cloudWatch == nil {
+		if ts.logger != nil {
+			ts.logger.Debug("skipping cost metric flush; CloudWatch client not configured",
+				zap.Int("metric_count", len(batch)),
+				zap.String("namespace", ts.config.CloudWatchNamespace))
+		}
+		return nil
+	}
+
 	// Send to CloudWatch
 	input := &cloudwatch.PutMetricDataInput{
 		Namespace:  aws.String(ts.config.CloudWatchNamespace),

@@ -1,0 +1,408 @@
+# _decisions.yaml - Decision trees for AI assistants using Lift
+# This file helps AI make correct architectural and implementation choices
+
+decisions:
+  choosing_handler_type:
+    question: "What type of Lambda handler should I use?"
+    decision_tree:
+      - condition: "Building AWS Lambda function in Go"
+        check: "Do you have structured request/response types?"
+        if_yes:
+          choice: "lift.SimpleHandler"
+          reason: "Provides type safety and automatic validation"
+          example: |
+            app.POST("/api/users", lift.SimpleHandler(func(ctx *lift.Context, req CreateUserRequest) (UserResponse, error) {
+                return createUser(req)
+            }))
+        if_no:
+          check: "Do you need flexible request handling?"
+          if_yes:
+            choice: "Basic lift handler"
+            reason: "More control over request parsing"
+            example: |
+              app.POST("/api/process", func(ctx *lift.Context) error {
+                  // Custom parsing logic
+                  return ctx.JSON(result)
+              })
+          if_no:
+            choice: "Consider if Lambda is right choice"
+            reason: "Lift is specifically for Lambda functions"
+      
+      - condition: "Not using AWS Lambda"
+        choice: "Don't use Lift"
+        reason: "Lift is Lambda-specific. Use Gin, Echo, or Fiber for traditional servers"
+        
+      - condition: "Using Lambda but not Go"
+        choice: "Use language-appropriate framework"
+        reason: "Lift is Go-specific"
+  
+  choosing_validation_approach:
+    question: "How should I validate incoming requests?"
+    decision_tree:
+      - condition: "Using lift.SimpleHandler"
+        choice: "Struct tags with validator"
+        reason: "Automatic validation before handler execution"
+        example: |
+          type Request struct {
+              Email string `json:"email" validate:"required,email"`
+              Age   int    `json:"age" validate:"required,min=18,max=100"`
+          }
+          
+      - condition: "Complex validation logic"
+        choice: "Custom validator method"
+        reason: "When validation depends on multiple fields or external data"
+        example: |
+          func (r *Request) Validate(ctx *lift.Context) error {
+              if r.StartDate.After(r.EndDate) {
+                  return lift.ValidationError("start date must be before end date")
+              }
+              return nil
+          }
+          
+      - condition: "Dynamic validation rules"
+        choice: "Validation in handler"
+        reason: "When rules change based on user role or tenant"
+        example: |
+          func HandleRequest(ctx *lift.Context) error {
+              var req Request
+              if err := ctx.ParseRequest(&req); err != nil {
+                  return err
+              }
+              
+              limits := getLimitsForTenant(ctx.TenantID())
+              if req.Amount > limits.MaxAmount {
+                  return lift.ValidationError("exceeds tenant limit")
+              }
+              return nil
+          }
+  
+  choosing_middleware:
+    question: "Which middleware should I use and in what order?"
+    decision_tree:
+      - condition: "Starting new Lambda function"
+        choice: "Standard middleware stack"
+        reason: "Covers 90% of production needs"
+        order:
+          1: "RequestID - Must be first for tracing"
+          2: "Logger - Needs RequestID for correlation"  
+          3: "Recover - Catch panics before they crash"
+          4: "ErrorHandler - Format all errors consistently"
+          5: "Timeout - Set request timeouts"
+          6: "Metrics - Collect performance data"
+          7: "CORS - If browser-facing API"
+          8: "Auth - Before any protected routes"
+          9: "RateLimit - After auth to prevent abuse"
+        example: |
+          app.Use(middleware.RequestID())
+          app.Use(middleware.Logger())
+          app.Use(middleware.Recover())
+          app.Use(middleware.ErrorHandler())
+          app.Use(middleware.Timeout(30*time.Second))
+          app.Use(middleware.Metrics())
+          
+          // API routes
+          api := app.Group("/api")
+          api.Use(middleware.CORS([]string{"https://example.com", "*"}))
+          api.Use(middleware.JWTAuth(middleware.JWTConfig{Secret: "your-secret"}))
+          api.Use(middleware.UserRateLimit(100, 15*time.Minute))
+      
+      - condition: "Public endpoints"
+        choice: "Skip auth but keep rate limiting"
+        reason: "Prevent abuse of public endpoints"
+        example: |
+          public := app.Group("/public")
+          public.Use(middleware.IPRateLimit(1000, time.Hour)) // By IP instead of user
+      
+      - condition: "Admin endpoints"
+        choice: "Additional authorization layer"
+        reason: "Extra security for sensitive operations"
+        example: |
+          admin := api.Group("/admin")
+          admin.Use(middleware.RequireRole("admin"))
+          admin.Use(middleware.AuditLog()) // Log all admin actions
+  
+  choosing_error_handling:
+    question: "How should I handle errors in my handler?"
+    decision_tree:
+      - condition: "Client error (bad request, not found, etc)"
+        choice: "Return lift.Error with appropriate status"
+        reason: "Provides consistent error format"
+        examples:
+          bad_request: "return lift.ValidationError(err.Error())"
+          not_found: "return lift.NewLiftError('NOT_FOUND', 'user not found', 404)"
+          unauthorized: "return lift.Unauthorized('authentication required')"
+          forbidden: "return lift.AuthorizationError('insufficient permissions')"
+          
+      - condition: "Server error (database, external service)"
+        choice: "Log details, return generic error"
+        reason: "Don't expose internal errors to clients"
+        example: |
+          if err != nil {
+              ctx.Logger.Error("database error", 
+                  "error", err,
+                  "query", query,
+                  "user_id", userID)
+              return lift.SystemError("failed to process request")
+          }
+          
+      - condition: "Validation error"
+        choice: "Return detailed validation errors"
+        reason: "Help clients fix their requests"
+        example: |
+          return lift.NewLiftError("VALIDATION_ERROR", "validation failed", 400).WithDetails(map[string]any{
+              "errors": map[string]string{
+                  "email": "invalid format",
+                  "age": "must be at least 18",
+              },
+          })
+  
+  choosing_event_source:
+    question: "How should I handle different AWS event sources?"
+    decision_tree:
+      - condition: "HTTP API (API Gateway)"
+        choice: "Standard lift routes"
+        reason: "Most common Lambda use case"
+        example: |
+          app.GET("/users", GetUsers)
+          app.POST("/users", CreateUser)
+          
+      - condition: "Queue processing (SQS)"
+        choice: "SQS adapter"
+        reason: "Batch processing with automatic retries"
+        example: |
+          app.Handle(sqs.Adapter(func(ctx *lift.Context, messages []sqs.Message) error {
+              // Process messages
+          }))
+          
+      - condition: "File processing (S3)"
+        choice: "S3 adapter"
+        reason: "Triggered by file uploads"
+        example: |
+          app.Handle(s3.Adapter(func(ctx *lift.Context, records []s3.Record) error {
+              // Process files
+          }))
+          
+      - condition: "Scheduled tasks"
+        choice: "EventBridge adapter"
+        reason: "Cron-like scheduling"
+        example: |
+          app.Handle(eventbridge.Adapter(func(ctx *lift.Context, event eventbridge.Event) error {
+              // Run scheduled task
+          }))
+          
+      - condition: "Real-time communication"
+        choice: "WebSocket adapter"
+        reason: "Bidirectional communication"
+        example: |
+          app.Handle(websocket.Adapter(func(ctx *lift.Context, event websocket.Event) error {
+              // Handle connection, message, or disconnect
+          }))
+  
+  choosing_data_access:
+    question: "How should I access data from my Lambda?"
+    decision_tree:
+      - condition: "Using DynamoDB"
+        choice: "DynamORM with lift.Context"
+        reason: "Type-safe DynamoDB access"
+        example: |
+          type User struct {
+              dynamorm.Model
+              ID       string `dynamorm:"pk"`
+              TenantID string `dynamorm:"sk"`
+          }
+          
+          func GetUser(ctx *lift.Context) error {
+              db, err := dynamorm.DB(ctx)
+              if err != nil {
+                  return err
+              }
+              
+              var user User
+              err = db.Get(ctx, ctx.Param("id"), &user)
+              return ctx.JSON(user)
+          }
+          
+      - condition: "Using RDS (PostgreSQL/MySQL)"
+        choice: "Connection pool with context"
+        reason: "Reuse connections across invocations"
+        example: |
+          var db *sql.DB
+          
+          func init() {
+              db = createDBPool()
+          }
+          
+          func GetUser(ctx *lift.Context) error {
+              var user User
+              err := db.QueryRowContext(ctx, 
+                  "SELECT * FROM users WHERE id = $1 AND tenant_id = $2",
+                  ctx.Param("id"), ctx.TenantID()).Scan(&user)
+              return ctx.JSON(user)
+          }
+          
+      - condition: "Using external API"
+        choice: "HTTP client with timeout"
+        reason: "Respect Lambda timeout"
+        example: |
+          func CallExternalAPI(ctx *lift.Context) error {
+              client := &http.Client{
+                  Timeout: 5 * time.Second,
+              }
+              
+              resp, err := client.Get("https://api.example.com/data")
+              // Handle response
+          }
+  
+  choosing_deployment_pattern:
+    question: "How should I structure my Lambda deployment?"
+    decision_tree:
+      - condition: "Single purpose function"
+        choice: "One handler per Lambda"
+        reason: "Better isolation and scaling"
+        example: |
+          // create-user/main.go
+          func main() {
+              app := lift.New()
+              app.POST("/users", CreateUser)
+              lambda.Start(app.HandleRequest)
+          }
+          
+      - condition: "Related endpoints"
+        choice: "Multiple routes in one Lambda"
+        reason: "Shared initialization and lower cold starts"
+        example: |
+          // user-service/main.go
+          func main() {
+              app := lift.New()
+              app.GET("/users", ListUsers)
+              app.GET("/users/:id", GetUser)
+              app.POST("/users", CreateUser)
+              app.PUT("/users/:id", UpdateUser)
+              app.DELETE("/users/:id", DeleteUser)
+              lambda.Start(app.HandleRequest)
+          }
+          
+      - condition: "Microservices"
+        choice: "Lambda per service"
+        reason: "Service boundary alignment"
+        example: |
+          // auth-service/main.go
+          // user-service/main.go  
+          // order-service/main.go
+          // Each with their own routes
+  
+  choosing_testing_strategy:
+    question: "How should I test my Lambda functions?"
+    decision_tree:
+      - condition: "Unit testing handlers"
+        choice: "Use lift testing utilities"
+        reason: "No need for real Lambda invoke"
+        example: |
+          func TestHandler(t *testing.T) {
+              app := testing.NewTestApp()
+              response := app.POST("/api/users", requestBody)
+              assert.Equal(t, 200, response.StatusCode)
+          }
+          
+      - condition: "Integration testing"
+        choice: "Test with mocked AWS services"
+        reason: "Fast and reliable"
+        example: |
+          func TestWithDynamoDB(t *testing.T) {
+              mock := dynamock.New()
+              defer mock.Close()
+              
+              // Test with mock
+          }
+          
+      - condition: "End-to-end testing"
+        choice: "Deploy to test environment"
+        reason: "Real AWS service interaction"
+        example: |
+          // Use separate test stage
+          // Invoke via API Gateway endpoint
+          
+      - condition: "Enterprise testing"
+        choice: "Use enterprise test suite"
+        reason: "Comprehensive testing across environments"
+        example: |
+          func TestEnterpriseScenario(t *testing.T) {
+              suite := testing.NewEnterpriseTestSuite()
+              env := suite.AddEnvironment("test", EnvironmentConfig{
+                  Region: "us-east-1",
+                  Stage: "test",
+              })
+              
+              app := suite.App().WithEnvironment(env)
+              response := app.POST("/api/users", requestBody)
+              // Enterprise assertions
+          }
+  
+  choosing_rate_limiting:
+    question: "How should I implement rate limiting?"
+    decision_tree:
+      - condition: "Simple rate limiting needed"
+        choice: "Use pre-built rate limiting middleware"
+        reason: "Works out of the box with DynamoDB"
+        example: |
+          limiter := middleware.IPRateLimit(1000, time.Hour)
+          app.Use(limiter)
+          
+      - condition: "Per-user rate limiting"
+        choice: "User-based rate limiting middleware"
+        reason: "Authenticated endpoints"
+        example: |
+          userLimiter := middleware.UserRateLimit(100, 15*time.Minute)
+          api.Use(userLimiter)
+          
+      - condition: "Complex rate limiting rules"
+        choice: "Custom rate limiting configuration"
+        reason: "Full control over rate limit keys"
+        example: |
+          limiter, _ := middleware.LimitedRateLimit(middleware.LimitedConfig{
+              Region: "us-east-1",
+              Limit: 1000,
+              Window: time.Hour,
+              Strategy: "fixed", // or "sliding"
+              TableName: "rate-limits",
+          })
+
+  choosing_cdk_integration:
+    question: "How should I integrate with AWS CDK?"
+    decision_tree:
+      - condition: "Building API Gateway Lambda"
+        choice: "Use Lift CDK constructs"
+        reason: "Pre-built patterns for common Lambda integrations"
+        example: |
+          import "github.com/pay-theory/lift/pkg/cdk/constructs"
+          
+          api := constructs.NewAPI(stack, "MyAPI", constructs.APIConfig{
+              Name: "my-api",
+              Stage: "prod",
+          })
+          
+          api.AddLambdaRoute("GET", "/users", userHandler)
+          
+      - condition: "Event-driven architecture"
+        choice: "Use event-specific constructs"
+        reason: "Optimized for specific event sources"
+        example: |
+          sqsQueue := constructs.NewSQSQueue(stack, "MyQueue", constructs.SQSConfig{
+              QueueName: "user-events",
+          })
+          
+          constructs.NewSQSLambda(stack, "QueueProcessor", constructs.SQSLambdaConfig{
+              Queue: sqsQueue,
+              Handler: processUserEvents,
+          })
+          
+      - condition: "Multi-tenant SaaS"
+        choice: "Use tenant-aware constructs"
+        reason: "Built-in tenant isolation and scaling"
+        example: |
+          tenantStack := constructs.NewTenantStack(stack, "TenantStack", constructs.TenantConfig{
+              TenantTable: tenantTable,
+              IsolationLevel: "database",
+          })
+          
+          tenantStack.AddService("user-service", userServiceConfig)

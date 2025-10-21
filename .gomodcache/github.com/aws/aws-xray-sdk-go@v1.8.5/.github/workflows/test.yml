@@ -1,0 +1,62 @@
+name: Test
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+        go:
+          - '1.19'
+          - '1.20'
+          - '1'
+    steps:
+      - name: Set up Go ${{ matrix.go }}
+        uses: actions/setup-go@v1
+        with:
+          go-version: ${{ matrix.go }}
+      - name: Check out code
+        uses: actions/checkout@v2
+        with:
+          path: src/github.com/aws/aws-xray-sdk-go
+      - name: Test
+        run: make test-with-race
+        shell: bash
+        working-directory: src/github.com/aws/aws-xray-sdk-go
+
+  benchmark:
+    name: XRay-Go-SDK-Benchmarking
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+        go:
+          - '1.20'
+    steps:
+      - name: Set up Go ${{ matrix.go }}
+        uses: actions/setup-go@v1
+        with:
+          go-version: ${{ matrix.go }}
+        id: go
+      - name: Check out code
+        uses: actions/checkout@v2
+        with:
+          path: src/github.com/aws/aws-xray-sdk-go
+      - name: Benchmark
+        run: go test -v -benchmem -run=^$$ -bench=. ./... | tee benchmark/output.txt
+        shell: bash
+        working-directory: src/github.com/aws/aws-xray-sdk-go

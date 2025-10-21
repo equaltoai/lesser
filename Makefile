@@ -1,4 +1,4 @@
-.PHONY: help build clean test deploy status destroy
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials
 
 # =============================================================================
 # CONFIGURATION
@@ -62,6 +62,7 @@ ENV_MAP_staging = staging
 ENV_MAP_live = production
 ENV_MAP_production = production
 CDK_ENV = $(ENV_MAP_$(ENV))
+CDN_ENV_FILE = tmp/cdn-$(ENV).env
 
 # =============================================================================
 # BUILD TARGETS
@@ -104,16 +105,25 @@ build-%:
 	@cd bin && zip -q $*.zip bootstrap && rm bootstrap
 	@echo "✓ Built $*.zip"
 
-## Build all Lambda functions (legacy/local)
+## Build entire deployment payload (always clean + rebuild every artifact)
 build:
-	@echo "Building Lambda functions for local use..."
+	@echo "Cleaning and rebuilding deployment artifacts..."
+	@$(MAKE) clean
+	@$(MAKE) rebuild-lambdas
+	@$(MAKE) build-cloudfront-keygen
+	@go build ./...
+	@echo "✓ Deployment build complete (Lambda zips, cloudfront-keygen.zip, and Go binaries refreshed)"
+
+## Build all Lambda binaries for local use (non-zipped)
+build-local:
+	@echo "Building Lambda binaries for local use..."
 	@mkdir -p bin
 	@for lambda in $(LAMBDAS); do \
 		echo "Building cmd/$$lambda..."; \
 		GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
 			go build -ldflags="-s -w" -o bin/$$lambda ./cmd/$$lambda || exit 1; \
 	done
-	@echo "✓ Build complete"
+	@echo "✓ Local binaries built in bin/"
 
 ## Build CloudFront key generation Lambda (for CDK custom resource)
 build-cloudfront-keygen:
@@ -214,23 +224,31 @@ check-shared:
 # ENVIRONMENT-SPECIFIC DEPLOYMENT
 # =============================================================================
 
+ensure-cdn-credentials:
+	@mkdir -p tmp
+	@echo "Ensuring CDN credentials for $(ENV)..."
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) scripts/ensure_cdn_credentials.sh $(ENV) > $(CDN_ENV_FILE)
+
 ## Deploy to development environment
 deploy-dev: ENV=dev
-deploy-dev: build-lambdas build-cloudfront-keygen check-shared
+deploy-dev: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-credentials
 	@echo "Deploying to DEVELOPMENT environment..."
 	@echo "Step 1/2: Deploying monitoring stack..."
 	@cd infra/cdk && cdk deploy LesserMonitoringStack-development \
 		--context environment=development \
 		--require-approval never
 	@echo "Step 2/2: Deploying application stack..."
-	@cd infra/cdk && cdk deploy LesserStack-development \
+	@. $(CDN_ENV_FILE); \
+	cd infra/cdk && cdk deploy LesserApiStack-development \
 		--context environment=development \
+		--context cdnPrivateKeySecret=$$CLOUDFRONT_PRIVATE_KEY_PATH \
+		--context cdnKeyPairId=$$CLOUDFRONT_KEY_PAIR_ID \
 		--require-approval never
 	@echo "✓ Development deployment complete"
 
 ## Deploy to test/staging environment
 deploy-test: ENV=test
-deploy-test: build-lambdas build-cloudfront-keygen check-shared
+deploy-test: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-credentials
 	@echo "Deploying to TEST/STAGING environment..."
 	@if [ -z "$(DOMAIN)" ]; then \
 		echo "Error: DOMAIN is required for staging"; \
@@ -243,15 +261,18 @@ deploy-test: build-lambdas build-cloudfront-keygen check-shared
 		--context domain=$(DOMAIN) \
 		--require-approval broadening
 	@echo "Step 2/2: Deploying application stack..."
-	@cd infra/cdk && cdk deploy LesserStack-staging \
+	@. $(CDN_ENV_FILE); \
+	cd infra/cdk && cdk deploy LesserApiStack-staging \
 		--context environment=staging \
 		--context domain=$(DOMAIN) \
+		--context cdnPrivateKeySecret=$$CLOUDFRONT_PRIVATE_KEY_PATH \
+		--context cdnKeyPairId=$$CLOUDFRONT_KEY_PAIR_ID \
 		--require-approval broadening
 	@echo "✓ Staging deployment complete"
 
 ## Deploy to live/production environment
 deploy-live: ENV=live
-deploy-live: build-lambdas build-cloudfront-keygen check-shared
+deploy-live: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-credentials
 	@echo "Deploying to LIVE/PRODUCTION environment..."
 	@if [ -z "$(DOMAIN)" ]; then \
 		echo "Error: DOMAIN is required for production"; \
@@ -264,9 +285,12 @@ deploy-live: build-lambdas build-cloudfront-keygen check-shared
 		--context domain=$(DOMAIN) \
 		--require-approval broadening
 	@echo "Step 2/2: Deploying application stack..."
-	@cd infra/cdk && cdk deploy LesserStack-production \
+	@. $(CDN_ENV_FILE); \
+	cd infra/cdk && cdk deploy LesserApiStack-production \
 		--context environment=production \
 		--context domain=$(DOMAIN) \
+		--context cdnPrivateKeySecret=$$CLOUDFRONT_PRIVATE_KEY_PATH \
+		--context cdnKeyPairId=$$CLOUDFRONT_KEY_PAIR_ID \
 		--require-approval broadening
 	@echo "✓ Production deployment complete"
 
@@ -374,7 +398,7 @@ destroy-dev:
 	@echo "Note: Shared resources (KMS, Secrets) will NOT be destroyed"
 	@read -p "Are you sure? Type 'yes' to confirm: " confirm && [ "$$confirm" = "yes" ] || exit 1
 	@echo "Destroying development environment..."
-	@cd infra/cdk && cdk destroy LesserStack-development LesserMonitoringStack-development \
+	@cd infra/cdk && cdk destroy LesserApiStack-development LesserMonitoringStack-development \
 		--context environment=development \
 		--force
 
@@ -384,7 +408,7 @@ destroy-test:
 	@echo "Note: Shared resources (KMS, Secrets) will NOT be destroyed"
 	@read -p "Are you sure? Type 'yes' to confirm: " confirm && [ "$$confirm" = "yes" ] || exit 1
 	@echo "Destroying staging environment..."
-	@cd infra/cdk && cdk destroy LesserStack-staging LesserMonitoringStack-staging \
+	@cd infra/cdk && cdk destroy LesserApiStack-staging LesserMonitoringStack-staging \
 		--context environment=staging \
 		--force
 
@@ -395,7 +419,7 @@ destroy-live:
 	@echo "Note: Shared resources (KMS, Secrets) will NOT be destroyed"
 	@read -p "Type 'DELETE PRODUCTION' to confirm: " confirm && [ "$$confirm" = "DELETE PRODUCTION" ] || exit 1
 	@echo "Destroying production environment..."
-	@cd infra/cdk && cdk destroy LesserStack-production LesserMonitoringStack-production \
+	@cd infra/cdk && cdk destroy LesserApiStack-production LesserMonitoringStack-production \
 		--context environment=production \
 		--force
 
@@ -615,11 +639,11 @@ init-deploy:
 ## Show deployment outputs (API endpoints, etc.)
 outputs:
 	@if [ "$(ENV)" = "live" ] || [ "$(ENV)" = "production" ]; then \
-		STACK_NAME="LesserStack-production"; \
+		STACK_NAME="LesserApiStack-production"; \
 	elif [ "$(ENV)" = "test" ] || [ "$(ENV)" = "staging" ]; then \
-		STACK_NAME="LesserStack-staging"; \
+		STACK_NAME="LesserApiStack-staging"; \
 	else \
-		STACK_NAME="LesserStack-development"; \
+		STACK_NAME="LesserApiStack-development"; \
 	fi; \
 	echo "Stack outputs for $$STACK_NAME:"; \
 	aws cloudformation describe-stacks \
@@ -667,10 +691,11 @@ help:
 	@echo "Usage: make [target] [ENV=dev|test|live]"
 	@echo ""
 	@echo "BUILD TARGETS:"
+	@echo "  build               Clean and rebuild all deployment artifacts (Lambda zips + cloudfront keygen)"
 	@echo "  build-lambdas       Build Lambda functions (incremental - skips existing)"
 	@echo "  rebuild-lambdas     Force rebuild all Lambda functions"
 	@echo "  build-<function>    Build a specific Lambda function"
-	@echo "  build               Build all functions for local use"
+	@echo "  build-local         Build local (non-zipped) binaries for each Lambda"
 	@echo "  clean               Clean build artifacts"
 	@echo ""
 	@echo "CDK COMMANDS:"

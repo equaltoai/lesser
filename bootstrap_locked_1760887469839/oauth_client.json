@@ -1,0 +1,61 @@
+{
+  "PK": {
+    "S": "OAUTH_CLIENT#857hQYMIz03ySCNrZYCch8"
+  },
+  "SK": {
+    "S": "CLIENT"
+  },
+  "ClientID": {
+    "S": "857hQYMIz03ySCNrZYCch8"
+  },
+  "ClientSecret": {
+    "S": "8kXCVsqRpaxVMGy30gGp3bKdBDYDBW67XLkSAu0W06F"
+  },
+  "Name": {
+    "S": "Bootstrap Client"
+  },
+  "Website": {
+    "S": "https://dev.lesser.host"
+  },
+  "RedirectURIs": {
+    "L": [
+      {
+        "S": "https://dev.lesser.host/auth/callback"
+      },
+      {
+        "S": "urn:ietf:wg:oauth:2.0:oob"
+      }
+    ]
+  },
+  "Scopes": {
+    "L": [
+      {
+        "S": "read"
+      },
+      {
+        "S": "write"
+      },
+      {
+        "S": "follow"
+      },
+      {
+        "S": "push"
+      }
+    ]
+  },
+  "CreatedAt": {
+    "S": "2025-10-19T15:24:29.839Z"
+  },
+  "OAuthClientsPK": {
+    "S": "OAUTH_CLIENTS"
+  },
+  "OAuthClientsSK": {
+    "S": "CREATED_AT#7462484567015775807#CLIENT#857hQYMIz03ySCNrZYCch8"
+  },
+  "Confidential": {
+    "BOOL": true
+  },
+  "UpdatedAt": {
+    "S": "2025-10-19T15:24:29.839Z"
+  }
+}

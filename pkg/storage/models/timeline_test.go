@@ -213,7 +213,7 @@ func TestTimeline_GetTimelineKey(t *testing.T) {
 
 func TestTimeline_TableName(t *testing.T) {
 	timeline := &Timeline{}
-	assert.Equal(t, "lesser-main", timeline.TableName())
+	assert.Equal(t, MainTableName, timeline.TableName())
 }
 
 func TestTimeline_EntryIDGeneration(t *testing.T) {

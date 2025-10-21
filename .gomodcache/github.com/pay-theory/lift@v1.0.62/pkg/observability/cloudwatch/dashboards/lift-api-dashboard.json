@@ -1,0 +1,176 @@
+{
+    "widgets": [
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "PayTheory/Lift", "requests.total", "Environment", "production" ],
+                    [ ".", "requests.errors", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "title": "API Request Volume",
+                "period": 300,
+                "stat": "Sum",
+                "yAxis": {
+                    "left": {
+                        "min": 0
+                    }
+                }
+            }
+        },
+        {
+            "type": "metric",
+            "x": 12,
+            "y": 0,
+            "width": 12,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "PayTheory/Lift", "requests.duration", "Environment", "production" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "title": "API Response Time",
+                "period": 300,
+                "stat": "Average",
+                "yAxis": {
+                    "left": {
+                        "min": 0,
+                        "label": "Milliseconds"
+                    }
+                }
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 6,
+            "width": 8,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "PayTheory/Lift", "requests.errors", "Environment", "production", { "stat": "Sum" } ]
+                ],
+                "view": "singleValue",
+                "region": "us-east-1",
+                "title": "Error Count (Last 5 min)",
+                "period": 300,
+                "stat": "Sum"
+            }
+        },
+        {
+            "type": "metric",
+            "x": 8,
+            "y": 6,
+            "width": 8,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ { "expression": "m1/m2*100", "label": "Error Rate %", "id": "e1" } ],
+                    [ "PayTheory/Lift", "requests.errors", "Environment", "production", { "id": "m1", "visible": false } ],
+                    [ ".", "requests.total", ".", ".", { "id": "m2", "visible": false } ]
+                ],
+                "view": "singleValue",
+                "region": "us-east-1",
+                "title": "Error Rate",
+                "period": 300,
+                "stat": "Sum"
+            }
+        },
+        {
+            "type": "metric",
+            "x": 16,
+            "y": 6,
+            "width": 8,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "PayTheory/Lift", "requests.duration", "Environment", "production" ]
+                ],
+                "view": "singleValue",
+                "region": "us-east-1",
+                "title": "Avg Response Time",
+                "period": 300,
+                "stat": "Average"
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 12,
+            "width": 12,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "PayTheory/Lift", "requests.total", "Environment", "production", "method", "GET" ],
+                    [ "...", "POST" ],
+                    [ "...", "PUT" ],
+                    [ "...", "DELETE" ]
+                ],
+                "view": "timeSeries",
+                "stacked": true,
+                "region": "us-east-1",
+                "title": "Requests by HTTP Method",
+                "period": 300,
+                "stat": "Sum"
+            }
+        },
+        {
+            "type": "metric",
+            "x": 12,
+            "y": 12,
+            "width": 12,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "PayTheory/Lift", "requests.total", "Environment", "production", "status", "200" ],
+                    [ "...", "201" ],
+                    [ "...", "400" ],
+                    [ "...", "401" ],
+                    [ "...", "403" ],
+                    [ "...", "404" ],
+                    [ "...", "500" ]
+                ],
+                "view": "timeSeries",
+                "stacked": true,
+                "region": "us-east-1",
+                "title": "Requests by Status Code",
+                "period": 300,
+                "stat": "Sum"
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 18,
+            "width": 24,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "PayTheory/Lift", "requests.duration", "Environment", "production" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "title": "Response Time Percentiles",
+                "period": 300,
+                "stat": "Average",
+                "annotations": {
+                    "horizontal": [
+                        {
+                            "label": "SLA Target (500ms)",
+                            "value": 500
+                        }
+                    ]
+                }
+            }
+        }
+    ]
+} 
