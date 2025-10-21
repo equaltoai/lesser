@@ -88,3 +88,7 @@ reference/
 !*.go
 !cmd/
 !pkg/
+bootstrap*
+.gocache
+.gomodcache
+.pai
