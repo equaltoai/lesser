@@ -677,10 +677,10 @@ func (r *SearchRepository) executeHashtagSearch(ctx context.Context, query strin
 // searchByHashtags searches for statuses containing hashtags
 func (r *SearchRepository) searchByHashtags(ctx context.Context, hashtags []string, result *statusSearchResult) {
 	for _, hashtag := range hashtags {
-		// Use GSI5 (hashtag-index) to find statuses with this hashtag
+		// Use GSI5 to find statuses with this hashtag
 		var statuses []models.Status
 		err := r.db.WithContext(ctx).Model(&models.Status{}).
-			Index("hashtag-index").
+			Index("GSI5").
 			Where("GSI5PK", "=", fmt.Sprintf("HASHTAG#%s", strings.ToLower(hashtag))).
 			Limit(50). // Limit to prevent excessive results
 			All(&statuses)

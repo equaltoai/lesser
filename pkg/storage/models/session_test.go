@@ -9,7 +9,7 @@ import (
 
 func TestSession_TableName(t *testing.T) {
 	s := &Session{}
-	assert.Equal(t, "lesser-main", s.TableName())
+	assert.Equal(t, MainTableName, s.TableName())
 }
 
 func TestSession_BeforeUpdate(t *testing.T) {

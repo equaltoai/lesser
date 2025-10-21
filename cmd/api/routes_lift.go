@@ -1,39 +1,69 @@
 package main
 
 import (
+	"time"
+
+	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/pay-theory/lift/pkg/lift"
 )
 
 // configureLiftRoutes sets up routes that use native Lift handlers
 // This allows gradual migration from Lambda handlers to Lift handlers
 func configureLiftRoutes(app *lift.App) {
-	// OAuth endpoints with native Lift implementation
-	_ = app.GET("/oauth/authorize", lift.HandlerFunc(liftHandler.HandleOAuthAuthorizeLift))
-	_ = app.POST("/oauth/token", lift.HandlerFunc(liftHandler.HandleOAuthTokenLift))
+	// OAuth endpoints with native Lift implementation + rate limiting
+	_ = app.GET("/oauth/authorize", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleOAuthAuthorizeLift),
+		20, 5*time.Minute, logger))
+	_ = app.POST("/oauth/token", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleOAuthTokenLift),
+		10, time.Minute, logger))
 
 	// NodeInfo endpoints with native Lift implementation
 	_ = app.GET("/.well-known/nodeinfo", lift.HandlerFunc(liftHandler.HandleNodeInfoWellKnownLift))
 	_ = app.GET("/nodeinfo/2.0", lift.HandlerFunc(liftHandler.HandleNodeInfoLift))
 
+	// Account verification/update endpoints with native Lift implementation
+	// verify_credentials is NOT rate limited (read-only)
+	_ = app.GET("/api/v1/accounts/verify_credentials", lift.HandlerFunc(liftHandler.HandleVerifyCredentialsLift))
+	// update_credentials IS rate limited
+	_ = app.PATCH("/api/v1/accounts/update_credentials", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleUpdateCredentialsLift),
+		10, time.Hour, logger))
+
 	// Relationships endpoint with native Lift implementation
 	_ = app.GET("/accounts/relationships", lift.HandlerFunc(liftHandler.HandleGetRelationshipsLift))
 
 	// Data exports with native Lift implementation
-	_ = app.POST("/exports", lift.HandlerFunc(liftHandler.HandleCreateExportLift))
+	// POST is rate limited (expensive operation)
+	_ = app.POST("/exports", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleCreateExportLift),
+		5, 24*time.Hour, logger))
+	// GETs are NOT rate limited (read-only)
 	_ = app.GET("/exports/{id}", lift.HandlerFunc(liftHandler.HandleGetExportStatusLift))
 	_ = app.GET("/exports/{id}/download", lift.HandlerFunc(liftHandler.HandleDownloadExportLift))
 	_ = app.GET("/exports", lift.HandlerFunc(liftHandler.HandleListExportsLift))
 
 	// Data imports with native Lift implementation
-	_ = app.POST("/imports", lift.HandlerFunc(liftHandler.HandleCreateImportLift))
+	// POST is rate limited (expensive operation)
+	_ = app.POST("/imports", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleCreateImportLift),
+		5, 24*time.Hour, logger))
+	// GETs and DELETE are NOT rate limited
 	_ = app.GET("/imports/{id}", lift.HandlerFunc(liftHandler.HandleGetImportStatusLift))
 	_ = app.DELETE("/imports/{id}", lift.HandlerFunc(liftHandler.HandleCancelImportLift))
 	_ = app.GET("/imports", lift.HandlerFunc(liftHandler.HandleListImportsLift))
 
 	// Community Notes endpoints with native Lift implementation
-	_ = app.POST("/notes", lift.HandlerFunc(liftHandler.HandleCreateNoteLift))
+	// POST create note is rate limited
+	_ = app.POST("/notes", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleCreateNoteLift),
+		20, time.Hour, logger))
+	// GETs are NOT rate limited
 	_ = app.GET("/notes/{object_id}", lift.HandlerFunc(liftHandler.HandleGetNotesLift))
-	_ = app.POST("/notes/{id}/vote", lift.HandlerFunc(liftHandler.HandleVoteNoteLift))
+	// POST vote is rate limited
+	_ = app.POST("/notes/{id}/vote", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleVoteNoteLift),
+		100, time.Hour, logger))
 	_ = app.GET("/accounts/{id}/notes", lift.HandlerFunc(liftHandler.HandleGetUserNotesLift))
 
 	// Admin endpoints (always enabled for administration)
@@ -86,10 +116,36 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.PUT("/admin/moderation/trust/{from}/{to}", lift.HandlerFunc(liftHandler.HandleAdminUpdateTrustLift))
 
 	// Search endpoints with privacy enforcement (always enabled)
-	_ = app.GET("/api/v1/accounts/search", lift.HandlerFunc(liftHandler.HandleAccountSearchLift))
+	// Account search is rate limited (scraping prevention)
+	_ = app.GET("/api/v1/accounts/search", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleAccountSearchLift),
+		30, 5*time.Minute, logger))
+	// Suggestions are NOT rate limited
 	_ = app.GET("/api/v1/accounts/search/suggestions", lift.HandlerFunc(liftHandler.HandleGetSearchSuggestionsLift))
-	_ = app.GET("/api/v1/search/statuses", lift.HandlerFunc(liftHandler.HandleStatusSearchLift))
-	_ = app.POST("/api/v1/search/statuses", lift.HandlerFunc(liftHandler.HandleStatusSearchLift))
+	// Status search is rate limited (GET and POST)
+	_ = app.GET("/api/v1/search/statuses", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleStatusSearchLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/search/statuses", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleStatusSearchLift),
+		30, 5*time.Minute, logger))
+
+	// Relationship interactions
+	_ = app.POST("/api/v1/accounts/{id}/follow", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleFollowLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/accounts/{id}/unfollow", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleUnfollowLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/accounts/{id}/block", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleBlockLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/accounts/{id}/unblock", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleUnblockLift),
+		30, 5*time.Minute, logger))
+	_ = app.GET("/api/v1/blocks", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleGetBlocksLift),
+		60, time.Hour, logger))
 
 	// Reviewer management (Admin only)
 	_ = app.GET("/admin/moderation/reviewers", lift.HandlerFunc(liftHandler.HandleAdminGetReviewersLift))
@@ -98,7 +154,11 @@ func configureLiftRoutes(app *lift.App) {
 
 	// Media endpoints - V1 (synchronous) and V2 (asynchronous)
 	// V1 Media endpoints (backwards compatibility)
-	_ = app.POST("/media", lift.HandlerFunc(liftHandler.HandleUploadMediaLift))
+	// POST is rate limited (storage abuse prevention)
+	_ = app.POST("/media", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleUploadMediaLift),
+		20, time.Hour, logger))
+	// GET and PUT are NOT rate limited
 	_ = app.GET("/media/{id}", lift.HandlerFunc(liftHandler.HandleGetMediaLift))
 	_ = app.PUT("/media/{id}", lift.HandlerFunc(liftHandler.HandleUpdateMediaLift))
 
@@ -143,7 +203,11 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.POST("/api/v2/notifications/groups/{group_id}/read", lift.HandlerFunc(liftHandler.HandleMarkGroupAsReadLift))
 
 	// Quote posts API endpoints
-	_ = app.POST("/api/v1/statuses/{id}/quote", lift.HandlerFunc(liftHandler.HandleCreateQuotePostLift))
+	// POST create quote is rate limited (spam prevention)
+	_ = app.POST("/api/v1/statuses/{id}/quote", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleCreateQuotePostLift),
+		30, time.Hour, logger))
+	// GETs, DELETE, and PUT are NOT rate limited
 	_ = app.GET("/api/v1/statuses/{id}/quotes", lift.HandlerFunc(liftHandler.HandleGetQuotesOfStatusLift))
 	_ = app.DELETE("/api/v1/statuses/{id}/quote/{quote_id}", lift.HandlerFunc(liftHandler.HandleDeleteQuotePostLift))
 	_ = app.GET("/api/v1/accounts/{id}/quote_permissions", lift.HandlerFunc(liftHandler.HandleGetQuotePermissionsLift))

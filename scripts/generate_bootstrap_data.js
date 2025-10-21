@@ -106,6 +106,19 @@ const timestamp = new Date().toISOString();
 const outputDir = `bootstrap_${username}_${Date.now()}`;
 fs.mkdirSync(outputDir, { recursive: true });
 
+const MAX_INT64 = BigInt('9223372036854775807');
+
+function padNumericId(seed) {
+    return seed.toString().padStart(12, '0');
+}
+
+function encodeDescendingTimestamp(date) {
+    const ts = date instanceof Date ? date : new Date(date);
+    const nanos = BigInt(ts.getTime()) * BigInt(1_000_000);
+    const encoded = MAX_INT64 - nanos;
+    return encoded.toString().padStart(19, '0');
+}
+
 // Generate Actor data
 const actorData = {
     PK: { S: `ACTOR#${username}` },
@@ -146,38 +159,59 @@ const actorData = {
         }
     },
     PrivateKey: { S: privateKey },
+    Username: { S: username },
     CreatedAt: { S: timestamp },
-    UpdatedAt: { S: timestamp }
+    UpdatedAt: { S: timestamp },
+    NumericID: { S: padNumericId(crypto.randomInt(1, 1_000_000)) }
 };
 
 // Generate User data
 const userData = {
     PK: { S: `USER#${username}` },
-    SK: { S: `USER#${username}` },
-    username: { S: username },
-    password_hash: { S: passwordHash },
-    created_at: { S: timestamp },
-    updated_at: { S: timestamp },
-    approved: { BOOL: true },
-    suspended: { BOOL: false },
-    role: { S: role }
+    SK: { S: 'METADATA' },
+    GSI1PK: { S: 'USERS' },
+    GSI1SK: { S: `${timestamp}#${username}` },
+    GSI2PK: { S: `EMAIL#${username}@${domain}` },
+    GSI2SK: { S: `USERNAME#${username}` },
+    GSI3PK: { S: `ROLE#${role}` },
+    GSI3SK: { S: username },
+    GSI4PK: { S: 'STATUS#active' },
+    GSI4SK: { S: username },
+    Username: { S: username },
+    Email: { S: `${username}@${domain}` },
+    PasswordHash: { S: passwordHash },
+    DisplayName: { S: isAdmin ? 'Administrator' : username },
+    CreatedAt: { S: timestamp },
+    UpdatedAt: { S: timestamp },
+    Approved: { BOOL: true },
+    Suspended: { BOOL: false },
+    Silenced: { BOOL: false },
+    Role: { S: role },
+    AllowNSFW: { BOOL: false },
+    RequireNSFWWarning: { BOOL: true },
+    Locked: { BOOL: false },
+    Discoverable: { BOOL: true },
+    Metadata: { M: {} },
+    Version: { N: '1' }
 };
 
 // Generate OAuth Client data
 const oauthClientData = {
     PK: { S: `OAUTH_CLIENT#${clientId}` },
-    SK: { S: `OAUTH_CLIENT#${clientId}` },
-    client_id: { S: clientId },
-    client_secret: { S: clientSecret },
-    name: { S: 'Bootstrap Client' },
-    website: { S: `https://${domain}` },
-    redirect_uris: {
+    SK: { S: 'CLIENT' },
+    OAuthClientsPK: { S: 'OAUTH_CLIENTS' },
+    OAuthClientsSK: { S: `CREATED_AT#${encodeDescendingTimestamp(timestamp)}#CLIENT#${clientId}` },
+    ClientID: { S: clientId },
+    ClientSecret: { S: clientSecret },
+    Name: { S: 'Bootstrap Client' },
+    Website: { S: `https://${domain}` },
+    RedirectURIs: {
         L: [
             { S: `https://${domain}/auth/callback` },
             { S: 'urn:ietf:wg:oauth:2.0:oob' }
         ]
     },
-    scopes: {
+    Scopes: {
         L: [
             { S: 'read' },
             { S: 'write' },
@@ -185,7 +219,9 @@ const oauthClientData = {
             { S: 'push' }
         ]
     },
-    created_at: { S: timestamp }
+    Confidential: { BOOL: true },
+    CreatedAt: { S: timestamp },
+    UpdatedAt: { S: timestamp }
 };
 
 // Write JSON files

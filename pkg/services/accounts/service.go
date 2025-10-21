@@ -181,6 +181,10 @@ func NewService(
 		logger = zap.NewNop()
 	}
 
+	logger.Info("accounts service: initializing",
+		zap.String("domain", domainName),
+		zap.Bool("storage_present", storage != nil))
+
 	// Initialize business logic frameworks
 	streamingEmitter := streamingEventEmitter{publisher: publisher}
 	businessLogic := common.NewBusinessLogicService(logger, &streamingEmitter, domainName)
@@ -196,7 +200,7 @@ func NewService(
 	mastodonConfig.Domain = domainName
 	mastodonLogic := common.NewMastodonBusinessLogic(mastodonConfig, logger)
 
-	return &Service{
+	svc := &Service{
 		storage:          storage,
 		publisher:        publisher,
 		federation:       federation,
@@ -209,6 +213,11 @@ func NewService(
 		mastodonLogic:    mastodonLogic,
 		streamingEmitter: streamingEmitter,
 	}
+
+	logger.Info("accounts service: initialized",
+		zap.String("domain", domainName))
+
+	return svc
 }
 
 // Command structs for operations
@@ -560,19 +569,29 @@ func (s *Service) UpdatePreferences(ctx context.Context, cmd *UpdatePreferencesC
 
 // GetAccount retrieves a single account with privacy-aware data
 func (s *Service) GetAccount(ctx context.Context, username string) (*storage.Account, error) {
-	s.logger.Debug("getting account",
+	s.logger.Info("accounts service: getting account",
 		zap.String("username", username))
 
 	// Get the account
 	account, err := s.storage.Account().GetAccount(ctx, username)
 	if err != nil {
+		s.logger.Error("accounts service: storage GetAccount failed",
+			zap.String("username", username),
+			zap.Error(err))
 		return nil, ErrGetAccount
 	}
 
 	// Check if account is suspended or deleted - hide from public
 	if account.User.Suspended {
+		s.logger.Warn("accounts service: account suspended",
+			zap.String("username", username))
 		return nil, ErrAccountNotFound // Don't reveal it's suspended
 	}
+
+	s.logger.Info("accounts service: account retrieved",
+		zap.String("username", username))
+
+	s.hydrateAccountActor(account)
 
 	// Return the account directly since we simplified the method
 	return account, nil
@@ -705,10 +724,172 @@ func (s *Service) validateUpdatePreferencesCommand(_ context.Context, cmd *Updat
 	return nil
 }
 
+func (s *Service) hydrateAccountActor(account *storage.Account) {
+	if account == nil {
+		return
+	}
+
+	user := account.User
+	if user == nil {
+		return
+	}
+
+	baseURL := s.normalizeBaseURL(s.domainName)
+	if baseURL == "" {
+		baseURL = s.normalizeBaseURL(user.URL)
+	}
+
+	actor := account.Actor
+	if actor == nil {
+		actor = &activitypub.Actor{}
+		account.Actor = actor
+	}
+
+	if actor.Type == "" {
+		actor.Type = activitypub.PersonType
+	}
+
+	if actor.ID == "" && baseURL != "" {
+		actor.ID = fmt.Sprintf("%s/users/%s", baseURL, user.Username)
+	}
+
+	if actor.URL == "" && baseURL != "" {
+		actor.URL = fmt.Sprintf("%s/@%s", baseURL, user.Username)
+	}
+
+	if actor.Inbox == "" && baseURL != "" {
+		actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, user.Username)
+	}
+
+	if actor.Outbox == "" && baseURL != "" {
+		actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, user.Username)
+	}
+
+	if actor.Followers == "" && baseURL != "" {
+		actor.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, user.Username)
+	}
+
+	if actor.Following == "" && baseURL != "" {
+		actor.Following = fmt.Sprintf("%s/users/%s/following", baseURL, user.Username)
+	}
+
+	if actor.Liked == "" && baseURL != "" {
+		actor.Liked = fmt.Sprintf("%s/users/%s/liked", baseURL, user.Username)
+	}
+
+	if actor.Endpoints == nil && baseURL != "" {
+		actor.Endpoints = &activitypub.Endpoints{
+			SharedInbox: fmt.Sprintf("%s/inbox", baseURL),
+		}
+	}
+
+	if actor.PreferredUsername == "" {
+		actor.PreferredUsername = user.Username
+	}
+
+	if actor.Name == "" {
+		actor.Name = user.DisplayName
+	}
+
+	if actor.Summary == "" {
+		actor.Summary = user.Note
+	}
+
+	if actor.Published == nil {
+		published := user.CreatedAt
+		actor.Published = &published
+	}
+
+	if actor.Updated == nil {
+		updated := user.UpdatedAt
+		actor.Updated = &updated
+	}
+
+	if len(actor.Attachment) == 0 && len(user.Fields) > 0 {
+		attachments := make([]activitypub.Attachment, 0, len(user.Fields))
+		for _, field := range user.Fields {
+			name := field["name"]
+			value := field["value"]
+			if name == "" && value == "" {
+				continue
+			}
+			attachments = append(attachments, activitypub.Attachment{
+				Type:  "PropertyValue",
+				Name:  name,
+				Value: value,
+			})
+		}
+		if len(attachments) > 0 {
+			actor.Attachment = attachments
+		}
+	}
+
+	if !actor.ManuallyApprovesFollowers {
+		actor.ManuallyApprovesFollowers = user.Locked
+	}
+
+	if !actor.Discoverable {
+		actor.Discoverable = user.Discoverable
+	}
+
+	if actor.Icon == nil && user.Avatar != "" {
+		actor.Icon = &activitypub.Image{
+			BaseObject: activitypub.BaseObject{
+				Type: activitypub.ImageType,
+			},
+			URL: user.Avatar,
+		}
+	}
+
+	if actor.Image == nil && user.Header != "" {
+		actor.Image = &activitypub.Image{
+			BaseObject: activitypub.BaseObject{
+				Type: activitypub.ImageType,
+			},
+			URL: user.Header,
+		}
+	}
+}
+
+func (s *Service) normalizeBaseURL(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.TrimRight(trimmed, "/")
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return trimmed
+	}
+	return fmt.Sprintf("https://%s", trimmed)
+}
+
 func (s *Service) updateAccountProfile(account *storage.Account, cmd *UpdateProfileCommand) error {
 	// Update User fields
 	if cmd.DisplayName != "" {
 		account.User.DisplayName = cmd.DisplayName
+	}
+	if cmd.Bio != "" {
+		account.User.Note = cmd.Bio
+	}
+	if cmd.Avatar != "" {
+		account.User.Avatar = cmd.Avatar
+	}
+	if cmd.Header != "" {
+		account.User.Header = cmd.Header
+	}
+
+	account.User.Locked = cmd.Locked
+	account.User.Discoverable = cmd.Discoverable
+
+	if len(cmd.Fields) > 0 {
+		fields := make([]map[string]string, 0, len(cmd.Fields))
+		for _, field := range cmd.Fields {
+			fields = append(fields, map[string]string{
+				"name":  field.Name,
+				"value": field.Value,
+			})
+		}
+		account.User.Fields = fields
 	}
 
 	// Update Actor fields (ActivityPub profile)
@@ -875,7 +1056,7 @@ func (s *Service) queueFederationUpdate(ctx context.Context, account *storage.Ac
 	now := time.Now()
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context:   "https://www.w3.org/ns/activitystreams",
+			Context:   activitypub.Context,
 			Type:      "Update",
 			ID:        fmt.Sprintf("%s#updates/%d", account.Actor.ID, now.Unix()),
 			Published: &now,

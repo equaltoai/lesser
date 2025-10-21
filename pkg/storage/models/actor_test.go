@@ -14,7 +14,7 @@ import (
 
 func TestActor_TableName(t *testing.T) {
 	actor := Actor{}
-	assert.Equal(t, "lesser-main", actor.TableName())
+	assert.Equal(t, MainTableName, actor.TableName())
 }
 
 // TestActor_BeforeCreate removed - requires complex fixtures and DynamoDB key verification

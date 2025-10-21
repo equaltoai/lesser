@@ -33,7 +33,7 @@ type ModerationAnalytics struct {
 
 // TableName returns the DynamoDB table name
 func (m *ModerationAnalytics) TableName() string {
-	return DefaultTableName // Replace with actual table name
+	return MainTableName
 }
 
 // UpdateKeys updates the primary and sort keys for DynamoDB

@@ -18,12 +18,12 @@ type RelationshipRecord struct {
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // FOLLOWER#{followerUsername}
 
 	// GSI2 for follower domain queries (Phase 2.4 - severance detection)
-	GSI2PK string `dynamorm:"gsi2pk" json:"GSI2PK,omitempty"` // FOLLOWER_DOMAIN#{domain}
-	GSI2SK string `dynamorm:"gsi2sk" json:"GSI2SK,omitempty"` // FOLLOWING#{username}
+	GSI2PK string `dynamorm:"index:GSI2,pk,omitempty" json:"GSI2PK,omitempty"` // FOLLOWER_DOMAIN#{domain}
+	GSI2SK string `dynamorm:"index:GSI2,sk,omitempty" json:"GSI2SK,omitempty"` // FOLLOWING#{username}
 
 	// GSI3 for following domain queries (Phase 2.4 - severance detection)
-	GSI3PK string `dynamorm:"gsi3pk" json:"GSI3PK,omitempty"` // FOLLOWING_DOMAIN#{domain}
-	GSI3SK string `dynamorm:"gsi3sk" json:"GSI3SK,omitempty"` // FOLLOWER#{username}
+	GSI3PK string `dynamorm:"index:GSI3,pk,omitempty" json:"GSI3PK,omitempty"` // FOLLOWING_DOMAIN#{domain}
+	GSI3SK string `dynamorm:"index:GSI3,sk,omitempty" json:"GSI3SK,omitempty"` // FOLLOWER#{username}
 
 	// Core fields from legacy
 	ActivityID string    `json:"ActivityID"`
@@ -80,6 +80,9 @@ func (r *RelationshipRecord) UpdateKeys() error {
 	if followerDomain, ok := extractRelationshipDomain(followerUsername); ok {
 		r.GSI2PK = fmt.Sprintf("FOLLOWER_DOMAIN#%s", followerDomain)
 		r.GSI2SK = r.SK // FOLLOWING#{username}
+	} else {
+		r.GSI2PK = ""
+		r.GSI2SK = ""
 	}
 
 	// Extract following username from SK: FOLLOWING#{username}
@@ -87,6 +90,9 @@ func (r *RelationshipRecord) UpdateKeys() error {
 	if followingDomain, ok := extractRelationshipDomain(followingUsername); ok {
 		r.GSI3PK = fmt.Sprintf("FOLLOWING_DOMAIN#%s", followingDomain)
 		r.GSI3SK = r.GSI1SK // FOLLOWER#{username}
+	} else {
+		r.GSI3PK = ""
+		r.GSI3SK = ""
 	}
 
 	return nil

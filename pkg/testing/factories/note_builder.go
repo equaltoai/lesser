@@ -26,7 +26,7 @@ func NewNoteBuilder(domain string) *NoteBuilder {
 func (b *NoteBuilder) Reset() *NoteBuilder {
 	b.note = &activitypub.Note{
 		BaseObject: activitypub.BaseObject{
-			Context: []string{"https://www.w3.org/ns/activitystreams"},
+			Context: activitypub.Context,
 			Type:    "Note",
 		},
 	}

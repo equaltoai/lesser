@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -114,6 +115,15 @@ func (r *RelationshipRepository) HasFollowRequest(ctx context.Context, requester
 func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followerUsername, followingUsername, activityID string) error {
 	relationship := models.NewRelationshipRecord(followerUsername, followingUsername, activityID)
 
+	r.logger.Info("attempting to persist follow relationship",
+		zap.String("follower", followerUsername),
+		zap.String("following", followingUsername),
+		zap.String("activity_id", activityID),
+		zap.String("pk", relationship.PK),
+		zap.String("sk", relationship.SK),
+		zap.String("gsi1pk", relationship.GSI1PK),
+		zap.String("gsi1sk", relationship.GSI1SK))
+
 	// Use enhanced validation and creation with automatic permission checking and event emission
 	if err := r.ValidateAndCreate(ctx, relationship); err != nil {
 		// Check if it's a duplicate key error
@@ -125,6 +135,12 @@ func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followe
 				zap.Bool("events_enabled", r.HasEvents()))
 			return nil
 		}
+		r.logger.Error("failed to validate or create follow relationship",
+			zap.String("follower", followerUsername),
+			zap.String("following", followingUsername),
+			zap.String("activity_id", activityID),
+			zap.String("error_type", fmt.Sprintf("%T", err)),
+			zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, EntityFollow, followerUsername)
 	}
 
@@ -161,9 +177,22 @@ func (r *RelationshipRepository) GetRelationship(ctx context.Context, followerUs
 
 	err := r.Get(ctx, pk, sk, &relationship)
 	if err != nil {
-		if fmt.Sprintf("%v", err) == fmt.Sprintf("item not found: pk=%s, sk=%s", pk, sk) {
-			return nil, ErrorHandler.HandleGetError(err, EntityFollow, "not found")
+		if errors.IsNotFound(err) || pkgErrors.HasCode(err, pkgErrors.CodeNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			r.logger.Debug("relationship record not found",
+				zap.String("follower", followerUsername),
+				zap.String("following", followingUsername),
+				zap.String("pk", pk),
+				zap.String("sk", sk))
+			return nil, pkgErrors.ItemNotFoundWithID(EntityFollow, fmt.Sprintf("%s:%s", followerUsername, followingUsername))
 		}
+
+		r.logger.Error("relationship fetch failed",
+			zap.String("follower", followerUsername),
+			zap.String("following", followingUsername),
+			zap.String("pk", pk),
+			zap.String("sk", sk),
+			zap.String("error_type", fmt.Sprintf("%T", err)),
+			zap.Error(err))
 		return nil, ErrorHandler.HandleGetError(err, EntityFollow, followerUsername)
 	}
 
@@ -878,14 +907,22 @@ func (r *RelationshipRepository) IsFollowing(ctx context.Context, followerUserna
 	// Extract target username from actor ID
 	targetUsername := r.extractUsernameFromID(targetActorID)
 
-	// Check relationship
 	relationship, err := r.GetRelationship(ctx, followerUsername, targetUsername)
 	if err != nil {
 		// If relationship not found, user is not following
-		if fmt.Sprintf("%v", err) == "follow relationship not found" {
+		if pkgErrors.HasCode(err, pkgErrors.CodeNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
 			return false, nil
 		}
+		r.logger.Error("isFollowing lookup failed",
+			zap.String("follower", followerUsername),
+			zap.String("target", targetUsername),
+			zap.String("error_type", fmt.Sprintf("%T", err)),
+			zap.Error(err))
 		return false, err
+	}
+
+	if relationship == nil {
+		return false, nil
 	}
 
 	// Check if relationship is accepted

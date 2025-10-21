@@ -9,7 +9,7 @@ import (
 
 func TestMedia_TableName(t *testing.T) {
 	m := &Media{}
-	assert.Equal(t, "lesser-main", m.TableName())
+	assert.Equal(t, MainTableName, m.TableName())
 }
 
 func TestMedia_BeforeCreate(t *testing.T) {
@@ -112,7 +112,7 @@ func TestMedia_BeforeCreate(t *testing.T) {
 				assert.Equal(t, "original", tt.media.Version)
 				assert.Equal(t, "pending", tt.media.Status)
 				assert.Equal(t, 0, tt.media.UsageCount)
-				assert.NotNil(t, tt.media.ExpiresAt)
+				assert.Greater(t, tt.media.ExpiresAt, int64(0))
 
 				// Check that keys were set correctly
 				expectedPK := "media#" + tt.media.MediaID
@@ -201,18 +201,18 @@ func TestMedia_MarkUsed(t *testing.T) {
 	expires := time.Now().Add(24 * time.Hour).Unix()
 	media := &Media{
 		UsageCount: 0,
-		ExpiresAt:  &expires,
+		ExpiresAt:  expires,
 	}
 
 	assert.Equal(t, 0, media.UsageCount)
 	assert.Nil(t, media.LastUsedAt)
-	assert.NotNil(t, media.ExpiresAt)
+	assert.Greater(t, media.ExpiresAt, int64(0))
 
 	media.MarkUsed()
 
 	assert.Equal(t, 1, media.UsageCount)
 	assert.NotNil(t, media.LastUsedAt)
-	assert.Nil(t, media.ExpiresAt) // Should be cleared for used media
+	assert.Equal(t, int64(0), media.ExpiresAt) // Should be cleared for used media
 
 	// Mark used again
 	media.MarkUsed()

@@ -3,9 +3,11 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -130,7 +132,9 @@ func (r *BlockRepository) IsBlocked(ctx context.Context, blockerActor, blockedAc
 	var block models.Block
 	err := r.Get(ctx, pk, sk, &block)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if errors.IsNotFound(err) ||
+			pkgErrors.HasCode(err, pkgErrors.CodeNotFound) ||
+			strings.Contains(strings.ToLower(err.Error()), "not found") {
 			return false, nil
 		}
 		r.logger.Error("failed to check block status",

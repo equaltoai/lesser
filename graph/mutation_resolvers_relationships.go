@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -25,7 +27,7 @@ func (r *mutationResolver) FollowActor(ctx context.Context, id string) (*activit
 	}
 
 	// Follow the actor
-	_, err = relationshipsService.Follow(ctx, &relationships.FollowCommand{
+	result, err := relationshipsService.Follow(ctx, &relationships.FollowCommand{
 		FollowerID:  username,
 		FollowingID: id,
 	})
@@ -40,16 +42,26 @@ func (r *mutationResolver) FollowActor(ctx context.Context, id string) (*activit
 	// Track cost using centralized tracker
 	r.trackDynamoOperation(ctx, "write", 1)
 
-	// Return the Follow activity (construct from result data)
-	activityID := fmt.Sprintf("%s/follows/%s", username, id)
-	return &activitypub.Activity{
-		BaseObject: activitypub.BaseObject{
-			ID:   activityID,
-			Type: "Follow",
-		},
-		Actor:  username,
-		Object: id,
-	}, nil
+	activity := result.Activity
+	if activity == nil {
+		activityID := fmt.Sprintf("%s/follows/%s", username, url.PathEscape(id))
+		now := time.Now().UTC()
+		activity = &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:        activityID,
+				Type:      activitypub.FollowType,
+				Published: &now,
+			},
+			Actor:  username,
+			Object: id,
+		}
+	} else if activity.Published == nil {
+		now := time.Now().UTC()
+		activity.BaseObject.Published = &now
+	}
+
+	return activity, nil
+
 }
 
 // BlockActor is the resolver for the blockActor field.

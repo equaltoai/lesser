@@ -1,12 +1,154 @@
 package activitypub
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
-// Context represents the JSON-LD context for ActivityStreams
-var Context = []any{
+// ContextValue wraps the ActivityPub @context field to support both legacy string
+// and modern array representations.
+type ContextValue []any
+
+// MarshalJSON persists the context as a string when a single string value is present,
+// otherwise it writes an array to match ActivityPub expectations.
+func (c ContextValue) MarshalJSON() ([]byte, error) {
+	if len(c) == 1 {
+		if s, ok := c[0].(string); ok {
+			return json.Marshal(s)
+		}
+	}
+	return json.Marshal([]any(c))
+}
+
+// UnmarshalJSON accepts either a single string or an array of values.
+func (c *ContextValue) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		*c = nil
+		return nil
+	}
+
+	switch trimmed[0] {
+	case '[':
+		var arr []any
+		if err := json.Unmarshal(trimmed, &arr); err != nil {
+			return err
+		}
+		*c = ContextValue(arr)
+		return nil
+	case '"':
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return err
+		}
+		*c = ContextValue{s}
+		return nil
+	default:
+		var v any
+		if err := json.Unmarshal(trimmed, &v); err != nil {
+			return err
+		}
+		switch vv := v.(type) {
+		case []any:
+			*c = ContextValue(vv)
+		case string:
+			*c = ContextValue{vv}
+		default:
+			*c = ContextValue{vv}
+		}
+		return nil
+	}
+}
+
+// Clone returns a shallow copy of the context slice so callers can safely append
+// without mutating the shared base context.
+func (c ContextValue) Clone() ContextValue {
+	if c == nil {
+		return nil
+	}
+	clone := make(ContextValue, len(c))
+	copy(clone, c)
+	return clone
+}
+
+// With returns a new context that includes the receiver's entries plus the provided ones.
+func (c ContextValue) With(values ...any) ContextValue {
+	if len(values) == 0 {
+		return c.Clone()
+	}
+	clone := c.Clone()
+	clone = append(clone, values...)
+	return clone
+}
+
+// MarshalDynamoDBAttributeValue converts the context to the DynamoDB list representation.
+func (c ContextValue) MarshalDynamoDBAttributeValue() (types.AttributeValue, error) {
+	if len(c) == 0 {
+		return &types.AttributeValueMemberNULL{Value: true}, nil
+	}
+
+	items := make([]types.AttributeValue, 0, len(c))
+	for _, value := range c {
+		av, err := attributevalue.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("marshal context entry: %w", err)
+		}
+		items = append(items, av)
+	}
+	return &types.AttributeValueMemberL{Value: items}, nil
+}
+
+// UnmarshalDynamoDBAttributeValue handles both legacy string and modern list encodings.
+func (c *ContextValue) UnmarshalDynamoDBAttributeValue(av types.AttributeValue) error {
+	switch v := av.(type) {
+	case *types.AttributeValueMemberNULL:
+		*c = nil
+		return nil
+	case *types.AttributeValueMemberS:
+		*c = ContextValue{v.Value}
+		return nil
+	case *types.AttributeValueMemberL:
+		if len(v.Value) == 0 {
+			*c = ContextValue{}
+			return nil
+		}
+		values := make(ContextValue, len(v.Value))
+		for i, item := range v.Value {
+			var decoded any
+			if err := attributevalue.Unmarshal(item, &decoded); err != nil {
+				return fmt.Errorf("unmarshal context entry %d: %w", i, err)
+			}
+			values[i] = decoded
+		}
+		*c = values
+		return nil
+	default:
+		var decoded any
+		if err := attributevalue.Unmarshal(av, &decoded); err != nil {
+			return fmt.Errorf("unmarshal context (generic): %w", err)
+		}
+		switch val := decoded.(type) {
+		case []any:
+			*c = ContextValue(val)
+		case string:
+			*c = ContextValue{val}
+		default:
+			*c = ContextValue{val}
+		}
+		return nil
+	}
+}
+
+// DefaultContext represents the bare ActivityStreams context.
+var DefaultContext = ContextValue{"https://www.w3.org/ns/activitystreams"}
+
+// Context represents the richer JSON-LD context for ActivityStreams with Mastodon extensions.
+var Context = ContextValue{
 	"https://www.w3.org/ns/activitystreams",
 	map[string]any{
 		"manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
@@ -25,18 +167,18 @@ var Context = []any{
 
 // BaseObject represents the base ActivityStreams object
 type BaseObject struct {
-	Context   any        `json:"@context,omitempty"`
-	ID        string     `json:"id"`
-	Type      string     `json:"type"`
-	Published *time.Time `json:"published,omitempty"`
-	Updated   *time.Time `json:"updated,omitempty"`
-	To        []string   `json:"to,omitempty"`
-	CC        []string   `json:"cc,omitempty"`
-	BTo       []string   `json:"bto,omitempty"`
-	BCC       []string   `json:"bcc,omitempty"`
-	InReplyTo string     `json:"inReplyTo,omitempty"`
-	Summary   string     `json:"summary,omitempty"`
-	Sensitive bool       `json:"sensitive,omitempty"`
+	Context   ContextValue `json:"@context,omitempty"`
+	ID        string       `json:"id"`
+	Type      string       `json:"type"`
+	Published *time.Time   `json:"published,omitempty"`
+	Updated   *time.Time   `json:"updated,omitempty"`
+	To        []string     `json:"to,omitempty"`
+	CC        []string     `json:"cc,omitempty"`
+	BTo       []string     `json:"bto,omitempty"`
+	BCC       []string     `json:"bcc,omitempty"`
+	InReplyTo string       `json:"inReplyTo,omitempty"`
+	Summary   string       `json:"summary,omitempty"`
+	Sensitive bool         `json:"sensitive,omitempty"`
 }
 
 // Actor represents an ActivityPub actor (Person, Service, etc.)

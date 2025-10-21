@@ -14,7 +14,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/middleware"
-	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -578,11 +577,8 @@ func main() {
 		})
 	})
 
-	// Add federation rate limiting middleware (fourth in chain)
-	if !cfg.DisableFederationRateLimiting {
-		app.Use(ratelimit.FederationRateLimitMiddleware(repos))
-		logger.Info("enabled federation rate limiting middleware for collections service")
-	}
+	// Note: Federation rate limiting removed - using Limited library approach in API service only
+	// Federation endpoints rely on ActivityPub HTTP signatures for authentication
 
 	// Add CORS middleware for ActivityPub federation compatibility
 	app.Use(func(next lift.Handler) lift.Handler {

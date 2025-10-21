@@ -133,10 +133,26 @@ cdk deploy LesserSharedStack
 cdk deploy LesserMonitoringStack-development
 
 # Deploy only application stack for staging
-cdk deploy LesserStack-staging \
+cdk deploy LesserApiStack-staging \
   --context environment=staging \
   --context domain=staging.lesser.app
 ```
+
+### Makefile Workflows
+
+For day-to-day work, prefer the `make deploy-*` targets. Each deployment command:
+
+```bash
+make deploy-dev      # development
+make deploy-test     # staging
+make deploy-live     # production
+```
+
+- Rebuilds Lambda packages as needed
+- Ensures the CDN private key secret and CloudFront public key/key group exist (via `scripts/ensure_cdn_credentials.sh`)
+- Passes the resulting secret name and key pair ID into CDK context before deployment
+
+This keeps the CloudFront credentials managed outside CloudFormation so stacks can be destroyed and redeployed reliably.
 
 ### Essential CDK Commands
 
@@ -154,10 +170,10 @@ cdk diff --context environment=production
 cdk list
 
 # Show stack resources
-cdk ls LesserStack-production
+cdk ls LesserApiStack-production
 
 # Destroy development stack (CAREFUL!)
-cdk destroy LesserStack-development --context environment=development
+cdk destroy LesserApiStack-development --context environment=development
 
 # Force destroy with dependency removal
 cdk destroy --all --context environment=development --force
@@ -465,7 +481,7 @@ aws apigatewayv2 get-domain-names
 # Deploy stacks in correct order
 cdk deploy LesserSharedStack
 cdk deploy LesserMonitoringStack-production
-cdk deploy LesserStack-production
+cdk deploy LesserApiStack-production
 
 # Force dependency resolution
 cdk deploy --all --context environment=production --force
@@ -477,7 +493,7 @@ cdk deploy --all --context environment=production --force
 cdk list --context environment=development
 
 # Delete in reverse order
-cdk destroy LesserStack-development
+cdk destroy LesserApiStack-development
 cdk destroy LesserMonitoringStack-development  
 cdk destroy LesserSharedStack  # Only if no other environments
 ```

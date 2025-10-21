@@ -9,7 +9,7 @@ import (
 
 func TestNotification_TableName(t *testing.T) {
 	n := &Notification{}
-	assert.Equal(t, "lesser-main", n.TableName())
+	assert.Equal(t, MainTableName, n.TableName())
 }
 
 // TestNotification_BeforeCreate removed - complex fixtures and model hooks

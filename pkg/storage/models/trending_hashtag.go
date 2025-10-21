@@ -29,7 +29,7 @@ type TrendingHashtag struct {
 
 // TableName returns the DynamoDB table name
 func (t *TrendingHashtag) TableName() string {
-	return DefaultTableName // Replace with actual table name
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys when the primary keys change

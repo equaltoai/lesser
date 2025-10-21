@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
@@ -37,7 +38,7 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	cmd := &notes.CreateNoteCommand{
 		AuthorID:   username,
 		Content:    input.Content,
-		Visibility: string(input.Visibility),
+		Visibility: strings.ToLower(input.Visibility.String()),
 		Sensitive:  input.Sensitive != nil && *input.Sensitive,
 	}
 

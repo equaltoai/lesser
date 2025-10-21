@@ -26,7 +26,7 @@ func NewActorBuilder(domain string) *ActorBuilder {
 func (b *ActorBuilder) Reset() *ActorBuilder {
 	b.actor = &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
-			Context: []string{"https://www.w3.org/ns/activitystreams"},
+			Context: activitypub.Context,
 			Type:    "Person",
 		},
 	}

@@ -3,6 +3,7 @@ package stacks
 import (
 	localconstructs "cdk/constructs"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
@@ -10,6 +11,8 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53targets"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
@@ -17,16 +20,24 @@ import (
 	"github.com/aws/jsii-runtime-go"
 )
 
-type LesserStackProps struct {
+type LesserApiStackProps struct {
 	awscdk.StackProps
-	Environment string
-	Domain      string
-	Config      map[string]interface{} // Environment-specific configuration
+	Environment      string
+	Domain           string
+	Config           map[string]interface{} // Environment-specific configuration
+	HostedZoneDomain string
+	HostedZoneId     string
+	CloudFrontDomain string
+	APICertificate   awscertificatemanager.ICertificate
+	CDNCertificate   awscertificatemanager.ICertificate
+	JWTSecret        awssecretsmanager.ISecret
+	ActorPrivateKey  awssecretsmanager.ISecret
 }
 
-type LesserStack struct {
+type LesserApiStack struct {
 	awscdk.Stack
 	MainTable              awsdynamodb.Table
+	RateLimitTable         awsdynamodb.Table
 	MediaBucket            awss3.Bucket
 	StreamingBucket        awss3.Bucket
 	TrainingBucket         awss3.Bucket
@@ -37,78 +48,102 @@ type LesserStack struct {
 	ImportExportQueue      awssqs.Queue
 	ImportExportDLQ        awssqs.Queue
 	PrivateKey             awssecretsmanager.ISecret
-	CloudFrontPrivateKey   awssecretsmanager.ISecret
-	Certificate            awscertificatemanager.Certificate
+	JwtSecret              awssecretsmanager.ISecret
 	Functions              *localconstructs.LambdaFunctions
 	API                    *localconstructs.APIGateway
 	Environment            string
 	Configuration          map[string]interface{}
 	MediaConvertRole       awsiam.Role
 	ModelMetadataTableName string
+	HostedZone             awsroute53.IHostedZone
+	CloudFrontDomain       string
+	APICertificate         awscertificatemanager.ICertificate
+	CDNCertificate         awscertificatemanager.ICertificate
+	CloudFrontKeyPairID    string
+	CloudFrontKeyGroupID   string
 }
 
-func NewLesserStack(scope constructs.Construct, id string, props *LesserStackProps) *LesserStack {
+func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiStackProps) *LesserApiStack {
 	stack := awscdk.NewStack(scope, &id, &props.StackProps)
 
-	lesserStack := &LesserStack{
-		Stack:         stack,
-		Environment:   props.Environment,
-		Configuration: props.Config,
+	apiStack := &LesserApiStack{
+		Stack:            stack,
+		Environment:      props.Environment,
+		Configuration:    props.Config,
+		CloudFrontDomain: props.CloudFrontDomain,
+		APICertificate:   props.APICertificate,
+		CDNCertificate:   props.CDNCertificate,
+		JwtSecret:        props.JWTSecret,
+		PrivateKey:       props.ActorPrivateKey,
 	}
 
-	// Create ACM certificate for HTTPS (like Pulumi did)
-	lesserStack.createCertificate(props.Domain)
+	if props.Config != nil {
+		if val, ok := props.Config["cloudfrontKeyPairId"].(string); ok {
+			apiStack.CloudFrontKeyPairID = val
+		}
+		if val, ok := props.Config["cloudfrontKeyGroupId"].(string); ok {
+			apiStack.CloudFrontKeyGroupID = val
+		}
+	}
+
+	apiStack.initHostedZone(props.HostedZoneDomain, props.HostedZoneId)
 
 	// Create shared resources
-	lesserStack.createSharedResources()
+	apiStack.createSharedResources()
 
 	// Create S3 and CloudFront (Phase 6.6)
-	lesserStack.createMediaInfrastructure(props.Domain)
+	apiStack.createMediaInfrastructure(props.Domain)
 
 	// Create media streaming and ML infrastructure (Phase 2.2/2.3)
-	lesserStack.createStreamingAndMLInfrastructure()
+	apiStack.createStreamingAndMLInfrastructure()
 
 	// Create SQS queues (Phase 6.6)
-	lesserStack.createSQSQueues()
+	apiStack.createSQSQueues()
 
 	// Create Lambda functions
-	lesserStack.createLambdaFunctions()
+	apiStack.createLambdaFunctions()
 
 	// Create API Gateway
-	lesserStack.createAPIGateway(props.Domain)
+	apiStack.createAPIGateway(props.Domain)
 
 	// Create stream processors
-	lesserStack.createStreamProcessors()
+	apiStack.createStreamProcessors()
 
 	// Setup monitoring
-	if features, ok := lesserStack.Configuration["features"].(map[string]interface{}); ok {
+	if features, ok := apiStack.Configuration["features"].(map[string]interface{}); ok {
 		if enableMonitoring, ok := features["enableMonitoring"].(bool); ok && enableMonitoring {
-			lesserStack.setupMonitoring()
+			apiStack.setupMonitoring()
 		}
 	}
 
 	// Setup security
-	lesserStack.setupSecurity()
+	apiStack.setupSecurity()
 
 	// Create outputs
-	lesserStack.createOutputs()
+	apiStack.createOutputs()
 
-	return lesserStack
+	return apiStack
 }
 
-func (s *LesserStack) createCertificate(domain string) {
-	// Create ACM certificate for HTTPS (matching Pulumi implementation)
-	s.Certificate = awscertificatemanager.NewCertificate(s.Stack, jsii.String("LesserCertificate"), &awscertificatemanager.CertificateProps{
+func (s *LesserApiStack) initHostedZone(domain string, zoneId string) {
+	if domain == "" {
+		return
+	}
+
+	if zoneId != "" {
+		s.HostedZone = awsroute53.HostedZone_FromHostedZoneAttributes(s.Stack, jsii.String("HostedZone"), &awsroute53.HostedZoneAttributes{
+			HostedZoneId: jsii.String(zoneId),
+			ZoneName:     jsii.String(domain),
+		})
+		return
+	}
+
+	s.HostedZone = awsroute53.HostedZone_FromLookup(s.Stack, jsii.String("HostedZone"), &awsroute53.HostedZoneProviderProps{
 		DomainName: jsii.String(domain),
-		SubjectAlternativeNames: &[]*string{
-			jsii.String(fmt.Sprintf("*.%s", domain)),
-			jsii.String(fmt.Sprintf("www.%s", domain)),
-		},
-		Validation: awscertificatemanager.CertificateValidation_FromDns(nil),
 	})
 }
 
-func (s *LesserStack) createSharedResources() {
+func (s *LesserApiStack) createSharedResources() {
 	isProd := s.Environment == "production"
 
 	// Create main DynamoDB table with streams
@@ -130,6 +165,27 @@ func (s *LesserStack) createSharedResources() {
 		},
 		DeletionProtection: jsii.Bool(isProd),
 		RemovalPolicy:      getRemovalPolicy(isProd),
+	})
+
+	// Create rate limit table for Lift's limited library
+	// The limited library uses its own table structure for rate limiting
+	s.RateLimitTable = awsdynamodb.NewTable(s.Stack, jsii.String("RateLimitTable"), &awsdynamodb.TableProps{
+		TableName: jsii.String(fmt.Sprintf("lesser-rate-limits-%s", s.Environment)),
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String("PK"),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String("SK"),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		BillingMode:         awsdynamodb.BillingMode_PAY_PER_REQUEST,
+		TimeToLiveAttribute: jsii.String("ExpiresAt"),
+		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
+			PointInTimeRecoveryEnabled: jsii.Bool(isProd),
+		},
+		DeletionProtection: jsii.Bool(false),             // Rate limit data is transient
+		RemovalPolicy:      awscdk.RemovalPolicy_DESTROY, // Can be recreated
 	})
 
 	// Add GSI1-GSI8 (generic pattern-based GSIs)
@@ -177,7 +233,7 @@ func (s *LesserStack) createSharedResources() {
 	})
 }
 
-func (s *LesserStack) createMediaInfrastructure(domain string) {
+func (s *LesserApiStack) createMediaInfrastructure(domain string) {
 	// Create Origin Access Identity for CloudFront
 	oai := awscloudfront.NewOriginAccessIdentity(s.Stack, jsii.String("MediaOAI"), &awscloudfront.OriginAccessIdentityProps{
 		Comment: jsii.String("Lesser Media OAI"),
@@ -208,14 +264,25 @@ func (s *LesserStack) createMediaInfrastructure(domain string) {
 	})
 
 	// Create CloudFront distribution for media.{domain}
-	mediaDomain := fmt.Sprintf("media.%s", domain)
+	mediaDomain := s.CloudFrontDomain
+	if mediaDomain == "" {
+		mediaDomain = fmt.Sprintf("media.%s", domain)
+	}
+
+	domainNames := func() *[]*string {
+		if mediaDomain == "" || s.CDNCertificate == nil {
+			return nil
+		}
+		return &[]*string{jsii.String(mediaDomain)}
+	}()
+
 	s.MediaDistribution = awscloudfront.NewDistribution(s.Stack, jsii.String("MediaDistribution"), &awscloudfront.DistributionProps{
 		Enabled:                jsii.Bool(true),
 		HttpVersion:            awscloudfront.HttpVersion_HTTP2,
 		Comment:                jsii.String("Lesser Media CDN"),
 		DefaultRootObject:      jsii.String("index.html"),
-		DomainNames:            &[]*string{jsii.String(mediaDomain)},
-		Certificate:            s.Certificate,
+		DomainNames:            domainNames,
+		Certificate:            s.CDNCertificate,
 		MinimumProtocolVersion: awscloudfront.SecurityPolicyProtocol_TLS_V1_2_2021,
 		DefaultBehavior: &awscloudfront.BehaviorOptions{
 			Origin: awscloudfrontorigins.S3BucketOrigin_WithOriginAccessIdentity(s.MediaBucket, &awscloudfrontorigins.S3BucketOriginWithOAIProps{
@@ -230,9 +297,49 @@ func (s *LesserStack) createMediaInfrastructure(domain string) {
 		},
 		PriceClass: awscloudfront.PriceClass_PRICE_CLASS_100, // US and Europe only for cost optimization
 	})
+
+	if s.HostedZone != nil && mediaDomain != "" && s.CDNCertificate != nil {
+		recordName := relativeRecordName(mediaDomain, s.HostedZone)
+		target := awsroute53targets.NewCloudFrontTarget(s.MediaDistribution)
+
+		awsroute53.NewARecord(s.Stack, jsii.String("MediaCdnAliasARecord"), &awsroute53.ARecordProps{
+			Zone:       s.HostedZone,
+			RecordName: recordName,
+			Target:     awsroute53.RecordTarget_FromAlias(target),
+		})
+
+		awsroute53.NewAaaaRecord(s.Stack, jsii.String("MediaCdnAliasAAAARecord"), &awsroute53.AaaaRecordProps{
+			Zone:       s.HostedZone,
+			RecordName: recordName,
+			Target:     awsroute53.RecordTarget_FromAlias(target),
+		})
+	}
 }
 
-func (s *LesserStack) createStreamingAndMLInfrastructure() {
+func relativeRecordName(domain string, zone awsroute53.IHostedZone) *string {
+	if zone == nil {
+		return jsii.String(domain)
+	}
+
+	zoneNamePtr := zone.ZoneName()
+	if zoneNamePtr == nil {
+		return jsii.String(domain)
+	}
+
+	zoneName := strings.TrimSuffix(*zoneNamePtr, ".")
+	if domain == "" || domain == zoneName {
+		return jsii.String("")
+	}
+
+	if strings.HasSuffix(domain, "."+zoneName) {
+		trimmed := strings.TrimSuffix(domain, "."+zoneName)
+		return jsii.String(trimmed)
+	}
+
+	return jsii.String(domain)
+}
+
+func (s *LesserApiStack) createStreamingAndMLInfrastructure() {
 	isProd := s.Environment == "production"
 
 	// Create S3 bucket for transcoded streaming outputs (HLS/DASH segments + manifests)
@@ -299,15 +406,6 @@ func (s *LesserStack) createStreamingAndMLInfrastructure() {
 		},
 	}))
 
-	// Generate CloudFront RSA-2048 key pair at deployment time using Custom Resource
-	// The Lambda function generates the key pair and stores it in Secrets Manager
-	// The public key is output for manual upload to CloudFront Key Management
-	keyPair := localconstructs.CreateCloudFrontKeyPair(s.Stack, "CloudFrontKeyPair", &localconstructs.CloudFrontKeyPairProps{
-		Environment: s.Environment,
-		SecretName:  fmt.Sprintf("lesser/cloudfront-private-key-%s", s.Environment),
-	})
-	s.CloudFrontPrivateKey = keyPair.Secret
-
 	// Add GSI9 to main table for model metadata tracking
 	s.MainTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
 		IndexName: jsii.String("GSI9"),
@@ -342,11 +440,13 @@ func (s *LesserStack) createStreamingAndMLInfrastructure() {
 		ExportName:  jsii.String(fmt.Sprintf("lesser-%s-mediaconvert-role", s.Environment)),
 	})
 
-	awscdk.NewCfnOutput(s.Stack, jsii.String("CloudFrontPrivateKeySecretArn"), &awscdk.CfnOutputProps{
-		Value:       s.CloudFrontPrivateKey.SecretArn(),
-		Description: jsii.String("Secrets Manager ARN for CloudFront private key"),
-		ExportName:  jsii.String(fmt.Sprintf("lesser-%s-cloudfront-key", s.Environment)),
-	})
+	if s.CloudFrontKeyGroupID != "" {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("CloudFrontKeyGroupId"), &awscdk.CfnOutputProps{
+			Value:       jsii.String(s.CloudFrontKeyGroupID),
+			Description: jsii.String("CloudFront key group ID managed by CDK"),
+			ExportName:  jsii.String(fmt.Sprintf("lesser-%s-cloudfront-keygroup-id", s.Environment)),
+		})
+	}
 
 	awscdk.NewCfnOutput(s.Stack, jsii.String("ModelMetadataTable"), &awscdk.CfnOutputProps{
 		Value:       jsii.String(s.ModelMetadataTableName),
@@ -355,7 +455,7 @@ func (s *LesserStack) createStreamingAndMLInfrastructure() {
 	})
 }
 
-func (s *LesserStack) createSQSQueues() {
+func (s *LesserApiStack) createSQSQueues() {
 	// Create federation dead letter queue
 	s.FederationDLQ = awssqs.NewQueue(s.Stack, jsii.String("FederationDLQ"), &awssqs.QueueProps{
 		QueueName:         jsii.String(fmt.Sprintf("lesser-federation-dlq-%s", s.Environment)),
@@ -403,33 +503,41 @@ func (s *LesserStack) createSQSQueues() {
 	})
 }
 
-func (s *LesserStack) createLambdaFunctions() {
-	// Load private key secret from shared stack
-	s.PrivateKey = awssecretsmanager.Secret_FromSecretNameV2(s.Stack, jsii.String("PrivateKeySecret"), jsii.String("lesser/actor-private-key"))
+func (s *LesserApiStack) createLambdaFunctions() {
+	// Use secrets passed from SharedStack (no lookup needed)
+	// If not passed via props, fall back to lookup by name for backwards compatibility
+	if s.PrivateKey == nil {
+		s.PrivateKey = awssecretsmanager.Secret_FromSecretNameV2(s.Stack, jsii.String("PrivateKeySecret"), jsii.String("lesser/actor-private-key"))
+	}
+	if s.JwtSecret == nil {
+		s.JwtSecret = awssecretsmanager.Secret_FromSecretNameV2(s.Stack, jsii.String("JwtSecret"), jsii.String("lesser/jwt-secret"))
+	}
 
 	s.Functions = localconstructs.CreateLambdaFunctions(s.Stack, &localconstructs.LambdaFunctionsProps{
-		Environment:          s.Environment,
-		Table:                s.MainTable,
-		MediaBucket:          s.MediaBucket,
-		StreamingBucket:      s.StreamingBucket,
-		TrainingBucket:       s.TrainingBucket,
-		FederationQueue:      s.FederationQueue,
-		FederationDLQ:        s.FederationDLQ,
-		PushQueue:            s.PushQueue,
-		PrivateKey:           s.PrivateKey,
-		CloudFrontPrivateKey: s.CloudFrontPrivateKey,
-		MediaConvertRoleArn:  s.MediaConvertRole.RoleArn(),
-		ModelMetadataTable:   jsii.String(s.ModelMetadataTableName),
-		Config:               s.Configuration,
+		Environment:         s.Environment,
+		Table:               s.MainTable,
+		RateLimitTable:      s.RateLimitTable,
+		MediaBucket:         s.MediaBucket,
+		StreamingBucket:     s.StreamingBucket,
+		TrainingBucket:      s.TrainingBucket,
+		FederationQueue:     s.FederationQueue,
+		FederationDLQ:       s.FederationDLQ,
+		PushQueue:           s.PushQueue,
+		PrivateKey:          s.PrivateKey,
+		JwtSecret:           s.JwtSecret,
+		MediaConvertRoleArn: s.MediaConvertRole.RoleArn(),
+		ModelMetadataTable:  jsii.String(s.ModelMetadataTableName),
+		Config:              s.Configuration,
 	})
 }
 
-func (s *LesserStack) createAPIGateway(domain string) {
+func (s *LesserApiStack) createAPIGateway(domain string) {
 	s.API = localconstructs.CreateAPIGateway(s.Stack, &localconstructs.APIGatewayProps{
 		Environment: s.Environment,
 		Domain:      domain,
-		Certificate: s.Certificate,
+		Certificate: s.APICertificate,
 		Functions:   s.Functions,
+		HostedZone:  s.HostedZone,
 	})
 
 	// Output API URLs
@@ -442,20 +550,28 @@ func (s *LesserStack) createAPIGateway(domain string) {
 		Value:       s.API.WebSocketApi.ApiEndpoint(),
 		Description: jsii.String("WebSocket API Gateway URL"),
 	})
+
+	if s.CloudFrontKeyPairID != "" {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("CloudFrontKeyPairId"), &awscdk.CfnOutputProps{
+			Value:       jsii.String(s.CloudFrontKeyPairID),
+			Description: jsii.String("CloudFront public key ID used for signed URLs"),
+			ExportName:  jsii.String(fmt.Sprintf("lesser-%s-cloudfront-keypair-id", s.Environment)),
+		})
+	}
 }
 
-func (s *LesserStack) createStreamProcessors() {
+func (s *LesserApiStack) createStreamProcessors() {
 	localconstructs.CreateStreamProcessors(s.Stack, &localconstructs.StreamProcessorsProps{
 		Table:     s.MainTable,
 		Functions: s.Functions,
 	})
 }
 
-func (s *LesserStack) setupMonitoring() {
+func (s *LesserApiStack) setupMonitoring() {
 	// Implementation will use monitoring_stack.go
 }
 
-func (s *LesserStack) setupSecurity() {
+func (s *LesserApiStack) setupSecurity() {
 	// Enhanced security setup (Phase 6.7) - comprehensive IAM policies are
 	// now integrated into Lambda functions via security constructs
 	// All policies match Pulumi configuration exactly:
@@ -467,7 +583,7 @@ func (s *LesserStack) setupSecurity() {
 	// - Comprehend: AI text analysis capabilities
 }
 
-func (s *LesserStack) createOutputs() {
+func (s *LesserApiStack) createOutputs() {
 	awscdk.NewCfnOutput(s.Stack, jsii.String("TableName"), &awscdk.CfnOutputProps{
 		Value:       s.MainTable.TableName(),
 		Description: jsii.String("DynamoDB table name"),

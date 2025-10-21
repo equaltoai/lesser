@@ -154,7 +154,7 @@ cdk diff --context environment=production
 
 ### Update Stack
 ```bash
-cdk deploy LesserStack-production --context environment=production
+cdk deploy LesserApiStack-production --context environment=production
 ```
 
 ### Delete Stack

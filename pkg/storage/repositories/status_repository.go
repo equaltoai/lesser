@@ -91,7 +91,7 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 // CountStatusesByAuthor counts the total number of statuses by an author
 func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID string) (int, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("author-timeline-index").
+		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)).
 		Count()
 	if err != nil {
@@ -104,7 +104,7 @@ func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID s
 // CountReplies counts the number of replies to a status
 func (r *StatusRepository) CountReplies(ctx context.Context, statusID string) (int, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("replies-index").
+		Index("GSI4").
 		Where("GSI4PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
 		Count()
 	if err != nil {
@@ -284,7 +284,7 @@ func (r *StatusRepository) GetStatusesByURL(ctx context.Context, targetURL strin
 	var matchingStatuses []models.Status
 
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("url-index").
+		Index("GSI7").
 		Where("GSI7PK", "=", "URL#"+normalizedURL).
 		Limit(limit).
 		All(&matchingStatuses)
@@ -516,7 +516,7 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 	// Query GSI7 for URL-indexed statuses
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("url-index").
+		Index("GSI7").
 		Where("GSI7PK", "=", "URL#"+normalizedURL).
 		Scan(&statuses)
 
@@ -552,34 +552,56 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 		return r.GetPublicTimeline(ctx, opts)
 	}
 
-	// Cast relationshipRepo to the proper interface
-	relationshipRepo, ok := r.relationshipRepo.(interfaces.RelationshipRepository)
-	if !ok {
-		r.logger.Error("relationshipRepo does not implement RelationshipRepository interface")
-		// Fallback to public timeline
-		return r.GetPublicTimeline(ctx, opts)
-	}
+	cfg := config.Get()
 
-	// Get list of users that this user follows
-	followingResult, err := relationshipRepo.GetFollowing(ctx, userID, interfaces.PaginationOptions{Limit: 1000}) // Get up to 1000 followed users
-	if err != nil {
-		r.logger.Error("failed to get following list for home timeline",
-			zap.String("user_id", userID),
-			zap.Error(err))
-		// Fallback to public timeline
-		return r.GetPublicTimeline(ctx, opts)
-	}
-
-	// Extract usernames from the following accounts
-	followingUsernames := make([]string, len(followingResult.Items))
-	for i, account := range followingResult.Items {
-		if account != nil && account.User != nil {
-			followingUsernames[i] = account.User.Username
+	// Resolve the following list depending on the repository capabilities
+	var followingActorIDs []string
+	switch repo := r.relationshipRepo.(type) {
+	case interfaces.RelationshipRepository:
+		followingResult, err := repo.GetFollowing(ctx, userID, interfaces.PaginationOptions{Limit: 1000})
+		if err != nil {
+			r.logger.Error("failed to get following list for home timeline",
+				zap.String("user_id", userID),
+				zap.Error(err))
+			return r.GetPublicTimeline(ctx, opts)
 		}
+
+		for _, account := range followingResult.Items {
+			if account == nil {
+				continue
+			}
+			if account.Actor != nil && account.Actor.ID != "" {
+				followingActorIDs = append(followingActorIDs, account.Actor.ID)
+				continue
+			}
+			if account.User != nil && account.User.Username != "" {
+				followingActorIDs = append(followingActorIDs, cfg.ActorURL(account.User.Username))
+			}
+		}
+	case interface {
+		GetFollowing(context.Context, string, int, string) ([]string, string, error)
+	}:
+		usernames, _, err := repo.GetFollowing(ctx, userID, 1000, "")
+		if err != nil {
+			r.logger.Error("failed to get following list for home timeline via username accessor",
+				zap.String("user_id", userID),
+				zap.Error(err))
+			return r.GetPublicTimeline(ctx, opts)
+		}
+		for _, username := range usernames {
+			if username == "" {
+				continue
+			}
+			followingActorIDs = append(followingActorIDs, cfg.ActorURL(username))
+		}
+	default:
+		r.logger.Error("relationshipRepo does not provide a compatible GetFollowing implementation",
+			zap.String("repo_type", fmt.Sprintf("%T", r.relationshipRepo)))
+		return r.GetPublicTimeline(ctx, opts)
 	}
 
 	// If user follows no one, return empty timeline (not public timeline)
-	if err := common.ValidateSliceNotEmpty("following_usernames", followingUsernames); err != nil {
+	if err := common.ValidateSliceNotEmpty("following_actor_ids", followingActorIDs); err != nil {
 		r.logger.Debug("user follows no accounts, returning empty home timeline",
 			zap.String("user_id", userID))
 		return &interfaces.PaginatedResult[*models.Status]{
@@ -597,12 +619,12 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 	// 3. Use a timeline ranking algorithm
 	var allStatuses []models.Status
 
-	// Query statuses for each followed user using the author-timeline-index
-	for _, username := range followingUsernames {
+	// Query statuses for each followed user using GSI1 (author timeline)
+	for _, actorID := range followingActorIDs {
 		var userStatuses []models.Status
 		err := r.db.WithContext(ctx).Model(&models.Status{}).
-			Index("author-timeline-index").
-			Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", username)).
+			Index("GSI1").
+			Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", actorID)).
 			OrderBy("GSI1SK", "DESC").
 			Limit(20). // Limit per user to avoid overwhelming queries
 			All(&userStatuses)
@@ -610,7 +632,7 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 		if err != nil {
 			r.logger.Error("failed to get statuses for followed user",
 				zap.String("user_id", userID),
-				zap.String("followed_user", username),
+				zap.String("followed_actor", actorID),
 				zap.Error(err))
 			continue // Skip this user on error
 		}
@@ -654,7 +676,7 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 
 	r.logger.Debug("successfully built home timeline",
 		zap.String("user_id", userID),
-		zap.Int("following_count", len(followingUsernames)),
+		zap.Int("following_count", len(followingActorIDs)),
 		zap.Int("total_statuses_found", len(allStatuses)),
 		zap.Int("page_statuses", len(statusPtrs)))
 
@@ -705,12 +727,12 @@ func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gs
 
 // GetUserTimeline retrieves user's own statuses
 func (r *StatusRepository) GetUserTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	return r.queryStatusesByGSI(ctx, "author-timeline-index", "GSI1PK", fmt.Sprintf("AUTHOR#%s", userID), "GSI1SK", "DESC", opts, "failed to get user timeline")
+	return r.queryStatusesByGSI(ctx, "GSI1", "GSI1PK", fmt.Sprintf("AUTHOR#%s", userID), "GSI1SK", "DESC", opts, "failed to get user timeline")
 }
 
 // GetConversationThread retrieves all statuses in a conversation thread
 func (r *StatusRepository) GetConversationThread(ctx context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	return r.queryStatusesByGSI(ctx, "conversation-index", "GSI3PK", fmt.Sprintf("CONVERSATION#%s", conversationID), "GSI3SK", "ASC", opts, "failed to get conversation thread")
+	return r.queryStatusesByGSI(ctx, "GSI3", "GSI3PK", fmt.Sprintf("CONVERSATION#%s", conversationID), "GSI3SK", "ASC", opts, "failed to get conversation thread")
 }
 
 // SearchStatuses searches statuses by query string
@@ -745,7 +767,7 @@ func (r *StatusRepository) SearchStatuses(ctx context.Context, query string, opt
 func (r *StatusRepository) GetStatusesByHashtag(ctx context.Context, hashtag string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("hashtag-index").
+		Index("GSI5").
 		Where("GSI5PK", "=", fmt.Sprintf("HASHTAG#%s", strings.ToLower(hashtag))).
 		OrderBy("GSI5SK", "DESC").
 		Limit(opts.Limit).
@@ -774,7 +796,7 @@ func (r *StatusRepository) GetTrendingStatuses(ctx context.Context, opts interfa
 	// In production, you'd want a more sophisticated trending algorithm
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("public-timeline-index").
+		Index("GSI2").
 		Where("GSI2PK", "=", "PUBLIC_TIMELINE").
 		Filter("LikeCount", ">", 0). // Only statuses with likes
 		OrderBy("GSI2SK", "DESC").
@@ -1078,7 +1100,7 @@ func (r *StatusRepository) GetStatusesByIDs(ctx context.Context, statusIDs []str
 func (r *StatusRepository) GetPublicTimeline(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("public-timeline-index").
+		Index("GSI2").
 		Where("GSI2PK", "=", "PUBLIC_TIMELINE").
 		OrderBy("GSI2SK", "DESC").
 		Limit(opts.Limit).
@@ -1105,7 +1127,7 @@ func (r *StatusRepository) GetPublicTimeline(ctx context.Context, opts interface
 func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("replies-index").
+		Index("GSI4").
 		Where("GSI4PK", "=", fmt.Sprintf("REPLIES#%s", parentStatusID)).
 		OrderBy("GSI4SK", "ASC"). // Chronological order for replies
 		Limit(opts.Limit).
@@ -1128,10 +1150,10 @@ func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string
 	}, nil
 }
 
-// GetFlaggedStatuses retrieves flagged statuses with pagination using GSI6 (flagged-content-index)
+// GetFlaggedStatuses retrieves flagged statuses with pagination using GSI6
 func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	// Use GSI6 (flagged-content-index) for efficient flagged content queries
-	return r.queryStatusesByGSI(ctx, "flagged-content-index", "GSI6PK", "FLAGGED_CONTENT", "GSI6SK", "DESC", opts, "failed to get flagged statuses")
+	// Use GSI6 for efficient flagged content queries
+	return r.queryStatusesByGSI(ctx, "GSI6", "GSI6PK", "FLAGGED_CONTENT", "GSI6SK", "DESC", opts, "failed to get flagged statuses")
 }
 
 // FlagStatus marks a status as flagged for moderation

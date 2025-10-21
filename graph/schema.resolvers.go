@@ -655,7 +655,60 @@ func (r *Resolver) convertRelationshipToGraphQL(rel *relationships.RelationshipD
 }
 
 func (r *Resolver) convertAccountToActor(account *storage.Account) *activitypub.Actor {
-	if account == nil || account.User == nil {
+	if account == nil {
+		return nil
+	}
+
+	// Prefer the persisted actor record when available to keep ActivityPub fields intact.
+	if account.Actor != nil {
+		actor := account.Actor
+		if actor != nil && account.User != nil && actor.ID == "" {
+			baseURL := ""
+			if r.Config != nil {
+				baseURL = r.Config.BaseURL()
+			}
+			if baseURL != "" {
+				actor.ID = fmt.Sprintf("%s/users/%s", baseURL, account.User.Username)
+				if actor.URL == "" {
+					actor.URL = fmt.Sprintf("%s/@%s", baseURL, account.User.Username)
+				}
+				if actor.Inbox == "" {
+					actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, account.User.Username)
+				}
+				if actor.Outbox == "" {
+					actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, account.User.Username)
+				}
+				if actor.Followers == "" {
+					actor.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, account.User.Username)
+				}
+				if actor.Following == "" {
+					actor.Following = fmt.Sprintf("%s/users/%s/following", baseURL, account.User.Username)
+				}
+			}
+		}
+		if account.User != nil {
+			if actor.Published == nil {
+				published := account.User.CreatedAt
+				actor.Published = &published
+			}
+			if actor.Updated == nil {
+				updated := account.User.UpdatedAt
+				actor.Updated = &updated
+			}
+			if actor.PreferredUsername == "" {
+				actor.PreferredUsername = account.User.Username
+			}
+			if actor.Name == "" {
+				actor.Name = account.User.DisplayName
+			}
+			if actor.Summary == "" {
+				actor.Summary = account.User.Note
+			}
+		}
+		return actor
+	}
+
+	if account.User == nil {
 		return nil
 	}
 	user := account.User
@@ -4179,6 +4232,14 @@ func (r *activityResolver) Cost(ctx context.Context, obj *activitypub.Activity) 
 
 // Object implements ActivityResolver
 func (r *activityResolver) Object(ctx context.Context, obj *activitypub.Activity) (*model.Object, error) {
+	if statusObj, ok := obj.Object.(*models.Status); ok && statusObj != nil {
+		return r.convertStatusToObject(ctx, statusObj), nil
+	}
+
+	if actorObj, ok := obj.Object.(*activitypub.Actor); ok && actorObj != nil {
+		return r.convertActorActivityObject(actorObj), nil
+	}
+
 	// Check if object is a string ID or embedded object
 	if objectID, ok := obj.Object.(string); ok && objectID != "" {
 		objectRepo := r.Registry.GetStorage().Object()
@@ -4290,6 +4351,112 @@ func (r *activityResolver) Target(_ context.Context, _ *activitypub.Activity) (*
 // InfrastructureEvent implements SubscriptionResolver
 
 // convertActivityPubObjectToModel converts an ActivityPub object to a GraphQL model object
+func (r *Resolver) convertActorActivityObject(actor *activitypub.Actor) *model.Object {
+	if actor == nil {
+		return nil
+	}
+
+	actorCopy := *actor
+
+	if actorCopy.Type == "" {
+		actorCopy.Type = activitypub.PersonType
+	}
+
+	objectID := strings.TrimSpace(actorCopy.ID)
+	if objectID == "" {
+		objectID = strings.TrimSpace(actorCopy.URL)
+	}
+	if objectID == "" && strings.TrimSpace(actorCopy.PreferredUsername) != "" {
+		objectID = fmt.Sprintf("actor:%s", strings.TrimSpace(actorCopy.PreferredUsername))
+	}
+	if objectID == "" {
+		objectID = "actor:unknown"
+	}
+
+	createdAt := time.Now().UTC()
+	switch {
+	case actorCopy.CreatedAt != nil:
+		createdAt = *actorCopy.CreatedAt
+	case actorCopy.Published != nil:
+		createdAt = *actorCopy.Published
+	}
+
+	updatedAt := createdAt
+	switch {
+	case actorCopy.Updated != nil:
+		updatedAt = *actorCopy.Updated
+	case actorCopy.LastStatusAt != nil:
+		updatedAt = *actorCopy.LastStatusAt
+	}
+
+	content := strings.TrimSpace(actorCopy.Summary)
+	contentMaps := make([]*model.ContentMap, 0, 1)
+	if content != "" {
+		contentMaps = append(contentMaps, &model.ContentMap{
+			Language: "und",
+			Content:  content,
+		})
+	}
+
+	attachments := make([]*activitypub.Attachment, 0, 2)
+	if actorCopy.Icon != nil && strings.TrimSpace(actorCopy.Icon.URL) != "" {
+		icon := *actorCopy.Icon
+		attachments = append(attachments, &activitypub.Attachment{
+			Type:      icon.Type,
+			MediaType: icon.MediaType,
+			URL:       icon.URL,
+			Name:      "avatar",
+			Width:     icon.Width,
+			Height:    icon.Height,
+		})
+	}
+	if actorCopy.Image != nil && strings.TrimSpace(actorCopy.Image.URL) != "" {
+		image := *actorCopy.Image
+		attachments = append(attachments, &activitypub.Attachment{
+			Type:      image.Type,
+			MediaType: image.MediaType,
+			URL:       image.URL,
+			Name:      "header",
+			Width:     image.Width,
+			Height:    image.Height,
+		})
+	}
+
+	actorPtr := actorCopy
+
+	return &model.Object{
+		ID:               objectID,
+		Type:             model.ObjectTypePage,
+		Actor:            &actorPtr,
+		Content:          content,
+		ContentMap:       contentMaps,
+		InReplyTo:        nil,
+		Visibility:       model.VisibilityPublic,
+		Sensitive:        false,
+		Attachments:      attachments,
+		Tags:             []*activitypub.Tag{},
+		Mentions:         []*model.Mention{},
+		CreatedAt:        model.Time(createdAt),
+		UpdatedAt:        model.Time(updatedAt),
+		RepliesCount:     0,
+		LikesCount:       0,
+		SharesCount:      0,
+		EstimatedCost:    0,
+		ModerationScore:  nil,
+		CommunityNotes:   []*model.CommunityNote{},
+		QuoteURL:         nil,
+		Quoteable:        false,
+		QuotePermissions: model.QuotePermissionNone,
+		QuoteContext:     nil,
+		QuoteCount:       0,
+		Quotes: &model.QuoteConnection{
+			Edges:      []*model.QuoteEdge{},
+			PageInfo:   &model.PageInfo{HasNextPage: false, HasPreviousPage: false},
+			TotalCount: 0,
+		},
+	}
+}
+
 func (r *Resolver) convertActivityPubObjectToModel(obj interface{}) *model.Object {
 	if obj == nil {
 		return nil

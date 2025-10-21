@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -131,7 +132,7 @@ func (r *MuteRepository) IsMuted(ctx context.Context, muterActor, mutedActor str
 	var mute models.Mute
 	err := r.Get(ctx, pk, sk, &mute)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if errors.IsNotFound(err) || strings.Contains(strings.ToLower(err.Error()), "not found") {
 			return false, nil
 		}
 		r.logger.Error("failed to check mute status",

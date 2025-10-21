@@ -348,6 +348,7 @@ func (r *BaseRepository[T]) Get(ctx context.Context, pk, sk string, result T) er
 		}
 		r.logger.Error("failed to get item",
 			zap.Error(err),
+			zap.String("table", r.tableName),
 			zap.String("pk", pk),
 			zap.String("sk", sk))
 		return ErrorHandler.HandleGetError(err, "base entity", fmt.Sprintf("pk=%s, sk=%s", pk, sk))

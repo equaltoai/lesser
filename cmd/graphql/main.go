@@ -42,6 +42,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/pay-theory/lift/pkg/lift"
 	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
@@ -69,6 +71,14 @@ var (
 	costTrackingService *cost.TrackingService // Centralized service
 	initTime            time.Time
 )
+
+type oauthMiddlewareAdapter struct {
+	service *auth.OAuthService
+}
+
+func (a *oauthMiddlewareAdapter) ValidateAccessToken(token string) (common.Claims, error) {
+	return a.service.ValidateAccessToken(token)
+}
 
 func init() {
 	if common.RunningUnitTests() {
@@ -125,16 +135,43 @@ func initializeManualServices() {
 
 	logger.Info("falling back to manual service initialization")
 
-	// Manual storage initialization would go here if needed
-	// For now, use services from Lambda context
-	if lambdaCtx.Repos != nil {
-		repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	// Determine DynamoDB table name
+	tableName := cfg.DynamoTableName
+	logger.Info("manual initialization: configured DynamoDB table",
+		zap.String("table_name", tableName))
+
+	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
+		tableName = "lesser-main"
+		logger.Warn("manual initialization: missing table name, falling back to default",
+			zap.String("table_name", tableName),
+			zap.Error(err))
 	}
+
+	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
+		logger.Fatal("DYNAMODB_TABLE environment variable is required")
+	}
+
+	// Initialize DynamORM client optimized for Lambda cold starts
+	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	if err != nil {
+		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+	}
+
+	// Initialize repository factory to provide core storage interfaces
+	repoFactory, err := factory.NewRepositoryFactory(db, tableName, logger)
+	if err != nil {
+		logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
+
+	repos = repoFactory
+	lambdaCtx.Repos = repoFactory
 
 	// Initialize cost tracker for resolver compatibility
 	costTracker = cost.New()
 
-	logger.Info("manual service initialization completed")
+	logger.Info("manual service initialization completed",
+		zap.String("table_name", tableName),
+		zap.String("region", cfg.Region))
 }
 
 // initializeGraphQLSpecificServices initializes GraphQL-specific components
@@ -233,6 +270,37 @@ func initializeGraphQLSpecificServices() {
 func handleGraphQL(ctx *lift.Context) error {
 	// Create request context with user information
 	requestCtx := context.WithValue(ctx.Request.Context(), contextKeyUser, ctx.Get("user"))
+
+	authHeader := common.ExtractAuthHeader(ctx)
+	logger.Info("GraphQL request auth header check",
+		zap.String("path", ctx.Request.Path),
+		zap.Bool("has_header", authHeader != ""),
+	)
+
+	if claimsVal := ctx.Get("claims"); claimsVal != nil {
+		logger.Info("GraphQL authentication context detected",
+			zap.String("path", ctx.Request.Path),
+			zap.String("claims_type", fmt.Sprintf("%T", claimsVal)),
+		)
+	} else {
+		logger.Info("GraphQL request without authentication context",
+			zap.String("path", ctx.Request.Path))
+	}
+
+	// Propagate authenticated username if available
+	if username, ok := ctx.Get("username").(string); ok && username != "" {
+		requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
+	}
+
+	// Propagate claims for resolvers that require authentication
+	if claimsVal, ok := ctx.Get("claims").(common.Claims); ok && claimsVal != nil {
+		requestCtx = context.WithValue(requestCtx, common.ContextKeyClaims, claimsVal)
+		// Ensure contextKeyUser is set even if username wasn't populated separately
+		if claimsVal.GetUsername() != "" {
+			requestCtx = context.WithValue(requestCtx, contextKeyUser, claimsVal.GetUsername())
+		}
+	}
+
 	requestCtx = context.WithValue(requestCtx, contextKeyCostTracker, ctx.Get("cost_tracker"))
 	requestCtx = context.WithValue(requestCtx, contextKeyLoaders, ctx.Get("loaders"))
 
@@ -423,14 +491,14 @@ func createCostTrackingMiddleware() lift.Middleware {
 
 // createAuthMiddleware creates authentication middleware using unified patterns
 func createAuthMiddleware() lift.Middleware {
-	// Create auth service for GraphQL middleware
-	authService, err := auth.NewAuthService(cfg, repos)
-	if err != nil {
-		logger.Fatal("Failed to create auth service for GraphQL middleware", zap.Error(err))
+	// Create OAuth service matching REST authentication semantics
+	if cfg.JWTSecret == "" {
+		logger.Fatal("JWT secret is not configured; cannot initialize GraphQL auth middleware")
 	}
 
-	// Use the unified GraphQL auth middleware
-	return auth.CreateGraphQLAuthMiddlewareFromAuthService(authService, logger)
+	auditLogger := auth.NewAuditLogger(repos, logger, auth.DefaultAuditConfig())
+	oauthService := auth.NewOAuthService(cfg.JWTSecret, cfg, repos, auditLogger)
+	return auth.CreateGraphQLAuthMiddleware(&oauthMiddlewareAdapter{service: oauthService}, logger)
 }
 
 func main() {
@@ -518,6 +586,8 @@ func main() {
 	// Configure GraphQL routes
 	_ = app.POST("/graphql", handleGraphQL)
 	_ = app.GET("/graphql", handleGraphQL)
+	_ = app.POST("/api/graphql", handleGraphQL)
+	_ = app.GET("/api/graphql", handleGraphQL)
 	// OPTIONS requests are handled by CORS middleware
 
 	// GraphQL playground (development only)
