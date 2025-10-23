@@ -21,6 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	services_ai "github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/lists"
@@ -346,23 +347,12 @@ func (r *Resolver) convertNotificationToGraphQL(ctx context.Context, notif *mode
 		return nil
 	}
 
-	// Get account that triggered the notification
-	var account *activitypub.Actor
-	if notif.ActorID != "" {
-		result, err := r.Registry.Accounts().GetAccount(ctx, notif.ActorID)
-		if err == nil && result != nil {
-			account = r.convertAccountToActor(result)
-		}
+	account := r.loadNotificationActor(ctx, notif)
+	if account == nil {
+		account = r.fallbackNotificationActor(notif)
 	}
 
-	// Get related status if applicable
-	var status *model.Object
-	if notif.TargetID != "" {
-		result, err := r.Registry.Notes().GetNote(ctx, notif.TargetID)
-		if err == nil && result != nil {
-			status = r.convertStatusToObject(ctx, result)
-		}
-	}
+	status := r.loadNotificationStatus(ctx, notif)
 
 	return &model.Notification{
 		ID:        notif.ID,
@@ -376,6 +366,143 @@ func (r *Resolver) convertNotificationToGraphQL(ctx context.Context, notif *mode
 
 // Include all converter functions (from service_converters.go)
 // These need to be methods on Resolver to access Registry
+
+func (r *Resolver) loadNotificationActor(ctx context.Context, notif *models.Notification) *activitypub.Actor {
+	if notif == nil {
+		return nil
+	}
+
+	accountsService := r.Registry.Accounts()
+	if accountsService == nil {
+		return nil
+	}
+
+	actorID := strings.TrimSpace(notif.ActorID)
+	if actorID == "" {
+		return nil
+	}
+
+	lookupCandidates := []string{actorID}
+
+	if username := extractUsernameFromActorIdentifier(actorID); username != "" && !strings.EqualFold(username, actorID) {
+		lookupCandidates = append(lookupCandidates, username)
+	}
+
+	if strings.Contains(actorID, "@") {
+		if parts := strings.Split(actorID, "@"); len(parts) == 2 && parts[0] != "" {
+			lookupCandidates = append(lookupCandidates, parts[0])
+		}
+	}
+
+	for _, candidate := range lookupCandidates {
+		account, err := accountsService.GetAccount(ctx, candidate)
+		if err == nil && account != nil {
+			return r.convertAccountToActor(account)
+		}
+	}
+
+	return nil
+}
+
+func (r *Resolver) loadNotificationStatus(ctx context.Context, notif *models.Notification) *model.Object {
+	if notif == nil || strings.TrimSpace(notif.TargetID) == "" {
+		return nil
+	}
+
+	notesService := r.Registry.Notes()
+	if notesService == nil {
+		return nil
+	}
+
+	result, err := notesService.GetNote(ctx, notif.TargetID)
+	if err != nil || result == nil {
+		return nil
+	}
+
+	return r.convertStatusToObject(ctx, result)
+}
+
+func (r *Resolver) fallbackNotificationActor(notif *models.Notification) *activitypub.Actor {
+	if notif == nil {
+		return nil
+	}
+
+	rawID := strings.TrimSpace(notif.ActorID)
+	if rawID == "" {
+		return nil
+	}
+
+	username := extractUsernameFromActorIdentifier(rawID)
+	baseURL := ""
+	if r.Config != nil {
+		baseURL = strings.TrimSuffix(r.Config.BaseURL(), "/")
+	}
+
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: username,
+		Name:              username,
+	}
+
+	if strings.Contains(rawID, "://") {
+		actor.BaseObject.ID = rawID
+		actor.URL = rawID
+	} else if baseURL != "" && username != "" {
+		actor.BaseObject.ID = fmt.Sprintf("%s/users/%s", baseURL, username)
+		actor.URL = fmt.Sprintf("%s/@%s", baseURL, username)
+		actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, username)
+		actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, username)
+		actor.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, username)
+		actor.Following = fmt.Sprintf("%s/users/%s/following", baseURL, username)
+	} else {
+		actor.BaseObject.ID = rawID
+		actor.URL = rawID
+	}
+
+	if actor.PreferredUsername == "" {
+		actor.PreferredUsername = rawID
+	}
+	if actor.Name == "" {
+		actor.Name = actor.PreferredUsername
+	}
+
+	return actor
+}
+
+func extractUsernameFromActorIdentifier(actorID string) string {
+	cleaned := strings.TrimSpace(actorID)
+	if cleaned == "" {
+		return ""
+	}
+
+	cleaned = strings.TrimPrefix(cleaned, "@")
+
+	if strings.Contains(cleaned, "://") {
+		if parsed, err := neturl.Parse(cleaned); err == nil {
+			segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+			for i := len(segments) - 1; i >= 0; i-- {
+				segment := strings.TrimSpace(segments[i])
+				if segment == "" {
+					continue
+				}
+				return strings.TrimPrefix(segment, "@")
+			}
+			if host := strings.TrimSpace(parsed.Host); host != "" {
+				return host
+			}
+		}
+	}
+
+	if strings.Contains(cleaned, "@") {
+		if parts := strings.Split(cleaned, "@"); len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+
+	return cleaned
+}
 
 func (r *Resolver) convertConversationToGraphQL(ctx context.Context, conv *models.Conversation) *model.Conversation {
 	if conv == nil {
@@ -1064,6 +1191,11 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		return nil
 	}
 
+	var poll *model.Poll
+	if status.StatusID != "" {
+		poll = r.resolvePollForStatus(ctx, status)
+	}
+
 	objectType := model.ObjectTypeNote
 
 	visibility := model.VisibilityPublic
@@ -1148,6 +1280,7 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		Mentions:         mentions,
 		CreatedAt:        model.Time(status.CreatedAt),
 		UpdatedAt:        model.Time(status.UpdatedAt),
+		Poll:             poll,
 		RepliesCount:     status.ReplyCount,
 		LikesCount:       status.LikeCount,
 		SharesCount:      status.ReblogCount,
@@ -1159,6 +1292,106 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 	}
 
 	return obj
+}
+
+func (r *Resolver) resolvePollForStatus(ctx context.Context, status *models.Status) *model.Poll {
+	if r.Storage == nil || status == nil {
+		return nil
+	}
+
+	pollRepo := r.Storage.Poll()
+	if pollRepo == nil {
+		return nil
+	}
+
+	pollRecord, err := pollRepo.GetPollByStatusID(ctx, status.StatusID)
+	if err != nil {
+		if !apperrors.HasCode(err, apperrors.CodeNotFound) && r.Logger != nil {
+			r.Logger.Warn("failed to load poll for status",
+				zap.String("status_id", status.StatusID),
+				zap.Error(err))
+		}
+		return nil
+	}
+
+	r.trackDynamoOperation(ctx, DynamoOperationQuery, 1)
+
+	var viewerVotes []int
+	viewerUsername := getUsernameFromContext(ctx)
+	if viewerUsername != "" && r.Registry != nil {
+		accountResult, accountErr := r.Registry.Accounts().GetAccount(ctx, viewerUsername)
+		if accountErr != nil {
+			if r.Logger != nil {
+				r.Logger.Debug("failed to load account while resolving poll votes",
+					zap.String("username", viewerUsername),
+					zap.Error(accountErr))
+			}
+		} else if accountResult != nil && accountResult.Actor != nil {
+			if voted, votes, voteErr := pollRepo.HasUserVoted(ctx, pollRecord.ID, accountResult.Actor.ID); voteErr != nil {
+				if !apperrors.HasCode(voteErr, apperrors.CodeNotFound) && r.Logger != nil {
+					r.Logger.Debug("failed to resolve poll vote status",
+						zap.String("poll_id", pollRecord.ID),
+						zap.String("username", viewerUsername),
+						zap.Error(voteErr))
+				}
+			} else {
+				r.trackDynamoOperation(ctx, DynamoOperationQuery, 1)
+				if voted {
+					viewerVotes = votes
+				}
+			}
+		}
+	}
+
+	return r.convertPollToGraphQL(pollRecord, viewerVotes)
+}
+
+func (r *Resolver) convertPollToGraphQL(poll *storage.Poll, viewerVotes []int) *model.Poll {
+	if poll == nil {
+		return nil
+	}
+
+	options := make([]*model.PollOption, len(poll.Options))
+	totalVotes := 0
+	for i, option := range poll.Options {
+		votesCount := 0
+		if i < len(poll.VotesCount) {
+			votesCount = poll.VotesCount[i]
+		}
+
+		options[i] = &model.PollOption{
+			Title:      option,
+			VotesCount: votesCount,
+		}
+		totalVotes += votesCount
+	}
+
+	var expiresAt *model.Time
+	expired := false
+	if poll.ExpiresAt != nil && !poll.ExpiresAt.IsZero() {
+		expires := model.Time(*poll.ExpiresAt)
+		expiresAt = &expires
+		expired = time.Now().After(*poll.ExpiresAt)
+	}
+
+	var ownVotes []int
+	if len(viewerVotes) > 0 {
+		ownVotes = make([]int, len(viewerVotes))
+		copy(ownVotes, viewerVotes)
+	}
+
+	return &model.Poll{
+		ID:          poll.ID,
+		ExpiresAt:   expiresAt,
+		Expired:     expired,
+		Multiple:    poll.Multiple,
+		HideTotals:  poll.HideTotals,
+		VotesCount:  totalVotes,
+		VotersCount: poll.VotersCount,
+		Voted:       len(ownVotes) > 0,
+		OwnVotes:    ownVotes,
+		Options:     options,
+	}
 }
 
 // Helper functions for managing conversion depth to prevent infinite recursion
@@ -2611,8 +2844,13 @@ func (r *actorResolver) Following(ctx context.Context, obj *activitypub.Actor) (
 
 // StatusesCount implements ActorResolver
 func (r *actorResolver) StatusesCount(ctx context.Context, obj *activitypub.Actor) (int, error) {
+	authorID := obj.ID
+	if authorID == "" {
+		authorID = obj.PreferredUsername
+	}
+
 	// Use efficient count method from status repository
-	count, err := r.Storage.Status().CountStatusesByAuthor(ctx, obj.PreferredUsername)
+	count, err := r.Storage.Status().CountStatusesByAuthor(ctx, authorID)
 	if err != nil {
 		r.Logger.Error("failed to get status count", zap.String("username", obj.PreferredUsername), zap.Error(err))
 		return 0, nil // Return 0 on error rather than failing the request
@@ -4897,7 +5135,7 @@ func (r *subscriptionResolver) convertEventToModerationItem(event *streaming.Int
 // calculateFreshReputation calculates a fresh reputation for an actor
 func (r *actorResolver) calculateFreshReputation(ctx context.Context, obj *activitypub.Actor) (*model.Reputation, error) {
 	// Get basic metrics
-	postCount, followerCount := r.getActorMetrics(ctx, obj.PreferredUsername)
+	postCount, followerCount := r.getActorMetrics(ctx, obj)
 
 	// Calculate account age in days
 	accountAge := r.getAccountAge(obj)
@@ -4992,7 +5230,7 @@ func (r *actorResolver) buildReputationEvidence(ctx context.Context, obj *activi
 		averageTrustScore = stored.AverageTrustScore
 	} else {
 		// Calculate fresh values
-		totalPosts, totalFollowers = r.getActorMetrics(ctx, obj.PreferredUsername)
+		totalPosts, totalFollowers = r.getActorMetrics(ctx, obj)
 		accountAge = r.getAccountAge(obj)
 		vouchCount = r.getVouchCount(ctx, obj.PreferredUsername)
 		trustingActors = r.getTrustingActorsCount(ctx, obj.PreferredUsername)
@@ -5016,16 +5254,21 @@ func (r *actorResolver) buildReputationEvidence(ctx context.Context, obj *activi
 }
 
 // getActorMetrics gets basic actor metrics (posts and followers)
-func (r *actorResolver) getActorMetrics(ctx context.Context, username string) (int, int) {
+func (r *actorResolver) getActorMetrics(ctx context.Context, actor *activitypub.Actor) (int, int) {
+	authorID := actor.ID
+	if authorID == "" {
+		authorID = actor.PreferredUsername
+	}
+
 	// Get post count
-	postCount, err := r.Storage.Status().CountStatusesByAuthor(ctx, username)
+	postCount, err := r.Storage.Status().CountStatusesByAuthor(ctx, authorID)
 	if err != nil {
-		r.Logger.Warn("failed to get post count", zap.String("username", username), zap.Error(err))
+		r.Logger.Warn("failed to get post count", zap.String("username", actor.PreferredUsername), zap.Error(err))
 		postCount = 0
 	}
 
 	// Get follower count
-	followers, _, err := r.Storage.Relationship().GetFollowers(ctx, username, 1000, "")
+	followers, _, err := r.Storage.Relationship().GetFollowers(ctx, actor.PreferredUsername, 1000, "")
 	followerCount := 0
 	if err == nil {
 		followerCount = len(followers)

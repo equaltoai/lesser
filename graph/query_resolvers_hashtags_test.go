@@ -43,7 +43,7 @@ func TestHashtagQueryResolver_BasicStructure(t *testing.T) {
 				// Expected
 			}
 		}()
-		_, _ = r.HashtagTimeline(ctx, "golang", nil, nil)
+		_, _ = r.HashtagTimeline(ctx, "golang", nil, nil, nil)
 	})
 
 	t.Run("MultiHashtagTimeline resolver exists", func(t *testing.T) {

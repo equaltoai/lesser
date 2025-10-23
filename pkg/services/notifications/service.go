@@ -6,15 +6,22 @@ package notifications
 import (
 	"context"
 	"fmt"
+	neturl "net/url"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	notifpush "github.com/equaltoai/lesser/pkg/notifications"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
+
+type pushQueue interface {
+	QueueNotification(ctx context.Context, msg *notifpush.PushMessage) error
+}
 
 // Service provides notification operations
 type Service struct {
@@ -23,6 +30,7 @@ type Service struct {
 	publisher        streaming.Publisher
 	logger           *zap.Logger
 	domainName       string
+	pushService      pushQueue
 }
 
 // NewService creates a new Notifications Service with the required dependencies
@@ -32,6 +40,7 @@ func NewService(
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 	domainName string,
+	pushService pushQueue,
 ) *Service {
 	if logger == nil {
 		logger = zap.NewNop()
@@ -43,6 +52,7 @@ func NewService(
 		publisher:        publisher,
 		logger:           logger,
 		domainName:       domainName,
+		pushService:      pushService,
 	}
 }
 
@@ -139,14 +149,15 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 	}
 
 	// Check if recipient user exists
-	_, err := s.accountRepo.GetAccount(ctx, cmd.UserID)
+	recipientAccount, err := s.accountRepo.GetAccount(ctx, cmd.UserID)
 	if err != nil {
 		return nil, common.WrapError(common.ErrNotFound("recipient user"), "failed to get recipient user")
 	}
 
 	// Check if actor exists (optional validation)
+	var actorAccount *storage.Account
 	if err := common.ValidateRequiredParam("actor_id_check", cmd.ActorID); err == nil && cmd.ActorID != "system" {
-		_, err := s.accountRepo.GetAccount(ctx, cmd.ActorID)
+		actorAccount, err = s.accountRepo.GetAccount(ctx, cmd.ActorID)
 		if err != nil {
 			s.logger.Warn("actor not found for notification",
 				zap.String("actor_id", cmd.ActorID),
@@ -193,6 +204,8 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 		return nil, ErrNotificationCreateFailed
 	}
 
+	s.queuePushNotification(ctx, recipientAccount, actorAccount, notification)
+
 	s.logger.Info("created notification successfully",
 		zap.String("notification_id", notification.ID),
 		zap.String("type", notification.Type),
@@ -205,6 +218,238 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 		Notification: notification,
 		Events:       events,
 	}, nil
+}
+
+func (s *Service) queuePushNotification(ctx context.Context, recipient *storage.Account, actor *storage.Account, notification *models.Notification) {
+	if s.pushService == nil || notification == nil {
+		return
+	}
+
+	if recipient == nil || recipient.User == nil {
+		return
+	}
+
+	username := strings.TrimSpace(recipient.User.Username)
+	if username == "" {
+		return
+	}
+
+	actorName := resolveActorDisplayName(actor, notification.ActorID)
+	content := extractNotificationContent(notification)
+
+	title := strings.TrimSpace(notification.Title)
+	if title == "" {
+		title = notifpush.FormatNotificationTitle(notification.Type, actorName)
+	}
+
+	body := strings.TrimSpace(notification.Body)
+	if body == "" {
+		body = notifpush.FormatNotificationBody(notification.Type, content)
+	}
+
+	s.logger.Info("queueing push notification",
+		zap.String("notification_id", notification.ID),
+		zap.String("username", username),
+		zap.String("type", notification.Type),
+	)
+
+	pushMessage := &notifpush.PushMessage{
+		Username:         username,
+		NotificationType: notification.Type,
+		Title:            title,
+		Body:             body,
+		Icon:             extractNotificationIcon(notification),
+		NotificationID:   notification.ID,
+		AccessToken:      extractNotificationAccessToken(notification),
+	}
+
+	if err := s.pushService.QueueNotification(ctx, pushMessage); err != nil {
+		s.logger.Warn("failed to queue push notification",
+			zap.String("notification_id", notification.ID),
+			zap.String("username", username),
+			zap.Error(err))
+	}
+}
+
+// DispatchPushForNotification replays the push queue logic for an already persisted notification.
+func (s *Service) DispatchPushForNotification(ctx context.Context, notification *models.Notification) {
+	if notification == nil {
+		return
+	}
+
+	recipient := s.lookupAccountByIdentifier(ctx, notification.UserID)
+	actorAccount := s.lookupAccountByIdentifier(ctx, notification.ActorID)
+
+	s.queuePushNotification(ctx, recipient, actorAccount, notification)
+}
+
+func (s *Service) lookupAccountByIdentifier(ctx context.Context, identifier string) *storage.Account {
+	if s.accountRepo == nil {
+		return nil
+	}
+
+	id := strings.TrimSpace(identifier)
+	if id == "" {
+		return nil
+	}
+
+	if account, err := s.accountRepo.GetAccount(ctx, id); err == nil && account != nil {
+		return account
+	}
+
+	username := extractUsernameFromIdentifier(id)
+	if username != "" && !strings.EqualFold(username, id) {
+		if account, err := s.accountRepo.GetAccount(ctx, username); err == nil && account != nil {
+			return account
+		}
+	}
+
+	if strings.Contains(id, "@") {
+		if parts := strings.Split(id, "@"); len(parts) == 2 && parts[0] != "" {
+			if account, err := s.accountRepo.GetAccount(ctx, parts[0]); err == nil && account != nil {
+				return account
+			}
+		}
+	}
+
+	return nil
+}
+
+func extractUsernameFromIdentifier(identifier string) string {
+	value := strings.TrimSpace(identifier)
+	if value == "" {
+		return ""
+	}
+
+	value = strings.TrimPrefix(value, "@")
+
+	if strings.Contains(value, "://") {
+		if parsed, err := neturl.Parse(value); err == nil {
+			segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+			for i := len(segments) - 1; i >= 0; i-- {
+				segment := strings.TrimSpace(segments[i])
+				if segment == "" {
+					continue
+				}
+				return strings.TrimPrefix(segment, "@")
+			}
+			if host := strings.TrimSpace(parsed.Host); host != "" {
+				return host
+			}
+		}
+	}
+
+	if strings.Contains(value, "@") {
+		if parts := strings.Split(value, "@"); len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+
+	return value
+}
+
+func resolveActorDisplayName(actor *storage.Account, actorID string) string {
+	if actor != nil {
+		if actor.User != nil {
+			if display := strings.TrimSpace(actor.User.DisplayName); display != "" {
+				return display
+			}
+			if username := strings.TrimSpace(actor.User.Username); username != "" {
+				return username
+			}
+		}
+		if actor.Actor != nil {
+			if name := strings.TrimSpace(actor.Actor.Name); name != "" {
+				return name
+			}
+			if preferred := strings.TrimSpace(actor.Actor.PreferredUsername); preferred != "" {
+				return preferred
+			}
+		}
+	}
+
+	id := strings.TrimSpace(actorID)
+	if id == "" {
+		return "Someone"
+	}
+
+	if strings.Contains(id, "/") {
+		segments := strings.Split(strings.Trim(id, "/"), "/")
+		if len(segments) > 0 {
+			candidate := strings.TrimSpace(segments[len(segments)-1])
+			if candidate != "" {
+				return candidate
+			}
+		}
+	}
+
+	return id
+}
+
+func extractNotificationContent(notification *models.Notification) string {
+	if notification == nil {
+		return ""
+	}
+
+	if body := strings.TrimSpace(notification.Body); body != "" {
+		return body
+	}
+
+	if notification.Data == nil {
+		return ""
+	}
+
+	return extractStringFromData(notification.Data,
+		"content",
+		"preview_text",
+		"summary",
+		"text",
+		"status_preview",
+	)
+}
+
+func extractNotificationIcon(notification *models.Notification) string {
+	if notification == nil || notification.Data == nil {
+		return ""
+	}
+
+	return extractStringFromData(notification.Data,
+		"icon",
+		"avatar",
+		"image",
+		"icon_url",
+		"avatar_url",
+	)
+}
+
+func extractNotificationAccessToken(notification *models.Notification) string {
+	if notification == nil || notification.Data == nil {
+		return ""
+	}
+
+	return extractStringFromData(notification.Data,
+		"access_token",
+		"accessToken",
+		"token",
+	)
+}
+
+func extractStringFromData(data map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if raw, ok := data[key]; ok {
+			switch value := raw.(type) {
+			case string:
+				if trimmed := strings.TrimSpace(value); trimmed != "" {
+					return trimmed
+				}
+			case fmt.Stringer:
+				if trimmed := strings.TrimSpace(value.String()); trimmed != "" {
+					return trimmed
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // MarkAsRead marks a notification as read and emits events

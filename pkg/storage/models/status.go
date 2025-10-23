@@ -123,6 +123,7 @@ func (s *Status) BeforeCreate() error {
 	now := time.Now()
 	s.CreatedAt = now
 	s.ModifiedAt = now
+	s.UpdatedAt = now
 
 	// Set published time if not already set
 	if s.PublishedAt.IsZero() {
@@ -146,7 +147,9 @@ func (s *Status) BeforeCreate() error {
 
 // BeforeUpdate sets up the model before update
 func (s *Status) BeforeUpdate() error {
-	s.ModifiedAt = time.Now()
+	now := time.Now()
+	s.ModifiedAt = now
+	s.UpdatedAt = now
 
 	// Update extracted data from Note if present
 	if s.Note != nil {

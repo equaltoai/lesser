@@ -26,7 +26,6 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -705,59 +704,30 @@ func main() {
 		panic(ErrProcessorInitialization(err))
 	}
 
-	app := lift.New()
+	lambda.Start(func(baseCtx context.Context, event events.SQSEvent) (err error) {
+		requestID := fmt.Sprintf("push-%d", time.Now().UnixNano())
+		liftCtx := lift.NewContext(baseCtx, nil)
+		liftCtx.RequestID = requestID
+		liftCtx.Set("requestID", requestID)
 
-	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(processor.logger))
-
-	// Add request ID middleware
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			requestID := fmt.Sprintf("push-%d", time.Now().UnixNano())
-			ctx.Set("requestID", requestID)
-			return next.Handle(ctx)
-		})
-	})
-
-	// Add error handling middleware
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			err := next.Handle(ctx)
-			if err != nil {
-				processor.logger.Error("handler error",
-					zap.String("request_id", ctx.Get("requestID").(string)),
-					zap.Error(err),
+		defer func() {
+			if r := recover(); r != nil {
+				processor.logger.Error("panic processing push batch",
+					zap.String("request_id", requestID),
+					zap.Any("panic", r),
 				)
+				err = fmt.Errorf("panic recovered: %v", r)
 			}
-			return err
-		})
-	})
+		}()
 
-	// Set SQS handler for push notification delivery
-	_ = app.SQS("push-delivery", func(ctx *lift.Context) error {
-		// Extract SQS event from Lift context - proper implementation
-		if ctx.Request.RawEvent == nil {
-			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
+		processor.logger.Info("received push SQS event",
+			zap.String("request_id", requestID),
+			zap.Int("record_count", len(event.Records)))
+
+		if len(event.Records) == 0 {
+			return nil
 		}
 
-		// Parse the raw event as SQS event
-		var event events.SQSEvent
-		if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
-			event = sqsEvent
-		} else {
-			// Try to parse from interface if it's a map
-			eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-			if err != nil {
-				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
-			}
-
-			if err := json.Unmarshal(eventBytes, &event); err != nil {
-				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
-			}
-		}
-
-		return processor.HandleSQSBatch(ctx, event)
+		return processor.HandleSQSBatch(liftCtx, event)
 	})
-
-	lambda.Start(app.HandleRequest)
 }

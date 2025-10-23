@@ -26,6 +26,11 @@ type RelationshipRepository struct {
 	queryUtils *QueryUtils
 }
 
+const (
+	defaultMoveQueryLimit = 100
+	maxMoveQueryLimit     = 500
+)
+
 // NewRelationshipRepository creates a new relationship repository with enhanced functionality
 func NewRelationshipRepository(db core.DB, tableName string, logger *zap.Logger) *RelationshipRepository {
 	// Create enhanced repository with social-specific services
@@ -201,21 +206,40 @@ func (r *RelationshipRepository) GetRelationship(ctx context.Context, followerUs
 
 // getRelationshipsByState retrieves relationships for a user filtered by state
 func (r *RelationshipRepository) getRelationshipsByState(ctx context.Context, username string, state models.RelationshipState, limit int, cursor string, errorContext string) ([]string, string, error) {
-	query := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
-		Filter("State", "=", state).
-		Limit(limit)
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
+	if limit <= 0 {
+		limit = 40
 	}
 
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
+	basePK := fmt.Sprintf("FOLLOW#%s", username)
+
+	query := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+		Index("GSI1").
+		Where("GSI1PK", "=", basePK).
+		Filter("State", "=", state)
+
+	if cursor != "" {
+		decodedPK, decodedSK, err := Utils.Pagination.DecodeCursor(cursor)
+		if err != nil {
+			r.logger.Warn("failed to decode followers cursor",
+				zap.String("username", username),
+				zap.String("cursor", cursor),
+				zap.Error(err))
+			return nil, "", ErrorHandler.HandleQueryError(err, EntityFollow, errorContext)
+		}
+
+		if decodedPK != "" && decodedPK != basePK {
+			r.logger.Warn("followers cursor PK mismatch",
+				zap.String("expected", basePK),
+				zap.String("received", decodedPK))
+		}
+
+		if decodedSK != "" {
+			query = query.Where("GSI1SK", ">", decodedSK)
+		}
+	}
 
 	var relationships []models.RelationshipRecord
-	err := query.All(&relationships)
+	err := query.Limit(limit + 1).All(&relationships)
 	if err != nil {
 		r.logger.Error(fmt.Sprintf("failed to query %s", errorContext),
 			zap.String("username", username),
@@ -223,12 +247,9 @@ func (r *RelationshipRepository) getRelationshipsByState(ctx context.Context, us
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityFollow, errorContext)
 	}
 
-	// Generate next cursor
-	var nextCursor string
-	if len(relationships) > limit {
-		// We got more results than requested, so there are more pages
-		nextCursor = relationships[limit-1].GSI1SK
-		relationships = relationships[:limit] // Trim to requested limit
+	hasMore := len(relationships) > limit
+	if hasMore {
+		relationships = relationships[:limit]
 	}
 
 	// Extract follower usernames
@@ -237,6 +258,12 @@ func (r *RelationshipRepository) getRelationshipsByState(ctx context.Context, us
 		if follower := rel.ExtractFollowerFromGSI(); follower != "" {
 			followers = append(followers, follower)
 		}
+	}
+
+	var nextCursor string
+	if hasMore && len(relationships) > 0 {
+		last := relationships[len(relationships)-1]
+		nextCursor = Utils.Pagination.EncodeCursor(basePK, last.GSI1SK)
 	}
 
 	return followers, nextCursor, nil
@@ -249,20 +276,39 @@ func (r *RelationshipRepository) GetFollowers(ctx context.Context, username stri
 
 // GetFollowing retrieves all users that a user is following
 func (r *RelationshipRepository) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	query := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
-		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
-		Filter("State", "=", models.RelationshipAccepted).
-		Limit(limit)
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
+	if limit <= 0 {
+		limit = 40
 	}
 
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
+	basePK := fmt.Sprintf("FOLLOW#%s", username)
+
+	query := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+		Where("PK", "=", basePK).
+		Filter("State", "=", models.RelationshipAccepted)
+
+	if cursor != "" {
+		decodedPK, decodedSK, err := Utils.Pagination.DecodeCursor(cursor)
+		if err != nil {
+			r.logger.Warn("failed to decode following cursor",
+				zap.String("username", username),
+				zap.String("cursor", cursor),
+				zap.Error(err))
+			return nil, "", ErrorHandler.HandleQueryError(err, EntityFollow, "following")
+		}
+
+		if decodedPK != "" && decodedPK != basePK {
+			r.logger.Warn("following cursor PK mismatch",
+				zap.String("expected", basePK),
+				zap.String("received", decodedPK))
+		}
+
+		if decodedSK != "" {
+			query = query.Where("SK", ">", decodedSK)
+		}
+	}
 
 	var relationships []models.RelationshipRecord
-	err := query.All(&relationships)
+	err := query.Limit(limit + 1).All(&relationships)
 	if err != nil {
 		r.logger.Error("failed to query following",
 			zap.String("username", username),
@@ -270,12 +316,9 @@ func (r *RelationshipRepository) GetFollowing(ctx context.Context, username stri
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityFollow, "following")
 	}
 
-	// Generate next cursor
-	var nextCursor string
-	if len(relationships) > limit {
-		// We got more results than requested, so there are more pages
-		nextCursor = relationships[limit-1].SK
-		relationships = relationships[:limit] // Trim to requested limit
+	hasMore := len(relationships) > limit
+	if hasMore {
+		relationships = relationships[:limit]
 	}
 
 	// Extract following usernames
@@ -284,6 +327,12 @@ func (r *RelationshipRepository) GetFollowing(ctx context.Context, username stri
 		if followed := rel.ExtractFollowingUsername(); followed != "" {
 			following = append(following, followed)
 		}
+	}
+
+	var nextCursor string
+	if hasMore && len(relationships) > 0 {
+		last := relationships[len(relationships)-1]
+		nextCursor = Utils.Pagination.EncodeCursor(basePK, last.SK)
 	}
 
 	return following, nextCursor, nil
@@ -637,14 +686,21 @@ func (r *RelationshipRepository) GetMove(ctx context.Context, actor string) (*st
 // GetAccountMoves retrieves all moves for an account (as actor)
 func (r *RelationshipRepository) GetAccountMoves(ctx context.Context, actor string) ([]*storage.Move, error) {
 	query := r.db.WithContext(ctx).Model(&models.Move{}).
-		Where("PK", "=", fmt.Sprintf("MOVE#ACTOR#%s", actor))
+		Where("PK", "=", fmt.Sprintf("MOVE#ACTOR#%s", actor)).
+		Where("SK", "begins_with", "TARGET#")
 
 	var moveRecords []models.Move
-	if err := query.All(&moveRecords); err != nil {
+	if err := query.Limit(defaultMoveQueryLimit).All(&moveRecords); err != nil {
 		r.logger.Error("failed to get account moves",
 			zap.String("actor", actor),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, "move", actor)
+	}
+
+	if len(moveRecords) == defaultMoveQueryLimit {
+		r.logger.Warn("account move query reached limit; results may be truncated",
+			zap.String("actor", actor),
+			zap.Int("limit", defaultMoveQueryLimit))
 	}
 
 	// Convert to storage.Move slice
@@ -702,11 +758,16 @@ func (r *RelationshipRepository) VerifyMove(ctx context.Context, actor, target s
 func (r *RelationshipRepository) GetPendingMoves(ctx context.Context, limit int) ([]*storage.Move, error) {
 	// Note: DynamORM doesn't support BeginsWith on PK directly
 	// We would need to scan and filter in application logic
-	query := r.db.WithContext(ctx).Model(&models.Move{}).
-		Limit(limit)
+	if limit <= 0 {
+		limit = defaultMoveQueryLimit
+	} else if limit > maxMoveQueryLimit {
+		limit = maxMoveQueryLimit
+	}
+
+	query := r.db.WithContext(ctx).Model(&models.Move{})
 
 	var moveRecords []models.Move
-	if err := query.All(&moveRecords); err != nil {
+	if err := query.Limit(limit).All(&moveRecords); err != nil {
 		r.logger.Error("failed to get pending moves", zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, "move", "pending")
 	}
@@ -733,11 +794,17 @@ func (r *RelationshipRepository) GetMoveByTarget(ctx context.Context, target str
 		Where("GSI1PK", "=", fmt.Sprintf("MOVE#TARGET#%s", target))
 
 	var moveRecords []models.Move
-	if err := query.All(&moveRecords); err != nil {
+	if err := query.Limit(defaultMoveQueryLimit).All(&moveRecords); err != nil {
 		r.logger.Error("failed to get moves by target",
 			zap.String("target", target),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, "move", target)
+	}
+
+	if len(moveRecords) == defaultMoveQueryLimit {
+		r.logger.Warn("move by target query reached limit; results may be truncated",
+			zap.String("target", target),
+			zap.Int("limit", defaultMoveQueryLimit))
 	}
 
 	// Convert to storage.Move slice
@@ -1022,18 +1089,14 @@ func (r *RelationshipRepository) GetCollectionItems(ctx context.Context, collect
 	}
 
 	query := r.db.WithContext(ctx).Model(&models.CollectionItem{}).
-		Where("PK", "=", fmt.Sprintf("COLLECTION#%s", collection)).
-		Limit(limit)
+		Where("PK", "=", fmt.Sprintf("COLLECTION#%s", collection))
 
 	if cursor != "" {
 		query = query.Cursor(cursor)
 	}
 
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
 	var items []models.CollectionItem
-	err := query.All(&items)
+	err := query.Limit(limit + 1).All(&items)
 	if err != nil {
 		r.logger.Error("failed to get collection items",
 			zap.String("collection", collection),

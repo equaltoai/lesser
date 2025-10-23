@@ -41,7 +41,7 @@ require (
 	github.com/graph-gophers/dataloader v5.0.0+incompatible
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/oklog/ulid/v2 v2.1.1
-	github.com/pay-theory/dynamorm v1.0.30-0.20251020234917-cf2ae3334b0b
+	github.com/pay-theory/dynamorm v1.0.30-0.20251021041254-f48fbfc56bf4
 	github.com/pay-theory/lift v1.0.59-0.20251020235817-d750e31562f6
 	github.com/shopspring/decimal v1.4.0
 	github.com/spruceid/siwe-go v0.2.1

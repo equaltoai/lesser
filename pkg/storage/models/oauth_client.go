@@ -9,10 +9,10 @@ import (
 // OAuthClient represents an OAuth 2.0 client application
 type OAuthClient struct {
 	// DynamoDB keys - MUST match legacy exactly
-	PK             string `dynamorm:"pk" json:"-"`                           // CLIENT#clientID
+	PK             string `dynamorm:"pk" json:"-"`                           // OAUTH_CLIENT#clientID
 	SK             string `dynamorm:"sk" json:"-"`                           // METADATA
-	GSI1PK         string `dynamorm:"gsi1pk" json:"-"`                       // OWNER#ownerID (for owner index)
-	GSI1SK         string `dynamorm:"gsi1sk" json:"-"`                       // CLIENT#clientID
+	GSI1PK         string `dynamorm:"index:gsi1,pk" json:"-"`                // OWNER#ownerID (for owner index)
+	GSI1SK         string `dynamorm:"index:gsi1,sk" json:"-"`                // CLIENT#clientID
 	OAuthClientsPK string `dynamorm:"index:oauth-clients-index,pk" json:"-"` // OAUTH_CLIENTS
 	OAuthClientsSK string `dynamorm:"index:oauth-clients-index,sk" json:"-"` // CREATED_AT#{ts_desc}#CLIENT#{clientID}
 
@@ -73,7 +73,7 @@ func (o *OAuthClient) GetSK() string {
 // UpdateKeys implements BaseModel interface and updates DynamoDB keys
 func (o *OAuthClient) UpdateKeys() error {
 	o.PK = "OAUTH_CLIENT#" + o.ClientID
-	o.SK = "CLIENT"
+	o.SK = SKMetadata
 	if o.OwnerID != "" {
 		o.GSI1PK = "OWNER#" + o.OwnerID
 		o.GSI1SK = "CLIENT#" + o.ClientID

@@ -22,16 +22,18 @@ import (
 
 type LesserApiStackProps struct {
 	awscdk.StackProps
-	Environment      string
-	Domain           string
-	Config           map[string]interface{} // Environment-specific configuration
-	HostedZoneDomain string
-	HostedZoneId     string
-	CloudFrontDomain string
-	APICertificate   awscertificatemanager.ICertificate
-	CDNCertificate   awscertificatemanager.ICertificate
-	JWTSecret        awssecretsmanager.ISecret
-	ActorPrivateKey  awssecretsmanager.ISecret
+	Environment            string
+	Domain                 string
+	Config                 map[string]interface{} // Environment-specific configuration
+	HostedZoneDomain       string
+	HostedZoneId           string
+	CloudFrontDomain       string
+	APICertificate         awscertificatemanager.ICertificate
+	CDNCertificate         awscertificatemanager.ICertificate
+	GraphQLWSCertificate   awscertificatemanager.ICertificate
+	StreamingWSCertificate awscertificatemanager.ICertificate
+	JWTSecret              awssecretsmanager.ISecret
+	ActorPrivateKey        awssecretsmanager.ISecret
 }
 
 type LesserApiStack struct {
@@ -59,6 +61,8 @@ type LesserApiStack struct {
 	CloudFrontDomain       string
 	APICertificate         awscertificatemanager.ICertificate
 	CDNCertificate         awscertificatemanager.ICertificate
+	GraphQLWSCertificate   awscertificatemanager.ICertificate
+	StreamingWSCertificate awscertificatemanager.ICertificate
 	CloudFrontKeyPairID    string
 	CloudFrontKeyGroupID   string
 }
@@ -67,14 +71,16 @@ func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiSt
 	stack := awscdk.NewStack(scope, &id, &props.StackProps)
 
 	apiStack := &LesserApiStack{
-		Stack:            stack,
-		Environment:      props.Environment,
-		Configuration:    props.Config,
-		CloudFrontDomain: props.CloudFrontDomain,
-		APICertificate:   props.APICertificate,
-		CDNCertificate:   props.CDNCertificate,
-		JwtSecret:        props.JWTSecret,
-		PrivateKey:       props.ActorPrivateKey,
+		Stack:                  stack,
+		Environment:            props.Environment,
+		Configuration:          props.Config,
+		CloudFrontDomain:       props.CloudFrontDomain,
+		APICertificate:         props.APICertificate,
+		CDNCertificate:         props.CDNCertificate,
+		GraphQLWSCertificate:   props.GraphQLWSCertificate,
+		StreamingWSCertificate: props.StreamingWSCertificate,
+		JwtSecret:              props.JWTSecret,
+		PrivateKey:             props.ActorPrivateKey,
 	}
 
 	if props.Config != nil {
@@ -533,11 +539,13 @@ func (s *LesserApiStack) createLambdaFunctions() {
 
 func (s *LesserApiStack) createAPIGateway(domain string) {
 	s.API = localconstructs.CreateAPIGateway(s.Stack, &localconstructs.APIGatewayProps{
-		Environment: s.Environment,
-		Domain:      domain,
-		Certificate: s.APICertificate,
-		Functions:   s.Functions,
-		HostedZone:  s.HostedZone,
+		Environment:            s.Environment,
+		Domain:                 domain,
+		Certificate:            s.APICertificate,
+		GraphQLWSCertificate:   s.GraphQLWSCertificate,
+		StreamingWSCertificate: s.StreamingWSCertificate,
+		Functions:              s.Functions,
+		HostedZone:             s.HostedZone,
 	})
 
 	// Output API URLs
@@ -551,6 +559,13 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 		Description: jsii.String("WebSocket API Gateway URL"),
 	})
 
+	if s.API.GraphQLWebSocketApi != nil {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("GraphQLWebSocketApiUrl"), &awscdk.CfnOutputProps{
+			Value:       s.API.GraphQLWebSocketApi.ApiEndpoint(),
+			Description: jsii.String("GraphQL WebSocket API Gateway URL"),
+		})
+	}
+
 	if s.CloudFrontKeyPairID != "" {
 		awscdk.NewCfnOutput(s.Stack, jsii.String("CloudFrontKeyPairId"), &awscdk.CfnOutputProps{
 			Value:       jsii.String(s.CloudFrontKeyPairID),
@@ -563,6 +578,7 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 func (s *LesserApiStack) createStreamProcessors() {
 	localconstructs.CreateStreamProcessors(s.Stack, &localconstructs.StreamProcessorsProps{
 		Table:     s.MainTable,
+		PushQueue: s.PushQueue,
 		Functions: s.Functions,
 	})
 }

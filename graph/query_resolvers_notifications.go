@@ -66,6 +66,13 @@ func (r *queryResolver) Notifications(ctx context.Context, types []string, exclu
 		endCursor = &edges[len(edges)-1].Cursor
 	}
 
+	totalCount := len(result.Notifications)
+	if result.Summary != nil {
+		totalCount = int(result.Summary.TotalCount)
+	} else if result.Pagination != nil && result.Pagination.Total >= 0 {
+		totalCount = int(result.Pagination.Total)
+	}
+
 	return &model.NotificationConnection{
 		Edges: edges,
 		PageInfo: &model.PageInfo{
@@ -74,6 +81,6 @@ func (r *queryResolver) Notifications(ctx context.Context, types []string, exclu
 			StartCursor:     startCursor,
 			EndCursor:       endCursor,
 		},
-		TotalCount: len(result.Notifications),
+		TotalCount: totalCount,
 	}, nil
 }

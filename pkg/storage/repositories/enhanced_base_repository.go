@@ -37,7 +37,6 @@ type CachingService interface {
 // EventService provides standardized event emission
 type EventService interface {
 	Emit(ctx context.Context, event Event) error
-	EmitAsync(ctx context.Context, event Event) error
 }
 
 // Event represents a repository event
@@ -159,7 +158,7 @@ func (r *EnhancedBaseRepository[T]) ValidateAndCreate(ctx context.Context, model
 	if r.events != nil {
 		event := NewEvent("entity.created", r.entityName, model.GetPK(), "create", model)
 		event.Actor = r.getActorFromContext(ctx)
-		_ = r.events.EmitAsync(ctx, event)
+		_ = r.events.Emit(ctx, event)
 	}
 
 	return nil
@@ -193,7 +192,7 @@ func (r *EnhancedBaseRepository[T]) ValidateAndUpdate(ctx context.Context, model
 	if r.events != nil {
 		event := NewEvent("entity.updated", r.entityName, model.GetPK(), "update", model)
 		event.Actor = r.getActorFromContext(ctx)
-		_ = r.events.EmitAsync(ctx, event)
+		_ = r.events.Emit(ctx, event)
 	}
 
 	// 6. Invalidate cache if caching is enabled
@@ -229,7 +228,7 @@ func (r *EnhancedBaseRepository[T]) ValidateAndDelete(ctx context.Context, pk, s
 	if r.events != nil {
 		event := NewEvent("entity.deleted", r.entityName, pk, "delete", map[string]string{"pk": pk, "sk": sk})
 		event.Actor = r.getActorFromContext(ctx)
-		_ = r.events.EmitAsync(ctx, event)
+		_ = r.events.Emit(ctx, event)
 	}
 
 	// 4. Invalidate cache if caching is enabled
@@ -404,7 +403,7 @@ func (r *EnhancedBaseRepository[T]) ValidateAndBatchCreate(ctx context.Context, 
 		for _, item := range items {
 			event := NewEvent("entity.created", r.entityName, item.GetPK(), "batch_create", item)
 			event.Actor = actor
-			_ = r.events.EmitAsync(ctx, event)
+			_ = r.events.Emit(ctx, event)
 		}
 	}
 

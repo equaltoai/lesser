@@ -87,6 +87,9 @@ func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType
 		return ch, ErrSubscriptionManagerNotRunning
 	}
 
+	// Ensure the WebSocket connection ID is attached so DynamoDB subscription records can be created.
+	ctx = WithConnectionID(ctx, r.getConnectionID(ctx))
+
 	timelineChan, err := sm.SubscribeToTimelineUpdates(ctx, username, timelineType)
 	if err != nil {
 		r.Logger.Error("failed to create timeline subscription",

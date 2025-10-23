@@ -57,6 +57,11 @@ type Config struct {
 		MediaConvertRole           string `yaml:"mediaConvertRole"`
 		ManifestTTLHours           int    `yaml:"manifestTTLHours"`
 	} `yaml:"media"`
+	Push struct {
+		VapidPublicKey string `yaml:"vapidPublicKey"`
+		VapidSubject   string `yaml:"vapidSubject"`
+		VapidSecretArn string `yaml:"vapidSecretArn"`
+	} `yaml:"push"`
 }
 
 // loadEnvironmentConfig loads environment-specific configuration
@@ -115,6 +120,9 @@ func configToMap(config *Config) map[string]interface{} {
 		"mediaConvertEndpoint":       config.Media.MediaConvertEndpoint,
 		"mediaConvertRole":           config.Media.MediaConvertRole,
 		"manifestTTLHours":           fmt.Sprintf("%d", config.Media.ManifestTTLHours),
+		"vapidPublicKey":             config.Push.VapidPublicKey,
+		"vapidSubject":               config.Push.VapidSubject,
+		"vapidSecretArn":             config.Push.VapidSecretArn,
 	}
 }
 
@@ -151,6 +159,18 @@ func main() {
 
 	if keyPairCtx := app.Node().TryGetContext(jsii.String("cdnKeyPairId")); keyPairCtx != nil {
 		config.Media.CloudfrontKeyPairId = fmt.Sprintf("%v", keyPairCtx)
+	}
+
+	if vapidSecretCtx := app.Node().TryGetContext(jsii.String("vapidSecretArn")); vapidSecretCtx != nil {
+		config.Push.VapidSecretArn = fmt.Sprintf("%v", vapidSecretCtx)
+	}
+
+	if vapidPublicCtx := app.Node().TryGetContext(jsii.String("vapidPublicKey")); vapidPublicCtx != nil {
+		config.Push.VapidPublicKey = fmt.Sprintf("%v", vapidPublicCtx)
+	}
+
+	if vapidSubjectCtx := app.Node().TryGetContext(jsii.String("vapidSubject")); vapidSubjectCtx != nil {
+		config.Push.VapidSubject = fmt.Sprintf("%v", vapidSubjectCtx)
 	}
 
 	// JWT secret is now auto-generated in SharedStack and retrieved by Lambda functions
@@ -201,16 +221,18 @@ func main() {
 			Env:         getEnv(config),
 			Description: jsii.String(fmt.Sprintf("Lesser serverless application - %s", env)),
 		},
-		Environment:      env,
-		Domain:           config.Domain,
-		Config:           configMap,
-		HostedZoneDomain: rootDomain,
-		HostedZoneId:     config.DNS.HostedZoneID,
-		CloudFrontDomain: config.Media.CloudfrontDomain,
-		APICertificate:   sharedStack.APICertificate,
-		CDNCertificate:   sharedStack.CDNCertificate,
-		JWTSecret:        sharedStack.JWTSecret,
-		ActorPrivateKey:  sharedStack.ActorPrivateKey,
+		Environment:            env,
+		Domain:                 config.Domain,
+		Config:                 configMap,
+		HostedZoneDomain:       rootDomain,
+		HostedZoneId:           config.DNS.HostedZoneID,
+		CloudFrontDomain:       config.Media.CloudfrontDomain,
+		APICertificate:         sharedStack.APICertificate,
+		CDNCertificate:         sharedStack.CDNCertificate,
+		GraphQLWSCertificate:   sharedStack.GraphQLWSCertificate,
+		StreamingWSCertificate: sharedStack.StreamingWSCertificate,
+		JWTSecret:              sharedStack.JWTSecret,
+		ActorPrivateKey:        sharedStack.ActorPrivateKey,
 	})
 
 	// Add dependencies

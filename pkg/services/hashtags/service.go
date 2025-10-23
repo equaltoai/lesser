@@ -301,65 +301,23 @@ func (s *Service) MuteHashtag(ctx context.Context, userID, hashtag string, until
 	return s.GetHashtag(ctx, tag, userID)
 }
 
-// GetHashtagActivity subscribes to the global event bus for hashtag-related events.
+// GetHashtagActivity subscribes to hashtag-related events via DynamoDB-backed streaming.
+// DEPRECATED: This method uses in-memory EventBus pattern that doesn't work on Lambda.
+// Clients should use GraphQL subscriptions (SubscribeToHashtagActivity) instead,
+// which properly persists subscriptions in DynamoDB and delivers via stream-router.
 func (s *Service) GetHashtagActivity(ctx context.Context, hashtags []string) (<-chan *ActivityEvent, error) {
 	cleaned := uniqueNormalizedHashtags(hashtags)
 	if len(cleaned) == 0 {
 		return nil, ErrHashtagNameRequired
 	}
 
-	eventBus := s.ensureEventBus()
-	if eventBus == nil {
-		return nil, ErrPublisherNotAvailable
-	}
+	// Return empty channel with deprecation warning
+	// This functionality is replaced by GraphQL subscriptions in the graph layer
+	s.logger.Warn("GetHashtagActivity called - this method is deprecated on Lambda, use GraphQL subscriptions instead",
+		zap.Strings("hashtags", cleaned))
 
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeStatus,
-			streaming.EventTypeHashtagUpdate,
-		},
-		Streams: buildHashtagStreams(cleaned),
-	}
-
-	subID := fmt.Sprintf("hashtag_service_%d", time.Now().UnixNano())
-	subscriber, err := eventBus.Subscribe(subID, filter, streaming.DefaultBufferSize)
-	if err != nil {
-		s.logger.Error("failed to subscribe to hashtag activity",
-			zap.Strings("hashtags", cleaned),
-			zap.Error(err))
-		return nil, ErrPublisherNotAvailable
-	}
-
-	out := make(chan *ActivityEvent, streaming.DefaultBufferSize)
-
-	go func() {
-		defer close(out)
-		defer func() {
-			if err := eventBus.Unsubscribe(subID); err != nil {
-				s.logger.Warn("failed to unsubscribe hashtag activity listener",
-					zap.String("subscriber_id", subID),
-					zap.Error(err))
-			}
-		}()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-subscriber.Quit:
-				return
-			case evt, ok := <-subscriber.Channel:
-				if !ok || evt == nil {
-					return
-				}
-				select {
-				case out <- wrapActivityEvent(evt):
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
+	out := make(chan *ActivityEvent, 100)
+	close(out) // Close immediately to prevent blocking
 
 	return out, nil
 }
@@ -474,51 +432,36 @@ func (s *Service) publishUserEvent(ctx context.Context, eventType, userID, hasht
 	}
 }
 
-// publishInternalHashtagEvent sends a lightweight update to the internal event bus.
+// publishInternalHashtagEvent sends a hashtag update event via the queue publisher to DynamoDB.
+// The event will be picked up by stream-router and delivered to WebSocket subscribers.
 func (s *Service) publishInternalHashtagEvent(action streaming.EventAction, hashtag string) {
-	eventBus := s.ensureEventBus()
-	if eventBus == nil {
+	if s.publisher == nil {
+		s.logger.Debug("publisher not available, skipping hashtag event",
+			zap.String("hashtag", hashtag))
 		return
 	}
 
-	event := &streaming.InternalEvent{
-		ID:        fmt.Sprintf("hashtag:%s:%d", hashtag, time.Now().UnixNano()),
-		Type:      streaming.EventTypeHashtagUpdate,
-		Action:    action,
-		Timestamp: time.Now(),
-		Streams:   []string{streaming.HashtagStreamName(hashtag)},
-		Data: &streaming.HashtagEventPayload{
-			Hashtag:   hashtag,
-			Count:     0,
-			Period:    "realtime",
-			UpdatedAt: time.Now(),
+	// Build event payload for queue-based delivery
+	event := &streaming.Event{
+		Type:   string(streaming.EventTypeHashtagUpdate),
+		Stream: streaming.HashtagStreamName(hashtag),
+		Payload: map[string]interface{}{
+			"hashtag":    hashtag,
+			"action":     string(action),
+			"count":      0,
+			"period":     "realtime",
+			"updated_at": time.Now().Format(time.RFC3339),
 		},
+		Timestamp: time.Now(),
 	}
 
-	if err := streaming.PublishGlobal(event); err != nil {
-		s.logger.Debug("failed to publish internal hashtag event",
+	// Publish to the hashtag stream - stream-router will fan out to subscribers
+	if err := s.publisher.PublishToStream(context.Background(), event.Stream, event); err != nil {
+		s.logger.Debug("failed to publish hashtag event",
 			zap.String("hashtag", hashtag),
+			zap.String("action", string(action)),
 			zap.Error(err))
 	}
-}
-
-// ensureEventBus lazily starts the global event bus if required and returns it.
-func (s *Service) ensureEventBus() *streaming.EventBus {
-	eventBus := streaming.GetGlobalEventBus(s.logger)
-	if eventBus == nil {
-		return nil
-	}
-
-	if eventBus.IsRunning() {
-		return eventBus
-	}
-
-	if err := eventBus.Start(context.Background()); err != nil {
-		s.logger.Warn("failed to start global event bus", zap.Error(err))
-		return nil
-	}
-
-	return eventBus
 }
 
 // wrapActivityEvent converts a raw internal event to an ActivityEvent understood by service consumers.

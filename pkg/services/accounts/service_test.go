@@ -349,6 +349,9 @@ func (m *MockRepositoryStorage) Quote() *repositories.QuoteRepository           
 func (m *MockRepositoryStorage) MediaAnalytics() *repositories.MediaAnalyticsRepository   { return nil }
 func (m *MockRepositoryStorage) MediaPopularity() *repositories.MediaPopularityRepository { return nil }
 func (m *MockRepositoryStorage) MediaSession() *repositories.MediaSessionRepository       { return nil }
+func (m *MockRepositoryStorage) StreamingConnection() *repositories.StreamingConnectionRepository {
+	return nil
+}
 
 // Utility methods
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB { return nil }

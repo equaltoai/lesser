@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -30,9 +31,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -90,26 +92,35 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 
 	// Initialize with API-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := lambdaCtx.InitializeWithDefaults(); err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
-	// Streaming-specific initialization
-	db := lambdaCtx.DynamoDB.(dynamormCore.DB)
-	tableName := cfg.DynamoTableName
+	ensureRepositoryFactory()
 
-	connectionsTable := cfg.ConnectionsTable
-	if err := common.ValidateRequiredParam("connections_table", connectionsTable); err != nil {
-		connectionsTable = "lesser-streaming-connections"
+	db := resolveDynamoClient()
+	if db == nil {
+		logger.Fatal("streaming lambda missing dynamo client after initialization")
 	}
 
-	subscriptionsTable := cfg.SubscriptionsTable
-	if err := common.ValidateRequiredParam("subscriptions_table", subscriptionsTable); err != nil {
-		subscriptionsTable = "lesser-streaming-subscriptions"
+	tableName := strings.TrimSpace(cfg.DynamoTableName)
+	if tableName == "" {
+		logger.Fatal("DYNAMODB_TABLE environment variable is required for streaming lambda")
+	}
+
+	connectionsTable := tableName
+	if override := strings.TrimSpace(cfg.ConnectionsTable); override != "" {
+		connectionsTable = override
+	}
+
+	subscriptionsTable := tableName
+	if override := strings.TrimSpace(cfg.SubscriptionsTable); override != "" {
+		subscriptionsTable = override
 	}
 
 	userRepo := repositories.NewUserRepository(db, tableName, logger)
@@ -741,84 +752,174 @@ func getAuthMethodFromEvent(event events.APIGatewayWebsocketProxyRequest, token 
 	return "oauth" // Default if token exists but method is unclear
 }
 
-func main() {
-	// Create a new Lift application
-	app := lift.New()
+// handleWebSocketRequest is the main Lambda handler for WebSocket events
+// This follows the same pattern as graphql-ws for reliable WebSocket handling
+func handleWebSocketRequest(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
+	start := time.Now()
+	routeKey := event.RequestContext.RouteKey
+	connectionID := event.RequestContext.ConnectionID
 
-	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
-
-	// Apply WebSocket-compatible security middleware
-	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeWebSocket, lambdaCtx.Logger)
-
-	// Add request ID middleware
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			requestID := fmt.Sprintf("streaming-%d", time.Now().UnixNano())
-			ctx.Set("requestID", requestID)
-			return next.Handle(ctx)
-		})
-	})
-
-	// Add logging middleware (second - logs with request ID)
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			start := time.Now()
-			requestID := ctx.Get("requestID")
-
-			handler.logger.Info("processing WebSocket event",
-				zap.Any("request_id", requestID),
+	// Panic recovery
+	defer func() {
+		if r := recover(); r != nil {
+			handler.logger.Error("panic recovered in WebSocket handler",
+				zap.String("connection_id", connectionID),
+				zap.String("route_key", routeKey),
+				zap.Any("panic", r),
 			)
+		}
+	}()
 
-			err := next.Handle(ctx)
-			duration := time.Since(start)
+	// Log the incoming request
+	handler.logger.Info("processing WebSocket event",
+		zap.String("route_key", routeKey),
+		zap.String("connection_id", connectionID),
+		zap.String("stage", event.RequestContext.Stage),
+		zap.String("api_id", event.RequestContext.APIID),
+	)
 
-			if err != nil {
-				handler.logger.Error("failed to process WebSocket event",
-					zap.Any("request_id", requestID),
-					zap.Error(err),
-					zap.Duration("duration", duration),
-				)
-			} else {
-				handler.logger.Info("successfully processed WebSocket event",
-					zap.Any("request_id", requestID),
-					zap.Duration("duration", duration),
-				)
+	// Construct the API Gateway Management Endpoint
+	managementAPIEndpoint := fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/%s",
+		event.RequestContext.APIID,
+		handler.awsConfig.Region,
+		event.RequestContext.Stage,
+	)
+
+	// Initialize API Gateway Management API client for this connection
+	handler.apiClient = apigatewaymanagementapi.NewFromConfig(handler.awsConfig, func(o *apigatewaymanagementapi.Options) {
+		o.BaseEndpoint = aws.String(managementAPIEndpoint)
+	})
+
+	// Route based on event type
+	var err error
+	switch routeKey {
+	case "$connect":
+		err = handler.handleConnect(ctx, event)
+	case "$disconnect":
+		err = handler.handleDisconnect(ctx, event)
+	case "$default":
+		err = handler.handleMessage(ctx, event)
+	default:
+		handler.logger.Warn("unknown route key", zap.String("route_key", routeKey))
+		err = fmt.Errorf("unknown route key: %s", routeKey)
+	}
+
+	duration := time.Since(start)
+
+	if err != nil {
+		handler.logger.Error("failed to process WebSocket event",
+			zap.String("route_key", routeKey),
+			zap.String("connection_id", connectionID),
+			zap.Error(err),
+			zap.Duration("duration", duration),
+		)
+		// For WebSocket, we still return 200 but log the error
+		return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+	}
+
+	handler.logger.Info("successfully processed WebSocket event",
+		zap.String("route_key", routeKey),
+		zap.String("connection_id", connectionID),
+		zap.Duration("duration", duration),
+	)
+
+	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+}
+
+func main() {
+	// Start the Lambda handler directly for WebSocket events
+	// WebSocket protocol events don't use Lift's HTTP routing - use direct handler like graphql-ws
+	lambda.Start(handleWebSocketRequest)
+}
+
+func ensureRepositoryFactory() {
+	if lambdaCtx == nil {
+		return
+	}
+
+	if repos == nil && lambdaCtx.Repos != nil {
+		if storage, ok := lambdaCtx.Repos.(core.RepositoryStorage); ok && storage != nil {
+			repos = storage
+		} else {
+			logger.Warn("lambda context repository is not core.RepositoryStorage")
+		}
+	}
+
+	if repos != nil {
+		return
+	}
+
+	initializeManualRepositories()
+}
+
+func resolveDynamoClient() dynamormCore.DB {
+	if lambdaCtx != nil {
+		if db, ok := lambdaCtx.DynamoDB.(dynamormCore.DB); ok && db != nil {
+			return db
+		}
+	}
+
+	if repos != nil {
+		if db := repos.GetDB(); db != nil {
+			if lambdaCtx != nil && lambdaCtx.DynamoDB == nil {
+				lambdaCtx.DynamoDB = db
 			}
+			if typed, ok := db.(dynamormCore.DB); ok && typed != nil {
+				return typed
+			}
+		}
+	}
 
-			return err
-		})
-	})
+	return nil
+}
 
-	// Add recovery middleware (third - catches panics)
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			defer func() {
-				if r := recover(); r != nil {
-					requestID := ctx.Get("requestID")
-					handler.logger.Error("panic recovered in WebSocket handler",
-						zap.Any("request_id", requestID),
-						zap.Any("panic", r),
-					)
-					// For WebSocket events, we can't return an HTTP response
-					// The panic will be logged and the connection will be terminated
-				}
-			}()
-			return next.Handle(ctx)
-		})
-	})
+func initializeManualRepositories() {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	if cfg == nil {
+		cfg = config.Get()
+	}
 
-	// Add WebSocket cost tracking middleware (fourth - tracks costs)
-	app.Use(repositories.WebSocketCostMiddleware(handler.costTracker))
+	region := strings.TrimSpace(cfg.Region)
+	if region == "" {
+		if envRegion := strings.TrimSpace(os.Getenv("AWS_REGION")); envRegion != "" {
+			region = envRegion
+		} else if envDefault := strings.TrimSpace(os.Getenv("AWS_DEFAULT_REGION")); envDefault != "" {
+			region = envDefault
+		} else {
+			region = "us-east-1"
+		}
+		cfg.Region = region
+	}
 
-	// Set up WebSocket event handler
-	app.Use(func(_ lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// This is our main WebSocket handler
-			return handler.HandleWebSocketEvent(ctx)
-		})
-	})
+	if os.Getenv("AWS_REGION") == "" && region != "" {
+		_ = os.Setenv("AWS_REGION", region)
+	}
+	if os.Getenv("AWS_DEFAULT_REGION") == "" && region != "" {
+		_ = os.Setenv("AWS_DEFAULT_REGION", region)
+	}
 
-	// Start the Lambda handler with Lift
-	lambda.Start(app.HandleRequest)
+	tableName := strings.TrimSpace(cfg.DynamoTableName)
+	if tableName == "" {
+		logger.Fatal("DYNAMODB_TABLE environment variable is required for streaming lambda")
+	}
+
+	logger.Info("falling back to manual repository initialization for streaming lambda",
+		zap.String("region", region),
+		zap.String("table_name", tableName))
+
+	client, err := dynamorm.NewLambdaOptimizedClient(context.Background(), region)
+	if err != nil {
+		logger.Fatal("failed to initialize dynamo client for streaming lambda", zap.Error(err))
+	}
+
+	repoFactory, err := factory.NewRepositoryFactory(client, tableName, logger)
+	if err != nil {
+		logger.Fatal("failed to create repository factory for streaming lambda", zap.Error(err))
+	}
+
+	repos = repoFactory
+	lambdaCtx.Repos = repoFactory
+	lambdaCtx.DynamoDB = client
 }

@@ -45,6 +45,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
@@ -174,6 +175,38 @@ func initializeManualServices() {
 		zap.String("region", cfg.Region))
 }
 
+func resolveStreamQueue() streaming.StreamQueueService {
+	if lambdaCtx != nil && lambdaCtx.StreamQueue != nil {
+		if sq, ok := lambdaCtx.StreamQueue.(streaming.StreamQueueService); ok {
+			return sq
+		}
+	}
+
+	var coreDB dynamormCore.DB
+	if lambdaCtx != nil && lambdaCtx.DynamoDB != nil {
+		if db, ok := lambdaCtx.DynamoDB.(dynamormCore.DB); ok {
+			coreDB = db
+		}
+	}
+
+	if coreDB == nil && repos != nil {
+		coreDB = repos.GetDB()
+	}
+
+	if coreDB == nil {
+		client, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+		if err != nil {
+			logger.Error("failed to initialize dynamo client for stream queue",
+				zap.String("region", cfg.Region),
+				zap.Error(err))
+			return nil
+		}
+		coreDB = client
+	}
+
+	return streaming.NewDynamoStreamQueue(coreDB, cfg.DynamoTableName, logger)
+}
+
 // initializeGraphQLSpecificServices initializes GraphQL-specific components
 func initializeGraphQLSpecificServices() {
 	// Initialize AI service (optional)
@@ -196,9 +229,12 @@ func initializeGraphQLSpecificServices() {
 		logger.Info("AI service disabled")
 	}
 
-	// Initialize event publisher for real-time updates
-	// For GraphQL, we'll use a mock publisher as real events go through WebSocket
-	publisher := streaming.NewMockPublisher()
+	// Initialize event publisher for real-time updates via DynamoDB streams
+	streamQueue := resolveStreamQueue()
+	if streamQueue == nil {
+		logger.Fatal("stream queue not available for graphql publisher")
+	}
+	publisher := streaming.NewQueuePublisher(streamQueue, logger)
 
 	// Create service registry with all dependencies
 	serviceConfig := &services.ServiceConfig{
@@ -220,18 +256,31 @@ func initializeGraphQLSpecificServices() {
 	// Create unified tracker for centralized cost tracking
 	unifiedTracker := cost.NewRepositoryTracker(nil, logger, "GraphQLResolver", "", "")
 
+	// Create subscription manager with DynamoDB-backed persistence
+	subscriptionManager := graph.NewSubscriptionManager(
+		registry.StreamingConnectionRepository(),
+		registry.Publisher(),
+		logger,
+	)
+
+	// Start the subscription manager
+	if err := subscriptionManager.Start(context.Background()); err != nil {
+		logger.Warn("failed to start subscription manager", zap.Error(err))
+	}
+
 	// Initialize GraphQL resolver with service registry
 	resolver := &graph.Resolver{
-		Registry:       registry,
-		Storage:        repos, // Keep for legacy resolvers
-		Config:         cfg,
-		CostTracker:    costTracker,
-		UnifiedTracker: unifiedTracker,
-		TableName:      cfg.DynamoTableName,
-		S3BucketName:   cfg.S3BucketName,
-		MastodonConv:   mastodon.NewConverter(cfg.BaseURL()),
-		Logger:         logger,
-		AIService:      aiService,
+		Registry:            registry,
+		Storage:             repos, // Keep for legacy resolvers
+		Config:              cfg,
+		CostTracker:         costTracker,
+		UnifiedTracker:      unifiedTracker,
+		TableName:           cfg.DynamoTableName,
+		S3BucketName:        cfg.S3BucketName,
+		MastodonConv:        mastodon.NewConverter(cfg.BaseURL()),
+		Logger:              logger,
+		SubscriptionManager: subscriptionManager,
+		AIService:           aiService,
 	}
 
 	// Create GraphQL schema

@@ -53,7 +53,12 @@ func (e *StreamingEvent) UpdateKeys() {
 
 // GetTableName returns the table name for this model
 func (e *StreamingEvent) GetTableName() string {
-	return "" // Will use the default table
+	return MainTableName
+}
+
+// TableName satisfies DynamORM's table resolver.
+func (e *StreamingEvent) TableName() string {
+	return MainTableName
 }
 
 // GetPrimaryKey returns the primary key for this model

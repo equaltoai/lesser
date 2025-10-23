@@ -3669,17 +3669,13 @@ func (c *centralizedCostTracker) TrackDynamoWrite(items int) {
 			OperationID:        fmt.Sprintf("user_batch_delete_%d", time.Now().UnixNano()),
 		}
 
-		// Track through centralized service (async to not block operation)
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			if err := c.costService.TrackDynamoOperation(ctx, operation); err != nil {
-				c.logger.Warn("failed to track batch delete cost through centralized service",
-					zap.Int("items", items),
-					zap.Error(err))
-			}
-		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := c.costService.TrackDynamoOperation(ctx, operation); err != nil {
+			c.logger.Warn("failed to track batch delete cost through centralized service",
+				zap.Int("items", items),
+				zap.Error(err))
+		}
+		cancel()
 	}
 
 	if c.logger != nil {
@@ -3704,17 +3700,13 @@ func (c *centralizedCostTracker) TrackDynamoRead(items int) {
 			OperationID:        fmt.Sprintf("user_batch_read_%d", time.Now().UnixNano()),
 		}
 
-		// Track through centralized service (async to not block operation)
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			if err := c.costService.TrackDynamoOperation(ctx, operation); err != nil {
-				c.logger.Warn("failed to track batch read cost through centralized service",
-					zap.Int("items", items),
-					zap.Error(err))
-			}
-		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := c.costService.TrackDynamoOperation(ctx, operation); err != nil {
+			c.logger.Warn("failed to track batch read cost through centralized service",
+				zap.Int("items", items),
+				zap.Error(err))
+		}
+		cancel()
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -18,8 +19,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -73,6 +76,7 @@ type Notification struct {
 }
 
 // StreamRouterHandler handles DynamoDB stream events and routes them to WebSocket subscribers
+// Events are routed exclusively via DynamoDB streams → API Gateway WebSocket connections
 type StreamRouterHandler struct {
 	db                 core.DB
 	tableName          string
@@ -84,7 +88,6 @@ type StreamRouterHandler struct {
 	actorRepo          *repositories.ActorRepository
 	accountRepo        *repositories.AccountRepository
 	statusRepo         *repositories.StatusRepository
-	eventBus           *streaming.EventBus
 	publisher          streaming.Publisher
 	streamingRepo      *repositories.StreamingConnectionRepository
 	domain             string
@@ -225,6 +228,13 @@ func init() {
 		lambdaCtx.Logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
+	// Ensure we have a Dynamo client even if the default bootstrap path failed
+	if lambdaCtx.DynamoDB == nil {
+		if manualErr := initializeManualServices(); manualErr != nil {
+			lambdaCtx.Logger.Fatal("failed to initialize manual services", zap.Error(manualErr))
+		}
+	}
+
 	// Stream router-specific initialization
 	var initErr error
 	handler, initErr = NewStreamRouterHandler()
@@ -233,19 +243,120 @@ func init() {
 	}
 }
 
+func initializeManualServices() error {
+	if lambdaCtx == nil {
+		return fmt.Errorf("lambda context not initialized")
+	}
+
+	if lambdaCtx.Config == nil {
+		lambdaCtx.Config = config.Get()
+	}
+
+	cfg := lambdaCtx.Config
+
+	region := cfg.Region
+	if region == "" {
+		region = os.Getenv("AWS_REGION")
+		if region == "" {
+			region = "us-east-1"
+		}
+		cfg.Region = region
+	}
+
+	client, err := dynamorm.NewLambdaOptimizedClient(context.Background(), region)
+	if err != nil {
+		lambdaCtx.Logger.Error("failed to initialize dynamo client manually",
+			zap.String("region", region),
+			zap.Error(err))
+		return err
+	}
+
+	lambdaCtx.DynamoDB = client
+
+	if cfg.DynamoTableName == "" {
+		if table := os.Getenv("DYNAMO_TABLE_NAME"); table != "" {
+			cfg.DynamoTableName = table
+		}
+	}
+
+	if cfg.SubscriptionsTable == "" {
+		if table := os.Getenv("STREAMING_SUBSCRIPTIONS_TABLE"); table != "" {
+			cfg.SubscriptionsTable = table
+		}
+	}
+
+	if cfg.WebSocketEndpoint == "" {
+		if endpoint := os.Getenv("WEBSOCKET_API_URL"); endpoint != "" {
+			cfg.WebSocketEndpoint = endpoint
+		} else if endpoint := os.Getenv("WEBSOCKET_ENDPOINT"); endpoint != "" {
+			cfg.WebSocketEndpoint = endpoint
+		}
+	}
+
+	if strings.HasPrefix(cfg.WebSocketEndpoint, "wss://") {
+		cfg.WebSocketEndpoint = "https://" + strings.TrimPrefix(cfg.WebSocketEndpoint, "wss://")
+	}
+
+	if cfg.WebSocketEndpoint == "" {
+		if apiID := os.Getenv("WEBSOCKET_API_ID"); apiID != "" {
+			stage := os.Getenv("WEBSOCKET_STAGE")
+			if stage == "" {
+				stage = "development"
+			}
+			cfg.WebSocketEndpoint = fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/%s", apiID, cfg.Region, stage)
+		}
+	}
+
+	if cfg.WebSocketEndpoint == "" && cfg.Domain != "" {
+		host := strings.TrimPrefix(strings.TrimPrefix(cfg.Domain, "https://"), "http://")
+		if host != "" {
+			cfg.WebSocketEndpoint = fmt.Sprintf("https://graphql-ws.%s", host)
+		}
+	}
+
+	if cfg.Domain == "" {
+		cfg.Domain = os.Getenv("DOMAIN_NAME")
+	}
+
+	lambdaCtx.Logger.Info("manual services initialized for stream-router",
+		zap.String("table_name", cfg.DynamoTableName),
+		zap.String("region", cfg.Region))
+
+	return nil
+}
+
 // NewStreamRouterHandler creates a new stream router handler with DynamORM
 func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	// Get config from the initialized lambda context
 	globalCfg := lambdaCtx.AWSServices.Config
 
 	// Use the standardized database connection
-	db := lambdaCtx.DynamoDB.(core.DB)
+	var db core.DB
+	if lambdaCtx.DynamoDB != nil {
+		if dynamo, ok := lambdaCtx.DynamoDB.(core.DB); ok && dynamo != nil {
+			db = dynamo
+		}
+	}
+
+	if db == nil {
+		if manualErr := initializeManualServices(); manualErr != nil {
+			return nil, fmt.Errorf("failed to initialize DynamoDB client: %w", manualErr)
+		}
+		if dynamo, ok := lambdaCtx.DynamoDB.(core.DB); ok && dynamo != nil {
+			db = dynamo
+		}
+	}
+
+	if db == nil {
+		return nil, fmt.Errorf("DynamoDB client unavailable for stream router")
+	}
 	tableName := lambdaCtx.Config.DynamoTableName
 
 	// Get configuration values
 	subscriptionsTable := lambdaCtx.Config.SubscriptionsTable
 	if err := common.ValidateRequiredParam("subscriptionsTable", subscriptionsTable); err != nil {
-		subscriptionsTable = "lesser-streaming-subscriptions"
+		// Default to primary table so subscriptions live alongside connections
+		subscriptionsTable = tableName
 	}
 
 	wsEndpoint := lambdaCtx.Config.WebSocketEndpoint
@@ -279,23 +390,10 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 		logger:        lambdaCtx.Logger,
 	}
 
-	// Initialize publisher
+	// Initialize publisher for WebSocket delivery via API Gateway
 	publisher := streaming.NewAPIGatewayPublisher(apiClient, connRepoAdapter, wsEndpoint, lambdaCtx.Logger)
 
-	// Initialize and start the internal event bus
-	eventBusConfig := streaming.DefaultEventBusConfig()
-	eventBusConfig.BufferSize = 2000    // Larger buffer for high-throughput streams
-	eventBusConfig.MaxSubscribers = 500 // Reasonable limit for GraphQL subscriptions
-
-	eventBus := streaming.NewEventBus(eventBusConfig, lambdaCtx.Logger)
-
-	// Start the event bus in a background context
-	// We use a background context here since the Lambda will manage the lifecycle
-	if err := eventBus.Start(context.Background()); err != nil {
-		return nil, FailedToStartInternalEventBus(err)
-	}
-
-	lambdaCtx.Logger.Info("internal event bus started for stream router")
+	lambdaCtx.Logger.Info("stream router initialized with DynamoDB-backed routing")
 
 	return &StreamRouterHandler{
 		db:                 db,
@@ -308,7 +406,6 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 		actorRepo:          actorRepo,
 		accountRepo:        accountRepo,
 		statusRepo:         statusRepo,
-		eventBus:           eventBus,
 		publisher:          publisher,
 		streamingRepo:      streamingRepo,
 		domain:             domain,
@@ -918,12 +1015,9 @@ func (h *StreamRouterHandler) publishStatusEventToInternalBus(ctx *lift.Context,
 		}
 	}
 
-	// Publish to the internal event bus
-	if err := h.eventBus.Publish(event); err != nil {
-		return FailedToPublishToInternalEventBus(err)
-	}
-
-	h.logger.Debug("published status event to internal bus",
+	// Note: Event routing to WebSocket connections happens via the publisher
+	// which is called by routeEventToWebSockets() in the main routing logic
+	h.logger.Debug("status event ready for routing",
 		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("event_id", event.ID),
 		zap.String("status_id", status.StatusID),
@@ -964,12 +1058,9 @@ func (h *StreamRouterHandler) publishNotificationEventToInternalBus(ctx *lift.Co
 		event.WithMetadata("status_id", notification.StatusID)
 	}
 
-	// Publish to the internal event bus
-	if err := h.eventBus.Publish(event); err != nil {
-		return FailedToPublishToInternalEventBus(err)
-	}
-
-	h.logger.Debug("published notification event to internal bus",
+	// Note: Event routing to WebSocket connections happens via the publisher
+	// which is called by routeEventToWebSockets() in the main routing logic
+	h.logger.Debug("notification event ready for routing",
 		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("event_id", event.ID),
 		zap.String("notification_id", notification.ID),
@@ -1020,12 +1111,9 @@ func (h *StreamRouterHandler) publishAccountEventToInternalBus(ctx *lift.Context
 	event.WithMetadata("account_id", accountID)
 	event.WithMetadata("request_id", ctx.GetRequestID())
 
-	// Publish to the internal event bus
-	if err := h.eventBus.Publish(event); err != nil {
-		return FailedToPublishToInternalEventBus(err)
-	}
-
-	h.logger.Debug("published account event to internal bus",
+	// Note: Event routing to WebSocket connections happens via the publisher
+	// which is called by routeEventToWebSockets() in the main routing logic
+	h.logger.Debug("account event ready for routing",
 		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("event_id", event.ID),
 		zap.String("account_id", accountID),
@@ -1033,19 +1121,6 @@ func (h *StreamRouterHandler) publishAccountEventToInternalBus(ctx *lift.Context
 		zap.Strings("streams", streams))
 
 	return nil
-}
-
-// GetEventBus returns the internal event bus for external subscribers (like GraphQL)
-func (h *StreamRouterHandler) GetEventBus() *streaming.EventBus {
-	return h.eventBus
-}
-
-// GetEventBusMetrics returns metrics about the internal event bus
-func (h *StreamRouterHandler) GetEventBusMetrics() *streaming.EventBusMetrics {
-	if h.eventBus == nil {
-		return nil
-	}
-	return h.eventBus.GetMetrics()
 }
 
 // broadcastToStream sends a message to a specific stream
@@ -1118,15 +1193,6 @@ func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, e
 	return nil
 }
 
-// GetGlobalEventBus returns the global stream router's event bus for external access
-// This allows other parts of the system (like GraphQL) to subscribe to internal events
-func GetGlobalEventBus() *streaming.EventBus {
-	if handler == nil {
-		return nil
-	}
-	return handler.GetEventBus()
-}
-
 // generateAttachmentID generates a stable ID from attachment URL
 func generateAttachmentID(url string) string {
 	// Use last part of URL as ID, or hash if needed
@@ -1167,14 +1233,6 @@ func mapAttachmentType(apType string) string {
 		}
 		return mediaTypeUnknown
 	}
-}
-
-// GetGlobalEventBusMetrics returns metrics for the global event bus
-func GetGlobalEventBusMetrics() *streaming.EventBusMetrics {
-	if handler == nil {
-		return nil
-	}
-	return handler.GetEventBusMetrics()
 }
 
 // getStreamSubscriptions retrieves active subscriptions for a stream

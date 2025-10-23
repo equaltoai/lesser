@@ -40,6 +40,11 @@ type HashtagStatusIndex struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// TableName ensures HashtagStatusIndex records persist in the shared Dynamo table.
+func (HashtagStatusIndex) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates all the GSI keys when the index data changes
 func (hsi *HashtagStatusIndex) UpdateKeys() error {
 	tagLower := strings.ToLower(strings.TrimPrefix(hsi.HashtagName, "#"))
@@ -115,6 +120,11 @@ type HashtagTrendingData struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// TableName ensures trending data records use the shared single table.
+func (HashtagTrendingData) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates all the GSI keys when the trending data changes
 func (htd *HashtagTrendingData) UpdateKeys() {
 	tagLower := strings.ToLower(strings.TrimPrefix(htd.HashtagName, "#"))
@@ -160,6 +170,11 @@ type HashtagSearchCache struct {
 
 	// Timestamps
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// TableName ensures hashtag search cache items share the main table.
+func (HashtagSearchCache) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates all the GSI keys when the cache data changes

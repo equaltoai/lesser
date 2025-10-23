@@ -40,6 +40,8 @@ type Config struct {
 	KMSKeyID             string // AWS KMS key ID for encryption (optional)
 	ReputationPrivateKey string // Private key for reputation system
 	VAPIDPublicKey       string // VAPID public key for push notifications
+	VAPIDSecretARN       string // ARN pointing to VAPID secret (private key + metadata)
+	VAPIDSubject         string // Subject/identifier used for VAPID JWTs
 	AdminUsername        string // Admin username for privileged operations
 	SystemActorPublicKey string // System actor public key for recovery federation
 
@@ -231,6 +233,8 @@ func loadConfig() *Config {
 		KMSKeyID:             getEnvOrDefault("KMS_KEY_ID", ""), // Optional - defaults to AWS managed key
 		ReputationPrivateKey: getEnvOrDefault("REPUTATION_PRIVATE_KEY", ""),
 		VAPIDPublicKey:       getEnvOrDefault("VAPID_PUBLIC_KEY", ""),
+		VAPIDSecretARN:       getEnvOrDefault("VAPID_SECRET_ARN", ""),
+		VAPIDSubject:         getEnvOrDefault("VAPID_SUBJECT", ""),
 		AdminUsername:        getEnvOrDefault("ADMIN_USERNAME", ""),
 		SystemActorPublicKey: getEnvOrDefault("SYSTEM_ACTOR_PUBLIC_KEY", ""),
 

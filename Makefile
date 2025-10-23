@@ -1,4 +1,4 @@
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials
 
 # =============================================================================
 # CONFIGURATION
@@ -32,6 +32,7 @@ LAMBDAS := \
 	federation-timeseries \
 	federation-tracker \
 	graphql \
+	graphql-ws \
 	import-processor \
 	inbox \
 	media-processor \
@@ -63,6 +64,7 @@ ENV_MAP_live = production
 ENV_MAP_production = production
 CDK_ENV = $(ENV_MAP_$(ENV))
 CDN_ENV_FILE = tmp/cdn-$(ENV).env
+VAPID_ENV_FILE = tmp/vapid-$(ENV).env
 
 # =============================================================================
 # BUILD TARGETS
@@ -229,9 +231,14 @@ ensure-cdn-credentials:
 	@echo "Ensuring CDN credentials for $(ENV)..."
 	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) scripts/ensure_cdn_credentials.sh $(ENV) > $(CDN_ENV_FILE)
 
+ensure-vapid-credentials:
+	@mkdir -p tmp
+	@echo "Ensuring VAPID credentials for $(ENV)..."
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) scripts/ensure_vapid_credentials.sh $(ENV) $(DOMAIN) > $(VAPID_ENV_FILE)
+
 ## Deploy to development environment
 deploy-dev: ENV=dev
-deploy-dev: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-credentials
+deploy-dev: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to DEVELOPMENT environment..."
 	@echo "Step 1/2: Deploying monitoring stack..."
 	@cd infra/cdk && cdk deploy LesserMonitoringStack-development \
@@ -239,16 +246,20 @@ deploy-dev: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-creden
 		--require-approval never
 	@echo "Step 2/2: Deploying application stack..."
 	@. $(CDN_ENV_FILE); \
+	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-development \
 		--context environment=development \
 		--context cdnPrivateKeySecret=$$CLOUDFRONT_PRIVATE_KEY_PATH \
 		--context cdnKeyPairId=$$CLOUDFRONT_KEY_PAIR_ID \
+		--context vapidSecretArn=$$VAPID_SECRET_ARN \
+		--context vapidPublicKey=$$VAPID_PUBLIC_KEY \
+		--context vapidSubject=$$VAPID_SUBJECT \
 		--require-approval never
 	@echo "✓ Development deployment complete"
 
 ## Deploy to test/staging environment
 deploy-test: ENV=test
-deploy-test: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-credentials
+deploy-test: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to TEST/STAGING environment..."
 	@if [ -z "$(DOMAIN)" ]; then \
 		echo "Error: DOMAIN is required for staging"; \
@@ -262,17 +273,21 @@ deploy-test: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-crede
 		--require-approval broadening
 	@echo "Step 2/2: Deploying application stack..."
 	@. $(CDN_ENV_FILE); \
+	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-staging \
 		--context environment=staging \
 		--context domain=$(DOMAIN) \
 		--context cdnPrivateKeySecret=$$CLOUDFRONT_PRIVATE_KEY_PATH \
 		--context cdnKeyPairId=$$CLOUDFRONT_KEY_PAIR_ID \
+		--context vapidSecretArn=$$VAPID_SECRET_ARN \
+		--context vapidPublicKey=$$VAPID_PUBLIC_KEY \
+		--context vapidSubject=$$VAPID_SUBJECT \
 		--require-approval broadening
 	@echo "✓ Staging deployment complete"
 
 ## Deploy to live/production environment
 deploy-live: ENV=live
-deploy-live: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-credentials
+deploy-live: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to LIVE/PRODUCTION environment..."
 	@if [ -z "$(DOMAIN)" ]; then \
 		echo "Error: DOMAIN is required for production"; \
@@ -286,11 +301,15 @@ deploy-live: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-crede
 		--require-approval broadening
 	@echo "Step 2/2: Deploying application stack..."
 	@. $(CDN_ENV_FILE); \
+	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-production \
 		--context environment=production \
 		--context domain=$(DOMAIN) \
 		--context cdnPrivateKeySecret=$$CLOUDFRONT_PRIVATE_KEY_PATH \
 		--context cdnKeyPairId=$$CLOUDFRONT_KEY_PAIR_ID \
+		--context vapidSecretArn=$$VAPID_SECRET_ARN \
+		--context vapidPublicKey=$$VAPID_PUBLIC_KEY \
+		--context vapidSubject=$$VAPID_SUBJECT \
 		--require-approval broadening
 	@echo "✓ Production deployment complete"
 

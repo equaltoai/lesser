@@ -65,6 +65,7 @@ type RepositoryStorage interface {
 	MediaAnalytics() *repositories.MediaAnalyticsRepository
 	MediaPopularity() *repositories.MediaPopularityRepository
 	MediaSession() *repositories.MediaSessionRepository
+	StreamingConnection() *repositories.StreamingConnectionRepository
 
 	// Utility methods
 	GetDB() dynamormCore.DB

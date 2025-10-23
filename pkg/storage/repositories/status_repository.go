@@ -48,7 +48,87 @@ func (r *StatusRepository) SetRelationshipRepository(relationshipRepo interface{
 // CreateStatus creates a new status using enhanced validation and event emission
 func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Status) error {
 	// Use enhanced validation and creation with automatic event emission
-	return r.ValidateAndCreate(ctx, status)
+	if err := r.ValidateAndCreate(ctx, status); err != nil {
+		return err
+	}
+
+	if err := r.createHashtagTimelineIndexes(ctx, status); err != nil {
+		r.logger.Warn("failed to create supplemental hashtag index records",
+			zap.String("status_id", status.StatusID),
+			zap.Strings("hashtags", status.Hashtags),
+			zap.Error(err))
+	}
+
+	return nil
+}
+
+// createHashtagTimelineIndexes persists supplemental hashtag index records so hashtag timelines can query efficiently.
+func (r *StatusRepository) createHashtagTimelineIndexes(ctx context.Context, status *models.Status) error {
+	if status == nil || len(status.Hashtags) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	records := make([]*models.HashtagStatusIndex, 0, len(status.Hashtags))
+
+	for _, tag := range status.Hashtags {
+		normalized := strings.TrimSpace(strings.TrimPrefix(strings.ToLower(tag), "#"))
+		if normalized == "" {
+			continue
+		}
+
+		record := &models.HashtagStatusIndex{
+			StatusID:     status.StatusID,
+			AuthorID:     status.AuthorID,
+			AuthorHandle: status.AuthorUsername,
+			StatusURL:    "",
+			Content:      status.Content,
+			MediaCount:   status.MediaCount,
+			Language:     status.Language,
+			Visibility:   status.Visibility,
+			Published:    status.PublishedAt,
+			HashtagName:  normalized,
+			TTL:          now.Add(90 * 24 * time.Hour).Unix(),
+			CreatedAt:    now,
+		}
+
+		if status.Note != nil && status.Note.ID != "" {
+			record.StatusURL = status.Note.ID
+		}
+
+		if record.Published.IsZero() {
+			record.Published = now
+		}
+
+		if err := record.UpdateKeys(); err != nil {
+			r.logger.Warn("failed to update hashtag timeline keys",
+				zap.String("status_id", status.StatusID),
+				zap.String("hashtag", normalized),
+				zap.Error(err))
+			continue
+		}
+
+		records = append(records, record)
+	}
+
+	if len(records) == 0 {
+		return nil
+	}
+
+	for _, record := range records {
+		err := r.db.WithContext(ctx).Model(record).Create()
+		if err != nil {
+			if errors.IsConditionFailed(err) {
+				r.logger.Debug("hashtag timeline index already exists",
+					zap.String("status_id", record.StatusID),
+					zap.String("hashtag", record.HashtagName))
+				continue
+			}
+			return err
+		}
+	}
+
+	return nil
 }
 
 // GetStatus retrieves a status by ID using BaseRepository
@@ -691,11 +771,18 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 // queryStatusesByGSI is a consolidated helper for GSI-based status queries
 func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gsiPKField, gsiPKValue, gsiSKField, orderDirection string, opts interfaces.PaginationOptions, errorMsg string) (*interfaces.PaginatedResult[*models.Status], error) {
 	var statuses []models.Status
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
 	query := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index(indexName).
 		Where(gsiPKField, "=", gsiPKValue).
-		OrderBy(gsiSKField, orderDirection).
-		Limit(opts.Limit)
+		OrderBy(gsiSKField, orderDirection)
 
 	// Resume from the supplied cursor value when available
 	if opts.Cursor != "" {
@@ -706,9 +793,14 @@ func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gs
 		query = query.Where(gsiSKField, operator, opts.Cursor)
 	}
 
-	err := query.All(&statuses)
+	err := query.Limit(limit + 1).All(&statuses)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, errorMsg)
+	}
+
+	hasMore := len(statuses) > limit
+	if hasMore {
+		statuses = statuses[:limit]
 	}
 
 	// Convert to pointer slice
@@ -717,10 +809,33 @@ func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gs
 		result[i] = &statuses[i]
 	}
 
+	var nextCursor string
+	if hasMore && len(statuses) > 0 {
+		last := statuses[len(statuses)-1]
+		switch gsiSKField {
+		case "GSI1SK":
+			nextCursor = last.GSI1SK
+		case "GSI2SK":
+			nextCursor = last.GSI2SK
+		case "GSI3SK":
+			nextCursor = last.GSI3SK
+		case "GSI4SK":
+			nextCursor = last.GSI4SK
+		case "GSI5SK":
+			nextCursor = last.GSI5SK
+		case "GSI6SK":
+			nextCursor = last.GSI6SK
+		case "GSI7SK":
+			nextCursor = last.GSI7SK
+		default:
+			nextCursor = last.SK
+		}
+	}
+
 	return &interfaces.PaginatedResult[*models.Status]{
 		Items:      result,
-		NextCursor: "", // Simple implementation without cursor
-		HasMore:    len(result) == opts.Limit,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
 		Total:      -1,
 	}, nil
 }
@@ -826,7 +941,7 @@ func (r *StatusRepository) LikeStatus(ctx context.Context, userID, statusID stri
 	now := time.Now()
 	like := &models.StatusEngagement{
 		PK:             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
-		SK:             fmt.Sprintf("like#%d#%s", now.Unix(), userID),
+		SK:             fmt.Sprintf("like#%d#%s", now.UnixNano(), userID),
 		StatusID:       statusID,
 		EngagementType: "like",
 		UserID:         userID,
@@ -905,7 +1020,7 @@ func (r *StatusRepository) ReblogStatus(ctx context.Context, userID, statusID, _
 	now := time.Now()
 	reblog := &models.StatusEngagement{
 		PK:             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
-		SK:             fmt.Sprintf("boost#%d#%s", now.Unix(), userID),
+		SK:             fmt.Sprintf("boost#%d#%s", now.UnixNano(), userID),
 		StatusID:       statusID,
 		EngagementType: "boost",
 		UserID:         userID,
@@ -925,6 +1040,10 @@ func (r *StatusRepository) ReblogStatus(ctx context.Context, userID, statusID, _
 	}
 
 	status.ReblogCount++
+	if err := status.BeforeUpdate(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
+	}
+
 	err = r.UpdateStatus(ctx, status)
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)

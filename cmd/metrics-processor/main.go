@@ -500,62 +500,37 @@ func (p *MetricsStreamProcessor) triggerRealTimeUpdates(metricType string, recor
 }
 
 // triggerModerationQueueUpdate triggers moderation queue updates
+// NOTE: Event publishing via DynamoDB streams is handled automatically
+// This method is kept for logging/tracing but no longer publishes to EventBus
 func (p *MetricsStreamProcessor) triggerModerationQueueUpdate(record *models.MetricRecord) {
-	// Publish moderation event to GraphQL subscription system via streaming EventBus
-	event := p.createStreamingEvent(streaming.EventTypeModeration, streaming.ActionUpdate, record)
-	if err := streaming.PublishGlobal(event); err != nil {
-		p.logger.Error("failed to publish moderation event to GraphQL subscriptions",
-			zap.Error(err),
-			zap.String("record_id", record.MetricID))
-	} else {
-		p.logger.Debug("published moderation queue update to GraphQL subscriptions",
-			zap.String("record_id", record.MetricID))
-	}
+	// Metrics are automatically propagated via DynamoDB streams to stream-router
+	// No explicit publishing needed - the stream router handles event delivery
+	p.logger.Debug("moderation queue metric recorded (auto-propagated via DynamoDB streams)",
+		zap.String("record_id", record.MetricID))
 }
 
 // triggerThreatIntelligence triggers threat intelligence updates
+// NOTE: Event publishing via DynamoDB streams is handled automatically
 func (p *MetricsStreamProcessor) triggerThreatIntelligence(record *models.MetricRecord) {
-	// Publish security event to GraphQL subscription system via streaming EventBus
-	// Use moderation flag for security threats as they require review
-	event := p.createStreamingEvent(streaming.EventTypeModerationFlag, streaming.ActionFlag, record)
-	if err := streaming.PublishGlobal(event); err != nil {
-		p.logger.Error("failed to publish security event to GraphQL subscriptions",
-			zap.Error(err),
-			zap.String("record_id", record.MetricID))
-	} else {
-		p.logger.Debug("published threat intelligence update to GraphQL subscriptions",
-			zap.String("record_id", record.MetricID))
-	}
+	// Metrics are automatically propagated via DynamoDB streams to stream-router
+	p.logger.Debug("threat intelligence metric recorded (auto-propagated via DynamoDB streams)",
+		zap.String("record_id", record.MetricID))
 }
 
 // triggerPerformanceAlert triggers performance alerts
+// NOTE: Event publishing via DynamoDB streams is handled automatically
 func (p *MetricsStreamProcessor) triggerPerformanceAlert(record *models.MetricRecord) {
-	// Publish performance event to GraphQL subscription system via streaming EventBus
-	// Cost alerts are used for performance metrics as they relate to resource consumption
-	event := p.createStreamingEvent(streaming.EventTypeCostAlert, streaming.ActionUpdate, record)
-	if err := streaming.PublishGlobal(event); err != nil {
-		p.logger.Error("failed to publish performance event to GraphQL subscriptions",
-			zap.Error(err),
-			zap.String("record_id", record.MetricID))
-	} else {
-		p.logger.Debug("published performance alert to GraphQL subscriptions",
-			zap.String("record_id", record.MetricID))
-	}
+	// Metrics are automatically propagated via DynamoDB streams to stream-router
+	p.logger.Debug("performance alert recorded (auto-propagated via DynamoDB streams)",
+		zap.String("record_id", record.MetricID))
 }
 
 // triggerInfrastructureEvent triggers infrastructure event notifications
+// NOTE: Event publishing via DynamoDB streams is handled automatically
 func (p *MetricsStreamProcessor) triggerInfrastructureEvent(record *models.MetricRecord) {
-	// Publish infrastructure event to GraphQL subscription system via streaming EventBus
-	// Cost updates are used for infrastructure metrics as they relate to resource usage
-	event := p.createStreamingEvent(streaming.EventTypeCostUpdate, streaming.ActionUpdate, record)
-	if err := streaming.PublishGlobal(event); err != nil {
-		p.logger.Error("failed to publish infrastructure event to GraphQL subscriptions",
-			zap.Error(err),
-			zap.String("record_id", record.MetricID))
-	} else {
-		p.logger.Debug("published infrastructure event to GraphQL subscriptions",
-			zap.String("record_id", record.MetricID))
-	}
+	// Metrics are automatically propagated via DynamoDB streams to stream-router
+	p.logger.Debug("infrastructure event recorded (auto-propagated via DynamoDB streams)",
+		zap.String("record_id", record.MetricID))
 }
 
 // createStreamingEvent creates a streaming event from a metric record
@@ -836,13 +811,14 @@ func (p *MetricsStreamProcessor) isHighCost(record *models.MetricRecord) bool {
 	return err == nil && cost > 100000 // >$0.001
 }
 
-// publishEventAndLog publishes the event and logs the result
+// publishEventAndLog is deprecated - events now auto-propagate via DynamoDB streams
+// This method is kept as a no-op for backward compatibility
 func (p *MetricsStreamProcessor) publishEventAndLog(event *streaming.InternalEvent, subscriptionCategory string, record *models.MetricRecord) {
-	if err := streaming.PublishGlobal(event); err != nil {
-		p.logPublishError(err, subscriptionCategory, record)
-	} else {
-		p.logPublishSuccess(event, subscriptionCategory, record)
-	}
+	// Events are automatically propagated via DynamoDB streams to stream-router
+	// No explicit publishing needed
+	p.logger.Debug("metric event will auto-propagate via DynamoDB streams",
+		zap.String("subscription_category", subscriptionCategory),
+		zap.String("record_id", record.MetricID))
 }
 
 // logPublishError logs failed event publishing

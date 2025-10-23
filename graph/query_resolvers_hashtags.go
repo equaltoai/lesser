@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
@@ -92,7 +93,7 @@ func (r *queryResolver) FollowedHashtags(ctx context.Context, first *int, after 
 }
 
 // HashtagTimeline implements QueryResolver.
-func (r *queryResolver) HashtagTimeline(ctx context.Context, hashtag string, first *int, after *string) (*model.PostConnection, error) {
+func (r *queryResolver) HashtagTimeline(ctx context.Context, hashtag string, first *int, after *string, mediaOnly *bool) (*model.PostConnection, error) {
 	viewerID := r.optionalAuth(ctx)
 
 	limit := 20
@@ -127,6 +128,40 @@ func (r *queryResolver) HashtagTimeline(ctx context.Context, hashtag string, fir
 		return nil, fmt.Errorf("failed to get hashtag timeline: %w", err)
 	}
 
+	statusRepo := r.Storage.Status()
+	if statusRepo == nil && mediaOnly != nil && *mediaOnly {
+		r.Logger.Warn("status repository unavailable for media filter",
+			zap.String("hashtag", hashtag))
+	}
+
+	var statusByID map[string]*models.Status
+	if statusRepo != nil {
+		statusIDs := make([]string, 0, len(posts))
+		for _, post := range posts {
+			if post != nil && post.StatusID != "" {
+				statusIDs = append(statusIDs, post.StatusID)
+			}
+		}
+
+		if len(statusIDs) > 0 {
+			if statuses, fetchErr := statusRepo.GetStatusesByIDs(ctx, statusIDs); fetchErr != nil {
+				r.Logger.Warn("failed to hydrate hashtag timeline statuses",
+					zap.String("hashtag", hashtag),
+					zap.Int("requested", len(statusIDs)),
+					zap.Error(fetchErr))
+			} else {
+				statusByID = make(map[string]*models.Status, len(statuses))
+				for _, status := range statuses {
+					if status != nil && status.StatusID != "" {
+						statusByID[status.StatusID] = status
+					}
+				}
+			}
+		}
+	}
+
+	requireMedia := mediaOnly != nil && *mediaOnly && statusRepo != nil
+
 	// Convert to post edges
 	edges := make([]*model.PostEdge, 0, len(posts))
 	for _, post := range posts {
@@ -134,16 +169,38 @@ func (r *queryResolver) HashtagTimeline(ctx context.Context, hashtag string, fir
 			continue
 		}
 
-		// Create a basic object model from the status search result
-		postModel := &model.Object{
-			ID:      post.StatusID,
-			Content: post.Content,
+		status := statusByID[post.StatusID]
+		if requireMedia {
+			if status == nil || !status.HasMedia() {
+				continue
+			}
+		}
+
+		cursorValue := post.StatusID
+		if post.ID != "" {
+			cursorValue = post.ID
+		}
+
+		var postModel *model.Object
+		if status != nil {
+			postModel = r.convertStatusToObject(ctx, status)
+		} else {
+			postModel = &model.Object{
+				ID:      post.StatusID,
+				Content: post.Content,
+			}
 		}
 
 		edges = append(edges, &model.PostEdge{
 			Node:   postModel,
-			Cursor: model.Cursor(post.StatusID),
+			Cursor: model.Cursor(cursorValue),
 		})
+	}
+
+	var startCursor, endCursor *model.Cursor
+	if len(edges) > 0 {
+		startCursor = &edges[0].Cursor
+		endCursor = &edges[len(edges)-1].Cursor
 	}
 
 	// Track cost
@@ -156,7 +213,10 @@ func (r *queryResolver) HashtagTimeline(ctx context.Context, hashtag string, fir
 		PageInfo: &model.PageInfo{
 			HasNextPage:     hasNextPage,
 			HasPreviousPage: false,
+			StartCursor:     startCursor,
+			EndCursor:       endCursor,
 		},
+		TotalCount: len(edges),
 	}, nil
 }
 

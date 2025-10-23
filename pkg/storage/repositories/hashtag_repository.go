@@ -545,14 +545,11 @@ func (r *HashtagRepository) GetHashtagTimelineAdvanced(ctx context.Context, hash
 func (r *HashtagRepository) getHashtagTimelineFromIndex(ctx context.Context, hashtag string, maxID *string, limit int) ([]*storage.StatusSearchResult, error) {
 	// Build query for hashtag timeline index
 	query := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
-		Where("PK", "=", fmt.Sprintf("HASHTAG_TIMELINE#%s", hashtag)).
-		Where("SK", "BEGINS_WITH", "STATUS#")
+		Where("PK", "=", fmt.Sprintf("HASHTAG_TIMELINE#%s", hashtag))
 
 	// Apply the maxID cursor when provided
 	if maxID != nil && *maxID != "" {
-		// Convert maxID to timestamp-desc format for proper comparison
-		// This would need the actual timestamp of the maxID status
-		query = query.Where("SK", "<", fmt.Sprintf("STATUS#%s", *maxID))
+		query = query.Where("SK", ">", *maxID)
 	}
 
 	// Set limit and order (SK already contains descending timestamp)
@@ -564,6 +561,9 @@ func (r *HashtagRepository) getHashtagTimelineFromIndex(ctx context.Context, has
 		if errors.IsNotFound(err) {
 			return []*storage.StatusSearchResult{}, nil
 		}
+		r.logger.Error("hashtag timeline index query failed",
+			zap.String("hashtag", hashtag),
+			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, "hashtag timeline index", hashtag)
 	}
 
@@ -571,6 +571,7 @@ func (r *HashtagRepository) getHashtagTimelineFromIndex(ctx context.Context, has
 	results := make([]*storage.StatusSearchResult, len(indexEntries))
 	for i, entry := range indexEntries {
 		results[i] = &storage.StatusSearchResult{
+			ID:             entry.SK,
 			StatusID:       entry.StatusID,
 			Content:        entry.Content,
 			URL:            entry.StatusURL,
@@ -590,12 +591,11 @@ func (r *HashtagRepository) getHashtagTimelineByVisibility(ctx context.Context, 
 	// Use the visibility-filtered GSI
 	query := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
 		Index("hashtag-visibility-index").
-		Where("GSI2PK", "=", fmt.Sprintf("HASHTAG_VIS#%s#%s", hashtag, visibility)).
-		Where("GSI2SK", "BEGINS_WITH", "TIMELINE#")
+		Where("GSI2PK", "=", fmt.Sprintf("HASHTAG_VIS#%s#%s", hashtag, visibility))
 
 	// Apply the maxID cursor when provided
 	if maxID != nil && *maxID != "" {
-		query = query.Where("GSI2SK", "<", fmt.Sprintf("TIMELINE#%s", *maxID))
+		query = query.Where("GSI2SK", ">", *maxID)
 	}
 
 	query = query.Limit(limit).OrderBy("GSI2SK", "ASC") // ASC because timestamp is reversed
@@ -606,6 +606,10 @@ func (r *HashtagRepository) getHashtagTimelineByVisibility(ctx context.Context, 
 		if errors.IsNotFound(err) {
 			return []*storage.StatusSearchResult{}, nil
 		}
+		r.logger.Error("hashtag timeline visibility query failed",
+			zap.String("hashtag", hashtag),
+			zap.String("visibility", visibility),
+			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, "hashtag timeline visibility", hashtag)
 	}
 
@@ -613,6 +617,7 @@ func (r *HashtagRepository) getHashtagTimelineByVisibility(ctx context.Context, 
 	results := make([]*storage.StatusSearchResult, len(indexEntries))
 	for i, entry := range indexEntries {
 		results[i] = &storage.StatusSearchResult{
+			ID:             entry.GSI2SK,
 			StatusID:       entry.StatusID,
 			Content:        entry.Content,
 			URL:            entry.StatusURL,

@@ -349,6 +349,7 @@ type LikeRepository interface {
 type SocialRepository interface {
 	CreateAnnounce(ctx context.Context, announce *storage.Announce) error
 	DeleteAnnounce(ctx context.Context, actor, object string) error
+	GetAnnounce(ctx context.Context, actor, object string) (*storage.Announce, error)
 	GetStatusAnnounces(ctx context.Context, statusID string, limit int, cursor string) ([]*storage.Announce, string, error)
 	CreateStatusPin(ctx context.Context, pin *storage.StatusPin) error
 	DeleteStatusPin(ctx context.Context, userID, statusID string) error

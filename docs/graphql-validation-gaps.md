@@ -9,18 +9,63 @@ Maintains the running list of issues or work still required to complete GraphQL 
   - *Status*: Placeholder guard prevents panics; actual queue adapter not yet implemented.  
   - *Owner*: Federation / Relationships team (TBD).  
   - *Next step*: Build and inject the queue-backed `FederationService` during Lambda init, then retest `followActor` for remote actors.
-- **Analytics metric collisions**  
-  - *Scope*: `createNote` intermittently returns HTTP 503 because `TrendingRepository.RecordInstanceMetric` hits a `ConditionalCheckFailed` when attempting to create a duplicate daily metric item.  
-  - *Status*: Metrics table writes succeed for the first post, then fail on subsequent posts for the same day, aborting the mutation.  
-  - *Owner*: Analytics service (TBD).  
-  - *Next step*: Switch to an update/increment pattern (or tolerant upsert) for instance metrics so note creation no longer depends on a unique PutItem.
-- **Status counters stale**  
-  - *Scope*: `actor(username:...) { statusesCount }` still returns `0` for all personas even after multiple successful `createNote` mutations.  
-  - *Status*: Dynamo writes exist (`status#…` items), but the counters/GSIs feeding `statusesCount` aren’t updated.  
-  - *Owner*: Notes/Timeline service (TBD).  
-  - *Next step*: Backfill counter updates (or query derived counts) as part of the note create path before Phase 3 timeline validation.
+- **Block workflow leaves follow rows intact**  
+  - *Scope*: `blockActor` succeeds but `RelationshipsRepository.Unfollow` fails (`failed to register model **models.RelationshipRecord: invalid model: model must be a struct`), so blocked actors remain in `followers`/`following` lists and `relationship.following` stays `true`. `unblockActor` returns `internal system error` because the same storage bug is hit on cleanup.  
+  - *Status*: Reproduced on dev (2025-10-21 04:40 UTC) and confirmed in CloudWatch logs (`repositories/base_repository.go:841`). Manual Dynamo cleanup restored the baseline follow graph.  
+  - *Owner*: Storage / Relationships team.  
+  - *Next step*: Fix `DeleteEntityWithLogging` generics (ensure `BaseModel` types register structs, not pointers) or adjust repository calls so Dynamo delete operates on the correct model type; add regression tests for block/unblock flows.
+- **Media processing automation**  
+  - *Scope*: GraphQL `createNote` rejects freshly uploaded attachments until the media record’s status flips to `ready`. Dev validation required manually issuing `aws dynamodb update-item` to set `Status=ready` and seed `ProcessedAt`.  
+  - *Status*: Workaround applied during media validation on 2025-10-22 08:15 UTC; automated processor or post-upload job not executing in dev.  
+  - *Owner*: Media / Processing team.  
+  - *Next step*: Ensure the media processor pipeline runs after `uploadMedia` (or add a service hook that promotes uploads) so GraphQL clients can attach media without manual Dynamo intervention; add regression coverage once automated.
+- **GraphQL timeline subscriptions drop events**  
+  - *Scope*: `timelineUpdates` subscriptions over `wss://graphql-ws.dev.lesser.host` connect successfully, but no `next` payload is delivered when new notes are published.  
+  - *Status*: As of 2025-10-22 22:22 UTC the GraphQL WS Lambda logs show `StreamingConnectionRepository.WriteSubscription` timing out while writing `SUB#user:admin` (`PutItem` context deadline exceeded after ~60 s). The corresponding `STREAM_EVENT#…` rows do exist with `TargetID=admin`, so events reach the queue but there is no active subscription to consume them.  
+  - *Owner*: GraphQL platform / Storage team.  
+  - *Next step*: Fix the subscription persistence path (diagnose Dynamo connectivity for `WriteSubscription`, ensure the main table ARN/region match the rest of Lift). Once the Dynamo write succeeds, re-run `timelineUpdates` to confirm `next` payloads arrive and add automated coverage.
 ## Resolved Items
 
+- **GraphQL WebSocket routing**  
+  - *Scope*: Prior attempts to negotiate `graphql-transport-ws` hit HTTP 400/502 before the Lambda executed because no dedicated WebSocket API or custom domain mapping existed for GraphQL subscriptions.  
+  - *Resolution*: Provisioned `graphql-ws` Lambda and WebSocket API (custom domain `graphql-ws.dev.lesser.host`) mirroring CDN credential automation. Post-deploy validation on 2025-10-23 11:11 UTC confirmed authenticated clients receive a `connection_ack`; future work tracks subscription delivery above.  
+  - *Owner*: Infrastructure / GraphQL platform team.
+- **Hashtag timeline media filtering**  
+  - *Scope*: Checklist required verifying media-only hashtag timelines. The resolver previously returned bare objects with empty `attachments` and exposed no filter input.  
+  - *Resolution*: Added a `mediaOnly` argument to `timeline`/`hashtagTimeline`, hydrated hashtag results via status lookups, and filtered nodes that lack attachments. Verified against `dev.lesser.host` on 2025-10-22 08:07 UTC (`hashtagTimeline(hashtag:"lesser", mediaOnly:true)` returns the seeded media post with attachment metadata).  
+  - *Owner*: GraphQL / Notes service.
+- **Push subscription lookup**  
+  - *Scope*: `pushSubscription` query failed with `Failed to query push subscription` because DynamORM couldn't register `**models.PushSubscription` when using the generic `QueryWithSKPrefix`.  
+  - *Resolution*: Repository now queries DynamoDB with the concrete model (and prefers Secrets Manager for VAPID keys), so GraphQL register/update/delete flows work end-to-end. Manual SQS validation on 2025-10-22 14:24 UTC also exercised the `push-delivery` Lambda; the remaining work is enqueuing notifications automatically (tracked above).  
+  - *Owner*: Storage / GraphQL team.
+- **Push queue integration**  
+  - *Scope*: `CreateNotification` records were stored but never enqueued to the push queue, so GraphQL-triggered notifications could not reach the `push-delivery` Lambda.  
+  - *Resolution*: `NotificationRepository` now accepts a dispatcher; the service registry (and standalone processors) register the notifications service so every successful `CreateNotification` invokes `QueueNotification`. GraphQL `notifications` queries no longer crash when a user has no stored notifications (the resolver falls back to synthetic actors), and the repository filters non-notification rows when listing user items.  
+  - *Owner*: Notifications service team.  
+  - *Follow-up*: Add an integration test that creates a notification via GraphQL and asserts the SQS queue receives the expected message; consider tightening `NotificationSummary` counts so metadata rows (e.g., preferences) are excluded from `totalCount`.
+
+- **Boost / share mutation failures**  
+  - *Scope*: `shareObject` returned `Processing failed` because duplicate DynamoDB writes (`CreateAnnounce`, `ReblogStatus`) surfaced conditional check errors, and status updates lacked `UpdatedAt`, causing validation failure. Repeated shares also over-counted `ReblogCount`.  
+  - *Resolution*: Status models now set `UpdatedAt` in `BeforeCreate/BeforeUpdate`, `ReblogStatus` calls `BeforeUpdate` before persisting, and the notes service performs an idempotency check (`GetAnnounce`) so re-shares skip duplicate writes. GraphQL `shareObject` succeeds and repeat calls return 200 without incrementing counters (validated 2025-10-22 20:47 UTC against status `f6f6a5d4-2492-4475-85d7-17e7ba40d90f`).  
+  - *Owner*: Notes / Storage team.  
+  - *Follow-up*: Consider returning the existing announce activity ID on idempotent re-shares to mirror Mastodon’s response; add integration coverage for `shareObject` + `timeline` reblog counts.
+
+- **Hashtag timeline pagination**  
+  - *Scope*: First-page queries succeeded but cursor-based pagination returned `Failed to query hashtag timeline` because DynamoDB rejected `SK > …` in a filter expression.  
+  - *Resolution*: After updating to DynamORM `feature/custom-type-converter` commit `v1.0.30-0.20251021041254-f48fbfc56bf4` and redeploying (2025-10-21 23:18 UTC), the compiler now emits the sort-key range in the key condition. `hashtagTimeline(... after: "STATUS#9223372035093764085#...")` returns a second page (`cursor=STATUS#9223372035093764454#...`) with `totalCount=2`.  
+  - *Owner*: Storage / GraphQL team.  
+- **Hashtag timeline lookup**  
+  - *Scope*: `hashtagTimeline(...)` previously failed with `Failed to query hashtag timeline` despite seeded hashtag metadata.  
+  - *Resolution*: Status persistence now writes supplemental `HashtagStatusIndex` rows and the repository query avoids invalid filter conditions; GraphQL timeline requests succeed (validated 2025-10-21).  
+  - *Owner*: Notes/Timeline service.
+- **Hashtag usage analytics IAM**  
+  - *Scope*: `createNote` emitted `AccessDeniedException` when recording hashtag usage because analytics models targeted dedicated tables (`HashtagUsages`, `HashtagTrends`).  
+  - *Resolution*: Hashtag analytics models now inherit `MainTableName`, so the GraphQL Lambda reuses the shared single table without IAM changes. New notes update usage metrics without errors (2025-10-21).  
+  - *Owner*: Infrastructure/Analytics.
+- **Hashtag timeline totals**  
+  - *Scope*: `hashtagTimeline(...)` returned edges, but `totalCount` stayed `0` even when multiple posts matched.  
+  - *Resolution*: Resolver now sets `totalCount` and cursors from the fetched edges; after redeploy (2025-10-21 22:34 UTC) the query reported `totalCount=4` for `#lesser`. Regression coverage still planned.  
+  - *Owner*: GraphQL / Notes service.
 - **CreateNote mutation timeout**  
   - *Scope*: `createNote` requests previously hit a 30 s Lambda timeout because the service registry deadlocked when initialising the analytics dependency, and Dynamo validation rejected empty primary/index keys.
   - *Resolution*: Registry now initialises analytics without re-locking, status models set PK/SK/timestamps during `UpdateKeys`, and optional GSI attributes skip empty strings. `createNote` returns HTTP 200 and writes `status#…` records on `lesser-development` (validated 2025-10-20).  
@@ -57,3 +102,15 @@ Maintains the running list of issues or work still required to complete GraphQL 
   - *Scope*: `timeline(type: HOME, …)` previously returned empty edges because seeded personas lacked posts and legacy context values failed to unmarshal.  
   - *Resolution*: ActivityPub context now normalizes through a DynamORM type converter and personas are reseeded with fresh notes; home/public timelines return populated edges (validated via GraphQL queries on 2025-10-21).  
   - *Owner*: GraphQL / Notes service.
+- **Analytics metric collisions**  
+  - *Scope*: `createNote` intermittently returned HTTP 503 because `TrendingRepository.RecordInstanceMetric` hit `ConditionalCheckFailed` when creating duplicate daily metric items.  
+  - *Resolution*: Instance metric lookups now run with `ConsistentRead`, and the duplicate path updates existing totals. Verified by posting three rapid notes on 2025-10-21 with HTTP 200 responses and growing counts.  
+  - *Owner*: Analytics service (GraphQL team).
+- **Status counters stale**  
+  - *Scope*: `actor(username:...) { statusesCount }` previously returned `0` because the repository counted by preferred username instead of the canonical actor ID.  
+  - *Resolution*: The resolver now prefers the actor ID (with username fallback), aligning counts with Dynamo data. Confirmed via admin/bot actors after multiple note mutations on 2025-10-21.  
+  - *Owner*: GraphQL / Notes service.
+- **Media attachments missing on GraphQL objects**  
+  - *Scope*: `uploadMedia` + `createNote` returned `attachments: []` and `MediaCount=0`, breaking GraphQL timelines.  
+  - *Resolution*: Notes service now validates ownership/readiness, loads attachment metadata into the ActivityPub note, and marks media as used post-write. Public timeline edges include attachment arrays (verified 2025-10-21 with admin persona).  
+  - *Owner*: Media/Notes service (GraphQL team).

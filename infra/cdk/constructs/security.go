@@ -81,6 +81,8 @@ func CreateSecurityConstructs(stack awscdk.Stack, props *SecurityProps) *Securit
 		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/actor-private-key-*"),
 		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/cdn-private-key"),
 		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/cdn-private-key-*"),
+		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/vapid-key"),
+		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/vapid-key-*"),
 	}
 	security.LambdaRole.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Effect: awsiam.Effect_ALLOW,
@@ -89,6 +91,16 @@ func CreateSecurityConstructs(stack awscdk.Stack, props *SecurityProps) *Securit
 			jsii.String("secretsmanager:DescribeSecret"),
 		},
 		Resources: secretResources,
+	}))
+
+	// Allow Lambda functions to manage WebSocket connections
+	security.LambdaRole.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Effect: awsiam.Effect_ALLOW,
+		Actions: &[]*string{
+			jsii.String("execute-api:ManageConnections"),
+			jsii.String("execute-api:Invoke"),
+		},
+		Resources: &[]*string{jsii.String("arn:aws:execute-api:*:*:*/*")},
 	}))
 
 	// Grant access to streaming and training buckets
@@ -113,6 +125,21 @@ func createDynamoDBPolicy(stack awscdk.Stack, table awsdynamodb.Table, rateLimit
 	if rateLimitTable != nil {
 		resources = append(resources, rateLimitTable.TableArn())
 		resources = append(resources, jsii.String(*rateLimitTable.TableArn()+"/index/*"))
+	}
+
+	// Include persistent WebSocket connection tables
+	streamingTables := []string{
+		"lesser-streaming-connections",
+		"lesser-streaming-subscriptions",
+		"WebSocketConnections",
+		"WebSocketSubscriptions",
+		"StreamingEvents",
+	}
+	for _, tableName := range streamingTables {
+		resources = append(resources,
+			jsii.String(fmt.Sprintf("arn:aws:dynamodb:*:*:table/%s", tableName)),
+			jsii.String(fmt.Sprintf("arn:aws:dynamodb:*:*:table/%s/index/*", tableName)),
+		)
 	}
 
 	policyDoc := map[string]interface{}{

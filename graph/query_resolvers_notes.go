@@ -36,7 +36,7 @@ func (r *queryResolver) Object(ctx context.Context, id string) (*model.Object, e
 }
 
 // Timeline is the resolver for the timeline field.
-func (r *queryResolver) Timeline(ctx context.Context, timelineType model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor) (*model.ObjectConnection, error) {
+func (r *queryResolver) Timeline(ctx context.Context, timelineType model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor, mediaOnly *bool) (*model.ObjectConnection, error) {
 	username := r.optionalAuth(ctx)
 
 	// Build pagination
@@ -56,6 +56,10 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 	query := &notes.ListNotesQuery{
 		ViewerID:   username,
 		Pagination: pagination,
+	}
+
+	if mediaOnly != nil && *mediaOnly {
+		query.OnlyMedia = true
 	}
 
 	// Set timeline filter

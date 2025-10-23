@@ -616,28 +616,21 @@ func (r *SearchRepository) executeStatusSearchStrategies(ctx context.Context, qu
 		resultMap: make(map[string]*storage.StatusSearchResult),
 	}
 
-	var wg sync.WaitGroup
-
 	// Execute different search strategies
-	r.executeURLSearch(ctx, query, result, &wg)
-	r.executeHashtagSearch(ctx, query, result, &wg)
-	r.executeContentSearch(ctx, query, result, &wg)
+	r.executeURLSearch(ctx, query, result)
+	r.executeHashtagSearch(ctx, query, result)
+	r.executeContentSearch(ctx, query, result)
 
-	wg.Wait()
 	return result.resultMap
 }
 
 // executeURLSearch searches for statuses by URL
-func (r *SearchRepository) executeURLSearch(ctx context.Context, query string, result *statusSearchResult, wg *sync.WaitGroup) {
+func (r *SearchRepository) executeURLSearch(ctx context.Context, query string, result *statusSearchResult) {
 	if !r.isURL(query) {
 		return
 	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		r.searchByURL(ctx, query, result)
-	}()
+	r.searchByURL(ctx, query, result)
 }
 
 // isURL checks if a query string is a URL
@@ -661,17 +654,13 @@ func (r *SearchRepository) searchByURL(ctx context.Context, url string, result *
 }
 
 // executeHashtagSearch searches for statuses by hashtags
-func (r *SearchRepository) executeHashtagSearch(ctx context.Context, query string, result *statusSearchResult, wg *sync.WaitGroup) {
+func (r *SearchRepository) executeHashtagSearch(ctx context.Context, query string, result *statusSearchResult) {
 	hashtags := r.extractHashtags(query)
 	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err != nil {
 		return
 	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		r.searchByHashtags(ctx, hashtags, result)
-	}()
+	r.searchByHashtags(ctx, hashtags, result)
 }
 
 // searchByHashtags searches for statuses containing hashtags
@@ -719,12 +708,8 @@ func (r *SearchRepository) searchByHashtags(ctx context.Context, hashtags []stri
 }
 
 // executeContentSearch searches for statuses by content
-func (r *SearchRepository) executeContentSearch(ctx context.Context, query string, result *statusSearchResult, wg *sync.WaitGroup) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		r.searchByContent(ctx, query, result)
-	}()
+func (r *SearchRepository) executeContentSearch(ctx context.Context, query string, result *statusSearchResult) {
+	r.searchByContent(ctx, query, result)
 }
 
 // searchByContent searches for statuses containing the query in their content
@@ -1286,47 +1271,38 @@ func (r *SearchRepository) GetSearchSuggestions(ctx context.Context, prefix stri
 	suggestions := make([]*models.SearchSuggestion, 0)
 	seen := make(map[string]bool)
 
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-
 	// Search different suggestion types concurrently
 	sugTypes := []string{"username", "hashtag", "display_name"}
 
 	for _, sugType := range sugTypes {
-		wg.Add(1)
-		go func(suggestionType string) {
-			defer wg.Done()
+		// Query using partition key with prefix filter
+		pk := fmt.Sprintf("SEARCH_SUGGEST#%s", sugType)
+		var typeSuggestions []models.SearchSuggestion
 
-			// Query using partition key with prefix filter
-			pk := fmt.Sprintf("SEARCH_SUGGEST#%s", suggestionType)
-			var typeSuggestions []models.SearchSuggestion
+		err := r.db.WithContext(ctx).Model(&models.SearchSuggestion{}).
+			Where("PK", "=", pk).
+			Filter("SK", "BEGINS_WITH", normalizedPrefix).
+			Limit(limit).
+			All(&typeSuggestions)
 
-			err := r.db.WithContext(ctx).Model(&models.SearchSuggestion{}).
-				Where("PK", "=", pk).
-				Filter("SK", "BEGINS_WITH", normalizedPrefix).
-				Limit(limit).
-				All(&typeSuggestions)
+		if err != nil {
+			r.logger.Warn("search suggestions failed",
+				zap.String("type", sugType),
+				zap.Error(err))
+			continue
+		}
 
-			if err != nil {
-				r.logger.Warn("search suggestions failed",
-					zap.String("type", suggestionType),
-					zap.Error(err))
-				return
+		for i := range typeSuggestions {
+			sugg := typeSuggestions[i]
+			key := fmt.Sprintf("%s:%s", sugg.Type, sugg.Term)
+			if seen[key] {
+				continue
 			}
-
-			mu.Lock()
-			for _, sugg := range typeSuggestions {
-				key := fmt.Sprintf("%s:%s", sugg.Type, sugg.Term)
-				if !seen[key] {
-					suggestions = append(suggestions, &sugg)
-					seen[key] = true
-				}
-			}
-			mu.Unlock()
-		}(sugType)
+			suggestionCopy := sugg
+			suggestions = append(suggestions, &suggestionCopy)
+			seen[key] = true
+		}
 	}
-
-	wg.Wait()
 
 	// Sort by score and last used
 	sort.Slice(suggestions, func(i, j int) bool {
