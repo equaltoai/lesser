@@ -17,6 +17,11 @@ type Reaction struct {
 	StaticURL string `json:"static_url,omitempty"` // Static URL for custom emoji
 }
 
+// TableName returns the DynamoDB table backing Reaction.
+func (Reaction) TableName() string {
+	return MainTableName
+}
+
 // CustomEmoji represents a custom emoji used in announcements
 type CustomEmoji struct {
 	Shortcode       string `json:"shortcode"`
@@ -26,12 +31,22 @@ type CustomEmoji struct {
 	Category        string `json:"category,omitempty"`
 }
 
+// TableName returns the DynamoDB table backing CustomEmoji.
+func (CustomEmoji) TableName() string {
+	return MainTableName
+}
+
 // Mention represents a mention in an announcement
 type Mention struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
 	URL      string `json:"url"`
 	Acct     string `json:"acct"`
+}
+
+// TableName returns the DynamoDB table backing Mention.
+func (Mention) TableName() string {
+	return MainTableName
 }
 
 // Announcement represents an announcement in DynamoDB
@@ -63,6 +78,11 @@ type Announcement struct {
 	Mentions    []Mention     `json:"mentions,omitempty"`  // Mentions
 	CreatedBy   string        `json:"created_by"`          // Admin who created it
 	CreatedAt   time.Time     `json:"created_at"`
+}
+
+// TableName returns the DynamoDB table backing Announcement.
+func (Announcement) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the PK and SK based on the announcement data
@@ -142,6 +162,11 @@ type AnnouncementDismissal struct {
 	DismissedAt    time.Time `json:"dismissed_at"`
 }
 
+// TableName returns the DynamoDB table backing AnnouncementDismissal.
+func (AnnouncementDismissal) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the PK and SK based on the dismissal data
 func (d *AnnouncementDismissal) UpdateKeys() error {
 	d.PK = fmt.Sprintf(KeyPatternUser, d.Username)
@@ -166,6 +191,11 @@ type AnnouncementReaction struct {
 	AnnouncementID string    `json:"announcement_id"`
 	EmojiName      string    `json:"emoji_name"`
 	ReactedAt      time.Time `json:"reacted_at"`
+}
+
+// TableName returns the DynamoDB table backing AnnouncementReaction.
+func (AnnouncementReaction) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the PK and SK based on the reaction data

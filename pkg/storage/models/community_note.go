@@ -44,6 +44,11 @@ type CommunityNote struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing CommunityNote.
+func (CommunityNote) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the GSI keys based on the current field values
 func (n *CommunityNote) UpdateKeys() error {
 	n.PK = fmt.Sprintf(KeyPatternNote, n.ID)
@@ -90,6 +95,11 @@ type CommunityNoteVote struct {
 
 	// TTL field
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+}
+
+// TableName returns the DynamoDB table backing CommunityNoteVote.
+func (CommunityNoteVote) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the keys based on the current field values

@@ -13,7 +13,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Activity |
+| DONE | Codex | Activity |
 
 ---
 
@@ -21,8 +21,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ActorField |
-| TODO |  | ActorMetadata |
+| DONE | Codex | ActorField |
+| DONE | Codex | ActorMetadata |
 
 ---
 
@@ -67,12 +67,12 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Announcement |
-| TODO |  | AnnouncementDismissal |
-| TODO |  | AnnouncementReaction |
-| TODO |  | CustomEmoji |
-| TODO |  | Mention |
-| TODO |  | Reaction |
+| DONE | Codex | Announcement |
+| DONE | Codex | AnnouncementDismissal |
+| DONE | Codex | AnnouncementReaction |
+| DONE | Codex | CustomEmoji |
+| DONE | Codex | Mention |
+| DONE | Codex | Reaction |
 
 ---
 
@@ -88,7 +88,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Bookmark |
+| DONE | Codex | Bookmark |
 
 ---
 
@@ -114,8 +114,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | CommunityNote |
-| TODO |  | CommunityNoteVote |
+| DONE | Codex | CommunityNote |
+| DONE | Codex | CommunityNoteVote |
 
 ---
 
@@ -189,10 +189,10 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | DomainAllow |
-| TODO |  | EmailDomainBlock |
-| TODO |  | InstanceDomainBlock |
-| TODO |  | UserDomainBlock |
+| DONE | Codex | DomainAllow |
+| DONE | Codex | EmailDomainBlock |
+| DONE | Codex | InstanceDomainBlock |
+| DONE | Codex | UserDomainBlock |
 
 ---
 
@@ -445,7 +445,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | InboxItem |
+| DONE | Codex | InboxItem |
 
 ---
 
@@ -503,7 +503,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Like |
+| DONE | Codex | Like |
 
 ---
 
@@ -616,7 +616,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | NotificationBuilder |
+| DONE | Codex | NotificationBuilder |
 
 ---
 
@@ -638,7 +638,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | NotificationPreferences |
+| DONE | Codex | NotificationPreferences |
 
 ---
 
@@ -662,7 +662,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Object |
+| DONE | Codex | Object |
 
 ---
 
@@ -670,7 +670,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | OutboxItem |
+| DONE | Codex | OutboxItem |
 
 ---
 
@@ -686,7 +686,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | PublicKeyCache |
+| DONE | Codex | PublicKeyCache |
 
 ---
 
@@ -694,7 +694,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | PushSubscriptionAlerts |
+| DONE | Codex | PushSubscriptionAlerts |
 
 ---
 
@@ -921,9 +921,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | StatusAttachment |
-| TODO |  | StatusHashtagIndex |
-| TODO |  | StatusTag |
+| DONE | Codex | StatusAttachment |
+| DONE | Codex | StatusHashtagIndex |
+| DONE | Codex | StatusTag |
 
 ---
 

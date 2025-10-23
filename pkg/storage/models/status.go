@@ -106,11 +106,21 @@ type StatusAttachment struct {
 	Height    int    `json:"height,omitempty"`
 }
 
+// TableName returns the DynamoDB table backing StatusAttachment.
+func (StatusAttachment) TableName() string {
+	return MainTableName
+}
+
 // StatusTag represents a tag (hashtag or mention) on a status
 type StatusTag struct {
 	Type string `json:"type"`
 	Href string `json:"href,omitempty"`
 	Name string `json:"name"`
+}
+
+// TableName returns the DynamoDB table backing StatusTag.
+func (StatusTag) TableName() string {
+	return MainTableName
 }
 
 // TableName returns the DynamoDB table name for the Status model
@@ -634,6 +644,11 @@ type StatusHashtagIndex struct {
 
 	// TTL for cleanup (optional - could be set to expire old hashtag indices)
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+}
+
+// TableName returns the DynamoDB table backing StatusHashtagIndex.
+func (StatusHashtagIndex) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets the DynamoDB keys for hashtag index records

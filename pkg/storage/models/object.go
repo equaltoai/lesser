@@ -55,6 +55,11 @@ type Object struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+// TableName returns the DynamoDB table backing Object.
+func (Object) TableName() string {
+	return MainTableName
+}
+
 // NewObject creates a new object with proper key structure
 func NewObject(id, objectType, actorID string) *Object {
 	now := time.Now()
