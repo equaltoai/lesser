@@ -1273,79 +1273,85 @@ func extractBaseURL(value, marker string) string {
 
 // SearchAccounts searches for accounts matching a query
 func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
-	// For now, implement a simple search by username prefix
-	// In a full implementation, this would use search indices or full-text search
+	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
+	if normalizedQuery == "" {
+		return &interfaces.PaginatedResult[*storage.Account]{
+			Items:      []*storage.Account{},
+			NextCursor: "",
+			HasMore:    false,
+			Total:      0,
+		}, nil
+	}
 
-	var users []models.User
-
-	// Apply limit
 	limit := opts.Limit
 	if err := common.ValidateQueryLimit(limit, 100, "user search"); err != nil {
 		limit = 20 // Default limit on validation error
 	}
 
-	// Use the user list GSI (GSI1) which is more efficient than scanning
-	// This still requires client-side filtering but operates on a smaller dataset
-	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("user-list-index").
-		Where("GSI1PK", "=", "USERS").
-		Limit(500) // Reasonable limit for search results
+	searchLimit := limit
+	if searchLimit <= 0 {
+		searchLimit = 20
+	}
 
-	// Apply cursor for pagination
+	prefix := normalizedQuery
+	if len(prefix) > 2 {
+		prefix = prefix[:2]
+	}
+	prefixKey := fmt.Sprintf("USER_HANDLE_PREFIX#%s", prefix)
+
+	var users []models.User
+	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
+		Index("gsi5").
+		Where("GSI5PK", "=", prefixKey).
+		Where("GSI5SK", "BEGINS_WITH", normalizedQuery).
+		OrderBy("GSI5SK", "ASC").
+		Limit(searchLimit + 1)
+
 	if opts.Cursor != "" {
-		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
-		if err == nil && sk != "" {
-			queryBuilder = queryBuilder.Where("GSI1SK", ">", sk)
+		pkCursor, skCursor, err := Utils.Pagination.DecodeCursor(opts.Cursor)
+		if err != nil {
+			r.logger.Warn("invalid search cursor provided",
+				zap.String("cursor", opts.Cursor),
+				zap.Error(err))
+		} else if skCursor != "" {
+			if pkCursor != "" && pkCursor != prefixKey {
+				r.logger.Info("search cursor prefix mismatch - resetting to new prefix",
+					zap.String("expected_prefix", prefixKey),
+					zap.String("cursor_prefix", pkCursor))
+			} else {
+				queryBuilder = queryBuilder.Where("GSI5SK", ">", skCursor)
+			}
 		}
 	}
 
-	err := queryBuilder.All(&users)
-	if err != nil {
+	if err := queryBuilder.All(&users); err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "search")
 	}
 
-	// Filter by query (simple contains check)
-	var filteredUsers []models.User
-	queryLower := strings.ToLower(query)
-	for _, user := range users {
-		if strings.Contains(strings.ToLower(user.Username), queryLower) ||
-			strings.Contains(strings.ToLower(user.DisplayName), queryLower) {
-			filteredUsers = append(filteredUsers, user)
-		}
-
-		// Stop if we have enough results
-		if len(filteredUsers) >= opts.Limit {
-			break
-		}
+	hasMore := len(users) > searchLimit
+	if hasMore {
+		users = users[:searchLimit]
 	}
 
-	// Convert to accounts
-	var accounts []*storage.Account
-	for _, user := range filteredUsers {
+	accounts := make([]*storage.Account, 0, len(users))
+	for _, user := range users {
 		account := &storage.Account{
 			User: r.modelToStorageUser(&user),
 		}
 		accounts = append(accounts, account)
-
-		// Respect the limit
-		if len(accounts) >= limit {
-			break
-		}
 	}
 
-	// Determine if there are more results
-	hasMore := len(users) > limit
 	var nextCursor string
-	if hasMore && len(accounts) > 0 {
-		lastUser := filteredUsers[len(filteredUsers)-1]
-		nextCursor = Utils.Pagination.EncodeCursor(lastUser.PK, lastUser.GSI1SK)
+	if hasMore && len(users) > 0 {
+		lastUser := users[len(users)-1]
+		nextCursor = Utils.Pagination.EncodeCursor(lastUser.GSI5PK, lastUser.GSI5SK)
 	}
 
 	return &interfaces.PaginatedResult[*storage.Account]{
 		Items:      accounts,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
-		Total:      -1, // Total count not calculated for performance
+		Total:      -1,
 	}, nil
 }
 

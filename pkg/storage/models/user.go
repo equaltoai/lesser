@@ -30,6 +30,10 @@ type User struct {
 	GSI4PK string `dynamorm:"index:status-index,pk" json:"gsi4_pk"` // Format: "STATUS#{status}"
 	GSI4SK string `dynamorm:"index:status-index,sk" json:"gsi4_sk"` // Format: "{username}"
 
+	// GSI5 - Handle prefix search (optimized begins_with queries)
+	GSI5PK string `dynamorm:"index:gsi5,pk" json:"gsi5_pk"`
+	GSI5SK string `dynamorm:"index:gsi5,sk" json:"gsi5_sk"`
+
 	// Core user data
 	Username     string              `json:"username"`
 	Email        string              `json:"email,omitempty"`         // Optional - not required for email-free auth
@@ -127,6 +131,15 @@ func (u *User) setupGSIKeys() {
 	status := u.getStatusString()
 	u.GSI4PK = "STATUS#" + status
 	u.GSI4SK = username
+
+	// GSI5 - Handle prefix search (lowercased username for lexicographic match)
+	normalizedUsername := strings.ToLower(username)
+	prefix := normalizedUsername
+	if len(prefix) > 2 {
+		prefix = prefix[:2]
+	}
+	u.GSI5PK = fmt.Sprintf("USER_HANDLE_PREFIX#%s", prefix)
+	u.GSI5SK = normalizedUsername
 
 }
 

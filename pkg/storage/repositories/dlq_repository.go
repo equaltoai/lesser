@@ -25,6 +25,44 @@ const (
 	DLQStatusAbandoned    = "abandoned"
 )
 
+const (
+	dlqDefaultPageLimit       = 20
+	dlqMaxPageLimit           = 200
+	dlqReprocessDefaultLimit  = 50
+	dlqSearchDefaultPageLimit = 50
+	dlqSearchMaxPageLimit     = 200
+)
+
+func clampDLQPageLimit(limit int) int {
+	if limit <= 0 {
+		return dlqDefaultPageLimit
+	}
+	if limit > dlqMaxPageLimit {
+		return dlqMaxPageLimit
+	}
+	return limit
+}
+
+func clampDLQReprocessLimit(limit int) int {
+	if limit <= 0 {
+		return dlqReprocessDefaultLimit
+	}
+	if limit > dlqMaxPageLimit {
+		return dlqMaxPageLimit
+	}
+	return limit
+}
+
+func clampDLQSearchLimit(limit int) int {
+	if limit <= 0 {
+		return dlqSearchDefaultPageLimit
+	}
+	if limit > dlqSearchMaxPageLimit {
+		return dlqSearchMaxPageLimit
+	}
+	return limit
+}
+
 // DLQRepository handles dead letter queue message operations using enhanced patterns
 type DLQRepository struct {
 	*EnhancedBaseRepository[*models.DLQMessage]
@@ -148,6 +186,8 @@ func (r *DLQRepository) GetDLQMessagesByServiceDateRange(ctx context.Context, se
 
 // GetDLQMessagesByErrorType retrieves DLQ messages by error type with pagination (DLQ-specific business logic)
 func (r *DLQRepository) GetDLQMessagesByErrorType(ctx context.Context, errorType string, limit int, cursor string) ([]*models.DLQMessage, string, error) {
+	safeLimit := clampDLQPageLimit(limit)
+
 	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 		Index("error-index").
 		Where("GSI1PK", "=", "DLQ_ERROR#"+errorType).
@@ -157,8 +197,8 @@ func (r *DLQRepository) GetDLQMessagesByErrorType(ctx context.Context, errorType
 		query = query.Where("GSI1SK", "<", cursor)
 	}
 
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
+	// Fetch one more item than requested to determine if there are more results
+	query = query.Limit(safeLimit + 1)
 
 	var messages []*models.DLQMessage
 	err := query.All(&messages)
@@ -168,42 +208,77 @@ func (r *DLQRepository) GetDLQMessagesByErrorType(ctx context.Context, errorType
 
 	// Generate next cursor
 	var nextCursor string
-	if err := common.ValidateSliceLength("messages", messages, limit); err == nil {
+	if len(messages) > safeLimit {
 		// We got more results than requested, so there are more pages
-		nextCursor = messages[limit-1].GSI1SK
-		messages = messages[:limit] // Trim to requested limit
+		nextCursor = messages[safeLimit-1].GSI1SK
+		messages = messages[:safeLimit] // Trim to requested limit
 	}
 
 	return messages, nextCursor, nil
 }
 
 // GetDLQMessagesForReprocessing retrieves messages that can be reprocessed (DLQ-specific retry logic)
-func (r *DLQRepository) GetDLQMessagesForReprocessing(ctx context.Context, service string, status string, limit int) ([]*models.DLQMessage, error) {
-	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
-		Index("retry-index").
-		Where("GSI2PK", "=", fmt.Sprintf("DLQ_RETRY#%s#%s", service, status)).
-		OrderBy("GSI2SK", "ASC"). // Oldest first for reprocessing
-		Limit(limit)
+func (r *DLQRepository) GetDLQMessagesForReprocessing(ctx context.Context, service string, status string, limit int, cursor string) ([]*models.DLQMessage, string, error) {
+	safeLimit := clampDLQReprocessLimit(limit)
 
-	var messages []*models.DLQMessage
-	err := query.All(&messages)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, "dlq", "reprocessing messages")
-	}
+	results := make([]*models.DLQMessage, 0, safeLimit)
+	nextCursor := ""
+	scanCursor := cursor
+	hasMore := false
 
-	// Filter to only include messages that can actually be reprocessed - DLQ business logic
-	var reprocessableMessages []*models.DLQMessage
-	for _, message := range messages {
-		if message.CanReprocess() {
-			reprocessableMessages = append(reprocessableMessages, message)
+	for {
+		query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
+			Index("retry-index").
+			Where("GSI2PK", "=", fmt.Sprintf("DLQ_RETRY#%s#%s", service, status)).
+			OrderBy("GSI2SK", "ASC").
+			Limit(safeLimit + 1)
+
+		if scanCursor != "" {
+			query = query.Where("GSI2SK", ">", scanCursor)
+		}
+
+		var batch []*models.DLQMessage
+		err := query.All(&batch)
+		if err != nil {
+			return nil, "", ErrorHandler.HandleQueryError(err, "dlq", "reprocessing messages")
+		}
+
+		if len(batch) == 0 {
+			break
+		}
+
+		scanCursor = batch[len(batch)-1].GSI2SK
+
+		for _, message := range batch {
+			if !message.CanReprocess() {
+				continue
+			}
+
+			if len(results) < safeLimit {
+				results = append(results, message)
+				continue
+			}
+
+			hasMore = true
+			break
+		}
+
+		if len(batch) < safeLimit+1 {
+			break
 		}
 	}
 
-	return reprocessableMessages, nil
+	if hasMore && len(results) > 0 {
+		nextCursor = results[len(results)-1].GSI2SK
+	}
+
+	return results, nextCursor, nil
 }
 
 // GetDLQMessagesByStatus retrieves messages by status (DLQ-specific status querying)
 func (r *DLQRepository) GetDLQMessagesByStatus(ctx context.Context, service, status string, limit int, cursor string) ([]*models.DLQMessage, string, error) {
+	safeLimit := clampDLQPageLimit(limit)
+
 	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 		Index("retry-index").
 		Where("GSI2PK", "=", fmt.Sprintf("DLQ_RETRY#%s#%s", service, status)).
@@ -213,7 +288,7 @@ func (r *DLQRepository) GetDLQMessagesByStatus(ctx context.Context, service, sta
 		query = query.Where("GSI2SK", "<", cursor)
 	}
 
-	query = query.Limit(limit + 1)
+	query = query.Limit(safeLimit + 1)
 
 	var messages []*models.DLQMessage
 	err := query.All(&messages)
@@ -223,9 +298,9 @@ func (r *DLQRepository) GetDLQMessagesByStatus(ctx context.Context, service, sta
 
 	// Generate next cursor
 	var nextCursor string
-	if err := common.ValidateSliceLength("messages", messages, limit); err == nil {
-		nextCursor = messages[limit-1].GSI2SK
-		messages = messages[:limit]
+	if len(messages) > safeLimit {
+		nextCursor = messages[safeLimit-1].GSI2SK
+		messages = messages[:safeLimit]
 	}
 
 	return messages, nextCursor, nil
@@ -445,6 +520,8 @@ func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearch
 		return nil, "", ErrorHandler.HandleQueryError(ErrDLQServiceRequired, "dlq", "search validation")
 	}
 
+	safeLimit := clampDLQSearchLimit(filter.Limit)
+
 	// Use service-wide index for broad searches
 	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 		Index("service-index").
@@ -482,11 +559,7 @@ func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearch
 	}
 
 	// Set limit
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	query = query.Limit(limit + 1)
+	query = query.Limit(safeLimit + 1)
 
 	var messages []*models.DLQMessage
 	err := query.All(&messages)
@@ -496,9 +569,9 @@ func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearch
 
 	// Generate next cursor
 	var nextCursor string
-	if err := common.ValidateSliceLength("messages", messages, limit); err == nil {
-		nextCursor = messages[limit-1].GSI3SK
-		messages = messages[:limit]
+	if len(messages) > safeLimit {
+		nextCursor = messages[safeLimit-1].GSI3SK
+		messages = messages[:safeLimit]
 	}
 
 	// Apply text search if specified - DLQ business logic
@@ -679,13 +752,13 @@ func (r *DLQRepository) AnalyzeFailurePatterns(ctx context.Context, service stri
 // GetRetryableMessages returns messages that are ready for retry based on backoff schedule
 func (r *DLQRepository) GetRetryableMessages(ctx context.Context, service string, limit int) ([]*models.DLQMessage, error) {
 	// Get messages with status "new" or "reprocessing" that are ready for retry
-	newMessages, err := r.GetDLQMessagesForReprocessing(ctx, service, DLQStatusNew, limit/2)
+	newMessages, _, err := r.GetDLQMessagesForReprocessing(ctx, service, DLQStatusNew, limit/2, "")
 	if err != nil {
 		r.logger.Warn("failed to get new messages for retry", zap.Error(err))
 		newMessages = []*models.DLQMessage{}
 	}
 
-	retryMessages, err := r.GetDLQMessagesForReprocessing(ctx, service, DLQStatusReprocessing, limit/2)
+	retryMessages, _, err := r.GetDLQMessagesForReprocessing(ctx, service, DLQStatusReprocessing, limit/2, "")
 	if err != nil {
 		r.logger.Warn("failed to get reprocessing messages for retry", zap.Error(err))
 		retryMessages = []*models.DLQMessage{}

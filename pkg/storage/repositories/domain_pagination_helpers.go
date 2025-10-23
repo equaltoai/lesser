@@ -15,6 +15,21 @@ type DomainPaginationConfig struct {
 	ErrorPrefix string // Prefix for error messages
 }
 
+const (
+	domainDefaultLimit = 20
+	domainMaxLimit     = 100
+)
+
+func clampDomainLimit(limit int) int {
+	if limit <= 0 {
+		return domainDefaultLimit
+	}
+	if limit > domainMaxLimit {
+		return domainMaxLimit
+	}
+	return limit
+}
+
 // buildPaginationQuery creates a common paginated query for domain models
 func buildPaginationQuery(
 	ctx context.Context,
@@ -23,23 +38,22 @@ func buildPaginationQuery(
 	cursor string,
 	config DomainPaginationConfig,
 	modelPtr interface{},
-) core.Query {
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
+) (core.Query, int) {
+	safeLimit := clampDomainLimit(limit)
 
 	query := db.WithContext(ctx).Model(modelPtr).
 		Index("GSI1").
 		Where("GSI1PK", "=", config.GSIPKValue).
-		OrderBy("GSI1SK", "DESC"). // Newest first
-		Limit(limit)
+		OrderBy("GSI1SK", "DESC") // Newest first
 
 	if cursor != "" {
-		query = query.Cursor(cursor)
+		query = query.Where("GSI1SK", "<", cursor)
 	}
 
-	// Get one more item than requested to determine if there are more results
-	return query.Limit(limit + 1)
+	// Fetch one more item than requested to determine if there are more results
+	query = query.Limit(safeLimit + 1)
+
+	return query, safeLimit
 }
 
 // generateNextCursor creates a cursor from the last item if there are more results
@@ -59,7 +73,7 @@ func getPaginatedInstanceDomainBlocks(
 	cursor string,
 	config DomainPaginationConfig,
 ) ([]*storage.InstanceDomainBlock, string, error) {
-	query := buildPaginationQuery(ctx, db, limit, cursor, config, &models.InstanceDomainBlock{})
+	query, safeLimit := buildPaginationQuery(ctx, db, limit, cursor, config, &models.InstanceDomainBlock{})
 
 	var modelBlocks []models.InstanceDomainBlock
 	err := query.All(&modelBlocks)
@@ -68,20 +82,12 @@ func getPaginatedInstanceDomainBlocks(
 	}
 
 	// Generate next cursor and trim results if needed
-	actualLimit := limit
-	if actualLimit <= 0 || actualLimit > 100 {
-		actualLimit = 20
-	}
-
-	nextCursor := generateNextCursor(len(modelBlocks), actualLimit, func() string {
-		if len(modelBlocks) > actualLimit {
-			return modelBlocks[actualLimit-1].GSI1SK
-		}
-		return ""
+	nextCursor := generateNextCursor(len(modelBlocks), safeLimit, func() string {
+		return modelBlocks[safeLimit-1].GSI1SK
 	})
 
-	if len(modelBlocks) > actualLimit {
-		modelBlocks = modelBlocks[:actualLimit] // Trim to requested limit
+	if len(modelBlocks) > safeLimit {
+		modelBlocks = modelBlocks[:safeLimit] // Trim to requested limit
 	}
 
 	// Convert to storage type
@@ -158,7 +164,7 @@ func getPaginatedDomainItems[M any, S any](
 	modelPtr *M,
 	converter DomainConverter[M, S],
 ) ([]S, string, error) {
-	query := buildPaginationQuery(ctx, db, limit, cursor, config, modelPtr)
+	query, safeLimit := buildPaginationQuery(ctx, db, limit, cursor, config, modelPtr)
 
 	var models []M
 	err := query.All(&models)
@@ -167,20 +173,12 @@ func getPaginatedDomainItems[M any, S any](
 	}
 
 	// Generate next cursor and trim results if needed
-	actualLimit := limit
-	if actualLimit <= 0 || actualLimit > 100 {
-		actualLimit = 20
-	}
-
-	nextCursor := generateNextCursor(len(models), actualLimit, func() string {
-		if len(models) > actualLimit {
-			return converter.GetGSI1SK(models[actualLimit-1])
-		}
-		return ""
+	nextCursor := generateNextCursor(len(models), safeLimit, func() string {
+		return converter.GetGSI1SK(models[safeLimit-1])
 	})
 
-	if len(models) > actualLimit {
-		models = models[:actualLimit] // Trim to requested limit
+	if len(models) > safeLimit {
+		models = models[:safeLimit] // Trim to requested limit
 	}
 
 	// Convert to storage type

@@ -120,20 +120,16 @@ func (r *DomainBlockRepository) RemoveDomainBlock(ctx context.Context, username,
 
 // GetUserDomainBlocks retrieves all domains blocked by a user
 func (r *DomainBlockRepository) GetUserDomainBlocks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	if limit <= 0 {
-		limit = 20
-	}
+	safeLimit := clampDomainLimit(limit)
 
 	query := r.db.WithContext(ctx).Model(&models.UserDomainBlock{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Limit(limit)
+		OrderBy("SK", "ASC").
+		Limit(safeLimit + 1)
 
 	if cursor != "" {
-		query = query.Cursor(cursor)
+		query = query.Where("SK", ">", cursor)
 	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
 
 	var blocks []models.UserDomainBlock
 	err := query.All(&blocks)
@@ -143,10 +139,10 @@ func (r *DomainBlockRepository) GetUserDomainBlocks(ctx context.Context, usernam
 
 	// Generate next cursor
 	var nextCursor string
-	if len(blocks) > limit {
+	if len(blocks) > safeLimit {
 		// We got more results than requested, so there are more pages
-		nextCursor = blocks[limit-1].SK
-		blocks = blocks[:limit] // Trim to requested limit
+		nextCursor = blocks[safeLimit-1].SK
+		blocks = blocks[:safeLimit] // Trim to requested limit
 	}
 
 	// Extract domains from the blocks
