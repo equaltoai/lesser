@@ -913,7 +913,7 @@ func (al *AuditLogger) GetSecurityEvents(ctx context.Context, startTime, endTime
 	if auditRepo := al.repos.Audit(); auditRepo != nil {
 		var events []*AuditEvent
 		for _, severity := range severityFilter {
-			logs, err := auditRepo.GetSecurityEvents(ctx, string(severity), startTime, endTime, 100)
+			logs, _, err := auditRepo.GetSecurityEvents(ctx, string(severity), startTime, endTime, 100, "")
 			if err != nil {
 				return nil, err
 			}

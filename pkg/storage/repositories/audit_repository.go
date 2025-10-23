@@ -114,16 +114,21 @@ func (r *AuditRepository) GetSessionAuditLogs(ctx context.Context, sessionID str
 	return result, nil
 }
 
+const (
+	auditSecurityDefaultLimit = 100
+	auditSecurityMaxLimit     = 1000
+)
+
 // GetSecurityEvents retrieves security events by severity within a time range - SECURITY CRITICAL
-func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string, startTime, endTime time.Time, limit int) ([]*models.AuthAuditLog, error) {
+func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string, startTime, endTime time.Time, limit int, cursor string) ([]*models.AuthAuditLog, string, error) {
 	// Security validation
 	if severity == "" {
-		return nil, ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityAudit, "security events")
+		return nil, "", ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityAudit, "security events")
 	}
 	// Validate severity levels to prevent injection
 	validSeverities := map[string]bool{"LOW": true, "MEDIUM": true, "HIGH": true, "CRITICAL": true}
 	if !validSeverities[severity] {
-		return nil, ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityAudit, "security events")
+		return nil, "", ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityAudit, "security events")
 	}
 
 	var logs []models.AuthAuditLog
@@ -141,12 +146,16 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 
 	// Apply limit with security bounds
 	if limit <= 0 {
-		limit = 100 // Default limit for security events
+		limit = auditSecurityDefaultLimit // Default limit for security events
 	}
-	if limit > 1000 {
-		limit = 1000 // Maximum security event limit
+	if limit > auditSecurityMaxLimit {
+		limit = auditSecurityMaxLimit // Maximum security event limit
 	}
-	query = query.Limit(limit)
+	query = query.OrderBy("GSI4SK", "ASC").Limit(limit + 1)
+
+	if cursor != "" {
+		query = query.Where("GSI4SK", ">", cursor)
+	}
 
 	// Execute query with enhanced error handling
 	if err := query.All(&logs); err != nil {
@@ -155,16 +164,22 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 			zap.Time("start_time", startTime),
 			zap.Time("end_time", endTime),
 			zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, EntityAudit, "security events")
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityAudit, "security events")
 	}
 
 	// Convert to pointer slice for compatibility
+	var nextCursor string
+	if len(logs) > limit {
+		nextCursor = logs[limit-1].GSI4SK
+		logs = logs[:limit]
+	}
+
 	result := make([]*models.AuthAuditLog, len(logs))
 	for i := range logs {
 		result[i] = &logs[i]
 	}
 
-	return result, nil
+	return result, nextCursor, nil
 }
 
 // GetRecentFailedLogins gets recent failed login attempts for a user

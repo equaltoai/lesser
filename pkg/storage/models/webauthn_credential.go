@@ -9,6 +9,9 @@ type WebAuthnCredential struct {
 	// DynamoDB keys - MUST match legacy exactly
 	PK string `dynamorm:"pk" json:"-"` // USER#username
 	SK string `dynamorm:"sk" json:"-"` // WEBAUTHN_CRED#credentialID
+	// GSI for credential lookup by ID
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"-"`
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"-"`
 
 	// Core fields from legacy storage.WebAuthnCredential
 	ID              string    `json:"id"`
@@ -37,6 +40,8 @@ func (WebAuthnCredential) TableName() string {
 func (w *WebAuthnCredential) BeforeCreate() error {
 	w.PK = "USER#" + w.UserID
 	w.SK = "WEBAUTHN_CRED#" + w.ID
+	w.GSI1PK = "WEBAUTHN_CREDENTIAL#" + w.ID
+	w.GSI1SK = "USER#" + w.UserID
 	w.Type = "WebAuthnCredential"
 
 	if w.CreatedAt.IsZero() {
@@ -52,6 +57,8 @@ func (w *WebAuthnCredential) BeforeCreate() error {
 // BeforeUpdate updates the last used timestamp
 func (w *WebAuthnCredential) BeforeUpdate() error {
 	w.LastUsedAt = time.Now()
+	w.GSI1PK = "WEBAUTHN_CREDENTIAL#" + w.ID
+	w.GSI1SK = "USER#" + w.UserID
 	return nil
 }
 
@@ -69,6 +76,8 @@ func (w *WebAuthnCredential) GetSK() string {
 func (w *WebAuthnCredential) UpdateKeys() error {
 	w.PK = "USER#" + w.UserID
 	w.SK = "WEBAUTHN_CRED#" + w.ID
+	w.GSI1PK = "WEBAUTHN_CREDENTIAL#" + w.ID
+	w.GSI1SK = "USER#" + w.UserID
 	w.Type = "WebAuthnCredential"
 	return nil
 }

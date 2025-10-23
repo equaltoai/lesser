@@ -378,7 +378,7 @@ func (p *Processor) ScheduledReprocessing(ctx context.Context) error {
 // reprocessServiceMessages reprocesses messages for a specific service
 func (p *Processor) reprocessServiceMessages(ctx context.Context, service string) (int, int, error) {
 	// Get messages ready for reprocessing
-	messages, err := p.dlqRepo.GetDLQMessagesForReprocessing(ctx, service, "new", 50)
+	messages, _, err := p.dlqRepo.GetDLQMessagesForReprocessing(ctx, service, "new", 50, "")
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to get messages for reprocessing: %w", err)
 	}

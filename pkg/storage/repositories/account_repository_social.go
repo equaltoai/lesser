@@ -118,14 +118,44 @@ func (r *AccountRepository) IsFollowing(ctx context.Context, followerUsername, f
 }
 
 // GetFollowers retrieves paginated list of followers for a user
+const (
+	followDefaultLimit   = 40
+	followMaxLimit       = 200
+	bookmarkDefaultLimit = 40
+	bookmarkMaxLimit     = 400
+)
+
+func clampFollowLimit(limit int) int {
+	if limit <= 0 {
+		return followDefaultLimit
+	}
+	if limit > followMaxLimit {
+		return followMaxLimit
+	}
+	return limit
+}
+
+func clampBookmarkLimit(limit int) int {
+	if limit <= 0 {
+		return bookmarkDefaultLimit
+	}
+	if limit > bookmarkMaxLimit {
+		return bookmarkMaxLimit
+	}
+	return limit
+}
+
 func (r *AccountRepository) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Actor, string, error) {
 	var follows []models.Follow
+
+	safeLimit := clampFollowLimit(limit)
 
 	// Build query using GSI1 for followed's perspective
 	query := r.db.WithContext(ctx).Model(&models.Follow{}).
 		Index("gsi1-index").
 		Where("GSI1PK", "=", fmt.Sprintf("follow#%s", username)).
-		Limit(limit)
+		OrderBy("GSI1SK", "ASC").
+		Limit(safeLimit + 1)
 
 	if cursor != "" {
 		query = query.Where("GSI1SK", ">", cursor)
@@ -137,6 +167,11 @@ func (r *AccountRepository) GetFollowers(ctx context.Context, username string, l
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("followers for %s", username))
+	}
+
+	hasMore := len(follows) > safeLimit
+	if hasMore {
+		follows = follows[:safeLimit]
 	}
 
 	// Get actor details for each follower
@@ -156,7 +191,7 @@ func (r *AccountRepository) GetFollowers(ctx context.Context, username string, l
 
 	// Determine next cursor
 	nextCursor := ""
-	if len(follows) == limit {
+	if hasMore && len(follows) > 0 {
 		lastFollow := follows[len(follows)-1]
 		nextCursor = lastFollow.GSI1SK
 	}
@@ -168,11 +203,14 @@ func (r *AccountRepository) GetFollowers(ctx context.Context, username string, l
 func (r *AccountRepository) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Actor, string, error) {
 	var follows []models.Follow
 
+	safeLimit := clampFollowLimit(limit)
+
 	// Build query using primary key
 	query := r.db.WithContext(ctx).Model(&models.Follow{}).
 		Where("PK", "=", fmt.Sprintf("follow#%s", username)).
 		Where("SK", "BEGINS_WITH", "following#").
-		Limit(limit)
+		OrderBy("SK", "ASC").
+		Limit(safeLimit + 1)
 
 	if cursor != "" {
 		query = query.Where("SK", ">", cursor)
@@ -184,6 +222,11 @@ func (r *AccountRepository) GetFollowing(ctx context.Context, username string, l
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("following for %s", username))
+	}
+
+	hasMore := len(follows) > safeLimit
+	if hasMore {
+		follows = follows[:safeLimit]
 	}
 
 	// Get actor details for each followed user
@@ -203,7 +246,7 @@ func (r *AccountRepository) GetFollowing(ctx context.Context, username string, l
 
 	// Determine next cursor
 	nextCursor := ""
-	if len(follows) == limit {
+	if hasMore && len(follows) > 0 {
 		lastFollow := follows[len(follows)-1]
 		nextCursor = lastFollow.SK
 	}
@@ -484,9 +527,12 @@ func (r *AccountRepository) RemoveBookmark(ctx context.Context, username, object
 func (r *AccountRepository) GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]*storage.Bookmark, string, error) {
 	var bookmarks []models.Bookmark
 
+	safeLimit := clampBookmarkLimit(limit)
+
 	query := r.db.WithContext(ctx).Model(&models.Bookmark{}).
 		Where("PK", "=", fmt.Sprintf("BOOKMARK#%s", username)).
-		Limit(limit)
+		OrderBy("SK", "ASC").
+		Limit(safeLimit + 1)
 
 	if cursor != "" {
 		query = query.Where("SK", ">", cursor)
@@ -498,6 +544,11 @@ func (r *AccountRepository) GetBookmarks(ctx context.Context, username string, l
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("bookmarks for %s", username))
+	}
+
+	hasMore := len(bookmarks) > safeLimit
+	if hasMore {
+		bookmarks = bookmarks[:safeLimit]
 	}
 
 	// Convert to storage type
@@ -512,7 +563,7 @@ func (r *AccountRepository) GetBookmarks(ctx context.Context, username string, l
 
 	// Determine next cursor
 	nextCursor := ""
-	if len(bookmarks) == limit {
+	if hasMore && len(bookmarks) > 0 {
 		lastBookmark := bookmarks[len(bookmarks)-1]
 		nextCursor = lastBookmark.SK
 	}
