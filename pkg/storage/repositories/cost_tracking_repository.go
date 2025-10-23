@@ -33,6 +33,7 @@ const (
 	relayCostPerDayCap       = 200
 	relayMetricsDefaultLimit = 100
 	relayMetricsMaxLimit     = 500
+	aggregatedPageMaxLimit   = 500
 )
 
 func clampCostTableLimit(limit int) int {
@@ -234,14 +235,14 @@ func (r *TrackingRepository) UpdateAggregated(ctx context.Context, aggregated *m
 }
 
 // ListAggregatedByPeriod lists aggregated cost tracking for a period
-func (r *TrackingRepository) ListAggregatedByPeriod(ctx context.Context, period, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostAggregation, error) {
+func (r *TrackingRepository) ListAggregatedByPeriod(ctx context.Context, period, operationType string, startTime, endTime time.Time, limit int, cursor string) ([]*models.DynamoDBCostAggregation, string, error) {
 	config := AggregatedQueryConfig{
 		PKPrefix:    "cost_agg",
 		LogContext:  "cost tracking",
 		ErrorPrefix: "failed to list aggregated cost tracking",
 	}
 
-	return ListAggregatedByPeriod[*models.DynamoDBCostAggregation](
+	aggregated, nextCursor, err := ListAggregatedByPeriod[*models.DynamoDBCostAggregation](
 		ctx,
 		r.db,
 		config,
@@ -250,7 +251,13 @@ func (r *TrackingRepository) ListAggregatedByPeriod(ctx context.Context, period,
 		startTime,
 		endTime,
 		limit,
+		cursor,
 	)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return aggregated, nextCursor, nil
 }
 
 // GetTableCostStats calculates cost statistics for a table
@@ -498,10 +505,31 @@ func (r *TrackingRepository) GetCostTrends(ctx context.Context, period string, o
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -lookbackDays)
 
-	// Get aggregated data for the period
-	aggregatedList, err := r.ListAggregatedByPeriod(ctx, period, operationType, startTime, endTime, 1000)
-	if err != nil {
-		return nil, err
+	// Get aggregated data for the period using paginated fetches
+	var (
+		aggregatedList []*models.DynamoDBCostAggregation
+		cursor         string
+		remaining      = 1000
+	)
+
+	for remaining > 0 {
+		pageSize := remaining
+		if pageSize > aggregatedPageMaxLimit {
+			pageSize = aggregatedPageMaxLimit
+		}
+
+		chunk, nextCursor, err := r.ListAggregatedByPeriod(ctx, period, operationType, startTime, endTime, pageSize, cursor)
+		if err != nil {
+			return nil, err
+		}
+
+		aggregatedList = append(aggregatedList, chunk...)
+		if nextCursor == "" || len(chunk) == 0 {
+			break
+		}
+
+		cursor = nextCursor
+		remaining -= len(chunk)
 	}
 
 	if err := common.ValidateSliceNotEmpty("aggregated_list", aggregatedList); err != nil {
@@ -745,14 +773,36 @@ func (r *TrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, per
 	var allAggregates []*models.DynamoDBCostAggregation
 
 	for _, opType := range operationTypes {
-		aggregates, err := r.ListAggregatedByPeriod(ctx, period, opType, startDate, endDate, 1000)
-		if err != nil {
-			r.logger.Warn("failed to get aggregates for operation type",
-				zap.String("operation_type", opType),
-				zap.Error(err))
-			continue
+		var (
+			opAggregates []*models.DynamoDBCostAggregation
+			cursor       string
+			remaining    = 1000
+		)
+
+		for remaining > 0 {
+			pageSize := remaining
+			if pageSize > aggregatedPageMaxLimit {
+				pageSize = aggregatedPageMaxLimit
+			}
+
+			chunk, nextCursor, err := r.ListAggregatedByPeriod(ctx, period, opType, startDate, endDate, pageSize, cursor)
+			if err != nil {
+				r.logger.Warn("failed to get aggregates for operation type",
+					zap.String("operation_type", opType),
+					zap.Error(err))
+				break
+			}
+
+			opAggregates = append(opAggregates, chunk...)
+			if nextCursor == "" || len(chunk) == 0 {
+				break
+			}
+
+			cursor = nextCursor
+			remaining -= len(chunk)
 		}
-		allAggregates = append(allAggregates, aggregates...)
+
+		allAggregates = append(allAggregates, opAggregates...)
 	}
 
 	// Merge aggregates by window

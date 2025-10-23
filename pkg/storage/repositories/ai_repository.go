@@ -151,14 +151,31 @@ func (r *AIRepository) GetStats(ctx context.Context, period string) (*ai.AIStats
 	}
 
 	// Query analyses using GSI4 through BaseRepository
-	var analyses []*models.AIAnalysis
 	dateStr := startDate.Format(common.DateFormat)
 	gsiPK := fmt.Sprintf("AI#ANALYSIS#%s", dateStr)
 
-	// Use BaseRepository QueryGSI for GSI queries
-	analyses, err := r.QueryGSI(ctx, "cost-date-index", gsiPK, 0)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, "ai stats", "by date")
+	const analysisPageLimit = 200
+
+	var (
+		analyses []*models.AIAnalysis
+		cursor   string
+	)
+
+	for {
+		page, err := r.QueryGSIPaginated(ctx, "cost-date-index", gsiPK, BasePaginationOptions{
+			Limit:  analysisPageLimit,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			return nil, ErrorHandler.HandleQueryError(err, "ai stats", "by date")
+		}
+
+		analyses = append(analyses, page.Items...)
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
 	// Calculate statistics using AI-specific analysis logic

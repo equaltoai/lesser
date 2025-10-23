@@ -229,8 +229,10 @@ func (r *MuteRepository) CountMutedUsers(ctx context.Context, muterActor string)
 func (r *MuteRepository) CountUsersWhoMuted(ctx context.Context, mutedActor string) (int, error) {
 	mutedUsername := extractUsernameFromActor(mutedActor)
 
-	// Use QueryGSI from BaseRepository to count on GSI1
-	mutes, err := r.QueryGSI(ctx, "GSI1", fmt.Sprintf("MUTED#%s", mutedUsername), 0)
+	count, err := r.db.WithContext(ctx).Model(&models.Mute{}).
+		Index("GSI1").
+		Where("GSI1PK", "=", fmt.Sprintf("MUTED#%s", mutedUsername)).
+		Count()
 	if err != nil {
 		r.logger.Error("failed to count users who muted actor",
 			zap.String("muted_actor", mutedActor),
@@ -238,5 +240,5 @@ func (r *MuteRepository) CountUsersWhoMuted(ctx context.Context, mutedActor stri
 		return 0, ErrorHandler.HandleQueryError(err, EntityMute, fmt.Sprintf("count users who muted %s", mutedActor))
 	}
 
-	return len(mutes), nil
+	return int(count), nil
 }

@@ -144,11 +144,30 @@ func (r *AuthRepository) GetUserWebAuthnCredentials(ctx context.Context, userID 
 	// Construct the key prefix
 	pk := "USER#" + userID
 
-	// Use BaseRepository QueryWithSKPrefix method
-	modelList, err := r.QueryWithSKPrefix(ctx, pk, "WEBAUTHN_CRED#", 0)
-	if err != nil {
-		r.logger.Error("failed to get user WebAuthn credentials", zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, EntityWebAuthnCredential, fmt.Sprintf("user %s", userID))
+	const credentialChunkLimit = 100
+
+	var (
+		modelList []*models.WebAuthnCredential
+		cursor    string
+	)
+
+	for {
+		page, err := r.QueryWithSKPrefixPaginated(ctx, pk, "WEBAUTHN_CRED#", BasePaginationOptions{
+			Limit:  credentialChunkLimit,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			r.logger.Error("failed to get user WebAuthn credentials", zap.Error(err))
+			return nil, ErrorHandler.HandleQueryError(err, EntityWebAuthnCredential, fmt.Sprintf("user %s", userID))
+		}
+
+		modelList = append(modelList, page.Items...)
+
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
 	// Convert to storage models

@@ -315,13 +315,31 @@ func (r *MediaSessionRepository) EndSession(ctx context.Context, sessionID strin
 
 // GetUserSessions retrieves active sessions for a user using GSI
 func (r *MediaSessionRepository) GetUserSessions(ctx context.Context, userID string) ([]*types.StreamingSession, error) {
-	// Query using GSI1 with user partition key
-	models, err := r.QueryGSI(ctx, "gsi1", fmt.Sprintf("USER#%s", userID), 0)
-	if err != nil {
-		if dynamormerrors.IsNotFound(err) {
-			return []*types.StreamingSession{}, nil
+	// Query using GSI1 with user partition key and paginate through results
+	const sessionChunkLimit = 100
+	var (
+		models []*models.MediaSession
+		cursor string
+	)
+
+	for {
+		page, err := r.QueryGSIPaginated(ctx, "gsi1", fmt.Sprintf("USER#%s", userID), BasePaginationOptions{
+			Limit:  sessionChunkLimit,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			if dynamormerrors.IsNotFound(err) {
+				return []*types.StreamingSession{}, nil
+			}
+			return nil, ErrorHandler.HandleQueryError(err, EntitySession, userID)
 		}
-		return nil, ErrorHandler.HandleQueryError(err, EntitySession, userID)
+
+		models = append(models, page.Items...)
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
 	// Filter for active sessions and convert

@@ -248,8 +248,10 @@ func (r *BlockRepository) CountBlockedUsers(ctx context.Context, blockerActor st
 func (r *BlockRepository) CountUsersWhoBlocked(ctx context.Context, blockedActor string) (int, error) {
 	blockedUsername := extractUsernameFromActor(blockedActor)
 
-	// Use QueryGSI from BaseRepository to count on GSI5
-	blocks, err := r.QueryGSI(ctx, "GSI5", fmt.Sprintf("BLOCKED#%s", blockedUsername), 0)
+	count, err := r.db.WithContext(ctx).Model(&models.Block{}).
+		Index("GSI5").
+		Where("GSI5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
+		Count()
 	if err != nil {
 		r.logger.Error("failed to count users who blocked actor",
 			zap.String("blocked_actor", blockedActor),
@@ -257,5 +259,5 @@ func (r *BlockRepository) CountUsersWhoBlocked(ctx context.Context, blockedActor
 		return 0, ErrorHandler.HandleQueryError(err, EntityBlock, "count blockers")
 	}
 
-	return len(blocks), nil
+	return int(count), nil
 }

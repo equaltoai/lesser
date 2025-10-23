@@ -132,9 +132,28 @@ func (r *FeaturedTagRepository) DeleteFeaturedTag(ctx context.Context, username,
 // GetFeaturedTags returns all featured tags for a user
 func (r *FeaturedTagRepository) GetFeaturedTags(ctx context.Context, username string) ([]*storage.FeaturedTag, error) {
 	pk := fmt.Sprintf("USER#%s", username)
-	featuredTagModels, err := r.QueryWithSKPrefix(ctx, pk, "FEATURED_TAG#", 0)
-	if err != nil {
-		return []*storage.FeaturedTag{}, nil // Return empty slice on not found
+	const featuredTagChunkLimit = 100
+
+	var (
+		featuredTagModels []*models.FeaturedTag
+		cursor            string
+	)
+
+	for {
+		page, err := r.QueryWithSKPrefixPaginated(ctx, pk, "FEATURED_TAG#", BasePaginationOptions{
+			Limit:  featuredTagChunkLimit,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			return []*storage.FeaturedTag{}, nil
+		}
+
+		featuredTagModels = append(featuredTagModels, page.Items...)
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
 	// Convert models to storage types
