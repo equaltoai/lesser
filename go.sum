@@ -255,8 +255,8 @@ github.com/opentracing/opentracing-go v1.1.0 h1:pWlfV3Bxv7k65HYwkikxat0+s3pV4bsq
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
-github.com/pay-theory/dynamorm v1.0.30-0.20251020234917-cf2ae3334b0b h1:XuUbfzA+VAN+xZ+1wK8yqJ3iKXJy6Fh7DWUY4F+LVYE=
-github.com/pay-theory/dynamorm v1.0.30-0.20251020234917-cf2ae3334b0b/go.mod h1:mPbxrJYZhfRFJCU1/JIk0DkADGgg2XP60Oig6g347Iw=
+github.com/pay-theory/dynamorm v1.0.30-0.20251021041254-f48fbfc56bf4 h1:TduKakyerVRsUARkzlHSsrfse9QO4jPTlnAn3oYlRGE=
+github.com/pay-theory/dynamorm v1.0.30-0.20251021041254-f48fbfc56bf4/go.mod h1:mPbxrJYZhfRFJCU1/JIk0DkADGgg2XP60Oig6g347Iw=
 github.com/pay-theory/lift v1.0.59-0.20251020235817-d750e31562f6 h1:s06APpSuZDv7AhzqAXhWztw9s32p6PXRjb1umsLDcUg=
 github.com/pay-theory/lift v1.0.59-0.20251020235817-d750e31562f6/go.mod h1:LX0saJEPaiHeU6zOAsAnGIyZ27CfqvppN05i0LLliZ0=
 github.com/pay-theory/limited v1.0.0 h1:70H8MrGXA8xb0UYwJnDgim33ldmJwTk7wjyP1txVYjw=

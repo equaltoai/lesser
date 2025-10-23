@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/converters"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -82,6 +84,7 @@ type RepositoryFactory struct {
 	mediaAnalyticsRepo      *repositories.MediaAnalyticsRepository
 	mediaPopularityRepo     *repositories.MediaPopularityRepository
 	mediaSessionRepo        *repositories.MediaSessionRepository
+	streamingConnectionRepo *repositories.StreamingConnectionRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -131,7 +134,39 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.listRepo = repositories.NewListRepository(f.db, f.tableName, f.logger, nil)
 	f.mediaRepo = repositories.NewMediaRepository(f.db, f.tableName, f.logger, nil)
 	f.pollRepo = repositories.NewPollRepository(f.db, f.tableName, f.logger, nil)
-	f.pushSubscriptionRepo = repositories.NewPushSubscriptionRepository(f.db, f.tableName, f.logger, nil)
+	var (
+		vapidSecretsClient  repositories.SecretsManagerClient
+		vapidSecretARN      string
+		defaultVAPIDSubject string
+	)
+
+	if f.cfg != nil {
+		vapidSecretARN = f.cfg.VAPIDSecretARN
+		defaultVAPIDSubject = f.cfg.VAPIDSubject
+		if defaultVAPIDSubject == "" && f.cfg.Domain != "" {
+			defaultVAPIDSubject = fmt.Sprintf("mailto:push@%s", f.cfg.Domain)
+		}
+	}
+
+	if vapidSecretARN != "" {
+		if awsCfg, err := awsconfig.LoadDefaultConfig(context.Background()); err != nil {
+			if f.logger != nil {
+				f.logger.Warn("repository factory: failed to initialize secrets manager client for VAPID keys", zap.Error(err))
+			}
+		} else {
+			vapidSecretsClient = secretsmanager.NewFromConfig(awsCfg)
+		}
+	}
+
+	f.pushSubscriptionRepo = repositories.NewPushSubscriptionRepository(
+		f.db,
+		f.tableName,
+		f.logger,
+		nil,
+		vapidSecretsClient,
+		vapidSecretARN,
+		defaultVAPIDSubject,
+	)
 	f.hashtagRepo = repositories.NewHashtagRepository(f.db, f.tableName, f.logger, f.cfg.Domain)
 	f.scheduledStatusRepo = repositories.NewScheduledStatusRepository(f.db, f.tableName, f.logger, nil)
 	f.announcementRepo = repositories.NewAnnouncementRepository(f.db, f.tableName, f.logger)
@@ -169,6 +204,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.mediaAnalyticsRepo = repositories.NewMediaAnalyticsRepository(f.db, f.tableName, f.logger, nil)
 	f.mediaPopularityRepo = repositories.NewMediaPopularityRepository(f.db, f.tableName, f.logger, nil)
 	f.mediaSessionRepo = repositories.NewMediaSessionRepository(f.db, f.logger, nil)
+	f.streamingConnectionRepo = repositories.NewStreamingConnectionRepository(f.db, f.tableName, f.db, f.tableName, f.logger, nil)
 
 	// All other repositories are nil until needed/implemented
 	// This allows the factory to be created without breaking the application
@@ -511,6 +547,11 @@ func (f *RepositoryFactory) MediaPopularity() *repositories.MediaPopularityRepos
 // MediaSession returns the MediaSession repository instance
 func (f *RepositoryFactory) MediaSession() *repositories.MediaSessionRepository {
 	return f.mediaSessionRepo
+}
+
+// StreamingConnection returns the StreamingConnection repository instance
+func (f *RepositoryFactory) StreamingConnection() *repositories.StreamingConnectionRepository {
+	return f.streamingConnectionRepo
 }
 
 // Additional repositories can be added here as needed

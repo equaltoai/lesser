@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -37,13 +38,46 @@ func (r *mutationResolver) UnlikeObject(ctx context.Context, id string) (bool, e
 
 // ShareObject is the resolver for the shareObject field.
 func (r *mutationResolver) ShareObject(ctx context.Context, id string) (*activitypub.Activity, error) {
-	return r.executeSocialAction(ctx, id, activitypub.AnnounceType, "share", func(ctx context.Context, objectID, username string) error {
-		_, err := r.Registry.Notes().ReblogNote(ctx, &notes.ReblogNoteCommand{
-			StatusID:    objectID,
-			RebloggerID: username,
-		})
-		return err
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := r.Registry.Notes().ReblogNote(ctx, &notes.ReblogNoteCommand{
+		StatusID:    id,
+		RebloggerID: username,
 	})
+	if err != nil {
+		r.Logger.Error("Failed to share object",
+			zap.String("user", username),
+			zap.String("object", id),
+			zap.Error(err))
+		return nil, ErrSocialActionFailedWithContext("share", err)
+	}
+
+	// Track the write for cost attribution
+	r.trackDynamoOperation(ctx, "write", 1)
+
+	if result != nil {
+		if activity := buildActivityFromAnnounce(username, id, result.Announce); activity != nil {
+			return activity, nil
+		}
+	}
+
+	r.Logger.Debug("share result missing announce metadata; returning synthetic activity",
+		zap.String("user", username),
+		zap.String("object", id))
+
+	now := time.Now()
+	return &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			ID:        generateID(),
+			Type:      activitypub.AnnounceType,
+			Published: &now,
+		},
+		Actor:  username,
+		Object: id,
+	}, nil
 }
 
 // UnshareObject is the resolver for the unshareObject field.

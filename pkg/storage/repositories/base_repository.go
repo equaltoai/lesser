@@ -6,6 +6,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -37,6 +38,15 @@ type BaseRepository[T BaseModel] struct {
 	logger      *zap.Logger
 	costService *cost.TrackingService
 	repoName    string
+}
+
+// modelPrototypeOf returns a pointer to the underlying struct type for a generic parameter.
+func modelPrototypeOf[T BaseModel]() interface{} {
+	modelType := reflect.TypeOf((*T)(nil)).Elem()
+	if modelType.Kind() == reflect.Ptr {
+		modelType = modelType.Elem()
+	}
+	return reflect.New(modelType).Interface()
 }
 
 // NewBaseRepository creates a new base repository
@@ -446,7 +456,7 @@ func (r *BaseRepository[T]) Query(ctx context.Context, pk string, limit int) ([]
 	var results []T
 
 	// Create query
-	query := r.db.WithContext(ctx).Model(new(T)).
+	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Where("PK", "=", pk)
 
 	if limit > 0 {
@@ -498,7 +508,7 @@ func (r *BaseRepository[T]) QueryWithSKPrefix(ctx context.Context, pk, skPrefix 
 	var results []T
 
 	// Create query
-	query := r.db.WithContext(ctx).Model(new(T)).
+	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", skPrefix)
 
@@ -525,7 +535,7 @@ func (r *BaseRepository[T]) QueryGSI(ctx context.Context, indexName, pk string, 
 	var results []T
 
 	// Create query
-	query := r.db.WithContext(ctx).Model(new(T)).
+	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Index(indexName).
 		Where(fmt.Sprintf("%sPK", indexName), "=", pk)
 
@@ -567,7 +577,7 @@ func (r *BaseRepository[T]) BatchGet(ctx context.Context, keys []struct{ PK, SK 
 		var batchResults []T
 
 		// Create batch get request
-		batchGet := r.db.WithContext(ctx).Model(new(T))
+		batchGet := r.db.WithContext(ctx).Model(modelPrototypeOf[T]())
 		for _, key := range batch {
 			batchGet = batchGet.Where("PK", "=", key.PK).Where("SK", "=", key.SK)
 		}
@@ -589,7 +599,7 @@ func (r *BaseRepository[T]) BatchGet(ctx context.Context, keys []struct{ PK, SK 
 
 // Count returns the number of items for a given partition key
 func (r *BaseRepository[T]) Count(ctx context.Context, pk string) (int, error) {
-	count, err := r.db.WithContext(ctx).Model(new(T)).
+	count, err := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Where("PK", "=", pk).
 		Count()
 
@@ -605,7 +615,7 @@ func (r *BaseRepository[T]) Count(ctx context.Context, pk string) (int, error) {
 
 // Exists checks if an item exists
 func (r *BaseRepository[T]) Exists(ctx context.Context, pk, sk string) (bool, error) {
-	count, err := r.db.WithContext(ctx).Model(new(T)).
+	count, err := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		Count()
@@ -1061,7 +1071,7 @@ func ListAggregatedByPeriod[T BaseModel](
 	endSK := fmt.Sprintf("window#%s", endTime.Format(time.RFC3339))
 
 	// Execute query with time range filtering
-	query := db.WithContext(ctx).Model(new(T)).
+	query := db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -1096,7 +1106,7 @@ type BasePaginatedResult[T BaseModel] struct {
 func (r *BaseRepository[T]) FindByPK(ctx context.Context, pk string) ([]T, error) {
 	var results []T
 
-	err := r.db.WithContext(ctx).Model(new(T)).
+	err := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Where("PK", "=", pk).
 		All(&results)
 
@@ -1141,7 +1151,7 @@ func (r *BaseRepository[T]) FindByPK(ctx context.Context, pk string) ([]T, error
 func (r *BaseRepository[T]) FindBySK(ctx context.Context, sk string, gsiName string) ([]T, error) {
 	var results []T
 
-	err := r.db.WithContext(ctx).Model(new(T)).
+	err := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Index(gsiName).
 		Where(fmt.Sprintf("%sPK", gsiName), "=", sk).
 		All(&results)
@@ -1199,7 +1209,7 @@ func (r *BaseRepository[T]) FindWithPagination(ctx context.Context, pk string, o
 	var results []T
 
 	// Build query
-	query := r.db.WithContext(ctx).Model(new(T)).
+	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Where("PK", "=", pk).
 		Limit(opts.Limit+1). // Get one extra to check if there are more
 		OrderBy("SK", opts.Order)
@@ -1386,7 +1396,7 @@ func (r *BaseRepository[T]) QueryWithFilter(ctx context.Context, pk string, filt
 	var results []T
 
 	// Build query
-	query := r.db.WithContext(ctx).Model(new(T)).
+	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Where("PK", "=", pk)
 
 	// Apply filters
@@ -1451,7 +1461,7 @@ func (r *BaseRepository[T]) QueryWithFilter(ctx context.Context, pk string, filt
 func (r *BaseRepository[T]) QueryBetween(ctx context.Context, pk, startSK, endSK string, limit int) ([]T, error) {
 	var results []T
 
-	query := r.db.WithContext(ctx).Model(new(T)).
+	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK)

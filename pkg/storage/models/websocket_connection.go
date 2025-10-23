@@ -117,6 +117,12 @@ func (w *WebSocketConnection) GetSK() string {
 	return w.SK
 }
 
+// TableName returns the DynamoDB table name for this model
+// This is REQUIRED by DynamORM to route operations to the correct table
+func (w *WebSocketConnection) TableName() string {
+	return MainTableName
+}
+
 // UpdateState changes the connection state and records the timestamp
 func (w *WebSocketConnection) UpdateState(newState ConnectionState) {
 	w.State = newState
@@ -244,4 +250,10 @@ func (w *WebSocketSubscription) GetPK() string {
 // GetSK returns the sort key
 func (w *WebSocketSubscription) GetSK() string {
 	return w.SK
+}
+
+// TableName returns the DynamoDB table name for this model
+// This is REQUIRED by DynamORM to route operations to the correct table
+func (w *WebSocketSubscription) TableName() string {
+	return MainTableName
 }

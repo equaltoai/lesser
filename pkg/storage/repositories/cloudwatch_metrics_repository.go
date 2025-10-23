@@ -102,59 +102,28 @@ func (r *CloudWatchMetricsRepository) GetServiceMetrics(ctx context.Context, ser
 		ServiceName: serviceName,
 	}
 
-	// Query all metrics in parallel - PRESERVE: CloudWatch integration critical for monitoring
-	errChan := make(chan error, 6)
-
-	// API Gateway metrics (requests, latency, errors) - PRESERVE: AWS monitoring
-	go func() {
-		if err := r.getAPIGatewayMetrics(ctx, metrics, startTime, endTime); err != nil {
-			r.getLogger().Warn("Failed to get API Gateway metrics", zap.Error(err))
-		}
-		errChan <- nil
-	}()
-
-	// DynamoDB metrics - PRESERVE: AWS monitoring
-	go func() {
-		if err := r.getDynamoDBMetrics(ctx, metrics, startTime, endTime); err != nil {
-			r.getLogger().Warn("Failed to get DynamoDB metrics", zap.Error(err))
-		}
-		errChan <- nil
-	}()
-
-	// Lambda metrics - PRESERVE: AWS monitoring
-	go func() {
-		if err := r.getLambdaMetrics(ctx, metrics, startTime, endTime); err != nil {
-			r.getLogger().Warn("Failed to get Lambda metrics", zap.Error(err))
-		}
-		errChan <- nil
-	}()
-
-	// S3 metrics - PRESERVE: AWS monitoring
-	go func() {
-		if err := r.getS3Metrics(ctx, metrics, startTime, endTime); err != nil {
-			r.getLogger().Warn("Failed to get S3 metrics", zap.Error(err))
-		}
-		errChan <- nil
-	}()
-
-	// Data transfer metrics - PRESERVE: AWS monitoring
-	go func() {
-		if err := r.getDataTransferMetrics(ctx, metrics, startTime, endTime); err != nil {
-			r.getLogger().Warn("Failed to get data transfer metrics", zap.Error(err))
-		}
-		errChan <- nil
-	}()
-
-	// Cost estimate - PRESERVE: AWS cost calculation
-	go func() {
-		metrics.EstimatedCostUSD = r.calculateEstimatedCost(metrics)
-		errChan <- nil
-	}()
-
-	// Wait for all goroutines
-	for i := 0; i < 6; i++ {
-		<-errChan
+	// Collect metrics sequentially to honor request context lifetime
+	if err := r.getAPIGatewayMetrics(ctx, metrics, startTime, endTime); err != nil {
+		r.getLogger().Warn("Failed to get API Gateway metrics", zap.Error(err))
 	}
+
+	if err := r.getDynamoDBMetrics(ctx, metrics, startTime, endTime); err != nil {
+		r.getLogger().Warn("Failed to get DynamoDB metrics", zap.Error(err))
+	}
+
+	if err := r.getLambdaMetrics(ctx, metrics, startTime, endTime); err != nil {
+		r.getLogger().Warn("Failed to get Lambda metrics", zap.Error(err))
+	}
+
+	if err := r.getS3Metrics(ctx, metrics, startTime, endTime); err != nil {
+		r.getLogger().Warn("Failed to get S3 metrics", zap.Error(err))
+	}
+
+	if err := r.getDataTransferMetrics(ctx, metrics, startTime, endTime); err != nil {
+		r.getLogger().Warn("Failed to get data transfer metrics", zap.Error(err))
+	}
+
+	metrics.EstimatedCostUSD = r.calculateEstimatedCost(metrics)
 
 	return metrics, nil
 }

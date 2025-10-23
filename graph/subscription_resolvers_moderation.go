@@ -2,13 +2,9 @@ package graph
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/moderation"
-	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
 
@@ -91,80 +87,28 @@ func (r *subscriptionResolver) ModerationAlerts(ctx context.Context, severity *m
 }
 
 // ModerationQueueUpdate implements SubscriptionResolver
+// Note: This subscription needs to be adapted to the DynamoDB model
+// For now, return a placeholder channel that will be implemented when moderation events are queued
 func (r *subscriptionResolver) ModerationQueueUpdate(ctx context.Context, priority *model.Priority) (<-chan *model.ModerationItem, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	// Add connection ID to context
+	ctx = WithConnectionID(ctx, r.getConnectionID(ctx))
+
+	// Create a channel for moderation queue updates
+	// This will be populated by stream-router when moderation events are queued
 	updateChan := make(chan *model.ModerationItem, 100)
 
-	// Get internal EventBus for real-time moderation queue updates
-	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
-	if internalEventBus == nil || !internalEventBus.IsRunning() {
-		r.Logger.Error("Internal EventBus not available for ModerationQueueUpdate")
-		close(updateChan)
-		return updateChan, ErrInternalEventBusUnavailable
-	}
+	// TODO: Implement proper moderation queue subscription via subscription manager
+	// For now, return empty channel - this will be implemented when moderation events
+	// are properly routed through the DynamoDB-backed system
 
-	streams := []string{"moderation:queue"}
-	if priority != nil {
-		streams = append(streams, fmt.Sprintf("moderation:priority:%s", *priority))
-	}
-
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeModerationFlag,
-			streaming.EventTypeModerationReview,
-			streaming.EventTypeModeration,
-		},
-		Streams: streams,
-		UserID:  username,
-	}
-
-	subscriber, err := internalEventBus.Subscribe(
-		fmt.Sprintf("mod_queue_%s_%d", username, time.Now().UnixNano()),
-		filter, 100)
-	if err != nil {
-		r.Logger.Error("Failed to subscribe to moderation queue", zap.Error(err))
-		close(updateChan)
-		return updateChan, errors.Join(errors.New("failed to subscribe"), err)
-	}
-
-	// Start forwarding events
-	go func() {
-		defer func() {
-			close(updateChan)
-			if subscriber != nil {
-				subscriber.Close()
-			}
-		}()
-
-		for {
-			select {
-			case event := <-subscriber.Channel:
-				if event == nil {
-					return
-				}
-
-				// Convert event to ModerationItem
-				item := r.convertEventToModerationItem(event, priority)
-				if item != nil {
-					select {
-					case updateChan <- item:
-					case <-ctx.Done():
-						return
-					}
-				}
-
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	r.Logger.Info("Started moderation queue subscription",
-		zap.String("user", username))
+	r.Logger.Info("Started moderation queue subscription (placeholder)",
+		zap.String("user", username),
+		zap.Any("priority", priority))
 
 	return updateChan, nil
 }

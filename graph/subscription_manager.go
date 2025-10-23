@@ -2,13 +2,17 @@ package graph
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
@@ -19,13 +23,20 @@ const (
 	StreamNamePublic = "public"
 )
 
+// Context key for WebSocket connection ID
+// Note: contextKey is already defined in dataloader.go, so we reuse it
+const (
+	contextKeyConnectionID = contextKey("ws_connection_id")
+)
+
 // GraphQLSubscriptionManager manages lifecycle of all GraphQL subscriptions
-// and connects to the stream-router's event bus for real-time updates
+// using DynamoDB-backed persistence and queue-based event delivery
 //
 //nolint:revive // Named this way for clarity in a codebase with multiple subscription types
 type GraphQLSubscriptionManager struct {
 	logger           *zap.Logger
-	eventBus         *streaming.EventBus
+	connRepo         *repositories.StreamingConnectionRepository
+	publisher        streaming.Publisher
 	converter        *EventConverter
 	subscriptions    map[string]*GraphQLSubscription
 	subscriptionsMux sync.RWMutex
@@ -40,9 +51,9 @@ type GraphQLSubscription struct {
 	ID            string
 	Type          string                 // timeline, notification, cost, etc.
 	UserID        string                 // User context
+	ConnectionID  string                 // WebSocket connection ID
 	Params        map[string]interface{} // Subscription parameters
-	Filter        *streaming.EventFilter // Event bus filter
-	Subscriber    *streaming.Subscriber  // Event bus subscriber
+	Streams       []string               // Stream names subscribed to
 	OutputChannel interface{}            // Typed output channel
 	Context       context.Context        // Subscription context
 	Cancel        context.CancelFunc     // Cancel function
@@ -50,8 +61,12 @@ type GraphQLSubscription struct {
 	LastActivity  time.Time
 }
 
-// NewGraphQLSubscriptionManager creates a new GraphQL subscription manager
-func NewGraphQLSubscriptionManager(eventBus *streaming.EventBus, logger *zap.Logger) *GraphQLSubscriptionManager {
+// NewGraphQLSubscriptionManager creates a new GraphQL subscription manager with DynamoDB backing
+func NewGraphQLSubscriptionManager(
+	connRepo *repositories.StreamingConnectionRepository,
+	publisher streaming.Publisher,
+	logger *zap.Logger,
+) *GraphQLSubscriptionManager {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -60,7 +75,8 @@ func NewGraphQLSubscriptionManager(eventBus *streaming.EventBus, logger *zap.Log
 
 	return &GraphQLSubscriptionManager{
 		logger:        logger,
-		eventBus:      eventBus,
+		connRepo:      connRepo,
+		publisher:     publisher,
 		converter:     converter,
 		subscriptions: make(map[string]*GraphQLSubscription),
 		running:       false,
@@ -115,14 +131,274 @@ func (sm *GraphQLSubscriptionManager) IsRunning() bool {
 	return sm.running
 }
 
-// SubscribeToTimeline subscribes to timeline updates using the event bus
+// Helper functions for WebSocket context and subscription management
+
+// WithConnectionID adds connection ID to context
+func WithConnectionID(ctx context.Context, connectionID string) context.Context {
+	if connectionID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, contextKeyConnectionID, connectionID)
+}
+
+// connectionIDFromContext extracts connection ID from context
+func connectionIDFromContext(ctx context.Context) string {
+	if connectionID, ok := ctx.Value(contextKeyConnectionID).(string); ok {
+		return connectionID
+	}
+	return ""
+}
+
+// createSubscriptionRecord writes a subscription to DynamoDB for the given streams
+func (sm *GraphQLSubscriptionManager) createSubscriptionRecord(
+	ctx context.Context,
+	subscriptionID, userID string,
+	streams []string,
+) (string, error) {
+	if sm.connRepo == nil {
+		sm.logger.Error("subscription repository unavailable",
+			zap.String("subscription_id", subscriptionID),
+			zap.String("user_id", userID))
+		return "", errors.ServiceUnavailable("subscription repository")
+	}
+	connectionID := sm.resolveConnectionID(ctx, userID)
+	sm.logger.Info("subscription context resolved",
+		zap.String("subscription_id", subscriptionID),
+		zap.String("connection_id", connectionID),
+		zap.String("user_id", userID),
+		zap.Strings("streams", streams))
+	if connectionID == "" {
+		sm.logger.Error("unable to resolve connection id for subscription",
+			zap.String("subscription_id", subscriptionID),
+			zap.String("user_id", userID),
+			zap.Strings("streams", streams))
+		return "", errors.ServiceUnavailable("websocket connection")
+	}
+
+	// Create subscription records for each stream using a background context so we
+	// are not coupled to gqlgen's request lifecycle (which cancels quickly). Some
+	// deployments route DynamoDB through VPC endpoints that add initial connection
+	// latency, so give the write a bit more headroom while still bounding it.
+	persistCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Preserve log context by attaching connectionID information manually.
+	for _, stream := range streams {
+		start := time.Now()
+		sm.logger.Info("persisting subscription stream",
+			zap.String("subscription_id", subscriptionID),
+			zap.String("connection_id", connectionID),
+			zap.String("user_id", userID),
+			zap.String("stream", stream))
+
+		if err := sm.connRepo.WriteSubscription(persistCtx, connectionID, userID, stream); err != nil {
+			sm.logger.Error("failed to persist subscription record",
+				zap.String("subscription_id", subscriptionID),
+				zap.String("connection_id", connectionID),
+				zap.String("user_id", userID),
+				zap.String("stream", stream),
+				zap.Error(err),
+				zap.Duration("elapsed", time.Since(start)),
+				zap.String("context_err", fmt.Sprint(persistCtx.Err())))
+			return "", fmt.Errorf("failed to create subscription for stream %s: %w", stream, err)
+		}
+
+		sm.logger.Info("persisted subscription stream",
+			zap.String("subscription_id", subscriptionID),
+			zap.String("connection_id", connectionID),
+			zap.String("user_id", userID),
+			zap.String("stream", stream),
+			zap.Duration("elapsed", time.Since(start)))
+	}
+
+	sm.logger.Info("created subscription records",
+		zap.String("subscription_id", subscriptionID),
+		zap.String("connection_id", connectionID),
+		zap.String("user_id", userID),
+		zap.Strings("streams", streams))
+
+	return connectionID, nil
+}
+
+// resolveConnectionID attempts to determine the websocket connection ID for a subscription.
+// Primary source is the context (set by the graphql-ws handler). If missing—such as during
+// resolver instrumentation or atypical gqlgen lifecycles—we fall back to the connection
+// repository to locate an active connection for the subscribing user.
+func (sm *GraphQLSubscriptionManager) resolveConnectionID(ctx context.Context, userID string) string {
+	if id := connectionIDFromContext(ctx); id != "" {
+		return id
+	}
+
+	if sm.connRepo == nil || userID == "" {
+		return ""
+	}
+
+	lookupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	connections, err := sm.connRepo.GetConnectionsByUser(lookupCtx, userID)
+	if err != nil {
+		sm.logger.Warn("failed to lookup connections for subscription",
+			zap.String("user_id", userID),
+			zap.Error(err))
+		return ""
+	}
+
+	if len(connections) == 0 {
+		return ""
+	}
+
+	for _, conn := range connections {
+		if conn.State == models.ConnectionStateConnected {
+			return conn.ConnectionID
+		}
+	}
+
+	// Fall back to the first connection if none are actively connected.
+	return connections[0].ConnectionID
+}
+
+// deleteSubscriptionRecords removes subscriptions from DynamoDB for the given streams
+func (sm *GraphQLSubscriptionManager) deleteSubscriptionRecords(
+	ctx context.Context,
+	connectionID string,
+	streams []string,
+) error {
+	if connectionID == "" {
+		return nil // No connection ID means nothing to delete
+	}
+
+	deleteCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for _, stream := range streams {
+		if err := sm.connRepo.DeleteSubscription(deleteCtx, connectionID, stream); err != nil {
+			sm.logger.Warn("failed to delete subscription",
+				zap.String("connection_id", connectionID),
+				zap.String("stream", stream),
+				zap.Error(err))
+			// Continue deleting other streams even if one fails
+		}
+	}
+
+	return nil
+}
+
+// marshalFilterMetadata converts filter metadata to JSON for storage
+func marshalFilterMetadata(filter *streaming.EventFilter) string {
+	if filter == nil {
+		return "{}"
+	}
+
+	data := map[string]interface{}{
+		"types":    filter.Types,
+		"streams":  filter.Streams,
+		"user_id":  filter.UserID,
+		"actor_id": filter.ActorID,
+		"metadata": filter.Metadata,
+	}
+
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		return "{}"
+	}
+
+	return string(jsonBytes)
+}
+
+// createGenericSubscription is a helper that creates a subscription with the given parameters
+func (sm *GraphQLSubscriptionManager) createGenericSubscription(
+	ctx context.Context,
+	subscriptionType, userID string,
+	streams []string,
+	channelBuffer int,
+) (interface{}, string, error) {
+	subscriptionID := fmt.Sprintf("%s_%s_%d", subscriptionType, userID, time.Now().UnixNano())
+
+	// Create subscription record in DynamoDB
+	connectionID, err := sm.createSubscriptionRecord(ctx, subscriptionID, userID, streams)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create %s subscription: %w", subscriptionType, err)
+	}
+
+	// Create channel based on type - we'll use interface{} and let caller cast
+	var ch interface{}
+	switch subscriptionType {
+	case "timeline":
+		ch = make(chan *model.Object, channelBuffer)
+	case "notification":
+		ch = make(chan *model.Notification, channelBuffer)
+	case "cost":
+		ch = make(chan *model.CostUpdate, channelBuffer)
+	case "moderation":
+		ch = make(chan *moderation.ModerationDecision, channelBuffer)
+	case "trust":
+		ch = make(chan *trust.TrustEdge, channelBuffer)
+	case "ai":
+		ch = make(chan *model.AIAnalysis, channelBuffer)
+	case "hashtag":
+		ch = make(chan *model.HashtagActivityUpdate, channelBuffer)
+	case "quote":
+		ch = make(chan *model.QuoteActivityUpdate, channelBuffer)
+	case "metrics":
+		ch = make(chan *model.MetricsUpdate, channelBuffer)
+	case "list":
+		ch = make(chan *model.ListUpdate, channelBuffer)
+	case "conversation":
+		ch = make(chan *model.Conversation, channelBuffer)
+	case "federation":
+		ch = make(chan *model.FederationHealthUpdate, channelBuffer)
+	case "relationship":
+		ch = make(chan *model.RelationshipUpdate, channelBuffer)
+	case "budget":
+		ch = make(chan *model.BudgetAlert, channelBuffer)
+	case "moderation_alerts":
+		ch = make(chan *model.ModerationAlert, channelBuffer)
+	case "cost_alerts":
+		ch = make(chan *model.CostAlert, channelBuffer)
+	case "performance":
+		ch = make(chan *model.PerformanceAlert, channelBuffer)
+	case "threat":
+		ch = make(chan *model.ThreatAlert, channelBuffer)
+	case "infrastructure":
+		ch = make(chan *model.InfrastructureEvent, channelBuffer)
+	default:
+		ch = make(chan interface{}, channelBuffer)
+	}
+
+	// Store subscription in memory for channel management
+	subCtx, cancel := context.WithCancel(ctx)
+	sub := &GraphQLSubscription{
+		ID:            subscriptionID,
+		Type:          subscriptionType,
+		UserID:        userID,
+		ConnectionID:  connectionID,
+		Streams:       streams,
+		OutputChannel: ch,
+		Context:       subCtx,
+		Cancel:        cancel,
+		Created:       time.Now(),
+		LastActivity:  time.Now(),
+	}
+
+	sm.subscriptionsMux.Lock()
+	sm.subscriptions[subscriptionID] = sub
+	sm.subscriptionsMux.Unlock()
+
+	sm.logger.Info("subscription created",
+		zap.String("subscription_id", subscriptionID),
+		zap.String("type", subscriptionType),
+		zap.String("user_id", userID),
+		zap.Strings("streams", streams))
+
+	return ch, subscriptionID, nil
+}
+
+// SubscribeToTimeline subscribes to timeline updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, username string, timelineType model.TimelineType) (<-chan *model.Object, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
 	}
-
-	// Create output channel
-	ch := make(chan *model.Object, 100)
 
 	// Determine stream name based on timeline type
 	var streamName string
@@ -139,173 +415,101 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, u
 		streamName = fmt.Sprintf("user:%s", username)
 	}
 
-	// Create event filter for status events
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeStatus,
-			streaming.EventTypeStatusUpdate,
-		},
-		Streams:     []string{streamName},
-		MinPriority: streaming.PriorityNormal,
+	streams := []string{streamName}
+	ch, _, err := sm.createGenericSubscription(ctx, "timeline", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("timeline_%s_%s_%d", username, timelineType, time.Now().UnixNano())
-
-	// Use event bus for timeline subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForTimeline
-	}
-
-	return sm.createEventBusSubscription(ctx, subscriptionID, "timeline", username, filter, ch)
+	return ch.(chan *model.Object), nil
 }
 
-// SubscribeToNotifications subscribes to notification events using the event bus
+// SubscribeToNotifications subscribes to notification events via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToNotifications(ctx context.Context, username string) (<-chan *model.Notification, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
 	}
 
-	ch := make(chan *model.Notification, 50)
-
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeNotification,
-		},
-		UserID:      username,
-		MinPriority: streaming.PriorityHigh,
+	streams := []string{fmt.Sprintf("user:%s:notifications", username)}
+	ch, _, err := sm.createGenericSubscription(ctx, "notification", username, streams, 50)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("notifications_%s_%d", username, time.Now().UnixNano())
-
-	// Use event bus for notification subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForNotifications
-	}
-
-	return sm.createNotificationEventBusSubscription(ctx, subscriptionID, username, filter, ch)
+	return ch.(chan *model.Notification), nil
 }
 
-// SubscribeToCostUpdates subscribes to cost update events using the event bus
+// SubscribeToCostUpdates subscribes to cost update events via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToCostUpdates(ctx context.Context, username string, threshold *int) (<-chan *model.CostUpdate, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
 	}
 
-	ch := make(chan *model.CostUpdate, 20)
-
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeCostUpdate,
-			streaming.EventTypeCostAlert,
-		},
-		UserID:      username,
-		MinPriority: streaming.PriorityNormal,
+	streams := []string{fmt.Sprintf("cost:%s", username)}
+	ch, _, err := sm.createGenericSubscription(ctx, "cost", username, streams, 20)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("cost_%s_%d", username, time.Now().UnixNano())
-
-	// Use event bus for cost update subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForCost
-	}
-
-	return sm.createCostEventBusSubscription(ctx, subscriptionID, username, filter, ch, threshold)
+	return ch.(chan *model.CostUpdate), nil
 }
 
-// SubscribeToModerationEvents subscribes to moderation events using the event bus
+// SubscribeToModerationEvents subscribes to moderation events via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToModerationEvents(ctx context.Context, actorID *string) (<-chan *moderation.ModerationDecision, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
 	}
 
-	ch := make(chan *moderation.ModerationDecision, 50)
-
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeModeration,
-			streaming.EventTypeModerationFlag,
-			streaming.EventTypeModerationReview,
-		},
-		MinPriority: streaming.PriorityHigh,
+	userID := getStringValue(actorID)
+	if userID == "" {
+		userID = "global"
 	}
 
-	if actorID != nil && *actorID != "" {
-		filter.ActorID = *actorID
+	streams := []string{fmt.Sprintf("moderation:%s", userID)}
+	ch, _, err := sm.createGenericSubscription(ctx, "moderation", userID, streams, 50)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("moderation_%s_%d", getStringValue(actorID), time.Now().UnixNano())
-
-	// Use event bus for moderation subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForModeration
-	}
-
-	return sm.createModerationEventBusSubscription(ctx, subscriptionID, actorID, filter, ch)
+	return ch.(chan *moderation.ModerationDecision), nil
 }
 
-// SubscribeToTrustUpdates subscribes to trust score updates using the event bus
+// SubscribeToTrustUpdates subscribes to trust score updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToTrustUpdates(ctx context.Context, actorID string) (<-chan *trust.TrustEdge, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
 	}
 
-	ch := make(chan *trust.TrustEdge, 20)
-
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeTrustUpdate,
-			streaming.EventTypeReputationUpdate,
-			streaming.EventTypeVouchUpdate,
-		},
-		ActorID:     actorID,
-		MinPriority: streaming.PriorityNormal,
+	streams := []string{fmt.Sprintf("trust:%s", actorID)}
+	ch, _, err := sm.createGenericSubscription(ctx, "trust", actorID, streams, 20)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("trust_%s_%d", actorID, time.Now().UnixNano())
-
-	// Use event bus for trust subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForTrust
-	}
-
-	return sm.createTrustEventBusSubscription(ctx, subscriptionID, actorID, filter, ch)
+	return ch.(chan *trust.TrustEdge), nil
 }
 
-// SubscribeToAIAnalysis subscribes to AI analysis updates using the event bus
+// SubscribeToAIAnalysis subscribes to AI analysis updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToAIAnalysis(ctx context.Context, objectID *string) (<-chan *model.AIAnalysis, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
 	}
 
-	ch := make(chan *model.AIAnalysis, 20)
-
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeAIAnalysis,
-			streaming.EventTypeAIClassification,
-			streaming.EventTypeAIModeration,
-		},
-		MinPriority: streaming.PriorityNormal,
+	userID := getStringValue(objectID)
+	if userID == "" {
+		userID = "global"
 	}
 
-	if objectID != nil && *objectID != "" {
-		if filter.Metadata == nil {
-			filter.Metadata = make(map[string]string)
-		}
-		filter.Metadata["target_id"] = *objectID
+	streams := []string{fmt.Sprintf("ai:%s", userID)}
+	ch, _, err := sm.createGenericSubscription(ctx, "ai", userID, streams, 20)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("ai_%s_%d", getStringValue(objectID), time.Now().UnixNano())
-
-	// Use event bus for AI analysis subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForAI
-	}
-
-	return sm.createAIEventBusSubscription(ctx, subscriptionID, objectID, filter, ch)
+	return ch.(chan *model.AIAnalysis), nil
 }
 
-// SubscribeToHashtagActivity subscribes to hashtag activity using the event bus
+// SubscribeToHashtagActivity subscribes to hashtag activity via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToHashtagActivity(ctx context.Context, username string, hashtags []string) (<-chan *model.HashtagActivityUpdate, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
@@ -315,33 +519,21 @@ func (sm *GraphQLSubscriptionManager) SubscribeToHashtagActivity(ctx context.Con
 		return nil, ErrAtLeastOneHashtagRequired
 	}
 
-	ch := make(chan *model.HashtagActivityUpdate, 100)
-
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeHashtagUpdate,
-			streaming.EventTypeHashtagTrend,
-		},
-		MinPriority: streaming.PriorityNormal,
-	}
-
-	// Add hashtag metadata filters
-	filter.Metadata = make(map[string]string)
+	// Create stream names for each hashtag
+	streams := make([]string, len(hashtags))
 	for i, hashtag := range hashtags {
-		filter.Metadata[fmt.Sprintf("hashtag_%d", i)] = hashtag
+		streams[i] = fmt.Sprintf("hashtag:%s", hashtag)
 	}
 
-	subscriptionID := fmt.Sprintf("hashtag_%s_%d", username, time.Now().UnixNano())
-
-	// Use event bus for hashtag activity subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForHashtag
+	ch, _, err := sm.createGenericSubscription(ctx, "hashtag", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	return sm.createHashtagEventBusSubscription(ctx, subscriptionID, username, hashtags, filter, ch)
+	return ch.(chan *model.HashtagActivityUpdate), nil
 }
 
-// SubscribeToQuoteActivity subscribes to quote activity using the event bus
+// SubscribeToQuoteActivity subscribes to quote activity via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string, noteObj any) (<-chan *model.QuoteActivityUpdate, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
@@ -354,40 +546,19 @@ func (sm *GraphQLSubscriptionManager) SubscribeToQuoteActivity(ctx context.Conte
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	ch := make(chan *model.QuoteActivityUpdate, 50)
-
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeStatus, // Quotes are statuses that reference the original
-		},
-		Streams:     []string{fmt.Sprintf("quote:%s", noteID)},
-		MinPriority: streaming.PriorityNormal,
+	streams := []string{fmt.Sprintf("quote:%s", noteID)}
+	ch, _, err := sm.createGenericSubscription(ctx, "quote", username, streams, 50)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("quote_%s_%s_%d", username, noteID, time.Now().UnixNano())
-
-	// Use event bus for quote activity subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForQuote
-	}
-
-	return sm.createQuoteEventBusSubscription(ctx, subscriptionID, username, noteID, noteObj, filter, ch)
+	return ch.(chan *model.QuoteActivityUpdate), nil
 }
 
-// SubscribeToMetricsUpdates subscribes to real-time metrics updates using the event bus
+// SubscribeToMetricsUpdates subscribes to real-time metrics updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToMetricsUpdates(ctx context.Context, username string, categories []string, services []string, threshold *float64) (<-chan *model.MetricsUpdate, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
-	}
-
-	ch := make(chan *model.MetricsUpdate, 100)
-
-	// Create filter for metrics events
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeMetricsUpdate,
-		},
-		MinPriority: streaming.PriorityNormal,
 	}
 
 	// Build streams for metrics filtering
@@ -409,27 +580,15 @@ func (sm *GraphQLSubscriptionManager) SubscribeToMetricsUpdates(ctx context.Cont
 		streams = append(streams, fmt.Sprintf("metrics:user:%s", username))
 	}
 
-	filter.Streams = streams
-
-	// Add category metadata filters if specified
-	if err := common.ValidateSliceNotEmpty("categories", categories); err == nil {
-		if filter.Metadata == nil {
-			filter.Metadata = make(map[string]string)
-		}
-		filter.Metadata["subscription_type"] = SubscriptionTypeMetrics
+	ch, _, err := sm.createGenericSubscription(ctx, "metrics", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("metrics_%s_%d", username, time.Now().UnixNano())
-
-	// Use event bus for metrics subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForMetrics
-	}
-
-	return sm.createMetricsEventBusSubscription(ctx, subscriptionID, username, categories, services, threshold, filter, ch)
+	return ch.(chan *model.MetricsUpdate), nil
 }
 
-// SubscribeToListActivity subscribes to list activity updates using the event bus
+// SubscribeToListActivity subscribes to list activity updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToListActivity(ctx context.Context, username string, listID string) (<-chan *model.ListUpdate, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
@@ -442,30 +601,16 @@ func (sm *GraphQLSubscriptionManager) SubscribeToListActivity(ctx context.Contex
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	ch := make(chan *model.ListUpdate, 100)
-
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			"list.update",
-			"list.member.add",
-			"list.member.remove",
-		},
-		Streams:     []string{fmt.Sprintf("list:%s", listID)},
-		UserID:      username,
-		MinPriority: streaming.PriorityNormal,
+	streams := []string{fmt.Sprintf("list:%s", listID)}
+	ch, _, err := sm.createGenericSubscription(ctx, "list", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("list_%s_%s_%d", listID, username, time.Now().UnixNano())
-
-	// Use event bus for list activity subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForList
-	}
-
-	return sm.createListEventBusSubscription(ctx, subscriptionID, username, listID, filter, ch)
+	return ch.(chan *model.ListUpdate), nil
 }
 
-// SubscribeToConversation subscribes to conversation updates using the event bus
+// SubscribeToConversation subscribes to conversation updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToConversation(ctx context.Context, username string) (<-chan *model.Conversation, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
@@ -475,29 +620,16 @@ func (sm *GraphQLSubscriptionManager) SubscribeToConversation(ctx context.Contex
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	ch := make(chan *model.Conversation, 100)
-
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			"conversation.update",
-			"conversation.create",
-		},
-		Streams:     []string{fmt.Sprintf("user:%s", username)},
-		ActorID:     username,
-		MinPriority: streaming.PriorityNormal,
+	streams := []string{fmt.Sprintf("conversation:%s", username)}
+	ch, _, err := sm.createGenericSubscription(ctx, "conversation", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("conv_%s_%d", username, time.Now().UnixNano())
-
-	// Use event bus for conversation subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForConversation
-	}
-
-	return sm.createConversationEventBusSubscription(ctx, subscriptionID, username, filter, ch)
+	return ch.(chan *model.Conversation), nil
 }
 
-// SubscribeToFederationHealth subscribes to federation health updates using the event bus
+// SubscribeToFederationHealth subscribes to federation health updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToFederationHealth(ctx context.Context, username string, domain *string) (<-chan *model.FederationHealthUpdate, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
@@ -507,38 +639,23 @@ func (sm *GraphQLSubscriptionManager) SubscribeToFederationHealth(ctx context.Co
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	ch := make(chan *model.FederationHealthUpdate, 100)
-
 	// Build streams based on domain filter
-	var streamNames []string
+	var streams []string
 	if domain != nil && *domain != "" {
-		streamNames = []string{fmt.Sprintf("federation:%s", *domain)}
+		streams = []string{fmt.Sprintf("federation:%s", *domain)}
 	} else {
-		streamNames = []string{"federation:health"}
+		streams = []string{"federation:health"}
 	}
 
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeFederationHealthUpdate,
-			streaming.EventTypeFederationFailure,
-			streaming.EventTypeFederationRecovery,
-		},
-		Streams:     streamNames,
-		UserID:      username,
-		MinPriority: streaming.PriorityNormal,
+	ch, _, err := sm.createGenericSubscription(ctx, "federation", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("fedhealth_%s_%d", username, time.Now().UnixNano())
-
-	// Use event bus for federation health subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForFederation
-	}
-
-	return sm.createFederationHealthEventBusSubscription(ctx, subscriptionID, username, domain, filter, ch)
+	return ch.(chan *model.FederationHealthUpdate), nil
 }
 
-// SubscribeToRelationshipUpdates subscribes to relationship updates using the event bus
+// SubscribeToRelationshipUpdates subscribes to relationship updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToRelationshipUpdates(ctx context.Context, username string, actorID *string) (<-chan *model.RelationshipUpdate, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
@@ -548,33 +665,19 @@ func (sm *GraphQLSubscriptionManager) SubscribeToRelationshipUpdates(ctx context
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	ch := make(chan *model.RelationshipUpdate, 100)
-
 	// Determine stream target - either specific actor or user's relationships
 	streamTarget := username
 	if actorID != nil && *actorID != "" {
 		streamTarget = *actorID
 	}
 
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			"relationship.create",
-			"relationship.update",
-			"relationship.delete",
-		},
-		Streams:     []string{fmt.Sprintf("user:%s", username)},
-		ActorID:     streamTarget,
-		MinPriority: streaming.PriorityNormal,
+	streams := []string{fmt.Sprintf("relationship:%s", streamTarget)}
+	ch, _, err := sm.createGenericSubscription(ctx, "relationship", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("rel_%s_%s_%d", username, streamTarget, time.Now().UnixNano())
-
-	// Use event bus for relationship subscription
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForRelationship
-	}
-
-	return sm.createRelationshipEventBusSubscription(ctx, subscriptionID, username, actorID, filter, ch)
+	return ch.(chan *model.RelationshipUpdate), nil
 }
 
 // Helper function to get string value from pointer
@@ -638,17 +741,25 @@ func (sm *GraphQLSubscriptionManager) cleanupInactiveSubscriptions() {
 	}
 }
 
-// cleanupSubscription cleans up a single subscription
+// cleanupSubscription cleans up a single subscription and removes from DynamoDB
 func (sm *GraphQLSubscriptionManager) cleanupSubscription(sub *GraphQLSubscription) {
 	if sub.Cancel != nil {
 		sub.Cancel()
 	}
-	if sub.Subscriber != nil && sm.eventBus != nil {
-		_ = sm.eventBus.Unsubscribe(sub.Subscriber.ID)
+
+	// Delete subscription records from DynamoDB
+	if sub.ConnectionID != "" && sub.Streams != nil {
+		ctx := context.Background()
+		if err := sm.deleteSubscriptionRecords(ctx, sub.ConnectionID, sub.Streams); err != nil {
+			sm.logger.Warn("failed to delete subscription records during cleanup",
+				zap.String("subscription_id", sub.ID),
+				zap.String("connection_id", sub.ConnectionID),
+				zap.Error(err))
+		}
 	}
 }
 
-// SubscribeToBudgetAlerts subscribes to budget alert updates using the event bus
+// SubscribeToBudgetAlerts subscribes to budget alert updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToBudgetAlerts(ctx context.Context, username string, domain *string) (<-chan *model.BudgetAlert, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
@@ -658,8 +769,6 @@ func (sm *GraphQLSubscriptionManager) SubscribeToBudgetAlerts(ctx context.Contex
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	ch := make(chan *model.BudgetAlert, 100)
-
 	// Build stream name based on domain
 	var streamName string
 	if domain != nil {
@@ -668,23 +777,16 @@ func (sm *GraphQLSubscriptionManager) SubscribeToBudgetAlerts(ctx context.Contex
 		streamName = fmt.Sprintf("budget_alerts:%s", username)
 	}
 
-	filter := &streaming.EventFilter{
-		Types:       []streaming.EventType{"budget.alert", "budget.threshold"},
-		Streams:     []string{streamName},
-		UserID:      username,
-		MinPriority: streaming.PriorityNormal,
+	streams := []string{streamName}
+	ch, _, err := sm.createGenericSubscription(ctx, "budget", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("budget_%s_%d", username, time.Now().UnixNano())
-
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForCost
-	}
-
-	return sm.createBudgetAlertEventBusSubscription(ctx, subscriptionID, username, filter, ch, domain)
+	return ch.(chan *model.BudgetAlert), nil
 }
 
-// SubscribeToModerationAlerts subscribes to moderation alert updates using the event bus
+// SubscribeToModerationAlerts subscribes to moderation alert updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToModerationAlerts(ctx context.Context, username string, severity *model.ModerationSeverity) (<-chan *model.ModerationAlert, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
@@ -694,38 +796,18 @@ func (sm *GraphQLSubscriptionManager) SubscribeToModerationAlerts(ctx context.Co
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	ch := make(chan *model.ModerationAlert, 100)
-
 	// Build stream names for moderation alerts
-	streams := []string{"moderation:alerts", fmt.Sprintf("user:%s:alerts", username)}
+	streams := []string{"moderation:alerts", fmt.Sprintf("moderation:alerts:%s", username)}
 
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeModerationFlag,
-			streaming.EventTypeModerationReview,
-			streaming.EventTypeAIModeration,
-		},
-		Streams:     streams,
-		UserID:      username,
-		MinPriority: streaming.PriorityNormal,
+	ch, _, err := sm.createGenericSubscription(ctx, "moderation_alerts", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	// Store severity in params for filtering
-	params := make(map[string]interface{})
-	if severity != nil {
-		params["severity"] = *severity
-	}
-
-	subscriptionID := fmt.Sprintf("mod_alerts_%s_%d", username, time.Now().UnixNano())
-
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForModeration
-	}
-
-	return sm.createModerationAlertEventBusSubscription(ctx, subscriptionID, username, filter, ch, severity)
+	return ch.(chan *model.ModerationAlert), nil
 }
 
-// SubscribeToCostAlerts subscribes to cost alert updates using the event bus
+// SubscribeToCostAlerts subscribes to cost alert updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToCostAlerts(ctx context.Context, username string, thresholdUSD float64) (<-chan *model.CostAlert, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
@@ -735,27 +817,18 @@ func (sm *GraphQLSubscriptionManager) SubscribeToCostAlerts(ctx context.Context,
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	ch := make(chan *model.CostAlert, 100)
+	streamName := fmt.Sprintf("cost_alerts:%s", username)
+	streams := []string{streamName}
 
-	streamName := fmt.Sprintf("cost_events:%s", username)
-
-	filter := &streaming.EventFilter{
-		Types:       []streaming.EventType{"cost.update", "cost.alert"},
-		Streams:     []string{streamName},
-		UserID:      username,
-		MinPriority: streaming.PriorityNormal,
+	ch, _, err := sm.createGenericSubscription(ctx, "cost_alerts", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("cost_alert_%s_%d", username, time.Now().UnixNano())
-
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForCost
-	}
-
-	return sm.createCostAlertEventBusSubscription(ctx, subscriptionID, username, filter, ch, thresholdUSD)
+	return ch.(chan *model.CostAlert), nil
 }
 
-// SubscribeToPerformanceAlerts subscribes to performance alert updates using the event bus
+// SubscribeToPerformanceAlerts subscribes to performance alert updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToPerformanceAlerts(ctx context.Context, username string, severity model.AlertSeverity) (<-chan *model.PerformanceAlert, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
@@ -765,27 +838,18 @@ func (sm *GraphQLSubscriptionManager) SubscribeToPerformanceAlerts(ctx context.C
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	ch := make(chan *model.PerformanceAlert, 100)
-
 	streamName := fmt.Sprintf("performance:%s", username)
+	streams := []string{streamName}
 
-	filter := &streaming.EventFilter{
-		Types:       []streaming.EventType{"performance.alert", "performance.degradation"},
-		Streams:     []string{streamName},
-		UserID:      username,
-		MinPriority: streaming.PriorityNormal,
+	ch, _, err := sm.createGenericSubscription(ctx, "performance", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("performance_alert_%s_%d", username, time.Now().UnixNano())
-
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForCost
-	}
-
-	return sm.createPerformanceAlertEventBusSubscription(ctx, subscriptionID, username, filter, ch, severity)
+	return ch.(chan *model.PerformanceAlert), nil
 }
 
-// SubscribeToThreatIntelligence subscribes to threat intelligence updates using the event bus
+// SubscribeToThreatIntelligence subscribes to threat intelligence updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToThreatIntelligence(ctx context.Context, username string) (<-chan *model.ThreatAlert, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
@@ -795,27 +859,18 @@ func (sm *GraphQLSubscriptionManager) SubscribeToThreatIntelligence(ctx context.
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	ch := make(chan *model.ThreatAlert, 100)
-
 	streamName := fmt.Sprintf("threat:%s", username)
+	streams := []string{streamName}
 
-	filter := &streaming.EventFilter{
-		Types:       []streaming.EventType{"threat.detected", "threat.intelligence"},
-		Streams:     []string{streamName},
-		UserID:      username,
-		MinPriority: streaming.PriorityNormal,
+	ch, _, err := sm.createGenericSubscription(ctx, "threat", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("threat_%s_%d", username, time.Now().UnixNano())
-
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForCost
-	}
-
-	return sm.createThreatIntelligenceEventBusSubscription(ctx, subscriptionID, username, filter, ch)
+	return ch.(chan *model.ThreatAlert), nil
 }
 
-// SubscribeToInfrastructureEvents subscribes to infrastructure event updates using the event bus
+// SubscribeToInfrastructureEvents subscribes to infrastructure event updates via DynamoDB-backed subscriptions
 func (sm *GraphQLSubscriptionManager) SubscribeToInfrastructureEvents(ctx context.Context, username string) (<-chan *model.InfrastructureEvent, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
@@ -825,24 +880,15 @@ func (sm *GraphQLSubscriptionManager) SubscribeToInfrastructureEvents(ctx contex
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	ch := make(chan *model.InfrastructureEvent, 100)
-
 	streamName := fmt.Sprintf("infrastructure:%s", username)
+	streams := []string{streamName}
 
-	filter := &streaming.EventFilter{
-		Types:       []streaming.EventType{"infrastructure.event", "infrastructure.outage"},
-		Streams:     []string{streamName},
-		UserID:      username,
-		MinPriority: streaming.PriorityNormal,
+	ch, _, err := sm.createGenericSubscription(ctx, "infrastructure", username, streams, 100)
+	if err != nil {
+		return nil, err
 	}
 
-	subscriptionID := fmt.Sprintf("infrastructure_%s_%d", username, time.Now().UnixNano())
-
-	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, ErrEventBusNotAvailableForCost
-	}
-
-	return sm.createInfrastructureEventBusSubscription(ctx, subscriptionID, username, filter, ch)
+	return ch.(chan *model.InfrastructureEvent), nil
 }
 
 // GetStats returns statistics about active subscriptions
@@ -852,7 +898,8 @@ func (sm *GraphQLSubscriptionManager) GetStats() map[string]interface{} {
 
 	stats := make(map[string]interface{})
 	stats["total_subscriptions"] = len(sm.subscriptions)
-	stats["event_bus_available"] = sm.eventBus != nil && sm.eventBus.IsRunning()
+	stats["repository_available"] = sm.connRepo != nil
+	stats["publisher_available"] = sm.publisher != nil
 
 	// Count by type
 	typeCounts := make(map[string]int)

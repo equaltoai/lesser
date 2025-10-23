@@ -4165,7 +4165,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	federationRepo := repositories.NewFederationRepository(nil, "test-table", logger, nil, config.Get())
 	recoveryRepo := repositories.NewRecoveryRepository(nil, "test-table", logger, nil)
 	conversationRepo := repositories.NewConversationRepository(nil, "test-table", logger, nil)
-	pushSubscriptionRepo := repositories.NewPushSubscriptionRepository(nil, "test-table", logger, nil)
+	pushSubscriptionRepo := repositories.NewPushSubscriptionRepository(nil, "test-table", logger, nil, nil, "", "")
 	analyticsRepo := repositories.NewTrendingRepository(nil, logger, nil)
 	socialRepo := repositories.NewSocialRepository(nil, "test-table", logger, nil)
 	userRepo := repositories.NewUserRepository(nil, "test-table", logger)
@@ -4455,6 +4455,11 @@ func (m *MockRepositoryStorage) MediaPopularity() *repositories.MediaPopularityR
 
 // MediaSession returns the mock media session repository
 func (m *MockRepositoryStorage) MediaSession() *repositories.MediaSessionRepository {
+	return nil // Mock can be implemented as needed
+}
+
+// StreamingConnection returns a mock StreamingConnection repository
+func (m *MockRepositoryStorage) StreamingConnection() *repositories.StreamingConnectionRepository {
 	return nil // Mock can be implemented as needed
 }
 

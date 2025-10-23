@@ -20,6 +20,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/moderation/advanced"
+	notifpush "github.com/equaltoai/lesser/pkg/notifications"
+	notifsvc "github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -433,6 +435,23 @@ func init() {
 	notificationRepo = repositories.NewNotificationRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger, nil)
 	objectRepo = repositories.NewObjectRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Config.Domain, lambdaCtx.Logger)
 	patternRepo = repositories.NewPatternRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger, nil)
+
+	accountRepo := repositories.NewAccountRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Config.Domain, lambdaCtx.Logger)
+	var pushService *notifpush.PushService
+	if svc, err := notifpush.NewPushService(lambdaCtx.Config); err != nil {
+		lambdaCtx.Logger.Warn("moderation processor: failed to initialize push service", zap.Error(err))
+	} else {
+		pushService = svc
+	}
+	notificationService := notifsvc.NewService(
+		notificationRepo,
+		accountRepo,
+		nil,
+		lambdaCtx.Logger,
+		lambdaCtx.Config.Domain,
+		pushService,
+	)
+	notificationRepo.SetDispatcher(notificationService)
 
 	// Initialize consensus engine with repository adapter
 	adapter := &repositoryStorageAdapter{

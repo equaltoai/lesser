@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -34,6 +35,15 @@ type PushMessage struct {
 
 // NewPushService creates a new push notification service
 func NewPushService(cfg *appConfig.Config) (*PushService, error) {
+	if cfg == nil {
+		return nil, nil
+	}
+
+	queueURL := strings.TrimSpace(cfg.PushNotificationQueueURL)
+	if queueURL == "" {
+		return nil, nil
+	}
+
 	awsConfig, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrLoadAWSConfig, err)
@@ -41,7 +51,6 @@ func NewPushService(cfg *appConfig.Config) (*PushService, error) {
 
 	sqsClient := sqs.NewFromConfig(awsConfig)
 
-	queueURL := cfg.PushNotificationQueueURL
 	if err := common.ValidateRequiredParam("queueURL", queueURL); err != nil {
 		// Queue might not be configured, return nil service
 		return nil, nil

@@ -395,16 +395,12 @@ func (w *SearchCostTrackingWrapper) completeCostTracking(ctx context.Context, co
 	// Search operations don't typically write to DynamoDB
 	// Writes would be tracked if costData.DynamoWrites > 0
 
-	// Record the cost data (async to not impact response time)
-	go func() {
-		ctx := context.Background() // Use background context for async logging
-		if err := w.costRepo.RecordSearchCost(ctx, costData); err != nil {
-			w.logger.Error("failed to record search cost",
-				zap.String("user_id", costData.UserID),
-				zap.String("operation", costData.OperationType),
-				zap.Error(err))
-		}
-	}()
+	if err := w.costRepo.RecordSearchCost(ctx, costData); err != nil {
+		w.logger.Error("failed to record search cost",
+			zap.String("user_id", costData.UserID),
+			zap.String("operation", costData.OperationType),
+			zap.Error(err))
+	}
 
 	// Log search metrics
 	w.logger.Info("search_operation_completed",

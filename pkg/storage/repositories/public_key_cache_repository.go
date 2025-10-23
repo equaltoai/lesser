@@ -64,15 +64,13 @@ func (r *PublicKeyCacheRepository) GetByActorURL(ctx context.Context, actorURL s
 			zap.String("actor_url", actorURL),
 			zap.Time("ttl", time.Unix(cache.TTL, 0)))
 		// Delete expired entry to keep table clean
-		go func() {
-			deleteCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := r.ValidateAndDelete(deleteCtx, cache.PK, cache.SK); err != nil {
-				r.logger.Warn("failed to delete expired cache entry",
-					zap.Error(err),
-					zap.String("actor_url", actorURL))
-			}
-		}()
+		deleteCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		if err := r.ValidateAndDelete(deleteCtx, cache.PK, cache.SK); err != nil {
+			r.logger.Warn("failed to delete expired cache entry",
+				zap.Error(err),
+				zap.String("actor_url", actorURL))
+		}
+		cancel()
 		return nil, ErrorHandler.HandleGetError(errors.New("public key cache expired"), EntityPublicKeyCache, actorURL)
 	}
 

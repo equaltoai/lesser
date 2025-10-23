@@ -1032,6 +1032,7 @@ type ComplexityRoot struct {
 		LikesCount       func(childComplexity int) int
 		Mentions         func(childComplexity int) int
 		ModerationScore  func(childComplexity int) int
+		Poll             func(childComplexity int) int
 		QuoteContext     func(childComplexity int) int
 		QuoteCount       func(childComplexity int) int
 		QuotePermissions func(childComplexity int) int
@@ -1108,6 +1109,24 @@ type ComplexityRoot struct {
 		Period     func(childComplexity int) int
 		Service    func(childComplexity int) int
 		Throughput func(childComplexity int) int
+	}
+
+	Poll struct {
+		Expired     func(childComplexity int) int
+		ExpiresAt   func(childComplexity int) int
+		HideTotals  func(childComplexity int) int
+		ID          func(childComplexity int) int
+		Multiple    func(childComplexity int) int
+		Options     func(childComplexity int) int
+		OwnVotes    func(childComplexity int) int
+		Voted       func(childComplexity int) int
+		VotersCount func(childComplexity int) int
+		VotesCount  func(childComplexity int) int
+	}
+
+	PollOption struct {
+		Title      func(childComplexity int) int
+		VotesCount func(childComplexity int) int
 	}
 
 	PollParams struct {
@@ -1222,7 +1241,7 @@ type ComplexityRoot struct {
 		Followers               func(childComplexity int, username string, limit *int, cursor *model.Cursor) int
 		Following               func(childComplexity int, username string, limit *int, cursor *model.Cursor) int
 		Hashtag                 func(childComplexity int, name string) int
-		HashtagTimeline         func(childComplexity int, hashtag string, first *int, after *string) int
+		HashtagTimeline         func(childComplexity int, hashtag string, first *int, after *string, mediaOnly *bool) int
 		InfrastructureHealth    func(childComplexity int) int
 		InstanceBudgets         func(childComplexity int, exceeded *bool) int
 		InstanceHealthReport    func(childComplexity int, domain string) int
@@ -1260,7 +1279,7 @@ type ComplexityRoot struct {
 		Suggestions             func(childComplexity int, limit *int) int
 		SupportedBitrates       func(childComplexity int, mediaID string) int
 		ThreadContext           func(childComplexity int, noteID string) int
-		Timeline                func(childComplexity int, typeArg model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor) int
+		Timeline                func(childComplexity int, typeArg model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor, mediaOnly *bool) int
 		TrustGraph              func(childComplexity int, actorID string, category *models.TrustCategory) int
 		UserPreferences         func(childComplexity int) int
 	}
@@ -1845,7 +1864,7 @@ type MutationResolver interface {
 type QueryResolver interface {
 	Actor(ctx context.Context, id *string, username *string) (*activitypub.Actor, error)
 	Object(ctx context.Context, id string) (*model.Object, error)
-	Timeline(ctx context.Context, typeArg model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor) (*model.ObjectConnection, error)
+	Timeline(ctx context.Context, typeArg model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor, mediaOnly *bool) (*model.ObjectConnection, error)
 	Search(ctx context.Context, query string, typeArg *string, first *int, after *model.Cursor) (*model.SearchResult, error)
 	Notifications(ctx context.Context, types []string, excludeTypes []string, first *int, after *model.Cursor) (*model.NotificationConnection, error)
 	Conversations(ctx context.Context, first *int, after *model.Cursor) ([]*model.Conversation, error)
@@ -1878,7 +1897,7 @@ type QueryResolver interface {
 	AiCapabilities(ctx context.Context) (*model.AICapabilities, error)
 	Hashtag(ctx context.Context, name string) (*model.Hashtag, error)
 	FollowedHashtags(ctx context.Context, first *int, after *string) (*model.HashtagConnection, error)
-	HashtagTimeline(ctx context.Context, hashtag string, first *int, after *string) (*model.PostConnection, error)
+	HashtagTimeline(ctx context.Context, hashtag string, first *int, after *string, mediaOnly *bool) (*model.PostConnection, error)
 	MultiHashtagTimeline(ctx context.Context, hashtags []string, mode model.HashtagMode, first *int, after *string) (*model.PostConnection, error)
 	SuggestedHashtags(ctx context.Context, limit *int) ([]*model.HashtagSuggestion, error)
 	ThreadContext(ctx context.Context, noteID string) (*model.ThreadContext, error)
@@ -6882,6 +6901,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Object.ModerationScore(childComplexity), true
 
+	case "Object.poll":
+		if e.complexity.Object.Poll == nil {
+			break
+		}
+
+		return e.complexity.Object.Poll(childComplexity), true
+
 	case "Object.quoteContext":
 		if e.complexity.Object.QuoteContext == nil {
 			break
@@ -7250,6 +7276,90 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.PerformanceReport.Throughput(childComplexity), true
+
+	case "Poll.expired":
+		if e.complexity.Poll.Expired == nil {
+			break
+		}
+
+		return e.complexity.Poll.Expired(childComplexity), true
+
+	case "Poll.expiresAt":
+		if e.complexity.Poll.ExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.Poll.ExpiresAt(childComplexity), true
+
+	case "Poll.hideTotals":
+		if e.complexity.Poll.HideTotals == nil {
+			break
+		}
+
+		return e.complexity.Poll.HideTotals(childComplexity), true
+
+	case "Poll.id":
+		if e.complexity.Poll.ID == nil {
+			break
+		}
+
+		return e.complexity.Poll.ID(childComplexity), true
+
+	case "Poll.multiple":
+		if e.complexity.Poll.Multiple == nil {
+			break
+		}
+
+		return e.complexity.Poll.Multiple(childComplexity), true
+
+	case "Poll.options":
+		if e.complexity.Poll.Options == nil {
+			break
+		}
+
+		return e.complexity.Poll.Options(childComplexity), true
+
+	case "Poll.ownVotes":
+		if e.complexity.Poll.OwnVotes == nil {
+			break
+		}
+
+		return e.complexity.Poll.OwnVotes(childComplexity), true
+
+	case "Poll.voted":
+		if e.complexity.Poll.Voted == nil {
+			break
+		}
+
+		return e.complexity.Poll.Voted(childComplexity), true
+
+	case "Poll.votersCount":
+		if e.complexity.Poll.VotersCount == nil {
+			break
+		}
+
+		return e.complexity.Poll.VotersCount(childComplexity), true
+
+	case "Poll.votesCount":
+		if e.complexity.Poll.VotesCount == nil {
+			break
+		}
+
+		return e.complexity.Poll.VotesCount(childComplexity), true
+
+	case "PollOption.title":
+		if e.complexity.PollOption.Title == nil {
+			break
+		}
+
+		return e.complexity.PollOption.Title(childComplexity), true
+
+	case "PollOption.votesCount":
+		if e.complexity.PollOption.VotesCount == nil {
+			break
+		}
+
+		return e.complexity.PollOption.VotesCount(childComplexity), true
 
 	case "PollParams.expiresIn":
 		if e.complexity.PollParams.ExpiresIn == nil {
@@ -7886,7 +7996,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.HashtagTimeline(childComplexity, args["hashtag"].(string), args["first"].(*int), args["after"].(*string)), true
+		return e.complexity.Query.HashtagTimeline(childComplexity, args["hashtag"].(string), args["first"].(*int), args["after"].(*string), args["mediaOnly"].(*bool)), true
 
 	case "Query.infrastructureHealth":
 		if e.complexity.Query.InfrastructureHealth == nil {
@@ -8322,7 +8432,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.Timeline(childComplexity, args["type"].(model.TimelineType), args["hashtag"].(*string), args["listId"].(*string), args["first"].(*int), args["after"].(*model.Cursor)), true
+		return e.complexity.Query.Timeline(childComplexity, args["type"].(model.TimelineType), args["hashtag"].(*string), args["listId"].(*string), args["first"].(*int), args["after"].(*model.Cursor), args["mediaOnly"].(*bool)), true
 
 	case "Query.trustGraph":
 		if e.complexity.Query.TrustGraph == nil {
@@ -11762,6 +11872,11 @@ func (ec *executionContext) field_Query_hashtagTimeline_args(ctx context.Context
 		return nil, err
 	}
 	args["after"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "mediaOnly", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["mediaOnly"] = arg3
 	return args, nil
 }
 
@@ -12282,6 +12397,11 @@ func (ec *executionContext) field_Query_timeline_args(ctx context.Context, rawAr
 		return nil, err
 	}
 	args["after"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "mediaOnly", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["mediaOnly"] = arg5
 	return args, nil
 }
 
@@ -15130,6 +15250,8 @@ func (ec *executionContext) fieldContext_Activity_object(_ context.Context, fiel
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -15225,6 +15347,8 @@ func (ec *executionContext) fieldContext_Activity_target(_ context.Context, fiel
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -18760,6 +18884,8 @@ func (ec *executionContext) fieldContext_CommunityNotePayload_object(_ context.C
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -18987,6 +19113,8 @@ func (ec *executionContext) fieldContext_Conversation_lastStatus(_ context.Conte
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -20690,6 +20818,8 @@ func (ec *executionContext) fieldContext_CreateNotePayload_object(_ context.Cont
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -26262,6 +26392,8 @@ func (ec *executionContext) fieldContext_HashtagActivityUpdate_post(_ context.Co
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -36060,6 +36192,8 @@ func (ec *executionContext) fieldContext_ModerationAlert_content(_ context.Conte
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -36726,6 +36860,8 @@ func (ec *executionContext) fieldContext_ModerationDecision_object(_ context.Con
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -37478,6 +37614,8 @@ func (ec *executionContext) fieldContext_ModerationItem_content(_ context.Contex
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -39124,6 +39262,8 @@ func (ec *executionContext) fieldContext_Mutation_bookmarkObject(ctx context.Con
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -39288,6 +39428,8 @@ func (ec *executionContext) fieldContext_Mutation_pinObject(ctx context.Context,
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -43670,6 +43812,8 @@ func (ec *executionContext) fieldContext_Notification_status(_ context.Context, 
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -44631,6 +44775,8 @@ func (ec *executionContext) fieldContext_Object_inReplyTo(_ context.Context, fie
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -45042,6 +45188,69 @@ func (ec *executionContext) fieldContext_Object_updatedAt(_ context.Context, fie
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Object_poll(ctx context.Context, field graphql.CollectedField, obj *model.Object) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Object_poll(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Poll, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Poll)
+	fc.Result = res
+	return ec.marshalOPoll2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPoll(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Object_poll(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Object",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Poll_id(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_Poll_expiresAt(ctx, field)
+			case "expired":
+				return ec.fieldContext_Poll_expired(ctx, field)
+			case "multiple":
+				return ec.fieldContext_Poll_multiple(ctx, field)
+			case "hideTotals":
+				return ec.fieldContext_Poll_hideTotals(ctx, field)
+			case "votesCount":
+				return ec.fieldContext_Poll_votesCount(ctx, field)
+			case "votersCount":
+				return ec.fieldContext_Poll_votersCount(ctx, field)
+			case "voted":
+				return ec.fieldContext_Poll_voted(ctx, field)
+			case "ownVotes":
+				return ec.fieldContext_Poll_ownVotes(ctx, field)
+			case "options":
+				return ec.fieldContext_Poll_options(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Poll", field.Name)
 		},
 	}
 	return fc, nil
@@ -45826,6 +46035,8 @@ func (ec *executionContext) fieldContext_ObjectEdge_node(_ context.Context, fiel
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -45968,6 +46179,8 @@ func (ec *executionContext) fieldContext_ObjectExplanation_object(_ context.Cont
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -47431,6 +47644,534 @@ func (ec *executionContext) fieldContext_PerformanceReport_period(_ context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _Poll_id(ctx context.Context, field graphql.CollectedField, obj *model.Poll) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Poll_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Poll_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Poll",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Poll_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.Poll) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Poll_expiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Poll_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Poll",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Poll_expired(ctx context.Context, field graphql.CollectedField, obj *model.Poll) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Poll_expired(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Expired, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Poll_expired(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Poll",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Poll_multiple(ctx context.Context, field graphql.CollectedField, obj *model.Poll) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Poll_multiple(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Multiple, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Poll_multiple(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Poll",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Poll_hideTotals(ctx context.Context, field graphql.CollectedField, obj *model.Poll) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Poll_hideTotals(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.HideTotals, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Poll_hideTotals(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Poll",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Poll_votesCount(ctx context.Context, field graphql.CollectedField, obj *model.Poll) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Poll_votesCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.VotesCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Poll_votesCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Poll",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Poll_votersCount(ctx context.Context, field graphql.CollectedField, obj *model.Poll) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Poll_votersCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.VotersCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Poll_votersCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Poll",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Poll_voted(ctx context.Context, field graphql.CollectedField, obj *model.Poll) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Poll_voted(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Voted, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Poll_voted(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Poll",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Poll_ownVotes(ctx context.Context, field graphql.CollectedField, obj *model.Poll) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Poll_ownVotes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.OwnVotes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.([]int)
+	fc.Result = res
+	return ec.marshalOInt2ᚕintᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Poll_ownVotes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Poll",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Poll_options(ctx context.Context, field graphql.CollectedField, obj *model.Poll) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Poll_options(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Options, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.PollOption)
+	fc.Result = res
+	return ec.marshalNPollOption2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPollOptionᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Poll_options(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Poll",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "title":
+				return ec.fieldContext_PollOption_title(ctx, field)
+			case "votesCount":
+				return ec.fieldContext_PollOption_votesCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PollOption", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PollOption_title(ctx context.Context, field graphql.CollectedField, obj *model.PollOption) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PollOption_title(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Title, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PollOption_title(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PollOption",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PollOption_votesCount(ctx context.Context, field graphql.CollectedField, obj *model.PollOption) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PollOption_votesCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.VotesCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PollOption_votesCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PollOption",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _PollParams_options(ctx context.Context, field graphql.CollectedField, obj *model.PollParams) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_PollParams_options(ctx, field)
 	if err != nil {
@@ -48260,6 +49001,8 @@ func (ec *executionContext) fieldContext_PostEdge_node(_ context.Context, field 
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -50086,6 +50829,8 @@ func (ec *executionContext) fieldContext_Query_object(ctx context.Context, field
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -50142,7 +50887,7 @@ func (ec *executionContext) _Query_timeline(ctx context.Context, field graphql.C
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Timeline(rctx, fc.Args["type"].(model.TimelineType), fc.Args["hashtag"].(*string), fc.Args["listId"].(*string), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+		return ec.resolvers.Query().Timeline(rctx, fc.Args["type"].(model.TimelineType), fc.Args["hashtag"].(*string), fc.Args["listId"].(*string), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor), fc.Args["mediaOnly"].(*bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -52383,7 +53128,7 @@ func (ec *executionContext) _Query_hashtagTimeline(ctx context.Context, field gr
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().HashtagTimeline(rctx, fc.Args["hashtag"].(string), fc.Args["first"].(*int), fc.Args["after"].(*string))
+		return ec.resolvers.Query().HashtagTimeline(rctx, fc.Args["hashtag"].(string), fc.Args["first"].(*int), fc.Args["after"].(*string), fc.Args["mediaOnly"].(*bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -54985,6 +55730,8 @@ func (ec *executionContext) fieldContext_QuoteActivityUpdate_quote(_ context.Con
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -55433,6 +56180,8 @@ func (ec *executionContext) fieldContext_QuoteContext_originalNote(_ context.Con
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -55663,6 +56412,8 @@ func (ec *executionContext) fieldContext_QuoteEdge_node(_ context.Context, field
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -58920,6 +59671,8 @@ func (ec *executionContext) fieldContext_SearchResult_statuses(_ context.Context
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -62512,6 +63265,8 @@ func (ec *executionContext) fieldContext_Subscription_timelineUpdates(ctx contex
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -65256,6 +66011,8 @@ func (ec *executionContext) fieldContext_ThreadContext_rootNote(_ context.Contex
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -67340,6 +68097,8 @@ func (ec *executionContext) fieldContext_UpdateQuotePermissionsPayload_note(_ co
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -68658,6 +69417,8 @@ func (ec *executionContext) fieldContext_WithdrawQuotePayload_note(_ context.Con
 				return ec.fieldContext_Object_createdAt(ctx, field)
 			case "updatedAt":
 				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
 			case "repliesCount":
 				return ec.fieldContext_Object_repliesCount(ctx, field)
 			case "likesCount":
@@ -70903,7 +71664,7 @@ func (ec *executionContext) unmarshalInputCreateNoteInput(ctx context.Context, o
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"content", "contentMap", "inReplyToId", "visibility", "sensitive", "spoilerText", "attachmentIds", "mentions", "tags"}
+	fieldsInOrder := [...]string{"content", "contentMap", "inReplyToId", "visibility", "sensitive", "spoilerText", "attachmentIds", "mentions", "tags", "poll"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -70973,6 +71734,13 @@ func (ec *executionContext) unmarshalInputCreateNoteInput(ctx context.Context, o
 				return it, err
 			}
 			it.Tags = data
+		case "poll":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("poll"))
+			data, err := ec.unmarshalOPollParamsInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPollParamsInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Poll = data
 		}
 	}
 
@@ -80907,6 +81675,8 @@ func (ec *executionContext) _Object(ctx context.Context, sel ast.SelectionSet, o
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "poll":
+			out.Values[i] = ec._Object_poll(ctx, field, obj)
 		case "repliesCount":
 			out.Values[i] = ec._Object_repliesCount(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -81411,6 +82181,128 @@ func (ec *executionContext) _PerformanceReport(ctx context.Context, sel ast.Sele
 			}
 		case "period":
 			out.Values[i] = ec._PerformanceReport_period(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var pollImplementors = []string{"Poll"}
+
+func (ec *executionContext) _Poll(ctx context.Context, sel ast.SelectionSet, obj *model.Poll) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, pollImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Poll")
+		case "id":
+			out.Values[i] = ec._Poll_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._Poll_expiresAt(ctx, field, obj)
+		case "expired":
+			out.Values[i] = ec._Poll_expired(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "multiple":
+			out.Values[i] = ec._Poll_multiple(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "hideTotals":
+			out.Values[i] = ec._Poll_hideTotals(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "votesCount":
+			out.Values[i] = ec._Poll_votesCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "votersCount":
+			out.Values[i] = ec._Poll_votersCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "voted":
+			out.Values[i] = ec._Poll_voted(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "ownVotes":
+			out.Values[i] = ec._Poll_ownVotes(ctx, field, obj)
+		case "options":
+			out.Values[i] = ec._Poll_options(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var pollOptionImplementors = []string{"PollOption"}
+
+func (ec *executionContext) _PollOption(ctx context.Context, sel ast.SelectionSet, obj *model.PollOption) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, pollOptionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PollOption")
+		case "title":
+			out.Values[i] = ec._PollOption_title(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "votesCount":
+			out.Values[i] = ec._PollOption_votesCount(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -91313,6 +92205,60 @@ func (ec *executionContext) marshalNPeriod2githubᚗcomᚋequaltoaiᚋlesserᚋg
 	return v
 }
 
+func (ec *executionContext) marshalNPollOption2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPollOptionᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.PollOption) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNPollOption2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPollOption(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNPollOption2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPollOption(ctx context.Context, sel ast.SelectionSet, v *model.PollOption) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PollOption(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNPostConnection2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPostConnection(ctx context.Context, sel ast.SelectionSet, v model.PostConnection) graphql.Marshaler {
 	return ec._PostConnection(ctx, sel, &v)
 }
@@ -93639,6 +94585,42 @@ func (ec *executionContext) marshalOInt2int(ctx context.Context, sel ast.Selecti
 	return res
 }
 
+func (ec *executionContext) unmarshalOInt2ᚕintᚄ(ctx context.Context, v any) ([]int, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]int, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNInt2int(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalOInt2ᚕintᚄ(ctx context.Context, sel ast.SelectionSet, v []int) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	for i := range v {
+		ret[i] = ec.marshalNInt2int(ctx, sel, v[i])
+	}
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
 func (ec *executionContext) unmarshalOInt2ᚖint(ctx context.Context, v any) (*int, error) {
 	if v == nil {
 		return nil, nil
@@ -93797,6 +94779,13 @@ func (ec *executionContext) marshalOPeriod2ᚖgithubᚗcomᚋequaltoaiᚋlesser�
 		return graphql.Null
 	}
 	return v
+}
+
+func (ec *executionContext) marshalOPoll2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPoll(ctx context.Context, sel ast.SelectionSet, v *model.Poll) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._Poll(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalOPollParams2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPollParams(ctx context.Context, sel ast.SelectionSet, v *model.PollParams) graphql.Marshaler {

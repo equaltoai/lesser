@@ -484,6 +484,11 @@ func (m *MockRepositoryStorage) MediaSession() *repositories.MediaSessionReposit
 	return nil
 }
 
+// StreamingConnection returns a mock streaming connection repository for testing
+func (m *MockRepositoryStorage) StreamingConnection() *repositories.StreamingConnectionRepository {
+	return nil
+}
+
 // GetDB returns a mock database connection for testing
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB {
 	args := m.Called()

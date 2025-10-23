@@ -8,11 +8,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	svcErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -32,6 +35,7 @@ type Service struct {
 	noteRepo          *repositories.StatusRepository
 	accountRepo       interfaces.AccountRepository
 	relationshipRepo  *repositories.RelationshipRepository
+	mediaRepo         interfaces.MediaRepository
 	likeRepo          *repositories.LikeRepository
 	socialRepo        interfaces.SocialRepository
 	conversationRepo  interfaces.ConversationRepository
@@ -109,6 +113,7 @@ func NewService(
 	noteRepo *repositories.StatusRepository,
 	accountRepo interfaces.AccountRepository,
 	relationshipRepo *repositories.RelationshipRepository,
+	mediaRepo interfaces.MediaRepository,
 	likeRepo *repositories.LikeRepository,
 	socialRepo interfaces.SocialRepository,
 	conversationRepo interfaces.ConversationRepository,
@@ -146,6 +151,7 @@ func NewService(
 		noteRepo:          noteRepo,
 		accountRepo:       accountRepo,
 		relationshipRepo:  relationshipRepo,
+		mediaRepo:         mediaRepo,
 		likeRepo:          likeRepo,
 		socialRepo:        socialRepo,
 		conversationRepo:  conversationRepo,
@@ -272,6 +278,21 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	publishedAt := time.Now()
 	note.Published = &publishedAt
 
+	// Enrich note with hashtags
+	hashtagTags, normalizedHashtags := s.buildHashtagTags(cmd.Content)
+	if len(hashtagTags) > 0 {
+		note.Tag = append(note.Tag, hashtagTags...)
+	}
+
+	// Attach media if provided
+	attachments, mediaIDsToMark, err := s.prepareMediaAttachments(ctx, author, cmd.MediaIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(attachments) > 0 {
+		note.Attachment = attachments
+	}
+
 	// Create Status model
 	status := &models.Status{
 		StatusID:       statusID,
@@ -292,6 +313,12 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		CreatedAt:      publishedAt,
 		ModifiedAt:     publishedAt,
 	}
+	if len(normalizedHashtags) > 0 {
+		status.Hashtags = normalizedHashtags
+	}
+	if len(attachments) > 0 {
+		status.MediaCount = len(attachments)
+	}
 
 	// Handle conversation ID - create new conversation if not provided and it's a top-level post
 	if common.ValidateRequiredParam("status.ConversationID", status.ConversationID) != nil && common.ValidateRequiredParam("status.InReplyToID", status.InReplyToID) != nil {
@@ -309,6 +336,28 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	// Store the status
 	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
 		return nil, errors.Join(ErrCreateStatus, err)
+	}
+
+	// Mark media attachments as used after successful persistence
+	if len(mediaIDsToMark) > 0 && s.mediaRepo != nil {
+		for _, mediaID := range mediaIDsToMark {
+			if err := s.mediaRepo.MarkMediaUsed(ctx, mediaID); err != nil {
+				s.logger.Warn("failed to mark media attachment as used",
+					zap.String("status_id", statusID),
+					zap.String("media_id", mediaID),
+					zap.Error(err))
+			}
+		}
+	}
+
+	// Record hashtag usage for analytics
+	if s.analytics != nil && len(status.Hashtags) > 0 && status.Note != nil {
+		if err := s.analytics.RecordHashtagUsage(ctx, status.Hashtags, status.Note.ID, status.AuthorID); err != nil {
+			s.logger.Warn("failed to record hashtag usage",
+				zap.String("status_id", statusID),
+				zap.Strings("hashtags", status.Hashtags),
+				zap.Error(err))
+		}
 	}
 
 	// Create poll if poll options are provided
@@ -795,6 +844,209 @@ func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, 
 	return note
 }
 
+// buildHashtagTags extracts hashtags from content and builds ActivityPub tags plus normalized values.
+func (s *Service) buildHashtagTags(content string) ([]activitypub.Tag, []string) {
+	hashtags := mastodon.ExtractHashtagsWithCase(content)
+	if len(hashtags) == 0 {
+		return nil, nil
+	}
+
+	sort.SliceStable(hashtags, func(i, j int) bool {
+		return strings.ToLower(hashtags[i]) < strings.ToLower(hashtags[j])
+	})
+
+	tags := make([]activitypub.Tag, 0, len(hashtags))
+	normalized := make([]string, 0, len(hashtags))
+
+	for _, tag := range hashtags {
+		normalizedTag := mastodon.NormalizeHashtag(tag)
+		if normalizedTag == "" {
+			continue
+		}
+
+		tagURL := fmt.Sprintf("https://%s/tags/%s", s.domainName, normalizedTag)
+		tags = append(tags, activitypub.Tag{
+			Type: "Hashtag",
+			Name: "#" + tag,
+			Href: tagURL,
+		})
+		normalized = append(normalized, normalizedTag)
+	}
+
+	if len(tags) == 0 {
+		return nil, nil
+	}
+
+	return tags, normalized
+}
+
+// prepareMediaAttachments validates the provided media IDs, converts them to ActivityPub attachments,
+// and returns the attachments alongside the IDs that should be marked as used.
+func (s *Service) prepareMediaAttachments(ctx context.Context, author *storage.Account, mediaIDs []string) ([]activitypub.Attachment, []string, error) {
+	if err := common.ValidateSliceNotEmpty("media_ids", mediaIDs); err != nil {
+		return nil, nil, nil
+	}
+
+	if err := common.ValidateSliceLength("media_ids", mediaIDs, 4); err != nil {
+		s.logger.Warn("too many media attachments for status",
+			zap.Int("limit", 4),
+			zap.Int("requested", len(mediaIDs)))
+		return nil, nil, errors.Join(svcErrors.ErrValidationFailed, err)
+	}
+
+	if s.mediaRepo == nil {
+		s.logger.Error("media repository unavailable for attachments")
+		return nil, nil, svcErrors.ErrRetrieveMediaAttachment
+	}
+
+	attachments := make([]activitypub.Attachment, 0, len(mediaIDs))
+	markIDs := make([]string, 0, len(mediaIDs))
+
+	for idx, mediaID := range mediaIDs {
+		media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+		if err != nil {
+			s.logger.Error("failed to get media attachment",
+				zap.String("media_id", mediaID),
+				zap.Error(err))
+			return nil, nil, errors.Join(svcErrors.ErrMediaAttachmentNotFound, err)
+		}
+
+		if !s.mediaBelongsToAuthor(media, author) {
+			s.logger.Warn("media attachment does not belong to author",
+				zap.String("media_id", mediaID),
+				zap.String("media_owner", media.UserID))
+			return nil, nil, svcErrors.ErrMediaAttachmentNotFound
+		}
+
+		if media.Status != "ready" && media.Status != "completed" {
+			s.logger.Warn("media attachment not ready",
+				zap.String("media_id", mediaID),
+				zap.String("status", media.Status))
+			return nil, nil, svcErrors.ErrMediaAttachmentNotReady
+		}
+
+		if media.ExpiresAt > 0 && time.Now().Unix() > media.ExpiresAt {
+			s.logger.Warn("media attachment expired",
+				zap.String("media_id", mediaID),
+				zap.Int64("expires_at", media.ExpiresAt))
+			return nil, nil, svcErrors.ErrMediaAttachmentExpired
+		}
+
+		attachments = append(attachments, s.mapMediaToAttachment(media))
+		markIDs = append(markIDs, mediaID)
+
+		s.logger.Debug("prepared media attachment for note",
+			zap.Int("index", idx),
+			zap.String("media_id", mediaID),
+			zap.String("content_type", media.ContentType))
+	}
+
+	return attachments, markIDs, nil
+}
+
+// mediaBelongsToAuthor checks whether the media item is owned by the author creating the note.
+func (s *Service) mediaBelongsToAuthor(media *models.Media, author *storage.Account) bool {
+	if media == nil || author == nil || author.User == nil {
+		return false
+	}
+
+	owner := strings.ToLower(strings.TrimSpace(media.UserID))
+	username := strings.ToLower(strings.TrimSpace(author.User.Username))
+	if owner == "" || username == "" {
+		return false
+	}
+
+	if owner == username {
+		return true
+	}
+
+	if author.Actor != nil {
+		actorID := strings.ToLower(strings.TrimSpace(author.Actor.ID))
+		if actorID != "" && owner == actorID {
+			return true
+		}
+	}
+
+	return false
+}
+
+// mapMediaToAttachment converts a media record into an ActivityPub attachment.
+func (s *Service) mapMediaToAttachment(media *models.Media) activitypub.Attachment {
+	if media == nil {
+		return activitypub.Attachment{}
+	}
+
+	url := strings.TrimSpace(media.CDNUrl)
+	if url == "" {
+		url = fmt.Sprintf("https://%s/media/%s", s.domainName, media.MediaID)
+	}
+
+	attachment := activitypub.Attachment{
+		Type:      mapMediaCategoryToAttachmentType(media.MediaCategory),
+		MediaType: media.ContentType,
+		URL:       url,
+		Width:     media.Width,
+		Height:    media.Height,
+	}
+
+	if media.Description != "" {
+		attachment.Name = media.Description
+	} else if media.FileName != "" {
+		attachment.Name = media.FileName
+	}
+
+	if media.FileName != "" {
+		attachment.Value = media.FileName
+	}
+
+	return attachment
+}
+
+func mapMediaCategoryToAttachmentType(category models.MediaCategory) string {
+	switch category {
+	case models.MediaCategoryImage, models.MediaCategoryGifv:
+		return "Image"
+	case models.MediaCategoryVideo:
+		return "Video"
+	case models.MediaCategoryAudio:
+		return "Audio"
+	default:
+		return "Document"
+	}
+}
+
+func extractStatusIDFromObjectURL(objectURL string) string {
+	if objectURL == "" {
+		return ""
+	}
+
+	trimmed := strings.TrimSuffix(objectURL, "/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[len(parts)-1]
+}
+
+func isAlreadyExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if appErr, ok := svcErrors.AsAppError(err); ok {
+		if appErr.Code == svcErrors.CodeAlreadyExists {
+			return true
+		}
+		message := strings.ToLower(appErr.Message)
+		if strings.Contains(message, "already") {
+			return true
+		}
+	}
+
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "already") || strings.Contains(lower, "condition check failed")
+}
+
 func (s *Service) emitStatusCreatedEvents(ctx context.Context, status *models.Status) []*streaming.Event {
 	// Use centralized business logic for event creation
 	businessEvents := common.EmitEntityCreatedEvents(ctx, "status", status.StatusID, status.AuthorID, status)
@@ -812,7 +1064,7 @@ func (s *Service) emitStatusCreatedEvents(ctx context.Context, status *models.St
 		// Emit to user's stream
 		userEvent := *streamingEvent
 		userEvent.Stream = fmt.Sprintf("user:%s", status.AuthorUsername)
-		if err := s.publisher.PublishToUser(ctx, status.AuthorID, &userEvent); err != nil {
+		if err := s.publisher.PublishToUser(ctx, status.AuthorUsername, &userEvent); err != nil {
 			s.logger.Error("failed to publish to user stream", zap.Error(err))
 		} else {
 			streamingEvents = append(streamingEvents, &userEvent)
@@ -875,7 +1127,7 @@ func (s *Service) emitStatusUpdatedEvents(ctx context.Context, status *models.St
 		}
 
 		// Emit to user's stream
-		if err := s.publisher.PublishToUser(ctx, status.AuthorID, streamingEvent); err != nil {
+		if err := s.publisher.PublishToUser(ctx, status.AuthorUsername, streamingEvent); err != nil {
 			s.logger.Error("failed to publish update to user stream", zap.Error(err))
 		} else {
 			streamingEvents = append(streamingEvents, streamingEvent)
@@ -899,7 +1151,7 @@ func (s *Service) emitStatusDeletedEvents(ctx context.Context, status *models.St
 		}
 
 		// Emit to user's stream
-		if err := s.publisher.PublishToUser(ctx, status.AuthorID, streamingEvent); err != nil {
+		if err := s.publisher.PublishToUser(ctx, status.AuthorUsername, streamingEvent); err != nil {
 			s.logger.Error("failed to publish deletion to user stream", zap.Error(err))
 		}
 	}
@@ -1336,8 +1588,9 @@ type GetLikersQuery struct {
 
 // LikeResult represents the result of a like operation
 type LikeResult struct {
-	Status *models.Status     `json:"status"`
-	Events []*streaming.Event `json:"events"`
+	Status   *models.Status
+	Events   []*streaming.Event
+	Announce *storage.Announce
 }
 
 // UsersResult represents a list of users (for likers, rebloggers, etc.)
@@ -1480,7 +1733,8 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 	objectURL := fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, note.AuthorUsername, cmd.StatusID)
 
 	// Create the reblog through repository interface
-	if err := s.createReblog(ctx, actorURL, objectURL, cmd.RebloggerID, cmd.StatusID); err != nil {
+	announce, err := s.createReblog(ctx, actorURL, objectURL, cmd.RebloggerID, cmd.StatusID)
+	if err != nil {
 		return nil, ErrReblogStatus
 	}
 
@@ -1488,8 +1742,9 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 	events := s.emitReblogEvents(ctx, note, cmd.RebloggerID)
 
 	return &LikeResult{
-		Status: note,
-		Events: events,
+		Status:   note,
+		Events:   events,
+		Announce: announce,
 	}, nil
 }
 
@@ -1749,24 +2004,130 @@ func (s *Service) getLikers(ctx context.Context, statusID string, pagination int
 	return accounts, result, nil
 }
 
-func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, _ string) error {
+func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, _ string) (*storage.Announce, error) {
+	// Idempotency: if an announce already exists for this actor/object, skip creating duplicates
+	if existing, err := s.socialRepo.GetAnnounce(ctx, actorURL, objectURL); err == nil {
+		s.logger.Debug("announce already persisted, skipping duplicate reblog",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL),
+			zap.String("announce_id", existing.ID))
+		return existing, nil
+	} else if appErr, ok := svcErrors.AsAppError(err); ok && appErr.Code != svcErrors.CodeNotFound {
+		s.logger.Error("failed to check existing announce",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL),
+			zap.Error(err))
+		return nil, ErrCreateReblog
+	}
+
 	announce := &storage.Announce{
 		Actor:     actorURL,
 		Object:    objectURL,
 		CreatedAt: time.Now(),
 	}
-	err := s.socialRepo.CreateAnnounce(ctx, announce)
-	if err != nil {
-		return ErrCreateReblog
+
+	if err := s.socialRepo.CreateAnnounce(ctx, announce); err != nil {
+		if appErr, ok := svcErrors.AsAppError(err); ok {
+			s.logger.Debug("create announce app error details",
+				zap.String("code", string(appErr.Code)),
+				zap.String("message", appErr.Message),
+				zap.Any("metadata", appErr.Metadata))
+		}
+
+		if isAlreadyExistsError(err) {
+			s.logger.Debug("announce already exists, treating as idempotent success",
+				zap.String("actor_url", actorURL),
+				zap.String("object_url", objectURL))
+			if existing, getErr := s.socialRepo.GetAnnounce(ctx, actorURL, objectURL); getErr == nil {
+				announce = existing
+			} else {
+				s.logger.Error("failed to load existing announce after duplicate detection",
+					zap.String("actor_url", actorURL),
+					zap.String("object_url", objectURL),
+					zap.Error(getErr))
+				return nil, ErrCreateReblog
+			}
+		} else {
+			return nil, ErrCreateReblog
+		}
 	}
-	return nil
+
+	if s.noteRepo == nil {
+		s.logger.Warn("status repository unavailable while recording reblog engagement",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL))
+		return announce, nil
+	}
+
+	if announce == nil {
+		s.logger.Error("announce metadata missing after create",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL))
+		return nil, ErrCreateReblog
+	}
+
+	statusID := extractStatusIDFromObjectURL(objectURL)
+
+	if err := common.ValidateRequiredParam("reblog_status_id", statusID); err != nil {
+		s.logger.Error("failed to resolve status id from object url",
+			zap.String("object_url", objectURL),
+			zap.Error(err))
+		return nil, ErrReblogStatus
+	}
+
+	engagementCreated := true
+	if err := s.noteRepo.ReblogStatus(ctx, actorURL, statusID, announce.ID); err != nil {
+		if isAlreadyExistsError(err) {
+			s.logger.Debug("reblog engagement already recorded",
+				zap.String("actor_url", actorURL),
+				zap.String("status_id", statusID))
+			engagementCreated = false
+		} else {
+			s.logger.Error("failed to record reblog engagement",
+				zap.String("actor_url", actorURL),
+				zap.String("status_id", statusID),
+				zap.Error(err))
+			return nil, ErrReblogStatus
+		}
+	}
+
+	if !engagementCreated {
+		// Nothing new was written; treat as idempotent success
+		return announce, nil
+	}
+
+	return announce, nil
 }
 
 func (s *Service) deleteReblog(ctx context.Context, actorURL, objectURL, _ string) error {
-	err := s.socialRepo.DeleteAnnounce(ctx, actorURL, objectURL)
-	if err != nil {
+	if err := s.socialRepo.DeleteAnnounce(ctx, actorURL, objectURL); err != nil {
 		return ErrDeleteReblog
 	}
+
+	if s.noteRepo == nil {
+		s.logger.Warn("status repository unavailable while removing reblog engagement",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL))
+		return nil
+	}
+
+	statusID := extractStatusIDFromObjectURL(objectURL)
+
+	if err := common.ValidateRequiredParam("reblog_status_id", statusID); err != nil {
+		s.logger.Error("failed to resolve status id from object url for unreblog",
+			zap.String("object_url", objectURL),
+			zap.Error(err))
+		return ErrDeleteReblog
+	}
+
+	if err := s.noteRepo.UnreblogStatus(ctx, actorURL, statusID); err != nil {
+		s.logger.Error("failed to remove reblog engagement",
+			zap.String("actor_url", actorURL),
+			zap.String("status_id", statusID),
+			zap.Error(err))
+		return ErrDeleteReblog
+	}
+
 	return nil
 }
 

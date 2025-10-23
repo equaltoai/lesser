@@ -111,6 +111,7 @@ type Object {
   mentions: [Mention!]!
   createdAt: Time!
   updatedAt: Time!
+  poll: Poll
   
   # Engagement metrics
   repliesCount: Int!
@@ -471,6 +472,24 @@ type PollParams {
   hideTotals: Boolean
 }
 
+type Poll {
+  id: ID!
+  expiresAt: Time
+  expired: Boolean!
+  multiple: Boolean!
+  hideTotals: Boolean!
+  votesCount: Int!
+  votersCount: Int!
+  voted: Boolean!
+  ownVotes: [Int!]
+  options: [PollOption!]!
+}
+
+type PollOption {
+  title: String!
+  votesCount: Int!
+}
+
 # Enhanced Search types
 type SearchResult {
   accounts: [Actor!]!
@@ -525,6 +544,7 @@ input CreateNoteInput {
   attachmentIds: [ID!]
   mentions: [String!]
   tags: [String!]
+  poll: PollParamsInput
 }
 
 input ContentMapInput {
@@ -729,7 +749,14 @@ type Query {
   # Mastodon compatibility
   actor(id: ID, username: String): Actor
   object(id: ID!): Object
-  timeline(type: TimelineType!, hashtag: String, listId: ID, first: Int = 20, after: Cursor): ObjectConnection!
+  timeline(
+    type: TimelineType!
+    hashtag: String
+    listId: ID
+    first: Int = 20
+    after: Cursor
+    mediaOnly: Boolean = false
+  ): ObjectConnection!
   search(query: String!, type: String, first: Int = 20, after: Cursor): SearchResult!
   notifications(types: [String!], excludeTypes: [String!], first: Int = 20, after: Cursor): NotificationConnection!
   
@@ -784,7 +811,7 @@ type Query {
   # Hashtag Following queries
   hashtag(name: String!): Hashtag
   followedHashtags(first: Int, after: String): HashtagConnection!
-  hashtagTimeline(hashtag: String!, first: Int, after: String): PostConnection!
+  hashtagTimeline(hashtag: String!, first: Int, after: String, mediaOnly: Boolean = false): PostConnection!
   multiHashtagTimeline(
     hashtags: [String!]!
     mode: HashtagMode!

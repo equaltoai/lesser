@@ -1780,6 +1780,7 @@ func (r *TrendingRepository) GetInstanceMetrics(ctx context.Context, date, metri
 	err := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
+		ConsistentRead().
 		First(&metrics)
 
 	if err != nil {

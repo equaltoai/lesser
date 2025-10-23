@@ -15,6 +15,11 @@ type StatusEngagement struct {
 	TTL            int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 7 day TTL
 }
 
+// TableName ensures status engagements persist in the shared main table.
+func (StatusEngagement) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates GSI keys for StatusEngagement - no GSIs needed for this model
 func (s *StatusEngagement) UpdateKeys() error {
 	// No GSIs for this model

@@ -120,3 +120,6 @@ func (s *SimpleRepositoryStorage) MediaPopularity() *repositories.MediaPopularit
 	return nil
 }
 func (s *SimpleRepositoryStorage) MediaSession() *repositories.MediaSessionRepository { return nil }
+func (s *SimpleRepositoryStorage) StreamingConnection() *repositories.StreamingConnectionRepository {
+	return nil
+}

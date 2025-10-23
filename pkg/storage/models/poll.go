@@ -33,6 +33,11 @@ type Poll struct {
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
 }
 
+// TableName returns the DynamoDB table name for Poll records
+func (Poll) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the DynamoDB keys based on the business fields
 func (p *Poll) UpdateKeys() error {
 	p.PK = fmt.Sprintf("POLL#%s", p.ID)
@@ -67,6 +72,11 @@ type PollVote struct {
 	VoterID string    `json:"voterId"`
 	Choices []int     `json:"choices"`
 	VotedAt time.Time `json:"votedAt"`
+}
+
+// TableName returns the DynamoDB table name for PollVote records
+func (PollVote) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the DynamoDB keys based on the business fields

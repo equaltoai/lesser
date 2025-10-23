@@ -449,16 +449,6 @@ func RegistryValidationFailed(reason string) *AppError {
 		WithMetadata("reason", reason)
 }
 
-// EventBusNotInitialized creates an error when internal event bus is not initialized.
-func EventBusNotInitialized() *AppError {
-	return NewAppError(CodeInternal, CategoryInternal, "Internal event bus not initialized")
-}
-
-// EventBusSubscriptionFailed creates an error for event bus subscription failures.
-func EventBusSubscriptionFailed(err error) *AppError {
-	return NewAppError(CodeInternal, CategoryInternal, "Failed to subscribe to internal event bus").WithInternalError(err)
-}
-
 // DatabaseTypeUnsupported creates an error for unsupported database types.
 func DatabaseTypeUnsupported(dbType string) *AppError {
 	return NewAppError(CodeInvalidInput, CategoryStorage, "Unsupported database type").

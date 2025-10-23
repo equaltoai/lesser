@@ -441,18 +441,7 @@ func (r *ActivityRepository) RecordActivity(ctx context.Context, activityType st
 	// In production, this might aggregate into time buckets for efficient querying
 	// Note: This uses direct DynamORM since it's not an Activity model
 
-	pk := fmt.Sprintf("activity_metric#%s", actorID)
-	sk := fmt.Sprintf("%s#%s", activityType, timestamp.Format(time.RFC3339Nano))
-
-	activityRecord := map[string]interface{}{
-		"PK":           pk,
-		"SK":           sk,
-		"ActivityType": activityType,
-		"ActorID":      actorID,
-		"Timestamp":    timestamp.Format(time.RFC3339),
-		"CreatedAt":    timestamp,
-		"Type":         "activity_metric",
-	}
+	activityRecord := models.NewActivityMetric(activityType, actorID, timestamp)
 
 	// Use direct DynamORM since this is not an Activity model
 	// BaseRepository is typed for Activity models only

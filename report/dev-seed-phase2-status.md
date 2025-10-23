@@ -4,11 +4,11 @@
 
 | Persona | Username | Role | Initial Password | OAuth Client ID | OAuth Client Secret | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| Admin | `admin` | admin | `LUpbgE5kovM0W00g` | `Pu7FZdvg3nMC0vYSmNVxXV` | `vQS3wrZGQ9piMgX21Yp6rAGV7B06PGjm8v0sfDTE9Wk` | Created via `scripts/generate_bootstrap_data.js`; assets in `bootstrap_admin_1760887370251/`. |
-| Moderator | `mod` | moderator | `AHALRF0dpj25CqSx` | `BzI0JfW3Qn4SzcLtjL8cen` | `4wEp00eIM53zVRcZB2C0rnU9uqE3q3OlTXWThyD0udX` | `user.json` patched to set `"role": "moderator"` before deployment (dir `bootstrap_mod_1760887404485/`). |
-| Member | `member` | user | `56WDAZp3Aiy77jxT` | `dS0pcWc1ExFpm4aWHicStV` | `X2nsq2BqL3mfTZy5a8RsoFLNKIxIWHRn97v0NuMbd03` | Standard persona (`bootstrap_member_1760887450104/`). |
-| Locked | `locked` | user | `OtnfsibwFg1xYLZc` | `857hQYMIz03ySCNrZYCch8` | `8kXCVsqRpaxVMGy30gGp3bKdBDYDBW67XLkSAu0W06F` | `actor.json` updated with `manuallyApprovesFollowers: true` (`bootstrap_locked_1760887469839/`). |
-| Bot | `bot` | user | `tdpAzJpR0U7LhkSH` | `99Shoc0hPrfYrgpKuH0Kjv` | `fwTheoY0OJXuIpMTkTeD6U0DQT73x1uIy89T2u8NJ9U` | `actor.json` updated to `type: "Service"` and bot summary (`bootstrap_bot_1760887501118/`). |
+| Admin | `admin` | admin | `zzsuWRko0nc03s00` | `4NQBEFCFIwtk9jd0r4u2Wa` | `TCCH2JOvuh0M3UmNDlgNH77PiObjCoO0KdOJoQZaKjD` | Regenerated 2025-10-21 (`bootstrap_admin_1761048479439/`). Continue using shared JWT secret (`|UQ)…`) in Lambda env. |
+| Moderator | `mod` | moderator | `lO81GnTyZj3bK9HL` | `YRXR6QBEE7BwAs0HdGXl1k` | `Chze8Y0tlt300CsVQBDtLuVXqiWm3z6yVKdTIBX6WgZ` | Role + summary patched post-generation (`bootstrap_mod_1761170674818/`). |
+| Member | `member` | user | `jRywBTOBTOkFLfGw` | `ovv9JDXyegBtz0rDoPAIVr` | `FFXYtxMrtN4x0q6hMbxC4tZCk9qn0CR1HjBnvWmvY0Z` | Standard persona (`bootstrap_member_1761170680290/`). |
+| Locked | `locked` | user | `XxmBNHChBw0LcO5V` | `85KvqrHdLjTfwy05Bz0aPl` | `WKGo5Wq95VRJomwvbbMevT0FudicovWtUXMGLVCwsnw` | `actor.json` updated with `manuallyApprovesFollowers: true`; `Locked.BOOL` toggled (`bootstrap_locked_1761170685184/`). |
+| Bot | `bot` | user | `GlTBx1Bap0yssZG6` | `WBJ3KxP0lOc0Ai8hz2uV1Y` | `8VHFaeUGDIgOHaPpiZjnn9gz1pmsNSfBkruRn5u0HZ5` | Actor `type` flipped to `Service` with automation summary (`bootstrap_bot_1761170689672/`). |
 
 - Each directory contains `actor.json`, `user.json`, `oauth_client.json`, `deploy.sh`, `credentials.txt`, and helper scripts.  All deploy scripts were executed with `AWS_PROFILE=Lesser`, inserting items into `lesser-development`.
 - Secrets: JWT signing key pulled from `lesser/jwt-secret` and reused (`JWT_SECRET=|UQ)}RtvjE[+s:$6QS?|kv[ZkOWAVs5680RpZh*[y,]$({dLT7bqPh;b[uPh>_V^`).  Keep this value confidential.
@@ -22,11 +22,11 @@ python - <<'PY'
 import base64, json, time, hmac, hashlib
 secret = "|UQ)}RtvjE[+s:$6QS?|kv[ZkOWAVs5680RpZh*[y,]$({dLT7bqPh;b[uPh>_V^"
 clients = {
-    "admin":  "Pu7FZdvg3nMC0vYSmNVxXV",
-    "mod":    "BzI0JfW3Qn4SzcLtjL8cen",
-    "member": "dS0pcWc1ExFpm4aWHicStV",
-    "locked": "857hQYMIz03ySCNrZYCch8",
-    "bot":    "99Shoc0hPrfYrgpKuH0Kjv",
+    "admin":  "4NQBEFCFIwtk9jd0r4u2Wa",
+    "mod":    "YRXR6QBEE7BwAs0HdGXl1k",
+    "member": "ovv9JDXyegBtz0rDoPAIVr",
+    "locked": "85KvqrHdLjTfwy05Bz0aPl",
+    "bot":    "WBJ3KxP0lOc0Ai8hz2uV1Y",
 }
 now = int(time.time())
 for user, client_id in clients.items():
@@ -49,27 +49,11 @@ PY
 
 ## Current Status
 
-- API Lambda redeployed successfully (`make build` + `make deploy ENV=dev` with `AWS_PROFILE=Lesser`).  
-- `GET https://dev.lesser.host/api/v1/accounts/verify_credentials`
-  - Returns `401` without credentials (expected).
-  - Returns `200` with the freshly minted admin token, hydrating user + actor payload from Dynamo.
-- GraphQL `mutation { followActor(id:"member") }`
-  - Executes successfully with the admin token.
-  - Response includes non-null `published` timestamp and hydrated actor metadata (object payload now populated).
-- Follower graph snapshot (2025-10-20 @ 17:45 UTC)
-  - `admin` follows 4 (`bot`, `locked`, `member`, `mod`) and is followed by 4 (`member`, `bot`, `mod`, `locked`).
-  - `member` now follows `admin`/`mod`/`bot` and is followed by all other personas (4 total).
-  - `locked` and `bot` contribute to sparse/dense coverage; see GraphQL counts for exact follow/follower totals.
-- GraphQL `updateProfile` mutation
-  - Executes successfully (validated 2025-10-20 @ 16:32 UTC); Dynamo version increments logged.
-  - Subsequent `actor(id:"admin")` query reflects updated display name and summary.
-- GraphQL `createNote` mutation
-  - Persists status and returns hydrated activity/object payload for most requests (admin/member/mod/bot verified).
-  - Analytics service now uses the correct table but hits `ConditionalCheckFailed` when incrementing daily metrics, causing intermittent HTTP 503 responses (especially for repeat posts on the same day). Logged as a gap.
-- Actor status counters
-  - `actor(username:...) { statusesCount }` still reports `0` for all personas despite existing `status#…` items, indicating counter backfills are missing.
-- GraphQL `timeline` query (`type: HOME`)
-  - Currently fails with `failed to get timeline`; likely missing timeline entries in Dynamo. Logged in gaps doc for follow-up.
+- 2025-10-22 22:05 UTC: Re-seeded the five baseline personas from the new `bootstrap_*_1761170…` directories. DynamoDB now only contains fresh account + OAuth rows; follower links, media posts, preferences, and push subscriptions were lost in the rebuild and still need to be replayed.  
+- Admin authentication continues to work with the shared JWT secret (`|UQ)}RtvjE[+s:$6QS?|kv[ZkOWAVs5680RpZh*[y,]$({dLT7bqPh;b[uPh>_V^`). `actor(username:"admin")` now reports `followers:0`, `following:0`, `statusesCount:0` until the graph is reseeded.  
+- GraphQL `createNote` executes successfully on the clean dataset; the 2025-10-22 22:22 UTC run produced status `f5854df2-0cb3-4cd4-9c1d-e473b750ffb0` and queued `STREAM_EVENT#evt_1761171732…` with `TargetID=admin`.  
+- Real-time gap: `timelineUpdates` subscriptions connect but fail to persist (`StreamingConnectionRepository.WriteSubscription` hits a DynamoDB `PutItem` timeout for `SUB#user:admin`), so stream-router never delivers a `next` payload. See `docs/graphql-validation-gaps.md` for remediation details.  
+- Action items: rebuild the follower graph, republish representative statuses/media, restore user preferences + push subscriptions, then rerun Phase 3 GraphQL validation once the subscription persistence bug is fixed.
 
 ## Next Steps
 

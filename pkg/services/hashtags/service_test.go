@@ -215,7 +215,12 @@ func TestFollowHashtag(t *testing.T) {
 	publisher.On("PublishToUser", mock.Anything, "alice", mock.MatchedBy(func(event *streaming.Event) bool {
 		return event != nil && event.Type == streaming.HashtagFollowed
 	})).Return(nil).Once()
-	publisher.On("PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.AnythingOfType("*streaming.Event")).Return(nil).Once()
+	publisher.On("PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.MatchedBy(func(event *streaming.Event) bool {
+		if event == nil {
+			return false
+		}
+		return event.Type == streaming.HashtagFollowed || event.Type == string(streaming.EventTypeHashtagUpdate)
+	})).Return(nil).Twice()
 
 	service := newTestService(repo, publisher)
 
@@ -261,7 +266,12 @@ func TestUnfollowHashtag(t *testing.T) {
 	publisher.On("PublishToUser", mock.Anything, "alice", mock.MatchedBy(func(event *streaming.Event) bool {
 		return event != nil && event.Type == "hashtag.unfollowed"
 	})).Return(nil).Once()
-	publisher.On("PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.AnythingOfType("*streaming.Event")).Return(nil).Once()
+	publisher.On("PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.MatchedBy(func(event *streaming.Event) bool {
+		if event == nil {
+			return false
+		}
+		return event.Type == "hashtag.unfollowed" || event.Type == string(streaming.EventTypeHashtagUpdate)
+	})).Return(nil).Twice()
 
 	service := newTestService(repo, publisher)
 
@@ -358,7 +368,12 @@ func TestMuteHashtag(t *testing.T) {
 	publisher.On("PublishToUser", mock.Anything, "alice", mock.MatchedBy(func(event *streaming.Event) bool {
 		return event != nil && event.Type == "hashtag.muted"
 	})).Return(nil).Once()
-	publisher.On("PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.AnythingOfType("*streaming.Event")).Return(nil).Once()
+	publisher.On("PublishToStream", mock.Anything, streaming.HashtagStreamName("golang"), mock.MatchedBy(func(event *streaming.Event) bool {
+		if event == nil {
+			return false
+		}
+		return event.Type == "hashtag.muted" || event.Type == string(streaming.EventTypeHashtagUpdate)
+	})).Return(nil).Twice()
 
 	service := newTestService(repo, publisher)
 	result, err := service.MuteHashtag(ctx, "alice", "golang", nil)
@@ -370,16 +385,10 @@ func TestMuteHashtag(t *testing.T) {
 	publisher.AssertExpectations(t)
 }
 
+// TestGetHashtagActivity verifies the deprecated GetHashtagActivity method returns empty channel
+// DEPRECATED: This test is kept for backward compatibility validation
 func TestGetHashtagActivity(t *testing.T) {
 	logger := zap.NewNop()
-
-	bus := streaming.InitializeGlobalEventBus(streaming.DefaultEventBusConfig(), logger)
-	require.NotNil(t, bus)
-	require.NoError(t, bus.Start(context.Background()))
-	defer func() {
-		_ = bus.Stop()
-	}()
-
 	service := NewService(nil, nil, nil, nil, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -389,33 +398,11 @@ func TestGetHashtagActivity(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, activityCh)
 
-	payload := &streaming.StatusEventPayload{
-		StatusID:       "status1",
-		AuthorID:       "actor1",
-		AuthorUsername: "alice",
-		Content:        "Hello #golang",
-		Hashtags:       []string{"golang"},
-		CreatedAt:      time.Now(),
-	}
-
-	event := &streaming.InternalEvent{
-		ID:        "evt1",
-		Type:      streaming.EventTypeStatus,
-		Action:    streaming.ActionCreate,
-		Timestamp: time.Now(),
-		Streams:   []string{streaming.HashtagStreamName("golang")},
-		Data:      payload,
-	}
-
-	require.NoError(t, streaming.PublishGlobal(event))
-
+	// Channel should be closed immediately (deprecated behavior)
 	select {
-	case received := <-activityCh:
-		require.NotNil(t, received)
-		assert.Equal(t, "golang", received.Hashtag)
-		assert.Equal(t, "status1", received.StatusID)
-		assert.Equal(t, "actor1", received.ActorID)
-	case <-time.After(2 * time.Second):
-		t.Fatalf("timed out waiting for activity event")
+	case _, ok := <-activityCh:
+		assert.False(t, ok, "channel should be closed for deprecated method")
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("channel should be closed immediately")
 	}
 }

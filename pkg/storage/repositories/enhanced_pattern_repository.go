@@ -227,11 +227,9 @@ func (r *EnhancedPatternRepository) AnalyzeContentPatterns(ctx context.Context, 
 			analysis.Matches = append(analysis.Matches, match)
 
 			// Update pattern usage statistics
-			go func(p *models.EnhancedModerationPattern, matchTime float64) {
-				updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				_ = r.RecordMatch(updateCtx, p.PatternID, true, false, matchTime) // Assume false positive initially
-			}(pattern, match.MatchTime)
+			updateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			_ = r.RecordMatch(updateCtx, pattern.PatternID, true, false, match.MatchTime) // Assume false positive initially
+			cancel()
 		}
 	}
 
@@ -297,11 +295,9 @@ func (r *EnhancedPatternRepository) DetectSpamPatterns(ctx context.Context, cont
 			result.ReasonCodes = append(result.ReasonCodes, fmt.Sprintf("%s_%s", pattern.Category, pattern.PatternType))
 
 			// Record pattern usage
-			go func(patternID string, matchTime float64) {
-				updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				_ = r.RecordMatch(updateCtx, patternID, true, false, matchTime)
-			}(pattern.PatternID, match.MatchTime)
+			updateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			_ = r.RecordMatch(updateCtx, pattern.PatternID, true, false, match.MatchTime)
+			cancel()
 		}
 	}
 
@@ -509,12 +505,11 @@ func (r *EnhancedPatternRepository) GetPatternCache(ctx context.Context, pattern
 	cache.CacheHits++
 	_ = cache.UpdateKeys() // Ignore error as this is internal model operation
 
-	// Update cache statistics (fire and forget)
-	go func() {
-		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = r.db.WithContext(updateCtx).Model(cache).Update()
-	}()
+	updateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	if err := r.db.WithContext(updateCtx).Model(cache).Update(); err != nil {
+		r.logger.Warn("failed to update pattern cache stats", zap.Error(err))
+	}
+	cancel()
 
 	return cache, nil
 }

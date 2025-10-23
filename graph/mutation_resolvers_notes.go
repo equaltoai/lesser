@@ -54,6 +54,35 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 		cmd.MediaIDs = input.AttachmentIds
 	}
 
+	if input.Poll != nil {
+		pollOptionsAny := make([]any, len(input.Poll.Options))
+		for i, option := range input.Poll.Options {
+			pollOptionsAny[i] = option
+		}
+
+		pollParams := map[string]any{
+			"options":    pollOptionsAny,
+			"expires_in": float64(input.Poll.ExpiresIn),
+		}
+
+		if input.Poll.Multiple != nil {
+			pollParams["multiple"] = *input.Poll.Multiple
+		}
+
+		if input.Poll.HideTotals != nil {
+			pollParams["hide_totals"] = *input.Poll.HideTotals
+		}
+
+		if err := common.ValidatePollParams(pollParams); err != nil {
+			return nil, err
+		}
+
+		cmd.PollOptions = input.Poll.Options
+		cmd.PollExpiresIn = input.Poll.ExpiresIn
+		cmd.PollMultiple = input.Poll.Multiple != nil && *input.Poll.Multiple
+		cmd.PollHideTotals = input.Poll.HideTotals != nil && *input.Poll.HideTotals
+	}
+
 	// Handle mentions and tags
 	// These would be parsed from content in the service
 

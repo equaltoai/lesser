@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	notifpush "github.com/equaltoai/lesser/pkg/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -337,10 +338,25 @@ func (m *MockAccountRepository) GetBookmarkedStatuses(ctx context.Context, usern
 
 // Helper functions for tests
 
-func setupTestService() (*Service, *MockNotificationRepository, *MockAccountRepository, MockPublisher) {
+type fakePushService struct {
+	messages []*notifpush.PushMessage
+	err      error
+}
+
+func (f *fakePushService) QueueNotification(_ context.Context, msg *notifpush.PushMessage) error {
+	f.messages = append(f.messages, msg)
+	return f.err
+}
+
+func (f *fakePushService) Messages() []*notifpush.PushMessage {
+	return f.messages
+}
+
+func setupTestService() (*Service, *MockNotificationRepository, *MockAccountRepository, MockPublisher, *fakePushService) {
 	mockNotificationRepo := new(MockNotificationRepository)
 	mockAccountRepo := new(MockAccountRepository)
 	mockPublisher := streaming.NewMockPublisher().(MockPublisher)
+	pushService := &fakePushService{}
 
 	service := NewService(
 		mockNotificationRepo,
@@ -348,9 +364,10 @@ func setupTestService() (*Service, *MockNotificationRepository, *MockAccountRepo
 		mockPublisher,
 		zap.NewNop(),
 		"example.com",
+		pushService,
 	)
 
-	return service, mockNotificationRepo, mockAccountRepo, mockPublisher
+	return service, mockNotificationRepo, mockAccountRepo, mockPublisher, pushService
 }
 
 func createTestUser(username string) *storage.Account {
@@ -377,7 +394,7 @@ func createTestNotification(userID, notifType, actorID string) *models.Notificat
 // Test CreateNotification
 
 func TestService_CreateNotification_Success(t *testing.T) {
-	service, mockNotificationRepo, mockAccountRepo, mockPublisher := setupTestService()
+	service, mockNotificationRepo, mockAccountRepo, mockPublisher, pushService := setupTestService()
 	ctx := context.Background()
 
 	// Setup mocks
@@ -415,12 +432,20 @@ func TestService_CreateNotification_Success(t *testing.T) {
 	assert.Equal(t, "notification.created", publishedEvents[0].Event.Type)
 	assert.Equal(t, "testuser", publishedEvents[0].TargetID)
 
+	assert.Len(t, pushService.Messages(), 1)
+	pushMsg := pushService.Messages()[0]
+	assert.Equal(t, "testuser", pushMsg.Username)
+	assert.Equal(t, "mention", pushMsg.NotificationType)
+	assert.Equal(t, "You were mentioned", pushMsg.Title)
+	assert.Equal(t, "Someone mentioned you in a post", pushMsg.Body)
+	assert.Equal(t, result.Notification.ID, pushMsg.NotificationID)
+
 	mockNotificationRepo.AssertExpectations(t)
 	mockAccountRepo.AssertExpectations(t)
 }
 
 func TestService_CreateNotification_ValidationError(t *testing.T) {
-	service, _, _, _ := setupTestService()
+	service, _, _, _, pushService := setupTestService()
 	ctx := context.Background()
 
 	// Test missing user_id
@@ -434,10 +459,11 @@ func TestService_CreateNotification_ValidationError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "Validation failed")
+	assert.Len(t, pushService.Messages(), 0)
 }
 
 func TestService_CreateNotification_InvalidType(t *testing.T) {
-	service, _, _, _ := setupTestService()
+	service, _, _, _, pushService := setupTestService()
 	ctx := context.Background()
 
 	cmd := &CreateNotificationCommand{
@@ -451,10 +477,11 @@ func TestService_CreateNotification_InvalidType(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "Validation failed")
+	assert.Len(t, pushService.Messages(), 0)
 }
 
 func TestService_CreateNotification_UserNotFound(t *testing.T) {
-	service, _, mockAccountRepo, _ := setupTestService()
+	service, _, mockAccountRepo, _, pushService := setupTestService()
 	ctx := context.Background()
 
 	mockAccountRepo.On("GetAccount", ctx, "nonexistent").Return(nil, assert.AnError)
@@ -472,12 +499,13 @@ func TestService_CreateNotification_UserNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "Resource not found")
 
 	mockAccountRepo.AssertExpectations(t)
+	assert.Len(t, pushService.Messages(), 0)
 }
 
 // Test MarkAsRead
 
 func TestService_MarkAsRead_Success(t *testing.T) {
-	service, mockNotificationRepo, _, mockPublisher := setupTestService()
+	service, mockNotificationRepo, _, mockPublisher, _ := setupTestService()
 	ctx := context.Background()
 
 	notification := createTestNotification("testuser", "mention", "actor")
@@ -509,7 +537,7 @@ func TestService_MarkAsRead_Success(t *testing.T) {
 }
 
 func TestService_MarkAsRead_AlreadyRead(t *testing.T) {
-	service, mockNotificationRepo, _, mockPublisher := setupTestService()
+	service, mockNotificationRepo, _, mockPublisher, _ := setupTestService()
 	ctx := context.Background()
 
 	notification := createTestNotification("testuser", "mention", "actor")
@@ -540,7 +568,7 @@ func TestService_MarkAsRead_AlreadyRead(t *testing.T) {
 }
 
 func TestService_MarkAsRead_Unauthorized(t *testing.T) {
-	service, mockNotificationRepo, _, _ := setupTestService()
+	service, mockNotificationRepo, _, _, _ := setupTestService()
 	ctx := context.Background()
 
 	notification := createTestNotification("otheruser", "mention", "actor")
@@ -565,7 +593,7 @@ func TestService_MarkAsRead_Unauthorized(t *testing.T) {
 // Test ClearNotifications
 
 func TestService_ClearNotifications_ClearAll(t *testing.T) {
-	service, mockNotificationRepo, _, mockPublisher := setupTestService()
+	service, mockNotificationRepo, _, mockPublisher, _ := setupTestService()
 	ctx := context.Background()
 
 	mockNotificationRepo.On("MarkAllNotificationsRead", ctx, "testuser").Return(nil)
@@ -590,7 +618,7 @@ func TestService_ClearNotifications_ClearAll(t *testing.T) {
 }
 
 func TestService_ClearNotifications_ByType(t *testing.T) {
-	service, mockNotificationRepo, _, _ := setupTestService()
+	service, mockNotificationRepo, _, _, _ := setupTestService()
 	ctx := context.Background()
 
 	mockNotificationRepo.On("MarkNotificationsReadByType", ctx, "testuser", "mention").Return(nil)
@@ -612,7 +640,7 @@ func TestService_ClearNotifications_ByType(t *testing.T) {
 }
 
 func TestService_ClearNotifications_SpecificIDs(t *testing.T) {
-	service, mockNotificationRepo, _, _ := setupTestService()
+	service, mockNotificationRepo, _, _, _ := setupTestService()
 	ctx := context.Background()
 
 	notification1 := createTestNotification("testuser", "mention", "actor")
@@ -640,7 +668,7 @@ func TestService_ClearNotifications_SpecificIDs(t *testing.T) {
 }
 
 func TestService_ClearNotifications_ValidationError(t *testing.T) {
-	service, _, _, _ := setupTestService()
+	service, _, _, _, _ := setupTestService()
 	ctx := context.Background()
 
 	cmd := &ClearCommand{
@@ -658,7 +686,7 @@ func TestService_ClearNotifications_ValidationError(t *testing.T) {
 // Test GetNotification
 
 func TestService_GetNotification_Success(t *testing.T) {
-	service, mockNotificationRepo, _, _ := setupTestService()
+	service, mockNotificationRepo, _, _, _ := setupTestService()
 	ctx := context.Background()
 
 	notification := createTestNotification("testuser", "mention", "actor")
@@ -682,7 +710,7 @@ func TestService_GetNotification_Success(t *testing.T) {
 }
 
 func TestService_GetNotification_Unauthorized(t *testing.T) {
-	service, mockNotificationRepo, _, _ := setupTestService()
+	service, mockNotificationRepo, _, _, _ := setupTestService()
 	ctx := context.Background()
 
 	notification := createTestNotification("otheruser", "mention", "actor")
@@ -707,7 +735,7 @@ func TestService_GetNotification_Unauthorized(t *testing.T) {
 // Test ListNotifications
 
 func TestService_ListNotifications_AllNotifications(t *testing.T) {
-	service, mockNotificationRepo, _, _ := setupTestService()
+	service, mockNotificationRepo, _, _, _ := setupTestService()
 	ctx := context.Background()
 
 	notifications := []*models.Notification{
@@ -750,7 +778,7 @@ func TestService_ListNotifications_AllNotifications(t *testing.T) {
 }
 
 func TestService_ListNotifications_OnlyUnread(t *testing.T) {
-	service, mockNotificationRepo, _, _ := setupTestService()
+	service, mockNotificationRepo, _, _, _ := setupTestService()
 	ctx := context.Background()
 
 	unreadNotification := createTestNotification("testuser", "mention", "actor")
@@ -794,7 +822,7 @@ func TestService_ListNotifications_OnlyUnread(t *testing.T) {
 }
 
 func TestService_ListNotifications_FilterByType(t *testing.T) {
-	service, mockNotificationRepo, _, _ := setupTestService()
+	service, mockNotificationRepo, _, _, _ := setupTestService()
 	ctx := context.Background()
 
 	mentionNotification := createTestNotification("testuser", "mention", "actor")
@@ -838,7 +866,7 @@ func TestService_ListNotifications_FilterByType(t *testing.T) {
 // Test convenience functions
 
 func TestService_CreateMentionNotification(t *testing.T) {
-	service, mockNotificationRepo, mockAccountRepo, _ := setupTestService()
+	service, mockNotificationRepo, mockAccountRepo, _, pushService := setupTestService()
 	ctx := context.Background()
 
 	user := createTestUser("testuser")
@@ -866,6 +894,8 @@ func TestService_CreateMentionNotification(t *testing.T) {
 	assert.Equal(t, "mention", result.Notification.Type)
 	assert.Equal(t, "New mention", result.Notification.Title)
 
+	assert.Len(t, pushService.Messages(), 1)
+
 	mockNotificationRepo.AssertExpectations(t)
 	mockAccountRepo.AssertExpectations(t)
 }
@@ -873,7 +903,7 @@ func TestService_CreateMentionNotification(t *testing.T) {
 // Test error cases
 
 func TestService_CreateNotification_RepositoryError(t *testing.T) {
-	service, mockNotificationRepo, mockAccountRepo, _ := setupTestService()
+	service, mockNotificationRepo, mockAccountRepo, _, pushService := setupTestService()
 	ctx := context.Background()
 
 	user := createTestUser("testuser")
@@ -897,10 +927,11 @@ func TestService_CreateNotification_RepositoryError(t *testing.T) {
 
 	mockNotificationRepo.AssertExpectations(t)
 	mockAccountRepo.AssertExpectations(t)
+	assert.Len(t, pushService.Messages(), 0)
 }
 
 func TestService_MarkAsRead_NotificationNotFound(t *testing.T) {
-	service, mockNotificationRepo, _, _ := setupTestService()
+	service, mockNotificationRepo, _, _, _ := setupTestService()
 	ctx := context.Background()
 
 	mockNotificationRepo.On("GetNotification", ctx, "nonexistent").Return(nil, assert.AnError)

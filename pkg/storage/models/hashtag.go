@@ -67,6 +67,11 @@ type HashtagUsage struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// TableName ensures hashtag usage records live in the shared single-table schema.
+func (HashtagUsage) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeysWithHashtag updates the keys when the usage data changes (parameterized version)
 func (hu *HashtagUsage) UpdateKeysWithHashtag(hashtag string) {
 	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))

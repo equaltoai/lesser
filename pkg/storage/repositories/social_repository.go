@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	svcErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -29,6 +30,11 @@ type SocialRepository struct {
 	db     core.DB
 	logger *zap.Logger
 }
+
+const (
+	defaultSocialPageLimit = 20
+	maxSocialPageLimit     = 100
+)
 
 // NewSocialRepository creates a new social repository with enhanced functionality
 func NewSocialRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *SocialRepository {
@@ -188,18 +194,23 @@ func (r *SocialRepository) IsBlocked(ctx context.Context, actor, targetActor str
 
 // GetBlockedUsers returns a paginated list of actors blocked by the given actor
 func (r *SocialRepository) GetBlockedUsers(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error) {
+	if limit <= 0 {
+		limit = defaultSocialPageLimit
+	} else if limit > maxSocialPageLimit {
+		limit = maxSocialPageLimit
+	}
+
 	blockerUsername := extractUsername(actor)
 
 	query := r.db.WithContext(ctx).Model(&models.Block{}).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)).
-		Limit(limit + 1) // Get one extra to check if there are more results
+		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername))
 
 	if cursor != "" {
 		query = query.Where("SK", ">", cursor)
 	}
 
 	var blocks []models.Block
-	err := query.All(&blocks)
+	err := query.Limit(limit + 1).All(&blocks)
 	if err != nil {
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityBlock, "query")
 	}
@@ -234,19 +245,24 @@ func (r *SocialRepository) GetBlockedUsers(ctx context.Context, actor string, li
 
 // GetBlockedByUsers returns a paginated list of actors who have blocked the given actor
 func (r *SocialRepository) GetBlockedByUsers(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error) {
+	if limit <= 0 {
+		limit = defaultSocialPageLimit
+	} else if limit > maxSocialPageLimit {
+		limit = maxSocialPageLimit
+	}
+
 	blockedUsername := extractUsername(actor)
 
 	query := r.db.WithContext(ctx).Model(&models.Block{}).
 		Index("GSI5").
-		Where("GSI5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
-		Limit(limit + 1) // Get one extra to check if there are more results
+		Where("GSI5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername))
 
 	if cursor != "" {
 		query = query.Where("GSI5SK", ">", cursor)
 	}
 
 	var blocks []models.Block
-	err := query.All(&blocks)
+	err := query.Limit(limit + 1).All(&blocks)
 	if err != nil {
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityBlock, "query")
 	}
@@ -371,13 +387,14 @@ func (r *SocialRepository) IsMuted(ctx context.Context, actor, targetActor strin
 
 // GetMutedUsers returns all actors muted by the given actor
 func (r *SocialRepository) GetMutedUsers(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Mute, string, error) {
-	if limit == 0 {
-		limit = 20
+	if limit <= 0 {
+		limit = defaultSocialPageLimit
+	} else if limit > maxSocialPageLimit {
+		limit = maxSocialPageLimit
 	}
 
 	query := r.db.WithContext(ctx).Model(&models.Mute{}).
 		Where("PK", "=", fmt.Sprintf("MUTE#%s", actor)).
-		Limit(limit+1).       // Get one extra to check if there are more results
 		OrderBy("SK", "DESC") // Newest first
 
 	if cursor != "" {
@@ -385,7 +402,7 @@ func (r *SocialRepository) GetMutedUsers(ctx context.Context, actor string, limi
 	}
 
 	var mutes []models.Mute
-	err := query.All(&mutes)
+	err := query.Limit(limit + 1).All(&mutes)
 	if err != nil {
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityMute, "muted actors")
 	}
@@ -442,11 +459,24 @@ func (r *SocialRepository) CreateAnnounce(ctx context.Context, announce *storage
 	}
 
 	// Use enhanced validation and creation
-	err := r.announceRepo.ValidateAndCreate(ctx, model)
-	if err != nil {
-		if errors.IsConditionFailed(err) {
-			return ErrorHandler.HandleCreateError(err, EntityAnnounce, "already announced")
+	if err := r.announceRepo.ValidateAndCreate(ctx, model); err != nil {
+		lowerMessage := strings.ToLower(err.Error())
+
+		if svcErrors.HasCode(err, svcErrors.CodeAlreadyExists) ||
+			svcErrors.HasCode(err, svcErrors.CodeConflict) ||
+			strings.Contains(lowerMessage, "already announced") ||
+			strings.Contains(lowerMessage, "already exists") ||
+			strings.Contains(lowerMessage, "condition check failed") {
+			r.logger.Debug("announce already persisted",
+				zap.String("actor", announce.Actor),
+				zap.String("object", announce.Object))
+			return nil
 		}
+
+		if _, ok := svcErrors.AsAppError(err); ok {
+			return err
+		}
+
 		return ErrorHandler.HandleCreateError(err, EntityAnnounce, "create")
 	}
 
@@ -506,7 +536,6 @@ func (r *SocialRepository) GetStatusAnnounces(ctx context.Context, objectID stri
 
 	query := r.db.WithContext(ctx).Model(&models.Announce{}).
 		Where("PK", "=", fmt.Sprintf("OBJECT#%s#ANNOUNCES", objectID)).
-		Limit(limit+1).       // Get one extra to check if there are more results
 		OrderBy("SK", "DESC") // Most recent first
 
 	if cursor != "" {
@@ -514,7 +543,7 @@ func (r *SocialRepository) GetStatusAnnounces(ctx context.Context, objectID stri
 	}
 
 	var announces []models.Announce
-	err := query.All(&announces)
+	err := query.Limit(limit + 1).All(&announces)
 	if err != nil {
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityAnnounce, "object announces")
 	}
@@ -571,7 +600,6 @@ func (r *SocialRepository) GetActorAnnounces(ctx context.Context, actorID string
 	query := r.db.WithContext(ctx).Model(&models.Announce{}).
 		Index("GSI4").
 		Where("GSI4PK", "=", fmt.Sprintf("ACTOR#%s#ANNOUNCES", actorID)).
-		Limit(limit+1).           // Get one extra to check if there are more results
 		OrderBy("GSI4SK", "DESC") // Most recent first
 
 	if cursor != "" {
@@ -579,7 +607,7 @@ func (r *SocialRepository) GetActorAnnounces(ctx context.Context, actorID string
 	}
 
 	var announces []models.Announce
-	err := query.All(&announces)
+	err := query.Limit(limit + 1).All(&announces)
 	if err != nil {
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityAnnounce, "actor announces")
 	}
@@ -860,13 +888,13 @@ func (r *SocialRepository) GetAccountNote(ctx context.Context, username, targetA
 	// Use BaseRepository Get method
 	var model models.AccountNote
 	err := r.accountNoteRepo.Get(ctx, pk, sk, &model)
-    if err != nil {
-        if errors.IsNotFound(err) {
-            return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityAccountNote, targetActorID)
-        }
-        r.logger.Error("failed to get account note", zap.Error(err))
-        return nil, ErrorHandler.HandleGetError(err, EntityAccountNote, targetActorID)
-    }
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityAccountNote, targetActorID)
+		}
+		r.logger.Error("failed to get account note", zap.Error(err))
+		return nil, ErrorHandler.HandleGetError(err, EntityAccountNote, targetActorID)
+	}
 
 	return &storage.AccountNote{
 		Username:      model.Username,

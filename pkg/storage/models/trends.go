@@ -24,6 +24,11 @@ type HashtagTrend struct {
 	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName ensures hashtag trends share the unified Dynamo table.
+func (h *HashtagTrend) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the GSI keys for hashtag trend
 func (h *HashtagTrend) UpdateKeys() error {
 	timeBucket := h.UpdatedAt.Format(common.DateFormat)
@@ -70,6 +75,11 @@ type StatusTrend struct {
 	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName ensures status trends use the unified Dynamo table.
+func (s *StatusTrend) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the GSI keys for status trend
 func (s *StatusTrend) UpdateKeys() error {
 	timeBucket := s.UpdatedAt.Format(common.DateFormat)
@@ -108,6 +118,11 @@ type LinkTrend struct {
 	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName ensures link trends persist in the shared Dynamo table.
+func (l *LinkTrend) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the GSI keys for link trend
 func (l *LinkTrend) UpdateKeys() error {
 	timeBucket := l.UpdatedAt.Format(common.DateFormat)
@@ -137,6 +152,11 @@ type SearchQuery struct {
 	ResultCount int       `json:"result_count"`
 	SearchedAt  time.Time `json:"searched_at"`
 	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"`
+}
+
+// TableName ensures search queries are stored in the shared Dynamo table.
+func (s *SearchQuery) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys for search query
@@ -182,6 +202,11 @@ type PopularQueryCounter struct {
 	FirstQueried time.Time `json:"first_queried"` // First time this query was seen
 	UpdatedAt    time.Time `json:"updated_at"`
 	TTL          int64     `json:"ttl,omitempty" dynamorm:"ttl"`
+}
+
+// TableName ensures query counters leverage the shared Dynamo table.
+func (p *PopularQueryCounter) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys for popular query counter

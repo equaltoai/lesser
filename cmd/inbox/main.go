@@ -24,7 +24,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/monitoring"
+	notifpush "github.com/equaltoai/lesser/pkg/notifications"
 	"github.com/equaltoai/lesser/pkg/observability"
+	notifsvc "github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -282,6 +284,35 @@ func initializeRepositories(repoFactory storageCore.RepositoryStorage, coreDB dy
 	costTrackingBaseRepo := repositories.NewBaseRepository[*models.FederationCostTracking](coreDB, cfg.DynamoTableName, logger)
 	budgetBaseRepo := repositories.NewBaseRepository[*models.FederationBudget](coreDB, cfg.DynamoTableName, logger)
 	repos.federationCostRepo = repositories.NewFederationCostRepositoryFromBase(costTrackingBaseRepo, budgetBaseRepo, nil)
+
+	var accountRepo *repositories.AccountRepository
+	if accessor, ok := repoFactory.(interface {
+		Account() *repositories.AccountRepository
+	}); ok {
+		accountRepo = accessor.Account()
+	}
+	if accountRepo == nil {
+		accountRepo = repositories.NewAccountRepository(coreDB, cfg.DynamoTableName, cfg.Domain, logger)
+	}
+
+	var pushService *notifpush.PushService
+	if svc, err := notifpush.NewPushService(cfg); err != nil {
+		logger.Warn("inbox handler: failed to initialize push service", zap.Error(err))
+	} else {
+		pushService = svc
+	}
+
+	if repos.notificationRepo != nil {
+		notificationService := notifsvc.NewService(
+			repos.notificationRepo,
+			accountRepo,
+			nil,
+			logger,
+			cfg.Domain,
+			pushService,
+		)
+		repos.notificationRepo.SetDispatcher(notificationService)
+	}
 
 	return repos
 }
