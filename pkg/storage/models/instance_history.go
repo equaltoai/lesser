@@ -43,7 +43,7 @@ type InstanceHistory struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing InstanceHistory.
 func (i *InstanceHistory) TableName() string {
 	return MainTableName
 }

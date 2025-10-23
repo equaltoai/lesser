@@ -65,6 +65,11 @@ type SearchCostTracking struct {
 	TTL int64 `dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing SearchCostTracking.
+func (SearchCostTracking) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets the composite keys for search cost tracking
 func (sct *SearchCostTracking) UpdateKeys() error {
 	if sct.Timestamp.IsZero() {
@@ -140,6 +145,11 @@ type SearchBudget struct {
 
 	// TTL for cleanup
 	TTL int64 `dynamorm:"ttl"`
+}
+
+// TableName returns the DynamoDB table backing SearchBudget.
+func (SearchBudget) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets the composite keys for search budget tracking
@@ -276,6 +286,11 @@ type SearchCostAggregation struct {
 	TTL int64 `dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing SearchCostAggregation.
+func (SearchCostAggregation) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets the composite keys for search cost aggregation
 func (sca *SearchCostAggregation) UpdateKeys() error {
 	// PK: SEARCH_AGG#date#aggregation_type
@@ -341,6 +356,11 @@ type SearchQueryStats struct {
 
 	// TTL for cleanup
 	TTL int64 `dynamorm:"ttl"`
+}
+
+// TableName returns the DynamoDB table backing SearchQueryStats.
+func (SearchQueryStats) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets the composite keys for search query stats

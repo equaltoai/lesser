@@ -47,6 +47,11 @@ type StreamingPreferences struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing StreamingPreferences.
+func (StreamingPreferences) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets the GSI keys based on the current values
 func (s *StreamingPreferences) UpdateKeys() error {
 	// Set primary keys

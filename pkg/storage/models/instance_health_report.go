@@ -27,6 +27,11 @@ type InstanceHealthReport struct {
 	TTL       int64  `json:"ttl,omitempty" dynamorm:"ttl"` // 30 days retention
 }
 
+// TableName returns the DynamoDB table backing InstanceHealthReport.
+func (InstanceHealthReport) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the partition and sort keys
 func (h *InstanceHealthReport) UpdateKeys() {
 	h.PK = fmt.Sprintf("INSTANCE#%s", h.Domain)

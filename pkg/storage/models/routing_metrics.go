@@ -35,6 +35,11 @@ type RouteMetricsWindow struct {
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
 }
 
+// TableName returns the DynamoDB table backing RouteMetricsWindow.
+func (RouteMetricsWindow) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the keys based on the current data
 func (r *RouteMetricsWindow) UpdateKeys() error {
 	r.PK = fmt.Sprintf("METRICS#ROUTE#%s", r.RouteID)
@@ -87,6 +92,11 @@ type GlobalMetricsWindow struct {
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
 }
 
+// TableName returns the DynamoDB table backing GlobalMetricsWindow.
+func (GlobalMetricsWindow) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the GSI keys based on the current data
 func (g *GlobalMetricsWindow) UpdateKeys() error {
 	windowUnix := g.WindowStart.Unix()
@@ -133,6 +143,11 @@ type InstanceMetricsWindow struct {
 
 	// TTL for cleanup
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+}
+
+// TableName returns the DynamoDB table backing InstanceMetricsWindow.
+func (InstanceMetricsWindow) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the keys based on the current data

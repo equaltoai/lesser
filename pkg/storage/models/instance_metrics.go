@@ -40,7 +40,7 @@ type InstanceMetrics struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing InstanceMetrics.
 func (i *InstanceMetrics) TableName() string {
 	return MainTableName
 }

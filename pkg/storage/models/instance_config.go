@@ -17,6 +17,11 @@ type InstanceConfig struct {
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
+// TableName returns the DynamoDB table backing InstanceConfig.
+func (InstanceConfig) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the DynamoDB keys (no GSI needed for this simple structure)
 func (c *InstanceConfig) UpdateKeys() error {
 	// Keys are set explicitly when creating/updating records
@@ -69,6 +74,11 @@ type AIInstanceConfig struct {
 	PIIDetectionEnabled  bool      `json:"pii_detection_enabled"`
 	AIContentDetection   bool      `json:"ai_content_detection_enabled"`
 	UpdatedAt            time.Time `json:"updated_at"`
+}
+
+// TableName returns the DynamoDB table backing AIInstanceConfig.
+func (AIInstanceConfig) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the DynamoDB keys

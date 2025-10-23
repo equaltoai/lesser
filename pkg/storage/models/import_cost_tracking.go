@@ -146,7 +146,7 @@ func (i *ImportCostTracking) GetSuccessRate() float64 {
 	return float64(i.SuccessCount) / float64(i.ProcessedCount)
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing ImportCostTracking.
 func (i *ImportCostTracking) TableName() string {
-	return "" // Will be set by the repository
+	return MainTableName
 }

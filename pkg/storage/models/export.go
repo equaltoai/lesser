@@ -90,7 +90,12 @@ func (e *Export) GetCreatedAt() time.Time {
 	return e.CreatedAt
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing Export.
 func (e *Export) TableName() string {
-	return "" // Will be set by the repository
+	return MainTableName
+}
+
+// TableName returns the DynamoDB table backing ExportDateRange.
+func (ExportDateRange) TableName() string {
+	return MainTableName
 }

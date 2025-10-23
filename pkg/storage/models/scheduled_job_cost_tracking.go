@@ -184,6 +184,11 @@ type ScheduledJobCategoryStats struct {
 	SuccessRate             float64 `json:"success_rate"`
 }
 
+// TableName returns the DynamoDB table backing ScheduledJobCategoryStats.
+func (ScheduledJobCategoryStats) TableName() string {
+	return MainTableName
+}
+
 // ScheduledJobEnvironmentStats represents cost statistics for an environment
 type ScheduledJobEnvironmentStats struct {
 	Environment             string  `json:"environment"`
@@ -191,6 +196,11 @@ type ScheduledJobEnvironmentStats struct {
 	TotalCostMicroCents     int64   `json:"total_cost_micro_cents"`
 	TotalCostDollars        float64 `json:"total_cost_dollars"`
 	AverageCostPerExecution float64 `json:"average_cost_per_execution"`
+}
+
+// TableName returns the DynamoDB table backing ScheduledJobEnvironmentStats.
+func (ScheduledJobEnvironmentStats) TableName() string {
+	return MainTableName
 }
 
 // ScheduledJobScheduleStats represents cost statistics for a schedule pattern
@@ -203,12 +213,17 @@ type ScheduledJobScheduleStats struct {
 	AverageExecutionTime    float64 `json:"average_execution_time"`
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing ScheduledJobScheduleStats.
+func (ScheduledJobScheduleStats) TableName() string {
+	return MainTableName
+}
+
+// TableName returns the DynamoDB table backing ScheduledJobCostRecord.
 func (ScheduledJobCostRecord) TableName() string {
 	return MainTableName
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing ScheduledJobCostAggregation.
 func (ScheduledJobCostAggregation) TableName() string {
 	return MainTableName
 }
@@ -526,6 +541,11 @@ func (sjca *ScheduledJobCostAggregation) UpdateKeys() error {
 // ScheduledJobCostRecordBuilder helps create scheduled job cost tracking records
 type ScheduledJobCostRecordBuilder struct {
 	record *ScheduledJobCostRecord
+}
+
+// TableName returns the DynamoDB table backing ScheduledJobCostRecordBuilder.
+func (ScheduledJobCostRecordBuilder) TableName() string {
+	return MainTableName
 }
 
 // NewScheduledJobCostRecordBuilder creates a new builder

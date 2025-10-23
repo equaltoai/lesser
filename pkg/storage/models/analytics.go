@@ -15,7 +15,7 @@ type StatusEngagement struct {
 	TTL            int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 7 day TTL
 }
 
-// TableName ensures status engagements persist in the shared main table.
+// TableName returns the DynamoDB table backing StatusEngagement.
 func (StatusEngagement) TableName() string {
 	return MainTableName
 }
@@ -61,6 +61,11 @@ func (l *LinkShare) GetPK() string {
 // GetSK returns the sort key for BaseModel interface
 func (l *LinkShare) GetSK() string {
 	return l.SK
+}
+
+// TableName returns the DynamoDB table backing LinkShare.
+func (LinkShare) TableName() string {
+	return MainTableName
 }
 
 // EngagementMetrics tracks engagement metrics for platform usage analysis
@@ -112,7 +117,7 @@ func (e *EngagementMetrics) GetSK() string {
 	return e.SK
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing EngagementMetrics.
 func (e *EngagementMetrics) TableName() string {
 	return MainTableName
 }

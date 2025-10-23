@@ -34,6 +34,11 @@ func (c *CostProjection) UpdateKeys() {
 	c.TTL = c.CalculatedAt.AddDate(0, 3, 0).Unix()
 }
 
+// TableName returns the DynamoDB table backing CostProjection.
+func (CostProjection) TableName() string {
+	return MainTableName
+}
+
 // NewCostProjection creates a new cost projection
 func NewCostProjection(period string) *CostProjection {
 	now := time.Now().UTC()

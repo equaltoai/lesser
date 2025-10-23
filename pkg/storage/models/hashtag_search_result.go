@@ -83,3 +83,8 @@ func (h *HashtagSearchResult) HasRecentActivity() bool {
 	}
 	return false
 }
+
+// TableName returns the DynamoDB table backing HashtagSearchResult.
+func (HashtagSearchResult) TableName() string {
+	return MainTableName
+}

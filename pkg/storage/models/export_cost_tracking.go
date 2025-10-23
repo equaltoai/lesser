@@ -128,9 +128,9 @@ func (e *ExportCostTracking) GetTotalCostMicroCents() int64 {
 	return e.TotalCostMicroCents
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing ExportCostTracking.
 func (e *ExportCostTracking) TableName() string {
-	return "" // Will be set by the repository
+	return MainTableName
 }
 
 // ExportCostSummary represents aggregated export costs
@@ -159,6 +159,11 @@ type ExportCostSummary struct {
 	TypeBreakdown map[string]*ExportTypeCostStats `json:"type_breakdown"`
 }
 
+// TableName returns the DynamoDB table backing ExportCostSummary.
+func (ExportCostSummary) TableName() string {
+	return MainTableName
+}
+
 // ExportTypeCostStats represents cost statistics for a specific export type
 type ExportTypeCostStats struct {
 	Type                  string  `json:"type"`
@@ -168,4 +173,9 @@ type ExportTypeCostStats struct {
 	AverageCostMicroCents int64   `json:"average_cost_micro_cents"`
 	AverageFileSize       int64   `json:"average_file_size"`
 	AverageRecordCount    int64   `json:"average_record_count"`
+}
+
+// TableName returns the DynamoDB table backing ExportTypeCostStats.
+func (ExportTypeCostStats) TableName() string {
+	return MainTableName
 }

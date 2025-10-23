@@ -21,6 +21,11 @@ type SearchSuggestion struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// TableName returns the DynamoDB table backing SearchSuggestion.
+func (SearchSuggestion) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the partition and sort keys based on the model's attributes
 func (s *SearchSuggestion) UpdateKeys() error {
 	s.PK = fmt.Sprintf("SEARCH_SUGGEST#%s", s.Type)

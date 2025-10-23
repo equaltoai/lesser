@@ -425,7 +425,7 @@ func (ca *CostAggregator) processRealtimeCosts(ctx *lift.Context, costs []*model
 				tableStats.TotalCostMicroCents += cost.TotalCostMicroCents
 			} else {
 				aggregated.TableBreakdown[cost.Table] = &models.DynamoDBTableCostStats{
-					TableName:           cost.Table,
+					Table:               cost.Table,
 					OperationCount:      1,
 					ReadCapacityUnits:   cost.ReadCapacityUnits,
 					WriteCapacityUnits:  cost.WriteCapacityUnits,

@@ -60,6 +60,11 @@ type MediaAnalytics struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing MediaAnalytics.
+func (MediaAnalytics) TableName() string {
+	return MainTableName
+}
+
 // MediaVariantCost represents cost metrics for a specific media variant
 type MediaVariantCost struct {
 	// Variant identification
@@ -93,6 +98,11 @@ type MediaVariantCost struct {
 	AverageLatencyMs int64   `json:"average_latency_ms"` // Average response time
 	ErrorRate        float64 `json:"error_rate"`         // Error rate for this variant
 	CacheHitRate     float64 `json:"cache_hit_rate"`     // CDN cache performance
+}
+
+// TableName returns the DynamoDB table backing MediaVariantCost.
+func (MediaVariantCost) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets the GSI keys based on the current values
