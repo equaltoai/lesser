@@ -19,6 +19,11 @@ type FederationSeverance struct {
 	Type         string    `json:"type"` // "domain_block", "suspension", "defederation"
 }
 
+// TableName returns the DynamoDB table backing FederationSeverance.
+func (FederationSeverance) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the GSI keys for federation severance
 func (f *FederationSeverance) UpdateKeys() {
 	f.PK = fmt.Sprintf(KeyPatternUser, f.UserID)
@@ -40,6 +45,11 @@ type FederationIssue struct {
 	Severity    string    `json:"severity"` // "low", "medium", "high", "critical"
 	Resolved    bool      `json:"resolved"`
 	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"`
+}
+
+// TableName returns the DynamoDB table backing FederationIssue.
+func (FederationIssue) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys for federation issue
@@ -65,6 +75,11 @@ type ReconnectionAttempt struct {
 	Method       string    `json:"method"` // "manual", "automatic", "scheduled"
 }
 
+// TableName returns the DynamoDB table backing ReconnectionAttempt.
+func (ReconnectionAttempt) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the GSI keys for reconnection attempt
 func (r *ReconnectionAttempt) UpdateKeys() {
 	r.PK = fmt.Sprintf("RECONNECTION#%s#%s", r.UserID, r.Domain)
@@ -85,6 +100,11 @@ type FederationTimeSeries struct {
 	ErrorCount     int64                  `json:"error_count"`
 	SuccessCount   int64                  `json:"success_count"`
 	TTL            int64                  `json:"ttl,omitempty" dynamorm:"ttl"`
+}
+
+// TableName returns the DynamoDB table backing FederationTimeSeries.
+func (FederationTimeSeries) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys for federation time series

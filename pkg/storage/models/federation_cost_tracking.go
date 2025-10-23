@@ -215,9 +215,9 @@ func (f *FederationCostTracking) GetTotalCostDollars() float64 {
 	return float64(f.TotalCostMicroCents) / 1_000_000.0
 }
 
-// TableName returns the DynamoDB table name
-func (f *FederationCostTracking) TableName() string {
-	return "" // Will be set by the repository
+// TableName returns the DynamoDB table backing FederationCostTracking.
+func (FederationCostTracking) TableName() string {
+	return MainTableName
 }
 
 // AddRouteDeliveryAttempt tracks a delivery attempt for a specific route
@@ -605,7 +605,7 @@ func (f *FederationBudget) ResetPeriod(newPeriodStart, newPeriodEnd time.Time) {
 	f.Status = StatusActive
 }
 
-// TableName returns the DynamoDB table name
-func (f *FederationBudget) TableName() string {
-	return "" // Will be set by the repository
+// TableName returns the DynamoDB table backing FederationBudget.
+func (FederationBudget) TableName() string {
+	return MainTableName
 }

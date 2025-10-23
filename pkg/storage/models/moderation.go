@@ -379,6 +379,11 @@ type ModerationEvidence struct {
 	RequiresReview    bool    `json:"requires_review,omitempty"`
 }
 
+// TableName returns the DynamoDB table backing ModerationEvidence.
+func (ModerationEvidence) TableName() string {
+	return MainTableName
+}
+
 // ModerationHistoryEntry represents a single entry in the moderation audit trail
 type ModerationHistoryEntry struct {
 	Timestamp   time.Time              `json:"timestamp"`
@@ -389,6 +394,11 @@ type ModerationHistoryEntry struct {
 	ToStatus    ModerationStatus       `json:"to_status"`
 	Note        string                 `json:"note,omitempty"`
 	ChangedData map[string]interface{} `json:"changed_data,omitempty"`
+}
+
+// TableName returns the DynamoDB table backing ModerationHistoryEntry.
+func (ModerationHistoryEntry) TableName() string {
+	return MainTableName
 }
 
 // Moderation represents an active moderation case being processed
@@ -408,6 +418,11 @@ type Moderation struct {
 	CreatedAt     time.Time                `json:"created_at"`
 	ActionedAt    *time.Time               `json:"actioned_at,omitempty"`
 	ResolvedAt    *time.Time               `json:"resolved_at,omitempty"`
+}
+
+// TableName returns the DynamoDB table backing Moderation.
+func (Moderation) TableName() string {
+	return MainTableName
 }
 
 // AddHistoryEntry adds a new entry to the moderation history

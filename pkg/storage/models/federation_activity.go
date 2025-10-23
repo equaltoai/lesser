@@ -69,7 +69,12 @@ type InstanceInfo struct {
 	FirstSeen   time.Time `json:"first_seen"`
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing InstanceInfo.
+func (InstanceInfo) TableName() string {
+	return MainTableName
+}
+
+// TableName returns the DynamoDB table backing FederationActivity.
 func (FederationActivity) TableName() string {
 	return MainTableName
 }
@@ -239,6 +244,11 @@ func (fa *FederationActivity) MarkFailed(errorMsg string) {
 // FederationActivityBuilder helps create federation activities
 type FederationActivityBuilder struct {
 	activity *FederationActivity
+}
+
+// TableName returns the DynamoDB table backing FederationActivityBuilder.
+func (FederationActivityBuilder) TableName() string {
+	return MainTableName
 }
 
 // NewFederationActivityBuilder creates a new builder

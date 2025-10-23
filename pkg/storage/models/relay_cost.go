@@ -53,6 +53,11 @@ type RelayCost struct {
 	TTL       int64     `json:"ttl,omitempty" dynamorm:"ttl"` // For automatic cleanup
 }
 
+// TableName returns the DynamoDB table backing RelayCost.
+func (RelayCost) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the composite keys based on the relay cost data
 func (rc *RelayCost) UpdateKeys() {
 	// Primary key: RELAY_COST#relayURL#operationType
@@ -159,6 +164,11 @@ type RelayMetrics struct {
 	TTL       int64     `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing RelayMetrics.
+func (RelayMetrics) TableName() string {
+	return MainTableName
+}
+
 // RelayOperationStats represents stats for a specific operation type
 type RelayOperationStats struct {
 	OperationType       string  `json:"operation_type"`
@@ -168,6 +178,11 @@ type RelayOperationStats struct {
 	TotalCostMicroCents int64   `json:"total_cost_micro_cents"`
 	AverageResponseTime float64 `json:"average_response_time_ms"`
 	SuccessRate         float64 `json:"success_rate"`
+}
+
+// TableName returns the DynamoDB table backing RelayOperationStats.
+func (RelayOperationStats) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the composite keys based on the relay metrics data
@@ -303,6 +318,11 @@ type RelayBudget struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	TTL       int64     `json:"ttl,omitempty" dynamorm:"ttl"`
+}
+
+// TableName returns the DynamoDB table backing RelayBudget.
+func (RelayBudget) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the composite keys based on the relay budget data

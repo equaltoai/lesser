@@ -151,7 +151,7 @@ func (f *FederationInstanceHealthTracking) CalculateHealthScore() {
 	f.IsHealthy = f.HealthScore >= 0.7 && f.ConsecutiveFails < 3
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing FederationInstanceHealthTracking.
 func (f *FederationInstanceHealthTracking) TableName() string {
 	return MainTableName
 }

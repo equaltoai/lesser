@@ -55,6 +55,11 @@ type FederationInstanceRegistry struct {
 	TTL int64 `dynamorm:"ttl" json:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing FederationInstanceRegistry.
+func (FederationInstanceRegistry) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys ensures GSI keys are properly set before saving
 func (f *FederationInstanceRegistry) UpdateKeys() error {
 	// Set primary keys
@@ -103,6 +108,11 @@ type FederationInstanceRegistryHealthHistory struct {
 
 	// TTL for automatic cleanup (keep 7 days)
 	TTL int64 `dynamorm:"ttl" json:"ttl"`
+}
+
+// TableName returns the DynamoDB table backing FederationInstanceRegistryHealthHistory.
+func (FederationInstanceRegistryHealthHistory) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys ensures keys are properly set for health history
