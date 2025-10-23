@@ -182,3 +182,8 @@ func (t *TrendingLink) GetDisplayTitle() string {
 
 	return t.URL
 }
+
+// TableName returns the DynamoDB table backing TrendingLink.
+func (TrendingLink) TableName() string {
+	return MainTableName
+}

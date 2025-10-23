@@ -13,6 +13,11 @@ type UserModelTestSuite struct {
 	suite.Suite
 }
 
+// TableName returns the DynamoDB table backing UserModelTestSuite.
+func (UserModelTestSuite) TableName() string {
+	return MainTableName
+}
+
 // Test BeforeCreate
 
 func (suite *UserModelTestSuite) TestBeforeCreate_SetsTimestamps() {

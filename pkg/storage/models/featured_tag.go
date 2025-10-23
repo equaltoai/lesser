@@ -38,3 +38,8 @@ func (f *FeaturedTag) GetPK() string {
 func (f *FeaturedTag) GetSK() string {
 	return f.SK
 }
+
+// TableName returns the DynamoDB table backing FeaturedTag.
+func (FeaturedTag) TableName() string {
+	return MainTableName
+}

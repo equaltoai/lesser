@@ -27,3 +27,8 @@ func (v *VAPIDKeyRecord) GetPK() string {
 func (v *VAPIDKeyRecord) GetSK() string {
 	return v.SK
 }
+
+// TableName returns the DynamoDB table backing VAPIDKeyRecord.
+func (VAPIDKeyRecord) TableName() string {
+	return MainTableName
+}

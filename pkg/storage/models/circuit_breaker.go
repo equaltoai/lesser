@@ -69,6 +69,11 @@ func (c *CircuitBreakerState) SetBackoffDuration(d time.Duration) {
 	c.BackoffDuration = int64(d)
 }
 
+// TableName returns the DynamoDB table backing CircuitBreakerState.
+func (CircuitBreakerState) TableName() string {
+	return MainTableName
+}
+
 // CircuitBreakerEvent represents a state change event for debugging and monitoring
 type CircuitBreakerEvent struct {
 	// DynamoDB keys
@@ -117,6 +122,11 @@ func (e *CircuitBreakerEvent) GetSK() string {
 	return e.SK
 }
 
+// TableName returns the DynamoDB table backing CircuitBreakerEvent.
+func (CircuitBreakerEvent) TableName() string {
+	return MainTableName
+}
+
 // CircuitBreakerConfig represents the configuration for circuit breaker behavior
 type CircuitBreakerConfig struct {
 	// Failure thresholds
@@ -134,6 +144,11 @@ type CircuitBreakerConfig struct {
 	// Recovery
 	BackoffMultiplier float64       // Exponential backoff multiplier
 	MaxBackoff        time.Duration // Maximum backoff duration
+}
+
+// TableName returns the DynamoDB table backing CircuitBreakerConfig.
+func (CircuitBreakerConfig) TableName() string {
+	return MainTableName
 }
 
 // DefaultCircuitBreakerConfig returns sensible defaults

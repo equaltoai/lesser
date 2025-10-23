@@ -52,3 +52,8 @@ func (s *ScheduledStatus) GetPK() string {
 func (s *ScheduledStatus) GetSK() string {
 	return s.SK
 }
+
+// TableName returns the DynamoDB table backing ScheduledStatus.
+func (ScheduledStatus) TableName() string {
+	return MainTableName
+}

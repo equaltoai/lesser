@@ -65,6 +65,11 @@ type UserPreferencesStorage struct {
 	StreamingDataSaver        bool            `json:"streaming_data_saver"`
 }
 
+// TableName returns the DynamoDB table backing UserPreferencesStorage.
+func (UserPreferencesStorage) TableName() string {
+	return MainTableName
+}
+
 // ToStorage converts the DynamORM model to UserPreferencesStorage
 func (up *UserPreferences) ToStorage() *UserPreferencesStorage {
 	return &UserPreferencesStorage{

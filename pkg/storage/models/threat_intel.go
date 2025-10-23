@@ -61,6 +61,11 @@ func (t *ThreatIntel) GetSK() string {
 	return t.SK
 }
 
+// TableName returns the DynamoDB table backing ThreatIntel.
+func (ThreatIntel) TableName() string {
+	return MainTableName
+}
+
 // ThreatIndicator represents an indicator mapping for fast lookup
 type ThreatIndicator struct {
 	// Primary key fields
@@ -94,4 +99,9 @@ func (ti *ThreatIndicator) GetPK() string {
 // GetSK returns the sort key for BaseModel interface
 func (ti *ThreatIndicator) GetSK() string {
 	return ti.SK
+}
+
+// TableName returns the DynamoDB table backing ThreatIndicator.
+func (ThreatIndicator) TableName() string {
+	return MainTableName
 }

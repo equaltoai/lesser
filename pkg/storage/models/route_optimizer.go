@@ -52,6 +52,11 @@ func (r *RouteDeliveryResult) GetSK() string {
 	return r.SK
 }
 
+// TableName returns the DynamoDB table backing RouteDeliveryResult.
+func (RouteDeliveryResult) TableName() string {
+	return MainTableName
+}
+
 // OptimizationDecision represents a route optimization decision record
 type OptimizationDecision struct {
 	// Primary keys
@@ -86,4 +91,9 @@ func (o *OptimizationDecision) GetPK() string {
 // GetSK returns the sort key
 func (o *OptimizationDecision) GetSK() string {
 	return o.SK
+}
+
+// TableName returns the DynamoDB table backing OptimizationDecision.
+func (OptimizationDecision) TableName() string {
+	return MainTableName
 }

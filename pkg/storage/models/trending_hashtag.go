@@ -27,8 +27,8 @@ type TrendingHashtag struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
-// TableName returns the DynamoDB table name
-func (t *TrendingHashtag) TableName() string {
+// TableName returns the DynamoDB table backing TrendingHashtag.
+func (TrendingHashtag) TableName() string {
 	return MainTableName
 }
 

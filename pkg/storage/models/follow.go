@@ -80,3 +80,8 @@ func (f *Follow) updateGSI2() {
 		f.FollowedUsername,
 	)
 }
+
+// TableName returns the DynamoDB table backing Follow.
+func (Follow) TableName() string {
+	return MainTableName
+}

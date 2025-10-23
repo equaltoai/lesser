@@ -130,3 +130,8 @@ func (h *HashtagStats) IsActive() bool {
 func (h *HashtagStats) IsTrending(threshold float64) bool {
 	return h.TrendingScore > threshold
 }
+
+// TableName returns the DynamoDB table backing HashtagStats.
+func (HashtagStats) TableName() string {
+	return MainTableName
+}

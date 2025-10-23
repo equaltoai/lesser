@@ -23,7 +23,7 @@ func (h *HashtagMute) UpdateKeys() {
 	}
 }
 
-// TableName returns the DynamoDB table name
-func (h *HashtagMute) TableName() string {
-	return "lesser"
+// TableName returns the DynamoDB table backing HashtagMute.
+func (HashtagMute) TableName() string {
+	return MainTableName
 }

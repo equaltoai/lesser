@@ -88,3 +88,8 @@ func (t *ThreadContext) GetPathElements() []string {
 	}
 	return []string{} // Would implement proper path parsing
 }
+
+// TableName returns the DynamoDB table backing ThreadContext.
+func (ThreadContext) TableName() string {
+	return MainTableName
+}

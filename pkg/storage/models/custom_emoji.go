@@ -158,3 +158,8 @@ func (e *EmojiModel) calculatePopularityScore() float64 {
 
 	return baseScore
 }
+
+// TableName returns the DynamoDB table backing EmojiModel.
+func (EmojiModel) TableName() string {
+	return MainTableName
+}

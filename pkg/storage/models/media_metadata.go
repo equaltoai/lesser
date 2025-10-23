@@ -58,6 +58,11 @@ type QualityCodecInfo struct {
 	Height     int    `json:"height"`      // Video height in pixels
 }
 
+// TableName returns the DynamoDB table backing QualityCodecInfo.
+func (QualityCodecInfo) TableName() string {
+	return MainTableName
+}
+
 // TableName returns the DynamoDB table name
 func (MediaMetadata) TableName() string {
 	return MainTableName

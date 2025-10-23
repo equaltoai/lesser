@@ -107,3 +107,8 @@ func (t *ThreadSync) RemoveMissingReply(replyID string) {
 func (t *ThreadSync) IsRecentlyCompleted() bool {
 	return t.SyncStatus == StatusCompleted && time.Since(t.LastSyncAt) < 30*time.Minute
 }
+
+// TableName returns the DynamoDB table backing ThreadSync.
+func (ThreadSync) TableName() string {
+	return MainTableName
+}

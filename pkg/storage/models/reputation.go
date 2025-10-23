@@ -106,3 +106,8 @@ func (r *Reputation) ToStorageReputation() (interface{}, error) {
 	}
 	return reputation, nil
 }
+
+// TableName returns the DynamoDB table backing Reputation.
+func (Reputation) TableName() string {
+	return MainTableName
+}

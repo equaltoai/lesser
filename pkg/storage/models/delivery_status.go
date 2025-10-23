@@ -58,3 +58,8 @@ func (d *DeliveryStatus) UpdateKeys() {
 		d.TTL = d.CreatedAt.Add(30 * 24 * time.Hour).Unix()
 	}
 }
+
+// TableName returns the DynamoDB table backing DeliveryStatus.
+func (DeliveryStatus) TableName() string {
+	return MainTableName
+}

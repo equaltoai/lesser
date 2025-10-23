@@ -116,6 +116,11 @@ type MediaVariant struct {
 	Quality     string `json:"quality,omitempty"` // "low", "medium", "high"
 }
 
+// TableName returns the DynamoDB table backing MediaVariant.
+func (MediaVariant) TableName() string {
+	return MainTableName
+}
+
 // TableName returns the DynamoDB table name for the Media model
 func (Media) TableName() string {
 	return MainTableName // Use the main table
