@@ -301,12 +301,30 @@ func (r *PollRepository) GetPollVotes(ctx context.Context, pollID string) (map[s
 	)
 
 	pk := fmt.Sprintf("POLL#%s", pollID)
-	voteModels, err := r.voteRepo.QueryWithSKPrefix(ctx, pk, "VOTE#", 0)
+	const voteChunkLimit = 200
 
-	if err != nil {
-		log.Error("failed to query votes",
-			zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, "poll vote", "voting")
+	var (
+		voteModels []*models.PollVote
+		cursor     string
+	)
+
+	for {
+		page, err := r.voteRepo.QueryWithSKPrefixPaginated(ctx, pk, "VOTE#", BasePaginationOptions{
+			Limit:  voteChunkLimit,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			log.Error("failed to query votes",
+				zap.Error(err))
+			return nil, ErrorHandler.HandleQueryError(err, "poll vote", "voting")
+		}
+
+		voteModels = append(voteModels, page.Items...)
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
 	votes := make(map[string][]int)

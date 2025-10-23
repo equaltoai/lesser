@@ -116,22 +116,22 @@ func (r *FederationActivityRepository) ListByDomain(ctx context.Context, domain 
 
 // ListByType lists federation activities by type - ActivityPub protocol compliance queries preserved
 func (r *FederationActivityRepository) ListByType(ctx context.Context, activityType string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
-	// Use shared GSI query helper with federation-specific parameters
-	return r.QueryGSIWithTimeRangeHelper(ctx,
+	items, _, err := r.QueryGSIWithTimeRangeHelper(ctx,
 		"type-index", "GSI1PK", "GSI1SK",
 		fmt.Sprintf("FED_TYPE#%s", activityType),
-		startTime, endTime, limit,
+		startTime, endTime, limit, "", SortOrderDesc,
 		"list federation activities by type")
+	return items, err
 }
 
 // ListByActor lists federation activities by actor - ActivityPub actor tracking preserved
 func (r *FederationActivityRepository) ListByActor(ctx context.Context, actorID string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
-	// Use shared GSI query helper with federation-specific parameters
-	return r.QueryGSIWithTimeRangeHelper(ctx,
+	items, _, err := r.QueryGSIWithTimeRangeHelper(ctx,
 		"actor-index", "GSI2PK", "GSI2SK",
 		fmt.Sprintf("FED_ACTOR#%s", actorID),
-		startTime, endTime, limit,
+		startTime, endTime, limit, "", SortOrderDesc,
 		"list federation activities by actor")
+	return items, err
 }
 
 // GetRecentActivities gets recent activities across all domains - federation monitoring preserved

@@ -665,7 +665,8 @@ func TestGetTimelineEntriesInRange_Parameters(t *testing.T) {
 	mockQuery.On("Where", "PK", "=", "TIMELINE#PUBLIC#FEDERATED").Return(mockQuery)
 	mockQuery.On("Where", "SK", ">=", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", "SK", "<=", mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", 20).Return(mockQuery)
+	mockQuery.On("OrderBy", "SK", "ASC").Return(mockQuery)
+	mockQuery.On("Limit", 21).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	_, err := repo.GetTimelineEntriesInRange(context.Background(), "PUBLIC", "FEDERATED", start, end, 20)

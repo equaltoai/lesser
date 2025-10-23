@@ -288,15 +288,34 @@ func (r *StreamingConnectionRepository) GetConnectionsByUser(ctx context.Context
 func (r *StreamingConnectionRepository) GetSubscriptionsForStream(ctx context.Context, stream string) ([]models.WebSocketSubscription, error) {
 	pk := fmt.Sprintf("SUB#%s", stream)
 
-	// Use BaseRepository Query method for partition key queries
-	subscriptions, err := r.subscriptionRepo.Query(ctx, pk, 0) // 0 means no limit
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, "websocket subscription", "subscriptions for stream")
+	const subscriptionChunkLimit = 200
+
+	var (
+		allSubscriptions []*models.WebSocketSubscription
+		cursor           string
+	)
+
+	for {
+		page, err := r.subscriptionRepo.FindWithPagination(ctx, pk, BasePaginationOptions{
+			Limit:  subscriptionChunkLimit,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			return nil, ErrorHandler.HandleQueryError(err, "websocket subscription", "subscriptions for stream")
+		}
+
+		allSubscriptions = append(allSubscriptions, page.Items...)
+
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
 	// Convert from pointers to values for backward compatibility
-	result := make([]models.WebSocketSubscription, len(subscriptions))
-	for i, sub := range subscriptions {
+	result := make([]models.WebSocketSubscription, len(allSubscriptions))
+	for i, sub := range allSubscriptions {
 		result[i] = *sub
 	}
 

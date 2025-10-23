@@ -349,8 +349,8 @@ func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, 
 		}
 	}
 
-	// Get one more item than requested to determine if there are more results
-	entries, err := r.QueryWithFilter(ctx, pk, filterMap, limit+1)
+	// Base repository handles retrieving limit+1 items to detect more pages
+	entries, err := r.QueryWithFilter(ctx, pk, filterMap, limit)
 	if err != nil {
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "filtered")
 	}

@@ -24,6 +24,18 @@ const (
 	SortOrderDesc = "DESC"
 )
 
+// Default limit constants for shared repository helpers
+const (
+	defaultBaseQueryLimit       = 100
+	maxBaseQueryLimit           = 500
+	defaultFilterQueryLimit     = 50
+	maxFilterQueryLimit         = 200
+	defaultCollectionQueryLimit = 50
+	maxCollectionQueryLimit     = 200
+	defaultAggregatedQueryLimit = 100
+	maxAggregatedQueryLimit     = 500
+)
+
 // BaseModel interface that all DynamoDB models must implement
 type BaseModel interface {
 	UpdateKeys() error
@@ -47,6 +59,19 @@ func modelPrototypeOf[T BaseModel]() interface{} {
 		modelType = modelType.Elem()
 	}
 	return reflect.New(modelType).Interface()
+}
+
+// clampLimit normalizes a requested limit to the configured defaults.
+// Returns the sanitized limit, whether it was clamped, and whether the default was applied.
+func clampLimit(limit, defaultLimit, maxLimit int) (sanitized int, clamped bool, usedDefault bool) {
+	switch {
+	case limit <= 0:
+		return defaultLimit, true, true
+	case limit > maxLimit:
+		return maxLimit, true, false
+	default:
+		return limit, false, false
+	}
 }
 
 // NewBaseRepository creates a new base repository
@@ -455,29 +480,57 @@ func (r *BaseRepository[T]) Delete(ctx context.Context, pk, sk string) error {
 func (r *BaseRepository[T]) Query(ctx context.Context, pk string, limit int) ([]T, error) {
 	var results []T
 
-	// Create query
-	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
-		Where("PK", "=", pk)
-
-	if limit > 0 {
-		query = query.Limit(limit)
+	safeLimit, clamped, usedDefault := clampLimit(limit, defaultBaseQueryLimit, maxBaseQueryLimit)
+	if clamped && r.logger != nil {
+		fields := []zap.Field{
+			zap.String("pk", pk),
+			zap.Int("requested_limit", limit),
+			zap.Int("applied_limit", safeLimit),
+		}
+		message := "base query limit clamped"
+		if usedDefault {
+			message = "base query called without limit; applying default"
+		}
+		r.logger.Warn(message, append(fields, zap.String("repository", r.repoName))...)
 	}
+
+	// Create query with sentinel fetch
+	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
+		Where("PK", "=", pk).
+		Limit(safeLimit + 1) // fetch sentinel record to detect additional pages
 
 	// Execute query
 	err := query.All(&results)
+	if err != nil {
+		r.logger.Error("failed to query items",
+			zap.Error(err),
+			zap.String("pk", pk),
+			zap.Int("limit", safeLimit))
+		return nil, ErrorHandler.HandleQueryError(err, "base entity", "partition query")
+	}
+
+	hasMore := len(results) > safeLimit
+	if hasMore {
+		results = results[:safeLimit]
+		if r.logger != nil {
+			r.logger.Debug("base query returned additional pages; follow-up pagination recommended",
+				zap.String("pk", pk),
+				zap.Int("limit", safeLimit),
+				zap.String("repository", r.repoName))
+		}
+	}
 
 	// Track cost if cost service is available
 	if r.costService != nil {
 		itemCount := int64(len(results))
-		estimatedRU := itemCount // Estimate 1 RU per item
-		if estimatedRU == 0 {
-			estimatedRU = 1 // Minimum for the query operation itself
+		if itemCount == 0 {
+			itemCount = 1 // minimum charge for the query execution
 		}
 
 		operation := cost.DynamoOperation{
 			Type:               "Query",
 			TableName:          r.tableName,
-			ConsumedReadUnits:  estimatedRU,
+			ConsumedReadUnits:  itemCount,
 			ConsumedWriteUnits: 0,
 			ItemCount:          itemCount,
 			Timestamp:          time.Now(),
@@ -492,69 +545,180 @@ func (r *BaseRepository[T]) Query(ctx context.Context, pk string, limit int) ([]
 		}
 	}
 
-	if err != nil {
-		r.logger.Error("failed to query items",
-			zap.Error(err),
-			zap.String("pk", pk),
-			zap.Int("limit", limit))
-		return nil, ErrorHandler.HandleQueryError(err, "base entity", "partition query")
-	}
-
 	return results, nil
 }
 
 // QueryWithSKPrefix performs a query with a sort key prefix
 func (r *BaseRepository[T]) QueryWithSKPrefix(ctx context.Context, pk, skPrefix string, limit int) ([]T, error) {
-	var results []T
-
-	// Create query
-	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
-		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", skPrefix)
-
-	if limit > 0 {
-		query = query.Limit(limit)
+	result, err := r.QueryWithSKPrefixPaginated(ctx, pk, skPrefix, BasePaginationOptions{
+		Limit: limit,
+		Order: SortOrderAsc,
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	// Execute query
-	err := query.All(&results)
-	if err != nil {
+	if result.HasMore && r.logger != nil {
+		r.logger.Debug("sk prefix query returned additional pages; consider paginating",
+			zap.String("pk", pk),
+			zap.String("sk_prefix", skPrefix),
+			zap.Int("limit", len(result.Items)),
+			zap.String("repository", r.repoName))
+	}
+
+	return result.Items, nil
+}
+
+// QueryWithSKPrefixPaginated performs a prefix query with cursor support.
+func (r *BaseRepository[T]) QueryWithSKPrefixPaginated(ctx context.Context, pk, skPrefix string, opts BasePaginationOptions) (*BasePaginatedResult[T], error) {
+	order := opts.Order
+	if order == "" {
+		order = SortOrderAsc
+	}
+
+	safeLimit, clamped, usedDefault := clampLimit(opts.Limit, defaultBaseQueryLimit, maxBaseQueryLimit)
+	if clamped && r.logger != nil {
+		fields := []zap.Field{
+			zap.String("pk", pk),
+			zap.String("sk_prefix", skPrefix),
+			zap.Int("requested_limit", opts.Limit),
+			zap.Int("applied_limit", safeLimit),
+		}
+		message := "sk prefix query limit clamped"
+		if usedDefault {
+			message = "sk prefix query called without limit; applying default"
+		}
+		r.logger.Warn(message, append(fields, zap.String("repository", r.repoName))...)
+	}
+
+	var results []T
+
+	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
+		Where("PK", "=", pk).
+		Where("SK", "BEGINS_WITH", skPrefix).
+		OrderBy("SK", order).
+		Limit(safeLimit + 1)
+
+	if opts.Cursor != "" {
+		if order == SortOrderDesc {
+			query = query.Where("SK", "<", opts.Cursor)
+		} else {
+			query = query.Where("SK", ">", opts.Cursor)
+		}
+	}
+
+	if err := query.All(&results); err != nil {
 		r.logger.Error("failed to query items with SK prefix",
 			zap.Error(err),
 			zap.String("pk", pk),
 			zap.String("skPrefix", skPrefix),
-			zap.Int("limit", limit))
+			zap.Int("limit", safeLimit))
 		return nil, ErrorHandler.HandleQueryError(err, "base entity", "prefix query")
 	}
 
-	return results, nil
+	hasMore := len(results) > safeLimit
+	if hasMore {
+		results = results[:safeLimit]
+	}
+
+	nextCursor := ""
+	if hasMore && len(results) > 0 {
+		nextCursor = results[len(results)-1].GetSK()
+	}
+
+	return &BasePaginatedResult[T]{
+		Items:      results,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
 }
 
 // QueryGSI performs a query on a Global Secondary Index
 func (r *BaseRepository[T]) QueryGSI(ctx context.Context, indexName, pk string, limit int) ([]T, error) {
-	var results []T
-
-	// Create query
-	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
-		Index(indexName).
-		Where(fmt.Sprintf("%sPK", indexName), "=", pk)
-
-	if limit > 0 {
-		query = query.Limit(limit)
+	result, err := r.QueryGSIPaginated(ctx, indexName, pk, BasePaginationOptions{
+		Limit: limit,
+		Order: SortOrderAsc,
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	// Execute query
-	err := query.All(&results)
-	if err != nil {
+	if result.HasMore && r.logger != nil {
+		r.logger.Debug("gsi query returned additional pages; consider paginating",
+			zap.String("index", indexName),
+			zap.String("pk", pk),
+			zap.Int("limit", len(result.Items)),
+			zap.String("repository", r.repoName))
+	}
+
+	return result.Items, nil
+}
+
+// QueryGSIPaginated performs a GSI query with cursor and ordering support.
+func (r *BaseRepository[T]) QueryGSIPaginated(ctx context.Context, indexName, pk string, opts BasePaginationOptions) (*BasePaginatedResult[T], error) {
+	order := opts.Order
+	if order == "" {
+		order = SortOrderAsc
+	}
+
+	safeLimit, clamped, usedDefault := clampLimit(opts.Limit, defaultBaseQueryLimit, maxBaseQueryLimit)
+	if clamped && r.logger != nil {
+		fields := []zap.Field{
+			zap.String("index", indexName),
+			zap.String("pk", pk),
+			zap.Int("requested_limit", opts.Limit),
+			zap.Int("applied_limit", safeLimit),
+		}
+		message := "gsi query limit clamped"
+		if usedDefault {
+			message = "gsi query called without limit; applying default"
+		}
+		r.logger.Warn(message, append(fields, zap.String("repository", r.repoName))...)
+	}
+
+	var results []T
+	skField := fmt.Sprintf("%sSK", indexName)
+
+	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
+		Index(indexName).
+		Where(fmt.Sprintf("%sPK", indexName), "=", pk).
+		OrderBy(skField, order).
+		Limit(safeLimit + 1)
+
+	if opts.Cursor != "" {
+		if order == SortOrderDesc {
+			query = query.Where(skField, "<", opts.Cursor)
+		} else {
+			query = query.Where(skField, ">", opts.Cursor)
+		}
+	}
+
+	if err := query.All(&results); err != nil {
 		r.logger.Error("failed to query GSI",
 			zap.Error(err),
 			zap.String("index", indexName),
 			zap.String("pk", pk),
-			zap.Int("limit", limit))
+			zap.Int("limit", safeLimit))
 		return nil, ErrorHandler.HandleQueryError(err, "base entity", fmt.Sprintf("GSI query on %s", indexName))
 	}
 
-	return results, nil
+	hasMore := len(results) > safeLimit
+	if hasMore {
+		results = results[:safeLimit]
+	}
+
+	nextCursor := ""
+	if hasMore && len(results) > 0 {
+		if cursor, ok := extractStringField(results[len(results)-1], skField); ok {
+			nextCursor = cursor
+		}
+	}
+
+	return &BasePaginatedResult[T]{
+		Items:      results,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
 }
 
 // BatchGet retrieves multiple items by their keys
@@ -563,10 +727,16 @@ func (r *BaseRepository[T]) BatchGet(ctx context.Context, keys []struct{ PK, SK 
 		return []T{}, nil
 	}
 
-	var results []T
+	const batchSize = 100
+	results := make([]T, 0, len(keys))
 
-	// DynamoDB batch get has a limit of 100 items
-	batchSize := 100
+	modelPrototype := modelPrototypeOf[T]()
+	modelType := reflect.TypeOf(modelPrototype)
+	if modelType.Kind() != reflect.Ptr {
+		return nil, fmt.Errorf("model prototype must be a pointer type")
+	}
+	elemType := modelType.Elem()
+
 	for i := 0; i < len(keys); i += batchSize {
 		end := i + batchSize
 		if end > len(keys) {
@@ -574,20 +744,26 @@ func (r *BaseRepository[T]) BatchGet(ctx context.Context, keys []struct{ PK, SK 
 		}
 
 		batch := keys[i:end]
-		var batchResults []T
-
-		// Create batch get request
-		batchGet := r.db.WithContext(ctx).Model(modelPrototypeOf[T]())
+		keyModels := make([]any, 0, len(batch))
 		for _, key := range batch {
-			batchGet = batchGet.Where("PK", "=", key.PK).Where("SK", "=", key.SK)
+			modelValue := reflect.New(elemType)
+
+			if !setStringField(modelValue, "PK", key.PK) || !setStringField(modelValue, "SK", key.SK) {
+				r.logger.Error("failed to assign key fields for batch get item",
+					zap.String("pk", key.PK),
+					zap.String("sk", key.SK))
+				return nil, ErrorHandler.HandleGetError(fmt.Errorf("missing PK/SK field on model"), "batch entity", fmt.Sprintf("%s#%s", key.PK, key.SK))
+			}
+
+			keyModels = append(keyModels, modelValue.Interface())
 		}
 
-		// Execute batch get
-		err := batchGet.All(&batchResults)
-		if err != nil {
+		var batchResults []T
+		query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]())
+		if err := query.BatchGet(keyModels, &batchResults); err != nil {
 			r.logger.Error("failed to batch get items",
 				zap.Error(err),
-				zap.Int("batchSize", len(batch)))
+				zap.Int("batch_size", len(batch)))
 			return nil, ErrorHandler.HandleGetError(err, "base entity batch", fmt.Sprintf("batch size %d", len(batch)))
 		}
 
@@ -746,6 +922,21 @@ func QueryCollectionWithConversion[M BaseModel, R any](
 	cursor string,
 	converter func([]M) ([]R, error),
 ) ([]R, string, error) {
+	safeLimit, clamped, usedDefault := clampLimit(limit, defaultCollectionQueryLimit, maxCollectionQueryLimit)
+	if clamped && r.logger != nil {
+		fields := []zap.Field{
+			zap.String("entity_id", entityID),
+			zap.String("collection", config.LogName),
+			zap.Int("requested_limit", limit),
+			zap.Int("applied_limit", safeLimit),
+		}
+		message := "collection query limit clamped"
+		if usedDefault {
+			message = "collection query called without limit; applying default"
+		}
+		r.logger.Warn(message, append(fields, zap.String("repository", r.repoName))...)
+	}
+
 	// Build and execute the query
 	var models []M
 	var err error
@@ -755,25 +946,27 @@ func QueryCollectionWithConversion[M BaseModel, R any](
 		gsi := config.GSIConfig
 		pkValue := fmt.Sprintf(gsi.PKValue, entityID)
 
+		order := gsi.OrderBy
+		if order == "" {
+			order = SortOrderAsc
+		}
+
 		query := r.db.WithContext(ctx).Model(new(M)).
 			Index(config.IndexName).
 			Where(gsi.PKField, "=", pkValue).
-			Limit(limit)
+			OrderBy(gsi.SKField, order).
+			Limit(safeLimit + 1)
 
 		if gsi.SKPattern != "" {
-			query = query.Filter(gsi.SKField, "BEGINS_WITH", gsi.SKPattern)
+			query = query.Where(gsi.SKField, "BEGINS_WITH", gsi.SKPattern)
 		}
 
 		if gsi.UseCursor && cursor != "" {
-			if gsi.OrderBy == SortOrderDesc {
+			if order == SortOrderDesc {
 				query = query.Where(gsi.SKField, "<", cursor)
 			} else {
 				query = query.Where(gsi.SKField, ">", cursor)
 			}
-		}
-
-		if gsi.OrderBy != "" {
-			query = query.OrderBy(gsi.SKField, gsi.OrderBy)
 		}
 
 		err = query.All(&models)
@@ -784,10 +977,14 @@ func QueryCollectionWithConversion[M BaseModel, R any](
 
 		query := r.db.WithContext(ctx).Model(new(M)).
 			Where("PK", "=", pkValue).
-			Limit(limit)
+			Limit(safeLimit + 1)
 
 		if skPattern != "" {
-			query = query.Filter("SK", "BEGINS_WITH", skPattern)
+			query = query.Where("SK", "BEGINS_WITH", skPattern)
+		}
+
+		if cursor != "" {
+			query = query.Where("SK", ">", cursor)
 		}
 
 		err = query.All(&models)
@@ -799,6 +996,11 @@ func QueryCollectionWithConversion[M BaseModel, R any](
 		return nil, "", ErrorHandler.HandleQueryError(err, "collection entity", config.ErrorPrefix)
 	}
 
+	hasMore := len(models) > safeLimit
+	if hasMore {
+		models = models[:safeLimit]
+	}
+
 	// Convert to target type
 	results, err := converter(models)
 	if err != nil {
@@ -807,9 +1009,11 @@ func QueryCollectionWithConversion[M BaseModel, R any](
 
 	// Generate next cursor
 	nextCursor := ""
-	if len(models) == limit && len(models) > 0 {
+	if hasMore && len(models) > 0 {
 		if config.GSIConfig != nil {
-			nextCursor = getGSISK(models[len(models)-1], config.GSIConfig.SKField)
+			if cursorValue, ok := extractStringField(models[len(models)-1], config.GSIConfig.SKField); ok {
+				nextCursor = cursorValue
+			}
 		} else {
 			nextCursor = models[len(models)-1].GetSK()
 		}
@@ -1036,14 +1240,6 @@ func ConvertAndPaginateAuditLogs[M interface{}](
 	return logs, nextCursor
 }
 
-// getGSISK extracts GSI SK value from a model using reflection or interface
-// This is a helper function to get cursor values from different GSI fields
-func getGSISK(_ BaseModel, _ string) string {
-	// This would need to be implemented based on the actual model structure
-	// For now, return empty string - this should be customized per repository
-	return ""
-}
-
 // === AGGREGATED DATA QUERY HELPER ===
 
 // AggregatedQueryConfig configures behavior for aggregated period queries
@@ -1062,8 +1258,22 @@ func ListAggregatedByPeriod[T BaseModel](
 	period, entityType string,
 	startTime, endTime time.Time,
 	limit int,
-) ([]T, error) {
+	cursor string,
+) ([]T, string, error) {
 	var aggregatedList []T
+
+	safeLimit, clamped, usedDefault := clampLimit(limit, defaultAggregatedQueryLimit, maxAggregatedQueryLimit)
+	if clamped {
+		msg := "aggregated query limit clamped"
+		if usedDefault {
+			msg = "aggregated query applied default limit"
+		}
+		zap.L().Warn(msg,
+			zap.String("pk_prefix", config.PKPrefix),
+			zap.String("entity_type", entityType),
+			zap.Int("requested_limit", limit),
+			zap.Int("applied_limit", safeLimit))
+	}
 
 	// Build consistent key patterns
 	pk := fmt.Sprintf("%s#%s#%s", config.PKPrefix, period, entityType)
@@ -1076,14 +1286,28 @@ func ListAggregatedByPeriod[T BaseModel](
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
 		OrderBy("SK", SortOrderDesc).
-		Limit(limit)
+		Limit(safeLimit + 1)
+
+	if cursor != "" {
+		query = query.Where("SK", "<", cursor)
+	}
 
 	err := query.All(&aggregatedList)
 	if err != nil {
-		return nil, MapErrorWithContext(err, config.ErrorPrefix)
+		return nil, "", MapErrorWithContext(err, config.ErrorPrefix)
 	}
 
-	return aggregatedList, nil
+	hasMore := len(aggregatedList) > safeLimit
+	if hasMore {
+		aggregatedList = aggregatedList[:safeLimit]
+	}
+
+	nextCursor := ""
+	if hasMore && len(aggregatedList) > 0 {
+		nextCursor = aggregatedList[len(aggregatedList)-1].GetSK()
+	}
+
+	return aggregatedList, nextCursor, nil
 }
 
 // === ENHANCED CRUD OPERATIONS FOR TASK 1.2.1 ===
@@ -1395,9 +1619,24 @@ func (r *BaseRepository[T]) BatchDelete(ctx context.Context, keys []struct{ PK, 
 func (r *BaseRepository[T]) QueryWithFilter(ctx context.Context, pk string, filters map[string]interface{}, limit int) ([]T, error) {
 	var results []T
 
+	safeLimit, clamped, usedDefault := clampLimit(limit, defaultFilterQueryLimit, maxFilterQueryLimit)
+	if clamped && r.logger != nil {
+		fields := []zap.Field{
+			zap.String("pk", pk),
+			zap.Int("requested_limit", limit),
+			zap.Int("applied_limit", safeLimit),
+		}
+		message := "filtered query limit clamped"
+		if usedDefault {
+			message = "filtered query used default limit"
+		}
+		r.logger.Warn(message, append(fields, zap.String("repository", r.repoName))...)
+	}
+
 	// Build query
 	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
-		Where("PK", "=", pk)
+		Where("PK", "=", pk).
+		Limit(safeLimit + 1)
 
 	// Apply filters
 	for field, value := range filters {
@@ -1414,10 +1653,6 @@ func (r *BaseRepository[T]) QueryWithFilter(ctx context.Context, pk string, filt
 		}
 	}
 
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
-
 	// Execute query
 	err := query.All(&results)
 	if err != nil {
@@ -1426,6 +1661,17 @@ func (r *BaseRepository[T]) QueryWithFilter(ctx context.Context, pk string, filt
 			zap.String("pk", pk),
 			zap.Any("filters", filters))
 		return nil, ErrorHandler.HandleQueryError(err, "base entity", "filtered query")
+	}
+
+	hasMore := len(results) > safeLimit
+	if hasMore {
+		results = results[:safeLimit]
+		if r.logger != nil {
+			r.logger.Debug("filtered query returned additional pages; consider pagination",
+				zap.String("pk", pk),
+				zap.Int("limit", safeLimit),
+				zap.String("repository", r.repoName))
+		}
 	}
 
 	// Track cost
@@ -1459,19 +1705,67 @@ func (r *BaseRepository[T]) QueryWithFilter(ctx context.Context, pk string, filt
 
 // QueryBetween performs range queries between two sort key values
 func (r *BaseRepository[T]) QueryBetween(ctx context.Context, pk, startSK, endSK string, limit int) ([]T, error) {
+	result, err := r.QueryBetweenPaginated(ctx, pk, startSK, endSK, BasePaginationOptions{
+		Limit: limit,
+		Order: SortOrderAsc,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if result.HasMore && r.logger != nil {
+		r.logger.Debug("range query returned additional pages; consider pagination",
+			zap.String("pk", pk),
+			zap.String("start_sk", startSK),
+			zap.String("end_sk", endSK),
+			zap.Int("limit", len(result.Items)),
+			zap.String("repository", r.repoName))
+	}
+
+	return result.Items, nil
+}
+
+// QueryBetweenPaginated performs range queries with cursor support.
+func (r *BaseRepository[T]) QueryBetweenPaginated(ctx context.Context, pk, startSK, endSK string, opts BasePaginationOptions) (*BasePaginatedResult[T], error) {
+	order := opts.Order
+	if order == "" {
+		order = SortOrderAsc
+	}
+
+	safeLimit, clamped, usedDefault := clampLimit(opts.Limit, defaultBaseQueryLimit, maxBaseQueryLimit)
+	if clamped && r.logger != nil {
+		fields := []zap.Field{
+			zap.String("pk", pk),
+			zap.String("start_sk", startSK),
+			zap.String("end_sk", endSK),
+			zap.Int("requested_limit", opts.Limit),
+			zap.Int("applied_limit", safeLimit),
+		}
+		message := "range query limit clamped"
+		if usedDefault {
+			message = "range query applied default limit"
+		}
+		r.logger.Warn(message, append(fields, zap.String("repository", r.repoName))...)
+	}
+
 	var results []T
 
 	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK)
+		Where("SK", "<=", endSK).
+		OrderBy("SK", order).
+		Limit(safeLimit + 1)
 
-	if limit > 0 {
-		query = query.Limit(limit)
+	if opts.Cursor != "" {
+		if order == SortOrderDesc {
+			query = query.Where("SK", "<", opts.Cursor)
+		} else {
+			query = query.Where("SK", ">", opts.Cursor)
+		}
 	}
 
-	err := query.All(&results)
-	if err != nil {
+	if err := query.All(&results); err != nil {
 		r.logger.Error("failed to query between range",
 			zap.Error(err),
 			zap.String("pk", pk),
@@ -1480,18 +1774,27 @@ func (r *BaseRepository[T]) QueryBetween(ctx context.Context, pk, startSK, endSK
 		return nil, ErrorHandler.HandleQueryError(err, "base entity", "range query")
 	}
 
+	hasMore := len(results) > safeLimit
+	if hasMore {
+		results = results[:safeLimit]
+	}
+
+	nextCursor := ""
+	if hasMore && len(results) > 0 {
+		nextCursor = results[len(results)-1].GetSK()
+	}
+
 	// Track cost
 	if r.costService != nil {
 		itemCount := int64(len(results))
-		estimatedRU := itemCount
-		if estimatedRU == 0 {
-			estimatedRU = 1
+		if itemCount == 0 {
+			itemCount = 1
 		}
 
 		operation := cost.DynamoOperation{
 			Type:               "Query",
 			TableName:          r.tableName,
-			ConsumedReadUnits:  estimatedRU,
+			ConsumedReadUnits:  itemCount,
 			ConsumedWriteUnits: 0,
 			ItemCount:          itemCount,
 			Timestamp:          time.Now(),
@@ -1506,5 +1809,48 @@ func (r *BaseRepository[T]) QueryBetween(ctx context.Context, pk, startSK, endSK
 		}
 	}
 
-	return results, nil
+	return &BasePaginatedResult[T]{
+		Items:      results,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
+}
+
+// setStringField assigns a string value to a named field using reflection.
+func setStringField(val reflect.Value, fieldName, fieldValue string) bool {
+	if val.Kind() != reflect.Ptr {
+		return false
+	}
+
+	elem := val.Elem()
+	if !elem.IsValid() {
+		return false
+	}
+
+	field := elem.FieldByName(fieldName)
+	if !field.IsValid() || field.Kind() != reflect.String || !field.CanSet() {
+		return false
+	}
+
+	field.SetString(fieldValue)
+	return true
+}
+
+// extractStringField retrieves a string field by name from the provided model.
+func extractStringField(model any, fieldName string) (string, bool) {
+	value := reflect.ValueOf(model)
+	if value.Kind() == reflect.Ptr {
+		value = value.Elem()
+	}
+
+	if !value.IsValid() {
+		return "", false
+	}
+
+	field := value.FieldByName(fieldName)
+	if !field.IsValid() || field.Kind() != reflect.String {
+		return "", false
+	}
+
+	return field.String(), true
 }

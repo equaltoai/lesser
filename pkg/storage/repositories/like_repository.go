@@ -159,11 +159,14 @@ func (r *LikeRepository) GetActorLikes(ctx context.Context, actorID string, limi
 
 // CountActorLikes returns the total number of likes by an actor
 func (r *LikeRepository) CountActorLikes(ctx context.Context, actorID string) (int64, error) {
-	likes, err := r.QueryGSI(ctx, "gsi1-index", fmt.Sprintf("actor#%s#likes", actorID), 0)
+	count, err := r.db.WithContext(ctx).Model(&models.Like{}).
+		Index("gsi1-index").
+		Where("GSI1PK", "=", fmt.Sprintf("actor#%s#likes", actorID)).
+		Count()
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "like", fmt.Sprintf("actor %s count", actorID))
 	}
-	return int64(len(likes)), nil
+	return count, nil
 }
 
 // HasLiked checks if an actor has liked an object

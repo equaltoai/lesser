@@ -207,14 +207,14 @@ func (r *MetricsRepository) UpdateAggregated(ctx context.Context, aggregated *mo
 }
 
 // ListAggregatedByPeriod lists aggregated metrics for a period
-func (r *MetricsRepository) ListAggregatedByPeriod(ctx context.Context, period, metricType string, startTime, endTime time.Time, limit int) ([]*models.AggregatedMetrics, error) {
+func (r *MetricsRepository) ListAggregatedByPeriod(ctx context.Context, period, metricType string, startTime, endTime time.Time, limit int, cursor string) ([]*models.AggregatedMetrics, string, error) {
 	config := AggregatedQueryConfig{
 		PKPrefix:    "metrics_agg",
 		LogContext:  "metrics",
 		ErrorPrefix: "failed to list aggregated metrics",
 	}
 
-	return ListAggregatedByPeriod[*models.AggregatedMetrics](
+	aggregated, nextCursor, err := ListAggregatedByPeriod[*models.AggregatedMetrics](
 		ctx,
 		r.aggregatedRepo.db,
 		config,
@@ -223,7 +223,13 @@ func (r *MetricsRepository) ListAggregatedByPeriod(ctx context.Context, period, 
 		startTime,
 		endTime,
 		limit,
+		cursor,
 	)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return aggregated, nextCursor, nil
 }
 
 // GetServiceStats calculates statistics for a service

@@ -102,16 +102,30 @@ func (r *AuditRepository) GetSessionAuditLogs(ctx context.Context, sessionID str
 	}
 
 	// Use BaseRepository GSI query
-	logs, err := r.QueryGSI(ctx, "GSI3", fmt.Sprintf("SESSION#%s", sessionID), 0)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityAudit, "session logs")
+	const sessionLogChunkLimit = 200
+	var (
+		logs   []*models.AuthAuditLog
+		cursor string
+	)
+
+	for {
+		page, err := r.QueryGSIPaginated(ctx, "GSI3", fmt.Sprintf("SESSION#%s", sessionID), BasePaginationOptions{
+			Limit:  sessionLogChunkLimit,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			return nil, ErrorHandler.HandleQueryError(err, EntityAudit, "session logs")
+		}
+
+		logs = append(logs, page.Items...)
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
-	// Convert to pointer slice for compatibility
-	result := make([]*models.AuthAuditLog, len(logs))
-	copy(result, logs)
-
-	return result, nil
+	return logs, nil
 }
 
 const (
@@ -246,34 +260,44 @@ func (r *AuditRepository) CleanupOldLogs(ctx context.Context, retentionDays int)
 		date := cutoffDate.AddDate(0, 0, -i)
 		pk := fmt.Sprintf("AUDIT#%s", date.Format("2006-01-02"))
 
-		// Use BaseRepository to find logs for this date
-		logs, err := r.Query(ctx, pk, 0)
-		if err != nil {
-			r.logger.Warn("failed to query logs for cleanup",
-				zap.String("date", date.Format("2006-01-02")),
-				zap.Error(err))
-			continue
-		}
+		cursor := ""
+		for {
+			page, err := r.FindWithPagination(ctx, pk, BasePaginationOptions{
+				Limit:  200,
+				Cursor: cursor,
+				Order:  SortOrderAsc,
+			})
+			if err != nil {
+				r.logger.Warn("failed to query logs for cleanup",
+					zap.String("date", date.Format("2006-01-02")),
+					zap.Error(err))
+				break
+			}
 
-		// Build keys for batch deletion
-		keys := make([]struct{ PK, SK string }, len(logs))
-		for i, log := range logs {
-			keys[i] = struct{ PK, SK string }{PK: log.GetPK(), SK: log.GetSK()}
-		}
+			if len(page.Items) == 0 {
+				break
+			}
 
-		// Use BaseRepository batch delete for efficiency
-		if len(keys) > 0 {
+			keys := make([]struct{ PK, SK string }, len(page.Items))
+			for idx, log := range page.Items {
+				keys[idx] = struct{ PK, SK string }{PK: log.GetPK(), SK: log.GetSK()}
+			}
+
 			if err := r.BatchDelete(ctx, keys); err != nil {
 				r.logger.Error("failed to batch delete old audit logs - COMPLIANCE ISSUE",
 					zap.String("date", date.Format("2006-01-02")),
 					zap.Int("count", len(keys)),
 					zap.Error(err))
-				// Continue with next date rather than fail completely
 			} else {
 				r.logger.Info("deleted old audit logs for compliance",
 					zap.String("date", date.Format("2006-01-02")),
 					zap.Int("count", len(keys)))
 			}
+
+			if page.NextCursor == "" {
+				break
+			}
+			cursor = page.NextCursor
 		}
 	}
 
