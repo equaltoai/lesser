@@ -14,6 +14,11 @@ type UserDomainBlock struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// TableName returns the DynamoDB table backing UserDomainBlock.
+func (UserDomainBlock) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the keys for the user domain block
 func (d *UserDomainBlock) UpdateKeys() error {
 	d.PK = fmt.Sprintf(KeyPatternUser, d.Username)
@@ -52,6 +57,11 @@ type InstanceDomainBlock struct {
 	Type           string    `json:"Type"`
 }
 
+// TableName returns the DynamoDB table backing InstanceDomainBlock.
+func (InstanceDomainBlock) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the keys for the instance domain block
 func (d *InstanceDomainBlock) UpdateKeys() error {
 	d.PK = fmt.Sprintf("DOMAIN_BLOCK#%s", d.Domain)
@@ -82,6 +92,11 @@ type EmailDomainBlock struct {
 	Domain    string    `json:"Domain"`
 	CreatedBy string    `json:"CreatedBy"`
 	CreatedAt time.Time `json:"CreatedAt"`
+}
+
+// TableName returns the DynamoDB table backing EmailDomainBlock.
+func (EmailDomainBlock) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the keys for the email domain block
@@ -123,6 +138,11 @@ type DomainAllow struct {
 	Domain    string    `json:"Domain"`
 	CreatedBy string    `json:"CreatedBy"`
 	CreatedAt time.Time `json:"CreatedAt"`
+}
+
+// TableName returns the DynamoDB table backing DomainAllow.
+func (DomainAllow) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the keys for the domain allow

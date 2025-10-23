@@ -20,6 +20,11 @@ type Bookmark struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing Bookmark.
+func (Bookmark) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets the DynamoDB partition and sort keys for the bookmark
 func (b *Bookmark) UpdateKeys() error {
 	// PK: BOOKMARK#username (matches legacy pattern exactly)

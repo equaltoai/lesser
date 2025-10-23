@@ -76,6 +76,11 @@ type NotificationBuilder struct {
 	notification *Notification
 }
 
+// TableName returns the DynamoDB table backing NotificationBuilder.
+func (NotificationBuilder) TableName() string {
+	return MainTableName
+}
+
 // TableName returns the DynamoDB table name for the Notification model
 func (Notification) TableName() string {
 	return MainTableName // Use the main table

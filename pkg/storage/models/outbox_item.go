@@ -26,6 +26,11 @@ type OutboxItem struct {
 	Public     bool                  `json:"public"` // Whether this is a public activity
 }
 
+// TableName returns the DynamoDB table backing OutboxItem.
+func (OutboxItem) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the composite keys based on the outbox item data
 func (o *OutboxItem) UpdateKeys() {
 	// Primary key pattern: ACTOR#actorID, SK: ACTIVITY#timestamp#activityID

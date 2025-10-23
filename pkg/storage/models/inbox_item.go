@@ -25,6 +25,11 @@ type InboxItem struct {
 	CreatedAt  time.Time             `json:"created_at"`
 }
 
+// TableName returns the DynamoDB table backing InboxItem.
+func (InboxItem) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the composite keys based on the inbox item data
 func (i *InboxItem) UpdateKeys() {
 	// Primary key pattern: ACTOR#actorID, SK: ACTIVITY#timestamp#activityID

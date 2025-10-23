@@ -24,6 +24,11 @@ type Like struct {
 	CreatedAt      time.Time `json:"created_at"`       // When stored in DB
 }
 
+// TableName returns the DynamoDB table backing Like.
+func (Like) TableName() string {
+	return MainTableName
+}
+
 // NewLike creates a new like with proper key structure
 func NewLike(actor, object, statusAuthorID string) *Like {
 	now := time.Now()
