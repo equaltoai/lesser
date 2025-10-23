@@ -24,8 +24,8 @@ type HashtagTrend struct {
 	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
-// TableName ensures hashtag trends share the unified Dynamo table.
-func (h *HashtagTrend) TableName() string {
+// TableName returns the DynamoDB table backing HashtagTrend.
+func (HashtagTrend) TableName() string {
 	return MainTableName
 }
 
@@ -75,8 +75,8 @@ type StatusTrend struct {
 	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
-// TableName ensures status trends use the unified Dynamo table.
-func (s *StatusTrend) TableName() string {
+// TableName returns the DynamoDB table backing StatusTrend.
+func (StatusTrend) TableName() string {
 	return MainTableName
 }
 
@@ -118,8 +118,8 @@ type LinkTrend struct {
 	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
-// TableName ensures link trends persist in the shared Dynamo table.
-func (l *LinkTrend) TableName() string {
+// TableName returns the DynamoDB table backing LinkTrend.
+func (LinkTrend) TableName() string {
 	return MainTableName
 }
 
@@ -154,8 +154,8 @@ type SearchQuery struct {
 	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
-// TableName ensures search queries are stored in the shared Dynamo table.
-func (s *SearchQuery) TableName() string {
+// TableName returns the DynamoDB table backing SearchQuery.
+func (SearchQuery) TableName() string {
 	return MainTableName
 }
 
@@ -204,8 +204,8 @@ type PopularQueryCounter struct {
 	TTL          int64     `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
-// TableName ensures query counters leverage the shared Dynamo table.
-func (p *PopularQueryCounter) TableName() string {
+// TableName returns the DynamoDB table backing PopularQueryCounter.
+func (PopularQueryCounter) TableName() string {
 	return MainTableName
 }
 

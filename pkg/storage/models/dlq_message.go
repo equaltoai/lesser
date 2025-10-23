@@ -94,6 +94,11 @@ func (DLQMessage) TableName() string {
 	return MainTableName // Use the main table
 }
 
+// TableName returns the DynamoDB table backing DLQMessageBuilder.
+func (DLQMessageBuilder) TableName() string {
+	return MainTableName
+}
+
 // BeforeCreate sets up the model before creation
 func (d *DLQMessage) BeforeCreate() error {
 	now := time.Now()

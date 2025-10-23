@@ -44,3 +44,8 @@ func (h *HashtagFollow) GetPK() string {
 func (h *HashtagFollow) GetSK() string {
 	return h.SK
 }
+
+// TableName returns the DynamoDB table backing HashtagFollow.
+func (HashtagFollow) TableName() string {
+	return MainTableName
+}

@@ -61,6 +61,11 @@ func (m *MediaSession) SetTTL(ttl time.Duration) {
 	m.TTL = time.Now().Add(ttl).Unix()
 }
 
+// TableName returns the DynamoDB table backing MediaSession.
+func (MediaSession) TableName() string {
+	return MainTableName
+}
+
 // QualityChange represents a quality change event for analytics
 type QualityChange struct {
 	// DynamoDB Keys
@@ -92,4 +97,9 @@ func (q *QualityChange) GetPK() string {
 // GetSK returns the sort key
 func (q *QualityChange) GetSK() string {
 	return q.SK
+}
+
+// TableName returns the DynamoDB table backing QualityChange.
+func (QualityChange) TableName() string {
+	return MainTableName
 }

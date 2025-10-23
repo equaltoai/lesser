@@ -205,6 +205,11 @@ func (r *ReviewerStats) NeedsTraining() bool {
 	return needsAccuracyTraining || needsRefresher
 }
 
+// TableName returns the DynamoDB table backing ReviewerStats.
+func (ReviewerStats) TableName() string {
+	return MainTableName
+}
+
 // EarnBadge adds a badge if not already earned
 func (r *ReviewerStats) EarnBadge(badge string) bool {
 	for _, b := range r.BadgesEarned {

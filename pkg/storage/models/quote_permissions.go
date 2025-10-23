@@ -90,3 +90,8 @@ func (q *QuotePermissions) SetDefaults() {
 	q.AllowMentioned = true
 	q.BlockList = []string{}
 }
+
+// TableName returns the DynamoDB table backing QuotePermissions.
+func (QuotePermissions) TableName() string {
+	return MainTableName
+}

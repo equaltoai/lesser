@@ -14,6 +14,11 @@ type StatusModelTestSuite struct {
 	suite.Suite
 }
 
+// TableName returns the DynamoDB table backing StatusModelTestSuite.
+func (StatusModelTestSuite) TableName() string {
+	return MainTableName
+}
+
 // Test TableName
 func (suite *StatusModelTestSuite) TestTableName() {
 	status := &Status{}

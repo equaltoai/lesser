@@ -46,3 +46,8 @@ func (h HashtagHistoryEntry) CompareWith(other HashtagHistoryEntry) float64 {
 	}
 	return float64(other.UsageCount-h.UsageCount) / float64(h.UsageCount) * 100
 }
+
+// TableName returns the DynamoDB table backing HashtagHistoryEntry.
+func (HashtagHistoryEntry) TableName() string {
+	return MainTableName
+}

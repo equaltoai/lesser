@@ -138,3 +138,8 @@ func (m *MediaPopularity) CalculateAvgWatchTime() float64 {
 	}
 	return float64(m.TotalWatchTime) / float64(m.ViewCount)
 }
+
+// TableName returns the DynamoDB table backing MediaPopularity.
+func (MediaPopularity) TableName() string {
+	return MainTableName
+}

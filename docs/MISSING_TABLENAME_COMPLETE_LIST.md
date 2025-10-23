@@ -30,8 +30,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | AIAnalysis |
-| TODO |  | AIAnalysisQueue |
+| DONE | Codex | AIAnalysis |
+| DONE | Codex | AIAnalysisQueue |
 
 ---
 
@@ -48,9 +48,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Alert |
-| TODO |  | DeadLetterMessage |
-| TODO |  | WebhookDelivery |
+| DONE | Codex | Alert |
+| DONE | Codex | DeadLetterMessage |
+| DONE | Codex | WebhookDelivery |
 
 ---
 
@@ -80,7 +80,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | AuthAuditLog |
+| DONE | Codex | AuthAuditLog |
 
 ---
 
@@ -96,9 +96,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | CircuitBreakerConfig |
-| TODO |  | CircuitBreakerEvent |
-| TODO |  | CircuitBreakerState |
+| DONE | Codex | CircuitBreakerConfig |
+| DONE | Codex | CircuitBreakerEvent |
+| DONE | Codex | CircuitBreakerState |
 
 ---
 
@@ -149,7 +149,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | EmojiModel |
+| DONE | Codex | EmojiModel |
 
 ---
 
@@ -157,7 +157,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | DeliveryStatus |
+| DONE | Codex | DeliveryStatus |
 
 ---
 
@@ -165,7 +165,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Device |
+| DONE | Codex | Device |
 
 ---
 
@@ -173,7 +173,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | DLQMessageBuilder |
+| DONE | Codex | DLQMessageBuilder |
 
 ---
 
@@ -181,7 +181,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | DNSCache |
+| DONE | Codex | DNSCache |
 
 ---
 
@@ -219,7 +219,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | FeaturedTag |
+| DONE | Codex | FeaturedTag |
 
 ---
 
@@ -344,7 +344,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Follow |
+| DONE | Codex | Follow |
 
 ---
 
@@ -352,7 +352,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Hashtag |
+| DONE | Codex | Hashtag |
 
 ---
 
@@ -360,7 +360,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | HashtagFollow |
+| DONE | Codex | HashtagFollow |
 
 ---
 
@@ -368,7 +368,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | HashtagHistoryEntry |
+| DONE | Codex | HashtagHistoryEntry |
 
 ---
 
@@ -376,7 +376,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | HashtagMute |
+| DONE | Codex | HashtagMute |
 
 ---
 
@@ -401,7 +401,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | HashtagStats |
+| DONE | Codex | HashtagStats |
 
 ---
 
@@ -511,7 +511,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | LinkMetadata |
+| DONE | Codex | LinkMetadata |
 
 ---
 
@@ -519,7 +519,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | MediaVariant |
+| DONE | Codex | MediaVariant |
 
 ---
 
@@ -536,7 +536,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | QualityCodecInfo |
+| DONE | Codex | QualityCodecInfo |
 
 ---
 
@@ -544,7 +544,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | MediaPopularity |
+| DONE | Codex | MediaPopularity |
 
 ---
 
@@ -552,8 +552,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | MediaSession |
-| TODO |  | QualityChange |
+| DONE | Codex | MediaSession |
+| DONE | Codex | QualityChange |
 
 ---
 
@@ -571,7 +571,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | MissingReply |
+| DONE | Codex | MissingReply |
 
 ---
 
@@ -646,7 +646,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | OAuthApp |
+| DONE | Codex | OAuthApp |
 
 ---
 
@@ -654,7 +654,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | OAuthState |
+| DONE | Codex | OAuthState |
 
 ---
 
@@ -678,7 +678,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | PatternFeedback |
+| DONE | Codex | PatternFeedback |
 
 ---
 
@@ -702,8 +702,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | BatchGetKeys |
-| TODO |  | QueryCacheEntry |
+| DONE | Codex | BatchGetKeys |
+| DONE | Codex | QueryCacheEntry |
 
 ---
 
@@ -711,7 +711,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | QuotePermissions |
+| DONE | Codex | QuotePermissions |
 
 ---
 
@@ -719,7 +719,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | QuoteRelationship |
+| DONE | Codex | QuoteRelationship |
 
 ---
 
@@ -765,7 +765,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | RemoteActor |
+| DONE | Codex | RemoteActor |
 
 ---
 
@@ -773,8 +773,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Report |
-| TODO |  | ReportStats |
+| DONE | Codex | Report |
+| DONE | Codex | ReportStats |
 
 ---
 
@@ -782,7 +782,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Reputation |
+| DONE | Codex | Reputation |
 
 ---
 
@@ -790,7 +790,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ReviewerStats |
+| DONE | Codex | ReviewerStats |
 
 ---
 
@@ -798,8 +798,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | OptimizationDecision |
-| TODO |  | RouteDeliveryResult |
+| DONE | Codex | OptimizationDecision |
+| DONE | Codex | RouteDeliveryResult |
 
 ---
 
@@ -828,7 +828,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ScheduledStatus |
+| DONE | Codex | ScheduledStatus |
 
 ---
 
@@ -948,7 +948,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | StatusModelTestSuite |
+| DONE | Codex | StatusModelTestSuite |
 
 ---
 
@@ -984,7 +984,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ThreadContext |
+| DONE | Codex | ThreadContext |
 
 ---
 
@@ -992,7 +992,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ThreadNode |
+| DONE | Codex | ThreadNode |
 
 ---
 
@@ -1000,7 +1000,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ThreadSync |
+| DONE | Codex | ThreadSync |
 
 ---
 
@@ -1008,8 +1008,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ThreatIndicator |
-| TODO |  | ThreatIntel |
+| DONE | Codex | ThreatIndicator |
+| DONE | Codex | ThreatIntel |
 
 ---
 
@@ -1017,7 +1017,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | TimelineEntry |
+| DONE | Codex | TimelineEntry |
 
 ---
 
@@ -1025,7 +1025,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | TrendingHashtag |
+| DONE | Codex | TrendingHashtag |
 
 ---
 
@@ -1033,7 +1033,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | TrendingLink |
+| DONE | Codex | TrendingLink |
 
 ---
 
@@ -1041,7 +1041,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | TrendingStatus |
+| DONE | Codex | TrendingStatus |
 
 ---
 
@@ -1049,11 +1049,11 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | HashtagTrend |
-| TODO |  | LinkTrend |
-| TODO |  | PopularQueryCounter |
-| TODO |  | SearchQuery |
-| TODO |  | StatusTrend |
+| DONE | Codex | HashtagTrend |
+| DONE | Codex | LinkTrend |
+| DONE | Codex | PopularQueryCounter |
+| DONE | Codex | SearchQuery |
+| DONE | Codex | StatusTrend |
 
 ---
 
@@ -1080,7 +1080,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | UpdateHistory |
+| DONE | Codex | UpdateHistory |
 
 ---
 
@@ -1088,7 +1088,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | UserAppConsent |
+| DONE | Codex | UserAppConsent |
 
 ---
 
@@ -1096,7 +1096,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | UserPreferencesStorage |
+| DONE | Codex | UserPreferencesStorage |
 
 ---
 
@@ -1104,7 +1104,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | UserModelTestSuite |
+| DONE | Codex | UserModelTestSuite |
 
 ---
 
@@ -1112,7 +1112,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | VAPIDKeyRecord |
+| DONE | Codex | VAPIDKeyRecord |
 
 ---
 
@@ -1120,7 +1120,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Vouch |
+| DONE | Codex | Vouch |
 
 ---
 
@@ -1128,7 +1128,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | WalletIndex |
+| DONE | Codex | WalletIndex |
 
 ---
 
@@ -1166,4 +1166,4 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | WeeklyActivity |
+| DONE | Codex | WeeklyActivity |

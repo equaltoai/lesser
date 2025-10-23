@@ -45,3 +45,8 @@ func (v *Vouch) UpdateKeys(vouchID, fromActorID, toActorID string, active bool, 
 	v.CreatedAt = createdAt
 	v.ExpiresAt = expiresAt.Unix()
 }
+
+// TableName returns the DynamoDB table backing Vouch.
+func (Vouch) TableName() string {
+	return MainTableName
+}

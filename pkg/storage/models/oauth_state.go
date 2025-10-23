@@ -50,3 +50,8 @@ func (o *OAuthState) UpdateKeys() error {
 	}
 	return nil
 }
+
+// TableName returns the DynamoDB table backing OAuthState.
+func (OAuthState) TableName() string {
+	return MainTableName
+}

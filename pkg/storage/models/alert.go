@@ -237,6 +237,11 @@ func (a *Alert) RecordDeliveryAttempt(success bool) {
 	}
 }
 
+// TableName returns the DynamoDB table backing Alert.
+func (Alert) TableName() string {
+	return MainTableName
+}
+
 // WebhookDelivery represents a webhook delivery attempt for an alert
 type WebhookDelivery struct {
 	// Primary key: WEBHOOK#{webhook_id}
@@ -423,6 +428,11 @@ func (w *WebhookDelivery) calculateNextRetry() time.Time {
 	return time.Now().Add(delay)
 }
 
+// TableName returns the DynamoDB table backing WebhookDelivery.
+func (WebhookDelivery) TableName() string {
+	return MainTableName
+}
+
 // DeadLetterMessage represents a message that failed processing
 type DeadLetterMessage struct {
 	PK            string                 `dynamorm:"pk" json:"pk"`
@@ -464,4 +474,9 @@ func (d *DeadLetterMessage) GetPK() string {
 // GetSK returns the sort key
 func (d *DeadLetterMessage) GetSK() string {
 	return d.SK
+}
+
+// TableName returns the DynamoDB table backing DeadLetterMessage.
+func (DeadLetterMessage) TableName() string {
+	return MainTableName
 }
