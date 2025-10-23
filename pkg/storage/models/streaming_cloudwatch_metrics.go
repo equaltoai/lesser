@@ -51,6 +51,11 @@ type StreamingCloudWatchMetrics struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing StreamingCloudWatchMetrics.
+func (StreamingCloudWatchMetrics) TableName() string {
+	return MainTableName
+}
+
 // QualityMetric represents metrics for a specific streaming quality
 type QualityMetric struct {
 	Quality            string  `json:"quality"`             // 480p, 720p, 1080p, 4k
@@ -63,6 +68,11 @@ type QualityMetric struct {
 	StartupTimeMs      int64   `json:"startup_time_ms"`     // Time to first frame
 }
 
+// TableName returns the DynamoDB table backing QualityMetric.
+func (QualityMetric) TableName() string {
+	return MainTableName
+}
+
 // GeographicMetric represents metrics for a specific geographic region
 type GeographicMetric struct {
 	Region             string  `json:"region"`               // US, EU, AS, etc.
@@ -72,6 +82,11 @@ type GeographicMetric struct {
 	PreferredQuality   string  `json:"preferred_quality"`    // Most popular quality in this region
 	CacheHitRate       float64 `json:"cache_hit_rate"`       // CDN cache performance
 	BandwidthUsageMbps float64 `json:"bandwidth_usage_mbps"` // Average bandwidth usage
+}
+
+// TableName returns the DynamoDB table backing GeographicMetric.
+func (GeographicMetric) TableName() string {
+	return MainTableName
 }
 
 // ConcurrentViewerMetrics represents concurrent viewing statistics
@@ -86,6 +101,11 @@ type ConcurrentViewerMetrics struct {
 	ReturningViewers int64     `json:"returning_viewers"`  // Returning viewers in last hour
 }
 
+// TableName returns the DynamoDB table backing ConcurrentViewerMetrics.
+func (ConcurrentViewerMetrics) TableName() string {
+	return MainTableName
+}
+
 // StreamingPerformanceMetrics represents overall streaming performance
 type StreamingPerformanceMetrics struct {
 	OverallLatencyMs     int64   `json:"overall_latency_ms"`     // Overall CDN latency
@@ -96,6 +116,11 @@ type StreamingPerformanceMetrics struct {
 	EdgeLocations        int     `json:"edge_locations"`         // Number of active edge locations
 	AutoQualityEvents    int64   `json:"auto_quality_events"`    // Number of quality switches in last hour
 	StartupLatencyMs     int64   `json:"startup_latency_ms"`     // Average startup latency across all qualities
+}
+
+// TableName returns the DynamoDB table backing StreamingPerformanceMetrics.
+func (StreamingPerformanceMetrics) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets the GSI keys based on the current values

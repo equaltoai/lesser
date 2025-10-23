@@ -249,9 +249,9 @@ func (b *ImportBudget) GetRemainingCombinedBudget() int64 {
 	return remaining
 }
 
-// TableName returns the DynamoDB table name
-func (b *ImportBudget) TableName() string {
-	return "" // Will be set by the repository
+// TableName returns the DynamoDB table backing ImportBudget.
+func (ImportBudget) TableName() string {
+	return MainTableName
 }
 
 // ImportCostSummary represents aggregated import costs (same structure as ExportCostSummary)
@@ -282,6 +282,11 @@ type ImportCostSummary struct {
 	TypeBreakdown map[string]*ImportTypeCostStats `json:"type_breakdown"`
 }
 
+// TableName returns the DynamoDB table backing ImportCostSummary.
+func (ImportCostSummary) TableName() string {
+	return MainTableName
+}
+
 // ImportTypeCostStats represents cost statistics for a specific import type
 type ImportTypeCostStats struct {
 	Type                  string  `json:"type"`
@@ -293,4 +298,9 @@ type ImportTypeCostStats struct {
 	SuccessfulRecords     int64   `json:"successful_records"`
 	FailedRecords         int64   `json:"failed_records"`
 	SuccessRate           float64 `json:"success_rate"`
+}
+
+// TableName returns the DynamoDB table backing ImportTypeCostStats.
+func (ImportTypeCostStats) TableName() string {
+	return MainTableName
 }

@@ -37,6 +37,11 @@ type InstanceHealth struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing InstanceHealth.
+func (InstanceHealth) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the partition and sort keys
 func (h *InstanceHealth) UpdateKeys() error {
 	h.PK = fmt.Sprintf("INSTANCE#%s", h.Domain)
@@ -143,6 +148,11 @@ type InstanceHealthSummary struct {
 
 	// TTL for cleanup (summaries kept longer - 30 days)
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+}
+
+// TableName returns the DynamoDB table backing InstanceHealthSummary.
+func (InstanceHealthSummary) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the partition and sort keys for health summary

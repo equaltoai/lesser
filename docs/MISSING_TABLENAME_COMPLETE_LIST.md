@@ -39,8 +39,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | AIAggregatedCost |
-| TODO |  | AICost |
+| DONE | Codex | AIAggregatedCost |
+| DONE | Codex | AICost |
 
 ---
 
@@ -58,8 +58,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | EngagementMetrics |
-| TODO |  | LinkShare |
+| DONE | Codex | EngagementMetrics |
+| DONE | Codex | LinkShare |
 
 ---
 
@@ -106,7 +106,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | CloudWatchMetrics |
+| DONE | Codex | CloudWatchMetrics |
 
 ---
 
@@ -123,7 +123,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Driver |
+| DONE | Codex | Driver |
 
 ---
 
@@ -131,7 +131,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | CostProjection |
+| DONE | Codex | CostProjection |
 
 ---
 
@@ -139,9 +139,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | DynamoDBCostRecordBuilder |
-| TODO |  | DynamoDBServiceCostStats |
-| TODO |  | DynamoDBTableCostStats |
+| DONE | Codex | DynamoDBCostRecordBuilder |
+| DONE | Codex | DynamoDBServiceCostStats |
+| DONE | Codex | DynamoDBTableCostStats |
 
 ---
 
@@ -200,8 +200,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Export |
-| TODO |  | ExportDateRange |
+| DONE | Codex | Export |
+| DONE | Codex | ExportDateRange |
 
 ---
 
@@ -209,9 +209,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ExportCostSummary |
-| TODO |  | ExportCostTracking |
-| TODO |  | ExportTypeCostStats |
+| DONE | Codex | ExportCostSummary |
+| DONE | Codex | ExportCostTracking |
+| DONE | Codex | ExportTypeCostStats |
 
 ---
 
@@ -384,8 +384,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | HashtagNotificationSettings |
-| TODO |  | NotificationFilter |
+| DONE | Codex | HashtagNotificationSettings |
+| DONE | Codex | NotificationFilter |
 
 ---
 
@@ -393,7 +393,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | HashtagSearchResult |
+| DONE | Codex | HashtagSearchResult |
 
 ---
 
@@ -409,9 +409,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ComponentHealthHistory |
-| TODO |  | HealthCheckResult |
-| TODO |  | HealthCheckSummaryResult |
+| DONE | Codex | ComponentHealthHistory |
+| DONE | Codex | HealthCheckResult |
+| DONE | Codex | HealthCheckSummaryResult |
 
 ---
 
@@ -419,7 +419,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Import |
+| DONE | Codex | Import |
 
 ---
 
@@ -427,9 +427,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ImportBudget |
-| TODO |  | ImportCostSummary |
-| TODO |  | ImportTypeCostStats |
+| DONE | Codex | ImportBudget |
+| DONE | Codex | ImportCostSummary |
+| DONE | Codex | ImportTypeCostStats |
 
 ---
 
@@ -437,7 +437,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ImportCostTracking |
+| DONE | Codex | ImportCostTracking |
 
 ---
 
@@ -453,8 +453,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | AIInstanceConfig |
-| TODO |  | InstanceConfig |
+| DONE | Codex | AIInstanceConfig |
+| DONE | Codex | InstanceConfig |
 
 ---
 
@@ -462,8 +462,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | InstanceHealth |
-| TODO |  | InstanceHealthSummary |
+| DONE | Codex | InstanceHealth |
+| DONE | Codex | InstanceHealthSummary |
 
 ---
 
@@ -471,7 +471,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | InstanceHealthReport |
+| DONE | Codex | InstanceHealthReport |
 
 ---
 
@@ -479,7 +479,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | InstanceHistory |
+| DONE | Codex | InstanceHistory |
 
 ---
 
@@ -487,7 +487,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | InstanceMetrics |
+| DONE | Codex | InstanceMetrics |
 
 ---
 
@@ -495,7 +495,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | InstanceRule |
+| DONE | Codex | InstanceRule |
 
 ---
 
@@ -527,8 +527,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | MediaAnalytics |
-| TODO |  | MediaVariantCost |
+| DONE | Codex | MediaAnalytics |
+| DONE | Codex | MediaVariantCost |
 
 ---
 
@@ -561,9 +561,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | DimensionStats |
-| TODO |  | MetricRecordBuilder |
-| TODO |  | MetricsBuilder |
+| DONE | Codex | DimensionStats |
+| DONE | Codex | MetricRecordBuilder |
+| DONE | Codex | MetricsBuilder |
 
 ---
 
@@ -624,13 +624,13 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | NotificationBudget |
-| TODO |  | NotificationChannelCostStats |
-| TODO |  | NotificationCostAggregation |
-| TODO |  | NotificationCostTracking |
-| TODO |  | NotificationCostTrackingBuilder |
-| TODO |  | NotificationTypeCostStats |
-| TODO |  | NotificationUserCostStats |
+| DONE | Codex | NotificationBudget |
+| DONE | Codex | NotificationChannelCostStats |
+| DONE | Codex | NotificationCostAggregation |
+| DONE | Codex | NotificationCostTracking |
+| DONE | Codex | NotificationCostTrackingBuilder |
+| DONE | Codex | NotificationTypeCostStats |
+| DONE | Codex | NotificationUserCostStats |
 
 ---
 
@@ -807,9 +807,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | GlobalMetricsWindow |
-| TODO |  | InstanceMetricsWindow |
-| TODO |  | RouteMetricsWindow |
+| DONE | Codex | GlobalMetricsWindow |
+| DONE | Codex | InstanceMetricsWindow |
+| DONE | Codex | RouteMetricsWindow |
 
 ---
 
@@ -817,10 +817,10 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ScheduledJobCategoryStats |
-| TODO |  | ScheduledJobCostRecordBuilder |
-| TODO |  | ScheduledJobEnvironmentStats |
-| TODO |  | ScheduledJobScheduleStats |
+| DONE | Codex | ScheduledJobCategoryStats |
+| DONE | Codex | ScheduledJobCostRecordBuilder |
+| DONE | Codex | ScheduledJobEnvironmentStats |
+| DONE | Codex | ScheduledJobScheduleStats |
 
 ---
 
@@ -836,7 +836,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | SearchAnalytics |
+| DONE | Codex | SearchAnalytics |
 
 ---
 
@@ -844,7 +844,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | SearchCache |
+| DONE | Codex | SearchCache |
 
 ---
 
@@ -852,7 +852,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | SearchClickRate |
+| DONE | Codex | SearchClickRate |
 
 ---
 
@@ -860,10 +860,10 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | SearchBudget |
-| TODO |  | SearchCostAggregation |
-| TODO |  | SearchCostTracking |
-| TODO |  | SearchQueryStats |
+| DONE | Codex | SearchBudget |
+| DONE | Codex | SearchCostAggregation |
+| DONE | Codex | SearchCostTracking |
+| DONE | Codex | SearchQueryStats |
 
 ---
 
@@ -871,7 +871,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | SearchEmbedding |
+| DONE | Codex | SearchEmbedding |
 
 ---
 
@@ -879,7 +879,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | SearchHistoryEntry |
+| DONE | Codex | SearchHistoryEntry |
 
 ---
 
@@ -887,7 +887,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | SearchResults |
+| DONE | Codex | SearchResults |
 
 ---
 
@@ -895,7 +895,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | SearchSuggestion |
+| DONE | Codex | SearchSuggestion |
 
 ---
 
@@ -931,8 +931,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | StatusSearchOptions |
-| TODO |  | TimeRange |
+| DONE | Codex | StatusSearchOptions |
+| DONE | Codex | TimeRange |
 
 ---
 
@@ -940,7 +940,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | StatusSearchResult |
+| DONE | Codex | StatusSearchResult |
 
 ---
 
@@ -956,7 +956,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | StreamingPreferences |
+| DONE | Codex | StreamingPreferences |
 
 ---
 
@@ -964,11 +964,11 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ConcurrentViewerMetrics |
-| TODO |  | GeographicMetric |
-| TODO |  | QualityMetric |
-| TODO |  | StreamingCloudWatchMetrics |
-| TODO |  | StreamingPerformanceMetrics |
+| DONE | Codex | ConcurrentViewerMetrics |
+| DONE | Codex | GeographicMetric |
+| DONE | Codex | QualityMetric |
+| DONE | Codex | StreamingCloudWatchMetrics |
+| DONE | Codex | StreamingPerformanceMetrics |
 
 ---
 
@@ -976,7 +976,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | StreamingEvent |
+| DONE | Codex | StreamingEvent |
 
 ---
 
@@ -1138,8 +1138,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 | --- | --- | --- |
 | TODO |  | ~~WebSocketConnection~~ ✅ FIXED |
 | TODO |  | ~~WebSocketSubscription~~ ✅ FIXED   |
-| TODO |  | ConnectionInfo |
-| TODO |  | ConnectionMetrics |
+| DONE | Codex | ConnectionInfo |
+| DONE | Codex | ConnectionMetrics |
 
 ---
 
@@ -1147,9 +1147,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | WebSocketCostBreakdown |
-| TODO |  | WebSocketCostRecordBuilder |
-| TODO |  | WebSocketTierCostStats |
+| DONE | Codex | WebSocketCostBreakdown |
+| DONE | Codex | WebSocketCostRecordBuilder |
+| DONE | Codex | WebSocketTierCostStats |
 
 ---
 
@@ -1157,8 +1157,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | WebSocketEventConnection |
-| TODO |  | WebSocketEventSubscription |
+| DONE | Codex | WebSocketEventConnection |
+| DONE | Codex | WebSocketEventSubscription |
 
 ---
 

@@ -388,7 +388,7 @@ func (r *TrackingRepository) Aggregate(ctx context.Context, operationType, perio
 		tableStats, exists := aggregated.TableBreakdown[ct.Table]
 		if !exists {
 			tableStats = &models.DynamoDBTableCostStats{
-				TableName: ct.Table,
+				Table: ct.Table,
 			}
 			aggregated.TableBreakdown[ct.Table] = tableStats
 		}

@@ -18,6 +18,11 @@ type SearchCache struct {
 	TTL       int64                  `json:"ttl,omitempty" dynamorm:"ttl"` // Unix timestamp
 }
 
+// TableName returns the DynamoDB table backing SearchCache.
+func (SearchCache) TableName() string {
+	return MainTableName
+}
+
 // NewSearchCache creates a new search cache entry
 func NewSearchCache(query string) *SearchCache {
 	now := time.Now()

@@ -114,7 +114,7 @@ type DynamoDBCostAggregation struct {
 
 // DynamoDBTableCostStats represents cost statistics for a specific table
 type DynamoDBTableCostStats struct {
-	TableName           string  `json:"table_name"`
+	Table               string  `json:"table_name"`
 	OperationCount      int64   `json:"operation_count"`
 	ReadCapacityUnits   float64 `json:"read_capacity_units"`
 	WriteCapacityUnits  float64 `json:"write_capacity_units"`
@@ -133,13 +133,23 @@ type DynamoDBServiceCostStats struct {
 	DataTransferBytes   int64   `json:"data_transfer_bytes"` // Data transfer for this service
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing DynamoDBCostRecord.
 func (DynamoDBCostRecord) TableName() string {
 	return MainTableName
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing DynamoDBCostAggregation.
 func (DynamoDBCostAggregation) TableName() string {
+	return MainTableName
+}
+
+// TableName returns the DynamoDB table backing DynamoDBTableCostStats.
+func (DynamoDBTableCostStats) TableName() string {
+	return MainTableName
+}
+
+// TableName returns the DynamoDB table backing DynamoDBServiceCostStats.
+func (DynamoDBServiceCostStats) TableName() string {
 	return MainTableName
 }
 
@@ -383,6 +393,11 @@ func isValidOperationType(opType string) bool {
 // DynamoDBCostRecordBuilder helps create cost tracking records
 type DynamoDBCostRecordBuilder struct {
 	tracking *DynamoDBCostRecord
+}
+
+// TableName returns the DynamoDB table backing DynamoDBCostRecordBuilder.
+func (DynamoDBCostRecordBuilder) TableName() string {
+	return MainTableName
 }
 
 // NewDynamoDBCostRecordBuilder creates a new cost tracking builder

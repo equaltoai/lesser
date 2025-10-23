@@ -17,6 +17,11 @@ type StatusSearchResult struct {
 	Highlights     map[string]string `json:"highlights"`
 }
 
+// TableName returns the DynamoDB table backing StatusSearchResult.
+func (StatusSearchResult) TableName() string {
+	return MainTableName
+}
+
 // NewStatusSearchResult creates a new status search result
 func NewStatusSearchResult(statusID, content, url, authorID, authorUsername string, published time.Time) *StatusSearchResult {
 	return &StatusSearchResult{

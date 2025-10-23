@@ -87,7 +87,7 @@ func (s *DynamORMStorage) GetDailyCosts(ctx context.Context, startDate, endDate 
 				// Aggregate unique users across all tables
 				if tableStats.UniqueUsers > 0 {
 					for i := 0; i < int(tableStats.UniqueUsers); i++ {
-						userSet[fmt.Sprintf("%s_%d", tableStats.TableName, i)] = true
+						userSet[fmt.Sprintf("%s_%d", tableStats.Table, i)] = true
 					}
 				}
 			}
@@ -155,7 +155,7 @@ func (s *DynamORMStorage) GetMonthlyCost(ctx context.Context, year int, month ti
 		for _, tableStats := range agg.TableBreakdown {
 			if tableStats.UniqueUsers > 0 {
 				for i := 0; i < int(tableStats.UniqueUsers); i++ {
-					userSet[fmt.Sprintf("%s_%d", tableStats.TableName, i)] = true
+					userSet[fmt.Sprintf("%s_%d", tableStats.Table, i)] = true
 				}
 			}
 		}
@@ -207,7 +207,7 @@ func (s *DynamORMStorage) GetMonthlyCosts(ctx context.Context, months int) ([]co
 			for _, tableStats := range agg.TableBreakdown {
 				if tableStats.UniqueUsers > 0 {
 					for i := 0; i < int(tableStats.UniqueUsers); i++ {
-						userSet[fmt.Sprintf("%s_%d", tableStats.TableName, i)] = true
+						userSet[fmt.Sprintf("%s_%d", tableStats.Table, i)] = true
 					}
 				}
 			}

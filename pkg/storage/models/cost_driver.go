@@ -37,6 +37,11 @@ func (c *Driver) UpdateKeys() {
 	c.TTL = c.MeasuredAt.AddDate(0, 3, 0).Unix()
 }
 
+// TableName returns the DynamoDB table backing Driver.
+func (Driver) TableName() string {
+	return MainTableName
+}
+
 // NewDriver creates a new cost driver
 func NewDriver(category, resource string) *Driver {
 	driver := &Driver{

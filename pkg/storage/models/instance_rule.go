@@ -30,6 +30,11 @@ type InstanceRule struct {
 	Examples    []string   `json:"examples,omitempty"`    // Example violations
 }
 
+// TableName returns the DynamoDB table backing InstanceRule.
+func (InstanceRule) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the GSI keys based on the rule data
 func (r *InstanceRule) UpdateKeys() {
 	// Primary key

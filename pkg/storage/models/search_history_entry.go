@@ -20,6 +20,11 @@ type SearchHistoryEntry struct {
 	SearchedAt  time.Time `json:"searched_at"`
 }
 
+// TableName returns the DynamoDB table backing SearchHistoryEntry.
+func (SearchHistoryEntry) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the DynamoDB keys based on the entry data
 func (s *SearchHistoryEntry) UpdateKeys() {
 	if s.UserID != "" {

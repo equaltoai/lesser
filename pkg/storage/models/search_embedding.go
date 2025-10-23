@@ -20,6 +20,11 @@ type SearchEmbedding struct {
 	CreatedAt   time.Time         `json:"created_at"`
 }
 
+// TableName returns the DynamoDB table backing SearchEmbedding.
+func (SearchEmbedding) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the partition and sort keys based on the model's attributes
 func (s *SearchEmbedding) UpdateKeys() error {
 	s.PK = fmt.Sprintf("EMBEDDING#%s", s.ContentID)

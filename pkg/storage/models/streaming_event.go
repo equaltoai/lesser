@@ -56,7 +56,7 @@ func (e *StreamingEvent) GetTableName() string {
 	return MainTableName
 }
 
-// TableName satisfies DynamORM's table resolver.
+// TableName returns the DynamoDB table backing StreamingEvent.
 func (e *StreamingEvent) TableName() string {
 	return MainTableName
 }

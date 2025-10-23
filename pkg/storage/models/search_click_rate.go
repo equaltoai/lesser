@@ -18,6 +18,11 @@ type SearchClickRate struct {
 	LastClicked time.Time `json:"last_clicked"`
 }
 
+// TableName returns the DynamoDB table backing SearchClickRate.
+func (SearchClickRate) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the partition and sort keys based on the model's attributes
 func (c *SearchClickRate) UpdateKeys() {
 	c.PK = fmt.Sprintf("CTR#%s", c.Query)

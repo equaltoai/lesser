@@ -12,6 +12,11 @@ type SearchResults struct {
 	Hashtags []*HashtagSearchResult `json:"hashtags"`
 }
 
+// TableName returns the DynamoDB table backing SearchResults.
+func (SearchResults) TableName() string {
+	return MainTableName
+}
+
 // NewSearchResults creates a new empty search results container
 func NewSearchResults() *SearchResults {
 	return &SearchResults{

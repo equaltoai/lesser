@@ -61,7 +61,7 @@ func (i *Import) GetCreatedAt() time.Time {
 	return i.CreatedAt
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing Import.
 func (i *Import) TableName() string {
-	return "" // Will be set by the repository
+	return MainTableName
 }
