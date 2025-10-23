@@ -289,6 +289,11 @@ type TrainingMetrics struct {
 	TrainingTime int     `json:"training_time"` // seconds
 }
 
+// TableName returns the DynamoDB table backing TrainingMetrics.
+func (TrainingMetrics) TableName() string {
+	return MainTableName
+}
+
 // TableName returns the DynamoDB table name
 func (ModelTrainingJob) TableName() string {
 	return MainTableName

@@ -25,6 +25,11 @@ type FederationInstance struct {
 	TotalMessages int64     `json:"total_messages"` // Total messages received
 }
 
+// TableName returns the DynamoDB table backing FederationInstance.
+func (FederationInstance) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the GSI keys for federation instance
 func (f *FederationInstance) UpdateKeys() {
 	// Primary key pattern: INSTANCE#domain
@@ -52,6 +57,11 @@ type FederationCostActivity struct {
 	ErrorMessage string    `json:"error_message,omitempty"`
 	Timestamp    time.Time `json:"timestamp"`
 	TTL          int64     `json:"ttl,omitempty" dynamorm:"ttl"`
+}
+
+// TableName returns the DynamoDB table backing FederationCostActivity.
+func (FederationCostActivity) TableName() string {
+	return MainTableName
 }
 
 // GetPK returns the partition key for BaseRepository compatibility
@@ -101,6 +111,11 @@ type FederationCost struct {
 	LastUpdated      time.Time `json:"last_updated"`
 }
 
+// TableName returns the DynamoDB table backing FederationCost.
+func (FederationCost) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the GSI keys for federation cost
 func (f *FederationCost) UpdateKeys() {
 	// Cost aggregation keys
@@ -119,6 +134,11 @@ type FederationHealthReport struct {
 	Issues          []string  `json:"issues"`
 	Recommendations []string  `json:"recommendations"`
 	LastChecked     time.Time `json:"last_checked"`
+}
+
+// TableName returns the DynamoDB table backing FederationHealthReport.
+func (FederationHealthReport) TableName() string {
+	return MainTableName
 }
 
 // FederationNode represents a node in the federation graph
@@ -147,6 +167,11 @@ type FederationNode struct {
 	ActiveConnections int64          `json:"active_connections,omitempty"`
 	ActivityVolume    int64          `json:"activity_volume,omitempty"`
 	Metadata          map[string]any `json:"metadata,omitempty"`
+}
+
+// TableName returns the DynamoDB table backing FederationNode.
+func (FederationNode) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys for federation node
@@ -181,6 +206,11 @@ type FederationEdge struct {
 	SuccessRate    float64   `json:"success_rate"`
 }
 
+// TableName returns the DynamoDB table backing FederationEdge.
+func (FederationEdge) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the GSI keys for federation edge
 func (f *FederationEdge) UpdateKeys() {
 	f.PK = fmt.Sprintf("FEDERATION_EDGE#%s", f.SourceDomain)
@@ -212,6 +242,11 @@ type InstanceMetadata struct {
 	LastUpdated     time.Time `json:"last_updated"`
 }
 
+// TableName returns the DynamoDB table backing InstanceMetadata.
+func (InstanceMetadata) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the GSI keys for instance metadata
 func (i *InstanceMetadata) UpdateKeys() {
 	i.PK = fmt.Sprintf("INSTANCE_META#%s", i.Domain)
@@ -232,6 +267,11 @@ type InstanceCluster struct {
 	Size        int       `json:"size"`
 	Description string    `json:"description,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// TableName returns the DynamoDB table backing InstanceCluster.
+func (InstanceCluster) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys for instance cluster
@@ -258,6 +298,11 @@ type InstanceConnection struct {
 	VolumeOut      int64     `json:"volume_out"`
 	LastActivity   time.Time `json:"last_activity"`
 	Success        bool      `json:"success"`
+}
+
+// TableName returns the DynamoDB table backing InstanceConnection.
+func (InstanceConnection) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys for instance connection

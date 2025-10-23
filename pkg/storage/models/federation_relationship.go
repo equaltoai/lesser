@@ -76,6 +76,11 @@ type FederationRelationship struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// TableName returns the DynamoDB table backing FederationRelationship.
+func (FederationRelationship) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets the DynamoDB keys for the federation relationship
 func (fr *FederationRelationship) UpdateKeys() {
 	// Primary keys: User-specific relationships
@@ -355,6 +360,11 @@ type FederationRelationshipAggregate struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// TableName returns the DynamoDB table backing FederationRelationshipAggregate.
+func (FederationRelationshipAggregate) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets the DynamoDB keys for the relationship aggregate
 func (fra *FederationRelationshipAggregate) UpdateKeys() {
 	// Primary keys: Instance + period
@@ -397,6 +407,11 @@ type FederationRelationshipIndex struct {
 	CreatedAt       time.Time         `json:"created_at"`
 }
 
+// TableName returns the DynamoDB table backing FederationRelationshipIndex.
+func (FederationRelationshipIndex) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets the DynamoDB keys for the relationship index
 func (fri *FederationRelationshipIndex) UpdateKeys() {
 	fri.PK = fmt.Sprintf("FEDERATION_REL_INDEX#%s", fri.RelationshipID)
@@ -429,6 +444,11 @@ type MetricsCompression struct {
 
 	// Activity pattern bitmap (daily activity over 30 days)
 	ActivityPattern uint32 `json:"ap"`
+}
+
+// TableName returns the DynamoDB table backing MetricsCompression.
+func (MetricsCompression) TableName() string {
+	return MainTableName
 }
 
 // ToBinary serializes the compression struct to compact binary format

@@ -549,9 +549,14 @@ type RouteRecommendation struct {
 	Impact      string `json:"impact"`      // Expected impact level
 }
 
-// TableName returns the DynamoDB table name
-func (f *FederationRouteMetrics) TableName() string {
-	return "" // Will be set by the repository
+// TableName returns the DynamoDB table backing RouteRecommendation.
+func (RouteRecommendation) TableName() string {
+	return MainTableName
+}
+
+// TableName returns the DynamoDB table backing FederationRouteMetrics.
+func (FederationRouteMetrics) TableName() string {
+	return MainTableName
 }
 
 // FederationRouteAggregation represents aggregated route metrics across multiple time periods
@@ -621,11 +626,21 @@ type FederationRouteAggregation struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing FederationRouteAggregation.
+func (FederationRouteAggregation) TableName() string {
+	return MainTableName
+}
+
 // ErrorFrequency represents error frequency data
 type ErrorFrequency struct {
 	ErrorCode  string  `json:"error_code"`
 	Count      int64   `json:"count"`
 	Percentage float64 `json:"percentage"`
+}
+
+// TableName returns the DynamoDB table backing ErrorFrequency.
+func (ErrorFrequency) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets the primary keys for the FederationRouteAggregation model
@@ -665,11 +680,6 @@ func (f *FederationRouteAggregation) BeforeUpdate() error {
 	f.UpdatedAt = time.Now()
 	f.UpdateKeys()
 	return nil
-}
-
-// TableName returns the DynamoDB table name
-func (f *FederationRouteAggregation) TableName() string {
-	return "" // Will be set by the repository
 }
 
 // GetRouteComparisonMetrics returns metrics for comparing routes

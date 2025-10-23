@@ -23,6 +23,11 @@ type FederationStats struct {
 	TTL       int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days retention
 }
 
+// TableName returns the DynamoDB table backing FederationStats.
+func (FederationStats) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the partition and sort keys based on the date
 func (f *FederationStats) UpdateKeys() {
 	f.PK = FederationStatsPK

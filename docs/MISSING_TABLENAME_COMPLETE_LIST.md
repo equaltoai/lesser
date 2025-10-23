@@ -227,8 +227,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | FederationActivityBuilder |
-| TODO |  | InstanceInfo |
+| DONE | Codex | FederationActivityBuilder |
+| DONE | Codex | InstanceInfo |
 
 ---
 
@@ -236,12 +236,12 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | FederationCost |
-| TODO |  | FederationCostActivity |
-| TODO |  | FederationEdge |
-| TODO |  | FederationHealthReport |
-| TODO |  | FederationInstance |
-| TODO |  | FederationNode |
+| DONE | Codex | FederationCost |
+| DONE | Codex | FederationCostActivity |
+| DONE | Codex | FederationEdge |
+| DONE | Codex | FederationHealthReport |
+| DONE | Codex | FederationInstance |
+| DONE | Codex | FederationNode |
 
 ---
 
@@ -249,9 +249,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | InstanceCluster |
-| TODO |  | InstanceConnection |
-| TODO |  | InstanceMetadata |
+| DONE | Codex | InstanceCluster |
+| DONE | Codex | InstanceConnection |
+| DONE | Codex | InstanceMetadata |
 
 ---
 
@@ -259,8 +259,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | FederationBudget |
-| TODO |  | FederationCostTracking |
+| DONE | Codex | FederationBudget |
+| DONE | Codex | FederationCostTracking |
 
 ---
 
@@ -268,8 +268,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | FederationInstanceRegistry |
-| TODO |  | FederationInstanceRegistryHealthHistory |
+| DONE | Codex | FederationInstanceRegistry |
+| DONE | Codex | FederationInstanceRegistryHealthHistory |
 
 ---
 
@@ -277,8 +277,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | FederationInstanceConfigTracking |
-| TODO |  | RetryPolicy |
+| DONE | Codex | FederationInstanceConfigTracking |
+| DONE | Codex | RetryPolicy |
 
 ---
 
@@ -286,7 +286,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | FederationInstanceHealthTracking |
+| DONE | Codex | FederationInstanceHealthTracking |
 
 ---
 
@@ -294,8 +294,8 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | FederationAlert |
-| TODO |  | FederationAnalyticsTimeSeries |
+| DONE | Codex | FederationAlert |
+| DONE | Codex | FederationAnalyticsTimeSeries |
 
 ---
 
@@ -303,10 +303,10 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | FederationRelationship |
-| TODO |  | FederationRelationshipAggregate |
-| TODO |  | FederationRelationshipIndex |
-| TODO |  | MetricsCompression |
+| DONE | Codex | FederationRelationship |
+| DONE | Codex | FederationRelationshipAggregate |
+| DONE | Codex | FederationRelationshipIndex |
+| DONE | Codex | MetricsCompression |
 
 ---
 
@@ -314,10 +314,10 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ErrorFrequency |
-| TODO |  | FederationRouteAggregation |
-| TODO |  | FederationRouteMetrics |
-| TODO |  | RouteRecommendation |
+| DONE | Codex | ErrorFrequency |
+| DONE | Codex | FederationRouteAggregation |
+| DONE | Codex | FederationRouteMetrics |
+| DONE | Codex | RouteRecommendation |
 
 ---
 
@@ -325,10 +325,10 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | FederationIssue |
-| TODO |  | FederationSeverance |
-| TODO |  | FederationTimeSeries |
-| TODO |  | ReconnectionAttempt |
+| DONE | Codex | FederationIssue |
+| DONE | Codex | FederationSeverance |
+| DONE | Codex | FederationTimeSeries |
+| DONE | Codex | ReconnectionAttempt |
 
 ---
 
@@ -336,7 +336,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | FederationStats |
+| DONE | Codex | FederationStats |
 
 ---
 
@@ -579,9 +579,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Moderation |
-| TODO |  | ModerationEvidence |
-| TODO |  | ModerationHistoryEntry |
+| DONE | Codex | Moderation |
+| DONE | Codex | ModerationEvidence |
+| DONE | Codex | ModerationHistoryEntry |
 
 ---
 
@@ -589,7 +589,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ModerationAnalytics |
+| DONE | Codex | ModerationAnalytics |
 
 ---
 
@@ -597,10 +597,10 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | ModerationMetricsStats |
-| TODO |  | ModerationMetricsTimeRange |
-| TODO |  | PatternStats |
-| TODO |  | RealtimeStats |
+| DONE | Codex | ModerationMetricsStats |
+| DONE | Codex | ModerationMetricsTimeRange |
+| DONE | Codex | PatternStats |
+| DONE | Codex | RealtimeStats |
 
 ---
 
@@ -608,7 +608,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | TrainingMetrics |
+| DONE | Codex | TrainingMetrics |
 
 ---
 
@@ -727,10 +727,10 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | RecoveryCode |
-| TODO |  | RecoveryRequest |
-| TODO |  | RecoveryToken |
-| TODO |  | Trustee |
+| DONE | Codex | RecoveryCode |
+| DONE | Codex | RecoveryRequest |
+| DONE | Codex | RecoveryToken |
+| DONE | Codex | Trustee |
 
 ---
 
@@ -738,7 +738,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | Relay |
+| DONE | Codex | Relay |
 
 ---
 
@@ -746,10 +746,10 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | RelayBudget |
-| TODO |  | RelayCost |
-| TODO |  | RelayMetrics |
-| TODO |  | RelayOperationStats |
+| DONE | Codex | RelayBudget |
+| DONE | Codex | RelayCost |
+| DONE | Codex | RelayMetrics |
+| DONE | Codex | RelayOperationStats |
 
 ---
 
@@ -757,7 +757,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | RelayInfo |
+| DONE | Codex | RelayInfo |
 
 ---
 
@@ -903,9 +903,9 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | AffectedRelationship |
-| TODO |  | SeveranceReconnectionAttempt |
-| TODO |  | SeveredRelationship |
+| DONE | Codex | AffectedRelationship |
+| DONE | Codex | SeveranceReconnectionAttempt |
+| DONE | Codex | SeveredRelationship |
 
 ---
 
@@ -913,7 +913,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | SocialRecoveryRequest |
+| DONE | Codex | SocialRecoveryRequest |
 
 ---
 
@@ -1061,10 +1061,10 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | TrustEvidence |
-| TODO |  | TrustRelationship |
-| TODO |  | TrustScore |
-| TODO |  | TrustUpdate |
+| DONE | Codex | TrustEvidence |
+| DONE | Codex | TrustRelationship |
+| DONE | Codex | TrustScore |
+| DONE | Codex | TrustUpdate |
 
 ---
 
@@ -1072,7 +1072,7 @@ Use this tracker to drive TableName() remediation. Update `Status` (`TODO`, `IN_
 
 | Status | Assignee | Model |
 | --- | --- | --- |
-| TODO |  | TrusteeConfig |
+| DONE | Codex | TrusteeConfig |
 
 ---
 

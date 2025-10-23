@@ -31,6 +31,11 @@ type RetryPolicy struct {
 	BackoffFactor  float64       `json:"backoff_factor"`
 }
 
+// TableName returns the DynamoDB table backing RetryPolicy.
+func (RetryPolicy) TableName() string {
+	return MainTableName
+}
+
 // FederationInstanceConfigTracking stores configuration for federated instances
 type FederationInstanceConfigTracking struct {
 	// Primary keys - INSTANCE#{domain}, CONFIG
@@ -93,6 +98,11 @@ type FederationInstanceConfigTracking struct {
 	LastModified time.Time `json:"last_modified"`
 
 	// No TTL - configurations are permanent until explicitly deleted
+}
+
+// TableName returns the DynamoDB table backing FederationInstanceConfigTracking.
+func (FederationInstanceConfigTracking) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets the primary and GSI keys for the config tracking model
@@ -220,9 +230,4 @@ func (f *FederationInstanceConfigTracking) GetRateLimit() int {
 	default:
 		return 100
 	}
-}
-
-// TableName returns the DynamoDB table name
-func (f *FederationInstanceConfigTracking) TableName() string {
-	return MainTableName
 }

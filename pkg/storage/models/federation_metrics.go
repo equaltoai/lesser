@@ -90,6 +90,11 @@ type FederationAnalyticsTimeSeries struct {
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"` // Unix timestamp
 }
 
+// TableName returns the DynamoDB table backing FederationAnalyticsTimeSeries.
+func (FederationAnalyticsTimeSeries) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets all primary and GSI keys for the time series record
 func (f *FederationAnalyticsTimeSeries) UpdateKeys() {
 	// Primary key pattern: FEDERATION_TIMESERIES#{domain}#{period}
@@ -347,4 +352,9 @@ type FederationAlert struct {
 	Message     string    `json:"message"`
 	HealthScore float64   `json:"health_score"`
 	Timestamp   time.Time `json:"timestamp"`
+}
+
+// TableName returns the DynamoDB table backing FederationAlert.
+func (FederationAlert) TableName() string {
+	return MainTableName
 }

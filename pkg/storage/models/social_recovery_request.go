@@ -31,6 +31,11 @@ type SocialRecoveryRequest struct {
 	TTL           int64           `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing SocialRecoveryRequest.
+func (SocialRecoveryRequest) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the composite keys based on the recovery request
 func (s *SocialRecoveryRequest) UpdateKeys() {
 	// Primary key: RECOVERY#userID

@@ -31,6 +31,11 @@ type RelayInfo struct {
 	TTL        int64     `json:"ttl,omitempty" dynamorm:"ttl"` // For automatic cleanup
 }
 
+// TableName returns the DynamoDB table backing RelayInfo.
+func (RelayInfo) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the composite keys based on the relay info
 func (r *RelayInfo) UpdateKeys() {
 	// Primary key: RELAY#domain

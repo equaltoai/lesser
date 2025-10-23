@@ -27,6 +27,11 @@ type TrustEvidence struct {
 	Timestamp   time.Time `json:"timestamp"`
 }
 
+// TableName returns the DynamoDB table backing TrustEvidence.
+func (TrustEvidence) TableName() string {
+	return MainTableName
+}
+
 // TrustRelationship represents a trust relationship between two actors
 type TrustRelationship struct {
 	// Primary keys - exact patterns from legacy
@@ -55,6 +60,11 @@ type TrustRelationship struct {
 
 	// Type marker for filtering
 	Type string `json:"type"` // Always "RELATIONSHIP"
+}
+
+// TableName returns the DynamoDB table backing TrustRelationship.
+func (TrustRelationship) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets all the DynamoDB keys based on the relationship data
@@ -110,6 +120,11 @@ type TrustScore struct {
 	Type string `json:"type"` // Always "SCORE"
 }
 
+// TableName returns the DynamoDB table backing TrustScore.
+func (TrustScore) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets all the DynamoDB keys for the trust score
 func (ts *TrustScore) UpdateKeys() error {
 	ts.PK = fmt.Sprintf("SCORE#%s#%s", ts.ActorID, ts.Category)
@@ -150,6 +165,11 @@ type TrustUpdate struct {
 
 	// Type marker
 	Type string `json:"type"` // Always "UPDATE"
+}
+
+// TableName returns the DynamoDB table backing TrustUpdate.
+func (TrustUpdate) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets all the DynamoDB keys for the trust update
