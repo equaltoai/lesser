@@ -89,17 +89,7 @@ const (
 // Table names
 var (
 	// MainTableName is the primary DynamoDB table name (resolved from environment)
-	MainTableName = func() string {
-		if table := config.GetDynamoTableName(); table != "" {
-			return table
-		}
-		return DefaultTableName
-	}()
-)
-
-const (
-	// DefaultTableName is a placeholder table name for test/example code
-	DefaultTableName = "lesser-table"
+	MainTableName = config.GetMainTableName()
 )
 
 // Cost tracking key patterns

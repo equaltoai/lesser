@@ -217,7 +217,7 @@ func loadConfig() *Config {
 		InstanceName: getEnvOrDefault("INSTANCE_NAME", "Lesser ActivityPub Server"),
 
 		Region:                  getEnvOrDefault("AWS_REGION", "us-east-1"),
-		DynamoTableName:         getEnvOrDefault("DYNAMO_TABLE_NAME", "lesser-main"),
+		DynamoTableName:         GetMainTableName(),
 		DynamoDBEndpoint:        getEnvOrDefault("DYNAMODB_ENDPOINT", ""),
 		S3BucketName:            getEnvOrDefault("S3_BUCKET_NAME", "lesser-media"),
 		SQSQueueURL:             getEnvOrDefault("SQS_QUEUE_URL", ""),
@@ -612,9 +612,17 @@ func GetDomainName() string {
 
 // GetDynamoTableName returns the DynamoDB table name
 func GetDynamoTableName() string {
-	table := os.Getenv("DYNAMODB_TABLE")
-	if table == "" {
-		table = os.Getenv("DYNAMO_TABLE_NAME")
+	return GetMainTableName()
+}
+
+// GetMainTableName returns the canonical DynamoDB table name for the current stage/environment.
+func GetMainTableName() string {
+	env := strings.TrimSpace(os.Getenv("ENVIRONMENT"))
+	if env == "" {
+		env = strings.TrimSpace(os.Getenv("STAGE"))
 	}
-	return table
+	if env == "" {
+		panic("ENVIRONMENT or STAGE must be set to determine the DynamoDB table name")
+	}
+	return fmt.Sprintf("lesser-%s", strings.ToLower(env))
 }

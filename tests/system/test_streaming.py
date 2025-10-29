@@ -1,240 +1,239 @@
 #!/usr/bin/env python3
-"""Test script for Lesser WebSocket streaming functionality"""
+"""
+Stage-aware validation script for Lesser's streaming (WebSocket) endpoint.
+
+Environment variables:
+  GRAPHQL_STAGE  -> deployment stage (default: dev)
+  GRAPHQL_DOMAIN -> root domain (default: lesser.host)
+  GRAPHQL_TOKEN  -> bearer token used for authenticated connections
+"""
 
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
-from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import List, Optional
 
 import websockets
 from websockets.client import WebSocketClientProtocol
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
+BASE_DOMAIN = os.getenv("GRAPHQL_DOMAIN", "lesser.host")
+DEFAULT_STAGE = os.getenv("GRAPHQL_STAGE", "dev")
+
 
 class StreamingTestClient:
-    def __init__(self, instance_url: str, access_token: str):
-        self.instance_url = instance_url.rstrip('/')
+    """Helper for interacting with the streaming WebSocket endpoint."""
+
+    def __init__(self, stage: str, access_token: str, base_domain: str = BASE_DOMAIN):
+        self.stage = stage
+        self.base_domain = base_domain
         self.access_token = access_token
-        # Extract domain from instance URL and construct WebSocket URL
-        domain = instance_url.replace('https://', '').replace('http://', '').split('/')[0]
-        self.ws_url = f"wss://ws.{domain}"
+        self.instance_url = f"https://{stage}.{base_domain}"
+        self.ws_url = f"wss://stream.{stage}.{base_domain}"
         self.websocket: Optional[WebSocketClientProtocol] = None
-        
-    async def connect(self):
-        """Connect to the WebSocket endpoint"""
-        logger.info(f"Connecting to {self.ws_url}")
-        
-        # Add access token as query parameter
-        url_with_token = f"{self.ws_url}?access_token={self.access_token}"
-        
+
+    async def connect(self) -> bool:
+        """Connect to the WebSocket endpoint."""
+        logger.info("Connecting to %s", self.ws_url)
+        headers: List[tuple[str, str]] = []
+        url = self.ws_url
+
+        if self.access_token:
+            headers.append(("Authorization", f"Bearer {self.access_token}"))
+            url = f"{url}?access_token={self.access_token}"
+
         try:
-            self.websocket = await websockets.connect(url_with_token)
+            self.websocket = await websockets.connect(
+                url,
+                additional_headers=headers or None,
+                ping_interval=20,
+                close_timeout=5,
+            )
             logger.info("Connected successfully")
             return True
-        except Exception as e:
-            logger.error(f"Failed to connect: {e}")
+        except Exception as exc:
+            logger.error("Failed to connect: %s", exc)
             return False
-    
-    async def disconnect(self):
-        """Disconnect from the WebSocket"""
+
+    async def disconnect(self) -> None:
+        """Disconnect from the WebSocket."""
         if self.websocket:
             await self.websocket.close()
             logger.info("Disconnected")
-    
-    async def subscribe(self, stream: str):
-        """Subscribe to a stream"""
+
+    async def subscribe(self, stream: str) -> bool:
+        """Subscribe to a named stream."""
         if not self.websocket:
             logger.error("Not connected")
             return False
-        
-        message = {
-            "type": "subscribe",
-            "stream": stream
-        }
-        
+
+        message = {"type": "subscribe", "stream": stream}
         try:
             await self.websocket.send(json.dumps(message))
-            logger.info(f"Sent subscribe request for stream: {stream}")
+            logger.info("Sent subscribe request for stream: %s", stream)
             return True
-        except Exception as e:
-            logger.error(f"Failed to subscribe: {e}")
+        except Exception as exc:
+            logger.error("Failed to subscribe: %s", exc)
             return False
-    
-    async def unsubscribe(self, stream: str):
-        """Unsubscribe from a stream"""
+
+    async def unsubscribe(self, stream: str) -> bool:
+        """Unsubscribe from a stream."""
         if not self.websocket:
             logger.error("Not connected")
             return False
-        
-        message = {
-            "type": "unsubscribe",
-            "stream": stream
-        }
-        
+
+        message = {"type": "unsubscribe", "stream": stream}
         try:
             await self.websocket.send(json.dumps(message))
-            logger.info(f"Sent unsubscribe request for stream: {stream}")
+            logger.info("Sent unsubscribe request for stream: %s", stream)
             return True
-        except Exception as e:
-            logger.error(f"Failed to unsubscribe: {e}")
+        except Exception as exc:
+            logger.error("Failed to unsubscribe: %s", exc)
             return False
-    
-    async def ping(self):
-        """Send a ping message"""
+
+    async def ping(self) -> bool:
+        """Send a ping message."""
         if not self.websocket:
             logger.error("Not connected")
             return False
-        
-        message = {"type": "ping"}
-        
+
         try:
-            await self.websocket.send(json.dumps(message))
+            await self.websocket.send(json.dumps({"type": "ping"}))
             logger.info("Sent ping")
             return True
-        except Exception as e:
-            logger.error(f"Failed to send ping: {e}")
+        except Exception as exc:
+            logger.error("Failed to send ping: %s", exc)
             return False
-    
-    async def listen_for_messages(self, duration: int = 60):
-        """Listen for messages for a specified duration"""
+
+    async def listen_for_messages(self, duration: int = 10) -> None:
+        """Listen for messages for a specified duration."""
         if not self.websocket:
             logger.error("Not connected")
             return
-        
-        logger.info(f"Listening for messages for {duration} seconds...")
+
+        logger.info("Listening for messages for %s seconds...", duration)
         start_time = time.time()
         message_count = 0
-        
+
         try:
             while time.time() - start_time < duration:
-                # Set a timeout so we can check the duration periodically
                 try:
-                    message = await asyncio.wait_for(
-                        self.websocket.recv(), 
-                        timeout=1.0
-                    )
-                    
+                    message = await asyncio.wait_for(self.websocket.recv(), timeout=1.0)
                     data = json.loads(message)
                     message_count += 1
-                    
-                    logger.info(f"Received message #{message_count}:")
-                    logger.info(f"  Type: {data.get('type', data.get('event'))}")
-                    logger.info(f"  Stream: {data.get('stream', 'N/A')}")
-                    
-                    if 'payload' in data:
-                        logger.info(f"  Payload: {json.dumps(data['payload'], indent=2)}")
-                    
+                    logger.info(
+                        "Received message #%s type=%s stream=%s",
+                        message_count,
+                        data.get("type", data.get("event")),
+                        data.get("stream", "N/A"),
+                    )
                 except asyncio.TimeoutError:
-                    # No message received in 1 second, continue
                     continue
                 except websockets.exceptions.ConnectionClosed:
                     logger.warning("Connection closed by server")
                     break
-                
-        except Exception as e:
-            logger.error(f"Error while listening: {e}")
-        
-        logger.info(f"Received {message_count} messages in {duration} seconds")
+        except Exception as exc:
+            logger.error("Error while listening: %s", exc)
+
+        logger.info("Received %s messages in %s seconds", message_count, duration)
 
 
-async def test_streaming(instance_url: str, access_token: str):
-    """Test the streaming functionality"""
-    client = StreamingTestClient(instance_url, access_token)
-    
-    # Test 1: Connect to WebSocket
+async def test_streaming(stage: str, access_token: str) -> None:
+    """Run a basic streaming validation flow."""
+    client = StreamingTestClient(stage, access_token)
+
     logger.info("\n=== Test 1: Connect to WebSocket ===")
     if not await client.connect():
         logger.error("Failed to connect, aborting tests")
         return
-    
-    # Test 2: Subscribe to public timeline
+
     logger.info("\n=== Test 2: Subscribe to public timeline ===")
     await client.subscribe("public")
-    
-    # Wait for subscription confirmation
-    await asyncio.sleep(2)
-    
-    # Test 3: Subscribe to user timeline
+    await asyncio.sleep(1)
+
     logger.info("\n=== Test 3: Subscribe to user timeline ===")
     await client.subscribe("user")
-    
-    # Test 4: Subscribe to notifications
+
     logger.info("\n=== Test 4: Subscribe to notifications ===")
     await client.subscribe("user:notification")
-    
-    # Test 5: Send ping
+
     logger.info("\n=== Test 5: Send ping ===")
     await client.ping()
-    
-    # Test 6: Listen for messages
+
     logger.info("\n=== Test 6: Listen for messages ===")
-    logger.info("Now post something to generate events...")
-    await client.listen_for_messages(duration=30)
-    
-    # Test 7: Unsubscribe from public timeline
+    await client.listen_for_messages(duration=10)
+
     logger.info("\n=== Test 7: Unsubscribe from public timeline ===")
     await client.unsubscribe("public")
-    
-    # Test 8: Disconnect
+
     logger.info("\n=== Test 8: Disconnect ===")
     await client.disconnect()
 
 
-async def test_multiple_connections(instance_url: str, access_token: str, num_connections: int = 5):
-    """Test multiple concurrent connections"""
-    logger.info(f"\n=== Testing {num_connections} concurrent connections ===")
-    
-    clients = []
-    
-    # Create and connect multiple clients
-    for i in range(num_connections):
-        client = StreamingTestClient(instance_url, access_token)
+async def test_multiple_connections(stage: str, access_token: str, num_connections: int = 3) -> None:
+    """Test multiple concurrent connections."""
+    logger.info("\n=== Testing %s concurrent connections ===", num_connections)
+    clients: List[StreamingTestClient] = []
+
+    for idx in range(num_connections):
+        client = StreamingTestClient(stage, access_token)
         if await client.connect():
             await client.subscribe("public")
             clients.append(client)
-            logger.info(f"Client {i+1} connected and subscribed")
+            logger.info("Client %s connected and subscribed", idx + 1)
         else:
-            logger.error(f"Client {i+1} failed to connect")
-    
-    # Let them listen for a bit
-    logger.info(f"All {len(clients)} clients listening...")
-    await asyncio.sleep(10)
-    
-    # Disconnect all
-    for i, client in enumerate(clients):
+            logger.error("Client %s failed to connect", idx + 1)
+
+    if clients:
+        logger.info("All %s clients listening...", len(clients))
+        await asyncio.sleep(5)
+
+    for idx, client in enumerate(clients):
         await client.disconnect()
-        logger.info(f"Client {i+1} disconnected")
+        logger.info("Client %s disconnected", idx + 1)
 
 
-def main():
-    if len(sys.argv) != 3:
-        print("Usage: python test_streaming.py <instance_url> <access_token>")
-        print("Example: python test_streaming.py https://lesser.example.com your_access_token")
+def parse_args() -> tuple[str, str]:
+    """Parse CLI arguments for stage and token."""
+    stage = DEFAULT_STAGE
+    token = os.getenv("GRAPHQL_TOKEN")
+
+    if len(sys.argv) == 2:
+        stage = sys.argv[1]
+    elif len(sys.argv) == 3:
+        stage = sys.argv[1]
+        token = sys.argv[2]
+    elif len(sys.argv) > 3:
+        print("Usage: python test_streaming.py [stage] [access_token]")
+        print("Example: python test_streaming.py dev <access_token>")
         sys.exit(1)
-    
-    instance_url = sys.argv[1]
-    access_token = sys.argv[2]
-    
+
+    if not token:
+        print("Error: access token is required (pass as argument or set GRAPHQL_TOKEN).")
+        sys.exit(1)
+
+    return stage, token
+
+
+def main() -> None:
+    stage, access_token = parse_args()
+
     logger.info("Starting WebSocket streaming tests")
-    logger.info(f"Instance: {instance_url}")
-    
-    # Run basic tests
-    asyncio.run(test_streaming(instance_url, access_token))
-    
-    # Run concurrent connection test
-    asyncio.run(test_multiple_connections(instance_url, access_token))
-    
+    logger.info("Stage: %s  Domain: %s", stage, BASE_DOMAIN)
+
+    asyncio.run(test_streaming(stage, access_token))
+    asyncio.run(test_multiple_connections(stage, access_token))
+
     logger.info("\nAll tests completed!")
 
 
 if __name__ == "__main__":
-    main() 
+    main()

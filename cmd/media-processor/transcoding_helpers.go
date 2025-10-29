@@ -335,14 +335,14 @@ func (mp *MediaProcessor) createEnhancedMediaConvertJob(ctx context.Context, s3I
 				CodecSettings: &mctypes.VideoCodecSettings{
 					Codec: mctypes.VideoCodecFrameCapture,
 					FrameCaptureSettings: &mctypes.FrameCaptureSettings{
-						FramerateNumerator:   int32(1),
-						FramerateDenominator: int32(60), // 1 frame every 60 seconds
-						MaxCaptures:          maxCaptures,
-						Quality:              int32(80),
+						FramerateNumerator:   aws.Int32(1),
+						FramerateDenominator: aws.Int32(60), // 1 frame every 60 seconds
+						MaxCaptures:          aws.Int32(maxCaptures),
+						Quality:              aws.Int32(80),
 					},
 				},
-				Width:  int32(320),
-				Height: int32(240),
+				Width:  aws.Int32(320),
+				Height: aws.Int32(240),
 			},
 			ContainerSettings: &mctypes.ContainerSettings{
 				Container: mctypes.ContainerTypeRaw,
@@ -443,14 +443,14 @@ func (mp *MediaProcessor) createQualityOutput(quality string) mctypes.Output {
 			CodecSettings: &mctypes.VideoCodecSettings{
 				Codec: mctypes.VideoCodecH264,
 				H264Settings: &mctypes.H264Settings{
-					Bitrate:         bitrate,
+					Bitrate:         aws.Int32(bitrate),
 					CodecProfile:    mctypes.H264CodecProfileMain,
 					CodecLevel:      mctypes.H264CodecLevelAuto,
 					RateControlMode: mctypes.H264RateControlModeVbr,
 				},
 			},
-			Width:  width,
-			Height: height,
+			Width:  aws.Int32(width),
+			Height: aws.Int32(height),
 		},
 		AudioDescriptions: []mctypes.AudioDescription{
 			{
@@ -458,8 +458,8 @@ func (mp *MediaProcessor) createQualityOutput(quality string) mctypes.Output {
 				CodecSettings: &mctypes.AudioCodecSettings{
 					Codec: mctypes.AudioCodecAac,
 					AacSettings: &mctypes.AacSettings{
-						Bitrate:      int32(128000),
-						SampleRate:   int32(48000),
+						Bitrate:      aws.Int32(128000),
+						SampleRate:   aws.Int32(48000),
 						CodecProfile: mctypes.AacCodecProfileLc,
 					},
 				},
