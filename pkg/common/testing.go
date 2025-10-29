@@ -1,3 +1,5 @@
+// Package common exposes helpers shared across tests.
+// revive:disable:var-naming - package name retained for backwards-compatible imports.
 package common
 
 import (

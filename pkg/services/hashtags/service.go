@@ -311,6 +311,10 @@ func (s *Service) GetHashtagActivity(ctx context.Context, hashtags []string) (<-
 		return nil, ErrHashtagNameRequired
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// Return empty channel with deprecation warning
 	// This functionality is replaced by GraphQL subscriptions in the graph layer
 	s.logger.Warn("GetHashtagActivity called - this method is deprecated on Lambda, use GraphQL subscriptions instead",

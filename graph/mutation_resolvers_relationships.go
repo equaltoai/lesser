@@ -57,7 +57,7 @@ func (r *mutationResolver) FollowActor(ctx context.Context, id string) (*activit
 		}
 	} else if activity.Published == nil {
 		now := time.Now().UTC()
-		activity.BaseObject.Published = &now
+		activity.Published = &now
 	}
 
 	return activity, nil

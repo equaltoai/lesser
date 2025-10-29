@@ -117,7 +117,6 @@ func (r *AccountRepository) IsFollowing(ctx context.Context, followerUsername, f
 	return follow.State == models.FollowStateAccepted, nil
 }
 
-// GetFollowers retrieves paginated list of followers for a user
 const (
 	followDefaultLimit   = 40
 	followMaxLimit       = 200
@@ -145,6 +144,7 @@ func clampBookmarkLimit(limit int) int {
 	return limit
 }
 
+// GetFollowers retrieves a paginated list of accepted followers for a user.
 func (r *AccountRepository) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Actor, string, error) {
 	var follows []models.Follow
 

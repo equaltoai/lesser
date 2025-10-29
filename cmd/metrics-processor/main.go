@@ -678,9 +678,22 @@ func (p *MetricsStreamProcessor) isHighCost(record *models.MetricRecord) bool {
 func (p *MetricsStreamProcessor) publishEventAndLog(event *streaming.InternalEvent, subscriptionCategory string, record *models.MetricRecord) {
 	// Events are automatically propagated via DynamoDB streams to stream-router
 	// No explicit publishing needed
-	p.logger.Debug("metric event will auto-propagate via DynamoDB streams",
+	fields := []zap.Field{
 		zap.String("subscription_category", subscriptionCategory),
-		zap.String("record_id", record.MetricID))
+		zap.String("record_id", record.MetricID),
+	}
+
+	if event != nil {
+		fields = append(fields,
+			zap.String("event_id", event.ID),
+			zap.String("event_type", string(event.Type)),
+			zap.Int("stream_count", len(event.Streams)),
+		)
+	} else {
+		fields = append(fields, zap.String("event_status", "nil_event"))
+	}
+
+	p.logger.Debug("metric event will auto-propagate via DynamoDB streams", fields...)
 }
 
 // getSubscriptionStreams determines which GraphQL subscription streams should receive the metrics event

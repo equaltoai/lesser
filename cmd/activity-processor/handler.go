@@ -123,7 +123,10 @@ type ActivityHandler struct {
 func NewActivityHandler(db core.DB, tableName string) *ActivityHandler {
 	logger := zap.L()
 	cfg := config.Get()
-	domain := cfg.Domain
+	domain := DefaultTestingDomain
+	if cfg != nil {
+		domain = cfg.Domain
+	}
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = DefaultTestingDomain // Default for testing
 	}
@@ -820,6 +823,9 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 //nolint:unused // Helper method for timeline processing
 func (h *ActivityHandler) isLocalActor(actorID string) bool {
 	cfg := config.Get()
+	if cfg == nil {
+		return strings.Contains(actorID, DefaultTestingDomain)
+	}
 	domain := cfg.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = DefaultTestingDomain // Default for testing

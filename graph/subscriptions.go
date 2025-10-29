@@ -144,8 +144,8 @@ func (sm *SubscriptionManager) SubscribeToMetricsUpdates(ctx context.Context, us
 }
 
 // SubscribeToQuoteActivity creates a channel for quote activity updates using event bus
-func (sm *SubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string, noteObj any) (<-chan *model.QuoteActivityUpdate, error) {
-	return sm.manager.SubscribeToQuoteActivity(ctx, username, noteID, noteObj)
+func (sm *SubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string) (<-chan *model.QuoteActivityUpdate, error) {
+	return sm.manager.SubscribeToQuoteActivity(ctx, username, noteID)
 }
 
 // SubscribeToListActivity creates a channel for list activity updates using event bus

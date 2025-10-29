@@ -1561,8 +1561,7 @@ func (r *TrackingRepository) AggregateRelayCosts(ctx context.Context, relayURL, 
 	return r.CreateRelayMetrics(ctx, metrics)
 }
 
-// GetRelayCostSummary calculates cost summary for a relay
-
+// GetRelayCostSummary aggregates relay cost metrics between the provided timestamps.
 func (r *TrackingRepository) GetRelayCostSummary(ctx context.Context, relayURL string, startTime, endTime time.Time) (*RelayCostSummary, error) {
 	costs, err := r.collectRelayCosts(ctx, relayURL, startTime, endTime, 10000, "")
 	if err != nil {

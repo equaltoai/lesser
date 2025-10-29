@@ -852,9 +852,9 @@ func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gs
 	if hasMore && len(statuses) > 0 {
 		last := statuses[len(statuses)-1]
 		switch gsiSKField {
-		case "GSI1SK":
+		case gsi1SKField:
 			nextCursor = last.GSI1SK
-		case "GSI2SK":
+		case gsi2SKField:
 			nextCursor = last.GSI2SK
 		case "GSI3SK":
 			nextCursor = last.GSI3SK

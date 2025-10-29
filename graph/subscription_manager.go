@@ -267,7 +267,11 @@ func (sm *GraphQLSubscriptionManager) deleteSubscriptionRecords(
 		return nil // No connection ID means nothing to delete
 	}
 
-	deleteCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	deleteCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	for _, stream := range streams {
@@ -289,6 +293,7 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 	subscriptionType, userID string,
 	streams []string,
 	channelBuffer int,
+	params map[string]interface{},
 ) (interface{}, string, error) {
 	subscriptionID := fmt.Sprintf("%s_%s_%d", subscriptionType, userID, time.Now().UnixNano())
 
@@ -305,7 +310,7 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 		ch = make(chan *model.Object, channelBuffer)
 	case "notification":
 		ch = make(chan *model.Notification, channelBuffer)
-	case "cost":
+	case EventTypeCost:
 		ch = make(chan *model.CostUpdate, channelBuffer)
 	case "moderation":
 		ch = make(chan *moderation.ModerationDecision, channelBuffer)
@@ -313,19 +318,19 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 		ch = make(chan *trust.TrustEdge, channelBuffer)
 	case "ai":
 		ch = make(chan *model.AIAnalysis, channelBuffer)
-	case "hashtag":
+	case TimelineTypeHashtag:
 		ch = make(chan *model.HashtagActivityUpdate, channelBuffer)
-	case "quote":
+	case QuoteType:
 		ch = make(chan *model.QuoteActivityUpdate, channelBuffer)
-	case "metrics":
+	case SubscriptionTypeMetrics:
 		ch = make(chan *model.MetricsUpdate, channelBuffer)
-	case "list":
+	case TimelineTypeList:
 		ch = make(chan *model.ListUpdate, channelBuffer)
 	case "conversation":
 		ch = make(chan *model.Conversation, channelBuffer)
 	case "federation":
 		ch = make(chan *model.FederationHealthUpdate, channelBuffer)
-	case "relationship":
+	case streaming.CategoryRelationship:
 		ch = make(chan *model.RelationshipUpdate, channelBuffer)
 	case "budget":
 		ch = make(chan *model.BudgetAlert, channelBuffer)
@@ -343,6 +348,14 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 		ch = make(chan interface{}, channelBuffer)
 	}
 
+	var subscriptionParams map[string]interface{}
+	if len(params) > 0 {
+		subscriptionParams = make(map[string]interface{}, len(params))
+		for key, value := range params {
+			subscriptionParams[key] = value
+		}
+	}
+
 	// Store subscription in memory for channel management
 	subCtx, cancel := context.WithCancel(ctx)
 	sub := &GraphQLSubscription{
@@ -354,6 +367,7 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 		OutputChannel: ch,
 		Context:       subCtx,
 		Cancel:        cancel,
+		Params:        subscriptionParams,
 		Created:       time.Now(),
 		LastActivity:  time.Now(),
 	}
@@ -366,7 +380,8 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 		zap.String("subscription_id", subscriptionID),
 		zap.String("type", subscriptionType),
 		zap.String("user_id", userID),
-		zap.Strings("streams", streams))
+		zap.Strings("streams", streams),
+		zap.Any("params", subscriptionParams))
 
 	return ch, subscriptionID, nil
 }
@@ -393,7 +408,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, u
 	}
 
 	streams := []string{streamName}
-	ch, _, err := sm.createGenericSubscription(ctx, "timeline", username, streams, 100)
+	ch, _, err := sm.createGenericSubscription(ctx, "timeline", username, streams, 100, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +423,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToNotifications(ctx context.Conte
 	}
 
 	streams := []string{fmt.Sprintf("user:%s:notifications", username)}
-	ch, _, err := sm.createGenericSubscription(ctx, "notification", username, streams, 50)
+	ch, _, err := sm.createGenericSubscription(ctx, "notification", username, streams, 50, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -422,8 +437,15 @@ func (sm *GraphQLSubscriptionManager) SubscribeToCostUpdates(ctx context.Context
 		return nil, ErrSubscriptionManagerNotRunning
 	}
 
-	streams := []string{fmt.Sprintf("cost:%s", username)}
-	ch, _, err := sm.createGenericSubscription(ctx, "cost", username, streams, 20)
+	var subscriptionParams map[string]interface{}
+	if threshold != nil {
+		subscriptionParams = map[string]interface{}{
+			"threshold": *threshold,
+		}
+	}
+
+	streams := []string{fmt.Sprintf("%s:%s", EventTypeCost, username)}
+	ch, _, err := sm.createGenericSubscription(ctx, EventTypeCost, username, streams, 20, subscriptionParams)
 	if err != nil {
 		return nil, err
 	}
@@ -443,7 +465,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToModerationEvents(ctx context.Co
 	}
 
 	streams := []string{fmt.Sprintf("moderation:%s", userID)}
-	ch, _, err := sm.createGenericSubscription(ctx, "moderation", userID, streams, 50)
+	ch, _, err := sm.createGenericSubscription(ctx, "moderation", userID, streams, 50, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +480,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTrustUpdates(ctx context.Contex
 	}
 
 	streams := []string{fmt.Sprintf("trust:%s", actorID)}
-	ch, _, err := sm.createGenericSubscription(ctx, "trust", actorID, streams, 20)
+	ch, _, err := sm.createGenericSubscription(ctx, "trust", actorID, streams, 20, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -478,7 +500,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToAIAnalysis(ctx context.Context,
 	}
 
 	streams := []string{fmt.Sprintf("ai:%s", userID)}
-	ch, _, err := sm.createGenericSubscription(ctx, "ai", userID, streams, 20)
+	ch, _, err := sm.createGenericSubscription(ctx, "ai", userID, streams, 20, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -499,10 +521,10 @@ func (sm *GraphQLSubscriptionManager) SubscribeToHashtagActivity(ctx context.Con
 	// Create stream names for each hashtag
 	streams := make([]string, len(hashtags))
 	for i, hashtag := range hashtags {
-		streams[i] = fmt.Sprintf("hashtag:%s", hashtag)
+		streams[i] = fmt.Sprintf("%s:%s", TimelineTypeHashtag, hashtag)
 	}
 
-	ch, _, err := sm.createGenericSubscription(ctx, "hashtag", username, streams, 100)
+	ch, _, err := sm.createGenericSubscription(ctx, TimelineTypeHashtag, username, streams, 100, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +533,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToHashtagActivity(ctx context.Con
 }
 
 // SubscribeToQuoteActivity subscribes to quote activity via DynamoDB-backed subscriptions
-func (sm *GraphQLSubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string, noteObj any) (<-chan *model.QuoteActivityUpdate, error) {
+func (sm *GraphQLSubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string) (<-chan *model.QuoteActivityUpdate, error) {
 	if !sm.IsRunning() {
 		return nil, ErrSubscriptionManagerNotRunning
 	}
@@ -523,8 +545,8 @@ func (sm *GraphQLSubscriptionManager) SubscribeToQuoteActivity(ctx context.Conte
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	streams := []string{fmt.Sprintf("quote:%s", noteID)}
-	ch, _, err := sm.createGenericSubscription(ctx, "quote", username, streams, 50)
+	streams := []string{fmt.Sprintf("%s:%s", QuoteType, noteID)}
+	ch, _, err := sm.createGenericSubscription(ctx, QuoteType, username, streams, 50, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -538,26 +560,33 @@ func (sm *GraphQLSubscriptionManager) SubscribeToMetricsUpdates(ctx context.Cont
 		return nil, ErrSubscriptionManagerNotRunning
 	}
 
+	var subscriptionParams map[string]interface{}
+	if threshold != nil {
+		subscriptionParams = map[string]interface{}{
+			"threshold": *threshold,
+		}
+	}
+
 	// Build streams for metrics filtering
-	streams := []string{"metrics:global"} // Always include global metrics
+	streams := []string{fmt.Sprintf("%s:global", SubscriptionTypeMetrics)} // Always include global metrics
 	if err := common.ValidateSliceNotEmpty("categories", categories); err == nil {
 		for _, category := range categories {
-			streams = append(streams, fmt.Sprintf("metrics:%s", category))
+			streams = append(streams, fmt.Sprintf("%s:%s", SubscriptionTypeMetrics, category))
 			if username != "" {
-				streams = append(streams, fmt.Sprintf("metrics:%s:user:%s", category, username))
+				streams = append(streams, fmt.Sprintf("%s:%s:user:%s", SubscriptionTypeMetrics, category, username))
 			}
 		}
 	}
 	if err := common.ValidateSliceNotEmpty("services", services); err == nil {
 		for _, service := range services {
-			streams = append(streams, fmt.Sprintf("metrics:service:%s", service))
+			streams = append(streams, fmt.Sprintf("%s:service:%s", SubscriptionTypeMetrics, service))
 		}
 	}
 	if username != "" {
-		streams = append(streams, fmt.Sprintf("metrics:user:%s", username))
+		streams = append(streams, fmt.Sprintf("%s:user:%s", SubscriptionTypeMetrics, username))
 	}
 
-	ch, _, err := sm.createGenericSubscription(ctx, "metrics", username, streams, 100)
+	ch, _, err := sm.createGenericSubscription(ctx, SubscriptionTypeMetrics, username, streams, 100, subscriptionParams)
 	if err != nil {
 		return nil, err
 	}
@@ -578,8 +607,8 @@ func (sm *GraphQLSubscriptionManager) SubscribeToListActivity(ctx context.Contex
 		return nil, ErrUsernameCannotBeEmpty
 	}
 
-	streams := []string{fmt.Sprintf("list:%s", listID)}
-	ch, _, err := sm.createGenericSubscription(ctx, "list", username, streams, 100)
+	streams := []string{fmt.Sprintf("%s:%s", TimelineTypeList, listID)}
+	ch, _, err := sm.createGenericSubscription(ctx, TimelineTypeList, username, streams, 100, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -598,7 +627,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToConversation(ctx context.Contex
 	}
 
 	streams := []string{fmt.Sprintf("conversation:%s", username)}
-	ch, _, err := sm.createGenericSubscription(ctx, "conversation", username, streams, 100)
+	ch, _, err := sm.createGenericSubscription(ctx, "conversation", username, streams, 100, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -624,7 +653,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToFederationHealth(ctx context.Co
 		streams = []string{"federation:health"}
 	}
 
-	ch, _, err := sm.createGenericSubscription(ctx, "federation", username, streams, 100)
+	ch, _, err := sm.createGenericSubscription(ctx, "federation", username, streams, 100, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -648,8 +677,8 @@ func (sm *GraphQLSubscriptionManager) SubscribeToRelationshipUpdates(ctx context
 		streamTarget = *actorID
 	}
 
-	streams := []string{fmt.Sprintf("relationship:%s", streamTarget)}
-	ch, _, err := sm.createGenericSubscription(ctx, "relationship", username, streams, 100)
+	streams := []string{fmt.Sprintf("%s:%s", streaming.CategoryRelationship, streamTarget)}
+	ch, _, err := sm.createGenericSubscription(ctx, streaming.CategoryRelationship, username, streams, 100, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -755,7 +784,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToBudgetAlerts(ctx context.Contex
 	}
 
 	streams := []string{streamName}
-	ch, _, err := sm.createGenericSubscription(ctx, "budget", username, streams, 100)
+	ch, _, err := sm.createGenericSubscription(ctx, "budget", username, streams, 100, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -769,6 +798,13 @@ func (sm *GraphQLSubscriptionManager) SubscribeToModerationAlerts(ctx context.Co
 		return nil, ErrSubscriptionManagerNotRunning
 	}
 
+	var subscriptionParams map[string]interface{}
+	if severity != nil {
+		subscriptionParams = map[string]interface{}{
+			"severity": *severity,
+		}
+	}
+
 	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil, ErrUsernameCannotBeEmpty
 	}
@@ -776,7 +812,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToModerationAlerts(ctx context.Co
 	// Build stream names for moderation alerts
 	streams := []string{"moderation:alerts", fmt.Sprintf("moderation:alerts:%s", username)}
 
-	ch, _, err := sm.createGenericSubscription(ctx, "moderation_alerts", username, streams, 100)
+	ch, _, err := sm.createGenericSubscription(ctx, "moderation_alerts", username, streams, 100, subscriptionParams)
 	if err != nil {
 		return nil, err
 	}
@@ -790,6 +826,10 @@ func (sm *GraphQLSubscriptionManager) SubscribeToCostAlerts(ctx context.Context,
 		return nil, ErrSubscriptionManagerNotRunning
 	}
 
+	subscriptionParams := map[string]interface{}{
+		"threshold": thresholdUSD,
+	}
+
 	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil, ErrUsernameCannotBeEmpty
 	}
@@ -797,7 +837,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToCostAlerts(ctx context.Context,
 	streamName := fmt.Sprintf("cost_alerts:%s", username)
 	streams := []string{streamName}
 
-	ch, _, err := sm.createGenericSubscription(ctx, "cost_alerts", username, streams, 100)
+	ch, _, err := sm.createGenericSubscription(ctx, "cost_alerts", username, streams, 100, subscriptionParams)
 	if err != nil {
 		return nil, err
 	}
@@ -811,6 +851,10 @@ func (sm *GraphQLSubscriptionManager) SubscribeToPerformanceAlerts(ctx context.C
 		return nil, ErrSubscriptionManagerNotRunning
 	}
 
+	subscriptionParams := map[string]interface{}{
+		"severity": severity,
+	}
+
 	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil, ErrUsernameCannotBeEmpty
 	}
@@ -818,7 +862,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToPerformanceAlerts(ctx context.C
 	streamName := fmt.Sprintf("performance:%s", username)
 	streams := []string{streamName}
 
-	ch, _, err := sm.createGenericSubscription(ctx, "performance", username, streams, 100)
+	ch, _, err := sm.createGenericSubscription(ctx, "performance", username, streams, 100, subscriptionParams)
 	if err != nil {
 		return nil, err
 	}
@@ -839,7 +883,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToThreatIntelligence(ctx context.
 	streamName := fmt.Sprintf("threat:%s", username)
 	streams := []string{streamName}
 
-	ch, _, err := sm.createGenericSubscription(ctx, "threat", username, streams, 100)
+	ch, _, err := sm.createGenericSubscription(ctx, "threat", username, streams, 100, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -860,7 +904,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToInfrastructureEvents(ctx contex
 	streamName := fmt.Sprintf("infrastructure:%s", username)
 	streams := []string{streamName}
 
-	ch, _, err := sm.createGenericSubscription(ctx, "infrastructure", username, streams, 100)
+	ch, _, err := sm.createGenericSubscription(ctx, "infrastructure", username, streams, 100, nil)
 	if err != nil {
 		return nil, err
 	}

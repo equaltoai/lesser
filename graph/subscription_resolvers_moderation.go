@@ -95,9 +95,6 @@ func (r *subscriptionResolver) ModerationQueueUpdate(ctx context.Context, priori
 		return nil, err
 	}
 
-	// Add connection ID to context
-	ctx = WithConnectionID(ctx, r.getConnectionID(ctx))
-
 	// Create a channel for moderation queue updates
 	// This will be populated by stream-router when moderation events are queued
 	updateChan := make(chan *model.ModerationItem, 100)

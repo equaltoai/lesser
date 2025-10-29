@@ -864,9 +864,7 @@ func resolveDynamoClient() dynamormCore.DB {
 			if lambdaCtx != nil && lambdaCtx.DynamoDB == nil {
 				lambdaCtx.DynamoDB = db
 			}
-			if typed, ok := db.(dynamormCore.DB); ok && typed != nil {
-				return typed
-			}
+			return db
 		}
 	}
 

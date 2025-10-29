@@ -1,3 +1,4 @@
+// Package main implements the GraphQL WebSocket Lambda entrypoint.
 package main
 
 import (
@@ -822,11 +823,9 @@ func initializeManualServices() {
 
 	if envRegion == "" && configRegion != "" {
 		_ = os.Setenv("AWS_REGION", configRegion)
-		envRegion = configRegion
 	}
 	if envDefaultRegion == "" && configRegion != "" {
 		_ = os.Setenv("AWS_DEFAULT_REGION", configRegion)
-		envDefaultRegion = configRegion
 	}
 
 	if cfg.DynamoTableName == "" {
