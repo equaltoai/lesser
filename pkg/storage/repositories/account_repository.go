@@ -508,120 +508,298 @@ func (r *AccountRepository) modelToStorageUser(model *models.User) *storage.User
 	return user
 }
 
-// applyUserUpdates applies a map of updates to a user model
-func (r *AccountRepository) applyUserUpdates(user *models.User, updates map[string]interface{}) error {
-	for key, value := range updates {
-		switch key {
-		case "email":
-			if v, ok := value.(string); ok {
-				user.Email = v
+type UserUpdatePayload struct {
+	Email              *string
+	Note               *string
+	Avatar             *string
+	Header             *string
+	URL                *string
+	PasswordHash       *string
+	DisplayName        *string
+	Approved           *bool
+	Suspended          *bool
+	Silenced           *bool
+	Role               *string
+	Locked             *bool
+	Discoverable       *bool
+	Locale             *string
+	AllowNSFW          *bool
+	RequireNSFWWarning *bool
+	RecoveryMethods    *[]string
+	Fields             *[]map[string]string
+	Metadata           map[string]interface{}
+}
+
+func decodeUserUpdatePayload(updates map[string]interface{}) (*UserUpdatePayload, error) {
+	payload := &UserUpdatePayload{}
+	var err error
+
+	if payload.Email, err = stringPtrFromMap(updates, "email"); err != nil {
+		return nil, err
+	}
+	if payload.Note, err = stringPtrFromMap(updates, "note"); err != nil {
+		return nil, err
+	}
+	if payload.Avatar, err = stringPtrFromMap(updates, "avatar"); err != nil {
+		return nil, err
+	}
+	if payload.Header, err = stringPtrFromMap(updates, "header"); err != nil {
+		return nil, err
+	}
+	if payload.URL, err = stringPtrFromMap(updates, "url"); err != nil {
+		return nil, err
+	}
+	if payload.PasswordHash, err = stringPtrFromMap(updates, "password_hash"); err != nil {
+		return nil, err
+	}
+	if payload.DisplayName, err = stringPtrFromMap(updates, "display_name"); err != nil {
+		return nil, err
+	}
+	if payload.Approved, err = boolPtrFromMap(updates, "approved"); err != nil {
+		return nil, err
+	}
+	if payload.Suspended, err = boolPtrFromMap(updates, AccountStatusSuspended); err != nil {
+		return nil, err
+	}
+	if payload.Silenced, err = boolPtrFromMap(updates, "silenced"); err != nil {
+		return nil, err
+	}
+	if payload.Role, err = stringPtrFromMap(updates, "role"); err != nil {
+		return nil, err
+	}
+	if payload.Locked, err = boolPtrFromMap(updates, "locked"); err != nil {
+		return nil, err
+	}
+	if payload.Discoverable, err = boolPtrFromMap(updates, "discoverable"); err != nil {
+		return nil, err
+	}
+	if payload.Locale, err = stringPtrFromMap(updates, "locale"); err != nil {
+		return nil, err
+	}
+	if payload.AllowNSFW, err = boolPtrFromMap(updates, "allow_nsfw"); err != nil {
+		return nil, err
+	}
+	if payload.RequireNSFWWarning, err = boolPtrFromMap(updates, "require_nsfw_warning"); err != nil {
+		return nil, err
+	}
+
+	if payload.RecoveryMethods, err = stringSlicePtrFromValue(updates["recovery_methods"]); err != nil {
+		return nil, err
+	}
+	if payload.Fields, err = fieldSlicePtrFromValue(updates["fields"]); err != nil {
+		return nil, err
+	}
+	if payload.Metadata, err = metadataFromValue(updates["metadata"]); err != nil {
+		return nil, err
+	}
+
+	return payload, nil
+}
+
+func stringPtrFromMap(m map[string]interface{}, key string) (*string, error) {
+	if m == nil {
+		return nil, nil
+	}
+	raw, ok := m[key]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	str, ok := raw.(string)
+	if !ok {
+		return nil, fmt.Errorf("field %s must be a string", key)
+	}
+	value := str
+	return &value, nil
+}
+
+func boolPtrFromMap(m map[string]interface{}, key string) (*bool, error) {
+	if m == nil {
+		return nil, nil
+	}
+	raw, ok := m[key]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	b, ok := raw.(bool)
+	if !ok {
+		return nil, fmt.Errorf("field %s must be a boolean", key)
+	}
+	value := b
+	return &value, nil
+}
+
+func stringSlicePtrFromValue(value interface{}) (*[]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	switch v := value.(type) {
+	case []string:
+		cloned := append([]string(nil), v...)
+		return &cloned, nil
+	case []interface{}:
+		result := make([]string, 0, len(v))
+		for i, item := range v {
+			str, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("field recovery_methods[%d] must be a string", i)
 			}
-		case "note":
-			if v, ok := value.(string); ok {
-				user.Note = v
-			}
-		case "avatar":
-			if v, ok := value.(string); ok {
-				user.Avatar = v
-			}
-		case "header":
-			if v, ok := value.(string); ok {
-				user.Header = v
-			}
-		case "url":
-			if v, ok := value.(string); ok {
-				user.URL = v
-			}
-		case "password_hash":
-			if v, ok := value.(string); ok {
-				user.PasswordHash = v
-			}
-		case "display_name":
-			if v, ok := value.(string); ok {
-				user.DisplayName = v
-			}
-		case "approved":
-			if v, ok := value.(bool); ok {
-				user.Approved = v
-			}
-		case AccountStatusSuspended:
-			if v, ok := value.(bool); ok {
-				user.Suspended = v
-			}
-		case "silenced":
-			if v, ok := value.(bool); ok {
-				user.Silenced = v
-			}
-		case "role":
-			if v, ok := value.(string); ok {
-				user.Role = v
-			}
-		case "locked":
-			if v, ok := value.(bool); ok {
-				user.Locked = v
-			}
-		case "discoverable":
-			if v, ok := value.(bool); ok {
-				user.Discoverable = v
-			}
-		case "locale":
-			if v, ok := value.(string); ok {
-				user.Locale = v
-			}
-		case "allow_nsfw":
-			if v, ok := value.(bool); ok {
-				user.AllowNSFW = v
-			}
-		case "require_nsfw_warning":
-			if v, ok := value.(bool); ok {
-				user.RequireNSFWWarning = v
-			}
-		case "recovery_methods":
-			switch vv := value.(type) {
-			case []string:
-				user.RecoveryMethods = vv
-			case []interface{}:
-				var methods []string
-				for _, item := range vv {
-					if s, ok := item.(string); ok {
-						methods = append(methods, s)
+			result = append(result, str)
+		}
+		return &result, nil
+	default:
+		return nil, fmt.Errorf("field recovery_methods must be an array of strings")
+	}
+}
+
+func fieldSlicePtrFromValue(value interface{}) (*[]map[string]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	switch v := value.(type) {
+	case []map[string]string:
+		cloned := cloneFields(v)
+		return &cloned, nil
+	case []interface{}:
+		fields := make([]map[string]string, 0, len(v))
+		for idx, item := range v {
+			switch fieldMap := item.(type) {
+			case map[string]string:
+				fields = append(fields, cloneStringMap(fieldMap))
+			case map[string]interface{}:
+				normalized := make(map[string]string, len(fieldMap))
+				for key, raw := range fieldMap {
+					str, ok := raw.(string)
+					if !ok {
+						return nil, fmt.Errorf("field fields[%d][%s] must be a string", idx, key)
 					}
+					normalized[key] = str
 				}
-				if len(methods) > 0 {
-					user.RecoveryMethods = methods
-				}
-			}
-		case "fields":
-			switch vv := value.(type) {
-			case []map[string]string:
-				user.Fields = vv
-			case []interface{}:
-				var fields []map[string]string
-				for _, item := range vv {
-					if fieldMap, ok := item.(map[string]string); ok {
-						fields = append(fields, fieldMap)
-						continue
-					}
-					if rawMap, ok := item.(map[string]interface{}); ok {
-						normalized := make(map[string]string, len(rawMap))
-						for key, val := range rawMap {
-							if strVal, ok := val.(string); ok {
-								normalized[key] = strVal
-							}
-						}
-						fields = append(fields, normalized)
-					}
-				}
-				if len(fields) > 0 {
-					user.Fields = fields
-				}
-			}
-		case "metadata":
-			if v, ok := value.(map[string]interface{}); ok {
-				user.Metadata = v
+				fields = append(fields, normalized)
+			default:
+				return nil, fmt.Errorf("field fields[%d] must be an object", idx)
 			}
 		}
+		return &fields, nil
+	default:
+		return nil, fmt.Errorf("field fields must be an array of objects")
 	}
+}
+
+func metadataFromValue(value interface{}) (map[string]interface{}, error) {
+	if value == nil {
+		return nil, nil
+	}
+	m, ok := value.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("field metadata must be an object")
+	}
+	return cloneMetadata(m), nil
+}
+
+func cloneFields(fields []map[string]string) []map[string]string {
+	if fields == nil {
+		return nil
+	}
+	cloned := make([]map[string]string, 0, len(fields))
+	for _, field := range fields {
+		cloned = append(cloned, cloneStringMap(field))
+	}
+	return cloned
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if input == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneMetadata(input map[string]interface{}) map[string]interface{} {
+	if input == nil {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func (p *UserUpdatePayload) applyTo(user *models.User) {
+	if p == nil {
+		return
+	}
+	if p.Email != nil {
+		user.Email = *p.Email
+	}
+	if p.Note != nil {
+		user.Note = *p.Note
+	}
+	if p.Avatar != nil {
+		user.Avatar = *p.Avatar
+	}
+	if p.Header != nil {
+		user.Header = *p.Header
+	}
+	if p.URL != nil {
+		user.URL = *p.URL
+	}
+	if p.PasswordHash != nil {
+		user.PasswordHash = *p.PasswordHash
+	}
+	if p.DisplayName != nil {
+		user.DisplayName = *p.DisplayName
+	}
+	if p.Approved != nil {
+		user.Approved = *p.Approved
+	}
+	if p.Suspended != nil {
+		user.Suspended = *p.Suspended
+	}
+	if p.Silenced != nil {
+		user.Silenced = *p.Silenced
+	}
+	if p.Role != nil {
+		user.Role = *p.Role
+	}
+	if p.Locked != nil {
+		user.Locked = *p.Locked
+	}
+	if p.Discoverable != nil {
+		user.Discoverable = *p.Discoverable
+	}
+	if p.Locale != nil {
+		user.Locale = *p.Locale
+	}
+	if p.AllowNSFW != nil {
+		user.AllowNSFW = *p.AllowNSFW
+	}
+	if p.RequireNSFWWarning != nil {
+		user.RequireNSFWWarning = *p.RequireNSFWWarning
+	}
+	if p.RecoveryMethods != nil {
+		user.RecoveryMethods = append([]string(nil), (*p.RecoveryMethods)...)
+	}
+	if p.Fields != nil {
+		user.Fields = cloneFields(*p.Fields)
+	}
+	if p.Metadata != nil {
+		user.Metadata = cloneMetadata(p.Metadata)
+	}
+}
+
+// applyUserUpdates applies a map of updates to a user model
+func (r *AccountRepository) applyUserUpdates(user *models.User, updates map[string]interface{}) error {
+	payload, err := decodeUserUpdatePayload(updates)
+	if err != nil {
+		return err
+	}
+
+	payload.applyTo(user)
 
 	user.UpdatedAt = time.Now()
 	return nil
