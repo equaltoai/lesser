@@ -92,4 +92,5 @@ bootstrap*
 .gocache/
 .gomodcache/
 /bootstrap_*/
-.pai
+.pai/
+lint-report.json

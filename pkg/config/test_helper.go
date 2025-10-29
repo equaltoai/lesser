@@ -14,7 +14,8 @@ func SetupTestEnvironment(t *testing.T) {
 		"DOMAIN",
 		"INSTANCE_NAME",
 		"AWS_REGION",
-		"DYNAMO_TABLE_NAME",
+		"ENVIRONMENT",
+		"STAGE",
 		"S3_BUCKET_NAME",
 	} {
 		originalEnv[key] = os.Getenv(key)
@@ -25,7 +26,8 @@ func SetupTestEnvironment(t *testing.T) {
 	_ = os.Setenv("DOMAIN", "localhost")
 	_ = os.Setenv("INSTANCE_NAME", "Lesser Test")
 	_ = os.Setenv("AWS_REGION", "us-east-1")
-	_ = os.Setenv("DYNAMO_TABLE_NAME", "lesser-test")
+	_ = os.Setenv("ENVIRONMENT", "test")
+	_ = os.Setenv("STAGE", "test")
 	_ = os.Setenv("S3_BUCKET_NAME", "lesser-test-media")
 
 	// Cleanup function to restore original environment

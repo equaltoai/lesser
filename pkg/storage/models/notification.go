@@ -12,8 +12,8 @@ import (
 // Notification represents a user notification
 type Notification struct {
 	// Primary key - using user ID as partition key with notification sort key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "user#{userID}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "notif#{timestamp}#{notificationID}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "user#{userID}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "notif#{timestamp}#{notificationID}"
 
 	// GSI1 - Notification type queries
 	GSI1PK string `dynamorm:"index:type-index,pk" json:"gsi1_pk"` // Format: "NOTIF_TYPE#{type}"

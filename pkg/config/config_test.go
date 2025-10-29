@@ -13,7 +13,8 @@ func TestSetupTestEnvironment(t *testing.T) {
 	_ = os.Unsetenv("DOMAIN")
 	_ = os.Unsetenv("INSTANCE_NAME")
 	_ = os.Unsetenv("AWS_REGION")
-	_ = os.Unsetenv("DYNAMO_TABLE_NAME")
+	_ = os.Unsetenv("ENVIRONMENT")
+	_ = os.Unsetenv("STAGE")
 	_ = os.Unsetenv("S3_BUCKET_NAME")
 
 	// Setup test environment
@@ -24,7 +25,8 @@ func TestSetupTestEnvironment(t *testing.T) {
 	assert.Equal(t, "localhost", os.Getenv("DOMAIN"))
 	assert.Equal(t, "Lesser Test", os.Getenv("INSTANCE_NAME"))
 	assert.Equal(t, "us-east-1", os.Getenv("AWS_REGION"))
-	assert.Equal(t, "lesser-test", os.Getenv("DYNAMO_TABLE_NAME"))
+	assert.Equal(t, "test", os.Getenv("ENVIRONMENT"))
+	assert.Equal(t, "test", os.Getenv("STAGE"))
 	assert.Equal(t, "lesser-test-media", os.Getenv("S3_BUCKET_NAME"))
 }
 
