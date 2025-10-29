@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -1369,61 +1370,55 @@ func (r *AccountRepository) ensureActorIdentifiers(username string, actor *activ
 		return
 	}
 
-	if actor.PreferredUsername == "" {
-		actor.PreferredUsername = username
+	resolvedUsername := activitypubutil.DerivePreferredUsername(actor, username)
+	if resolvedUsername == "" {
+		resolvedUsername = strings.TrimSpace(username)
 	}
 
 	baseURL := r.actorBaseURL()
 	if baseURL == "" {
-		if actor.URL != "" {
-			baseURL = extractBaseURL(actor.URL, "/@"+username)
-		} else if actor.ID != "" {
-			baseURL = extractBaseURL(actor.ID, "/users/"+username)
-		} else if source != nil {
-			if source.URL != "" {
-				baseURL = extractBaseURL(source.URL, "/@"+username)
-			} else if source.ID != "" {
-				baseURL = extractBaseURL(source.ID, "/users/"+username)
-			}
+		baseURL = deriveActorBaseURL(actor, resolvedUsername)
+		if baseURL == "" {
+			baseURL = deriveActorBaseURL(source, resolvedUsername)
 		}
 	}
 
-	if actor.ID == "" && baseURL != "" {
-		actor.ID = fmt.Sprintf("%s/users/%s", baseURL, username)
-	}
-	if actor.URL == "" && baseURL != "" {
-		actor.URL = fmt.Sprintf("%s/@%s", baseURL, username)
-	}
-	if actor.Inbox == "" && baseURL != "" {
-		actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, username)
-	}
-	if actor.Outbox == "" && baseURL != "" {
-		actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, username)
-	}
-	if actor.Followers == "" && baseURL != "" {
-		actor.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, username)
-	}
-	if actor.Following == "" && baseURL != "" {
-		actor.Following = fmt.Sprintf("%s/users/%s/following", baseURL, username)
-	}
-	if actor.Liked == "" && baseURL != "" {
-		actor.Liked = fmt.Sprintf("%s/users/%s/liked", baseURL, username)
+	sanitized := activitypubutil.BuildLocalActor(resolvedUsername, baseURL, nil, actor)
+	if sanitized == nil {
+		return
 	}
 
-	if actor.Endpoints == nil && baseURL != "" {
-		actor.Endpoints = &activitypub.Endpoints{
-			SharedInbox: fmt.Sprintf("%s/inbox", baseURL),
-		}
+	if source != nil {
+		activitypubutil.MergeActorMetadata(sanitized, source)
 	}
 
-	if actor.PublicKey != nil {
-		if actor.PublicKey.Owner == "" && actor.ID != "" {
+	*actor = *sanitized
+
+	if actor.PublicKey != nil && actor.ID != "" {
+		if actor.PublicKey.Owner == "" {
 			actor.PublicKey.Owner = actor.ID
 		}
-		if actor.PublicKey.ID == "" && actor.ID != "" {
+		if actor.PublicKey.ID == "" {
 			actor.PublicKey.ID = actor.ID + "#main-key"
 		}
 	}
+}
+
+func deriveActorBaseURL(actor *activitypub.Actor, username string) string {
+	if actor == nil {
+		return ""
+	}
+	if actor.URL != "" {
+		if base := extractBaseURL(actor.URL, "/@"+username); base != "" {
+			return base
+		}
+	}
+	if actor.ID != "" {
+		if base := extractBaseURL(actor.ID, "/users/"+username); base != "" {
+			return base
+		}
+	}
+	return ""
 }
 
 func (r *AccountRepository) actorBaseURL() string {

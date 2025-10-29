@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -725,130 +726,16 @@ func (s *Service) validateUpdatePreferencesCommand(_ context.Context, cmd *Updat
 }
 
 func (s *Service) hydrateAccountActor(account *storage.Account) {
-	if account == nil {
-		return
-	}
-
-	user := account.User
-	if user == nil {
+	if account == nil || account.User == nil {
 		return
 	}
 
 	baseURL := s.normalizeBaseURL(s.domainName)
 	if baseURL == "" {
-		baseURL = s.normalizeBaseURL(user.URL)
+		baseURL = s.normalizeBaseURL(account.User.URL)
 	}
 
-	actor := account.Actor
-	if actor == nil {
-		actor = &activitypub.Actor{}
-		account.Actor = actor
-	}
-
-	if actor.Type == "" {
-		actor.Type = activitypub.PersonType
-	}
-
-	if actor.ID == "" && baseURL != "" {
-		actor.ID = fmt.Sprintf("%s/users/%s", baseURL, user.Username)
-	}
-
-	if actor.URL == "" && baseURL != "" {
-		actor.URL = fmt.Sprintf("%s/@%s", baseURL, user.Username)
-	}
-
-	if actor.Inbox == "" && baseURL != "" {
-		actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, user.Username)
-	}
-
-	if actor.Outbox == "" && baseURL != "" {
-		actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, user.Username)
-	}
-
-	if actor.Followers == "" && baseURL != "" {
-		actor.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, user.Username)
-	}
-
-	if actor.Following == "" && baseURL != "" {
-		actor.Following = fmt.Sprintf("%s/users/%s/following", baseURL, user.Username)
-	}
-
-	if actor.Liked == "" && baseURL != "" {
-		actor.Liked = fmt.Sprintf("%s/users/%s/liked", baseURL, user.Username)
-	}
-
-	if actor.Endpoints == nil && baseURL != "" {
-		actor.Endpoints = &activitypub.Endpoints{
-			SharedInbox: fmt.Sprintf("%s/inbox", baseURL),
-		}
-	}
-
-	if actor.PreferredUsername == "" {
-		actor.PreferredUsername = user.Username
-	}
-
-	if actor.Name == "" {
-		actor.Name = user.DisplayName
-	}
-
-	if actor.Summary == "" {
-		actor.Summary = user.Note
-	}
-
-	if actor.Published == nil {
-		published := user.CreatedAt
-		actor.Published = &published
-	}
-
-	if actor.Updated == nil {
-		updated := user.UpdatedAt
-		actor.Updated = &updated
-	}
-
-	if len(actor.Attachment) == 0 && len(user.Fields) > 0 {
-		attachments := make([]activitypub.Attachment, 0, len(user.Fields))
-		for _, field := range user.Fields {
-			name := field["name"]
-			value := field["value"]
-			if name == "" && value == "" {
-				continue
-			}
-			attachments = append(attachments, activitypub.Attachment{
-				Type:  "PropertyValue",
-				Name:  name,
-				Value: value,
-			})
-		}
-		if len(attachments) > 0 {
-			actor.Attachment = attachments
-		}
-	}
-
-	if !actor.ManuallyApprovesFollowers {
-		actor.ManuallyApprovesFollowers = user.Locked
-	}
-
-	if !actor.Discoverable {
-		actor.Discoverable = user.Discoverable
-	}
-
-	if actor.Icon == nil && user.Avatar != "" {
-		actor.Icon = &activitypub.Image{
-			BaseObject: activitypub.BaseObject{
-				Type: activitypub.ImageType,
-			},
-			URL: user.Avatar,
-		}
-	}
-
-	if actor.Image == nil && user.Header != "" {
-		actor.Image = &activitypub.Image{
-			BaseObject: activitypub.BaseObject{
-				Type: activitypub.ImageType,
-			},
-			URL: user.Header,
-		}
-	}
+	account.Actor = activitypubutil.BuildLocalActor(account.User.Username, baseURL, account.User, account.Actor)
 }
 
 func (s *Service) normalizeBaseURL(value string) string {

@@ -18,6 +18,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -786,116 +787,17 @@ func (r *Resolver) convertAccountToActor(account *storage.Account) *activitypub.
 		return nil
 	}
 
-	// Prefer the persisted actor record when available to keep ActivityPub fields intact.
-	if account.Actor != nil {
-		actor := account.Actor
-		if actor != nil && account.User != nil && actor.ID == "" {
-			baseURL := ""
-			if r.Config != nil {
-				baseURL = r.Config.BaseURL()
-			}
-			if baseURL != "" {
-				actor.ID = fmt.Sprintf("%s/users/%s", baseURL, account.User.Username)
-				if actor.URL == "" {
-					actor.URL = fmt.Sprintf("%s/@%s", baseURL, account.User.Username)
-				}
-				if actor.Inbox == "" {
-					actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, account.User.Username)
-				}
-				if actor.Outbox == "" {
-					actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, account.User.Username)
-				}
-				if actor.Followers == "" {
-					actor.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, account.User.Username)
-				}
-				if actor.Following == "" {
-					actor.Following = fmt.Sprintf("%s/users/%s/following", baseURL, account.User.Username)
-				}
-			}
-		}
-		if account.User != nil {
-			if actor.Published == nil {
-				published := account.User.CreatedAt
-				actor.Published = &published
-			}
-			if actor.Updated == nil {
-				updated := account.User.UpdatedAt
-				actor.Updated = &updated
-			}
-			if actor.PreferredUsername == "" {
-				actor.PreferredUsername = account.User.Username
-			}
-			if actor.Name == "" {
-				actor.Name = account.User.DisplayName
-			}
-			if actor.Summary == "" {
-				actor.Summary = account.User.Note
-			}
-		}
-		return actor
+	username := ""
+	if account.User != nil {
+		username = account.User.Username
 	}
 
-	if account.User == nil {
-		return nil
-	}
-	user := account.User
-
-	actor := &activitypub.Actor{
-		BaseObject: activitypub.BaseObject{
-			ID:        user.ID,
-			Type:      activitypub.PersonType,
-			Published: &user.CreatedAt,
-			Updated:   &user.UpdatedAt,
-		},
-		PreferredUsername:         user.Username,
-		Name:                      user.DisplayName,
-		Summary:                   user.Note,
-		URL:                       user.URL,
-		Inbox:                     fmt.Sprintf("%s/inbox", user.URL),
-		Outbox:                    fmt.Sprintf("%s/outbox", user.URL),
-		Followers:                 fmt.Sprintf("%s/followers", user.URL),
-		Following:                 fmt.Sprintf("%s/following", user.URL),
-		PublicKey:                 nil,
-		Endpoints:                 nil,
-		ManuallyApprovesFollowers: user.Locked,
-		Discoverable:              user.Discoverable,
+	baseURL := ""
+	if r.Config != nil {
+		baseURL = r.Config.BaseURL()
 	}
 
-	// Set icon if avatar URL exists
-	if user.Avatar != "" {
-		actor.Icon = &activitypub.Image{
-			BaseObject: activitypub.BaseObject{
-				Type: "Image",
-			},
-			URL: user.Avatar,
-		}
-	}
-
-	// Set image if header URL exists
-	if user.Header != "" {
-		actor.Image = &activitypub.Image{
-			BaseObject: activitypub.BaseObject{
-				Type: "Image",
-			},
-			URL: user.Header,
-		}
-	}
-
-	actor.PreferredUsername = user.Username
-
-	if err := common.ValidateSliceNotEmpty("fields", user.Fields); err == nil {
-		attachments := make([]activitypub.Attachment, len(user.Fields))
-		for i, field := range user.Fields {
-			attachments[i] = activitypub.Attachment{
-				Type:  "PropertyValue",
-				Name:  field["name"],
-				Value: field["value"],
-			}
-		}
-		actor.Attachment = attachments
-	}
-
-	return actor
+	return activitypubutil.BuildLocalActor(username, baseURL, account.User, account.Actor)
 }
 
 func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.Note) *model.Object {
