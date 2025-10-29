@@ -1,3 +1,4 @@
+// Package ratelimit provides helpers for applying distributed request throttling.
 package ratelimit
 
 import (

@@ -18,7 +18,7 @@ const (
 type RelationshipPaginationConfig struct {
 	IndexName   string // "" for main table, "GSI1", "GSI5", etc. for GSIs
 	PKFormat    string // Format string for partition key, e.g. "ACTOR#%s#BLOCKS"
-	SKField     string // Field name for sort key in cursor, e.g. "SK" or "GSI1SK"
+	SKField     string // Field name for sort key in cursor, e.g. "SK" or gsi1SKField
 	ActorField  string // "Actor" or "Object" - which field to extract for result
 	ErrorPrefix string // Prefix for error messages, e.g. "blocked users" or "muted users"
 	ModelType   string // modelTypeBlock or "Mute" - which model to query
@@ -158,7 +158,7 @@ func generateMuteCursor(items []models.Mute, limit int, skField string) string {
 		return ""
 	}
 
-	if skField == "GSI1SK" {
+	if skField == gsi1SKField {
 		return items[limit-1].GSI1SK
 	}
 	return items[limit-1].SK

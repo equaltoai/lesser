@@ -132,6 +132,7 @@ func clampActivityLimit(limit int) int {
 	return limit
 }
 
+// GetInboxActivities returns inbox activities ordered newest-first with opaque pagination cursors.
 func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
 	safeLimit := clampActivityLimit(limit)
 

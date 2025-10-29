@@ -20,7 +20,7 @@ func (r *subscriptionResolver) QuoteActivity(ctx context.Context, noteID string)
 	ctx = WithConnectionID(ctx, r.getConnectionID(ctx))
 
 	// Delegate to the subscription manager which handles DynamoDB persistence
-	ch, err := r.SubscriptionManager.SubscribeToQuoteActivity(ctx, username, noteID, nil)
+	ch, err := r.SubscriptionManager.SubscribeToQuoteActivity(ctx, username, noteID)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to quote activity", zap.Error(err))
 		return nil, err

@@ -509,6 +509,7 @@ func (r *AccountRepository) modelToStorageUser(model *models.User) *storage.User
 	return user
 }
 
+// UserUpdatePayload captures mutable account fields accepted from federation updates.
 type UserUpdatePayload struct {
 	Email              *string
 	Note               *string

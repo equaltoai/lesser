@@ -1,3 +1,4 @@
+// Package activitypubutil contains helpers for constructing ActivityPub actors.
 package activitypubutil
 
 import (

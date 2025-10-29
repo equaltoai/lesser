@@ -448,17 +448,17 @@ func (r *Resolver) fallbackNotificationActor(notif *models.Notification) *activi
 	}
 
 	if strings.Contains(rawID, "://") {
-		actor.BaseObject.ID = rawID
+		actor.ID = rawID
 		actor.URL = rawID
 	} else if baseURL != "" && username != "" {
-		actor.BaseObject.ID = fmt.Sprintf("%s/users/%s", baseURL, username)
+		actor.ID = fmt.Sprintf("%s/users/%s", baseURL, username)
 		actor.URL = fmt.Sprintf("%s/@%s", baseURL, username)
 		actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, username)
 		actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, username)
 		actor.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, username)
 		actor.Following = fmt.Sprintf("%s/users/%s/following", baseURL, username)
 	} else {
-		actor.BaseObject.ID = rawID
+		actor.ID = rawID
 		actor.URL = rawID
 	}
 

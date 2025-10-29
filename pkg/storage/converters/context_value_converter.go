@@ -1,3 +1,4 @@
+// Package converters hosts DynamoDB converters for storage-layer types.
 package converters
 
 import (

@@ -553,7 +553,7 @@ func safeInt32(i int) *int32 {
 	if i < -2147483648 {
 		i = -2147483648
 	}
-	val := int32(i)
+	val := int32(i) //nolint:gosec
 	return aws.Int32(val)
 }
 
