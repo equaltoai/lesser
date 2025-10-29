@@ -416,14 +416,6 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-func getEnvOrPanic(key string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		panic(fmt.Sprintf("Required environment variable %s is not set", key))
-	}
-	return value
-}
-
 var jwtSecretLoader struct {
 	once  sync.Once
 	value string

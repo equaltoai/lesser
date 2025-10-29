@@ -2,7 +2,6 @@ package graph
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -282,28 +281,6 @@ func (sm *GraphQLSubscriptionManager) deleteSubscriptionRecords(
 	}
 
 	return nil
-}
-
-// marshalFilterMetadata converts filter metadata to JSON for storage
-func marshalFilterMetadata(filter *streaming.EventFilter) string {
-	if filter == nil {
-		return "{}"
-	}
-
-	data := map[string]interface{}{
-		"types":    filter.Types,
-		"streams":  filter.Streams,
-		"user_id":  filter.UserID,
-		"actor_id": filter.ActorID,
-		"metadata": filter.Metadata,
-	}
-
-	jsonBytes, err := json.Marshal(data)
-	if err != nil {
-		return "{}"
-	}
-
-	return string(jsonBytes)
 }
 
 // createGenericSubscription is a helper that creates a subscription with the given parameters

@@ -1739,17 +1739,6 @@ func (r *Registry) Quotes() *quotes.QuoteService {
 	return r.quotesService
 }
 
-// createNotesFederationAdapter creates an adapter that implements notes.FederationService
-// by wrapping the main FederationService
-func (r *Registry) createNotesFederationAdapter() *queueFederationAdapter {
-	mainFederation := r.Federation()
-	return &queueFederationAdapter{
-		federation: mainFederation,
-		storage:    r.storage,
-		logger:     r.logger,
-	}
-}
-
 // createFederationAdapterUnlocked creates federation adapter without locking mutex
 // This is used internally when already holding the lock to avoid deadlock
 func (r *Registry) createFederationAdapterUnlocked() *queueFederationAdapter {
@@ -1786,39 +1775,6 @@ func (r *Registry) createRelationshipsFederationAdapterUnlocked() *queueFederati
 
 func (r *Registry) createThreadsFederationAdapterUnlocked() *queueFederationAdapter {
 	return r.createFederationAdapterUnlocked()
-}
-
-// createAccountsFederationAdapter creates an adapter that implements accounts.FederationService
-// by wrapping the main FederationService
-func (r *Registry) createAccountsFederationAdapter() *queueFederationAdapter {
-	mainFederation := r.Federation()
-	return &queueFederationAdapter{
-		federation: mainFederation,
-		storage:    r.storage,
-		logger:     r.logger,
-	}
-}
-
-// createRelationshipsFederationAdapter creates an adapter that implements relationships.FederationService
-// by wrapping the main FederationService
-func (r *Registry) createRelationshipsFederationAdapter() *queueFederationAdapter {
-	mainFederation := r.Federation()
-	return &queueFederationAdapter{
-		federation: mainFederation,
-		storage:    r.storage,
-		logger:     r.logger,
-	}
-}
-
-// createThreadsFederationAdapter creates an adapter that implements threads.FederationService
-// by wrapping the main FederationService
-func (r *Registry) createThreadsFederationAdapter() *queueFederationAdapter {
-	mainFederation := r.Federation()
-	return &queueFederationAdapter{
-		federation: mainFederation,
-		storage:    r.storage,
-		logger:     r.logger,
-	}
 }
 
 // createSeveranceFederationAdapter creates the federation adapter for the Severance service

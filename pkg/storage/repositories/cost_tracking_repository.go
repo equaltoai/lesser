@@ -22,6 +22,8 @@ import (
 // TrackingRepository handles cost tracking persistence
 type TrackingRepository struct {
 	*EnhancedBaseRepository[*models.DynamoDBCostRecord]
+
+	listAggregatedByPeriodFn func(ctx context.Context, period, operationType string, startTime, endTime time.Time, limit int, cursor string) ([]*models.DynamoDBCostAggregation, string, error)
 }
 
 const (
@@ -236,6 +238,10 @@ func (r *TrackingRepository) UpdateAggregated(ctx context.Context, aggregated *m
 
 // ListAggregatedByPeriod lists aggregated cost tracking for a period
 func (r *TrackingRepository) ListAggregatedByPeriod(ctx context.Context, period, operationType string, startTime, endTime time.Time, limit int, cursor string) ([]*models.DynamoDBCostAggregation, string, error) {
+	if r.listAggregatedByPeriodFn != nil {
+		return r.listAggregatedByPeriodFn(ctx, period, operationType, startTime, endTime, limit, cursor)
+	}
+
 	config := AggregatedQueryConfig{
 		PKPrefix:    "cost_agg",
 		LogContext:  "cost tracking",
@@ -764,92 +770,98 @@ func getPercentileValue(sorted []float64, percentile float64) float64 {
 	return lowerValue + (upperValue-lowerValue)*fraction
 }
 
-// GetAggregatedCostsByPeriod retrieves aggregated costs for a specific period
-func (r *TrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, period string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error) {
-	// Query all operation types for the period
-	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan",
-		"BatchGetItem", "BatchWriteItem", "TransactGetItems", "TransactWriteItems"}
+// fetchAggregatesForOperation retrieves all aggregated costs for a single operation type within a given time range.
+// It handles pagination internally to fetch all records.
+func (r *TrackingRepository) fetchAggregatesForOperation(ctx context.Context, period, opType string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error) {
+	var (
+		opAggregates []*models.DynamoDBCostAggregation
+		cursor       string
+		remaining    = 1000 // A reasonable starting limit for pagination fetches.
+	)
 
-	var allAggregates []*models.DynamoDBCostAggregation
-
-	for _, opType := range operationTypes {
-		var (
-			opAggregates []*models.DynamoDBCostAggregation
-			cursor       string
-			remaining    = 1000
-		)
-
-		for remaining > 0 {
-			pageSize := remaining
-			if pageSize > aggregatedPageMaxLimit {
-				pageSize = aggregatedPageMaxLimit
-			}
-
-			chunk, nextCursor, err := r.ListAggregatedByPeriod(ctx, period, opType, startDate, endDate, pageSize, cursor)
-			if err != nil {
-				r.logger.Warn("failed to get aggregates for operation type",
-					zap.String("operation_type", opType),
-					zap.Error(err))
-				break
-			}
-
-			opAggregates = append(opAggregates, chunk...)
-			if nextCursor == "" || len(chunk) == 0 {
-				break
-			}
-
-			cursor = nextCursor
-			remaining -= len(chunk)
+	for {
+		pageSize := remaining
+		if pageSize > aggregatedPageMaxLimit {
+			pageSize = aggregatedPageMaxLimit
+		}
+		if pageSize == 0 { // Should not happen, but as a safeguard.
+			break
 		}
 
-		allAggregates = append(allAggregates, opAggregates...)
+		chunk, nextCursor, err := r.ListAggregatedByPeriod(ctx, period, opType, startDate, endDate, pageSize, cursor)
+		if err != nil {
+			r.logger.Warn("failed to get aggregates for operation type",
+				zap.String("operation_type", opType),
+				zap.Error(err))
+			return nil, err // Return error to let the caller decide how to proceed.
+		}
+
+		opAggregates = append(opAggregates, chunk...)
+		if nextCursor == "" || len(chunk) == 0 {
+			break // No more data to fetch.
+		}
+
+		cursor = nextCursor
+		// We don't decrement `remaining` as we want to fetch all pages.
 	}
 
-	// Merge aggregates by window
+	return opAggregates, nil
+}
+
+// mergeAggregatesByWindow merges a list of cost aggregations into a map keyed by the window start time.
+// This function combines stats from different operation types that fall into the same time window.
+func mergeAggregatesByWindow(allAggregates []*models.DynamoDBCostAggregation) map[string]*models.DynamoDBCostAggregation {
 	mergedByWindow := make(map[string]*models.DynamoDBCostAggregation)
 
 	for _, agg := range allAggregates {
 		windowKey := agg.WindowStart.Format(time.RFC3339)
 
-		if existing, exists := mergedByWindow[windowKey]; exists {
-			// Merge the aggregates
-			existing.TotalOperations += agg.TotalOperations
-			existing.TotalReadCapacityUnits += agg.TotalReadCapacityUnits
-			existing.TotalWriteCapacityUnits += agg.TotalWriteCapacityUnits
-			existing.TotalReadCostMicroCents += agg.TotalReadCostMicroCents
-			existing.TotalWriteCostMicroCents += agg.TotalWriteCostMicroCents
-			existing.TotalCostMicroCents += agg.TotalCostMicroCents
-			existing.TotalItemCount += agg.TotalItemCount
-
-			// Merge table breakdown
-			for table, stats := range agg.TableBreakdown {
-				if existingStats, exists := existing.TableBreakdown[table]; exists {
-					existingStats.OperationCount += stats.OperationCount
-					existingStats.ReadCapacityUnits += stats.ReadCapacityUnits
-					existingStats.WriteCapacityUnits += stats.WriteCapacityUnits
-					existingStats.TotalCostMicroCents += stats.TotalCostMicroCents
-					existingStats.TotalCostDollars += stats.TotalCostDollars
-				} else {
-					existing.TableBreakdown[table] = stats
-				}
-			}
-
-			// Merge service breakdown
-			for service, stats := range agg.ServiceBreakdown {
-				if existingStats, exists := existing.ServiceBreakdown[service]; exists {
-					existingStats.OperationCount += stats.OperationCount
-					existingStats.TotalCostMicroCents += stats.TotalCostMicroCents
-					existingStats.TotalCostDollars += stats.TotalCostDollars
-				} else {
-					existing.ServiceBreakdown[service] = stats
-				}
-			}
-		} else {
+		existing, exists := mergedByWindow[windowKey]
+		if !exists {
 			mergedByWindow[windowKey] = agg
+			continue
+		}
+
+		// Merge the aggregates
+		existing.TotalOperations += agg.TotalOperations
+		existing.TotalReadCapacityUnits += agg.TotalReadCapacityUnits
+		existing.TotalWriteCapacityUnits += agg.TotalWriteCapacityUnits
+		existing.TotalReadCostMicroCents += agg.TotalReadCostMicroCents
+		existing.TotalWriteCostMicroCents += agg.TotalWriteCostMicroCents
+		existing.TotalCostMicroCents += agg.TotalCostMicroCents
+		existing.TotalItemCount += agg.TotalItemCount
+
+		// Merge table breakdown
+		for table, stats := range agg.TableBreakdown {
+			if existingStats, ok := existing.TableBreakdown[table]; ok {
+				existingStats.OperationCount += stats.OperationCount
+				existingStats.ReadCapacityUnits += stats.ReadCapacityUnits
+				existingStats.WriteCapacityUnits += stats.WriteCapacityUnits
+				existingStats.TotalCostMicroCents += stats.TotalCostMicroCents
+				existingStats.TotalCostDollars += stats.TotalCostDollars
+			} else {
+				existing.TableBreakdown[table] = stats
+			}
+		}
+
+		// Merge service breakdown
+		for service, stats := range agg.ServiceBreakdown {
+			if existingStats, ok := existing.ServiceBreakdown[service]; ok {
+				existingStats.OperationCount += stats.OperationCount
+				existingStats.TotalCostMicroCents += stats.TotalCostMicroCents
+				existingStats.TotalCostDollars += stats.TotalCostDollars
+			} else {
+				existing.ServiceBreakdown[service] = stats
+			}
 		}
 	}
 
-	// Convert map back to slice
+	return mergedByWindow
+}
+
+// finalizeCostMetrics converts the merged map of aggregations into a sorted slice,
+// calculating final derived metrics like total cost in dollars and average cost per operation.
+func finalizeCostMetrics(mergedByWindow map[string]*models.DynamoDBCostAggregation) []*models.DynamoDBCostAggregation {
 	result := make([]*models.DynamoDBCostAggregation, 0, len(mergedByWindow))
 	for _, agg := range mergedByWindow {
 		// Recalculate averages and totals
@@ -864,6 +876,36 @@ func (r *TrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, per
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].WindowStart.Before(result[j].WindowStart)
 	})
+
+	return result
+}
+
+// GetAggregatedCostsByPeriod retrieves aggregated costs for a specific period
+func (r *TrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, period string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error) {
+	// Query all operation types for the period
+	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan",
+		"BatchGetItem", "BatchWriteItem", "TransactGetItems", "TransactWriteItems"}
+
+	var allAggregates []*models.DynamoDBCostAggregation
+
+	for _, opType := range operationTypes {
+		opAggregates, err := r.fetchAggregatesForOperation(ctx, period, opType, startDate, endDate)
+		if err != nil {
+			// Depending on desired behavior, we could either continue or fail fast.
+			// The original implementation continued, so we'll log and continue here.
+			r.logger.Warn("skipping operation type due to fetch error",
+				zap.String("operation_type", opType),
+				zap.Error(err))
+			continue
+		}
+		allAggregates = append(allAggregates, opAggregates...)
+	}
+
+	// Merge aggregates by window
+	merged := mergeAggregatesByWindow(allAggregates)
+
+	// Finalize and sort the results
+	result := finalizeCostMetrics(merged)
 
 	return result, nil
 }
