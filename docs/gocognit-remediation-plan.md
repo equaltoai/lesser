@@ -81,4 +81,3 @@ This plan outlines how we will resolve the ten cognitive complexity violations r
 4. **Week 4:** Finish cost aggregation refactor (Workstream 5) and run a full lint/test sweep.
 
 This sequencing prioritizes risk reduction and shared helper work before tackling user-facing flows. Adjustments can be made if downstream teams need specific fixes sooner.
-

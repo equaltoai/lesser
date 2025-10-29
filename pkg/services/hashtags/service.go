@@ -464,33 +464,6 @@ func (s *Service) publishInternalHashtagEvent(action streaming.EventAction, hash
 	}
 }
 
-// wrapActivityEvent converts a raw internal event to an ActivityEvent understood by service consumers.
-func wrapActivityEvent(event *streaming.InternalEvent) *ActivityEvent {
-	if event == nil {
-		return nil
-	}
-
-	result := &ActivityEvent{
-		Event:     event,
-		Timestamp: event.Timestamp,
-	}
-
-	switch payload := event.Data.(type) {
-	case *streaming.HashtagEventPayload:
-		result.Hashtag = payload.Hashtag
-		result.Timestamp = payload.UpdatedAt
-	case *streaming.StatusEventPayload:
-		if len(payload.Hashtags) > 0 {
-			result.Hashtag = payload.Hashtags[0]
-		}
-		result.StatusID = payload.StatusID
-		result.ActorID = payload.AuthorID
-		result.Timestamp = payload.CreatedAt
-	}
-
-	return result
-}
-
 // cloneNotificationSettings creates a safe copy with enforced user/hashtag identity.
 func cloneNotificationSettings(settings *storage.HashtagNotificationSettings, userID, hashtag string) *storage.HashtagNotificationSettings {
 	if settings == nil {
@@ -562,14 +535,4 @@ func uniqueNormalizedHashtags(inputs []string) []string {
 	}
 
 	return order
-}
-
-// buildHashtagStreams creates stream names for the given hashtags plus the global hashtag stream.
-func buildHashtagStreams(hashtags []string) []string {
-	streams := make([]string, 0, len(hashtags)+1)
-	streams = append(streams, "hashtags:global")
-	for _, tag := range hashtags {
-		streams = append(streams, streaming.HashtagStreamName(tag))
-	}
-	return streams
 }

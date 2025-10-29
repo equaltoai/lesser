@@ -45,6 +45,13 @@ func (r *StatusRepository) SetRelationshipRepository(relationshipRepo interface{
 	r.relationshipRepo = relationshipRepo
 }
 
+const (
+	defaultHomeTimelinePageLimit    = 20
+	maxHomeTimelinePageLimit        = 40
+	homeTimelineStatusesPerActor    = 20
+	homeTimelineFollowingSampleSize = 1000
+)
+
 // CreateStatus creates a new status using enhanced validation and event emission
 func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Status) error {
 	// Use enhanced validation and creation with automatic event emission
@@ -632,51 +639,8 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 		return r.GetPublicTimeline(ctx, opts)
 	}
 
-	cfg := config.Get()
-
-	// Resolve the following list depending on the repository capabilities
-	var followingActorIDs []string
-	switch repo := r.relationshipRepo.(type) {
-	case interfaces.RelationshipRepository:
-		followingResult, err := repo.GetFollowing(ctx, userID, interfaces.PaginationOptions{Limit: 1000})
-		if err != nil {
-			r.logger.Error("failed to get following list for home timeline",
-				zap.String("user_id", userID),
-				zap.Error(err))
-			return r.GetPublicTimeline(ctx, opts)
-		}
-
-		for _, account := range followingResult.Items {
-			if account == nil {
-				continue
-			}
-			if account.Actor != nil && account.Actor.ID != "" {
-				followingActorIDs = append(followingActorIDs, account.Actor.ID)
-				continue
-			}
-			if account.User != nil && account.User.Username != "" {
-				followingActorIDs = append(followingActorIDs, cfg.ActorURL(account.User.Username))
-			}
-		}
-	case interface {
-		GetFollowing(context.Context, string, int, string) ([]string, string, error)
-	}:
-		usernames, _, err := repo.GetFollowing(ctx, userID, 1000, "")
-		if err != nil {
-			r.logger.Error("failed to get following list for home timeline via username accessor",
-				zap.String("user_id", userID),
-				zap.Error(err))
-			return r.GetPublicTimeline(ctx, opts)
-		}
-		for _, username := range usernames {
-			if username == "" {
-				continue
-			}
-			followingActorIDs = append(followingActorIDs, cfg.ActorURL(username))
-		}
-	default:
-		r.logger.Error("relationshipRepo does not provide a compatible GetFollowing implementation",
-			zap.String("repo_type", fmt.Sprintf("%T", r.relationshipRepo)))
+	followingActorIDs, err := r.fetchFollowingActorIDs(ctx, userID)
+	if err != nil {
 		return r.GetPublicTimeline(ctx, opts)
 	}
 
@@ -692,80 +656,155 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 		}, nil
 	}
 
-	// Get statuses from all followed users
-	// Note: This is a simplified implementation. In production, you might want to:
-	// 1. Use a pre-computed home timeline cache
-	// 2. Implement pagination across multiple author queries
-	// 3. Use a timeline ranking algorithm
-	var allStatuses []models.Status
-
-	// Query statuses for each followed user using GSI1 (author timeline)
-	for _, actorID := range followingActorIDs {
-		var userStatuses []models.Status
-		err := r.db.WithContext(ctx).Model(&models.Status{}).
-			Index("GSI1").
-			Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", actorID)).
-			OrderBy("GSI1SK", "DESC").
-			Limit(20). // Limit per user to avoid overwhelming queries
-			All(&userStatuses)
-
-		if err != nil {
-			r.logger.Error("failed to get statuses for followed user",
-				zap.String("user_id", userID),
-				zap.String("followed_actor", actorID),
-				zap.Error(err))
-			continue // Skip this user on error
-		}
-
-		allStatuses = append(allStatuses, userStatuses...)
-	}
-
-	// Sort all statuses by published time (most recent first)
-	sort.Slice(allStatuses, func(i, j int) bool {
-		return allStatuses[i].PublishedAt.After(allStatuses[j].PublishedAt)
-	})
-
-	// Apply pagination limits
-	limit := opts.Limit
-	// Validate limit using centralized validation
-	if err := common.ValidateQueryLimit(limit, 40, "timeline"); err != nil {
-		limit = 20
-	}
-
-	// Take only the number needed for this page
-	var pageStatuses []models.Status
-	if len(allStatuses) > limit {
-		pageStatuses = allStatuses[:limit]
-	} else {
-		pageStatuses = allStatuses
-	}
-
-	// Convert to pointer slice
-	statusPtrs := make([]*models.Status, len(pageStatuses))
-	for i := range pageStatuses {
-		statusPtrs[i] = &pageStatuses[i]
-	}
-
-	// Generate next cursor if there are more items
-	nextCursor := ""
-	hasMore := len(allStatuses) > limit
-	if hasMore && len(statusPtrs) > 0 {
-		lastStatus := statusPtrs[len(statusPtrs)-1]
-		nextCursor = lastStatus.StatusID
-	}
+	allStatuses := r.collectStatusesForActors(ctx, userID, followingActorIDs)
+	limit := sanitizeHomeTimelineLimit(opts.Limit)
+	paginated := paginateHomeTimeline(allStatuses, limit)
 
 	r.logger.Debug("successfully built home timeline",
 		zap.String("user_id", userID),
 		zap.Int("following_count", len(followingActorIDs)),
 		zap.Int("total_statuses_found", len(allStatuses)),
-		zap.Int("page_statuses", len(statusPtrs)))
+		zap.Int("page_statuses", len(paginated.Items)))
+
+	return paginated, nil
+}
+
+func (r *StatusRepository) fetchFollowingActorIDs(ctx context.Context, userID string) ([]string, error) {
+	cfg := config.Get()
+
+	switch repo := r.relationshipRepo.(type) {
+	case interfaces.RelationshipRepository:
+		followingResult, err := repo.GetFollowing(ctx, userID, interfaces.PaginationOptions{Limit: homeTimelineFollowingSampleSize})
+		if err != nil {
+			r.logger.Error("failed to get following list for home timeline",
+				zap.String("user_id", userID),
+				zap.Error(err))
+			return nil, err
+		}
+
+		actorIDs := make([]string, 0, len(followingResult.Items))
+		for _, account := range followingResult.Items {
+			if account == nil {
+				continue
+			}
+			if account.Actor != nil && account.Actor.ID != "" {
+				actorIDs = append(actorIDs, account.Actor.ID)
+				continue
+			}
+			if account.User != nil && account.User.Username != "" {
+				actorIDs = append(actorIDs, cfg.ActorURL(account.User.Username))
+			}
+		}
+		return actorIDs, nil
+	case interface {
+		GetFollowing(context.Context, string, int, string) ([]string, string, error)
+	}:
+		usernames, _, err := repo.GetFollowing(ctx, userID, homeTimelineFollowingSampleSize, "")
+		if err != nil {
+			r.logger.Error("failed to get following list for home timeline via username accessor",
+				zap.String("user_id", userID),
+				zap.Error(err))
+			return nil, err
+		}
+
+		actorIDs := make([]string, 0, len(usernames))
+		for _, username := range usernames {
+			if username == "" {
+				continue
+			}
+			actorIDs = append(actorIDs, cfg.ActorURL(username))
+		}
+		return actorIDs, nil
+	default:
+		r.logger.Error("relationshipRepo does not provide a compatible GetFollowing implementation",
+			zap.String("repo_type", fmt.Sprintf("%T", r.relationshipRepo)))
+		return nil, fmt.Errorf("relationshipRepo does not support GetFollowing")
+	}
+}
+
+func (r *StatusRepository) collectStatusesForActors(ctx context.Context, userID string, actorIDs []string) []models.Status {
+	// Gather statuses per actor and then sort globally so pagination is consistent
+	collected := make([]models.Status, 0, len(actorIDs)*homeTimelineStatusesPerActor)
+	for _, actorID := range actorIDs {
+		userStatuses := r.fetchStatusesForActor(ctx, userID, actorID)
+		if len(userStatuses) == 0 {
+			continue
+		}
+		collected = append(collected, userStatuses...)
+	}
+
+	sort.Slice(collected, func(i, j int) bool {
+		return collected[i].PublishedAt.After(collected[j].PublishedAt)
+	})
+
+	return collected
+}
+
+func (r *StatusRepository) fetchStatusesForActor(ctx context.Context, userID string, actorID string) []models.Status {
+	var userStatuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("GSI1").
+		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", actorID)).
+		OrderBy("GSI1SK", "DESC").
+		Limit(homeTimelineStatusesPerActor).
+		All(&userStatuses)
+
+	if err != nil {
+		r.logger.Error("failed to get statuses for followed user",
+			zap.String("user_id", userID),
+			zap.String("followed_actor", actorID),
+			zap.Error(err))
+		return nil
+	}
+
+	return userStatuses
+}
+
+func sanitizeHomeTimelineLimit(requested int) int {
+	limit := requested
+	if limit <= 0 {
+		limit = defaultHomeTimelinePageLimit
+	}
+
+	if err := common.ValidateQueryLimit(limit, maxHomeTimelinePageLimit, "timeline"); err != nil {
+		return defaultHomeTimelinePageLimit
+	}
+
+	return limit
+}
+
+func paginateHomeTimeline(allStatuses []models.Status, limit int) *interfaces.PaginatedResult[*models.Status] {
+	if len(allStatuses) == 0 {
+		return &interfaces.PaginatedResult[*models.Status]{
+			Items:      []*models.Status{},
+			NextCursor: "",
+			HasMore:    false,
+			Total:      0,
+		}
+	}
+
+	pageStatuses := allStatuses
+	if len(pageStatuses) > limit {
+		pageStatuses = pageStatuses[:limit]
+	}
+
+	statusPtrs := make([]*models.Status, len(pageStatuses))
+	for i := range pageStatuses {
+		statusPtrs[i] = &pageStatuses[i]
+	}
+
+	hasMore := len(allStatuses) > limit
+	nextCursor := ""
+	if hasMore && len(statusPtrs) > 0 {
+		nextCursor = statusPtrs[len(statusPtrs)-1].StatusID
+	}
 
 	return &interfaces.PaginatedResult[*models.Status]{
 		Items:      statusPtrs,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 		Total:      int64(len(allStatuses)),
-	}, nil
+	}
 }
 
 // queryStatusesByGSI is a consolidated helper for GSI-based status queries

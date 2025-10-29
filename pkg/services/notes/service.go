@@ -293,7 +293,34 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		note.Attachment = attachments
 	}
 
-	// Create Status model
+	status := s.composeStatus(cmd, author, statusID, note, normalizedHashtags, attachments, publishedAt)
+	status.ConversationID = resolveConversationID(ctx, status, s.lookupParentStatus)
+
+	// Store the status
+	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
+		return nil, errors.Join(ErrCreateStatus, err)
+	}
+
+	// Mark media attachments as used after successful persistence
+	s.markMediaAsUsed(ctx, statusID, mediaIDsToMark)
+	s.recordStatusCreationAnalytics(ctx, status)
+	s.handlePollCreation(ctx, cmd, statusID)
+
+	s.logger.Info("created note successfully",
+		zap.String("status_id", statusID),
+		zap.String("conversation_id", status.ConversationID))
+
+	// Emit events and queue federation
+	events := s.emitStatusCreatedEvents(ctx, status)
+	s.queueFederationDelivery(ctx, status, "Create")
+
+	return &NoteResult{
+		Note:   status,
+		Events: events,
+	}, nil
+}
+
+func (s *Service) composeStatus(cmd *CreateNoteCommand, author *storage.Account, statusID string, note *activitypub.Note, hashtags []string, attachments []activitypub.Attachment, timestamp time.Time) *models.Status {
 	status := &models.Status{
 		StatusID:       statusID,
 		Note:           note,
@@ -309,95 +336,108 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		CcRecipients:   cmd.CcRecipients,
 		BtoRecipients:  cmd.BtoRecipients,
 		BccRecipients:  cmd.BccRecipients,
-		PublishedAt:    publishedAt,
-		CreatedAt:      publishedAt,
-		ModifiedAt:     publishedAt,
+		PublishedAt:    timestamp,
+		CreatedAt:      timestamp,
+		ModifiedAt:     timestamp,
 	}
-	if len(normalizedHashtags) > 0 {
-		status.Hashtags = normalizedHashtags
+
+	if len(hashtags) > 0 {
+		status.Hashtags = hashtags
 	}
+
 	if len(attachments) > 0 {
 		status.MediaCount = len(attachments)
 	}
 
-	// Handle conversation ID - create new conversation if not provided and it's a top-level post
-	if common.ValidateRequiredParam("status.ConversationID", status.ConversationID) != nil && common.ValidateRequiredParam("status.InReplyToID", status.InReplyToID) != nil {
-		status.ConversationID = statusID
-	} else if common.ValidateRequiredParam("status.ConversationID", status.ConversationID) != nil && common.ValidateRequiredParam("status.InReplyToID", status.InReplyToID) == nil {
-		// Get parent status to inherit conversation ID
-		parent, err := s.noteRepo.GetStatus(ctx, status.InReplyToID)
-		if err == nil && parent.ConversationID != "" {
-			status.ConversationID = parent.ConversationID
-		} else {
-			status.ConversationID = status.InReplyToID
+	return status
+}
+
+type parentStatusFetcher func(context.Context, string) (*models.Status, error)
+
+func resolveConversationID(ctx context.Context, status *models.Status, fetch parentStatusFetcher) string {
+	if status == nil {
+		return ""
+	}
+
+	if status.ConversationID != "" {
+		return status.ConversationID
+	}
+
+	if status.InReplyToID == "" {
+		return status.StatusID
+	}
+
+	if fetch == nil {
+		return status.InReplyToID
+	}
+
+	parent, err := fetch(ctx, status.InReplyToID)
+	if err == nil && parent != nil && parent.ConversationID != "" {
+		return parent.ConversationID
+	}
+
+	return status.InReplyToID
+}
+
+func (s *Service) lookupParentStatus(ctx context.Context, statusID string) (*models.Status, error) {
+	if s.noteRepo == nil || statusID == "" {
+		return nil, fmt.Errorf("note repository unavailable")
+	}
+	return s.noteRepo.GetStatus(ctx, statusID)
+}
+
+func (s *Service) markMediaAsUsed(ctx context.Context, statusID string, mediaIDs []string) {
+	if len(mediaIDs) == 0 || s.mediaRepo == nil {
+		return
+	}
+
+	for _, mediaID := range mediaIDs {
+		if err := s.mediaRepo.MarkMediaUsed(ctx, mediaID); err != nil {
+			s.logger.Warn("failed to mark media attachment as used",
+				zap.String("status_id", statusID),
+				zap.String("media_id", mediaID),
+				zap.Error(err))
 		}
 	}
+}
 
-	// Store the status
-	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
-		return nil, errors.Join(ErrCreateStatus, err)
+func (s *Service) recordStatusCreationAnalytics(ctx context.Context, status *models.Status) {
+	if s.analytics == nil || status == nil {
+		return
 	}
 
-	// Mark media attachments as used after successful persistence
-	if len(mediaIDsToMark) > 0 && s.mediaRepo != nil {
-		for _, mediaID := range mediaIDsToMark {
-			if err := s.mediaRepo.MarkMediaUsed(ctx, mediaID); err != nil {
-				s.logger.Warn("failed to mark media attachment as used",
-					zap.String("status_id", statusID),
-					zap.String("media_id", mediaID),
-					zap.Error(err))
-			}
-		}
-	}
-
-	// Record hashtag usage for analytics
-	if s.analytics != nil && len(status.Hashtags) > 0 && status.Note != nil {
+	if len(status.Hashtags) > 0 && status.Note != nil {
 		if err := s.analytics.RecordHashtagUsage(ctx, status.Hashtags, status.Note.ID, status.AuthorID); err != nil {
 			s.logger.Warn("failed to record hashtag usage",
-				zap.String("status_id", statusID),
+				zap.String("status_id", status.StatusID),
 				zap.Strings("hashtags", status.Hashtags),
 				zap.Error(err))
 		}
 	}
 
-	// Create poll if poll options are provided
-	if common.ValidateSliceNotEmpty("cmd.PollOptions", cmd.PollOptions) == nil {
-		if err := s.createPollForStatus(ctx, cmd, statusID); err != nil {
-			// Log error but don't fail status creation
-			s.logger.Error("failed to create poll for status",
-				zap.String("status_id", statusID),
-				zap.Error(err))
-		}
+	activityType := "post"
+	if status.InReplyToID != "" {
+		activityType = "comment"
 	}
 
-	// Update instance metrics after successful creation
-	if s.analytics != nil {
-		activityType := "post" // Default to post
-		if status.InReplyToID != "" {
-			activityType = "comment" // This is a reply/comment
-		}
+	if err := s.analytics.RecordInstanceActivity(ctx, activityType, time.Now()); err != nil {
+		s.logger.Warn("failed to record instance metrics",
+			zap.String("activity_type", activityType),
+			zap.String("status_id", status.StatusID),
+			zap.Error(err))
+	}
+}
 
-		if err := s.analytics.RecordInstanceActivity(ctx, activityType, time.Now()); err != nil {
-			// Log the error but don't fail the creation - metrics are not critical
-			s.logger.Warn("failed to record instance metrics",
-				zap.String("activity_type", activityType),
-				zap.String("status_id", statusID),
-				zap.Error(err))
-		}
+func (s *Service) handlePollCreation(ctx context.Context, cmd *CreateNoteCommand, statusID string) {
+	if common.ValidateSliceNotEmpty("cmd.PollOptions", cmd.PollOptions) != nil {
+		return
 	}
 
-	s.logger.Info("created note successfully",
-		zap.String("status_id", statusID),
-		zap.String("conversation_id", status.ConversationID))
-
-	// Emit events and queue federation
-	events := s.emitStatusCreatedEvents(ctx, status)
-	s.queueFederationDelivery(ctx, status, "Create")
-
-	return &NoteResult{
-		Note:   status,
-		Events: events,
-	}, nil
+	if err := s.createPollForStatus(ctx, cmd, statusID); err != nil {
+		s.logger.Error("failed to create poll for status",
+			zap.String("status_id", statusID),
+			zap.Error(err))
+	}
 }
 
 // UpdateNote updates an existing note, validates permission, stores changes, and emits events

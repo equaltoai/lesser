@@ -254,21 +254,6 @@ func subscriptionStreamName(subscriptionID string) string {
 	return fmt.Sprintf("graphql:subscription:%s", subscriptionID)
 }
 
-func (s *wsServer) persistSubscription(ctx context.Context, connectionID, username, subscriptionID string) {
-	if s.connRepo == nil || username == "" || subscriptionID == "" {
-		return
-	}
-
-	stream := subscriptionStreamName(subscriptionID)
-	if err := s.connRepo.WriteSubscription(ctx, connectionID, username, stream); err != nil {
-		s.logger.Warn("failed to persist graphql subscription",
-			zap.String("connection_id", connectionID),
-			zap.String("subscription_id", subscriptionID),
-			zap.String("stream", stream),
-			zap.Error(err))
-	}
-}
-
 func (s *wsServer) removeSubscriptionRecord(ctx context.Context, connectionID, subscriptionID string) {
 	if s.connRepo == nil || subscriptionID == "" {
 		return
