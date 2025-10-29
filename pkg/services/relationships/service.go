@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
 	pkgerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -575,155 +576,27 @@ func (s *Service) sanitizeActivityActor(ctx context.Context, account *storage.Ac
 		return nil
 	}
 
-	actorFallback := strings.TrimSpace(fallback)
-	if actorFallback == "" && account.User != nil {
-		actorFallback = strings.TrimSpace(account.User.Username)
-	}
-	if actorFallback == "" && account.Actor != nil {
-		actorFallback = strings.TrimSpace(account.Actor.PreferredUsername)
-		if actorFallback == "" {
-			actorFallback = s.normalizeActorIdentifier(account.Actor.ID)
+	baseURL := s.baseURL()
+	username := strings.TrimSpace(fallback)
+	if account.User != nil {
+		userName := strings.TrimSpace(account.User.Username)
+		if userName != "" {
+			username = userName
 		}
 	}
-
-	actorFallback = strings.TrimSpace(actorFallback)
+	if account.Actor != nil {
+		username = activitypubutil.DerivePreferredUsername(account.Actor, username)
+	}
 
 	if account.Actor == nil {
-		if actorFallback == "" {
-			return nil
-		}
-
-		baseURL := s.baseURL()
-		actor := &activitypub.Actor{
-			BaseObject: activitypub.BaseObject{
-				Type: activitypub.PersonType,
-			},
-			PreferredUsername: actorFallback,
-		}
-
-		if baseURL != "" {
-			actor.BaseObject.ID = fmt.Sprintf("%s/users/%s", baseURL, actorFallback)
-			actor.URL = fmt.Sprintf("%s/@%s", baseURL, actorFallback)
-			actor.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, actorFallback)
-			actor.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, actorFallback)
-			actor.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, actorFallback)
-			actor.Following = fmt.Sprintf("%s/users/%s/following", baseURL, actorFallback)
-		} else {
-			actor.BaseObject.ID = actorFallback
-		}
-
-		if account.User != nil {
-			if display := strings.TrimSpace(account.User.DisplayName); display != "" {
-				actor.Name = display
-			}
-			if note := strings.TrimSpace(account.User.Note); note != "" {
-				actor.Summary = note
-			}
-			if account.User.URL != "" && actor.URL == "" {
-				actor.URL = account.User.URL
-			}
-			if account.User.Avatar != "" {
-				actor.Icon = &activitypub.Image{
-					BaseObject: activitypub.BaseObject{
-						Type: activitypub.ImageType,
-					},
-					URL: account.User.Avatar,
-				}
-			}
-			if account.User.Header != "" {
-				actor.Image = &activitypub.Image{
-					BaseObject: activitypub.BaseObject{
-						Type: activitypub.ImageType,
-					},
-					URL: account.User.Header,
-				}
-			}
-			actor.ManuallyApprovesFollowers = account.User.Locked
-			actor.Discoverable = account.User.Discoverable
-
-			if !account.User.CreatedAt.IsZero() {
-				createdAt := account.User.CreatedAt.UTC()
-				actor.BaseObject.Published = &createdAt
-				actor.CreatedAt = &createdAt
-			}
-			if !account.User.UpdatedAt.IsZero() {
-				updatedAt := account.User.UpdatedAt.UTC()
-				actor.BaseObject.Updated = &updatedAt
-				actor.Updated = &updatedAt
-			}
-
-			if len(account.User.Fields) > 0 {
-				for _, field := range account.User.Fields {
-					name := strings.TrimSpace(field["name"])
-					if name == "" {
-						continue
-					}
-					value := field["value"]
-					actor.Attachment = append(actor.Attachment, activitypub.Attachment{
-						Type:  "PropertyValue",
-						Name:  name,
-						Value: value,
-					})
-				}
-			}
-		}
-
-		return actor
+		return activitypubutil.BuildLocalActor(username, baseURL, account.User, nil)
 	}
 
-	sourceActor := cloneActivityActor(account.Actor)
-	if sourceActor == nil {
-		return nil
+	if enriched := s.buildAccountFromActor(ctx, account.Actor, username); enriched != nil && enriched.Actor != nil {
+		return enriched.Actor
 	}
 
-	if enriched := s.buildAccountFromActor(ctx, sourceActor, actorFallback); enriched != nil && enriched.Actor != nil {
-		return cloneActivityActor(enriched.Actor)
-	}
-
-	if sourceActor.PreferredUsername == "" && actorFallback != "" {
-		sourceActor.PreferredUsername = actorFallback
-	}
-
-	return sourceActor
-}
-
-func cloneActivityActor(actor *activitypub.Actor) *activitypub.Actor {
-	if actor == nil {
-		return nil
-	}
-
-	cloned := *actor
-
-	if actor.PublicKey != nil {
-		publicKeyCopy := *actor.PublicKey
-		cloned.PublicKey = &publicKeyCopy
-	}
-
-	if actor.Endpoints != nil {
-		endpointsCopy := *actor.Endpoints
-		cloned.Endpoints = &endpointsCopy
-	}
-
-	if actor.Icon != nil {
-		iconCopy := *actor.Icon
-		cloned.Icon = &iconCopy
-	}
-
-	if actor.Image != nil {
-		imageCopy := *actor.Image
-		cloned.Image = &imageCopy
-	}
-
-	if len(actor.AlsoKnownAs) > 0 {
-		cloned.AlsoKnownAs = append([]string{}, actor.AlsoKnownAs...)
-	}
-
-	if len(actor.Attachment) > 0 {
-		cloned.Attachment = make([]activitypub.Attachment, len(actor.Attachment))
-		copy(cloned.Attachment, actor.Attachment)
-	}
-
-	return &cloned
+	return activitypubutil.BuildLocalActor(username, baseURL, account.User, account.Actor)
 }
 
 func (s *Service) createRelationship(ctx context.Context, followerID, followingID, activityID string) error {
@@ -2347,51 +2220,12 @@ func (s *Service) buildAccountFromActor(ctx context.Context, actor *activitypub.
 		return nil
 	}
 
-	actorCopy := *actor
-
-	username := strings.TrimSpace(actorCopy.PreferredUsername)
-	if username == "" {
-		username = s.normalizeActorIdentifier(actorCopy.ID)
-	}
-	if username == "" && actorCopy.URL != "" {
-		if parsed, err := url.Parse(actorCopy.URL); err == nil {
-			segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-			if len(segments) > 0 {
-				username = strings.TrimPrefix(segments[len(segments)-1], "@")
-			}
-		}
-	}
+	username := activitypubutil.DerivePreferredUsername(actor, fallbackUsername)
+	baseURL := s.baseURL()
 
 	username = strings.TrimSpace(username)
-	if strings.Contains(username, "@") {
-		parts := strings.Split(username, "@")
-		if len(parts) > 0 {
-			username = parts[0]
-		}
-	}
 	if username == "" {
 		username = strings.TrimSpace(fallbackUsername)
-	}
-	actorCopy.PreferredUsername = username
-
-	baseURL := s.baseURL()
-	if actorCopy.ID == "" && baseURL != "" && username != "" {
-		actorCopy.ID = fmt.Sprintf("%s/users/%s", baseURL, username)
-	}
-	if actorCopy.URL == "" && baseURL != "" && username != "" {
-		actorCopy.URL = fmt.Sprintf("%s/@%s", baseURL, username)
-	}
-	if actorCopy.Inbox == "" && baseURL != "" && username != "" {
-		actorCopy.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, username)
-	}
-	if actorCopy.Outbox == "" && baseURL != "" && username != "" {
-		actorCopy.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, username)
-	}
-	if actorCopy.Followers == "" && baseURL != "" && username != "" {
-		actorCopy.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, username)
-	}
-	if actorCopy.Following == "" && baseURL != "" && username != "" {
-		actorCopy.Following = fmt.Sprintf("%s/users/%s/following", baseURL, username)
 	}
 
 	var storedUser *storage.User
@@ -2409,39 +2243,27 @@ func (s *Service) buildAccountFromActor(ctx context.Context, actor *activitypub.
 		}
 	}
 
-	// Prefer stored profile metadata when present, otherwise fall back to actor payload.
+	actorCopy := activitypubutil.BuildLocalActor(username, baseURL, storedUser, actor)
+	if actorCopy == nil {
+		return nil
+	}
+
 	displayName := strings.TrimSpace(actorCopy.Name)
-	if displayName == "" && storedUser != nil {
-		displayName = strings.TrimSpace(storedUser.DisplayName)
-	}
-	if displayName == "" && storedUser != nil {
-		displayName = strings.TrimSpace(storedUser.Username)
-	}
 	if displayName == "" {
 		displayName = username
 	}
-
 	note := strings.TrimSpace(actorCopy.Summary)
-	if note == "" && storedUser != nil {
-		note = strings.TrimSpace(storedUser.Note)
-	}
-
 	avatar := ""
+	if actorCopy.Icon != nil {
+		avatar = strings.TrimSpace(actorCopy.Icon.URL)
+	}
 	header := ""
-	if storedUser != nil {
-		avatar = storedUser.Avatar
-		header = storedUser.Header
-	} else {
-		if actorCopy.Icon != nil {
-			avatar = actorCopy.Icon.URL
-		}
-		if actorCopy.Image != nil {
-			header = actorCopy.Image.URL
-		}
+	if actorCopy.Image != nil {
+		header = strings.TrimSpace(actorCopy.Image.URL)
 	}
 
-	var createdAt time.Time
-	var updatedAt time.Time
+	createdAt := time.Time{}
+	updatedAt := time.Time{}
 	if storedUser != nil {
 		createdAt = storedUser.CreatedAt
 		updatedAt = storedUser.UpdatedAt
@@ -2455,34 +2277,21 @@ func (s *Service) buildAccountFromActor(ctx context.Context, actor *activitypub.
 	}
 
 	user := &storage.User{
-		ID: func() string {
-			if storedUser != nil {
-				return storedUser.ID
-			}
-			return actorCopy.ID
-		}(),
-		Username:    username,
-		DisplayName: displayName,
-		Note:        note,
-		Avatar:      avatar,
-		Header:      header,
-		URL:         actorCopy.URL,
-		Locked: func() bool {
-			if storedUser != nil {
-				return storedUser.Locked
-			}
-			return actorCopy.ManuallyApprovesFollowers
-		}(),
-		Discoverable: func() bool {
-			if storedUser != nil {
-				return storedUser.Discoverable
-			}
-			return actorCopy.Discoverable
-		}(),
-		CreatedAt: createdAt,
-		UpdatedAt: updatedAt,
+		ID:           actorCopy.ID,
+		Username:     username,
+		DisplayName:  displayName,
+		Note:         note,
+		Avatar:       avatar,
+		Header:       header,
+		URL:          actorCopy.URL,
+		Locked:       actorCopy.ManuallyApprovesFollowers,
+		Discoverable: actorCopy.Discoverable,
+		CreatedAt:    createdAt,
+		UpdatedAt:    updatedAt,
 	}
+
 	if storedUser != nil {
+		user.ID = storedUser.ID
 		user.Email = storedUser.Email
 		user.URL = storedUser.URL
 		user.Metadata = storedUser.Metadata
@@ -2493,16 +2302,29 @@ func (s *Service) buildAccountFromActor(ctx context.Context, actor *activitypub.
 		user.Role = storedUser.Role
 		user.Locale = storedUser.Locale
 		user.RecoveryMethods = storedUser.RecoveryMethods
-	}
-
-	actorCopy.Name = displayName
-	if actorCopy.Summary == "" {
-		actorCopy.Summary = note
+		user.AllowNSFW = storedUser.AllowNSFW
+		user.RequireNSFWWarning = storedUser.RequireNSFWWarning
+		user.CreatedAt = storedUser.CreatedAt
+		user.UpdatedAt = storedUser.UpdatedAt
+		if strings.TrimSpace(storedUser.DisplayName) != "" {
+			user.DisplayName = storedUser.DisplayName
+		}
+		if strings.TrimSpace(storedUser.Note) != "" {
+			user.Note = storedUser.Note
+		}
+		if strings.TrimSpace(storedUser.Avatar) != "" {
+			user.Avatar = storedUser.Avatar
+		}
+		if strings.TrimSpace(storedUser.Header) != "" {
+			user.Header = storedUser.Header
+		}
+		user.Locked = storedUser.Locked
+		user.Discoverable = storedUser.Discoverable
 	}
 
 	return &storage.Account{
 		User:  user,
-		Actor: &actorCopy,
+		Actor: actorCopy,
 	}
 }
 
