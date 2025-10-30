@@ -25,32 +25,32 @@ type Status struct {
 	SK string `dynamorm:"sk" json:"sk"` // Format: "status#{status_id}"
 
 	// GSI1 - Author timeline (all statuses by an author)
-	GSI1PK string `dynamorm:"column:GSI1PK,index:GSI1,pk" json:"-"` // Format: "AUTHOR#{author_id}"
-	GSI1SK string `dynamorm:"column:GSI1SK,index:GSI1,sk" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI1PK string `dynamorm:"column:gsI1PK,index:GSI1,pk" json:"-"` // Format: "AUTHOR#{author_id}"
+	GSI1SK string `dynamorm:"column:gsI1SK,index:GSI1,sk" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI2 - Public timeline (public statuses)
-	GSI2PK string `dynamorm:"column:GSI2PK,index:GSI2,pk,omitempty" json:"-"` // Format: "PUBLIC_TIMELINE"
-	GSI2SK string `dynamorm:"column:GSI2SK,index:GSI2,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI2PK string `dynamorm:"column:gsI2PK,index:GSI2,pk,omitempty" json:"-"` // Format: "PUBLIC_TIMELINE"
+	GSI2SK string `dynamorm:"column:gsI2SK,index:GSI2,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI3 - Conversation/thread tracking
-	GSI3PK string `dynamorm:"column:GSI3PK,index:GSI3,pk,omitempty" json:"-"` // Format: "CONVERSATION#{conversation_id}"
-	GSI3SK string `dynamorm:"column:GSI3SK,index:GSI3,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI3PK string `dynamorm:"column:gsI3PK,index:GSI3,pk,omitempty" json:"-"` // Format: "CONVERSATION#{conversation_id}"
+	GSI3SK string `dynamorm:"column:gsI3SK,index:GSI3,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI4 - Replies to a specific status
-	GSI4PK string `dynamorm:"column:GSI4PK,index:GSI4,pk,omitempty" json:"-"` // Format: "REPLIES#{parent_status_id}"
-	GSI4SK string `dynamorm:"column:GSI4SK,index:GSI4,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI4PK string `dynamorm:"column:gsI4PK,index:GSI4,pk,omitempty" json:"-"` // Format: "REPLIES#{parent_status_id}"
+	GSI4SK string `dynamorm:"column:gsI4SK,index:GSI4,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI5 - Hashtag timeline
-	GSI5PK string `dynamorm:"column:GSI5PK,index:GSI5,pk,omitempty" json:"-"` // Format: "HASHTAG#{hashtag}"
-	GSI5SK string `dynamorm:"column:GSI5SK,index:GSI5,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI5PK string `dynamorm:"column:gsI5PK,index:GSI5,pk,omitempty" json:"-"` // Format: "HASHTAG#{hashtag}"
+	GSI5SK string `dynamorm:"column:gsI5SK,index:GSI5,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI6 - Flagged content moderation
-	GSI6PK string `dynamorm:"column:GSI6PK,index:GSI6,pk,omitempty" json:"-"` // Format: "FLAGGED_CONTENT"
-	GSI6SK string `dynamorm:"column:GSI6SK,index:GSI6,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI6PK string `dynamorm:"column:gsI6PK,index:GSI6,pk,omitempty" json:"-"` // Format: "FLAGGED_CONTENT"
+	GSI6SK string `dynamorm:"column:gsI6SK,index:GSI6,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI7 - URL index for link searches
-	GSI7PK string `dynamorm:"column:GSI7PK,index:GSI7,pk,omitempty" json:"-"` // Format: "URL#{normalized_url}"
-	GSI7SK string `dynamorm:"column:GSI7SK,index:GSI7,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI7PK string `dynamorm:"column:gsI7PK,index:GSI7,pk,omitempty" json:"-"` // Format: "URL#{normalized_url}"
+	GSI7SK string `dynamorm:"column:gsI7SK,index:GSI7,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// Core status data
 	StatusID       string            `json:"status_id"`

@@ -172,15 +172,11 @@ func (r *StatusRepository) canonicalizeStatusIndexes(ctx context.Context, status
 		partitionKey := "PUBLIC_TIMELINE"
 		sortKey := fmt.Sprintf("%s#%s", timestampStr, status.StatusID)
 
-		builder.Set("GSI2PK", partitionKey)
-		builder.Set("GSI2SK", sortKey)
-		builder.Set("GSI2PK", partitionKey)
-		builder.Set("GSI2SK", sortKey)
+		builder.Set("gsI2PK", partitionKey)
+		builder.Set("gsI2SK", sortKey)
 	} else {
-		builder.Remove("GSI2PK")
-		builder.Remove("GSI2SK")
-		builder.Remove("GSI2PK")
-		builder.Remove("GSI2SK")
+		builder.Remove("gsI2PK")
+		builder.Remove("gsI2SK")
 	}
 
 	return builder.Execute()
@@ -202,7 +198,7 @@ func (r *StatusRepository) queryPublicTimelineDirect(ctx context.Context, opts i
 		IndexName:              aws.String("GSI2"),
 		KeyConditionExpression: aws.String("#pk = :pk"),
 		ExpressionAttributeNames: map[string]string{
-			"#pk": "GSI2PK",
+			"#pk": "gsI2PK",
 		},
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: "PUBLIC_TIMELINE"},
@@ -216,6 +212,10 @@ func (r *StatusRepository) queryPublicTimelineDirect(ctx context.Context, opts i
 		return nil, err
 	}
 
+	r.logger.Info("public timeline query completed",
+		zap.Int("items_returned", len(output.Items)),
+		zap.Int("limit", int(opts.Limit)))
+
 	statuses := make([]*models.Status, 0, len(output.Items))
 	for _, item := range output.Items {
 		var status models.Status
@@ -223,8 +223,15 @@ func (r *StatusRepository) queryPublicTimelineDirect(ctx context.Context, opts i
 			r.logger.Warn("failed to unmarshal status from public timeline query", zap.Error(err))
 			continue
 		}
+		r.logger.Debug("unmarshalled public timeline status",
+			zap.String("status_id", status.StatusID),
+			zap.String("visibility", status.Visibility),
+			zap.Bool("deleted", status.Deleted))
 		statuses = append(statuses, &status)
 	}
+
+	r.logger.Info("public timeline unmarshal completed",
+		zap.Int("statuses_unmarshalled", len(statuses)))
 
 	return statuses, nil
 }

@@ -207,6 +207,7 @@ func (s *LesserApiStack) createSharedResources() {
 				Name: jsii.String(fmt.Sprintf("gsI%dSK", i)),
 				Type: awsdynamodb.AttributeType_STRING,
 			},
+			ProjectionType: awsdynamodb.ProjectionType_ALL,
 		})
 	}
 
