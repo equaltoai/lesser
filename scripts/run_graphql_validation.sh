@@ -20,7 +20,7 @@ MOD_DIR=$(find "$BOOTSTRAP_ROOT" -maxdepth 1 -type d -name "bootstrap_mod_*" | h
 extract_jwt_secret() {
     local cred_file="$1/credentials.txt"
     if [ -f "$cred_file" ]; then
-        grep "^JWT Secret:" "$cred_file" | cut -d: -f2 | sed 's/^[[:space:]]*//'
+        grep "^JWT Secret:" "$cred_file" | cut -d: -f2- | sed 's/^[[:space:]]*//'
     fi
 }
 
@@ -46,14 +46,15 @@ generate_token() {
     local secret="$2"
     local client_id="$3"
     
-    python3 -c "
-import sys
+    JWT_SECRET_VALUE="$secret" JWT_USERNAME="$username" JWT_CLIENT_ID="$client_id" python3 << 'PYTHON_EOF'
 import jwt
 import time
+import os
 
-secret = '$secret'
-username = '$username'
-client_id = '$client_id'
+# Read from environment to avoid shell escaping issues
+secret = os.environ['JWT_SECRET_VALUE']
+username = os.environ['JWT_USERNAME']
+client_id = os.environ['JWT_CLIENT_ID']
 
 now = int(time.time())
 payload = {
@@ -67,7 +68,7 @@ payload = {
 
 token = jwt.encode(payload, secret, algorithm='HS256')
 print(f'Bearer {token}')
-"
+PYTHON_EOF
 }
 
 echo "=== GraphQL Validation Setup ==="
@@ -84,7 +85,7 @@ fi
 if [ -z "$JWT_SECRET" ]; then
     echo "Attempting to get JWT_SECRET from AWS Secrets Manager..."
     JWT_SECRET=$(aws secretsmanager get-secret-value \
-        --secret-id "lesser/dev/jwt-secret" \
+        --secret-id "lesser/jwt-secret" \
         --profile "$AWS_PROFILE" \
         --query "SecretString" \
         --output text 2>/dev/null || echo "")
