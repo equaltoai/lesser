@@ -685,7 +685,9 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 
 	// Route to appropriate timeline method based on type
 	switch query.TimelineType {
-	case VisibilityPublic:
+	case VisibilityPublic, "local":
+		// Both public and local use the same public timeline for now
+		// In a federated setup, local would filter to local domain only
 		result, err = s.noteRepo.GetPublicTimeline(ctx, query.Pagination)
 	case "home":
 		if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
@@ -733,17 +735,32 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 		return nil, ErrGetTimeline
 	}
 
+	s.logger.Info("timeline query result before filtering",
+		zap.String("timeline_type", query.TimelineType),
+		zap.Int("items_count", len(result.Items)))
+
 	// Filter results based on privacy and other criteria
 	filteredNotes := make([]*models.Status, 0, len(result.Items))
+	isPublicTimeline := query.TimelineType == VisibilityPublic || query.TimelineType == "local"
+	
 	for _, status := range result.Items {
 		// Skip deleted posts
 		if status.Deleted {
+			s.logger.Debug("skipping deleted status",
+				zap.String("status_id", status.StatusID))
 			continue
 		}
 
-		// Check visibility
-		if !status.IsVisibleTo(query.ViewerID) {
-			continue
+		// For public/local timelines, skip visibility check since repository already filtered
+		// For other timelines (home, user, etc.), check visibility
+		if !isPublicTimeline {
+			if !status.IsVisibleTo(query.ViewerID) {
+				s.logger.Debug("skipping status not visible to viewer",
+					zap.String("status_id", status.StatusID),
+					zap.String("visibility", status.Visibility),
+					zap.String("viewer_id", query.ViewerID))
+				continue
+			}
 		}
 
 		// Apply additional filters
