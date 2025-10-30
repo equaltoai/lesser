@@ -224,8 +224,8 @@ func (r *RateLimitRepository) CheckCommunityNoteRateLimit(ctx context.Context, u
 	var notes []*models.CommunityNote
 	err := r.db.WithContext(ctx).Model(&models.CommunityNote{}).
 		Index("gsi3").
-		Where("gsI3PK", "=", gsi3PK).
-		Where("gsI3SK", ">", gsi3SKPrefix).
+		Where("GSI3PK", "=", gsi3PK).
+		Where("GSI3SK", ">", gsi3SKPrefix).
 		All(&notes)
 
 	if err != nil {
