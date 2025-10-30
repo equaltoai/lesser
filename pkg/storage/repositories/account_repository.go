@@ -1200,6 +1200,7 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 	}
 
 	// Ensure we have the current optimistic locking version
+	versionExistsInDB := userModel.Version > 0 // If Version > 0 after Get(), it exists in DB
 	if userModel.Version == 0 {
 		versionProjection := &userVersionProjection{Table: r.tableName}
 		if err := r.db.WithContext(ctx).
@@ -1208,13 +1209,20 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 			Where("SK", "=", models.SKMetadata).
 			ConsistentRead().
 			First(versionProjection); err != nil {
-			r.logger.Warn("failed to hydrate user version for update account",
+			r.logger.Warn("failed to hydrate user version for update account, defaulting to 1",
 				zap.String("username", username),
 				zap.Error(err))
+			userModel.Version = 1 // Default to 1 if hydration fails
+			versionExistsInDB = false // Version doesn't exist in DB
 		} else if versionProjection.Value > 0 {
 			userModel.Version = versionProjection.Value
-		} else if userModel.Version == 0 {
-			r.logger.Warn("user version attribute missing during update; continuing with version 0",
+			versionExistsInDB = true // Version exists in DB
+		} else {
+			// Version attribute doesn't exist in DB (Value=0 means not set)
+			// We'll initialize it without condition check
+			userModel.Version = 1
+			versionExistsInDB = false // Version doesn't exist in DB
+			r.logger.Warn("user version attribute missing during update; will initialize to 1",
 				zap.String("username", username))
 		}
 	}
@@ -1258,7 +1266,48 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 		return ErrorHandler.HandleUpdateError(err, EntityUser, username)
 	}
 
-	if err := r.Update(ctx, userModel); err != nil {
+	// Use UpdateBuilder for versioned updates to ensure optimistic locking works correctly
+	updateBuilder := r.db.WithContext(ctx).Model(userModel).
+		Where("PK", "=", userModel.PK).
+		Where("SK", "=", userModel.SK).
+		UpdateBuilder()
+
+	// Set all fields that need updating
+	updateBuilder.Set("DisplayName", userModel.DisplayName)
+	updateBuilder.Set("Note", userModel.Note)
+	updateBuilder.Set("Avatar", userModel.Avatar)
+	updateBuilder.Set("Header", userModel.Header)
+	updateBuilder.Set("URL", userModel.URL)
+	updateBuilder.Set("Locked", userModel.Locked)
+	updateBuilder.Set("Discoverable", userModel.Discoverable)
+	updateBuilder.Set("Fields", userModel.Fields)
+	updateBuilder.Set("Email", userModel.Email)
+	updateBuilder.Set("Locale", userModel.Locale)
+	updateBuilder.Set("Approved", userModel.Approved)
+	updateBuilder.Set("Suspended", userModel.Suspended)
+	updateBuilder.Set("Silenced", userModel.Silenced)
+	updateBuilder.Set("Role", userModel.Role)
+	updateBuilder.Set("RecoveryMethods", userModel.RecoveryMethods)
+	updateBuilder.Set("AllowNSFW", userModel.AllowNSFW)
+	updateBuilder.Set("RequireNSFWWarning", userModel.RequireNSFWWarning)
+	if userModel.Metadata != nil {
+		updateBuilder.Set("Metadata", userModel.Metadata)
+	}
+	updateBuilder.Set("UpdatedAt", now)
+
+	// Handle version for optimistic locking
+	// If version exists in DB (> 0), use condition check for optimistic locking
+	// If version doesn't exist (was 0), set it without condition (first time initialization)
+	if versionExistsInDB && currentVersion > 0 {
+		// Version exists in DB - use optimistic locking
+		updateBuilder.ConditionVersion(int64(currentVersion))
+		updateBuilder.Set("Version", currentVersion+1)
+	} else {
+		// Version doesn't exist yet - set it without condition (first time initialization)
+		updateBuilder.Set("Version", 1)
+	}
+
+	if err := updateBuilder.Execute(); err != nil {
 		r.logger.Error("failed to update user profile record",
 			zap.String("username", username),
 			zap.Int("version", currentVersion),
@@ -1267,8 +1316,12 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 	}
 
 	newVersion := currentVersion + 1
+	if newVersion == 0 {
+		newVersion = 1
+	}
 	account.User.UpdatedAt = now
 	account.User.Version = newVersion
+	userModel.Version = newVersion
 
 	r.logger.Info("updated user profile record",
 		zap.String("username", username),

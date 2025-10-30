@@ -334,18 +334,24 @@ func (h *Handler) createOAuthClientAndRespond(ctx *lift.Context, req *models.App
 	// Parse scopes
 	scopes := h.parseScopes(req.Scopes)
 
+	// Try to extract authenticated user (optional - public registration allowed for initial OAuth flow)
+	// But if authenticated, set OwnerID for security and proper ownership
+	ownerID := h.getOptionalAuthenticatedUser(ctx)
+
 	// Create OAuth client
 	client := &storage.OAuthClient{
 		Name:         req.ClientName,
 		Website:      req.Website,
 		RedirectURIs: redirectURIs,
 		Scopes:       scopes,
+		OwnerID:      ownerID, // Set owner if authenticated
 	}
 
 	h.logger.Info("creating OAuth client",
 		zap.String("client_name", client.Name),
 		zap.Strings("redirect_uris", client.RedirectURIs),
-		zap.Strings("scopes", client.Scopes))
+		zap.Strings("scopes", client.Scopes),
+		zap.String("owner_id", ownerID))
 
 	if err := h.repos.Account().CreateOAuthClient(ctx.Context, client); err != nil {
 		h.logger.Error("failed to create OAuth client", zap.Error(err))

@@ -11,8 +11,8 @@ type OAuthClient struct {
 	// DynamoDB keys - MUST match legacy exactly
 	PK             string `dynamorm:"pk" json:"-"`                           // OAUTH_CLIENT#clientID
 	SK             string `dynamorm:"sk" json:"-"`                           // METADATA
-	GSI1PK         string `dynamorm:"index:gsi1,pk" json:"-"`                // OWNER#ownerID (for owner index)
-	GSI1SK         string `dynamorm:"index:gsi1,sk" json:"-"`                // CLIENT#clientID
+	GSI1PK         string `dynamorm:"index:gsi1,pk,omitempty" json:"-"`                // OWNER#ownerID (for owner index)
+	GSI1SK         string `dynamorm:"index:gsi1,sk,omitempty" json:"-"`                // CLIENT#clientID
 	OAuthClientsPK string `dynamorm:"index:oauth-clients-index,pk" json:"-"` // OAUTH_CLIENTS
 	OAuthClientsSK string `dynamorm:"index:oauth-clients-index,sk" json:"-"` // CREATED_AT#{ts_desc}#CLIENT#{clientID}
 
@@ -74,10 +74,20 @@ func (o *OAuthClient) GetSK() string {
 func (o *OAuthClient) UpdateKeys() error {
 	o.PK = "OAUTH_CLIENT#" + o.ClientID
 	o.SK = SKMetadata
+	
+	// GSI1 is for owner-based queries - only set if OwnerID exists
+	// DynamoDB requires GSI keys to be non-empty if they're part of the index
+	// So we either set them or leave them empty (and DynamORM should skip them)
 	if o.OwnerID != "" {
 		o.GSI1PK = "OWNER#" + o.OwnerID
 		o.GSI1SK = "CLIENT#" + o.ClientID
+	} else {
+		// Clear GSI1 keys when OwnerID is empty to avoid empty string errors
+		// DynamORM should handle omitted GSI keys gracefully
+		o.GSI1PK = ""
+		o.GSI1SK = ""
 	}
+	
 	desc := encodeDescendingTimestamp(o.CreatedAt)
 	o.OAuthClientsPK = "OAUTH_CLIENTS"
 	o.OAuthClientsSK = fmt.Sprintf("CREATED_AT#%019d#CLIENT#%s", desc, o.ClientID)

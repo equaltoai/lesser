@@ -232,7 +232,7 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	status.ToRecipients = recipientURLs
 
 	// Create ActivityPub Note
-	status.Note = s.buildActivityPubNote(cmd, messageID, sender, conversation.ID, recipientAccounts)
+	status.Note = &models.NoteField{Note: s.buildActivityPubNote(cmd, messageID, sender, conversation.ID, recipientAccounts)}
 
 	// Store the message
 	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {

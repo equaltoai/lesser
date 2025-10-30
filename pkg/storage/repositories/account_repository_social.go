@@ -815,45 +815,23 @@ func (r *AccountRepository) updateFollowCounts(ctx context.Context, followerUser
 	r.updateActorCount(ctx, followedUsername, "FollowerCount", delta)
 }
 
-// updateActorCount updates a numeric count field on an actor
+// updateActorCount updates a numeric count field on an actor using atomic operations
 func (r *AccountRepository) updateActorCount(ctx context.Context, username, field string, delta int) {
 	// This is a best-effort update, don't fail the operation if it fails
-	// Get the actor first
-	var actor models.Actor
-	err := r.db.WithContext(ctx).Model(&actor).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s", username)).
-		Where("SK", "=", "PROFILE").
-		First(&actor)
+	pk := fmt.Sprintf("ACTOR#%s", username)
+	sk := "PROFILE"
+
+	// Use atomic UpdateBuilder().Add() to prevent race conditions
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Add(field, delta).
+		Condition(field, ">=", -delta). // Prevent negative counts: only allow if count + delta >= 0
+		Execute()
 
 	if err != nil {
-		r.logger.Warn("failed to get actor for count update",
-			zap.String("username", username),
-			zap.Error(err))
-		return
-	}
-
-	// Update the count field
-	switch field {
-	case "FollowerCount":
-		actor.FollowerCount += delta
-		if actor.FollowerCount < 0 {
-			actor.FollowerCount = 0
-		}
-	case "FollowingCount":
-		actor.FollowingCount += delta
-		if actor.FollowingCount < 0 {
-			actor.FollowingCount = 0
-		}
-	case "StatusCount":
-		actor.StatusCount += delta
-		if actor.StatusCount < 0 {
-			actor.StatusCount = 0
-		}
-	}
-
-	err = r.db.WithContext(ctx).Model(&actor).Update()
-	if err != nil {
-		r.logger.Warn("failed to update actor count",
+		r.logger.Warn("failed to update actor count atomically",
 			zap.String("username", username),
 			zap.String("field", field),
 			zap.Int("delta", delta),

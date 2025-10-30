@@ -20,7 +20,8 @@ REST_PREFIXES = [
 ]
 if not REST_PREFIXES:
     REST_PREFIXES = [""]
-REQUEST_TIMEOUT = float(os.environ.get("LESSER_REQUEST_TIMEOUT", "15"))
+# Increased timeout to handle Lambda cold starts (30 seconds)
+REQUEST_TIMEOUT = float(os.environ.get("LESSER_REQUEST_TIMEOUT", "30"))
 SESSION = requests.Session()
 
 BOOTSTRAP_ROOT = Path(__file__).resolve().parents[2]
@@ -180,8 +181,10 @@ def process_bootstrap_directory(directory: Path, admin_token: str) -> None:
     if not all([user_data, oauth_data, actor_data]):
         return
 
-    username = user_data["Username"]["S"]
-    role = user_data.get("Role", {}).get("S", "user")
+    username = user_data.get("username", {}).get("S") or user_data.get("Username", {}).get("S")
+    if not username:
+        raise RuntimeError(f"Username field not found in user.json for {directory.name}")
+    role = user_data.get("role", {}).get("S") or user_data.get("Role", {}).get("S", "user")
 
     # NOTE: Passwordless authentication only - no password sent to registration endpoint
     if not ensure_account_exists(username, user_data, admin_token):
@@ -241,10 +244,10 @@ def ensure_account_exists(username: str, user_data: Dict, admin_token: str) -> b
     print(f"  Creating user {username} via passwordless registration endpoint...")
     payload = {
         "username": username,
-        "email": user_data["Email"]["S"],
+        "email": user_data.get("email", {}).get("S") or user_data.get("Email", {}).get("S"),
         # No password field - passwordless authentication only (WebAuthn/crypto wallet)
         "agreement": True,
-        "locale": user_data.get("Locale", {}).get("S", "en"),
+        "locale": user_data.get("locale", {}).get("S") or user_data.get("Locale", {}).get("S", "en"),
         "reason": "bootstrap seeding",
     }
 
@@ -288,11 +291,11 @@ def ensure_account_exists(username: str, user_data: Dict, admin_token: str) -> b
 def ensure_account_state(
     username: str, user_data: Dict, role: str, admin_token: str
 ) -> None:
-    approved = user_data.get("Approved", {}).get("BOOL", False)
+    approved = user_data.get("approved", {}).get("BOOL") or user_data.get("Approved", {}).get("BOOL", False)
     if approved:
         approve_user(username, admin_token)
 
-    suspended = user_data.get("Suspended", {}).get("BOOL", False)
+    suspended = user_data.get("suspended", {}).get("BOOL") or user_data.get("Suspended", {}).get("BOOL", False)
     if suspended:
         set_account_action(username, "suspend", admin_token)
     elif approved:
@@ -372,11 +375,12 @@ def ensure_oauth_client(oauth_data: Dict, admin_token: str) -> None:
 
     print(f"  Registering OAuth client {client_id} with name '{client_name}'...")
 
+    # Use admin token for authenticated registration (sets OwnerID)
     resp = rest_request(
         "POST",
         "/api/v1/apps",
         json=payload,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "Authorization": admin_token},
     )
 
     if resp is None:
@@ -399,8 +403,12 @@ def update_profile(
     actor = actor_data.get("Actor", {}).get("M", {})
     summary = actor.get("summary", {}).get("S", "")
     display_name = actor.get("name", {}).get("S", username)
-    locked = user_data.get("Locked", {}).get("BOOL")
-    discoverable = user_data.get("Discoverable", {}).get("BOOL")
+    locked = user_data.get("locked", {}).get("BOOL")
+    if locked is None:
+        locked = user_data.get("Locked", {}).get("BOOL")
+    discoverable = user_data.get("discoverable", {}).get("BOOL")
+    if discoverable is None:
+        discoverable = user_data.get("Discoverable", {}).get("BOOL")
 
     mutation = """
     mutation UpdateProfile($input: UpdateProfileInput!) {
@@ -422,8 +430,12 @@ def update_profile(
 
     max_attempts = int(os.environ.get("LESSER_PROFILE_RETRIES", "3"))
     delay = float(os.environ.get("LESSER_PROFILE_RETRY_DELAY", "2"))
+    # Add small delay before first attempt to avoid Lambda throttling bursts
+    initial_delay = float(os.environ.get("LESSER_PROFILE_INITIAL_DELAY", "0.5"))
 
     for attempt in range(1, max_attempts + 1):
+        if attempt == 1 and initial_delay > 0:
+            time.sleep(initial_delay)
         resp = SESSION.post(
             GRAPHQL_ENDPOINT,
             headers={"Authorization": user_token, "Content-Type": "application/json"},

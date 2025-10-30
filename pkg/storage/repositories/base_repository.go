@@ -1031,7 +1031,9 @@ func DeleteEntityWithLogging[M BaseModel](
 	entityType string,
 	identifiers map[string]string, // key-value pairs for logging (e.g., "actor": actorID, "object": objectID)
 ) error {
-	model := new(M)
+	// Use var instead of new() to avoid double pointer when M is already a pointer type
+	// When M = *models.Like, new(M) creates **models.Like which DynamORM rejects
+	var model M
 
 	err := r.db.WithContext(ctx).Model(model).
 		Where("PK", "=", pk).

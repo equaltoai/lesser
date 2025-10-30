@@ -328,17 +328,62 @@ The JWT secret extraction in `scripts/run_graphql_validation.sh` was truncating 
    - Changed to use environment variables for passing secret to Python
    - Prevents bash from interpreting special characters in secret
 
-### Current Test Results (26/32 Passing)
-✅ **All Authentication Working**:
-- Update Profile, Create Post, Get Relationship, Unfollow Actor
-- Home Timeline, Get Notifications, Get Lists, Get Media Library
-- Like Post, Create Reply, and all other authenticated operations
+### Current Test Results (26/32 Passing - 81.2%)
 
-❌ **Remaining Failures** (API Bugs, Not Auth):
-1. Follow Actor: 422 Client Error
-2. Boost Post: Processing failed
-3. Bookmark Post: 422 Client Error
-4. Unlike Post: Processing failed
-5. Unboost Post: Processing failed
-6. Delete Post: Access denied
+✅ **Working Operations**:
+- ✓ Account: Get Actor, Update Profile
+- ✓ Content: Create Post, Create Reply, Like Post
+- ✓ Queries: Get Relationship, All Timelines, Search, Followers/Following
+- ✓ Auth: Notifications, Lists, Media Library
+- ✓ Social: Bookmark Post (after test script fix)
+- ✓ Metrics: Instance Metrics, Cost Breakdown
+
+❌ **Remaining Failures** (6 total: 3 server bugs, 2 test issues, 1 unknown):
+
+### Server Bugs (3):
+
+1. **Unlike Post** - ✅ HIGH CONFIDENCE
+   - Error: `failed to register model **models.Like: invalid model: model must be a struct`
+   - Root Cause: `DeleteEntityWithLogging` at line 1034 calls `new(M)` where M=`*models.Like`, creating `**models.Like`
+   - Fix: Change `model := new(M)` to `var model M` (matches BaseRepository.Delete pattern)
+   - Impact: Also affects other delete operations using this function
+
+2. **Boost Post** - ⚠️ MEDIUM CONFIDENCE
+   - Error: `failed to check existing announce: Failed to retrieve announce`
+   - Root Cause: GetAnnounce query returns non-NotFound error, suggesting DynamoDB query failure (likely same double-pointer issue in Get operation)
+   - Fix: Verify announceRepo type parameters and Get method implementation
+   - Impact: Prevents boosting any post
+
+3. **Delete Post** - ⚠️ MEDIUM CONFIDENCE
+   - Error: `Failed to delete status` (was "Access denied" before AuthorUsername fix)
+   - Root Cause: Authorization now passes but `UpdateStatus` → `ValidateAndUpdate` rejects soft delete
+   - Fix: Check enhanced repository validation/permission services for delete blocking
+   - Note: Soft delete sets `Deleted=true` and `DeletedAt=&now`, then calls UpdateStatus
+
+### Test Script Issues (2):
+
+4. **Follow Actor** - ✅ HIGH CONFIDENCE (NOT A BUG)
+   - Error: 422 "Unprocessable Entity"  
+   - Manual Test: ✅ Works perfectly (`{"data":{"followActor":{"id":"admin/follows/member","type":"FOLLOW"}}}`)
+   - Root Cause: Test script tries to follow member on every run; relationship already exists from previous run
+   - Fix: Test script should unfollow before following, or handle 422 as expected for duplicate follows
+
+5. **Bookmark Post** - ✅ FIXED
+   - Was: GraphQL validation error (missing subfield selection)
+   - Fix Applied: Added `{ id }` to test query
+   - Status: Now passing ✅
+
+### Unknown (1):
+
+6. **Unboost Post** - ⚠️ LOW CONFIDENCE
+   - Error: `failed to remove reblog engagement: Failed to update status`
+   - Location: `UnreblogStatus` update operation at service.go:2185
+   - Root Cause: Status update failing when trying to decrement reblog count
+   - Need: Examine UnreblogStatus implementation and enhanced repository validation
+
+**Unfollow Actor** (BONUS):
+   - Error: "internal system error" - panic in generated.go:39609
+   - Unusual: Panic occurs in gqlgen's generated code, not resolver
+   - Hypothesis: Response serialization issue or test script not handling boolean return properly
+   - Need: Full panic stack trace analysis
 

@@ -511,8 +511,13 @@ func (r *SocialRepository) GetAnnounce(ctx context.Context, actor, object string
 	var model models.Announce
 	err := r.announceRepo.Get(ctx, pk, sk, &model)
 	if err != nil {
+		// Check if it's a not found error (could be dynamorm error or our AppError with CodeNotFound)
 		if errors.IsNotFound(err) {
-			return nil, ErrorHandler.HandleGetError(err, EntityAnnounce, "not found")
+			return nil, svcErrors.ItemNotFoundWithID(EntityAnnounce, fmt.Sprintf("%s/%s", actor, object))
+		}
+		// Check if it's our AppError with NotFound code
+		if appErr, ok := svcErrors.AsAppError(err); ok && appErr.Code == svcErrors.CodeNotFound {
+			return nil, svcErrors.ItemNotFoundWithID(EntityAnnounce, fmt.Sprintf("%s/%s", actor, object))
 		}
 		return nil, ErrorHandler.HandleGetError(err, EntityAnnounce, "get")
 	}

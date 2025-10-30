@@ -2166,58 +2166,47 @@ const (
 	countUpdateFollowing countUpdateType = "following"
 )
 
-// updateActorCount updates either follower or following count for a user's actor
+// updateActorCount updates either follower or following count for a user's actor using atomic operations
 func (r *UserRepository) updateActorCount(ctx context.Context, username string, delta int, countType countUpdateType) error {
-	// Get the current actor
-	var actor models.Actor
+	pk := fmt.Sprintf("ACTOR#%s", username)
+	sk := "PROFILE"
+
+	// Determine which field to update
+	var fieldName string
+	switch countType {
+	case countUpdateFollowers:
+		fieldName = "FollowerCount"
+	case countUpdateFollowing:
+		fieldName = "FollowingCount"
+	default:
+		return ErrorHandler.HandleUpdateError(fmt.Errorf("unknown count type: %s", countType), EntityActor, "count")
+	}
+
+	// Use atomic UpdateBuilder().Add() to prevent race conditions
 	err := r.GetDB().WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s", username)).
-		Where("SK", "=", "PROFILE").
-		First(&actor)
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Add(fieldName, delta).
+		Condition(fieldName, ">=", -delta). // Prevent negative counts: only allow if count + delta >= 0
+		Execute()
 
 	if err != nil {
+		// Check if actor doesn't exist
 		if errors.IsNotFound(err) {
 			r.logger.Warn("actor not found for count update",
 				zap.String("username", username),
 				zap.String("count_type", string(countType)))
 			return nil // Don't error if actor doesn't exist
 		}
-		return ErrorHandler.HandleGetError(err, EntityActor, "get")
+		return ErrorHandler.HandleUpdateError(err, EntityActor, string(countType))
 	}
 
-	// Update the appropriate count
-	var newCount int
-	switch countType {
-	case countUpdateFollowers:
-		actor.FollowerCount += delta
-		if actor.FollowerCount < 0 {
-			actor.FollowerCount = 0
-		}
-		newCount = actor.FollowerCount
-	case countUpdateFollowing:
-		actor.FollowingCount += delta
-		if actor.FollowingCount < 0 {
-			actor.FollowingCount = 0
-		}
-		newCount = actor.FollowingCount
-	}
-
-	// Update keys to reflect new counts
-	if err := actor.UpdateKeys(); err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityActor, "keys")
-	}
-
-	// Save the updated actor
-	err = r.GetDB().WithContext(ctx).Model(&actor).Update()
-	if err != nil {
-		return ErrorHandler.HandleUpdateError(err, string(countType), "count")
-	}
-
-	r.logger.Debug("updated count",
+	r.logger.Debug("updated count atomically",
 		zap.String("username", username),
 		zap.String("count_type", string(countType)),
 		zap.Int("delta", delta),
-		zap.Int("new_count", newCount))
+		zap.String("field", fieldName))
 
 	return nil
 }

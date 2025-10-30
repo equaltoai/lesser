@@ -310,6 +310,38 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		zap.String("status_id", statusID),
 		zap.String("conversation_id", status.ConversationID))
 
+	// Ensure AuthorUsername is populated before emitting events
+	if status.AuthorUsername == "" && status.AuthorID != "" {
+		// Extract username from Actor ID - try multiple formats
+		// Format 1: https://domain.com/users/username
+		if strings.Contains(status.AuthorID, "/users/") {
+			parts := strings.Split(status.AuthorID, "/users/")
+			if len(parts) == 2 {
+				status.AuthorUsername = strings.Split(parts[1], "/")[0]
+			}
+		}
+		// Format 2: https://domain.com/@username
+		if status.AuthorUsername == "" && strings.Contains(status.AuthorID, "/@") {
+			parts := strings.Split(status.AuthorID, "/@")
+			if len(parts) == 2 {
+				status.AuthorUsername = strings.Split(parts[1], "/")[0]
+			}
+		}
+		// Format 3: Just take the last path segment
+		if status.AuthorUsername == "" {
+			parts := strings.Split(strings.TrimSuffix(status.AuthorID, "/"), "/")
+			if len(parts) > 0 {
+				status.AuthorUsername = parts[len(parts)-1]
+			}
+		}
+		// Last resort: try to get from account
+		if status.AuthorUsername == "" && s.accountRepo != nil {
+			if account, err := s.accountRepo.GetAccount(ctx, cmd.AuthorID); err == nil && account != nil {
+				status.AuthorUsername = account.User.Username
+			}
+		}
+	}
+
 	// Emit events and queue federation
 	events := s.emitStatusCreatedEvents(ctx, status)
 	s.queueFederationDelivery(ctx, status, "Create")
@@ -323,7 +355,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 func (s *Service) composeStatus(cmd *CreateNoteCommand, author *storage.Account, statusID string, note *activitypub.Note, hashtags []string, attachments []activitypub.Attachment, timestamp time.Time) *models.Status {
 	status := &models.Status{
 		StatusID:       statusID,
-		Note:           note,
+		Note:           &models.NoteField{Note: note}, // Wrap Note in NoteField for proper DynamORM handling
 		AuthorID:       cmd.AuthorID,
 		AuthorUsername: author.User.Username,
 		Content:        cmd.Content,
@@ -453,9 +485,11 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 	}
 
 	// Verify permission (only author can update)
-	if status.AuthorID != cmd.UpdaterID {
+	// Compare usernames, not full IDs (AuthorUsername is just the username, AuthorID is the full URL)
+	if status.AuthorUsername != cmd.UpdaterID {
 		s.logger.Warn("user cannot update post owned by another user",
 			zap.String("updater_id", cmd.UpdaterID),
+			zap.String("author_username", status.AuthorUsername),
 			zap.String("author_id", status.AuthorID))
 		return nil, common.ErrForbidden(ErrCannotUpdatePostOwnedByOther)
 	}
@@ -472,11 +506,11 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 	status.UpdatedAt = time.Now()
 
 	// Update the ActivityPub Note if present
-	if status.Note != nil {
-		status.Note.Content = cmd.Content
-		status.Note.Sensitive = cmd.Sensitive
+	if status.Note != nil && status.Note.Get() != nil {
+		status.Note.Get().Content = cmd.Content
+		status.Note.Get().Sensitive = cmd.Sensitive
 		now := time.Now()
-		status.Note.Updated = &now
+		status.Note.Get().Updated = &now
 	}
 
 	// Store the updated status
@@ -509,13 +543,46 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 		return ErrGetStatus
 	}
 
+	// Ensure AuthorUsername is populated (may be empty if status was loaded from DB)
+	if status.AuthorUsername == "" && status.AuthorID != "" {
+		// Extract username from Actor ID - try multiple formats
+		// Format 1: https://domain.com/users/username
+		if strings.Contains(status.AuthorID, "/users/") {
+			parts := strings.Split(status.AuthorID, "/users/")
+			if len(parts) == 2 {
+				status.AuthorUsername = strings.Split(parts[1], "/")[0] // Get username before any trailing slash
+			}
+		}
+		// Format 2: https://domain.com/@username
+		if status.AuthorUsername == "" && strings.Contains(status.AuthorID, "/@") {
+			parts := strings.Split(status.AuthorID, "/@")
+			if len(parts) == 2 {
+				status.AuthorUsername = strings.Split(parts[1], "/")[0]
+			}
+		}
+		// Format 3: Just take the last path segment
+		if status.AuthorUsername == "" {
+			parts := strings.Split(strings.TrimSuffix(status.AuthorID, "/"), "/")
+			if len(parts) > 0 {
+				status.AuthorUsername = parts[len(parts)-1]
+			}
+		}
+		// Last resort: try to get from account using AuthorID
+		if status.AuthorUsername == "" && s.accountRepo != nil {
+			if account, err := s.accountRepo.GetAccount(ctx, status.AuthorID); err == nil && account != nil {
+				status.AuthorUsername = account.User.Username
+			}
+		}
+	}
+
 	// Check if already deleted
 	if status.Deleted {
 		return nil // Idempotent operation
 	}
 
 	// Verify permission (author or admin)
-	if status.AuthorID != cmd.DeleterID {
+	// Compare usernames, not full IDs (AuthorUsername is just the username, AuthorID is the full URL)
+	if status.AuthorUsername != cmd.DeleterID {
 		// Check if deleter is an admin
 		isAdmin := false
 		if s.userRepo != nil {
@@ -527,6 +594,7 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 		if !isAdmin {
 			s.logger.Warn("user cannot delete post owned by another user without admin privileges",
 				zap.String("deleter_id", cmd.DeleterID),
+				zap.String("author_username", status.AuthorUsername),
 				zap.String("author_id", status.AuthorID))
 			return common.ErrForbidden(ErrCannotDeletePostOwnedByOther)
 		}
@@ -538,7 +606,8 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 	status.DeletedAt = &now
 	status.ModifiedAt = now
 
-	// Store the deletion
+	// Store the deletion - use UpdateStatus which uses UpdateBuilder() to prevent Note field corruption
+	// No need to call UpdateKeys() here - keys are already set from creation and we're only updating Deleted flag
 	if err := s.noteRepo.UpdateStatus(ctx, status); err != nil {
 		return ErrDeleteStatus
 	}
@@ -714,7 +783,19 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 		if err := common.ValidateRequiredParam("hashtag", query.Hashtag); err != nil {
 			return nil, ErrHashtagTimelineRequiresHashtag
 		}
-		result, err = s.noteRepo.GetStatusesByHashtag(ctx, query.Hashtag, query.Pagination)
+		// Normalize hashtag to canonical format: lowercase, no # prefix
+		// This is the only place where normalization happens - repository enforces format
+		normalizedHashtag := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(query.Hashtag), "#"))
+		result, err = s.noteRepo.GetStatusesByHashtag(ctx, normalizedHashtag, query.Pagination)
+		if err != nil {
+			// Log the underlying error for debugging
+			s.logger.Error("failed to get hashtag timeline",
+				zap.String("hashtag", query.Hashtag),
+				zap.String("normalized_hashtag", normalizedHashtag),
+				zap.Error(err))
+			// Wrap the original error to preserve details
+			return nil, errors.Join(ErrGetTimeline, fmt.Errorf("hashtag timeline error: %w", err))
+		}
 	case "list":
 		if err := common.ValidateRequiredParam("list_id", query.ListID); err != nil {
 			return nil, ErrListTimelineRequiresListID
@@ -1195,6 +1276,14 @@ func (s *Service) emitStatusUpdatedEvents(ctx context.Context, status *models.St
 }
 
 func (s *Service) emitStatusDeletedEvents(ctx context.Context, status *models.Status) {
+	// Skip if AuthorUsername is still empty (can't emit events without it)
+	if status.AuthorUsername == "" {
+		s.logger.Warn("skipping status deletion events - AuthorUsername is empty",
+			zap.String("status_id", status.StatusID),
+			zap.String("author_id", status.AuthorID))
+		return
+	}
+
 	// Use centralized business logic for event creation
 	businessEvents := common.EmitEntityDeletedEvents(ctx, "status", status.StatusID, status.AuthorID)
 
@@ -1225,19 +1314,27 @@ func (s *Service) queueFederationDelivery(ctx context.Context, status *models.St
 		return
 	}
 
+	// Skip if Note is nil (can happen with deleted/corrupted statuses)
+	if status.Note == nil || status.Note.Get() == nil {
+		s.logger.Debug("status note is nil, skipping federation delivery",
+			zap.String("status_id", status.StatusID))
+		return
+	}
+
 	// Create ActivityPub Create activity
+	note := status.Note.Get() // Get underlying *activitypub.Note for federation
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
 			Context: activitypub.Context,
 			Type:    activityType,
-			ID:      fmt.Sprintf("%s#%s", status.Note.ID, strings.ToLower(activityType)),
+			ID:      fmt.Sprintf("%s#%s", note.ID, strings.ToLower(activityType)),
 			To:      status.ToRecipients,
 			CC:      status.CcRecipients,
 			BTo:     status.BtoRecipients,
 			BCC:     status.BccRecipients,
 		},
-		Actor:  status.Note.AttributedTo,
-		Object: status.Note,
+		Actor:  note.AttributedTo,
+		Object: note, // Pass underlying *activitypub.Note for federation
 	}
 
 	defer func() {
@@ -1263,21 +1360,53 @@ func (s *Service) queueFederationTombstone(ctx context.Context, status *models.S
 		return
 	}
 
+	// Skip if Note is nil (can happen with deleted/corrupted statuses)
+	if status.Note == nil || status.Note.Get() == nil {
+		s.logger.Debug("status note is nil, skipping federation tombstone",
+			zap.String("status_id", status.StatusID))
+		return
+	}
+
+	// Ensure we have an ID for the tombstone
+	tombstoneID := status.Note.Get().ID
+	if tombstoneID == "" {
+		// Fallback to StatusID if Note.ID is empty
+		tombstoneID = status.StatusID
+		s.logger.Warn("status note ID is empty, using status ID for tombstone",
+			zap.String("status_id", status.StatusID))
+	}
+
 	// Create ActivityPub Delete activity with Tombstone
 	tombstone := &activitypub.BaseObject{
 		Type: "Tombstone",
-		ID:   status.Note.ID,
+		ID:   tombstoneID,
+	}
+
+	// Ensure ToRecipients and CcRecipients are not nil
+	toRecipients := status.ToRecipients
+	if toRecipients == nil {
+		toRecipients = []string{}
+	}
+	ccRecipients := status.CcRecipients
+	if ccRecipients == nil {
+		ccRecipients = []string{}
+	}
+
+	// Use Note.AttributedTo if available, otherwise fallback to AuthorID
+	actorID := status.AuthorID
+	if status.Note.Get().AttributedTo != "" {
+		actorID = status.Note.Get().AttributedTo
 	}
 
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
 			Context: activitypub.Context,
 			Type:    "Delete",
-			ID:      fmt.Sprintf("%s#delete", status.Note.ID),
-			To:      status.ToRecipients,
-			CC:      status.CcRecipients,
+			ID:      fmt.Sprintf("%s#delete", tombstoneID),
+			To:      toRecipients,
+			CC:      ccRecipients,
 		},
-		Actor:  status.Note.AttributedTo,
+		Actor:  actorID,
 		Object: tombstone,
 	}
 
@@ -1285,6 +1414,7 @@ func (s *Service) queueFederationTombstone(ctx context.Context, status *models.S
 		s.logger.Error("failed to queue federation tombstone",
 			zap.String("status_id", status.StatusID),
 			zap.Error(err))
+		// Don't return error - tombstone queuing is best-effort
 	}
 }
 
@@ -2073,8 +2203,18 @@ func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, _ st
 		s.logger.Error("failed to check existing announce",
 			zap.String("actor_url", actorURL),
 			zap.String("object_url", objectURL),
+			zap.String("error_code", string(appErr.Code)),
+			zap.String("error_message", appErr.Message),
+			zap.Bool("is_app_error", ok),
 			zap.Error(err))
 		return nil, ErrCreateReblog
+	} else if err != nil {
+		// Log if error is not an AppError at all
+		s.logger.Warn("announce check returned non-AppError",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL),
+			zap.String("error_type", fmt.Sprintf("%T", err)),
+			zap.Error(err))
 	}
 
 	announce := &storage.Announce{
