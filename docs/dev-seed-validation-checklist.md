@@ -1,5 +1,6 @@
 ## Phase 1 – Environment & Access Prep
 
+- [x] Run `make seed-and-validate` to automatically seed the database and run validation tests.
 - [x] Confirm `dev.lesser.host` is reachable from the seed runner and GraphQL endpoints respond (`/graphql`, `/graphql/ws`).
 - [x] Gather API credentials for seed automation (service account or admin tokens) and store them securely.
 - [ ] Verify storage/CDN configuration for media uploads (S3 credentials, VAPID keys, media bucket access).
@@ -8,7 +9,7 @@
 
 ## Phase 2 – Core Data Seeding
 
-- [x] Create baseline personas (admin, moderator, member, locked user, bot) via REST helpers or seed tooling.
+- [x] The `make seed-and-validate` target creates baseline personas (admin, moderator, member, locked user, bot) via the new API-driven seeder.
 - [ ] Establish follower/following graph coverage (dense cluster, sparse connections, blocked/muted pairs). _Needs reseed after 2025-10-22 table reset; prior clusters were cleared._
 - [ ] Post representative content: hashtag-heavy threads, spoilerText entries, media attachments with varied `mediaType`, polls, boosts, and replies. _Baseline posts were removed with the reset; rebuild once follower graph is back in place._
 - [ ] Upload media assets and ensure alt text, spoiler settings, and media metadata persist. _Baseline `uploadMedia` + `createNote` flow verified 2025-10-21; need alt-text/NSFW/spoiler regression checks._
@@ -18,6 +19,7 @@
 
 ## Phase 3 – GraphQL Validation Sweep
 
+- [x] The `make seed-and-validate` target automatically runs the GraphQL validation scripts.
 - [x] Timelines: Query home/local/federated timelines to confirm seeded posts surface with correct ordering and spoiler/media flags. _Home and public timelines now return populated edges after context converter + reseed validation on 2025-10-21; federated timeline remains blocked on remote federation work._
 - [x] Hashtag timelines: Validate pagination and counts for popular and niche tags; ensure media filtering works. _`hashtagTimeline` now accepts `mediaOnly` and hydrates attachments by fetching full statuses; validated on `dev.lesser.host` (2025-10-22 08:07 UTC) with admin media post for `#lesser` surfacing attachments._
 - [x] Thread context: Fetch conversation context for multi-reply threads and verify ancestor/descendant traversal matches expectations. _Admin root note `9a8db6af-c9cf-4ebf-8981-573253880629` with replies from `member` and `mod` returns `replyCount=2`, `participantCount=3`, `syncStatus=COMPLETE`; nested replies (e.g., bot replying to member) require querying that child note’s context separately._
@@ -31,6 +33,7 @@
 
 ## Phase 4 – Reporting & Documentation
 
+- [ ] The new `make seed-and-validate` target provides a single command to seed and validate the environment.
 - [ ] Capture GraphQL query/mutation examples and responses for each validation area in shared documentation.
 - [ ] Log discrepancies or missing coverage in an issue tracker with repro steps tied to the checklist items.
 - [ ] Update the seeding/validation runbook with lessons learned and manual intervention steps (if any).

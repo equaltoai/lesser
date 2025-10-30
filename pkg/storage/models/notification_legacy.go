@@ -28,8 +28,23 @@ func (NotificationLegacy) TableName() string {
 }
 
 // UpdateKeys updates the notification keys
-func (n *NotificationLegacy) UpdateKeys() {
-	// Keys are set during creation
+func (n *NotificationLegacy) UpdateKeys() error {
+	// Validate required fields
+	if n.Username == "" {
+		return fmt.Errorf("Username is required")
+	}
+	if n.ID == "" {
+		return fmt.Errorf("ID is required")
+	}
+	if n.CreatedAt == 0 {
+		return fmt.Errorf("CreatedAt is required")
+	}
+
+	// Set primary keys
+	n.PK = fmt.Sprintf("NOTIFICATIONS#%s", n.Username)
+	n.SK = fmt.Sprintf("%d#%s", n.CreatedAt, n.ID)
+
+	return nil
 }
 
 // SetPrimaryKey sets the primary key for the notification

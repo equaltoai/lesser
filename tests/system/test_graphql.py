@@ -12,6 +12,7 @@ Environment variables:
 
 import json
 import os
+import time
 from typing import Dict
 
 import requests
@@ -24,11 +25,39 @@ ACTOR_USERNAME = os.getenv("GRAPHQL_ACTOR_USERNAME", "admin")
 AUTH_TOKEN = os.getenv("GRAPHQL_TOKEN")
 
 
+def auth_header_value(token: str) -> str:
+    token = token.strip()
+    if token.lower().startswith("bearer "):
+        return token
+    return f"Bearer {token}"
+
+
 def build_headers() -> Dict[str, str]:
     headers: Dict[str, str] = {"Content-Type": "application/json"}
     if AUTH_TOKEN:
-        headers["Authorization"] = f"Bearer {AUTH_TOKEN}"
+        headers["Authorization"] = auth_header_value(AUTH_TOKEN)
     return headers
+
+
+def post_graphql(payload: Dict[str, object]) -> requests.Response:
+    max_attempts = int(os.getenv("GRAPHQL_RETRY_ATTEMPTS", "3"))
+    delay = float(os.getenv("GRAPHQL_RETRY_DELAY", "2"))
+
+    for attempt in range(1, max_attempts + 1):
+        response = requests.post(
+            GRAPHQL_ENDPOINT,
+            json=payload,
+            headers=build_headers(),
+            timeout=30,
+        )
+        if response.status_code < 500 or attempt == max_attempts:
+            return response
+        print(
+            f"[warn] GraphQL request retry {attempt}/{max_attempts} -- status {response.status_code}; sleeping {delay}s"
+        )
+        time.sleep(delay)
+
+    return response
 
 
 def test_instance_metrics() -> None:
@@ -46,12 +75,7 @@ def test_instance_metrics() -> None:
     }
     """
 
-    response = requests.post(
-        GRAPHQL_ENDPOINT,
-        json={"query": query},
-        headers=build_headers(),
-        timeout=30,
-    )
+    response = post_graphql({"query": query})
     print("\n=== Instance Metrics Query ===")
     print(f"Status: {response.status_code}")
     print(f"Headers: {dict(response.headers)}")
@@ -87,12 +111,7 @@ def test_actor_query() -> None:
 
     variables = {"username": ACTOR_USERNAME}
 
-    response = requests.post(
-        GRAPHQL_ENDPOINT,
-        json={"query": query, "variables": variables},
-        headers=build_headers(),
-        timeout=30,
-    )
+    response = post_graphql({"query": query, "variables": variables})
     print("\n=== Actor Query ===")
     print(f"Status: {response.status_code}")
     print(f"Response: {json.dumps(response.json(), indent=2)}")
@@ -120,12 +139,7 @@ def test_introspection() -> None:
     }
     """
 
-    response = requests.post(
-        GRAPHQL_ENDPOINT,
-        json={"query": query},
-        headers=build_headers(),
-        timeout=30,
-    )
+    response = post_graphql({"query": query})
     print("\n=== Schema Introspection ===")
     print(f"Status: {response.status_code}")
 
@@ -150,12 +164,7 @@ def test_graphql_error_handling() -> None:
     }
     """
 
-    response = requests.post(
-        GRAPHQL_ENDPOINT,
-        json={"query": query},
-        headers=build_headers(),
-        timeout=30,
-    )
+    response = post_graphql({"query": query})
     print("\n=== Error Handling Test ===")
     print(f"Status: {response.status_code}")
     print(f"Response: {json.dumps(response.json(), indent=2)}")

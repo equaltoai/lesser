@@ -99,6 +99,16 @@ func (o *Object) UpdateGSIKeys() {
 
 // UpdateKeys updates the GSI keys (required by BaseModel)
 func (o *Object) UpdateKeys() error {
+	// Validate required fields
+	if o.ID == "" {
+		return fmt.Errorf("ID is required")
+	}
+
+	// Set primary keys
+	o.PK = fmt.Sprintf("object#%s", o.ID)
+	o.SK = fmt.Sprintf("object#%s", o.ID)
+
+	// Update GSI keys
 	o.UpdateGSIKeys()
 	return nil
 }

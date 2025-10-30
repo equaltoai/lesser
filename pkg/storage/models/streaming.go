@@ -54,8 +54,19 @@ func (StreamingPreferences) TableName() string {
 
 // UpdateKeys sets the GSI keys based on the current values
 func (s *StreamingPreferences) UpdateKeys() error {
+	// Validate required fields
+	if s.Username == "" {
+		return fmt.Errorf("Username is required")
+	}
+
 	// Set primary keys
 	s.PK = fmt.Sprintf("STREAMING_PREFS#%s", s.Username)
+
+	// Note: SK should be set by helper methods (SetCurrentPreference, SetVersionedPreference, etc.)
+	// If not set, default to CURRENT
+	if s.SK == "" {
+		s.SK = SKCurrent
+	}
 
 	// Set GSI1 keys for user-based queries
 	s.GSI1PK = fmt.Sprintf(KeyPatternUser, s.Username)

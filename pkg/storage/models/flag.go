@@ -10,8 +10,8 @@ import (
 // Flag represents a content moderation flag with DynamORM tags
 type Flag struct {
 	// Keys
-	PK     string `dynamorm:"pk"`                      // FLAG#objectID (first object if multiple)
-	SK     string `dynamorm:"sk"`                      // TIME#timestamp#flagID
+	PK     string `dynamorm:"pk"`                                  // FLAG#objectID (first object if multiple)
+	SK     string `dynamorm:"sk"`                                  // TIME#timestamp#flagID
 	GSI1PK string `dynamorm:"index:GSI1,pk,omitempty"` // ACTOR#actorID
 	GSI1SK string `dynamorm:"index:GSI1,sk,omitempty"` // FLAG#timestamp
 	GSI2PK string `dynamorm:"index:GSI2,pk,omitempty"` // FLAG_STATUS#status

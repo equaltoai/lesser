@@ -107,6 +107,18 @@ func (MediaVariantCost) TableName() string {
 
 // UpdateKeys sets the GSI keys based on the current values
 func (m *MediaAnalytics) UpdateKeys() error {
+	// Note: PK and SK are set by helper methods (SetManifestGeneration, SetQualityChange, SetGeneralEvent)
+	// based on the specific event type. We validate they exist but don't reconstruct them here.
+	if m.MediaID == "" {
+		return fmt.Errorf("MediaID is required")
+	}
+	if m.Date == "" {
+		return fmt.Errorf("Date is required")
+	}
+	if m.PK == "" || m.SK == "" {
+		return fmt.Errorf("PK and SK must be set before calling UpdateKeys")
+	}
+
 	// Set GSI1 keys for date-based queries
 	m.GSI1PK = fmt.Sprintf("DATE#%s", m.Date)
 	m.GSI1SK = fmt.Sprintf("%s#%s", m.Format, m.Timestamp.Format(time.RFC3339))

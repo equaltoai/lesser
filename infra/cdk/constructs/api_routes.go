@@ -131,6 +131,16 @@ func addHttpRoutes(api awsapigatewayv2.HttpApi, functions *LambdaFunctions) {
 	addRoute(api, "GET /api/graphql", functions.GraphQLFunction)
 	addRoute(api, "POST /api/graphql", functions.GraphQLFunction)
 
+    // Account registration endpoint (Mastodon-compatible)
+    addRoute(api, "POST /api/v1/accounts", functions.APIFunction)
+
+	// Admin routes
+	addRoute(api, "GET /api/v1/admin/{proxy+}", functions.APIFunction)
+	addRoute(api, "POST /api/v1/admin/{proxy+}", functions.APIFunction)
+	addRoute(api, "PUT /api/v1/admin/{proxy+}", functions.APIFunction)
+	addRoute(api, "DELETE /api/v1/admin/{proxy+}", functions.APIFunction)
+	addRoute(api, "PATCH /api/v1/admin/{proxy+}", functions.APIFunction)
+
 	// OAuth routes (handled by native Lift implementation in API)
 	addRoute(api, "GET /oauth/{proxy+}", functions.APIFunction)
 	addRoute(api, "POST /oauth/{proxy+}", functions.APIFunction)
@@ -164,6 +174,9 @@ func addHttpRoutes(api awsapigatewayv2.HttpApi, functions *LambdaFunctions) {
 	addRoute(api, "GET /api/v1/instance", functions.APIFunction)
 	addRoute(api, "GET /api/v2/instance", functions.APIFunction)
 
+	// Catch-all fallback to ensure unexpected routes reach the API Lambda
+	addRoute(api, "ANY /{proxy+}", functions.APIFunction)
+
 	// Health check
 	addRoute(api, "GET /health", functions.HealthFunction)
 }
@@ -180,25 +193,30 @@ func addRoute(api awsapigatewayv2.HttpApi, path string, handler awslambda.Functi
 	)
 
 	// Parse method and path
-	var method awsapigatewayv2.HttpMethod
-	var routePath string
+	var (
+		method    awsapigatewayv2.HttpMethod
+		routePath string
+	)
 
 	switch {
-	case len(path) > 4 && path[:4] == "GET ":
+	case strings.HasPrefix(path, "GET "):
 		method = awsapigatewayv2.HttpMethod_GET
 		routePath = path[4:]
-	case len(path) > 5 && path[:5] == "POST ":
+	case strings.HasPrefix(path, "POST "):
 		method = awsapigatewayv2.HttpMethod_POST
 		routePath = path[5:]
-	case len(path) > 4 && path[:4] == "PUT ":
+	case strings.HasPrefix(path, "PUT "):
 		method = awsapigatewayv2.HttpMethod_PUT
 		routePath = path[4:]
-	case len(path) > 7 && path[:7] == "DELETE ":
+	case strings.HasPrefix(path, "DELETE "):
 		method = awsapigatewayv2.HttpMethod_DELETE
 		routePath = path[7:]
-	case len(path) > 6 && path[:6] == "PATCH ":
+	case strings.HasPrefix(path, "PATCH "):
 		method = awsapigatewayv2.HttpMethod_PATCH
 		routePath = path[6:]
+	case strings.HasPrefix(path, "ANY "):
+		method = awsapigatewayv2.HttpMethod_ANY
+		routePath = path[4:]
 	default:
 		return
 	}

@@ -18,6 +18,7 @@ import os
 from typing import Dict, Optional
 
 import requests
+import time
 
 BASE_DOMAIN = os.getenv("GRAPHQL_DOMAIN", "lesser.host")
 STAGE = os.getenv("GRAPHQL_STAGE", "dev")
@@ -30,10 +31,17 @@ THREAD_ROOT = os.getenv("GRAPHQL_THREAD_ROOT")
 LIST_ID = os.getenv("GRAPHQL_LIST_ID")
 
 
+def auth_header_value(token: str) -> str:
+    token = token.strip()
+    if token.lower().startswith("bearer "):
+        return token
+    return f"Bearer {token}"
+
+
 def headers() -> Dict[str, str]:
     hdrs: Dict[str, str] = {"Content-Type": "application/json"}
     if AUTH_TOKEN:
-        hdrs["Authorization"] = f"Bearer {AUTH_TOKEN}"
+        hdrs["Authorization"] = auth_header_value(AUTH_TOKEN)
     return hdrs
 
 
@@ -48,12 +56,22 @@ def run_query(
     if variables:
         payload["variables"] = variables
 
-    response = requests.post(
-        GRAPHQL_ENDPOINT,
-        json=payload,
-        headers=headers(),
-        timeout=30,
-    )
+    max_attempts = int(os.getenv("GRAPHQL_RETRY_ATTEMPTS", "3"))
+    delay = float(os.getenv("GRAPHQL_RETRY_DELAY", "2"))
+
+    for attempt in range(1, max_attempts + 1):
+        response = requests.post(
+            GRAPHQL_ENDPOINT,
+            json=payload,
+            headers=headers(),
+            timeout=30,
+        )
+        if response.status_code < 500 or attempt == max_attempts:
+            break
+        print(
+            f"[warn] {title}: received {response.status_code}, retrying in {delay}s (attempt {attempt}/{max_attempts})"
+        )
+        time.sleep(delay)
     print(f"Status: {response.status_code}")
     try:
         body = response.json()

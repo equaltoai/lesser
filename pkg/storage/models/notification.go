@@ -373,6 +373,20 @@ func NewFollowRequestNotification(userID, requesterID string) *Notification {
 
 // UpdateKeys updates the GSI keys for this notification (required by DynamORM)
 func (n *Notification) UpdateKeys() error {
+	// Set primary keys
+	if err := common.ValidateRequiredParam("n.UserID", n.UserID); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("n.ID", n.ID); err != nil {
+		return err
+	}
+
+	// Set up primary key
+	n.PK = "USER#" + n.UserID
+	timestamp := n.CreatedAt.Format("20060102150405")
+	n.SK = fmt.Sprintf("notif#%s#%s", timestamp, n.ID)
+
+	// Set GSI keys
 	n.setupGSIKeys()
 	return nil
 }

@@ -132,6 +132,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.severanceRepo = repositories.NewSeveranceRepository(f.db, f.tableName, f.logger)
 	f.quoteRepo = repositories.NewQuoteRepository(f.db, f.tableName, f.logger, nil)
 	f.listRepo = repositories.NewListRepository(f.db, f.tableName, f.logger, nil)
+	f.conversationRepo = repositories.NewConversationRepository(f.db, f.tableName, f.logger, nil)
 	f.mediaRepo = repositories.NewMediaRepository(f.db, f.tableName, f.logger, nil)
 	f.pollRepo = repositories.NewPollRepository(f.db, f.tableName, f.logger, nil)
 	var (

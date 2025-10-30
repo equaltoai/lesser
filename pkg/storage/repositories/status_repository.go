@@ -7,12 +7,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/pay-theory/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
@@ -57,6 +62,12 @@ func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Stat
 	// Use enhanced validation and creation with automatic event emission
 	if err := r.ValidateAndCreate(ctx, status); err != nil {
 		return err
+	}
+
+	if err := r.canonicalizeStatusIndexes(ctx, status); err != nil {
+		r.logger.Warn("failed to canonicalize status index attributes",
+			zap.String("status_id", status.StatusID),
+			zap.Error(err))
 	}
 
 	if err := r.createHashtagTimelineIndexes(ctx, status); err != nil {
@@ -136,6 +147,86 @@ func (r *StatusRepository) createHashtagTimelineIndexes(ctx context.Context, sta
 	}
 
 	return nil
+}
+
+func (r *StatusRepository) canonicalizeStatusIndexes(ctx context.Context, status *models.Status) error {
+	if status == nil {
+		return nil
+	}
+
+	pk := fmt.Sprintf("status#%s", status.StatusID)
+	sk := pk
+
+	builder := r.db.WithContext(ctx).
+		Model(&models.Status{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder()
+
+	if status.Visibility == models.VisibilityPublic {
+		timestamp := status.PublishedAt.Unix()
+		if timestamp == 0 {
+			timestamp = time.Now().Unix()
+		}
+		timestampStr := fmt.Sprintf("%d", timestamp)
+		partitionKey := "PUBLIC_TIMELINE"
+		sortKey := fmt.Sprintf("%s#%s", timestampStr, status.StatusID)
+
+		builder.Set("GSI2PK", partitionKey)
+		builder.Set("GSI2SK", sortKey)
+		builder.Set("gsI2PK", partitionKey)
+		builder.Set("gsI2SK", sortKey)
+	} else {
+		builder.Remove("GSI2PK")
+		builder.Remove("GSI2SK")
+		builder.Remove("gsI2PK")
+		builder.Remove("gsI2SK")
+	}
+
+	return builder.Execute()
+}
+
+func (r *StatusRepository) queryPublicTimelineDirect(ctx context.Context, opts interfaces.PaginationOptions) ([]*models.Status, error) {
+	if opts.Limit <= 0 {
+		opts.Limit = defaultHomeTimelinePageLimit
+	}
+
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(config.Get().Region))
+	if err != nil {
+		return nil, fmt.Errorf("load aws config: %w", err)
+	}
+
+	client := dynamodb.NewFromConfig(awsCfg)
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(r.tableName),
+		IndexName:              aws.String("GSI2"),
+		KeyConditionExpression: aws.String("#pk = :pk"),
+		ExpressionAttributeNames: map[string]string{
+			"#pk": "gsI2PK",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: "PUBLIC_TIMELINE"},
+		},
+		ScanIndexForward: aws.Bool(false),
+		Limit:            aws.Int32(int32(opts.Limit)),
+	}
+
+	output, err := client.Query(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	statuses := make([]*models.Status, 0, len(output.Items))
+	for _, item := range output.Items {
+		var status models.Status
+		if err := dynamorm.UnmarshalItem(item, &status); err != nil {
+			r.logger.Warn("failed to unmarshal status from public timeline query", zap.Error(err))
+			continue
+		}
+		statuses = append(statuses, &status)
+	}
+
+	return statuses, nil
 }
 
 // GetStatus retrieves a status by ID using BaseRepository
@@ -951,7 +1042,7 @@ func (r *StatusRepository) GetTrendingStatuses(ctx context.Context, opts interfa
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI2").
-		Where("GSI2PK", "=", "PUBLIC_TIMELINE").
+		Where("gsI2PK", "=", "PUBLIC_TIMELINE").
 		Filter("LikeCount", ">", 0). // Only statuses with likes
 		OrderBy("GSI2SK", "DESC").
 		Limit(opts.Limit).
@@ -1256,27 +1347,18 @@ func (r *StatusRepository) GetStatusesByIDs(ctx context.Context, statusIDs []str
 
 // GetPublicTimeline retrieves the public timeline with pagination
 func (r *StatusRepository) GetPublicTimeline(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("GSI2").
-		Where("GSI2PK", "=", "PUBLIC_TIMELINE").
-		OrderBy("GSI2SK", "DESC").
-		Limit(opts.Limit).
-		All(&statuses)
+	statuses, err := r.queryPublicTimelineDirect(ctx, opts)
 	if err != nil {
+		r.logger.Error("failed to query public timeline",
+			zap.Error(err),
+			zap.Int("limit", opts.Limit))
 		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "get public timeline")
 	}
 
-	// Convert to pointer slice
-	result := make([]*models.Status, len(statuses))
-	for i := range statuses {
-		result[i] = &statuses[i]
-	}
-
 	return &interfaces.PaginatedResult[*models.Status]{
-		Items:      result,
-		NextCursor: "", // Simple implementation without cursor
-		HasMore:    len(result) == opts.Limit,
+		Items:      statuses,
+		NextCursor: "",
+		HasMore:    len(statuses) == opts.Limit,
 		Total:      -1,
 	}, nil
 }

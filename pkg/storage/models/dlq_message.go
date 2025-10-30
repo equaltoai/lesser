@@ -489,6 +489,24 @@ func (d *DLQMessage) GetSK() string {
 
 // UpdateKeys updates the GSI keys for this DLQ message (required by DynamORM)
 func (d *DLQMessage) UpdateKeys() error {
+	// Set primary keys
+	if err := common.ValidateRequiredParam("d.Service", d.Service); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("d.ID", d.ID); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("d.OriginalMessageID", d.OriginalMessageID); err != nil {
+		return err
+	}
+
+	// Set up primary key
+	dateStr := d.FirstSeenAt.Format(common.CompactDateFormat)
+	d.PK = fmt.Sprintf("DLQ#%s#%s", d.Service, dateStr)
+	timestamp := d.FirstSeenAt.Format(common.CompactTimeFormat)
+	d.SK = fmt.Sprintf("MSG#%s#%s", timestamp, d.OriginalMessageID)
+
+	// Set GSI keys
 	d.setupGSIKeys()
 	return nil
 }

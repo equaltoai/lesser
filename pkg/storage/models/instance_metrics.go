@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -47,6 +48,18 @@ func (i *InstanceMetrics) TableName() string {
 
 // UpdateKeys updates the GSI keys when the primary keys change
 func (i *InstanceMetrics) UpdateKeys() error {
+	// Validate required fields
+	if i.Date == "" {
+		return fmt.Errorf("Date is required")
+	}
+	if i.MetricType == "" {
+		return fmt.Errorf("MetricType is required")
+	}
+
+	// Set primary keys
+	i.PK = fmt.Sprintf("INSTANCE_METRICS#%s", i.Date)
+	i.SK = fmt.Sprintf("METRIC#%s", i.MetricType)
+
 	// GSI1 is used for time-based queries
 	i.GSI1PK = "INSTANCE_METRICS"
 	i.GSI1SK = i.Date
