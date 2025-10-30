@@ -162,7 +162,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*sto
 	var userModels []models.User
 	err := r.GetDB().WithContext(ctx).Model(&models.User{}).
 		Index("email-index").
-		Where("gsI2PK", "=", "EMAIL#"+strings.ToLower(email)).
+		Where("GSI2PK", "=", "EMAIL#"+strings.ToLower(email)).
 		Limit(1).
 		All(&userModels)
 	if err != nil {
@@ -239,12 +239,12 @@ func (r *UserRepository) ListUsers(ctx context.Context, limit int32, cursor stri
 	var userModels []models.User
 	query := r.GetDB().WithContext(ctx).Model(&models.User{}).
 		Index("user-list-index").
-		Where("gsI1PK", "=", "USERS").
+		Where("GSI1PK", "=", "USERS").
 		Limit(int(limit) + 1) // Request one extra to detect if there are more pages
 
 	// Apply cursor if provided
 	if cursor != "" {
-		query = query.Where("gsI1SK", ">", cursor)
+		query = query.Where("GSI1SK", ">", cursor)
 	}
 
 	err := query.All(&userModels)
@@ -286,8 +286,8 @@ func (r *UserRepository) GetActiveUserCount(ctx context.Context, days int) (int6
 	var userModels []models.User
 	err := r.GetDB().WithContext(ctx).Model(&models.User{}).
 		Index("activity-index").
-		Where("gsI3PK", "=", "ACTIVITY").
-		Where("gsI3SK", ">=", fmt.Sprintf("%d", cutoffTimestamp)).
+		Where("GSI3PK", "=", "ACTIVITY").
+		Where("GSI3SK", ">=", fmt.Sprintf("%d", cutoffTimestamp)).
 		All(&userModels)
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, EntityUser, "count active")
@@ -304,7 +304,7 @@ func (r *UserRepository) GetTotalUserCount(ctx context.Context) (int64, error) {
 	// This is much more efficient than scanning the main table
 	count, err := r.GetDB().WithContext(ctx).Model(&models.User{}).
 		Index("user-list-index").
-		Where("gsI1PK", "=", "USERS").
+		Where("GSI1PK", "=", "USERS").
 		Count()
 
 	if err != nil {
@@ -322,8 +322,8 @@ func (r *UserRepository) GetUserByProviderID(ctx context.Context, provider, prov
 	var providerAccounts []models.ProviderAccount
 	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
 		Index("provider-index").
-		Where("gsI1PK", "=", "PROVIDER#"+provider).
-		Where("gsI1SK", "=", providerID+"#").
+		Where("GSI1PK", "=", "PROVIDER#"+provider).
+		Where("GSI1SK", "=", providerID+"#").
 		Limit(1).
 		All(&providerAccounts)
 	if err != nil {
@@ -376,7 +376,7 @@ func (r *UserRepository) UnlinkProviderAccount(ctx context.Context, username, pr
 	var allProviderAccounts []models.ProviderAccount
 	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
 		Index("user-providers-index").
-		Where("gsI2PK", "=", "USER_PROVIDERS#"+username).
+		Where("GSI2PK", "=", "USER_PROVIDERS#"+username).
 		All(&allProviderAccounts)
 	if err != nil {
 		return ErrorHandler.HandleQueryError(err, "provider account", "query")
@@ -411,7 +411,7 @@ func (r *UserRepository) GetLinkedProviders(ctx context.Context, username string
 	var providerAccounts []models.ProviderAccount
 	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
 		Index("user-providers-index").
-		Where("gsI2PK", "=", "USER_PROVIDERS#"+username).
+		Where("GSI2PK", "=", "USER_PROVIDERS#"+username).
 		All(&providerAccounts)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "provider account", "query")
@@ -1038,7 +1038,7 @@ func (r *UserRepository) GetMonthlyVouchCount(_ context.Context, actorID string,
 	// Query GSI1 with date range filter
 	query := r.GetDB().Model(&models.Vouch{}).
 		Index("gsi1-index").
-		Where("gsI1PK", "=", fmt.Sprintf("VOUCHER#%s", actorID))
+		Where("GSI1PK", "=", fmt.Sprintf("VOUCHER#%s", actorID))
 
 	// Execute query - we'll filter in memory since DynamORM doesn't support BETWEEN on non-key attributes
 	var vouchModels []*models.Vouch

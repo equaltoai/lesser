@@ -144,7 +144,7 @@ func (r *FederationActivityRepository) GetRecentActivities(ctx context.Context, 
 	// Use BaseRepository's underlying db but preserve federation-specific recent query logic
 	err := r.db.WithContext(ctx).Model(&models.FederationActivity{}).
 		Index("type-index").
-		Where("gsI1SK", ">=", startSK).
+		Where("GSI1SK", ">=", startSK).
 		OrderBy("GSI1SK", "DESC").
 		Limit(limit).
 		All(&activities)

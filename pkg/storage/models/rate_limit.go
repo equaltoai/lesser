@@ -3,8 +3,6 @@ package models
 import (
 	"fmt"
 	"time"
-
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // LoginAttempt represents a login attempt record for rate limiting
@@ -22,19 +20,16 @@ type LoginAttempt struct {
 
 // UpdateKeys updates the DynamoDB keys for the LoginAttempt model
 func (la *LoginAttempt) UpdateKeys() error {
-	// Note: PK must contain the identifier and SK the timestamp
-	// These should be set before calling UpdateKeys
-	if la.PK == "" {
-		return fmt.Errorf("PK is required (format: RATELIMIT#{identifier})")
-	}
-	if la.SK == "" {
-		return fmt.Errorf("SK is required (format: timestamp in RFC3339Nano)")
+	// Set type
+	la.Type = "LoginAttempt"
+
+	// Set SK from Timestamp if available and SK not set
+	if la.SK == "" && !la.Timestamp.IsZero() {
+		la.SK = la.Timestamp.Format(time.RFC3339Nano)
 	}
 
-	// Ensure type is set
-	if err := common.ValidateRequiredParam("type", la.Type); err != nil {
-		la.Type = "LoginAttempt"
-	}
+	// Note: PK must be set externally with the identifier (format: RATELIMIT#{identifier})
+	// SK is generated from Timestamp if available
 	return nil
 }
 
@@ -80,18 +75,15 @@ type RateLimitLockout struct {
 
 // UpdateKeys updates the DynamoDB keys for the RateLimitLockout model
 func (rll *RateLimitLockout) UpdateKeys() error {
-	// Note: PK and SK must be set before calling UpdateKeys
-	if rll.PK == "" {
-		return fmt.Errorf("PK is required (format: RATELIMIT#{identifier})")
-	}
+	// Set type
+	rll.Type = "RateLimitLockout"
+
+	// Set SK if not already set
 	if rll.SK == "" {
-		return fmt.Errorf("SK is required (value: LOCKOUT)")
+		rll.SK = "LOCKOUT"
 	}
 
-	// Ensure type is set
-	if err := common.ValidateRequiredParam("type", rll.Type); err != nil {
-		rll.Type = "RateLimitLockout"
-	}
+	// Note: PK must be set externally with the identifier (format: RATELIMIT#{identifier})
 	return nil
 }
 
@@ -147,18 +139,17 @@ type APIRateLimit struct {
 
 // UpdateKeys updates the DynamoDB keys for the APIRateLimit model
 func (arl *APIRateLimit) UpdateKeys() error {
-	// Note: PK and SK must be set before calling UpdateKeys
-	if arl.PK == "" {
-		return fmt.Errorf("PK is required (format: RATELIMIT#{key})")
-	}
-	if arl.SK == "" {
-		return fmt.Errorf("SK is required (format: WINDOW#{window_start})")
-	}
-
-	// Ensure type is set
-	if err := common.ValidateRequiredParam("type", arl.Type); err != nil {
+	// Set type
+	if arl.Type == "" {
 		arl.Type = "APIRateLimit"
 	}
+
+	// Set SK from Window if available and SK not set
+	if arl.SK == "" && !arl.Window.IsZero() {
+		arl.SK = fmt.Sprintf("WINDOW#%s", arl.Window.Format(time.RFC3339))
+	}
+
+	// Note: PK must be set externally with the identifier (format: RATELIMIT#{key})
 	return nil
 }
 
@@ -234,18 +225,15 @@ type RateLimitViolation struct {
 
 // UpdateKeys updates the DynamoDB keys for the RateLimitViolation model
 func (rlv *RateLimitViolation) UpdateKeys() error {
-	// Note: PK and SK must be set before calling UpdateKeys
-	if rlv.PK == "" {
-		return fmt.Errorf("PK is required (format: RATELIMIT_VIOLATION#{identifier})")
-	}
-	if rlv.SK == "" {
-		return fmt.Errorf("SK is required (format: timestamp in RFC3339Nano)")
+	// Set type
+	rlv.Type = "RateLimitViolation"
+
+	// Set SK from Timestamp if available and SK not set
+	if rlv.SK == "" && !rlv.Timestamp.IsZero() {
+		rlv.SK = rlv.Timestamp.Format(time.RFC3339Nano)
 	}
 
-	// Ensure type is set
-	if err := common.ValidateRequiredParam("type", rlv.Type); err != nil {
-		rlv.Type = "RateLimitViolation"
-	}
+	// Note: PK must be set externally with the identifier (format: RATELIMIT_VIOLATION#{identifier})
 	return nil
 }
 

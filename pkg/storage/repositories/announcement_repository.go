@@ -267,12 +267,12 @@ func (r *AnnouncementRepository) GetAnnouncementsPaginated(ctx context.Context, 
 
 	query := r.db.WithContext(ctx).Model(&models.Announcement{}).
 		Index("status-date-index").
-		Where("gsI1PK", "=", fmt.Sprintf("ANNOUNCEMENT#%s", status)).
+		Where("GSI1PK", "=", fmt.Sprintf("ANNOUNCEMENT#%s", status)).
 		OrderBy("GSI1SK", "ASC") // ASC because we use reverse timestamps (newest first)
 
 	// Resume results from the provided cursor position when present
 	if cursor != "" {
-		query = query.Where("gsI1SK", ">", cursor)
+		query = query.Where("GSI1SK", ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results
@@ -344,12 +344,12 @@ func (r *AnnouncementRepository) GetAnnouncementsByAdmin(ctx context.Context, ad
 	// Use GSI2 for efficient admin-based queries
 	query := r.db.WithContext(ctx).Model(&models.Announcement{}).
 		Index("admin-index").
-		Where("gsI2PK", "=", "ADMIN#"+adminUsername).
+		Where("GSI2PK", "=", "ADMIN#"+adminUsername).
 		OrderBy("GSI2SK", "DESC") // Most recent first
 
 	// Resume results for the admin index when a cursor is provided
 	if cursor != "" {
-		query = query.Where("gsI2SK", "<", cursor)
+		query = query.Where("GSI2SK", "<", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results

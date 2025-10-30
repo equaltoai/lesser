@@ -120,8 +120,8 @@ func (r *SeveranceRepository) ListSeveredRelationships(ctx context.Context, loca
 	if filters.Status != "" {
 		query := r.db.WithContext(ctx).Model(&models.SeveredRelationship{}).
 			Index("gsi1").
-			Where("gsI1PK", "=", fmt.Sprintf("STATUS#%s", filters.Status)).
-			Where("gsI1SK", "begins_with", "TIMESTAMP#").
+			Where("GSI1PK", "=", fmt.Sprintf("STATUS#%s", filters.Status)).
+			Where("GSI1SK", "begins_with", "TIMESTAMP#").
 			OrderBy("GSI1SK", "DESC").
 			Limit(limit + 1)
 

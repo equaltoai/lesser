@@ -259,7 +259,7 @@ func (r *QuoteRepository) DeleteQuotePermissions(ctx context.Context, username s
 func (r *QuoteRepository) GetQuoteCount(ctx context.Context, statusID string) (int64, error) {
 	db := r.relationshipRepo.GetDB()
 	count, err := db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Where("gsI1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
+		Where("GSI1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
 		Where("Withdrawn", "=", false).
 		Count()
 
@@ -290,7 +290,7 @@ func (r *QuoteRepository) WithdrawQuotes(ctx context.Context, noteID, userID str
 	// Query all quotes by this user on this note
 	var quotes []models.QuoteRelationship
 	err := db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Where("gsI2PK", "=", fmt.Sprintf("QUOTER#%s", userID)).
+		Where("GSI2PK", "=", fmt.Sprintf("QUOTER#%s", userID)).
 		Filter("TargetNoteID", "=", noteID).
 		Filter("Withdrawn", "=", false).
 		All(&quotes)

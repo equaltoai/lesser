@@ -234,7 +234,7 @@ func (r *StreamingConnectionRepository) DeleteAllSubscriptions(ctx context.Conte
 
 	err := r.subscriptionRepo.GetDB().WithContext(ctx).Model(&models.WebSocketSubscription{}).
 		Index("GSI1").
-		Where("gsI1PK", "=", fmt.Sprintf("CONN#%s", connectionID)).
+		Where("GSI1PK", "=", fmt.Sprintf("CONN#%s", connectionID)).
 		All(&subscriptions)
 
 	if err != nil {
@@ -264,7 +264,7 @@ func (r *StreamingConnectionRepository) GetConnectionsByUser(ctx context.Context
 
 	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
 		Index("GSI1").
-		Where("gsI1PK", "=", fmt.Sprintf("USER#%s", userID)).
+		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", userID)).
 		Limit(connectionQueryLimit).
 		All(&connections)
 
@@ -736,7 +736,7 @@ func (r *StreamingConnectionRepository) GetActiveConnectionsCount(ctx context.Co
 func (r *StreamingConnectionRepository) GetConnectionCountByState(ctx context.Context, state models.ConnectionState) (int, error) {
 	count, err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
 		Index("GSI2").
-		Where("gsI2PK", "=", fmt.Sprintf("STATE#%s", state)).
+		Where("GSI2PK", "=", fmt.Sprintf("STATE#%s", state)).
 		Count()
 	if err != nil {
 		if errors.IsNotFound(err) || isResourceNotFound(err) {
@@ -752,7 +752,7 @@ func (r *StreamingConnectionRepository) GetConnectionCountByState(ctx context.Co
 func (r *StreamingConnectionRepository) GetUserConnectionCount(ctx context.Context, userID string) (int, error) {
 	count, err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
 		Index("GSI1").
-		Where("gsI1PK", "=", fmt.Sprintf("USER#%s", userID)).
+		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", userID)).
 		Count()
 	if err != nil {
 		if errors.IsNotFound(err) || isResourceNotFound(err) {
@@ -770,7 +770,7 @@ func (r *StreamingConnectionRepository) GetConnectionsByState(ctx context.Contex
 
 	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
 		Index("GSI2").
-		Where("gsI2PK", "=", fmt.Sprintf("STATE#%s", state)).
+		Where("GSI2PK", "=", fmt.Sprintf("STATE#%s", state)).
 		Limit(connectionQueryLimit).
 		All(&connections)
 

@@ -88,7 +88,7 @@ func (r *MediaMetadataRepository) GetMediaMetadataByStatus(ctx context.Context, 
 	var metadataList []*models.MediaMetadata
 	query := r.GetDB().WithContext(ctx).Model(&models.MediaMetadata{}).
 		Index("gsi1-index").
-		Where("gsI1PK", "=", fmt.Sprintf("STATUS#%s", status))
+		Where("GSI1PK", "=", fmt.Sprintf("STATUS#%s", status))
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -237,8 +237,8 @@ func (r *MediaMetadataRepository) CleanupExpiredMetadata(ctx context.Context) er
 	// Use GetDB() for complex GSI query with date range
 	err := r.GetDB().WithContext(ctx).Model(&models.MediaMetadata{}).
 		Index("gsi1-index").
-		Where("gsI1PK", "=", "STATUS#failed").
-		Where("gsI1SK", "<", fmt.Sprintf("PROCESSED#%s", cutoffTime.Format(time.RFC3339))).
+		Where("GSI1PK", "=", "STATUS#failed").
+		Where("GSI1SK", "<", fmt.Sprintf("PROCESSED#%s", cutoffTime.Format(time.RFC3339))).
 		Limit(100). // Process in batches
 		Scan(&expiredMetadata)
 

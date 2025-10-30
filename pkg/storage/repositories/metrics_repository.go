@@ -140,9 +140,9 @@ func (r *MetricsRepository) ListByService(ctx context.Context, service string, s
 
 	query := r.db.WithContext(ctx).Model(&models.Metrics{}).
 		Index("service-index").
-		Where("gsI1PK", "=", fmt.Sprintf("METRICS_SVC#%s", service)).
-		Where("gsI1SK", ">=", startSK).
-		Where("gsI1SK", "<=", endSK).
+		Where("GSI1PK", "=", fmt.Sprintf("METRICS_SVC#%s", service)).
+		Where("GSI1SK", ">=", startSK).
+		Where("GSI1SK", "<=", endSK).
 		OrderBy("GSI1SK", "DESC").
 		Limit(limit)
 
@@ -445,8 +445,8 @@ func (r *MetricsRepository) cleanupAggregatedMetricsByPeriod(ctx context.Context
 	// This is a limitation but necessary to avoid expensive scans
 	err := r.aggregatedRepo.db.WithContext(ctx).Model(&models.AggregatedMetrics{}).
 		Index("aggregate-index").
-		Where("gsI2PK", "begins_with", fmt.Sprintf("METRICS_AGG#%s#", period)).
-		Where("gsI2SK", "<", cutoffTime.Format("2006-01-02T15:04:05Z")).
+		Where("GSI2PK", "begins_with", fmt.Sprintf("METRICS_AGG#%s#", period)).
+		Where("GSI2SK", "<", cutoffTime.Format("2006-01-02T15:04:05Z")).
 		All(&oldMetrics)
 
 	if err != nil {
@@ -648,12 +648,12 @@ func (r *MetricRecordRepository) GetMetricsByDate(ctx context.Context, date time
 	// Build the query
 	query := r.db.WithContext(ctx).Model(&models.MetricRecord{}).
 		Index("date-index").
-		Where("gsI3PK", "=", gsi3pk)
+		Where("GSI3PK", "=", gsi3pk)
 
 	// If service is specified, add prefix filter
 	if serviceName != "" {
 		skPrefix := fmt.Sprintf("SERVICE#%s#", serviceName)
-		query = query.Where("gsI3SK", "BEGINS_WITH", skPrefix)
+		query = query.Where("GSI3SK", "BEGINS_WITH", skPrefix)
 	}
 
 	err := query.OrderBy("GSI3SK", "DESC").All(&records)

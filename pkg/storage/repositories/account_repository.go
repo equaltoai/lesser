@@ -288,7 +288,7 @@ func (r *AccountRepository) GetUserByEmail(ctx context.Context, email string) (*
 
 	err := r.db.WithContext(ctx).Model(&user).
 		Index("email-index").
-		Where("gsI2PK", "=", emailKey).
+		Where("GSI2PK", "=", emailKey).
 		First(&user)
 
 	if err != nil {
@@ -1519,8 +1519,8 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 	var users []models.User
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("gsi5").
-		Where("gsI5PK", "=", prefixKey).
-		Where("gsI5SK", "BEGINS_WITH", normalizedQuery).
+		Where("GSI5PK", "=", prefixKey).
+		Where("GSI5SK", "BEGINS_WITH", normalizedQuery).
 		OrderBy("GSI5SK", "ASC").
 		Limit(searchLimit + 1)
 
@@ -1536,7 +1536,7 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 					zap.String("expected_prefix", prefixKey),
 					zap.String("cursor_prefix", pkCursor))
 			} else {
-				queryBuilder = queryBuilder.Where("gsI5SK", ">", skCursor)
+				queryBuilder = queryBuilder.Where("GSI5SK", ">", skCursor)
 			}
 		}
 	}
@@ -1580,7 +1580,7 @@ func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, _ string, 
 	var users []models.User
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("user-list-index").
-		Where("gsI1PK", "=", "USERS")
+		Where("GSI1PK", "=", "USERS")
 
 	limit := opts.Limit
 	if err := common.ValidateQueryLimit(limit, 50, "user suggestions"); err != nil {
@@ -1591,7 +1591,7 @@ func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, _ string, 
 	if opts.Cursor != "" {
 		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
 		if err == nil && sk != "" {
-			queryBuilder = queryBuilder.Where("gsI1SK", ">", sk)
+			queryBuilder = queryBuilder.Where("GSI1SK", ">", sk)
 		}
 	}
 
@@ -1639,7 +1639,7 @@ func (r *AccountRepository) GetFeaturedAccounts(ctx context.Context, opts interf
 	var users []models.User
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("role-index").
-		Where("gsI3PK", "IN", []string{"ROLE#admin", "ROLE#moderator"})
+		Where("GSI3PK", "IN", []string{"ROLE#admin", "ROLE#moderator"})
 
 	limit := opts.Limit
 	if limit <= 0 || limit > 50 {
@@ -1650,7 +1650,7 @@ func (r *AccountRepository) GetFeaturedAccounts(ctx context.Context, opts interf
 	if opts.Cursor != "" {
 		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
 		if err == nil && sk != "" {
-			queryBuilder = queryBuilder.Where("gsI3SK", ">", sk)
+			queryBuilder = queryBuilder.Where("GSI3SK", ">", sk)
 		}
 	}
 
@@ -1873,7 +1873,7 @@ func (r *AccountRepository) GetPasswordReset(ctx context.Context, token string) 
 	var resetModel models.PasswordReset
 	err := r.db.WithContext(ctx).Model(&resetModel).
 		Index("token-index").
-		Where("gsI1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
+		Where("GSI1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
 		First(&resetModel)
 
 	if err != nil {
@@ -1911,7 +1911,7 @@ func (r *AccountRepository) UsePasswordReset(ctx context.Context, token string) 
 
 	err := r.db.WithContext(ctx).Model(resetModel).
 		Index("token-index").
-		Where("gsI1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
+		Where("GSI1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
 		First(resetModel)
 
 	if err != nil {
@@ -2053,7 +2053,7 @@ func (r *AccountRepository) GetAccountsCount(ctx context.Context) (int64, error)
 	var users []models.User
 	err := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("user-list-index").
-		Where("gsI1PK", "=", "USERS").
+		Where("GSI1PK", "=", "USERS").
 		Scan(&users)
 
 	if err != nil {

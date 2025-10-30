@@ -252,8 +252,8 @@ func (r *AccountRepository) GetAdvancedTokensByUser(ctx context.Context, userID 
 
 	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
 		Index("user-tokens-index").
-		Where("gsI1PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("gsI1SK", "BEGINS_WITH", "TOKEN#").
+		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", userID)).
+		Where("GSI1SK", "BEGINS_WITH", "TOKEN#").
 		All(&tokens)
 
 	if err != nil {
@@ -272,8 +272,8 @@ func (r *AccountRepository) GetAdvancedTokensByFamily(ctx context.Context, famil
 
 	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
 		Index("family-tokens-index").
-		Where("gsI2PK", "=", fmt.Sprintf("FAMILY#%s", family)).
-		Where("gsI2SK", "BEGINS_WITH", "TOKEN#").
+		Where("GSI2PK", "=", fmt.Sprintf("FAMILY#%s", family)).
+		Where("GSI2SK", "BEGINS_WITH", "TOKEN#").
 		All(&tokens)
 
 	if err != nil {

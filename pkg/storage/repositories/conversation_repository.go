@@ -269,7 +269,7 @@ func (r *ConversationRepository) GetConversationByParticipants(ctx context.Conte
 	var record models.ConversationParticipantKey
 	err := r.GetDB().Model(&models.ConversationParticipantKey{}).WithContext(ctx).
 		Index("GSI1").
-		Where("gsI1PK", "=", fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", participantKey)).
+		Where("GSI1PK", "=", fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", participantKey)).
 		Limit(1).
 		First(&record)
 

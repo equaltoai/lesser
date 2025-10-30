@@ -140,7 +140,7 @@ func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username st
 	// Note: Using direct DynamORM query since BaseRepository doesn't have GSI query with custom cursor handling
 	query := r.db.WithContext(ctx).Model(&models.Activity{}).
 		Index("GSI1").
-		Where("gsI1PK", "=", "INBOX#"+username).
+		Where("GSI1PK", "=", "INBOX#"+username).
 		Limit(safeLimit+1).
 		OrderBy("GSI1SK", "DESC") // Newest first
 
