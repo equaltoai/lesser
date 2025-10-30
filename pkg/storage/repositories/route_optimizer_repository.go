@@ -99,8 +99,8 @@ func (r *RouteOptimizerRepository) GetRecentResults(ctx context.Context, since t
 
 	query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 		Index("GSI1").
-		Where("gsI1PK", "=", "RESULTS").
-		Where("gsI1SK", ">", sinceKey).
+		Where("GSI1PK", "=", "RESULTS").
+		Where("GSI1SK", ">", sinceKey).
 		OrderBy("GSI1SK", "DESC"). // Most recent first
 		Limit(limit)
 
@@ -344,12 +344,12 @@ func (r *RouteOptimizerRepository) GetMetricsInRange(ctx context.Context, routeI
 		startKey := fmt.Sprintf("%d", start.Unix())
 		query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 			Index("GSI1").
-			Where("gsI1PK", "=", "RESULTS").
-			Where("gsI1SK", ">=", startKey)
+			Where("GSI1PK", "=", "RESULTS").
+			Where("GSI1SK", ">=", startKey)
 
 		if !end.IsZero() {
 			endKey := fmt.Sprintf("%d", end.Unix())
-			query = query.Where("gsI1SK", "<=", endKey)
+			query = query.Where("GSI1SK", "<=", endKey)
 		}
 
 		query = query.OrderBy("GSI1SK", "DESC").Limit(limit)

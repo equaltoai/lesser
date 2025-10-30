@@ -296,8 +296,8 @@ func (r *HashtagRepository) RemoveStatusFromHashtagIndex(ctx context.Context, st
 	var indexEntries []models.HashtagStatusIndex
 	err := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
 		Index("status-hashtag-index").
-		Where("gsI1PK", "=", fmt.Sprintf("STATUS_HASHTAGS#%s", statusID)).
-		Where("gsI1SK", "BEGINS_WITH", "HASHTAG#").
+		Where("GSI1PK", "=", fmt.Sprintf("STATUS_HASHTAGS#%s", statusID)).
+		Where("GSI1SK", "BEGINS_WITH", "HASHTAG#").
 		All(&indexEntries)
 
 	if err != nil && !errors.IsNotFound(err) {
@@ -591,11 +591,11 @@ func (r *HashtagRepository) getHashtagTimelineByVisibility(ctx context.Context, 
 	// Use the visibility-filtered GSI
 	query := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
 		Index("hashtag-visibility-index").
-		Where("gsI2PK", "=", fmt.Sprintf("HASHTAG_VIS#%s#%s", hashtag, visibility))
+		Where("GSI2PK", "=", fmt.Sprintf("HASHTAG_VIS#%s#%s", hashtag, visibility))
 
 	// Apply the maxID cursor when provided
 	if maxID != nil && *maxID != "" {
-		query = query.Where("gsI2SK", ">", *maxID)
+		query = query.Where("GSI2SK", ">", *maxID)
 	}
 
 	query = query.Limit(limit).OrderBy("GSI2SK", "ASC") // ASC because timestamp is reversed
@@ -1441,8 +1441,8 @@ func (r *HashtagRepository) GetHashtagTrendsByScore(ctx context.Context, date ti
 	var trendModels []*models.HashtagTrend
 	err := r.db.WithContext(ctx).Model(&models.HashtagTrend{}).
 		Index("gsi8").
-		Where("gsI8PK", "=", fmt.Sprintf("TREND_TYPE#HASHTAG#%s", dateStr)).
-		Where("gsI8SK", "BEGINS_WITH", "SCORE#").
+		Where("GSI8PK", "=", fmt.Sprintf("TREND_TYPE#HASHTAG#%s", dateStr)).
+		Where("GSI8SK", "BEGINS_WITH", "SCORE#").
 		OrderBy("GSI8SK", order).
 		Limit(limit).
 		All(&trendModels)

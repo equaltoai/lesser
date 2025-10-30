@@ -209,7 +209,7 @@ func (r *CSRFRepository) GetUserActiveTokenCount(ctx context.Context, userID str
 	// Using direct DB call since BaseRepository doesn't have GSI query method with these specific parameters
 	err := r.db.WithContext(ctx).Model(&models.CSRFToken{}).
 		Index("user-csrf-index").
-		Where("gsI1PK", "=", gsi1pk).
+		Where("GSI1PK", "=", gsi1pk).
 		All(&tokens)
 
 	if err != nil {
@@ -244,7 +244,7 @@ func (r *CSRFRepository) CleanupUserTokens(ctx context.Context, userID string) e
 	// Using direct DB call since BaseRepository doesn't have this specific GSI query pattern
 	err := r.db.WithContext(ctx).Model(&models.CSRFToken{}).
 		Index("user-csrf-index").
-		Where("gsI1PK", "=", gsi1pk).
+		Where("GSI1PK", "=", gsi1pk).
 		All(&tokens)
 
 	if err != nil {

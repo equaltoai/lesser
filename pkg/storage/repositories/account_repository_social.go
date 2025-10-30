@@ -153,12 +153,12 @@ func (r *AccountRepository) GetFollowers(ctx context.Context, username string, l
 	// Build query using GSI1 for followed's perspective
 	query := r.db.WithContext(ctx).Model(&models.Follow{}).
 		Index("gsi1-index").
-		Where("gsI1PK", "=", fmt.Sprintf("follow#%s", username)).
+		Where("GSI1PK", "=", fmt.Sprintf("follow#%s", username)).
 		OrderBy("GSI1SK", "ASC").
 		Limit(safeLimit + 1)
 
 	if cursor != "" {
-		query = query.Where("gsI1SK", ">", cursor)
+		query = query.Where("GSI1SK", ">", cursor)
 	}
 
 	err := query.All(&follows)

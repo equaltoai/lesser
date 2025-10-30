@@ -44,7 +44,7 @@ func (r *CommunityNoteRepository) GetUserVotingHistory(ctx context.Context, user
 	// Query using GSI to get all votes by this user - preserve community voting history functionality
 	err := r.GetDB().WithContext(ctx).Model(&models.CommunityNoteVote{}).
 		Index("user-votes-index").
-		Where("gsI1PK", "=", "VOTES#"+userID).
+		Where("GSI1PK", "=", "VOTES#"+userID).
 		OrderBy("GSI1SK", "DESC"). // Most recent first
 		Limit(limit).
 		All(&votes)
@@ -151,7 +151,7 @@ func (r *CommunityNoteRepository) GetVisibleCommunityNotes(ctx context.Context, 
 	// Query by object ID using GSI1 - preserve community visibility filtering
 	err := r.GetDB().WithContext(ctx).Model(&models.CommunityNote{}).
 		Index("gsi1").
-		Where("gsI1PK", "=", fmt.Sprintf("OBJECT#%s#NOTES", objectID)).
+		Where("GSI1PK", "=", fmt.Sprintf("OBJECT#%s#NOTES", objectID)).
 		Limit(50).
 		All(&modelsSlice)
 
@@ -303,7 +303,7 @@ func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(ctx context.Context,
 	// Build query using GSI3 - preserve community author query logic
 	query := r.GetDB().WithContext(ctx).Model(&models.CommunityNote{}).
 		Index("gsi3").
-		Where("gsI3PK", "=", fmt.Sprintf("AUTHOR#%s#NOTES", authorID)).
+		Where("GSI3PK", "=", fmt.Sprintf("AUTHOR#%s#NOTES", authorID)).
 		Limit(limit)
 
 	// Add cursor if provided - preserve exact cursor logic
@@ -311,7 +311,7 @@ func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(ctx context.Context,
 		// Parse cursor - expecting format "timestamp#noteID" - preserve exact parsing
 		parts := strings.Split(cursor, "#")
 		if len(parts) >= 2 {
-			query = query.Where("gsI3SK", "<", cursor)
+			query = query.Where("GSI3SK", "<", cursor)
 		}
 	}
 

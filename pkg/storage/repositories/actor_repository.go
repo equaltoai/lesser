@@ -274,26 +274,26 @@ func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Ac
 	updateBuilder.Set("UpdatedAt", now)
 
 	gsi1PK, gsi1SK := buildActorGSI1Keys(username)
-	updateBuilder.Set("gsI1PK", gsi1PK)
-	updateBuilder.Set("gsI1SK", gsi1SK)
+	updateBuilder.Set("GSI1PK", gsi1PK)
+	updateBuilder.Set("GSI1SK", gsi1SK)
 
 	displayName := strings.TrimSpace(actor.Name)
 	if displayName != "" {
 		gsi2PK, gsi2SK := buildActorGSI2Keys(displayName, username)
-		updateBuilder.Set("gsI2PK", gsi2PK)
-		updateBuilder.Set("gsI2SK", gsi2SK)
+		updateBuilder.Set("GSI2PK", gsi2PK)
+		updateBuilder.Set("GSI2SK", gsi2SK)
 	} else {
-		updateBuilder.Remove("gsI2PK")
-		updateBuilder.Remove("gsI2SK")
+		updateBuilder.Remove("GSI2PK")
+		updateBuilder.Remove("GSI2SK")
 	}
 
 	domainName := r.resolveActorDomain(actor)
 	if domainName != "" {
-		updateBuilder.Set("gsI3PK", fmt.Sprintf("DOMAIN#%s", domainName))
-		updateBuilder.Set("gsI3SK", username)
+		updateBuilder.Set("GSI3PK", fmt.Sprintf("DOMAIN#%s", domainName))
+		updateBuilder.Set("GSI3SK", username)
 	} else {
-		updateBuilder.Remove("gsI3PK")
-		updateBuilder.Remove("gsI3SK")
+		updateBuilder.Remove("GSI3PK")
+		updateBuilder.Remove("GSI3SK")
 	}
 
 	gsi4PK, gsi4SK := buildActorGSI4Keys(actorModel.FollowerCount, username)
@@ -405,7 +405,7 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 		prefix := normalizedQuery[:2]
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("username-search-index").
-			Where("gsI1PK", "=", "USERNAME_SEARCH#"+prefix).
+			Where("GSI1PK", "=", "USERNAME_SEARCH#"+prefix).
 			Filter("GSI1SK", "BEGINS_WITH", normalizedQuery).
 			Limit(limit).
 			All(&actors)
@@ -419,7 +419,7 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 		prefix := normalizedQuery[:2]
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("name-search-index").
-			Where("gsI2PK", "=", "NAME_SEARCH#"+prefix).
+			Where("GSI2PK", "=", "NAME_SEARCH#"+prefix).
 			Filter("GSI2SK", "BEGINS_WITH", normalizedQuery).
 			Limit(limit).
 			All(&actors)
@@ -451,7 +451,7 @@ func (r *ActorRepository) GetSearchSuggestions(ctx context.Context, prefix strin
 	var actors []models.Actor
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("username-search-index").
-		Where("gsI1PK", "=", "USERNAME_SEARCH#"+prefixKey).
+		Where("GSI1PK", "=", "USERNAME_SEARCH#"+prefixKey).
 		Filter("GSI1SK", "BEGINS_WITH", normalizedPrefix).
 		Limit(10).
 		All(&actors)
@@ -1086,7 +1086,7 @@ func (r *ActorRepository) getRecentActiveActors(ctx context.Context, limit int) 
 		var actors []models.Actor
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("activity-index").
-			Where("gsI5PK", "=", dateKey).
+			Where("GSI5PK", "=", dateKey).
 			OrderBy("GSI5SK", "DESC"). // Get most recent first
 			Limit(limit).
 			All(&actors)
@@ -1144,7 +1144,7 @@ func (r *ActorRepository) getPopularActors(ctx context.Context, limit int) ([]*a
 		var actors []models.Actor
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("popularity-index").
-			Where("gsI4PK", "=", "ACTOR_RANK#"+bucket).
+			Where("GSI4PK", "=", "ACTOR_RANK#"+bucket).
 			OrderBy("GSI4SK", "DESC"). // Highest follower count first
 			Limit(limit - len(allActors)).
 			All(&actors)

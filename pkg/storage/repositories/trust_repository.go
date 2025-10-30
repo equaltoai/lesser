@@ -189,7 +189,7 @@ func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trustee
 	var trustModels []*models.TrustRelationship
 	query := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
 		Index("gsi1-index").
-		Where("gsI1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
+		Where("GSI1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
 
 	if cursor != "" {
 		query = query.Cursor(cursor)

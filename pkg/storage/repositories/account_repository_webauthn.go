@@ -90,8 +90,8 @@ func (r *AccountRepository) GetUserWebAuthnCredentials(ctx context.Context, user
 
 	err := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
 		Index("user-credentials-index").
-		Where("gsI1PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("gsI1SK", "BEGINS_WITH", "WEBAUTHN#").
+		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", userID)).
+		Where("GSI1SK", "BEGINS_WITH", "WEBAUTHN#").
 		All(&credentials)
 
 	if err != nil {
