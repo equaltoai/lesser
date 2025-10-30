@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 )
@@ -53,8 +52,8 @@ type Status struct {
 	GSI7SK string `dynamorm:"column:gsI7SK,index:GSI7,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// Core status data
-	StatusID       string            `json:"status_id"`
-	Note           *activitypub.Note `dynamorm:"json" json:"note"`      // The actual ActivityPub Note
+	StatusID       string     `json:"status_id"`
+	Note           *NoteField `json:"note"`      // The actual ActivityPub Note (wrapped for proper DynamORM handling)
 	AuthorID       string            `json:"author_id"`                 // AttributedTo from the Note
 	AuthorUsername string            `json:"author_username"`           // Extracted username for efficient queries
 	Content        string            `json:"content"`                   // Cached content for search
@@ -178,62 +177,72 @@ func (s *Status) extractFromNote() {
 		return
 	}
 
+	note := s.Note.Get()
+	if note == nil {
+		return
+	}
+
 	// Extract basic fields
-	s.Content = s.Note.Content
-	s.AuthorID = s.Note.AttributedTo
-	s.Sensitive = s.Note.Sensitive
+	s.Content = note.Content
+	s.AuthorID = note.AttributedTo
+	s.Sensitive = note.Sensitive
 
 	// Extract username from author ID
 	s.AuthorUsername = extractUsernameFromActorID(s.AuthorID)
 
 	// Extract conversation ID
-	s.ConversationID = s.Note.ConversationID
+	s.ConversationID = note.ConversationID
 
 	// Extract in reply to
-	if s.Note.InReplyTo != "" {
-		s.InReplyToID = extractStatusIDFromURL(s.Note.InReplyTo)
+	if note.InReplyTo != "" {
+		s.InReplyToID = extractStatusIDFromURL(note.InReplyTo)
 	}
 
 	// Extract addressing fields
-	s.ToRecipients = s.Note.To
-	s.CcRecipients = s.Note.CC
-	s.BtoRecipients = s.Note.BTo
-	s.BccRecipients = s.Note.BCC
+	s.ToRecipients = note.To
+	s.CcRecipients = note.CC
+	s.BtoRecipients = note.BTo
+	s.BccRecipients = note.BCC
 
 	// Extract visibility from Note or set default
-	if s.Note.Visibility != "" {
-		s.Visibility = s.Note.Visibility
+	if note.Visibility != "" {
+		s.Visibility = note.Visibility
 	} else {
-		s.Visibility = determineVisibilityFromAudience(s.Note.To, s.Note.CC)
+		s.Visibility = determineVisibilityFromAudience(note.To, note.CC)
 	}
 
 	// Extract hashtags and mentions from tags
 	s.extractTagsFromNote()
 
 	// Count media attachments
-	s.MediaCount = len(s.Note.Attachment)
+	s.MediaCount = len(note.Attachment)
 
 	// Set published time from Note if available
-	if s.Note.Published != nil && !s.Note.Published.IsZero() {
-		s.PublishedAt = *s.Note.Published
+	if note.Published != nil && !note.Published.IsZero() {
+		s.PublishedAt = *note.Published
 	}
 
 	// Set updated time from Note if available
-	if s.Note.Updated != nil && !s.Note.Updated.IsZero() {
-		s.UpdatedAt = *s.Note.Updated
+	if note.Updated != nil && !note.Updated.IsZero() {
+		s.UpdatedAt = *note.Updated
 	}
 }
 
 // extractTagsFromNote extracts hashtags and mentions from the Note's tags
 func (s *Status) extractTagsFromNote() {
-	if s.Note == nil || s.Note.Tag == nil {
+	if s.Note == nil {
+		return
+	}
+
+	note := s.Note.Get()
+	if note == nil || note.Tag == nil {
 		return
 	}
 
 	s.Hashtags = []string{}
 	s.Mentions = []string{}
 
-	for _, tag := range s.Note.Tag {
+	for _, tag := range note.Tag {
 		switch tag.Type {
 		case "Hashtag":
 			// Remove # prefix if present

@@ -110,8 +110,8 @@ func (r *StatusRepository) createHashtagTimelineIndexes(ctx context.Context, sta
 			CreatedAt:    now,
 		}
 
-		if status.Note != nil && status.Note.ID != "" {
-			record.StatusURL = status.Note.ID
+		if status.Note != nil && status.Note.Get() != nil && status.Note.Get().ID != "" {
+			record.StatusURL = status.Note.Get().ID
 		}
 
 		if record.Published.IsZero() {
@@ -252,8 +252,74 @@ func (r *StatusRepository) GetStatus(ctx context.Context, statusID string) (*mod
 
 // UpdateStatus updates an existing status using enhanced validation and event emission
 func (r *StatusRepository) UpdateStatus(ctx context.Context, status *models.Status) error {
-	// Use enhanced validation and update with automatic event emission and cache invalidation
-	return r.ValidateAndUpdate(ctx, status)
+	// Use UpdateBuilder with explicit fields to prevent Note field corruption
+	pk := status.PK
+	if pk == "" {
+		pk = fmt.Sprintf("status#%s", status.StatusID)
+	}
+	sk := status.SK
+	if sk == "" {
+		sk = fmt.Sprintf("status#%s", status.StatusID)
+	}
+
+	updateBuilder := r.db.WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder()
+
+	// Set only the fields that should be updated - explicitly exclude Note to prevent corruption
+	// Update basic fields
+	if status.Content != "" {
+		updateBuilder.Set("Content", status.Content)
+	}
+	updateBuilder.Set("Sensitive", status.Sensitive)
+	updateBuilder.Set("Language", status.Language)
+	updateBuilder.Set("Visibility", status.Visibility)
+	updateBuilder.Set("UpdatedAt", status.UpdatedAt)
+
+	// Update engagement counts (if changed)
+	if status.LikeCount >= 0 {
+		updateBuilder.Set("LikeCount", status.LikeCount)
+	}
+	if status.ReblogCount >= 0 {
+		updateBuilder.Set("ReblogCount", status.ReblogCount)
+	}
+	if status.ReplyCount >= 0 {
+		updateBuilder.Set("ReplyCount", status.ReplyCount)
+	}
+	if status.QuoteCount >= 0 {
+		updateBuilder.Set("QuoteCount", status.QuoteCount)
+	}
+
+	// Update flags
+	updateBuilder.Set("Deleted", status.Deleted)
+	if status.DeletedAt != nil {
+		updateBuilder.Set("DeletedAt", status.DeletedAt)
+	}
+	updateBuilder.Set("Flagged", status.Flagged)
+
+	// Update addressing fields
+	if status.ToRecipients != nil {
+		updateBuilder.Set("ToRecipients", status.ToRecipients)
+	}
+	if status.CcRecipients != nil {
+		updateBuilder.Set("CcRecipients", status.CcRecipients)
+	}
+
+	// Only update Note field if it's explicitly provided and valid
+	// This prevents corruption from nil or partially-loaded Note fields
+	if status.Note != nil && status.Note.Get() != nil {
+		// Validate Note has required fields before updating
+		if status.Note.Get().ID != "" && status.Note.Get().Type != "" {
+			updateBuilder.Set("Note", status.Note)
+		}
+	}
+
+	if err := updateBuilder.Execute(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityStatus, status.StatusID)
+	}
+
+	return nil
 }
 
 // DeleteStatus marks a status as deleted using BaseRepository
@@ -264,13 +330,20 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 		return err
 	}
 
-	// Mark as deleted instead of hard delete
+	// Mark as deleted using UpdateBuilder to avoid corrupting Note field
 	now := time.Now()
-	status.Deleted = true
-	status.DeletedAt = &now
+	err = r.db.WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", status.PK).
+		Where("SK", "=", status.SK).
+		UpdateBuilder().
+		Set("Deleted", true).
+		Set("DeletedAt", now).
+		Execute()
+	if err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
+	}
 
-	// Update using BaseRepository
-	return r.Update(ctx, status)
+	return nil
 }
 
 // CountStatusesByAuthor counts the total number of statuses by an author
@@ -301,25 +374,19 @@ func (r *StatusRepository) CountReplies(ctx context.Context, statusID string) (i
 
 // UpdateEngagementMetrics updates the cached engagement metrics for a status
 func (r *StatusRepository) UpdateEngagementMetrics(ctx context.Context, statusID string, likes, reblogs, replies, quotes int) error {
-	var status models.Status
+	pk := fmt.Sprintf("status#%s", statusID)
+	sk := fmt.Sprintf("status#%s", statusID)
+
+	// Use UpdateBuilder to update only engagement metrics, avoiding Note field corruption
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
-		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
-		First(&status)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-		}
-		return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-	}
-
-	// Update metrics
-	status.LikeCount = likes
-	status.ReblogCount = reblogs
-	status.ReplyCount = replies
-	status.QuoteCount = quotes
-
-	err = r.db.WithContext(ctx).Model(&status).Update()
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Set("LikeCount", likes).
+		Set("ReblogCount", reblogs).
+		Set("ReplyCount", replies).
+		Set("QuoteCount", quotes).
+		Execute()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, "engagement metrics", "status")
 	}
@@ -711,7 +778,7 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 
 	// Find exact match by checking the Note.ID field
 	for _, status := range statuses {
-		if status.Note != nil && status.Note.ID == url {
+		if status.Note != nil && status.Note.Get() != nil && status.Note.Get().ID == url {
 			return &status, nil
 		}
 	}
@@ -1016,17 +1083,62 @@ func (r *StatusRepository) SearchStatuses(ctx context.Context, query string, opt
 }
 
 // GetStatusesByHashtag retrieves statuses containing a specific hashtag
+// Hashtag must be in canonical format: lowercase, no # prefix (e.g., "test" not "#test" or "Test")
 func (r *StatusRepository) GetStatusesByHashtag(ctx context.Context, hashtag string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	// Validate and set limit
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	// Enforce canonical format: lowercase, no # prefix
+	// Reject invalid formats to prevent ambiguity
+	if hashtag == "" {
+		return nil, fmt.Errorf("hashtag cannot be empty")
+	}
+	if strings.HasPrefix(hashtag, "#") {
+		return nil, fmt.Errorf("hashtag must not include # prefix (got: %q)", hashtag)
+	}
+	if hashtag != strings.ToLower(hashtag) {
+		return nil, fmt.Errorf("hashtag must be lowercase (got: %q)", hashtag)
+	}
+
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI5").
-		Where("GSI5PK", "=", fmt.Sprintf("HASHTAG#%s", strings.ToLower(hashtag))).
+		Where("GSI5PK", "=", fmt.Sprintf("HASHTAG#%s", hashtag)).
 		OrderBy("GSI5SK", "DESC").
-		Limit(opts.Limit).
+		Limit(limit).
 		All(&statuses)
 	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "get by hashtag")
+		// Check if it's a NotFound error (no results) - return empty instead of error
+		if errors.IsNotFound(err) {
+			r.logger.Debug("GetStatusesByHashtag: no results found",
+				zap.String("hashtag", hashtag))
+			return &interfaces.PaginatedResult[*models.Status]{
+				Items:      []*models.Status{},
+				NextCursor: "",
+				HasMore:    false,
+				Total:      0,
+			}, nil
+		}
+		// Log the full error with context for debugging
+		r.logger.Error("GetStatusesByHashtag query failed",
+			zap.String("hashtag", hashtag),
+			zap.String("gsi5pk", fmt.Sprintf("HASHTAG#%s", hashtag)),
+			zap.Int("limit", limit),
+			zap.Error(err))
+		// Wrap with original error for better debugging
+		return nil, fmt.Errorf("failed to query statuses by hashtag %q: %w", hashtag, err)
 	}
+
+	// Log if we got results
+	r.logger.Debug("GetStatusesByHashtag query succeeded",
+		zap.String("hashtag", hashtag),
+		zap.Int("result_count", len(statuses)),
+		zap.Int("limit", limit))
 
 	// Convert to pointer slice
 	result := make([]*models.Status, len(statuses))
@@ -1037,7 +1149,7 @@ func (r *StatusRepository) GetStatusesByHashtag(ctx context.Context, hashtag str
 	return &interfaces.PaginatedResult[*models.Status]{
 		Items:      result,
 		NextCursor: "", // Simple implementation without cursor
-		HasMore:    len(result) == opts.Limit,
+		HasMore:    len(result) == limit,
 		Total:      -1,
 	}, nil
 }
@@ -1091,14 +1203,16 @@ func (r *StatusRepository) LikeStatus(ctx context.Context, userID, statusID stri
 		return ErrorHandler.HandleCreateError(err, "like", statusID)
 	}
 
-	// Update status like count
-	status, err := r.GetStatus(ctx, statusID)
-	if err != nil {
-		return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-	}
-
-	status.LikeCount++
-	err = r.UpdateStatus(ctx, status)
+	// Atomically increment like count using UpdateBuilder
+	pk := fmt.Sprintf("status#%s", statusID)
+	sk := fmt.Sprintf("status#%s", statusID)
+	
+	err = r.db.WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Add("LikeCount", 1).
+		Execute()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
 	}
@@ -1107,7 +1221,7 @@ func (r *StatusRepository) LikeStatus(ctx context.Context, userID, statusID stri
 }
 
 // removeEngagement removes an engagement (like or reblog) for a user and updates the status count
-func (r *StatusRepository) removeEngagement(ctx context.Context, userID, statusID, engagementType, actionName string, updateCount func(*models.Status)) error {
+func (r *StatusRepository) removeEngagement(ctx context.Context, userID, statusID, engagementType, actionName, counterField string) error {
 	// Find and delete the engagement record - need to scan since we don't know the exact timestamp
 	var engagements []models.StatusEngagement
 	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
@@ -1127,16 +1241,22 @@ func (r *StatusRepository) removeEngagement(ctx context.Context, userID, statusI
 		}
 	}
 
-	// Update status count
-	status, err := r.GetStatus(ctx, statusID)
-	if err != nil {
-		return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-	}
-
-	updateCount(status)
-	err = r.UpdateStatus(ctx, status)
-	if err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
+	// Atomically decrement the counter using UpdateBuilder
+	// Only decrement if engagement was found and deleted
+	if err := common.ValidateSliceNotEmpty("engagements", engagements); err == nil {
+		pk := fmt.Sprintf("status#%s", statusID)
+		sk := fmt.Sprintf("status#%s", statusID)
+		
+		err = r.db.WithContext(ctx).Model(&models.Status{}).
+			Where("PK", "=", pk).
+			Where("SK", "=", sk).
+			UpdateBuilder().
+			Add(counterField, -1).
+			Condition(counterField, ">", 0). // Only decrement if count > 0
+			Execute()
+		if err != nil {
+			return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
+		}
 	}
 
 	return nil
@@ -1144,11 +1264,7 @@ func (r *StatusRepository) removeEngagement(ctx context.Context, userID, statusI
 
 // UnlikeStatus unlikes a status for a user
 func (r *StatusRepository) UnlikeStatus(ctx context.Context, userID, statusID string) error {
-	return r.removeEngagement(ctx, userID, statusID, "like", "like", func(status *models.Status) {
-		if status.LikeCount > 0 {
-			status.LikeCount--
-		}
-	})
+	return r.removeEngagement(ctx, userID, statusID, "like", "like", "LikeCount")
 }
 
 // ReblogStatus reblogs a status for a user
@@ -1170,18 +1286,16 @@ func (r *StatusRepository) ReblogStatus(ctx context.Context, userID, statusID, _
 		return ErrorHandler.HandleCreateError(err, "reblog", statusID)
 	}
 
-	// Update status reblog count
-	status, err := r.GetStatus(ctx, statusID)
-	if err != nil {
-		return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-	}
-
-	status.ReblogCount++
-	if err := status.BeforeUpdate(); err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
-	}
-
-	err = r.UpdateStatus(ctx, status)
+	// Atomically increment reblog count using UpdateBuilder
+	pk := fmt.Sprintf("status#%s", statusID)
+	sk := fmt.Sprintf("status#%s", statusID)
+	
+	err = r.db.WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Add("ReblogCount", 1).
+		Execute()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
 	}
@@ -1191,11 +1305,7 @@ func (r *StatusRepository) ReblogStatus(ctx context.Context, userID, statusID, _
 
 // UnreblogStatus unreblogs a status for a user
 func (r *StatusRepository) UnreblogStatus(ctx context.Context, userID, statusID string) error {
-	return r.removeEngagement(ctx, userID, statusID, "boost", "reblog", func(status *models.Status) {
-		if status.ReblogCount > 0 {
-			status.ReblogCount--
-		}
-	})
+	return r.removeEngagement(ctx, userID, statusID, "boost", "reblog", "ReblogCount")
 }
 
 // BookmarkStatus bookmarks a status for a user
@@ -1243,21 +1353,16 @@ func (r *StatusRepository) UnbookmarkStatus(ctx context.Context, userID, statusI
 
 // UnflagStatus unflags a previously flagged status
 func (r *StatusRepository) UnflagStatus(ctx context.Context, statusID string) error {
-	var status models.Status
+	pk := fmt.Sprintf("status#%s", statusID)
+	sk := fmt.Sprintf("status#%s", statusID)
+
+	// Use UpdateBuilder to update only Flagged field, avoiding Note field corruption
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
-		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
-		First(&status)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-		}
-		return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-	}
-
-	status.Flagged = false
-
-	err = r.db.WithContext(ctx).Model(&status).Update()
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Set("Flagged", false).
+		Execute()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
 	}
@@ -1405,21 +1510,16 @@ func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, opts interfac
 
 // FlagStatus marks a status as flagged for moderation
 func (r *StatusRepository) FlagStatus(ctx context.Context, statusID, _ string, _ string) error {
-	var status models.Status
+	pk := fmt.Sprintf("status#%s", statusID)
+	sk := fmt.Sprintf("status#%s", statusID)
+
+	// Use UpdateBuilder to update only Flagged field, avoiding Note field corruption
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
-		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
-		First(&status)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-		}
-		return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-	}
-
-	status.Flagged = true
-
-	err = r.db.WithContext(ctx).Model(&status).Update()
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Set("Flagged", true).
+		Execute()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
 	}

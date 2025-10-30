@@ -1,4 +1,4 @@
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate clear-data
 
 # =============================================================================
 # CONFIGURATION
@@ -570,26 +570,44 @@ test-unit:
 		JWT_SECRET=$${JWT_SECRET:-dummy_value} \
 		go test -short -v ./...
 
+## Clear all data from DynamoDB table
+clear-data:
+	@echo "Clearing all data from DynamoDB table..."
+	@AWS_PROFILE=$${AWS_PROFILE:-Lesser} \
+	DYNAMODB_TABLE=$${DYNAMODB_TABLE:-lesser-development} \
+	python3 scripts/clear_all_data.py
+	@echo "✓ Data cleared"
+
 ## Seed data and run validation tests
 seed-and-validate:
-	@echo "Seeding data..."
+	@echo "=== Step 1: Clearing existing data ==="
+	@AWS_PROFILE=$${AWS_PROFILE:-Lesser} \
+	DYNAMODB_TABLE=$${DYNAMODB_TABLE:-lesser-development} \
+	python3 scripts/clear_all_data.py
+	@echo ""
+	@echo "=== Step 2: Seeding fresh data ==="
 	@LESSER_BASE_URL=$(SEED_BASE_URL) \
 	LESSER_GRAPHQL_ENDPOINT=$(SEED_GRAPHQL_ENDPOINT) \
 	python3 scripts/seed_runner/main.py
-	@echo "Running GraphQL validation tests..."
+	@echo ""
+	@echo "=== Step 3: Running GraphQL validation tests ==="
 	@TOKEN=$$(LESSER_BASE_URL=$(SEED_BASE_URL) python3 scripts/seed_runner/main.py get_token); \
 	GRAPHQL_STAGE=dev \
 	GRAPHQL_DOMAIN=lesser.host \
 	GRAPHQL_ENDPOINT=$(SEED_GRAPHQL_ENDPOINT) \
 	GRAPHQL_TOKEN="$$TOKEN" \
 	python3 tests/system/test_graphql.py
-	@echo "Running GraphQL read validation tests..."
+	@echo ""
+	@echo "=== Step 4: Running GraphQL read validation tests ==="
 	@TOKEN=$$(LESSER_BASE_URL=$(SEED_BASE_URL) python3 scripts/seed_runner/main.py get_token); \
 	GRAPHQL_STAGE=dev \
 	GRAPHQL_DOMAIN=lesser.host \
 	GRAPHQL_ENDPOINT=$(SEED_GRAPHQL_ENDPOINT) \
 	GRAPHQL_TOKEN="$$TOKEN" \
 	python3 tests/system/test_graphql_reads.py
+	@echo ""
+	@echo "=== Step 5: Running comprehensive GraphQL validation ==="
+	@bash scripts/run_graphql_validation.sh
 
 # =============================================================================
 # CODE QUALITY
@@ -799,6 +817,7 @@ help:
 	@echo "  test-race           Run tests with race detection"
 	@echo "  test-integration    Run integration tests"
 	@echo "  test-unit           Run unit tests only"
+	@echo "  clear-data          Clear all data from DynamoDB table"
 	@echo "  seed-and-validate   Seed data and run validation tests"
 	@echo ""
 	@echo "CODE QUALITY:"

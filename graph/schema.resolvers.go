@@ -1119,15 +1119,15 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 	}
 
 	attachments := make([]*activitypub.Attachment, 0)
-	if status.Note != nil {
-		for _, att := range status.Note.Attachment {
+	if status.Note != nil && status.Note.Get() != nil {
+		for _, att := range status.Note.Get().Attachment {
 			attachments = append(attachments, &att)
 		}
 	}
 
 	tags := make([]*activitypub.Tag, 0)
-	if status.Note != nil {
-		for _, tag := range status.Note.Tag {
+	if status.Note != nil && status.Note.Get() != nil {
+		for _, tag := range status.Note.Get().Tag {
 			tags = append(tags, &tag)
 		}
 	}
@@ -1163,8 +1163,8 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 	}
 
 	var summary *string
-	if status.Note != nil && status.Note.Summary != "" {
-		summary = &status.Note.Summary
+	if status.Note != nil && status.Note.Get() != nil && status.Note.Get().Summary != "" {
+		summary = &status.Note.Get().Summary
 	}
 
 	obj := &model.Object{

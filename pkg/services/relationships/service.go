@@ -721,9 +721,18 @@ func (s *Service) removeRelationshipGeneric(ctx context.Context, params removeRe
 	}
 
 	if !exists {
-		// Relationship doesn't exist - return current relationship
+		// Relationship doesn't exist - return current relationship (idempotent success)
+		s.logger.Debug("relationship does not exist, treating removal as idempotent success",
+			zap.String(params.actorName, params.actorID),
+			zap.String(params.targetName, params.targetID))
+		
 		relationship, err := s.GetRelationship(ctx, params.actorID, params.targetID)
 		if err != nil {
+			// Don't mask the error - we need to know why GetRelationship failed
+			s.logger.Error("failed to get relationship status after idempotent check",
+				zap.String(params.actorName, params.actorID),
+				zap.String(params.targetName, params.targetID),
+				zap.Error(err))
 			return nil, err
 		}
 
@@ -736,11 +745,17 @@ func (s *Service) removeRelationshipGeneric(ctx context.Context, params removeRe
 	// Get accounts for events
 	actor, err := s.accountRepo.GetAccount(ctx, params.actorID)
 	if err != nil {
+		s.logger.Error("failed to get actor account for relationship removal",
+			zap.String(params.actorName, params.actorID),
+			zap.Error(err))
 		return nil, err
 	}
 
 	target, err := s.accountRepo.GetAccount(ctx, params.targetID)
 	if err != nil {
+		s.logger.Error("failed to get target account for relationship removal",
+			zap.String(params.targetName, params.targetID),
+			zap.Error(err))
 		return nil, err
 	}
 

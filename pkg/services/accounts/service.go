@@ -781,7 +781,17 @@ func (s *Service) updateAccountProfile(account *storage.Account, cmd *UpdateProf
 
 	// Update Actor fields (ActivityPub profile)
 	if account.Actor == nil {
-		return ErrAccountNoActivityPubActor
+		// Initialize Actor if missing (shouldn't happen, but handle gracefully)
+		account.Actor = &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				Context: activitypub.Context,
+				Type:    "Person",
+				ID:      fmt.Sprintf("https://%s/users/%s", s.domainName, account.User.Username),
+			},
+			PreferredUsername: account.User.Username,
+		}
+		s.logger.Warn("account missing Actor, initializing",
+			zap.String("username", account.User.Username))
 	}
 
 	if cmd.DisplayName != "" {
