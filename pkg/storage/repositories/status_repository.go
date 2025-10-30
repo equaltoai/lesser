@@ -172,13 +172,13 @@ func (r *StatusRepository) canonicalizeStatusIndexes(ctx context.Context, status
 		partitionKey := "PUBLIC_TIMELINE"
 		sortKey := fmt.Sprintf("%s#%s", timestampStr, status.StatusID)
 
-		builder.Set("GSI2PK", partitionKey)
-		builder.Set("GSI2SK", sortKey)
+		builder.Set("gsI2PK", partitionKey)
+		builder.Set("gsI2SK", sortKey)
 		builder.Set("gsI2PK", partitionKey)
 		builder.Set("gsI2SK", sortKey)
 	} else {
-		builder.Remove("GSI2PK")
-		builder.Remove("GSI2SK")
+		builder.Remove("gsI2PK")
+		builder.Remove("gsI2SK")
 		builder.Remove("gsI2PK")
 		builder.Remove("gsI2SK")
 	}
@@ -270,7 +270,7 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID string) (int, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)).
+		Where("gsI1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)).
 		Count()
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, EntityStatus, "count by author")
@@ -283,7 +283,7 @@ func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID s
 func (r *StatusRepository) CountReplies(ctx context.Context, statusID string) (int, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI4").
-		Where("GSI4PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
+		Where("gsI4PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
 		Count()
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "reply", "count")
@@ -463,7 +463,7 @@ func (r *StatusRepository) GetStatusesByURL(ctx context.Context, targetURL strin
 
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI7").
-		Where("GSI7PK", "=", "URL#"+normalizedURL).
+		Where("gsI7PK", "=", "URL#"+normalizedURL).
 		Limit(limit).
 		All(&matchingStatuses)
 
@@ -695,7 +695,7 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI7").
-		Where("GSI7PK", "=", "URL#"+normalizedURL).
+		Where("gsI7PK", "=", "URL#"+normalizedURL).
 		Scan(&statuses)
 
 	if err != nil {
@@ -835,7 +835,7 @@ func (r *StatusRepository) fetchStatusesForActor(ctx context.Context, userID str
 	var userStatuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", actorID)).
+		Where("gsI1PK", "=", fmt.Sprintf("AUTHOR#%s", actorID)).
 		OrderBy("GSI1SK", "DESC").
 		Limit(homeTimelineStatusesPerActor).
 		All(&userStatuses)
@@ -1013,7 +1013,7 @@ func (r *StatusRepository) GetStatusesByHashtag(ctx context.Context, hashtag str
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI5").
-		Where("GSI5PK", "=", fmt.Sprintf("HASHTAG#%s", strings.ToLower(hashtag))).
+		Where("gsI5PK", "=", fmt.Sprintf("HASHTAG#%s", strings.ToLower(hashtag))).
 		OrderBy("GSI5SK", "DESC").
 		Limit(opts.Limit).
 		All(&statuses)
@@ -1368,7 +1368,7 @@ func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI4").
-		Where("GSI4PK", "=", fmt.Sprintf("REPLIES#%s", parentStatusID)).
+		Where("gsI4PK", "=", fmt.Sprintf("REPLIES#%s", parentStatusID)).
 		OrderBy("GSI4SK", "ASC"). // Chronological order for replies
 		Limit(opts.Limit).
 		All(&statuses)

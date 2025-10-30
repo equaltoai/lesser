@@ -190,11 +190,11 @@ func (r *DLQRepository) GetDLQMessagesByErrorType(ctx context.Context, errorType
 
 	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 		Index("error-index").
-		Where("GSI1PK", "=", "DLQ_ERROR#"+errorType).
+		Where("gsI1PK", "=", "DLQ_ERROR#"+errorType).
 		OrderBy("GSI1SK", "DESC")
 
 	if cursor != "" {
-		query = query.Where("GSI1SK", "<", cursor)
+		query = query.Where("gsI1SK", "<", cursor)
 	}
 
 	// Fetch one more item than requested to determine if there are more results
@@ -229,12 +229,12 @@ func (r *DLQRepository) GetDLQMessagesForReprocessing(ctx context.Context, servi
 	for {
 		query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 			Index("retry-index").
-			Where("GSI2PK", "=", fmt.Sprintf("DLQ_RETRY#%s#%s", service, status)).
+			Where("gsI2PK", "=", fmt.Sprintf("DLQ_RETRY#%s#%s", service, status)).
 			OrderBy("GSI2SK", "ASC").
 			Limit(safeLimit + 1)
 
 		if scanCursor != "" {
-			query = query.Where("GSI2SK", ">", scanCursor)
+			query = query.Where("gsI2SK", ">", scanCursor)
 		}
 
 		var batch []*models.DLQMessage
@@ -281,11 +281,11 @@ func (r *DLQRepository) GetDLQMessagesByStatus(ctx context.Context, service, sta
 
 	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 		Index("retry-index").
-		Where("GSI2PK", "=", fmt.Sprintf("DLQ_RETRY#%s#%s", service, status)).
+		Where("gsI2PK", "=", fmt.Sprintf("DLQ_RETRY#%s#%s", service, status)).
 		OrderBy("GSI2SK", "DESC")
 
 	if cursor != "" {
-		query = query.Where("GSI2SK", "<", cursor)
+		query = query.Where("gsI2SK", "<", cursor)
 	}
 
 	query = query.Limit(safeLimit + 1)
@@ -525,7 +525,7 @@ func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearch
 	// Use service-wide index for broad searches
 	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 		Index("service-index").
-		Where("GSI3PK", "=", "DLQ_SERVICE#"+filter.Service).
+		Where("gsI3PK", "=", "DLQ_SERVICE#"+filter.Service).
 		OrderBy("GSI3SK", "DESC")
 
 	// Apply filters
@@ -555,7 +555,7 @@ func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearch
 
 	// Continue scanning from the previous page when a cursor is supplied
 	if filter.Cursor != "" {
-		query = query.Where("GSI3SK", "<", filter.Cursor)
+		query = query.Where("gsI3SK", "<", filter.Cursor)
 	}
 
 	// Set limit

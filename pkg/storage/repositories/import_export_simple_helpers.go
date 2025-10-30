@@ -103,7 +103,7 @@ func getImportExportItemsByStatus[T ImportExportItem](
 
 	query := db.Model(modelPtr).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username))
+		Where("gsI1PK", "=", fmt.Sprintf("USER#%s", username))
 
 	err := query.All(&items)
 	if err != nil {
@@ -177,7 +177,7 @@ func getCostsByDateRange[T CostTrackingItem](
 		var dailyCosts []T
 		query := db.Model(modelPtr).
 			Index("GSI2").
-			Where("GSI2PK", "=", fmt.Sprintf("%s#%s", costTypeUpper, dateStr)).
+			Where("gsI2PK", "=", fmt.Sprintf("%s#%s", costTypeUpper, dateStr)).
 			OrderBy("GSI2SK", "DESC").
 			Limit(limit)
 
@@ -225,9 +225,9 @@ func getUserCosts[T any](
 
 	query := db.Model(modelPtr).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("GSI1SK", ">=", startSK).
-		Where("GSI1SK", "<=", endSK).
+		Where("gsI1PK", "=", fmt.Sprintf("USER#%s", username)).
+		Where("gsI1SK", ">=", startSK).
+		Where("gsI1SK", "<=", endSK).
 		OrderBy("GSI1SK", "DESC").
 		Limit(limit)
 

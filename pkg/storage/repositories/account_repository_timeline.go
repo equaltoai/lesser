@@ -85,16 +85,16 @@ func (r *AccountRepository) GetLocalTimeline(ctx context.Context, limit int, max
 	// Build query using GSI for local timeline
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Index("local-timeline-index").
-		Where("GSI1PK", "=", "LOCAL_TIMELINE").
+		Where("gsI1PK", "=", "LOCAL_TIMELINE").
 		OrderBy("GSI1SK", "DESC").
 		Limit(safeLimit + 1)
 
 	// Apply pagination filters
 	if maxID != "" {
-		query = query.Where("GSI1SK", "<", maxID)
+		query = query.Where("gsI1SK", "<", maxID)
 	}
 	if sinceID != "" {
-		query = query.Where("GSI1SK", ">", sinceID)
+		query = query.Where("gsI1SK", ">", sinceID)
 	}
 
 	// Execute query
@@ -134,16 +134,16 @@ func (r *AccountRepository) GetPublicTimeline(ctx context.Context, limit int, ma
 	// Build query
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Index(indexName).
-		Where("GSI2PK", "=", gsiPK).
+		Where("gsI2PK", "=", gsiPK).
 		OrderBy("GSI2SK", "DESC").
 		Limit(safeLimit + 1)
 
 	// Apply pagination filters
 	if maxID != "" {
-		query = query.Where("GSI2SK", "<", maxID)
+		query = query.Where("gsI2SK", "<", maxID)
 	}
 	if sinceID != "" {
-		query = query.Where("GSI2SK", ">", sinceID)
+		query = query.Where("gsI2SK", ">", sinceID)
 	}
 
 	// Execute query
@@ -178,16 +178,16 @@ func (r *AccountRepository) GetHashtagTimeline(ctx context.Context, hashtag stri
 	// Build query using hashtag index
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Index("hashtag-timeline-index").
-		Where("GSI3PK", "=", fmt.Sprintf("HASHTAG#%s", hashtag)).
+		Where("gsI3PK", "=", fmt.Sprintf("HASHTAG#%s", hashtag)).
 		OrderBy("GSI3SK", "DESC").
 		Limit(safeLimit + 1)
 
 	// Apply pagination filters
 	if maxID != "" {
-		query = query.Where("GSI3SK", "<", maxID)
+		query = query.Where("gsI3SK", "<", maxID)
 	}
 	if sinceID != "" {
-		query = query.Where("GSI3SK", ">", sinceID)
+		query = query.Where("gsI3SK", ">", sinceID)
 	}
 
 	// Execute query
@@ -230,16 +230,16 @@ func (r *AccountRepository) GetListTimeline(ctx context.Context, username, listI
 	// Build query using list timeline index
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Index("list-timeline-index").
-		Where("GSI4PK", "=", fmt.Sprintf("LIST#%s", listID)).
+		Where("gsI4PK", "=", fmt.Sprintf("LIST#%s", listID)).
 		OrderBy("GSI4SK", "DESC").
 		Limit(safeLimit + 1)
 
 	// Apply pagination filters
 	if maxID != "" {
-		query = query.Where("GSI4SK", "<", maxID)
+		query = query.Where("gsI4SK", "<", maxID)
 	}
 	if sinceID != "" {
-		query = query.Where("GSI4SK", ">", sinceID)
+		query = query.Where("gsI4SK", ">", sinceID)
 	}
 
 	// Execute query

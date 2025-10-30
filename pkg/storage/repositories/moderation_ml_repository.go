@@ -72,7 +72,7 @@ func (r *ModerationMLRepository) GetSample(ctx context.Context, sampleID string)
 
 	err := r.db.WithContext(ctx).Model(&sample).
 		Index("gsi3").
-		Where("GSI3PK", "=", fmt.Sprintf("SAMPLEID#%s", sampleID)).
+		Where("gsI3PK", "=", fmt.Sprintf("SAMPLEID#%s", sampleID)).
 		First(&sample)
 
 	if err != nil {
@@ -96,7 +96,7 @@ func (r *ModerationMLRepository) ListSamplesByLabel(ctx context.Context, label s
 
 	query := r.db.WithContext(ctx).Model(&models.ModerationSample{}).
 		Index("gsi2").
-		Where("GSI2PK", "=", fmt.Sprintf("LABEL#%s", label)).
+		Where("gsI2PK", "=", fmt.Sprintf("LABEL#%s", label)).
 		Limit(limit)
 
 	err := query.Scan(&results)
@@ -122,7 +122,7 @@ func (r *ModerationMLRepository) ListSamplesByReviewer(ctx context.Context, revi
 
 	query := r.db.WithContext(ctx).Model(&models.ModerationSample{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", fmt.Sprintf("REVIEWER#%s", reviewerID)).
+		Where("gsI1PK", "=", fmt.Sprintf("REVIEWER#%s", reviewerID)).
 		Limit(limit)
 
 	err := query.Scan(&results)
@@ -191,7 +191,7 @@ func (r *ModerationMLRepository) GetActiveModelVersion(ctx context.Context) (*mo
 
 	query := r.db.WithContext(ctx).Model(&version).
 		Index("gsi1").
-		Where("GSI1PK", "=", "MLMODEL#ACTIVE")
+		Where("gsI1PK", "=", "MLMODEL#ACTIVE")
 
 	err := query.First(&version)
 	if err != nil {
@@ -307,7 +307,7 @@ func (r *ModerationMLRepository) ListEffectivenessMetricsByPeriod(ctx context.Co
 
 	query := r.db.WithContext(ctx).Model(&models.ModerationEffectivenessMetric{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", fmt.Sprintf("METRICS#%s", period)).
+		Where("gsI1PK", "=", fmt.Sprintf("METRICS#%s", period)).
 		Limit(limit)
 
 	err := query.Scan(&results)

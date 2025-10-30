@@ -183,7 +183,7 @@ func (r *TrendingRepository) getTrendingItemsGeneric(ctx context.Context, trendT
 	trendsValue := reflect.New(sliceType).Elem()
 
 	err := r.db.WithContext(ctx).Model(modelInstance).
-		Where("GSI8PK", "=", pk).
+		Where("gsI8PK", "=", pk).
 		OrderBy("GSI8SK", "DESC"). // Sort by score descending
 		Limit(limit).
 		All(trendsValue.Addr().Interface())
@@ -260,7 +260,7 @@ func (r *TrendingRepository) getTrendingLinksInternal(ctx context.Context, trend
 
 	var trendModels []models.LinkTrend
 	err := r.db.WithContext(ctx).Model(&models.LinkTrend{}).
-		Where("GSI8PK", "=", pk).
+		Where("gsI8PK", "=", pk).
 		OrderBy("GSI8SK", "DESC"). // Sort by score descending
 		Limit(limit).
 		All(&trendModels)
@@ -1400,8 +1400,8 @@ func (r *TrendingRepository) GetEngagementByDateRange(ctx context.Context, metri
 
 	var metricsRecords []models.EngagementMetrics
 	err := r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
-		Where("GSI8PK", ">=", startPK).
-		Where("GSI8PK", "<=", endPK).
+		Where("gsI8PK", ">=", startPK).
+		Where("gsI8PK", "<=", endPK).
 		OrderBy("GSI8PK", "ASC").
 		Limit(limit).
 		All(&metricsRecords)
@@ -2615,7 +2615,7 @@ func (r *TrendingRepository) GetTopQueries(ctx context.Context, limit int, timeR
 
 	var counters []models.PopularQueryCounter
 	err := r.db.WithContext(ctx).Model(&models.PopularQueryCounter{}).
-		Where("GSI8PK", "=", gsi8PK).
+		Where("gsI8PK", "=", gsi8PK).
 		OrderBy("GSI8SK", "DESC"). // Highest counts first
 		Limit(limit).
 		All(&counters)

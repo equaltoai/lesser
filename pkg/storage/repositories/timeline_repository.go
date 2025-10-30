@@ -81,13 +81,13 @@ func (r *TimelineRepository) GetPublicTimeline(_ context.Context, local bool, li
 
 	query := r.db.Model(&models.Timeline{}).
 		Index("post-timeline-index"). // GSI1
-		Where("GSI1PK", "=", gsi1pk).
+		Where("gsI1PK", "=", gsi1pk).
 		OrderBy("GSI1SK", "ASC") // ASC because we use reverse timestamp
 
 	// Resume from the supplied cursor value when available
 	if cursor != "" {
 		// With reverse timestamp, we use > for getting older entries
-		query = query.Where("GSI1SK", ">", cursor)
+		query = query.Where("gsI1SK", ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results

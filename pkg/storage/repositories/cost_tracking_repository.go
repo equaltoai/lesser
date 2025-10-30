@@ -127,14 +127,14 @@ func (r *TrackingRepository) ListByTable(ctx context.Context, tableName string, 
 
 	query := r.db.WithContext(ctx).Model(&models.DynamoDBCostRecord{}).
 		Index("table-index").
-		Where("GSI1PK", "=", fmt.Sprintf("COST_TABLE#%s", tableName)).
-		Where("GSI1SK", ">=", startSK).
-		Where("GSI1SK", "<=", endSK).
+		Where("gsI1PK", "=", fmt.Sprintf("COST_TABLE#%s", tableName)).
+		Where("gsI1SK", ">=", startSK).
+		Where("gsI1SK", "<=", endSK).
 		OrderBy("GSI1SK", "DESC").
 		Limit(safeLimit + 1)
 
 	if cursor != "" {
-		query = query.Where("GSI1SK", "<", cursor)
+		query = query.Where("gsI1SK", "<", cursor)
 	}
 
 	err := query.All(&trackingList)
@@ -1190,14 +1190,14 @@ func (r *TrackingRepository) GetRelayCostsByURL(ctx context.Context, relayURL st
 
 	query := r.db.WithContext(ctx).Model(&models.RelayCost{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("RELAY_COSTS#%s", relayURL)).
-		Where("GSI1SK", ">=", startSK).
-		Where("GSI1SK", "<=", endSK).
+		Where("gsI1PK", "=", fmt.Sprintf("RELAY_COSTS#%s", relayURL)).
+		Where("gsI1SK", ">=", startSK).
+		Where("gsI1SK", "<=", endSK).
 		OrderBy("GSI1SK", "DESC").
 		Limit(safeLimit + 1)
 
 	if cursor != "" {
-		query = query.Where("GSI1SK", "<", cursor)
+		query = query.Where("gsI1SK", "<", cursor)
 	}
 
 	if operationType != "" {
@@ -1283,7 +1283,7 @@ func (r *TrackingRepository) GetRelayCostsByDateRange(ctx context.Context, start
 		var dailyCosts []*models.RelayCost
 		query := r.db.WithContext(ctx).Model(&models.RelayCost{}).
 			Index("GSI2").
-			Where("GSI2PK", "=", fmt.Sprintf("RELAY_COSTS_DAILY#%s", dateStr)).
+			Where("gsI2PK", "=", fmt.Sprintf("RELAY_COSTS_DAILY#%s", dateStr)).
 			OrderBy("GSI2SK", "DESC").
 			Limit(dayLimit + 1)
 
@@ -1385,14 +1385,14 @@ func (r *TrackingRepository) GetRelayMetricsHistory(ctx context.Context, relayUR
 
 	query := r.db.WithContext(ctx).Model(&models.RelayMetrics{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("RELAY_METRICS#%s", relayURL)).
-		Where("GSI1SK", ">=", startSK).
-		Where("GSI1SK", "<=", endSK).
+		Where("gsI1PK", "=", fmt.Sprintf("RELAY_METRICS#%s", relayURL)).
+		Where("gsI1SK", ">=", startSK).
+		Where("gsI1SK", "<=", endSK).
 		OrderBy("GSI1SK", "DESC").
 		Limit(safeLimit + 1)
 
 	if cursor != "" {
-		query = query.Where("GSI1SK", "<", cursor)
+		query = query.Where("gsI1SK", "<", cursor)
 	}
 
 	err := query.All(&metricsHistory)

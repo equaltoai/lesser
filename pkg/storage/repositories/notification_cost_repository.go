@@ -100,7 +100,7 @@ func (r *NotificationCostRepository) GetDailyCostTracking(ctx context.Context, d
 
 	query := r.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
 		Index("gsi3").
-		Where("GSI3PK", "=", fmt.Sprintf("DAILY#%s", dateStr)).
+		Where("gsI3PK", "=", fmt.Sprintf("DAILY#%s", dateStr)).
 		OrderBy("GSI3SK", "DESC").
 		Limit(limit)
 
@@ -900,9 +900,9 @@ func (r *NotificationCostRepository) GetDailySpending(ctx context.Context, usern
 	endSK := fmt.Sprintf("COST#%s", tomorrow.Format(time.RFC3339))
 
 	err := r.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
-		Where("GSI1PK", "=", gsi1PK).
-		Where("GSI1SK", ">=", startSK).
-		Where("GSI1SK", "<", endSK).
+		Where("gsI1PK", "=", gsi1PK).
+		Where("gsI1SK", ">=", startSK).
+		Where("gsI1SK", "<", endSK).
 		All(&costs)
 
 	if err != nil {

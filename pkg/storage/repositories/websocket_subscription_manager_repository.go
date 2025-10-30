@@ -159,7 +159,7 @@ func (r *WebSocketSubscriptionManagerRepository) GetSubscriptionsForType(ctx con
 	var subscriptions []models.WebSocketEventSubscription
 
 	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketEventSubscription{}).
-		Where("GSI1PK", "=", fmt.Sprintf("SUBSCRIPTION#%s", subscriptionType)).
+		Where("gsI1PK", "=", fmt.Sprintf("SUBSCRIPTION#%s", subscriptionType)).
 		All(&subscriptions)
 
 	if err != nil {
@@ -202,7 +202,7 @@ func (r *WebSocketSubscriptionManagerRepository) GetAllConnections(ctx context.C
 	// Use GSI2 to query all connected connections efficiently
 	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
 		Index("gsi2").
-		Where("GSI2PK", "=", "STATE#connected").
+		Where("gsI2PK", "=", "STATE#connected").
 		All(&connections)
 
 	if err != nil {
@@ -240,8 +240,8 @@ func (r *WebSocketSubscriptionManagerRepository) GetUserConnections(ctx context.
 
 	// Query connections by GSI2 (UserID index)
 	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketEventConnection{}).
-		Where("GSI2PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("GSI2SK", "begins_with", "CONNECTION#").
+		Where("gsI2PK", "=", fmt.Sprintf("USER#%s", userID)).
+		Where("gsI2SK", "begins_with", "CONNECTION#").
 		All(&connections)
 
 	if err != nil {

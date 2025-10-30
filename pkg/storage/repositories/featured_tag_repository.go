@@ -197,7 +197,7 @@ func (r *FeaturedTagRepository) GetTagSuggestions(ctx context.Context, username 
 	var statusModels []models.Status
 	err = r.GetDB().WithContext(ctx).Model(&models.Status{}).
 		Index("GSI3").
-		Where("GSI3PK", "=", fmt.Sprintf("USER_STATUS#%s", username)).
+		Where("gsI3PK", "=", fmt.Sprintf("USER_STATUS#%s", username)).
 		OrderBy("GSI3SK", "DESC").
 		Limit(100). // Analyze last 100 statuses
 		All(&statusModels)
@@ -254,7 +254,7 @@ func (r *FeaturedTagRepository) calculateTagStatistics(ctx context.Context, user
 	var statusModels []models.Status
 	err := r.GetDB().WithContext(ctx).Model(&models.Status{}).
 		Index("GSI3").
-		Where("GSI3PK", "=", fmt.Sprintf("USER_STATUS#%s", userID)).
+		Where("gsI3PK", "=", fmt.Sprintf("USER_STATUS#%s", userID)).
 		OrderBy("GSI3SK", "DESC"). // Most recent first
 		All(&statusModels)
 	if err != nil {
