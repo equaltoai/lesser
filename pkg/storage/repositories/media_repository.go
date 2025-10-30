@@ -130,7 +130,7 @@ func (r *MediaRepository) GetJobsByStatus(ctx context.Context, status string, li
 
 	var jobs []*models.MediaJob
 	query := r.db.WithContext(ctx).Model(&models.MediaJob{}).
-		Where("GSI2PK", "=", fmt.Sprintf("STATUS#%s", status))
+		Where("gsI2PK", "=", fmt.Sprintf("STATUS#%s", status))
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -152,7 +152,7 @@ func (r *MediaRepository) GetJobsByUser(ctx context.Context, username string, li
 
 	var jobs []*models.MediaJob
 	query := r.db.WithContext(ctx).Model(&models.MediaJob{}).
-		Where("GSI1PK", "=", fmt.Sprintf("USER_JOBS#%s", username))
+		Where("gsI1PK", "=", fmt.Sprintf("USER_JOBS#%s", username))
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -220,7 +220,7 @@ func (r *MediaRepository) GetMediaByUser(ctx context.Context, userID string, lim
 
 	var mediaList []*models.Media
 	query := r.db.WithContext(ctx).Model(&models.Media{}).
-		Where("GSI1PK", "=", fmt.Sprintf("USER_MEDIA#%s", userID))
+		Where("gsI1PK", "=", fmt.Sprintf("USER_MEDIA#%s", userID))
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -242,7 +242,7 @@ func (r *MediaRepository) GetMediaByStatus(ctx context.Context, status string, l
 
 	var mediaList []*models.Media
 	query := r.db.WithContext(ctx).Model(&models.Media{}).
-		Where("GSI2PK", "=", fmt.Sprintf("MEDIA_STATUS#%s", status))
+		Where("gsI2PK", "=", fmt.Sprintf("MEDIA_STATUS#%s", status))
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -264,7 +264,7 @@ func (r *MediaRepository) GetMediaByContentType(ctx context.Context, contentType
 
 	var mediaList []*models.Media
 	query := r.db.WithContext(ctx).Model(&models.Media{}).
-		Where("GSI3PK", "=", fmt.Sprintf("CONTENT_TYPE#%s", contentType))
+		Where("gsI3PK", "=", fmt.Sprintf("CONTENT_TYPE#%s", contentType))
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -713,7 +713,7 @@ func (r *MediaRepository) GetTranscodingJobsByUser(ctx context.Context, userID s
 
 	var jobs []*models.TranscodingJob
 	query := r.db.WithContext(ctx).Model(&models.TranscodingJob{}).
-		Where("GSI1PK", "=", fmt.Sprintf("USER_TRANSCODING#%s", userID))
+		Where("gsI1PK", "=", fmt.Sprintf("USER_TRANSCODING#%s", userID))
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -735,7 +735,7 @@ func (r *MediaRepository) GetTranscodingJobsByMedia(ctx context.Context, mediaID
 
 	var jobs []*models.TranscodingJob
 	query := r.db.WithContext(ctx).Model(&models.TranscodingJob{}).
-		Where("GSI2PK", "=", fmt.Sprintf("MEDIA_TRANSCODING#%s", mediaID))
+		Where("gsI2PK", "=", fmt.Sprintf("MEDIA_TRANSCODING#%s", mediaID))
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -1078,7 +1078,7 @@ func (r *MediaRepository) SetMediaModeration(ctx context.Context, mediaID string
 func (r *MediaRepository) getMediaByStatus(ctx context.Context, status string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Media], error) {
 	var mediaList []*models.Media
 	query := r.db.WithContext(ctx).Model(&models.Media{}).
-		Where("GSI2PK", "=", fmt.Sprintf("MEDIA_STATUS#%s", status))
+		Where("gsI2PK", "=", fmt.Sprintf("MEDIA_STATUS#%s", status))
 
 	if opts.Limit > 0 {
 		query = query.Limit(opts.Limit)
@@ -1094,7 +1094,7 @@ func (r *MediaRepository) getMediaByStatus(ctx context.Context, status string, o
 
 	// Resume from the provided cursor when present
 	if opts.Cursor != "" {
-		query = query.Where("GSI2SK", ">", opts.Cursor)
+		query = query.Where("gsI2SK", ">", opts.Cursor)
 	}
 
 	err := query.Scan(&mediaList)
@@ -1124,7 +1124,7 @@ func (r *MediaRepository) getMediaByStatus(ctx context.Context, status string, o
 func (r *MediaRepository) getUserMediaWithOptions(ctx context.Context, userID string, opts interfaces.PaginationOptions, contentType string) (*interfaces.PaginatedResult[*models.Media], error) {
 	var mediaList []*models.Media
 	query := r.db.WithContext(ctx).Model(&models.Media{}).
-		Where("GSI1PK", "=", fmt.Sprintf("USER_MEDIA#%s", userID))
+		Where("gsI1PK", "=", fmt.Sprintf("USER_MEDIA#%s", userID))
 
 	// Apply content type filter if provided
 	if contentType != "" {
@@ -1147,7 +1147,7 @@ func (r *MediaRepository) getUserMediaWithOptions(ctx context.Context, userID st
 
 	// Resume from the provided cursor when present
 	if opts.Cursor != "" {
-		query = query.Where("GSI1SK", ">", opts.Cursor)
+		query = query.Where("gsI1SK", ">", opts.Cursor)
 	}
 
 	err := query.Scan(&mediaList)

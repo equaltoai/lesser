@@ -250,7 +250,7 @@ func (r *BlockRepository) CountUsersWhoBlocked(ctx context.Context, blockedActor
 
 	count, err := r.db.WithContext(ctx).Model(&models.Block{}).
 		Index("GSI5").
-		Where("GSI5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
+		Where("gsI5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
 		Count()
 	if err != nil {
 		r.logger.Error("failed to count users who blocked actor",

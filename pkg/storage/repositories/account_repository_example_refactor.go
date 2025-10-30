@@ -37,7 +37,7 @@ func (r *AccountRepository) GetUserByEmailRefactored(ctx context.Context, email 
 
 	err := r.db.WithContext(ctx).Model(&user).
 		Index("email-index").
-		Where("GSI2PK", "=", emailKey).
+		Where("gsI2PK", "=", emailKey).
 		First(&user)
 
 	if err != nil {

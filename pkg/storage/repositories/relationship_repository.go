@@ -214,7 +214,7 @@ func (r *RelationshipRepository) getRelationshipsByState(ctx context.Context, us
 
 	query := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", basePK).
+		Where("gsI1PK", "=", basePK).
 		Filter("State", "=", state)
 
 	if cursor != "" {
@@ -234,7 +234,7 @@ func (r *RelationshipRepository) getRelationshipsByState(ctx context.Context, us
 		}
 
 		if decodedSK != "" {
-			query = query.Where("GSI1SK", ">", decodedSK)
+			query = query.Where("gsI1SK", ">", decodedSK)
 		}
 	}
 
@@ -344,7 +344,7 @@ func (r *RelationshipRepository) CountFollowers(ctx context.Context, username st
 	// BaseRepository doesn't have a method for filtered counts on GSI
 	count, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
+		Where("gsI1PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
 		Filter("State", "=", models.RelationshipAccepted).
 		Count()
 
@@ -410,7 +410,7 @@ func (r *RelationshipRepository) CountRelationshipsByDomain(ctx context.Context,
 	// Uses GSI2: FOLLOWER_DOMAIN#{domain} → FOLLOWING#{username}
 	followerCount, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Index("gsi2").
-		Where("GSI2PK", "=", followerKey).
+		Where("gsI2PK", "=", followerKey).
 		Filter("State", "=", models.RelationshipAccepted).
 		Count()
 
@@ -425,7 +425,7 @@ func (r *RelationshipRepository) CountRelationshipsByDomain(ctx context.Context,
 	// Uses GSI3: FOLLOWING_DOMAIN#{domain} → FOLLOWER#{username}
 	followingCount, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Index("gsi3").
-		Where("GSI3PK", "=", followingKey).
+		Where("gsI3PK", "=", followingKey).
 		Filter("State", "=", models.RelationshipAccepted).
 		Count()
 
@@ -791,7 +791,7 @@ func (r *RelationshipRepository) GetPendingMoves(ctx context.Context, limit int)
 func (r *RelationshipRepository) GetMoveByTarget(ctx context.Context, target string) ([]*storage.Move, error) {
 	query := r.db.WithContext(ctx).Model(&models.Move{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("MOVE#TARGET#%s", target))
+		Where("gsI1PK", "=", fmt.Sprintf("MOVE#TARGET#%s", target))
 
 	var moveRecords []models.Move
 	if err := query.Limit(defaultMoveQueryLimit).All(&moveRecords); err != nil {

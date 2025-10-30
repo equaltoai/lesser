@@ -316,7 +316,7 @@ func (h *OAuthHelper) ListOAuthClientsGeneric(ctx context.Context, ownerID strin
 	var models []models.OAuthClient
 	query := h.db.WithContext(ctx).Model(&models).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("OWNER#%s", ownerID))
+		Where("gsI1PK", "=", fmt.Sprintf("OWNER#%s", ownerID))
 
 	if limit > 0 {
 		query = query.Limit(limit)

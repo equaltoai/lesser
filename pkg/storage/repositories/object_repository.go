@@ -368,7 +368,7 @@ func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string
 
 	query := r.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi1-index").
-		Where("GSI1PK", "=", fmt.Sprintf("actor#%s", actorID)).
+		Where("gsI1PK", "=", fmt.Sprintf("actor#%s", actorID)).
 		Limit(limit)
 
 	if cursor != "" {
@@ -413,7 +413,7 @@ func (r *ObjectRepository) CountObjectReplies(ctx context.Context, objectID stri
 	var objects []models.Object
 	query := r.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi2-index"). // Assuming GSI2 is used for reply relationships
-		Where("GSI2PK", "=", fmt.Sprintf("reply#%s", objectID))
+		Where("gsI2PK", "=", fmt.Sprintf("reply#%s", objectID))
 
 	if err := query.All(&objects); err != nil {
 		r.logger.Error("failed to count object replies",
@@ -756,7 +756,7 @@ func (r *ObjectRepository) CountQuotes(ctx context.Context, noteID string) (int,
 	// Query quotes using GSI1 where GSI1PK = QUOTED#<noteID>
 	count, err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("QUOTED#%s", noteID)).
+		Where("gsI1PK", "=", fmt.Sprintf("QUOTED#%s", noteID)).
 		Count()
 
 	if err != nil {
@@ -816,7 +816,7 @@ func (r *ObjectRepository) CountReplies(ctx context.Context, objectID string) (i
 	// Use GSI6 to efficiently count replies
 	count, err := r.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi6-index").
-		Where("GSI6PK", "=", fmt.Sprintf("REPLIES#%s", parentID)).
+		Where("gsI6PK", "=", fmt.Sprintf("REPLIES#%s", parentID)).
 		Count()
 
 	if err != nil {
@@ -990,7 +990,7 @@ func (r *ObjectRepository) GetUserStatusCount(ctx context.Context, userID string
 	// Use GSI1 to query by actor
 	count, err := r.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi1-index").
-		Where("GSI1PK", "=", fmt.Sprintf("actor#%s", userID)).
+		Where("gsI1PK", "=", fmt.Sprintf("actor#%s", userID)).
 		Count()
 
 	if err != nil {
@@ -1023,7 +1023,7 @@ func (r *ObjectRepository) GetReplies(ctx context.Context, objectID string, limi
 	// Use GSI6 to efficiently get replies
 	query := r.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi6-index").
-		Where("GSI6PK", "=", fmt.Sprintf("REPLIES#%s", parentID)).
+		Where("gsI6PK", "=", fmt.Sprintf("REPLIES#%s", parentID)).
 		OrderBy("GSI6SK", "ASC"). // Oldest first
 		Limit(limit)
 
@@ -1250,8 +1250,8 @@ func (r *ObjectRepository) GetThreadContext(ctx context.Context, statusID string
 	// Try to find by GSI1 (status lookup) with proper index name
 	err := r.db.WithContext(ctx).Model(&context).
 		Index("gsi1-index").
-		Where("GSI1PK", "=", fmt.Sprintf("STATUS#%s", statusID)).
-		Where("GSI1SK", "=", "THREAD").
+		Where("gsI1PK", "=", fmt.Sprintf("STATUS#%s", statusID)).
+		Where("gsI1SK", "=", "THREAD").
 		First(&context)
 
 	if err != nil {
@@ -1307,7 +1307,7 @@ func (r *ObjectRepository) GetQuotesForNote(ctx context.Context, noteID string, 
 	// Use GSI1 to find quotes where GSI1PK = QUOTED#<noteID>
 	query := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("QUOTED#%s", noteID)).
+		Where("gsI1PK", "=", fmt.Sprintf("QUOTED#%s", noteID)).
 		OrderBy("GSI1SK", "DESC"). // Newest first
 		Limit(limit)
 
@@ -1389,7 +1389,7 @@ func (r *ObjectRepository) WithdrawQuote(ctx context.Context, quoteNoteID string
 	// We need to find the quote by the quoter note ID, which could be in GSI2
 	err := r.db.WithContext(ctx).Model(&quote).
 		Index("GSI2").
-		Where("GSI2PK", "=", fmt.Sprintf("QUOTER_NOTE#%s", quoteNoteID)).
+		Where("gsI2PK", "=", fmt.Sprintf("QUOTER_NOTE#%s", quoteNoteID)).
 		First(&quote)
 
 	if err != nil {
@@ -1622,7 +1622,7 @@ func (r *ObjectRepository) GetQuotesOfStatus(ctx context.Context, statusID strin
 	// Use GSI1 to find quotes where GSI1PK = QUOTED#<statusID>
 	query := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
+		Where("gsI1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
 		OrderBy("GSI1SK", "DESC"). // Newest first
 		Limit(limit)
 
@@ -1937,7 +1937,7 @@ func (r *ObjectRepository) getDirectReplies(ctx context.Context, statusID string
 	var objects []models.Object
 	err := r.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi6-index").
-		Where("GSI6PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
+		Where("gsI6PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
 		All(&objects)
 
 	if err != nil {
@@ -2007,8 +2007,8 @@ func (r *ObjectRepository) updateThreadContext(ctx context.Context, statusID, ac
 	var threadCtx models.ThreadContext
 	err := r.db.WithContext(ctx).Model(&threadCtx).
 		Index("gsi1-index").
-		Where("GSI1PK", "=", fmt.Sprintf("STATUS#%s", statusID)).
-		Where("GSI1SK", "=", "THREAD").
+		Where("gsI1PK", "=", fmt.Sprintf("STATUS#%s", statusID)).
+		Where("gsI1SK", "=", "THREAD").
 		First(&threadCtx)
 
 	if err != nil {
@@ -2076,7 +2076,7 @@ func (r *ObjectRepository) withdrawExistingQuotes(ctx context.Context, statusID 
 	var quotes []models.QuoteRelationship
 	err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
+		Where("gsI1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
 		All(&quotes)
 
 	if err != nil {
