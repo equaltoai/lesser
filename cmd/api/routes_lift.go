@@ -73,6 +73,24 @@ func configureLiftRoutes(app *lift.App) {
 		100, time.Hour, logger))
 	_ = app.GET("/api/v1/accounts/{id}/notes", lift.HandlerFunc(liftHandler.HandleGetUserNotesLift))
 
+	// Status endpoints (Mastodon parity)
+	_ = app.POST("/api/v1/statuses", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleCreateStatusLift),
+		300, time.Hour, logger))
+	_ = app.PUT("/api/v1/statuses/{id}", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleUpdateStatusLift),
+		300, time.Hour, logger))
+	_ = app.DELETE("/api/v1/statuses/{id}", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleDeleteStatusLift),
+		300, time.Hour, logger))
+	_ = app.GET("/api/v1/statuses/{id}", lift.HandlerFunc(liftHandler.HandleGetStatusLift))
+	_ = app.GET("/api/v1/statuses/{id}/context", lift.HandlerFunc(liftHandler.HandleGetStatusContextLift))
+	_ = app.GET("/api/v1/statuses/{id}/history", lift.HandlerFunc(liftHandler.HandleGetStatusHistoryLift))
+	_ = app.GET("/api/v1/statuses/{id}/source", lift.HandlerFunc(liftHandler.HandleGetStatusSourceLift))
+	_ = app.GET("/api/v1/statuses/{id}/favourited_by", lift.HandlerFunc(liftHandler.HandleGetStatusFavouritedByLift))
+	_ = app.GET("/api/v1/statuses/{id}/reblogged_by", lift.HandlerFunc(liftHandler.HandleGetStatusRebloggedByLift))
+	_ = app.GET("/api/v1/accounts/{id}/statuses", lift.HandlerFunc(liftHandler.HandleGetAccountStatusesLift))
+
 	// Admin endpoints (always enabled for administration)
 	// Note: RBAC is handled within each handler's requireAdminLift() method
 	// Account management (Admin only)
