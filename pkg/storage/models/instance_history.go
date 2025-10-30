@@ -50,6 +50,30 @@ func (i *InstanceHistory) TableName() string {
 
 // UpdateKeys updates the GSI keys when the primary keys change
 func (i *InstanceHistory) UpdateKeys() error {
+	// Validate required fields
+	if i.Date == "" {
+		return fmt.Errorf("Date is required")
+	}
+	if i.MetricType == "" {
+		return fmt.Errorf("MetricType is required")
+	}
+	if i.Granularity == "" {
+		return fmt.Errorf("Granularity is required")
+	}
+
+	// Set primary keys based on granularity
+	i.PK = "INSTANCE#HISTORY"
+	switch i.Granularity {
+	case "daily":
+		i.SK = fmt.Sprintf("DAILY#%s#%s", i.Date, i.MetricType)
+	case "weekly":
+		i.SK = fmt.Sprintf("WEEKLY#%s#%s", i.Date, i.MetricType)
+	case "monthly":
+		i.SK = fmt.Sprintf("MONTHLY#%s#%s", i.Date, i.MetricType)
+	default:
+		return fmt.Errorf("invalid granularity: %s", i.Granularity)
+	}
+
 	// GSI1 is used for metric-specific time range queries
 	i.GSI1PK = fmt.Sprintf("METRIC#%s", i.MetricType)
 	i.GSI1SK = fmt.Sprintf("DATE#%s", i.Date)

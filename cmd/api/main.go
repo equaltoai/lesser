@@ -6,8 +6,9 @@ Lesser API Server - Mastodon-compatible ActivityPub implementation
 This Lambda function serves the Lesser API using AWS API Gateway v2.
 All routing is handled by the Lift framework.
 
-The API Gateway configuration strips the /api/v1 and /api/v2 prefixes
-before passing requests to this Lambda, so the router receives clean paths.
+The API Gateway configuration forwards the full request path including /api/v1
+and /api/v2 prefixes to this Lambda. All Lift routes must include the complete
+path with prefix to match Mastodon API specifications.
 */
 
 import (

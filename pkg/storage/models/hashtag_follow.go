@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // HashtagFollow represents a user following a hashtag
 type HashtagFollow struct {
@@ -27,11 +30,18 @@ func (h *HashtagFollow) UpdateKeysWithParams(userID, hashtag string) {
 
 // UpdateKeys implements BaseModel interface - updates keys without parameters
 func (h *HashtagFollow) UpdateKeys() error {
-	// For HashtagFollow, we need userID and hashtag to be set in some way
-	// Assume they are already set in the struct fields
-	if h.UserID != "" && h.Hashtag != "" {
-		h.UpdateKeysWithParams(h.UserID, h.Hashtag)
+	// Validate required fields
+	if h.UserID == "" {
+		return fmt.Errorf("UserID is required")
 	}
+	if h.Hashtag == "" {
+		return fmt.Errorf("Hashtag is required")
+	}
+
+	// Set primary keys
+	h.PK = "user#" + h.UserID
+	h.SK = "hashtag#" + h.Hashtag
+
 	return nil
 }
 

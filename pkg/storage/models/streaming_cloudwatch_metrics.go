@@ -125,6 +125,23 @@ func (StreamingPerformanceMetrics) TableName() string {
 
 // UpdateKeys sets the GSI keys based on the current values
 func (s *StreamingCloudWatchMetrics) UpdateKeys() error {
+	// Validate required fields
+	if s.MediaID == "" {
+		return fmt.Errorf("MediaID is required")
+	}
+	if s.MetricType == "" {
+		return fmt.Errorf("MetricType is required")
+	}
+	if s.Date == "" {
+		return fmt.Errorf("Date is required")
+	}
+
+	// Note: PK and SK are set by helper methods (SetQualityBreakdown, SetGeographicData, etc.)
+	// Validate they exist
+	if s.PK == "" || s.SK == "" {
+		return fmt.Errorf("PK and SK must be set before calling UpdateKeys")
+	}
+
 	// Set GSI1 keys for time-based queries
 	s.GSI1PK = fmt.Sprintf("METRIC_TIME#%s", s.Date)
 	s.GSI1SK = fmt.Sprintf("%s#%s", s.MetricType, s.Timestamp.Format(time.RFC3339))

@@ -243,14 +243,11 @@ func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Ac
 			Where("SK", "=", actorModel.SK).
 			UpdateBuilder()
 
-		if err := seedBuilder.SetIfNotExists("Version", nil, 1).Execute(); err != nil && !strings.Contains(strings.ToLower(err.Error()), "conditionalcheckfailed") {
+		if err := seedBuilder.SetIfNotExists("Version", nil, 0).Execute(); err != nil && !strings.Contains(strings.ToLower(err.Error()), "conditionalcheckfailed") {
 			r.logger.Warn("failed to seed actor version attribute",
 				zap.String("username", username),
 				zap.Error(err))
 		}
-
-		// Assume version 1 after seeding (or existing attribute)
-		actorModel.Version = 1
 	}
 
 	now := time.Now()
@@ -311,7 +308,7 @@ func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Ac
 		updateBuilder.ConditionVersion(int64(actorModel.Version))
 		updateBuilder.Set("Version", actorModel.Version+1)
 	} else {
-		updateBuilder.SetIfNotExists("Version", nil, 1)
+		updateBuilder.Set("Version", 1)
 	}
 
 	if err := updateBuilder.Execute(); err != nil {

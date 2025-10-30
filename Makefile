@@ -1,4 +1,4 @@
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate
 
 # =============================================================================
 # CONFIGURATION
@@ -14,6 +14,10 @@ TEST_ENVIRONMENT ?= test
 TEST_STAGE ?= test
 INTEGRATION_ENVIRONMENT ?= integration
 INTEGRATION_STAGE ?= integration
+
+# Seed/validation configuration
+SEED_BASE_URL ?= https://dev.lesser.host
+SEED_GRAPHQL_ENDPOINT ?= $(SEED_BASE_URL)/api/graphql
 
 # Detect OS for Windows compatibility
 ifeq ($(OS),Windows_NT)
@@ -86,7 +90,7 @@ build-lambdas:
 			echo "Building $$lambda..."; \
 			GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
 				go build -ldflags="-s -w" -o bin/bootstrap ./cmd/$$lambda && \
-			cd bin && zip -q $$lambda.zip bootstrap && rm bootstrap && cd .. || exit 1; \
+			cd bin && zip -q $$lambda.zip bootstrap && rm -f bootstrap && cd .. || exit 1; \
 			BUILT=$$((BUILT + 1)); \
 		else \
 			SKIPPED=$$((SKIPPED + 1)); \
@@ -566,6 +570,27 @@ test-unit:
 		JWT_SECRET=$${JWT_SECRET:-dummy_value} \
 		go test -short -v ./...
 
+## Seed data and run validation tests
+seed-and-validate:
+	@echo "Seeding data..."
+	@LESSER_BASE_URL=$(SEED_BASE_URL) \
+	LESSER_GRAPHQL_ENDPOINT=$(SEED_GRAPHQL_ENDPOINT) \
+	python3 scripts/seed_runner/main.py
+	@echo "Running GraphQL validation tests..."
+	@TOKEN=$$(LESSER_BASE_URL=$(SEED_BASE_URL) python3 scripts/seed_runner/main.py get_token); \
+	GRAPHQL_STAGE=dev \
+	GRAPHQL_DOMAIN=lesser.host \
+	GRAPHQL_ENDPOINT=$(SEED_GRAPHQL_ENDPOINT) \
+	GRAPHQL_TOKEN="$$TOKEN" \
+	python3 tests/system/test_graphql.py
+	@echo "Running GraphQL read validation tests..."
+	@TOKEN=$$(LESSER_BASE_URL=$(SEED_BASE_URL) python3 scripts/seed_runner/main.py get_token); \
+	GRAPHQL_STAGE=dev \
+	GRAPHQL_DOMAIN=lesser.host \
+	GRAPHQL_ENDPOINT=$(SEED_GRAPHQL_ENDPOINT) \
+	GRAPHQL_TOKEN="$$TOKEN" \
+	python3 tests/system/test_graphql_reads.py
+
 # =============================================================================
 # CODE QUALITY
 # =============================================================================
@@ -774,6 +799,7 @@ help:
 	@echo "  test-race           Run tests with race detection"
 	@echo "  test-integration    Run integration tests"
 	@echo "  test-unit           Run unit tests only"
+	@echo "  seed-and-validate   Seed data and run validation tests"
 	@echo ""
 	@echo "CODE QUALITY:"
 	@echo "  fmt                 Format Go code"

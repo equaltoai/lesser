@@ -84,6 +84,19 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		services.WithConfig(serviceConfig),
 	}
 
+	// Add publisher if available (required for event streaming)
+	if streamQueue != nil {
+		// Convert StreamQueueService to Publisher interface
+		if publisher, ok := streamQueue.(streaming.Publisher); ok {
+			registryOpts = append(registryOpts, services.WithPublisher(publisher))
+			logger.Info("initialized registry with streaming publisher")
+		} else {
+			logger.Warn("streamQueue does not implement Publisher interface")
+		}
+	} else {
+		logger.Warn("streamQueue is nil, registry will not have publisher")
+	}
+
 	registry, err := services.NewRegistry(registryOpts...)
 	if err != nil {
 		logger.Error("failed to initialize service registry", zap.Error(err))

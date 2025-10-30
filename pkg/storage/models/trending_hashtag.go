@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -34,6 +35,18 @@ func (TrendingHashtag) TableName() string {
 
 // UpdateKeys updates the GSI keys when the primary keys change
 func (t *TrendingHashtag) UpdateKeys() error {
+	// Validate required fields
+	if t.Date == "" {
+		return fmt.Errorf("Date is required")
+	}
+	if t.Hashtag == "" {
+		return fmt.Errorf("Hashtag is required")
+	}
+
+	// Set primary keys
+	t.PK = fmt.Sprintf("TRENDING#%s", t.Date)
+	t.SK = fmt.Sprintf("HASHTAG#%f#%s", t.Score, t.Hashtag)
+
 	// GSI8 is used for trending queries
 	t.GSI8PK = t.PK
 	t.GSI8SK = t.SK

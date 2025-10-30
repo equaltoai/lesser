@@ -184,6 +184,14 @@ func (u *User) IsModerator() bool {
 
 // UpdateKeys updates the GSI keys for this user (required by DynamORM)
 func (u *User) UpdateKeys() error {
+	// Set primary keys
+	if err := common.ValidateRequiredParam("u.Username", u.Username); err != nil {
+		return err
+	}
+	u.PK = "USER#" + u.Username
+	u.SK = SKMetadata
+
+	// Set GSI keys
 	u.setupGSIKeys()
 	return nil
 }

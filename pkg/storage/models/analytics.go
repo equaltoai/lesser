@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -22,6 +23,9 @@ func (StatusEngagement) TableName() string {
 
 // UpdateKeys updates GSI keys for StatusEngagement - no GSIs needed for this model
 func (s *StatusEngagement) UpdateKeys() error {
+	// Set primary keys (required for DynamoDB operations)
+	s.PK = fmt.Sprintf("STATUS_ENGAGEMENT#%s", s.StatusID)
+	s.SK = fmt.Sprintf("%s#%s#%s", s.EngagementType, s.EngagedAt.Format(time.RFC3339), s.UserID)
 	// No GSIs for this model
 	return nil
 }
@@ -49,6 +53,9 @@ type LinkShare struct {
 
 // UpdateKeys updates GSI keys for LinkShare - no GSIs needed for this model
 func (l *LinkShare) UpdateKeys() error {
+	// Set primary keys (required for DynamoDB operations)
+	l.PK = fmt.Sprintf("LINK_SHARE#%s", l.URL)
+	l.SK = fmt.Sprintf("STATUS#%s", l.StatusID)
 	// No GSIs for this model
 	return nil
 }
@@ -101,6 +108,10 @@ type EngagementMetrics struct {
 
 // UpdateKeys updates GSI keys for EngagementMetrics
 func (e *EngagementMetrics) UpdateKeys() error {
+	// Note: PK and SK must be set by the caller/repository based on the specific use case
+	// This model has multiple key patterns: METRICS#type#date, STATUS#statusID, ENGAGEMENT#bucket
+	// We cannot reconstruct them here without knowing the context
+
 	// GSI8 is used for date range queries
 	e.GSI8PK = e.PK
 	e.GSI8SK = e.SK

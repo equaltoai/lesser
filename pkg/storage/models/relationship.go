@@ -72,7 +72,18 @@ func (r *RelationshipRecord) BeforeUpdate() error {
 
 // UpdateKeys updates GSI keys based on primary keys
 func (r *RelationshipRecord) UpdateKeys() error {
-	// GSI1 keys are set by repository methods
+	// Validate that PK and SK are set
+	if r.PK == "" {
+		return fmt.Errorf("PK is required (format: FOLLOW#{followerUsername})")
+	}
+	if r.SK == "" {
+		return fmt.Errorf("SK is required (format: FOLLOWING#{followingUsername})")
+	}
+
+	// Note: Primary keys (PK, SK) should already be set by the caller/repository
+	// We only validate and update GSI keys here
+
+	// GSI1 keys should also be set by repository methods
 	// Update domain-based GSI keys (GSI2, GSI3) for severance detection
 
 	// Extract follower username from PK: FOLLOW#{username}

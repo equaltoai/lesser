@@ -195,15 +195,16 @@ func (s *LesserApiStack) createSharedResources() {
 	})
 
 	// Add GSI1-GSI8 (generic pattern-based GSIs)
+	// Using camelCase attribute names to match DynamORM conventions (gsI1PK, gsI2PK, etc.)
 	for i := 1; i <= 8; i++ {
 		s.MainTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
 			IndexName: jsii.String(fmt.Sprintf("GSI%d", i)),
 			PartitionKey: &awsdynamodb.Attribute{
-				Name: jsii.String(fmt.Sprintf("GSI%dPK", i)),
+				Name: jsii.String(fmt.Sprintf("gsI%dPK", i)),
 				Type: awsdynamodb.AttributeType_STRING,
 			},
 			SortKey: &awsdynamodb.Attribute{
-				Name: jsii.String(fmt.Sprintf("GSI%dSK", i)),
+				Name: jsii.String(fmt.Sprintf("gsI%dSK", i)),
 				Type: awsdynamodb.AttributeType_STRING,
 			},
 		})

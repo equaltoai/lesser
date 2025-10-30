@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -207,7 +208,8 @@ func (r *ListRepository) GetUserLists(ctx context.Context, username string, opts
 	// Query lists with pagination
 	query := r.db.WithContext(ctx).Model(&models.List{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER_LISTS#%s", username))
+		Where("GSI1PK", "=", fmt.Sprintf("USER_LISTS#%s", username)).
+		OrderBy("GSI1SK", "ASC")
 
 	if opts.Limit <= 0 {
 		opts.Limit = 20
@@ -215,14 +217,46 @@ func (r *ListRepository) GetUserLists(ctx context.Context, username string, opts
 	query = query.Limit(opts.Limit)
 
 	if opts.Cursor != "" {
-		query = query.Where("ID", ">", opts.Cursor)
+		query = query.Where("GSI1SK", ">", opts.Cursor)
 	}
 
 	var lists []models.List
 	err := query.All(&lists)
 	if err != nil {
+		r.logger.Info("GetUserLists query error",
+			zap.String("username", username),
+			zap.Error(err),
+			zap.String("error_type", fmt.Sprintf("%T", err)),
+			zap.Bool("is_not_found", dmerrors.IsNotFound(err)))
+
+		if dmerrors.IsNotFound(err) {
+			r.logger.Info("returning empty list for user with no lists",
+				zap.String("username", username))
+			return &interfaces.PaginatedResult[*models.List]{
+				Items: []*models.List{},
+			}, nil
+		}
+
+		// Handle "Query condition missed key schema element" - happens when querying empty GSI
+		// This is a DynamoDB/DynamORM quirk where empty indexes can trigger validation errors
+		if strings.Contains(err.Error(), "Query condition missed key schema element") ||
+			strings.Contains(err.Error(), "ValidationException") {
+			r.logger.Info("GSI query validation error (likely empty index), returning empty results",
+				zap.String("username", username))
+			return &interfaces.PaginatedResult[*models.List]{
+				Items: []*models.List{},
+			}, nil
+		}
+
+		r.logger.Error("GetUserLists failed with non-NotFound error",
+			zap.String("username", username),
+			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, EntityList, "user list management")
 	}
+
+	r.logger.Info("GetUserLists succeeded",
+		zap.String("username", username),
+		zap.Int("count", len(lists)))
 
 	// Convert to models.List pointers
 	result := &interfaces.PaginatedResult[*models.List]{

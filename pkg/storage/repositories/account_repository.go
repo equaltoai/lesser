@@ -383,6 +383,10 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 	username := actor.PreferredUsername
 	numericID := common.GenerateNumericID(username)
 
+	r.logger.Info("creating actor",
+		zap.String("username", username),
+		zap.String("actor_id", actor.ID))
+
 	// Encrypt private key if available
 	encryptedKey := privateKey
 	if encryptor, err := r.getEncryptor(); err == nil {
@@ -408,13 +412,40 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 		actorModel.GSI3SK = username
 	}
 
+	r.logger.Info("actor model before UpdateKeys",
+		zap.String("username", actorModel.Username),
+		zap.String("pk", actorModel.PK),
+		zap.String("sk", actorModel.SK))
+
+	// Explicitly call UpdateKeys to ensure PK/SK are set
+	if err := actorModel.UpdateKeys(); err != nil {
+		r.logger.Error("failed to update actor keys",
+			zap.String("username", username),
+			zap.Error(err))
+		return err
+	}
+
+	r.logger.Info("actor model after UpdateKeys",
+		zap.String("username", actorModel.Username),
+		zap.String("pk", actorModel.PK),
+		zap.String("sk", actorModel.SK))
+
 	// Create using DynamORM
 	if err := r.db.WithContext(ctx).Model(actorModel).Create(); err != nil {
+		r.logger.Error("DynamORM Create failed for actor",
+			zap.String("username", username),
+			zap.String("pk", actorModel.PK),
+			zap.String("sk", actorModel.SK),
+			zap.Error(err))
 		if dynamormErrors.IsConditionFailed(err) {
 			return common.ConflictError{Resource: "actor", Message: fmt.Sprintf("actor %s already exists", username)}
 		}
 		return ErrorHandler.HandleCreateError(err, EntityActor, username)
 	}
+
+	r.logger.Info("actor created successfully",
+		zap.String("username", username),
+		zap.String("pk", actorModel.PK))
 
 	return nil
 }
@@ -1183,8 +1214,7 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 		} else if versionProjection.Value > 0 {
 			userModel.Version = versionProjection.Value
 		} else if userModel.Version == 0 {
-			userModel.Version = 1
-			r.logger.Warn("user version attribute missing during update; defaulting to 1",
+			r.logger.Warn("user version attribute missing during update; continuing with version 0",
 				zap.String("username", username))
 		}
 	}
@@ -1214,6 +1244,19 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 		userModel.Metadata = account.User.Metadata
 	}
 	userModel.UpdatedAt = now
+
+	if strings.TrimSpace(userModel.Username) == "" {
+		userModel.Username = username
+	}
+
+	// Ensure primary and secondary keys reflect the latest state before persisting.
+	// DynamORM does not automatically invoke UpdateKeys during Update(), so we do it explicitly.
+	if err := userModel.UpdateKeys(); err != nil {
+		r.logger.Error("failed to refresh user keys prior to update",
+			zap.String("username", username),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityUser, username)
+	}
 
 	if err := r.Update(ctx, userModel); err != nil {
 		r.logger.Error("failed to update user profile record",

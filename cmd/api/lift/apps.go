@@ -149,6 +149,16 @@ func (h *Handler) parseAppRegistrationRequest(ctx *lift.Context) (models.AppRegi
 		zap.Int("body_length", len(body)))
 
 	// Parse based on content type
+	if strings.Contains(contentTypeLower, "application/json") {
+		// Parse as JSON
+		var req models.AppRegistrationRequest
+		if err := ctx.ParseRequest(&req); err != nil {
+			h.logger.Error("failed to parse JSON request", zap.Error(err), zap.String("body", body))
+			return models.AppRegistrationRequest{}, err
+		}
+		h.logger.Info("parsed as JSON", zap.String("client_name", req.ClientName))
+		return req, nil
+	}
 	if strings.Contains(contentTypeLower, "multipart/form-data") {
 		return h.parseMultipartFormRequest(body, contentType)
 	}

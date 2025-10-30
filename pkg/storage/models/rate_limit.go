@@ -22,8 +22,16 @@ type LoginAttempt struct {
 
 // UpdateKeys updates the DynamoDB keys for the LoginAttempt model
 func (la *LoginAttempt) UpdateKeys() error {
-	// PK is set when creating the record (RATELIMIT#{identifier})
-	// SK is set when creating the record (timestamp in RFC3339Nano)
+	// Note: PK must contain the identifier and SK the timestamp
+	// These should be set before calling UpdateKeys
+	if la.PK == "" {
+		return fmt.Errorf("PK is required (format: RATELIMIT#{identifier})")
+	}
+	if la.SK == "" {
+		return fmt.Errorf("SK is required (format: timestamp in RFC3339Nano)")
+	}
+
+	// Ensure type is set
 	if err := common.ValidateRequiredParam("type", la.Type); err != nil {
 		la.Type = "LoginAttempt"
 	}
@@ -72,7 +80,15 @@ type RateLimitLockout struct {
 
 // UpdateKeys updates the DynamoDB keys for the RateLimitLockout model
 func (rll *RateLimitLockout) UpdateKeys() error {
-	// PK and SK are set when creating the record
+	// Note: PK and SK must be set before calling UpdateKeys
+	if rll.PK == "" {
+		return fmt.Errorf("PK is required (format: RATELIMIT#{identifier})")
+	}
+	if rll.SK == "" {
+		return fmt.Errorf("SK is required (value: LOCKOUT)")
+	}
+
+	// Ensure type is set
 	if err := common.ValidateRequiredParam("type", rll.Type); err != nil {
 		rll.Type = "RateLimitLockout"
 	}
@@ -131,7 +147,15 @@ type APIRateLimit struct {
 
 // UpdateKeys updates the DynamoDB keys for the APIRateLimit model
 func (arl *APIRateLimit) UpdateKeys() error {
-	// PK and SK are set when creating/updating the record
+	// Note: PK and SK must be set before calling UpdateKeys
+	if arl.PK == "" {
+		return fmt.Errorf("PK is required (format: RATELIMIT#{key})")
+	}
+	if arl.SK == "" {
+		return fmt.Errorf("SK is required (format: WINDOW#{window_start})")
+	}
+
+	// Ensure type is set
 	if err := common.ValidateRequiredParam("type", arl.Type); err != nil {
 		arl.Type = "APIRateLimit"
 	}
@@ -210,6 +234,15 @@ type RateLimitViolation struct {
 
 // UpdateKeys updates the DynamoDB keys for the RateLimitViolation model
 func (rlv *RateLimitViolation) UpdateKeys() error {
+	// Note: PK and SK must be set before calling UpdateKeys
+	if rlv.PK == "" {
+		return fmt.Errorf("PK is required (format: RATELIMIT_VIOLATION#{identifier})")
+	}
+	if rlv.SK == "" {
+		return fmt.Errorf("SK is required (format: timestamp in RFC3339Nano)")
+	}
+
+	// Ensure type is set
 	if err := common.ValidateRequiredParam("type", rlv.Type); err != nil {
 		rlv.Type = "RateLimitViolation"
 	}

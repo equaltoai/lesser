@@ -69,6 +69,15 @@ func (t *Tombstone) BeforeCreate() error {
 
 // UpdateKeys updates GSI keys for the tombstone
 func (t *Tombstone) UpdateKeys() error {
+	// Validate required fields
+	if t.ID == "" {
+		return fmt.Errorf("ID is required")
+	}
+
+	// Set primary keys
+	t.PK = fmt.Sprintf(KeyPatternObject, t.ID)
+	t.SK = "TOMBSTONE"
+
 	// GSI1: Query tombstones by actor
 	if t.DeletedBy != "" {
 		t.GSI1PK = fmt.Sprintf("ACTOR#%s#TOMBSTONES", t.DeletedBy)

@@ -3,6 +3,8 @@ package models
 import (
 	"fmt"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // List represents a user-created list for organizing followed accounts
@@ -47,6 +49,18 @@ func (l *List) BeforeUpdate() error {
 
 // UpdateKeys updates the GSI keys based on current field values
 func (l *List) UpdateKeys() error {
+	// Validate required fields
+	if err := common.ValidateRequiredParam("l.ID", l.ID); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("l.Username", l.Username); err != nil {
+		return err
+	}
+
+	// Set primary keys
+	l.PK = fmt.Sprintf(KeyPatternList, l.ID)
+	l.SK = SKMetadata
+
 	// Set up GSI1 keys for user's lists index
 	l.GSI1PK = fmt.Sprintf("USER_LISTS#%s", l.Username)
 	l.GSI1SK = l.ID

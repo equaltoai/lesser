@@ -1763,14 +1763,24 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		return nil, ErrCreateAccount
 	}
 
+	s.logger.Info("account created successfully, recording activity",
+		zap.String("username", cmd.Username))
+
 	// Record registration activity for metrics
 	if err := s.storage.Activity().RecordActivity(ctx, "registration", actor.ID, time.Now()); err != nil {
 		// Log the error but don't fail the request
 		s.logger.Warn("failed to record registration activity", zap.Error(err))
 	}
 
+	s.logger.Info("emitting account created events",
+		zap.String("username", cmd.Username))
+
 	// Create events for streaming
 	events := s.emitAccountCreatedEvents(ctx, account)
+
+	s.logger.Info("returning registration result",
+		zap.String("username", cmd.Username),
+		zap.String("actor_id", actor.ID))
 
 	return &RegisterAccountResult{
 		Account: account,
@@ -1822,6 +1832,12 @@ func (s *Service) hashPassword(password string) (string, error) {
 // emitAccountCreatedEvents creates events for account creation
 func (s *Service) emitAccountCreatedEvents(ctx context.Context, account *storage.Account) []*streaming.Event {
 	var events []*streaming.Event
+
+	// Skip event emission if publisher is not configured (optional dependency)
+	if s.publisher == nil {
+		s.logger.Debug("publisher not configured, skipping event emission for account creation")
+		return events
+	}
 
 	// Create account created event
 	event := &streaming.Event{
