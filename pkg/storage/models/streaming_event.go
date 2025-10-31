@@ -53,7 +53,12 @@ func (e *StreamingEvent) UpdateKeys() {
 
 // GetTableName returns the table name for this model
 func (e *StreamingEvent) GetTableName() string {
-	return "" // Will use the default table
+	return MainTableName
+}
+
+// TableName returns the DynamoDB table backing StreamingEvent.
+func (e *StreamingEvent) TableName() string {
+	return MainTableName
 }
 
 // GetPrimaryKey returns the primary key for this model

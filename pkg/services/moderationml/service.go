@@ -160,11 +160,12 @@ func (s *Service) fetchContentForSample(ctx context.Context, objectID, objectTyp
 
 		// Use the cached Content field or extract from Note
 		content := status.Content
-		if content == "" && status.Note != nil {
-			content = status.Note.Content
+		if content == "" && status.Note != nil && status.Note.Get() != nil {
+			note := status.Note.Get()
+			content = note.Content
 			// Add content warning if present
-			if status.Note.Summary != "" {
-				content = status.Note.Summary + "\n\n" + content
+			if note.Summary != "" {
+				content = note.Summary + "\n\n" + content
 			}
 		}
 

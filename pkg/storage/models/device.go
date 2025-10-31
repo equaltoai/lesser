@@ -81,3 +81,8 @@ func (d *Device) SetTrustLevel(level string) {
 func (d *Device) IsActive() bool {
 	return d.Active && time.Since(d.LastSeenAt) < 30*24*time.Hour
 }
+
+// TableName returns the DynamoDB table backing Device.
+func (Device) TableName() string {
+	return MainTableName
+}

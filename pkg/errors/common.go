@@ -82,6 +82,13 @@ func ServiceUnavailable(serviceName string) *AppError {
 
 // ProcessingFailed creates an error indicating processing failed.
 func ProcessingFailed(processType string, err error) *AppError {
+	if err == nil {
+		return NewLambdaError(CodeEventProcessingFailed, "Processing failed").
+			WithMetadata("process_type", processType).
+			WithInternalMessage("no inner error provided").
+			AsRetryable()
+	}
+
 	return NewLambdaInternalError(CodeEventProcessingFailed, "Processing failed", err).
 		WithMetadata("process_type", processType).AsRetryable()
 }
@@ -440,16 +447,6 @@ func RegistryOptionApplyFailed(err error) *AppError {
 func RegistryValidationFailed(reason string) *AppError {
 	return NewAppError(CodeValidationFailed, CategoryInternal, "Registry validation failed").
 		WithMetadata("reason", reason)
-}
-
-// EventBusNotInitialized creates an error when internal event bus is not initialized.
-func EventBusNotInitialized() *AppError {
-	return NewAppError(CodeInternal, CategoryInternal, "Internal event bus not initialized")
-}
-
-// EventBusSubscriptionFailed creates an error for event bus subscription failures.
-func EventBusSubscriptionFailed(err error) *AppError {
-	return NewAppError(CodeInternal, CategoryInternal, "Failed to subscribe to internal event bus").WithInternalError(err)
 }
 
 // DatabaseTypeUnsupported creates an error for unsupported database types.

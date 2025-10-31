@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -11,6 +12,21 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
+
+const (
+	timelineDefaultLimit = 20
+	timelineMaxLimit     = 200
+)
+
+func clampTimelineLimit(limit int) int {
+	if limit <= 0 {
+		return timelineDefaultLimit
+	}
+	if limit > timelineMaxLimit {
+		return timelineMaxLimit
+	}
+	return limit
+}
 
 // ===== Timeline Operations =====
 // This file contains timeline-related methods for the AccountRepository
@@ -21,11 +37,14 @@ import (
 func (r *AccountRepository) GetHomeTimeline(ctx context.Context, username string, limit int, maxID, sinceID string) ([]*storage.TimelineEntry, error) {
 	var entries []models.TimelineEntry
 
+	safeLimit := clampTimelineLimit(limit)
+
 	// Build query
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "BEGINS_WITH", "HOME#").
-		Limit(limit)
+		OrderBy("SK", "DESC").
+		Limit(safeLimit + 1)
 
 	// Apply pagination filters
 	if maxID != "" {
@@ -44,6 +63,10 @@ func (r *AccountRepository) GetHomeTimeline(ctx context.Context, username string
 		return nil, ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "home timeline")
 	}
 
+	if len(entries) > safeLimit {
+		entries = entries[:safeLimit]
+	}
+
 	// Convert to storage type
 	result := make([]*storage.TimelineEntry, len(entries))
 	for i, entry := range entries {
@@ -57,11 +80,14 @@ func (r *AccountRepository) GetHomeTimeline(ctx context.Context, username string
 func (r *AccountRepository) GetLocalTimeline(ctx context.Context, limit int, maxID, sinceID string) ([]*storage.TimelineEntry, error) {
 	var entries []models.TimelineEntry
 
+	safeLimit := clampTimelineLimit(limit)
+
 	// Build query using GSI for local timeline
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Index("local-timeline-index").
 		Where("GSI1PK", "=", "LOCAL_TIMELINE").
-		Limit(limit)
+		OrderBy("GSI1SK", "DESC").
+		Limit(safeLimit + 1)
 
 	// Apply pagination filters
 	if maxID != "" {
@@ -78,6 +104,10 @@ func (r *AccountRepository) GetLocalTimeline(ctx context.Context, limit int, max
 		return nil, ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "local timeline")
 	}
 
+	if len(entries) > safeLimit {
+		entries = entries[:safeLimit]
+	}
+
 	// Convert to storage type
 	result := make([]*storage.TimelineEntry, len(entries))
 	for i, entry := range entries {
@@ -91,6 +121,8 @@ func (r *AccountRepository) GetLocalTimeline(ctx context.Context, limit int, max
 func (r *AccountRepository) GetPublicTimeline(ctx context.Context, limit int, maxID, sinceID string, onlyMedia bool) ([]*storage.TimelineEntry, error) {
 	var entries []models.TimelineEntry
 
+	safeLimit := clampTimelineLimit(limit)
+
 	// Choose index based on media filter
 	indexName := "public-timeline-index"
 	gsiPK := "PUBLIC_TIMELINE"
@@ -103,7 +135,8 @@ func (r *AccountRepository) GetPublicTimeline(ctx context.Context, limit int, ma
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Index(indexName).
 		Where("GSI2PK", "=", gsiPK).
-		Limit(limit)
+		OrderBy("GSI2SK", "DESC").
+		Limit(safeLimit + 1)
 
 	// Apply pagination filters
 	if maxID != "" {
@@ -122,6 +155,10 @@ func (r *AccountRepository) GetPublicTimeline(ctx context.Context, limit int, ma
 		return nil, ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "public timeline")
 	}
 
+	if len(entries) > safeLimit {
+		entries = entries[:safeLimit]
+	}
+
 	// Convert to storage type
 	result := make([]*storage.TimelineEntry, len(entries))
 	for i, entry := range entries {
@@ -135,11 +172,15 @@ func (r *AccountRepository) GetPublicTimeline(ctx context.Context, limit int, ma
 func (r *AccountRepository) GetHashtagTimeline(ctx context.Context, hashtag string, limit int, maxID, sinceID string) ([]*storage.TimelineEntry, error) {
 	var entries []models.TimelineEntry
 
+	hashtag = strings.TrimSpace(hashtag)
+	safeLimit := clampTimelineLimit(limit)
+
 	// Build query using hashtag index
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Index("hashtag-timeline-index").
 		Where("GSI3PK", "=", fmt.Sprintf("HASHTAG#%s", hashtag)).
-		Limit(limit)
+		OrderBy("GSI3SK", "DESC").
+		Limit(safeLimit + 1)
 
 	// Apply pagination filters
 	if maxID != "" {
@@ -156,6 +197,10 @@ func (r *AccountRepository) GetHashtagTimeline(ctx context.Context, hashtag stri
 			zap.String("hashtag", hashtag),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "hashtag timeline")
+	}
+
+	if len(entries) > safeLimit {
+		entries = entries[:safeLimit]
 	}
 
 	// Convert to storage type
@@ -180,11 +225,14 @@ func (r *AccountRepository) GetListTimeline(ctx context.Context, username, listI
 
 	var entries []models.TimelineEntry
 
+	safeLimit := clampTimelineLimit(limit)
+
 	// Build query using list timeline index
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Index("list-timeline-index").
 		Where("GSI4PK", "=", fmt.Sprintf("LIST#%s", listID)).
-		Limit(limit)
+		OrderBy("GSI4SK", "DESC").
+		Limit(safeLimit + 1)
 
 	// Apply pagination filters
 	if maxID != "" {
@@ -201,6 +249,10 @@ func (r *AccountRepository) GetListTimeline(ctx context.Context, username, listI
 			zap.String("listID", listID),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "list timeline")
+	}
+
+	if len(entries) > safeLimit {
+		entries = entries[:safeLimit]
 	}
 
 	// Convert to storage type
@@ -279,11 +331,14 @@ func (r *AccountRepository) RemoveFromTimeline(ctx context.Context, username, ob
 func (r *AccountRepository) GetConversations(ctx context.Context, username string, limit int, maxID, sinceID string) ([]*storage.Conversation, error) {
 	var conversations []models.Conversation
 
+	safeLimit := clampTimelineLimit(limit)
+
 	// Build query
 	query := r.db.WithContext(ctx).Model(&models.Conversation{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "BEGINS_WITH", "CONVERSATION#").
-		Limit(limit)
+		OrderBy("SK", "DESC").
+		Limit(safeLimit + 1)
 
 	// Apply pagination filters
 	if maxID != "" {
@@ -300,6 +355,10 @@ func (r *AccountRepository) GetConversations(ctx context.Context, username strin
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "conversations")
+	}
+
+	if len(conversations) > safeLimit {
+		conversations = conversations[:safeLimit]
 	}
 
 	// Convert to storage type

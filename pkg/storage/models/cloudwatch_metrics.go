@@ -76,6 +76,11 @@ func (c *CloudWatchMetrics) GetSK() string {
 	return c.SK
 }
 
+// TableName returns the DynamoDB table backing CloudWatchMetrics.
+func (CloudWatchMetrics) TableName() string {
+	return MainTableName
+}
+
 // IsExpired checks if the cached metrics have expired (5 minutes cache)
 func (c *CloudWatchMetrics) IsExpired() bool {
 	return time.Now().After(c.CacheExpiry)

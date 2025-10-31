@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -15,8 +16,16 @@ type StatusEngagement struct {
 	TTL            int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 7 day TTL
 }
 
+// TableName returns the DynamoDB table backing StatusEngagement.
+func (StatusEngagement) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates GSI keys for StatusEngagement - no GSIs needed for this model
 func (s *StatusEngagement) UpdateKeys() error {
+	// Set primary keys (required for DynamoDB operations)
+	s.PK = fmt.Sprintf("STATUS_ENGAGEMENT#%s", s.StatusID)
+	s.SK = fmt.Sprintf("%s#%s#%s", s.EngagementType, s.EngagedAt.Format(time.RFC3339), s.UserID)
 	// No GSIs for this model
 	return nil
 }
@@ -44,6 +53,9 @@ type LinkShare struct {
 
 // UpdateKeys updates GSI keys for LinkShare - no GSIs needed for this model
 func (l *LinkShare) UpdateKeys() error {
+	// Set primary keys (required for DynamoDB operations)
+	l.PK = fmt.Sprintf("LINK_SHARE#%s", l.URL)
+	l.SK = fmt.Sprintf("STATUS#%s", l.StatusID)
 	// No GSIs for this model
 	return nil
 }
@@ -56,6 +68,11 @@ func (l *LinkShare) GetPK() string {
 // GetSK returns the sort key for BaseModel interface
 func (l *LinkShare) GetSK() string {
 	return l.SK
+}
+
+// TableName returns the DynamoDB table backing LinkShare.
+func (LinkShare) TableName() string {
+	return MainTableName
 }
 
 // EngagementMetrics tracks engagement metrics for platform usage analysis
@@ -91,6 +108,10 @@ type EngagementMetrics struct {
 
 // UpdateKeys updates GSI keys for EngagementMetrics
 func (e *EngagementMetrics) UpdateKeys() error {
+	// Note: PK and SK must be set by the caller/repository based on the specific use case
+	// This model has multiple key patterns: METRICS#type#date, STATUS#statusID, ENGAGEMENT#bucket
+	// We cannot reconstruct them here without knowing the context
+
 	// GSI8 is used for date range queries
 	e.GSI8PK = e.PK
 	e.GSI8SK = e.SK
@@ -107,7 +128,7 @@ func (e *EngagementMetrics) GetSK() string {
 	return e.SK
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing EngagementMetrics.
 func (e *EngagementMetrics) TableName() string {
-	return DefaultTableName // Replace with actual table name
+	return MainTableName
 }

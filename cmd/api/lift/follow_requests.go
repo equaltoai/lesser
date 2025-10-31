@@ -343,7 +343,7 @@ func (h *Handler) sendFollowResponseActivity(ctx context.Context, followerID, fo
 	// Create response activity (Accept or Reject)
 	responseActivity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: "https://www.w3.org/ns/activitystreams",
+			Context: activitypub.Context,
 			Type:    activityType,
 			ID:      fmt.Sprintf("https://%s/activities/%d", h.cfg.Domain, time.Now().UnixNano()),
 		},

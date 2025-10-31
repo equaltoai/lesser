@@ -192,3 +192,8 @@ func (m *MissingReply) SetPriority(priority int) {
 	m.Priority = priority
 	m.UpdatedAt = time.Now()
 }
+
+// TableName returns the DynamoDB table backing MissingReply.
+func (MissingReply) TableName() string {
+	return MainTableName
+}

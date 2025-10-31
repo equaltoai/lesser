@@ -352,7 +352,7 @@ func (r *repositoryStorageAdapter) checkQueueHealth(ctx context.Context) ([]*mod
 	}
 
 	// Get recent DLQ messages to assess queue health
-	recentMessages, err := r.repos.DLQ().GetDLQMessagesForReprocessing(ctx, "health-check", "PENDING", 100)
+	recentMessages, _, err := r.repos.DLQ().GetDLQMessagesForReprocessing(ctx, "health-check", "PENDING", 100, "")
 	if err == nil {
 		dlqStatus.Depth = len(recentMessages)
 		dlqStatus.DlqCount = len(recentMessages)

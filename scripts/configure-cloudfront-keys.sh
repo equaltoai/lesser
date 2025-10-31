@@ -6,25 +6,51 @@
 set -e
 
 ENVIRONMENT=${1:-development}
-STACK_NAME="LesserStack-${ENVIRONMENT}"
 
-if [ "$ENVIRONMENT" = "live" ]; then
-    ENVIRONMENT="production"
-    STACK_NAME="LesserStack-production"
-fi
+STACK_NAME="LesserSharedStack"
+
+resolve_stage() {
+    case "$1" in
+        development|dev)
+            echo "dev"
+            ;;
+        staging|test)
+            echo "staging"
+            ;;
+        production|live)
+            echo "live"
+            ;;
+        *)
+            echo "$1"
+            ;;
+    esac
+}
+
+pascal_case() {
+    local value=$1
+    if [ -z "$value" ]; then
+        echo ""
+        return
+    fi
+    echo "${value^}"
+}
+
+STAGE=$(resolve_stage "$ENVIRONMENT")
+STAGE_PASCAL=$(pascal_case "$STAGE")
 
 echo "=== Configuring CloudFront Keys for ${ENVIRONMENT} ==="
 echo
 
 # Step 1: Extract public key from stack outputs
 echo "Step 1: Extracting public key from CloudFormation stack..."
+OUTPUT_KEY="${STAGE_PASCAL}CloudFrontKeyPairPublicKey"
 PUBLIC_KEY=$(aws cloudformation describe-stacks \
   --stack-name "$STACK_NAME" \
-  --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontKeyPairPublicKey`].OutputValue' \
+  --query "Stacks[0].Outputs[?OutputKey==\`${OUTPUT_KEY}\`].OutputValue" \
   --output text)
 
 if [ -z "$PUBLIC_KEY" ]; then
-    echo "❌ Error: Could not find CloudFrontKeyPairPublicKey output in stack $STACK_NAME"
+    echo "❌ Error: Could not find ${OUTPUT_KEY} output in stack $STACK_NAME"
     echo "   Make sure the stack has been deployed with the CloudFront key pair construct."
     exit 1
 fi
@@ -36,7 +62,7 @@ echo
 echo "Step 2: Uploading public key to CloudFront..."
 KEY_RESPONSE=$(aws cloudfront create-public-key \
   --public-key-config \
-    Name=lesser-${ENVIRONMENT}-key,EncodedKey="$PUBLIC_KEY",CallerReference=$(date +%s) \
+    Name=lesser-${STAGE}-key,EncodedKey="$PUBLIC_KEY",CallerReference=$(date +%s) \
   --output json)
 
 KEY_ID=$(echo "$KEY_RESPONSE" | jq -r '.PublicKey.Id')
@@ -51,7 +77,7 @@ echo
 echo "Step 3: Creating CloudFront key group..."
 KEYGROUP_RESPONSE=$(aws cloudfront create-key-group \
   --key-group-config \
-    Name=lesser-${ENVIRONMENT}-keygroup,Items=$KEY_ID \
+    Name=lesser-${STAGE}-keygroup,Items=$KEY_ID \
   --output json)
 
 KEYGROUP_ID=$(echo "$KEYGROUP_RESPONSE" | jq -r '.KeyGroup.Id')
@@ -120,4 +146,3 @@ echo "✓ CDK config file updated: $CONFIG_FILE"
 echo
 echo "⚠️  IMPORTANT: Run 'cd infra/cdk && cdk deploy' to persist the configuration!"
 echo
-

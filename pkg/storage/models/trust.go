@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"net/url"
 	"time"
 )
 
@@ -25,6 +26,11 @@ type TrustEvidence struct {
 	Score       float64   `json:"score"` // Impact on trust score
 	Description string    `json:"description"`
 	Timestamp   time.Time `json:"timestamp"`
+}
+
+// TableName returns the DynamoDB table backing TrustEvidence.
+func (TrustEvidence) TableName() string {
+	return MainTableName
 }
 
 // TrustRelationship represents a trust relationship between two actors
@@ -55,6 +61,11 @@ type TrustRelationship struct {
 
 	// Type marker for filtering
 	Type string `json:"type"` // Always "RELATIONSHIP"
+}
+
+// TableName returns the DynamoDB table backing TrustRelationship.
+func (TrustRelationship) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets all the DynamoDB keys based on the relationship data
@@ -110,6 +121,11 @@ type TrustScore struct {
 	Type string `json:"type"` // Always "SCORE"
 }
 
+// TableName returns the DynamoDB table backing TrustScore.
+func (TrustScore) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets all the DynamoDB keys for the trust score
 func (ts *TrustScore) UpdateKeys() error {
 	ts.PK = fmt.Sprintf("SCORE#%s#%s", ts.ActorID, ts.Category)
@@ -152,6 +168,11 @@ type TrustUpdate struct {
 	Type string `json:"type"` // Always "UPDATE"
 }
 
+// TableName returns the DynamoDB table backing TrustUpdate.
+func (TrustUpdate) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets all the DynamoDB keys for the trust update
 func (tu *TrustUpdate) UpdateKeys() error {
 	tu.PK = fmt.Sprintf("UPDATES#%s", tu.ActorID)
@@ -177,12 +198,18 @@ func (tu *TrustUpdate) GetSK() string {
 
 // Helper function to extract domain from actor ID
 func getDomainFromActorID(actorID string) string {
-	// Look for the last @ in the actor ID
+	// First, try to parse as URL (handles https://domain.com/users/username format)
+	if u, err := url.Parse(actorID); err == nil && u.Host != "" {
+		return u.Host
+	}
+	
+	// Look for the last @ in the actor ID (handles @user@domain.com format)
 	for i := len(actorID) - 1; i >= 0; i-- {
 		if actorID[i] == '@' {
 			return actorID[i+1:]
 		}
 	}
+	
 	// Default to "local" if no domain found
 	return "local"
 }

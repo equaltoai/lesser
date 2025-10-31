@@ -300,16 +300,16 @@ func (r *InstanceRepository) GetLocalCommentCount(ctx context.Context) (int64, e
 
 // countLocalComments counts local comments by using the replies GSI for efficient counting
 func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, error) {
-	// Use GSI4 (replies-index) to efficiently count comments
+	// Use GSI4 (replies timeline) to efficiently count comments
 	// Comments are statuses with InReplyToID set, which populate GSI4PK with "REPLIES#<parent_id>"
 	// We need to scan the GSI4 to count all entries, but this is more efficient than scanning the main table
 
 	var comments []models.Status
 
-	// Query the replies-index GSI for all comments
+	// Query GSI4 for all comments
 	// Since we only need the count, we'll use a projection that minimizes data transfer
 	err := r.metricsRepo.GetDB().WithContext(ctx).Model(&models.Status{}).
-		Index("replies-index").
+		Index("GSI4").
 		Where("GSI4PK", "begins_with", "REPLIES#").
 		All(&comments)
 

@@ -32,6 +32,11 @@ type ConnectionMetrics struct {
 	ConnectionQuality float64   `json:"connection_quality"` // 0.0-1.0
 }
 
+// TableName returns the DynamoDB table backing ConnectionMetrics.
+func (ConnectionMetrics) TableName() string {
+	return MainTableName
+}
+
 // ConnectionInfo holds metadata about the connection
 type ConnectionInfo struct {
 	ClientIP      string            `json:"client_ip"`
@@ -41,6 +46,11 @@ type ConnectionInfo struct {
 	AuthMethod    string            `json:"auth_method"`
 	APIVersion    string            `json:"api_version"`
 	CustomHeaders map[string]string `json:"custom_headers,omitempty"`
+}
+
+// TableName returns the DynamoDB table backing ConnectionInfo.
+func (ConnectionInfo) TableName() string {
+	return MainTableName
 }
 
 // WebSocketConnection represents a WebSocket connection with complete lifecycle management
@@ -115,6 +125,11 @@ func (w *WebSocketConnection) GetPK() string {
 // GetSK returns the sort key
 func (w *WebSocketConnection) GetSK() string {
 	return w.SK
+}
+
+// TableName returns the DynamoDB table backing WebSocketConnection.
+func (w *WebSocketConnection) TableName() string {
+	return MainTableName
 }
 
 // UpdateState changes the connection state and records the timestamp
@@ -244,4 +259,10 @@ func (w *WebSocketSubscription) GetPK() string {
 // GetSK returns the sort key
 func (w *WebSocketSubscription) GetSK() string {
 	return w.SK
+}
+
+// TableName returns the DynamoDB table name for this model
+// This is REQUIRED by DynamORM to route operations to the correct table
+func (w *WebSocketSubscription) TableName() string {
+	return MainTableName
 }

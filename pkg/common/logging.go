@@ -1,4 +1,5 @@
 // Package common provides shared logging utilities for the Lesser application.
+// revive:disable:var-naming - package name retained for backwards-compatible imports.
 package common
 
 import (

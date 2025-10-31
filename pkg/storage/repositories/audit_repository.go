@@ -102,28 +102,47 @@ func (r *AuditRepository) GetSessionAuditLogs(ctx context.Context, sessionID str
 	}
 
 	// Use BaseRepository GSI query
-	logs, err := r.QueryGSI(ctx, "GSI3", fmt.Sprintf("SESSION#%s", sessionID), 0)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityAudit, "session logs")
+	const sessionLogChunkLimit = 200
+	var (
+		logs   []*models.AuthAuditLog
+		cursor string
+	)
+
+	for {
+		page, err := r.QueryGSIPaginated(ctx, "GSI3", fmt.Sprintf("SESSION#%s", sessionID), BasePaginationOptions{
+			Limit:  sessionLogChunkLimit,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			return nil, ErrorHandler.HandleQueryError(err, EntityAudit, "session logs")
+		}
+
+		logs = append(logs, page.Items...)
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
-	// Convert to pointer slice for compatibility
-	result := make([]*models.AuthAuditLog, len(logs))
-	copy(result, logs)
-
-	return result, nil
+	return logs, nil
 }
 
+const (
+	auditSecurityDefaultLimit = 100
+	auditSecurityMaxLimit     = 1000
+)
+
 // GetSecurityEvents retrieves security events by severity within a time range - SECURITY CRITICAL
-func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string, startTime, endTime time.Time, limit int) ([]*models.AuthAuditLog, error) {
+func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string, startTime, endTime time.Time, limit int, cursor string) ([]*models.AuthAuditLog, string, error) {
 	// Security validation
 	if severity == "" {
-		return nil, ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityAudit, "security events")
+		return nil, "", ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityAudit, "security events")
 	}
 	// Validate severity levels to prevent injection
 	validSeverities := map[string]bool{"LOW": true, "MEDIUM": true, "HIGH": true, "CRITICAL": true}
 	if !validSeverities[severity] {
-		return nil, ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityAudit, "security events")
+		return nil, "", ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityAudit, "security events")
 	}
 
 	var logs []models.AuthAuditLog
@@ -141,12 +160,16 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 
 	// Apply limit with security bounds
 	if limit <= 0 {
-		limit = 100 // Default limit for security events
+		limit = auditSecurityDefaultLimit // Default limit for security events
 	}
-	if limit > 1000 {
-		limit = 1000 // Maximum security event limit
+	if limit > auditSecurityMaxLimit {
+		limit = auditSecurityMaxLimit // Maximum security event limit
 	}
-	query = query.Limit(limit)
+	query = query.OrderBy("GSI4SK", "ASC").Limit(limit + 1)
+
+	if cursor != "" {
+		query = query.Where("GSI4SK", ">", cursor)
+	}
 
 	// Execute query with enhanced error handling
 	if err := query.All(&logs); err != nil {
@@ -155,16 +178,22 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 			zap.Time("start_time", startTime),
 			zap.Time("end_time", endTime),
 			zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, EntityAudit, "security events")
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityAudit, "security events")
 	}
 
 	// Convert to pointer slice for compatibility
+	var nextCursor string
+	if len(logs) > limit {
+		nextCursor = logs[limit-1].GSI4SK
+		logs = logs[:limit]
+	}
+
 	result := make([]*models.AuthAuditLog, len(logs))
 	for i := range logs {
 		result[i] = &logs[i]
 	}
 
-	return result, nil
+	return result, nextCursor, nil
 }
 
 // GetRecentFailedLogins gets recent failed login attempts for a user
@@ -231,34 +260,44 @@ func (r *AuditRepository) CleanupOldLogs(ctx context.Context, retentionDays int)
 		date := cutoffDate.AddDate(0, 0, -i)
 		pk := fmt.Sprintf("AUDIT#%s", date.Format("2006-01-02"))
 
-		// Use BaseRepository to find logs for this date
-		logs, err := r.Query(ctx, pk, 0)
-		if err != nil {
-			r.logger.Warn("failed to query logs for cleanup",
-				zap.String("date", date.Format("2006-01-02")),
-				zap.Error(err))
-			continue
-		}
+		cursor := ""
+		for {
+			page, err := r.FindWithPagination(ctx, pk, BasePaginationOptions{
+				Limit:  200,
+				Cursor: cursor,
+				Order:  SortOrderAsc,
+			})
+			if err != nil {
+				r.logger.Warn("failed to query logs for cleanup",
+					zap.String("date", date.Format("2006-01-02")),
+					zap.Error(err))
+				break
+			}
 
-		// Build keys for batch deletion
-		keys := make([]struct{ PK, SK string }, len(logs))
-		for i, log := range logs {
-			keys[i] = struct{ PK, SK string }{PK: log.GetPK(), SK: log.GetSK()}
-		}
+			if len(page.Items) == 0 {
+				break
+			}
 
-		// Use BaseRepository batch delete for efficiency
-		if len(keys) > 0 {
+			keys := make([]struct{ PK, SK string }, len(page.Items))
+			for idx, log := range page.Items {
+				keys[idx] = struct{ PK, SK string }{PK: log.GetPK(), SK: log.GetSK()}
+			}
+
 			if err := r.BatchDelete(ctx, keys); err != nil {
 				r.logger.Error("failed to batch delete old audit logs - COMPLIANCE ISSUE",
 					zap.String("date", date.Format("2006-01-02")),
 					zap.Int("count", len(keys)),
 					zap.Error(err))
-				// Continue with next date rather than fail completely
 			} else {
 				r.logger.Info("deleted old audit logs for compliance",
 					zap.String("date", date.Format("2006-01-02")),
 					zap.Int("count", len(keys)))
 			}
+
+			if page.NextCursor == "" {
+				break
+			}
+			cursor = page.NextCursor
 		}
 	}
 

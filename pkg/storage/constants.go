@@ -1,5 +1,7 @@
 package storage
 
+import "github.com/equaltoai/lesser/pkg/config"
+
 // DynamoDB Key Prefixes and Patterns
 const (
 	// User-related keys
@@ -79,12 +81,9 @@ const (
 )
 
 // Table names
-const (
+var (
 	// MainTableName is the primary DynamoDB table name
-	MainTableName = "lesser-main"
-
-	// DefaultTableName is a placeholder table name for test/example code
-	DefaultTableName = "lesser-table"
+	MainTableName = config.GetMainTableName()
 )
 
 // Cost tracking constants

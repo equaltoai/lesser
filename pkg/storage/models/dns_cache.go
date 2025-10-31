@@ -38,7 +38,7 @@ func (d *DNSCache) GetSK() string {
 	return d.SK
 }
 
-// TableName returns the DynamoDB table name for this model
-func (d *DNSCache) TableName() string {
-	return "LiftTable" // This will be overridden by the repository
+// TableName returns the DynamoDB table backing DNSCache.
+func (DNSCache) TableName() string {
+	return MainTableName
 }

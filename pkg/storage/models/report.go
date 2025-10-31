@@ -67,6 +67,11 @@ func (r *Report) UpdateKeys() {
 	}
 }
 
+// TableName returns the DynamoDB table backing Report.
+func (Report) TableName() string {
+	return MainTableName
+}
+
 // ReportStats represents reporting statistics for a user
 type ReportStats struct {
 	// Primary key fields
@@ -85,4 +90,9 @@ type ReportStats struct {
 func (rs *ReportStats) UpdateKeys(username string) {
 	rs.PK = fmt.Sprintf(KeyPatternUser, username)
 	rs.SK = "REPORT_STATS"
+}
+
+// TableName returns the DynamoDB table backing ReportStats.
+func (ReportStats) TableName() string {
+	return MainTableName
 }

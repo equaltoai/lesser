@@ -14,10 +14,15 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-lambda-go/cfn"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
+	cftypes "github.com/aws/aws-sdk-go-v2/service/cloudfront/types"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 )
@@ -35,6 +40,16 @@ func handler(ctx context.Context, event cfn.Event) (physicalResourceID string, d
 	secretName, ok := event.ResourceProperties["SecretName"].(string)
 	if !ok || secretName == "" {
 		return "", nil, fmt.Errorf("SecretName property is required")
+	}
+
+	keyName, _ := event.ResourceProperties["KeyName"].(string)
+	if keyName == "" {
+		keyName = fmt.Sprintf("lesser-%s-key", event.LogicalResourceID)
+	}
+
+	keyGroupName, _ := event.ResourceProperties["KeyGroupName"].(string)
+	if keyGroupName == "" {
+		keyGroupName = fmt.Sprintf("lesser-%s-keygroup", event.LogicalResourceID)
 	}
 
 	// For Delete events, don't delete the secret as it may still be in use
@@ -127,15 +142,180 @@ func handler(ctx context.Context, event cfn.Event) (physicalResourceID string, d
 		log.Printf("Created secret with ARN: %s", secretArn)
 	}
 
+	// Ensure CloudFront resources exist and are updated
+	cfClient := cloudfront.NewFromConfig(cfg)
+
+	trimmedPublicKey := strings.TrimSpace(string(publicKeyPEM))
+
+	publicKeyID, keyGroupID, err := ensureCloudFrontResources(ctx, cfClient, keyName, keyGroupName, trimmedPublicKey)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to ensure CloudFront resources: %w", err)
+	}
+
 	// Return outputs for CloudFormation
 	return secretArn, map[string]interface{}{
-		"SecretArn": secretArn,
-		"PublicKey": string(publicKeyPEM),
+		"SecretArn":   secretArn,
+		"PublicKey":   trimmedPublicKey,
+		"PublicKeyId": publicKeyID,
+		"KeyGroupId":  keyGroupID,
 	}, nil
 }
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+func ensureCloudFrontResources(ctx context.Context, client *cloudfront.Client, keyName, keyGroupName, encodedKey string) (string, string, error) {
+	publicKeyID, err := upsertPublicKey(ctx, client, keyName, encodedKey)
+	if err != nil {
+		return "", "", err
+	}
+
+	keyGroupID, err := upsertKeyGroup(ctx, client, keyGroupName, publicKeyID)
+	if err != nil {
+		return "", "", err
+	}
+
+	return publicKeyID, keyGroupID, nil
+}
+
+func upsertPublicKey(ctx context.Context, client *cloudfront.Client, keyName, encodedKey string) (string, error) {
+	existingID, existingConfig, etag, err := findPublicKeyByName(ctx, client, keyName)
+	if err != nil {
+		return "", err
+	}
+
+	comment := fmt.Sprintf("Managed by Lesser CDK (%s)", keyName)
+
+	if existingConfig != nil && existingID != "" && etag != nil {
+		cfg := existingConfig
+		cfg.EncodedKey = aws.String(encodedKey)
+		cfg.Comment = aws.String(comment)
+
+		_, err = client.UpdatePublicKey(ctx, &cloudfront.UpdatePublicKeyInput{
+			Id:              aws.String(existingID),
+			IfMatch:         etag,
+			PublicKeyConfig: cfg,
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to update CloudFront public key %s: %w", keyName, err)
+		}
+		return existingID, nil
+	}
+
+	callerRef := fmt.Sprintf("%s-%d", keyName, time.Now().UnixNano())
+
+	out, err := client.CreatePublicKey(ctx, &cloudfront.CreatePublicKeyInput{
+		PublicKeyConfig: &cftypes.PublicKeyConfig{
+			CallerReference: aws.String(callerRef),
+			Name:            aws.String(keyName),
+			EncodedKey:      aws.String(encodedKey),
+			Comment:         aws.String(comment),
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to create CloudFront public key %s: %w", keyName, err)
+	}
+
+	return aws.ToString(out.PublicKey.Id), nil
+}
+
+func upsertKeyGroup(ctx context.Context, client *cloudfront.Client, keyGroupName, publicKeyID string) (string, error) {
+	existingID, existingConfig, etag, err := findKeyGroupByName(ctx, client, keyGroupName)
+	if err != nil {
+		return "", err
+	}
+
+	items := []string{publicKeyID}
+	comment := fmt.Sprintf("Managed by Lesser CDK (%s)", keyGroupName)
+
+	if existingConfig != nil && existingID != "" && etag != nil {
+		cfg := &cftypes.KeyGroupConfig{
+			Name:    existingConfig.Name,
+			Items:   items,
+			Comment: aws.String(comment),
+		}
+		_, err = client.UpdateKeyGroup(ctx, &cloudfront.UpdateKeyGroupInput{
+			Id:             aws.String(existingID),
+			IfMatch:        etag,
+			KeyGroupConfig: cfg,
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to update CloudFront key group %s: %w", keyGroupName, err)
+		}
+		return existingID, nil
+	}
+
+	out, err := client.CreateKeyGroup(ctx, &cloudfront.CreateKeyGroupInput{
+		KeyGroupConfig: &cftypes.KeyGroupConfig{
+			Name:    aws.String(keyGroupName),
+			Items:   items,
+			Comment: aws.String(comment),
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to create CloudFront key group %s: %w", keyGroupName, err)
+	}
+
+	return aws.ToString(out.KeyGroup.Id), nil
+}
+
+func findPublicKeyByName(ctx context.Context, client *cloudfront.Client, keyName string) (string, *cftypes.PublicKeyConfig, *string, error) {
+	params := &cloudfront.ListPublicKeysInput{}
+	for {
+		out, err := client.ListPublicKeys(ctx, params)
+		if err != nil {
+			return "", nil, nil, fmt.Errorf("failed to list CloudFront public keys: %w", err)
+		}
+
+		if out.PublicKeyList != nil {
+			for _, summary := range out.PublicKeyList.Items {
+				if aws.ToString(summary.Name) == keyName {
+					cfgResp, err := client.GetPublicKeyConfig(ctx, &cloudfront.GetPublicKeyConfigInput{Id: summary.Id})
+					if err != nil {
+						return "", nil, nil, fmt.Errorf("failed to get CloudFront public key config: %w", err)
+					}
+					return aws.ToString(summary.Id), cfgResp.PublicKeyConfig, cfgResp.ETag, nil
+				}
+			}
+		}
+
+		if out.PublicKeyList == nil || out.PublicKeyList.NextMarker == nil || aws.ToString(out.PublicKeyList.NextMarker) == "" {
+			break
+		}
+		params.Marker = out.PublicKeyList.NextMarker
+	}
+
+	return "", nil, nil, nil
+}
+
+func findKeyGroupByName(ctx context.Context, client *cloudfront.Client, keyGroupName string) (string, *cftypes.KeyGroupConfig, *string, error) {
+	params := &cloudfront.ListKeyGroupsInput{}
+	for {
+		out, err := client.ListKeyGroups(ctx, params)
+		if err != nil {
+			return "", nil, nil, fmt.Errorf("failed to list CloudFront key groups: %w", err)
+		}
+
+		if out.KeyGroupList != nil {
+			for _, summary := range out.KeyGroupList.Items {
+				if summary.KeyGroup != nil && summary.KeyGroup.KeyGroupConfig != nil && aws.ToString(summary.KeyGroup.KeyGroupConfig.Name) == keyGroupName {
+					cfgResp, err := client.GetKeyGroupConfig(ctx, &cloudfront.GetKeyGroupConfigInput{Id: summary.KeyGroup.Id})
+					if err != nil {
+						return "", nil, nil, fmt.Errorf("failed to get CloudFront key group config: %w", err)
+					}
+					return aws.ToString(summary.KeyGroup.Id), cfgResp.KeyGroupConfig, cfgResp.ETag, nil
+				}
+			}
+		}
+
+		if out.KeyGroupList == nil || out.KeyGroupList.NextMarker == nil || aws.ToString(out.KeyGroupList.NextMarker) == "" {
+			break
+		}
+		params.Marker = out.KeyGroupList.NextMarker
+	}
+
+	return "", nil, nil, nil
 }
 
 func main() {

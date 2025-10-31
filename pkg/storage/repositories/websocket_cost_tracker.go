@@ -468,8 +468,13 @@ func WebSocketCostMiddleware(costTracker *WebSocketCostTracker) func(lift.Handle
 			// Execute the handler and measure performance
 			result, err := executeAndMeasure(next, ctx, operationType)
 
-			// Track the operation asynchronously
-			trackOperationAsync(costTracker, opCtx, operationType, result)
+			// Track the operation before returning
+			if trackErr := costTracker.TrackWebSocketOperation(ctx.Request.Context(), opCtx, result); trackErr != nil {
+				costTracker.logger.Error("failed to track WebSocket operation cost",
+					zap.String("connection_id", opCtx.ConnectionID),
+					zap.String("operation_type", operationType),
+					zap.Error(trackErr))
+			}
 
 			return err
 		})
@@ -549,19 +554,4 @@ func executeAndMeasure(next lift.Handler, ctx *lift.Context, operationType strin
 	}
 
 	return result, err
-}
-
-// trackOperationAsync tracks the operation asynchronously to not impact response time
-func trackOperationAsync(costTracker *WebSocketCostTracker, opCtx *WebSocketOperationContext, operationType string, result *WebSocketOperationResult) {
-	go func() {
-		trackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if trackErr := costTracker.TrackWebSocketOperation(trackCtx, opCtx, result); trackErr != nil {
-			costTracker.logger.Error("failed to track WebSocket operation cost",
-				zap.String("connection_id", opCtx.ConnectionID),
-				zap.String("operation_type", operationType),
-				zap.Error(trackErr))
-		}
-	}()
 }

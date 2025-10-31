@@ -64,12 +64,22 @@ type ActorField struct {
 	VerifiedAt *time.Time `json:"verified_at,omitempty"`
 }
 
+// TableName returns the DynamoDB table backing ActorField.
+func (ActorField) TableName() string {
+	return MainTableName
+}
+
 // ActorMetadata contains additional metadata about an actor
 type ActorMetadata struct {
 	CreatedAt    time.Time    `json:"created_at"`
 	UpdatedAt    time.Time    `json:"updated_at"`
 	LastStatusAt *time.Time   `json:"last_status_at,omitempty"`
 	Fields       []ActorField `json:"fields,omitempty"`
+}
+
+// TableName returns the DynamoDB table backing ActorMetadata.
+func (ActorMetadata) TableName() string {
+	return MainTableName
 }
 
 // TableName returns the DynamoDB table name for the Actor model
@@ -162,6 +172,14 @@ func formatFollowerCountForGSI(count int, username string) string {
 
 // UpdateKeys updates the GSI keys for this actor (required by DynamORM)
 func (a *Actor) UpdateKeys() error {
+	// Set primary keys
+	if err := common.ValidateRequiredParam("a.Username", a.Username); err != nil {
+		return err
+	}
+	a.PK = "ACTOR#" + a.Username
+	a.SK = SKProfile
+
+	// Set GSI keys
 	a.setupGSIKeys()
 	return nil
 }

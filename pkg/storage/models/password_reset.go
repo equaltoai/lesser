@@ -58,5 +58,21 @@ func (r *PasswordReset) GetSK() string {
 
 // UpdateKeys updates the keys
 func (r *PasswordReset) UpdateKeys() error {
-	return r.BeforeCreate()
+	// Validate required fields
+	if r.Username == "" {
+		return fmt.Errorf("username is required")
+	}
+	if r.Token == "" {
+		return fmt.Errorf("token is required")
+	}
+
+	// Set primary keys
+	r.PK = fmt.Sprintf(KeyPatternUser, r.Username)
+	r.SK = fmt.Sprintf("RESET#%s", r.Token)
+
+	// Set up GSI for token lookup
+	r.GSI1PK = fmt.Sprintf("RESET_TOKEN#%s", r.Token)
+	r.GSI1SK = fmt.Sprintf("USERNAME#%s", r.Username)
+
+	return nil
 }

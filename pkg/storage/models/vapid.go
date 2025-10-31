@@ -14,6 +14,10 @@ type VAPIDKeyRecord struct {
 
 // UpdateKeys updates any GSI keys - VAPID doesn't use GSIs so this is no-op
 func (v *VAPIDKeyRecord) UpdateKeys() error {
+	// Set primary keys (static for VAPID keys)
+	v.PK = "INSTANCE#CONFIG"
+	v.SK = "VAPID_KEYS"
+
 	// VAPID keys don't use GSI keys, so no updates needed
 	return nil
 }
@@ -26,4 +30,9 @@ func (v *VAPIDKeyRecord) GetPK() string {
 // GetSK returns the sort key
 func (v *VAPIDKeyRecord) GetSK() string {
 	return v.SK
+}
+
+// TableName returns the DynamoDB table backing VAPIDKeyRecord.
+func (VAPIDKeyRecord) TableName() string {
+	return MainTableName
 }

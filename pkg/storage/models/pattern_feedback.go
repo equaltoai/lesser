@@ -164,3 +164,8 @@ func CalculatePatternMetrics(feedbacks []*PatternFeedback) map[string]interface{
 
 	return metrics
 }
+
+// TableName returns the DynamoDB table backing PatternFeedback.
+func (PatternFeedback) TableName() string {
+	return MainTableName
+}

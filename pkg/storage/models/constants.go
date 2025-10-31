@@ -1,5 +1,7 @@
 package models
 
+import "github.com/equaltoai/lesser/pkg/config"
+
 // Common SK (Sort Key) constants used across multiple models
 const (
 	// SKMetadata is used for metadata records
@@ -85,12 +87,9 @@ const (
 )
 
 // Table names
-const (
-	// MainTableName is the primary DynamoDB table name
-	MainTableName = "lesser-main"
-
-	// DefaultTableName is a placeholder table name for test/example code
-	DefaultTableName = "lesser-table"
+var (
+	// MainTableName is the primary DynamoDB table name (resolved from environment)
+	MainTableName = config.GetMainTableName()
 )
 
 // Cost tracking key patterns

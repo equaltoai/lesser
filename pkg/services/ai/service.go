@@ -78,19 +78,19 @@ func (s *Service) SaveAnalysis(ctx context.Context, cmd *SaveAnalysisCommand) (*
 		return nil, errors.Join(ErrSaveAnalysis, err)
 	}
 
-	// Publish event to EventBus if publisher is configured
+	// Publish event via queue publisher for DynamoDB Streams delivery
 	var events []*streaming.Event
 	if s.publisher != nil {
 		event := s.createAnalysisEvent(cmd.Analysis, cmd.UserID)
 
-		// Publish to stream for real-time subscriptions
+		// Publish to stream for real-time subscriptions via stream-router
 		if err := s.publisher.PublishToStream(ctx, "ai_analysis", event); err != nil {
 			s.logger.Warn("failed to publish AI analysis event to stream",
 				zap.String("analysis_id", cmd.Analysis.ID),
 				zap.Error(err))
 		}
 
-		// Also publish to user if specified
+		// Also publish to user if specified - stream-router will deliver to user's WebSocket connections
 		if cmd.UserID != "" {
 			if err := s.publisher.PublishToUser(ctx, cmd.UserID, event); err != nil {
 				s.logger.Warn("failed to publish AI analysis event to user",
@@ -365,18 +365,18 @@ type AnalysisEvent struct {
 }
 
 // SubscribeToAnalysisEvents creates a channel for receiving AI analysis events
-// Note: The actual event delivery happens through the EventBus in the GraphQL layer
+// DEPRECATED: This method is deprecated on Lambda. Use GraphQL subscriptions (SubscribeToAIAnalysis) instead,
+// which properly persists subscriptions in DynamoDB and delivers via stream-router.
 func (s *Service) SubscribeToAnalysisEvents(_ context.Context, userID string, objectID *string) (<-chan *AnalysisEvent, error) {
-	eventChan := make(chan *AnalysisEvent, 100)
-
-	// The GraphQL subscription manager will handle the actual EventBus subscription
-	// This method just provides the channel interface for compatibility
-
-	s.logger.Info("Created AI analysis event channel",
+	// Return empty channel with deprecation warning
+	// This functionality is replaced by GraphQL subscriptions in the graph layer
+	s.logger.Warn("SubscribeToAnalysisEvents called - this method is deprecated on Lambda, use GraphQL subscriptions instead",
 		zap.String("user_id", userID),
 		zap.Bool("filtered", objectID != nil && *objectID != ""))
 
-	// Return the channel - GraphQL layer will populate it from EventBus
+	eventChan := make(chan *AnalysisEvent, 100)
+	close(eventChan) // Close immediately to prevent blocking
+
 	return eventChan, nil
 }
 

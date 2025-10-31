@@ -79,6 +79,7 @@ func (m *mockStorage) Quote() *repositories.QuoteRepository                     
 func (m *mockStorage) MediaAnalytics() *repositories.MediaAnalyticsRepository           { return nil }
 func (m *mockStorage) MediaPopularity() *repositories.MediaPopularityRepository         { return nil }
 func (m *mockStorage) MediaSession() *repositories.MediaSessionRepository               { return nil }
+func (m *mockStorage) StreamingConnection() *repositories.StreamingConnectionRepository { return nil }
 func (m *mockStorage) GetDB() dynamormCore.DB                                           { return nil }
 func (m *mockStorage) GetTableName() string                                             { return "test-table" }
 func (m *mockStorage) GetLogger() *zap.Logger                                           { return zap.NewNop() }

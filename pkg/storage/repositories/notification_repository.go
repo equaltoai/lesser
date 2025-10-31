@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -18,6 +19,12 @@ import (
 // NotificationRepository handles notification operations using enhanced DynamORM patterns
 type NotificationRepository struct {
 	*EnhancedBaseRepository[*models.Notification]
+	dispatcher NotificationDispatcher
+}
+
+// NotificationDispatcher receives callbacks after notifications are persisted.
+type NotificationDispatcher interface {
+	DispatchPushForNotification(ctx context.Context, notification *models.Notification)
 }
 
 // NewNotificationRepository creates a new notification repository with enhanced functionality and cost tracking
@@ -34,6 +41,11 @@ func NewNotificationRepository(db core.DB, tableName string, logger *zap.Logger,
 	return &NotificationRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
+}
+
+// SetDispatcher wires an optional dispatcher for post-create side effects.
+func (r *NotificationRepository) SetDispatcher(dispatcher NotificationDispatcher) {
+	r.dispatcher = dispatcher
 }
 
 // CreateNotification creates a new notification using BaseRepository
@@ -55,6 +67,10 @@ func (r *NotificationRepository) CreateNotification(ctx context.Context, notific
 	r.logger.Info("created notification with enhanced patterns",
 		zap.String("notification_id", notification.ID),
 		zap.String("type", notification.Type))
+
+	if r.dispatcher != nil {
+		r.dispatcher.DispatchPushForNotification(ctx, notification)
+	}
 
 	return nil
 }
@@ -112,6 +128,7 @@ func (r *NotificationRepository) GetUserNotifications(ctx context.Context, userI
 	pk := "USER#" + userID
 	query := r.db.WithContext(ctx).Model(&models.Notification{}).
 		Where("PK", "=", pk).
+		Where("SK", "begins_with", "notif#").
 		OrderBy("SK", "DESC") // Most recent first
 
 	// Resume from the supplied cursor value when available
@@ -119,7 +136,7 @@ func (r *NotificationRepository) GetUserNotifications(ctx context.Context, userI
 		query = query.Where("SK", "<", opts.Cursor)
 	}
 
-	// Get one more item than requested to determine if there are more results
+	// Fetch limit+1 to detect if more results exist
 	query = query.Limit(opts.Limit + 1)
 
 	var notifications []models.Notification
@@ -128,24 +145,26 @@ func (r *NotificationRepository) GetUserNotifications(ctx context.Context, userI
 		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "user notifications")
 	}
 
-	// Build result
 	result := &interfaces.PaginatedResult[*models.Notification]{
 		Items: make([]*models.Notification, 0, len(notifications)),
-		Total: -1, // Not calculated
+		Total: 0,
 	}
 
-	// Generate next cursor
-	if len(notifications) > opts.Limit {
-		// We got more results than requested, so there are more pages
-		result.NextCursor = notifications[opts.Limit-1].SK
+	hasMore := len(notifications) > opts.Limit
+	if hasMore {
+		notifications = notifications[:opts.Limit]
 		result.HasMore = true
-		notifications = notifications[:opts.Limit] // Trim to requested limit
 	}
 
-	// Convert to pointers
 	for i := range notifications {
 		result.Items = append(result.Items, &notifications[i])
 	}
+
+	if hasMore && len(result.Items) > 0 {
+		result.NextCursor = result.Items[len(result.Items)-1].SK
+	}
+
+	result.Total = int64(len(result.Items))
 
 	return result, nil
 }
@@ -161,6 +180,7 @@ func (r *NotificationRepository) GetUnreadNotifications(ctx context.Context, use
 	pk := "USER#" + userID
 	query := r.db.WithContext(ctx).Model(&models.Notification{}).
 		Where("PK", "=", pk).
+		Where("SK", "begins_with", "notif#").
 		Filter("IsRead", "=", false).
 		OrderBy("SK", "DESC") // Most recent first
 
@@ -169,7 +189,7 @@ func (r *NotificationRepository) GetUnreadNotifications(ctx context.Context, use
 		query = query.Where("SK", "<", opts.Cursor)
 	}
 
-	// Get one more item than requested to determine if there are more results
+	// Fetch limit+1 to detect if more results exist
 	query = query.Limit(opts.Limit + 1)
 
 	var notifications []models.Notification
@@ -178,24 +198,25 @@ func (r *NotificationRepository) GetUnreadNotifications(ctx context.Context, use
 		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "unread notifications")
 	}
 
-	// Build result
 	result := &interfaces.PaginatedResult[*models.Notification]{
 		Items: make([]*models.Notification, 0, len(notifications)),
-		Total: -1, // Not calculated
 	}
 
-	// Generate next cursor
-	if len(notifications) > opts.Limit {
-		// We got more results than requested, so there are more pages
-		result.NextCursor = notifications[opts.Limit-1].SK
+	hasMore := len(notifications) > opts.Limit
+	if hasMore {
+		notifications = notifications[:opts.Limit]
 		result.HasMore = true
-		notifications = notifications[:opts.Limit] // Trim to requested limit
 	}
 
-	// Convert to pointers
 	for i := range notifications {
 		result.Items = append(result.Items, &notifications[i])
 	}
+
+	if hasMore && len(result.Items) > 0 {
+		result.NextCursor = result.Items[len(result.Items)-1].SK
+	}
+
+	result.Total = int64(len(result.Items))
 
 	return result, nil
 }
@@ -228,6 +249,32 @@ func (r *NotificationRepository) GetNotificationsByType(ctx context.Context, use
 	var notifications []models.Notification
 	err := query.All(&notifications)
 	if err != nil {
+		// If GSI doesn't exist or query fails, fallback to getting all notifications and filtering
+		// This allows the system to work even if the type-index GSI hasn't been set up yet
+		if strings.Contains(strings.ToLower(err.Error()), "index") || 
+		   strings.Contains(strings.ToLower(err.Error()), "not found") {
+			r.logger.Debug("type-index GSI not available, falling back to user notifications",
+				zap.String("user_id", userID),
+				zap.String("type", notificationType))
+			// Fallback to GetUserNotifications and filter by type
+			result, fallbackErr := r.GetUserNotifications(ctx, userID, opts)
+			if fallbackErr != nil {
+				return nil, ErrorHandler.HandleQueryError(fallbackErr, EntityNotification, "notifications by type")
+			}
+			// Filter by type
+			filtered := make([]*models.Notification, 0)
+			for _, notif := range result.Items {
+				if strings.EqualFold(notif.Type, notificationType) {
+					filtered = append(filtered, notif)
+				}
+			}
+			return &interfaces.PaginatedResult[*models.Notification]{
+				Items:      filtered,
+				NextCursor: result.NextCursor,
+				HasMore:    result.HasMore,
+				Total:      int64(len(filtered)),
+			}, nil
+		}
 		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "notifications by type")
 	}
 
@@ -426,19 +473,19 @@ func (r *NotificationRepository) GetNotificationGroups(ctx context.Context, user
 		opts.Limit = 100
 	}
 
-	// Use GSI3 to efficiently query grouped notifications
-	// We'll get all groups and then filter for the user
+	pk := "USER#" + userID
 	query := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Index("group-index")
+		Where("PK", "=", pk).
+		Where("SK", "begins_with", "notif#").
+		OrderBy("SK", "DESC")
 
 	// Resume from the supplied cursor value when available
 	if opts.Cursor != "" {
-		query = query.Where("GSI3SK", "<", opts.Cursor)
+		query = query.Where("SK", "<", opts.Cursor)
 	}
 
-	// Order by GSI3SK (timestamp#id) to get chronological groups
-	query = query.OrderBy("GSI3SK", "DESC").
-		Limit(opts.Limit + 1) // Get one extra to check for more results
+	// Fetch extra items to account for grouping expansion and detect more results
+	query = query.Limit((opts.Limit * 3) + 1)
 
 	var allNotifications []models.Notification
 	err := query.All(&allNotifications)
@@ -488,10 +535,10 @@ func (r *NotificationRepository) GetNotificationGroups(ctx context.Context, user
 	// Set next cursor if we have more results
 	if result.HasMore && len(result.Items) > 0 {
 		lastNotif := result.Items[len(result.Items)-1]
-		result.NextCursor = lastNotif.GSI3SK
+		result.NextCursor = lastNotif.SK
 	}
 
-	r.logger.Debug("retrieved notification groups using GSI3",
+	r.logger.Debug("retrieved notification groups using PK",
 		zap.String("user_id", userID),
 		zap.Int("total_groups", len(userGroups)),
 		zap.Int("returned_count", len(result.Items)),
@@ -505,12 +552,20 @@ func (r *NotificationRepository) GetNotificationGroups(ctx context.Context, user
 func (r *NotificationRepository) ConsolidateNotifications(ctx context.Context, groupKey string) error {
 	// Query notifications with the same group key using GSI3
 	var notifications []models.Notification
+	const consolidationLimit = 100
 	err := r.db.WithContext(ctx).Model(&models.Notification{}).
 		Index("group-index").
 		Where("GSI3PK", "=", "NOTIF_GROUP#"+groupKey).
+		Limit(consolidationLimit).
 		All(&notifications)
 	if err != nil {
 		return ErrorHandler.HandleQueryError(err, EntityNotification, "consolidation query")
+	}
+
+	if len(notifications) == consolidationLimit {
+		r.logger.Warn("notification group consolidation truncated due to limit",
+			zap.String("group_key", groupKey),
+			zap.Int("limit", consolidationLimit))
 	}
 
 	if len(notifications) <= 1 {
@@ -570,19 +625,43 @@ func (r *NotificationRepository) GetUnreadNotificationCount(ctx context.Context,
 func (r *NotificationRepository) GetNotificationCountsByType(ctx context.Context, userID string) (map[string]int64, error) {
 	pk := "USER#" + userID
 
-	// Get all notifications for the user and count by type
-	var notifications []models.Notification
-	err := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Where("PK", "=", pk).
-		All(&notifications)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "type counting")
-	}
-
-	// Count by type
 	counts := make(map[string]int64)
-	for _, notif := range notifications {
-		counts[notif.Type]++
+	const countBatchLimit = 500
+	cursor := ""
+
+	for {
+		query := r.db.WithContext(ctx).Model(&models.Notification{}).
+			Where("PK", "=", pk).
+			Where("SK", "begins_with", "notif#").
+			OrderBy("SK", "DESC").
+			Limit(countBatchLimit)
+
+		if cursor != "" {
+			query = query.Where("SK", "<", cursor)
+		}
+
+		var notifications []models.Notification
+		err := query.All(&notifications)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				break
+			}
+			return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "type counting")
+		}
+
+		if len(notifications) == 0 {
+			break
+		}
+
+		for i := range notifications {
+			counts[notifications[i].Type]++
+		}
+
+		if len(notifications) < countBatchLimit {
+			break
+		}
+
+		cursor = notifications[len(notifications)-1].SK
 	}
 
 	return counts, nil
@@ -615,6 +694,12 @@ func (r *NotificationRepository) CreateNotifications(ctx context.Context, notifi
 	r.logger.Info("batch created notifications",
 		zap.Int("notification_count", len(notifications)),
 	)
+
+	if r.dispatcher != nil {
+		for _, notification := range notifications {
+			r.dispatcher.DispatchPushForNotification(ctx, notification)
+		}
+	}
 
 	return nil
 }
@@ -665,25 +750,50 @@ func (r *NotificationRepository) DeleteNotificationsByType(ctx context.Context, 
 
 // DeleteNotificationsByObject deletes all notifications related to a specific object
 func (r *NotificationRepository) DeleteNotificationsByObject(ctx context.Context, objectID string) error {
-	// Query all notifications for this object
-	var notifications []models.Notification
-	err := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Where("ObjectID", "=", objectID).
-		All(&notifications)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil // No notifications to delete
+	const deleteBatchLimit = 100
+	totalDeleted := 0
+
+	for {
+		var notifications []models.Notification
+		err := r.db.WithContext(ctx).Model(&models.Notification{}).
+			Where("ObjectID", "=", objectID).
+			Limit(deleteBatchLimit).
+			All(&notifications)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				break
+			}
+			return ErrorHandler.HandleQueryError(err, EntityNotification, "object notifications")
 		}
-		return ErrorHandler.HandleQueryError(err, EntityNotification, "object notifications")
+
+		if len(notifications) == 0 {
+			break
+		}
+
+		keys := make([]any, len(notifications))
+		for i := range notifications {
+			keys[i] = &models.Notification{
+				PK: notifications[i].PK,
+				SK: notifications[i].SK,
+			}
+		}
+
+		if err := r.db.WithContext(ctx).Model(&models.Notification{}).BatchDelete(keys); err != nil {
+			return ErrorHandler.HandleDeleteError(err, EntityNotification, "batch delete by object")
+		}
+
+		totalDeleted += len(notifications)
+
+		if len(notifications) < deleteBatchLimit {
+			break
+		}
 	}
 
-	// Delete each notification
-	for _, notification := range notifications {
-		if err := r.db.WithContext(ctx).Model(&notification).Delete(); err != nil {
-			r.logger.Warn("failed to delete notification",
-				zap.String("notification_id", notification.ID),
-				zap.Error(err))
-		}
+	if totalDeleted > 0 {
+		r.logger.Info("batch deleted notifications by object",
+			zap.String("object_id", objectID),
+			zap.Int("deleted_count", totalDeleted),
+			zap.Int("batch_limit", deleteBatchLimit))
 	}
 
 	return nil
@@ -812,36 +922,55 @@ func (r *NotificationRepository) ClearOldNotifications(ctx context.Context, user
 
 // GetNotificationsAdvanced retrieves notifications with advanced filtering options
 func (r *NotificationRepository) GetNotificationsAdvanced(ctx context.Context, userID string, filters map[string]interface{}, pagination interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Notification], error) {
+	if pagination.Limit <= 0 {
+		pagination.Limit = 20
+	}
+	if pagination.Limit > 100 {
+		pagination.Limit = 100
+	}
+
+	pk := "USER#" + userID
 	query := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Index("user-notifications-index").
-		Filter("UserID", "=", userID)
+		Where("PK", "=", pk).
+		Where("SK", "begins_with", "notif#").
+		OrderBy("SK", "DESC")
 
 	// Apply additional filters
 	for key, value := range filters {
 		query = query.Filter(key, "=", value)
 	}
 
-	// Apply pagination with limit
-	if pagination.Limit > 0 {
-		query = query.Limit(pagination.Limit)
-	} else {
-		query = query.Limit(20) // Default limit
+	if pagination.Cursor != "" {
+		query = query.Where("SK", "<", pagination.Cursor)
 	}
 
-	result := &interfaces.PaginatedResult[*models.Notification]{
-		Items: []*models.Notification{},
-	}
+	query = query.Limit(pagination.Limit + 1)
 
-	var notifications []*models.Notification
-	err := query.Scan(&notifications)
-	if err != nil && !errors.IsNotFound(err) {
+	var notifications []models.Notification
+	err := query.All(&notifications)
+	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "advanced query")
 	}
 
-	result.Items = notifications
-	// For now, simple pagination - could enhance with cursor later
-	result.HasMore = len(notifications) == pagination.Limit
-	result.Total = int64(len(notifications))
+	result := &interfaces.PaginatedResult[*models.Notification]{
+		Items: make([]*models.Notification, 0, len(notifications)),
+	}
+
+	hasMore := len(notifications) > pagination.Limit
+	if hasMore {
+		notifications = notifications[:pagination.Limit]
+		result.HasMore = true
+	}
+
+	for i := range notifications {
+		result.Items = append(result.Items, &notifications[i])
+	}
+
+	if hasMore && len(result.Items) > 0 {
+		result.NextCursor = result.Items[len(result.Items)-1].SK
+	}
+
+	result.Total = int64(len(result.Items))
 
 	return result, nil
 }

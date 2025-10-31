@@ -2,10 +2,13 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -19,11 +22,28 @@ import (
 // PushSubscriptionRepository handles push subscription operations using enhanced DynamORM patterns
 type PushSubscriptionRepository struct {
 	*EnhancedBaseRepository[*models.PushSubscription]
-	vapidRepo *EnhancedBaseRepository[*models.VAPIDKeyRecord]
+	vapidRepo         *EnhancedBaseRepository[*models.VAPIDKeyRecord]
+	secretsClient     SecretsManagerClient
+	vapidSecretARN    string
+	defaultVAPIDEmail string
+}
+
+// SecretsManagerClient defines the subset of AWS Secrets Manager client methods used by the repository.
+type SecretsManagerClient interface {
+	GetSecretValue(ctx context.Context, params *secretsmanager.GetSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
+	PutSecretValue(ctx context.Context, params *secretsmanager.PutSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.PutSecretValueOutput, error)
 }
 
 // NewPushSubscriptionRepository creates a new push subscription repository with enhanced functionality and cost tracking
-func NewPushSubscriptionRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PushSubscriptionRepository {
+func NewPushSubscriptionRepository(
+	db core.DB,
+	tableName string,
+	logger *zap.Logger,
+	costService *cost.TrackingService,
+	secretsClient SecretsManagerClient,
+	vapidSecretARN string,
+	defaultSubject string,
+) *PushSubscriptionRepository {
 	// Create enhanced repository for push subscription operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.PushSubscription](db, tableName, logger, costService, "PushSubscriptionRepository", "push_subscription")
 
@@ -43,6 +63,9 @@ func NewPushSubscriptionRepository(db core.DB, tableName string, logger *zap.Log
 	return &PushSubscriptionRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		vapidRepo:              vapidRepo,
+		secretsClient:          secretsClient,
+		vapidSecretARN:         vapidSecretARN,
+		defaultVAPIDEmail:      defaultSubject,
 	}
 }
 
@@ -104,8 +127,17 @@ func (r *PushSubscriptionRepository) GetUserPushSubscriptions(ctx context.Contex
 	pk := fmt.Sprintf("PUSH#%s", username)
 
 	// Use BaseRepository QueryWithSKPrefix method
-	records, err := r.QueryWithSKPrefix(ctx, pk, "SUB#", 100)
-	if err != nil {
+	var records []*models.PushSubscription
+	query := r.BaseRepository.db.WithContext(ctx).
+		Model(&models.PushSubscription{}).
+		Where("PK", "=", pk).
+		Where("SK", "BEGINS_WITH", "SUB#").
+		Limit(100)
+
+	if err := query.All(&records); err != nil {
+		r.logger.Error("failed to query push subscriptions by prefix",
+			zap.Error(err),
+			zap.String("pk", pk))
 		return nil, ErrorHandler.HandleQueryError(err, "push subscription", "user subscriptions")
 	}
 
@@ -174,6 +206,14 @@ func (r *PushSubscriptionRepository) DeleteAllPushSubscriptions(ctx context.Cont
 
 // GetVAPIDKeys retrieves the VAPID keys for the instance
 func (r *PushSubscriptionRepository) GetVAPIDKeys(ctx context.Context) (*storage.VAPIDKeys, error) {
+	if keys, err := r.getVAPIDKeysFromSecret(ctx); err == nil && keys != nil {
+		return keys, nil
+	} else if err != nil {
+		r.logger.Warn("failed to load VAPID keys from secret, falling back to DynamoDB",
+			zap.String("secret_arn", r.vapidSecretARN),
+			zap.Error(err))
+	}
+
 	var record models.VAPIDKeyRecord
 	pk := "INSTANCE#CONFIG"
 	sk := "VAPID_KEYS"
@@ -198,9 +238,24 @@ func (r *PushSubscriptionRepository) GetVAPIDKeys(ctx context.Context) (*storage
 
 // SetVAPIDKeys stores the VAPID keys for the instance
 func (r *PushSubscriptionRepository) SetVAPIDKeys(ctx context.Context, keys *storage.VAPIDKeys) error {
+	if keys == nil {
+		return errors.New("vapid keys payload cannot be nil")
+	}
+
 	// Set creation timestamp if not set
 	if keys.CreatedAt.IsZero() {
-		keys.CreatedAt = time.Now()
+		keys.CreatedAt = time.Now().UTC()
+	}
+	keys.UpdatedAt = time.Now().UTC()
+
+	if keys.Subject == "" {
+		keys.Subject = r.defaultVAPIDEmail
+	}
+
+	if err := r.setVAPIDKeysInSecret(ctx, keys); err != nil {
+		r.logger.Error("failed to store VAPID keys in secrets manager",
+			zap.String("secret_arn", r.vapidSecretARN),
+			zap.Error(err))
 	}
 
 	// Create the VAPID key record
@@ -224,6 +279,90 @@ func (r *PushSubscriptionRepository) SetVAPIDKeys(ctx context.Context, keys *sto
 	}
 
 	return nil
+}
+
+type vapidSecretPayload struct {
+	PublicKey  string `json:"public_key"`
+	PrivateKey string `json:"private_key"`
+	Subject    string `json:"subject"`
+	CreatedAt  string `json:"created_at,omitempty"`
+	UpdatedAt  string `json:"updated_at,omitempty"`
+}
+
+func (r *PushSubscriptionRepository) getVAPIDKeysFromSecret(ctx context.Context) (*storage.VAPIDKeys, error) {
+	if r.secretsClient == nil || r.vapidSecretARN == "" {
+		return nil, nil
+	}
+
+	result, err := r.secretsClient.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: aws.String(r.vapidSecretARN),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if result.SecretString == nil {
+		return nil, errors.New("vapid secret does not contain SecretString")
+	}
+
+	var payload vapidSecretPayload
+	if err := json.Unmarshal([]byte(*result.SecretString), &payload); err != nil {
+		return nil, err
+	}
+
+	if payload.PublicKey == "" || payload.PrivateKey == "" {
+		return nil, errors.New("vapid secret missing key material")
+	}
+
+	subject := payload.Subject
+	if subject == "" {
+		subject = r.defaultVAPIDEmail
+	}
+
+	return &storage.VAPIDKeys{
+		PublicKey:  payload.PublicKey,
+		PrivateKey: payload.PrivateKey,
+		Subject:    subject,
+		CreatedAt:  parseVAPIDTimestamp(payload.CreatedAt),
+		UpdatedAt:  parseVAPIDTimestamp(payload.UpdatedAt),
+	}, nil
+}
+
+func (r *PushSubscriptionRepository) setVAPIDKeysInSecret(ctx context.Context, keys *storage.VAPIDKeys) error {
+	if r.secretsClient == nil || r.vapidSecretARN == "" {
+		return nil
+	}
+
+	payload := vapidSecretPayload{
+		PublicKey:  keys.PublicKey,
+		PrivateKey: keys.PrivateKey,
+		Subject:    keys.Subject,
+		CreatedAt:  keys.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:  keys.UpdatedAt.UTC().Format(time.RFC3339),
+	}
+
+	secretBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.secretsClient.PutSecretValue(ctx, &secretsmanager.PutSecretValueInput{
+		SecretId:     aws.String(r.vapidSecretARN),
+		SecretString: aws.String(string(secretBytes)),
+	})
+	return err
+}
+
+func parseVAPIDTimestamp(value string) time.Time {
+	if value == "" {
+		return time.Time{}
+	}
+
+	if ts, err := time.Parse(time.RFC3339, value); err == nil {
+		return ts
+	}
+
+	return time.Time{}
 }
 
 // convertStorageAlerts converts storage.PushSubscriptionAlerts to models.PushSubscriptionAlerts

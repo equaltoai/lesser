@@ -38,15 +38,13 @@ var (
 	ErrAuthRequiredForDirect   = errors.NewAuthError(errors.CodeUnauthorized, "authentication required for direct timeline")
 
 	// Service unavailability errors
-	ErrEventBusUnavailable         = errors.ServiceUnavailable("event bus")
-	ErrInternalEventBusUnavailable = errors.EventBusNotInitialized()
-	ErrModerationUnavailable       = errors.ServiceUnavailable("moderation service")
-	ErrAIServiceUnavailable        = errors.ServiceNotAvailable("AI service")
-	ErrAnalyticsUnavailable        = errors.ServiceUnavailable("analytics service")
-	ErrMediaServiceUnavailable     = errors.ServiceUnavailable("media service")
-	ErrStorageUnavailable          = errors.ServiceUnavailable("storage")
-	ErrFederationUnavailable       = errors.ServiceUnavailable("federation service")
-	ErrCostTrackingUnavailable     = errors.ServiceUnavailable("cost tracking")
+	ErrModerationUnavailable   = errors.ServiceUnavailable("moderation service")
+	ErrAIServiceUnavailable    = errors.ServiceNotAvailable("AI service")
+	ErrAnalyticsUnavailable    = errors.ServiceUnavailable("analytics service")
+	ErrMediaServiceUnavailable = errors.ServiceUnavailable("media service")
+	ErrStorageUnavailable      = errors.ServiceUnavailable("storage")
+	ErrFederationUnavailable   = errors.ServiceUnavailable("federation service")
+	ErrCostTrackingUnavailable = errors.ServiceUnavailable("cost tracking")
 
 	// Repository unavailability errors
 	ErrObjectRepositoryUnavailable     = errors.RepositoryNotAvailable("object")
@@ -94,28 +92,12 @@ var (
 	ErrGetUpdatedListFailed = errors.ProcessingFailed("get updated list", stdErrors.New("failed to get updated list"))
 
 	// Subscription manager errors
-	ErrSubscriptionManagerAlreadyRunning    = errors.InvalidStateForOperation("not running", "start subscription manager")
-	ErrSubscriptionManagerNotRunning        = errors.InvalidStateForOperation("running", "stop subscription manager")
-	ErrEventBusNotAvailableForTimeline      = errors.ServiceUnavailable("event bus for timeline subscription")
-	ErrEventBusNotAvailableForNotifications = errors.ServiceUnavailable("event bus for notification subscription")
-	ErrEventBusNotAvailableForCost          = errors.ServiceUnavailable("event bus for cost update subscription")
-	ErrEventBusNotAvailableForModeration    = errors.ServiceUnavailable("event bus for moderation subscription")
-	ErrEventBusNotAvailableForTrust         = errors.ServiceUnavailable("event bus for trust subscription")
-	ErrEventBusNotAvailableForAI            = errors.ServiceUnavailable("event bus for AI analysis subscription")
-	ErrEventBusNotAvailableForHashtag       = errors.ServiceUnavailable("event bus for hashtag activity subscription")
-	ErrEventBusNotAvailableForQuote         = errors.ServiceUnavailable("event bus for quote activity subscription")
-	ErrEventBusNotAvailableForMetrics       = errors.ServiceUnavailable("event bus for metrics subscription")
-	ErrEventBusNotAvailableForList          = errors.ServiceUnavailable("event bus for list activity subscription")
-	ErrEventBusNotAvailableForConversation  = errors.ServiceUnavailable("event bus for conversation subscription")
-	ErrEventBusNotAvailableForFederation    = errors.ServiceUnavailable("event bus for federation health subscription")
-	ErrEventBusNotAvailableForRelationship  = errors.ServiceUnavailable("event bus for relationship subscription")
-	ErrAtLeastOneHashtagRequired            = errors.NewValidationError("hashtags", "at least one must be specified")
-	ErrNoteIDCannotBeEmpty                  = errors.NewValidationError("noteID", "cannot be empty")
-	ErrUsernameCannotBeEmpty                = errors.NewValidationError("username", "cannot be empty")
-	ErrListIDCannotBeEmpty                  = errors.NewValidationError("listID", "cannot be empty")
-
-	// Subscription factory errors
-	ErrEventBusSubscriptionFailed = errors.EventBusSubscriptionFailed(nil)
+	ErrSubscriptionManagerAlreadyRunning = errors.InvalidStateForOperation("not running", "start subscription manager")
+	ErrSubscriptionManagerNotRunning     = errors.InvalidStateForOperation("running", "stop subscription manager")
+	ErrAtLeastOneHashtagRequired         = errors.NewValidationError("hashtags", "at least one must be specified")
+	ErrNoteIDCannotBeEmpty               = errors.NewValidationError("noteID", "cannot be empty")
+	ErrUsernameCannotBeEmpty             = errors.NewValidationError("username", "cannot be empty")
+	ErrListIDCannotBeEmpty               = errors.NewValidationError("listID", "cannot be empty")
 
 	// Pagination errors
 	ErrPaginationMixedParams = errors.NewValidationError("pagination", "cannot use first/after with last/before")
@@ -166,11 +148,6 @@ func ErrListMembershipFailedWithAction(actionName string) *errors.AppError {
 // ErrGetUpdatedListFailedWithContext returns an error for when getting an updated list fails with additional context.
 func ErrGetUpdatedListFailedWithContext(err error) *errors.AppError {
 	return errors.ProcessingFailed("get updated list", err)
-}
-
-// ErrEventBusSubscriptionFailedWithContext returns an error for when event bus subscription fails with additional context.
-func ErrEventBusSubscriptionFailedWithContext(err error) *errors.AppError {
-	return errors.EventBusSubscriptionFailed(err)
 }
 
 // ErrFailedToConvertItem returns an error for when item conversion fails at a specific index.

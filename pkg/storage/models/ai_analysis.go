@@ -76,6 +76,11 @@ func (a *AIAnalysis) BeforeUpdate() error {
 	return a.UpdateKeys()
 }
 
+// TableName returns the DynamoDB table backing AIAnalysis.
+func (AIAnalysis) TableName() string {
+	return MainTableName
+}
+
 // AIAnalysisQueue represents a queued object for AI analysis
 type AIAnalysisQueue struct {
 	// Using object keys for updating
@@ -107,4 +112,9 @@ func (q *AIAnalysisQueue) GetSK() string {
 func (q *AIAnalysisQueue) BeforeUpdate() error {
 	q.UpdatedAt = time.Now()
 	return q.UpdateKeys()
+}
+
+// TableName returns the DynamoDB table backing AIAnalysisQueue.
+func (AIAnalysisQueue) TableName() string {
+	return MainTableName
 }

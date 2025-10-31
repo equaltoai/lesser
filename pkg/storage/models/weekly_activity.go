@@ -137,3 +137,8 @@ func (w *WeeklyActivity) Merge(other *WeeklyActivity) {
 	w.Logins += other.Logins
 	w.Registrations += other.Registrations
 }
+
+// TableName returns the DynamoDB table backing WeeklyActivity.
+func (WeeklyActivity) TableName() string {
+	return MainTableName
+}

@@ -10,20 +10,26 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslogs"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53targets"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 )
 
 type APIGatewayProps struct {
-	Environment string
-	Domain      string
-	Certificate awscertificatemanager.ICertificate
-	Functions   *LambdaFunctions
+	Environment            string
+	Domain                 string
+	Certificate            awscertificatemanager.ICertificate
+	GraphQLWSCertificate   awscertificatemanager.ICertificate
+	StreamingWSCertificate awscertificatemanager.ICertificate
+	Functions              *LambdaFunctions
+	HostedZone             awsroute53.IHostedZone
 }
 
 type APIGateway struct {
-	HttpApi      awsapigatewayv2.HttpApi
-	WebSocketApi awsapigatewayv2.WebSocketApi
+	HttpApi             awsapigatewayv2.HttpApi
+	WebSocketApi        awsapigatewayv2.WebSocketApi
+	GraphQLWebSocketApi awsapigatewayv2.WebSocketApi
 }
 
 func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGateway {
@@ -68,6 +74,23 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 			Api:        gateway.HttpApi,
 			DomainName: domainName,
 		})
+
+		if props.HostedZone != nil {
+			recordName := relativeRecordName(props.Domain, props.HostedZone)
+			target := awsroute53targets.NewApiGatewayv2DomainProperties(domainName.RegionalDomainName(), domainName.RegionalHostedZoneId())
+
+			awsroute53.NewARecord(scope, jsii.String("ApiAliasARecord"), &awsroute53.ARecordProps{
+				Zone:       props.HostedZone,
+				RecordName: recordName,
+				Target:     awsroute53.RecordTarget_FromAlias(target),
+			})
+
+			awsroute53.NewAaaaRecord(scope, jsii.String("ApiAliasAAAARecord"), &awsroute53.AaaaRecordProps{
+				Zone:       props.HostedZone,
+				RecordName: recordName,
+				Target:     awsroute53.RecordTarget_FromAlias(target),
+			})
+		}
 	}
 
 	// Create access log group
@@ -87,6 +110,9 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	// Create WebSocket API
 	gateway.WebSocketApi = createWebSocketApi(scope, props)
 
+	// Create GraphQL WebSocket API
+	gateway.GraphQLWebSocketApi = createGraphQLWebSocketApi(scope, props)
+
 	return gateway
 }
 
@@ -104,6 +130,16 @@ func addHttpRoutes(api awsapigatewayv2.HttpApi, functions *LambdaFunctions) {
 	// GraphQL routes
 	addRoute(api, "GET /api/graphql", functions.GraphQLFunction)
 	addRoute(api, "POST /api/graphql", functions.GraphQLFunction)
+
+    // Account registration endpoint (Mastodon-compatible)
+    addRoute(api, "POST /api/v1/accounts", functions.APIFunction)
+
+	// Admin routes
+	addRoute(api, "GET /api/v1/admin/{proxy+}", functions.APIFunction)
+	addRoute(api, "POST /api/v1/admin/{proxy+}", functions.APIFunction)
+	addRoute(api, "PUT /api/v1/admin/{proxy+}", functions.APIFunction)
+	addRoute(api, "DELETE /api/v1/admin/{proxy+}", functions.APIFunction)
+	addRoute(api, "PATCH /api/v1/admin/{proxy+}", functions.APIFunction)
 
 	// OAuth routes (handled by native Lift implementation in API)
 	addRoute(api, "GET /oauth/{proxy+}", functions.APIFunction)
@@ -138,6 +174,9 @@ func addHttpRoutes(api awsapigatewayv2.HttpApi, functions *LambdaFunctions) {
 	addRoute(api, "GET /api/v1/instance", functions.APIFunction)
 	addRoute(api, "GET /api/v2/instance", functions.APIFunction)
 
+	// Catch-all fallback to ensure unexpected routes reach the API Lambda
+	addRoute(api, "ANY /{proxy+}", functions.APIFunction)
+
 	// Health check
 	addRoute(api, "GET /health", functions.HealthFunction)
 }
@@ -154,25 +193,30 @@ func addRoute(api awsapigatewayv2.HttpApi, path string, handler awslambda.Functi
 	)
 
 	// Parse method and path
-	var method awsapigatewayv2.HttpMethod
-	var routePath string
+	var (
+		method    awsapigatewayv2.HttpMethod
+		routePath string
+	)
 
 	switch {
-	case len(path) > 4 && path[:4] == "GET ":
+	case strings.HasPrefix(path, "GET "):
 		method = awsapigatewayv2.HttpMethod_GET
 		routePath = path[4:]
-	case len(path) > 5 && path[:5] == "POST ":
+	case strings.HasPrefix(path, "POST "):
 		method = awsapigatewayv2.HttpMethod_POST
 		routePath = path[5:]
-	case len(path) > 4 && path[:4] == "PUT ":
+	case strings.HasPrefix(path, "PUT "):
 		method = awsapigatewayv2.HttpMethod_PUT
 		routePath = path[4:]
-	case len(path) > 7 && path[:7] == "DELETE ":
+	case strings.HasPrefix(path, "DELETE "):
 		method = awsapigatewayv2.HttpMethod_DELETE
 		routePath = path[7:]
-	case len(path) > 6 && path[:6] == "PATCH ":
+	case strings.HasPrefix(path, "PATCH "):
 		method = awsapigatewayv2.HttpMethod_PATCH
 		routePath = path[6:]
+	case strings.HasPrefix(path, "ANY "):
+		method = awsapigatewayv2.HttpMethod_ANY
+		routePath = path[4:]
 	default:
 		return
 	}
@@ -187,19 +231,19 @@ func addRoute(api awsapigatewayv2.HttpApi, path string, handler awslambda.Functi
 func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsapigatewayv2.WebSocketApi {
 	// Create WebSocket API for streaming
 	wsApi := awsapigatewayv2.NewWebSocketApi(scope, jsii.String("WebSocketApi"), &awsapigatewayv2.WebSocketApiProps{
-		ApiName:     jsii.String(fmt.Sprintf("lesser-%s-ws", props.Environment)),
+		ApiName:     jsii.String(fmt.Sprintf("lesser-%s-streaming-ws-v2", props.Environment)),
 		Description: jsii.String("Lesser WebSocket API for streaming"),
 		ConnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
 				jsii.String("ConnectIntegration"),
-				props.Functions.StreamRouterFunction,
+				props.Functions.StreamingFunction,
 				&awsapigatewayv2integrations.WebSocketLambdaIntegrationProps{},
 			),
 		},
 		DisconnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
 				jsii.String("DisconnectIntegration"),
-				props.Functions.StreamRouterFunction,
+				props.Functions.StreamingFunction,
 				&awsapigatewayv2integrations.WebSocketLambdaIntegrationProps{},
 			),
 		},
@@ -213,13 +257,136 @@ func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsa
 	})
 
 	// Create stage
-	awsapigatewayv2.NewWebSocketStage(scope, jsii.String("WebSocketStage"), &awsapigatewayv2.WebSocketStageProps{
+	stage := awsapigatewayv2.NewWebSocketStage(scope, jsii.String("WebSocketStage"), &awsapigatewayv2.WebSocketStageProps{
 		WebSocketApi: wsApi,
 		StageName:    jsii.String(props.Environment),
 		AutoDeploy:   jsii.Bool(true),
 	})
 
+	// Attach custom domain if certificate is provided
+	if props.StreamingWSCertificate != nil && props.Domain != "" {
+		streamDomain := fmt.Sprintf("stream.%s", props.Domain)
+
+		domainName := awsapigatewayv2.NewDomainName(scope, jsii.String("StreamingWebSocketDomain"), &awsapigatewayv2.DomainNameProps{
+			DomainName:  jsii.String(streamDomain),
+			Certificate: props.StreamingWSCertificate,
+		})
+
+		awsapigatewayv2.NewApiMapping(scope, jsii.String("StreamingWebSocketApiMapping"), &awsapigatewayv2.ApiMappingProps{
+			Api:        wsApi,
+			DomainName: domainName,
+			Stage:      stage,
+		})
+
+		if props.HostedZone != nil {
+			recordName := relativeRecordName(streamDomain, props.HostedZone)
+			target := awsroute53targets.NewApiGatewayv2DomainProperties(domainName.RegionalDomainName(), domainName.RegionalHostedZoneId())
+
+			awsroute53.NewARecord(scope, jsii.String("StreamingWebSocketAliasARecord"), &awsroute53.ARecordProps{
+				Zone:       props.HostedZone,
+				RecordName: recordName,
+				Target:     awsroute53.RecordTarget_FromAlias(target),
+			})
+
+			awsroute53.NewAaaaRecord(scope, jsii.String("StreamingWebSocketAliasAAAARecord"), &awsroute53.AaaaRecordProps{
+				Zone:       props.HostedZone,
+				RecordName: recordName,
+				Target:     awsroute53.RecordTarget_FromAlias(target),
+			})
+		}
+	}
+
 	return wsApi
+}
+
+func createGraphQLWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsapigatewayv2.WebSocketApi {
+	wsApi := awsapigatewayv2.NewWebSocketApi(scope, jsii.String("GraphQLWebSocketApi"), &awsapigatewayv2.WebSocketApiProps{
+		ApiName:     jsii.String(fmt.Sprintf("lesser-%s-graphql-ws", props.Environment)),
+		Description: jsii.String("GraphQL WebSocket API for subscriptions"),
+		ConnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
+			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
+				jsii.String("GraphQLWSConnectIntegration"),
+				props.Functions.GraphQLWSFunction,
+				&awsapigatewayv2integrations.WebSocketLambdaIntegrationProps{},
+			),
+		},
+		DisconnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
+			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
+				jsii.String("GraphQLWSDisconnectIntegration"),
+				props.Functions.GraphQLWSFunction,
+				&awsapigatewayv2integrations.WebSocketLambdaIntegrationProps{},
+			),
+		},
+		DefaultRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
+			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
+				jsii.String("GraphQLWSDefaultIntegration"),
+				props.Functions.GraphQLWSFunction,
+				&awsapigatewayv2integrations.WebSocketLambdaIntegrationProps{},
+			),
+		},
+	})
+
+	stage := awsapigatewayv2.NewWebSocketStage(scope, jsii.String("GraphQLWebSocketStage"), &awsapigatewayv2.WebSocketStageProps{
+		WebSocketApi: wsApi,
+		StageName:    jsii.String(props.Environment),
+		AutoDeploy:   jsii.Bool(true),
+	})
+
+	if props.GraphQLWSCertificate != nil && props.Domain != "" {
+		graphqlWsDomain := fmt.Sprintf("graphql-ws.%s", props.Domain)
+
+		domainName := awsapigatewayv2.NewDomainName(scope, jsii.String("GraphQLWebSocketDomain"), &awsapigatewayv2.DomainNameProps{
+			DomainName:  jsii.String(graphqlWsDomain),
+			Certificate: props.GraphQLWSCertificate,
+		})
+
+		awsapigatewayv2.NewApiMapping(scope, jsii.String("GraphQLWebSocketApiMapping"), &awsapigatewayv2.ApiMappingProps{
+			Api:        wsApi,
+			DomainName: domainName,
+			Stage:      stage,
+		})
+
+		if props.HostedZone != nil {
+			recordName := relativeRecordName(graphqlWsDomain, props.HostedZone)
+			target := awsroute53targets.NewApiGatewayv2DomainProperties(domainName.RegionalDomainName(), domainName.RegionalHostedZoneId())
+
+			awsroute53.NewARecord(scope, jsii.String("GraphQLWebSocketAliasARecord"), &awsroute53.ARecordProps{
+				Zone:       props.HostedZone,
+				RecordName: recordName,
+				Target:     awsroute53.RecordTarget_FromAlias(target),
+			})
+
+			awsroute53.NewAaaaRecord(scope, jsii.String("GraphQLWebSocketAliasAAAARecord"), &awsroute53.AaaaRecordProps{
+				Zone:       props.HostedZone,
+				RecordName: recordName,
+				Target:     awsroute53.RecordTarget_FromAlias(target),
+			})
+		}
+	}
+
+	return wsApi
+}
+
+func relativeRecordName(domain string, zone awsroute53.IHostedZone) *string {
+	if zone == nil {
+		return jsii.String(domain)
+	}
+
+	zoneNamePtr := zone.ZoneName()
+	if zoneNamePtr == nil {
+		return jsii.String(domain)
+	}
+
+	zoneName := strings.TrimSuffix(*zoneNamePtr, ".")
+	if domain == "" || domain == zoneName {
+		return jsii.String("")
+	}
+
+	if strings.HasSuffix(domain, "."+zoneName) {
+		return jsii.String(strings.TrimSuffix(domain, "."+zoneName))
+	}
+
+	return jsii.String(domain)
 }
 
 // sanitizeName converts a path string to a valid CDK resource identifier

@@ -132,3 +132,8 @@ func (t *TrendingStatus) FormatTrendingSummary() string {
 	return fmt.Sprintf("Rank #%d: %d likes, %d boosts, %d replies (score: %.0f)",
 		t.Rank, t.Likes, t.Boosts, t.Replies, t.TrendingScore)
 }
+
+// TableName returns the DynamoDB table backing TrendingStatus.
+func (TrendingStatus) TableName() string {
+	return MainTableName
+}

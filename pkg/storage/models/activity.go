@@ -23,6 +23,11 @@ type Activity struct {
 	CreatedAt time.Time             `json:"CreatedAt"`
 }
 
+// TableName returns the DynamoDB table backing Activity.
+func (Activity) TableName() string {
+	return MainTableName
+}
+
 // GetPK returns the partition key
 func (a *Activity) GetPK() string {
 	return a.PK

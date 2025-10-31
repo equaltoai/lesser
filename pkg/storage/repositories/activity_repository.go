@@ -117,18 +117,31 @@ func (r *ActivityRepository) GetActivity(ctx context.Context, id string) (*activ
 }
 
 // GetInboxActivities retrieves inbox activities for a user - matches legacy implementation
-func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	// Set default limit if not specified
-	if limit <= 0 || limit > 100 {
-		limit = 20
+const (
+	activityDefaultLimit = 20
+	activityMaxLimit     = 100
+)
+
+func clampActivityLimit(limit int) int {
+	if limit <= 0 {
+		return activityDefaultLimit
 	}
+	if limit > activityMaxLimit {
+		return activityMaxLimit
+	}
+	return limit
+}
+
+// GetInboxActivities returns inbox activities ordered newest-first with opaque pagination cursors.
+func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
+	safeLimit := clampActivityLimit(limit)
 
 	// Query using GSI1 for inbox activities
 	// Note: Using direct DynamORM query since BaseRepository doesn't have GSI query with custom cursor handling
 	query := r.db.WithContext(ctx).Model(&models.Activity{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", "INBOX#"+username).
-		Limit(limit).
+		Limit(safeLimit+1).
 		OrderBy("GSI1SK", "DESC") // Newest first
 
 	// If cursor provided, decode and set it
@@ -167,6 +180,11 @@ func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username st
 	}
 
 	// Convert to ActivityPub activities
+	hasMore := len(activities) > safeLimit
+	if hasMore {
+		activities = activities[:safeLimit]
+	}
+
 	result := make([]*activitypub.Activity, 0, len(activities))
 	for _, record := range activities {
 		result = append(result, record.Activity)
@@ -174,7 +192,7 @@ func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username st
 
 	// Encode next cursor if there are more results
 	var nextCursor string
-	if len(activities) == limit {
+	if hasMore && len(result) > 0 {
 		// There might be more results
 		lastItem := activities[len(activities)-1]
 		cursorData := map[string]string{
@@ -196,10 +214,7 @@ func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username st
 
 // GetOutboxActivities retrieves activities created by a user - matches legacy implementation
 func (r *ActivityRepository) GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	// Set default limit if not specified
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
+	safeLimit := clampActivityLimit(limit)
 
 	// Use BaseRepository QueryWithSKPrefix for outbox activities
 	pk := "ACTOR#" + username
@@ -207,36 +222,24 @@ func (r *ActivityRepository) GetOutboxActivities(ctx context.Context, username s
 
 	// Use BaseRepository method with custom cursor handling for compatibility
 	var activities []*models.Activity
-	var err error
+	query := r.db.WithContext(ctx).Model(&models.Activity{}).
+		Where("PK", "=", pk).
+		Where("SK", "BEGINS_WITH", skPrefix).
+		Limit(safeLimit+1).
+		OrderBy("SK", "DESC") // Newest first
 
-	// If cursor provided, we need custom query handling
 	if cursor != "" {
 		decodedCursor, cursorErr := activityDecodeCursor(cursor)
 		if cursorErr != nil {
 			r.logger.Warn("invalid cursor provided",
 				zap.String("cursor", cursor),
 				zap.Error(cursorErr))
-			// Continue without cursor - use BaseRepository method
-			activities, err = r.QueryWithSKPrefix(ctx, pk, skPrefix, limit)
 		} else {
-			// Custom query with cursor
-			query := r.db.WithContext(ctx).Model(&models.Activity{}).
-				Where("PK", "=", pk).
-				Where("SK", "BEGINS_WITH", skPrefix).
-				Limit(limit).
-				OrderBy("SK", "DESC"). // Newest first
-				Cursor(decodedCursor)
-			err = query.All(&activities)
+			query = query.Cursor(decodedCursor)
 		}
-	} else {
-		// For proper DESC ordering, we need custom query
-		query := r.db.WithContext(ctx).Model(&models.Activity{}).
-			Where("PK", "=", pk).
-			Where("SK", "BEGINS_WITH", skPrefix).
-			Limit(limit).
-			OrderBy("SK", "DESC") // Newest first
-		err = query.All(&activities)
 	}
+
+	err := query.All(&activities)
 
 	if err != nil {
 		r.logger.Error("failed to query outbox activities",
@@ -258,6 +261,11 @@ func (r *ActivityRepository) GetOutboxActivities(ctx context.Context, username s
 	}
 
 	// Convert to ActivityPub activities
+	hasMore := len(activities) > safeLimit
+	if hasMore {
+		activities = activities[:safeLimit]
+	}
+
 	result := make([]*activitypub.Activity, 0, len(activities))
 	for _, record := range activities {
 		result = append(result, record.Activity)
@@ -265,7 +273,7 @@ func (r *ActivityRepository) GetOutboxActivities(ctx context.Context, username s
 
 	// Encode next cursor if there are more results
 	var nextCursor string
-	if len(activities) == limit {
+	if hasMore && len(result) > 0 {
 		// There might be more results
 		lastItem := activities[len(activities)-1]
 		cursorData := map[string]string{
@@ -441,18 +449,7 @@ func (r *ActivityRepository) RecordActivity(ctx context.Context, activityType st
 	// In production, this might aggregate into time buckets for efficient querying
 	// Note: This uses direct DynamORM since it's not an Activity model
 
-	pk := fmt.Sprintf("activity_metric#%s", actorID)
-	sk := fmt.Sprintf("%s#%s", activityType, timestamp.Format(time.RFC3339Nano))
-
-	activityRecord := map[string]interface{}{
-		"PK":           pk,
-		"SK":           sk,
-		"ActivityType": activityType,
-		"ActorID":      actorID,
-		"Timestamp":    timestamp.Format(time.RFC3339),
-		"CreatedAt":    timestamp,
-		"Type":         "activity_metric",
-	}
+	activityRecord := models.NewActivityMetric(activityType, actorID, timestamp)
 
 	// Use direct DynamORM since this is not an Activity model
 	// BaseRepository is typed for Activity models only

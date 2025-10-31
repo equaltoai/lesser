@@ -24,6 +24,11 @@ type SearchAnalytics struct {
 	TTL           int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days expiration
 }
 
+// TableName returns the DynamoDB table backing SearchAnalytics.
+func (SearchAnalytics) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the partition and sort keys based on the model's attributes
 func (s *SearchAnalytics) UpdateKeys() {
 	date := s.Timestamp.Format(common.DateFormat)

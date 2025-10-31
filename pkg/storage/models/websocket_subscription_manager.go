@@ -25,6 +25,11 @@ type WebSocketEventConnection struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing WebSocketEventConnection.
+func (WebSocketEventConnection) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets the GSI keys based on the current values
 func (w *WebSocketEventConnection) UpdateKeys() error {
 	// Set primary keys
@@ -67,6 +72,11 @@ type WebSocketEventSubscription struct {
 
 	// TTL for automatic cleanup
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+}
+
+// TableName returns the DynamoDB table backing WebSocketEventSubscription.
+func (WebSocketEventSubscription) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets the GSI keys based on the current values

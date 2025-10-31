@@ -6,6 +6,8 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/services/hashtags"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -43,7 +45,7 @@ func TestHashtagQueryResolver_BasicStructure(t *testing.T) {
 				// Expected
 			}
 		}()
-		_, _ = r.HashtagTimeline(ctx, "golang", nil, nil)
+		_, _ = r.HashtagTimeline(ctx, "golang", nil, nil, nil)
 	})
 
 	t.Run("MultiHashtagTimeline resolver exists", func(t *testing.T) {
@@ -142,6 +144,67 @@ func TestIsHashtagMuted(t *testing.T) {
 		result := r.isHashtagMuted(ctx, "testuser", "")
 		assert.False(t, result)
 	})
+}
+
+func TestNormalizeTimelineArgs(t *testing.T) {
+	defaultLimit := 20
+
+	limit, cursor := normalizeTimelineArgs(nil, nil, defaultLimit)
+	assert.Equal(t, defaultLimit, limit)
+	assert.Empty(t, cursor)
+
+	first := 5
+	after := "cursor123"
+	limit, cursor = normalizeTimelineArgs(&first, &after, defaultLimit)
+	assert.Equal(t, first, limit)
+	assert.Equal(t, after, cursor)
+
+	invalid := -10
+	limit, cursor = normalizeTimelineArgs(&invalid, nil, defaultLimit)
+	assert.Equal(t, defaultLimit, limit)
+	assert.Empty(t, cursor)
+}
+
+func TestBuildHashtagTimelineEdges_MediaFilter(t *testing.T) {
+	ctx := context.Background()
+	resolver := &Resolver{}
+	query := &queryResolver{resolver}
+
+	posts := []*storage.StatusSearchResult{
+		{StatusID: "1", Content: "first"},
+		{StatusID: "2", Content: "second"},
+		{StatusID: "3", Content: "third"},
+	}
+
+	statusByID := map[string]*models.Status{
+		"1": {StatusID: "1", MediaCount: 1},
+		"2": {StatusID: "2", MediaCount: 0},
+	}
+
+	edges := query.buildHashtagTimelineEdges(ctx, posts, statusByID, true)
+	assert.Len(t, edges, 1)
+	assert.Equal(t, model.Cursor("1"), edges[0].Cursor)
+	assert.NotNil(t, edges[0].Node)
+}
+
+func TestBuildPostConnection(t *testing.T) {
+	edges := []*model.PostEdge{
+		{Cursor: "a"},
+		{Cursor: "b"},
+	}
+
+	connection := buildPostConnection(edges, true)
+	assert.NotNil(t, connection)
+	assert.Equal(t, edges, connection.Edges)
+	assert.Equal(t, len(edges), connection.TotalCount)
+	assert.True(t, connection.PageInfo.HasNextPage)
+	assert.False(t, connection.PageInfo.HasPreviousPage)
+	if assert.NotNil(t, connection.PageInfo.StartCursor) {
+		assert.Equal(t, model.Cursor("a"), *connection.PageInfo.StartCursor)
+	}
+	if assert.NotNil(t, connection.PageInfo.EndCursor) {
+		assert.Equal(t, model.Cursor("b"), *connection.PageInfo.EndCursor)
+	}
 }
 
 // Additional integration tests with full mock setup should be added

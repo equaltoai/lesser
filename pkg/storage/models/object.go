@@ -55,6 +55,11 @@ type Object struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+// TableName returns the DynamoDB table backing Object.
+func (Object) TableName() string {
+	return MainTableName
+}
+
 // NewObject creates a new object with proper key structure
 func NewObject(id, objectType, actorID string) *Object {
 	now := time.Now()
@@ -94,6 +99,16 @@ func (o *Object) UpdateGSIKeys() {
 
 // UpdateKeys updates the GSI keys (required by BaseModel)
 func (o *Object) UpdateKeys() error {
+	// Validate required fields
+	if o.ID == "" {
+		return fmt.Errorf("ID is required")
+	}
+
+	// Set primary keys
+	o.PK = fmt.Sprintf("object#%s", o.ID)
+	o.SK = fmt.Sprintf("object#%s", o.ID)
+
+	// Update GSI keys
 	o.UpdateGSIKeys()
 	return nil
 }

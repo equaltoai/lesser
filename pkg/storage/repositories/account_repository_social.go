@@ -117,15 +117,45 @@ func (r *AccountRepository) IsFollowing(ctx context.Context, followerUsername, f
 	return follow.State == models.FollowStateAccepted, nil
 }
 
-// GetFollowers retrieves paginated list of followers for a user
+const (
+	followDefaultLimit   = 40
+	followMaxLimit       = 200
+	bookmarkDefaultLimit = 40
+	bookmarkMaxLimit     = 400
+)
+
+func clampFollowLimit(limit int) int {
+	if limit <= 0 {
+		return followDefaultLimit
+	}
+	if limit > followMaxLimit {
+		return followMaxLimit
+	}
+	return limit
+}
+
+func clampBookmarkLimit(limit int) int {
+	if limit <= 0 {
+		return bookmarkDefaultLimit
+	}
+	if limit > bookmarkMaxLimit {
+		return bookmarkMaxLimit
+	}
+	return limit
+}
+
+// GetFollowers retrieves a paginated list of accepted followers for a user.
 func (r *AccountRepository) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Actor, string, error) {
 	var follows []models.Follow
+
+	safeLimit := clampFollowLimit(limit)
 
 	// Build query using GSI1 for followed's perspective
 	query := r.db.WithContext(ctx).Model(&models.Follow{}).
 		Index("gsi1-index").
 		Where("GSI1PK", "=", fmt.Sprintf("follow#%s", username)).
-		Limit(limit)
+		OrderBy("GSI1SK", "ASC").
+		Limit(safeLimit + 1)
 
 	if cursor != "" {
 		query = query.Where("GSI1SK", ">", cursor)
@@ -137,6 +167,11 @@ func (r *AccountRepository) GetFollowers(ctx context.Context, username string, l
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("followers for %s", username))
+	}
+
+	hasMore := len(follows) > safeLimit
+	if hasMore {
+		follows = follows[:safeLimit]
 	}
 
 	// Get actor details for each follower
@@ -156,7 +191,7 @@ func (r *AccountRepository) GetFollowers(ctx context.Context, username string, l
 
 	// Determine next cursor
 	nextCursor := ""
-	if len(follows) == limit {
+	if hasMore && len(follows) > 0 {
 		lastFollow := follows[len(follows)-1]
 		nextCursor = lastFollow.GSI1SK
 	}
@@ -168,11 +203,14 @@ func (r *AccountRepository) GetFollowers(ctx context.Context, username string, l
 func (r *AccountRepository) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Actor, string, error) {
 	var follows []models.Follow
 
+	safeLimit := clampFollowLimit(limit)
+
 	// Build query using primary key
 	query := r.db.WithContext(ctx).Model(&models.Follow{}).
 		Where("PK", "=", fmt.Sprintf("follow#%s", username)).
 		Where("SK", "BEGINS_WITH", "following#").
-		Limit(limit)
+		OrderBy("SK", "ASC").
+		Limit(safeLimit + 1)
 
 	if cursor != "" {
 		query = query.Where("SK", ">", cursor)
@@ -184,6 +222,11 @@ func (r *AccountRepository) GetFollowing(ctx context.Context, username string, l
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("following for %s", username))
+	}
+
+	hasMore := len(follows) > safeLimit
+	if hasMore {
+		follows = follows[:safeLimit]
 	}
 
 	// Get actor details for each followed user
@@ -203,7 +246,7 @@ func (r *AccountRepository) GetFollowing(ctx context.Context, username string, l
 
 	// Determine next cursor
 	nextCursor := ""
-	if len(follows) == limit {
+	if hasMore && len(follows) > 0 {
 		lastFollow := follows[len(follows)-1]
 		nextCursor = lastFollow.SK
 	}
@@ -484,9 +527,12 @@ func (r *AccountRepository) RemoveBookmark(ctx context.Context, username, object
 func (r *AccountRepository) GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]*storage.Bookmark, string, error) {
 	var bookmarks []models.Bookmark
 
+	safeLimit := clampBookmarkLimit(limit)
+
 	query := r.db.WithContext(ctx).Model(&models.Bookmark{}).
 		Where("PK", "=", fmt.Sprintf("BOOKMARK#%s", username)).
-		Limit(limit)
+		OrderBy("SK", "ASC").
+		Limit(safeLimit + 1)
 
 	if cursor != "" {
 		query = query.Where("SK", ">", cursor)
@@ -498,6 +544,11 @@ func (r *AccountRepository) GetBookmarks(ctx context.Context, username string, l
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("bookmarks for %s", username))
+	}
+
+	hasMore := len(bookmarks) > safeLimit
+	if hasMore {
+		bookmarks = bookmarks[:safeLimit]
 	}
 
 	// Convert to storage type
@@ -512,7 +563,7 @@ func (r *AccountRepository) GetBookmarks(ctx context.Context, username string, l
 
 	// Determine next cursor
 	nextCursor := ""
-	if len(bookmarks) == limit {
+	if hasMore && len(bookmarks) > 0 {
 		lastBookmark := bookmarks[len(bookmarks)-1]
 		nextCursor = lastBookmark.SK
 	}
@@ -764,45 +815,23 @@ func (r *AccountRepository) updateFollowCounts(ctx context.Context, followerUser
 	r.updateActorCount(ctx, followedUsername, "FollowerCount", delta)
 }
 
-// updateActorCount updates a numeric count field on an actor
+// updateActorCount updates a numeric count field on an actor using atomic operations
 func (r *AccountRepository) updateActorCount(ctx context.Context, username, field string, delta int) {
 	// This is a best-effort update, don't fail the operation if it fails
-	// Get the actor first
-	var actor models.Actor
-	err := r.db.WithContext(ctx).Model(&actor).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s", username)).
-		Where("SK", "=", "PROFILE").
-		First(&actor)
+	pk := fmt.Sprintf("ACTOR#%s", username)
+	sk := "PROFILE"
+
+	// Use atomic UpdateBuilder().Add() to prevent race conditions
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Add(field, delta).
+		Condition(field, ">=", -delta). // Prevent negative counts: only allow if count + delta >= 0
+		Execute()
 
 	if err != nil {
-		r.logger.Warn("failed to get actor for count update",
-			zap.String("username", username),
-			zap.Error(err))
-		return
-	}
-
-	// Update the count field
-	switch field {
-	case "FollowerCount":
-		actor.FollowerCount += delta
-		if actor.FollowerCount < 0 {
-			actor.FollowerCount = 0
-		}
-	case "FollowingCount":
-		actor.FollowingCount += delta
-		if actor.FollowingCount < 0 {
-			actor.FollowingCount = 0
-		}
-	case "StatusCount":
-		actor.StatusCount += delta
-		if actor.StatusCount < 0 {
-			actor.StatusCount = 0
-		}
-	}
-
-	err = r.db.WithContext(ctx).Model(&actor).Update()
-	if err != nil {
-		r.logger.Warn("failed to update actor count",
+		r.logger.Warn("failed to update actor count atomically",
 			zap.String("username", username),
 			zap.String("field", field),
 			zap.Int("delta", delta),

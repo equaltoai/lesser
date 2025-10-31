@@ -73,6 +73,11 @@ type NotificationCostTracking struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// TableName returns the DynamoDB table backing NotificationCostTracking.
+func (NotificationCostTracking) TableName() string {
+	return MainTableName
+}
+
 // BeforeCreate sets up the notification cost tracking before creation
 func (n *NotificationCostTracking) BeforeCreate() error {
 	if err := common.ValidateRequiredParam("n.ID", n.ID); err != nil {
@@ -238,6 +243,11 @@ type NotificationCostAggregation struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// TableName returns the DynamoDB table backing NotificationCostAggregation.
+func (NotificationCostAggregation) TableName() string {
+	return MainTableName
+}
+
 // BeforeCreate sets up the aggregation before creation
 func (n *NotificationCostAggregation) BeforeCreate() error {
 	now := time.Now()
@@ -312,6 +322,11 @@ type NotificationTypeCostStats struct {
 	SuccessRate           float64 `json:"success_rate"`
 }
 
+// TableName returns the DynamoDB table backing NotificationTypeCostStats.
+func (NotificationTypeCostStats) TableName() string {
+	return MainTableName
+}
+
 // NotificationChannelCostStats represents cost statistics for a specific delivery channel
 type NotificationChannelCostStats struct {
 	Channel               string  `json:"channel"`
@@ -326,6 +341,11 @@ type NotificationChannelCostStats struct {
 	AverageDeliveryTimeMs float64 `json:"average_delivery_time_ms"`
 }
 
+// TableName returns the DynamoDB table backing NotificationChannelCostStats.
+func (NotificationChannelCostStats) TableName() string {
+	return MainTableName
+}
+
 // NotificationUserCostStats represents cost statistics for a specific user
 type NotificationUserCostStats struct {
 	Username              string  `json:"username"`
@@ -337,6 +357,11 @@ type NotificationUserCostStats struct {
 	AverageCostMicroCents int64   `json:"average_cost_micro_cents"`
 	AverageCostDollars    float64 `json:"average_cost_dollars"`
 	SuccessRate           float64 `json:"success_rate"`
+}
+
+// TableName returns the DynamoDB table backing NotificationUserCostStats.
+func (NotificationUserCostStats) TableName() string {
+	return MainTableName
 }
 
 // NotificationBudget represents a budget limit for notification sending per user
@@ -379,6 +404,11 @@ type NotificationBudget struct {
 	// Timestamps
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TableName returns the DynamoDB table backing NotificationBudget.
+func (NotificationBudget) TableName() string {
+	return MainTableName
 }
 
 // BeforeCreate sets up the budget before creation
@@ -533,6 +563,11 @@ func (n *NotificationBudget) ResetPeriod(newPeriodStart, newPeriodEnd time.Time)
 // NotificationCostTrackingBuilder helps build notification cost tracking records
 type NotificationCostTrackingBuilder struct {
 	tracking *NotificationCostTracking
+}
+
+// TableName returns the DynamoDB table backing NotificationCostTrackingBuilder.
+func (NotificationCostTrackingBuilder) TableName() string {
+	return MainTableName
 }
 
 // NewNotificationCostTrackingBuilder creates a new builder

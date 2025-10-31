@@ -234,52 +234,18 @@ func (te *TrendingEngine) CalculateTrending(ctx context.Context, since time.Time
 		return []*storage.TrendingHashtag{}, nil
 	}
 
-	// Step 2: Calculate comprehensive metrics for each candidate
-	metricsResults := make(chan *EnhancedHashtagMetrics, len(candidates))
-	errorsChan := make(chan error, len(candidates))
-
-	// Process candidates in parallel
-	semaphore := make(chan struct{}, 10) // Limit concurrency
-	var wg sync.WaitGroup
-
-	for _, candidate := range candidates {
-		wg.Add(1)
-		go func(hashtag *models.Hashtag) {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			metrics, err := te.calculateEnhancedMetrics(ctx, hashtag)
-			if err != nil {
-				errorsChan <- err
-				return
-			}
-			metricsResults <- metrics
-		}(candidate)
-	}
-
-	// Wait for all metrics calculations
-	go func() {
-		wg.Wait()
-		close(metricsResults)
-		close(errorsChan)
-	}()
-
-	// Collect results
+	// Step 2: Calculate comprehensive metrics for each candidate sequentially
 	var allMetrics []*EnhancedHashtagMetrics
-	for metrics := range metricsResults {
-		if metrics != nil {
-			allMetrics = append(allMetrics, metrics)
-		}
-	}
 
-	// Check for errors (but don't fail entirely)
 	var errorCount int
-	for err := range errorsChan {
+	for _, candidate := range candidates {
+		metrics, err := te.calculateEnhancedMetrics(ctx, candidate)
 		if err != nil {
 			errorCount++
 			te.logger.Warn("error calculating hashtag metrics", zap.Error(err))
+			continue
 		}
+		allMetrics = append(allMetrics, metrics)
 	}
 
 	if errorCount > 0 {

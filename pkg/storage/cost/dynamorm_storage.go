@@ -83,11 +83,11 @@ func (s *DynamORMStorage) GetDailyCosts(ctx context.Context, startDate, endDate 
 		var uniqueUsers int64
 		if agg.TableBreakdown != nil {
 			userSet := make(map[string]bool)
-			for _, tableStats := range agg.TableBreakdown {
+			for tableName, tableStats := range agg.TableBreakdown {
 				// Aggregate unique users across all tables
 				if tableStats.UniqueUsers > 0 {
 					for i := 0; i < int(tableStats.UniqueUsers); i++ {
-						userSet[fmt.Sprintf("%s_%d", tableStats.TableName, i)] = true
+						userSet[fmt.Sprintf("%s_%d", tableName, i)] = true
 					}
 				}
 			}
@@ -152,10 +152,10 @@ func (s *DynamORMStorage) GetMonthlyCost(ctx context.Context, year int, month ti
 
 	if agg.TableBreakdown != nil {
 		userSet := make(map[string]bool)
-		for _, tableStats := range agg.TableBreakdown {
+		for tableName, tableStats := range agg.TableBreakdown {
 			if tableStats.UniqueUsers > 0 {
 				for i := 0; i < int(tableStats.UniqueUsers); i++ {
-					userSet[fmt.Sprintf("%s_%d", tableStats.TableName, i)] = true
+					userSet[fmt.Sprintf("%s_%d", tableName, i)] = true
 				}
 			}
 		}
@@ -204,10 +204,10 @@ func (s *DynamORMStorage) GetMonthlyCosts(ctx context.Context, months int) ([]co
 		var uniqueUsers int64
 		if agg.TableBreakdown != nil {
 			userSet := make(map[string]bool)
-			for _, tableStats := range agg.TableBreakdown {
+			for tableName, tableStats := range agg.TableBreakdown {
 				if tableStats.UniqueUsers > 0 {
 					for i := 0; i < int(tableStats.UniqueUsers); i++ {
-						userSet[fmt.Sprintf("%s_%d", tableStats.TableName, i)] = true
+						userSet[fmt.Sprintf("%s_%d", tableName, i)] = true
 					}
 				}
 			}

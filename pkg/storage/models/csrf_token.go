@@ -88,6 +88,15 @@ func (c *CSRFToken) GetSK() string {
 
 // UpdateKeys configures all GSI partition and sort keys
 func (c *CSRFToken) UpdateKeys() error {
+	// Validate required fields
+	if err := common.ValidateRequiredParam("c.Token", strings.TrimSpace(c.Token)); err != nil {
+		return ErrCSRFTokenRequired
+	}
+
+	// Set primary keys
+	c.PK = "CSRF#" + c.Token
+	c.SK = SKToken
+
 	// GSI1 - User CSRF tokens lookup for rate limiting and cleanup
 	if c.UserID != "" {
 		c.GSI1PK = "USER_CSRF#" + c.UserID

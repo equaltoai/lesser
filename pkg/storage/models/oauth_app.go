@@ -59,3 +59,8 @@ func (o *OAuthApp) IsValidRedirectURI(uri string) bool {
 	}
 	return false
 }
+
+// TableName returns the DynamoDB table backing OAuthApp.
+func (OAuthApp) TableName() string {
+	return MainTableName
+}

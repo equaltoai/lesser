@@ -72,6 +72,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
+	notifpush "github.com/equaltoai/lesser/pkg/notifications"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/bulk"
@@ -113,12 +114,6 @@ const (
 	federationPriorityHigh   = "high"
 	federationPriorityNormal = "normal"
 )
-
-// EventBus defines the interface for GraphQL event subscriptions
-type EventBus interface {
-	// Subscribe creates a subscription to events matching the stream name
-	Subscribe(ctx context.Context, streamName string) (<-chan interface{}, error)
-}
 
 // Registry provides centralized access to all application services
 // It follows the functional options pattern for flexible configuration
@@ -162,10 +157,6 @@ type Registry struct {
 	streamingAnalyticsService *streaminganalytics.Service
 	performanceService        *performance.Service
 	queryTracker              *performance.QueryTracker
-
-	// Event infrastructure
-	eventBus         EventBus
-	internalEventBus *streaming.EventBus
 
 	// Service management
 	mu          sync.RWMutex
@@ -406,6 +397,11 @@ func (r *Registry) Analytics() AnalyticsService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	return r.ensureAnalyticsLocked()
+}
+
+// ensureAnalyticsLocked initializes the analytics service when the registry mutex is already held.
+func (r *Registry) ensureAnalyticsLocked() AnalyticsService {
 	if r.analytics == nil {
 		deps := &ServiceDependencies{
 			Repos:  r.storage,
@@ -413,7 +409,9 @@ func (r *Registry) Analytics() AnalyticsService {
 			Logger: r.logger,
 		}
 		r.analytics = NewAnalyticsService(deps)
-		r.initialized["Analytics"] = true
+		if r.initialized != nil {
+			r.initialized["Analytics"] = true
+		}
 	}
 
 	return r.analytics
@@ -459,7 +457,7 @@ func (r *Registry) Threads() *threads.Service {
 				statusRepo,
 				objectRepo,
 				actorRepo,
-				r.createThreadsFederationAdapter(),
+				r.createThreadsFederationAdapterUnlocked(),
 				r.publisher,
 				r.logger,
 				domain,
@@ -755,14 +753,6 @@ func (r *Registry) Close() error {
 		}
 	}
 
-	// Close internal event bus if it exists
-	if r.internalEventBus != nil {
-		if err := r.internalEventBus.Stop(); err != nil {
-			r.logger.Error("failed to stop internal event bus", zap.Error(err))
-			lastError = err
-		}
-	}
-
 	// Get initialized services without holding lock (to avoid deadlock)
 	r.mu.Unlock()
 	initializedServices := r.GetInitializedServices()
@@ -822,10 +812,13 @@ func (r *Registry) Notes() *notes.Service {
 				}
 			}
 
+			analyticsService := r.ensureAnalyticsLocked()
+
 			r.notesService = notes.NewService(
 				statusRepo,
 				accountRepo,
 				r.storage.Relationship(), // Add relationship repository
+				r.storage.Media(),
 				likeRepo,
 				socialRepo,
 				conversationRepo,
@@ -835,8 +828,8 @@ func (r *Registry) Notes() *notes.Service {
 				userRepo,
 				pollRepo, // Add poll repository
 				r.publisher,
-				r.Analytics(),                    // Analytics service
-				r.createNotesFederationAdapter(), // Federation service adapter
+				analyticsService,                         // Analytics service
+				r.createNotesFederationAdapterUnlocked(), // Federation service adapter
 				r.logger,
 				domainName,
 			)
@@ -857,20 +850,29 @@ func (r *Registry) Accounts() *accounts.Service {
 	defer r.mu.Unlock()
 
 	if r.accountsService == nil {
+		if r.logger != nil {
+			r.logger.Info("registry: initializing Accounts service")
+		}
 		// Create adapter services for crypto and auth
 		cryptoAdapter := NewCryptoAdapter()
 		authAdapter := NewAuthAdapter(r.config.JWTSecret, r.storage)
 
+		// Create federation adapter using unlocked helper to avoid deadlock
+		federationAdapter := r.createAccountsFederationAdapterUnlocked()
+
 		r.accountsService = accounts.NewService(
 			r.storage,
 			r.publisher,
-			r.createAccountsFederationAdapter(), // federation service adapter
+			federationAdapter,
 			cryptoAdapter,
 			authAdapter,
 			r.logger,
 			r.config.BaseURL,
 		)
 		r.initialized["Accounts"] = true
+		if r.logger != nil {
+			r.logger.Info("registry: Accounts service initialized")
+		}
 	}
 
 	return r.accountsService
@@ -895,7 +897,7 @@ func (r *Registry) Relationships() *relationships.Service {
 		r.relationshipsService = relationships.NewServiceWithStorage(
 			r.storage,
 			r.publisher,
-			r.createRelationshipsFederationAdapter(), // federation service adapter
+			r.createRelationshipsFederationAdapterUnlocked(), // federation service adapter
 			r.logger,
 			domainName,
 		)
@@ -1359,13 +1361,27 @@ func (r *Registry) Notifications() *notifications.Service {
 				}
 			}
 
+			var (
+				pushService *notifpush.PushService
+				err         error
+			)
+			if r.config != nil {
+				pushService, err = notifpush.NewPushService(r.config.Config)
+				if err != nil && r.logger != nil {
+					r.logger.Warn("failed to initialize push service",
+						zap.Error(err))
+				}
+			}
+
 			r.notificationsService = notifications.NewService(
 				notificationRepo,
 				accountRepo,
 				r.publisher,
 				r.logger,
 				domainName,
+				pushService,
 			)
+			notificationRepo.SetDispatcher(r.notificationsService)
 			r.initialized["Notifications"] = true
 		} else {
 			if r.logger != nil {
@@ -1723,48 +1739,42 @@ func (r *Registry) Quotes() *quotes.QuoteService {
 	return r.quotesService
 }
 
-// createNotesFederationAdapter creates an adapter that implements notes.FederationService
-// by wrapping the main FederationService
-func (r *Registry) createNotesFederationAdapter() *queueFederationAdapter {
-	mainFederation := r.Federation()
+// createFederationAdapterUnlocked creates federation adapter without locking mutex
+// This is used internally when already holding the lock to avoid deadlock
+func (r *Registry) createFederationAdapterUnlocked() *queueFederationAdapter {
+	// Initialize federation service inline without locking
+	if r.federation == nil {
+		deps := &ServiceDependencies{
+			Repos:  r.storage,
+			Config: r.config,
+			Logger: r.logger,
+		}
+		r.federation = NewFederationService(deps)
+		r.initialized["Federation"] = true
+	}
+
 	return &queueFederationAdapter{
-		federation: mainFederation,
+		federation: r.federation,
 		storage:    r.storage,
 		logger:     r.logger,
 	}
 }
 
-// createAccountsFederationAdapter creates an adapter that implements accounts.FederationService
-// by wrapping the main FederationService
-func (r *Registry) createAccountsFederationAdapter() *queueFederationAdapter {
-	mainFederation := r.Federation()
-	return &queueFederationAdapter{
-		federation: mainFederation,
-		storage:    r.storage,
-		logger:     r.logger,
-	}
+// Convenience methods that use the unlocked version
+func (r *Registry) createAccountsFederationAdapterUnlocked() *queueFederationAdapter {
+	return r.createFederationAdapterUnlocked()
 }
 
-// createRelationshipsFederationAdapter creates an adapter that implements relationships.FederationService
-// by wrapping the main FederationService
-func (r *Registry) createRelationshipsFederationAdapter() *queueFederationAdapter {
-	mainFederation := r.Federation()
-	return &queueFederationAdapter{
-		federation: mainFederation,
-		storage:    r.storage,
-		logger:     r.logger,
-	}
+func (r *Registry) createNotesFederationAdapterUnlocked() *queueFederationAdapter {
+	return r.createFederationAdapterUnlocked()
 }
 
-// createThreadsFederationAdapter creates an adapter that implements threads.FederationService
-// by wrapping the main FederationService
-func (r *Registry) createThreadsFederationAdapter() *queueFederationAdapter {
-	mainFederation := r.Federation()
-	return &queueFederationAdapter{
-		federation: mainFederation,
-		storage:    r.storage,
-		logger:     r.logger,
-	}
+func (r *Registry) createRelationshipsFederationAdapterUnlocked() *queueFederationAdapter {
+	return r.createFederationAdapterUnlocked()
+}
+
+func (r *Registry) createThreadsFederationAdapterUnlocked() *queueFederationAdapter {
+	return r.createFederationAdapterUnlocked()
 }
 
 // createSeveranceFederationAdapter creates the federation adapter for the Severance service
@@ -1809,129 +1819,25 @@ func (r *Registry) createSeveranceEventPublisherAdapter() severance.EventPublish
 	}
 }
 
-// EventBus returns the EventBus interface for GraphQL subscriptions
-func (r *Registry) EventBus() EventBus {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+// StreamingConnectionRepository returns the streaming connection repository for WebSocket subscriptions
+func (r *Registry) StreamingConnectionRepository() *repositories.StreamingConnectionRepository {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
-	if r.eventBus == nil {
-		// Initialize the internal event bus if not already done
-		if r.internalEventBus == nil {
-			r.internalEventBus = streaming.GetGlobalEventBus(r.logger)
-			// Start the event bus if not running
-			if !r.internalEventBus.IsRunning() {
-				ctx := context.Background()
-				if err := r.internalEventBus.Start(ctx); err != nil {
-					r.logger.Error("failed to start internal event bus", zap.Error(err))
-					return nil
-				}
-			}
-		}
-
-		// Create the GraphQL EventBus adapter
-		r.eventBus = &graphqlEventBusAdapter{
-			internalEventBus: r.internalEventBus,
-			logger:           r.logger,
-		}
-		r.initialized["EventBus"] = true
+	if r.storage == nil {
+		r.logger.Warn("storage is nil, cannot return StreamingConnectionRepository")
+		return nil
 	}
 
-	return r.eventBus
+	return r.storage.StreamingConnection()
 }
 
-// graphqlEventBusAdapter adapts the internal EventBus to the GraphQL EventBus interface
-type graphqlEventBusAdapter struct {
-	internalEventBus *streaming.EventBus
-	logger           *zap.Logger
-}
+// Publisher returns the configured streaming publisher for real-time events
+func (r *Registry) Publisher() streaming.Publisher {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
-// Subscribe creates a subscription to events matching the stream name
-func (a *graphqlEventBusAdapter) Subscribe(ctx context.Context, streamName string) (<-chan interface{}, error) {
-	if a.internalEventBus == nil {
-		return nil, ErrEventBusNotInitialized
-	}
-
-	// Create a filter for the specific stream
-	filter := &streaming.EventFilter{
-		Streams: []string{streamName},
-	}
-
-	// Subscribe to the internal event bus
-	subscriber, err := a.internalEventBus.Subscribe(streamName, filter, 100) // 100 buffer size
-	if err != nil {
-		return nil, errors.Join(ErrEventBusSubscription, err)
-	}
-
-	// Create a channel for GraphQL events
-	graphqlChan := make(chan interface{}, 100)
-
-	// Start a goroutine to forward events from internal bus to GraphQL channel
-	go func() {
-		defer func() {
-			close(graphqlChan)
-			if subscriber != nil {
-				subscriber.Close()
-				// Also unsubscribe from the internal event bus
-				if err := a.internalEventBus.Unsubscribe(streamName); err != nil {
-					a.logger.Warn("failed to unsubscribe from internal event bus",
-						zap.String("stream", streamName),
-						zap.Error(err))
-				}
-			}
-		}()
-
-		for {
-			select {
-			case event := <-subscriber.Channel:
-				if event == nil {
-					return // Channel closed
-				}
-
-				// Convert internal event to GraphQL-compatible format
-				graphqlEvent := convertInternalEventToGraphQL(event)
-
-				// Non-blocking send to GraphQL channel
-				select {
-				case graphqlChan <- graphqlEvent:
-				case <-ctx.Done():
-					return
-				default:
-					// Drop event if channel is full
-					a.logger.Warn("dropping event - GraphQL channel full",
-						zap.String("stream", streamName),
-						zap.String("event_id", event.ID))
-				}
-
-			case <-subscriber.Quit:
-				return
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	return graphqlChan, nil
-}
-
-// convertInternalEventToGraphQL converts an internal streaming event to a GraphQL-compatible format
-func convertInternalEventToGraphQL(event *streaming.InternalEvent) interface{} {
-	// For now, return the event data directly
-	// This can be enhanced based on specific GraphQL requirements
-	if event.Data != nil {
-		return event.Data
-	}
-
-	// If no specific data, return a generic event structure
-	return map[string]interface{}{
-		"id":        event.ID,
-		"type":      string(event.Type),
-		"action":    string(event.Action),
-		"actor_id":  event.ActorID,
-		"target_id": event.TargetID,
-		"user_id":   event.UserID,
-		"timestamp": event.Timestamp,
-		"metadata":  event.Metadata,
-	}
+	return r.publisher
 }
 
 // federationServiceAdapter adapts the registry's FederationService to the bulk service's interface

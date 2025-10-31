@@ -144,11 +144,30 @@ func (r *AuthRepository) GetUserWebAuthnCredentials(ctx context.Context, userID 
 	// Construct the key prefix
 	pk := "USER#" + userID
 
-	// Use BaseRepository QueryWithSKPrefix method
-	modelList, err := r.QueryWithSKPrefix(ctx, pk, "WEBAUTHN_CRED#", 0)
-	if err != nil {
-		r.logger.Error("failed to get user WebAuthn credentials", zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, EntityWebAuthnCredential, fmt.Sprintf("user %s", userID))
+	const credentialChunkLimit = 100
+
+	var (
+		modelList []*models.WebAuthnCredential
+		cursor    string
+	)
+
+	for {
+		page, err := r.QueryWithSKPrefixPaginated(ctx, pk, "WEBAUTHN_CRED#", BasePaginationOptions{
+			Limit:  credentialChunkLimit,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			r.logger.Error("failed to get user WebAuthn credentials", zap.Error(err))
+			return nil, ErrorHandler.HandleQueryError(err, EntityWebAuthnCredential, fmt.Sprintf("user %s", userID))
+		}
+
+		modelList = append(modelList, page.Items...)
+
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
 	// Convert to storage models
@@ -481,7 +500,7 @@ func (r *AuthRepository) GetUserWallets(ctx context.Context, username string) ([
 	pk := "USER#" + username
 
 	// Use queryWalletCredentials helper method
-	modelList, err := r.queryWalletCredentials(ctx, pk, "WALLET#", 0)
+	modelList, _, err := r.queryWalletCredentials(ctx, pk, "WALLET#", 0, "")
 	if err != nil {
 		r.logger.Error("failed to get user wallets", zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, EntityWalletCredential, username)
@@ -932,8 +951,23 @@ func (r *AuthRepository) createWalletChallenge(ctx context.Context, model *model
 	return r.createChallenge(ctx, model, "createWalletChallenge", "wallet challenge", model.ID)
 }
 
+const (
+	walletCredentialDefaultLimit = 25
+	walletCredentialMaxLimit     = 100
+)
+
+func clampWalletCredentialLimit(limit int) int {
+	if limit <= 0 {
+		return walletCredentialDefaultLimit
+	}
+	if limit > walletCredentialMaxLimit {
+		return walletCredentialMaxLimit
+	}
+	return limit
+}
+
 // queryWalletCredentials queries wallet credentials with SK prefix
-func (r *AuthRepository) queryWalletCredentials(ctx context.Context, pk, skPrefix string, limit int) ([]models.WalletCredential, error) {
+func (r *AuthRepository) queryWalletCredentials(ctx context.Context, pk, skPrefix string, limit int, cursor string) ([]models.WalletCredential, string, error) {
 	// Track cost if available
 	if r.costService != nil {
 		operation := cost.DynamoOperation{
@@ -955,20 +989,30 @@ func (r *AuthRepository) queryWalletCredentials(ctx context.Context, pk, skPrefi
 	}
 
 	var modelList []models.WalletCredential
+	safeLimit := clampWalletCredentialLimit(limit)
+
 	query := r.db.WithContext(ctx).Model(&models.WalletCredential{}).
 		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", skPrefix)
+		Where("SK", "BEGINS_WITH", skPrefix).
+		OrderBy("SK", "ASC").
+		Limit(safeLimit + 1)
 
-	if limit > 0 {
-		query = query.Limit(limit)
+	if cursor != "" {
+		query = query.Where("SK", ">", cursor)
 	}
 
 	err := query.All(&modelList)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return modelList, nil
+	var nextCursor string
+	if len(modelList) > safeLimit {
+		nextCursor = modelList[safeLimit-1].SK
+		modelList = modelList[:safeLimit]
+	}
+
+	return modelList, nextCursor, nil
 }
 
 // getWalletChallenge retrieves a WalletChallenge using the generic helper

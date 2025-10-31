@@ -245,13 +245,32 @@ func (r *StreamingRepository) SyncStreamingPreferences(ctx context.Context, user
 func (r *StreamingRepository) ResolvePreferenceConflict(ctx context.Context, username string, strategy storage.ConflictResolutionStrategy) (*storage.StreamingPreferences, error) {
 	// Get all active preference versions
 	pk := fmt.Sprintf("STREAMING_PREFS#%s", username)
-	streamingModels, err := r.Query(ctx, pk, 0) // Get all models for this partition
+	const preferenceChunkLimit = 100
 
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, storage.ErrNotFound
+	var (
+		streamingModels []*models.StreamingPreferences
+		cursor          string
+	)
+
+	for {
+		page, err := r.FindWithPagination(ctx, pk, BasePaginationOptions{
+			Limit:  preferenceChunkLimit,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return nil, storage.ErrNotFound
+			}
+			return nil, ErrorHandler.HandleQueryError(err, "streaming preferences", "conflict resolution")
 		}
-		return nil, ErrorHandler.HandleQueryError(err, "streaming preferences", "conflict resolution")
+
+		streamingModels = append(streamingModels, page.Items...)
+
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
 	if err := common.ValidateSliceNotEmpty("streamingModels", streamingModels); err != nil {

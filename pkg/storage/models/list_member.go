@@ -37,6 +37,18 @@ func (lm *ListMember) BeforeCreate() error {
 
 // UpdateKeys updates the GSI keys based on current field values
 func (lm *ListMember) UpdateKeys() error {
+	// Validate required fields
+	if lm.ListID == "" {
+		return fmt.Errorf("ListID is required")
+	}
+	if lm.AccountID == "" {
+		return fmt.Errorf("AccountID is required")
+	}
+
+	// Set primary keys
+	lm.PK = fmt.Sprintf("LIST_MEMBERS#%s", lm.ListID)
+	lm.SK = lm.AccountID
+
 	// Set up GSI1 keys for reverse lookup
 	lm.GSI1PK = fmt.Sprintf("ACCOUNT_LISTS#%s", lm.AccountID)
 	lm.GSI1SK = fmt.Sprintf("%s#%s", lm.ListID, lm.ListUsername)

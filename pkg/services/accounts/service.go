@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -181,6 +182,10 @@ func NewService(
 		logger = zap.NewNop()
 	}
 
+	logger.Info("accounts service: initializing",
+		zap.String("domain", domainName),
+		zap.Bool("storage_present", storage != nil))
+
 	// Initialize business logic frameworks
 	streamingEmitter := streamingEventEmitter{publisher: publisher}
 	businessLogic := common.NewBusinessLogicService(logger, &streamingEmitter, domainName)
@@ -196,7 +201,7 @@ func NewService(
 	mastodonConfig.Domain = domainName
 	mastodonLogic := common.NewMastodonBusinessLogic(mastodonConfig, logger)
 
-	return &Service{
+	svc := &Service{
 		storage:          storage,
 		publisher:        publisher,
 		federation:       federation,
@@ -209,6 +214,11 @@ func NewService(
 		mastodonLogic:    mastodonLogic,
 		streamingEmitter: streamingEmitter,
 	}
+
+	logger.Info("accounts service: initialized",
+		zap.String("domain", domainName))
+
+	return svc
 }
 
 // Command structs for operations
@@ -560,19 +570,29 @@ func (s *Service) UpdatePreferences(ctx context.Context, cmd *UpdatePreferencesC
 
 // GetAccount retrieves a single account with privacy-aware data
 func (s *Service) GetAccount(ctx context.Context, username string) (*storage.Account, error) {
-	s.logger.Debug("getting account",
+	s.logger.Info("accounts service: getting account",
 		zap.String("username", username))
 
 	// Get the account
 	account, err := s.storage.Account().GetAccount(ctx, username)
 	if err != nil {
+		s.logger.Error("accounts service: storage GetAccount failed",
+			zap.String("username", username),
+			zap.Error(err))
 		return nil, ErrGetAccount
 	}
 
 	// Check if account is suspended or deleted - hide from public
 	if account.User.Suspended {
+		s.logger.Warn("accounts service: account suspended",
+			zap.String("username", username))
 		return nil, ErrAccountNotFound // Don't reveal it's suspended
 	}
+
+	s.logger.Info("accounts service: account retrieved",
+		zap.String("username", username))
+
+	s.hydrateAccountActor(account)
 
 	// Return the account directly since we simplified the method
 	return account, nil
@@ -705,15 +725,73 @@ func (s *Service) validateUpdatePreferencesCommand(_ context.Context, cmd *Updat
 	return nil
 }
 
+func (s *Service) hydrateAccountActor(account *storage.Account) {
+	if account == nil || account.User == nil {
+		return
+	}
+
+	baseURL := s.normalizeBaseURL(s.domainName)
+	if baseURL == "" {
+		baseURL = s.normalizeBaseURL(account.User.URL)
+	}
+
+	account.Actor = activitypubutil.BuildLocalActor(account.User.Username, baseURL, account.User, account.Actor)
+}
+
+func (s *Service) normalizeBaseURL(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.TrimRight(trimmed, "/")
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return trimmed
+	}
+	return fmt.Sprintf("https://%s", trimmed)
+}
+
 func (s *Service) updateAccountProfile(account *storage.Account, cmd *UpdateProfileCommand) error {
 	// Update User fields
 	if cmd.DisplayName != "" {
 		account.User.DisplayName = cmd.DisplayName
 	}
+	if cmd.Bio != "" {
+		account.User.Note = cmd.Bio
+	}
+	if cmd.Avatar != "" {
+		account.User.Avatar = cmd.Avatar
+	}
+	if cmd.Header != "" {
+		account.User.Header = cmd.Header
+	}
+
+	account.User.Locked = cmd.Locked
+	account.User.Discoverable = cmd.Discoverable
+
+	if len(cmd.Fields) > 0 {
+		fields := make([]map[string]string, 0, len(cmd.Fields))
+		for _, field := range cmd.Fields {
+			fields = append(fields, map[string]string{
+				"name":  field.Name,
+				"value": field.Value,
+			})
+		}
+		account.User.Fields = fields
+	}
 
 	// Update Actor fields (ActivityPub profile)
 	if account.Actor == nil {
-		return ErrAccountNoActivityPubActor
+		// Initialize Actor if missing (shouldn't happen, but handle gracefully)
+		account.Actor = &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				Context: activitypub.Context,
+				Type:    "Person",
+				ID:      fmt.Sprintf("https://%s/users/%s", s.domainName, account.User.Username),
+			},
+			PreferredUsername: account.User.Username,
+		}
+		s.logger.Warn("account missing Actor, initializing",
+			zap.String("username", account.User.Username))
 	}
 
 	if cmd.DisplayName != "" {
@@ -875,7 +953,7 @@ func (s *Service) queueFederationUpdate(ctx context.Context, account *storage.Ac
 	now := time.Now()
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context:   "https://www.w3.org/ns/activitystreams",
+			Context:   activitypub.Context,
 			Type:      "Update",
 			ID:        fmt.Sprintf("%s#updates/%d", account.Actor.ID, now.Unix()),
 			Published: &now,
@@ -1695,14 +1773,24 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		return nil, ErrCreateAccount
 	}
 
+	s.logger.Info("account created successfully, recording activity",
+		zap.String("username", cmd.Username))
+
 	// Record registration activity for metrics
 	if err := s.storage.Activity().RecordActivity(ctx, "registration", actor.ID, time.Now()); err != nil {
 		// Log the error but don't fail the request
 		s.logger.Warn("failed to record registration activity", zap.Error(err))
 	}
 
+	s.logger.Info("emitting account created events",
+		zap.String("username", cmd.Username))
+
 	// Create events for streaming
 	events := s.emitAccountCreatedEvents(ctx, account)
+
+	s.logger.Info("returning registration result",
+		zap.String("username", cmd.Username),
+		zap.String("actor_id", actor.ID))
 
 	return &RegisterAccountResult{
 		Account: account,
@@ -1754,6 +1842,12 @@ func (s *Service) hashPassword(password string) (string, error) {
 // emitAccountCreatedEvents creates events for account creation
 func (s *Service) emitAccountCreatedEvents(ctx context.Context, account *storage.Account) []*streaming.Event {
 	var events []*streaming.Event
+
+	// Skip event emission if publisher is not configured (optional dependency)
+	if s.publisher == nil {
+		s.logger.Debug("publisher not configured, skipping event emission for account creation")
+		return events
+	}
 
 	// Create account created event
 	event := &streaming.Event{

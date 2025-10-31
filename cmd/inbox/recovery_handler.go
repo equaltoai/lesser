@@ -104,16 +104,13 @@ func CreateRecoveryConfirmationActivity(requestID, trusteeActorID, systemActorID
 	now := generateTime()
 	return &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: []any{
-				"https://www.w3.org/ns/activitystreams",
-				map[string]any{
-					"lesser": "https://lesser.social/ns#",
-					"RecoveryConfirmation": map[string]string{
-						"@id":   "lesser:RecoveryConfirmation",
-						"@type": "@id",
-					},
+			Context: activitypub.Context.With(map[string]any{
+				"lesser": "https://lesser.social/ns#",
+				"RecoveryConfirmation": map[string]string{
+					"@id":   "lesser:RecoveryConfirmation",
+					"@type": "@id",
 				},
-			},
+			}),
 			Type:      "Create",
 			ID:        fmt.Sprintf("%s/activities/%d", trusteeActorID, generateTimestamp()),
 			To:        []string{systemActorID},
@@ -137,16 +134,13 @@ func CreateTrusteeAcceptanceActivity(inviterUsername, trusteeActorID, inviterAct
 	now := generateTime()
 	return &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: []any{
-				"https://www.w3.org/ns/activitystreams",
-				map[string]any{
-					"lesser": "https://lesser.social/ns#",
-					"TrusteeAcceptance": map[string]string{
-						"@id":   "lesser:TrusteeAcceptance",
-						"@type": "@id",
-					},
+			Context: activitypub.Context.With(map[string]any{
+				"lesser": "https://lesser.social/ns#",
+				"TrusteeAcceptance": map[string]string{
+					"@id":   "lesser:TrusteeAcceptance",
+					"@type": "@id",
 				},
-			},
+			}),
 			Type:      "Accept",
 			ID:        fmt.Sprintf("%s/activities/%d", trusteeActorID, generateTimestamp()),
 			To:        []string{inviterActorID},

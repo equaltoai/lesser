@@ -75,3 +75,8 @@ func (e *TimelineEntry) SetEntryID() {
 func (e *TimelineEntry) IsExpired() bool {
 	return !e.ExpiresAt.IsZero() && time.Now().After(e.ExpiresAt)
 }
+
+// TableName returns the DynamoDB table backing TimelineEntry.
+func (TimelineEntry) TableName() string {
+	return MainTableName
+}

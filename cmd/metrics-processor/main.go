@@ -500,200 +500,37 @@ func (p *MetricsStreamProcessor) triggerRealTimeUpdates(metricType string, recor
 }
 
 // triggerModerationQueueUpdate triggers moderation queue updates
+// NOTE: Event publishing via DynamoDB streams is handled automatically
+// This method is kept for logging/tracing but no longer publishes to EventBus
 func (p *MetricsStreamProcessor) triggerModerationQueueUpdate(record *models.MetricRecord) {
-	// Publish moderation event to GraphQL subscription system via streaming EventBus
-	event := p.createStreamingEvent(streaming.EventTypeModeration, streaming.ActionUpdate, record)
-	if err := streaming.PublishGlobal(event); err != nil {
-		p.logger.Error("failed to publish moderation event to GraphQL subscriptions",
-			zap.Error(err),
-			zap.String("record_id", record.MetricID))
-	} else {
-		p.logger.Debug("published moderation queue update to GraphQL subscriptions",
-			zap.String("record_id", record.MetricID))
-	}
+	// Metrics are automatically propagated via DynamoDB streams to stream-router
+	// No explicit publishing needed - the stream router handles event delivery
+	p.logger.Debug("moderation queue metric recorded (auto-propagated via DynamoDB streams)",
+		zap.String("record_id", record.MetricID))
 }
 
 // triggerThreatIntelligence triggers threat intelligence updates
+// NOTE: Event publishing via DynamoDB streams is handled automatically
 func (p *MetricsStreamProcessor) triggerThreatIntelligence(record *models.MetricRecord) {
-	// Publish security event to GraphQL subscription system via streaming EventBus
-	// Use moderation flag for security threats as they require review
-	event := p.createStreamingEvent(streaming.EventTypeModerationFlag, streaming.ActionFlag, record)
-	if err := streaming.PublishGlobal(event); err != nil {
-		p.logger.Error("failed to publish security event to GraphQL subscriptions",
-			zap.Error(err),
-			zap.String("record_id", record.MetricID))
-	} else {
-		p.logger.Debug("published threat intelligence update to GraphQL subscriptions",
-			zap.String("record_id", record.MetricID))
-	}
+	// Metrics are automatically propagated via DynamoDB streams to stream-router
+	p.logger.Debug("threat intelligence metric recorded (auto-propagated via DynamoDB streams)",
+		zap.String("record_id", record.MetricID))
 }
 
 // triggerPerformanceAlert triggers performance alerts
+// NOTE: Event publishing via DynamoDB streams is handled automatically
 func (p *MetricsStreamProcessor) triggerPerformanceAlert(record *models.MetricRecord) {
-	// Publish performance event to GraphQL subscription system via streaming EventBus
-	// Cost alerts are used for performance metrics as they relate to resource consumption
-	event := p.createStreamingEvent(streaming.EventTypeCostAlert, streaming.ActionUpdate, record)
-	if err := streaming.PublishGlobal(event); err != nil {
-		p.logger.Error("failed to publish performance event to GraphQL subscriptions",
-			zap.Error(err),
-			zap.String("record_id", record.MetricID))
-	} else {
-		p.logger.Debug("published performance alert to GraphQL subscriptions",
-			zap.String("record_id", record.MetricID))
-	}
+	// Metrics are automatically propagated via DynamoDB streams to stream-router
+	p.logger.Debug("performance alert recorded (auto-propagated via DynamoDB streams)",
+		zap.String("record_id", record.MetricID))
 }
 
 // triggerInfrastructureEvent triggers infrastructure event notifications
+// NOTE: Event publishing via DynamoDB streams is handled automatically
 func (p *MetricsStreamProcessor) triggerInfrastructureEvent(record *models.MetricRecord) {
-	// Publish infrastructure event to GraphQL subscription system via streaming EventBus
-	// Cost updates are used for infrastructure metrics as they relate to resource usage
-	event := p.createStreamingEvent(streaming.EventTypeCostUpdate, streaming.ActionUpdate, record)
-	if err := streaming.PublishGlobal(event); err != nil {
-		p.logger.Error("failed to publish infrastructure event to GraphQL subscriptions",
-			zap.Error(err),
-			zap.String("record_id", record.MetricID))
-	} else {
-		p.logger.Debug("published infrastructure event to GraphQL subscriptions",
-			zap.String("record_id", record.MetricID))
-	}
-}
-
-// createStreamingEvent creates a streaming event from a metric record
-func (p *MetricsStreamProcessor) createStreamingEvent(eventType streaming.EventType, action streaming.EventAction, record *models.MetricRecord) *streaming.InternalEvent {
-	userID, tenantID, actorID := p.extractEventUserInfo(record)
-	metadata := p.buildEventMetadata(record, tenantID, actorID)
-	priority := p.calculateEventPriority(record)
-
-	return &streaming.InternalEvent{
-		ID:        record.MetricID,
-		Type:      eventType,
-		Action:    action,
-		UserID:    userID,
-		ActorID:   actorID,
-		Timestamp: record.Timestamp,
-		Data:      record,
-		Metadata:  metadata,
-		Priority:  priority,
-		Streams:   p.determineEventStreams(record),
-	}
-}
-
-// extractEventUserInfo extracts user information from record dimensions
-func (p *MetricsStreamProcessor) extractEventUserInfo(record *models.MetricRecord) (string, string, string) {
-	if record.Dimensions == nil {
-		return "", "", ""
-	}
-
-	userID := record.Dimensions["user_id"]
-	tenantID := record.Dimensions["tenant_id"]
-	actorID := record.Dimensions["actor_id"]
-
-	return userID, tenantID, actorID
-}
-
-// buildEventMetadata creates comprehensive metadata for the streaming event
-func (p *MetricsStreamProcessor) buildEventMetadata(record *models.MetricRecord, tenantID, actorID string) map[string]string {
-	metadata := p.createBaseEventMetadata(record)
-	p.addEventUserInfo(metadata, tenantID, actorID)
-	p.addEventPercentiles(metadata, record)
-	p.addEventDimensions(metadata, record)
-
-	return metadata
-}
-
-// createBaseEventMetadata creates the base metadata structure
-func (p *MetricsStreamProcessor) createBaseEventMetadata(record *models.MetricRecord) map[string]string {
-	return map[string]string{
-		"service_name":      record.ServiceName,
-		"metric_type":       record.MetricType,
-		"aggregation_level": record.AggregationLevel,
-		"unit":              record.Unit,
-		"count":             fmt.Sprintf("%d", record.Count),
-		"sum":               fmt.Sprintf("%.2f", record.Sum),
-		"min":               fmt.Sprintf("%.2f", record.Min),
-		"max":               fmt.Sprintf("%.2f", record.Max),
-		"timestamp":         record.Timestamp.Format(time.RFC3339),
-		"subscription_type": "metrics",
-	}
-}
-
-// addEventUserInfo adds tenant and actor information to metadata
-func (p *MetricsStreamProcessor) addEventUserInfo(metadata map[string]string, tenantID, actorID string) {
-	if tenantID != "" {
-		metadata["tenant_id"] = tenantID
-	}
-	if actorID != "" {
-		metadata["actor_id"] = actorID
-	}
-}
-
-// addEventPercentiles adds percentile data to metadata
-func (p *MetricsStreamProcessor) addEventPercentiles(metadata map[string]string, record *models.MetricRecord) {
-	percentiles := map[string]float64{
-		"p50": record.P50,
-		"p95": record.P95,
-		"p99": record.P99,
-	}
-
-	for key, value := range percentiles {
-		if value > 0 {
-			metadata[key] = fmt.Sprintf("%.2f", value)
-		}
-	}
-}
-
-// addEventDimensions adds dimension information to metadata
-func (p *MetricsStreamProcessor) addEventDimensions(metadata map[string]string, record *models.MetricRecord) {
-	if record.Dimensions == nil {
-		return
-	}
-
-	p.addEventKnownDimensions(metadata, record.Dimensions)
-	p.addEventCustomDimensions(metadata, record.Dimensions)
-}
-
-// addEventKnownDimensions adds known dimension keys to metadata
-func (p *MetricsStreamProcessor) addEventKnownDimensions(metadata map[string]string, dimensions map[string]string) {
-	knownKeys := []string{
-		"user_cost_microcents", "instance_cost_microcents", "total_cost_microcents",
-		"instance_domain", "record_size_bytes",
-	}
-
-	for _, key := range knownKeys {
-		if value, exists := dimensions[key]; exists {
-			metadata[key] = value
-		}
-	}
-}
-
-// addEventCustomDimensions adds custom dimensions with prefix to metadata
-func (p *MetricsStreamProcessor) addEventCustomDimensions(metadata map[string]string, dimensions map[string]string) {
-	for key, value := range dimensions {
-		if _, exists := metadata[key]; !exists {
-			metadata["dim_"+key] = value
-		}
-	}
-}
-
-// calculateEventPriority determines event priority based on metric type and values
-func (p *MetricsStreamProcessor) calculateEventPriority(record *models.MetricRecord) streaming.EventPriority {
-	if p.isSecurityOrModerationEvent(record) {
-		return streaming.PriorityHigh
-	}
-	if p.isHighVolumeEvent(record) {
-		return streaming.PriorityHigh
-	}
-	return streaming.PriorityNormal
-}
-
-// isSecurityOrModerationEvent checks if the event is security or moderation related
-func (p *MetricsStreamProcessor) isSecurityOrModerationEvent(record *models.MetricRecord) bool {
-	return record.MetricType == metricEventSecurity || record.MetricType == metricEventModeration
-}
-
-// isHighVolumeEvent checks if the event represents high volume activity
-func (p *MetricsStreamProcessor) isHighVolumeEvent(record *models.MetricRecord) bool {
-	return record.Count > 1000 || record.Sum > 10000
+	// Metrics are automatically propagated via DynamoDB streams to stream-router
+	p.logger.Debug("infrastructure event recorded (auto-propagated via DynamoDB streams)",
+		zap.String("record_id", record.MetricID))
 }
 
 // publishMetricsSubscriptionEvent publishes a metrics event specifically for GraphQL subscriptions
@@ -836,33 +673,27 @@ func (p *MetricsStreamProcessor) isHighCost(record *models.MetricRecord) bool {
 	return err == nil && cost > 100000 // >$0.001
 }
 
-// publishEventAndLog publishes the event and logs the result
+// publishEventAndLog is deprecated - events now auto-propagate via DynamoDB streams
+// This method is kept as a no-op for backward compatibility
 func (p *MetricsStreamProcessor) publishEventAndLog(event *streaming.InternalEvent, subscriptionCategory string, record *models.MetricRecord) {
-	if err := streaming.PublishGlobal(event); err != nil {
-		p.logPublishError(err, subscriptionCategory, record)
-	} else {
-		p.logPublishSuccess(event, subscriptionCategory, record)
+	// Events are automatically propagated via DynamoDB streams to stream-router
+	// No explicit publishing needed
+	fields := []zap.Field{
+		zap.String("subscription_category", subscriptionCategory),
+		zap.String("record_id", record.MetricID),
 	}
-}
 
-// logPublishError logs failed event publishing
-func (p *MetricsStreamProcessor) logPublishError(err error, subscriptionCategory string, record *models.MetricRecord) {
-	p.logger.Error("failed to publish metrics subscription event to GraphQL",
-		zap.Error(err),
-		zap.String("subscription_category", subscriptionCategory),
-		zap.String("metric_id", record.MetricID),
-		zap.String("service", record.ServiceName),
-		zap.String("metric_type", record.MetricType))
-}
+	if event != nil {
+		fields = append(fields,
+			zap.String("event_id", event.ID),
+			zap.String("event_type", string(event.Type)),
+			zap.Int("stream_count", len(event.Streams)),
+		)
+	} else {
+		fields = append(fields, zap.String("event_status", "nil_event"))
+	}
 
-// logPublishSuccess logs successful event publishing
-func (p *MetricsStreamProcessor) logPublishSuccess(event *streaming.InternalEvent, subscriptionCategory string, record *models.MetricRecord) {
-	p.logger.Debug("published metrics event to GraphQL subscriptions",
-		zap.String("subscription_category", subscriptionCategory),
-		zap.String("metric_id", record.MetricID),
-		zap.String("service", record.ServiceName),
-		zap.String("metric_type", record.MetricType),
-		zap.Strings("streams", event.Streams))
+	p.logger.Debug("metric event will auto-propagate via DynamoDB streams", fields...)
 }
 
 // getSubscriptionStreams determines which GraphQL subscription streams should receive the metrics event
@@ -892,32 +723,6 @@ func (p *MetricsStreamProcessor) getSubscriptionStreams(category, userID, tenant
 
 	// Combined category-service streams for more specific filtering
 	streams = append(streams, fmt.Sprintf("metrics:%s:service:%s", category, serviceName))
-
-	return streams
-}
-
-// determineEventStreams determines target streams for general metric events (non-subscription specific)
-func (p *MetricsStreamProcessor) determineEventStreams(record *models.MetricRecord) []string {
-	streams := []string{}
-
-	// Service-based routing
-	streams = append(streams, fmt.Sprintf("service:%s", record.ServiceName))
-
-	// Metric type routing
-	streams = append(streams, fmt.Sprintf("metrics:%s", record.MetricType))
-
-	// User-based routing if available
-	if record.Dimensions != nil {
-		if userID, exists := record.Dimensions["user_id"]; exists && userID != "" {
-			streams = append(streams, fmt.Sprintf("user:%s", userID))
-		}
-		if tenantID, exists := record.Dimensions["tenant_id"]; exists && tenantID != "" {
-			streams = append(streams, fmt.Sprintf("tenant:%s", tenantID))
-		}
-	}
-
-	// Global stream for dashboard and monitoring
-	streams = append(streams, "global")
 
 	return streams
 }

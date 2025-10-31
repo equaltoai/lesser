@@ -24,6 +24,11 @@ type PushSubscriptionAlerts struct {
 	AdminReport   bool `json:"admin_report"`
 }
 
+// TableName returns the DynamoDB table backing PushSubscriptionAlerts.
+func (PushSubscriptionAlerts) TableName() string {
+	return MainTableName
+}
+
 // PushSubscription represents a push subscription stored in DynamoDB
 type PushSubscription struct {
 	// Primary keys

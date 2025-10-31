@@ -453,16 +453,6 @@ func (e *DefaultEventService) Emit(ctx context.Context, event Event) error {
 	return nil
 }
 
-// EmitAsync emits an event asynchronously
-func (e *DefaultEventService) EmitAsync(ctx context.Context, event Event) error {
-	// For now, just emit synchronously
-	// In production, this would use goroutines or a message queue
-	go func() {
-		_ = e.Emit(ctx, event)
-	}()
-	return nil
-}
-
 // LogEventHandler logs all events (useful for debugging)
 type LogEventHandler struct {
 	logger interface{} //nolint:unused // Reserved for future logging functionality

@@ -8,11 +8,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	svcErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -32,6 +35,7 @@ type Service struct {
 	noteRepo          *repositories.StatusRepository
 	accountRepo       interfaces.AccountRepository
 	relationshipRepo  *repositories.RelationshipRepository
+	mediaRepo         interfaces.MediaRepository
 	likeRepo          *repositories.LikeRepository
 	socialRepo        interfaces.SocialRepository
 	conversationRepo  interfaces.ConversationRepository
@@ -60,6 +64,40 @@ type ScheduledStatusRepository interface {
 	GetScheduledStatuses(ctx context.Context, username string, limit int, cursor string) ([]*storage.ScheduledStatus, string, error)
 	UpdateScheduledStatus(ctx context.Context, scheduled *storage.ScheduledStatus) error
 	DeleteScheduledStatus(ctx context.Context, id string) error
+}
+
+// ensureAuthorUsername extracts username from Actor ID and populates AuthorUsername if empty
+func (s *Service) ensureAuthorUsername(ctx context.Context, status *models.Status) {
+	if status.AuthorUsername == "" && status.AuthorID != "" {
+		// Extract username from Actor ID - try multiple formats
+		// Format 1: https://domain.com/users/username
+		if strings.Contains(status.AuthorID, "/users/") {
+			parts := strings.Split(status.AuthorID, "/users/")
+			if len(parts) == 2 {
+				status.AuthorUsername = strings.Split(parts[1], "/")[0] // Get username before any trailing slash
+			}
+		}
+		// Format 2: https://domain.com/@username
+		if status.AuthorUsername == "" && strings.Contains(status.AuthorID, "/@") {
+			parts := strings.Split(status.AuthorID, "/@")
+			if len(parts) == 2 {
+				status.AuthorUsername = strings.Split(parts[1], "/")[0]
+			}
+		}
+		// Format 3: Just take the last path segment
+		if status.AuthorUsername == "" {
+			parts := strings.Split(strings.TrimSuffix(status.AuthorID, "/"), "/")
+			if len(parts) > 0 {
+				status.AuthorUsername = parts[len(parts)-1]
+			}
+		}
+		// Last resort: try to get from account using AuthorID
+		if status.AuthorUsername == "" && s.accountRepo != nil {
+			if account, err := s.accountRepo.GetAccount(ctx, status.AuthorID); err == nil && account != nil {
+				status.AuthorUsername = account.User.Username
+			}
+		}
+	}
 }
 
 // FederationService defines the interface for federation operations
@@ -109,6 +147,7 @@ func NewService(
 	noteRepo *repositories.StatusRepository,
 	accountRepo interfaces.AccountRepository,
 	relationshipRepo *repositories.RelationshipRepository,
+	mediaRepo interfaces.MediaRepository,
 	likeRepo *repositories.LikeRepository,
 	socialRepo interfaces.SocialRepository,
 	conversationRepo interfaces.ConversationRepository,
@@ -146,6 +185,7 @@ func NewService(
 		noteRepo:          noteRepo,
 		accountRepo:       accountRepo,
 		relationshipRepo:  relationshipRepo,
+		mediaRepo:         mediaRepo,
 		likeRepo:          likeRepo,
 		socialRepo:        socialRepo,
 		conversationRepo:  conversationRepo,
@@ -269,10 +309,58 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	// Create ActivityPub Note
 	note := s.buildActivityPubNote(cmd, statusID, author)
 
-	// Create Status model
+	publishedAt := time.Now()
+	note.Published = &publishedAt
+
+	// Enrich note with hashtags
+	hashtagTags, normalizedHashtags := s.buildHashtagTags(cmd.Content)
+	if len(hashtagTags) > 0 {
+		note.Tag = append(note.Tag, hashtagTags...)
+	}
+
+	// Attach media if provided
+	attachments, mediaIDsToMark, err := s.prepareMediaAttachments(ctx, author, cmd.MediaIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(attachments) > 0 {
+		note.Attachment = attachments
+	}
+
+	status := s.composeStatus(cmd, author, statusID, note, normalizedHashtags, attachments, publishedAt)
+	status.ConversationID = resolveConversationID(ctx, status, s.lookupParentStatus)
+
+	// Store the status
+	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
+		return nil, errors.Join(ErrCreateStatus, err)
+	}
+
+	// Mark media attachments as used after successful persistence
+	s.markMediaAsUsed(ctx, statusID, mediaIDsToMark)
+	s.recordStatusCreationAnalytics(ctx, status)
+	s.handlePollCreation(ctx, cmd, statusID)
+
+	s.logger.Info("created note successfully",
+		zap.String("status_id", statusID),
+		zap.String("conversation_id", status.ConversationID))
+
+	// Ensure AuthorUsername is populated before emitting events
+	s.ensureAuthorUsername(ctx, status)
+
+	// Emit events and queue federation
+	events := s.emitStatusCreatedEvents(ctx, status)
+	s.queueFederationDelivery(ctx, status, "Create")
+
+	return &NoteResult{
+		Note:   status,
+		Events: events,
+	}, nil
+}
+
+func (s *Service) composeStatus(cmd *CreateNoteCommand, author *storage.Account, statusID string, note *activitypub.Note, hashtags []string, attachments []activitypub.Attachment, timestamp time.Time) *models.Status {
 	status := &models.Status{
 		StatusID:       statusID,
-		Note:           note,
+		Note:           &models.NoteField{Note: note}, // Wrap Note in NoteField for proper DynamORM handling
 		AuthorID:       cmd.AuthorID,
 		AuthorUsername: author.User.Username,
 		Content:        cmd.Content,
@@ -285,65 +373,108 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		CcRecipients:   cmd.CcRecipients,
 		BtoRecipients:  cmd.BtoRecipients,
 		BccRecipients:  cmd.BccRecipients,
-		PublishedAt:    time.Now(),
+		PublishedAt:    timestamp,
+		CreatedAt:      timestamp,
+		ModifiedAt:     timestamp,
 	}
 
-	// Handle conversation ID - create new conversation if not provided and it's a top-level post
-	if common.ValidateRequiredParam("status.ConversationID", status.ConversationID) != nil && common.ValidateRequiredParam("status.InReplyToID", status.InReplyToID) != nil {
-		status.ConversationID = statusID
-	} else if common.ValidateRequiredParam("status.ConversationID", status.ConversationID) != nil && common.ValidateRequiredParam("status.InReplyToID", status.InReplyToID) == nil {
-		// Get parent status to inherit conversation ID
-		parent, err := s.noteRepo.GetStatus(ctx, status.InReplyToID)
-		if err == nil && parent.ConversationID != "" {
-			status.ConversationID = parent.ConversationID
-		} else {
-			status.ConversationID = status.InReplyToID
+	if len(hashtags) > 0 {
+		status.Hashtags = hashtags
+	}
+
+	if len(attachments) > 0 {
+		status.MediaCount = len(attachments)
+	}
+
+	return status
+}
+
+type parentStatusFetcher func(context.Context, string) (*models.Status, error)
+
+func resolveConversationID(ctx context.Context, status *models.Status, fetch parentStatusFetcher) string {
+	if status == nil {
+		return ""
+	}
+
+	if status.ConversationID != "" {
+		return status.ConversationID
+	}
+
+	if status.InReplyToID == "" {
+		return status.StatusID
+	}
+
+	if fetch == nil {
+		return status.InReplyToID
+	}
+
+	parent, err := fetch(ctx, status.InReplyToID)
+	if err == nil && parent != nil && parent.ConversationID != "" {
+		return parent.ConversationID
+	}
+
+	return status.InReplyToID
+}
+
+func (s *Service) lookupParentStatus(ctx context.Context, statusID string) (*models.Status, error) {
+	if s.noteRepo == nil || statusID == "" {
+		return nil, fmt.Errorf("note repository unavailable")
+	}
+	return s.noteRepo.GetStatus(ctx, statusID)
+}
+
+func (s *Service) markMediaAsUsed(ctx context.Context, statusID string, mediaIDs []string) {
+	if len(mediaIDs) == 0 || s.mediaRepo == nil {
+		return
+	}
+
+	for _, mediaID := range mediaIDs {
+		if err := s.mediaRepo.MarkMediaUsed(ctx, mediaID); err != nil {
+			s.logger.Warn("failed to mark media attachment as used",
+				zap.String("status_id", statusID),
+				zap.String("media_id", mediaID),
+				zap.Error(err))
 		}
 	}
+}
 
-	// Store the status
-	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
-		return nil, errors.Join(ErrCreateStatus, err)
+func (s *Service) recordStatusCreationAnalytics(ctx context.Context, status *models.Status) {
+	if s.analytics == nil || status == nil {
+		return
 	}
 
-	// Create poll if poll options are provided
-	if common.ValidateSliceNotEmpty("cmd.PollOptions", cmd.PollOptions) == nil {
-		if err := s.createPollForStatus(ctx, cmd, statusID); err != nil {
-			// Log error but don't fail status creation
-			s.logger.Error("failed to create poll for status",
-				zap.String("status_id", statusID),
+	if len(status.Hashtags) > 0 && status.Note != nil {
+		if err := s.analytics.RecordHashtagUsage(ctx, status.Hashtags, status.Note.ID, status.AuthorID); err != nil {
+			s.logger.Warn("failed to record hashtag usage",
+				zap.String("status_id", status.StatusID),
+				zap.Strings("hashtags", status.Hashtags),
 				zap.Error(err))
 		}
 	}
 
-	// Update instance metrics after successful creation
-	if s.analytics != nil {
-		activityType := "post" // Default to post
-		if status.InReplyToID != "" {
-			activityType = "comment" // This is a reply/comment
-		}
-
-		if err := s.analytics.RecordInstanceActivity(ctx, activityType, time.Now()); err != nil {
-			// Log the error but don't fail the creation - metrics are not critical
-			s.logger.Warn("failed to record instance metrics",
-				zap.String("activity_type", activityType),
-				zap.String("status_id", statusID),
-				zap.Error(err))
-		}
+	activityType := "post"
+	if status.InReplyToID != "" {
+		activityType = "comment"
 	}
 
-	s.logger.Info("created note successfully",
-		zap.String("status_id", statusID),
-		zap.String("conversation_id", status.ConversationID))
+	if err := s.analytics.RecordInstanceActivity(ctx, activityType, time.Now()); err != nil {
+		s.logger.Warn("failed to record instance metrics",
+			zap.String("activity_type", activityType),
+			zap.String("status_id", status.StatusID),
+			zap.Error(err))
+	}
+}
 
-	// Emit events and queue federation
-	events := s.emitStatusCreatedEvents(ctx, status)
-	s.queueFederationDelivery(ctx, status, "Create")
+func (s *Service) handlePollCreation(ctx context.Context, cmd *CreateNoteCommand, statusID string) {
+	if common.ValidateSliceNotEmpty("cmd.PollOptions", cmd.PollOptions) != nil {
+		return
+	}
 
-	return &NoteResult{
-		Note:   status,
-		Events: events,
-	}, nil
+	if err := s.createPollForStatus(ctx, cmd, statusID); err != nil {
+		s.logger.Error("failed to create poll for status",
+			zap.String("status_id", statusID),
+			zap.Error(err))
+	}
 }
 
 // UpdateNote updates an existing note, validates permission, stores changes, and emits events
@@ -359,9 +490,11 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 	}
 
 	// Verify permission (only author can update)
-	if status.AuthorID != cmd.UpdaterID {
+	// Compare usernames, not full IDs (AuthorUsername is just the username, AuthorID is the full URL)
+	if status.AuthorUsername != cmd.UpdaterID {
 		s.logger.Warn("user cannot update post owned by another user",
 			zap.String("updater_id", cmd.UpdaterID),
+			zap.String("author_username", status.AuthorUsername),
 			zap.String("author_id", status.AuthorID))
 		return nil, common.ErrForbidden(ErrCannotUpdatePostOwnedByOther)
 	}
@@ -378,11 +511,11 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 	status.UpdatedAt = time.Now()
 
 	// Update the ActivityPub Note if present
-	if status.Note != nil {
-		status.Note.Content = cmd.Content
-		status.Note.Sensitive = cmd.Sensitive
+	if status.Note != nil && status.Note.Get() != nil {
+		status.Note.Get().Content = cmd.Content
+		status.Note.Get().Sensitive = cmd.Sensitive
 		now := time.Now()
-		status.Note.Updated = &now
+		status.Note.Get().Updated = &now
 	}
 
 	// Store the updated status
@@ -415,13 +548,17 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 		return ErrGetStatus
 	}
 
+	// Ensure AuthorUsername is populated (may be empty if status was loaded from DB)
+	s.ensureAuthorUsername(ctx, status)
+
 	// Check if already deleted
 	if status.Deleted {
 		return nil // Idempotent operation
 	}
 
 	// Verify permission (author or admin)
-	if status.AuthorID != cmd.DeleterID {
+	// Compare usernames, not full IDs (AuthorUsername is just the username, AuthorID is the full URL)
+	if status.AuthorUsername != cmd.DeleterID {
 		// Check if deleter is an admin
 		isAdmin := false
 		if s.userRepo != nil {
@@ -433,6 +570,7 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 		if !isAdmin {
 			s.logger.Warn("user cannot delete post owned by another user without admin privileges",
 				zap.String("deleter_id", cmd.DeleterID),
+				zap.String("author_username", status.AuthorUsername),
 				zap.String("author_id", status.AuthorID))
 			return common.ErrForbidden(ErrCannotDeletePostOwnedByOther)
 		}
@@ -444,7 +582,8 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 	status.DeletedAt = &now
 	status.ModifiedAt = now
 
-	// Store the deletion
+	// Store the deletion - use UpdateStatus which uses UpdateBuilder() to prevent Note field corruption
+	// No need to call UpdateKeys() here - keys are already set from creation and we're only updating Deleted flag
 	if err := s.noteRepo.UpdateStatus(ctx, status); err != nil {
 		return ErrDeleteStatus
 	}
@@ -586,87 +725,136 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 		zap.String("viewer_id", query.ViewerID),
 		zap.String("author_id", query.AuthorID))
 
-	var result *interfaces.PaginatedResult[*models.Status]
-	var err error
+	result, err := s.routeTimelineQuery(ctx, query)
+	if err != nil {
+		return nil, err
+	}
 
-	// Route to appropriate timeline method based on type
+	if result == nil {
+		return nil, ErrGetTimeline
+	}
+
+	s.logger.Info("timeline query result before filtering",
+		zap.String("timeline_type", query.TimelineType),
+		zap.Int("items_count", len(result.Items)))
+
+	filteredNotes := s.filterNotesForViewer(result.Items, query)
+
+	return s.buildNotesResult(filteredNotes, result), nil
+}
+
+// routeTimelineQuery routes to the appropriate timeline method based on type
+func (s *Service) routeTimelineQuery(ctx context.Context, query *ListNotesQuery) (*interfaces.PaginatedResult[*models.Status], error) {
 	switch query.TimelineType {
-	case VisibilityPublic:
-		result, err = s.noteRepo.GetPublicTimeline(ctx, query.Pagination)
+	case VisibilityPublic, "local":
+		return s.noteRepo.GetPublicTimeline(ctx, query.Pagination)
 	case "home":
 		if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
 			return nil, ErrHomeTimelineRequiresViewerID
 		}
-		result, err = s.noteRepo.GetHomeTimeline(ctx, query.ViewerID, query.Pagination)
+		return s.noteRepo.GetHomeTimeline(ctx, query.ViewerID, query.Pagination)
 	case "user":
 		if err := common.ValidateRequiredParam("author_id", query.AuthorID); err != nil {
 			return nil, ErrUserTimelineRequiresAuthorID
 		}
-		result, err = s.noteRepo.GetUserTimeline(ctx, query.AuthorID, query.Pagination)
+		return s.noteRepo.GetUserTimeline(ctx, query.AuthorID, query.Pagination)
 	case "conversations":
 		if err := common.ValidateRequiredParam("conversation_id", query.ConversationID); err != nil {
 			return nil, ErrConversationsTimelineRequiresConversationID
 		}
-		result, err = s.noteRepo.GetConversationThread(ctx, query.ConversationID, query.Pagination)
+		return s.noteRepo.GetConversationThread(ctx, query.ConversationID, query.Pagination)
 	case "direct":
 		if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
 			return nil, ErrDirectTimelineRequiresViewerID
 		}
 		// Direct messages are handled differently - we get conversations first, then statuses
-		return s.getDirectTimeline(ctx, query)
+		directResult, err := s.getDirectTimeline(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		return directResult.Pagination, nil
 	case "hashtag":
 		if err := common.ValidateRequiredParam("hashtag", query.Hashtag); err != nil {
 			return nil, ErrHashtagTimelineRequiresHashtag
 		}
-		result, err = s.noteRepo.GetStatusesByHashtag(ctx, query.Hashtag, query.Pagination)
+		normalizedHashtag := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(query.Hashtag), "#"))
+		result, err := s.noteRepo.GetStatusesByHashtag(ctx, normalizedHashtag, query.Pagination)
+		if err != nil {
+			s.logger.Error("failed to get hashtag timeline",
+				zap.String("hashtag", query.Hashtag),
+				zap.String("normalized_hashtag", normalizedHashtag),
+				zap.Error(err))
+			return nil, errors.Join(ErrGetTimeline, fmt.Errorf("hashtag timeline error: %w", err))
+		}
+		return result, nil
 	case "list":
 		if err := common.ValidateRequiredParam("list_id", query.ListID); err != nil {
 			return nil, ErrListTimelineRequiresListID
 		}
-		// Get list timeline - statuses from members of the list
-		listResult, listErr := s.getListTimeline(ctx, query)
-		if listErr != nil {
-			return nil, listErr
+		listResult, err := s.getListTimeline(ctx, query)
+		if err != nil {
+			return nil, err
 		}
-		return listResult, nil
+		return listResult.Pagination, nil
 	default:
 		s.logger.Warn("unsupported timeline type",
 			zap.String("timeline_type", query.TimelineType))
 		return nil, ErrUnsupportedTimelineType
 	}
+}
 
-	if err != nil {
-		return nil, ErrGetTimeline
-	}
+// filterNotesForViewer filters notes based on privacy, visibility, and query filters
+func (s *Service) filterNotesForViewer(notes []*models.Status, query *ListNotesQuery) []*models.Status {
+	filteredNotes := make([]*models.Status, 0, len(notes))
+	isPublicTimeline := query.TimelineType == VisibilityPublic || query.TimelineType == "local"
 
-	// Filter results based on privacy and other criteria
-	filteredNotes := make([]*models.Status, 0, len(result.Items))
-	for _, status := range result.Items {
-		// Skip deleted posts
-		if status.Deleted {
+	for _, status := range notes {
+		if !s.shouldIncludeStatus(status, query, isPublicTimeline) {
 			continue
 		}
 
-		// Check visibility
-		if !status.IsVisibleTo(query.ViewerID) {
-			continue
-		}
-
-		// Apply additional filters
-		if query.OnlyMedia && !status.HasMedia() {
-			continue
-		}
-		if query.ExcludeReplies && status.IsReply() {
-			continue
-		}
-		// Note: ExcludeReblogs and PinnedOnly would require additional data
-
-		// Sanitize for viewer
 		sanitized := status.SanitizeForActor(query.ViewerID)
 		filteredNotes = append(filteredNotes, sanitized)
 	}
 
-	// Update the result with filtered items
+	return filteredNotes
+}
+
+// shouldIncludeStatus determines if a status should be included based on filters
+func (s *Service) shouldIncludeStatus(status *models.Status, query *ListNotesQuery, isPublicTimeline bool) bool {
+	// Skip deleted posts
+	if status.Deleted {
+		s.logger.Debug("skipping deleted status",
+			zap.String("status_id", status.StatusID))
+		return false
+	}
+
+	// For public/local timelines, skip visibility check since repository already filtered
+	// For other timelines (home, user, etc.), check visibility
+	if !isPublicTimeline {
+		if !status.IsVisibleTo(query.ViewerID) {
+			s.logger.Debug("skipping status not visible to viewer",
+				zap.String("status_id", status.StatusID),
+				zap.String("visibility", status.Visibility),
+				zap.String("viewer_id", query.ViewerID))
+			return false
+		}
+	}
+
+	// Apply additional filters
+	if query.OnlyMedia && !status.HasMedia() {
+		return false
+	}
+	if query.ExcludeReplies && status.IsReply() {
+		return false
+	}
+	// Note: ExcludeReblogs and PinnedOnly would require additional data
+
+	return true
+}
+
+// buildNotesResult constructs the final Result from filtered notes and pagination
+func (s *Service) buildNotesResult(filteredNotes []*models.Status, result *interfaces.PaginatedResult[*models.Status]) *Result {
 	filteredResult := &interfaces.PaginatedResult[*models.Status]{
 		Items:      filteredNotes,
 		NextCursor: result.NextCursor,
@@ -678,7 +866,7 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 		Notes:      filteredNotes,
 		Pagination: filteredResult,
 		Events:     []*streaming.Event{}, // No events for read operations
-	}, nil
+	}
 }
 
 // Private helper methods
@@ -761,7 +949,7 @@ func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, 
 
 	note := &activitypub.Note{
 		BaseObject: activitypub.BaseObject{
-			Context:   "https://www.w3.org/ns/activitystreams",
+			Context:   activitypub.Context,
 			Type:      "Note",
 			ID:        fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, author.User.Username, statusID),
 			Published: &now,
@@ -790,6 +978,209 @@ func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, 
 	return note
 }
 
+// buildHashtagTags extracts hashtags from content and builds ActivityPub tags plus normalized values.
+func (s *Service) buildHashtagTags(content string) ([]activitypub.Tag, []string) {
+	hashtags := mastodon.ExtractHashtagsWithCase(content)
+	if len(hashtags) == 0 {
+		return nil, nil
+	}
+
+	sort.SliceStable(hashtags, func(i, j int) bool {
+		return strings.ToLower(hashtags[i]) < strings.ToLower(hashtags[j])
+	})
+
+	tags := make([]activitypub.Tag, 0, len(hashtags))
+	normalized := make([]string, 0, len(hashtags))
+
+	for _, tag := range hashtags {
+		normalizedTag := mastodon.NormalizeHashtag(tag)
+		if normalizedTag == "" {
+			continue
+		}
+
+		tagURL := fmt.Sprintf("https://%s/tags/%s", s.domainName, normalizedTag)
+		tags = append(tags, activitypub.Tag{
+			Type: "Hashtag",
+			Name: "#" + tag,
+			Href: tagURL,
+		})
+		normalized = append(normalized, normalizedTag)
+	}
+
+	if len(tags) == 0 {
+		return nil, nil
+	}
+
+	return tags, normalized
+}
+
+// prepareMediaAttachments validates the provided media IDs, converts them to ActivityPub attachments,
+// and returns the attachments alongside the IDs that should be marked as used.
+func (s *Service) prepareMediaAttachments(ctx context.Context, author *storage.Account, mediaIDs []string) ([]activitypub.Attachment, []string, error) {
+	if err := common.ValidateSliceNotEmpty("media_ids", mediaIDs); err != nil {
+		return nil, nil, nil
+	}
+
+	if err := common.ValidateSliceLength("media_ids", mediaIDs, 4); err != nil {
+		s.logger.Warn("too many media attachments for status",
+			zap.Int("limit", 4),
+			zap.Int("requested", len(mediaIDs)))
+		return nil, nil, errors.Join(svcErrors.ErrValidationFailed, err)
+	}
+
+	if s.mediaRepo == nil {
+		s.logger.Error("media repository unavailable for attachments")
+		return nil, nil, svcErrors.ErrRetrieveMediaAttachment
+	}
+
+	attachments := make([]activitypub.Attachment, 0, len(mediaIDs))
+	markIDs := make([]string, 0, len(mediaIDs))
+
+	for idx, mediaID := range mediaIDs {
+		media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+		if err != nil {
+			s.logger.Error("failed to get media attachment",
+				zap.String("media_id", mediaID),
+				zap.Error(err))
+			return nil, nil, errors.Join(svcErrors.ErrMediaAttachmentNotFound, err)
+		}
+
+		if !s.mediaBelongsToAuthor(media, author) {
+			s.logger.Warn("media attachment does not belong to author",
+				zap.String("media_id", mediaID),
+				zap.String("media_owner", media.UserID))
+			return nil, nil, svcErrors.ErrMediaAttachmentNotFound
+		}
+
+		if media.Status != "ready" && media.Status != "completed" {
+			s.logger.Warn("media attachment not ready",
+				zap.String("media_id", mediaID),
+				zap.String("status", media.Status))
+			return nil, nil, svcErrors.ErrMediaAttachmentNotReady
+		}
+
+		if media.ExpiresAt > 0 && time.Now().Unix() > media.ExpiresAt {
+			s.logger.Warn("media attachment expired",
+				zap.String("media_id", mediaID),
+				zap.Int64("expires_at", media.ExpiresAt))
+			return nil, nil, svcErrors.ErrMediaAttachmentExpired
+		}
+
+		attachments = append(attachments, s.mapMediaToAttachment(media))
+		markIDs = append(markIDs, mediaID)
+
+		s.logger.Debug("prepared media attachment for note",
+			zap.Int("index", idx),
+			zap.String("media_id", mediaID),
+			zap.String("content_type", media.ContentType))
+	}
+
+	return attachments, markIDs, nil
+}
+
+// mediaBelongsToAuthor checks whether the media item is owned by the author creating the note.
+func (s *Service) mediaBelongsToAuthor(media *models.Media, author *storage.Account) bool {
+	if media == nil || author == nil || author.User == nil {
+		return false
+	}
+
+	owner := strings.ToLower(strings.TrimSpace(media.UserID))
+	username := strings.ToLower(strings.TrimSpace(author.User.Username))
+	if owner == "" || username == "" {
+		return false
+	}
+
+	if owner == username {
+		return true
+	}
+
+	if author.Actor != nil {
+		actorID := strings.ToLower(strings.TrimSpace(author.Actor.ID))
+		if actorID != "" && owner == actorID {
+			return true
+		}
+	}
+
+	return false
+}
+
+// mapMediaToAttachment converts a media record into an ActivityPub attachment.
+func (s *Service) mapMediaToAttachment(media *models.Media) activitypub.Attachment {
+	if media == nil {
+		return activitypub.Attachment{}
+	}
+
+	url := strings.TrimSpace(media.CDNUrl)
+	if url == "" {
+		url = fmt.Sprintf("https://%s/media/%s", s.domainName, media.MediaID)
+	}
+
+	attachment := activitypub.Attachment{
+		Type:      mapMediaCategoryToAttachmentType(media.MediaCategory),
+		MediaType: media.ContentType,
+		URL:       url,
+		Width:     media.Width,
+		Height:    media.Height,
+	}
+
+	if media.Description != "" {
+		attachment.Name = media.Description
+	} else if media.FileName != "" {
+		attachment.Name = media.FileName
+	}
+
+	if media.FileName != "" {
+		attachment.Value = media.FileName
+	}
+
+	return attachment
+}
+
+func mapMediaCategoryToAttachmentType(category models.MediaCategory) string {
+	switch category {
+	case models.MediaCategoryImage, models.MediaCategoryGifv:
+		return "Image"
+	case models.MediaCategoryVideo:
+		return "Video"
+	case models.MediaCategoryAudio:
+		return "Audio"
+	default:
+		return "Document"
+	}
+}
+
+func extractStatusIDFromObjectURL(objectURL string) string {
+	if objectURL == "" {
+		return ""
+	}
+
+	trimmed := strings.TrimSuffix(objectURL, "/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[len(parts)-1]
+}
+
+func isAlreadyExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if appErr, ok := svcErrors.AsAppError(err); ok {
+		if appErr.Code == svcErrors.CodeAlreadyExists {
+			return true
+		}
+		message := strings.ToLower(appErr.Message)
+		if strings.Contains(message, "already") {
+			return true
+		}
+	}
+
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "already") || strings.Contains(lower, "condition check failed")
+}
+
 func (s *Service) emitStatusCreatedEvents(ctx context.Context, status *models.Status) []*streaming.Event {
 	// Use centralized business logic for event creation
 	businessEvents := common.EmitEntityCreatedEvents(ctx, "status", status.StatusID, status.AuthorID, status)
@@ -807,7 +1198,7 @@ func (s *Service) emitStatusCreatedEvents(ctx context.Context, status *models.St
 		// Emit to user's stream
 		userEvent := *streamingEvent
 		userEvent.Stream = fmt.Sprintf("user:%s", status.AuthorUsername)
-		if err := s.publisher.PublishToUser(ctx, status.AuthorID, &userEvent); err != nil {
+		if err := s.publisher.PublishToUser(ctx, status.AuthorUsername, &userEvent); err != nil {
 			s.logger.Error("failed to publish to user stream", zap.Error(err))
 		} else {
 			streamingEvents = append(streamingEvents, &userEvent)
@@ -870,7 +1261,7 @@ func (s *Service) emitStatusUpdatedEvents(ctx context.Context, status *models.St
 		}
 
 		// Emit to user's stream
-		if err := s.publisher.PublishToUser(ctx, status.AuthorID, streamingEvent); err != nil {
+		if err := s.publisher.PublishToUser(ctx, status.AuthorUsername, streamingEvent); err != nil {
 			s.logger.Error("failed to publish update to user stream", zap.Error(err))
 		} else {
 			streamingEvents = append(streamingEvents, streamingEvent)
@@ -881,6 +1272,14 @@ func (s *Service) emitStatusUpdatedEvents(ctx context.Context, status *models.St
 }
 
 func (s *Service) emitStatusDeletedEvents(ctx context.Context, status *models.Status) {
+	// Skip if AuthorUsername is still empty (can't emit events without it)
+	if status.AuthorUsername == "" {
+		s.logger.Warn("skipping status deletion events - AuthorUsername is empty",
+			zap.String("status_id", status.StatusID),
+			zap.String("author_id", status.AuthorID))
+		return
+	}
+
 	// Use centralized business logic for event creation
 	businessEvents := common.EmitEntityDeletedEvents(ctx, "status", status.StatusID, status.AuthorID)
 
@@ -894,7 +1293,7 @@ func (s *Service) emitStatusDeletedEvents(ctx context.Context, status *models.St
 		}
 
 		// Emit to user's stream
-		if err := s.publisher.PublishToUser(ctx, status.AuthorID, streamingEvent); err != nil {
+		if err := s.publisher.PublishToUser(ctx, status.AuthorUsername, streamingEvent); err != nil {
 			s.logger.Error("failed to publish deletion to user stream", zap.Error(err))
 		}
 	}
@@ -906,20 +1305,42 @@ func (s *Service) queueFederationDelivery(ctx context.Context, status *models.St
 		return
 	}
 
+	if strings.TrimSpace(s.domainName) == "" {
+		s.logger.Debug("domain name not configured, skipping delivery")
+		return
+	}
+
+	// Skip if Note is nil (can happen with deleted/corrupted statuses)
+	if status.Note == nil || status.Note.Get() == nil {
+		s.logger.Debug("status note is nil, skipping federation delivery",
+			zap.String("status_id", status.StatusID))
+		return
+	}
+
 	// Create ActivityPub Create activity
+	note := status.Note.Get() // Get underlying *activitypub.Note for federation
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: "https://www.w3.org/ns/activitystreams",
+			Context: activitypub.Context,
 			Type:    activityType,
-			ID:      fmt.Sprintf("%s#%s", status.Note.ID, strings.ToLower(activityType)),
+			ID:      fmt.Sprintf("%s#%s", note.ID, strings.ToLower(activityType)),
 			To:      status.ToRecipients,
 			CC:      status.CcRecipients,
 			BTo:     status.BtoRecipients,
 			BCC:     status.BccRecipients,
 		},
-		Actor:  status.Note.AttributedTo,
-		Object: status.Note,
+		Actor:  note.AttributedTo,
+		Object: note, // Pass underlying *activitypub.Note for federation
 	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Warn("federation queue panic suppressed during delivery",
+				zap.String("status_id", status.StatusID),
+				zap.String("activity_type", activityType),
+				zap.Any("reason", r))
+		}
+	}()
 
 	if err := s.federation.QueueActivity(ctx, activity); err != nil {
 		s.logger.Error("failed to queue federation delivery",
@@ -935,21 +1356,53 @@ func (s *Service) queueFederationTombstone(ctx context.Context, status *models.S
 		return
 	}
 
+	// Skip if Note is nil (can happen with deleted/corrupted statuses)
+	if status.Note == nil || status.Note.Get() == nil {
+		s.logger.Debug("status note is nil, skipping federation tombstone",
+			zap.String("status_id", status.StatusID))
+		return
+	}
+
+	// Ensure we have an ID for the tombstone
+	tombstoneID := status.Note.Get().ID
+	if tombstoneID == "" {
+		// Fallback to StatusID if Note.ID is empty
+		tombstoneID = status.StatusID
+		s.logger.Warn("status note ID is empty, using status ID for tombstone",
+			zap.String("status_id", status.StatusID))
+	}
+
 	// Create ActivityPub Delete activity with Tombstone
 	tombstone := &activitypub.BaseObject{
 		Type: "Tombstone",
-		ID:   status.Note.ID,
+		ID:   tombstoneID,
+	}
+
+	// Ensure ToRecipients and CcRecipients are not nil
+	toRecipients := status.ToRecipients
+	if toRecipients == nil {
+		toRecipients = []string{}
+	}
+	ccRecipients := status.CcRecipients
+	if ccRecipients == nil {
+		ccRecipients = []string{}
+	}
+
+	// Use Note.AttributedTo if available, otherwise fallback to AuthorID
+	actorID := status.AuthorID
+	if status.Note.Get().AttributedTo != "" {
+		actorID = status.Note.Get().AttributedTo
 	}
 
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: "https://www.w3.org/ns/activitystreams",
+			Context: activitypub.Context,
 			Type:    "Delete",
-			ID:      fmt.Sprintf("%s#delete", status.Note.ID),
-			To:      status.ToRecipients,
-			CC:      status.CcRecipients,
+			ID:      fmt.Sprintf("%s#delete", tombstoneID),
+			To:      toRecipients,
+			CC:      ccRecipients,
 		},
-		Actor:  status.Note.AttributedTo,
+		Actor:  actorID,
 		Object: tombstone,
 	}
 
@@ -957,6 +1410,7 @@ func (s *Service) queueFederationTombstone(ctx context.Context, status *models.S
 		s.logger.Error("failed to queue federation tombstone",
 			zap.String("status_id", status.StatusID),
 			zap.Error(err))
+		// Don't return error - tombstone queuing is best-effort
 	}
 }
 
@@ -1317,8 +1771,9 @@ type GetLikersQuery struct {
 
 // LikeResult represents the result of a like operation
 type LikeResult struct {
-	Status *models.Status     `json:"status"`
-	Events []*streaming.Event `json:"events"`
+	Status   *models.Status
+	Events   []*streaming.Event
+	Announce *storage.Announce
 }
 
 // UsersResult represents a list of users (for likers, rebloggers, etc.)
@@ -1461,7 +1916,8 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 	objectURL := fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, note.AuthorUsername, cmd.StatusID)
 
 	// Create the reblog through repository interface
-	if err := s.createReblog(ctx, actorURL, objectURL, cmd.RebloggerID, cmd.StatusID); err != nil {
+	announce, err := s.createReblog(ctx, actorURL, objectURL, cmd.RebloggerID, cmd.StatusID)
+	if err != nil {
 		return nil, ErrReblogStatus
 	}
 
@@ -1469,8 +1925,9 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 	events := s.emitReblogEvents(ctx, note, cmd.RebloggerID)
 
 	return &LikeResult{
-		Status: note,
-		Events: events,
+		Status:   note,
+		Events:   events,
+		Announce: announce,
 	}, nil
 }
 
@@ -1539,10 +1996,17 @@ func (s *Service) executePinActionGeneric(ctx context.Context, params pinActionP
 		return nil, ErrStatusNotFound
 	}
 
+	// Ensure AuthorUsername is populated (may be empty if status was loaded from DB)
+	// AuthorID is a full URL (e.g., https://dev.lesser.host/users/admin)
+	// but pinnerID is just a username (e.g., admin), so we need to compare usernames
+	s.ensureAuthorUsername(ctx, note)
+
 	// Verify the user owns the status (can only pin/unpin own statuses)
-	if note.AuthorID != params.pinnerID {
+	// Compare usernames, not full IDs (AuthorUsername is just the username, AuthorID is the full URL)
+	if note.AuthorUsername != params.pinnerID {
 		s.logger.Warn("user cannot pin/unpin status owned by another user",
 			zap.String("pinner_id", params.pinnerID),
+			zap.String("author_username", note.AuthorUsername),
 			zap.String("author_id", note.AuthorID))
 		return nil, common.ErrForbidden(ErrCannotPinPostOwnedByOther)
 	}
@@ -1730,24 +2194,140 @@ func (s *Service) getLikers(ctx context.Context, statusID string, pagination int
 	return accounts, result, nil
 }
 
-func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, _ string) error {
+func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, _ string) (*storage.Announce, error) {
+	// Idempotency: if an announce already exists for this actor/object, skip creating duplicates
+	if existing, err := s.socialRepo.GetAnnounce(ctx, actorURL, objectURL); err == nil {
+		s.logger.Debug("announce already persisted, skipping duplicate reblog",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL),
+			zap.String("announce_id", existing.ID))
+		return existing, nil
+	} else if appErr, ok := svcErrors.AsAppError(err); ok && appErr.Code != svcErrors.CodeNotFound {
+		s.logger.Error("failed to check existing announce",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL),
+			zap.String("error_code", string(appErr.Code)),
+			zap.String("error_message", appErr.Message),
+			zap.Bool("is_app_error", ok),
+			zap.Error(err))
+		return nil, ErrCreateReblog
+	} else if err != nil {
+		// Log if error is not an AppError at all
+		s.logger.Warn("announce check returned non-AppError",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL),
+			zap.String("error_type", fmt.Sprintf("%T", err)),
+			zap.Error(err))
+	}
+
 	announce := &storage.Announce{
 		Actor:     actorURL,
 		Object:    objectURL,
 		CreatedAt: time.Now(),
 	}
-	err := s.socialRepo.CreateAnnounce(ctx, announce)
-	if err != nil {
-		return ErrCreateReblog
+
+	if err := s.socialRepo.CreateAnnounce(ctx, announce); err != nil {
+		if appErr, ok := svcErrors.AsAppError(err); ok {
+			s.logger.Debug("create announce app error details",
+				zap.String("code", string(appErr.Code)),
+				zap.String("message", appErr.Message),
+				zap.Any("metadata", appErr.Metadata))
+		}
+
+		if isAlreadyExistsError(err) {
+			s.logger.Debug("announce already exists, treating as idempotent success",
+				zap.String("actor_url", actorURL),
+				zap.String("object_url", objectURL))
+			if existing, getErr := s.socialRepo.GetAnnounce(ctx, actorURL, objectURL); getErr == nil {
+				announce = existing
+			} else {
+				s.logger.Error("failed to load existing announce after duplicate detection",
+					zap.String("actor_url", actorURL),
+					zap.String("object_url", objectURL),
+					zap.Error(getErr))
+				return nil, ErrCreateReblog
+			}
+		} else {
+			return nil, ErrCreateReblog
+		}
 	}
-	return nil
+
+	if s.noteRepo == nil {
+		s.logger.Warn("status repository unavailable while recording reblog engagement",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL))
+		return announce, nil
+	}
+
+	if announce == nil {
+		s.logger.Error("announce metadata missing after create",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL))
+		return nil, ErrCreateReblog
+	}
+
+	statusID := extractStatusIDFromObjectURL(objectURL)
+
+	if err := common.ValidateRequiredParam("reblog_status_id", statusID); err != nil {
+		s.logger.Error("failed to resolve status id from object url",
+			zap.String("object_url", objectURL),
+			zap.Error(err))
+		return nil, ErrReblogStatus
+	}
+
+	engagementCreated := true
+	if err := s.noteRepo.ReblogStatus(ctx, actorURL, statusID, announce.ID); err != nil {
+		if isAlreadyExistsError(err) {
+			s.logger.Debug("reblog engagement already recorded",
+				zap.String("actor_url", actorURL),
+				zap.String("status_id", statusID))
+			engagementCreated = false
+		} else {
+			s.logger.Error("failed to record reblog engagement",
+				zap.String("actor_url", actorURL),
+				zap.String("status_id", statusID),
+				zap.Error(err))
+			return nil, ErrReblogStatus
+		}
+	}
+
+	if !engagementCreated {
+		// Nothing new was written; treat as idempotent success
+		return announce, nil
+	}
+
+	return announce, nil
 }
 
 func (s *Service) deleteReblog(ctx context.Context, actorURL, objectURL, _ string) error {
-	err := s.socialRepo.DeleteAnnounce(ctx, actorURL, objectURL)
-	if err != nil {
+	if err := s.socialRepo.DeleteAnnounce(ctx, actorURL, objectURL); err != nil {
 		return ErrDeleteReblog
 	}
+
+	if s.noteRepo == nil {
+		s.logger.Warn("status repository unavailable while removing reblog engagement",
+			zap.String("actor_url", actorURL),
+			zap.String("object_url", objectURL))
+		return nil
+	}
+
+	statusID := extractStatusIDFromObjectURL(objectURL)
+
+	if err := common.ValidateRequiredParam("reblog_status_id", statusID); err != nil {
+		s.logger.Error("failed to resolve status id from object url for unreblog",
+			zap.String("object_url", objectURL),
+			zap.Error(err))
+		return ErrDeleteReblog
+	}
+
+	if err := s.noteRepo.UnreblogStatus(ctx, actorURL, statusID); err != nil {
+		s.logger.Error("failed to remove reblog engagement",
+			zap.String("actor_url", actorURL),
+			zap.String("status_id", statusID),
+			zap.Error(err))
+		return ErrDeleteReblog
+	}
+
 	return nil
 }
 

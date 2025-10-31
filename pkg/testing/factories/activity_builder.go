@@ -31,7 +31,7 @@ func NewActivityBuilder(domain string) *ActivityBuilder {
 func (b *ActivityBuilder) Reset() *ActivityBuilder {
 	b.activity = &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: []string{"https://www.w3.org/ns/activitystreams"},
+			Context: activitypub.Context,
 		},
 	}
 	return b
@@ -106,7 +106,7 @@ func (b *ActivityBuilder) Build() *activitypub.Activity {
 	}
 
 	if b.activity.Context == nil {
-		b.activity.Context = []string{"https://www.w3.org/ns/activitystreams"}
+		b.activity.Context = activitypub.Context
 	}
 
 	// Create a copy to return

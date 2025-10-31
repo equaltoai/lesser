@@ -29,6 +29,11 @@ type TrusteeConfig struct {
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
+// TableName returns the DynamoDB table backing TrusteeConfig.
+func (TrusteeConfig) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the partition and sort keys
 func (t *TrusteeConfig) UpdateKeys() {
 	t.PK = TrusteeConfigPK

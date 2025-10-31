@@ -53,6 +53,11 @@ func (q *QueryCacheEntry) IsExpired() bool {
 	return time.Now().After(q.ExpiresAt)
 }
 
+// TableName returns the DynamoDB table backing QueryCacheEntry.
+func (QueryCacheEntry) TableName() string {
+	return MainTableName
+}
+
 // BatchGetKeys represents batch get keys for instances
 type BatchGetKeys struct {
 	// Primary keys - using pattern: PK=BATCH#{batchType}, SK=KEY#{key}
@@ -90,4 +95,9 @@ func (b *BatchGetKeys) GetPK() string {
 // GetSK returns the sort key for BaseModel interface
 func (b *BatchGetKeys) GetSK() string {
 	return b.SK
+}
+
+// TableName returns the DynamoDB table backing BatchGetKeys.
+func (BatchGetKeys) TableName() string {
+	return MainTableName
 }

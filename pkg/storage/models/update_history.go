@@ -32,3 +32,8 @@ func (h *UpdateHistory) UpdateKeys() {
 		h.SK = fmt.Sprintf("VERSION#%05d", h.Version)
 	}
 }
+
+// TableName returns the DynamoDB table backing UpdateHistory.
+func (UpdateHistory) TableName() string {
+	return MainTableName
+}

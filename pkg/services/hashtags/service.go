@@ -3,6 +3,7 @@ package hashtags
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -98,54 +99,131 @@ func (s *Service) GetHashtag(ctx context.Context, name, viewerID string) (*Hasht
 		return nil, ErrHashtagNameRequired
 	}
 
+	info, err := s.getHashtagInfoWithFallback(ctx, tag)
+	if err != nil {
+		return nil, err
+	}
+
+	stats := s.loadHashtagStats(ctx, tag)
+	viewerState := s.getViewerHashtagState(ctx, viewerID, tag)
+
+	result := s.buildHashtagResult(tag, info, stats, viewerState)
+	result.Related = s.relatedHashtags(ctx, tag, 5)
+
+	return result, nil
+}
+
+// getHashtagInfoWithFallback retrieves hashtag info, handling not found gracefully
+func (s *Service) getHashtagInfoWithFallback(ctx context.Context, tag string) (*storage.Hashtag, error) {
 	info, err := s.hashtagRepo.GetHashtagInfo(ctx, tag)
 	if err != nil {
+		// If hashtag doesn't exist, return empty hashtag info instead of error
+		// This allows clients to query hashtags that haven't been created yet
+		if errors.Is(err, storage.ErrNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			s.logger.Debug("hashtag not found, returning empty info",
+				zap.String("hashtag", tag))
+			return nil, nil // Will create empty hashtag result below
+		}
 		s.logger.Error("failed to fetch hashtag info",
 			zap.String("hashtag", tag),
 			zap.Error(err))
 		return nil, ErrGetHashtag
 	}
+	return info, nil
+}
 
-	stats := s.loadHashtagStats(ctx, tag)
+// viewerHashtagState holds viewer-specific hashtag state
+type viewerHashtagState struct {
+	isFollowing bool
+	settings    *storage.HashtagNotificationSettings
+	isMuted     bool
+}
 
-	isFollowing := false
-	var settings *storage.HashtagNotificationSettings
-	isMuted := false
-
-	if viewerID != "" {
-		isFollowing, err = s.hashtagRepo.IsFollowingHashtag(ctx, viewerID, tag)
-		if err != nil {
-			s.logger.Error("failed to check follow relationship",
-				zap.String("viewer", viewerID),
-				zap.String("hashtag", tag),
-				zap.Error(err))
-			return nil, ErrGetHashtag
-		}
-
-		settings, err = s.hashtagRepo.GetHashtagNotificationSettings(ctx, viewerID, tag)
-		if err != nil {
-			s.logger.Error("failed to load hashtag notification settings",
-				zap.String("viewer", viewerID),
-				zap.String("hashtag", tag),
-				zap.Error(err))
-			return nil, ErrGetHashtag
-		}
-
-		isMuted, err = s.hashtagRepo.IsHashtagMuted(ctx, viewerID, tag)
-		if err != nil {
-			s.logger.Error("failed to check hashtag mute status",
-				zap.String("viewer", viewerID),
-				zap.String("hashtag", tag),
-				zap.Error(err))
-			return nil, ErrGetHashtag
+// getViewerHashtagState retrieves viewer-specific state for a hashtag
+func (s *Service) getViewerHashtagState(ctx context.Context, viewerID, tag string) *viewerHashtagState {
+	if viewerID == "" {
+		return &viewerHashtagState{
+			isFollowing: false,
+			settings:    nil,
+			isMuted:     false,
 		}
 	}
 
+	isFollowing := s.checkFollowingWithFallback(ctx, viewerID, tag)
+	settings := s.getNotificationSettingsWithFallback(ctx, viewerID, tag)
+	isMuted := s.checkMutedWithFallback(ctx, viewerID, tag)
+
+	return &viewerHashtagState{
+		isFollowing: isFollowing,
+		settings:    settings,
+		isMuted:     isMuted,
+	}
+}
+
+// checkFollowingWithFallback checks if viewer is following hashtag, handling not found gracefully
+func (s *Service) checkFollowingWithFallback(ctx context.Context, viewerID, tag string) bool {
+	isFollowing, err := s.hashtagRepo.IsFollowingHashtag(ctx, viewerID, tag)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			s.logger.Debug("hashtag follow check failed (hashtag not found), defaulting to false",
+				zap.String("viewer", viewerID),
+				zap.String("hashtag", tag))
+			return false
+		}
+		s.logger.Error("failed to check follow relationship",
+			zap.String("viewer", viewerID),
+			zap.String("hashtag", tag),
+			zap.Error(err))
+		return false
+	}
+	return isFollowing
+}
+
+// getNotificationSettingsWithFallback retrieves notification settings, handling not found gracefully
+func (s *Service) getNotificationSettingsWithFallback(ctx context.Context, viewerID, tag string) *storage.HashtagNotificationSettings {
+	settings, err := s.hashtagRepo.GetHashtagNotificationSettings(ctx, viewerID, tag)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			s.logger.Debug("hashtag notification settings not found, defaulting to nil",
+				zap.String("viewer", viewerID),
+				zap.String("hashtag", tag))
+			return nil
+		}
+		s.logger.Error("failed to load hashtag notification settings",
+			zap.String("viewer", viewerID),
+			zap.String("hashtag", tag),
+			zap.Error(err))
+		return nil
+	}
+	return settings
+}
+
+// checkMutedWithFallback checks if hashtag is muted, handling not found gracefully
+func (s *Service) checkMutedWithFallback(ctx context.Context, viewerID, tag string) bool {
+	isMuted, err := s.hashtagRepo.IsHashtagMuted(ctx, viewerID, tag)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			s.logger.Debug("hashtag mute check failed (hashtag not found), defaulting to false",
+				zap.String("viewer", viewerID),
+				zap.String("hashtag", tag))
+			return false
+		}
+		s.logger.Error("failed to check hashtag mute status",
+			zap.String("viewer", viewerID),
+			zap.String("hashtag", tag),
+			zap.Error(err))
+		return false
+	}
+	return isMuted
+}
+
+// buildHashtagResult constructs the final Hashtag result from info, stats, and viewer state
+func (s *Service) buildHashtagResult(tag string, info *storage.Hashtag, stats *storage.HashtagStats, viewerState *viewerHashtagState) *Hashtag {
 	result := &Hashtag{
 		Name:                 tag,
-		IsFollowing:          isFollowing,
-		IsMuted:              isMuted,
-		NotificationSettings: settings,
+		IsFollowing:          viewerState.isFollowing,
+		IsMuted:              viewerState.isMuted,
+		NotificationSettings: viewerState.settings,
 		Stats:                stats,
 	}
 
@@ -167,9 +245,7 @@ func (s *Service) GetHashtag(ctx context.Context, name, viewerID string) (*Hasht
 		result.TrendingScore = stats.TrendingScore
 	}
 
-	result.Related = s.relatedHashtags(ctx, tag, 5)
-
-	return result, nil
+	return result
 }
 
 // FollowHashtag creates a follow record, optionally updates notification settings, and emits streaming events.
@@ -301,65 +377,27 @@ func (s *Service) MuteHashtag(ctx context.Context, userID, hashtag string, until
 	return s.GetHashtag(ctx, tag, userID)
 }
 
-// GetHashtagActivity subscribes to the global event bus for hashtag-related events.
+// GetHashtagActivity subscribes to hashtag-related events via DynamoDB-backed streaming.
+// DEPRECATED: This method uses in-memory EventBus pattern that doesn't work on Lambda.
+// Clients should use GraphQL subscriptions (SubscribeToHashtagActivity) instead,
+// which properly persists subscriptions in DynamoDB and delivers via stream-router.
 func (s *Service) GetHashtagActivity(ctx context.Context, hashtags []string) (<-chan *ActivityEvent, error) {
 	cleaned := uniqueNormalizedHashtags(hashtags)
 	if len(cleaned) == 0 {
 		return nil, ErrHashtagNameRequired
 	}
 
-	eventBus := s.ensureEventBus()
-	if eventBus == nil {
-		return nil, ErrPublisherNotAvailable
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeStatus,
-			streaming.EventTypeHashtagUpdate,
-		},
-		Streams: buildHashtagStreams(cleaned),
-	}
+	// Return empty channel with deprecation warning
+	// This functionality is replaced by GraphQL subscriptions in the graph layer
+	s.logger.Warn("GetHashtagActivity called - this method is deprecated on Lambda, use GraphQL subscriptions instead",
+		zap.Strings("hashtags", cleaned))
 
-	subID := fmt.Sprintf("hashtag_service_%d", time.Now().UnixNano())
-	subscriber, err := eventBus.Subscribe(subID, filter, streaming.DefaultBufferSize)
-	if err != nil {
-		s.logger.Error("failed to subscribe to hashtag activity",
-			zap.Strings("hashtags", cleaned),
-			zap.Error(err))
-		return nil, ErrPublisherNotAvailable
-	}
-
-	out := make(chan *ActivityEvent, streaming.DefaultBufferSize)
-
-	go func() {
-		defer close(out)
-		defer func() {
-			if err := eventBus.Unsubscribe(subID); err != nil {
-				s.logger.Warn("failed to unsubscribe hashtag activity listener",
-					zap.String("subscriber_id", subID),
-					zap.Error(err))
-			}
-		}()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-subscriber.Quit:
-				return
-			case evt, ok := <-subscriber.Channel:
-				if !ok || evt == nil {
-					return
-				}
-				select {
-				case out <- wrapActivityEvent(evt):
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
+	out := make(chan *ActivityEvent, 100)
+	close(out) // Close immediately to prevent blocking
 
 	return out, nil
 }
@@ -474,78 +512,36 @@ func (s *Service) publishUserEvent(ctx context.Context, eventType, userID, hasht
 	}
 }
 
-// publishInternalHashtagEvent sends a lightweight update to the internal event bus.
+// publishInternalHashtagEvent sends a hashtag update event via the queue publisher to DynamoDB.
+// The event will be picked up by stream-router and delivered to WebSocket subscribers.
 func (s *Service) publishInternalHashtagEvent(action streaming.EventAction, hashtag string) {
-	eventBus := s.ensureEventBus()
-	if eventBus == nil {
+	if s.publisher == nil {
+		s.logger.Debug("publisher not available, skipping hashtag event",
+			zap.String("hashtag", hashtag))
 		return
 	}
 
-	event := &streaming.InternalEvent{
-		ID:        fmt.Sprintf("hashtag:%s:%d", hashtag, time.Now().UnixNano()),
-		Type:      streaming.EventTypeHashtagUpdate,
-		Action:    action,
-		Timestamp: time.Now(),
-		Streams:   []string{streaming.HashtagStreamName(hashtag)},
-		Data: &streaming.HashtagEventPayload{
-			Hashtag:   hashtag,
-			Count:     0,
-			Period:    "realtime",
-			UpdatedAt: time.Now(),
+	// Build event payload for queue-based delivery
+	event := &streaming.Event{
+		Type:   string(streaming.EventTypeHashtagUpdate),
+		Stream: streaming.HashtagStreamName(hashtag),
+		Payload: map[string]interface{}{
+			"hashtag":    hashtag,
+			"action":     string(action),
+			"count":      0,
+			"period":     "realtime",
+			"updated_at": time.Now().Format(time.RFC3339),
 		},
+		Timestamp: time.Now(),
 	}
 
-	if err := streaming.PublishGlobal(event); err != nil {
-		s.logger.Debug("failed to publish internal hashtag event",
+	// Publish to the hashtag stream - stream-router will fan out to subscribers
+	if err := s.publisher.PublishToStream(context.Background(), event.Stream, event); err != nil {
+		s.logger.Debug("failed to publish hashtag event",
 			zap.String("hashtag", hashtag),
+			zap.String("action", string(action)),
 			zap.Error(err))
 	}
-}
-
-// ensureEventBus lazily starts the global event bus if required and returns it.
-func (s *Service) ensureEventBus() *streaming.EventBus {
-	eventBus := streaming.GetGlobalEventBus(s.logger)
-	if eventBus == nil {
-		return nil
-	}
-
-	if eventBus.IsRunning() {
-		return eventBus
-	}
-
-	if err := eventBus.Start(context.Background()); err != nil {
-		s.logger.Warn("failed to start global event bus", zap.Error(err))
-		return nil
-	}
-
-	return eventBus
-}
-
-// wrapActivityEvent converts a raw internal event to an ActivityEvent understood by service consumers.
-func wrapActivityEvent(event *streaming.InternalEvent) *ActivityEvent {
-	if event == nil {
-		return nil
-	}
-
-	result := &ActivityEvent{
-		Event:     event,
-		Timestamp: event.Timestamp,
-	}
-
-	switch payload := event.Data.(type) {
-	case *streaming.HashtagEventPayload:
-		result.Hashtag = payload.Hashtag
-		result.Timestamp = payload.UpdatedAt
-	case *streaming.StatusEventPayload:
-		if len(payload.Hashtags) > 0 {
-			result.Hashtag = payload.Hashtags[0]
-		}
-		result.StatusID = payload.StatusID
-		result.ActorID = payload.AuthorID
-		result.Timestamp = payload.CreatedAt
-	}
-
-	return result
 }
 
 // cloneNotificationSettings creates a safe copy with enforced user/hashtag identity.
@@ -619,14 +615,4 @@ func uniqueNormalizedHashtags(inputs []string) []string {
 	}
 
 	return order
-}
-
-// buildHashtagStreams creates stream names for the given hashtags plus the global hashtag stream.
-func buildHashtagStreams(hashtags []string) []string {
-	streams := make([]string, 0, len(hashtags)+1)
-	streams = append(streams, "hashtags:global")
-	for _, tag := range hashtags {
-		streams = append(streams, streaming.HashtagStreamName(tag))
-	}
-	return streams
 }

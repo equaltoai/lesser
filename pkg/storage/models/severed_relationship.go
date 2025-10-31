@@ -67,6 +67,11 @@ type SeveredRelationship struct {
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
 }
 
+// TableName returns the DynamoDB table backing SeveredRelationship.
+func (SeveredRelationship) TableName() string {
+	return MainTableName
+}
+
 // AffectedRelationship represents a single affected follow/follower relationship
 type AffectedRelationship struct {
 	// Keys
@@ -91,6 +96,11 @@ type AffectedRelationship struct {
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
 }
 
+// TableName returns the DynamoDB table backing AffectedRelationship.
+func (AffectedRelationship) TableName() string {
+	return MainTableName
+}
+
 // SeveranceReconnectionAttempt represents an attempt to restore severed relationships
 type SeveranceReconnectionAttempt struct {
 	// Keys
@@ -113,6 +123,11 @@ type SeveranceReconnectionAttempt struct {
 
 	// TTL for auto-cleanup (90 days)
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+}
+
+// TableName returns the DynamoDB table backing SeveranceReconnectionAttempt.
+func (SeveranceReconnectionAttempt) TableName() string {
+	return MainTableName
 }
 
 // NewSeveredRelationship creates a new severed relationship record

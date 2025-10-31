@@ -12,8 +12,8 @@ import (
 // Notification represents a user notification
 type Notification struct {
 	// Primary key - using user ID as partition key with notification sort key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "user#{userID}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "notif#{timestamp}#{notificationID}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "user#{userID}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "notif#{timestamp}#{notificationID}"
 
 	// GSI1 - Notification type queries
 	GSI1PK string `dynamorm:"index:type-index,pk" json:"gsi1_pk"` // Format: "NOTIF_TYPE#{type}"
@@ -74,6 +74,11 @@ type Notification struct {
 // NotificationBuilder helps create notifications with proper defaults
 type NotificationBuilder struct {
 	notification *Notification
+}
+
+// TableName returns the DynamoDB table backing NotificationBuilder.
+func (NotificationBuilder) TableName() string {
+	return MainTableName
 }
 
 // TableName returns the DynamoDB table name for the Notification model
@@ -368,6 +373,20 @@ func NewFollowRequestNotification(userID, requesterID string) *Notification {
 
 // UpdateKeys updates the GSI keys for this notification (required by DynamORM)
 func (n *Notification) UpdateKeys() error {
+	// Set primary keys
+	if err := common.ValidateRequiredParam("n.UserID", n.UserID); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("n.ID", n.ID); err != nil {
+		return err
+	}
+
+	// Set up primary key
+	n.PK = "USER#" + n.UserID
+	timestamp := n.CreatedAt.Format("20060102150405")
+	n.SK = fmt.Sprintf("notif#%s#%s", timestamp, n.ID)
+
+	// Set GSI keys
 	n.setupGSIKeys()
 	return nil
 }

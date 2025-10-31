@@ -37,21 +37,12 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 		return common.RespondUnprocessableEntity(ctx, err.Error())
 	}
 
-	// Validate password strength if provided
+	// NOTE: Password-based authentication is disabled. This system uses WebAuthn/crypto wallet authentication only.
+	// If a password is provided in the request, it will be ignored to prevent password-based access.
 	if req.Password != "" {
-		// Validate password strength
-		if err := auth.ValidatePassword(req.Password, req.Username); err != nil {
-			return common.RespondUnprocessableEntity(ctx, err.Error())
-		}
-
-		// Check password strength
-		strength := auth.PasswordStrength(req.Password)
-		if strength < 3 {
-			hints := auth.GeneratePasswordHint(req.Password)
-			return common.RespondUnprocessableEntity(ctx, fmt.Sprintf("Password is too weak (%s). Suggestions: %s",
-				auth.PasswordStrengthLabel(strength),
-				strings.Join(hints, ", ")))
-		}
+		h.logger.Warn("password provided in registration request but passwords are disabled",
+			zap.String("username", req.Username))
+		req.Password = "" // Clear password to enforce passwordless authentication
 	}
 
 	// Use Accounts service to register the account
@@ -88,18 +79,35 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 
 // HandleVerifyCredentialsLift returns the current user's information
 func (h *Handler) HandleVerifyCredentialsLift(ctx *lift.Context) error {
+	h.logger.Info("handle verify_credentials: start")
+
 	// Authenticate user
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
+		h.logger.Warn("handle verify_credentials: authentication failed", zap.Error(err))
 		return err
+	}
+
+	h.logger.Info("handle verify_credentials: authentication succeeded",
+		zap.String("username", claims.Username))
+
+	// Check if registry is available
+	if h.registry == nil {
+		h.logger.Error("handle verify_credentials: service registry not initialized")
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Call Accounts service
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
-		h.logger.Error("failed to get account", zap.Error(err))
+		h.logger.Error("handle verify_credentials: failed to get account",
+			zap.String("username", claims.Username),
+			zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
+
+	h.logger.Info("handle verify_credentials: account retrieved",
+		zap.String("username", claims.Username))
 
 	return h.respondOK(ctx, account)
 }

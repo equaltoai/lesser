@@ -105,12 +105,17 @@ type DimensionStats struct {
 	Max     float64 `json:"max"`
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing DimensionStats.
+func (DimensionStats) TableName() string {
+	return MainTableName
+}
+
+// TableName returns the DynamoDB table backing Metrics.
 func (Metrics) TableName() string {
 	return MainTableName
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing AggregatedMetrics.
 func (AggregatedMetrics) TableName() string {
 	return MainTableName
 }
@@ -379,6 +384,11 @@ type MetricsBuilder struct {
 	metrics *Metrics
 }
 
+// TableName returns the DynamoDB table backing MetricsBuilder.
+func (MetricsBuilder) TableName() string {
+	return MainTableName
+}
+
 // NewMetricsBuilder creates a new metrics builder
 func NewMetricsBuilder() *MetricsBuilder {
 	return &MetricsBuilder{
@@ -514,7 +524,7 @@ type MetricRecord struct {
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"` // Unix timestamp
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing MetricRecord.
 func (MetricRecord) TableName() string {
 	return MainTableName
 }
@@ -686,6 +696,11 @@ func (m *MetricRecord) AddDimension(key, value string) {
 // MetricRecordBuilder helps create metric records
 type MetricRecordBuilder struct {
 	record *MetricRecord
+}
+
+// TableName returns the DynamoDB table backing MetricRecordBuilder.
+func (MetricRecordBuilder) TableName() string {
+	return MainTableName
 }
 
 // NewMetricRecordBuilder creates a new metric record builder

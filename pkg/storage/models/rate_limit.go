@@ -3,8 +3,6 @@ package models
 import (
 	"fmt"
 	"time"
-
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // LoginAttempt represents a login attempt record for rate limiting
@@ -22,11 +20,16 @@ type LoginAttempt struct {
 
 // UpdateKeys updates the DynamoDB keys for the LoginAttempt model
 func (la *LoginAttempt) UpdateKeys() error {
-	// PK is set when creating the record (RATELIMIT#{identifier})
-	// SK is set when creating the record (timestamp in RFC3339Nano)
-	if err := common.ValidateRequiredParam("type", la.Type); err != nil {
-		la.Type = "LoginAttempt"
+	// Set type
+	la.Type = "LoginAttempt"
+
+	// Set SK from Timestamp if available and SK not set
+	if la.SK == "" && !la.Timestamp.IsZero() {
+		la.SK = la.Timestamp.Format(time.RFC3339Nano)
 	}
+
+	// Note: PK must be set externally with the identifier (format: RATELIMIT#{identifier})
+	// SK is generated from Timestamp if available
 	return nil
 }
 
@@ -38,6 +41,11 @@ func (la *LoginAttempt) GetPK() string {
 // GetSK returns the sort key - required for BaseModel interface
 func (la *LoginAttempt) GetSK() string {
 	return la.SK
+}
+
+// TableName returns the DynamoDB table name for login attempts
+func (LoginAttempt) TableName() string {
+	return MainTableName
 }
 
 // NewLoginAttempt creates a new LoginAttempt record
@@ -67,10 +75,15 @@ type RateLimitLockout struct {
 
 // UpdateKeys updates the DynamoDB keys for the RateLimitLockout model
 func (rll *RateLimitLockout) UpdateKeys() error {
-	// PK and SK are set when creating the record
-	if err := common.ValidateRequiredParam("type", rll.Type); err != nil {
-		rll.Type = "RateLimitLockout"
+	// Set type
+	rll.Type = "RateLimitLockout"
+
+	// Set SK if not already set
+	if rll.SK == "" {
+		rll.SK = "LOCKOUT"
 	}
+
+	// Note: PK must be set externally with the identifier (format: RATELIMIT#{identifier})
 	return nil
 }
 
@@ -82,6 +95,11 @@ func (rll *RateLimitLockout) GetPK() string {
 // GetSK returns the sort key - required for BaseModel interface
 func (rll *RateLimitLockout) GetSK() string {
 	return rll.SK
+}
+
+// TableName returns the DynamoDB table name for rate limit lockouts
+func (RateLimitLockout) TableName() string {
+	return MainTableName
 }
 
 // NewRateLimitLockout creates a new RateLimitLockout record
@@ -121,10 +139,17 @@ type APIRateLimit struct {
 
 // UpdateKeys updates the DynamoDB keys for the APIRateLimit model
 func (arl *APIRateLimit) UpdateKeys() error {
-	// PK and SK are set when creating/updating the record
-	if err := common.ValidateRequiredParam("type", arl.Type); err != nil {
+	// Set type
+	if arl.Type == "" {
 		arl.Type = "APIRateLimit"
 	}
+
+	// Set SK from Window if available and SK not set
+	if arl.SK == "" && !arl.Window.IsZero() {
+		arl.SK = fmt.Sprintf("WINDOW#%s", arl.Window.Format(time.RFC3339))
+	}
+
+	// Note: PK must be set externally with the identifier (format: RATELIMIT#{key})
 	return nil
 }
 
@@ -136,6 +161,11 @@ func (arl *APIRateLimit) GetPK() string {
 // GetSK returns the sort key - required for BaseModel interface
 func (arl *APIRateLimit) GetSK() string {
 	return arl.SK
+}
+
+// TableName returns the DynamoDB table name for API rate limits
+func (APIRateLimit) TableName() string {
+	return MainTableName
 }
 
 // NewAPIRateLimit creates a new APIRateLimit record
@@ -195,9 +225,15 @@ type RateLimitViolation struct {
 
 // UpdateKeys updates the DynamoDB keys for the RateLimitViolation model
 func (rlv *RateLimitViolation) UpdateKeys() error {
-	if err := common.ValidateRequiredParam("type", rlv.Type); err != nil {
-		rlv.Type = "RateLimitViolation"
+	// Set type
+	rlv.Type = "RateLimitViolation"
+
+	// Set SK from Timestamp if available and SK not set
+	if rlv.SK == "" && !rlv.Timestamp.IsZero() {
+		rlv.SK = rlv.Timestamp.Format(time.RFC3339Nano)
 	}
+
+	// Note: PK must be set externally with the identifier (format: RATELIMIT_VIOLATION#{identifier})
 	return nil
 }
 
@@ -209,6 +245,11 @@ func (rlv *RateLimitViolation) GetPK() string {
 // GetSK returns the sort key - required for BaseModel interface
 func (rlv *RateLimitViolation) GetSK() string {
 	return rlv.SK
+}
+
+// TableName returns the DynamoDB table name for rate limit violations
+func (RateLimitViolation) TableName() string {
+	return MainTableName
 }
 
 // NewRateLimitViolation creates a new rate limit violation record

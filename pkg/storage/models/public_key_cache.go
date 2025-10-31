@@ -62,9 +62,9 @@ func (p *PublicKeyCache) GetSK() string {
 	return p.SK
 }
 
-// TableName returns the DynamoDB table name for this model
-func (p *PublicKeyCache) TableName() string {
-	return "LiftTable"
+// TableName returns the DynamoDB table backing PublicKeyCache.
+func (PublicKeyCache) TableName() string {
+	return MainTableName
 }
 
 // IsValid checks if the cache entry is still valid

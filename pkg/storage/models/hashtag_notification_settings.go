@@ -16,6 +16,11 @@ type NotificationFilter struct {
 	ExcludeTypes []string `json:"exclude_types,omitempty"`
 }
 
+// TableName returns the DynamoDB table backing NotificationFilter.
+func (NotificationFilter) TableName() string {
+	return MainTableName
+}
+
 // HashtagNotificationSettings stores per-hashtag notification preferences for a user.
 type HashtagNotificationSettings struct {
 	PK         string               `dynamorm:"pk" json:"pk"` // user#{userID}
@@ -40,9 +45,18 @@ func (h *HashtagNotificationSettings) UpdateKeysWithParams(userID, hashtag strin
 
 // UpdateKeys implements the BaseModel interface.
 func (h *HashtagNotificationSettings) UpdateKeys() error {
-	if h.UserID != "" && h.Hashtag != "" {
-		h.UpdateKeysWithParams(h.UserID, h.Hashtag)
+	// Validate required fields
+	if h.UserID == "" {
+		return fmt.Errorf("UserID is required")
 	}
+	if h.Hashtag == "" {
+		return fmt.Errorf("Hashtag is required")
+	}
+
+	// Set primary keys
+	h.PK = fmt.Sprintf("user#%s", h.UserID)
+	h.SK = fmt.Sprintf("settings#%s", h.Hashtag)
+
 	return nil
 }
 
@@ -54,4 +68,9 @@ func (h *HashtagNotificationSettings) GetPK() string {
 // GetSK returns the sort key for the BaseModel interface.
 func (h *HashtagNotificationSettings) GetSK() string {
 	return h.SK
+}
+
+// TableName returns the DynamoDB table backing HashtagNotificationSettings.
+func (HashtagNotificationSettings) TableName() string {
+	return MainTableName
 }

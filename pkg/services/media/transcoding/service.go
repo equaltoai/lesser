@@ -211,7 +211,7 @@ func (s *Service) GetJobStatus(ctx context.Context, mediaConvertJobID string) (*
 	status := &JobStatus{
 		MediaConvertJobID: aws.ToString(job.Id),
 		Status:            string(job.Status),
-		PercentComplete:   int(aws.ToInt32(&job.JobPercentComplete)),
+		PercentComplete:   int(aws.ToInt32(job.JobPercentComplete)),
 		CreatedAt:         aws.ToTime(job.CreatedAt),
 	}
 
@@ -316,8 +316,8 @@ func (s *Service) buildHLSOutputGroup(outputPrefix string, qualityLevels []strin
 			Type: types.OutputGroupTypeHlsGroupSettings,
 			HlsGroupSettings: &types.HlsGroupSettings{
 				Destination:            aws.String(destination),
-				SegmentLength:          6,
-				MinSegmentLength:       0,
+				SegmentLength:          aws.Int32(6),
+				MinSegmentLength:       aws.Int32(0),
 				ManifestDurationFormat: types.HlsManifestDurationFormatInteger,
 				OutputSelection:        types.HlsOutputSelectionManifestsAndSegments,
 				SegmentControl:         types.HlsSegmentControlSegmentedFiles,
@@ -354,9 +354,9 @@ func (s *Service) buildHLSOutput(quality string) types.Output {
 				CodecSettings: &types.AudioCodecSettings{
 					Codec: types.AudioCodecAac,
 					AacSettings: &types.AacSettings{
-						Bitrate:    128000,
+						Bitrate:    aws.Int32(128000),
 						CodingMode: types.AacCodingModeCodingMode20,
-						SampleRate: 48000,
+						SampleRate: aws.Int32(48000),
 					},
 				},
 			},
@@ -380,8 +380,8 @@ func (s *Service) buildDASHOutputGroup(outputPrefix string, qualityLevels []stri
 			Type: types.OutputGroupTypeDashIsoGroupSettings,
 			DashIsoGroupSettings: &types.DashIsoGroupSettings{
 				Destination:    aws.String(destination),
-				SegmentLength:  6,
-				FragmentLength: 2,
+				SegmentLength:  aws.Int32(6),
+				FragmentLength: aws.Int32(2),
 				SegmentControl: types.DashIsoSegmentControlSegmentedFiles,
 			},
 		},
@@ -414,8 +414,8 @@ func (s *Service) buildDASHOutput(quality string) types.Output {
 				CodecSettings: &types.AudioCodecSettings{
 					Codec: types.AudioCodecAac,
 					AacSettings: &types.AacSettings{
-						Bitrate:    128000,
-						SampleRate: 48000,
+						Bitrate:    aws.Int32(128000),
+						SampleRate: aws.Int32(48000),
 					},
 				},
 			},
@@ -444,14 +444,14 @@ func (s *Service) buildThumbnailOutputGroup(outputPrefix string, count int) type
 					CodecSettings: &types.VideoCodecSettings{
 						Codec: types.VideoCodecFrameCapture,
 						FrameCaptureSettings: &types.FrameCaptureSettings{
-							FramerateNumerator:   1,
-							FramerateDenominator: 5, // 1 frame every 5 seconds
+							FramerateNumerator:   aws.Int32(1),
+							FramerateDenominator: aws.Int32(5), // 1 frame every 5 seconds
 							MaxCaptures:          safeInt32(count),
-							Quality:              80,
+							Quality:              aws.Int32(80),
 						},
 					},
-					Width:  1280,
-					Height: 720,
+					Width:  safeInt32(1280),
+					Height: safeInt32(720),
 				},
 			},
 		},
@@ -545,15 +545,16 @@ func (s *Service) estimateCost(req *TranscodeRequest) float64 {
 	return totalCost
 }
 
-// safeInt32 safely converts int to int32 with bounds checking
-func safeInt32(i int) int32 {
+// safeInt32 safely converts int to *int32 with bounds checking
+func safeInt32(i int) *int32 {
 	if i > 2147483647 {
-		return 2147483647
+		i = 2147483647
 	}
 	if i < -2147483648 {
-		return -2147483648
+		i = -2147483648
 	}
-	return int32(i)
+	val := int32(i) //nolint:gosec
+	return aws.Int32(val)
 }
 
 // estimateDuration estimates the transcoding duration
@@ -576,8 +577,8 @@ func (s *Service) parseOutputs(outputGroupDetails []types.OutputGroupDetail) []O
 			}
 
 			info := OutputInfo{
-				Width:  int(detail.VideoDetails.WidthInPx),
-				Height: int(detail.VideoDetails.HeightInPx),
+				Width:  int(aws.ToInt32(detail.VideoDetails.WidthInPx)),
+				Height: int(aws.ToInt32(detail.VideoDetails.HeightInPx)),
 			}
 
 			// Try to parse output info from JSON (if available)

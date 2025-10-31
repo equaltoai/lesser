@@ -3,9 +3,11 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -88,6 +90,12 @@ func (r *TrustRepository) CreateTrustRelationship(ctx context.Context, relations
 		TTL:        relationship.TTL,
 	}
 
+	// Update keys (sets PK, SK, GSI keys, and Type field)
+	if err := model.UpdateKeys(); err != nil {
+		r.logger.Error("failed to update trust relationship keys", zap.Error(err))
+		return err
+	}
+
 	// Use enhanced validation and creation
 	if err := r.ValidateAndCreate(ctx, model); err != nil {
 		r.logger.Error("failed to create trust relationship", zap.Error(err),
@@ -124,9 +132,87 @@ func (r *TrustRepository) GetTrustRelationship(ctx context.Context, trusterID, t
 
 // UpdateTrustRelationship updates an existing trust relationship
 func (r *TrustRepository) UpdateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
-	// Just use CreateTrustRelationship as it's an upsert operation
-	relationship.Updated = time.Now()
-	return r.CreateTrustRelationship(ctx, relationship)
+	if relationship == nil {
+		return common.ValidationError{Field: "relationship", Message: "cannot be nil"}
+	}
+
+	r.logger.Debug("updating trust relationship",
+		zap.String("truster", relationship.TrusterID),
+		zap.String("trustee", relationship.TrusteeID),
+		zap.String("category", string(relationship.Category)))
+
+	model := &models.TrustRelationship{
+		ID:         relationship.ID,
+		TrusterID:  relationship.TrusterID,
+		TrusteeID:  relationship.TrusteeID,
+		Category:   relationship.Category,
+		Score:      relationship.Score,
+		Confidence: relationship.Confidence,
+		Evidence:   convertToModelEvidence(relationship.Evidence),
+		Created:    relationship.Created,
+		Updated:    time.Now(), // Always update the timestamp
+		TTL:        relationship.TTL,
+	}
+
+	// Update keys (sets PK, SK, GSI keys, and Type field)
+	if err := model.UpdateKeys(); err != nil {
+		r.logger.Error("failed to update trust relationship keys", zap.Error(err))
+		return err
+	}
+
+	// Check if relationship exists - if not, create it; if yes, update it
+	existingPK := fmt.Sprintf("TRUST#%s#%s", relationship.TrusterID, relationship.Category)
+	existingSK := fmt.Sprintf("TRUSTEE#%s", relationship.TrusteeID)
+	var existing models.TrustRelationship
+	err := r.Get(ctx, existingPK, existingSK, &existing)
+	
+	if err != nil {
+		// Item doesn't exist, create it
+		// Check for NotFound in multiple ways since error format can vary
+		if errors.IsNotFound(err) || 
+			strings.Contains(strings.ToLower(err.Error()), "not found") ||
+			strings.Contains(strings.ToLower(err.Error()), "item not found") {
+			r.logger.Debug("trust relationship does not exist, creating new one",
+				zap.String("truster", relationship.TrusterID),
+				zap.String("trustee", relationship.TrusteeID))
+			return r.CreateTrustRelationship(ctx, relationship)
+		}
+		r.logger.Error("failed to check if trust relationship exists",
+			zap.String("truster", relationship.TrusterID),
+			zap.String("trustee", relationship.TrusteeID),
+			zap.Error(err))
+		return err
+	}
+	
+	// Item exists, update it using UpdateBuilder
+	r.logger.Debug("trust relationship exists, updating",
+		zap.String("truster", relationship.TrusterID),
+		zap.String("trustee", relationship.TrusteeID))
+	
+	updateBuilder := r.db.WithContext(ctx).Model(&models.TrustRelationship{}).
+		Where("PK", "=", existingPK).
+		Where("SK", "=", existingSK).
+		UpdateBuilder()
+	
+	updateBuilder.Set("Score", model.Score)
+	updateBuilder.Set("Confidence", model.Confidence)
+	updateBuilder.Set("Evidence", model.Evidence)
+	updateBuilder.Set("Updated", model.Updated)
+	if model.TTL > 0 {
+		updateBuilder.Set("TTL", model.TTL)
+	}
+	
+	if err := updateBuilder.Execute(); err != nil {
+		r.logger.Error("failed to update trust relationship", zap.Error(err),
+			zap.String("truster", relationship.TrusterID),
+			zap.String("trustee", relationship.TrusteeID))
+		return err
+	}
+	
+	// Invalidate cached trust scores
+	r.invalidateTrustScoreCache(ctx, relationship.TrusteeID, string(relationship.Category))
+	
+	return nil
 }
 
 // DeleteTrustRelationship removes a trust relationship
@@ -186,9 +272,10 @@ func (r *TrustRepository) GetTrustRelationships(ctx context.Context, trusterID s
 // GetTrustedByRelationships retrieves all relationships where the actor is trusted
 func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
 	// Query using GSI1 for reverse lookup
+	// Note: DynamORM uses case-sensitive index names, check actual index name in CDK
 	var trustModels []*models.TrustRelationship
 	query := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
-		Index("gsi1-index").
+		Index("GSI1"). // Try GSI1 first (common DynamORM pattern)
 		Where("GSI1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
 
 	if cursor != "" {
@@ -197,17 +284,29 @@ func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trustee
 
 	// Get one more item than requested to determine if there are more results
 	err := query.Limit(limit + 1).Scan(&trustModels)
+	
+	// If GSI1 fails, try gsi1-index (lowercase)
+	if err != nil && strings.Contains(err.Error(), "index") {
+		r.logger.Debug("GSI1 query failed, trying gsi1-index", zap.Error(err))
+		query = r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
+			Index("gsi1-index").
+			Where("GSI1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
+		if cursor != "" {
+			query = query.Cursor(cursor)
+		}
+		err = query.Limit(limit + 1).Scan(&trustModels)
+	}
 
 	// Generate next cursor
 	var nextCursor string
+	if err != nil {
+		return nil, "", err
+	}
+	
 	if len(trustModels) > limit {
 		// We got more results than requested, so there are more pages
 		nextCursor = trustModels[limit-1].GSI1SK
 		trustModels = trustModels[:limit] // Trim to requested limit
-	}
-
-	if err != nil {
-		return nil, "", err
 	}
 
 	relationships := make([]*storage.TrustRelationship, 0)

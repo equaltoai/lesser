@@ -69,3 +69,8 @@ func (c *UserAppConsent) Revoke() {
 func (c *UserAppConsent) IsValid() bool {
 	return c.Active && c.RevokedAt == nil
 }
+
+// TableName returns the DynamoDB table backing UserAppConsent.
+func (UserAppConsent) TableName() string {
+	return MainTableName
+}

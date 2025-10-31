@@ -142,3 +142,8 @@ func (w *WalletIndex) UpdateKeys(walletType, address, username string) {
 	w.SK = fmt.Sprintf(KeyPatternUser, username)
 	w.Username = username
 }
+
+// TableName returns the DynamoDB table backing WalletIndex.
+func (WalletIndex) TableName() string {
+	return MainTableName
+}

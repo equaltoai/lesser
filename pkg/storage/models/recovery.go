@@ -18,6 +18,11 @@ type Trustee struct {
 	Confirmed bool      `json:"confirmed"`
 }
 
+// TableName returns the DynamoDB table backing Trustee.
+func (Trustee) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the primary and GSI keys based on the model's business fields
 func (t *Trustee) UpdateKeys() error {
 	t.PK = fmt.Sprintf(KeyPatternUser, t.Username)
@@ -59,6 +64,11 @@ type RecoveryRequest struct {
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
 }
 
+// TableName returns the DynamoDB table backing RecoveryRequest.
+func (RecoveryRequest) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the primary and GSI keys based on the model's business fields
 func (r *RecoveryRequest) UpdateKeys() error {
 	r.PK = fmt.Sprintf("RECOVERY#%s", r.ID)
@@ -95,6 +105,11 @@ type RecoveryCode struct {
 	Position  int        `json:"position"` // Position in the list (0-7 typically)
 }
 
+// TableName returns the DynamoDB table backing RecoveryCode.
+func (RecoveryCode) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the primary and GSI keys based on the model's business fields
 func (c *RecoveryCode) UpdateKeys() error {
 	c.PK = fmt.Sprintf(KeyPatternUser, c.Username)
@@ -124,6 +139,11 @@ type RecoveryToken struct {
 
 	// TTL for automatic cleanup (24 hours)
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+}
+
+// TableName returns the DynamoDB table backing RecoveryToken.
+func (RecoveryToken) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the primary keys and TTL based on the model's business fields

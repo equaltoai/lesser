@@ -111,6 +111,7 @@ func (m *MockAnalytics) Quote() *repositories.QuoteRepository                   
 func (m *MockAnalytics) MediaAnalytics() *repositories.MediaAnalyticsRepository           { return nil }
 func (m *MockAnalytics) MediaPopularity() *repositories.MediaPopularityRepository         { return nil }
 func (m *MockAnalytics) MediaSession() *repositories.MediaSessionRepository               { return nil }
+func (m *MockAnalytics) StreamingConnection() *repositories.StreamingConnectionRepository { return nil }
 func (m *MockAnalytics) GetDB() dynamormCore.DB                                           { return nil }
 func (m *MockAnalytics) GetTableName() string                                             { return "test-table" }
 func (m *MockAnalytics) GetLogger() *zap.Logger                                           { return zap.NewNop() }

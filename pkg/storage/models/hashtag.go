@@ -48,6 +48,11 @@ func (h *Hashtag) GetSK() string {
 	return h.SK
 }
 
+// TableName returns the DynamoDB table backing Hashtag.
+func (Hashtag) TableName() string {
+	return MainTableName
+}
+
 // HashtagUsage represents a single usage of a hashtag stored in DynamoDB using DynamORM
 type HashtagUsage struct {
 	// Primary key - hashtag usage
@@ -65,6 +70,11 @@ type HashtagUsage struct {
 
 	// Timestamps
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// TableName ensures hashtag usage records live in the shared single-table schema.
+func (HashtagUsage) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeysWithHashtag updates the keys when the usage data changes (parameterized version)

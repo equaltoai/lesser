@@ -14,25 +14,27 @@ import (
 )
 
 type LambdaFunctionsProps struct {
-	Environment          string
-	Table                awsdynamodb.Table
-	MediaBucket          awss3.Bucket
-	StreamingBucket      awss3.Bucket
-	TrainingBucket       awss3.Bucket
-	FederationQueue      awssqs.Queue
-	FederationDLQ        awssqs.Queue
-	PushQueue            awssqs.Queue
-	PrivateKey           awssecretsmanager.ISecret
-	CloudFrontPrivateKey awssecretsmanager.ISecret
-	MediaConvertRoleArn  *string
-	ModelMetadataTable   *string
-	Config               map[string]interface{}
+	Environment         string
+	Table               awsdynamodb.Table
+	RateLimitTable      awsdynamodb.Table
+	MediaBucket         awss3.Bucket
+	StreamingBucket     awss3.Bucket
+	TrainingBucket      awss3.Bucket
+	FederationQueue     awssqs.Queue
+	FederationDLQ       awssqs.Queue
+	PushQueue           awssqs.Queue
+	PrivateKey          awssecretsmanager.ISecret
+	JwtSecret           awssecretsmanager.ISecret
+	MediaConvertRoleArn *string
+	ModelMetadataTable  *string
+	Config              map[string]interface{}
 }
 
 type LambdaFunctions struct {
 	// API Functions
-	APIFunction     awslambda.Function
-	GraphQLFunction awslambda.Function
+	APIFunction       awslambda.Function
+	GraphQLFunction   awslambda.Function
+	GraphQLWSFunction awslambda.Function
 
 	// Federation Functions
 	InboxFunction     awslambda.Function
@@ -69,6 +71,7 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	security := CreateSecurityConstructs(stack, &SecurityProps{
 		Environment:     props.Environment,
 		Table:           props.Table,
+		RateLimitTable:  props.RateLimitTable,
 		MediaBucket:     props.MediaBucket,
 		FederationQueue: props.FederationQueue,
 		FederationDLQ:   props.FederationDLQ,
@@ -85,26 +88,36 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		return jsii.String(defaultVal)
 	}
 
+	domainValue := "lesser.host"
+	if domainPtr := getConfigString("domain", "lesser.host"); domainPtr != nil && *domainPtr != "" {
+		domainValue = *domainPtr
+	}
+
 	// Common environment variables matching Pulumi config (lines 620-641)
 	commonEnv := &map[string]*string{
-		"DYNAMO_TABLE_NAME":     props.Table.TableName(),
-		"S3_BUCKET_NAME":        props.MediaBucket.BucketName(),
-		"FEDERATION_QUEUE_URL":  props.FederationQueue.QueueUrl(),
-		"FEDERATION_DLQ_URL":    props.FederationDLQ.QueueUrl(),
-		"PUSH_QUEUE_URL":        props.PushQueue.QueueUrl(),
-		"DOMAIN":                jsii.String("REPLACE_WITH_DOMAIN"),                                          // Set by CDK context
-		"JWT_SECRET_ARN":        jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/jwt-secret-*"),        // Reference to auto-generated JWT secret in SharedStack
-		"ACTOR_PRIVATE_KEY_ARN": jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/actor-private-key-*"), // Reference to actor key in SharedStack
-		"KMS_KEY_ID":            jsii.String("alias/lesser-encryption"),                                      // SharedStack KMS key
-		"CDN_DOMAIN":            jsii.String("REPLACE_WITH_MEDIA_DOMAIN"),                                    // Set by CDK context
-		"INSTANCE_TITLE":        jsii.String("Lesser Instance"),
-		"INSTANCE_SHORT_DESC":   jsii.String("A personal ActivityPub server"),
-		"INSTANCE_DESCRIPTION":  jsii.String("A lightweight, serverless ActivityPub implementation"),
-		"INSTANCE_ADMIN_EMAIL":  jsii.String("REPLACE_WITH_ADMIN_EMAIL"), // Set by CDK context
-		"REGISTRATIONS_OPEN":    jsii.String("false"),
-		"APPROVAL_REQUIRED":     jsii.String("true"),
-		"INVITES_ENABLED":       jsii.String("false"),
-		"FEDERATION_ENABLED":    jsii.String("true"),
+		"ENVIRONMENT":                 jsii.String(props.Environment),
+		"DYNAMO_TABLE_NAME":           props.Table.TableName(),
+		"RATE_LIMIT_TABLE_NAME":       props.RateLimitTable.TableName(),
+		"LIMITED_TABLE_NAME":          props.RateLimitTable.TableName(), // For limited library
+		"CONNECTIONS_TABLE":           props.Table.TableName(),
+		"SUBSCRIPTIONS_TABLE":         props.Table.TableName(),
+		"S3_BUCKET_NAME":              props.MediaBucket.BucketName(),
+		"FEDERATION_QUEUE_URL":        props.FederationQueue.QueueUrl(),
+		"FEDERATION_DLQ_URL":          props.FederationDLQ.QueueUrl(),
+		"PUSH_QUEUE_URL":              props.PushQueue.QueueUrl(),
+		"PUSH_NOTIFICATION_QUEUE_URL": props.PushQueue.QueueUrl(),
+		"DOMAIN":                      jsii.String(domainValue),
+		"ACTOR_PRIVATE_KEY_ARN":       props.PrivateKey.SecretArn(),             // Reference to actor key in SharedStack
+		"KMS_KEY_ID":                  jsii.String("alias/lesser-encryption"),   // SharedStack KMS key
+		"CDN_DOMAIN":                  jsii.String("REPLACE_WITH_MEDIA_DOMAIN"), // Set by CDK context
+		"INSTANCE_TITLE":              jsii.String("Lesser Instance"),
+		"INSTANCE_SHORT_DESC":         jsii.String("A personal ActivityPub server"),
+		"INSTANCE_DESCRIPTION":        jsii.String("A lightweight, serverless ActivityPub implementation"),
+		"INSTANCE_ADMIN_EMAIL":        jsii.String("REPLACE_WITH_ADMIN_EMAIL"), // Set by CDK context
+		"REGISTRATIONS_OPEN":          jsii.String("false"),
+		"APPROVAL_REQUIRED":           jsii.String("true"),
+		"INVITES_ENABLED":             jsii.String("false"),
+		"FEDERATION_ENABLED":          jsii.String("true"),
 
 		// Media Streaming Configuration (Phase 2.2)
 		"MEDIA_SOURCE_BUCKET_NAME":    props.MediaBucket.BucketName(),
@@ -112,9 +125,12 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		"MEDIA_CONVERT_ENDPOINT":      getConfigString("mediaConvertEndpoint", ""),
 		"MEDIA_CONVERT_ROLE_ARN":      props.MediaConvertRoleArn,
 		"CLOUDFRONT_DOMAIN":           getConfigString("cloudfrontDomain", ""),
-		"CLOUDFRONT_PRIVATE_KEY_PATH": props.CloudFrontPrivateKey.SecretArn(),
+		"CLOUDFRONT_PRIVATE_KEY_PATH": getConfigString("cloudfrontPrivateKeySecret", ""),
 		"CLOUDFRONT_KEY_PAIR_ID":      getConfigString("cloudfrontKeyPairId", ""), // Set after manual upload
 		"MANIFEST_TTL_HOURS":          getConfigString("manifestTTLHours", "24"),
+		"VAPID_PUBLIC_KEY":            getConfigString("vapidPublicKey", ""),
+		"VAPID_SUBJECT":               getConfigString("vapidSubject", ""),
+		"VAPID_SECRET_ARN":            getConfigString("vapidSecretArn", ""),
 
 		// ML Moderation Configuration (Phase 2.3)
 		"MODERATION_TRAINING_BUCKET_NAME": props.TrainingBucket.BucketName(),
@@ -126,6 +142,20 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		"BEDROCK_GUARDRAIL_VERSION":       getConfigString("bedrockGuardrailVersion", "DRAFT"),
 		"MODERATION_ML_ENABLED":           getConfigString("moderationMLEnabled", "false"),
 		"MODERATION_ML_TENANTS":           getConfigString("moderationMLTenants", ""),
+	}
+
+	// WebSocket endpoints (GraphQL subscriptions + streaming)
+	graphqlWsHost := fmt.Sprintf("graphql-ws.%s", domainValue)
+	streamWsHost := fmt.Sprintf("stream.%s", domainValue)
+	(*commonEnv)["WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("https://%s", graphqlWsHost))
+	(*commonEnv)["WEBSOCKET_API_URL"] = jsii.String(fmt.Sprintf("https://%s", graphqlWsHost))
+	(*commonEnv)["GRAPHQL_WS_URL"] = jsii.String(fmt.Sprintf("wss://%s", graphqlWsHost))
+	(*commonEnv)["STREAM_WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("wss://%s", streamWsHost))
+	(*commonEnv)["STREAM_WEBSOCKET_API_URL"] = jsii.String(fmt.Sprintf("https://%s", streamWsHost))
+
+	// Set JWT secret ARN from SharedStack (securely passed, never synthesized)
+	if props.JwtSecret != nil {
+		(*commonEnv)["JWT_SECRET_ARN"] = props.JwtSecret.SecretArn()
 	}
 
 	// Determine log retention based on environment
@@ -150,6 +180,7 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	// Create Lambda functions - Lift-based implementation
 	functions.APIFunction = createFunction(stack, "api", props.Environment, &commonProps, "../../bin/api.zip", logRetention)
 	functions.GraphQLFunction = createFunction(stack, "graphql", props.Environment, &commonProps, "../../bin/graphql.zip", logRetention)
+	functions.GraphQLWSFunction = createFunction(stack, "graphql-ws", props.Environment, &commonProps, "../../bin/graphql-ws.zip", logRetention)
 
 	// Create federation functions (Pulumi lines 668-691)
 	functions.InboxFunction = createFunction(stack, "inbox", props.Environment, &commonProps, "../../bin/inbox.zip", logRetention)
@@ -190,10 +221,12 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	functions.HealthFunction = createFunction(stack, "federation-tracker", props.Environment, &commonProps, "../../bin/federation-tracker.zip", logRetention)
 	functions.RecoveryFunction = createFunction(stack, "import-processor", props.Environment, &streamProps, "../../bin/import-processor.zip", logRetention)
 
-	// Grant additional Secrets Manager permissions to federation functions
-	props.PrivateKey.GrantRead(functions.InboxFunction, nil)
-	props.PrivateKey.GrantRead(functions.OutboxFunction, nil)
-	props.PrivateKey.GrantRead(functions.APIFunction, nil)
+	// Note: Secrets Manager permissions are granted via the security role (security.go)
+	// We don't use GrantRead() here to avoid circular dependencies between SharedStack and LesserApiStack
+	// The security constructs already grant secretsmanager:GetSecretValue for:
+	// - lesser/jwt-secret and lesser/jwt-secret-*
+	// - lesser/actor-private-key and lesser/actor-private-key-*
+	// - lesser/cdn-private-key and lesser/cdn-private-key-*
 
 	return functions
 }

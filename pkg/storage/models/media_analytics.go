@@ -60,6 +60,11 @@ type MediaAnalytics struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing MediaAnalytics.
+func (MediaAnalytics) TableName() string {
+	return MainTableName
+}
+
 // MediaVariantCost represents cost metrics for a specific media variant
 type MediaVariantCost struct {
 	// Variant identification
@@ -95,8 +100,25 @@ type MediaVariantCost struct {
 	CacheHitRate     float64 `json:"cache_hit_rate"`     // CDN cache performance
 }
 
+// TableName returns the DynamoDB table backing MediaVariantCost.
+func (MediaVariantCost) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets the GSI keys based on the current values
 func (m *MediaAnalytics) UpdateKeys() error {
+	// Note: PK and SK are set by helper methods (SetManifestGeneration, SetQualityChange, SetGeneralEvent)
+	// based on the specific event type. We validate they exist but don't reconstruct them here.
+	if m.MediaID == "" {
+		return fmt.Errorf("media ID is required")
+	}
+	if m.Date == "" {
+		return fmt.Errorf("date is required")
+	}
+	if m.PK == "" || m.SK == "" {
+		return fmt.Errorf("PK and SK must be set before calling UpdateKeys")
+	}
+
 	// Set GSI1 keys for date-based queries
 	m.GSI1PK = fmt.Sprintf("DATE#%s", m.Date)
 	m.GSI1SK = fmt.Sprintf("%s#%s", m.Format, m.Timestamp.Format(time.RFC3339))

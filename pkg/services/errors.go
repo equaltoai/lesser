@@ -816,12 +816,6 @@ var (
 	// ErrStorageRequired is returned when storage is required but not provided
 	ErrStorageRequired = func() error { return errors.RequiredFieldMissing("storage") }()
 
-	// ErrEventBusNotInitialized is returned when internal event bus is not initialized
-	ErrEventBusNotInitialized = func() error { return errors.EventBusNotInitialized() }()
-
-	// ErrEventBusSubscription is returned when event bus subscription fails
-	ErrEventBusSubscription = func() error { return errors.EventBusSubscriptionFailed(nil) }()
-
 	// File validation service errors
 	// ErrLoadAWSConfig is returned when AWS config loading fails in file validation
 	ErrLoadAWSConfig = func() error { return errors.ConnectionFailed("AWS config", nil) }()

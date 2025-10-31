@@ -269,7 +269,7 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 // GetOAuthClient retrieves an OAuth client by client ID
 func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error) {
 	// Construct the key using the correct pattern from existing OAuth repository
-	pk := "CLIENT#" + clientID
+	pk := "OAUTH_CLIENT#" + clientID
 	sk := models.SKMetadata
 
 	// Query for the item
@@ -315,7 +315,7 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 	}
 
 	// Construct the key
-	pk := "CLIENT#" + clientID
+	pk := "OAUTH_CLIENT#" + clientID
 	sk := models.SKMetadata
 
 	// First, get the existing client
@@ -390,7 +390,7 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 // DeleteOAuthClient deletes an OAuth client
 func (r *AccountRepository) DeleteOAuthClient(ctx context.Context, clientID string) error {
 	// Construct the key
-	pk := "CLIENT#" + clientID
+	pk := "OAUTH_CLIENT#" + clientID
 	sk := models.SKMetadata
 
 	// Delete the item

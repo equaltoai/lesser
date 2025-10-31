@@ -223,6 +223,24 @@ func (t *Timeline) GetSortKey() string {
 
 // UpdateKeys updates the GSI keys for this timeline entry (required by DynamORM)
 func (t *Timeline) UpdateKeys() error {
+	// Set primary keys
+	if err := common.ValidateRequiredParam("t.TimelineType", t.TimelineType); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("t.TimelineID", t.TimelineID); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("t.PostID", t.PostID); err != nil {
+		return err
+	}
+
+	// Set up primary key
+	t.PK = fmt.Sprintf("TIMELINE#%s#%s", t.TimelineType, t.TimelineID)
+	// Use reverse timestamp for newest-first ordering like legacy
+	reverseTimestamp := 9999999999 - t.TimelineAt.Unix()
+	t.SK = fmt.Sprintf("%010d#%s", reverseTimestamp, t.PostID)
+
+	// Set GSI keys
 	t.setupGSIKeys()
 	return nil
 }

@@ -173,8 +173,11 @@ func (h *Handler) fetchAndConvertNote(ctx *lift.Context, objectID string) (*acti
 		return nil, common.RespondStatusNotFound(ctx)
 	}
 
-	// Return the Note directly
-	return result.Note, nil
+	// Return the Note directly (unwrap from NoteField)
+	if result.Note == nil {
+		return nil, common.RespondStatusNotFound(ctx)
+	}
+	return result.Note.Get(), nil
 }
 
 // convertToNote converts an object to an ActivityPub Note
@@ -474,7 +477,11 @@ func (h *Handler) fetchEmbedObject(ctx *lift.Context, objectID string) (any, err
 		h.logger.Error("failed to get note for embed", zap.String("status_id", statusID), zap.Error(err))
 		return nil, common.RespondStatusNotFound(ctx)
 	}
-	return result.Note, nil
+	// Return the Note directly (unwrap from NoteField)
+	if result.Note == nil {
+		return nil, common.RespondStatusNotFound(ctx)
+	}
+	return result.Note.Get(), nil
 }
 
 // convertObjectToNote converts an object to an ActivityPub Note

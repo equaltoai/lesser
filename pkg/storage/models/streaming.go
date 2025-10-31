@@ -47,10 +47,26 @@ type StreamingPreferences struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// TableName returns the DynamoDB table backing StreamingPreferences.
+func (StreamingPreferences) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys sets the GSI keys based on the current values
 func (s *StreamingPreferences) UpdateKeys() error {
+	// Validate required fields
+	if s.Username == "" {
+		return fmt.Errorf("username is required")
+	}
+
 	// Set primary keys
 	s.PK = fmt.Sprintf("STREAMING_PREFS#%s", s.Username)
+
+	// Note: SK should be set by helper methods (SetCurrentPreference, SetVersionedPreference, etc.)
+	// If not set, default to CURRENT
+	if s.SK == "" {
+		s.SK = SKCurrent
+	}
 
 	// Set GSI1 keys for user-based queries
 	s.GSI1PK = fmt.Sprintf(KeyPatternUser, s.Username)

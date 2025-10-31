@@ -489,10 +489,10 @@ func (s *Service) validateMediaAttachments(ctx context.Context, mediaIDs []strin
 		}
 
 		// Check media hasn't expired
-		if media.ExpiresAt != nil && time.Now().Unix() > *media.ExpiresAt {
+		if media.ExpiresAt > 0 && time.Now().Unix() > media.ExpiresAt {
 			s.logger.Error("media attachment expired",
 				zap.String("media_id", mediaID),
-				zap.Int64("expires_at", *media.ExpiresAt))
+				zap.Int64("expires_at", media.ExpiresAt))
 			return svcErrors.ErrMediaAttachmentExpired
 		}
 

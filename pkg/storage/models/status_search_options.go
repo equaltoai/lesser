@@ -10,6 +10,11 @@ type TimeRange struct {
 	End   time.Time `json:"end"`
 }
 
+// TableName returns the DynamoDB table backing TimeRange.
+func (TimeRange) TableName() string {
+	return MainTableName
+}
+
 // StatusSearchOptions configures status search behavior
 // This is a query parameter type, not stored in DynamoDB
 type StatusSearchOptions struct {
@@ -22,6 +27,11 @@ type StatusSearchOptions struct {
 	Language      string    `json:"language"`       // Filter by language
 	MinEngagement int       `json:"min_engagement"` // Minimum likes/boosts
 	TimeRange     TimeRange `json:"time_range"`     // Time-based filtering
+}
+
+// TableName returns the DynamoDB table backing StatusSearchOptions.
+func (StatusSearchOptions) TableName() string {
+	return MainTableName
 }
 
 // NewStatusSearchOptions creates new search options with defaults

@@ -11,27 +11,32 @@ type UserPreferences struct {
 	SK string `dynamorm:"sk" json:"sk"`
 
 	// User preferences fields (matching storage.UserPreferences exactly)
-	Language                  string          `json:"language" dynamorm:"language"`
-	DefaultPostingVisibility  string          `json:"default_posting_visibility" dynamorm:"default_posting_visibility"`
-	DefaultMediaSensitive     bool            `json:"default_media_sensitive" dynamorm:"default_media_sensitive"`
-	ExpandSpoilers            bool            `json:"expand_spoilers" dynamorm:"expand_spoilers"`
-	ExpandMedia               string          `json:"expand_media" dynamorm:"expand_media"`
-	AutoplayGifs              bool            `json:"autoplay_gifs" dynamorm:"autoplay_gifs"`
-	ShowFollowCounts          bool            `json:"show_follow_counts" dynamorm:"show_follow_counts"`
-	PreferredTimelineOrder    string          `json:"preferred_timeline_order" dynamorm:"preferred_timeline_order"`
-	SearchSuggestionsEnabled  bool            `json:"search_suggestions_enabled" dynamorm:"search_suggestions_enabled"`
-	PersonalizedSearchEnabled bool            `json:"personalized_search_enabled" dynamorm:"personalized_search_enabled"`
-	ReblogFilters             map[string]bool `json:"reblog_filters,omitempty" dynamorm:"reblog_filters,omitempty"`
-	StreamingDefaultQuality   string          `json:"streaming_default_quality" dynamorm:"streaming_default_quality"`
-	StreamingAutoQuality      bool            `json:"streaming_auto_quality" dynamorm:"streaming_auto_quality"`
-	StreamingPreloadNext      bool            `json:"streaming_preload_next" dynamorm:"streaming_preload_next"`
-	StreamingDataSaver        bool            `json:"streaming_data_saver" dynamorm:"streaming_data_saver"`
+	Language                  string          `json:"language"`
+	DefaultPostingVisibility  string          `json:"default_posting_visibility"`
+	DefaultMediaSensitive     bool            `json:"default_media_sensitive"`
+	ExpandSpoilers            bool            `json:"expand_spoilers"`
+	ExpandMedia               string          `json:"expand_media"`
+	AutoplayGifs              bool            `json:"autoplay_gifs"`
+	ShowFollowCounts          bool            `json:"show_follow_counts"`
+	PreferredTimelineOrder    string          `json:"preferred_timeline_order"`
+	SearchSuggestionsEnabled  bool            `json:"search_suggestions_enabled"`
+	PersonalizedSearchEnabled bool            `json:"personalized_search_enabled"`
+	ReblogFilters             map[string]bool `json:"reblog_filters,omitempty"`
+	StreamingDefaultQuality   string          `json:"streaming_default_quality"`
+	StreamingAutoQuality      bool            `json:"streaming_auto_quality"`
+	StreamingPreloadNext      bool            `json:"streaming_preload_next"`
+	StreamingDataSaver        bool            `json:"streaming_data_saver"`
 
 	// Metadata
-	UpdatedAt time.Time `json:"updated_at" dynamorm:"updated_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 
 	// Username for key generation
 	Username string `json:"-"`
+}
+
+// TableName returns the DynamoDB table name for user preferences.
+func (UserPreferences) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets the DynamoDB keys for user preferences
@@ -58,6 +63,11 @@ type UserPreferencesStorage struct {
 	StreamingAutoQuality      bool            `json:"streaming_auto_quality"`
 	StreamingPreloadNext      bool            `json:"streaming_preload_next"`
 	StreamingDataSaver        bool            `json:"streaming_data_saver"`
+}
+
+// TableName returns the DynamoDB table backing UserPreferencesStorage.
+func (UserPreferencesStorage) TableName() string {
+	return MainTableName
 }
 
 // ToStorage converts the DynamORM model to UserPreferencesStorage

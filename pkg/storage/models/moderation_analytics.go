@@ -31,9 +31,9 @@ type ModerationAnalytics struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
-// TableName returns the DynamoDB table name
-func (m *ModerationAnalytics) TableName() string {
-	return DefaultTableName // Replace with actual table name
+// TableName returns the DynamoDB table backing ModerationAnalytics.
+func (ModerationAnalytics) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the primary and sort keys for DynamoDB

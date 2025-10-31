@@ -118,6 +118,16 @@ func (o *OAuthAuthSession) BeforeCreate() error {
 
 // UpdateKeys implements BaseModel interface - updates the GSI keys
 func (o *OAuthAuthSession) UpdateKeys() error {
+	// Set primary keys
+	if err := common.ValidateRequiredParam("o.SessionID", o.SessionID); err != nil {
+		return err
+	}
+
+	// Set up primary key
+	o.PK = "OAUTH_AUTH#" + o.SessionID
+	o.SK = "SESSION#" + o.SessionID
+
+	// Set GSI keys
 	o.setupGSIKeys()
 	return nil
 }

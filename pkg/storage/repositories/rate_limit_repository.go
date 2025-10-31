@@ -96,17 +96,30 @@ func (r *RateLimitRepository) GetLoginAttemptCount(ctx context.Context, identifi
 	pk := fmt.Sprintf("RATELIMIT#%s", identifier)
 	sinceKey := since.Format(time.RFC3339Nano)
 
-	// Use BaseRepository QueryBetween method for range queries
-	attempts, err := r.loginAttempts.QueryBetween(ctx, pk, sinceKey, "~", 0) // "~" is lexically after all timestamps
-	if err != nil {
-		r.logger.Error("failed to get login attempt count",
-			zap.String("identifier", identifier),
-			zap.Time("since", since),
-			zap.Error(err))
-		return 0, err
-	}
+	const attemptsPageLimit = 200
+	count := 0
+	cursor := ""
 
-	count := len(attempts)
+	for {
+		page, err := r.loginAttempts.QueryBetweenPaginated(ctx, pk, sinceKey, "~", BasePaginationOptions{
+			Limit:  attemptsPageLimit,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			r.logger.Error("failed to get login attempt count",
+				zap.String("identifier", identifier),
+				zap.Time("since", since),
+				zap.Error(err))
+			return 0, err
+		}
+
+		count += len(page.Items)
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			break
+		}
+		cursor = page.NextCursor
+	}
 	r.logger.Debug("retrieved login attempt count",
 		zap.String("identifier", identifier),
 		zap.Time("since", since),
@@ -521,18 +534,33 @@ func (r *RateLimitRepository) GetViolationCount(ctx context.Context, userID, dom
 	pk := fmt.Sprintf("RATELIMIT_VIOLATION#%s", identifier)
 	sinceKey := time.Now().Add(-since).Format(time.RFC3339Nano)
 
-	// Use BaseRepository QueryBetween method
-	violations, err := r.rateLimitViolations.QueryBetween(ctx, pk, sinceKey, "~", 0)
-	if err != nil {
-		r.logger.Error("failed to get violation count",
-			zap.String("user_id", userID),
-			zap.String("domain", domain),
-			zap.Duration("since", since),
-			zap.Error(err))
-		return 0, err
+	const violationPageLimit = 200
+	count := 0
+	cursor := ""
+
+	for {
+		page, err := r.rateLimitViolations.QueryBetweenPaginated(ctx, pk, sinceKey, "~", BasePaginationOptions{
+			Limit:  violationPageLimit,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			r.logger.Error("failed to get violation count",
+				zap.String("user_id", userID),
+				zap.String("domain", domain),
+				zap.Duration("since", since),
+				zap.Error(err))
+			return 0, err
+		}
+
+		count += len(page.Items)
+		if page.NextCursor == "" || len(page.Items) == 0 {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
-	return len(violations), nil
+	return count, nil
 }
 
 // calculatePenaltyDuration calculates escalating penalty duration based on violation count

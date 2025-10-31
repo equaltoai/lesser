@@ -81,3 +81,8 @@ func (q *QuoteRelationship) IsActive() bool {
 func (q *QuoteRelationship) GenerateID() {
 	q.ID = fmt.Sprintf("%s:%s", q.QuoterNoteID, q.TargetNoteID)
 }
+
+// TableName returns the DynamoDB table backing QuoteRelationship.
+func (QuoteRelationship) TableName() string {
+	return MainTableName
+}

@@ -22,6 +22,50 @@ import (
 // TrackingRepository handles cost tracking persistence
 type TrackingRepository struct {
 	*EnhancedBaseRepository[*models.DynamoDBCostRecord]
+
+	listAggregatedByPeriodFn func(ctx context.Context, period, operationType string, startTime, endTime time.Time, limit int, cursor string) ([]*models.DynamoDBCostAggregation, string, error)
+}
+
+const (
+	costTableDefaultLimit    = 100
+	costTableMaxLimit        = 1000
+	relayCostDefaultLimit    = 100
+	relayCostMaxLimit        = 1000
+	relayCostDateCap         = 1000
+	relayCostPerDayCap       = 200
+	relayMetricsDefaultLimit = 100
+	relayMetricsMaxLimit     = 500
+	aggregatedPageMaxLimit   = 500
+)
+
+func clampCostTableLimit(limit int) int {
+	if limit <= 0 {
+		return costTableDefaultLimit
+	}
+	if limit > costTableMaxLimit {
+		return costTableMaxLimit
+	}
+	return limit
+}
+
+func clampRelayCostLimit(limit int) int {
+	if limit <= 0 {
+		return relayCostDefaultLimit
+	}
+	if limit > relayCostMaxLimit {
+		return relayCostMaxLimit
+	}
+	return limit
+}
+
+func clampRelayMetricsLimit(limit int) int {
+	if limit <= 0 {
+		return relayMetricsDefaultLimit
+	}
+	if limit > relayMetricsMaxLimit {
+		return relayMetricsMaxLimit
+	}
+	return limit
 }
 
 // NewTrackingRepository creates a new cost tracking repository with enhanced functionality
@@ -72,8 +116,10 @@ func (r *TrackingRepository) ListByOperationType(ctx context.Context, operationT
 }
 
 // ListByTable lists cost tracking records by table within a time range
-func (r *TrackingRepository) ListByTable(ctx context.Context, tableName string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
+func (r *TrackingRepository) ListByTable(ctx context.Context, tableName string, startTime, endTime time.Time, limit int, cursor string) ([]*models.DynamoDBCostRecord, string, error) {
 	var trackingList []*models.DynamoDBCostRecord
+
+	safeLimit := clampCostTableLimit(limit)
 
 	// Use GSI1 for table-based queries
 	startSK := startTime.Format(time.RFC3339)
@@ -85,14 +131,24 @@ func (r *TrackingRepository) ListByTable(ctx context.Context, tableName string, 
 		Where("GSI1SK", ">=", startSK).
 		Where("GSI1SK", "<=", endSK).
 		OrderBy("GSI1SK", "DESC").
-		Limit(limit)
+		Limit(safeLimit + 1)
+
+	if cursor != "" {
+		query = query.Where("GSI1SK", "<", cursor)
+	}
 
 	err := query.All(&trackingList)
 	if err != nil {
-		return nil, MapErrorWithContext(err, "failed to list cost tracking by table")
+		return nil, "", MapErrorWithContext(err, "failed to list cost tracking by table")
 	}
 
-	return trackingList, nil
+	var nextCursor string
+	if len(trackingList) > safeLimit {
+		nextCursor = trackingList[safeLimit-1].GSI1SK
+		trackingList = trackingList[:safeLimit]
+	}
+
+	return trackingList, nextCursor, nil
 }
 
 // GetRecentCosts retrieves recent cost tracking records across all operations
@@ -181,14 +237,18 @@ func (r *TrackingRepository) UpdateAggregated(ctx context.Context, aggregated *m
 }
 
 // ListAggregatedByPeriod lists aggregated cost tracking for a period
-func (r *TrackingRepository) ListAggregatedByPeriod(ctx context.Context, period, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostAggregation, error) {
+func (r *TrackingRepository) ListAggregatedByPeriod(ctx context.Context, period, operationType string, startTime, endTime time.Time, limit int, cursor string) ([]*models.DynamoDBCostAggregation, string, error) {
+	if r.listAggregatedByPeriodFn != nil {
+		return r.listAggregatedByPeriodFn(ctx, period, operationType, startTime, endTime, limit, cursor)
+	}
+
 	config := AggregatedQueryConfig{
 		PKPrefix:    "cost_agg",
 		LogContext:  "cost tracking",
 		ErrorPrefix: "failed to list aggregated cost tracking",
 	}
 
-	return ListAggregatedByPeriod[*models.DynamoDBCostAggregation](
+	aggregated, nextCursor, err := ListAggregatedByPeriod[*models.DynamoDBCostAggregation](
 		ctx,
 		r.db,
 		config,
@@ -197,21 +257,50 @@ func (r *TrackingRepository) ListAggregatedByPeriod(ctx context.Context, period,
 		startTime,
 		endTime,
 		limit,
+		cursor,
 	)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return aggregated, nextCursor, nil
 }
 
 // GetTableCostStats calculates cost statistics for a table
 func (r *TrackingRepository) GetTableCostStats(ctx context.Context, tableName string, startTime, endTime time.Time) (*TableCostStats, error) {
-	costs, err := r.ListByTable(ctx, tableName, startTime, endTime, 10000)
-	if err != nil {
-		return nil, err
+	const maxStatsRecords = 10000
+
+	var (
+		allCosts  []*models.DynamoDBCostRecord
+		cursor    string
+		remaining = maxStatsRecords
+	)
+
+	for remaining > 0 {
+		pageLimit := remaining
+		if pageLimit > costTableMaxLimit {
+			pageLimit = costTableMaxLimit
+		}
+
+		costs, nextCursor, err := r.ListByTable(ctx, tableName, startTime, endTime, pageLimit, cursor)
+		if err != nil {
+			return nil, err
+		}
+
+		allCosts = append(allCosts, costs...)
+		if nextCursor == "" || len(costs) == 0 {
+			break
+		}
+
+		cursor = nextCursor
+		remaining -= len(costs)
 	}
 
 	stats := &TableCostStats{
 		TableName:          tableName,
 		StartTime:          startTime,
 		EndTime:            endTime,
-		Count:              len(costs),
+		Count:              len(allCosts),
 		OperationBreakdown: make(map[string]OperationCostStats),
 	}
 
@@ -220,7 +309,7 @@ func (r *TrackingRepository) GetTableCostStats(ctx context.Context, tableName st
 	}
 
 	// Calculate statistics
-	for _, ct := range costs {
+	for _, ct := range allCosts {
 		stats.TotalReadCapacityUnits += ct.ReadCapacityUnits
 		stats.TotalWriteCapacityUnits += ct.WriteCapacityUnits
 		stats.TotalCostMicroCents += ct.TotalCostMicroCents
@@ -305,7 +394,7 @@ func (r *TrackingRepository) Aggregate(ctx context.Context, operationType, perio
 		tableStats, exists := aggregated.TableBreakdown[ct.Table]
 		if !exists {
 			tableStats = &models.DynamoDBTableCostStats{
-				TableName: ct.Table,
+				Table: ct.Table,
 			}
 			aggregated.TableBreakdown[ct.Table] = tableStats
 		}
@@ -422,10 +511,31 @@ func (r *TrackingRepository) GetCostTrends(ctx context.Context, period string, o
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -lookbackDays)
 
-	// Get aggregated data for the period
-	aggregatedList, err := r.ListAggregatedByPeriod(ctx, period, operationType, startTime, endTime, 1000)
-	if err != nil {
-		return nil, err
+	// Get aggregated data for the period using paginated fetches
+	var (
+		aggregatedList []*models.DynamoDBCostAggregation
+		cursor         string
+		remaining      = 1000
+	)
+
+	for remaining > 0 {
+		pageSize := remaining
+		if pageSize > aggregatedPageMaxLimit {
+			pageSize = aggregatedPageMaxLimit
+		}
+
+		chunk, nextCursor, err := r.ListAggregatedByPeriod(ctx, period, operationType, startTime, endTime, pageSize, cursor)
+		if err != nil {
+			return nil, err
+		}
+
+		aggregatedList = append(aggregatedList, chunk...)
+		if nextCursor == "" || len(chunk) == 0 {
+			break
+		}
+
+		cursor = nextCursor
+		remaining -= len(chunk)
 	}
 
 	if err := common.ValidateSliceNotEmpty("aggregated_list", aggregatedList); err != nil {
@@ -660,70 +770,98 @@ func getPercentileValue(sorted []float64, percentile float64) float64 {
 	return lowerValue + (upperValue-lowerValue)*fraction
 }
 
-// GetAggregatedCostsByPeriod retrieves aggregated costs for a specific period
-func (r *TrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, period string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error) {
-	// Query all operation types for the period
-	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan",
-		"BatchGetItem", "BatchWriteItem", "TransactGetItems", "TransactWriteItems"}
+// fetchAggregatesForOperation retrieves all aggregated costs for a single operation type within a given time range.
+// It handles pagination internally to fetch all records.
+func (r *TrackingRepository) fetchAggregatesForOperation(ctx context.Context, period, opType string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error) {
+	var (
+		opAggregates []*models.DynamoDBCostAggregation
+		cursor       string
+		remaining    = 1000 // A reasonable starting limit for pagination fetches.
+	)
 
-	var allAggregates []*models.DynamoDBCostAggregation
+	for {
+		pageSize := remaining
+		if pageSize > aggregatedPageMaxLimit {
+			pageSize = aggregatedPageMaxLimit
+		}
+		if pageSize == 0 { // Should not happen, but as a safeguard.
+			break
+		}
 
-	for _, opType := range operationTypes {
-		aggregates, err := r.ListAggregatedByPeriod(ctx, period, opType, startDate, endDate, 1000)
+		chunk, nextCursor, err := r.ListAggregatedByPeriod(ctx, period, opType, startDate, endDate, pageSize, cursor)
 		if err != nil {
 			r.logger.Warn("failed to get aggregates for operation type",
 				zap.String("operation_type", opType),
 				zap.Error(err))
-			continue
+			return nil, err // Return error to let the caller decide how to proceed.
 		}
-		allAggregates = append(allAggregates, aggregates...)
+
+		opAggregates = append(opAggregates, chunk...)
+		if nextCursor == "" || len(chunk) == 0 {
+			break // No more data to fetch.
+		}
+
+		cursor = nextCursor
+		// We don't decrement `remaining` as we want to fetch all pages.
 	}
 
-	// Merge aggregates by window
+	return opAggregates, nil
+}
+
+// mergeAggregatesByWindow merges a list of cost aggregations into a map keyed by the window start time.
+// This function combines stats from different operation types that fall into the same time window.
+func mergeAggregatesByWindow(allAggregates []*models.DynamoDBCostAggregation) map[string]*models.DynamoDBCostAggregation {
 	mergedByWindow := make(map[string]*models.DynamoDBCostAggregation)
 
 	for _, agg := range allAggregates {
 		windowKey := agg.WindowStart.Format(time.RFC3339)
 
-		if existing, exists := mergedByWindow[windowKey]; exists {
-			// Merge the aggregates
-			existing.TotalOperations += agg.TotalOperations
-			existing.TotalReadCapacityUnits += agg.TotalReadCapacityUnits
-			existing.TotalWriteCapacityUnits += agg.TotalWriteCapacityUnits
-			existing.TotalReadCostMicroCents += agg.TotalReadCostMicroCents
-			existing.TotalWriteCostMicroCents += agg.TotalWriteCostMicroCents
-			existing.TotalCostMicroCents += agg.TotalCostMicroCents
-			existing.TotalItemCount += agg.TotalItemCount
-
-			// Merge table breakdown
-			for table, stats := range agg.TableBreakdown {
-				if existingStats, exists := existing.TableBreakdown[table]; exists {
-					existingStats.OperationCount += stats.OperationCount
-					existingStats.ReadCapacityUnits += stats.ReadCapacityUnits
-					existingStats.WriteCapacityUnits += stats.WriteCapacityUnits
-					existingStats.TotalCostMicroCents += stats.TotalCostMicroCents
-					existingStats.TotalCostDollars += stats.TotalCostDollars
-				} else {
-					existing.TableBreakdown[table] = stats
-				}
-			}
-
-			// Merge service breakdown
-			for service, stats := range agg.ServiceBreakdown {
-				if existingStats, exists := existing.ServiceBreakdown[service]; exists {
-					existingStats.OperationCount += stats.OperationCount
-					existingStats.TotalCostMicroCents += stats.TotalCostMicroCents
-					existingStats.TotalCostDollars += stats.TotalCostDollars
-				} else {
-					existing.ServiceBreakdown[service] = stats
-				}
-			}
-		} else {
+		existing, exists := mergedByWindow[windowKey]
+		if !exists {
 			mergedByWindow[windowKey] = agg
+			continue
+		}
+
+		// Merge the aggregates
+		existing.TotalOperations += agg.TotalOperations
+		existing.TotalReadCapacityUnits += agg.TotalReadCapacityUnits
+		existing.TotalWriteCapacityUnits += agg.TotalWriteCapacityUnits
+		existing.TotalReadCostMicroCents += agg.TotalReadCostMicroCents
+		existing.TotalWriteCostMicroCents += agg.TotalWriteCostMicroCents
+		existing.TotalCostMicroCents += agg.TotalCostMicroCents
+		existing.TotalItemCount += agg.TotalItemCount
+
+		// Merge table breakdown
+		for table, stats := range agg.TableBreakdown {
+			if existingStats, ok := existing.TableBreakdown[table]; ok {
+				existingStats.OperationCount += stats.OperationCount
+				existingStats.ReadCapacityUnits += stats.ReadCapacityUnits
+				existingStats.WriteCapacityUnits += stats.WriteCapacityUnits
+				existingStats.TotalCostMicroCents += stats.TotalCostMicroCents
+				existingStats.TotalCostDollars += stats.TotalCostDollars
+			} else {
+				existing.TableBreakdown[table] = stats
+			}
+		}
+
+		// Merge service breakdown
+		for service, stats := range agg.ServiceBreakdown {
+			if existingStats, ok := existing.ServiceBreakdown[service]; ok {
+				existingStats.OperationCount += stats.OperationCount
+				existingStats.TotalCostMicroCents += stats.TotalCostMicroCents
+				existingStats.TotalCostDollars += stats.TotalCostDollars
+			} else {
+				existing.ServiceBreakdown[service] = stats
+			}
 		}
 	}
 
-	// Convert map back to slice
+	return mergedByWindow
+}
+
+// finalizeCostMetrics converts the merged map of aggregations into a sorted slice,
+// calculating final derived metrics like total cost in dollars and average cost per operation.
+func finalizeCostMetrics(mergedByWindow map[string]*models.DynamoDBCostAggregation) []*models.DynamoDBCostAggregation {
 	result := make([]*models.DynamoDBCostAggregation, 0, len(mergedByWindow))
 	for _, agg := range mergedByWindow {
 		// Recalculate averages and totals
@@ -738,6 +876,36 @@ func (r *TrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, per
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].WindowStart.Before(result[j].WindowStart)
 	})
+
+	return result
+}
+
+// GetAggregatedCostsByPeriod retrieves aggregated costs for a specific period
+func (r *TrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, period string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error) {
+	// Query all operation types for the period
+	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan",
+		"BatchGetItem", "BatchWriteItem", "TransactGetItems", "TransactWriteItems"}
+
+	var allAggregates []*models.DynamoDBCostAggregation
+
+	for _, opType := range operationTypes {
+		opAggregates, err := r.fetchAggregatesForOperation(ctx, period, opType, startDate, endDate)
+		if err != nil {
+			// Depending on desired behavior, we could either continue or fail fast.
+			// The original implementation continued, so we'll log and continue here.
+			r.logger.Warn("skipping operation type due to fetch error",
+				zap.String("operation_type", opType),
+				zap.Error(err))
+			continue
+		}
+		allAggregates = append(allAggregates, opAggregates...)
+	}
+
+	// Merge aggregates by window
+	merged := mergeAggregatesByWindow(allAggregates)
+
+	// Finalize and sort the results
+	result := finalizeCostMetrics(merged)
 
 	return result, nil
 }
@@ -1012,8 +1180,10 @@ func (r *TrackingRepository) CreateRelayCost(ctx context.Context, relayCost *mod
 }
 
 // GetRelayCostsByURL retrieves relay costs for a specific relay URL within a time range
-func (r *TrackingRepository) GetRelayCostsByURL(ctx context.Context, relayURL string, startTime, endTime time.Time, limit int) ([]*models.RelayCost, error) {
+func (r *TrackingRepository) GetRelayCostsByURL(ctx context.Context, relayURL string, startTime, endTime time.Time, limit int, cursor string, operationType string) ([]*models.RelayCost, string, error) {
 	var costs []*models.RelayCost
+
+	safeLimit := clampRelayCostLimit(limit)
 
 	startSK := fmt.Sprintf("TS#%s", startTime.Format(common.CompactTimeFormat))
 	endSK := fmt.Sprintf("TS#%s", endTime.Format(common.CompactTimeFormat))
@@ -1024,23 +1194,90 @@ func (r *TrackingRepository) GetRelayCostsByURL(ctx context.Context, relayURL st
 		Where("GSI1SK", ">=", startSK).
 		Where("GSI1SK", "<=", endSK).
 		OrderBy("GSI1SK", "DESC").
-		Limit(limit)
+		Limit(safeLimit + 1)
+
+	if cursor != "" {
+		query = query.Where("GSI1SK", "<", cursor)
+	}
+
+	if operationType != "" {
+		query = query.Filter("OperationType", "=", operationType)
+	}
 
 	err := query.All(&costs)
 	if err != nil {
-		return nil, MapErrorWithContext(err, "failed to get relay costs by URL")
+		return nil, "", MapErrorWithContext(err, "failed to get relay costs by URL")
 	}
 
-	return costs, nil
+	var nextCursor string
+	if len(costs) > safeLimit {
+		nextCursor = costs[safeLimit-1].GSI1SK
+		costs = costs[:safeLimit]
+	}
+
+	return costs, nextCursor, nil
+}
+
+func (r *TrackingRepository) collectRelayCosts(ctx context.Context, relayURL string, startTime, endTime time.Time, limit int, operationType string) ([]*models.RelayCost, error) {
+	remaining := limit
+	if remaining <= 0 {
+		remaining = relayCostMaxLimit
+	}
+
+	var (
+		allCosts []*models.RelayCost
+		cursor   string
+	)
+
+	for remaining > 0 {
+		pageLimit := remaining
+		if pageLimit > relayCostMaxLimit {
+			pageLimit = relayCostMaxLimit
+		}
+
+		batch, nextCursor, err := r.GetRelayCostsByURL(ctx, relayURL, startTime, endTime, pageLimit, cursor, operationType)
+		if err != nil {
+			return nil, err
+		}
+
+		allCosts = append(allCosts, batch...)
+		if nextCursor == "" || len(batch) == 0 {
+			break
+		}
+
+		cursor = nextCursor
+		remaining -= len(batch)
+	}
+
+	return allCosts, nil
 }
 
 // GetRelayCostsByDateRange retrieves relay costs for all relays within a date range
 func (r *TrackingRepository) GetRelayCostsByDateRange(ctx context.Context, startDate, endDate time.Time, limit int) ([]*models.RelayCost, error) {
 	var allCosts []*models.RelayCost
 
+	safeTotal := limit
+	if safeTotal <= 0 || safeTotal > relayCostDateCap {
+		safeTotal = relayCostDateCap
+	}
+
 	// Query by daily partitions
 	currentDate := startDate
 	for currentDate.Before(endDate) || currentDate.Equal(endDate) {
+		if len(allCosts) >= safeTotal {
+			break
+		}
+
+		remaining := safeTotal - len(allCosts)
+		dayLimit := relayCostPerDayCap
+		if remaining < dayLimit {
+			dayLimit = remaining
+		}
+
+		if dayLimit <= 0 {
+			break
+		}
+
 		dateStr := currentDate.Format("20060102")
 
 		var dailyCosts []*models.RelayCost
@@ -1048,7 +1285,7 @@ func (r *TrackingRepository) GetRelayCostsByDateRange(ctx context.Context, start
 			Index("GSI2").
 			Where("GSI2PK", "=", fmt.Sprintf("RELAY_COSTS_DAILY#%s", dateStr)).
 			OrderBy("GSI2SK", "DESC").
-			Limit(limit)
+			Limit(dayLimit + 1)
 
 		err := query.All(&dailyCosts)
 		if err != nil {
@@ -1057,16 +1294,14 @@ func (r *TrackingRepository) GetRelayCostsByDateRange(ctx context.Context, start
 				zap.Error(err))
 			// Continue with next date
 		} else {
+			if len(dailyCosts) > dayLimit {
+				dailyCosts = dailyCosts[:dayLimit]
+			}
 			allCosts = append(allCosts, dailyCosts...)
 		}
 
 		// Move to next day
 		currentDate = currentDate.AddDate(0, 0, 1)
-
-		// Break if we have enough results
-		if len(allCosts) >= limit {
-			break
-		}
 	}
 
 	// Sort by timestamp (newest first) and limit
@@ -1074,8 +1309,8 @@ func (r *TrackingRepository) GetRelayCostsByDateRange(ctx context.Context, start
 		return allCosts[i].Timestamp.After(allCosts[j].Timestamp)
 	})
 
-	if len(allCosts) > limit {
-		allCosts = allCosts[:limit]
+	if len(allCosts) > safeTotal {
+		allCosts = allCosts[:safeTotal]
 	}
 
 	return allCosts, nil
@@ -1140,8 +1375,10 @@ func (r *TrackingRepository) GetRelayMetrics(ctx context.Context, relayURL, peri
 }
 
 // GetRelayMetricsHistory retrieves metrics history for a relay
-func (r *TrackingRepository) GetRelayMetricsHistory(ctx context.Context, relayURL string, startTime, endTime time.Time, limit int) ([]*models.RelayMetrics, error) {
+func (r *TrackingRepository) GetRelayMetricsHistory(ctx context.Context, relayURL string, startTime, endTime time.Time, limit int, cursor string) ([]*models.RelayMetrics, string, error) {
 	var metricsHistory []*models.RelayMetrics
+
+	safeLimit := clampRelayMetricsLimit(limit)
 
 	startSK := fmt.Sprintf("daily#%s", startTime.Format(common.CompactTimeFormat))
 	endSK := fmt.Sprintf("daily#%s", endTime.Format(common.CompactTimeFormat))
@@ -1152,14 +1389,24 @@ func (r *TrackingRepository) GetRelayMetricsHistory(ctx context.Context, relayUR
 		Where("GSI1SK", ">=", startSK).
 		Where("GSI1SK", "<=", endSK).
 		OrderBy("GSI1SK", "DESC").
-		Limit(limit)
+		Limit(safeLimit + 1)
+
+	if cursor != "" {
+		query = query.Where("GSI1SK", "<", cursor)
+	}
 
 	err := query.All(&metricsHistory)
 	if err != nil {
-		return nil, MapErrorWithContext(err, "failed to get relay metrics history")
+		return nil, "", MapErrorWithContext(err, "failed to get relay metrics history")
 	}
 
-	return metricsHistory, nil
+	var nextCursor string
+	if len(metricsHistory) > safeLimit {
+		nextCursor = metricsHistory[safeLimit-1].GSI1SK
+		metricsHistory = metricsHistory[:safeLimit]
+	}
+
+	return metricsHistory, nextCursor, nil
 }
 
 // CreateRelayBudget creates a new relay budget configuration
@@ -1221,7 +1468,7 @@ func (r *TrackingRepository) GetRelayBudget(ctx context.Context, relayURL, perio
 // AggregateRelayCosts aggregates raw relay cost data into metrics
 func (r *TrackingRepository) AggregateRelayCosts(ctx context.Context, relayURL, period string, windowStart, windowEnd time.Time) error {
 	// Get all relay costs in the window
-	costs, err := r.GetRelayCostsByURL(ctx, relayURL, windowStart, windowEnd, 10000)
+	costs, err := r.collectRelayCosts(ctx, relayURL, windowStart, windowEnd, 10000, "")
 	if err != nil {
 		return ErrorHandler.HandleQueryError(err, "relay cost", "aggregation")
 	}
@@ -1240,9 +1487,7 @@ func (r *TrackingRepository) AggregateRelayCosts(ctx context.Context, relayURL, 
 	}
 
 	// Extract domain from first cost record
-	if err := common.ValidateSliceNotEmpty("costs", costs); err == nil {
-		metrics.Domain = costs[0].Domain
-	}
+	metrics.Domain = costs[0].Domain
 
 	// Aggregate costs by operation type
 	opStats := make(map[string]*models.RelayOperationStats)
@@ -1316,9 +1561,9 @@ func (r *TrackingRepository) AggregateRelayCosts(ctx context.Context, relayURL, 
 	return r.CreateRelayMetrics(ctx, metrics)
 }
 
-// GetRelayCostSummary calculates cost summary for a relay
+// GetRelayCostSummary aggregates relay cost metrics between the provided timestamps.
 func (r *TrackingRepository) GetRelayCostSummary(ctx context.Context, relayURL string, startTime, endTime time.Time) (*RelayCostSummary, error) {
-	costs, err := r.GetRelayCostsByURL(ctx, relayURL, startTime, endTime, 10000)
+	costs, err := r.collectRelayCosts(ctx, relayURL, startTime, endTime, 10000, "")
 	if err != nil {
 		return nil, err
 	}

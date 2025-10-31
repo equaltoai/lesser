@@ -278,6 +278,7 @@ type CreateNoteInput struct {
 	AttachmentIds []string           `json:"attachmentIds,omitempty"`
 	Mentions      []string           `json:"mentions,omitempty"`
 	Tags          []string           `json:"tags,omitempty"`
+	Poll          *PollParamsInput   `json:"poll,omitempty"`
 }
 
 type CreateNotePayload struct {
@@ -937,6 +938,7 @@ type Object struct {
 	Mentions         []*Mention                `json:"mentions"`
 	CreatedAt        Time                      `json:"createdAt"`
 	UpdatedAt        Time                      `json:"updatedAt"`
+	Poll             *Poll                     `json:"poll,omitempty"`
 	RepliesCount     int                       `json:"repliesCount"`
 	LikesCount       int                       `json:"likesCount"`
 	SharesCount      int                       `json:"sharesCount"`
@@ -1011,6 +1013,24 @@ type PerformanceReport struct {
 	Throughput float64         `json:"throughput"`
 	ColdStarts int             `json:"coldStarts"`
 	Period     TimePeriod      `json:"period"`
+}
+
+type Poll struct {
+	ID          string        `json:"id"`
+	ExpiresAt   *Time         `json:"expiresAt,omitempty"`
+	Expired     bool          `json:"expired"`
+	Multiple    bool          `json:"multiple"`
+	HideTotals  bool          `json:"hideTotals"`
+	VotesCount  int           `json:"votesCount"`
+	VotersCount int           `json:"votersCount"`
+	Voted       bool          `json:"voted"`
+	OwnVotes    []int         `json:"ownVotes,omitempty"`
+	Options     []*PollOption `json:"options"`
+}
+
+type PollOption struct {
+	Title      string `json:"title"`
+	VotesCount int    `json:"votesCount"`
 }
 
 type PollParams struct {

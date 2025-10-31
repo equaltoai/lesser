@@ -52,5 +52,17 @@ func (m *TimelineMarker) GetSK() string {
 
 // UpdateKeys updates the keys
 func (m *TimelineMarker) UpdateKeys() error {
-	return m.BeforeCreate()
+	// Validate required fields
+	if m.Username == "" {
+		return fmt.Errorf("username is required")
+	}
+	if m.Timeline == "" {
+		return fmt.Errorf("timeline is required")
+	}
+
+	// Set primary keys
+	m.PK = fmt.Sprintf(KeyPatternUser, m.Username)
+	m.SK = fmt.Sprintf("MARKER#%s", m.Timeline)
+
+	return nil
 }

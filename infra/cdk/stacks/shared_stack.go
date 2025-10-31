@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awskms"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
@@ -12,22 +14,37 @@ import (
 
 type SharedStackProps struct {
 	awscdk.StackProps
-	AppName string
+	AppName        string
+	RootDomain     string
+	HostedZoneId   string
+	HostedZoneName string
+	Stages         []string
 }
 
 type SharedStack struct {
 	awscdk.Stack
-	EncryptionKey   awskms.Key
-	ActorPrivateKey awssecretsmanager.Secret
-	JWTSecret       awssecretsmanager.Secret
+	EncryptionKey          awskms.Key
+	ActorPrivateKey        awssecretsmanager.Secret
+	JWTSecret              awssecretsmanager.Secret
+	HostedZone             awsroute53.IHostedZone
+	APICertificate         awscertificatemanager.Certificate
+	CDNCertificate         awscertificatemanager.Certificate
+	GraphQLWSCertificate   awscertificatemanager.Certificate
+	StreamingWSCertificate awscertificatemanager.Certificate
+	RootDomain             string
+	Stages                 []string
 }
 
 func NewSharedStack(scope constructs.Construct, id string, props *SharedStackProps) *SharedStack {
 	stack := awscdk.NewStack(scope, &id, &props.StackProps)
 
 	sharedStack := &SharedStack{
-		Stack: stack,
+		Stack:      stack,
+		RootDomain: props.RootDomain,
+		Stages:     props.Stages,
 	}
+
+	sharedStack.initHostedZone(props.HostedZoneName, props.HostedZoneId)
 
 	// Create KMS key for encryption
 	sharedStack.EncryptionKey = awskms.NewKey(stack, jsii.String("LesserEncryptionKey"), &awskms.KeyProps{
@@ -82,5 +99,139 @@ func NewSharedStack(scope constructs.Construct, id string, props *SharedStackPro
 		ExportName:  jsii.String(fmt.Sprintf("%s-jwt-secret-arn", props.AppName)),
 	})
 
+	sharedStack.createCertificates()
+
+	if sharedStack.APICertificate != nil {
+		awscdk.NewCfnOutput(stack, jsii.String("ApiCertificateArn"), &awscdk.CfnOutputProps{
+			Value:       sharedStack.APICertificate.CertificateArn(),
+			Description: jsii.String("ACM certificate ARN for stage API domains"),
+			ExportName:  jsii.String(fmt.Sprintf("%s-api-certificate-arn", props.AppName)),
+		})
+	}
+
+	if sharedStack.CDNCertificate != nil {
+		awscdk.NewCfnOutput(stack, jsii.String("CdnCertificateArn"), &awscdk.CfnOutputProps{
+			Value:       sharedStack.CDNCertificate.CertificateArn(),
+			Description: jsii.String("ACM certificate ARN for stage CDN domains"),
+			ExportName:  jsii.String(fmt.Sprintf("%s-cdn-certificate-arn", props.AppName)),
+		})
+	}
+
+	if sharedStack.GraphQLWSCertificate != nil {
+		awscdk.NewCfnOutput(stack, jsii.String("GraphQLWSCertificateArn"), &awscdk.CfnOutputProps{
+			Value:       sharedStack.GraphQLWSCertificate.CertificateArn(),
+			Description: jsii.String("ACM certificate ARN for GraphQL WebSocket domains"),
+			ExportName:  jsii.String(fmt.Sprintf("%s-graphql-ws-certificate-arn", props.AppName)),
+		})
+	}
+
+	if sharedStack.StreamingWSCertificate != nil {
+		awscdk.NewCfnOutput(stack, jsii.String("StreamingWSCertificateArn"), &awscdk.CfnOutputProps{
+			Value:       sharedStack.StreamingWSCertificate.CertificateArn(),
+			Description: jsii.String("ACM certificate ARN for streaming WebSocket domains"),
+			ExportName:  jsii.String(fmt.Sprintf("%s-streaming-ws-certificate-arn", props.AppName)),
+		})
+	}
+
 	return sharedStack
+}
+
+func (s *SharedStack) initHostedZone(domain string, hostedZoneId string) {
+	if domain == "" && hostedZoneId == "" {
+		return
+	}
+
+	if hostedZoneId != "" && domain != "" {
+		s.HostedZone = awsroute53.HostedZone_FromHostedZoneAttributes(s.Stack, jsii.String("SharedHostedZone"), &awsroute53.HostedZoneAttributes{
+			HostedZoneId: jsii.String(hostedZoneId),
+			ZoneName:     jsii.String(domain),
+		})
+		return
+	}
+
+	if domain != "" {
+		s.HostedZone = awsroute53.HostedZone_FromLookup(s.Stack, jsii.String("SharedHostedZone"), &awsroute53.HostedZoneProviderProps{
+			DomainName: jsii.String(domain),
+		})
+	}
+}
+
+func (s *SharedStack) createCertificates() {
+	if s.RootDomain == "" || len(s.Stages) == 0 || s.HostedZone == nil {
+		return
+	}
+
+	stageFqdns := make([]*string, 0, len(s.Stages))
+	for _, stage := range s.Stages {
+		stageFqdns = append(stageFqdns, jsii.String(fmt.Sprintf("%s.%s", stage, s.RootDomain)))
+	}
+
+	validation := awscertificatemanager.CertificateValidation_FromDns(s.HostedZone)
+
+	apiPrimary := stageFqdns[0]
+	var apiSans []*string
+	if len(stageFqdns) > 1 {
+		apiSans = stageFqdns[1:]
+	}
+
+	s.APICertificate = awscertificatemanager.NewCertificate(s.Stack, jsii.String("SharedApiCertificate"), &awscertificatemanager.CertificateProps{
+		DomainName:              apiPrimary,
+		SubjectAlternativeNames: &apiSans,
+		Validation:              validation,
+	})
+
+	cdnFqdns := make([]*string, 0, len(s.Stages))
+	for _, stage := range s.Stages {
+		cdnFqdns = append(cdnFqdns, jsii.String(fmt.Sprintf("cdn.%s.%s", stage, s.RootDomain)))
+	}
+
+	cdnPrimary := cdnFqdns[0]
+	var cdnSans []*string
+	if len(cdnFqdns) > 1 {
+		cdnSans = cdnFqdns[1:]
+	}
+
+	s.CDNCertificate = awscertificatemanager.NewCertificate(s.Stack, jsii.String("SharedCdnCertificate"), &awscertificatemanager.CertificateProps{
+		DomainName:              cdnPrimary,
+		SubjectAlternativeNames: &cdnSans,
+		Validation:              validation,
+	})
+
+	graphqlWsFqdns := make([]*string, 0, len(s.Stages))
+	for _, stage := range s.Stages {
+		graphqlWsFqdns = append(graphqlWsFqdns, jsii.String(fmt.Sprintf("graphql-ws.%s.%s", stage, s.RootDomain)))
+	}
+
+	if len(graphqlWsFqdns) > 0 {
+		graphqlWsPrimary := graphqlWsFqdns[0]
+		var graphqlWsSans []*string
+		if len(graphqlWsFqdns) > 1 {
+			graphqlWsSans = graphqlWsFqdns[1:]
+		}
+
+		s.GraphQLWSCertificate = awscertificatemanager.NewCertificate(s.Stack, jsii.String("SharedGraphQLWsCertificate"), &awscertificatemanager.CertificateProps{
+			DomainName:              graphqlWsPrimary,
+			SubjectAlternativeNames: &graphqlWsSans,
+			Validation:              validation,
+		})
+	}
+
+	streamWsFqdns := make([]*string, 0, len(s.Stages))
+	for _, stage := range s.Stages {
+		streamWsFqdns = append(streamWsFqdns, jsii.String(fmt.Sprintf("stream.%s.%s", stage, s.RootDomain)))
+	}
+
+	if len(streamWsFqdns) > 0 {
+		streamWsPrimary := streamWsFqdns[0]
+		var streamWsSans []*string
+		if len(streamWsFqdns) > 1 {
+			streamWsSans = streamWsFqdns[1:]
+		}
+
+		s.StreamingWSCertificate = awscertificatemanager.NewCertificate(s.Stack, jsii.String("SharedStreamingWsCertificate"), &awscertificatemanager.CertificateProps{
+			DomainName:              streamWsPrimary,
+			SubjectAlternativeNames: &streamWsSans,
+			Validation:              validation,
+		})
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
@@ -18,21 +19,17 @@ type SubscriptionManager struct {
 	logger  *zap.Logger
 }
 
-// NewSubscriptionManager creates a new subscription manager with event bus integration
-func NewSubscriptionManager(logger *zap.Logger) *SubscriptionManager {
+// NewSubscriptionManager creates a new subscription manager with DynamoDB-backed persistence
+func NewSubscriptionManager(
+	connRepo *repositories.StreamingConnectionRepository,
+	publisher streaming.Publisher,
+	logger *zap.Logger,
+) *SubscriptionManager {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 
-	// Try to get the global event bus from stream-router
-	eventBus := getGlobalStreamRouterEventBus()
-	if eventBus != nil {
-		logger.Info("GraphQL subscriptions connected to stream-router event bus")
-	} else {
-		logger.Warn("Stream-router event bus not available - GraphQL subscriptions will fail until event bus is initialized")
-	}
-
-	manager := NewGraphQLSubscriptionManager(eventBus, logger)
+	manager := NewGraphQLSubscriptionManager(connRepo, publisher, logger)
 
 	return &SubscriptionManager{
 		manager: manager,
@@ -147,8 +144,8 @@ func (sm *SubscriptionManager) SubscribeToMetricsUpdates(ctx context.Context, us
 }
 
 // SubscribeToQuoteActivity creates a channel for quote activity updates using event bus
-func (sm *SubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string, noteObj any) (<-chan *model.QuoteActivityUpdate, error) {
-	return sm.manager.SubscribeToQuoteActivity(ctx, username, noteID, noteObj)
+func (sm *SubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string) (<-chan *model.QuoteActivityUpdate, error) {
+	return sm.manager.SubscribeToQuoteActivity(ctx, username, noteID)
 }
 
 // SubscribeToListActivity creates a channel for list activity updates using event bus
@@ -204,13 +201,4 @@ func (sm *SubscriptionManager) SubscribeToInfrastructureEvents(ctx context.Conte
 // GetStats returns statistics about active subscriptions
 func (sm *SubscriptionManager) GetStats() map[string]interface{} {
 	return sm.manager.GetStats()
-}
-
-// getGlobalStreamRouterEventBus tries to access the stream-router's global event bus
-// This connects to the stream-router Lambda's event bus for real-time events
-func getGlobalStreamRouterEventBus() *streaming.EventBus {
-	// Use the global event bus from the streaming package
-	// This will be initialized if the stream-router has started its event bus
-	// Note: In separate Lambda deployments, this will return nil and we'll fall back to polling
-	return streaming.GetGlobalEventBus(zap.NewNop())
 }

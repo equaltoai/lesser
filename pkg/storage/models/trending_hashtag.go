@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -27,13 +28,25 @@ type TrendingHashtag struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
-// TableName returns the DynamoDB table name
-func (t *TrendingHashtag) TableName() string {
-	return DefaultTableName // Replace with actual table name
+// TableName returns the DynamoDB table backing TrendingHashtag.
+func (TrendingHashtag) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys when the primary keys change
 func (t *TrendingHashtag) UpdateKeys() error {
+	// Validate required fields
+	if t.Date == "" {
+		return fmt.Errorf("date is required")
+	}
+	if t.Hashtag == "" {
+		return fmt.Errorf("hashtag is required")
+	}
+
+	// Set primary keys
+	t.PK = fmt.Sprintf("TRENDING#%s", t.Date)
+	t.SK = fmt.Sprintf("HASHTAG#%f#%s", t.Score, t.Hashtag)
+
 	// GSI8 is used for trending queries
 	t.GSI8PK = t.PK
 	t.GSI8SK = t.SK

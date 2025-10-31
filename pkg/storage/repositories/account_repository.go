@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -36,6 +37,21 @@ type AccountRepository struct {
 	// Dependencies for cross-repository operations
 	// Note: storage.Storage dependency removed in Phase 5.6
 	statusRepo interfaces.StatusRepository // For accessing status objects
+	actorRepo  *ActorRepository
+}
+
+type userVersionProjection struct {
+	Table string `json:"-"`
+	PK    string `dynamorm:"pk"`
+	SK    string `dynamorm:"sk"`
+	Value int    `dynamorm:"version"`
+}
+
+func (p userVersionProjection) TableName() string {
+	if strings.TrimSpace(p.Table) != "" {
+		return p.Table
+	}
+	return models.MainTableName
 }
 
 // NewAccountRepository creates a new unified account repository
@@ -55,6 +71,7 @@ func NewAccountRepository(db core.DB, tableName string, domain string, logger *z
 		logger:                 logger,
 		tableName:              tableName,
 		domain:                 domain,
+		actorRepo:              NewActorRepository(db, tableName, logger),
 	}
 }
 
@@ -75,6 +92,7 @@ func NewAccountRepositoryWithCostTracking(db core.DB, tableName string, domain s
 		logger:                 logger,
 		tableName:              tableName,
 		domain:                 domain,
+		actorRepo:              NewActorRepositoryWithCostTracking(db, tableName, logger, costService),
 	}
 }
 
@@ -293,10 +311,34 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, username string, upd
 		return ErrorHandler.HandleGetError(err, EntityUser, username)
 	}
 
+	if user.Version == 0 {
+		versionProjection := &userVersionProjection{Table: r.tableName}
+		if err := r.db.WithContext(ctx).
+			Model(versionProjection).
+			Where("PK", "=", pk).
+			Where("SK", "=", models.SKMetadata).
+			ConsistentRead().
+			First(versionProjection); err != nil {
+			r.logger.Warn("failed to hydrate user version",
+				zap.String("username", username),
+				zap.Error(err))
+		} else if versionProjection.Value > 0 {
+			user.Version = versionProjection.Value
+		} else if user.Version == 0 {
+			user.Version = 1
+			r.logger.Warn("user version attribute missing; defaulting to 1",
+				zap.String("username", username))
+		}
+	}
+
 	// Apply updates
 	if err := r.applyUserUpdates(user, updates); err != nil {
 		return err
 	}
+
+	r.logger.Info("updating user profile record",
+		zap.String("username", username),
+		zap.Int("current_version", user.Version))
 
 	// Update using BaseRepository with error handling
 	if err := r.Update(ctx, user); err != nil {
@@ -341,6 +383,10 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 	username := actor.PreferredUsername
 	numericID := common.GenerateNumericID(username)
 
+	r.logger.Info("creating actor",
+		zap.String("username", username),
+		zap.String("actor_id", actor.ID))
+
 	// Encrypt private key if available
 	encryptedKey := privateKey
 	if encryptor, err := r.getEncryptor(); err == nil {
@@ -366,13 +412,40 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 		actorModel.GSI3SK = username
 	}
 
+	r.logger.Info("actor model before UpdateKeys",
+		zap.String("username", actorModel.Username),
+		zap.String("pk", actorModel.PK),
+		zap.String("sk", actorModel.SK))
+
+	// Explicitly call UpdateKeys to ensure PK/SK are set
+	if err := actorModel.UpdateKeys(); err != nil {
+		r.logger.Error("failed to update actor keys",
+			zap.String("username", username),
+			zap.Error(err))
+		return err
+	}
+
+	r.logger.Info("actor model after UpdateKeys",
+		zap.String("username", actorModel.Username),
+		zap.String("pk", actorModel.PK),
+		zap.String("sk", actorModel.SK))
+
 	// Create using DynamORM
 	if err := r.db.WithContext(ctx).Model(actorModel).Create(); err != nil {
+		r.logger.Error("DynamORM Create failed for actor",
+			zap.String("username", username),
+			zap.String("pk", actorModel.PK),
+			zap.String("sk", actorModel.SK),
+			zap.Error(err))
 		if dynamormErrors.IsConditionFailed(err) {
 			return common.ConflictError{Resource: "actor", Message: fmt.Sprintf("actor %s already exists", username)}
 		}
 		return ErrorHandler.HandleCreateError(err, EntityActor, username)
 	}
+
+	r.logger.Info("actor created successfully",
+		zap.String("username", username),
+		zap.String("pk", actorModel.PK))
 
 	return nil
 }
@@ -425,60 +498,341 @@ func (r *AccountRepository) GetActorPrivateKey(ctx context.Context, username str
 
 // modelToStorageUser converts User model to storage type
 func (r *AccountRepository) modelToStorageUser(model *models.User) *storage.User {
-	return &storage.User{
-		Username:        model.Username,
-		Email:           model.Email,
-		PasswordHash:    model.PasswordHash,
-		DisplayName:     model.DisplayName,
-		CreatedAt:       model.CreatedAt,
-		UpdatedAt:       model.UpdatedAt,
-		Approved:        model.Approved,
-		Suspended:       model.Suspended,
-		Silenced:        model.Silenced,
-		Role:            model.Role,
-		Locale:          model.Locale,
-		RecoveryMethods: model.RecoveryMethods,
+	id := common.GenerateNumericID(model.Username)
+
+	baseURL := strings.TrimSpace(r.domain)
+	if baseURL != "" && !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "https://" + baseURL
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+
+	user := &storage.User{
+		ID:                 id,
+		Username:           model.Username,
+		Email:              model.Email,
+		PasswordHash:       model.PasswordHash,
+		DisplayName:        model.DisplayName,
+		Note:               model.Note,
+		Avatar:             model.Avatar,
+		Header:             model.Header,
+		URL:                model.URL,
+		Locked:             model.Locked,
+		Discoverable:       model.Discoverable,
+		Fields:             model.Fields,
+		CreatedAt:          model.CreatedAt,
+		UpdatedAt:          model.UpdatedAt,
+		Approved:           model.Approved,
+		Suspended:          model.Suspended,
+		Silenced:           model.Silenced,
+		Role:               model.Role,
+		Locale:             model.Locale,
+		RecoveryMethods:    model.RecoveryMethods,
+		AllowNSFW:          model.AllowNSFW,
+		RequireNSFWWarning: model.RequireNSFWWarning,
+		Metadata:           model.Metadata,
+		Version:            model.Version,
+	}
+
+	if baseURL != "" && strings.TrimSpace(user.URL) == "" {
+		user.URL = fmt.Sprintf("%s/@%s", baseURL, model.Username)
+	}
+
+	return user
+}
+
+// UserUpdatePayload captures mutable account fields accepted from federation updates.
+type UserUpdatePayload struct {
+	Email              *string
+	Note               *string
+	Avatar             *string
+	Header             *string
+	URL                *string
+	PasswordHash       *string
+	DisplayName        *string
+	Approved           *bool
+	Suspended          *bool
+	Silenced           *bool
+	Role               *string
+	Locked             *bool
+	Discoverable       *bool
+	Locale             *string
+	AllowNSFW          *bool
+	RequireNSFWWarning *bool
+	RecoveryMethods    *[]string
+	Fields             *[]map[string]string
+	Metadata           map[string]interface{}
+}
+
+func decodeUserUpdatePayload(updates map[string]interface{}) (*UserUpdatePayload, error) {
+	payload := &UserUpdatePayload{}
+	var err error
+
+	if payload.Email, err = stringPtrFromMap(updates, "email"); err != nil {
+		return nil, err
+	}
+	if payload.Note, err = stringPtrFromMap(updates, "note"); err != nil {
+		return nil, err
+	}
+	if payload.Avatar, err = stringPtrFromMap(updates, "avatar"); err != nil {
+		return nil, err
+	}
+	if payload.Header, err = stringPtrFromMap(updates, "header"); err != nil {
+		return nil, err
+	}
+	if payload.URL, err = stringPtrFromMap(updates, "url"); err != nil {
+		return nil, err
+	}
+	if payload.PasswordHash, err = stringPtrFromMap(updates, "password_hash"); err != nil {
+		return nil, err
+	}
+	if payload.DisplayName, err = stringPtrFromMap(updates, "display_name"); err != nil {
+		return nil, err
+	}
+	if payload.Approved, err = boolPtrFromMap(updates, "approved"); err != nil {
+		return nil, err
+	}
+	if payload.Suspended, err = boolPtrFromMap(updates, AccountStatusSuspended); err != nil {
+		return nil, err
+	}
+	if payload.Silenced, err = boolPtrFromMap(updates, "silenced"); err != nil {
+		return nil, err
+	}
+	if payload.Role, err = stringPtrFromMap(updates, "role"); err != nil {
+		return nil, err
+	}
+	if payload.Locked, err = boolPtrFromMap(updates, "locked"); err != nil {
+		return nil, err
+	}
+	if payload.Discoverable, err = boolPtrFromMap(updates, "discoverable"); err != nil {
+		return nil, err
+	}
+	if payload.Locale, err = stringPtrFromMap(updates, "locale"); err != nil {
+		return nil, err
+	}
+	if payload.AllowNSFW, err = boolPtrFromMap(updates, "allow_nsfw"); err != nil {
+		return nil, err
+	}
+	if payload.RequireNSFWWarning, err = boolPtrFromMap(updates, "require_nsfw_warning"); err != nil {
+		return nil, err
+	}
+
+	if payload.RecoveryMethods, err = stringSlicePtrFromValue(updates["recovery_methods"]); err != nil {
+		return nil, err
+	}
+	if payload.Fields, err = fieldSlicePtrFromValue(updates["fields"]); err != nil {
+		return nil, err
+	}
+	if payload.Metadata, err = metadataFromValue(updates["metadata"]); err != nil {
+		return nil, err
+	}
+
+	return payload, nil
+}
+
+func stringPtrFromMap(m map[string]interface{}, key string) (*string, error) {
+	if m == nil {
+		return nil, nil
+	}
+	raw, ok := m[key]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	str, ok := raw.(string)
+	if !ok {
+		return nil, fmt.Errorf("field %s must be a string", key)
+	}
+	value := str
+	return &value, nil
+}
+
+func boolPtrFromMap(m map[string]interface{}, key string) (*bool, error) {
+	if m == nil {
+		return nil, nil
+	}
+	raw, ok := m[key]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	b, ok := raw.(bool)
+	if !ok {
+		return nil, fmt.Errorf("field %s must be a boolean", key)
+	}
+	value := b
+	return &value, nil
+}
+
+func stringSlicePtrFromValue(value interface{}) (*[]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	switch v := value.(type) {
+	case []string:
+		cloned := append([]string(nil), v...)
+		return &cloned, nil
+	case []interface{}:
+		result := make([]string, 0, len(v))
+		for i, item := range v {
+			str, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("field recovery_methods[%d] must be a string", i)
+			}
+			result = append(result, str)
+		}
+		return &result, nil
+	default:
+		return nil, fmt.Errorf("field recovery_methods must be an array of strings")
+	}
+}
+
+func fieldSlicePtrFromValue(value interface{}) (*[]map[string]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	switch v := value.(type) {
+	case []map[string]string:
+		cloned := cloneFields(v)
+		return &cloned, nil
+	case []interface{}:
+		fields := make([]map[string]string, 0, len(v))
+		for idx, item := range v {
+			switch fieldMap := item.(type) {
+			case map[string]string:
+				fields = append(fields, cloneStringMap(fieldMap))
+			case map[string]interface{}:
+				normalized := make(map[string]string, len(fieldMap))
+				for key, raw := range fieldMap {
+					str, ok := raw.(string)
+					if !ok {
+						return nil, fmt.Errorf("field fields[%d][%s] must be a string", idx, key)
+					}
+					normalized[key] = str
+				}
+				fields = append(fields, normalized)
+			default:
+				return nil, fmt.Errorf("field fields[%d] must be an object", idx)
+			}
+		}
+		return &fields, nil
+	default:
+		return nil, fmt.Errorf("field fields must be an array of objects")
+	}
+}
+
+func metadataFromValue(value interface{}) (map[string]interface{}, error) {
+	if value == nil {
+		return nil, nil
+	}
+	m, ok := value.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("field metadata must be an object")
+	}
+	return cloneMetadata(m), nil
+}
+
+func cloneFields(fields []map[string]string) []map[string]string {
+	if fields == nil {
+		return nil
+	}
+	cloned := make([]map[string]string, 0, len(fields))
+	for _, field := range fields {
+		cloned = append(cloned, cloneStringMap(field))
+	}
+	return cloned
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if input == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneMetadata(input map[string]interface{}) map[string]interface{} {
+	if input == nil {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func (p *UserUpdatePayload) applyTo(user *models.User) {
+	if p == nil {
+		return
+	}
+	if p.Email != nil {
+		user.Email = *p.Email
+	}
+	if p.Note != nil {
+		user.Note = *p.Note
+	}
+	if p.Avatar != nil {
+		user.Avatar = *p.Avatar
+	}
+	if p.Header != nil {
+		user.Header = *p.Header
+	}
+	if p.URL != nil {
+		user.URL = *p.URL
+	}
+	if p.PasswordHash != nil {
+		user.PasswordHash = *p.PasswordHash
+	}
+	if p.DisplayName != nil {
+		user.DisplayName = *p.DisplayName
+	}
+	if p.Approved != nil {
+		user.Approved = *p.Approved
+	}
+	if p.Suspended != nil {
+		user.Suspended = *p.Suspended
+	}
+	if p.Silenced != nil {
+		user.Silenced = *p.Silenced
+	}
+	if p.Role != nil {
+		user.Role = *p.Role
+	}
+	if p.Locked != nil {
+		user.Locked = *p.Locked
+	}
+	if p.Discoverable != nil {
+		user.Discoverable = *p.Discoverable
+	}
+	if p.Locale != nil {
+		user.Locale = *p.Locale
+	}
+	if p.AllowNSFW != nil {
+		user.AllowNSFW = *p.AllowNSFW
+	}
+	if p.RequireNSFWWarning != nil {
+		user.RequireNSFWWarning = *p.RequireNSFWWarning
+	}
+	if p.RecoveryMethods != nil {
+		user.RecoveryMethods = append([]string(nil), (*p.RecoveryMethods)...)
+	}
+	if p.Fields != nil {
+		user.Fields = cloneFields(*p.Fields)
+	}
+	if p.Metadata != nil {
+		user.Metadata = cloneMetadata(p.Metadata)
 	}
 }
 
 // applyUserUpdates applies a map of updates to a user model
 func (r *AccountRepository) applyUserUpdates(user *models.User, updates map[string]interface{}) error {
-	for key, value := range updates {
-		switch key {
-		case "email":
-			if v, ok := value.(string); ok {
-				user.Email = v
-			}
-		case "password_hash":
-			if v, ok := value.(string); ok {
-				user.PasswordHash = v
-			}
-		case "display_name":
-			if v, ok := value.(string); ok {
-				user.DisplayName = v
-			}
-		case "approved":
-			if v, ok := value.(bool); ok {
-				user.Approved = v
-			}
-		case AccountStatusSuspended:
-			if v, ok := value.(bool); ok {
-				user.Suspended = v
-			}
-		case "silenced":
-			if v, ok := value.(bool); ok {
-				user.Silenced = v
-			}
-		case "role":
-			if v, ok := value.(string); ok {
-				user.Role = v
-			}
-		case "locale":
-			if v, ok := value.(string); ok {
-				user.Locale = v
-			}
-		}
+	payload, err := decodeUserUpdatePayload(updates)
+	if err != nil {
+		return err
 	}
+
+	payload.applyTo(user)
 
 	user.UpdatedAt = time.Now()
 	return nil
@@ -831,103 +1185,443 @@ func (r *AccountRepository) GetAccountByEmail(ctx context.Context, email string)
 // UpdateAccount updates account data (updated to match interface)
 func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.Account) error {
 	if account == nil || account.User == nil {
-		return ErrorHandler.HandleUpdateError(errors.New("invalid input"), "account", "update")
+		return ErrorHandler.HandleUpdateError(errors.New("invalid input"), EntityUser, "account")
 	}
 
-	// Convert storage.User to updates map
-	updates := map[string]interface{}{
-		"email":        account.User.Email,
-		"display_name": account.User.DisplayName,
-		"approved":     account.User.Approved,
-		"suspended":    account.User.Suspended,
-		"silenced":     account.User.Silenced,
-		"role":         account.User.Role,
-		"locale":       account.User.Locale,
+	username := strings.TrimSpace(account.User.Username)
+	if username == "" {
+		return ErrorHandler.HandleUpdateError(errors.New("username is required"), EntityUser, "account")
 	}
 
-	// Only include password_hash if it's not empty
-	if account.User.PasswordHash != "" {
-		updates["password_hash"] = account.User.PasswordHash
+	pk := fmt.Sprintf("USER#%s", username)
+	userModel := &models.User{}
+	if err := r.Get(ctx, pk, models.SKMetadata, userModel); err != nil {
+		return ErrorHandler.HandleGetError(err, EntityUser, username)
 	}
 
-	return r.UpdateUser(ctx, account.User.Username, updates)
+	// Ensure we have the current optimistic locking version
+	versionExistsInDB := userModel.Version > 0 // If Version > 0 after Get(), it exists in DB
+	if userModel.Version == 0 {
+		versionProjection := &userVersionProjection{Table: r.tableName}
+		if err := r.db.WithContext(ctx).
+			Model(versionProjection).
+			Where("PK", "=", pk).
+			Where("SK", "=", models.SKMetadata).
+			ConsistentRead().
+			First(versionProjection); err != nil {
+			r.logger.Warn("failed to hydrate user version for update account, defaulting to 1",
+				zap.String("username", username),
+				zap.Error(err))
+			userModel.Version = 1 // Default to 1 if hydration fails
+			versionExistsInDB = false // Version doesn't exist in DB
+		} else if versionProjection.Value > 0 {
+			userModel.Version = versionProjection.Value
+			versionExistsInDB = true // Version exists in DB
+		} else {
+			// Version attribute doesn't exist in DB (Value=0 means not set)
+			// We'll initialize it without condition check
+			userModel.Version = 1
+			versionExistsInDB = false // Version doesn't exist in DB
+			r.logger.Warn("user version attribute missing during update; will initialize to 1",
+				zap.String("username", username))
+		}
+	}
+
+	currentVersion := userModel.Version
+	now := time.Now().UTC()
+
+	// Apply incoming changes
+	userModel.DisplayName = account.User.DisplayName
+	userModel.Note = account.User.Note
+	userModel.Avatar = account.User.Avatar
+	userModel.Header = account.User.Header
+	userModel.URL = strings.TrimSpace(account.User.URL)
+	userModel.Locked = account.User.Locked
+	userModel.Discoverable = account.User.Discoverable
+	userModel.Fields = account.User.Fields
+	userModel.Email = strings.TrimSpace(account.User.Email)
+	userModel.Locale = strings.TrimSpace(account.User.Locale)
+	userModel.Approved = account.User.Approved
+	userModel.Suspended = account.User.Suspended
+	userModel.Silenced = account.User.Silenced
+	userModel.Role = strings.TrimSpace(account.User.Role)
+	userModel.RecoveryMethods = account.User.RecoveryMethods
+	userModel.AllowNSFW = account.User.AllowNSFW
+	userModel.RequireNSFWWarning = account.User.RequireNSFWWarning
+	if account.User.Metadata != nil {
+		userModel.Metadata = account.User.Metadata
+	}
+	userModel.UpdatedAt = now
+
+	if strings.TrimSpace(userModel.Username) == "" {
+		userModel.Username = username
+	}
+
+	// Ensure primary and secondary keys reflect the latest state before persisting.
+	// DynamORM does not automatically invoke UpdateKeys during Update(), so we do it explicitly.
+	if err := userModel.UpdateKeys(); err != nil {
+		r.logger.Error("failed to refresh user keys prior to update",
+			zap.String("username", username),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityUser, username)
+	}
+
+	// Use UpdateBuilder for versioned updates to ensure optimistic locking works correctly
+	updateBuilder := r.db.WithContext(ctx).Model(userModel).
+		Where("PK", "=", userModel.PK).
+		Where("SK", "=", userModel.SK).
+		UpdateBuilder()
+
+	// Set all fields that need updating
+	updateBuilder.Set("DisplayName", userModel.DisplayName)
+	updateBuilder.Set("Note", userModel.Note)
+	updateBuilder.Set("Avatar", userModel.Avatar)
+	updateBuilder.Set("Header", userModel.Header)
+	updateBuilder.Set("URL", userModel.URL)
+	updateBuilder.Set("Locked", userModel.Locked)
+	updateBuilder.Set("Discoverable", userModel.Discoverable)
+	updateBuilder.Set("Fields", userModel.Fields)
+	updateBuilder.Set("Email", userModel.Email)
+	updateBuilder.Set("Locale", userModel.Locale)
+	updateBuilder.Set("Approved", userModel.Approved)
+	updateBuilder.Set("Suspended", userModel.Suspended)
+	updateBuilder.Set("Silenced", userModel.Silenced)
+	updateBuilder.Set("Role", userModel.Role)
+	updateBuilder.Set("RecoveryMethods", userModel.RecoveryMethods)
+	updateBuilder.Set("AllowNSFW", userModel.AllowNSFW)
+	updateBuilder.Set("RequireNSFWWarning", userModel.RequireNSFWWarning)
+	if userModel.Metadata != nil {
+		updateBuilder.Set("Metadata", userModel.Metadata)
+	}
+	updateBuilder.Set("UpdatedAt", now)
+
+	// Handle version for optimistic locking
+	// If version exists in DB (> 0), use condition check for optimistic locking
+	// If version doesn't exist (was 0), set it without condition (first time initialization)
+	if versionExistsInDB && currentVersion > 0 {
+		// Version exists in DB - use optimistic locking
+		updateBuilder.ConditionVersion(int64(currentVersion))
+		updateBuilder.Set("Version", currentVersion+1)
+	} else {
+		// Version doesn't exist yet - set it without condition (first time initialization)
+		updateBuilder.Set("Version", 1)
+	}
+
+	if err := updateBuilder.Execute(); err != nil {
+		r.logger.Error("failed to update user profile record",
+			zap.String("username", username),
+			zap.Int("version", currentVersion),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityUser, username)
+	}
+
+	newVersion := currentVersion + 1
+	if newVersion == 0 {
+		newVersion = 1
+	}
+	account.User.UpdatedAt = now
+	account.User.Version = newVersion
+	userModel.Version = newVersion
+
+	r.logger.Info("updated user profile record",
+		zap.String("username", username),
+		zap.Int("previous_version", currentVersion),
+		zap.Int("new_version", newVersion))
+
+	// Persist ActivityPub actor changes if provided
+	if account.Actor != nil && r.actorRepo != nil {
+		var existingActor *activitypub.Actor
+		if storedActor, err := r.actorRepo.GetActor(ctx, username); err == nil {
+			existingActor = storedActor
+		} else if err != nil && !isAccountNotFound(err) {
+			r.logger.Error("failed to load existing actor profile record",
+				zap.String("username", username),
+				zap.Error(err))
+			return ErrorHandler.HandleUpdateError(err, EntityActor, username)
+		}
+
+		account.Actor = r.mergeActorDataForUpdate(username, existingActor, account.Actor)
+
+		if err := r.actorRepo.UpdateActor(ctx, account.Actor); err != nil {
+			r.logger.Error("failed to update actor profile record",
+				zap.String("username", username),
+				zap.Error(err))
+			return ErrorHandler.HandleUpdateError(err, EntityActor, username)
+		}
+	}
+
+	return nil
+}
+
+func (r *AccountRepository) mergeActorDataForUpdate(username string, existing, incoming *activitypub.Actor) *activitypub.Actor {
+	if incoming == nil {
+		return existing
+	}
+
+	result := existing
+	if result == nil {
+		result = &activitypub.Actor{}
+	}
+
+	// Copy over identifying fields when provided
+	if incoming.ID != "" {
+		result.ID = incoming.ID
+	}
+	if incoming.URL != "" {
+		result.URL = incoming.URL
+	}
+	if incoming.Inbox != "" {
+		result.Inbox = incoming.Inbox
+	}
+	if incoming.Outbox != "" {
+		result.Outbox = incoming.Outbox
+	}
+	if incoming.Followers != "" {
+		result.Followers = incoming.Followers
+	}
+	if incoming.Following != "" {
+		result.Following = incoming.Following
+	}
+	if incoming.Liked != "" {
+		result.Liked = incoming.Liked
+	}
+
+	if incoming.PreferredUsername != "" {
+		result.PreferredUsername = incoming.PreferredUsername
+	} else if result.PreferredUsername == "" {
+		result.PreferredUsername = username
+	}
+
+	if incoming.Name != "" {
+		result.Name = incoming.Name
+	}
+	if incoming.Summary != "" {
+		result.Summary = incoming.Summary
+	}
+
+	// Booleans should reflect the incoming state explicitly
+	result.ManuallyApprovesFollowers = incoming.ManuallyApprovesFollowers
+	result.Discoverable = incoming.Discoverable
+
+	if incoming.Type != "" {
+		result.Type = incoming.Type
+	} else if result.Type == "" {
+		result.Type = activitypub.PersonType
+	}
+
+	if len(incoming.Attachment) > 0 {
+		result.Attachment = incoming.Attachment
+	}
+
+	if incoming.Icon != nil {
+		if result.Icon == nil {
+			result.Icon = &activitypub.Image{}
+		}
+		mergeActivityPubImage(result.Icon, incoming.Icon)
+	}
+
+	if incoming.Image != nil {
+		if result.Image == nil {
+			result.Image = &activitypub.Image{}
+		}
+		mergeActivityPubImage(result.Image, incoming.Image)
+	}
+
+	if incoming.PublicKey != nil {
+		result.PublicKey = incoming.PublicKey
+	}
+
+	if incoming.Endpoints != nil {
+		result.Endpoints = incoming.Endpoints
+	}
+
+	r.ensureActorIdentifiers(username, result, incoming)
+
+	return result
+}
+
+func mergeActivityPubImage(dest *activitypub.Image, src *activitypub.Image) {
+	if src == nil || dest == nil {
+		return
+	}
+
+	if src.Type != "" {
+		dest.Type = src.Type
+	}
+	if src.URL != "" {
+		dest.URL = src.URL
+	}
+	if src.MediaType != "" {
+		dest.MediaType = src.MediaType
+	}
+	if src.Width != 0 {
+		dest.Width = src.Width
+	}
+	if src.Height != 0 {
+		dest.Height = src.Height
+	}
+}
+
+func (r *AccountRepository) ensureActorIdentifiers(username string, actor *activitypub.Actor, source *activitypub.Actor) {
+	if actor == nil {
+		return
+	}
+
+	resolvedUsername := activitypubutil.DerivePreferredUsername(actor, username)
+	if resolvedUsername == "" {
+		resolvedUsername = strings.TrimSpace(username)
+	}
+
+	baseURL := r.actorBaseURL()
+	if baseURL == "" {
+		baseURL = deriveActorBaseURL(actor, resolvedUsername)
+		if baseURL == "" {
+			baseURL = deriveActorBaseURL(source, resolvedUsername)
+		}
+	}
+
+	sanitized := activitypubutil.BuildLocalActor(resolvedUsername, baseURL, nil, actor)
+	if sanitized == nil {
+		return
+	}
+
+	if source != nil {
+		activitypubutil.MergeActorMetadata(sanitized, source)
+	}
+
+	*actor = *sanitized
+
+	if actor.PublicKey != nil && actor.ID != "" {
+		if actor.PublicKey.Owner == "" {
+			actor.PublicKey.Owner = actor.ID
+		}
+		if actor.PublicKey.ID == "" {
+			actor.PublicKey.ID = actor.ID + "#main-key"
+		}
+	}
+}
+
+func deriveActorBaseURL(actor *activitypub.Actor, username string) string {
+	if actor == nil {
+		return ""
+	}
+	if actor.URL != "" {
+		if base := extractBaseURL(actor.URL, "/@"+username); base != "" {
+			return base
+		}
+	}
+	if actor.ID != "" {
+		if base := extractBaseURL(actor.ID, "/users/"+username); base != "" {
+			return base
+		}
+	}
+	return ""
+}
+
+func (r *AccountRepository) actorBaseURL() string {
+	base := strings.TrimSpace(r.domain)
+	if base == "" {
+		return ""
+	}
+
+	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+		base = "https://" + base
+	}
+
+	return strings.TrimSuffix(base, "/")
+}
+
+func extractBaseURL(value, marker string) string {
+	if value == "" {
+		return ""
+	}
+	if idx := strings.Index(value, marker); idx > 0 {
+		return value[:idx]
+	}
+	return strings.TrimSuffix(value, marker)
 }
 
 // SearchAccounts searches for accounts matching a query
 func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
-	// For now, implement a simple search by username prefix
-	// In a full implementation, this would use search indices or full-text search
+	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
+	if normalizedQuery == "" {
+		return &interfaces.PaginatedResult[*storage.Account]{
+			Items:      []*storage.Account{},
+			NextCursor: "",
+			HasMore:    false,
+			Total:      0,
+		}, nil
+	}
 
-	var users []models.User
-
-	// Apply limit
 	limit := opts.Limit
 	if err := common.ValidateQueryLimit(limit, 100, "user search"); err != nil {
 		limit = 20 // Default limit on validation error
 	}
 
-	// Use the user list GSI (GSI1) which is more efficient than scanning
-	// This still requires client-side filtering but operates on a smaller dataset
-	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("user-list-index").
-		Where("GSI1PK", "=", "USERS").
-		Limit(500) // Reasonable limit for search results
+	searchLimit := limit
+	if searchLimit <= 0 {
+		searchLimit = 20
+	}
 
-	// Apply cursor for pagination
+	prefix := normalizedQuery
+	if len(prefix) > 2 {
+		prefix = prefix[:2]
+	}
+	prefixKey := fmt.Sprintf("USER_HANDLE_PREFIX#%s", prefix)
+
+	var users []models.User
+	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
+		Index("gsi5").
+		Where("GSI5PK", "=", prefixKey).
+		Where("GSI5SK", "BEGINS_WITH", normalizedQuery).
+		OrderBy("GSI5SK", "ASC").
+		Limit(searchLimit + 1)
+
 	if opts.Cursor != "" {
-		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
-		if err == nil && sk != "" {
-			queryBuilder = queryBuilder.Where("GSI1SK", ">", sk)
+		pkCursor, skCursor, err := Utils.Pagination.DecodeCursor(opts.Cursor)
+		if err != nil {
+			r.logger.Warn("invalid search cursor provided",
+				zap.String("cursor", opts.Cursor),
+				zap.Error(err))
+		} else if skCursor != "" {
+			if pkCursor != "" && pkCursor != prefixKey {
+				r.logger.Info("search cursor prefix mismatch - resetting to new prefix",
+					zap.String("expected_prefix", prefixKey),
+					zap.String("cursor_prefix", pkCursor))
+			} else {
+				queryBuilder = queryBuilder.Where("GSI5SK", ">", skCursor)
+			}
 		}
 	}
 
-	err := queryBuilder.All(&users)
-	if err != nil {
+	if err := queryBuilder.All(&users); err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "search")
 	}
 
-	// Filter by query (simple contains check)
-	var filteredUsers []models.User
-	queryLower := strings.ToLower(query)
-	for _, user := range users {
-		if strings.Contains(strings.ToLower(user.Username), queryLower) ||
-			strings.Contains(strings.ToLower(user.DisplayName), queryLower) {
-			filteredUsers = append(filteredUsers, user)
-		}
-
-		// Stop if we have enough results
-		if len(filteredUsers) >= opts.Limit {
-			break
-		}
+	hasMore := len(users) > searchLimit
+	if hasMore {
+		users = users[:searchLimit]
 	}
 
-	// Convert to accounts
-	var accounts []*storage.Account
-	for _, user := range filteredUsers {
+	accounts := make([]*storage.Account, 0, len(users))
+	for _, user := range users {
 		account := &storage.Account{
 			User: r.modelToStorageUser(&user),
 		}
 		accounts = append(accounts, account)
-
-		// Respect the limit
-		if len(accounts) >= limit {
-			break
-		}
 	}
 
-	// Determine if there are more results
-	hasMore := len(users) > limit
 	var nextCursor string
-	if hasMore && len(accounts) > 0 {
-		lastUser := filteredUsers[len(filteredUsers)-1]
-		nextCursor = Utils.Pagination.EncodeCursor(lastUser.PK, lastUser.GSI1SK)
+	if hasMore && len(users) > 0 {
+		lastUser := users[len(users)-1]
+		nextCursor = Utils.Pagination.EncodeCursor(lastUser.GSI5PK, lastUser.GSI5SK)
 	}
 
 	return &interfaces.PaginatedResult[*storage.Account]{
 		Items:      accounts,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
-		Total:      -1, // Total count not calculated for performance
+		Total:      -1,
 	}, nil
 }
 

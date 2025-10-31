@@ -129,3 +129,8 @@ func (n *ThreadNode) UpdatePath(parentPath string) {
 		n.Path = n.StatusID
 	}
 }
+
+// TableName returns the DynamoDB table backing ThreadNode.
+func (ThreadNode) TableName() string {
+	return MainTableName
+}

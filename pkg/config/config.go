@@ -2,10 +2,17 @@
 package config
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
+
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 )
 
 // Config holds the application configuration
@@ -29,9 +36,12 @@ type Config struct {
 
 	// Security
 	JWTSecret            string // For client authentication
+	JWTSecretARN         string // ARN pointing to stored secret (optional)
 	KMSKeyID             string // AWS KMS key ID for encryption (optional)
 	ReputationPrivateKey string // Private key for reputation system
 	VAPIDPublicKey       string // VAPID public key for push notifications
+	VAPIDSecretARN       string // ARN pointing to VAPID secret (private key + metadata)
+	VAPIDSubject         string // Subject/identifier used for VAPID JWTs
 	AdminUsername        string // Admin username for privileged operations
 	SystemActorPublicKey string // System actor public key for recovery federation
 
@@ -207,7 +217,7 @@ func loadConfig() *Config {
 		InstanceName: getEnvOrDefault("INSTANCE_NAME", "Lesser ActivityPub Server"),
 
 		Region:                  getEnvOrDefault("AWS_REGION", "us-east-1"),
-		DynamoTableName:         getEnvOrDefault("DYNAMO_TABLE_NAME", "lesser-main"),
+		DynamoTableName:         GetMainTableName(),
 		DynamoDBEndpoint:        getEnvOrDefault("DYNAMODB_ENDPOINT", ""),
 		S3BucketName:            getEnvOrDefault("S3_BUCKET_NAME", "lesser-media"),
 		SQSQueueURL:             getEnvOrDefault("SQS_QUEUE_URL", ""),
@@ -218,10 +228,13 @@ func loadConfig() *Config {
 		ReputationTableName:     getEnvOrDefault("REPUTATION_TABLE_NAME", "lesser-reputation"),
 		AWSAccountID:            getEnvOrDefault("AWS_ACCOUNT_ID", ""),
 
-		JWTSecret:            getEnvOrPanic("JWT_SECRET"),
+		JWTSecret:            mustGetJWTSecret(),
+		JWTSecretARN:         getEnvOrDefault("JWT_SECRET_ARN", ""),
 		KMSKeyID:             getEnvOrDefault("KMS_KEY_ID", ""), // Optional - defaults to AWS managed key
 		ReputationPrivateKey: getEnvOrDefault("REPUTATION_PRIVATE_KEY", ""),
 		VAPIDPublicKey:       getEnvOrDefault("VAPID_PUBLIC_KEY", ""),
+		VAPIDSecretARN:       getEnvOrDefault("VAPID_SECRET_ARN", ""),
+		VAPIDSubject:         getEnvOrDefault("VAPID_SUBJECT", ""),
 		AdminUsername:        getEnvOrDefault("ADMIN_USERNAME", ""),
 		SystemActorPublicKey: getEnvOrDefault("SYSTEM_ACTOR_PUBLIC_KEY", ""),
 
@@ -403,12 +416,65 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-func getEnvOrPanic(key string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		panic(fmt.Sprintf("Required environment variable %s is not set", key))
+var jwtSecretLoader struct {
+	once  sync.Once
+	value string
+	err   error
+}
+
+func mustGetJWTSecret() string {
+	// Check for plain text secret (not recommended for production)
+	if secret := os.Getenv("JWT_SECRET"); secret != "" {
+		return secret
 	}
-	return value
+
+	// Get ARN from environment
+	arn := os.Getenv("JWT_SECRET_ARN")
+	if arn == "" {
+		// Default to secret name (will be looked up in the region)
+		arn = "lesser/jwt-secret"
+	}
+
+	// Load secret from AWS Secrets Manager (once)
+	jwtSecretLoader.once.Do(func() {
+		jwtSecretLoader.value, jwtSecretLoader.err = fetchSecretValue(arn)
+	})
+
+	if jwtSecretLoader.err != nil {
+		panic(fmt.Sprintf("Failed to resolve JWT secret from %s: %v", arn, jwtSecretLoader.err))
+	}
+
+	return jwtSecretLoader.value
+}
+
+func fetchSecretValue(arn string) (string, error) {
+	ctx := context.Background()
+	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("load AWS config: %w", err)
+	}
+
+	sm := secretsmanager.NewFromConfig(cfg)
+	output, err := sm.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: &arn})
+	if err != nil {
+		return "", fmt.Errorf("get secret value: %w", err)
+	}
+
+	if output.SecretString == nil {
+		return "", errors.New("secret does not contain SecretString")
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal([]byte(*output.SecretString), &payload); err != nil {
+		return "", fmt.Errorf("unmarshal secret string: %w", err)
+	}
+
+	val, ok := payload["secret"]
+	if !ok || val == "" {
+		return "", errors.New("secret payload missing 'secret' key")
+	}
+
+	return val, nil
 }
 
 func getEnvAsIntOrDefault(key string, defaultValue int) int {
@@ -538,9 +604,17 @@ func GetDomainName() string {
 
 // GetDynamoTableName returns the DynamoDB table name
 func GetDynamoTableName() string {
-	table := os.Getenv("DYNAMODB_TABLE")
-	if table == "" {
-		table = os.Getenv("DYNAMO_TABLE_NAME")
+	return GetMainTableName()
+}
+
+// GetMainTableName returns the canonical DynamoDB table name for the current stage/environment.
+func GetMainTableName() string {
+	env := strings.TrimSpace(os.Getenv("ENVIRONMENT"))
+	if env == "" {
+		env = strings.TrimSpace(os.Getenv("STAGE"))
 	}
-	return table
+	if env == "" {
+		panic("ENVIRONMENT or STAGE must be set to determine the DynamoDB table name")
+	}
+	return fmt.Sprintf("lesser-%s", strings.ToLower(env))
 }

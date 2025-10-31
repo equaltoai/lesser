@@ -5,8 +5,14 @@ import (
 	"fmt"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
+)
+
+const (
+	defaultHashtagTimelineLimit = 20
 )
 
 // Hashtag implements QueryResolver.
@@ -92,72 +98,29 @@ func (r *queryResolver) FollowedHashtags(ctx context.Context, first *int, after 
 }
 
 // HashtagTimeline implements QueryResolver.
-func (r *queryResolver) HashtagTimeline(ctx context.Context, hashtag string, first *int, after *string) (*model.PostConnection, error) {
+func (r *queryResolver) HashtagTimeline(ctx context.Context, hashtag string, first *int, after *string, mediaOnly *bool) (*model.PostConnection, error) {
 	viewerID := r.optionalAuth(ctx)
 
-	limit := 20
-	if first != nil && *first > 0 {
-		limit = *first
-	}
+	limit, cursor := normalizeTimelineArgs(first, after, defaultHashtagTimelineLimit)
 
-	var cursor string
-	if after != nil {
-		cursor = *after
-	}
-
-	// Get hashtag repository for timeline query
-	hashtagRepo := r.Storage.Hashtag()
-	if hashtagRepo == nil {
-		r.Logger.Error("hashtag repository not available")
-		return nil, fmt.Errorf("hashtag repository not available")
-	}
-
-	// Get timeline from repository
-	var maxID *string
-	if cursor != "" {
-		maxID = &cursor
-	}
-
-	posts, err := hashtagRepo.GetHashtagTimelineAdvanced(ctx, hashtag, maxID, limit, "public")
+	posts, err := r.fetchHashtagTimelinePosts(ctx, hashtag, viewerID, limit, cursor)
 	if err != nil {
-		r.Logger.Error("failed to get hashtag timeline",
-			zap.String("hashtag", hashtag),
-			zap.String("viewer", viewerID),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get hashtag timeline: %w", err)
+		return nil, err
 	}
 
-	// Convert to post edges
-	edges := make([]*model.PostEdge, 0, len(posts))
-	for _, post := range posts {
-		if post == nil {
-			continue
-		}
-
-		// Create a basic object model from the status search result
-		postModel := &model.Object{
-			ID:      post.StatusID,
-			Content: post.Content,
-		}
-
-		edges = append(edges, &model.PostEdge{
-			Node:   postModel,
-			Cursor: model.Cursor(post.StatusID),
-		})
+	statusRepo := r.Storage.Status()
+	if statusRepo == nil && mediaOnly != nil && *mediaOnly {
+		r.Logger.Warn("status repository unavailable for media filter",
+			zap.String("hashtag", hashtag))
 	}
 
-	// Track cost
+	statusByID := r.hydrateHashtagTimelineStatuses(ctx, statusRepo, posts, hashtag)
+	requireMedia := mediaOnly != nil && *mediaOnly && statusRepo != nil
+	edges := r.buildHashtagTimelineEdges(ctx, posts, statusByID, requireMedia)
+
 	r.trackDynamoOperation(ctx, "read", int64(len(posts)))
 
-	hasNextPage := len(posts) == limit
-
-	return &model.PostConnection{
-		Edges: edges,
-		PageInfo: &model.PageInfo{
-			HasNextPage:     hasNextPage,
-			HasPreviousPage: false,
-		},
-	}, nil
+	return buildPostConnection(edges, len(posts) == limit), nil
 }
 
 // MultiHashtagTimeline implements QueryResolver.
@@ -262,6 +225,154 @@ func (r *queryResolver) MultiHashtagTimeline(ctx context.Context, hashtags []str
 			HasPreviousPage: false,
 		},
 	}, nil
+}
+
+func normalizeTimelineArgs(first *int, after *string, defaultLimit int) (int, string) {
+	limit := defaultLimit
+	if first != nil && *first > 0 {
+		limit = *first
+	}
+
+	cursor := ""
+	if after != nil {
+		cursor = *after
+	}
+
+	return limit, cursor
+}
+
+func (r *queryResolver) fetchHashtagTimelinePosts(ctx context.Context, hashtag string, viewerID string, limit int, cursor string) ([]*storage.StatusSearchResult, error) {
+	hashtagRepo := r.Storage.Hashtag()
+	if hashtagRepo == nil {
+		r.Logger.Error("hashtag repository not available")
+		return nil, fmt.Errorf("hashtag repository not available")
+	}
+
+	var maxID *string
+	if cursor != "" {
+		maxID = &cursor
+	}
+
+	posts, err := hashtagRepo.GetHashtagTimelineAdvanced(ctx, hashtag, maxID, limit, "public")
+	if err != nil {
+		r.Logger.Error("failed to get hashtag timeline",
+			zap.String("hashtag", hashtag),
+			zap.String("viewer", viewerID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get hashtag timeline: %w", err)
+	}
+
+	return posts, nil
+}
+
+func (r *queryResolver) hydrateHashtagTimelineStatuses(ctx context.Context, statusRepo interfaces.StatusRepository, posts []*storage.StatusSearchResult, hashtag string) map[string]*models.Status {
+	if statusRepo == nil {
+		return nil
+	}
+
+	statusIDs := make([]string, 0, len(posts))
+	for _, post := range posts {
+		if post != nil && post.StatusID != "" {
+			statusIDs = append(statusIDs, post.StatusID)
+		}
+	}
+
+	if len(statusIDs) == 0 {
+		return nil
+	}
+
+	statuses, err := statusRepo.GetStatusesByIDs(ctx, statusIDs)
+	if err != nil {
+		r.Logger.Warn("failed to hydrate hashtag timeline statuses",
+			zap.String("hashtag", hashtag),
+			zap.Int("requested", len(statusIDs)),
+			zap.Error(err))
+		return nil
+	}
+
+	statusByID := make(map[string]*models.Status, len(statuses))
+	for _, status := range statuses {
+		if status != nil && status.StatusID != "" {
+			statusByID[status.StatusID] = status
+		}
+	}
+
+	return statusByID
+}
+
+func (r *queryResolver) buildHashtagTimelineEdges(ctx context.Context, posts []*storage.StatusSearchResult, statusByID map[string]*models.Status, requireMedia bool) []*model.PostEdge {
+	edges := make([]*model.PostEdge, 0, len(posts))
+	for _, post := range posts {
+		if post == nil {
+			continue
+		}
+
+		var status *models.Status
+		if statusByID != nil {
+			status = statusByID[post.StatusID]
+		}
+
+		if requireMedia && (status == nil || !status.HasMedia()) {
+			continue
+		}
+
+		cursorValue := post.StatusID
+		if post.ID != "" {
+			cursorValue = post.ID
+		}
+
+		postModel := r.buildTimelineObject(ctx, status, post)
+
+		edges = append(edges, &model.PostEdge{
+			Node:   postModel,
+			Cursor: model.Cursor(cursorValue),
+		})
+	}
+
+	return edges
+}
+
+func (r *queryResolver) buildTimelineObject(ctx context.Context, status *models.Status, post *storage.StatusSearchResult) *model.Object {
+	if status != nil {
+		return r.convertStatusToObject(ctx, status)
+	}
+
+	content := ""
+	statusID := ""
+	if post != nil {
+		content = post.Content
+		statusID = post.StatusID
+	}
+
+	return &model.Object{
+		ID:      statusID,
+		Content: content,
+	}
+}
+
+func buildPostConnection(edges []*model.PostEdge, hasNextPage bool) *model.PostConnection {
+	startCursor, endCursor := deriveEdgeCursors(edges)
+
+	return &model.PostConnection{
+		Edges: edges,
+		PageInfo: &model.PageInfo{
+			HasNextPage:     hasNextPage,
+			HasPreviousPage: false,
+			StartCursor:     startCursor,
+			EndCursor:       endCursor,
+		},
+		TotalCount: len(edges),
+	}
+}
+
+func deriveEdgeCursors(edges []*model.PostEdge) (*model.Cursor, *model.Cursor) {
+	if len(edges) == 0 {
+		return nil, nil
+	}
+
+	start := edges[0].Cursor
+	end := edges[len(edges)-1].Cursor
+	return &start, &end
 }
 
 // SuggestedHashtags implements QueryResolver.

@@ -1168,26 +1168,30 @@ func (r *AccountRepository) UpdateWebAuthnCredential(ctx context.Context, creden
 		return ErrorHandler.HandleUpdateError(ErrWebAuthnValidationFailed, EntityWebAuthnCredential, "empty")
 	}
 
-	// We need to find the credential first since we don't have the username
-	// This requires scanning, which matches the legacy inefficient approach
-	var credentials []models.WebAuthnCredential
+	var credential models.WebAuthnCredential
 
-	err := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).Where("ID", "=", credentialID).All(&credentials)
+	query := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
+		Index("gsi1").
+		Where("GSI1PK", "=", "WEBAUTHN_CREDENTIAL#"+credentialID).
+		Limit(1)
+
+	err := query.First(&credential)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return ErrorHandler.HandleGetError(ErrWebAuthnCredentialNotFound, EntityWebAuthnCredential, credentialID)
+		}
 		r.logger.Error("failed to find WebAuthn credential for update",
 			zap.String("credentialID", credentialID),
 			zap.Error(err))
 		return ErrorHandler.HandleQueryError(err, EntityWebAuthnCredential, credentialID)
 	}
 
-	if err := common.ValidateSliceNotEmpty("credentials", credentials); err != nil {
-		return ErrorHandler.HandleGetError(ErrWebAuthnCredentialNotFound, EntityWebAuthnCredential, credentialID)
-	}
-
-	// Update the credential
-	credential := credentials[0]
 	credential.SignCount = signCount
 	credential.LastUsedAt = time.Now()
+
+	if err := credential.BeforeUpdate(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityWebAuthnCredential, credentialID)
+	}
 
 	err = r.db.WithContext(ctx).Model(&credential).Update()
 	if err != nil {

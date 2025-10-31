@@ -61,8 +61,20 @@ func (c *Conversation) BeforeCreate() error {
 
 // UpdateKeys updates GSI keys - for conversation, this is mainly used for participant records
 func (c *Conversation) UpdateKeys() error {
+	// Validate required fields
+	if err := common.ValidateRequiredParam("c.ID", c.ID); err != nil {
+		return ErrConversationIDRequired
+	}
+
+	// Set primary keys
+	c.PK = fmt.Sprintf(KeyPatternConversation, c.ID)
+	c.SK = SKMetadata
+
 	// For the main conversation record, GSI keys are empty
 	// GSI keys are only used for participant records which are created separately
+	c.GSI1PK = ""
+	c.GSI1SK = ""
+
 	return nil
 }
 

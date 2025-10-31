@@ -17,6 +17,7 @@ import (
 type SecurityProps struct {
 	Environment      string
 	Table            awsdynamodb.Table
+	RateLimitTable   awsdynamodb.Table
 	MediaBucket      awss3.Bucket
 	StreamingBucket  awss3.Bucket
 	TrainingBucket   awss3.Bucket
@@ -27,13 +28,14 @@ type SecurityProps struct {
 }
 
 type SecurityConstructs struct {
-	LambdaRole     awsiam.Role
-	DynamoDBPolicy awsiam.Policy
-	S3Policy       awsiam.Policy
-	SQSPolicy      awsiam.Policy
-	BedrockPolicy  awsiam.Policy
-	KMSPolicy      awsiam.Policy
-	KMSKey         awskms.IKey
+	LambdaRole       awsiam.Role
+	DynamoDBPolicy   awsiam.Policy
+	S3Policy         awsiam.Policy
+	SQSPolicy        awsiam.Policy
+	CloudWatchPolicy awsiam.Policy
+	BedrockPolicy    awsiam.Policy
+	KMSPolicy        awsiam.Policy
+	KMSKey           awskms.IKey
 }
 
 func CreateSecurityConstructs(stack awscdk.Stack, props *SecurityProps) *SecurityConstructs {
@@ -48,7 +50,7 @@ func CreateSecurityConstructs(stack awscdk.Stack, props *SecurityProps) *Securit
 	security.LambdaRole.AddManagedPolicy(awsiam.ManagedPolicy_FromAwsManagedPolicyName(jsii.String("service-role/AWSLambdaBasicExecutionRole")))
 
 	// Create DynamoDB policy matching Pulumi exactly (lines 434-476)
-	security.DynamoDBPolicy = createDynamoDBPolicy(stack, props.Table)
+	security.DynamoDBPolicy = createDynamoDBPolicy(stack, props.Table, props.RateLimitTable)
 	security.LambdaRole.AttachInlinePolicy(security.DynamoDBPolicy)
 
 	// Create S3 policy matching Pulumi exactly (lines 487-513)
@@ -58,6 +60,10 @@ func CreateSecurityConstructs(stack awscdk.Stack, props *SecurityProps) *Securit
 	// Create SQS policy matching Pulumi exactly (lines 516-551)
 	security.SQSPolicy = createSQSPolicy(stack, props.FederationQueue, props.FederationDLQ, props.PushQueue)
 	security.LambdaRole.AttachInlinePolicy(security.SQSPolicy)
+
+	// Allow custom metric emission to CloudWatch
+	security.CloudWatchPolicy = createCloudWatchPolicy(stack)
+	security.LambdaRole.AttachInlinePolicy(security.CloudWatchPolicy)
 
 	// Create Bedrock policy matching Pulumi exactly (lines 556-586)
 	security.BedrockPolicy = createBedrockPolicy(stack)
@@ -69,9 +75,14 @@ func CreateSecurityConstructs(stack awscdk.Stack, props *SecurityProps) *Securit
 
 	// Add Secrets Manager permissions for JWT secret, actor private key, and CloudFront key
 	secretResources := &[]*string{
+		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/jwt-secret"),
 		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/jwt-secret-*"),
+		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/actor-private-key"),
 		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/actor-private-key-*"),
-		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/cloudfront-private-key-*"),
+		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/cdn-private-key"),
+		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/cdn-private-key-*"),
+		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/vapid-key"),
+		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/vapid-key-*"),
 	}
 	security.LambdaRole.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Effect: awsiam.Effect_ALLOW,
@@ -80,6 +91,16 @@ func CreateSecurityConstructs(stack awscdk.Stack, props *SecurityProps) *Securit
 			jsii.String("secretsmanager:DescribeSecret"),
 		},
 		Resources: secretResources,
+	}))
+
+	// Allow Lambda functions to manage WebSocket connections
+	security.LambdaRole.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Effect: awsiam.Effect_ALLOW,
+		Actions: &[]*string{
+			jsii.String("execute-api:ManageConnections"),
+			jsii.String("execute-api:Invoke"),
+		},
+		Resources: &[]*string{jsii.String("arn:aws:execute-api:*:*:*/*")},
 	}))
 
 	// Grant access to streaming and training buckets
@@ -93,7 +114,34 @@ func CreateSecurityConstructs(stack awscdk.Stack, props *SecurityProps) *Securit
 	return security
 }
 
-func createDynamoDBPolicy(stack awscdk.Stack, table awsdynamodb.Table) awsiam.Policy {
+func createDynamoDBPolicy(stack awscdk.Stack, table awsdynamodb.Table, rateLimitTable awsdynamodb.Table) awsiam.Policy {
+	// Build resource list including both main table and rate limit table
+	resources := []*string{
+		table.TableArn(),
+		jsii.String(*table.TableArn() + "/index/*"),
+	}
+
+	// Add rate limit table if provided
+	if rateLimitTable != nil {
+		resources = append(resources, rateLimitTable.TableArn())
+		resources = append(resources, jsii.String(*rateLimitTable.TableArn()+"/index/*"))
+	}
+
+	// Include persistent WebSocket connection tables
+	streamingTables := []string{
+		"lesser-streaming-connections",
+		"lesser-streaming-subscriptions",
+		"WebSocketConnections",
+		"WebSocketSubscriptions",
+		"StreamingEvents",
+	}
+	for _, tableName := range streamingTables {
+		resources = append(resources,
+			jsii.String(fmt.Sprintf("arn:aws:dynamodb:*:*:table/%s", tableName)),
+			jsii.String(fmt.Sprintf("arn:aws:dynamodb:*:*:table/%s/index/*", tableName)),
+		)
+	}
+
 	policyDoc := map[string]interface{}{
 		"Version": "2012-10-17",
 		"Statement": []map[string]interface{}{
@@ -109,10 +157,7 @@ func createDynamoDBPolicy(stack awscdk.Stack, table awsdynamodb.Table) awsiam.Po
 					"dynamodb:BatchGetItem",
 					"dynamodb:BatchWriteItem",
 				},
-				"Resource": []*string{
-					table.TableArn(),
-					jsii.String(*table.TableArn() + "/index/*"),
-				},
+				"Resource": resources,
 			},
 			{
 				"Effect": "Allow",
@@ -199,6 +244,38 @@ func createSQSPolicy(stack awscdk.Stack, federationQueue, federationDLQ, pushQue
 	})
 }
 
+func createCloudWatchPolicy(stack awscdk.Stack) awsiam.Policy {
+	policyDoc := map[string]interface{}{
+		"Version": "2012-10-17",
+		"Statement": []map[string]interface{}{
+			{
+				"Effect": "Allow",
+				"Action": []string{
+					"cloudwatch:PutMetricData",
+				},
+				"Resource": "*",
+				"Condition": map[string]interface{}{
+					"StringLike": map[string]interface{}{
+						"cloudwatch:namespace": []string{
+							"Lesser/*",
+							"lesser/*",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	policyJSON, _ := json.Marshal(policyDoc)
+	var jsonData interface{}
+	_ = json.Unmarshal(policyJSON, &jsonData)
+	document := awsiam.PolicyDocument_FromJson(jsonData)
+
+	return awsiam.NewPolicy(stack, jsii.String("LambdaCloudWatchPolicy"), &awsiam.PolicyProps{
+		Document: document,
+	})
+}
+
 func createBedrockPolicy(stack awscdk.Stack) awsiam.Policy {
 	policyDoc := map[string]interface{}{
 		"Version": "2012-10-17",
@@ -244,24 +321,28 @@ func createBedrockPolicy(stack awscdk.Stack) awsiam.Policy {
 	})
 }
 
-// createKMSPolicyByPattern creates KMS policy using ARN pattern (no key lookup needed)
+// createKMSPolicyByPattern creates KMS policy using wildcard pattern (no key lookup needed)
 func createKMSPolicyByPattern(stack awscdk.Stack, environment string) awsiam.Policy {
-	// Construct KMS key ARN pattern - works without looking up the actual key
-	// Format: arn:aws:kms:region:account:alias/lesser-encryption
-	kmsArnPattern := fmt.Sprintf("arn:aws:kms:*:*:alias/lesser-encryption")
-
+	// Use wildcard for KMS key ARN - grants access to all keys in the account
+	// This avoids circular dependency issues and works with keys created in SharedStack
+	// Format: arn:aws:kms:region:account:key/*
 	policyDoc := map[string]interface{}{
 		"Version": "2012-10-17",
 		"Statement": []map[string]interface{}{
 			{
 				"Effect": "Allow",
 				"Action": []string{
-					"kms:Encrypt",
 					"kms:Decrypt",
-					"kms:GenerateDataKey",
 					"kms:DescribeKey",
 				},
-				"Resource": kmsArnPattern,
+				"Resource": "*",
+				"Condition": map[string]interface{}{
+					"StringEquals": map[string]interface{}{
+						"kms:ViaService": []string{
+							fmt.Sprintf("secretsmanager.%s.amazonaws.com", *stack.Region()),
+						},
+					},
+				},
 			},
 		},
 	}

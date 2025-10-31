@@ -48,5 +48,17 @@ func (l *UserLogin) GetSK() string {
 
 // UpdateKeys updates the keys
 func (l *UserLogin) UpdateKeys() error {
-	return l.BeforeCreate()
+	// Validate required fields
+	if l.Username == "" {
+		return fmt.Errorf("username is required")
+	}
+	if l.Timestamp.IsZero() {
+		return fmt.Errorf("timestamp is required")
+	}
+
+	// Set primary keys
+	l.PK = fmt.Sprintf(KeyPatternUser, l.Username)
+	l.SK = fmt.Sprintf("LOGIN#%s", l.Timestamp.Format(time.RFC3339Nano))
+
+	return nil
 }

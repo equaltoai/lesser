@@ -19,7 +19,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation/routing"
 	"github.com/equaltoai/lesser/pkg/federation/types"
+	notifpush "github.com/equaltoai/lesser/pkg/notifications"
 	"github.com/equaltoai/lesser/pkg/services"
+	notifsvc "github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -111,16 +113,49 @@ type ActivityHandler struct {
 	ModerationRepo   *repositories.ModerationRepository
 	ListRepo         *repositories.ListRepository
 	RouteManager     *routing.Manager
+	PushService      *notifpush.PushService
+	AccountRepo      *repositories.AccountRepository
+	NotificationRepo *repositories.NotificationRepository
+	NotificationSvc  *notifsvc.Service
 }
 
 // NewActivityHandler creates a new ActivityHandler
 func NewActivityHandler(db core.DB, tableName string) *ActivityHandler {
 	logger := zap.L()
 	cfg := config.Get()
-	domain := cfg.Domain
+	domain := DefaultTestingDomain
+	if cfg != nil {
+		domain = cfg.Domain
+	}
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = DefaultTestingDomain // Default for testing
 	}
+
+	accountRepo := repositories.NewAccountRepository(db, tableName, domain, logger)
+	notificationRepo := repositories.NewNotificationRepository(db, tableName, logger, nil)
+
+	var pushService *notifpush.PushService
+	if cfg != nil {
+		if svc, err := notifpush.NewPushService(cfg); err != nil {
+			logger.Warn("activity handler: failed to initialize push service", zap.Error(err))
+		} else {
+			pushService = svc
+		}
+	}
+
+	var notificationService *notifsvc.Service
+	if notificationRepo != nil && accountRepo != nil {
+		notificationService = notifsvc.NewService(
+			notificationRepo,
+			accountRepo,
+			nil,
+			logger,
+			domain,
+			pushService,
+		)
+		notificationRepo.SetDispatcher(notificationService)
+	}
+
 	return &ActivityHandler{
 		DB:               db,
 		TableName:        tableName,
@@ -135,6 +170,10 @@ func NewActivityHandler(db core.DB, tableName string) *ActivityHandler {
 		ModerationRepo:   repositories.NewModerationRepository(db, tableName, logger),
 		ListRepo:         repositories.NewListRepository(db, tableName, logger, nil),
 		RouteManager:     createRouteManager(db, tableName, logger),
+		PushService:      pushService,
+		AccountRepo:      accountRepo,
+		NotificationRepo: notificationRepo,
+		NotificationSvc:  notificationService,
 	}
 }
 
@@ -630,7 +669,7 @@ func (h *ActivityHandler) createStatusFromNote(note *activitypub.Note, _ *activi
 	// Create storage model with transformation-derived and specific fields
 	status := &models.Status{
 		StatusID:      statusID,
-		Note:          note,
+		Note:          &models.NoteField{Note: note}, // Wrap Note in NoteField for proper DynamORM handling
 		AuthorID:      note.AttributedTo,
 		Visibility:    visibility,
 		ToRecipients:  note.To,
@@ -784,6 +823,9 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 //nolint:unused // Helper method for timeline processing
 func (h *ActivityHandler) isLocalActor(actorID string) bool {
 	cfg := config.Get()
+	if cfg == nil {
+		return strings.Contains(actorID, DefaultTestingDomain)
+	}
 	domain := cfg.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = DefaultTestingDomain // Default for testing
@@ -2661,7 +2703,14 @@ func (h *ActivityHandler) filterRemoteRecipients(recipients []string) []string {
 //
 //nolint:unused // false positive - function is used
 func (h *ActivityHandler) createNotificationRepo() *repositories.NotificationRepository {
-	return repositories.NewNotificationRepository(h.DB, h.TableName, h.Logger, nil)
+	if h.NotificationRepo == nil {
+		repo := repositories.NewNotificationRepository(h.DB, h.TableName, h.Logger, nil)
+		if h.NotificationSvc != nil {
+			repo.SetDispatcher(h.NotificationSvc)
+		}
+		h.NotificationRepo = repo
+	}
+	return h.NotificationRepo
 }
 
 // processUndoWithObjectExtraction handles the common pattern for Undo activities

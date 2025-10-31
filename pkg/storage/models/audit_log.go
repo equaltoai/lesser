@@ -67,9 +67,9 @@ type AuthAuditLog struct {
 	CreatedAt time.Time `dynamorm:"created_at" json:"created_at"`
 }
 
-// TableName returns the DynamoDB table name
-func (a *AuthAuditLog) TableName() string {
-	return "" // Uses default table
+// TableName returns the DynamoDB table backing AuthAuditLog.
+func (AuthAuditLog) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the DynamoDB keys before saving

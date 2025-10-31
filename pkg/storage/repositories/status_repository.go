@@ -7,12 +7,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/pay-theory/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
@@ -45,10 +50,203 @@ func (r *StatusRepository) SetRelationshipRepository(relationshipRepo interface{
 	r.relationshipRepo = relationshipRepo
 }
 
+const (
+	defaultHomeTimelinePageLimit    = 20
+	maxHomeTimelinePageLimit        = 40
+	homeTimelineStatusesPerActor    = 20
+	homeTimelineFollowingSampleSize = 1000
+	maxInt32                        = 2147483647 // Maximum value for int32
+)
+
+// limitInt32 safely converts int to int32, clamping to maxInt32 to prevent overflow
+func limitInt32(limit int) int32 {
+	if limit > maxInt32 {
+		return maxInt32
+	}
+	if limit < 0 {
+		return 0
+	}
+	// nolint:gosec // Conversion is safe: we've checked bounds above
+	return int32(limit)
+}
+
 // CreateStatus creates a new status using enhanced validation and event emission
 func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Status) error {
 	// Use enhanced validation and creation with automatic event emission
-	return r.ValidateAndCreate(ctx, status)
+	if err := r.ValidateAndCreate(ctx, status); err != nil {
+		return err
+	}
+
+	if err := r.canonicalizeStatusIndexes(ctx, status); err != nil {
+		r.logger.Warn("failed to canonicalize status index attributes",
+			zap.String("status_id", status.StatusID),
+			zap.Error(err))
+	}
+
+	if err := r.createHashtagTimelineIndexes(ctx, status); err != nil {
+		r.logger.Warn("failed to create supplemental hashtag index records",
+			zap.String("status_id", status.StatusID),
+			zap.Strings("hashtags", status.Hashtags),
+			zap.Error(err))
+	}
+
+	return nil
+}
+
+// createHashtagTimelineIndexes persists supplemental hashtag index records so hashtag timelines can query efficiently.
+func (r *StatusRepository) createHashtagTimelineIndexes(ctx context.Context, status *models.Status) error {
+	if status == nil || len(status.Hashtags) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	records := make([]*models.HashtagStatusIndex, 0, len(status.Hashtags))
+
+	for _, tag := range status.Hashtags {
+		normalized := strings.TrimSpace(strings.TrimPrefix(strings.ToLower(tag), "#"))
+		if normalized == "" {
+			continue
+		}
+
+		record := &models.HashtagStatusIndex{
+			StatusID:     status.StatusID,
+			AuthorID:     status.AuthorID,
+			AuthorHandle: status.AuthorUsername,
+			StatusURL:    "",
+			Content:      status.Content,
+			MediaCount:   status.MediaCount,
+			Language:     status.Language,
+			Visibility:   status.Visibility,
+			Published:    status.PublishedAt,
+			HashtagName:  normalized,
+			TTL:          now.Add(90 * 24 * time.Hour).Unix(),
+			CreatedAt:    now,
+		}
+
+		if status.Note != nil && status.Note.Get() != nil && status.Note.Get().ID != "" {
+			record.StatusURL = status.Note.Get().ID
+		}
+
+		if record.Published.IsZero() {
+			record.Published = now
+		}
+
+		if err := record.UpdateKeys(); err != nil {
+			r.logger.Warn("failed to update hashtag timeline keys",
+				zap.String("status_id", status.StatusID),
+				zap.String("hashtag", normalized),
+				zap.Error(err))
+			continue
+		}
+
+		records = append(records, record)
+	}
+
+	if len(records) == 0 {
+		return nil
+	}
+
+	for _, record := range records {
+		err := r.db.WithContext(ctx).Model(record).Create()
+		if err != nil {
+			if errors.IsConditionFailed(err) {
+				r.logger.Debug("hashtag timeline index already exists",
+					zap.String("status_id", record.StatusID),
+					zap.String("hashtag", record.HashtagName))
+				continue
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *StatusRepository) canonicalizeStatusIndexes(ctx context.Context, status *models.Status) error {
+	if status == nil {
+		return nil
+	}
+
+	pk := fmt.Sprintf("status#%s", status.StatusID)
+	sk := pk
+
+	builder := r.db.WithContext(ctx).
+		Model(&models.Status{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder()
+
+	if status.Visibility == models.VisibilityPublic {
+		timestamp := status.PublishedAt.Unix()
+		if timestamp == 0 {
+			timestamp = time.Now().Unix()
+		}
+		timestampStr := fmt.Sprintf("%d", timestamp)
+		partitionKey := "PUBLIC_TIMELINE"
+		sortKey := fmt.Sprintf("%s#%s", timestampStr, status.StatusID)
+
+		builder.Set("gsI2PK", partitionKey)
+		builder.Set("gsI2SK", sortKey)
+	} else {
+		builder.Remove("gsI2PK")
+		builder.Remove("gsI2SK")
+	}
+
+	return builder.Execute()
+}
+
+func (r *StatusRepository) queryPublicTimelineDirect(ctx context.Context, opts interfaces.PaginationOptions) ([]*models.Status, error) {
+	if opts.Limit <= 0 {
+		opts.Limit = defaultHomeTimelinePageLimit
+	}
+
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(config.Get().Region))
+	if err != nil {
+		return nil, fmt.Errorf("load aws config: %w", err)
+	}
+
+	client := dynamodb.NewFromConfig(awsCfg)
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(r.tableName),
+		IndexName:              aws.String("GSI2"),
+		KeyConditionExpression: aws.String("#pk = :pk"),
+		ExpressionAttributeNames: map[string]string{
+			"#pk": "gsI2PK",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: "PUBLIC_TIMELINE"},
+		},
+		ScanIndexForward: aws.Bool(false),
+		Limit:            aws.Int32(limitInt32(opts.Limit)),
+	}
+
+	output, err := client.Query(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	r.logger.Info("public timeline query completed",
+		zap.Int("items_returned", len(output.Items)),
+		zap.Int("limit", int(opts.Limit)))
+
+	statuses := make([]*models.Status, 0, len(output.Items))
+	for _, item := range output.Items {
+		var status models.Status
+		if err := dynamorm.UnmarshalItem(item, &status); err != nil {
+			r.logger.Warn("failed to unmarshal status from public timeline query", zap.Error(err))
+			continue
+		}
+		r.logger.Debug("unmarshalled public timeline status",
+			zap.String("status_id", status.StatusID),
+			zap.String("visibility", status.Visibility),
+			zap.Bool("deleted", status.Deleted))
+		statuses = append(statuses, &status)
+	}
+
+	r.logger.Info("public timeline unmarshal completed",
+		zap.Int("statuses_unmarshalled", len(statuses)))
+
+	return statuses, nil
 }
 
 // GetStatus retrieves a status by ID using BaseRepository
@@ -67,8 +265,74 @@ func (r *StatusRepository) GetStatus(ctx context.Context, statusID string) (*mod
 
 // UpdateStatus updates an existing status using enhanced validation and event emission
 func (r *StatusRepository) UpdateStatus(ctx context.Context, status *models.Status) error {
-	// Use enhanced validation and update with automatic event emission and cache invalidation
-	return r.ValidateAndUpdate(ctx, status)
+	// Use UpdateBuilder with explicit fields to prevent Note field corruption
+	pk := status.PK
+	if pk == "" {
+		pk = fmt.Sprintf("status#%s", status.StatusID)
+	}
+	sk := status.SK
+	if sk == "" {
+		sk = fmt.Sprintf("status#%s", status.StatusID)
+	}
+
+	updateBuilder := r.db.WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder()
+
+	// Set only the fields that should be updated - explicitly exclude Note to prevent corruption
+	// Update basic fields
+	if status.Content != "" {
+		updateBuilder.Set("Content", status.Content)
+	}
+	updateBuilder.Set("Sensitive", status.Sensitive)
+	updateBuilder.Set("Language", status.Language)
+	updateBuilder.Set("Visibility", status.Visibility)
+	updateBuilder.Set("UpdatedAt", status.UpdatedAt)
+
+	// Update engagement counts (if changed)
+	if status.LikeCount >= 0 {
+		updateBuilder.Set("LikeCount", status.LikeCount)
+	}
+	if status.ReblogCount >= 0 {
+		updateBuilder.Set("ReblogCount", status.ReblogCount)
+	}
+	if status.ReplyCount >= 0 {
+		updateBuilder.Set("ReplyCount", status.ReplyCount)
+	}
+	if status.QuoteCount >= 0 {
+		updateBuilder.Set("QuoteCount", status.QuoteCount)
+	}
+
+	// Update flags
+	updateBuilder.Set("Deleted", status.Deleted)
+	if status.DeletedAt != nil {
+		updateBuilder.Set("DeletedAt", status.DeletedAt)
+	}
+	updateBuilder.Set("Flagged", status.Flagged)
+
+	// Update addressing fields
+	if status.ToRecipients != nil {
+		updateBuilder.Set("ToRecipients", status.ToRecipients)
+	}
+	if status.CcRecipients != nil {
+		updateBuilder.Set("CcRecipients", status.CcRecipients)
+	}
+
+	// Only update Note field if it's explicitly provided and valid
+	// This prevents corruption from nil or partially-loaded Note fields
+	if status.Note != nil && status.Note.Get() != nil {
+		// Validate Note has required fields before updating
+		if status.Note.Get().ID != "" && status.Note.Get().Type != "" {
+			updateBuilder.Set("Note", status.Note)
+		}
+	}
+
+	if err := updateBuilder.Execute(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityStatus, status.StatusID)
+	}
+
+	return nil
 }
 
 // DeleteStatus marks a status as deleted using BaseRepository
@@ -79,19 +343,26 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 		return err
 	}
 
-	// Mark as deleted instead of hard delete
+	// Mark as deleted using UpdateBuilder to avoid corrupting Note field
 	now := time.Now()
-	status.Deleted = true
-	status.DeletedAt = &now
+	err = r.db.WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", status.PK).
+		Where("SK", "=", status.SK).
+		UpdateBuilder().
+		Set("Deleted", true).
+		Set("DeletedAt", now).
+		Execute()
+	if err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
+	}
 
-	// Update using BaseRepository
-	return r.Update(ctx, status)
+	return nil
 }
 
 // CountStatusesByAuthor counts the total number of statuses by an author
 func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID string) (int, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("author-timeline-index").
+		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)).
 		Count()
 	if err != nil {
@@ -104,7 +375,7 @@ func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID s
 // CountReplies counts the number of replies to a status
 func (r *StatusRepository) CountReplies(ctx context.Context, statusID string) (int, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("replies-index").
+		Index("GSI4").
 		Where("GSI4PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
 		Count()
 	if err != nil {
@@ -116,25 +387,19 @@ func (r *StatusRepository) CountReplies(ctx context.Context, statusID string) (i
 
 // UpdateEngagementMetrics updates the cached engagement metrics for a status
 func (r *StatusRepository) UpdateEngagementMetrics(ctx context.Context, statusID string, likes, reblogs, replies, quotes int) error {
-	var status models.Status
+	pk := fmt.Sprintf("status#%s", statusID)
+	sk := fmt.Sprintf("status#%s", statusID)
+
+	// Use UpdateBuilder to update only engagement metrics, avoiding Note field corruption
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
-		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
-		First(&status)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-		}
-		return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-	}
-
-	// Update metrics
-	status.LikeCount = likes
-	status.ReblogCount = reblogs
-	status.ReplyCount = replies
-	status.QuoteCount = quotes
-
-	err = r.db.WithContext(ctx).Model(&status).Update()
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Set("LikeCount", likes).
+		Set("ReblogCount", reblogs).
+		Set("ReplyCount", replies).
+		Set("QuoteCount", quotes).
+		Execute()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, "engagement metrics", "status")
 	}
@@ -284,7 +549,7 @@ func (r *StatusRepository) GetStatusesByURL(ctx context.Context, targetURL strin
 	var matchingStatuses []models.Status
 
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("url-index").
+		Index("GSI7").
 		Where("GSI7PK", "=", "URL#"+normalizedURL).
 		Limit(limit).
 		All(&matchingStatuses)
@@ -516,7 +781,7 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 	// Query GSI7 for URL-indexed statuses
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("url-index").
+		Index("GSI7").
 		Where("GSI7PK", "=", "URL#"+normalizedURL).
 		Scan(&statuses)
 
@@ -526,7 +791,7 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 
 	// Find exact match by checking the Note.ID field
 	for _, status := range statuses {
-		if status.Note != nil && status.Note.ID == url {
+		if status.Note != nil && status.Note.Get() != nil && status.Note.Get().ID == url {
 			return &status, nil
 		}
 	}
@@ -552,34 +817,13 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 		return r.GetPublicTimeline(ctx, opts)
 	}
 
-	// Cast relationshipRepo to the proper interface
-	relationshipRepo, ok := r.relationshipRepo.(interfaces.RelationshipRepository)
-	if !ok {
-		r.logger.Error("relationshipRepo does not implement RelationshipRepository interface")
-		// Fallback to public timeline
-		return r.GetPublicTimeline(ctx, opts)
-	}
-
-	// Get list of users that this user follows
-	followingResult, err := relationshipRepo.GetFollowing(ctx, userID, interfaces.PaginationOptions{Limit: 1000}) // Get up to 1000 followed users
+	followingActorIDs, err := r.fetchFollowingActorIDs(ctx, userID)
 	if err != nil {
-		r.logger.Error("failed to get following list for home timeline",
-			zap.String("user_id", userID),
-			zap.Error(err))
-		// Fallback to public timeline
 		return r.GetPublicTimeline(ctx, opts)
-	}
-
-	// Extract usernames from the following accounts
-	followingUsernames := make([]string, len(followingResult.Items))
-	for i, account := range followingResult.Items {
-		if account != nil && account.User != nil {
-			followingUsernames[i] = account.User.Username
-		}
 	}
 
 	// If user follows no one, return empty timeline (not public timeline)
-	if err := common.ValidateSliceNotEmpty("following_usernames", followingUsernames); err != nil {
+	if err := common.ValidateSliceNotEmpty("following_actor_ids", followingActorIDs); err != nil {
 		r.logger.Debug("user follows no accounts, returning empty home timeline",
 			zap.String("user_id", userID))
 		return &interfaces.PaginatedResult[*models.Status]{
@@ -590,90 +834,172 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 		}, nil
 	}
 
-	// Get statuses from all followed users
-	// Note: This is a simplified implementation. In production, you might want to:
-	// 1. Use a pre-computed home timeline cache
-	// 2. Implement pagination across multiple author queries
-	// 3. Use a timeline ranking algorithm
-	var allStatuses []models.Status
+	allStatuses := r.collectStatusesForActors(ctx, userID, followingActorIDs)
+	limit := sanitizeHomeTimelineLimit(opts.Limit)
+	paginated := paginateHomeTimeline(allStatuses, limit)
 
-	// Query statuses for each followed user using the author-timeline-index
-	for _, username := range followingUsernames {
-		var userStatuses []models.Status
-		err := r.db.WithContext(ctx).Model(&models.Status{}).
-			Index("author-timeline-index").
-			Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", username)).
-			OrderBy("GSI1SK", "DESC").
-			Limit(20). // Limit per user to avoid overwhelming queries
-			All(&userStatuses)
+	r.logger.Debug("successfully built home timeline",
+		zap.String("user_id", userID),
+		zap.Int("following_count", len(followingActorIDs)),
+		zap.Int("total_statuses_found", len(allStatuses)),
+		zap.Int("page_statuses", len(paginated.Items)))
 
+	return paginated, nil
+}
+
+func (r *StatusRepository) fetchFollowingActorIDs(ctx context.Context, userID string) ([]string, error) {
+	cfg := config.Get()
+
+	switch repo := r.relationshipRepo.(type) {
+	case interfaces.RelationshipRepository:
+		followingResult, err := repo.GetFollowing(ctx, userID, interfaces.PaginationOptions{Limit: homeTimelineFollowingSampleSize})
 		if err != nil {
-			r.logger.Error("failed to get statuses for followed user",
+			r.logger.Error("failed to get following list for home timeline",
 				zap.String("user_id", userID),
-				zap.String("followed_user", username),
 				zap.Error(err))
-			continue // Skip this user on error
+			return nil, err
 		}
 
-		allStatuses = append(allStatuses, userStatuses...)
+		actorIDs := make([]string, 0, len(followingResult.Items))
+		for _, account := range followingResult.Items {
+			if account == nil {
+				continue
+			}
+			if account.Actor != nil && account.Actor.ID != "" {
+				actorIDs = append(actorIDs, account.Actor.ID)
+				continue
+			}
+			if account.User != nil && account.User.Username != "" {
+				actorIDs = append(actorIDs, cfg.ActorURL(account.User.Username))
+			}
+		}
+		return actorIDs, nil
+	case interface {
+		GetFollowing(context.Context, string, int, string) ([]string, string, error)
+	}:
+		usernames, _, err := repo.GetFollowing(ctx, userID, homeTimelineFollowingSampleSize, "")
+		if err != nil {
+			r.logger.Error("failed to get following list for home timeline via username accessor",
+				zap.String("user_id", userID),
+				zap.Error(err))
+			return nil, err
+		}
+
+		actorIDs := make([]string, 0, len(usernames))
+		for _, username := range usernames {
+			if username == "" {
+				continue
+			}
+			actorIDs = append(actorIDs, cfg.ActorURL(username))
+		}
+		return actorIDs, nil
+	default:
+		r.logger.Error("relationshipRepo does not provide a compatible GetFollowing implementation",
+			zap.String("repo_type", fmt.Sprintf("%T", r.relationshipRepo)))
+		return nil, fmt.Errorf("relationshipRepo does not support GetFollowing")
+	}
+}
+
+func (r *StatusRepository) collectStatusesForActors(ctx context.Context, userID string, actorIDs []string) []models.Status {
+	// Gather statuses per actor and then sort globally so pagination is consistent
+	collected := make([]models.Status, 0, len(actorIDs)*homeTimelineStatusesPerActor)
+	for _, actorID := range actorIDs {
+		userStatuses := r.fetchStatusesForActor(ctx, userID, actorID)
+		if len(userStatuses) == 0 {
+			continue
+		}
+		collected = append(collected, userStatuses...)
 	}
 
-	// Sort all statuses by published time (most recent first)
-	sort.Slice(allStatuses, func(i, j int) bool {
-		return allStatuses[i].PublishedAt.After(allStatuses[j].PublishedAt)
+	sort.Slice(collected, func(i, j int) bool {
+		return collected[i].PublishedAt.After(collected[j].PublishedAt)
 	})
 
-	// Apply pagination limits
-	limit := opts.Limit
-	// Validate limit using centralized validation
-	if err := common.ValidateQueryLimit(limit, 40, "timeline"); err != nil {
-		limit = 20
+	return collected
+}
+
+func (r *StatusRepository) fetchStatusesForActor(ctx context.Context, userID string, actorID string) []models.Status {
+	var userStatuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("GSI1").
+		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", actorID)).
+		OrderBy("GSI1SK", "DESC").
+		Limit(homeTimelineStatusesPerActor).
+		All(&userStatuses)
+
+	if err != nil {
+		r.logger.Error("failed to get statuses for followed user",
+			zap.String("user_id", userID),
+			zap.String("followed_actor", actorID),
+			zap.Error(err))
+		return nil
 	}
 
-	// Take only the number needed for this page
-	var pageStatuses []models.Status
-	if len(allStatuses) > limit {
-		pageStatuses = allStatuses[:limit]
-	} else {
-		pageStatuses = allStatuses
+	return userStatuses
+}
+
+func sanitizeHomeTimelineLimit(requested int) int {
+	limit := requested
+	if limit <= 0 {
+		limit = defaultHomeTimelinePageLimit
 	}
 
-	// Convert to pointer slice
+	if err := common.ValidateQueryLimit(limit, maxHomeTimelinePageLimit, "timeline"); err != nil {
+		return defaultHomeTimelinePageLimit
+	}
+
+	return limit
+}
+
+func paginateHomeTimeline(allStatuses []models.Status, limit int) *interfaces.PaginatedResult[*models.Status] {
+	if len(allStatuses) == 0 {
+		return &interfaces.PaginatedResult[*models.Status]{
+			Items:      []*models.Status{},
+			NextCursor: "",
+			HasMore:    false,
+			Total:      0,
+		}
+	}
+
+	pageStatuses := allStatuses
+	if len(pageStatuses) > limit {
+		pageStatuses = pageStatuses[:limit]
+	}
+
 	statusPtrs := make([]*models.Status, len(pageStatuses))
 	for i := range pageStatuses {
 		statusPtrs[i] = &pageStatuses[i]
 	}
 
-	// Generate next cursor if there are more items
-	nextCursor := ""
 	hasMore := len(allStatuses) > limit
+	nextCursor := ""
 	if hasMore && len(statusPtrs) > 0 {
-		lastStatus := statusPtrs[len(statusPtrs)-1]
-		nextCursor = lastStatus.StatusID
+		nextCursor = statusPtrs[len(statusPtrs)-1].StatusID
 	}
-
-	r.logger.Debug("successfully built home timeline",
-		zap.String("user_id", userID),
-		zap.Int("following_count", len(followingUsernames)),
-		zap.Int("total_statuses_found", len(allStatuses)),
-		zap.Int("page_statuses", len(statusPtrs)))
 
 	return &interfaces.PaginatedResult[*models.Status]{
 		Items:      statusPtrs,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 		Total:      int64(len(allStatuses)),
-	}, nil
+	}
 }
 
 // queryStatusesByGSI is a consolidated helper for GSI-based status queries
 func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gsiPKField, gsiPKValue, gsiSKField, orderDirection string, opts interfaces.PaginationOptions, errorMsg string) (*interfaces.PaginatedResult[*models.Status], error) {
 	var statuses []models.Status
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
 	query := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index(indexName).
 		Where(gsiPKField, "=", gsiPKValue).
-		OrderBy(gsiSKField, orderDirection).
-		Limit(opts.Limit)
+		OrderBy(gsiSKField, orderDirection)
 
 	// Resume from the supplied cursor value when available
 	if opts.Cursor != "" {
@@ -684,9 +1010,14 @@ func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gs
 		query = query.Where(gsiSKField, operator, opts.Cursor)
 	}
 
-	err := query.All(&statuses)
+	err := query.Limit(limit + 1).All(&statuses)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, errorMsg)
+	}
+
+	hasMore := len(statuses) > limit
+	if hasMore {
+		statuses = statuses[:limit]
 	}
 
 	// Convert to pointer slice
@@ -695,22 +1026,45 @@ func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gs
 		result[i] = &statuses[i]
 	}
 
+	var nextCursor string
+	if hasMore && len(statuses) > 0 {
+		last := statuses[len(statuses)-1]
+		switch gsiSKField {
+		case gsi1SKField:
+			nextCursor = last.GSI1SK
+		case gsi2SKField:
+			nextCursor = last.GSI2SK
+		case "GSI3SK":
+			nextCursor = last.GSI3SK
+		case "GSI4SK":
+			nextCursor = last.GSI4SK
+		case "GSI5SK":
+			nextCursor = last.GSI5SK
+		case "GSI6SK":
+			nextCursor = last.GSI6SK
+		case "GSI7SK":
+			nextCursor = last.GSI7SK
+		default:
+			nextCursor = last.SK
+		}
+	}
+
 	return &interfaces.PaginatedResult[*models.Status]{
 		Items:      result,
-		NextCursor: "", // Simple implementation without cursor
-		HasMore:    len(result) == opts.Limit,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
 		Total:      -1,
 	}, nil
 }
 
 // GetUserTimeline retrieves user's own statuses
 func (r *StatusRepository) GetUserTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	return r.queryStatusesByGSI(ctx, "author-timeline-index", "GSI1PK", fmt.Sprintf("AUTHOR#%s", userID), "GSI1SK", "DESC", opts, "failed to get user timeline")
+	return r.queryStatusesByGSI(ctx, "GSI1", "GSI1PK", fmt.Sprintf("AUTHOR#%s", userID), "GSI1SK", "DESC", opts, "failed to get user timeline")
 }
 
 // GetConversationThread retrieves all statuses in a conversation thread
 func (r *StatusRepository) GetConversationThread(ctx context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	return r.queryStatusesByGSI(ctx, "conversation-index", "GSI3PK", fmt.Sprintf("CONVERSATION#%s", conversationID), "GSI3SK", "ASC", opts, "failed to get conversation thread")
+	return r.queryStatusesByGSI(ctx, "GSI3", "GSI3PK", fmt.Sprintf("CONVERSATION#%s", conversationID), "GSI3SK", "ASC", opts, "failed to get conversation thread")
 }
 
 // SearchStatuses searches statuses by query string
@@ -742,17 +1096,62 @@ func (r *StatusRepository) SearchStatuses(ctx context.Context, query string, opt
 }
 
 // GetStatusesByHashtag retrieves statuses containing a specific hashtag
+// Hashtag must be in canonical format: lowercase, no # prefix (e.g., "test" not "#test" or "Test")
 func (r *StatusRepository) GetStatusesByHashtag(ctx context.Context, hashtag string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	// Validate and set limit
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	// Enforce canonical format: lowercase, no # prefix
+	// Reject invalid formats to prevent ambiguity
+	if hashtag == "" {
+		return nil, fmt.Errorf("hashtag cannot be empty")
+	}
+	if strings.HasPrefix(hashtag, "#") {
+		return nil, fmt.Errorf("hashtag must not include # prefix (got: %q)", hashtag)
+	}
+	if hashtag != strings.ToLower(hashtag) {
+		return nil, fmt.Errorf("hashtag must be lowercase (got: %q)", hashtag)
+	}
+
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("hashtag-index").
-		Where("GSI5PK", "=", fmt.Sprintf("HASHTAG#%s", strings.ToLower(hashtag))).
+		Index("GSI5").
+		Where("GSI5PK", "=", fmt.Sprintf("HASHTAG#%s", hashtag)).
 		OrderBy("GSI5SK", "DESC").
-		Limit(opts.Limit).
+		Limit(limit).
 		All(&statuses)
 	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "get by hashtag")
+		// Check if it's a NotFound error (no results) - return empty instead of error
+		if errors.IsNotFound(err) {
+			r.logger.Debug("GetStatusesByHashtag: no results found",
+				zap.String("hashtag", hashtag))
+			return &interfaces.PaginatedResult[*models.Status]{
+				Items:      []*models.Status{},
+				NextCursor: "",
+				HasMore:    false,
+				Total:      0,
+			}, nil
+		}
+		// Log the full error with context for debugging
+		r.logger.Error("GetStatusesByHashtag query failed",
+			zap.String("hashtag", hashtag),
+			zap.String("gsi5pk", fmt.Sprintf("HASHTAG#%s", hashtag)),
+			zap.Int("limit", limit),
+			zap.Error(err))
+		// Wrap with original error for better debugging
+		return nil, fmt.Errorf("failed to query statuses by hashtag %q: %w", hashtag, err)
 	}
+
+	// Log if we got results
+	r.logger.Debug("GetStatusesByHashtag query succeeded",
+		zap.String("hashtag", hashtag),
+		zap.Int("result_count", len(statuses)),
+		zap.Int("limit", limit))
 
 	// Convert to pointer slice
 	result := make([]*models.Status, len(statuses))
@@ -763,7 +1162,7 @@ func (r *StatusRepository) GetStatusesByHashtag(ctx context.Context, hashtag str
 	return &interfaces.PaginatedResult[*models.Status]{
 		Items:      result,
 		NextCursor: "", // Simple implementation without cursor
-		HasMore:    len(result) == opts.Limit,
+		HasMore:    len(result) == limit,
 		Total:      -1,
 	}, nil
 }
@@ -774,7 +1173,7 @@ func (r *StatusRepository) GetTrendingStatuses(ctx context.Context, opts interfa
 	// In production, you'd want a more sophisticated trending algorithm
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("public-timeline-index").
+		Index("GSI2").
 		Where("GSI2PK", "=", "PUBLIC_TIMELINE").
 		Filter("LikeCount", ">", 0). // Only statuses with likes
 		OrderBy("GSI2SK", "DESC").
@@ -800,31 +1199,43 @@ func (r *StatusRepository) GetTrendingStatuses(ctx context.Context, opts interfa
 
 // LikeStatus likes a status for a user
 func (r *StatusRepository) LikeStatus(ctx context.Context, userID, statusID string) error {
-	// Create a like record using the existing StatusEngagement model
+	return r.createEngagementAndIncrement(ctx, userID, statusID, "like", "LikeCount")
+}
+
+// ReblogStatus reblogs a status for a user
+func (r *StatusRepository) ReblogStatus(ctx context.Context, userID, statusID, _ string) error {
+	return r.createEngagementAndIncrement(ctx, userID, statusID, "boost", "ReblogCount")
+}
+
+// createEngagementAndIncrement creates an engagement record and atomically increments the count
+func (r *StatusRepository) createEngagementAndIncrement(ctx context.Context, userID, statusID, engagementType, countField string) error {
+	// Create an engagement record using the existing StatusEngagement model
 	now := time.Now()
-	like := &models.StatusEngagement{
+	engagement := &models.StatusEngagement{
 		PK:             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
-		SK:             fmt.Sprintf("like#%d#%s", now.Unix(), userID),
+		SK:             fmt.Sprintf("%s#%d#%s", engagementType, now.UnixNano(), userID),
 		StatusID:       statusID,
-		EngagementType: "like",
+		EngagementType: engagementType,
 		UserID:         userID,
 		EngagedAt:      now,
 		TTL:            now.AddDate(0, 0, 7).Unix(), // 7 day TTL
 	}
 
-	err := r.db.WithContext(ctx).Model(like).Create()
+	err := r.db.WithContext(ctx).Model(engagement).Create()
 	if err != nil {
-		return ErrorHandler.HandleCreateError(err, "like", statusID)
+		return ErrorHandler.HandleCreateError(err, engagementType, statusID)
 	}
 
-	// Update status like count
-	status, err := r.GetStatus(ctx, statusID)
-	if err != nil {
-		return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-	}
+	// Atomically increment count using UpdateBuilder
+	pk := fmt.Sprintf("status#%s", statusID)
+	sk := fmt.Sprintf("status#%s", statusID)
 
-	status.LikeCount++
-	err = r.UpdateStatus(ctx, status)
+	err = r.db.WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Add(countField, 1).
+		Execute()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
 	}
@@ -833,7 +1244,7 @@ func (r *StatusRepository) LikeStatus(ctx context.Context, userID, statusID stri
 }
 
 // removeEngagement removes an engagement (like or reblog) for a user and updates the status count
-func (r *StatusRepository) removeEngagement(ctx context.Context, userID, statusID, engagementType, actionName string, updateCount func(*models.Status)) error {
+func (r *StatusRepository) removeEngagement(ctx context.Context, userID, statusID, engagementType, actionName, counterField string) error {
 	// Find and delete the engagement record - need to scan since we don't know the exact timestamp
 	var engagements []models.StatusEngagement
 	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
@@ -853,16 +1264,22 @@ func (r *StatusRepository) removeEngagement(ctx context.Context, userID, statusI
 		}
 	}
 
-	// Update status count
-	status, err := r.GetStatus(ctx, statusID)
-	if err != nil {
-		return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-	}
-
-	updateCount(status)
-	err = r.UpdateStatus(ctx, status)
-	if err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
+	// Atomically decrement the counter using UpdateBuilder
+	// Only decrement if engagement was found and deleted
+	if err := common.ValidateSliceNotEmpty("engagements", engagements); err == nil {
+		pk := fmt.Sprintf("status#%s", statusID)
+		sk := fmt.Sprintf("status#%s", statusID)
+		
+		err = r.db.WithContext(ctx).Model(&models.Status{}).
+			Where("PK", "=", pk).
+			Where("SK", "=", sk).
+			UpdateBuilder().
+			Add(counterField, -1).
+			Condition(counterField, ">", 0). // Only decrement if count > 0
+			Execute()
+		if err != nil {
+			return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
+		}
 	}
 
 	return nil
@@ -870,54 +1287,14 @@ func (r *StatusRepository) removeEngagement(ctx context.Context, userID, statusI
 
 // UnlikeStatus unlikes a status for a user
 func (r *StatusRepository) UnlikeStatus(ctx context.Context, userID, statusID string) error {
-	return r.removeEngagement(ctx, userID, statusID, "like", "like", func(status *models.Status) {
-		if status.LikeCount > 0 {
-			status.LikeCount--
-		}
-	})
+	return r.removeEngagement(ctx, userID, statusID, "like", "like", "LikeCount")
 }
 
 // ReblogStatus reblogs a status for a user
-func (r *StatusRepository) ReblogStatus(ctx context.Context, userID, statusID, _ string) error {
-	// Create a reblog record using the existing StatusEngagement model
-	now := time.Now()
-	reblog := &models.StatusEngagement{
-		PK:             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
-		SK:             fmt.Sprintf("boost#%d#%s", now.Unix(), userID),
-		StatusID:       statusID,
-		EngagementType: "boost",
-		UserID:         userID,
-		EngagedAt:      now,
-		TTL:            now.AddDate(0, 0, 7).Unix(), // 7 day TTL
-	}
-
-	err := r.db.WithContext(ctx).Model(reblog).Create()
-	if err != nil {
-		return ErrorHandler.HandleCreateError(err, "reblog", statusID)
-	}
-
-	// Update status reblog count
-	status, err := r.GetStatus(ctx, statusID)
-	if err != nil {
-		return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-	}
-
-	status.ReblogCount++
-	err = r.UpdateStatus(ctx, status)
-	if err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
-	}
-
-	return nil
-}
 
 // UnreblogStatus unreblogs a status for a user
 func (r *StatusRepository) UnreblogStatus(ctx context.Context, userID, statusID string) error {
-	return r.removeEngagement(ctx, userID, statusID, "boost", "reblog", func(status *models.Status) {
-		if status.ReblogCount > 0 {
-			status.ReblogCount--
-		}
-	})
+	return r.removeEngagement(ctx, userID, statusID, "boost", "reblog", "ReblogCount")
 }
 
 // BookmarkStatus bookmarks a status for a user
@@ -965,21 +1342,16 @@ func (r *StatusRepository) UnbookmarkStatus(ctx context.Context, userID, statusI
 
 // UnflagStatus unflags a previously flagged status
 func (r *StatusRepository) UnflagStatus(ctx context.Context, statusID string) error {
-	var status models.Status
+	pk := fmt.Sprintf("status#%s", statusID)
+	sk := fmt.Sprintf("status#%s", statusID)
+
+	// Use UpdateBuilder to update only Flagged field, avoiding Note field corruption
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
-		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
-		First(&status)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-		}
-		return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-	}
-
-	status.Flagged = false
-
-	err = r.db.WithContext(ctx).Model(&status).Update()
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Set("Flagged", false).
+		Execute()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
 	}
@@ -1076,27 +1448,18 @@ func (r *StatusRepository) GetStatusesByIDs(ctx context.Context, statusIDs []str
 
 // GetPublicTimeline retrieves the public timeline with pagination
 func (r *StatusRepository) GetPublicTimeline(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("public-timeline-index").
-		Where("GSI2PK", "=", "PUBLIC_TIMELINE").
-		OrderBy("GSI2SK", "DESC").
-		Limit(opts.Limit).
-		All(&statuses)
+	statuses, err := r.queryPublicTimelineDirect(ctx, opts)
 	if err != nil {
+		r.logger.Error("failed to query public timeline",
+			zap.Error(err),
+			zap.Int("limit", opts.Limit))
 		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "get public timeline")
 	}
 
-	// Convert to pointer slice
-	result := make([]*models.Status, len(statuses))
-	for i := range statuses {
-		result[i] = &statuses[i]
-	}
-
 	return &interfaces.PaginatedResult[*models.Status]{
-		Items:      result,
-		NextCursor: "", // Simple implementation without cursor
-		HasMore:    len(result) == opts.Limit,
+		Items:      statuses,
+		NextCursor: "",
+		HasMore:    len(statuses) == opts.Limit,
 		Total:      -1,
 	}, nil
 }
@@ -1105,7 +1468,7 @@ func (r *StatusRepository) GetPublicTimeline(ctx context.Context, opts interface
 func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("replies-index").
+		Index("GSI4").
 		Where("GSI4PK", "=", fmt.Sprintf("REPLIES#%s", parentStatusID)).
 		OrderBy("GSI4SK", "ASC"). // Chronological order for replies
 		Limit(opts.Limit).
@@ -1128,29 +1491,24 @@ func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string
 	}, nil
 }
 
-// GetFlaggedStatuses retrieves flagged statuses with pagination using GSI6 (flagged-content-index)
+// GetFlaggedStatuses retrieves flagged statuses with pagination using GSI6
 func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	// Use GSI6 (flagged-content-index) for efficient flagged content queries
-	return r.queryStatusesByGSI(ctx, "flagged-content-index", "GSI6PK", "FLAGGED_CONTENT", "GSI6SK", "DESC", opts, "failed to get flagged statuses")
+	// Use GSI6 for efficient flagged content queries
+	return r.queryStatusesByGSI(ctx, "GSI6", "GSI6PK", "FLAGGED_CONTENT", "GSI6SK", "DESC", opts, "failed to get flagged statuses")
 }
 
 // FlagStatus marks a status as flagged for moderation
 func (r *StatusRepository) FlagStatus(ctx context.Context, statusID, _ string, _ string) error {
-	var status models.Status
+	pk := fmt.Sprintf("status#%s", statusID)
+	sk := fmt.Sprintf("status#%s", statusID)
+
+	// Use UpdateBuilder to update only Flagged field, avoiding Note field corruption
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
-		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
-		First(&status)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-		}
-		return ErrorHandler.HandleGetError(err, EntityStatus, statusID)
-	}
-
-	status.Flagged = true
-
-	err = r.db.WithContext(ctx).Model(&status).Update()
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Set("Flagged", true).
+		Execute()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
 	}

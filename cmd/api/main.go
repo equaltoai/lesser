@@ -6,8 +6,9 @@ Lesser API Server - Mastodon-compatible ActivityPub implementation
 This Lambda function serves the Lesser API using AWS API Gateway v2.
 All routing is handled by the Lift framework.
 
-The API Gateway configuration strips the /api/v1 and /api/v2 prefixes
-before passing requests to this Lambda, so the router receives clean paths.
+The API Gateway configuration forwards the full request path including /api/v1
+and /api/v2 prefixes to this Lambda. All Lift routes must include the complete
+path with prefix to match Mastodon API specifications.
 */
 
 import (
@@ -26,7 +27,6 @@ import (
 	liftAuth "github.com/equaltoai/lesser/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/observability"
-	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -151,8 +151,13 @@ func initializeManualServices() {
 
 	// Manual DynamORM initialization
 	tableName := cfg.DynamoTableName
+	logger.Info("manual initialization: configured DynamoDB table",
+		zap.String("table_name", tableName))
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main" // fallback
+		logger.Warn("manual initialization: missing table name, falling back to default",
+			zap.String("table_name", tableName),
+			zap.Error(err))
 	}
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		logger.Fatal("DYNAMODB_TABLE environment variable is required")
@@ -329,11 +334,8 @@ func main() {
 	// Add comprehensive latency tracking middleware
 	app.Use(createLatencyTrackingMiddleware())
 
-	// Add rate limiting middleware (before routes)
-	if !cfg.DisableRateLimiting {
-		app.Use(ratelimit.Middleware(repos, nil)) // Use default config
-		logger.Info("enabled rate limiting middleware")
-	}
+	// Note: Rate limiting is now applied per-endpoint in routes_lift.go
+	// Not using global middleware to avoid incorrectly rate limiting read endpoints
 
 	// Configure native Lift routes
 	configureLiftRoutes(app)

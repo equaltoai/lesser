@@ -22,6 +22,11 @@ type HealthCheckResult struct {
 	TTL           int64                  `dynamorm:"ttl" json:"ttl"` // Auto-expire after 30 days
 }
 
+// TableName returns the DynamoDB table backing HealthCheckResult.
+func (HealthCheckResult) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the partition and sort keys for the health check result
 func (h *HealthCheckResult) UpdateKeys() {
 	timestamp := h.CheckTime.Format("2006-01-02T15:04:05Z")
@@ -74,6 +79,11 @@ type HealthCheckSummaryResult struct {
 	MinLatencyMs   int64     `json:"min_latency_ms"`
 	LastUpdated    time.Time `json:"last_updated"`
 	TTL            int64     `dynamorm:"ttl" json:"ttl"` // Auto-expire after 90 days
+}
+
+// TableName returns the DynamoDB table backing HealthCheckSummaryResult.
+func (HealthCheckSummaryResult) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the partition and sort keys for the health check summary
@@ -147,6 +157,11 @@ type ComponentHealthHistory struct {
 	LatencyMs     int64     `json:"latency_ms"`
 	Error         string    `json:"error,omitempty"`
 	TTL           int64     `dynamorm:"ttl" json:"ttl"` // Auto-expire after 7 days
+}
+
+// TableName returns the DynamoDB table backing ComponentHealthHistory.
+func (ComponentHealthHistory) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys updates the partition and sort keys for component health history

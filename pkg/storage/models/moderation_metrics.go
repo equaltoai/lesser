@@ -285,6 +285,11 @@ type ModerationMetricsTimeRange struct {
 	End   time.Time
 }
 
+// TableName returns the DynamoDB table backing ModerationMetricsTimeRange.
+func (ModerationMetricsTimeRange) TableName() string {
+	return MainTableName
+}
+
 // ModerationMetricsStats represents aggregated moderation statistics
 type ModerationMetricsStats struct {
 	TimeRange         ModerationMetricsTimeRange
@@ -296,6 +301,11 @@ type ModerationMetricsStats struct {
 	FalsePositives    int64
 	TruePositives     int64
 	ResponseTime      time.Duration
+}
+
+// TableName returns the DynamoDB table backing ModerationMetricsStats.
+func (ModerationMetricsStats) TableName() string {
+	return MainTableName
 }
 
 // RealtimeStats represents current real-time statistics
@@ -311,10 +321,20 @@ type RealtimeStats struct {
 	P95ResponseTime time.Duration
 }
 
+// TableName returns the DynamoDB table backing RealtimeStats.
+func (RealtimeStats) TableName() string {
+	return MainTableName
+}
+
 // PatternStats represents pattern matching statistics
 type PatternStats struct {
 	PatternID   string
 	PatternName string
 	HitCount    int64
 	LastHit     time.Time
+}
+
+// TableName returns the DynamoDB table backing PatternStats.
+func (PatternStats) TableName() string {
+	return MainTableName
 }

@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 )
@@ -25,36 +24,36 @@ type Status struct {
 	SK string `dynamorm:"sk" json:"sk"` // Format: "status#{status_id}"
 
 	// GSI1 - Author timeline (all statuses by an author)
-	GSI1PK string `dynamorm:"index:author-timeline-index,pk" json:"gsi1_pk"` // Format: "AUTHOR#{author_id}"
-	GSI1SK string `dynamorm:"index:author-timeline-index,sk" json:"gsi1_sk"` // Format: "{published_timestamp}#{status_id}"
+	GSI1PK string `dynamorm:"column:gsI1PK,index:GSI1,pk" json:"-"` // Format: "AUTHOR#{author_id}"
+	GSI1SK string `dynamorm:"column:gsI1SK,index:GSI1,sk" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI2 - Public timeline (public statuses)
-	GSI2PK string `dynamorm:"index:public-timeline-index,pk" json:"gsi2_pk,omitempty"` // Format: "PUBLIC_TIMELINE"
-	GSI2SK string `dynamorm:"index:public-timeline-index,sk" json:"gsi2_sk,omitempty"` // Format: "{published_timestamp}#{status_id}"
+	GSI2PK string `dynamorm:"column:gsI2PK,index:GSI2,pk,omitempty" json:"-"` // Format: "PUBLIC_TIMELINE"
+	GSI2SK string `dynamorm:"column:gsI2SK,index:GSI2,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI3 - Conversation/thread tracking
-	GSI3PK string `dynamorm:"index:conversation-index,pk" json:"gsi3_pk,omitempty"` // Format: "CONVERSATION#{conversation_id}"
-	GSI3SK string `dynamorm:"index:conversation-index,sk" json:"gsi3_sk,omitempty"` // Format: "{published_timestamp}#{status_id}"
+	GSI3PK string `dynamorm:"column:gsI3PK,index:GSI3,pk,omitempty" json:"-"` // Format: "CONVERSATION#{conversation_id}"
+	GSI3SK string `dynamorm:"column:gsI3SK,index:GSI3,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI4 - Replies to a specific status
-	GSI4PK string `dynamorm:"index:replies-index,pk" json:"gsi4_pk,omitempty"` // Format: "REPLIES#{parent_status_id}"
-	GSI4SK string `dynamorm:"index:replies-index,sk" json:"gsi4_sk,omitempty"` // Format: "{published_timestamp}#{status_id}"
+	GSI4PK string `dynamorm:"column:gsI4PK,index:GSI4,pk,omitempty" json:"-"` // Format: "REPLIES#{parent_status_id}"
+	GSI4SK string `dynamorm:"column:gsI4SK,index:GSI4,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI5 - Hashtag timeline
-	GSI5PK string `dynamorm:"index:hashtag-index,pk" json:"gsi5_pk,omitempty"` // Format: "HASHTAG#{hashtag}"
-	GSI5SK string `dynamorm:"index:hashtag-index,sk" json:"gsi5_sk,omitempty"` // Format: "{published_timestamp}#{status_id}"
+	GSI5PK string `dynamorm:"column:gsI5PK,index:GSI5,pk,omitempty" json:"-"` // Format: "HASHTAG#{hashtag}"
+	GSI5SK string `dynamorm:"column:gsI5SK,index:GSI5,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI6 - Flagged content moderation
-	GSI6PK string `dynamorm:"index:flagged-content-index,pk" json:"gsi6_pk,omitempty"` // Format: "FLAGGED_CONTENT"
-	GSI6SK string `dynamorm:"index:flagged-content-index,sk" json:"gsi6_sk,omitempty"` // Format: "{published_timestamp}#{status_id}"
+	GSI6PK string `dynamorm:"column:gsI6PK,index:GSI6,pk,omitempty" json:"-"` // Format: "FLAGGED_CONTENT"
+	GSI6SK string `dynamorm:"column:gsI6SK,index:GSI6,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI7 - URL index for link searches
-	GSI7PK string `dynamorm:"index:url-index,pk" json:"gsi7_pk,omitempty"` // Format: "URL#{normalized_url}"
-	GSI7SK string `dynamorm:"index:url-index,sk" json:"gsi7_sk,omitempty"` // Format: "{published_timestamp}#{status_id}"
+	GSI7PK string `dynamorm:"column:gsI7PK,index:GSI7,pk,omitempty" json:"-"` // Format: "URL#{normalized_url}"
+	GSI7SK string `dynamorm:"column:gsI7SK,index:GSI7,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// Core status data
-	StatusID       string            `json:"status_id"`
-	Note           *activitypub.Note `dynamorm:"json" json:"note"`      // The actual ActivityPub Note
+	StatusID       string     `json:"status_id"`
+	Note           *NoteField `json:"note"`      // The actual ActivityPub Note (wrapped for proper DynamORM handling)
 	AuthorID       string            `json:"author_id"`                 // AttributedTo from the Note
 	AuthorUsername string            `json:"author_username"`           // Extracted username for efficient queries
 	Content        string            `json:"content"`                   // Cached content for search
@@ -106,11 +105,21 @@ type StatusAttachment struct {
 	Height    int    `json:"height,omitempty"`
 }
 
+// TableName returns the DynamoDB table backing StatusAttachment.
+func (StatusAttachment) TableName() string {
+	return MainTableName
+}
+
 // StatusTag represents a tag (hashtag or mention) on a status
 type StatusTag struct {
 	Type string `json:"type"`
 	Href string `json:"href,omitempty"`
 	Name string `json:"name"`
+}
+
+// TableName returns the DynamoDB table backing StatusTag.
+func (StatusTag) TableName() string {
+	return MainTableName
 }
 
 // TableName returns the DynamoDB table name for the Status model
@@ -123,6 +132,7 @@ func (s *Status) BeforeCreate() error {
 	now := time.Now()
 	s.CreatedAt = now
 	s.ModifiedAt = now
+	s.UpdatedAt = now
 
 	// Set published time if not already set
 	if s.PublishedAt.IsZero() {
@@ -146,7 +156,9 @@ func (s *Status) BeforeCreate() error {
 
 // BeforeUpdate sets up the model before update
 func (s *Status) BeforeUpdate() error {
-	s.ModifiedAt = time.Now()
+	now := time.Now()
+	s.ModifiedAt = now
+	s.UpdatedAt = now
 
 	// Update extracted data from Note if present
 	if s.Note != nil {
@@ -165,62 +177,72 @@ func (s *Status) extractFromNote() {
 		return
 	}
 
+	note := s.Note.Get()
+	if note == nil {
+		return
+	}
+
 	// Extract basic fields
-	s.Content = s.Note.Content
-	s.AuthorID = s.Note.AttributedTo
-	s.Sensitive = s.Note.Sensitive
+	s.Content = note.Content
+	s.AuthorID = note.AttributedTo
+	s.Sensitive = note.Sensitive
 
 	// Extract username from author ID
 	s.AuthorUsername = extractUsernameFromActorID(s.AuthorID)
 
 	// Extract conversation ID
-	s.ConversationID = s.Note.ConversationID
+	s.ConversationID = note.ConversationID
 
 	// Extract in reply to
-	if s.Note.InReplyTo != "" {
-		s.InReplyToID = extractStatusIDFromURL(s.Note.InReplyTo)
+	if note.InReplyTo != "" {
+		s.InReplyToID = extractStatusIDFromURL(note.InReplyTo)
 	}
 
 	// Extract addressing fields
-	s.ToRecipients = s.Note.To
-	s.CcRecipients = s.Note.CC
-	s.BtoRecipients = s.Note.BTo
-	s.BccRecipients = s.Note.BCC
+	s.ToRecipients = note.To
+	s.CcRecipients = note.CC
+	s.BtoRecipients = note.BTo
+	s.BccRecipients = note.BCC
 
 	// Extract visibility from Note or set default
-	if s.Note.Visibility != "" {
-		s.Visibility = s.Note.Visibility
+	if note.Visibility != "" {
+		s.Visibility = note.Visibility
 	} else {
-		s.Visibility = determineVisibilityFromAudience(s.Note.To, s.Note.CC)
+		s.Visibility = determineVisibilityFromAudience(note.To, note.CC)
 	}
 
 	// Extract hashtags and mentions from tags
 	s.extractTagsFromNote()
 
 	// Count media attachments
-	s.MediaCount = len(s.Note.Attachment)
+	s.MediaCount = len(note.Attachment)
 
 	// Set published time from Note if available
-	if s.Note.Published != nil && !s.Note.Published.IsZero() {
-		s.PublishedAt = *s.Note.Published
+	if note.Published != nil && !note.Published.IsZero() {
+		s.PublishedAt = *note.Published
 	}
 
 	// Set updated time from Note if available
-	if s.Note.Updated != nil && !s.Note.Updated.IsZero() {
-		s.UpdatedAt = *s.Note.Updated
+	if note.Updated != nil && !note.Updated.IsZero() {
+		s.UpdatedAt = *note.Updated
 	}
 }
 
 // extractTagsFromNote extracts hashtags and mentions from the Note's tags
 func (s *Status) extractTagsFromNote() {
-	if s.Note == nil || s.Note.Tag == nil {
+	if s.Note == nil {
+		return
+	}
+
+	note := s.Note.Get()
+	if note == nil || note.Tag == nil {
 		return
 	}
 
 	s.Hashtags = []string{}
 	s.Mentions = []string{}
 
-	for _, tag := range s.Note.Tag {
+	for _, tag := range note.Tag {
 		switch tag.Type {
 		case "Hashtag":
 			// Remove # prefix if present
@@ -488,6 +510,22 @@ func (s *Status) IsPrivate() bool {
 
 // UpdateKeys updates the GSI keys for this status (required by DynamORM)
 func (s *Status) UpdateKeys() error {
+	if err := common.ValidateRequiredParam("status.StatusID", s.StatusID); err != nil {
+		return err
+	}
+
+	// Ensure derived fields stay in sync with the note payload
+	if s.Note != nil {
+		s.extractFromNote()
+	}
+
+	s.PK = "status#" + s.StatusID
+	s.SK = "status#" + s.StatusID
+
+	if s.PublishedAt.IsZero() {
+		s.PublishedAt = time.Now()
+	}
+
 	s.setupGSIKeys()
 	return nil
 }
@@ -615,6 +653,11 @@ type StatusHashtagIndex struct {
 
 	// TTL for cleanup (optional - could be set to expire old hashtag indices)
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+}
+
+// TableName returns the DynamoDB table backing StatusHashtagIndex.
+func (StatusHashtagIndex) TableName() string {
+	return MainTableName
 }
 
 // UpdateKeys sets the DynamoDB keys for hashtag index records

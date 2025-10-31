@@ -165,3 +165,8 @@ func (l *LinkMetadata) SanitizeMetadata() {
 	// Ensure description is reasonable length
 	l.TruncateDescription(500)
 }
+
+// TableName returns the DynamoDB table backing LinkMetadata.
+func (LinkMetadata) TableName() string {
+	return MainTableName
+}

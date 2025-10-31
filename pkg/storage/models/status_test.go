@@ -14,6 +14,11 @@ type StatusModelTestSuite struct {
 	suite.Suite
 }
 
+// TableName returns the DynamoDB table backing StatusModelTestSuite.
+func (StatusModelTestSuite) TableName() string {
+	return MainTableName
+}
+
 // Test TableName
 func (suite *StatusModelTestSuite) TestTableName() {
 	status := &Status{}
@@ -81,7 +86,7 @@ func (suite *StatusModelTestSuite) TestBeforeCreate_ExtractsFromNote() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     note,
+		Note:     &NoteField{Note: note},
 	}
 
 	err := status.BeforeCreate()
@@ -130,7 +135,7 @@ func (suite *StatusModelTestSuite) TestBeforeUpdate_ExtractsFromNote() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     note,
+		Note:     &NoteField{Note: note},
 	}
 
 	err := status.BeforeUpdate()
@@ -308,7 +313,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_BasicFields() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     note,
+		Note:     &NoteField{Note: note},
 	}
 
 	status.extractFromNote()
@@ -332,7 +337,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_ConversationAndReply() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     note,
+		Note:     &NoteField{Note: note},
 	}
 
 	status.extractFromNote()
@@ -391,7 +396,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_Visibility() {
 
 			status := &Status{
 				StatusID: "123",
-				Note:     note,
+				Note:     &NoteField{Note: note},
 			}
 
 			status.extractFromNote()
@@ -426,7 +431,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_Tags() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     note,
+		Note:     &NoteField{Note: note},
 	}
 
 	status.extractFromNote()
@@ -459,7 +464,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_MediaAttachments() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     note,
+		Note:     &NoteField{Note: note},
 	}
 
 	status.extractFromNote()
@@ -483,7 +488,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_Timestamps() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     note,
+		Note:     &NoteField{Note: note},
 	}
 
 	status.extractFromNote()
@@ -517,7 +522,7 @@ func (suite *StatusModelTestSuite) TestExtractTagsFromNote_NilTags() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     note,
+		Note:     &NoteField{Note: note},
 	}
 
 	status.extractTagsFromNote()
@@ -563,7 +568,7 @@ func (suite *StatusModelTestSuite) TestExtractTagsFromNote_MixedTags() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     note,
+		Note:     &NoteField{Note: note},
 	}
 
 	status.extractTagsFromNote()

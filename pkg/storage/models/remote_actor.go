@@ -55,3 +55,8 @@ func extractDomainFromHandle(handle string) string {
 	}
 	return ""
 }
+
+// TableName returns the DynamoDB table backing RemoteActor.
+func (RemoteActor) TableName() string {
+	return MainTableName
+}

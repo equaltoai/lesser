@@ -64,6 +64,7 @@ func ErrorHandlingMiddleware(config ErrorMiddlewareConfig) lift.Middleware {
 			// Handle any errors returned by handlers
 			if err != nil {
 				handleRequestError(ctx, err, config)
+				return nil
 			}
 
 			return err

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -40,13 +41,25 @@ type InstanceMetrics struct {
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing InstanceMetrics.
 func (i *InstanceMetrics) TableName() string {
-	return DefaultTableName // Replace with actual table name
+	return MainTableName
 }
 
 // UpdateKeys updates the GSI keys when the primary keys change
 func (i *InstanceMetrics) UpdateKeys() error {
+	// Validate required fields
+	if i.Date == "" {
+		return fmt.Errorf("date is required")
+	}
+	if i.MetricType == "" {
+		return fmt.Errorf("metric type is required")
+	}
+
+	// Set primary keys
+	i.PK = fmt.Sprintf("INSTANCE_METRICS#%s", i.Date)
+	i.SK = fmt.Sprintf("METRIC#%s", i.MetricType)
+
 	// GSI1 is used for time-based queries
 	i.GSI1PK = "INSTANCE_METRICS"
 	i.GSI1SK = i.Date

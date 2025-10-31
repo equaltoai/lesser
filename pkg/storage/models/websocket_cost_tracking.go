@@ -237,18 +237,23 @@ type WebSocketTierCostStats struct {
 	MessageCount        int64   `json:"message_count"`
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing WebSocketCostRecord.
 func (WebSocketCostRecord) TableName() string {
 	return MainTableName
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing WebSocketCostBudget.
 func (WebSocketCostBudget) TableName() string {
 	return MainTableName
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing WebSocketCostAggregation.
 func (WebSocketCostAggregation) TableName() string {
+	return MainTableName
+}
+
+// TableName returns the DynamoDB table backing WebSocketTierCostStats.
+func (WebSocketTierCostStats) TableName() string {
 	return MainTableName
 }
 
@@ -722,9 +727,19 @@ type WebSocketCostBreakdown struct {
 	TotalCostMicroCents      int64
 }
 
+// TableName returns the DynamoDB table backing WebSocketCostBreakdown.
+func (WebSocketCostBreakdown) TableName() string {
+	return MainTableName
+}
+
 // WebSocketCostRecordBuilder helps create WebSocket cost tracking records
 type WebSocketCostRecordBuilder struct {
 	record *WebSocketCostRecord
+}
+
+// TableName returns the DynamoDB table backing WebSocketCostRecordBuilder.
+func (WebSocketCostRecordBuilder) TableName() string {
+	return MainTableName
 }
 
 // NewWebSocketCostRecordBuilder creates a new WebSocket cost tracking builder

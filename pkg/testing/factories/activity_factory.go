@@ -59,7 +59,7 @@ func (f *ActivityFactory) CreateActivity(opts ActivityOptions) *activitypub.Acti
 
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context:   []string{"https://www.w3.org/ns/activitystreams"},
+			Context:   activitypub.Context,
 			ID:        id,
 			Type:      opts.Type,
 			Published: &published,
@@ -97,7 +97,7 @@ func (f *ActivityFactory) CreateNote(content string, actorID string, opts ...Not
 
 	note := &activitypub.Note{
 		BaseObject: activitypub.BaseObject{
-			Context:   []string{"https://www.w3.org/ns/activitystreams"},
+			Context:   activitypub.Context,
 			ID:        id,
 			Type:      "Note",
 			Published: &published,

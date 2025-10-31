@@ -364,9 +364,9 @@ func (a *AICost) GetSK() string {
 	return a.SK
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing AICost.
 func (a *AICost) TableName() string {
-	return "" // Will be set by the repository
+	return MainTableName
 }
 
 // AIAggregatedCost represents aggregated AI cost metrics for efficient querying
@@ -508,7 +508,7 @@ func (a *AIAggregatedCost) GetSK() string {
 	return a.SK
 }
 
-// TableName returns the DynamoDB table name
+// TableName returns the DynamoDB table backing AIAggregatedCost.
 func (a *AIAggregatedCost) TableName() string {
-	return "" // Will be set by the repository
+	return MainTableName
 }

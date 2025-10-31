@@ -232,7 +232,7 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	status.ToRecipients = recipientURLs
 
 	// Create ActivityPub Note
-	status.Note = s.buildActivityPubNote(cmd, messageID, sender, conversation.ID, recipientAccounts)
+	status.Note = &models.NoteField{Note: s.buildActivityPubNote(cmd, messageID, sender, conversation.ID, recipientAccounts)}
 
 	// Store the message
 	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
@@ -417,7 +417,7 @@ func (s *Service) buildActivityPubNote(cmd *SendDirectMessageCommand, messageID 
 
 	note := &activitypub.Note{
 		BaseObject: activitypub.BaseObject{
-			Context:   "https://www.w3.org/ns/activitystreams",
+			Context:   activitypub.Context,
 			Type:      "Note",
 			ID:        fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, sender.User.Username, messageID),
 			Published: &now,
@@ -532,7 +532,7 @@ func (s *Service) queueFederationDelivery(ctx context.Context, message *models.S
 	// Create ActivityPub Create activity
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: "https://www.w3.org/ns/activitystreams",
+			Context: activitypub.Context,
 			Type:    "Create",
 			ID:      fmt.Sprintf("%s#create", message.Note.ID),
 			To:      message.ToRecipients,

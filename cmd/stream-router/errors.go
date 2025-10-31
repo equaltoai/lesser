@@ -83,13 +83,6 @@ func FailedToQueryConnection(err error) *errors.AppError {
 	return errors.FailedToQuery("connection", err)
 }
 
-// Event bus errors
-
-// FailedToStartInternalEventBus creates an error indicating the internal event bus failed to start.
-func FailedToStartInternalEventBus(err error) *errors.AppError {
-	return errors.ServiceInitializationFailed("internal event bus", err)
-}
-
 // Marshaling errors
 
 // FailedToMarshalStatus creates an error indicating status marshaling failed.
@@ -124,13 +117,6 @@ func FailedToCreateAccountPayload(err error) *errors.AppError {
 // FailedToGetFollowers creates an error indicating follower retrieval failed.
 func FailedToGetFollowers(err error) *errors.AppError {
 	return errors.FailedToGet("followers", err)
-}
-
-// Internal event bus publishing errors
-
-// FailedToPublishToInternalEventBus creates an error indicating publishing to internal event bus failed.
-func FailedToPublishToInternalEventBus(err error) *errors.AppError {
-	return errors.ProcessingFailed("internal_event_bus_publish", err)
 }
 
 // Repository errors

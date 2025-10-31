@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
@@ -37,7 +38,7 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	cmd := &notes.CreateNoteCommand{
 		AuthorID:   username,
 		Content:    input.Content,
-		Visibility: string(input.Visibility),
+		Visibility: strings.ToLower(input.Visibility.String()),
 		Sensitive:  input.Sensitive != nil && *input.Sensitive,
 	}
 
@@ -51,6 +52,35 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 
 	if input.AttachmentIds != nil {
 		cmd.MediaIDs = input.AttachmentIds
+	}
+
+	if input.Poll != nil {
+		pollOptionsAny := make([]any, len(input.Poll.Options))
+		for i, option := range input.Poll.Options {
+			pollOptionsAny[i] = option
+		}
+
+		pollParams := map[string]any{
+			"options":    pollOptionsAny,
+			"expires_in": float64(input.Poll.ExpiresIn),
+		}
+
+		if input.Poll.Multiple != nil {
+			pollParams["multiple"] = *input.Poll.Multiple
+		}
+
+		if input.Poll.HideTotals != nil {
+			pollParams["hide_totals"] = *input.Poll.HideTotals
+		}
+
+		if err := common.ValidatePollParams(pollParams); err != nil {
+			return nil, err
+		}
+
+		cmd.PollOptions = input.Poll.Options
+		cmd.PollExpiresIn = input.Poll.ExpiresIn
+		cmd.PollMultiple = input.Poll.Multiple != nil && *input.Poll.Multiple
+		cmd.PollHideTotals = input.Poll.HideTotals != nil && *input.Poll.HideTotals
 	}
 
 	// Handle mentions and tags
@@ -257,9 +287,10 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 	}
 
 	// Set default visibility if not provided
+	// Convert GraphQL enum (PUBLIC, UNLISTED, etc.) to lowercase (public, unlisted, etc.)
 	visibility := "public"
 	if input.Visibility != nil {
-		visibility = string(*input.Visibility)
+		visibility = strings.ToLower(string(*input.Visibility))
 	}
 
 	// Create the quote note using the notes service

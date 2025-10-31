@@ -32,6 +32,11 @@ type NotificationPreferences struct {
 	DigestEmail              bool `json:"digest_email"`
 }
 
+// TableName returns the DynamoDB table backing NotificationPreferences.
+func (NotificationPreferences) TableName() string {
+	return MainTableName
+}
+
 // UpdateKeys updates the primary and GSI keys based on the model's fields
 func (n *NotificationPreferences) UpdateKeys() {
 	n.PK = fmt.Sprintf(KeyPatternUser, n.Username)
