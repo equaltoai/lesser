@@ -55,7 +55,20 @@ const (
 	maxHomeTimelinePageLimit        = 40
 	homeTimelineStatusesPerActor    = 20
 	homeTimelineFollowingSampleSize = 1000
+	maxInt32                        = 2147483647 // Maximum value for int32
 )
+
+// limitInt32 safely converts int to int32, clamping to maxInt32 to prevent overflow
+func limitInt32(limit int) int32 {
+	if limit > maxInt32 {
+		return maxInt32
+	}
+	if limit < 0 {
+		return 0
+	}
+	// nolint:gosec // Conversion is safe: we've checked bounds above
+	return int32(limit)
+}
 
 // CreateStatus creates a new status using enhanced validation and event emission
 func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Status) error {
@@ -204,7 +217,7 @@ func (r *StatusRepository) queryPublicTimelineDirect(ctx context.Context, opts i
 			":pk": &types.AttributeValueMemberS{Value: "PUBLIC_TIMELINE"},
 		},
 		ScanIndexForward: aws.Bool(false),
-		Limit:            aws.Int32(int32(opts.Limit)),
+		Limit:            aws.Int32(limitInt32(opts.Limit)),
 	}
 
 	output, err := client.Query(ctx, input)
@@ -1186,32 +1199,42 @@ func (r *StatusRepository) GetTrendingStatuses(ctx context.Context, opts interfa
 
 // LikeStatus likes a status for a user
 func (r *StatusRepository) LikeStatus(ctx context.Context, userID, statusID string) error {
-	// Create a like record using the existing StatusEngagement model
+	return r.createEngagementAndIncrement(ctx, userID, statusID, "like", "LikeCount")
+}
+
+// ReblogStatus reblogs a status for a user
+func (r *StatusRepository) ReblogStatus(ctx context.Context, userID, statusID, _ string) error {
+	return r.createEngagementAndIncrement(ctx, userID, statusID, "boost", "ReblogCount")
+}
+
+// createEngagementAndIncrement creates an engagement record and atomically increments the count
+func (r *StatusRepository) createEngagementAndIncrement(ctx context.Context, userID, statusID, engagementType, countField string) error {
+	// Create an engagement record using the existing StatusEngagement model
 	now := time.Now()
-	like := &models.StatusEngagement{
+	engagement := &models.StatusEngagement{
 		PK:             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
-		SK:             fmt.Sprintf("like#%d#%s", now.UnixNano(), userID),
+		SK:             fmt.Sprintf("%s#%d#%s", engagementType, now.UnixNano(), userID),
 		StatusID:       statusID,
-		EngagementType: "like",
+		EngagementType: engagementType,
 		UserID:         userID,
 		EngagedAt:      now,
 		TTL:            now.AddDate(0, 0, 7).Unix(), // 7 day TTL
 	}
 
-	err := r.db.WithContext(ctx).Model(like).Create()
+	err := r.db.WithContext(ctx).Model(engagement).Create()
 	if err != nil {
-		return ErrorHandler.HandleCreateError(err, "like", statusID)
+		return ErrorHandler.HandleCreateError(err, engagementType, statusID)
 	}
 
-	// Atomically increment like count using UpdateBuilder
+	// Atomically increment count using UpdateBuilder
 	pk := fmt.Sprintf("status#%s", statusID)
 	sk := fmt.Sprintf("status#%s", statusID)
-	
+
 	err = r.db.WithContext(ctx).Model(&models.Status{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		UpdateBuilder().
-		Add("LikeCount", 1).
+		Add(countField, 1).
 		Execute()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
@@ -1268,40 +1291,6 @@ func (r *StatusRepository) UnlikeStatus(ctx context.Context, userID, statusID st
 }
 
 // ReblogStatus reblogs a status for a user
-func (r *StatusRepository) ReblogStatus(ctx context.Context, userID, statusID, _ string) error {
-	// Create a reblog record using the existing StatusEngagement model
-	now := time.Now()
-	reblog := &models.StatusEngagement{
-		PK:             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
-		SK:             fmt.Sprintf("boost#%d#%s", now.UnixNano(), userID),
-		StatusID:       statusID,
-		EngagementType: "boost",
-		UserID:         userID,
-		EngagedAt:      now,
-		TTL:            now.AddDate(0, 0, 7).Unix(), // 7 day TTL
-	}
-
-	err := r.db.WithContext(ctx).Model(reblog).Create()
-	if err != nil {
-		return ErrorHandler.HandleCreateError(err, "reblog", statusID)
-	}
-
-	// Atomically increment reblog count using UpdateBuilder
-	pk := fmt.Sprintf("status#%s", statusID)
-	sk := fmt.Sprintf("status#%s", statusID)
-	
-	err = r.db.WithContext(ctx).Model(&models.Status{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		UpdateBuilder().
-		Add("ReblogCount", 1).
-		Execute()
-	if err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
-	}
-
-	return nil
-}
 
 // UnreblogStatus unreblogs a status for a user
 func (r *StatusRepository) UnreblogStatus(ctx context.Context, userID, statusID string) error {

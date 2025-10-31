@@ -14,6 +14,8 @@ GRAPHQL_ENDPOINT = os.getenv("GRAPHQL_ENDPOINT", "https://dev.lesser.host/api/gr
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 MEMBER_TOKEN = os.getenv("MEMBER_TOKEN")
 MOD_TOKEN = os.getenv("MOD_TOKEN")
+# Delay between tests to avoid Lambda throttling (in seconds)
+TEST_DELAY = float(os.getenv("GRAPHQL_TEST_DELAY", "0.5"))
 
 class ValidationResult:
     def __init__(self, name: str):
@@ -68,6 +70,10 @@ class GraphQLValidator:
         """Run a test and record results"""
         result = ValidationResult(name)
         start_time = time.time()
+        
+        # Add delay before test to avoid Lambda throttling
+        if TEST_DELAY > 0:
+            time.sleep(TEST_DELAY)
         
         try:
             response = self.graphql_request(query, variables)

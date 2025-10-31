@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/ai"
@@ -24,9 +25,39 @@ func (r *queryResolver) ExplainObject(ctx context.Context, id string) (*model.Ob
 	// Retrieve the object from storage
 	obj, err := objectRepo.GetObject(ctx, id)
 	if err != nil {
-		r.Logger.Error("failed to get object for explanation",
-			zap.String("object_id", id),
-			zap.Error(err))
+		// If object not found, check if it's a status ID instead
+		// Notes create statuses, not objects in the object repository
+		errStr := strings.ToLower(err.Error())
+		isNotFound := strings.Contains(errStr, "not found") || 
+		              strings.Contains(errStr, "notfound") ||
+		              strings.Contains(errStr, "failed to get") && strings.Contains(errStr, "object")
+		
+		// Always try status lookup as fallback (notes are stored as statuses)
+		statusRepo := r.Registry.GetStorage().Status()
+		if statusRepo != nil {
+			status, statusErr := statusRepo.GetStatus(ctx, id)
+			if statusErr == nil && status != nil {
+				// Convert status to object
+				modelObject := r.convertStatusToObject(ctx, status)
+				if modelObject != nil {
+					// Generate fallback explanation for status
+					explanation := r.generateFallbackExplanation(id, modelObject, status)
+					r.enrichWithStorageAnalysis(ctx, explanation, id)
+					return explanation, nil
+				}
+			}
+		}
+		
+		// If we reach here, neither object nor status was found
+		if isNotFound {
+			r.Logger.Debug("object not found for explanation",
+				zap.String("object_id", id),
+				zap.Error(err))
+		} else {
+			r.Logger.Error("failed to get object for explanation",
+				zap.String("object_id", id),
+				zap.Error(err))
+		}
 		return nil, errors.Join(errors.New("object not found"), err)
 	}
 

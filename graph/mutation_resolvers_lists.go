@@ -3,11 +3,15 @@ package graph
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"go.uber.org/zap"
 )
+
+// TimelineTypeList is referenced from constants.go
+var _ = TimelineTypeList
 
 // NOTE: imports intentionally omitted. Run gofmt/goimports and add any
 // required imports after generating these files.
@@ -26,9 +30,11 @@ func (r *mutationResolver) CreateList(ctx context.Context, input model.CreateLis
 	}
 
 	if input.RepliesPolicy != nil {
-		cmd.RepliesPolicy = string(*input.RepliesPolicy)
+		// Convert GraphQL enum (FOLLOWED, LIST, NONE) to lowercase (followed, list, none)
+		// as expected by validation
+		cmd.RepliesPolicy = strings.ToLower(string(*input.RepliesPolicy))
 	} else {
-		cmd.RepliesPolicy = TimelineTypeList
+		cmd.RepliesPolicy = TimelineTypeList // Default to "list" (lowercase)
 	}
 
 	// Note: Exclusive field doesn't exist in CreateListCommand
@@ -63,7 +69,9 @@ func (r *mutationResolver) UpdateList(ctx context.Context, id string, input mode
 		cmd.Title = *input.Title
 	}
 	if input.RepliesPolicy != nil {
-		cmd.RepliesPolicy = string(*input.RepliesPolicy)
+		// Convert GraphQL enum (FOLLOWED, LIST, NONE) to lowercase (followed, list, none)
+		// as expected by validation
+		cmd.RepliesPolicy = strings.ToLower(string(*input.RepliesPolicy))
 	}
 	// Note: Exclusive field doesn't exist in UpdateListCommand
 

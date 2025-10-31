@@ -60,10 +60,10 @@ func (r *PasswordReset) GetSK() string {
 func (r *PasswordReset) UpdateKeys() error {
 	// Validate required fields
 	if r.Username == "" {
-		return fmt.Errorf("Username is required")
+		return fmt.Errorf("username is required")
 	}
 	if r.Token == "" {
-		return fmt.Errorf("Token is required")
+		return fmt.Errorf("token is required")
 	}
 
 	// Set primary keys

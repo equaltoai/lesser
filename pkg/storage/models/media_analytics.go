@@ -110,10 +110,10 @@ func (m *MediaAnalytics) UpdateKeys() error {
 	// Note: PK and SK are set by helper methods (SetManifestGeneration, SetQualityChange, SetGeneralEvent)
 	// based on the specific event type. We validate they exist but don't reconstruct them here.
 	if m.MediaID == "" {
-		return fmt.Errorf("MediaID is required")
+		return fmt.Errorf("media ID is required")
 	}
 	if m.Date == "" {
-		return fmt.Errorf("Date is required")
+		return fmt.Errorf("date is required")
 	}
 	if m.PK == "" || m.SK == "" {
 		return fmt.Errorf("PK and SK must be set before calling UpdateKeys")

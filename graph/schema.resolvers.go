@@ -213,14 +213,15 @@ func (r *mutationResolver) UpdateTrust(ctx context.Context, input model.TrustInp
 	category := trust.TrustCategory(input.Category)
 
 	// Create trust relationship
-	relationship := &trust.TrustRelationship{
+	// Note: We use storage.TrustRelationship which is an alias for models.TrustRelationship
+	relationship := &storage.TrustRelationship{
 		ID:         generateID(),
 		TrusterID:  username,
 		TrusteeID:  input.TargetActorID,
-		Category:   category,
+		Category:   storage.TrustCategory(category),
 		Score:      input.Score,
 		Confidence: 1.0, // Full confidence for direct trust input
-		Evidence: []trust.TrustEvidence{
+		Evidence: []storage.TrustEvidence{
 			{
 				Type:        "direct_input",
 				Score:       input.Score,
@@ -231,12 +232,15 @@ func (r *mutationResolver) UpdateTrust(ctx context.Context, input model.TrustInp
 		Created: time.Now(),
 		Updated: time.Now(),
 	}
+	
+	// Note: UpdateKeys() will be called by the repository's UpdateTrustRelationship
 
-	// Get trust repository and create/update the relationship
+	// Get trust repository and update/create the relationship (upsert)
+	// Use UpdateTrustRelationship since UpdateTrust implies we want to update if it exists
 	trustRepo := r.Registry.GetStorage().Trust()
-	err = trustRepo.CreateTrustRelationship(ctx, relationship)
+	err = trustRepo.UpdateTrustRelationship(ctx, relationship)
 	if err != nil {
-		r.Logger.Error("Failed to create trust relationship", zap.Error(err))
+		r.Logger.Error("Failed to update trust relationship", zap.Error(err))
 		return nil, errors.Join(errors.New("failed to create trust relationship"), err)
 	}
 
@@ -1189,7 +1193,12 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		CommunityNotes:   []*model.CommunityNote{},
 		Quoteable:        true,
 		QuotePermissions: model.QuotePermissionEveryone,
-		QuoteCount:       0,
+		QuoteCount:       status.QuoteCount,
+		Quotes: &model.QuoteConnection{
+			Edges:      []*model.QuoteEdge{},
+			PageInfo:   &model.PageInfo{HasNextPage: false, HasPreviousPage: false},
+			TotalCount: status.QuoteCount,
+		},
 		EstimatedCost:    1,
 	}
 
@@ -1518,9 +1527,23 @@ func getStringFromMap(m map[string]interface{}, key string) string {
 
 // getDomainHealthScore retrieves the health score for a domain
 func (r *queryResolver) getDomainHealthScore(ctx context.Context, federationRepo interface{}, domain string) float64 {
-	repo := federationRepo.(interface {
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.Logger.Warn("panic in getDomainHealthScore, returning default",
+				zap.String("domain", domain),
+				zap.Any("panic", rec))
+		}
+	}()
+	
+	repo, ok := federationRepo.(interface {
 		GetDomainHealthScore(context.Context, string) (float64, error)
 	})
+	if !ok {
+		r.Logger.Debug("federation repo does not support GetDomainHealthScore",
+			zap.String("domain", domain))
+		return 0.0
+	}
+
 	healthScore, err := repo.GetDomainHealthScore(ctx, domain)
 	if err != nil {
 		r.Logger.Debug("no health score found for domain",
@@ -1533,9 +1556,23 @@ func (r *queryResolver) getDomainHealthScore(ctx context.Context, federationRepo
 
 // getRecentFederationMetrics retrieves recent federation metrics for a domain
 func (r *queryResolver) getRecentFederationMetrics(ctx context.Context, federationRepo interface{}, domain string) []*models.FederationAnalyticsTimeSeries {
-	repo := federationRepo.(interface {
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.Logger.Warn("panic in getRecentFederationMetrics, returning empty",
+				zap.String("domain", domain),
+				zap.Any("panic", rec))
+		}
+	}()
+	
+	repo, ok := federationRepo.(interface {
 		GetDetailedMetricsByPeriod(context.Context, string, time.Time, time.Time, int) ([]*models.FederationAnalyticsTimeSeries, error)
 	})
+	if !ok {
+		r.Logger.Debug("federation repo does not support GetDetailedMetricsByPeriod",
+			zap.String("domain", domain))
+		return []*models.FederationAnalyticsTimeSeries{}
+	}
+	
 	endTime := time.Now()
 	startTime := endTime.Add(-30 * time.Minute) // Last 30 minutes of activity
 
@@ -1589,9 +1626,23 @@ func (r *queryResolver) findRecentActivity(status *model.FederationStatus, recen
 
 // getInstanceInfo retrieves cached instance information for a domain
 func (r *queryResolver) getInstanceInfo(ctx context.Context, federationRepo interface{}, domain string) *models.FederationInstance {
-	repo := federationRepo.(interface {
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.Logger.Warn("panic in getInstanceInfo, returning nil",
+				zap.String("domain", domain),
+				zap.Any("panic", rec))
+		}
+	}()
+	
+	repo, ok := federationRepo.(interface {
 		GetInstanceInfo(context.Context, string) (*models.FederationInstance, error)
 	})
+	if !ok {
+		r.Logger.Debug("federation repo does not support GetInstanceInfo",
+			zap.String("domain", domain))
+		return nil
+	}
+	
 	instanceInfo, err := repo.GetInstanceInfo(ctx, domain)
 	if err != nil {
 		r.Logger.Debug("could not get instance information",

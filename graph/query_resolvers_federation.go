@@ -61,7 +61,11 @@ func (r *queryResolver) FederationStatus(ctx context.Context, domain string) (*m
 	// Get federation repository for metrics and analytics
 	federationRepo := r.Registry.GetStorage().Federation()
 	if federationRepo == nil {
-		return nil, ErrFederationRepositoryUnavailable
+		r.Logger.Warn("federation repository unavailable, returning basic status")
+		return &model.FederationStatus{
+			Domain:    domain,
+			Reachable: false,
+		}, nil
 	}
 
 	// Initialize the federation status response

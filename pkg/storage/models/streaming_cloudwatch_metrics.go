@@ -127,13 +127,13 @@ func (StreamingPerformanceMetrics) TableName() string {
 func (s *StreamingCloudWatchMetrics) UpdateKeys() error {
 	// Validate required fields
 	if s.MediaID == "" {
-		return fmt.Errorf("MediaID is required")
+		return fmt.Errorf("media ID is required")
 	}
 	if s.MetricType == "" {
-		return fmt.Errorf("MetricType is required")
+		return fmt.Errorf("metric type is required")
 	}
 	if s.Date == "" {
-		return fmt.Errorf("Date is required")
+		return fmt.Errorf("date is required")
 	}
 
 	// Note: PK and SK are set by helper methods (SetQualityBreakdown, SetGeographicData, etc.)

@@ -50,10 +50,10 @@ func (i *InstanceMetrics) TableName() string {
 func (i *InstanceMetrics) UpdateKeys() error {
 	// Validate required fields
 	if i.Date == "" {
-		return fmt.Errorf("Date is required")
+		return fmt.Errorf("date is required")
 	}
 	if i.MetricType == "" {
-		return fmt.Errorf("MetricType is required")
+		return fmt.Errorf("metric type is required")
 	}
 
 	// Set primary keys

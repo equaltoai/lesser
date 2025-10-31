@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -248,6 +249,32 @@ func (r *NotificationRepository) GetNotificationsByType(ctx context.Context, use
 	var notifications []models.Notification
 	err := query.All(&notifications)
 	if err != nil {
+		// If GSI doesn't exist or query fails, fallback to getting all notifications and filtering
+		// This allows the system to work even if the type-index GSI hasn't been set up yet
+		if strings.Contains(strings.ToLower(err.Error()), "index") || 
+		   strings.Contains(strings.ToLower(err.Error()), "not found") {
+			r.logger.Debug("type-index GSI not available, falling back to user notifications",
+				zap.String("user_id", userID),
+				zap.String("type", notificationType))
+			// Fallback to GetUserNotifications and filter by type
+			result, fallbackErr := r.GetUserNotifications(ctx, userID, opts)
+			if fallbackErr != nil {
+				return nil, ErrorHandler.HandleQueryError(fallbackErr, EntityNotification, "notifications by type")
+			}
+			// Filter by type
+			filtered := make([]*models.Notification, 0)
+			for _, notif := range result.Items {
+				if strings.EqualFold(notif.Type, notificationType) {
+					filtered = append(filtered, notif)
+				}
+			}
+			return &interfaces.PaginatedResult[*models.Notification]{
+				Items:      filtered,
+				NextCursor: result.NextCursor,
+				HasMore:    result.HasMore,
+				Total:      int64(len(filtered)),
+			}, nil
+		}
 		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "notifications by type")
 	}
 

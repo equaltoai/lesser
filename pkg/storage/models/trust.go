@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"net/url"
 	"time"
 )
 
@@ -197,12 +198,18 @@ func (tu *TrustUpdate) GetSK() string {
 
 // Helper function to extract domain from actor ID
 func getDomainFromActorID(actorID string) string {
-	// Look for the last @ in the actor ID
+	// First, try to parse as URL (handles https://domain.com/users/username format)
+	if u, err := url.Parse(actorID); err == nil && u.Host != "" {
+		return u.Host
+	}
+	
+	// Look for the last @ in the actor ID (handles @user@domain.com format)
 	for i := len(actorID) - 1; i >= 0; i-- {
 		if actorID[i] == '@' {
 			return actorID[i+1:]
 		}
 	}
+	
 	// Default to "local" if no domain found
 	return "local"
 }
