@@ -140,6 +140,7 @@ export GRAPHQL_ENDPOINT="$ENDPOINT"
 export ADMIN_TOKEN="$ADMIN_TOKEN"
 export MEMBER_TOKEN="$MEMBER_TOKEN"
 export MOD_TOKEN="$MOD_TOKEN"
+export GRAPHQL_TEST_DELAY="${GRAPHQL_TEST_DELAY:-0.5}"
 
 python3 "$SCRIPT_DIR/validate_graphql_comprehensive.py"
 

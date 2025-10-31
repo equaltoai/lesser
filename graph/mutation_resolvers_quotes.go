@@ -2,10 +2,11 @@ package graph
 
 import (
 	"context"
+	stdErrors "errors"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
@@ -16,76 +17,75 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 		return nil, err
 	}
 
-	// Get the quotes service
-	quotesService := r.Registry.Quotes()
-	if quotesService == nil {
-		r.Logger.Error("quotes service not available")
-		return nil, errors.ServiceUnavailable("quotes service")
+	// Verify user owns the note
+	statusRepo := r.Registry.GetStorage().Status()
+	if statusRepo == nil {
+		r.Logger.Error("status repository not available")
+		return nil, errors.ServiceUnavailable("status repository")
 	}
 
-	// Build quote permissions
-	permissions := &models.QuotePermissions{
-		Username: username,
+	status, err := statusRepo.GetStatus(ctx, noteID)
+	if err != nil {
+		r.Logger.Error("failed to get status",
+			zap.String("note_id", noteID),
+			zap.Error(err))
+		return nil, stdErrors.Join(stdErrors.New("processing failed"), err)
+	}
+
+	// Verify ownership
+	if status.AuthorUsername != username {
+		r.Logger.Warn("user cannot update quote permissions for note owned by another user",
+			zap.String("user", username),
+			zap.String("author", status.AuthorUsername))
+		return nil, errors.Forbidden("cannot update quote permissions for note owned by another user")
+	}
+
+	// Build quote permissions for the note
+	storagePermissions := &storage.QuotePermissions{
+		AllowPublic:    false,
+		AllowFollowers: false,
+		AllowMentioned: false,
 	}
 
 	// Map GraphQL permission enum to storage model
-	switch permission {
-	case model.QuotePermissionEveryone:
-		permissions.AllowPublic = true
-		permissions.AllowFollowers = true
-		permissions.AllowMentioned = true
-	case model.QuotePermissionFollowers:
-		permissions.AllowPublic = false
-		permissions.AllowFollowers = true
-		permissions.AllowMentioned = true
-	case model.QuotePermissionNone:
-		permissions.AllowPublic = false
-		permissions.AllowFollowers = false
-		permissions.AllowMentioned = false
+	if quoteable {
+		switch permission {
+		case model.QuotePermissionEveryone:
+			storagePermissions.AllowPublic = true
+			storagePermissions.AllowFollowers = true
+			storagePermissions.AllowMentioned = true
+		case model.QuotePermissionFollowers:
+			storagePermissions.AllowPublic = false
+			storagePermissions.AllowFollowers = true
+			storagePermissions.AllowMentioned = true
+		case model.QuotePermissionNone:
+			storagePermissions.AllowPublic = false
+			storagePermissions.AllowFollowers = false
+			storagePermissions.AllowMentioned = false
+		}
 	}
 
-	// If quoteable is false, override all permissions to deny
-	if !quoteable {
-		permissions.AllowPublic = false
-		permissions.AllowFollowers = false
-		permissions.AllowMentioned = false
+	// Update permissions using object repository
+	objectRepo := r.Registry.GetStorage().Object()
+	if objectRepo == nil {
+		r.Logger.Error("object repository not available")
+		return nil, errors.ServiceUnavailable("object repository")
 	}
 
-	// Update permissions
-	err = quotesService.UpdateQuotePermissions(ctx, permissions)
+	err = objectRepo.UpdateQuotePermissions(ctx, noteID, storagePermissions)
 	if err != nil {
 		r.Logger.Error("failed to update quote permissions",
 			zap.String("user", username),
+			zap.String("note_id", noteID),
 			zap.Error(err))
-		return nil, err
+		return nil, stdErrors.Join(stdErrors.New("processing failed"), err)
 	}
 
 	// Track cost using centralized tracker
 	r.trackDynamoOperation(ctx, "write", 1)
 
 	// Get the note to return
-	var note *model.Object
-	// Access storage through the unexported field (internal to services package)
-	if r.Registry != nil {
-		storageRepo := r.Registry.GetStorage()
-		if storageRepo != nil {
-			statusRepo := storageRepo.Status()
-			if statusRepo != nil {
-				status, getErr := statusRepo.GetStatus(ctx, noteID)
-				if getErr != nil {
-					r.Logger.Warn("failed to get note after updating permissions",
-						zap.String("note_id", noteID),
-						zap.Error(getErr))
-				} else if status != nil {
-					note = r.convertStatusToObject(ctx, status)
-				}
-			}
-		}
-	}
-
-	// Count affected quotes (quotes that may need to be re-checked)
-	// For now, we'll return 0 as this would require a complex query
-	affectedQuotes := 0
+	note := r.convertStatusToObject(ctx, status)
 
 	r.Logger.Info("quote permissions updated",
 		zap.String("user", username),
@@ -96,6 +96,6 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 	return &model.UpdateQuotePermissionsPayload{
 		Success:        true,
 		Note:           note,
-		AffectedQuotes: affectedQuotes,
+		AffectedQuotes: 0, // Would require complex query to calculate
 	}, nil
 }

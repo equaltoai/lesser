@@ -37,10 +37,10 @@ func (TrendingHashtag) TableName() string {
 func (t *TrendingHashtag) UpdateKeys() error {
 	// Validate required fields
 	if t.Date == "" {
-		return fmt.Errorf("Date is required")
+		return fmt.Errorf("date is required")
 	}
 	if t.Hashtag == "" {
-		return fmt.Errorf("Hashtag is required")
+		return fmt.Errorf("hashtag is required")
 	}
 
 	// Set primary keys

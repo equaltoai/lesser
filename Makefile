@@ -607,7 +607,22 @@ seed-and-validate:
 	python3 tests/system/test_graphql_reads.py
 	@echo ""
 	@echo "=== Step 5: Running comprehensive GraphQL validation ==="
-	@bash scripts/run_graphql_validation.sh
+	@TOKEN=$$(LESSER_BASE_URL=$(SEED_BASE_URL) python3 scripts/seed_runner/main.py get_token); \
+	GRAPHQL_STAGE=dev \
+	GRAPHQL_DOMAIN=lesser.host \
+	GRAPHQL_ENDPOINT=$(SEED_GRAPHQL_ENDPOINT) \
+	ADMIN_TOKEN="$$TOKEN" \
+	GRAPHQL_TEST_DELAY=0.5 \
+	bash scripts/run_graphql_validation.sh
+	@echo ""
+	@echo "=== Step 6: Running expanded GraphQL validation ==="
+	@TOKEN=$$(LESSER_BASE_URL=$(SEED_BASE_URL) python3 scripts/seed_runner/main.py get_token); \
+	GRAPHQL_STAGE=dev \
+	GRAPHQL_DOMAIN=lesser.host \
+	GRAPHQL_ENDPOINT=$(SEED_GRAPHQL_ENDPOINT) \
+	ADMIN_TOKEN="$$TOKEN" \
+	GRAPHQL_TEST_DELAY=0.5 \
+	python3 scripts/validate_graphql_expanded.py
 
 # =============================================================================
 # CODE QUALITY

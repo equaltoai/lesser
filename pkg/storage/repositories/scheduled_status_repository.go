@@ -151,8 +151,9 @@ func (r *ScheduledStatusRepository) GetScheduledStatus(ctx context.Context, id s
 		return nil, ErrorHandler.HandleGetError(err, EntityScheduledStatus, id)
 	}
 
-	if err := common.ValidateSliceNotEmpty("scheduled_models", scheduledModels); err != nil {
-		return nil, ErrorHandler.HandleGetError(err, EntityScheduledStatus, id)
+	// Return NotFound if no results found
+	if len(scheduledModels) == 0 {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityScheduledStatus, id)
 	}
 
 	return r.modelToStorage(scheduledModels[0]), nil

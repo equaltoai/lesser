@@ -3,6 +3,7 @@ package hashtags
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -98,54 +99,131 @@ func (s *Service) GetHashtag(ctx context.Context, name, viewerID string) (*Hasht
 		return nil, ErrHashtagNameRequired
 	}
 
+	info, err := s.getHashtagInfoWithFallback(ctx, tag)
+	if err != nil {
+		return nil, err
+	}
+
+	stats := s.loadHashtagStats(ctx, tag)
+	viewerState := s.getViewerHashtagState(ctx, viewerID, tag)
+
+	result := s.buildHashtagResult(tag, info, stats, viewerState)
+	result.Related = s.relatedHashtags(ctx, tag, 5)
+
+	return result, nil
+}
+
+// getHashtagInfoWithFallback retrieves hashtag info, handling not found gracefully
+func (s *Service) getHashtagInfoWithFallback(ctx context.Context, tag string) (*storage.Hashtag, error) {
 	info, err := s.hashtagRepo.GetHashtagInfo(ctx, tag)
 	if err != nil {
+		// If hashtag doesn't exist, return empty hashtag info instead of error
+		// This allows clients to query hashtags that haven't been created yet
+		if errors.Is(err, storage.ErrNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			s.logger.Debug("hashtag not found, returning empty info",
+				zap.String("hashtag", tag))
+			return nil, nil // Will create empty hashtag result below
+		}
 		s.logger.Error("failed to fetch hashtag info",
 			zap.String("hashtag", tag),
 			zap.Error(err))
 		return nil, ErrGetHashtag
 	}
+	return info, nil
+}
 
-	stats := s.loadHashtagStats(ctx, tag)
+// viewerHashtagState holds viewer-specific hashtag state
+type viewerHashtagState struct {
+	isFollowing bool
+	settings    *storage.HashtagNotificationSettings
+	isMuted     bool
+}
 
-	isFollowing := false
-	var settings *storage.HashtagNotificationSettings
-	isMuted := false
-
-	if viewerID != "" {
-		isFollowing, err = s.hashtagRepo.IsFollowingHashtag(ctx, viewerID, tag)
-		if err != nil {
-			s.logger.Error("failed to check follow relationship",
-				zap.String("viewer", viewerID),
-				zap.String("hashtag", tag),
-				zap.Error(err))
-			return nil, ErrGetHashtag
-		}
-
-		settings, err = s.hashtagRepo.GetHashtagNotificationSettings(ctx, viewerID, tag)
-		if err != nil {
-			s.logger.Error("failed to load hashtag notification settings",
-				zap.String("viewer", viewerID),
-				zap.String("hashtag", tag),
-				zap.Error(err))
-			return nil, ErrGetHashtag
-		}
-
-		isMuted, err = s.hashtagRepo.IsHashtagMuted(ctx, viewerID, tag)
-		if err != nil {
-			s.logger.Error("failed to check hashtag mute status",
-				zap.String("viewer", viewerID),
-				zap.String("hashtag", tag),
-				zap.Error(err))
-			return nil, ErrGetHashtag
+// getViewerHashtagState retrieves viewer-specific state for a hashtag
+func (s *Service) getViewerHashtagState(ctx context.Context, viewerID, tag string) *viewerHashtagState {
+	if viewerID == "" {
+		return &viewerHashtagState{
+			isFollowing: false,
+			settings:    nil,
+			isMuted:     false,
 		}
 	}
 
+	isFollowing := s.checkFollowingWithFallback(ctx, viewerID, tag)
+	settings := s.getNotificationSettingsWithFallback(ctx, viewerID, tag)
+	isMuted := s.checkMutedWithFallback(ctx, viewerID, tag)
+
+	return &viewerHashtagState{
+		isFollowing: isFollowing,
+		settings:    settings,
+		isMuted:     isMuted,
+	}
+}
+
+// checkFollowingWithFallback checks if viewer is following hashtag, handling not found gracefully
+func (s *Service) checkFollowingWithFallback(ctx context.Context, viewerID, tag string) bool {
+	isFollowing, err := s.hashtagRepo.IsFollowingHashtag(ctx, viewerID, tag)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			s.logger.Debug("hashtag follow check failed (hashtag not found), defaulting to false",
+				zap.String("viewer", viewerID),
+				zap.String("hashtag", tag))
+			return false
+		}
+		s.logger.Error("failed to check follow relationship",
+			zap.String("viewer", viewerID),
+			zap.String("hashtag", tag),
+			zap.Error(err))
+		return false
+	}
+	return isFollowing
+}
+
+// getNotificationSettingsWithFallback retrieves notification settings, handling not found gracefully
+func (s *Service) getNotificationSettingsWithFallback(ctx context.Context, viewerID, tag string) *storage.HashtagNotificationSettings {
+	settings, err := s.hashtagRepo.GetHashtagNotificationSettings(ctx, viewerID, tag)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			s.logger.Debug("hashtag notification settings not found, defaulting to nil",
+				zap.String("viewer", viewerID),
+				zap.String("hashtag", tag))
+			return nil
+		}
+		s.logger.Error("failed to load hashtag notification settings",
+			zap.String("viewer", viewerID),
+			zap.String("hashtag", tag),
+			zap.Error(err))
+		return nil
+	}
+	return settings
+}
+
+// checkMutedWithFallback checks if hashtag is muted, handling not found gracefully
+func (s *Service) checkMutedWithFallback(ctx context.Context, viewerID, tag string) bool {
+	isMuted, err := s.hashtagRepo.IsHashtagMuted(ctx, viewerID, tag)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			s.logger.Debug("hashtag mute check failed (hashtag not found), defaulting to false",
+				zap.String("viewer", viewerID),
+				zap.String("hashtag", tag))
+			return false
+		}
+		s.logger.Error("failed to check hashtag mute status",
+			zap.String("viewer", viewerID),
+			zap.String("hashtag", tag),
+			zap.Error(err))
+		return false
+	}
+	return isMuted
+}
+
+// buildHashtagResult constructs the final Hashtag result from info, stats, and viewer state
+func (s *Service) buildHashtagResult(tag string, info *storage.Hashtag, stats *storage.HashtagStats, viewerState *viewerHashtagState) *Hashtag {
 	result := &Hashtag{
 		Name:                 tag,
-		IsFollowing:          isFollowing,
-		IsMuted:              isMuted,
-		NotificationSettings: settings,
+		IsFollowing:          viewerState.isFollowing,
+		IsMuted:              viewerState.isMuted,
+		NotificationSettings: viewerState.settings,
 		Stats:                stats,
 	}
 
@@ -167,9 +245,7 @@ func (s *Service) GetHashtag(ctx context.Context, name, viewerID string) (*Hasht
 		result.TrendingScore = stats.TrendingScore
 	}
 
-	result.Related = s.relatedHashtags(ctx, tag, 5)
-
-	return result, nil
+	return result
 }
 
 // FollowHashtag creates a follow record, optionally updates notification settings, and emits streaming events.

@@ -743,20 +743,59 @@ func (s *Service) removeRelationshipGeneric(ctx context.Context, params removeRe
 	}
 
 	// Get accounts for events
-	actor, err := s.accountRepo.GetAccount(ctx, params.actorID)
-	if err != nil {
-		s.logger.Error("failed to get actor account for relationship removal",
-			zap.String(params.actorName, params.actorID),
-			zap.Error(err))
-		return nil, err
-	}
+	var actor, target *storage.Account
+	
+	if s.accountRepo != nil {
+		var err error
+		actor, err = s.accountRepo.GetAccount(ctx, params.actorID)
+		if err != nil {
+			s.logger.Error("failed to get actor account for relationship removal",
+				zap.String(params.actorName, params.actorID),
+				zap.Error(err))
+			return nil, err
+		}
 
-	target, err := s.accountRepo.GetAccount(ctx, params.targetID)
-	if err != nil {
-		s.logger.Error("failed to get target account for relationship removal",
-			zap.String(params.targetName, params.targetID),
-			zap.Error(err))
-		return nil, err
+		target, err = s.accountRepo.GetAccount(ctx, params.targetID)
+		if err != nil {
+			s.logger.Error("failed to get target account for relationship removal",
+				zap.String(params.targetName, params.targetID),
+				zap.Error(err))
+			return nil, err
+		}
+	} else if s.storage != nil {
+		// Fallback to Actor repository if accountRepo is not available
+		var err error
+		actorActor, err := s.storage.Actor().GetActor(ctx, params.actorID)
+		if err != nil {
+			s.logger.Error("failed to get actor for relationship removal",
+				zap.String(params.actorName, params.actorID),
+				zap.Error(err))
+			return nil, err
+		}
+		targetActor, err := s.storage.Actor().GetActor(ctx, params.targetID)
+		if err != nil {
+			s.logger.Error("failed to get target actor for relationship removal",
+				zap.String(params.targetName, params.targetID),
+				zap.Error(err))
+			return nil, err
+		}
+		
+		actor = &storage.Account{
+			User:  &storage.User{Username: actorActor.PreferredUsername},
+			Actor: actorActor,
+		}
+		target = &storage.Account{
+			User:  &storage.User{Username: targetActor.PreferredUsername},
+			Actor: targetActor,
+		}
+	} else {
+		// No account repository available - create minimal accounts for events
+		actor = &storage.Account{
+			User: &storage.User{Username: params.actorID},
+		}
+		target = &storage.Account{
+			User: &storage.User{Username: params.targetID},
+		}
 	}
 
 	// Remove relationship

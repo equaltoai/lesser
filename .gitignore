@@ -72,9 +72,14 @@ docs/api/swagger-ui/
 
 # Generated schema exports
 schema.graphql
+graph/generated.go
+graph/model/models_gen.go
 
-
+# Reports
 test-reports*
+report/
+*.json.report
+jscpd-report.json
 
 .env.k6
 

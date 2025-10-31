@@ -581,6 +581,16 @@ func (s *Service) SyncMissingReplies(ctx context.Context, cmd SyncMissingReplies
 	// Get the note
 	note, err := s.getNote(ctx, cmd.NoteID)
 	if err != nil {
+		// If note not found, return empty result instead of error (graceful handling)
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			s.logger.Debug("note not found for sync missing replies, returning empty result",
+				zap.String("note_id", cmd.NoteID))
+			return &SyncMissingRepliesResult{
+				Success:       true,
+				SyncedReplies: 0,
+				Errors:        []string{},
+			}, nil
+		}
 		return nil, errors.Join(ErrThreadNotFound, err)
 	}
 

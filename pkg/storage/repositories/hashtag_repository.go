@@ -1169,11 +1169,28 @@ func (r *HashtagRepository) UpdateHashtagNotificationSettings(ctx context.Contex
 	}
 
 	if err = r.db.WithContext(ctx).Model(model).Create(); err != nil {
-		r.logger.Error("failed to update hashtag notification settings",
-			zap.String("user_id", userID),
-			zap.String("hashtag", tagLower),
-			zap.Error(err))
-		return ErrorHandler.HandleUpdateError(err, EntityHashtag, fmt.Sprintf("settings %s#%s", userID, tagLower))
+		// If item already exists, try Update instead (upsert behavior)
+		if strings.Contains(strings.ToLower(err.Error()), "already exists") ||
+		   strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			r.logger.Debug("hashtag notification settings already exist, updating instead",
+				zap.String("user_id", userID),
+				zap.String("hashtag", tagLower))
+			// Update existing settings
+			updateErr := r.db.WithContext(ctx).Model(model).Update()
+			if updateErr != nil {
+				r.logger.Error("failed to update hashtag notification settings",
+					zap.String("user_id", userID),
+					zap.String("hashtag", tagLower),
+					zap.Error(updateErr))
+				return ErrorHandler.HandleUpdateError(updateErr, EntityHashtag, fmt.Sprintf("settings %s#%s", userID, tagLower))
+			}
+		} else {
+			r.logger.Error("failed to update hashtag notification settings",
+				zap.String("user_id", userID),
+				zap.String("hashtag", tagLower),
+				zap.Error(err))
+			return ErrorHandler.HandleUpdateError(err, EntityHashtag, fmt.Sprintf("settings %s#%s", userID, tagLower))
+		}
 	}
 
 	notifyEnabled := !strings.EqualFold(settings.Level, "none") && !settings.Muted

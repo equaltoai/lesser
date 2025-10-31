@@ -287,9 +287,10 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 	}
 
 	// Set default visibility if not provided
+	// Convert GraphQL enum (PUBLIC, UNLISTED, etc.) to lowercase (public, unlisted, etc.)
 	visibility := "public"
 	if input.Visibility != nil {
-		visibility = string(*input.Visibility)
+		visibility = strings.ToLower(string(*input.Visibility))
 	}
 
 	// Create the quote note using the notes service

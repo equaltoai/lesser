@@ -66,6 +66,40 @@ type ScheduledStatusRepository interface {
 	DeleteScheduledStatus(ctx context.Context, id string) error
 }
 
+// ensureAuthorUsername extracts username from Actor ID and populates AuthorUsername if empty
+func (s *Service) ensureAuthorUsername(ctx context.Context, status *models.Status) {
+	if status.AuthorUsername == "" && status.AuthorID != "" {
+		// Extract username from Actor ID - try multiple formats
+		// Format 1: https://domain.com/users/username
+		if strings.Contains(status.AuthorID, "/users/") {
+			parts := strings.Split(status.AuthorID, "/users/")
+			if len(parts) == 2 {
+				status.AuthorUsername = strings.Split(parts[1], "/")[0] // Get username before any trailing slash
+			}
+		}
+		// Format 2: https://domain.com/@username
+		if status.AuthorUsername == "" && strings.Contains(status.AuthorID, "/@") {
+			parts := strings.Split(status.AuthorID, "/@")
+			if len(parts) == 2 {
+				status.AuthorUsername = strings.Split(parts[1], "/")[0]
+			}
+		}
+		// Format 3: Just take the last path segment
+		if status.AuthorUsername == "" {
+			parts := strings.Split(strings.TrimSuffix(status.AuthorID, "/"), "/")
+			if len(parts) > 0 {
+				status.AuthorUsername = parts[len(parts)-1]
+			}
+		}
+		// Last resort: try to get from account using AuthorID
+		if status.AuthorUsername == "" && s.accountRepo != nil {
+			if account, err := s.accountRepo.GetAccount(ctx, status.AuthorID); err == nil && account != nil {
+				status.AuthorUsername = account.User.Username
+			}
+		}
+	}
+}
+
 // FederationService defines the interface for federation operations
 type FederationService interface {
 	QueueActivity(ctx context.Context, activity *activitypub.Activity) error
@@ -311,36 +345,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		zap.String("conversation_id", status.ConversationID))
 
 	// Ensure AuthorUsername is populated before emitting events
-	if status.AuthorUsername == "" && status.AuthorID != "" {
-		// Extract username from Actor ID - try multiple formats
-		// Format 1: https://domain.com/users/username
-		if strings.Contains(status.AuthorID, "/users/") {
-			parts := strings.Split(status.AuthorID, "/users/")
-			if len(parts) == 2 {
-				status.AuthorUsername = strings.Split(parts[1], "/")[0]
-			}
-		}
-		// Format 2: https://domain.com/@username
-		if status.AuthorUsername == "" && strings.Contains(status.AuthorID, "/@") {
-			parts := strings.Split(status.AuthorID, "/@")
-			if len(parts) == 2 {
-				status.AuthorUsername = strings.Split(parts[1], "/")[0]
-			}
-		}
-		// Format 3: Just take the last path segment
-		if status.AuthorUsername == "" {
-			parts := strings.Split(strings.TrimSuffix(status.AuthorID, "/"), "/")
-			if len(parts) > 0 {
-				status.AuthorUsername = parts[len(parts)-1]
-			}
-		}
-		// Last resort: try to get from account
-		if status.AuthorUsername == "" && s.accountRepo != nil {
-			if account, err := s.accountRepo.GetAccount(ctx, cmd.AuthorID); err == nil && account != nil {
-				status.AuthorUsername = account.User.Username
-			}
-		}
-	}
+	s.ensureAuthorUsername(ctx, status)
 
 	// Emit events and queue federation
 	events := s.emitStatusCreatedEvents(ctx, status)
@@ -544,36 +549,7 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 	}
 
 	// Ensure AuthorUsername is populated (may be empty if status was loaded from DB)
-	if status.AuthorUsername == "" && status.AuthorID != "" {
-		// Extract username from Actor ID - try multiple formats
-		// Format 1: https://domain.com/users/username
-		if strings.Contains(status.AuthorID, "/users/") {
-			parts := strings.Split(status.AuthorID, "/users/")
-			if len(parts) == 2 {
-				status.AuthorUsername = strings.Split(parts[1], "/")[0] // Get username before any trailing slash
-			}
-		}
-		// Format 2: https://domain.com/@username
-		if status.AuthorUsername == "" && strings.Contains(status.AuthorID, "/@") {
-			parts := strings.Split(status.AuthorID, "/@")
-			if len(parts) == 2 {
-				status.AuthorUsername = strings.Split(parts[1], "/")[0]
-			}
-		}
-		// Format 3: Just take the last path segment
-		if status.AuthorUsername == "" {
-			parts := strings.Split(strings.TrimSuffix(status.AuthorID, "/"), "/")
-			if len(parts) > 0 {
-				status.AuthorUsername = parts[len(parts)-1]
-			}
-		}
-		// Last resort: try to get from account using AuthorID
-		if status.AuthorUsername == "" && s.accountRepo != nil {
-			if account, err := s.accountRepo.GetAccount(ctx, status.AuthorID); err == nil && account != nil {
-				status.AuthorUsername = account.User.Username
-			}
-		}
-	}
+	s.ensureAuthorUsername(ctx, status)
 
 	// Check if already deleted
 	if status.Deleted {
@@ -749,70 +725,12 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 		zap.String("viewer_id", query.ViewerID),
 		zap.String("author_id", query.AuthorID))
 
-	var result *interfaces.PaginatedResult[*models.Status]
-	var err error
-
-	// Route to appropriate timeline method based on type
-	switch query.TimelineType {
-	case VisibilityPublic, "local":
-		// Both public and local use the same public timeline for now
-		// In a federated setup, local would filter to local domain only
-		result, err = s.noteRepo.GetPublicTimeline(ctx, query.Pagination)
-	case "home":
-		if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
-			return nil, ErrHomeTimelineRequiresViewerID
-		}
-		result, err = s.noteRepo.GetHomeTimeline(ctx, query.ViewerID, query.Pagination)
-	case "user":
-		if err := common.ValidateRequiredParam("author_id", query.AuthorID); err != nil {
-			return nil, ErrUserTimelineRequiresAuthorID
-		}
-		result, err = s.noteRepo.GetUserTimeline(ctx, query.AuthorID, query.Pagination)
-	case "conversations":
-		if err := common.ValidateRequiredParam("conversation_id", query.ConversationID); err != nil {
-			return nil, ErrConversationsTimelineRequiresConversationID
-		}
-		result, err = s.noteRepo.GetConversationThread(ctx, query.ConversationID, query.Pagination)
-	case "direct":
-		if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
-			return nil, ErrDirectTimelineRequiresViewerID
-		}
-		// Direct messages are handled differently - we get conversations first, then statuses
-		return s.getDirectTimeline(ctx, query)
-	case "hashtag":
-		if err := common.ValidateRequiredParam("hashtag", query.Hashtag); err != nil {
-			return nil, ErrHashtagTimelineRequiresHashtag
-		}
-		// Normalize hashtag to canonical format: lowercase, no # prefix
-		// This is the only place where normalization happens - repository enforces format
-		normalizedHashtag := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(query.Hashtag), "#"))
-		result, err = s.noteRepo.GetStatusesByHashtag(ctx, normalizedHashtag, query.Pagination)
-		if err != nil {
-			// Log the underlying error for debugging
-			s.logger.Error("failed to get hashtag timeline",
-				zap.String("hashtag", query.Hashtag),
-				zap.String("normalized_hashtag", normalizedHashtag),
-				zap.Error(err))
-			// Wrap the original error to preserve details
-			return nil, errors.Join(ErrGetTimeline, fmt.Errorf("hashtag timeline error: %w", err))
-		}
-	case "list":
-		if err := common.ValidateRequiredParam("list_id", query.ListID); err != nil {
-			return nil, ErrListTimelineRequiresListID
-		}
-		// Get list timeline - statuses from members of the list
-		listResult, listErr := s.getListTimeline(ctx, query)
-		if listErr != nil {
-			return nil, listErr
-		}
-		return listResult, nil
-	default:
-		s.logger.Warn("unsupported timeline type",
-			zap.String("timeline_type", query.TimelineType))
-		return nil, ErrUnsupportedTimelineType
+	result, err := s.routeTimelineQuery(ctx, query)
+	if err != nil {
+		return nil, err
 	}
 
-	if err != nil {
+	if result == nil {
 		return nil, ErrGetTimeline
 	}
 
@@ -820,45 +738,123 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 		zap.String("timeline_type", query.TimelineType),
 		zap.Int("items_count", len(result.Items)))
 
-	// Filter results based on privacy and other criteria
-	filteredNotes := make([]*models.Status, 0, len(result.Items))
+	filteredNotes := s.filterNotesForViewer(result.Items, query)
+
+	return s.buildNotesResult(filteredNotes, result), nil
+}
+
+// routeTimelineQuery routes to the appropriate timeline method based on type
+func (s *Service) routeTimelineQuery(ctx context.Context, query *ListNotesQuery) (*interfaces.PaginatedResult[*models.Status], error) {
+	switch query.TimelineType {
+	case VisibilityPublic, "local":
+		return s.noteRepo.GetPublicTimeline(ctx, query.Pagination)
+	case "home":
+		if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
+			return nil, ErrHomeTimelineRequiresViewerID
+		}
+		return s.noteRepo.GetHomeTimeline(ctx, query.ViewerID, query.Pagination)
+	case "user":
+		if err := common.ValidateRequiredParam("author_id", query.AuthorID); err != nil {
+			return nil, ErrUserTimelineRequiresAuthorID
+		}
+		return s.noteRepo.GetUserTimeline(ctx, query.AuthorID, query.Pagination)
+	case "conversations":
+		if err := common.ValidateRequiredParam("conversation_id", query.ConversationID); err != nil {
+			return nil, ErrConversationsTimelineRequiresConversationID
+		}
+		return s.noteRepo.GetConversationThread(ctx, query.ConversationID, query.Pagination)
+	case "direct":
+		if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
+			return nil, ErrDirectTimelineRequiresViewerID
+		}
+		// Direct messages are handled differently - we get conversations first, then statuses
+		directResult, err := s.getDirectTimeline(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		return directResult.Pagination, nil
+	case "hashtag":
+		if err := common.ValidateRequiredParam("hashtag", query.Hashtag); err != nil {
+			return nil, ErrHashtagTimelineRequiresHashtag
+		}
+		normalizedHashtag := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(query.Hashtag), "#"))
+		result, err := s.noteRepo.GetStatusesByHashtag(ctx, normalizedHashtag, query.Pagination)
+		if err != nil {
+			s.logger.Error("failed to get hashtag timeline",
+				zap.String("hashtag", query.Hashtag),
+				zap.String("normalized_hashtag", normalizedHashtag),
+				zap.Error(err))
+			return nil, errors.Join(ErrGetTimeline, fmt.Errorf("hashtag timeline error: %w", err))
+		}
+		return result, nil
+	case "list":
+		if err := common.ValidateRequiredParam("list_id", query.ListID); err != nil {
+			return nil, ErrListTimelineRequiresListID
+		}
+		listResult, err := s.getListTimeline(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		return listResult.Pagination, nil
+	default:
+		s.logger.Warn("unsupported timeline type",
+			zap.String("timeline_type", query.TimelineType))
+		return nil, ErrUnsupportedTimelineType
+	}
+}
+
+// filterNotesForViewer filters notes based on privacy, visibility, and query filters
+func (s *Service) filterNotesForViewer(notes []*models.Status, query *ListNotesQuery) []*models.Status {
+	filteredNotes := make([]*models.Status, 0, len(notes))
 	isPublicTimeline := query.TimelineType == VisibilityPublic || query.TimelineType == "local"
-	
-	for _, status := range result.Items {
-		// Skip deleted posts
-		if status.Deleted {
-			s.logger.Debug("skipping deleted status",
-				zap.String("status_id", status.StatusID))
+
+	for _, status := range notes {
+		if !s.shouldIncludeStatus(status, query, isPublicTimeline) {
 			continue
 		}
 
-		// For public/local timelines, skip visibility check since repository already filtered
-		// For other timelines (home, user, etc.), check visibility
-		if !isPublicTimeline {
-			if !status.IsVisibleTo(query.ViewerID) {
-				s.logger.Debug("skipping status not visible to viewer",
-					zap.String("status_id", status.StatusID),
-					zap.String("visibility", status.Visibility),
-					zap.String("viewer_id", query.ViewerID))
-				continue
-			}
-		}
-
-		// Apply additional filters
-		if query.OnlyMedia && !status.HasMedia() {
-			continue
-		}
-		if query.ExcludeReplies && status.IsReply() {
-			continue
-		}
-		// Note: ExcludeReblogs and PinnedOnly would require additional data
-
-		// Sanitize for viewer
 		sanitized := status.SanitizeForActor(query.ViewerID)
 		filteredNotes = append(filteredNotes, sanitized)
 	}
 
-	// Update the result with filtered items
+	return filteredNotes
+}
+
+// shouldIncludeStatus determines if a status should be included based on filters
+func (s *Service) shouldIncludeStatus(status *models.Status, query *ListNotesQuery, isPublicTimeline bool) bool {
+	// Skip deleted posts
+	if status.Deleted {
+		s.logger.Debug("skipping deleted status",
+			zap.String("status_id", status.StatusID))
+		return false
+	}
+
+	// For public/local timelines, skip visibility check since repository already filtered
+	// For other timelines (home, user, etc.), check visibility
+	if !isPublicTimeline {
+		if !status.IsVisibleTo(query.ViewerID) {
+			s.logger.Debug("skipping status not visible to viewer",
+				zap.String("status_id", status.StatusID),
+				zap.String("visibility", status.Visibility),
+				zap.String("viewer_id", query.ViewerID))
+			return false
+		}
+	}
+
+	// Apply additional filters
+	if query.OnlyMedia && !status.HasMedia() {
+		return false
+	}
+	if query.ExcludeReplies && status.IsReply() {
+		return false
+	}
+	// Note: ExcludeReblogs and PinnedOnly would require additional data
+
+	return true
+}
+
+// buildNotesResult constructs the final Result from filtered notes and pagination
+func (s *Service) buildNotesResult(filteredNotes []*models.Status, result *interfaces.PaginatedResult[*models.Status]) *Result {
 	filteredResult := &interfaces.PaginatedResult[*models.Status]{
 		Items:      filteredNotes,
 		NextCursor: result.NextCursor,
@@ -870,7 +866,7 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 		Notes:      filteredNotes,
 		Pagination: filteredResult,
 		Events:     []*streaming.Event{}, // No events for read operations
-	}, nil
+	}
 }
 
 // Private helper methods
@@ -2000,10 +1996,17 @@ func (s *Service) executePinActionGeneric(ctx context.Context, params pinActionP
 		return nil, ErrStatusNotFound
 	}
 
+	// Ensure AuthorUsername is populated (may be empty if status was loaded from DB)
+	// AuthorID is a full URL (e.g., https://dev.lesser.host/users/admin)
+	// but pinnerID is just a username (e.g., admin), so we need to compare usernames
+	s.ensureAuthorUsername(ctx, note)
+
 	// Verify the user owns the status (can only pin/unpin own statuses)
-	if note.AuthorID != params.pinnerID {
+	// Compare usernames, not full IDs (AuthorUsername is just the username, AuthorID is the full URL)
+	if note.AuthorUsername != params.pinnerID {
 		s.logger.Warn("user cannot pin/unpin status owned by another user",
 			zap.String("pinner_id", params.pinnerID),
+			zap.String("author_username", note.AuthorUsername),
 			zap.String("author_id", note.AuthorID))
 		return nil, common.ErrForbidden(ErrCannotPinPostOwnedByOther)
 	}

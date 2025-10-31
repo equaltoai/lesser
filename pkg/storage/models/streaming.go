@@ -56,7 +56,7 @@ func (StreamingPreferences) TableName() string {
 func (s *StreamingPreferences) UpdateKeys() error {
 	// Validate required fields
 	if s.Username == "" {
-		return fmt.Errorf("Username is required")
+		return fmt.Errorf("username is required")
 	}
 
 	// Set primary keys

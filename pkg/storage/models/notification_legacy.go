@@ -31,13 +31,13 @@ func (NotificationLegacy) TableName() string {
 func (n *NotificationLegacy) UpdateKeys() error {
 	// Validate required fields
 	if n.Username == "" {
-		return fmt.Errorf("Username is required")
+		return fmt.Errorf("username is required")
 	}
 	if n.ID == "" {
-		return fmt.Errorf("ID is required")
+		return fmt.Errorf("id is required")
 	}
 	if n.CreatedAt == 0 {
-		return fmt.Errorf("CreatedAt is required")
+		return fmt.Errorf("created at is required")
 	}
 
 	// Set primary keys

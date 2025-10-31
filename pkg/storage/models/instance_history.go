@@ -52,23 +52,23 @@ func (i *InstanceHistory) TableName() string {
 func (i *InstanceHistory) UpdateKeys() error {
 	// Validate required fields
 	if i.Date == "" {
-		return fmt.Errorf("Date is required")
+		return fmt.Errorf("date is required")
 	}
 	if i.MetricType == "" {
-		return fmt.Errorf("MetricType is required")
+		return fmt.Errorf("metric type is required")
 	}
 	if i.Granularity == "" {
-		return fmt.Errorf("Granularity is required")
+		return fmt.Errorf("granularity is required")
 	}
 
 	// Set primary keys based on granularity
 	i.PK = "INSTANCE#HISTORY"
 	switch i.Granularity {
-	case "daily":
+	case PeriodDaily:
 		i.SK = fmt.Sprintf("DAILY#%s#%s", i.Date, i.MetricType)
-	case "weekly":
+	case PeriodWeekly:
 		i.SK = fmt.Sprintf("WEEKLY#%s#%s", i.Date, i.MetricType)
-	case "monthly":
+	case PeriodMonthly:
 		i.SK = fmt.Sprintf("MONTHLY#%s#%s", i.Date, i.MetricType)
 	default:
 		return fmt.Errorf("invalid granularity: %s", i.Granularity)
@@ -98,7 +98,7 @@ func NewDailyInstanceHistory(date string, metricType string) *InstanceHistory {
 		SK:          fmt.Sprintf("DAILY#%s#%s", date, metricType),
 		Date:        date,
 		MetricType:  metricType,
-		Granularity: "daily",
+		Granularity: PeriodDaily,
 		RecordedAt:  now,
 		// Set TTL to 90 days from now (90 * 24 * 60 * 60 = 7776000 seconds)
 		TTL: now.Unix() + 7776000,
@@ -116,7 +116,7 @@ func NewWeeklyInstanceHistory(weekStart string, metricType string) *InstanceHist
 		SK:          fmt.Sprintf("WEEKLY#%s#%s", weekStart, metricType),
 		Date:        weekStart,
 		MetricType:  metricType,
-		Granularity: "weekly",
+		Granularity: PeriodWeekly,
 		RecordedAt:  now,
 		// Set TTL to 365 days from now (365 * 24 * 60 * 60 = 31536000 seconds)
 		TTL: now.Unix() + 31536000,

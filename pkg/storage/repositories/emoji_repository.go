@@ -109,7 +109,15 @@ func (r *EmojiRepository) GetCustomEmojis(ctx context.Context) ([]*storage.Custo
 	// Query using GSI1 for all emojis
 	emojiModels, err := r.queryEmojiGSI(ctx, "gsi1", "GSI1PK", "ALL_EMOJIS", 0)
 	if err != nil {
-		return nil, err
+		// If GSI doesn't exist or query fails, return empty list (graceful degradation)
+		// This allows the system to work even if emojis haven't been set up yet
+		if errors.IsNotFound(err) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			r.logger.Debug("no emojis found or GSI not available, returning empty list")
+			return []*storage.CustomEmoji{}, nil
+		}
+		r.logger.Warn("failed to query emojis, returning empty list",
+			zap.Error(err))
+		return []*storage.CustomEmoji{}, nil
 	}
 
 	// Filter out disabled emojis and convert to storage type

@@ -50,10 +50,10 @@ func (l *UserLogin) GetSK() string {
 func (l *UserLogin) UpdateKeys() error {
 	// Validate required fields
 	if l.Username == "" {
-		return fmt.Errorf("Username is required")
+		return fmt.Errorf("username is required")
 	}
 	if l.Timestamp.IsZero() {
-		return fmt.Errorf("Timestamp is required")
+		return fmt.Errorf("timestamp is required")
 	}
 
 	// Set primary keys

@@ -54,10 +54,10 @@ func (m *TimelineMarker) GetSK() string {
 func (m *TimelineMarker) UpdateKeys() error {
 	// Validate required fields
 	if m.Username == "" {
-		return fmt.Errorf("Username is required")
+		return fmt.Errorf("username is required")
 	}
 	if m.Timeline == "" {
-		return fmt.Errorf("Timeline is required")
+		return fmt.Errorf("timeline is required")
 	}
 
 	// Set primary keys
