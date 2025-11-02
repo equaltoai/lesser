@@ -91,12 +91,12 @@ func SafeRedirect(w http.ResponseWriter, r *http.Request, defaultPath string) {
 
 	target := defaultPath
 	if raw != "" {
-		if sanitized, err := sanitizedRedirectTarget(raw, r.Host); err == nil {
+		if sanitized := resolveRedirectPath(raw, r.Host); sanitized != "" {
 			target = sanitized
 		} else {
 			Logger().Warn("Invalid redirect attempt",
 				zap.String("url", raw),
-				zap.Error(err))
+				zap.String("reason", "rejected by resolver"))
 		}
 	}
 
@@ -107,13 +107,13 @@ func SafeRedirect(w http.ResponseWriter, r *http.Request, defaultPath string) {
 func SafeRedirectOrDefault(w http.ResponseWriter, r *http.Request, redirectURL, defaultPath string) {
 	target := defaultPath
 	if redirectURL != "" {
-		if sanitized, err := sanitizedRedirectTarget(redirectURL, r.Host); err == nil {
+		if sanitized := resolveRedirectPath(redirectURL, r.Host); sanitized != "" {
 			target = sanitized
 		} else {
 			Logger().Warn("Invalid redirect, using default",
 				zap.String("requested_url", redirectURL),
 				zap.String("default_url", defaultPath),
-				zap.Error(err))
+				zap.String("reason", "rejected by resolver"))
 		}
 	}
 
@@ -134,41 +134,62 @@ func ConfigureAllowedRedirectHosts(hosts []string) {
 
 // GetSafeRedirectURL returns a validated redirect URL or the default
 func GetSafeRedirectURL(redirectURL, currentHost, defaultPath string) string {
-	if sanitized, err := sanitizedRedirectTarget(redirectURL, currentHost); err == nil {
+	if sanitized := resolveRedirectPath(redirectURL, currentHost); sanitized != "" {
 		return sanitized
 	}
 	return defaultPath
 }
 
-func sanitizedRedirectTarget(redirectURL, currentHost string) (string, error) {
-	if err := ValidateRedirectURL(redirectURL, currentHost); err != nil {
-		return "", err
+func resolveRedirectPath(rawURL, currentHost string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
 	}
 
-	u, err := url.Parse(redirectURL)
+	// Fast path for relative URLs of the form "/path"
+	if strings.HasPrefix(rawURL, "/") && !strings.HasPrefix(rawURL, "//") && !strings.HasPrefix(rawURL, "/\\") {
+		return sanitizeRelativeURL(rawURL)
+	}
+
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid redirect URL: %w", err)
+		return ""
 	}
 
-	if u.Host == "" {
-		if u.Path == "" {
-			return "/", nil
-		}
-		return u.String(), nil
+	if parsed.Scheme != "" && parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ""
 	}
 
-	// For allowed external hosts, redirect to the same path on the current origin to avoid open redirects.
-	clean := &url.URL{
-		Path:     u.Path,
-		RawQuery: u.RawQuery,
-		Fragment: u.Fragment,
+	if parsed.Host == "" {
+		return sanitizeRelativeURL(parsed.String())
 	}
-	if result := clean.String(); result != "" {
-		// Only allow paths starting with a single slash and not followed by '/' or '\'
-		if strings.HasPrefix(result, "/") && (len(result) == 1 || (result[1] != '/' && result[1] != '\\')) {
-			return result, nil
-		}
-		return "/", nil
+
+	host := normalizeHost(parsed.Host)
+	current := normalizeHost(currentHost)
+	if host == "" || (host != current && !allowedRedirectHosts[host]) {
+		return ""
 	}
-	return "/", nil
+
+	return sanitizeRelativeURL((&url.URL{
+		Path:     parsed.Path,
+		RawQuery: parsed.RawQuery,
+		Fragment: parsed.Fragment,
+	}).String())
+}
+
+func sanitizeRelativeURL(u string) string {
+	if u == "" {
+		return ""
+	}
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return ""
+	}
+	if parsed.Host != "" || parsed.Scheme != "" {
+		return ""
+	}
+	if !strings.HasPrefix(parsed.Path, "/") || (len(parsed.Path) > 1 && (parsed.Path[1] == '/' || parsed.Path[1] == '\\')) {
+		return ""
+	}
+	return parsed.String()
 }

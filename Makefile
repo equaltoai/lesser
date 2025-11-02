@@ -1,4 +1,4 @@
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate clear-data
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate clear-data snyk snyk-go snyk-code snyk-iac
 
 # =============================================================================
 # CONFIGURATION
@@ -18,6 +18,12 @@ INTEGRATION_STAGE ?= integration
 # Seed/validation configuration
 SEED_BASE_URL ?= https://dev.lesser.host
 SEED_GRAPHQL_ENDPOINT ?= $(SEED_BASE_URL)/api/graphql
+
+# Snyk configuration
+SNYK_CMD ?= snyk
+SNYK_ORG ?= 3d56b57f-0609-4364-960c-b66074a51ae7
+SNYK_CODE_FLAGS ?= --severity-threshold=medium
+SNYK_EXTRA_FLAGS ?=
 
 # Detect OS for Windows compatibility
 ifeq ($(OS),Windows_NT)
@@ -154,6 +160,30 @@ clean:
 	@rm -rf bin/
 	@rm -f coverage.out coverage.html
 	@echo "✓ Clean complete"
+
+# =============================================================================
+# SECURITY SCANNING
+# =============================================================================
+
+snyk: snyk-go snyk-code
+	@echo "✓ Snyk application scans completed"
+
+snyk-go:
+	@command -v $(SNYK_CMD) >/dev/null 2>&1 || { echo "Snyk CLI not found; install from https://docs.snyk.io/snyk-cli"; exit 1; }
+	@test -f go.mod || { echo "go.mod not found; run from repo root"; exit 1; }
+	@echo "Running Snyk dependency scan for Go modules..."
+	@$(SNYK_CMD) test --file=go.mod --org=$(SNYK_ORG) $(SNYK_EXTRA_FLAGS)
+
+snyk-code:
+	@command -v $(SNYK_CMD) >/dev/null 2>&1 || { echo "Snyk CLI not found; install from https://docs.snyk.io/snyk-cli"; exit 1; }
+	@echo "Running Snyk Code (SAST) scan..."
+	@$(SNYK_CMD) code test --org=$(SNYK_ORG) $(SNYK_CODE_FLAGS) $(SNYK_EXTRA_FLAGS)
+
+snyk-iac:
+	@command -v $(SNYK_CMD) >/dev/null 2>&1 || { echo "Snyk CLI not found; install from https://docs.snyk.io/snyk-cli"; exit 1; }
+	@test -d infra/cdk || { echo "infra/cdk not found; IaC scan skipped"; exit 1; }
+	@echo "Running Snyk IaC scan for infra/cdk..."
+	@$(SNYK_CMD) iac test infra/cdk --org=$(SNYK_ORG)
 
 # =============================================================================
 # CDK DEPLOYMENT TARGETS

@@ -266,7 +266,22 @@ go test ./pkg/activitypub/...
 
 # With coverage
 make test-coverage
+
+# Dependency & code scanning (requires Snyk CLI)
+make snyk-go    # Go module dependency audit
+make snyk-code  # Snyk Code (SAST) using .snyk policy
+make snyk-iac   # (Optional) IaC scan for infra/cdk
 ```
+
+### Security Scanning
+
+- Install the [Snyk CLI](https://docs.snyk.io/snyk-cli) and run `snyk auth` once per machine.
+- Use `make snyk-go` and `make snyk-code` before opening a PR; they automatically pass our `--exclude` list so cached modules and fixtures don’t generate noise.
+- `make snyk-iac` scans the CDK stack definitions when you touch `infra/cdk`.
+- Override defaults when needed:
+  - `make snyk-go SNYK_ORG=<your-org-id>`
+  - `make snyk-go SNYK_EXTRA_FLAGS="--all-projects --exclude=.gomodcache,tmp"` (only if you truly need `--all-projects`)
+- Record any intentional Snyk ignores (with an expiry) in the PR description so reviewers understand the rationale.
 
 ## Pull Request Process
 
