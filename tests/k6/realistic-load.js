@@ -670,7 +670,7 @@ export function backgroundLoad() {
 }
 
 // Test teardown
-export function teardown(data) {
+export function teardown() {
   console.log('Load test completed');
   console.log(`Total estimated cost: ${costTracker.count} microcents`);
   console.log(`Total DB operations: ${dbOperations.count}`);
