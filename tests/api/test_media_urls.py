@@ -4,6 +4,7 @@ import requests
 import sys
 import os
 import io
+from urllib.parse import urlparse
 from PIL import Image
 
 def test_media_upload(base_url, token):
@@ -41,13 +42,15 @@ def test_media_upload(base_url, token):
     print(f"   URL: {media['url']}")
     
     # Check if URL uses CDN domain
-    if base_url.replace('https://', '') in media['url']:
+    media_url = urlparse(media['url'])
+    base_host = urlparse(base_url).hostname
+    if media_url.hostname == base_host:
         print("❌ Media URL is using main domain instead of CDN domain")
         return False
-    
-    if 'media.' in media['url']:
+
+    if media_url.hostname and media_url.hostname.startswith('media.'):
         print("✅ Media URL correctly uses CDN subdomain")
-    elif 's3.amazonaws.com' in media['url']:
+    elif media_url.hostname and media_url.hostname.endswith('s3.amazonaws.com'):
         print("⚠️  Media URL is using direct S3 URL (CDN may not be configured)")
     
     # Try to fetch the image via the CDN URL

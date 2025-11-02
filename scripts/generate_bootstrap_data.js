@@ -416,9 +416,9 @@ console.log("  - test_commands.sh   : API test commands");
 console.log("\nNext steps:");
 console.log(`1. cd ${outputDir}`);
 console.log(`2. ./deploy.sh`);
-console.log(`3. Set environment variable: export JWT_SECRET=${jwtSecret}`);
+console.log('3. Set environment variable: export JWT_SECRET=<value from credentials.txt>');
 console.log(
-  `4. Generate JWT token: JWT_SECRET=${jwtSecret} node create_token.js`,
+  '4. Generate JWT token: JWT_SECRET=<value from credentials.txt> node create_token.js',
 );
 console.log(`5. Test API: ./test_commands.sh <token>`);
 console.log(`\n🔐 Authentication: Passwordless (WebAuthn/Crypto Wallet only)`);

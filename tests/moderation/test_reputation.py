@@ -167,18 +167,7 @@ def test_export_reputation():
         print(f"   Total Score: {portable_rep['reputation']['totalScore']}")
         print(f"   Vouches Included: {len(portable_rep['vouches'])}")
         
-        # Pretty print a sample
-        print("\n   Document Preview:")
-        preview = {
-            "@context": portable_rep.get("@context", []),
-            "@type": portable_rep.get("@type"),
-            "actor": portable_rep.get("actor"),
-            "reputation": {
-                "totalScore": portable_rep["reputation"]["totalScore"],
-                "calculatedAt": portable_rep["reputation"]["calculatedAt"]
-            }
-        }
-        print(json.dumps(preview, indent=4))
+        print("\n   Document preview available (sensitive fields omitted).")
         
         return portable_rep
     else:

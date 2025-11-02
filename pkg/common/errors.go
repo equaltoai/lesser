@@ -447,6 +447,7 @@ var (
 	ErrRedirectURLEmpty               = errors.RequiredFieldMissing("redirect_url")
 	ErrProtocolRelativeURLsNotAllowed = errors.URLSchemeNotAllowed("", "protocol-relative")
 	ErrJavascriptDataURLsNotAllowed   = errors.URLSchemeNotAllowed("", "javascript/data")
+	ErrRedirectSchemeNotAllowed       = errors.URLSchemeNotAllowed("", "unsupported")
 	ErrExternalHostNotAllowed         = errors.URLHostNotAllowed("", "external")
 )
 

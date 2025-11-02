@@ -8,6 +8,16 @@ import requests
 import webbrowser
 import urllib.parse
 
+
+def redact(value: str, visible: int = 4) -> str:
+    """Mask sensitive values before displaying them."""
+    if not value:
+        return ""
+    value = str(value)
+    if len(value) <= visible * 2:
+        return "*" * len(value)
+    return f"{value[:visible]}...{value[-visible:]}"
+
 def create_app():
     """Create an OAuth app on lesser.host"""
     
@@ -22,9 +32,9 @@ def create_app():
     
     if response.status_code == 200:
         app = response.json()
-        print(f"✅ OAuth app created!")
-        print(f"Client ID: {app['client_id']}")
-        print(f"Client Secret: {app['client_secret']}")
+        print("✅ OAuth app created!")
+        print(f"Client ID: {redact(app['client_id'])}")
+        print(f"Client Secret: {redact(app['client_secret'])}")
         return app['client_id'], app['client_secret']
     else:
         print(f"❌ Failed to create app: {response.status_code} - {response.text}")
@@ -50,7 +60,7 @@ def main():
     print("MANUAL STEPS REQUIRED:")
     print("="*60)
     print("\n1. Open this URL in your browser:")
-    print(f"\n   {auth_url}\n")
+    print(f"\n   {redact(auth_url, visible=12)}\n")
     print("2. Log in with your Lesser account")
     print("3. Authorize the app")
     print("4. Copy the authorization code shown\n")
@@ -67,7 +77,7 @@ def main():
     
     # URL decode the code if needed
     auth_code = urllib.parse.unquote(auth_code)
-    print(f"Using code: {auth_code}")
+    print(f"Using code: {redact(auth_code)}")
     
     # Step 4: Exchange code for token
     print("\nExchanging code for token...")
@@ -82,17 +92,18 @@ def main():
     
     if token_response.status_code == 200:
         tokens = token_response.json()
-        print("\n✅ Success! Here are your tokens:\n")
-        print(f"Access Token: {tokens['access_token']}")
-        print(f"\nRefresh Token: {tokens.get('refresh_token', 'N/A')}")
-        
+        print("\n✅ Success! Tokens retrieved (values redacted for safety):\n")
+        print(f"Access Token: {redact(tokens['access_token'])}")
+        refresh_token = tokens.get('refresh_token')
+        print(f"\nRefresh Token: {redact(refresh_token) if refresh_token else 'N/A'}")
+
         print("\n" + "="*60)
         print("To use these tokens in tests:")
         print("="*60)
-        print(f"\nexport LESSER_AUTH_TOKEN='{tokens['access_token']}'")
-        print(f"export LESSER_URL='https://lesser.host'")
-        print(f"export LESSER_CLIENT_ID='{client_id}'")
-        print(f"export LESSER_CLIENT_SECRET='{client_secret}'")
+        print("\nexport LESSER_AUTH_TOKEN='<access token>'")
+        print("export LESSER_URL='https://lesser.host'")
+        print("export LESSER_CLIENT_ID='<client id>'")
+        print("export LESSER_CLIENT_SECRET='<client secret>'")
         
         # Verify the token works
         print("\nVerifying token...")

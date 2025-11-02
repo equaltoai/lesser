@@ -7,13 +7,23 @@ import time
 import hashlib
 import base64
 import secrets
-from urllib.parse import urlencode, urlparse, parse_qs
+from urllib.parse import urlencode, urlparse, parse_qs, parse_qsl
 
 # Configuration
 BASE_URL = "http://localhost:8080/api/v1"  # Update with your API URL
 CLIENT_ID = None  # Will be set after app registration
 CLIENT_SECRET = None
 REDIRECT_URI = "http://localhost:3000/callback"
+
+
+def redact(value: str, visible: int = 4) -> str:
+    """Return a masked representation of a sensitive value."""
+    if not value:
+        return ""
+    value = str(value)
+    if len(value) <= visible * 2:
+        return "*" * len(value)
+    return f"{value[:visible]}...{value[-visible:]}"
 
 def register_oauth_app():
     """Register an OAuth application."""
@@ -32,8 +42,8 @@ def register_oauth_app():
     if response.status_code == 200:
         app = response.json()
         print(f"App registered successfully!")
-        print(f"Client ID: {app['client_id']}")
-        print(f"Client Secret: {app['client_secret']}")
+        print(f"Client ID: {redact(app['client_id'])}")
+        print(f"Client Secret: {redact(app['client_secret'])}")
         return app['client_id'], app['client_secret']
     else:
         print(f"Error: {response.text}")
@@ -88,7 +98,7 @@ def test_authorization_flow(username, password):
     if auth_response.status_code == 302:
         # Parse authorization code from redirect
         redirect_url = auth_response.headers.get('Location')
-        print(f"Redirect URL: {redirect_url}")
+        print(f"Redirect URL: {redact(redirect_url, visible=8)}")
         
         parsed = urlparse(redirect_url)
         params = parse_qs(parsed.query)
@@ -97,7 +107,7 @@ def test_authorization_flow(username, password):
             auth_code = params['code'][0]
             returned_state = params.get('state', [None])[0]
             
-            print(f"Authorization code: {auth_code}")
+            print(f"Authorization code: {redact(auth_code)}")
             print(f"State matches: {returned_state == state}")
             
             # Step 2: Exchange code for tokens
@@ -116,8 +126,8 @@ def test_authorization_flow(username, password):
             
             if token_response.status_code == 200:
                 tokens = token_response.json()
-                print(f"Access token: {tokens['access_token'][:50]}...")
-                print(f"Refresh token: {tokens['refresh_token'][:20]}...")
+                print(f"Access token: {redact(tokens['access_token'])}")
+                print(f"Refresh token: {redact(tokens['refresh_token'])}")
                 print(f"Token type: {tokens['token_type']}")
                 print(f"Expires in: {tokens['expires_in']} seconds")
                 return tokens
@@ -147,7 +157,7 @@ def test_refresh_token(refresh_token):
     
     if response.status_code == 200:
         tokens = response.json()
-        print(f"New access token: {tokens['access_token'][:50]}...")
+        print(f"New access token: {redact(tokens['access_token'])}")
         print(f"Token refreshed successfully!")
         return tokens['access_token']
     else:
@@ -205,8 +215,17 @@ def test_external_oauth():
     
     if response.status_code == 200:
         data = response.json()
-        print(f"GitHub Auth URL: {data['auth_url']}")
-        print(f"State: {data['state']}")
+        auth_url = data['auth_url']
+        parsed_url = urlparse(auth_url)
+        masked_query = []
+        for key, value in parse_qsl(parsed_url.query):
+            if key.lower() in {"client_id", "state"}:
+                masked_query.append(f"{key}=<redacted>")
+            else:
+                masked_query.append(f"{key}={value}")
+        safe_url = parsed_url._replace(query="&".join(masked_query)).geturl()
+        print(f"GitHub Auth URL: {safe_url}")
+        print(f"State: {redact(data['state'])}")
         print("\nTo test GitHub OAuth:")
         print("1. Visit the auth URL in your browser")
         print("2. Authorize the app on GitHub")

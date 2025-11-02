@@ -94,7 +94,7 @@ func (p *queuePublisher) logQueueError(message string, err error, fields map[str
 		return
 	}
 
-	zapFields := make([]zap.Field, 0, len(fields)+1)
+	zapFields := make([]zap.Field, 0, len(fields))
 	for k, v := range fields {
 		zapFields = append(zapFields, zap.Any(k, v))
 	}

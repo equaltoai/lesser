@@ -28,11 +28,24 @@ BOOTSTRAP_ROOT = Path(__file__).resolve().parents[2]
 JWT_SECRET_CACHE: Optional[str] = None
 
 
+def redact(value: str, visible: int = 4) -> str:
+    """Return a masked representation of sensitive data."""
+    if not value:
+        return ""
+    if len(value) <= visible * 2:
+        return "*" * len(value)
+    return f"{value[:visible]}...{value[-visible:]}"
+
+
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "get_token":
         token = build_admin_token()
         if token:
-            print(token)
+            if os.environ.get("LESSER_SEED_ALLOW_RAW_SECRET") == "1":
+                print(token)
+            else:
+                print(f"Admin token (redacted): {redact(token)}")
+                print("Set LESSER_SEED_ALLOW_RAW_SECRET=1 to print the full token.")
         return
 
     print("Starting API-driven bootstrap process...")

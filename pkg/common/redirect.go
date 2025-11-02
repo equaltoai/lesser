@@ -15,10 +15,30 @@ var allowedRedirectHosts = map[string]bool{
 	"auth.lesser.example.com": true,
 }
 
+func normalizeHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return ""
+	}
+	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
+		if parsed, err := url.Parse(host); err == nil {
+			host = parsed.Host
+		}
+	}
+	if colon := strings.Index(host, ":"); colon != -1 {
+		host = host[:colon]
+	}
+	return strings.ToLower(host)
+}
+
 // ValidateRedirectURL validates that a redirect URL is safe and allowed
 func ValidateRedirectURL(redirectURL string, currentHost string) error {
+	redirectURL = strings.TrimSpace(redirectURL)
 	if redirectURL == "" {
 		return ErrRedirectURLEmpty
+	}
+	if strings.HasPrefix(redirectURL, "//") {
+		return ErrProtocolRelativeURLsNotAllowed
 	}
 
 	// Parse the URL
@@ -27,30 +47,36 @@ func ValidateRedirectURL(redirectURL string, currentHost string) error {
 		return fmt.Errorf("invalid redirect URL: %w", err)
 	}
 
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "" && scheme != "http" && scheme != "https" {
+		return ErrRedirectSchemeNotAllowed
+	}
+
 	// Relative URLs are safe (same origin)
 	if u.Host == "" {
-		// But check for protocol-relative URLs
-		if strings.HasPrefix(redirectURL, "//") {
-			return ErrProtocolRelativeURLsNotAllowed
-		}
-		// Check for javascript: or data: URLs
-		if u.Scheme == "javascript" || u.Scheme == "data" {
-			return ErrJavascriptDataURLsNotAllowed
+		// But check for disguised schemes
+		if scheme != "" {
+			return ErrRedirectSchemeNotAllowed
 		}
 		return nil
 	}
 
 	// Check against whitelist
-	if allowedRedirectHosts[u.Host] {
+	host := normalizeHost(u.Host)
+	if host == "" {
+		return ErrExternalHostNotAllowed
+	}
+
+	if allowedRedirectHosts[host] {
 		return nil
 	}
 
-	// Allow same host
-	if u.Host == currentHost {
+	current := normalizeHost(currentHost)
+	if current != "" && host == current {
 		return nil
 	}
 
-	return fmt.Errorf("redirect to external host not allowed: %s", u.Host)
+	return fmt.Errorf("redirect to external host not allowed: %s", host)
 }
 
 // SafeRedirect performs a safe redirect with validation
@@ -93,7 +119,10 @@ func SafeRedirectOrDefault(w http.ResponseWriter, r *http.Request, redirectURL, 
 func ConfigureAllowedRedirectHosts(hosts []string) {
 	newAllowed := make(map[string]bool)
 	for _, host := range hosts {
-		newAllowed[host] = true
+		normalized := normalizeHost(host)
+		if normalized != "" {
+			newAllowed[normalized] = true
+		}
 	}
 	allowedRedirectHosts = newAllowed
 }

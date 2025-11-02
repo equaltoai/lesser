@@ -700,7 +700,7 @@ func (s *Service) validateUpdatePreferencesCommand(_ context.Context, cmd *Updat
 	}
 
 	if cmd.DefaultPostingVisibility != "" && !validVisibilities[cmd.DefaultPostingVisibility] {
-		return common.ErrValidation("default_posting_visibility", fmt.Sprintf("Visibility '%s' is not valid", cmd.DefaultPostingVisibility)).InternalError
+		return common.ErrValidation("default_posting_visibility", fmt.Sprintf("visibility %q is not valid", cmd.DefaultPostingVisibility)).InternalError
 	}
 
 	validExpandMedia := map[string]bool{
