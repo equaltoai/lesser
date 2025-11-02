@@ -1446,6 +1446,11 @@ var (
 	// ErrS3UploadFailed is returned when S3 file upload fails
 	ErrS3UploadFailed = func() error { return errors.ProcessingFailed("S3 file upload", stdErrors.New("S3 file upload failed")) }()
 
+	// ErrS3DeleteFailed is returned when S3 file deletion fails
+	ErrS3DeleteFailed = func() error {
+		return errors.ProcessingFailed("S3 file deletion", stdErrors.New("S3 file deletion failed"))
+	}()
+
 	// ErrS3DownloadFailed is returned when S3 file download fails
 	ErrS3DownloadFailed = func() error {
 		return errors.ProcessingFailed("S3 file download", stdErrors.New("S3 file download failed"))

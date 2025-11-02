@@ -13,7 +13,7 @@ const (
 	MaxRequestSize = 1 * 1024 * 1024 // 1MB
 
 	// MaxActivitySize is the maximum size for ActivityPub activities
-	MaxActivitySize = 512 * 1024 // 512KB
+	MaxActivitySize = 10 * 1024 * 1024 // 10MB
 
 	// MaxMediaSize is the maximum size for media uploads (50MB)
 	MaxMediaSize = 50 * 1024 * 1024 // 50MB

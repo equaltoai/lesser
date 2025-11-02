@@ -23,7 +23,6 @@ func (UserModelTestSuite) TableName() string {
 func (suite *UserModelTestSuite) TestBeforeCreate_SetsTimestamps() {
 	user := &User{
 		Username: "testuser",
-		Email:    "test@example.com",
 	}
 
 	err := user.BeforeCreate()
@@ -38,7 +37,6 @@ func (suite *UserModelTestSuite) TestBeforeCreate_SetsTimestamps() {
 func (suite *UserModelTestSuite) TestBeforeCreate_SetsDefaultRole() {
 	user := &User{
 		Username: "testuser",
-		Email:    "test@example.com",
 	}
 
 	err := user.BeforeCreate()
@@ -50,7 +48,6 @@ func (suite *UserModelTestSuite) TestBeforeCreate_SetsDefaultRole() {
 func (suite *UserModelTestSuite) TestBeforeCreate_PreservesExistingRole() {
 	user := &User{
 		Username: "testuser",
-		Email:    "test@example.com",
 		Role:     "admin",
 	}
 
@@ -63,7 +60,6 @@ func (suite *UserModelTestSuite) TestBeforeCreate_PreservesExistingRole() {
 func (suite *UserModelTestSuite) TestBeforeCreate_SetsPrimaryKeys() {
 	user := &User{
 		Username: "testuser",
-		Email:    "test@example.com",
 	}
 
 	err := user.BeforeCreate()
@@ -76,7 +72,6 @@ func (suite *UserModelTestSuite) TestBeforeCreate_SetsPrimaryKeys() {
 func (suite *UserModelTestSuite) TestBeforeCreate_SetsGSIKeys() {
 	user := &User{
 		Username: "testuser",
-		Email:    "test@example.com",
 		Role:     "moderator",
 		Approved: true,
 	}
@@ -85,13 +80,9 @@ func (suite *UserModelTestSuite) TestBeforeCreate_SetsGSIKeys() {
 
 	assert.NoError(suite.T(), err)
 
-	// GSI1 - Email index
-	assert.Equal(suite.T(), "EMAIL#test@example.com", user.GSI1PK)
-	assert.Equal(suite.T(), "user#testuser", user.GSI1SK)
-
-	// GSI2 - User list index
-	assert.Equal(suite.T(), "USERS", user.GSI2PK)
-	assert.Contains(suite.T(), user.GSI2SK, "#testuser")
+	// GSI1 - User list index
+	assert.Equal(suite.T(), "USERS", user.GSI1PK)
+	assert.Contains(suite.T(), user.GSI1SK, "#testuser")
 
 	// GSI3 - Role index
 	assert.Equal(suite.T(), "ROLE#moderator", user.GSI3PK)
@@ -100,6 +91,22 @@ func (suite *UserModelTestSuite) TestBeforeCreate_SetsGSIKeys() {
 	// GSI4 - Status index
 	assert.Equal(suite.T(), "STATUS#active", user.GSI4PK)
 	assert.Equal(suite.T(), "testuser", user.GSI4SK)
+
+	// GSI5 - Handle prefix index
+	assert.Equal(suite.T(), "USER_HANDLE_PREFIX#te", user.GSI5PK)
+	assert.Equal(suite.T(), "testuser", user.GSI5SK)
+}
+
+func (suite *UserModelTestSuite) TestBeforeCreate_ReturnsErrorWhenEmailProvided() {
+	user := &User{
+		Username: "testuser",
+		Email:    "test@example.com",
+	}
+
+	err := user.BeforeCreate()
+
+	assert.Error(suite.T(), err)
+	assert.Contains(suite.T(), err.Error(), "email is not supported")
 }
 
 // Test BeforeUpdate
@@ -107,7 +114,6 @@ func (suite *UserModelTestSuite) TestBeforeCreate_SetsGSIKeys() {
 func (suite *UserModelTestSuite) TestBeforeUpdate_UpdatesTimestamp() {
 	user := &User{
 		Username:  "testuser",
-		Email:     "test@example.com",
 		CreatedAt: time.Now().Add(-time.Hour),
 		UpdatedAt: time.Now().Add(-time.Hour),
 	}
@@ -120,19 +126,19 @@ func (suite *UserModelTestSuite) TestBeforeUpdate_UpdatesTimestamp() {
 
 func (suite *UserModelTestSuite) TestBeforeUpdate_UpdatesGSIKeys() {
 	user := &User{
-		Username: "testuser",
-		Email:    "newemail@example.com",
-		Role:     "admin",
-		Approved: false,
+		Username:  "testuser",
+		Role:      "admin",
+		Approved:  false,
+		CreatedAt: time.Date(2023, 1, 2, 15, 4, 5, 0, time.UTC),
 	}
 
 	err := user.BeforeUpdate()
 
 	assert.NoError(suite.T(), err)
 
-	// GSI1 - Email index should be updated
-	assert.Equal(suite.T(), "EMAIL#newemail@example.com", user.GSI1PK)
-	assert.Equal(suite.T(), "user#testuser", user.GSI1SK)
+	// GSI1 - User index should be updated
+	assert.Equal(suite.T(), "USERS", user.GSI1PK)
+	assert.Equal(suite.T(), "2023-01-02T15:04:05Z#testuser", user.GSI1SK)
 
 	// GSI3 - Role index should be updated
 	assert.Equal(suite.T(), "ROLE#admin", user.GSI3PK)
@@ -141,50 +147,27 @@ func (suite *UserModelTestSuite) TestBeforeUpdate_UpdatesGSIKeys() {
 	// GSI4 - Status index should be updated
 	assert.Equal(suite.T(), "STATUS#pending", user.GSI4PK)
 	assert.Equal(suite.T(), "testuser", user.GSI4SK)
+
+	// GSI5 - Handle prefix index should remain normalized
+	assert.Equal(suite.T(), "USER_HANDLE_PREFIX#te", user.GSI5PK)
+	assert.Equal(suite.T(), "testuser", user.GSI5SK)
 }
 
 // Test setupGSIKeys
 
-func (suite *UserModelTestSuite) TestSetupGSIKeys_WithEmail() {
-	user := &User{
-		Username: "testuser",
-		Email:    "Test@Example.Com", // Mixed case to test normalization
-		Role:     "user",
-		Approved: true,
-	}
-
-	user.setupGSIKeys()
-
-	// GSI1 - Email should be normalized to lowercase
-	assert.Equal(suite.T(), "EMAIL#test@example.com", user.GSI1PK)
-	assert.Equal(suite.T(), "user#testuser", user.GSI1SK)
-}
-
-func (suite *UserModelTestSuite) TestSetupGSIKeys_WithoutEmail() {
-	user := &User{
-		Username: "testuser",
-		Role:     "user",
-		Approved: true,
-	}
-
-	user.setupGSIKeys()
-
-	// GSI1 - Should be empty when no email
-	assert.Empty(suite.T(), user.GSI1PK)
-	assert.Empty(suite.T(), user.GSI1SK)
-}
-
 func (suite *UserModelTestSuite) TestSetupGSIKeys_UserListIndex() {
 	user := &User{
 		Username:  "testuser",
+		Role:      "user",
+		Approved:  true,
 		CreatedAt: time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
 	}
 
 	user.setupGSIKeys()
 
-	// GSI2 - User list index
-	assert.Equal(suite.T(), "USERS", user.GSI2PK)
-	assert.Equal(suite.T(), "2023-01-01T12:00:00Z#testuser", user.GSI2SK)
+	// GSI1 - User list index
+	assert.Equal(suite.T(), "USERS", user.GSI1PK)
+	assert.Equal(suite.T(), "2023-01-01T12:00:00Z#testuser", user.GSI1SK)
 }
 
 func (suite *UserModelTestSuite) TestSetupGSIKeys_RoleIndex() {
@@ -241,6 +224,17 @@ func (suite *UserModelTestSuite) TestSetupGSIKeys_StatusIndex() {
 			assert.Equal(t, "testuser", user.GSI4SK)
 		})
 	}
+}
+
+func (suite *UserModelTestSuite) TestSetupGSIKeys_HandlePrefixIndex() {
+	user := &User{
+		Username: "TeStUser",
+	}
+
+	user.setupGSIKeys()
+
+	assert.Equal(suite.T(), "USER_HANDLE_PREFIX#te", user.GSI5PK)
+	assert.Equal(suite.T(), "testuser", user.GSI5SK)
 }
 
 // Test getStatusString
