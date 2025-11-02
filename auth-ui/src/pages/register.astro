@@ -1,0 +1,31 @@
+---
+/**
+ * ⚠️ STATELESS STATIC APPLICATION - NO SESSIONS OR COOKIES PERMITTED ⚠️
+ * 
+ * This is a static Astro page with NO server-side logic.
+ * All registration is handled client-side via the PasswordlessLogin component.
+ * OAuth params are preserved in sessionStorage across navigation.
+ */
+import AuthLayout from '../layouts/AuthLayout.astro';
+import PasswordlessLogin from '../components/PasswordlessLogin.svelte';
+
+// Extract query parameters for OAuth flow continuation
+const authRequest = Astro.url.searchParams.get('auth_request') || '';
+const returnTo = Astro.url.searchParams.get('return_to') || '/oauth/authorize';
+const sessionId = Astro.url.searchParams.get('session_id') || '';
+---
+
+<AuthLayout title="Register" subtitle="Create your Lesser account">
+  <PasswordlessLogin 
+    client:only="svelte"
+    authRequest={authRequest}
+    returnTo={returnTo}
+    sessionId={sessionId}
+    hideRegisterLink={true}
+    isRegistration={true}
+  />
+  <div class="text-center mt-4" style="font-size: 0.875rem; color: var(--text-muted);">
+    Already have an account? <a href="/login" style="color: var(--lesser-primary-500); text-decoration: none;">Sign in</a>
+  </div>
+</AuthLayout>
+

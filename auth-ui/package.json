@@ -1,0 +1,27 @@
+{
+  "name": "@equaltoai/lesser-auth-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "STATELESS passwordless OAuth UI for Lesser - NO SESSIONS OR COOKIES - JWT-only authentication",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "astro dev --port 4322",
+    "build": "astro build",
+    "preview": "astro preview",
+    "clean": "rm -rf dist .astro node_modules"
+  },
+  "dependencies": {
+    "astro": "^5.14.0",
+    "svelte": "^5.36.0",
+    "@astrojs/svelte": "^7.1.0",
+    "@equaltoai/greater-components": "^1.0.20"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.3",
+    "typescript": "^5.5.4"
+  }
+}
+

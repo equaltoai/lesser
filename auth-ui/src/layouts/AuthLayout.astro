@@ -1,0 +1,38 @@
+---
+import '@equaltoai/greater-components/tokens/theme.css';
+import '../styles/global.css';
+import LessThanLogo from '../components/LessThanLogo.svelte';
+
+interface Props {
+  title: string;
+  subtitle?: string;
+}
+
+const { title, subtitle = 'Passwordless authentication' } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{title} - Lesser</title>
+  <meta name="description" content="Secure passwordless authentication for Lesser">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo">
+          <LessThanLogo client:load />
+        </div>
+        <h1 class="auth-title">{title}</h1>
+        <p class="auth-subtitle">{subtitle}</p>
+      </div>
+      <slot />
+    </div>
+  </div>
+</body>
+</html>
+

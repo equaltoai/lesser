@@ -1,0 +1,56 @@
+---
+import AuthLayout from '../layouts/AuthLayout.astro';
+
+const message = Astro.url.searchParams.get('message') || 'An error occurred';
+---
+
+<AuthLayout title="Error">
+  <div class="error-container">
+    <div class="error-icon">⚠️</div>
+    <h2 class="error-title">Error</h2>
+    <p class="error-message">{message}</p>
+    <a href="/" class="error-link">Return to Home</a>
+  </div>
+</AuthLayout>
+
+<style>
+  .error-container {
+    text-align: center;
+    padding: var(--spacing-lg, 2rem);
+  }
+  
+  .error-icon {
+    font-size: 4rem;
+    margin-bottom: var(--spacing-md, 1rem);
+  }
+  
+  .error-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary, #fff);
+    margin-bottom: var(--spacing-sm, 0.5rem);
+  }
+  
+  .error-message {
+    font-size: 1rem;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.8));
+    margin-bottom: var(--spacing-lg, 2rem);
+    line-height: 1.5;
+  }
+  
+  .error-link {
+    display: inline-block;
+    padding: var(--spacing-sm, 0.5rem) var(--spacing-md, 1rem);
+    background: var(--lesser-primary-500, #7c3aed);
+    color: white;
+    text-decoration: none;
+    border-radius: var(--border-radius-md, 0.375rem);
+    font-weight: 500;
+    transition: background 0.2s;
+  }
+  
+  .error-link:hover {
+    background: var(--lesser-primary-600, #6d28d9);
+  }
+</style>
+
