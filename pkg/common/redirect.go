@@ -164,10 +164,11 @@ func sanitizedRedirectTarget(redirectURL, currentHost string) (string, error) {
 		Fragment: u.Fragment,
 	}
 	if result := clean.String(); result != "" {
-		if strings.HasPrefix(result, "/") {
+		// Only allow paths starting with a single slash and not followed by '/' or '\'
+		if strings.HasPrefix(result, "/") && (len(result) == 1 || (result[1] != '/' && result[1] != '\\')) {
 			return result, nil
 		}
-		return "/" + result, nil
+		return "/", nil
 	}
 	return "/", nil
 }
