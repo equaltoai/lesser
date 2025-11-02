@@ -99,3 +99,7 @@ bootstrap*
 /bootstrap_*/
 .pai/
 lint-report.json
+
+/*/.astro/
+
+/*/dist/
