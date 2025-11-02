@@ -453,14 +453,12 @@ func (ec *EventConverter) convertMetricRecordToUpdate(record *models.MetricRecor
 
 		// Extract cost information
 		if userCost, exists := event.Metadata["user_cost_microcents"]; exists {
-			if cost64, err := parseIntFromString(userCost); err == nil {
-				cost := int(cost64)
+			if cost, err := parseIntFromString(userCost); err == nil {
 				update.UserCostMicrocents = &cost
 			}
 		}
 		if totalCost, exists := event.Metadata["total_cost_microcents"]; exists {
-			if cost64, err := parseIntFromString(totalCost); err == nil {
-				cost := int(cost64)
+			if cost, err := parseIntFromString(totalCost); err == nil {
 				update.TotalCostMicrocents = &cost
 			}
 		}
@@ -596,7 +594,7 @@ func (ec *EventConverter) extractBasicFields(metadata map[string]string, update 
 func (ec *EventConverter) extractNumericFields(metadata map[string]string, update *model.MetricsUpdate) {
 	if count, exists := metadata["count"]; exists {
 		if c, err := parseIntFromString(count); err == nil {
-			update.Count = int(c)
+			update.Count = c
 		}
 	}
 	if sum, exists := metadata["sum"]; exists {
@@ -661,8 +659,7 @@ func (ec *EventConverter) extractOptionalFields(metadata map[string]string, upda
 // extractCostField extracts and converts cost fields from metadata
 func (ec *EventConverter) extractCostField(metadata map[string]string, key string, target **int) {
 	if costStr, exists := metadata[key]; exists {
-		if cost64, err := parseIntFromString(costStr); err == nil {
-			cost := int(cost64)
+		if cost, err := parseIntFromString(costStr); err == nil {
 			*target = &cost
 		}
 	}
@@ -684,8 +681,12 @@ func (ec *EventConverter) extractDimensions(metadata map[string]string, update *
 }
 
 // Helper functions for parsing metadata strings
-func parseIntFromString(s string) (int64, error) {
-	return strconv.ParseInt(s, 10, 64)
+func parseIntFromString(s string) (int, error) {
+	value, err := strconv.ParseInt(s, 10, strconv.IntSize)
+	if err != nil {
+		return 0, err
+	}
+	return int(value), nil
 }
 
 func parseFloatFromString(s string) (float64, error) {
