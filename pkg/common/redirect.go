@@ -89,35 +89,33 @@ func SafeRedirect(w http.ResponseWriter, r *http.Request, defaultPath string) {
 		raw = r.URL.Query().Get("next")
 	}
 
-	target := defaultPath
 	if raw != "" {
-		if sanitized := resolveRedirectPath(raw, r.Host); sanitized != "" {
-			target = sanitized
-		} else {
-			Logger().Warn("Invalid redirect attempt",
-				zap.String("url", raw),
-				zap.String("reason", "rejected by resolver"))
+		if target := resolveRedirectTarget(raw, r.Host); target != nil {
+			http.Redirect(w, r, target.String(), http.StatusFound)
+			return
 		}
+		Logger().Warn("Invalid redirect attempt",
+			zap.String("url", raw),
+			zap.String("reason", "rejected by resolver"))
 	}
 
-	http.Redirect(w, r, target, http.StatusFound)
+	http.Redirect(w, r, defaultPath, http.StatusFound)
 }
 
 // SafeRedirectOrDefault redirects to the given URL if safe, otherwise to default
 func SafeRedirectOrDefault(w http.ResponseWriter, r *http.Request, redirectURL, defaultPath string) {
-	target := defaultPath
 	if redirectURL != "" {
-		if sanitized := resolveRedirectPath(redirectURL, r.Host); sanitized != "" {
-			target = sanitized
-		} else {
-			Logger().Warn("Invalid redirect, using default",
-				zap.String("requested_url", redirectURL),
-				zap.String("default_url", defaultPath),
-				zap.String("reason", "rejected by resolver"))
+		if target := resolveRedirectTarget(redirectURL, r.Host); target != nil {
+			http.Redirect(w, r, target.String(), http.StatusFound)
+			return
 		}
+		Logger().Warn("Invalid redirect, using default",
+			zap.String("requested_url", redirectURL),
+			zap.String("default_url", defaultPath),
+			zap.String("reason", "rejected by resolver"))
 	}
 
-	http.Redirect(w, r, target, http.StatusFound)
+	http.Redirect(w, r, defaultPath, http.StatusFound)
 }
 
 // ConfigureAllowedRedirectHosts updates the allowed redirect hosts
@@ -134,16 +132,16 @@ func ConfigureAllowedRedirectHosts(hosts []string) {
 
 // GetSafeRedirectURL returns a validated redirect URL or the default
 func GetSafeRedirectURL(redirectURL, currentHost, defaultPath string) string {
-	if sanitized := resolveRedirectPath(redirectURL, currentHost); sanitized != "" {
-		return sanitized
+	if target := resolveRedirectTarget(redirectURL, currentHost); target != nil {
+		return target.String()
 	}
 	return defaultPath
 }
 
-func resolveRedirectPath(rawURL, currentHost string) string {
+func resolveRedirectTarget(rawURL, currentHost string) *url.URL {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
-		return ""
+		return nil
 	}
 
 	// Fast path for relative URLs of the form "/path"
@@ -153,11 +151,11 @@ func resolveRedirectPath(rawURL, currentHost string) string {
 
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return ""
+		return nil
 	}
 
-	if parsed.Scheme != "" && parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return ""
+	if parsed.Scheme != "" && parsed.Scheme != SchemeHTTP && parsed.Scheme != SchemeHTTPS {
+		return nil
 	}
 
 	if parsed.Host == "" {
@@ -167,7 +165,7 @@ func resolveRedirectPath(rawURL, currentHost string) string {
 	host := normalizeHost(parsed.Host)
 	current := normalizeHost(currentHost)
 	if host == "" || (host != current && !allowedRedirectHosts[host]) {
-		return ""
+		return nil
 	}
 
 	return sanitizeRelativeURL((&url.URL{
@@ -177,19 +175,19 @@ func resolveRedirectPath(rawURL, currentHost string) string {
 	}).String())
 }
 
-func sanitizeRelativeURL(u string) string {
+func sanitizeRelativeURL(u string) *url.URL {
 	if u == "" {
-		return ""
+		return nil
 	}
 	parsed, err := url.Parse(u)
 	if err != nil {
-		return ""
+		return nil
 	}
 	if parsed.Host != "" || parsed.Scheme != "" {
-		return ""
+		return nil
 	}
 	if !strings.HasPrefix(parsed.Path, "/") || (len(parsed.Path) > 1 && (parsed.Path[1] == '/' || parsed.Path[1] == '\\')) {
-		return ""
+		return nil
 	}
-	return parsed.String()
+	return &url.URL{Path: parsed.Path, RawQuery: parsed.RawQuery, Fragment: parsed.Fragment}
 }

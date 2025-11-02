@@ -101,6 +101,7 @@ func (s *AWSS3StorageClient) GeneratePresignedURL(ctx context.Context, key strin
 	return s.GeneratePresignedURLForBucket(ctx, "", key, expiry)
 }
 
+// GeneratePresignedURLForBucket produces a presigned GET URL for the provided bucket/key pair.
 func (s *AWSS3StorageClient) GeneratePresignedURLForBucket(ctx context.Context, bucket, key string, expiry time.Duration) (string, error) {
 	resolvedBucket, err := s.resolveBucket(bucket)
 	if err != nil {
@@ -139,6 +140,7 @@ func (s *AWSS3StorageClient) UploadFile(ctx context.Context, key string, data []
 	return err
 }
 
+// UploadFileWithContentType stores bytes in S3, applying the provided content type when set.
 func (s *AWSS3StorageClient) UploadFileWithContentType(ctx context.Context, bucket, key string, data []byte, contentType string) (string, error) {
 	if err := common.ValidateRequiredParam("key", key); err != nil {
 		return "", err
@@ -203,6 +205,7 @@ func (s *AWSS3StorageClient) UploadFileWithContentType(ctx context.Context, buck
 	return fmt.Sprintf("s3://%s/%s", resolvedBucket, key), nil
 }
 
+// DeleteFileFromBucket removes the specified key from the resolved bucket.
 func (s *AWSS3StorageClient) DeleteFileFromBucket(ctx context.Context, bucket, key string) error {
 	resolvedBucket, err := s.resolveBucket(bucket)
 	if err != nil {
