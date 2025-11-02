@@ -48,11 +48,6 @@ def test_media_upload(base_url, token):
         print("❌ Media URL is using main domain instead of CDN domain")
         return False
 
-    if media_url.hostname and media_url.hostname.startswith('media.'):
-        print("✅ Media URL correctly uses CDN subdomain")
-    elif media_url.hostname and media_url.hostname.endswith('s3.amazonaws.com'):
-        print("⚠️  Media URL is using direct S3 URL (CDN may not be configured)")
-    
     # Ensure CDN URL is trusted before fetching
     allowed_hosts_config = os.getenv("LESSER_MEDIA_ALLOWED_HOSTS", "")
     allowed_hosts = {host.strip().lower() for host in allowed_hosts_config.split(",") if host.strip()}

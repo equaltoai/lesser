@@ -41,7 +41,7 @@ def register_oauth_app():
         print("OAuth client credentials retrieved.")
         return app['client_id'], app['client_secret']
     else:
-        print(f"Error: {response.text}")
+        print(f"Error: status={response.status_code}")
         return None, None
 
 def test_authorization_flow(username, password):
@@ -80,7 +80,7 @@ def test_authorization_flow(username, password):
     })
     
     if login_response.status_code != 200:
-        print(f"Login failed: {login_response.text}")
+        print(f"Login failed: status={login_response.status_code}")
         return None
     
     auth_token = login_response.json()['access_token']
@@ -127,12 +127,11 @@ def test_authorization_flow(username, password):
                 print(f"Expires in: {tokens['expires_in']} seconds")
                 return tokens
             else:
-                print(f"Token exchange failed: {token_response.text}")
+                print(f"Token exchange failed with status {token_response.status_code}.")
         else:
             print(f"No authorization code in redirect: {params}")
     else:
-        print(f"Authorization failed: {auth_response.status_code}")
-        print(auth_response.text)
+        print(f"Authorization failed with status {auth_response.status_code}.")
     
     return None
 
@@ -156,7 +155,7 @@ def test_refresh_token(refresh_token):
         print(f"Token refreshed successfully!")
         return tokens['access_token']
     else:
-        print(f"Error: {response.text}")
+        print(f"Error: status={response.status_code}")
         return None
 
 def test_token_revocation(token):
@@ -176,7 +175,7 @@ def test_token_revocation(token):
     if response.status_code == 200:
         print("Token revoked successfully!")
     else:
-        print(f"Error: {response.text}")
+        print(f"Error: status={response.status_code}")
 
 def test_api_with_oauth_token(access_token):
     """Test API access with OAuth token."""
@@ -196,7 +195,7 @@ def test_api_with_oauth_token(access_token):
         print(f"Display name: {user.get('display_name', 'N/A')}")
         return True
     else:
-        print(f"Error: {response.text}")
+        print(f"Error: status={response.status_code}")
         return False
 
 def test_external_oauth():
@@ -227,7 +226,7 @@ def test_external_oauth():
         print("3. You'll be redirected back with a code")
         print("4. The callback handler will exchange it for tokens")
     else:
-        print(f"Error: {response.text}")
+        print(f"Error: status={response.status_code}")
 
 def main():
     """Run OAuth tests."""

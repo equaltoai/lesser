@@ -386,7 +386,7 @@ def ensure_oauth_client(oauth_data: Dict, admin_token: str) -> None:
         "website": oauth_data.get("Website", {}).get("S", ""),
     }
 
-    print(f"  Registering OAuth client {client_id} with name '{client_name}'...")
+    print("  Registering OAuth client (identifier redacted)...")
 
     # Use admin token for authenticated registration (sets OwnerID)
     resp = rest_request(
@@ -397,16 +397,16 @@ def ensure_oauth_client(oauth_data: Dict, admin_token: str) -> None:
     )
 
     if resp is None:
-        print(f"  Unable to reach OAuth registration endpoint for {client_id}.")
+        print("  Unable to reach OAuth registration endpoint for client.")
         return
 
     if resp.status_code in (200, 201):
-        print(f"  Registered OAuth client {client_id}.")
+        print("  Registered OAuth client successfully.")
     elif resp.status_code == 409 or resp.status_code == 422:
-        print(f"  OAuth client {client_id} already exists.")
+        print("  OAuth client already exists.")
     else:
         print(
-            f"  Failed to register OAuth client {client_id}: {resp.status_code}"
+            f"  Failed to register OAuth client; status={resp.status_code}"
         )
 
 
