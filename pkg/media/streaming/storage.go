@@ -580,10 +580,12 @@ func (s *S3MediaStorage) getSecretFromSecretsManager(secretID string) ([]byte, e
 	// If the secret is JSON (from CloudFront key generation), extract the privateKey field
 	if strings.HasPrefix(strings.TrimSpace(secretValue), "{") {
 		var secretData map[string]interface{}
-		if err := json.Unmarshal([]byte(secretValue), &secretData); err == nil {
-			if privateKey, ok := secretData["privateKey"].(string); ok {
-				secretValue = privateKey
-			}
+		if err := json.Unmarshal([]byte(secretValue), &secretData); err != nil {
+			s.logger.Debug("failed to parse CloudFront private key secret as JSON",
+				zap.String("secret_id", secretID),
+				zap.Error(err))
+		} else if privateKey, ok := secretData["privateKey"].(string); ok {
+			secretValue = privateKey
 		}
 	}
 
