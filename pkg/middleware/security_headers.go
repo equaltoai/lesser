@@ -488,7 +488,7 @@ func BodyLimits() func(lift.HandlerFunc) lift.HandlerFunc {
 			case strings.Contains(path, "/api/v1/media"):
 				maxSize = 40 * 1024 * 1024 // 40MB for media uploads
 			case strings.Contains(path, "/api/v1/statuses"):
-				maxSize = 512 * 1024 // 512KB for posts
+				maxSize = 10 * 1024 * 1024 // 10MB for posts
 			case strings.Contains(path, "/oauth/"):
 				maxSize = 16 * 1024 // 16KB for OAuth
 			case strings.HasPrefix(path, "/api/"):

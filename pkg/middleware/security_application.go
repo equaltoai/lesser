@@ -52,7 +52,7 @@ func applyAPISecurityMiddleware(app *lift.App, logger *zap.Logger) {
 	app.Use(createLiftSecurityMiddleware(securityConfig, logger))
 
 	// Apply body size limits for API endpoints
-	app.Use(createLiftBodyLimitMiddleware(512*1024, logger)) // 512KB
+	app.Use(createLiftBodyLimitMiddleware(100*1024*1024, logger)) // 100MB
 
 	logger.Info("applied API security middleware")
 }
