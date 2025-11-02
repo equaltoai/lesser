@@ -53,6 +53,29 @@ def test_media_upload(base_url, token):
     elif media_url.hostname and media_url.hostname.endswith('s3.amazonaws.com'):
         print("⚠️  Media URL is using direct S3 URL (CDN may not be configured)")
     
+    # Ensure CDN URL is trusted before fetching
+    allowed_hosts_config = os.getenv("LESSER_MEDIA_ALLOWED_HOSTS", "")
+    allowed_hosts = {host.strip().lower() for host in allowed_hosts_config.split(",") if host.strip()}
+    if base_host:
+        allowed_hosts.add(f"media.{base_host}".lower())
+    allowed_hosts.add("s3.amazonaws.com")
+
+    if not media_url.hostname:
+        print("❌ Media URL is missing a hostname; aborting fetch.")
+        return False
+
+    media_host = media_url.hostname.lower()
+    if media_url.scheme != "https":
+        print("❌ Media URL must use HTTPS.")
+        return False
+
+    if not any(
+        media_host == allowed or media_host.endswith(f".{allowed}")
+        for allowed in allowed_hosts
+    ):
+        print(f"❌ Media URL host '{media_host}' is not in the allowed CDN host list.")
+        return False
+
     # Try to fetch the image via the CDN URL
     print(f"\nFetching image from CDN URL...")
     img_response = requests.get(media['url'])

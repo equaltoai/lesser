@@ -89,13 +89,15 @@ func SafeRedirect(w http.ResponseWriter, r *http.Request, defaultPath string) {
 		redirectTo = r.URL.Query().Get("next")
 	}
 
-	// Validate the redirect URL
-	err := ValidateRedirectURL(redirectTo, r.Host)
-	if err != nil {
-		Logger().Warn("Invalid redirect attempt",
-			zap.String("url", redirectTo),
-			zap.Error(err))
-		redirectTo = defaultPath
+	requested := redirectTo
+	redirectTo = GetSafeRedirectURL(redirectTo, r.Host, defaultPath)
+	if redirectTo != requested {
+		err := ValidateRedirectURL(requested, r.Host)
+		if err != nil {
+			Logger().Warn("Invalid redirect attempt",
+				zap.String("url", requested),
+				zap.Error(err))
+		}
 	}
 
 	http.Redirect(w, r, redirectTo, http.StatusFound)

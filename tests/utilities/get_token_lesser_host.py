@@ -4,19 +4,15 @@ Get auth token from lesser.host for testing
 Since lesser.host doesn't support password grant, this script helps you get a token manually
 """
 
-import requests
-import webbrowser
 import urllib.parse
+import webbrowser
+
+import requests
 
 
-def redact(value: str, visible: int = 4) -> str:
-    """Mask sensitive values before displaying them."""
-    if not value:
-        return ""
-    value = str(value)
-    if len(value) <= visible * 2:
-        return "*" * len(value)
-    return f"{value[:visible]}...{value[-visible:]}"
+def report_secret(label: str) -> None:
+    """Consistently acknowledge secret handling without printing it."""
+    print(f"{label}: <redacted>")
 
 def create_app():
     """Create an OAuth app on lesser.host"""
@@ -33,8 +29,7 @@ def create_app():
     if response.status_code == 200:
         app = response.json()
         print("✅ OAuth app created!")
-        print(f"Client ID: {redact(app['client_id'])}")
-        print(f"Client Secret: {redact(app['client_secret'])}")
+        print("Client credentials retrieved (values redacted).")
         return app['client_id'], app['client_secret']
     else:
         print(f"❌ Failed to create app: {response.status_code} - {response.text}")
@@ -59,8 +54,8 @@ def main():
     print("\n" + "="*60)
     print("MANUAL STEPS REQUIRED:")
     print("="*60)
-    print("\n1. Open this URL in your browser:")
-    print(f"\n   {redact(auth_url, visible=12)}\n")
+    print("\n1. The authorization URL will open in your default browser.")
+    print("   (If the browser does not open, rerun with a manual workflow and construct the URL locally.)\n")
     print("2. Log in with your Lesser account")
     print("3. Authorize the app")
     print("4. Copy the authorization code shown\n")
@@ -77,7 +72,7 @@ def main():
     
     # URL decode the code if needed
     auth_code = urllib.parse.unquote(auth_code)
-    print(f"Using code: {redact(auth_code)}")
+    print("Authorization code captured.")
     
     # Step 4: Exchange code for token
     print("\nExchanging code for token...")
@@ -92,10 +87,13 @@ def main():
     
     if token_response.status_code == 200:
         tokens = token_response.json()
-        print("\n✅ Success! Tokens retrieved (values redacted for safety):\n")
-        print(f"Access Token: {redact(tokens['access_token'])}")
+        print("\n✅ Success! Tokens retrieved (values redacted).")
+        report_secret("Access token")
         refresh_token = tokens.get('refresh_token')
-        print(f"\nRefresh Token: {redact(refresh_token) if refresh_token else 'N/A'}")
+        if refresh_token:
+            report_secret("Refresh token")
+        else:
+            print("Refresh token: N/A")
 
         print("\n" + "="*60)
         print("To use these tokens in tests:")

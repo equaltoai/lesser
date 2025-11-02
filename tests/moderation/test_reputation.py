@@ -184,15 +184,7 @@ def test_verify_reputation(document):
     
     if response and response.status_code == 200:
         result = response.json()
-        print(f"✅ Verification completed")
-        print(f"   Valid: {result['valid']}")
-        print(f"   Actor: {result['actorId']}")
-        print(f"   Issuer: {result['issuer']}")
-        print(f"   Signature Valid: {result['signatureValid']}")
-        print(f"   Not Expired: {result['notExpired']}")
-        print(f"   Issuer Trusted: {result['issuerTrusted']}")
-        if result.get('error'):
-            print(f"   Error: {result['error']}")
+        print("✅ Verification completed (response redacted for safety).")
         return result
     else:
         print(f"❌ Failed to verify reputation: {response.status_code if response else 'No response'}")

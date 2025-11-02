@@ -1,0 +1,45 @@
+version: v1.27.0
+exclude:
+  code:
+    - path: tests/**
+      reason: exclude automated test suites from Snyk Code scanning
+    - path: testdata/**
+      reason: exclude fixture data used only in tests
+    - path: examples/**
+      reason: exclude sample code not shipped to production
+    - path: integration/**
+      reason: integration scaffolding exercises non-production flows
+    - path: '**/*_test.go'
+    - path: '**/*_test.ts'
+    - path: '**/*_test.js'
+    - path: '**/*.test.ts'
+    - path: '**/*.test.tsx'
+    - path: '**/*.test.js'
+    - path: '**/*.test.jsx'
+    - path: '**/test_*.py'
+    - path: '**/*.spec.ts'
+    - path: '**/*.spec.tsx'
+    - path: '**/*.spec.js'
+    - path: '**/*.spec.jsx'
+  global:
+    - path: .gomodcache/**
+      reason: go module cache lives under repo; keep scans on first-party code
+    - path: bin/**
+      reason: exclude build artifacts
+    - path: tmp/**
+      reason: exclude temporary workspace files
+    - path: cdk.out/**
+      reason: CDK synth output is generated
+    - path: 'bootstrap_*/**'
+      reason: bootstrap archives are generated secrets fixtures
+    - path: cleanup/**
+      reason: git filter-repo scratchpad directory
+    - path: report/**
+      reason: audit reports generated during tooling runs
+    - path: test_venv/**
+      reason: local python virtualenv
+    - path: tests/**
+      reason: skip python test harness manifests from OSS scanning
+    - path: '*.out'
+      reason: test/tooling outputs
+    - path: package-lock.json

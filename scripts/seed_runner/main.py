@@ -284,14 +284,14 @@ def ensure_account_exists(username: str, user_data: Dict, admin_token: str) -> b
             print(f"    Registration accepted for {username}.")
             return True
 
-        if resp.status_code in (409, 422) and "already" in resp.text.lower():
+        if resp.status_code in (409, 422):
             print(
                 f"    Registration indicates {username} already exists ({resp.status_code})."
             )
             return True
 
         print(
-            f"    Registration failed for {username}: {resp.status_code} {resp.text}"
+            f"    Registration failed for {username}: {resp.status_code}"
         )
         if resp.status_code >= 500 and attempt < max_attempts:
             time.sleep(delay)
@@ -406,7 +406,7 @@ def ensure_oauth_client(oauth_data: Dict, admin_token: str) -> None:
         print(f"  OAuth client {client_id} already exists.")
     else:
         print(
-            f"  Failed to register OAuth client {client_id}: {resp.status_code} {resp.text}"
+            f"  Failed to register OAuth client {client_id}: {resp.status_code}"
         )
 
 
@@ -459,14 +459,17 @@ def update_profile(
         try:
             payload = resp.json()
         except ValueError:
-            payload = {"errors": [{"message": resp.text}]}
+            payload = None
 
-        if resp.status_code == 200 and "errors" not in payload:
+        if resp.status_code == 200 and (not isinstance(payload, dict) or "errors" not in payload):
             print(f"  Updated profile for {username}.")
             return
 
+        error_suffix = ""
+        if isinstance(payload, dict) and "errors" in payload:
+            error_suffix = f"; errors={len(payload.get('errors', []))}"
         print(
-            f"  Failed to update profile for {username}: {resp.status_code} {payload}"
+            f"  Failed to update profile for {username}: {resp.status_code}{error_suffix}"
         )
         if resp.status_code >= 500 and attempt < max_attempts:
             time.sleep(delay)
