@@ -4,7 +4,6 @@ Add test data to Lesser for testing pagination
 """
 
 import requests
-import json
 import time
 
 INSTANCE_URL = 'https://lesser.host'

@@ -338,7 +338,7 @@ func (r *queryResolver) AffectedRelationships(ctx context.Context, severedRelati
 
 	// Determine pagination info
 	hasNextPage := nextCursor != ""
-	hasPreviousPage := cursor != ""
+	hasPreviousPage := false
 
 	var startCursor, endCursor *model.Cursor
 	if len(edges) > 0 {

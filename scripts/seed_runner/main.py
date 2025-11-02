@@ -4,7 +4,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, List
 
 import jwt
 import requests
@@ -376,7 +376,6 @@ def promote_moderator(username: str, admin_token: str) -> None:
 
 
 def ensure_oauth_client(oauth_data: Dict, admin_token: str) -> None:
-    client_id = oauth_data["ClientID"]["S"]
     client_name = oauth_data.get("Name", {}).get("S", "Bootstrap Client")
 
     payload = {

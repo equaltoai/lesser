@@ -491,20 +491,18 @@ func (s *S3MediaStorage) initializeCloudFront() error {
 		return ErrCloudFrontNotConfigured
 	}
 
-	var cfPrivateKeyContent string
-
 	// Load private key
 	var privateKeyPEM []byte
 	var err error
 
-	// Check if key path is a Secrets Manager reference
-	if strings.HasPrefix(cfPrivateKeyPath, "arn:aws:secretsmanager:") || strings.HasPrefix(cfPrivateKeyPath, "lesser/") {
+	switch {
+	case strings.HasPrefix(cfPrivateKeyPath, "arn:aws:secretsmanager:") || strings.HasPrefix(cfPrivateKeyPath, "lesser/"):
 		// Retrieve from Secrets Manager
 		privateKeyPEM, err = s.getSecretFromSecretsManager(cfPrivateKeyPath)
 		if err != nil {
 			return fmt.Errorf("failed to load CloudFront private key from Secrets Manager: %w", err)
 		}
-	} else if cfPrivateKeyPath != "" {
+	case cfPrivateKeyPath != "":
 		// Validate the file path to prevent directory traversal
 		cleanPath := filepath.Clean(cfPrivateKeyPath)
 		if !filepath.IsAbs(cleanPath) || strings.Contains(cleanPath, "..") {
@@ -516,10 +514,7 @@ func (s *S3MediaStorage) initializeCloudFront() error {
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrFailedToReadCloudFrontPrivateKeyFile, err)
 		}
-	} else if cfPrivateKeyContent != "" {
-		// Use key content directly
-		privateKeyPEM = []byte(cfPrivateKeyContent)
-	} else {
+	default:
 		return ErrCloudFrontPrivateKeyNotProvided
 	}
 

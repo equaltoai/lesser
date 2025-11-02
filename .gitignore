@@ -8,7 +8,7 @@ build/
 *.test
 
 # Go compiled binaries (prevent accidental commits)
-
+/auth
 /streaming
 /api
 /graphql
@@ -103,3 +103,5 @@ lint-report.json
 /*/.astro/
 
 /*/dist/
+
+/docs/github

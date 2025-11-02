@@ -5,7 +5,6 @@ Create test posts for GraphQL validation
 import os
 import sys
 import time
-import json
 import requests
 
 GRAPHQL_ENDPOINT = os.getenv("GRAPHQL_ENDPOINT", "https://dev.lesser.host/api/graphql")
@@ -98,4 +97,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

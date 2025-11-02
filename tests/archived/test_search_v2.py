@@ -103,7 +103,6 @@ def test_search_v2():
     if response.status_code == 200:
         data = response.json()
         # When type=accounts, only accounts should have results
-        has_accounts = len(data.get('accounts', [])) > 0 or True  # Allow empty results
         has_statuses = len(data.get('statuses', [])) == 0
         has_hashtags = len(data.get('hashtags', [])) == 0
         

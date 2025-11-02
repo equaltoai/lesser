@@ -4,9 +4,7 @@ Test script for Filters & Mutes functionality
 """
 
 import requests
-import json
 import time
-import sys
 from datetime import datetime
 
 # Configuration

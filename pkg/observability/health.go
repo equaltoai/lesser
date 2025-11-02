@@ -176,8 +176,10 @@ func (hc *HealthChecker) DetailedHandler(w http.ResponseWriter, r *http.Request)
 			checks = append(checks, check)
 			if check.Status == HealthStatusCritical {
 				overallStatus = HealthStatusCritical
-			} else if check.Status == HealthStatusWarning && overallStatus == HealthStatusHealthy {
-				overallStatus = HealthStatusWarning
+			} else if check.Status == HealthStatusWarning {
+				if overallStatus == HealthStatusHealthy {
+					overallStatus = HealthStatusWarning
+				}
 			}
 		}
 
@@ -187,8 +189,10 @@ func (hc *HealthChecker) DetailedHandler(w http.ResponseWriter, r *http.Request)
 			checks = append(checks, check)
 			if check.Status == HealthStatusCritical {
 				overallStatus = HealthStatusCritical
-			} else if check.Status == HealthStatusWarning && overallStatus == HealthStatusHealthy {
-				overallStatus = HealthStatusWarning
+			} else if check.Status == HealthStatusWarning {
+				if overallStatus == HealthStatusHealthy {
+					overallStatus = HealthStatusWarning
+				}
 			}
 		}
 	}

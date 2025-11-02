@@ -4,14 +4,9 @@ Federation Validation Test Suite for Lesser
 Tests ActivityPub compliance and federation capabilities
 """
 
-import json
 import requests
-import hashlib
-import base64
-from datetime import datetime, timezone
 from urllib.parse import urlparse
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 import logging
 

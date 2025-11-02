@@ -103,7 +103,6 @@ def demo_performance_benchmark():
     print("(Note: This is a demo - actual benchmarking requires a running instance)")
     
     # Initialize benchmark
-    benchmark = LesserPerformanceBenchmark(base_url)
     
     # Demonstrate benchmark configuration
     print("\n1. Available benchmark types:")

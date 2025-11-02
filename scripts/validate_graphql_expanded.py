@@ -725,7 +725,7 @@ def main():
     
     if original_post_id:
         # Get the post URL for quoting
-        get_post_result = validator.test("Get Object (for quote URL)", f"""
+        validator.test("Get Object (for quote URL)", f"""
             query {{
                 object(id: "{original_post_id}") {{
                     id
@@ -815,7 +815,7 @@ def main():
     print("\n--- Hashtag Following ---")
     
     # Create a post with hashtag first
-    hashtag_post_result = validator.test("Create Post with Hashtag", """
+    validator.test("Create Post with Hashtag", """
         mutation {
             createNote(input: {
                 content: "Post with #validation hashtag for testing"
@@ -1339,4 +1339,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

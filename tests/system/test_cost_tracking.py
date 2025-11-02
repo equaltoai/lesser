@@ -9,7 +9,6 @@ This script tests:
 """
 
 import requests
-import json
 import sys
 from typing import Dict, Any
 import os

@@ -443,7 +443,7 @@ TAITOkZNaLV9vjJPclVBvJhLlixn9sDVwoBMkiVwmxNvNRHXa0n5w8As1YLjSXf6
                 actor["preferredUsername"] = username
                 
                 for _ in range(posts_per_account):
-                    note = self.generate_note(author=actor)
+                    self.generate_note(author=actor)
                     # In a real implementation, you'd POST this to the API
                     results["posts_created"] += 1
             elif account and account.get("status") == "skipped":

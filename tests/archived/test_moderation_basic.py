@@ -4,11 +4,6 @@ Basic test script for the Reactive Moderation Mesh
 Demonstrates the flow of flagging content, reviewing it, and reaching consensus
 """
 
-import requests
-import json
-import time
-import sys
-
 BASE_URL = "https://your-instance.com"  # Replace with your instance URL
 
 def test_moderation_flow():

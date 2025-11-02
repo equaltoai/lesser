@@ -4,10 +4,7 @@ Fixed version of the test script with better error handling
 """
 
 from mastodon import Mastodon
-import time
-import sys
 import requests
-from datetime import datetime
 
 # Your lesser instance
 INSTANCE_URL = 'https://lesser.host'

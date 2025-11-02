@@ -7,7 +7,6 @@ First install: pip install Mastodon.py
 
 from mastodon import Mastodon
 import time
-import sys
 import requests
 from datetime import datetime
 
@@ -130,7 +129,7 @@ def test_oauth_flow(client_id, client_secret):
             return None
         
         # Log in with code
-        access_token = mastodon.log_in(
+        mastodon.log_in(
             code=auth_code,
             scopes=['read', 'write', 'follow', 'push']
         )
@@ -264,7 +263,7 @@ def test_search(mastodon):
     
     try:
         # Search with resolve
-        results = mastodon.search_v2('test', resolve=True, limit=5)
+        mastodon.search_v2('test', resolve=True, limit=5)
         log_test(True, "GET /api/v2/search?resolve=true", "Search with resolve")
     except Exception as e:
         log_test(False, "GET /api/v2/search?resolve=true", str(e))
@@ -350,7 +349,7 @@ def test_timeline_fanout(mastodon):
         
         try:
             # Favorite
-            fav = mastodon.status_favourite(status['id'])
+            mastodon.status_favourite(status['id'])
             log_test(True, "POST /api/v1/statuses/:id/favourite", "Favorited")
             time.sleep(1)
             
@@ -360,7 +359,7 @@ def test_timeline_fanout(mastodon):
                     f"Favorites count: {status_check['favourites_count']}")
             
             # Unfavorite
-            unfav = mastodon.status_unfavourite(status['id'])
+            mastodon.status_unfavourite(status['id'])
             log_test(True, "POST /api/v1/statuses/:id/unfavourite", "Unfavorited")
             
             # Boost
@@ -370,11 +369,11 @@ def test_timeline_fanout(mastodon):
             time.sleep(1)
             
             # Unboost
-            unboost = mastodon.status_unreblog(status['id'])
+            mastodon.status_unreblog(status['id'])
             log_test(True, "POST /api/v1/statuses/:id/unreblog", "Unboosted")
             
             # Bookmark
-            bookmark = mastodon.status_bookmark(status['id'])
+            mastodon.status_bookmark(status['id'])
             log_test(True, "POST /api/v1/statuses/:id/bookmark", "Bookmarked")
             
             # Check bookmarks
@@ -384,7 +383,7 @@ def test_timeline_fanout(mastodon):
                     "Bookmark system working" if found_bookmark else "Not found")
             
             # Unbookmark
-            unbookmark = mastodon.status_unbookmark(status['id'])
+            mastodon.status_unbookmark(status['id'])
             log_test(True, "POST /api/v1/statuses/:id/unbookmark", "Unbookmarked")
             
         except Exception as e:
@@ -460,13 +459,13 @@ def test_account_operations(mastodon):
             if not rel['following']:
                 print(f"\n🤝 Would you like to follow @{account['acct']}? (y/n): ", end='')
                 if input().strip().lower() == 'y':
-                    follow_result = mastodon.account_follow(account_id)
+                    mastodon.account_follow(account_id)
                     log_test(True, f"POST /api/v1/accounts/{account_id}/follow", 
                             "Follow request sent")
                     
                     # Unfollow
                     time.sleep(2)
-                    unfollow_result = mastodon.account_unfollow(account_id)
+                    mastodon.account_unfollow(account_id)
                     log_test(True, f"POST /api/v1/accounts/{account_id}/unfollow", 
                             "Unfollowed")
                     
@@ -497,7 +496,7 @@ def main():
         return
         
     # Test authenticated endpoints
-    account_id = test_authenticated_endpoints(mastodon)
+    test_authenticated_endpoints(mastodon)
     test_search(mastodon)
     test_trends(mastodon)
     

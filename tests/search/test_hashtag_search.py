@@ -2,7 +2,6 @@
 """Test hashtag search implementation."""
 
 import requests
-import json
 import time
 from typing import Dict, Any
 

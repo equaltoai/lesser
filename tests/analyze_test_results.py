@@ -6,7 +6,6 @@ Analyze test results from Lesser API tests
 import json
 import sys
 import os
-from datetime import datetime
 from collections import defaultdict
 
 def load_results(filename):
@@ -36,7 +35,6 @@ def analyze_results(results):
         if ' /api/' in test_name:
             # API endpoint test
             parts = test_name.split(' /api/')
-            method = parts[0]
             endpoint = '/api/' + parts[1]
             
             # Determine category

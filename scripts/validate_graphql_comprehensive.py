@@ -306,7 +306,7 @@ def main():
         """)
         
         # Create a reply
-        reply_result = validator.test("Create Reply", f"""
+        validator.test("Create Reply", f"""
             mutation {{
                 createNote(input: {{
                     content: "This is a reply to the test post"
@@ -323,11 +323,6 @@ def main():
                 }}
             }}
         """)
-        
-        reply_id = None
-        if reply_result.success and reply_result.data:
-            reply_data = reply_result.data.get("createNote", {}).get("object", {})
-            reply_id = reply_data.get("id")
         
         validator.test("Bookmark Post", f"""
             mutation {{
@@ -602,4 +597,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

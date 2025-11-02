@@ -256,20 +256,20 @@ def run_all_tests():
     print("=" * 60)
     
     # Test 1: Get reputation
-    reputation = test_get_reputation()
+    test_get_reputation()
     
     # Test 2: Create vouch
     vouch = test_create_vouch()
     
     # Test 3: Get vouches
-    vouches = test_get_vouches()
+    test_get_vouches()
     
     # Test 4: Export reputation
     portable_rep = test_export_reputation()
     
     # Test 5: Verify reputation (if we have a document)
     if portable_rep:
-        verification = test_verify_reputation(portable_rep)
+        test_verify_reputation(portable_rep)
     
     # Test 6: Import reputation (would need a document from another instance)
     # Skipping actual import as it would need a real document from another instance
@@ -279,10 +279,10 @@ def run_all_tests():
     # Test 7: Revoke vouch (if we created one)
     if vouch:
         time.sleep(2)  # Wait a bit before revoking
-        revoked = test_revoke_vouch(vouch['id'])
+        test_revoke_vouch(vouch['id'])
     
     # Test 8: Get reputation keys
-    keys = test_reputation_keys()
+    test_reputation_keys()
     
     print("\n" + "=" * 60)
     print("✅ Test suite completed!")

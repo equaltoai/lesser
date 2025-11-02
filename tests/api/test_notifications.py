@@ -73,7 +73,6 @@ def test_notifications(base_url, token1, token2):
     
     if follow_notif:
         print(f"✅ Follow notification created: {follow_notif['account']['username']} followed you")
-        notif_id = follow_notif['id']
     else:
         print("❌ No follow notification found")
     

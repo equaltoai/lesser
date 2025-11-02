@@ -8,7 +8,7 @@ import time
 import statistics
 import concurrent.futures
 import requests
-from typing import List, Dict, Callable
+from typing import Dict
 import json
 import logging
 from datetime import datetime

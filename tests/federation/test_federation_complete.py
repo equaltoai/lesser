@@ -11,11 +11,9 @@ This script tests:
 """
 
 import requests
-import json
-import sys
 import time
 import argparse
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 
 def make_request(method: str, url: str, token: Optional[str] = None, 
                 json_data: Optional[Dict] = None, headers: Optional[Dict] = None) -> requests.Response:
@@ -83,6 +81,8 @@ def test_inbox_follow_processing(base_url: str, token: str, username: str):
     # For testing, the inbox might accept activities without signature in dev mode
     print("! Note: Inbox POST normally requires HTTP signature from remote server")
     print("  This test simulates what would happen when a properly signed Follow arrives")
+    print(f"  Inbox URL: {inbox_url}")
+    print(f"  Sample Follow payload: {follow_activity}")
 
 def test_create_activity_delivery(base_url: str, token: str, username: str):
     """Test creating a post that should be delivered to followers"""

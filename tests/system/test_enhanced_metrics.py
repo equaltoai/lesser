@@ -9,9 +9,8 @@ This script tests:
 """
 
 import requests
-import json
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any
 import os
 from dotenv import load_dotenv

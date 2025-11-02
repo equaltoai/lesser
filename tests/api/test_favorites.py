@@ -3,7 +3,6 @@
 
 import requests
 import sys
-import json
 
 def test_favorites_timeline(base_url, token):
     """Test the GET /api/v1/favourites endpoint."""
