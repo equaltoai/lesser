@@ -1,6 +1,11 @@
 package transcoding
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"sync"
 	"testing"
 	"time"
 
@@ -8,10 +13,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test RSA private key (for testing only - DO NOT use in production)
-const testPrivateKeyPEM = `[REDACTED TEST KEY]`
+var (
+	testPrivateKeyOnce sync.Once
+	testPrivateKeyPEM  string
+)
+
+func getTestPrivateKeyPEM(t *testing.T) string {
+	t.Helper()
+
+	testPrivateKeyOnce.Do(func() {
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		require.NoError(t, err)
+
+		privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(key)
+		require.NoError(t, err)
+
+		pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyBytes})
+		require.NotNil(t, pemBytes)
+		testPrivateKeyPEM = string(pemBytes)
+	})
+
+	return testPrivateKeyPEM
+}
 
 func TestValidateConfig(t *testing.T) {
+	key := getTestPrivateKeyPEM(t)
+
 	tests := []struct {
 		name        string
 		config      CloudFrontConfig
@@ -23,7 +50,7 @@ func TestValidateConfig(t *testing.T) {
 			config: CloudFrontConfig{
 				Domain:        "d123.cloudfront.net",
 				KeyPairID:     "APKAXXXXXXX",
-				PrivateKeyPEM: testPrivateKeyPEM,
+				PrivateKeyPEM: key,
 				DefaultTTL:    24 * time.Hour,
 			},
 			expectError: false,
@@ -32,7 +59,7 @@ func TestValidateConfig(t *testing.T) {
 			name: "missing domain",
 			config: CloudFrontConfig{
 				KeyPairID:     "APKAXXXXXXX",
-				PrivateKeyPEM: testPrivateKeyPEM,
+				PrivateKeyPEM: key,
 			},
 			expectError: true,
 			errorMsg:    "domain is required",
@@ -41,7 +68,7 @@ func TestValidateConfig(t *testing.T) {
 			name: "missing key pair ID",
 			config: CloudFrontConfig{
 				Domain:        "d123.cloudfront.net",
-				PrivateKeyPEM: testPrivateKeyPEM,
+				PrivateKeyPEM: key,
 			},
 			expectError: true,
 			errorMsg:    "key pair ID is required",
@@ -81,10 +108,12 @@ func TestValidateConfig(t *testing.T) {
 }
 
 func TestNewCloudFrontService(t *testing.T) {
+	key := getTestPrivateKeyPEM(t)
+
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
 		KeyPairID:     "APKAXXXXXXX",
-		PrivateKeyPEM: testPrivateKeyPEM,
+		PrivateKeyPEM: key,
 		DefaultTTL:    12 * time.Hour,
 	}
 
@@ -98,10 +127,12 @@ func TestNewCloudFrontService(t *testing.T) {
 }
 
 func TestNewCloudFrontServiceDefaultTTL(t *testing.T) {
+	key := getTestPrivateKeyPEM(t)
+
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
 		KeyPairID:     "APKAXXXXXXX",
-		PrivateKeyPEM: testPrivateKeyPEM,
+		PrivateKeyPEM: key,
 		// DefaultTTL not set
 	}
 
@@ -111,10 +142,12 @@ func TestNewCloudFrontServiceDefaultTTL(t *testing.T) {
 }
 
 func TestSignURL(t *testing.T) {
+	key := getTestPrivateKeyPEM(t)
+
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
 		KeyPairID:     "APKAXXXXXXX",
-		PrivateKeyPEM: testPrivateKeyPEM,
+		PrivateKeyPEM: key,
 	}
 
 	service, err := NewCloudFrontService(config, nil)
@@ -136,10 +169,12 @@ func TestSignURL(t *testing.T) {
 }
 
 func TestSignStreamingURL(t *testing.T) {
+	key := getTestPrivateKeyPEM(t)
+
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
 		KeyPairID:     "APKAXXXXXXX",
-		PrivateKeyPEM: testPrivateKeyPEM,
+		PrivateKeyPEM: key,
 	}
 
 	service, err := NewCloudFrontService(config, nil)
@@ -203,10 +238,12 @@ func TestSignStreamingURL(t *testing.T) {
 }
 
 func TestSignBatchURLs(t *testing.T) {
+	key := getTestPrivateKeyPEM(t)
+
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
 		KeyPairID:     "APKAXXXXXXX",
-		PrivateKeyPEM: testPrivateKeyPEM,
+		PrivateKeyPEM: key,
 	}
 
 	service, err := NewCloudFrontService(config, nil)
@@ -231,10 +268,12 @@ func TestSignBatchURLs(t *testing.T) {
 }
 
 func TestGetExpirationTime(t *testing.T) {
+	key := getTestPrivateKeyPEM(t)
+
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
 		KeyPairID:     "APKAXXXXXXX",
-		PrivateKeyPEM: testPrivateKeyPEM,
+		PrivateKeyPEM: key,
 		DefaultTTL:    24 * time.Hour,
 	}
 
@@ -295,6 +334,8 @@ func TestMakeURLSafe(t *testing.T) {
 }
 
 func TestParsePrivateKey(t *testing.T) {
+	key := getTestPrivateKeyPEM(t)
+
 	tests := []struct {
 		name        string
 		pemStr      string
@@ -302,7 +343,7 @@ func TestParsePrivateKey(t *testing.T) {
 	}{
 		{
 			name:        "valid key",
-			pemStr:      testPrivateKeyPEM,
+			pemStr:      key,
 			expectError: false,
 		},
 		{
