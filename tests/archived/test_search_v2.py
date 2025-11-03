@@ -2,7 +2,6 @@
 """Test the search v2 endpoint implementation."""
 
 import requests
-import json
 from typing import Dict, Any
 
 # Test configuration
