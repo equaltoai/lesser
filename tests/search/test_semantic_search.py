@@ -8,8 +8,7 @@ import requests
 import json
 import time
 import argparse
-import sys
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 
 class SemanticSearchTester:

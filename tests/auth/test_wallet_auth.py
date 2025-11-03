@@ -35,7 +35,7 @@ def test_wallet_auth():
     
     if challenge_response.status_code != 200:
         print(f"Failed to create challenge: {challenge_response.text}")
-        return
+        return None
     
     challenge = challenge_response.json()
     print(f"Challenge created: {challenge['id']}")
@@ -64,14 +64,14 @@ def test_wallet_auth():
     
     if verify_response.status_code != 200:
         print(f"Failed to verify signature: {verify_response.text}")
-        return
+        return None
     
     verify_result = verify_response.json()
     
     if verify_result.get('authenticated') == False:
         print("Wallet not linked to any account")
         print("Please create an account first and link this wallet")
-        return
+        return None
     
     print("Authentication successful!")
     print(f"Access token: {verify_result['access_token']}")
@@ -99,7 +99,7 @@ def test_wallet_linking(auth_token):
     
     if challenge_response.status_code != 200:
         print(f"Failed to create challenge: {challenge_response.text}")
-        return
+        return None
     
     challenge = challenge_response.json()
     
@@ -126,7 +126,7 @@ def test_wallet_linking(auth_token):
     
     if link_response.status_code != 200:
         print(f"Failed to link wallet: {link_response.text}")
-        return
+        return None
     
     print("Wallet linked successfully!")
     

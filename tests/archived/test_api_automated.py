@@ -7,7 +7,6 @@ Tests public endpoints only
 from mastodon import Mastodon
 import json
 import requests
-import time
 import sys
 from datetime import datetime
 

@@ -332,10 +332,10 @@ def test_list_timeline_fanout(base_url, token1, token2):
     
     # Cleanup
     print("\n7. Cleanup...")
-    r = requests.delete(f"{base_url}/api/v1/lists/{list_id}", headers=headers1)
-    r = requests.delete(f"{base_url}/api/v1/statuses/{status['id']}", headers=headers2)
-    r = requests.delete(f"{base_url}/api/v1/statuses/{reply['id']}", headers=headers2)
-    r = requests.delete(f"{base_url}/api/v1/statuses/{reply2['id']}", headers=headers2)
+    requests.delete(f"{base_url}/api/v1/lists/{list_id}", headers=headers1)
+    requests.delete(f"{base_url}/api/v1/statuses/{status['id']}", headers=headers2)
+    requests.delete(f"{base_url}/api/v1/statuses/{reply['id']}", headers=headers2)
+    requests.delete(f"{base_url}/api/v1/statuses/{reply2['id']}", headers=headers2)
     print("✅ Cleanup complete")
     
     print("\n✅ List timeline fan-out tests passed!")

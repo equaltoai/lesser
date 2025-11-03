@@ -225,9 +225,9 @@ def test_notifications(base_url, token1, token2):
     # Cleanup
     print("\n12. Cleanup...")
     # Unfollow
-    r = requests.post(f"{base_url}/api/v1/accounts/{user1['id']}/unfollow", headers=headers2)
+    requests.post(f"{base_url}/api/v1/accounts/{user1['id']}/unfollow", headers=headers2)
     # Delete status
-    r = requests.delete(f"{base_url}/api/v1/statuses/{status['id']}", headers=headers1)
+    requests.delete(f"{base_url}/api/v1/statuses/{status['id']}", headers=headers1)
     print("✅ Cleanup complete")
 
 def main():

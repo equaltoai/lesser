@@ -46,7 +46,7 @@ def test_search(mastodon):
         except TypeError:
             try:
                 results = mastodon.search(q='test', resolve=True, version=2)
-            except:
+            except Exception as raw_exc:
                 # Fall back to raw request
                 response = requests.get(
                     f"{INSTANCE_URL}/api/v2/search",
@@ -56,7 +56,7 @@ def test_search(mastodon):
                 if response.status_code == 200:
                     results = response.json()
                 else:
-                    raise Exception(f"Status {response.status_code}")
+                    raise Exception(f"Status {response.status_code}") from raw_exc
                     
         log_test(True, "GET /api/v2/search?resolve=true", "Search with resolve")
     except Exception as e:

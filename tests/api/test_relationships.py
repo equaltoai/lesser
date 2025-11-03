@@ -4,7 +4,6 @@
 import requests
 import sys
 import json
-import time
 
 def test_account_relationships_batch(base_url, token):
     """Test the GET /api/v1/accounts/relationships endpoint."""

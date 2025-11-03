@@ -29,8 +29,8 @@ def graphql_request(query, variables=None):
     
     try:
         return response.json()
-    except:
-        print(f"Failed to parse response: {response.text}")
+    except ValueError as exc:
+        print(f"Failed to parse response: {exc}; body={response.text}")
         return None
 
 def create_post(content, visibility="PUBLIC"):
