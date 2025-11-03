@@ -13,7 +13,6 @@ Tests:
 """
 
 import requests
-import json
 import argparse
 
 def test_polls(base_url, token):
