@@ -3,7 +3,7 @@
 
 import requests
 from typing import Dict, Any
-
+from typing import Dict
 # Test configuration
 BASE_URL = "https://lab.lesser.aronprice.com/api/v1"
 BASE_URL_V2 = "https://lab.lesser.aronprice.com/api/v2"
