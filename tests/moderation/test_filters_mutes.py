@@ -4,7 +4,6 @@ Test script for Filters & Mutes functionality
 """
 
 import requests
-from datetime import datetime
 
 # Configuration
 BASE_URL = "https://api.lesser.social"
