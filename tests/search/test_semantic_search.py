@@ -5,7 +5,6 @@ Tests AWS Bedrock embeddings, Comprehend query analysis, and semantic search.
 """
 
 import requests
-import json
 import time
 import argparse
 from typing import Dict, List
