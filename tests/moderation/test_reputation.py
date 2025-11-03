@@ -23,13 +23,11 @@ API_BASE = f"{BASE_URL}/api/v1"
 
 # Test credentials (you'll need valid tokens)
 TOKEN_USER1 = "your_token_here"  # User with high reputation
-TOKEN_USER2 = "your_token_here"  # User to vouch for
 TOKEN_USER3 = "your_token_here"  # User importing reputation
 
 # Actor IDs
 ACTOR1 = "https://lab.lesser.social/users/testuser1"
 ACTOR2 = "https://lab.lesser.social/users/testuser2"
-ACTOR3 = "https://lab.lesser.social/users/testuser3"
 
 
 def print_section(title):

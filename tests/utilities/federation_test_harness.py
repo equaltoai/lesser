@@ -34,7 +34,6 @@ class FederationInstance:
     """Represents a mock federation instance"""
     domain: str
     inbox_url: str
-    outbox_url: str
     actors: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     received_activities: List[Dict[str, Any]] = field(default_factory=list)
     private_key: Any = None
@@ -75,7 +74,6 @@ class FederationTestHarness:
         instance = FederationInstance(
             domain=domain,
             inbox_url=f"https://{domain}/inbox",
-            outbox_url=f"https://{domain}/outbox"
         )
         self.mock_instances[domain] = instance
         logger.info(f"Created mock instance: {domain}")
@@ -226,6 +224,7 @@ class FederationTestHarness:
             "followee": f"{followee_username}@{self.target_instance_url}",
             "activity": follow_activity,
             "result": result,
+            "success": success,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         

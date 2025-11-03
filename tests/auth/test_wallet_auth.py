@@ -6,7 +6,6 @@ Requirements:
     pip install eth-account requests
 """
 
-import json
 import requests
 from eth_account import Account
 from eth_account.messages import encode_defunct

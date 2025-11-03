@@ -6,7 +6,6 @@ Demonstrates usage of test data generator, federation harness, and performance b
 
 import asyncio
 import json
-import sys
 from test_data_generator import LesserTestDataGenerator
 from federation_test_harness import FederationTestHarness
 from performance_benchmark import LesserPerformanceBenchmark

@@ -73,7 +73,7 @@ class SemanticSearchTester:
         # Compare results
         print("\n📊 Similarity analysis:")
         for i, query1 in enumerate(queries):
-            for j, query2 in enumerate(queries[i+1:], i+1):
+            for _, query2 in enumerate(queries[i+1:], i+1):
                 set1 = set(results_by_query.get(query1, []))
                 set2 = set(results_by_query.get(query2, []))
                 

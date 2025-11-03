@@ -186,7 +186,7 @@ if __name__ == "__main__":
     print("Testing Hashtag Search Implementation\n")
     
     # Create a status with hashtags
-    status_id, unique_tag = test_hashtag_indexing()
+    _, unique_tag = test_hashtag_indexing()
     
     if unique_tag:
         # Wait a moment for indexing

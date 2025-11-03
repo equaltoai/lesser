@@ -22,10 +22,6 @@ BASE_URL = os.getenv('API_BASE_URL', 'https://lesser.aronprice.com')
 if not BASE_URL.startswith('http'):
     BASE_URL = f'https://{BASE_URL}'
 
-# Test user credentials (if needed for authenticated endpoints)
-TEST_USERNAME = os.getenv('TEST_USERNAME', 'testuser')
-TEST_PASSWORD = os.getenv('TEST_PASSWORD', 'testpass123')
-
 # Cost header names
 COST_HEADERS = [
     'X-Cost-Total-Microcents',

@@ -9,21 +9,13 @@ import requests
 # Your lesser instance
 INSTANCE_URL = 'https://lesser.host'
 
-# Global counters for test results
-tests_passed = 0
-tests_failed = 0
-
 def log_test(success, test_name, details=""):
     """Log test result with consistent formatting"""
-    global tests_passed, tests_failed
-    
     if success:
-        tests_passed += 1
         print(f"✓ {test_name}")
         if details:
             print(f"  {details}")
     else:
-        tests_failed += 1
         print(f"✗ {test_name}")
         if details:
             print(f"  ERROR: {details}")

@@ -180,7 +180,7 @@ def test_pagination():
         ("/api/v1/custom_emojis", "custom emojis")
     ]
     
-    for endpoint, name in endpoints:
+    for endpoint, _ in endpoints:
         try:
             response = requests.get(f"{INSTANCE_URL}{endpoint}")
             

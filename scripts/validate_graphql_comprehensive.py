@@ -12,8 +12,6 @@ from typing import Dict, Optional, Any
 
 GRAPHQL_ENDPOINT = os.getenv("GRAPHQL_ENDPOINT", "https://dev.lesser.host/api/graphql")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
-MEMBER_TOKEN = os.getenv("MEMBER_TOKEN")
-MOD_TOKEN = os.getenv("MOD_TOKEN")
 # Delay between tests to avoid Lambda throttling (in seconds)
 TEST_DELAY = float(os.getenv("GRAPHQL_TEST_DELAY", "0.5"))
 

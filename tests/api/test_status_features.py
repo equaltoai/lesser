@@ -2,10 +2,7 @@
 """Test Phase 2 status features for Lesser - Status pinning and conversation muting"""
 
 import requests
-import time
-import json
 import sys
-from datetime import datetime
 
 # Configuration
 BASE_URL = "http://localhost:8080"
