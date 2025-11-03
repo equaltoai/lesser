@@ -8,7 +8,7 @@ import sys
 import time
 import json
 import requests
-from typing import Dict, Optional, Any
+from typing import Dict, Optional
 
 GRAPHQL_ENDPOINT = os.getenv("GRAPHQL_ENDPOINT", "https://dev.lesser.host/api/graphql")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")

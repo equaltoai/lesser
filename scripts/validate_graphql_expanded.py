@@ -10,7 +10,7 @@ import json
 import subprocess
 from pathlib import Path
 import requests
-from typing import Dict, Optional, Any
+from typing import Dict, Optional
 import jwt
 
 GRAPHQL_ENDPOINT = os.getenv("GRAPHQL_ENDPOINT", "https://dev.lesser.host/api/graphql")

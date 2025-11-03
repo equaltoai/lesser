@@ -10,7 +10,6 @@ This script tests:
 
 import requests
 import sys
-from typing import Dict, Any
 import os
 from dotenv import load_dotenv
 

@@ -15,7 +15,6 @@ import requests
 import json
 import sys
 import time
-from datetime import datetime
 
 # Configuration
 BASE_URL = "https://lab.lesser.social"

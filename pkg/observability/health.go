@@ -50,6 +50,17 @@ type HealthChecker struct {
 	config       *HealthConfig
 }
 
+// promoteStatus escalates the overall health status based on an incoming check result.
+func promoteStatus(current HealthStatus, incoming HealthStatus) HealthStatus {
+	if incoming == HealthStatusCritical {
+		return HealthStatusCritical
+	}
+	if incoming == HealthStatusWarning && current == HealthStatusHealthy {
+		return HealthStatusWarning
+	}
+	return current
+}
+
 // HealthConfig contains configuration for health checks
 type HealthConfig struct {
 	TableName        string
@@ -174,26 +185,14 @@ func (hc *HealthChecker) DetailedHandler(w http.ResponseWriter, r *http.Request)
 		if hc.config.TableName != "" {
 			check := hc.checkDynamoDBDetailed(ctx)
 			checks = append(checks, check)
-			if check.Status == HealthStatusCritical {
-				overallStatus = HealthStatusCritical
-			} else if check.Status == HealthStatusWarning {
-				if overallStatus == HealthStatusHealthy {
-					overallStatus = HealthStatusWarning
-				}
-			}
+			overallStatus = promoteStatus(overallStatus, check.Status)
 		}
 
 		// SQS detailed check
 		if hc.config.QueueURL != "" {
 			check := hc.checkSQSDetailed(ctx)
 			checks = append(checks, check)
-			if check.Status == HealthStatusCritical {
-				overallStatus = HealthStatusCritical
-			} else if check.Status == HealthStatusWarning {
-				if overallStatus == HealthStatusHealthy {
-					overallStatus = HealthStatusWarning
-				}
-			}
+			overallStatus = promoteStatus(overallStatus, check.Status)
 		}
 	}
 

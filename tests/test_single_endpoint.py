@@ -48,15 +48,15 @@ def test_endpoint(base_url, method, path, token=None, data=None, params=None):
         
         # Try to parse JSON response
         try:
-        response_data = response.json()
-        print(f"\nBody:")
-        print(json.dumps(response_data, indent=2))
-    except ValueError:
-        # Not JSON, print raw
-        print(f"\nBody (raw):")
-        print(response.text[:500])
-        if len(response.text) > 500:
-            print("... (truncated)")
+            response_data = response.json()
+            print(f"\nBody:")
+            print(json.dumps(response_data, indent=2))
+        except ValueError:
+            # Not JSON, print raw
+            print(f"\nBody (raw):")
+            print(response.text[:500])
+            if len(response.text) > 500:
+                print("... (truncated)")
         
         # Check for cost headers
         cost_headers = {k: v for k, v in response.headers.items() if k.lower().startswith('x-lesser-cost')}
