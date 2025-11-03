@@ -16,7 +16,6 @@ It also tests notification generation for:
 """
 
 import requests
-import json
 import sys
 import time
 import argparse
