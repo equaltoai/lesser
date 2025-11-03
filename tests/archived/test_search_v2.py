@@ -2,7 +2,7 @@
 """Test the search v2 endpoint implementation."""
 
 import requests
-from typing import Dict, Any
+
 from typing import Dict
 # Test configuration
 BASE_URL = "https://lab.lesser.aronprice.com/api/v1"
