@@ -8,7 +8,6 @@ import asyncio
 import json
 from test_data_generator import LesserTestDataGenerator
 from federation_test_harness import FederationTestHarness
-from performance_benchmark import LesserPerformanceBenchmark
 
 
 def demo_test_data_generator():
