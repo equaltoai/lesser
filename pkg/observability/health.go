@@ -51,7 +51,7 @@ type HealthChecker struct {
 }
 
 // promoteStatus escalates the overall health status based on an incoming check result.
-func promoteStatus(current HealthStatus, incoming HealthStatus) HealthStatus {
+func promoteStatus(current string, incoming string) string {
 	if incoming == HealthStatusCritical {
 		return HealthStatusCritical
 	}
