@@ -3,7 +3,6 @@
 Fixed version of the test script with better error handling
 """
 
-from mastodon import Mastodon
 import requests
 
 # Your lesser instance
