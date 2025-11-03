@@ -3,7 +3,6 @@
 
 import base64
 import hashlib
-import json
 import secrets
 from urllib.parse import urlencode, urlparse, parse_qs, parse_qsl
 
