@@ -6,7 +6,6 @@ Tests social interactions, content operations, and other features
 import os
 import sys
 import time
-import requests
 from typing import Dict, Optional
 
 GRAPHQL_ENDPOINT = os.getenv("GRAPHQL_ENDPOINT", "https://dev.lesser.host/api/graphql")
