@@ -700,7 +700,7 @@ func (s *Service) validateUpdatePreferencesCommand(_ context.Context, cmd *Updat
 	}
 
 	if cmd.DefaultPostingVisibility != "" && !validVisibilities[cmd.DefaultPostingVisibility] {
-		return common.ErrValidation("default_posting_visibility", fmt.Sprintf("visibility %q is not valid", cmd.DefaultPostingVisibility)).InternalError
+		return common.ErrValidation("default_posting_visibility", fmt.Sprintf("Visibility '%s' is not valid", cmd.DefaultPostingVisibility)).InternalError
 	}
 
 	validExpandMedia := map[string]bool{
@@ -1716,6 +1716,14 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		return nil, ErrEncodePublicKey
 	}
 
+	// Encode private key to PEM format for storage
+	privateKeyPEMBytes, err := s.crypto.EncodePrivateKeyPEM(privateKey)
+	if err != nil {
+		s.logger.Error("failed to encode private key", zap.Error(err))
+		return nil, fmt.Errorf("failed to encode private key: %w", err)
+	}
+	privateKeyPEM := string(privateKeyPEMBytes)
+
 	// Create user object
 	user := &storage.User{
 		Username:     cmd.Username,
@@ -1760,8 +1768,9 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 
 	// Create account with actor
 	account := &storage.Account{
-		User:  user,
-		Actor: actor,
+		User:       user,
+		Actor:      actor,
+		PrivateKey: privateKeyPEM, // Pass private key for actor creation
 	}
 
 	// Save to storage
@@ -1769,8 +1778,11 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		if strings.Contains(err.Error(), "already exists") {
 			return nil, ErrUsernameAlreadyTaken
 		}
-		s.logger.Error("failed to create account", zap.Error(err))
-		return nil, ErrCreateAccount
+		s.logger.Error("failed to create account", 
+			zap.String("username", cmd.Username),
+			zap.Error(err))
+		// Return the actual error instead of wrapping it
+		return nil, fmt.Errorf("failed to create account: %w", err)
 	}
 
 	s.logger.Info("account created successfully, recording activity",
@@ -1807,8 +1819,9 @@ func (s *Service) validateRegisterAccountCommand(_ context.Context, cmd *Registe
 	if err := common.ValidateStringLength("username", cmd.Username, 3, 30); err != nil {
 		return err
 	}
-	if err := common.ValidateRequiredParam("email", cmd.Email); err != nil {
-		return ErrEmailRequired
+	// Email is deprecated and disallowed - must be empty for wallet-based registration
+	if cmd.Email != "" {
+		return errors.New("email is not supported - wallet authentication only")
 	}
 	if !cmd.Agreement {
 		return ErrMustAgreeToTerms

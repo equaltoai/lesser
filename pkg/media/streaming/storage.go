@@ -491,18 +491,20 @@ func (s *S3MediaStorage) initializeCloudFront() error {
 		return ErrCloudFrontNotConfigured
 	}
 
+	var cfPrivateKeyContent string
+
 	// Load private key
 	var privateKeyPEM []byte
 	var err error
 
-	switch {
-	case strings.HasPrefix(cfPrivateKeyPath, "arn:aws:secretsmanager:") || strings.HasPrefix(cfPrivateKeyPath, "lesser/"):
+	// Check if key path is a Secrets Manager reference
+	if strings.HasPrefix(cfPrivateKeyPath, "arn:aws:secretsmanager:") || strings.HasPrefix(cfPrivateKeyPath, "lesser/") {
 		// Retrieve from Secrets Manager
 		privateKeyPEM, err = s.getSecretFromSecretsManager(cfPrivateKeyPath)
 		if err != nil {
 			return fmt.Errorf("failed to load CloudFront private key from Secrets Manager: %w", err)
 		}
-	case cfPrivateKeyPath != "":
+	} else if cfPrivateKeyPath != "" {
 		// Validate the file path to prevent directory traversal
 		cleanPath := filepath.Clean(cfPrivateKeyPath)
 		if !filepath.IsAbs(cleanPath) || strings.Contains(cleanPath, "..") {
@@ -514,7 +516,10 @@ func (s *S3MediaStorage) initializeCloudFront() error {
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrFailedToReadCloudFrontPrivateKeyFile, err)
 		}
-	default:
+	} else if cfPrivateKeyContent != "" {
+		// Use key content directly
+		privateKeyPEM = []byte(cfPrivateKeyContent)
+	} else {
 		return ErrCloudFrontPrivateKeyNotProvided
 	}
 
@@ -575,12 +580,10 @@ func (s *S3MediaStorage) getSecretFromSecretsManager(secretID string) ([]byte, e
 	// If the secret is JSON (from CloudFront key generation), extract the privateKey field
 	if strings.HasPrefix(strings.TrimSpace(secretValue), "{") {
 		var secretData map[string]interface{}
-		if err := json.Unmarshal([]byte(secretValue), &secretData); err != nil {
-			s.logger.Debug("failed to parse CloudFront private key secret as JSON",
-				zap.String("secret_id", secretID),
-				zap.Error(err))
-		} else if privateKey, ok := secretData["privateKey"].(string); ok {
-			secretValue = privateKey
+		if err := json.Unmarshal([]byte(secretValue), &secretData); err == nil {
+			if privateKey, ok := secretData["privateKey"].(string); ok {
+				secretValue = privateKey
+			}
 		}
 	}
 

@@ -38,7 +38,10 @@ func GetWebClientCORSConfig() CORSConfig {
 	// Fallback to domain if no specific origins set
 	if len(allowedOrigins) == 0 {
 		if domain := os.Getenv("DOMAIN_NAME"); domain != "" {
-			allowedOrigins = []string{"https://" + domain}
+			allowedOrigins = []string{
+				"https://" + domain,
+				"https://auth." + domain,
+			}
 		}
 	}
 
@@ -56,7 +59,7 @@ func GetWebClientCORSConfig() CORSConfig {
 			"X-Requested-With",
 			"Accept",
 		},
-		ExposedHeaders:   []string{"Content-Type", "X-RateLimit-Remaining", "X-RateLimit-Reset"},
+		ExposedHeaders:   []string{"Content-Type", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Location"},
 		AllowCredentials: true,
 		MaxAge:           3600,
 	}

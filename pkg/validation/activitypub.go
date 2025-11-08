@@ -382,7 +382,7 @@ func (v *ActivityPubValidator) ValidateInboxDelivery(data []byte, signature stri
 	// Create stricter config for inbox deliveries
 	config := DefaultConfig()
 	config.RequiredFields = []string{"type", "actor", "id"}
-	config.MaxObjectSize = 10 * 1024 * 1024 // 10MB for inbox deliveries
+	config.MaxObjectSize = 512 * 1024 // 512KB for inbox deliveries
 
 	// Validate the activity
 	activity, err := v.ValidateActivity(data, config)

@@ -62,10 +62,10 @@ func NewStreamingConnectionRepository(db core.DB, tableName string, subscription
 }
 
 // WriteConnection stores a WebSocket connection with full lifecycle initialization and connection pooling
-func (r *StreamingConnectionRepository) WriteConnection(ctx context.Context, connectionID, userID, username string, streams []string) error {
+func (r *StreamingConnectionRepository) WriteConnection(ctx context.Context, connectionID, userID, username string, streams []string) (*models.WebSocketConnection, error) {
 	// Check connection limits before creating new connection (Count() queries keep this efficient)
 	if err := r.checkConnectionLimits(ctx, userID); err != nil {
-		return ErrorHandler.HandleCreateError(err, "streaming connection", "connection limit check")
+		return nil, ErrorHandler.HandleCreateError(err, "streaming connection", "connection limit check")
 	}
 
 	now := time.Now()
@@ -95,7 +95,7 @@ func (r *StreamingConnectionRepository) WriteConnection(ctx context.Context, con
 
 	// Use BaseRepository Create method
 	if err := r.ValidateAndCreate(ctx, connection); err != nil {
-		return ErrorHandler.HandleCreateError(err, "streaming connection", connectionID)
+		return nil, ErrorHandler.HandleCreateError(err, "streaming connection", connectionID)
 	}
 
 	r.logger.Info("connection created",
@@ -103,7 +103,7 @@ func (r *StreamingConnectionRepository) WriteConnection(ctx context.Context, con
 		zap.String("user_id", userID),
 		zap.String("state", string(models.ConnectionStateConnecting)))
 
-	return nil
+	return connection, nil
 }
 
 // GetConnection retrieves a WebSocket connection by connection ID

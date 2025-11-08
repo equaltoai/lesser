@@ -8,8 +8,7 @@ import (
 // AccountRegistrationRequest represents a user registration request
 type AccountRegistrationRequest struct {
 	Username  string `json:"username"`
-	Email     string `json:"email"`
-	Password  string `json:"password"`
+	Password  string `json:"password"` // Ignored - passwordless auth only
 	Agreement bool   `json:"agreement"` // ToS agreement
 	Locale    string `json:"locale,omitempty"`
 	Reason    string `json:"reason,omitempty"` // For approval
@@ -19,7 +18,6 @@ type AccountRegistrationRequest struct {
 type AccountRegistrationResponse struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
-	Email    string `json:"email"`
 	Created  bool   `json:"created"`
 }
 
@@ -33,8 +31,6 @@ type VerifyCredentialsResponse struct {
 	Bot            bool           `json:"bot"`
 	Discoverable   bool           `json:"discoverable"`
 	Group          bool           `json:"group"`
-	Email          string         `json:"email"`
-	EmailVerified  bool           `json:"email_verified"`
 	Note           string         `json:"note"`
 	URL            string         `json:"url"`
 	Avatar         string         `json:"avatar"`
@@ -257,7 +253,6 @@ type Instance struct {
 	Title            string         `json:"title"`
 	ShortDescription string         `json:"short_description"`
 	Description      string         `json:"description"`
-	Email            string         `json:"email"`
 	Version          string         `json:"version"`
 	Languages        []string       `json:"languages"`
 	Registrations    bool           `json:"registrations"`
@@ -554,8 +549,6 @@ type AdminAccount struct {
 	Username               string    `json:"username"`
 	Domain                 *string   `json:"domain"`
 	CreatedAt              time.Time `json:"created_at"`
-	Email                  string    `json:"email"`
-	EmailStatus            string    `json:"email_status,omitempty"`
 	IP                     *string   `json:"ip"`
 	IPs                    []AdminIP `json:"ips"`
 	Locale                 string    `json:"locale"`

@@ -456,8 +456,22 @@ func (r *BaseRepository[T]) Delete(ctx context.Context, pk, sk string) error {
 		}()
 	}
 
-	// Create a zero value of T to get the model type
+	// Create a proper model instance for DynamORM
+	// Handle pointer types correctly - DynamORM needs a non-nil pointer or value
+	// Use reflection to get the concrete type of T
+	var zero T
+	tType := reflect.TypeOf((*T)(nil)).Elem()
+
 	var model T
+	// If T is a pointer type, create a new instance
+	if tType.Kind() == reflect.Ptr {
+		elemType := tType.Elem()
+		ptrValue := reflect.New(elemType)
+		model = ptrValue.Interface().(T)
+	} else {
+		// T is a value type, use zero value
+		model = zero
+	}
 
 	// Delete the item
 	err := r.db.WithContext(ctx).Model(model).

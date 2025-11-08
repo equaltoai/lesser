@@ -16,24 +16,20 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsssm"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 )
 
 type LesserApiStackProps struct {
 	awscdk.StackProps
-	Environment            string
-	Domain                 string
-	Config                 map[string]interface{} // Environment-specific configuration
-	HostedZoneDomain       string
-	HostedZoneId           string
-	CloudFrontDomain       string
-	APICertificate         awscertificatemanager.ICertificate
-	CDNCertificate         awscertificatemanager.ICertificate
-	GraphQLWSCertificate   awscertificatemanager.ICertificate
-	StreamingWSCertificate awscertificatemanager.ICertificate
-	JWTSecret              awssecretsmanager.ISecret
-	ActorPrivateKey        awssecretsmanager.ISecret
+	Environment      string
+	Domain           string
+	Config           map[string]interface{} // Environment-specific configuration
+	HostedZoneDomain string
+	HostedZoneId     string
+	CloudFrontDomain string
+	AppName          string // For SSM parameter lookup
 }
 
 type LesserApiStack struct {
@@ -63,25 +59,25 @@ type LesserApiStack struct {
 	CDNCertificate         awscertificatemanager.ICertificate
 	GraphQLWSCertificate   awscertificatemanager.ICertificate
 	StreamingWSCertificate awscertificatemanager.ICertificate
+	AuthCertificate        awscertificatemanager.ICertificate
 	CloudFrontKeyPairID    string
 	CloudFrontKeyGroupID   string
+	LambdaEncryptionRole   awsiam.IRole
+	LambdaBasicRole        awsiam.IRole
 }
 
 func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiStackProps) *LesserApiStack {
 	stack := awscdk.NewStack(scope, &id, &props.StackProps)
 
 	apiStack := &LesserApiStack{
-		Stack:                  stack,
-		Environment:            props.Environment,
-		Configuration:          props.Config,
-		CloudFrontDomain:       props.CloudFrontDomain,
-		APICertificate:         props.APICertificate,
-		CDNCertificate:         props.CDNCertificate,
-		GraphQLWSCertificate:   props.GraphQLWSCertificate,
-		StreamingWSCertificate: props.StreamingWSCertificate,
-		JwtSecret:              props.JWTSecret,
-		PrivateKey:             props.ActorPrivateKey,
+		Stack:            stack,
+		Environment:      props.Environment,
+		Configuration:    props.Config,
+		CloudFrontDomain: props.CloudFrontDomain,
 	}
+
+	// Import shared resources from SSM Parameter Store
+	apiStack.loadSharedResourcesFromSSM(props.AppName)
 
 	if props.Config != nil {
 		if val, ok := props.Config["cloudfrontKeyPairId"].(string); ok {
@@ -99,6 +95,9 @@ func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiSt
 
 	// Create S3 and CloudFront (Phase 6.6)
 	apiStack.createMediaInfrastructure(props.Domain)
+
+	// Create Auth UI infrastructure (passwordless OAuth)
+	apiStack.createAuthUIInfrastructure(props.Domain, apiStack.AuthCertificate)
 
 	// Create media streaming and ML infrastructure (Phase 2.2/2.3)
 	apiStack.createStreamingAndMLInfrastructure()
@@ -129,6 +128,116 @@ func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiSt
 	apiStack.createOutputs()
 
 	return apiStack
+}
+
+func (s *LesserApiStack) loadSharedResourcesFromSSM(appName string) {
+	// Load shared resource ARNs from SSM Parameter Store
+	// Use well-known naming convention: /lesser/shared/{resource-type}/{resource-name}
+	paramPrefix := fmt.Sprintf("/%s/shared", appName)
+
+	// Import IAM roles by ARN
+	encryptionRoleArnParam := awsssm.StringParameter_FromStringParameterName(
+		s.Stack,
+		jsii.String("EncryptionRoleArnParamLookup"),
+		jsii.String(fmt.Sprintf("%s/iam/lambda-encryption-role-arn", paramPrefix)),
+	)
+	s.LambdaEncryptionRole = awsiam.Role_FromRoleArn(
+		s.Stack,
+		jsii.String("ImportedEncryptionRole"),
+		encryptionRoleArnParam.StringValue(),
+		nil,
+	)
+
+	basicRoleArnParam := awsssm.StringParameter_FromStringParameterName(
+		s.Stack,
+		jsii.String("BasicRoleArnParamLookup"),
+		jsii.String(fmt.Sprintf("%s/iam/lambda-basic-role-arn", paramPrefix)),
+	)
+	s.LambdaBasicRole = awsiam.Role_FromRoleArn(
+		s.Stack,
+		jsii.String("ImportedBasicRole"),
+		basicRoleArnParam.StringValue(),
+		nil,
+	)
+
+	// Import secrets by ARN
+	jwtSecretArnParam := awsssm.StringParameter_FromStringParameterName(
+		s.Stack,
+		jsii.String("JWTSecretArnParamLookup"),
+		jsii.String(fmt.Sprintf("%s/secrets/jwt-secret-arn", paramPrefix)),
+	)
+	s.JwtSecret = awssecretsmanager.Secret_FromSecretCompleteArn(
+		s.Stack,
+		jsii.String("ImportedJWTSecret"),
+		jwtSecretArnParam.StringValue(),
+	)
+
+	actorKeyArnParam := awsssm.StringParameter_FromStringParameterName(
+		s.Stack,
+		jsii.String("ActorKeyArnParamLookup"),
+		jsii.String(fmt.Sprintf("%s/secrets/actor-private-key-arn", paramPrefix)),
+	)
+	s.PrivateKey = awssecretsmanager.Secret_FromSecretCompleteArn(
+		s.Stack,
+		jsii.String("ImportedActorPrivateKey"),
+		actorKeyArnParam.StringValue(),
+	)
+
+	// Import certificates by ARN
+	apiCertArnParam := awsssm.StringParameter_FromStringParameterName(
+		s.Stack,
+		jsii.String("APICertArnParamLookup"),
+		jsii.String(fmt.Sprintf("%s/certificates/api-cert-arn", paramPrefix)),
+	)
+	s.APICertificate = awscertificatemanager.Certificate_FromCertificateArn(
+		s.Stack,
+		jsii.String("ImportedAPICert"),
+		apiCertArnParam.StringValue(),
+	)
+
+	cdnCertArnParam := awsssm.StringParameter_FromStringParameterName(
+		s.Stack,
+		jsii.String("CDNCertArnParamLookup"),
+		jsii.String(fmt.Sprintf("%s/certificates/cdn-cert-arn", paramPrefix)),
+	)
+	s.CDNCertificate = awscertificatemanager.Certificate_FromCertificateArn(
+		s.Stack,
+		jsii.String("ImportedCDNCert"),
+		cdnCertArnParam.StringValue(),
+	)
+
+	graphqlWSCertArnParam := awsssm.StringParameter_FromStringParameterName(
+		s.Stack,
+		jsii.String("GraphQLWSCertArnParamLookup"),
+		jsii.String(fmt.Sprintf("%s/certificates/graphql-ws-cert-arn", paramPrefix)),
+	)
+	s.GraphQLWSCertificate = awscertificatemanager.Certificate_FromCertificateArn(
+		s.Stack,
+		jsii.String("ImportedGraphQLWSCert"),
+		graphqlWSCertArnParam.StringValue(),
+	)
+
+	streamingWSCertArnParam := awsssm.StringParameter_FromStringParameterName(
+		s.Stack,
+		jsii.String("StreamingWSCertArnParamLookup"),
+		jsii.String(fmt.Sprintf("%s/certificates/streaming-ws-cert-arn", paramPrefix)),
+	)
+	s.StreamingWSCertificate = awscertificatemanager.Certificate_FromCertificateArn(
+		s.Stack,
+		jsii.String("ImportedStreamingWSCert"),
+		streamingWSCertArnParam.StringValue(),
+	)
+
+	authCertArnParam := awsssm.StringParameter_FromStringParameterName(
+		s.Stack,
+		jsii.String("AuthCertArnParamLookup"),
+		jsii.String(fmt.Sprintf("%s/certificates/auth-cert-arn", paramPrefix)),
+	)
+	s.AuthCertificate = awscertificatemanager.Certificate_FromCertificateArn(
+		s.Stack,
+		jsii.String("ImportedAuthCert"),
+		authCertArnParam.StringValue(),
+	)
 }
 
 func (s *LesserApiStack) initHostedZone(domain string, zoneId string) {
@@ -347,6 +456,34 @@ func relativeRecordName(domain string, zone awsroute53.IHostedZone) *string {
 	return jsii.String(domain)
 }
 
+// createAuthUIInfrastructure creates S3 + CloudFront for the passwordless OAuth UI
+func (s *LesserApiStack) createAuthUIInfrastructure(domain string, certificate awscertificatemanager.ICertificate) {
+	authUI := localconstructs.NewAuthUI(s.Stack, jsii.String("AuthUI"), &localconstructs.AuthUIProps{
+		Environment: s.Environment,
+		Domain:      domain,
+		Certificate: certificate,
+	})
+
+	// Create DNS record for auth.{domain}
+	if s.HostedZone != nil && certificate != nil {
+		authDomain := fmt.Sprintf("auth.%s", domain)
+		recordName := relativeRecordName(authDomain, s.HostedZone)
+		target := awsroute53targets.NewCloudFrontTarget(authUI.Distribution)
+
+		awsroute53.NewARecord(s.Stack, jsii.String("AuthUIARecord"), &awsroute53.ARecordProps{
+			Zone:       s.HostedZone,
+			RecordName: recordName,
+			Target:     awsroute53.RecordTarget_FromAlias(target),
+		})
+
+		awsroute53.NewAaaaRecord(s.Stack, jsii.String("AuthUIAAAARecord"), &awsroute53.AaaaRecordProps{
+			Zone:       s.HostedZone,
+			RecordName: recordName,
+			Target:     awsroute53.RecordTarget_FromAlias(target),
+		})
+	}
+}
+
 func (s *LesserApiStack) createStreamingAndMLInfrastructure() {
 	isProd := s.Environment == "production"
 
@@ -536,6 +673,8 @@ func (s *LesserApiStack) createLambdaFunctions() {
 		MediaConvertRoleArn: s.MediaConvertRole.RoleArn(),
 		ModelMetadataTable:  jsii.String(s.ModelMetadataTableName),
 		Config:              s.Configuration,
+		EncryptionRole:      s.LambdaEncryptionRole,
+		BasicRole:           s.LambdaBasicRole,
 	})
 }
 

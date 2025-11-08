@@ -172,10 +172,10 @@ func SendPaginatedMastodonResponse(ctx *lift.Context, data interface{}, params P
 
 // GetBaseURL constructs the base URL for the current request
 func GetBaseURL(ctx *lift.Context) string {
-	scheme := SchemeHTTPS
+	scheme := "https"
 	if ctx.Request != nil && ctx.Request.Request != nil {
-		if ctx.Request.Request.Headers["X-Forwarded-Proto"] == SchemeHTTP {
-			scheme = SchemeHTTP
+		if ctx.Request.Request.Headers["X-Forwarded-Proto"] == "http" {
+			scheme = "http"
 		}
 	}
 

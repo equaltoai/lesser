@@ -224,7 +224,6 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 			Username:  user.Username,
 			Domain:    nil, // Local user
 			CreatedAt: user.CreatedAt,
-			Email:     user.Email,
 			IP:        lastIP,
 			IPs:       ipHistory,
 			Locale:    user.Locale,
@@ -315,7 +314,6 @@ func (h *Handler) HandleAdminGetAccountLift(ctx *lift.Context) error {
 		Username:  user.Username,
 		Domain:    nil, // Local user
 		CreatedAt: user.CreatedAt,
-		Email:     user.Email,
 		IP:        lastIP,
 		IPs:       ipHistory,
 		Locale:    user.Locale,

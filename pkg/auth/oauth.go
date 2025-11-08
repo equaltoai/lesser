@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 )
 
 var (
@@ -47,16 +49,15 @@ const (
 	GrantTypeRefreshToken      = "refresh_token"
 )
 
-// Token expiration times - enhanced security with shorter durations
+// Token expiration times
 const (
-	// Production: Very short access token duration forces regular refresh
-	AccessTokenDuration = 15 * time.Minute
-	// Development: Longer duration for easier testing
-	AccessTokenDurationDev = 1 * time.Hour
+	// Access token duration: 1 hour is reasonable for external client applications
+	// Balances security with usability - clients should use refresh tokens for longer sessions
+	AccessTokenDuration = 1 * time.Hour
 	// Refresh tokens should be rotated regularly
-	RefreshTokenDuration = 7 * 24 * time.Hour // 7 days (reduced from 30)
+	RefreshTokenDuration = 7 * 24 * time.Hour // 7 days
 	// Authorization codes must be very short-lived
-	AuthCodeDuration = 5 * time.Minute // Reduced from 10
+	AuthCodeDuration = 5 * time.Minute
 	// Token family tracking for refresh token rotation
 	RefreshTokenFamilyExpiry = 30 * 24 * time.Hour // 30 days for family tracking
 )
@@ -224,17 +225,11 @@ func (s *OAuthService) generateAccessToken(username, clientID string, scopes []s
 func (s *OAuthService) generateAccessTokenWithContext(username, clientID string, scopes []string, sessionID, deviceID string, tokenVersion int, ipAddress, userAgent string) (string, error) {
 	now := time.Now()
 
-	// Use shorter duration in production environments
-	duration := AccessTokenDuration
-	if s.config.Stage == "development" || s.config.Stage == "test" {
-		duration = AccessTokenDurationDev
-	}
-
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   username,
 			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(duration)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(AccessTokenDuration)),
 			NotBefore: jwt.NewNumericDate(now),
 			// Add unique JTI for token tracking
 			ID: generateSecureJTI(),
@@ -276,6 +271,13 @@ func (s *OAuthService) ValidateAccessTokenWithContext(tokenString, expectedSessi
 		return s.jwtSecret, nil
 	})
 	if err != nil {
+		// Log the actual JWT parsing error for debugging
+		if s.auditLogger != nil && s.auditLogger.logger != nil {
+			s.auditLogger.logger.Warn("JWT token parsing failed",
+				zap.Error(err),
+				zap.String("error_type", fmt.Sprintf("%T", err)),
+			)
+		}
 		return nil, ErrInvalidToken
 	}
 
@@ -287,6 +289,17 @@ func (s *OAuthService) ValidateAccessTokenWithContext(tokenString, expectedSessi
 		return claims, nil
 	}
 
+	// Token is not valid or claims type assertion failed
+	if s.auditLogger != nil && s.auditLogger.logger != nil {
+		claimsOK := false
+		if _, ok := token.Claims.(*Claims); ok {
+			claimsOK = true
+		}
+		s.auditLogger.logger.Warn("JWT token validation failed",
+			zap.Bool("token_valid", token.Valid),
+			zap.Bool("claims_ok", claimsOK),
+		)
+	}
 	return nil, ErrInvalidToken
 }
 

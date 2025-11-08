@@ -17,7 +17,7 @@ import (
 // Session constants - enhanced security
 const (
 	SessionDuration               = 7 * 24 * time.Hour // 7 days (reduced from 30)
-	ShortAccessTokenDuration      = 15 * time.Minute   // 15 minutes
+	ShortAccessTokenDuration      = 1 * time.Hour      // Align with client app expectations
 	RefreshTokenRotationWindow    = 1 * time.Hour      // Reduced grace period (from 24h)
 	MaxSessionsPerUser            = 10                 // Limit concurrent sessions
 	SessionInactivityTimeout      = 24 * time.Hour     // Auto-logout after inactivity

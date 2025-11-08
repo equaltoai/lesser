@@ -235,8 +235,8 @@ func TestErrorPreventsInfoLeak(t *testing.T) {
 		},
 		{
 			name:      "AWS credentials",
-			err:       errors.New("InvalidUserID.NotFound: AWS_ACCESS_KEY_FAKE123"),
-			sensitive: "AWS_ACCESS_KEY_FAKE123",
+			err:       errors.New("InvalidUserID.NotFound: AKIAIOSFODNN7EXAMPLE"),
+			sensitive: "AKIA",
 		},
 	}
 

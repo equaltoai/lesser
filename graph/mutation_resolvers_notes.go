@@ -86,13 +86,28 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	// Handle mentions and tags
 	// These would be parsed from content in the service
 
+	var requestLogger *zap.Logger
+	if r.Logger != nil {
+		requestLogger = r.Logger
+		requestLogger.Info("createNote resolver started",
+			zap.String("user", username),
+			zap.Int("content_length", len(input.Content)))
+	}
+
 	// Create note using service
+	serviceStart := time.Now()
 	result, err := r.Registry.Notes().CreateNote(ctx, cmd)
 	if err != nil {
 		r.Logger.Error("Failed to create note",
 			zap.String("user", username),
 			zap.Error(err))
 		return nil, errors.Join(errors.New("failed to create note"), err)
+	}
+	if requestLogger != nil && result != nil && result.Note != nil {
+		requestLogger.Info("createNote service completed",
+			zap.String("user", username),
+			zap.String("status_id", result.Note.StatusID),
+			zap.Duration("duration", time.Since(serviceStart)))
 	}
 
 	// Track costs
@@ -105,8 +120,17 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 
 	// Build response
 	now := time.Now()
-	return &model.CreateNotePayload{
-		Object: r.convertStatusToObject(ctx, result.Note),
+	convertStart := time.Now()
+	objectModel := r.convertStatusToObject(ctx, result.Note)
+	if requestLogger != nil && result != nil && result.Note != nil {
+		requestLogger.Info("createNote object conversion completed",
+			zap.String("status_id", result.Note.StatusID),
+			zap.Duration("duration", time.Since(convertStart)),
+			zap.Bool("actor_loaded", objectModel != nil && objectModel.Actor != nil))
+	}
+
+	payload := &model.CreateNotePayload{
+		Object: objectModel,
 		Activity: &activitypub.Activity{
 			BaseObject: activitypub.BaseObject{
 				ID:        generateID(),
@@ -121,7 +145,15 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 			DailyTotal:        0.10, // Estimated daily total
 			MonthlyProjection: 3.00, // Estimated monthly projection
 		},
-	}, nil
+	}
+
+	if requestLogger != nil && result != nil && result.Note != nil {
+		requestLogger.Info("createNote resolver completed",
+			zap.String("status_id", result.Note.StatusID),
+			zap.Duration("total_duration", time.Since(serviceStart)))
+	}
+
+	return payload, nil
 }
 
 // DeleteObject is the resolver for the deleteObject field.

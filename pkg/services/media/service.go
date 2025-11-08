@@ -37,7 +37,6 @@ type Service struct {
 	transcoder        *transcoding.Service
 	manifestService   *transcoding.ManifestService
 	cloudfrontService *transcoding.CloudFrontService
-	storageClient     S3Service
 }
 
 // S3Service defines the interface for S3 operations (for abstraction/mocking)
@@ -104,11 +103,6 @@ func (s *Service) SetManifestService(manifestService *transcoding.ManifestServic
 // SetCloudFrontService sets the CloudFront service (optional)
 func (s *Service) SetCloudFrontService(cloudfrontService *transcoding.CloudFrontService) {
 	s.cloudfrontService = cloudfrontService
-}
-
-// SetStorageClient wires the S3 storage client used for media uploads.
-func (s *Service) SetStorageClient(client S3Service) {
-	s.storageClient = client
 }
 
 // SetMaxFileSize sets the maximum allowed file size
@@ -213,33 +207,9 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 	media.S3Bucket = s.s3Bucket
 	media.S3Key = s3Key
 
-	if strings.TrimSpace(s.s3Bucket) == "" {
-		s.logger.Error("media storage bucket not configured")
-		return nil, errors.Join(ErrMediaStorageFailed, errors.New("media storage bucket not configured"))
-	}
-
-	if s.storageClient == nil {
-		s.logger.Error("media storage client not configured",
-			zap.String("media_id", media.MediaID),
-			zap.String("user_id", cmd.UserID))
-		return nil, errors.Join(ErrMediaStorageFailed, errors.New("media storage client not configured"))
-	}
-
-	uploadLocation, err := s.storageClient.UploadFile(ctx, s.s3Bucket, s3Key, cmd.FileData, cmd.ContentType)
-	if err != nil {
-		s.logger.Error("failed to upload media to storage",
-			zap.String("media_id", media.MediaID),
-			zap.String("bucket", s.s3Bucket),
-			zap.String("key", s3Key),
-			zap.Error(err))
-		return nil, errors.Join(ErrMediaStorageFailed, err)
-	}
-
 	// Generate CDN URL
 	if s.cdnDomain != "" {
 		media.CDNUrl = fmt.Sprintf("https://%s/%s", s.cdnDomain, s3Key)
-	} else if uploadLocation != "" {
-		media.CDNUrl = uploadLocation
 	}
 
 	// Analyze media dimensions for images

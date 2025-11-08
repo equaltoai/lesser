@@ -443,15 +443,14 @@ type WalletCredential struct {
 type WalletChallenge struct {
 	ID        string    `json:"id"`
 	Username  string    `json:"username"`
-	Challenge string    `json:"challenge"`
 	Address   string    `json:"address"`
 	ChainID   int       `json:"chain_id"`
 	Nonce     string    `json:"nonce"`
 	Message   string    `json:"message"`
 	IssuedAt  time.Time `json:"issued_at"`
-	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
-	Type      string    `json:"type"` // "registration" or "authentication"
+	Used      bool      `json:"used"`  // Set after first verification (wallet/verify)
+	Spent     bool      `json:"spent"` // Set after second verification (wallet/link)
 }
 
 // WeeklyActivity represents aggregated weekly activity metrics

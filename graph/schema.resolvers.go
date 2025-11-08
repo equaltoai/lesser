@@ -232,7 +232,7 @@ func (r *mutationResolver) UpdateTrust(ctx context.Context, input model.TrustInp
 		Created: time.Now(),
 		Updated: time.Now(),
 	}
-	
+
 	// Note: UpdateKeys() will be called by the repository's UpdateTrustRelationship
 
 	// Get trust repository and update/create the relationship (upsert)
@@ -1097,6 +1097,15 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		return nil
 	}
 
+	var convertLogger *zap.Logger
+	if r.Logger != nil {
+		convertLogger = r.Logger
+		convertLogger.Info("convertStatusToObject started",
+			zap.String("status_id", status.StatusID))
+	}
+
+	start := time.Now()
+
 	var poll *model.Poll
 	if status.StatusID != "" {
 		poll = r.resolvePollForStatus(ctx, status)
@@ -1116,7 +1125,16 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 
 	var actor *activitypub.Actor
 	if status.AuthorUsername != "" {
+		accountStart := time.Now()
 		result, err := r.Registry.Accounts().GetAccount(ctx, status.AuthorUsername)
+		if convertLogger != nil {
+			convertLogger.Info("convertStatusToObject account lookup",
+				zap.String("status_id", status.StatusID),
+				zap.String("author_username", status.AuthorUsername),
+				zap.Duration("duration", time.Since(accountStart)),
+				zap.Bool("found", err == nil && result != nil),
+				zap.Error(err))
+		}
 		if err == nil && result != nil {
 			actor = r.convertAccountToActor(result)
 		}
@@ -1159,7 +1177,15 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		depth := r.getConversionDepth(ctx)
 		if depth < 3 { // Limit to 3 levels of nesting
 			newCtx := r.setConversionDepth(ctx, depth+1)
+			parentLookupStart := time.Now()
 			parentStatus, err := r.Registry.Notes().GetNote(newCtx, status.InReplyToID)
+			if convertLogger != nil {
+				convertLogger.Info("convertStatusToObject parent lookup",
+					zap.String("status_id", status.StatusID),
+					zap.String("in_reply_to", status.InReplyToID),
+					zap.Duration("duration", time.Since(parentLookupStart)),
+					zap.Error(err))
+			}
 			if err == nil && parentStatus != nil {
 				inReplyTo = r.convertStatusToObject(newCtx, parentStatus)
 			}
@@ -1199,7 +1225,15 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 			PageInfo:   &model.PageInfo{HasNextPage: false, HasPreviousPage: false},
 			TotalCount: status.QuoteCount,
 		},
-		EstimatedCost:    1,
+		EstimatedCost: 1,
+	}
+
+	if convertLogger != nil {
+		convertLogger.Info("convertStatusToObject finished",
+			zap.String("status_id", status.StatusID),
+			zap.Duration("duration", time.Since(start)),
+			zap.Bool("actor_loaded", actor != nil),
+			zap.Int("attachment_count", len(attachments)))
 	}
 
 	return obj
@@ -1534,7 +1568,7 @@ func (r *queryResolver) getDomainHealthScore(ctx context.Context, federationRepo
 				zap.Any("panic", rec))
 		}
 	}()
-	
+
 	repo, ok := federationRepo.(interface {
 		GetDomainHealthScore(context.Context, string) (float64, error)
 	})
@@ -1563,7 +1597,7 @@ func (r *queryResolver) getRecentFederationMetrics(ctx context.Context, federati
 				zap.Any("panic", rec))
 		}
 	}()
-	
+
 	repo, ok := federationRepo.(interface {
 		GetDetailedMetricsByPeriod(context.Context, string, time.Time, time.Time, int) ([]*models.FederationAnalyticsTimeSeries, error)
 	})
@@ -1572,7 +1606,7 @@ func (r *queryResolver) getRecentFederationMetrics(ctx context.Context, federati
 			zap.String("domain", domain))
 		return []*models.FederationAnalyticsTimeSeries{}
 	}
-	
+
 	endTime := time.Now()
 	startTime := endTime.Add(-30 * time.Minute) // Last 30 minutes of activity
 
@@ -1633,7 +1667,7 @@ func (r *queryResolver) getInstanceInfo(ctx context.Context, federationRepo inte
 				zap.Any("panic", rec))
 		}
 	}()
-	
+
 	repo, ok := federationRepo.(interface {
 		GetInstanceInfo(context.Context, string) (*models.FederationInstance, error)
 	})
@@ -1642,7 +1676,7 @@ func (r *queryResolver) getInstanceInfo(ctx context.Context, federationRepo inte
 			zap.String("domain", domain))
 		return nil
 	}
-	
+
 	instanceInfo, err := repo.GetInstanceInfo(ctx, domain)
 	if err != nil {
 		r.Logger.Debug("could not get instance information",
@@ -2874,23 +2908,43 @@ func (r *actorResolver) Fields(_ context.Context, obj *activitypub.Actor) ([]*mo
 
 // TrustScore implements ActorResolver
 func (r *actorResolver) TrustScore(ctx context.Context, obj *activitypub.Actor) (float64, error) {
+	var trustLogger *zap.Logger
+	if r.Logger != nil {
+		trustLogger = r.Logger
+		trustLogger.Info("actor trust score resolution started",
+			zap.String("actor", obj.PreferredUsername))
+	}
+	start := time.Now()
+
 	// Get trust score from DataLoader for performance
 	result, err := LoadTrustScore(ctx, obj.PreferredUsername, string(trust.TrustCategoryGeneral))
 	if err != nil {
-		r.Logger.Warn("failed to load trust score, returning default",
-			zap.String("actor", obj.PreferredUsername),
-			zap.Error(err))
+		if trustLogger != nil {
+			trustLogger.Warn("failed to load trust score, returning default",
+				zap.String("actor", obj.PreferredUsername),
+				zap.Duration("duration", time.Since(start)),
+				zap.Error(err))
+		}
 		return 0.5, nil
 	}
 
 	// Cast the result to float64 (should be a trust score)
 	if score, ok := result.(float64); ok {
+		if trustLogger != nil {
+			trustLogger.Info("actor trust score resolution completed",
+				zap.String("actor", obj.PreferredUsername),
+				zap.Duration("duration", time.Since(start)),
+				zap.Float64("score", score))
+		}
 		return score, nil
 	}
 
-	r.Logger.Warn("unexpected trust score type, returning default",
-		zap.String("actor", obj.PreferredUsername),
-		zap.Any("result", result))
+	if trustLogger != nil {
+		trustLogger.Warn("unexpected trust score type, returning default",
+			zap.String("actor", obj.PreferredUsername),
+			zap.Duration("duration", time.Since(start)),
+			zap.Any("result", result))
+	}
 	return 0.5, nil
 }
 

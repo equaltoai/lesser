@@ -93,7 +93,9 @@ func decodeImage(r io.Reader, mimeType string) (image.Image, string, error) {
 		img, err := webp.Decode(r)
 		return img, "webp", err
 	default:
-		return nil, "", fmt.Errorf("unsupported image format: %s", mimeType)
+		// Try generic decoder
+		img, format, err := image.Decode(r)
+		return img, format, err
 	}
 }
 

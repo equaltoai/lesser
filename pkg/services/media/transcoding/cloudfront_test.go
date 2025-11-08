@@ -1,11 +1,6 @@
 package transcoding
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
-	"sync"
 	"testing"
 	"time"
 
@@ -13,32 +8,37 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	testPrivateKeyOnce sync.Once
-	testPrivateKeyPEM  string
-)
-
-func getTestPrivateKeyPEM(t *testing.T) string {
-	t.Helper()
-
-	testPrivateKeyOnce.Do(func() {
-		key, err := rsa.GenerateKey(rand.Reader, 2048)
-		require.NoError(t, err)
-
-		privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(key)
-		require.NoError(t, err)
-
-		pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyBytes})
-		require.NotNil(t, pemBytes)
-		testPrivateKeyPEM = string(pemBytes)
-	})
-
-	return testPrivateKeyPEM
-}
+// Test RSA private key (for testing only - DO NOT use in production)
+const testPrivateKeyPEM = `-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC08X1T53E5Gj8q
+KCgo1mcq0hUyOKKvTN2l2iOwSSPl0kXIekH1wxTU7YbMnfbNrxbvsPuXrMgSQH2p
+DfUn9l6hmsu6J3u1fOAcaM3PvXklzax6gFDUrD+9V/q35T/jCed/jwCmg6Tfhse1
+RCIcYJPt+aWL8I6o9ZIrmkjEK7t19YrcS3W8o7kGcUU/GOE/leq0uSZAArwDbeJa
+o4R8AtcQQjJVWVnaMxQUSv/WIbA2zOE6ZoMXLewHSuo5acUg1YMFHkdNmAtfH8Oy
+SHFuYSUdKlX4BjDs01eoFX4N4Up0fwX7WCFIDyC+ic/qP2jSrjbMBoqPvDG8CW8e
+Ie7znQzzAgMBAAECggEAOCaGl26HnspL1re+eqnKOyoVhM+5gH/weoLet1qDJtMh
+b6ys4mjHAqqxPbc5eyu+COTZtoBaV/umYztfHCcix7CjTyHojHHzlC1bzP9F5JrW
+Tu+Z5d2MLCRsu/uK31hX/Cgy8fmBRRJs0A4ULc00qtFhc7NTehA264wFz8aodlqW
+R9SlBe7T0lCg6XM3cj6/amWSsGhoqqXrDSeyu0axzG4K2pu+jB4ZuppZioxgOQMk
+g5XeZ3r97AbwqnKwDt1mXu6sqDnO3x/BeaFbUN3lZczoI2Gr2T0kuG2fwnhNJKiX
+3PveCIhxr3EjcAXpYkUKsyEwgIer+NC6c3zdnvThfQKBgQDYMzD0kd9vFxkUOE63
++/yeHOkOjKT2TyZvTy9Mh6LnODrRZyra5OnDZvkkUaQ5whIUwt3ikJumcsxtRx1c
+mx1i86a0hFDMlKsdVT+cXR82j4tPyOb+DFjCsQT/E5Efcd6K8R3CfTqBVEntB/k/
+lxWoTs0A0S/u9bEROpvft0ptXwKBgQDWQMQXtq38mFPAZE66iBRCTQR/+fgFBOBX
+i9aA/PKk7WK6vayT17qXvnTuVLpARJCi4Ydn+/B3Ro2ynxCeAAIWQiFPPhXRo3H0
+chVDYdcxLUQERf7z5v419ZsyPIRMTg+xEJ0BogJh007JAhDfaR6vGfd9Rgg8Zjrr
+yS+7hJG07QKBgE2wZ4EbAg0rYamwaikW9bnjbaP6yjRwUMFi1P5NJy6rOAeTaQTr
+iUzcLd7tL3RJ1rF7LLyDdksjqW4DRfvHCZJLN7ZabaZ2Ld8GiSspE1RJ1KfA67CS
+wzqC3ebDIz0HcA7Bgg4nbeSXY1E3sks1gWTPnD8U7IKT6yLjyqtjc+1FAoGAbQ6U
+gfmTwGKNJv4n8Ny5azIm2zmS3IMp6oYcjpWysO7AdYt8n9iMexcQEAyCrZn5AV/I
++84LDbuU/tnmrHYWmdvZdquEkawfoiy71AumbLq8x2wVpXLr7O1yrPSO5wRJCnkJ
+Yj5j9gWIMdriWcX5P2n5RwPxx0TGMyS6LjoBrNUCgYAcLetmHw6QZRb2LoXCVrXQ
+xRSZBkYX9g1/jjo7ve8Uj7hBfwHShE7CMpIf1OsoQtMOIjxB0kkF0BVfaRfgf1P3
+T5ulJ6DfKh1SVZ14CEYkPOTCwjCEOrHW3boBh0RNHwd2EyO8fe0RWkAsvFT8Wu4a
+KlxodPV8adLvfgfi7mgkIg==
+-----END PRIVATE KEY-----`
 
 func TestValidateConfig(t *testing.T) {
-	key := getTestPrivateKeyPEM(t)
-
 	tests := []struct {
 		name        string
 		config      CloudFrontConfig
@@ -50,7 +50,7 @@ func TestValidateConfig(t *testing.T) {
 			config: CloudFrontConfig{
 				Domain:        "d123.cloudfront.net",
 				KeyPairID:     "APKAXXXXXXX",
-				PrivateKeyPEM: key,
+				PrivateKeyPEM: testPrivateKeyPEM,
 				DefaultTTL:    24 * time.Hour,
 			},
 			expectError: false,
@@ -59,7 +59,7 @@ func TestValidateConfig(t *testing.T) {
 			name: "missing domain",
 			config: CloudFrontConfig{
 				KeyPairID:     "APKAXXXXXXX",
-				PrivateKeyPEM: key,
+				PrivateKeyPEM: testPrivateKeyPEM,
 			},
 			expectError: true,
 			errorMsg:    "domain is required",
@@ -68,7 +68,7 @@ func TestValidateConfig(t *testing.T) {
 			name: "missing key pair ID",
 			config: CloudFrontConfig{
 				Domain:        "d123.cloudfront.net",
-				PrivateKeyPEM: key,
+				PrivateKeyPEM: testPrivateKeyPEM,
 			},
 			expectError: true,
 			errorMsg:    "key pair ID is required",
@@ -108,12 +108,10 @@ func TestValidateConfig(t *testing.T) {
 }
 
 func TestNewCloudFrontService(t *testing.T) {
-	key := getTestPrivateKeyPEM(t)
-
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
 		KeyPairID:     "APKAXXXXXXX",
-		PrivateKeyPEM: key,
+		PrivateKeyPEM: testPrivateKeyPEM,
 		DefaultTTL:    12 * time.Hour,
 	}
 
@@ -127,12 +125,10 @@ func TestNewCloudFrontService(t *testing.T) {
 }
 
 func TestNewCloudFrontServiceDefaultTTL(t *testing.T) {
-	key := getTestPrivateKeyPEM(t)
-
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
 		KeyPairID:     "APKAXXXXXXX",
-		PrivateKeyPEM: key,
+		PrivateKeyPEM: testPrivateKeyPEM,
 		// DefaultTTL not set
 	}
 
@@ -142,12 +138,10 @@ func TestNewCloudFrontServiceDefaultTTL(t *testing.T) {
 }
 
 func TestSignURL(t *testing.T) {
-	key := getTestPrivateKeyPEM(t)
-
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
 		KeyPairID:     "APKAXXXXXXX",
-		PrivateKeyPEM: key,
+		PrivateKeyPEM: testPrivateKeyPEM,
 	}
 
 	service, err := NewCloudFrontService(config, nil)
@@ -169,12 +163,10 @@ func TestSignURL(t *testing.T) {
 }
 
 func TestSignStreamingURL(t *testing.T) {
-	key := getTestPrivateKeyPEM(t)
-
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
 		KeyPairID:     "APKAXXXXXXX",
-		PrivateKeyPEM: key,
+		PrivateKeyPEM: testPrivateKeyPEM,
 	}
 
 	service, err := NewCloudFrontService(config, nil)
@@ -238,12 +230,10 @@ func TestSignStreamingURL(t *testing.T) {
 }
 
 func TestSignBatchURLs(t *testing.T) {
-	key := getTestPrivateKeyPEM(t)
-
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
 		KeyPairID:     "APKAXXXXXXX",
-		PrivateKeyPEM: key,
+		PrivateKeyPEM: testPrivateKeyPEM,
 	}
 
 	service, err := NewCloudFrontService(config, nil)
@@ -268,12 +258,10 @@ func TestSignBatchURLs(t *testing.T) {
 }
 
 func TestGetExpirationTime(t *testing.T) {
-	key := getTestPrivateKeyPEM(t)
-
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
 		KeyPairID:     "APKAXXXXXXX",
-		PrivateKeyPEM: key,
+		PrivateKeyPEM: testPrivateKeyPEM,
 		DefaultTTL:    24 * time.Hour,
 	}
 
@@ -334,8 +322,6 @@ func TestMakeURLSafe(t *testing.T) {
 }
 
 func TestParsePrivateKey(t *testing.T) {
-	key := getTestPrivateKeyPEM(t)
-
 	tests := []struct {
 		name        string
 		pemStr      string
@@ -343,7 +329,7 @@ func TestParsePrivateKey(t *testing.T) {
 	}{
 		{
 			name:        "valid key",
-			pemStr:      key,
+			pemStr:      testPrivateKeyPEM,
 			expectError: false,
 		},
 		{

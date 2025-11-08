@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/pay-theory/lift/pkg/lift"
+	"go.uber.org/zap"
 )
 
 // ContextKey is the type for context keys
@@ -163,6 +164,13 @@ func ExtractOptionalAuth(ctx *lift.Context, oauthService OAuthServiceInterface) 
 	token, err := ExtractBearerToken(authHeader)
 	if err != nil {
 		// Invalid token format - return unauthenticated state for optional auth
+		// Log the error for debugging
+		if logger := Logger(); logger != nil {
+			logger.Debug("optional auth: invalid bearer token format",
+				zap.Error(err),
+				zap.String("path", ctx.Request.Path),
+			)
+		}
 		return &AuthenticationResult{
 			Context: &AuthContext{},
 		}
@@ -172,6 +180,18 @@ func ExtractOptionalAuth(ctx *lift.Context, oauthService OAuthServiceInterface) 
 	claims, err := oauthService.ValidateAccessToken(token)
 	if err != nil {
 		// Invalid token - return unauthenticated state for optional auth
+		// Log the error for debugging
+		if logger := Logger(); logger != nil {
+			tokenPreview := token
+			if len(token) > 20 {
+				tokenPreview = token[:20] + "..."
+			}
+			logger.Warn("optional auth: token validation failed",
+				zap.Error(err),
+				zap.String("path", ctx.Request.Path),
+				zap.String("token_preview", tokenPreview),
+			)
+		}
 		return &AuthenticationResult{
 			Context: &AuthContext{},
 		}

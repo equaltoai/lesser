@@ -71,9 +71,18 @@ func notificationMatchesTypes(notification *model.Notification, types []string) 
 
 // getUsernameFromContext extracts username from authentication context
 func getUsernameFromContext(ctx context.Context) string {
-	// Extract claims from context
-	if claims, ok := ctx.Value(common.ContextKeyClaims).(*auth.Claims); ok && claims != nil {
-		return claims.Username
+	// Extract claims from context - try both interface and concrete type
+	if claimsVal := ctx.Value(common.ContextKeyClaims); claimsVal != nil {
+		// Try as common.Claims interface first
+		if claims, ok := claimsVal.(common.Claims); ok && claims != nil {
+			if username := claims.GetUsername(); username != "" {
+				return username
+			}
+		}
+		// Try as concrete *auth.Claims type
+		if claims, ok := claimsVal.(*auth.Claims); ok && claims != nil {
+			return claims.Username
+		}
 	}
 	return ""
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"mime"
-	"net/mail"
 	"strings"
 	"time"
 
@@ -49,7 +48,7 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 	accountsService := h.registry.Accounts()
 	result, err := accountsService.RegisterAccount(ctx.Context, &accounts.RegisterAccountCommand{
 		Username:  req.Username,
-		Email:     req.Email,
+		Email:     "", // Email is forbidden - always empty
 		Password:  req.Password,
 		Locale:    req.Locale,
 		Agreement: req.Agreement,
@@ -59,18 +58,21 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 		if strings.Contains(err.Error(), "username already taken") || strings.Contains(err.Error(), "Username is already taken") {
 			return common.RespondAlreadyExists(ctx, "Username")
 		}
-		if strings.Contains(err.Error(), "validation failed") {
+		if strings.Contains(err.Error(), "validation failed") || strings.Contains(err.Error(), "is required") {
 			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
-		h.logger.Error("failed to register account", zap.Error(err))
-		return common.RespondInternalServerError(ctx)
+		// Log the full error for debugging
+		h.logger.Error("failed to register account", 
+			zap.String("username", req.Username),
+			zap.Error(err))
+		// Return error message instead of generic internal server error
+		return common.RespondUnprocessableEntity(ctx, fmt.Sprintf("registration failed: %v", err))
 	}
 
 	// Return response using common helper
 	resp := models.AccountRegistrationResponse{
 		ID:       result.Actor.ID,
 		Username: result.Account.User.Username,
-		Email:    result.Account.User.Email,
 		Created:  true,
 	}
 
@@ -567,12 +569,7 @@ func (h *Handler) validateRegistrationRequestLift(req models.AccountRegistration
 		return err
 	}
 
-	// Validate email (optional for email-free auth)
-	if req.Email != "" {
-		if _, err := mail.ParseAddress(req.Email); err != nil {
-			return errors.New("invalid email address")
-		}
-	}
+	// Email validation removed - email is forbidden
 
 	// Validate agreement
 	if !req.Agreement {

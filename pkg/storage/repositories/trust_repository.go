@@ -2,12 +2,13 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dmerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -165,11 +166,11 @@ func (r *TrustRepository) UpdateTrustRelationship(ctx context.Context, relations
 	existingSK := fmt.Sprintf("TRUSTEE#%s", relationship.TrusteeID)
 	var existing models.TrustRelationship
 	err := r.Get(ctx, existingPK, existingSK, &existing)
-	
+
 	if err != nil {
 		// Item doesn't exist, create it
 		// Check for NotFound in multiple ways since error format can vary
-		if errors.IsNotFound(err) || 
+		if dmerrors.IsNotFound(err) ||
 			strings.Contains(strings.ToLower(err.Error()), "not found") ||
 			strings.Contains(strings.ToLower(err.Error()), "item not found") {
 			r.logger.Debug("trust relationship does not exist, creating new one",
@@ -183,17 +184,17 @@ func (r *TrustRepository) UpdateTrustRelationship(ctx context.Context, relations
 			zap.Error(err))
 		return err
 	}
-	
+
 	// Item exists, update it using UpdateBuilder
 	r.logger.Debug("trust relationship exists, updating",
 		zap.String("truster", relationship.TrusterID),
 		zap.String("trustee", relationship.TrusteeID))
-	
+
 	updateBuilder := r.db.WithContext(ctx).Model(&models.TrustRelationship{}).
 		Where("PK", "=", existingPK).
 		Where("SK", "=", existingSK).
 		UpdateBuilder()
-	
+
 	updateBuilder.Set("Score", model.Score)
 	updateBuilder.Set("Confidence", model.Confidence)
 	updateBuilder.Set("Evidence", model.Evidence)
@@ -201,17 +202,17 @@ func (r *TrustRepository) UpdateTrustRelationship(ctx context.Context, relations
 	if model.TTL > 0 {
 		updateBuilder.Set("TTL", model.TTL)
 	}
-	
+
 	if err := updateBuilder.Execute(); err != nil {
 		r.logger.Error("failed to update trust relationship", zap.Error(err),
 			zap.String("truster", relationship.TrusterID),
 			zap.String("trustee", relationship.TrusteeID))
 		return err
 	}
-	
+
 	// Invalidate cached trust scores
 	r.invalidateTrustScoreCache(ctx, relationship.TrusteeID, string(relationship.Category))
-	
+
 	return nil
 }
 
@@ -284,7 +285,7 @@ func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trustee
 
 	// Get one more item than requested to determine if there are more results
 	err := query.Limit(limit + 1).Scan(&trustModels)
-	
+
 	// If GSI1 fails, try gsi1-index (lowercase)
 	if err != nil && strings.Contains(err.Error(), "index") {
 		r.logger.Debug("GSI1 query failed, trying gsi1-index", zap.Error(err))
@@ -302,7 +303,7 @@ func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trustee
 	if err != nil {
 		return nil, "", err
 	}
-	
+
 	if len(trustModels) > limit {
 		// We got more results than requested, so there are more pages
 		nextCursor = trustModels[limit-1].GSI1SK
@@ -319,6 +320,11 @@ func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trustee
 
 // GetTrustScore retrieves a cached trust score or calculates it
 func (r *TrustRepository) GetTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error) {
+	start := time.Now()
+	r.logger.Info("trust repository get score started",
+		zap.String("actor", actorID),
+		zap.String("category", category))
+
 	// Try to get cached score first
 	cacheModel := &models.TrustScore{}
 	pk := fmt.Sprintf("SCORE#%s#%s", actorID, category)
@@ -343,7 +349,34 @@ func (r *TrustRepository) GetTrustScore(ctx context.Context, actorID, category s
 			zap.String("category", category))
 	}
 
+	r.logger.Info("trust repository get score completed",
+		zap.String("actor", actorID),
+		zap.String("category", category),
+		zap.Duration("duration", time.Since(start)),
+		zap.Float64("score", score.Score))
+
 	return score, nil
+}
+
+// getCachedTrustScore returns a cached trust score without triggering recalculation.
+func (r *TrustRepository) getCachedTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error) {
+	cacheModel := &models.TrustScore{}
+	pk := fmt.Sprintf("SCORE#%s#%s", actorID, category)
+	sk := "CURRENT"
+
+	err := r.scoreRepo.Get(ctx, pk, sk, cacheModel)
+	if err != nil {
+		if dmerrors.IsNotFound(err) || stdErrors.Is(err, storage.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if cacheModel.CacheTTL.Before(time.Now()) {
+		return nil, nil
+	}
+
+	return r.modelToTrustScore(cacheModel), nil
 }
 
 // UpdateTrustScore updates a cached trust score
@@ -363,6 +396,10 @@ func (r *TrustRepository) UpdateTrustScore(ctx context.Context, score *storage.T
 		CategoryScores:  score.CategoryScores,
 		LastCalculated:  score.LastCalculated,
 		CacheTTL:        score.CacheTTL,
+	}
+
+	if err := model.UpdateKeys(); err != nil {
+		return err
 	}
 
 	return r.scoreRepo.ValidateAndCreate(ctx, model)
@@ -576,8 +613,15 @@ func (r *TrustRepository) expandTrustNetwork(ctx context.Context, current trustN
 	propagatedTrust := 0.0
 
 	// Get the trust score for this node
-	nodeScore, err := r.GetTrustScore(ctx, current.actorID, category)
-	if err != nil || nodeScore.Score < config.minTrustScore {
+	nodeScore, err := r.getCachedTrustScore(ctx, current.actorID, category)
+	if err != nil {
+		r.logger.Debug("failed to get cached trust score for propagation",
+			zap.String("actor", current.actorID),
+			zap.String("category", category),
+			zap.Error(err))
+		return newNodes, propagatedTrust
+	}
+	if nodeScore == nil || nodeScore.Score < config.minTrustScore {
 		return newNodes, propagatedTrust
 	}
 

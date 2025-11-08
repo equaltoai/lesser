@@ -1,16 +1,13 @@
 package lift
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -49,35 +46,25 @@ func (h *Handler) HandleOAuthConsentLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Initialize OAuth session repository
-	oauthSessionRepo := repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger, nil)
-
 	// Get OAuth state from storage
 	authState, err := h.repos.OAuth().GetOAuthState(ctx.Context, state)
 	if err != nil {
-		h.logger.Error("failed to get OAuth state", zap.Error(err))
+		h.logger.Error("failed to get OAuth state",
+			zap.String("state", state),
+			zap.Error(err))
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
 			"error":             "invalid_request",
 			"error_description": "Invalid or expired authorization request",
 		})
 	}
 
-	// Create or get OAuth session for this authorization flow
-	oauthSession, err := h.getOrCreateOAuthSession(ctx.Context, authState, oauthSessionRepo)
-	if err != nil {
-		h.logger.Error("failed to get OAuth session", zap.Error(err))
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
-			"error":             "server_error",
-			"error_description": "Failed to process authorization request",
-		})
-	}
-
 	// Handle user action
+	// Note: We don't create OAuth sessions for client applications - OAuth state is sufficient
 	switch action {
 	case "deny":
-		return h.handleConsentDenial(ctx, authState, oauthSession)
+		return h.handleConsentDenial(ctx, authState)
 	case "approve":
-		return h.handleConsentApproval(ctx, authState, oauthSession, oauthSessionRepo)
+		return h.handleConsentApproval(ctx, authState)
 	default:
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
 			"error":             "invalid_request",
@@ -86,48 +73,8 @@ func (h *Handler) HandleOAuthConsentLift(ctx *lift.Context) error {
 	}
 }
 
-// getOrCreateOAuthSession gets or creates an OAuth session for the authorization flow
-func (h *Handler) getOrCreateOAuthSession(ctx context.Context, authState *storage.OAuthState, repo *repositories.OAuthSessionRepository) (*models.OAuthAuthSession, error) {
-	// Try to get existing session by state
-	session, err := repo.GetOAuthSessionByState(ctx, authState.State)
-	if err == nil {
-		return session, nil
-	}
-
-	// Create new OAuth session
-	clientIP := ""  // Extract from Lambda event context if available
-	userAgent := "" // Extract from Lambda event headers if available
-
-	oauthSession := &models.OAuthAuthSession{
-		ClientID:            authState.ClientID,
-		RedirectURI:         authState.RedirectURI,
-		Scopes:              authState.Scopes,
-		State:               authState.State,
-		CodeChallenge:       authState.CodeChallenge,
-		CodeChallengeMethod: authState.CodeChallengeMethod,
-		Username:            authState.Username,
-		FlowStep:            "consent",
-		IPAddress:           clientIP,
-		UserAgent:           userAgent,
-		IsSecure:            true, // Assume HTTPS in production
-	}
-
-	err = repo.CreateOAuthSession(ctx, oauthSession)
-	if err != nil {
-		return nil, errors.Join(failedToCreateOAuthSession(), err)
-	}
-
-	return oauthSession, nil
-}
-
 // handleConsentDenial handles when the user denies consent
-func (h *Handler) handleConsentDenial(ctx *lift.Context, authState *storage.OAuthState, oauthSession *models.OAuthAuthSession) error {
-	// Update OAuth session to reflect denial
-	oauthSession.SetFlowStep("denied", map[string]interface{}{
-		"denied_at": time.Now(),
-		"reason":    "user_denied",
-	})
-
+func (h *Handler) handleConsentDenial(ctx *lift.Context, authState *storage.OAuthState) error {
 	// Clean up the OAuth state
 	if err := h.repos.OAuth().DeleteOAuthState(ctx.Context, authState.State); err != nil {
 		h.logger.Warn("failed to clean up OAuth state", zap.Error(err))
@@ -150,23 +97,14 @@ func (h *Handler) handleConsentDenial(ctx *lift.Context, authState *storage.OAut
 	}
 	redirectURL.RawQuery = q.Encode()
 
-	ctx.Response.Header("Location", redirectURL.String())
-	ctx.Status(http.StatusFound)
-	return nil
+	ctx.Status(http.StatusOK)
+	return ctx.JSON(map[string]string{
+		"redirect_uri": redirectURL.String(),
+	})
 }
 
 // handleConsentApproval handles when the user approves consent
-func (h *Handler) handleConsentApproval(ctx *lift.Context, authState *storage.OAuthState, oauthSession *models.OAuthAuthSession, repo *repositories.OAuthSessionRepository) error {
-	// Update OAuth session to reflect approval
-	err := repo.AuthorizeOAuthSession(ctx.Context, oauthSession.SessionID)
-	if err != nil {
-		h.logger.Error("failed to authorize OAuth session", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
-			"error":             "server_error",
-			"error_description": "Failed to process authorization",
-		})
-	}
-
+func (h *Handler) handleConsentApproval(ctx *lift.Context, authState *storage.OAuthState) error {
 	// Store user consent for future requests
 	consent := &storage.UserAppConsent{
 		Username:  authState.Username,
@@ -214,13 +152,6 @@ func (h *Handler) handleConsentApproval(ctx *lift.Context, authState *storage.OA
 		h.logger.Warn("failed to clean up OAuth state", zap.Error(err))
 	}
 
-	// Create user session for successful authorization
-	err = h.createUserSessionAfterAuth(ctx.Context, authState.Username, oauthSession)
-	if err != nil {
-		h.logger.Warn("failed to create user session", zap.Error(err))
-		// Non-fatal - continue with OAuth flow
-	}
-
 	// Build redirect URL with authorization code
 	redirectURL, err := url.Parse(authState.RedirectURI)
 	if err != nil {
@@ -237,35 +168,10 @@ func (h *Handler) handleConsentApproval(ctx *lift.Context, authState *storage.OA
 	}
 	redirectURL.RawQuery = q.Encode()
 
-	ctx.Response.Header("Location", redirectURL.String())
-	ctx.Status(http.StatusFound)
-	return nil
-}
-
-// createUserSessionAfterAuth creates a user session after successful OAuth authorization
-func (h *Handler) createUserSessionAfterAuth(ctx context.Context, username string, oauthSession *models.OAuthAuthSession) error {
-	// Create session manager
-	sessionManager := auth.NewSessionManager(h.repos)
-
-	// Create user session
-	session, err := sessionManager.CreateSession(
-		ctx,
-		username,
-		"OAuth Client", // Device name
-		oauthSession.UserAgent,
-		oauthSession.IPAddress,
-		"oauth", // Auth method
-	)
-	if err != nil {
-		return errors.Join(failedToCreateUserSession(), err)
-	}
-
-	h.logger.Debug("created user session after OAuth authorization",
-		zap.String("username", username),
-		zap.String("sessionID", session.SessionID),
-		zap.String("oauthSessionID", oauthSession.SessionID))
-
-	return nil
+	ctx.Status(http.StatusOK)
+	return ctx.JSON(map[string]string{
+		"redirect_uri": redirectURL.String(),
+	})
 }
 
 // HandleOAuthLoginLift handles redirecting users to login during OAuth flow

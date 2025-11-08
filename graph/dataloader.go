@@ -88,16 +88,32 @@ func newTrustScoreLoader(repos core.RepositoryStorage, logger *zap.Logger) *data
 			}
 
 			actorID, category := keyParts[0], keyParts[1]
+			loadStart := time.Now()
+			logger.Info("trust score loader fetching",
+				zap.String("actorID", actorID),
+				zap.String("category", category))
+
 			// Get trust score from storage
 			score, err := repos.Trust().GetTrustScore(ctx, actorID, category)
 			if err != nil {
 				logger.Error("Failed to load trust score",
 					zap.String("actorID", actorID),
 					zap.String("category", category),
+					zap.Duration("duration", time.Since(loadStart)),
 					zap.Error(err))
 				results[i] = &dataloader.Result{Error: err}
+			} else if score == nil {
+				logger.Warn("Trust score loader returned nil score, using neutral default",
+					zap.String("actorID", actorID),
+					zap.String("category", category))
+				results[i] = &dataloader.Result{Data: 0.5}
 			} else {
-				results[i] = &dataloader.Result{Data: score}
+				logger.Info("trust score loader completed",
+					zap.String("actorID", actorID),
+					zap.String("category", category),
+					zap.Duration("duration", time.Since(loadStart)),
+					zap.Float64("score", score.Score))
+				results[i] = &dataloader.Result{Data: score.Score}
 			}
 		}
 

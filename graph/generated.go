@@ -1279,7 +1279,7 @@ type ComplexityRoot struct {
 		Suggestions             func(childComplexity int, limit *int) int
 		SupportedBitrates       func(childComplexity int, mediaID string) int
 		ThreadContext           func(childComplexity int, noteID string) int
-		Timeline                func(childComplexity int, typeArg model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor, mediaOnly *bool) int
+		Timeline                func(childComplexity int, typeArg model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool) int
 		TrustGraph              func(childComplexity int, actorID string, category *models.TrustCategory) int
 		UserPreferences         func(childComplexity int) int
 	}
@@ -1864,7 +1864,7 @@ type MutationResolver interface {
 type QueryResolver interface {
 	Actor(ctx context.Context, id *string, username *string) (*activitypub.Actor, error)
 	Object(ctx context.Context, id string) (*model.Object, error)
-	Timeline(ctx context.Context, typeArg model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor, mediaOnly *bool) (*model.ObjectConnection, error)
+	Timeline(ctx context.Context, typeArg model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool) (*model.ObjectConnection, error)
 	Search(ctx context.Context, query string, typeArg *string, first *int, after *model.Cursor) (*model.SearchResult, error)
 	Notifications(ctx context.Context, types []string, excludeTypes []string, first *int, after *model.Cursor) (*model.NotificationConnection, error)
 	Conversations(ctx context.Context, first *int, after *model.Cursor) ([]*model.Conversation, error)
@@ -8432,7 +8432,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.Timeline(childComplexity, args["type"].(model.TimelineType), args["hashtag"].(*string), args["listId"].(*string), args["first"].(*int), args["after"].(*model.Cursor), args["mediaOnly"].(*bool)), true
+		return e.complexity.Query.Timeline(childComplexity, args["type"].(model.TimelineType), args["hashtag"].(*string), args["listId"].(*string), args["actorId"].(*string), args["first"].(*int), args["after"].(*model.Cursor), args["mediaOnly"].(*bool)), true
 
 	case "Query.trustGraph":
 		if e.complexity.Query.TrustGraph == nil {
@@ -12387,21 +12387,26 @@ func (ec *executionContext) field_Query_timeline_args(ctx context.Context, rawAr
 		return nil, err
 	}
 	args["listId"] = arg2
-	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "actorId", ec.unmarshalOID2ᚖstring)
 	if err != nil {
 		return nil, err
 	}
-	args["first"] = arg3
-	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	args["actorId"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
 	if err != nil {
 		return nil, err
 	}
-	args["after"] = arg4
-	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "mediaOnly", ec.unmarshalOBoolean2ᚖbool)
+	args["first"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
 	if err != nil {
 		return nil, err
 	}
-	args["mediaOnly"] = arg5
+	args["after"] = arg5
+	arg6, err := graphql.ProcessArgField(ctx, rawArgs, "mediaOnly", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["mediaOnly"] = arg6
 	return args, nil
 }
 
@@ -50887,7 +50892,7 @@ func (ec *executionContext) _Query_timeline(ctx context.Context, field graphql.C
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Timeline(rctx, fc.Args["type"].(model.TimelineType), fc.Args["hashtag"].(*string), fc.Args["listId"].(*string), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor), fc.Args["mediaOnly"].(*bool))
+		return ec.resolvers.Query().Timeline(rctx, fc.Args["type"].(model.TimelineType), fc.Args["hashtag"].(*string), fc.Args["listId"].(*string), fc.Args["actorId"].(*string), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor), fc.Args["mediaOnly"].(*bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)

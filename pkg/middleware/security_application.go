@@ -52,7 +52,7 @@ func applyAPISecurityMiddleware(app *lift.App, logger *zap.Logger) {
 	app.Use(createLiftSecurityMiddleware(securityConfig, logger))
 
 	// Apply body size limits for API endpoints
-	app.Use(createLiftBodyLimitMiddleware(100*1024*1024, logger)) // 100MB
+	app.Use(createLiftBodyLimitMiddleware(512*1024, logger)) // 512KB
 
 	logger.Info("applied API security middleware")
 }
@@ -136,7 +136,7 @@ func handlePreflightRequest(ctx *lift.Context, config *CORSConfig, allowed, useW
 		if useWildcard {
 			ctx.Response.Header("Access-Control-Allow-Origin", "*")
 		} else if origin != "" {
-			ctx.Response.Header("Access-control-Allow-Origin", origin)
+			ctx.Response.Header("Access-Control-Allow-Origin", origin)
 		}
 	}
 
@@ -164,7 +164,12 @@ func setActualRequestHeaders(ctx *lift.Context, config *CORSConfig, allowed, use
 	}
 
 	if len(config.ExposedHeaders) > 0 {
-		ctx.Response.Header("Access-Control-Expose-Headers", strings.Join(config.ExposedHeaders, ", "))
+		exposedHeaders := strings.Join(config.ExposedHeaders, ", ")
+		ctx.Response.Header("Access-Control-Expose-Headers", exposedHeaders)
+		// Debug: log exposed headers for OAuth endpoints
+		if strings.Contains(ctx.Request.Path, "/oauth/") {
+			ctx.Set("_cors_exposed_headers", exposedHeaders)
+		}
 	}
 
 	if config.AllowCredentials {

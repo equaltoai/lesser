@@ -169,22 +169,6 @@ type Registry struct {
 	awsConfigCacheMu sync.Mutex
 }
 
-type mediaS3Adapter struct {
-	client *AWSS3StorageClient
-}
-
-func (a *mediaS3Adapter) UploadFile(ctx context.Context, bucket, key string, data []byte, contentType string) (string, error) {
-	return a.client.UploadFileWithContentType(ctx, bucket, key, data, contentType)
-}
-
-func (a *mediaS3Adapter) DeleteFile(ctx context.Context, bucket, key string) error {
-	return a.client.DeleteFileFromBucket(ctx, bucket, key)
-}
-
-func (a *mediaS3Adapter) GeneratePresignedURL(ctx context.Context, bucket, key string, expiry time.Duration) (string, error) {
-	return a.client.GeneratePresignedURLForBucket(ctx, bucket, key, expiry)
-}
-
 // RegistryOption defines functional options for Registry configuration
 type RegistryOption func(*Registry) error
 
@@ -876,6 +860,19 @@ func (r *Registry) Accounts() *accounts.Service {
 		// Create federation adapter using unlocked helper to avoid deadlock
 		federationAdapter := r.createAccountsFederationAdapterUnlocked()
 
+		// Extract domain from base URL (same pattern as Notes and Relationships services)
+		domainName := DefaultLocalhost
+		if r.config != nil && r.config.BaseURL != "" {
+			// Extract domain from base URL
+			if strings.HasPrefix(r.config.BaseURL, "https://") {
+				domainName = strings.TrimPrefix(r.config.BaseURL, "https://")
+			} else if strings.HasPrefix(r.config.BaseURL, "http://") {
+				domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
+			} else {
+				domainName = r.config.BaseURL
+			}
+		}
+
 		r.accountsService = accounts.NewService(
 			r.storage,
 			r.publisher,
@@ -883,7 +880,7 @@ func (r *Registry) Accounts() *accounts.Service {
 			cryptoAdapter,
 			authAdapter,
 			r.logger,
-			r.config.BaseURL,
+			domainName,
 		)
 		r.initialized["Accounts"] = true
 		if r.logger != nil {
@@ -1000,15 +997,6 @@ func (r *Registry) Media() *media.Service {
 				sourceBucket,
 				cdnDomain,
 			)
-
-			if storageClient, storageErr := NewAWSS3StorageClient(context.Background(), r.logger); storageErr != nil {
-				if r.logger != nil {
-					r.logger.Warn("failed to initialize media storage client",
-						zap.Error(storageErr))
-				}
-			} else {
-				r.mediaService.SetStorageClient(&mediaS3Adapter{client: storageClient})
-			}
 
 			// Wire up optional streaming services if config is available
 			r.wireMediaStreamingServices(r.mediaService)

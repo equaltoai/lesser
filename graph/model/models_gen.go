@@ -3874,6 +3874,7 @@ const (
 	TimelineTypeHashtag TimelineType = "HASHTAG"
 	TimelineTypeList    TimelineType = "LIST"
 	TimelineTypeDirect  TimelineType = "DIRECT"
+	TimelineTypeActor   TimelineType = "ACTOR"
 )
 
 var AllTimelineType = []TimelineType{
@@ -3883,11 +3884,12 @@ var AllTimelineType = []TimelineType{
 	TimelineTypeHashtag,
 	TimelineTypeList,
 	TimelineTypeDirect,
+	TimelineTypeActor,
 }
 
 func (e TimelineType) IsValid() bool {
 	switch e {
-	case TimelineTypeHome, TimelineTypePublic, TimelineTypeLocal, TimelineTypeHashtag, TimelineTypeList, TimelineTypeDirect:
+	case TimelineTypeHome, TimelineTypePublic, TimelineTypeLocal, TimelineTypeHashtag, TimelineTypeList, TimelineTypeDirect, TimelineTypeActor:
 		return true
 	}
 	return false

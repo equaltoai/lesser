@@ -18,6 +18,7 @@ var (
 	ErrEitherIDOrUsernameRequired = errors.NewValidationError("identifier", "either id or username must be provided")
 	ErrHashtagParameterRequired   = errors.NewValidationError("hashtag", "parameter required for hashtag timeline")
 	ErrListIDParameterRequired    = errors.NewValidationError("listId", "parameter required for list timeline")
+	ErrActorIDParameterRequired   = errors.NewValidationError("actorId", "parameter required for ACTOR timeline")
 	ErrTrusteeIDRequired          = errors.NewValidationError("trustee_id", "required")
 	ErrObjectIDRequired           = errors.NewValidationError("objectId", "required")
 	ErrReasonRequired             = errors.NewValidationError("reason", "required")

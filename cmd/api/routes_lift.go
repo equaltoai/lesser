@@ -13,13 +13,47 @@ func configureLiftRoutes(app *lift.App) {
 	// OAuth app registration (public, no auth required)
 	_ = app.POST("/api/v1/apps", lift.HandlerFunc(liftHandler.HandleAppRegistrationLift))
 
+	// Wallet authentication endpoints (public, for passwordless login)
+	_ = app.POST("/auth/wallet/challenge", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleCreateChallengeLift),
+		20, 5*time.Minute, logger))
+	_ = app.POST("/auth/wallet/verify", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleVerifySignatureLift),
+		20, 5*time.Minute, logger))
+	_ = app.POST("/auth/wallet/login", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleLoginWalletLift),
+		20, 5*time.Minute, logger))
+	_ = app.POST("/auth/wallet/link", lift.HandlerFunc(liftHandler.HandleLinkWalletLift))
+	_ = app.DELETE("/auth/wallet/unlink/{address}", lift.HandlerFunc(liftHandler.HandleUnlinkWalletLift))
+	_ = app.GET("/auth/wallet/list", lift.HandlerFunc(liftHandler.HandleGetWalletsLift))
+	
+	// OPTIONS handlers for CORS preflight (CORS headers set by middleware)
+	optionsHandler := func(ctx *lift.Context) error {
+		// CORS headers are set by middleware, just return 200
+		return ctx.Status(200).JSON(map[string]string{"message": "OK"})
+	}
+	_ = app.Handle("OPTIONS", "/auth/wallet/challenge", optionsHandler)
+	_ = app.Handle("OPTIONS", "/auth/wallet/verify", optionsHandler)
+	_ = app.Handle("OPTIONS", "/auth/wallet/login", optionsHandler)
+	_ = app.Handle("OPTIONS", "/auth/wallet/link", optionsHandler)
+	_ = app.Handle("OPTIONS", "/auth/wallet/unlink/{address}", optionsHandler)
+	_ = app.Handle("OPTIONS", "/auth/wallet/list", optionsHandler)
+
 	// OAuth endpoints with native Lift implementation + rate limiting
 	_ = app.GET("/oauth/authorize", ratelimit.ApplyRateLimit(
 		lift.HandlerFunc(liftHandler.HandleOAuthAuthorizeLift),
 		20, 5*time.Minute, logger))
+	_ = app.POST("/oauth/consent", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleOAuthConsentLift),
+		20, 5*time.Minute, logger))
 	_ = app.POST("/oauth/token", ratelimit.ApplyRateLimit(
 		lift.HandlerFunc(liftHandler.HandleOAuthTokenLift),
 		10, time.Minute, logger))
+	
+	// OPTIONS handlers for OAuth endpoints (CORS preflight)
+	_ = app.Handle("OPTIONS", "/oauth/authorize", optionsHandler)
+	_ = app.Handle("OPTIONS", "/oauth/consent", optionsHandler)
+	_ = app.Handle("OPTIONS", "/oauth/token", optionsHandler)
 
 	// NodeInfo endpoints with native Lift implementation
 	_ = app.GET("/.well-known/nodeinfo", lift.HandlerFunc(liftHandler.HandleNodeInfoWellKnownLift))
@@ -36,6 +70,11 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.POST("/api/v1/accounts", ratelimit.ApplyRateLimit(
 		lift.HandlerFunc(liftHandler.HandleRegistrationLift),
 		10, time.Hour, logger))
+	
+	// OPTIONS handlers for account endpoints (CORS preflight)
+	_ = app.Handle("OPTIONS", "/api/v1/accounts", optionsHandler)
+	_ = app.Handle("OPTIONS", "/api/v1/accounts/verify_credentials", optionsHandler)
+	_ = app.Handle("OPTIONS", "/api/v1/accounts/update_credentials", optionsHandler)
 
 	// Relationships endpoint with native Lift implementation
 	_ = app.GET("/api/v1/accounts/relationships", lift.HandlerFunc(liftHandler.HandleGetRelationshipsLift))
