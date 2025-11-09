@@ -1268,9 +1268,12 @@ func (r *Resolver) resolveQuoteMetadata(ctx context.Context, status *models.Stat
 		return nil, nil
 	}
 
-	var targetStatus *models.Status
-	lookupStart := time.Now()
-	var err error
+	var (
+		targetStatus *models.Status
+		lookupStart  = time.Now()
+		err          error
+	)
+
 	targetStatus, err = r.loadQuoteTargetStatus(ctx, status.QuoteTargetStatusID)
 	if err != nil && r.Logger != nil {
 		r.Logger.Warn("failed to resolve quote target",
@@ -1281,15 +1284,22 @@ func (r *Resolver) resolveQuoteMetadata(ctx context.Context, status *models.Stat
 	}
 
 	originalAuthor := status.QuoteTargetAuthorID
+	originalAuthorUsername := ""
 	if targetStatus != nil {
 		if targetStatus.AuthorID != "" {
 			originalAuthor = targetStatus.AuthorID
 		} else if targetStatus.AuthorUsername != "" && originalAuthor == "" {
 			originalAuthor = targetStatus.AuthorUsername
 		}
+		if targetStatus.AuthorUsername != "" {
+			originalAuthorUsername = targetStatus.AuthorUsername
+		}
 	}
 	if originalAuthor == "" {
 		originalAuthor = status.QuoteTargetStatusID
+	}
+	if originalAuthorUsername == "" {
+		originalAuthorUsername = extractUsernameFromActorIdentifier(originalAuthor)
 	}
 
 	quoteCount := 0
@@ -1310,17 +1320,42 @@ func (r *Resolver) resolveQuoteMetadata(ctx context.Context, status *models.Stat
 		quoteURL = &quoteURLValue
 	}
 
-	quoteContext := &activitypub.QuoteContext{
-		OriginalNoteID:  status.QuoteTargetStatusID,
-		OriginalAuthor:  originalAuthor,
-		QuoteCount:      quoteCount,
-		AllowWithdrawal: true,
+	quoteAllowed := true
+	withdrawn := false
+	if targetStatus != nil && targetStatus.Deleted {
+		withdrawn = true
+		quoteAllowed = false
 	}
 
+	quoteContext := &activitypub.QuoteContext{
+		OriginalNoteID:         status.QuoteTargetStatusID,
+		OriginalAuthor:         originalAuthor,
+		OriginalAuthorUsername: originalAuthorUsername,
+		QuoteCount:             quoteCount,
+		AllowWithdrawal:        true,
+		QuoteAllowed:           quoteAllowed,
+		Withdrawn:              withdrawn,
+		OriginalStatus:         targetStatus,
+	}
+
+	if r.Logger != nil {
+		url := ""
+		if quoteURL != nil {
+			url = *quoteURL
+		}
+		r.Logger.Debug("resolved quote metadata",
+			zap.String("status_id", status.StatusID),
+			zap.String("target_status_id", status.QuoteTargetStatusID),
+			zap.String("quote_url", url),
+			zap.Int("quote_count", quoteContext.QuoteCount),
+			zap.Bool("quote_allowed", quoteContext.QuoteAllowed),
+			zap.Bool("withdrawn", quoteContext.Withdrawn))
+	}
 	return quoteURL, quoteContext
 }
 
 var quoteTargetStatusLoaderFunc = LoadQuoteTargetStatus
+var actorLoaderFunc = LoadActor
 
 func (r *Resolver) loadQuoteTargetStatus(ctx context.Context, statusID string) (*models.Status, error) {
 	if statusID == "" {
@@ -3586,32 +3621,55 @@ func (r *moderationPatternResolver) CreatedBy(_ context.Context, _ *moderation.M
 // ====================================================================
 
 // OriginalAuthor implements QuoteContextResolver
-func (r *quoteContextResolver) OriginalAuthor(_ context.Context, obj *activitypub.QuoteContext) (*activitypub.Actor, error) {
-	// Create minimal actor from OriginalAuthor field
-	if obj.OriginalAuthor != "" {
-		return &activitypub.Actor{
-			PreferredUsername: obj.OriginalAuthor,
-		}, nil
+func (r *quoteContextResolver) OriginalAuthor(ctx context.Context, obj *activitypub.QuoteContext) (*activitypub.Actor, error) {
+	if obj == nil {
+		return nil, nil
 	}
-	return nil, nil
+
+	candidates := r.collectQuoteAuthorCandidates(obj)
+	for _, candidate := range candidates {
+		actor, err := r.loadQuoteAuthor(ctx, candidate)
+		if err != nil {
+			if r.Logger != nil {
+				r.Logger.Debug("quote context author lookup failed",
+					zap.String("candidate", candidate),
+					zap.Error(err))
+			}
+			continue
+		}
+		if actor != nil {
+			return actor, nil
+		}
+	}
+
+	if obj.OriginalAuthor == "" {
+		return nil, nil
+	}
+	return r.fallbackQuoteAuthorActor(obj.OriginalAuthor), nil
 }
 
 // OriginalNote implements QuoteContextResolver
 func (r *quoteContextResolver) OriginalNote(ctx context.Context, obj *activitypub.QuoteContext) (*model.Object, error) {
-	if err := common.ValidateRequiredParam("originalNoteID", obj.OriginalNoteID); err != nil {
+	if obj == nil || obj.Withdrawn || obj.OriginalNoteID == "" {
 		return nil, nil
 	}
 
-	// Get object using notes service
-	note, err := r.Registry.Notes().GetNote(ctx, obj.OriginalNoteID)
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+	if cached, ok := obj.OriginalStatus.(*models.Status); ok && cached != nil {
+		if cached.Deleted {
 			return nil, nil
 		}
+		return r.convertStatusToObject(ctx, cached), nil
+	}
+
+	note, err := r.loadQuoteTargetStatus(ctx, obj.OriginalNoteID)
+	if err != nil {
 		r.Logger.Error("Failed to get original note for quote context",
 			zap.String("note_id", obj.OriginalNoteID),
 			zap.Error(err))
 		return nil, errors.Join(errors.New("failed to get original note"), err)
+	}
+	if note == nil || note.Deleted {
+		return nil, nil
 	}
 
 	return r.convertStatusToObject(ctx, note), nil
@@ -3619,9 +3677,10 @@ func (r *quoteContextResolver) OriginalNote(ctx context.Context, obj *activitypu
 
 // QuoteAllowed implements QuoteContextResolver
 func (r *quoteContextResolver) QuoteAllowed(_ context.Context, obj *activitypub.QuoteContext) (bool, error) {
-	// QuoteAllowed is always true unless explicitly disabled by withdrawal
-	// Check if withdrawal is allowed and the quote is not withdrawn
-	return !obj.AllowWithdrawal || obj.QuoteCount > 0, nil
+	if obj == nil {
+		return true, nil
+	}
+	return obj.QuoteAllowed, nil
 }
 
 // QuoteType implements QuoteContextResolver
@@ -3638,9 +3697,75 @@ func (r *quoteContextResolver) QuoteType(_ context.Context, obj *activitypub.Quo
 
 // Withdrawn implements QuoteContextResolver
 func (r *quoteContextResolver) Withdrawn(_ context.Context, obj *activitypub.QuoteContext) (bool, error) {
-	// A quote is considered withdrawn if withdrawal is allowed and quote count is 0
-	// This indicates the original author has withdrawn permission to quote
-	return obj.AllowWithdrawal && obj.QuoteCount == 0, nil
+	if obj == nil {
+		return false, nil
+	}
+	return obj.Withdrawn, nil
+}
+
+func (r *quoteContextResolver) collectQuoteAuthorCandidates(obj *activitypub.QuoteContext) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, 3)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+
+	add(obj.OriginalAuthorUsername)
+	add(extractUsernameFromActorIdentifier(obj.OriginalAuthor))
+	add(obj.OriginalAuthor)
+	return result
+}
+
+func (r *quoteContextResolver) loadQuoteAuthor(ctx context.Context, username string) (*activitypub.Actor, error) {
+	if username == "" {
+		return nil, nil
+	}
+
+	if actorLoaderFunc != nil {
+		actor, err := actorLoaderFunc(ctx, username)
+		switch {
+		case err == nil && actor != nil:
+			return actor, nil
+		case err != nil:
+			var notFound common.ActorNotFoundError
+			if errors.Is(err, errLoadersNotFound) || errors.As(err, &notFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+	}
+
+	return nil, nil
+}
+
+func (r *quoteContextResolver) fallbackQuoteAuthorActor(identifier string) *activitypub.Actor {
+	username := extractUsernameFromActorIdentifier(identifier)
+	if username == "" {
+		username = identifier
+	}
+
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			Type: activitypub.PersonType,
+			ID:   identifier,
+		},
+		PreferredUsername: username,
+		Name:              username,
+	}
+
+	if identifier != "" && strings.Contains(identifier, "://") {
+		actor.URL = identifier
+	}
+
+	return actor
 }
 
 // ====================================================================

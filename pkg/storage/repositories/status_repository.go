@@ -319,6 +319,10 @@ func (r *StatusRepository) UpdateStatus(ctx context.Context, status *models.Stat
 		updateBuilder.Set("CcRecipients", status.CcRecipients)
 	}
 
+	// Update quote reference metadata so quote posts resolve correctly
+	updateBuilder.Set("QuoteTargetStatusID", status.QuoteTargetStatusID)
+	updateBuilder.Set("QuoteTargetAuthorID", status.QuoteTargetAuthorID)
+
 	// Only update Note field if it's explicitly provided and valid
 	// This prevents corruption from nil or partially-loaded Note fields
 	if status.Note != nil && status.Note.Get() != nil {

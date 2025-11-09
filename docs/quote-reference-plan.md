@@ -12,6 +12,7 @@
 - Status rows now include `QuoteTargetStatusID`/`QuoteTargetAuthorID`, so every quote keeps a canonical pointer to the original.
 - The quote service (`pkg/services/quotes/quote_service.go`) writes these references via `setQuoteReference` and no longer mutates the serialized `activitypub.Note`.
 - GraphQL (`graph/schema.resolvers.go`) derives `quoteUrl`/`quoteContext` by following the stored reference at read time, so no fallbacks or embedded metadata remain.
+- Quote metadata assembly now defaults `quoteAllowed` to true (unless the source status was deleted), marks `withdrawn` only when the original post is gone/denied, hydrates `quoteContext.originalAuthor` via the actor loader so display names/avatars populate, and reuses the same cached status to serve `quoteContext.originalNote` for inline previews.
 - Quote target lookups are always routed through the per-request `QuoteTargetLoader`, and each GraphQL request logs cache hits/misses so we can spot contexts that fail to attach loaders.
 - `NoteField` is once again purely responsible for ActivityPub serialization; the note payload stays quote-free except for federation-only knobs like `quoteable`.
 
@@ -59,11 +60,11 @@
 4. ✅ Loader contexts are attached for GraphQL and REST bridges, and we emit metrics for cache hits vs. misses so operational dashboards can catch regressions.
 
 ### Phase 3 – Migration / Data Hygiene
-1. Write an admin script (Go or Python) that:
+1. ✅ Write an admin script (Go or Python) that:
    - Scans the `lesser-<env>` table for statuses where `Note.note.quoteUrl` exists.
    - Writes the referenced status ID into `QuoteTargetStatusID` and removes the embedded `note.quote*` fields.
-2. Run the script in each environment (or wipe/reseed dev as we’ve been doing).
-3. After verification, remove the temporary fallback code from the resolver/unmarshaler so only the new reference path remains.
+2. ✅ Run the script in each environment (or wipe/reseed dev as we’ve been doing).
+3. ✅ After verification, remove the temporary fallback code from the resolver/unmarshaler so only the new reference path remains. GraphQL now exclusively populates `quoteUrl`/`quoteContext` from live references (including permissions metadata) so timelines stay accurate.
 
 ### Phase 4 – Tests & Validation
 1. Unit tests covering:
