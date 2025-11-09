@@ -288,7 +288,7 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 
 	// Determine pagination info
 	hasNextPage := nextCursor != ""
-	hasPreviousPage := cursor != ""
+	hasPreviousPage := false
 
 	var startCursor, endCursor *model.Cursor
 	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {

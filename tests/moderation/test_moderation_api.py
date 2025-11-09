@@ -4,10 +4,8 @@ Test script for Lesser moderation API endpoints
 """
 
 import requests
-import json
 import sys
-import time
-from typing import Dict, Any
+from typing import Dict
 
 # Configuration
 BASE_URL = "https://api.staging.lesser.aron23.com"

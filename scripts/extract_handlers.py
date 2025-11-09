@@ -2,7 +2,6 @@
 """Extract and organize handlers from the main.go file"""
 
 import re
-import os
 
 # Define handler groups
 HANDLER_GROUPS = {

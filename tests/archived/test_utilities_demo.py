@@ -6,7 +6,6 @@ Demonstrates usage of test data generator, federation harness, and performance b
 
 import asyncio
 import json
-import sys
 from test_data_generator import LesserTestDataGenerator
 from federation_test_harness import FederationTestHarness
 from performance_benchmark import LesserPerformanceBenchmark
@@ -104,6 +103,7 @@ def demo_performance_benchmark():
     
     # Initialize benchmark
     benchmark = LesserPerformanceBenchmark(base_url)
+    print(f"Using benchmark harness: {benchmark.__class__.__name__}")
     
     # Demonstrate benchmark configuration
     print("\n1. Available benchmark types:")

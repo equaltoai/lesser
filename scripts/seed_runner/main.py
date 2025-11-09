@@ -4,7 +4,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, List
 
 import jwt
 import requests

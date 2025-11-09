@@ -3,11 +3,7 @@
 Fixed version of the test script with better error handling
 """
 
-from mastodon import Mastodon
-import time
-import sys
 import requests
-from datetime import datetime
 
 # Your lesser instance
 INSTANCE_URL = 'https://lesser.host'
@@ -57,7 +53,7 @@ def test_search(mastodon):
         except TypeError:
             try:
                 results = mastodon.search(q='test', resolve=True, version=2)
-            except:
+            except Exception as legacy_err:
                 # Fall back to raw request
                 response = requests.get(
                     f"{INSTANCE_URL}/api/v2/search",
@@ -67,9 +63,16 @@ def test_search(mastodon):
                 if response.status_code == 200:
                     results = response.json()
                 else:
-                    raise Exception(f"Status {response.status_code}")
+                    raise RuntimeError(f"Status {response.status_code}") from legacy_err
                     
-        log_test(True, "GET /api/v2/search?resolve=true", "Search with resolve")
+        accounts = len(results.get('accounts', []))
+        statuses = len(results.get('statuses', []))
+        hashtags = len(results.get('hashtags', []))
+        log_test(
+            True,
+            "GET /api/v2/search?resolve=true",
+            f"Accounts: {accounts}, Statuses: {statuses}, Hashtags: {hashtags}",
+        )
     except Exception as e:
         log_test(False, "GET /api/v2/search?resolve=true", str(e))
 

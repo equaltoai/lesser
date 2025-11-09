@@ -6,7 +6,6 @@ Tests VAPID key generation, subscription management, and notification delivery.
 
 import argparse
 import requests
-import json
 import sys
 import base64
 import os

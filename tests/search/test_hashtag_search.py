@@ -2,9 +2,8 @@
 """Test hashtag search implementation."""
 
 import requests
-import json
 import time
-from typing import Dict, Any
+from typing import Dict
 
 # Test configuration
 BASE_URL = "https://lab.lesser.aronprice.com/api/v1"

@@ -10,7 +10,7 @@ import json
 import subprocess
 from pathlib import Path
 import requests
-from typing import Dict, Optional, Any
+from typing import Dict, Optional
 import jwt
 
 GRAPHQL_ENDPOINT = os.getenv("GRAPHQL_ENDPOINT", "https://dev.lesser.host/api/graphql")
@@ -725,20 +725,25 @@ def main():
     
     if original_post_id:
         # Get the post URL for quoting
+        quote_url = f"https://dev.lesser.host/objects/{original_post_id}"
         get_post_result = validator.test("Get Object (for quote URL)", f"""
             query {{
                 object(id: "{original_post_id}") {{
                     id
+                    url
                 }}
             }}
         """)
+        if get_post_result.success and get_post_result.data:
+            post_info = get_post_result.data.get("object", {})
+            quote_url = post_info.get("url") or quote_url
         
         # Quote the post
         quote_result = validator.test("Create Quote Note", f"""
             mutation {{
                 createQuoteNote(input: {{
                     content: "Quoting this post for validation"
-                    quoteUrl: "https://dev.lesser.host/objects/{original_post_id}"
+                    quoteUrl: "{quote_url}"
                     quoteType: COMMENTARY
                     visibility: PUBLIC
                 }}) {{
@@ -827,6 +832,10 @@ def main():
             }
         }
     """)
+    hashtag_post_id = None
+    if hashtag_post_result.success and hashtag_post_result.data:
+        hashtag_post = hashtag_post_result.data.get("createNote", {}).get("object", {})
+        hashtag_post_id = hashtag_post.get("id")
     
     validator.test("Get Hashtag", """
         query {
@@ -932,6 +941,13 @@ def main():
             }
         }
     """)
+    
+    if hashtag_post_id:
+        validator.test("Delete Hashtag Test Post", f"""
+            mutation {{
+                deleteObject(id: "{hashtag_post_id}")
+            }}
+        """)
     
     # ===== THREAD SYNCHRONIZATION =====
     print("\n--- Thread Synchronization ---")
@@ -1339,4 +1355,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

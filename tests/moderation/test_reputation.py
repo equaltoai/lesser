@@ -15,7 +15,6 @@ import requests
 import json
 import sys
 import time
-from datetime import datetime
 
 # Configuration
 BASE_URL = "https://lab.lesser.social"
@@ -276,12 +275,16 @@ def run_all_tests():
     
     # Test 1: Get reputation
     reputation = test_get_reputation()
+    if reputation:
+        print(f"   Summary: Total {reputation.get('total_score', 'n/a')} / 1000")
     
     # Test 2: Create vouch
     vouch = test_create_vouch()
     
     # Test 3: Get vouches
     vouches = test_get_vouches()
+    if vouches is not None:
+        print(f"   Retrieved {len(vouches)} vouches for actor {ACTOR2}")
     
     # Test 4: Export reputation
     portable_rep = test_export_reputation()
@@ -289,6 +292,8 @@ def run_all_tests():
     # Test 5: Verify reputation (if we have a document)
     if portable_rep:
         verification = test_verify_reputation(portable_rep)
+        if verification and not verification.get("valid", False):
+            print("⚠️  Verification reported invalid reputation document")
     
     # Test 6: Import reputation (would need a document from another instance)
     # Skipping actual import as it would need a real document from another instance
@@ -299,9 +304,13 @@ def run_all_tests():
     if vouch:
         time.sleep(2)  # Wait a bit before revoking
         revoked = test_revoke_vouch(vouch['id'])
+        if not revoked:
+            print("⚠️  Vouch revocation failed")
     
     # Test 8: Get reputation keys
     keys = test_reputation_keys()
+    if keys:
+        print(f"   Active key ID: {keys.get('keyId', 'unknown')}")
     
     print("\n" + "=" * 60)
     print("✅ Test suite completed!")

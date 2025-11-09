@@ -16,7 +16,6 @@ It also tests notification generation for:
 """
 
 import requests
-import json
 import sys
 import time
 import argparse
@@ -74,6 +73,7 @@ def test_notifications(base_url, token1, token2):
     if follow_notif:
         print(f"✅ Follow notification created: {follow_notif['account']['username']} followed you")
         notif_id = follow_notif['id']
+        print(f"   Notification ID: {notif_id}")
     else:
         print("❌ No follow notification found")
     
@@ -173,28 +173,32 @@ def test_notifications(base_url, token1, token2):
     assert all(n['type'] != 'follow' for n in filtered), "Exclude types failed"
     print(f"✅ Exclude types working: {len(filtered)} non-follow notifications")
     
-    # 8. Test getting single notification
-    print("\n8. Testing single notification retrieval...")
-    if notifications:
-        test_notif = notifications[0]
-        r = requests.get(f"{base_url}/api/v1/notifications/{test_notif['id']}", headers=headers1)
-        assert r.status_code == 200, f"Failed to get notification: {r.status_code}"
-        single = r.json()
-        assert single['id'] == test_notif['id'], "Retrieved wrong notification"
-        print(f"✅ Retrieved single notification: {single['type']} from {single['account']['username']}")
-    
-    # 9. Test dismissing single notification
-    print("\n9. Testing dismiss single notification...")
-    if notifications:
-        dismiss_id = notifications[0]['id']
-        r = requests.post(f"{base_url}/api/v1/notifications/{dismiss_id}/dismiss", headers=headers1)
-        assert r.status_code in [200, 204], f"Failed to dismiss: {r.status_code}"
-        print(f"✅ Dismissed notification {dismiss_id}")
+# 8. Test getting single notification
+print("\n8. Testing single notification retrieval...")
+test_notif_id = notif_id or (notifications[0]['id'] if notifications else None)
+if test_notif_id:
+    r = requests.get(f"{base_url}/api/v1/notifications/{test_notif_id}", headers=headers1)
+    assert r.status_code == 200, f"Failed to get notification: {r.status_code}"
+    single = r.json()
+    assert single['id'] == test_notif_id, "Retrieved wrong notification"
+    print(f"✅ Retrieved single notification: {single['type']} from {single['account']['username']}")
+else:
+    print("⚠️ No notifications available to retrieve")
+
+# 9. Test dismissing single notification
+print("\n9. Testing dismiss single notification...")
+dismiss_id = test_notif_id
+if dismiss_id:
+    r = requests.post(f"{base_url}/api/v1/notifications/{dismiss_id}/dismiss", headers=headers1)
+    assert r.status_code in [200, 204], f"Failed to dismiss: {r.status_code}"
+    print(f"✅ Dismissed notification {dismiss_id}")
         
-        # Verify it's gone
-        r = requests.get(f"{base_url}/api/v1/notifications/{dismiss_id}", headers=headers1)
-        assert r.status_code == 404, "Notification still exists after dismiss"
-        print("✅ Verified notification was deleted")
+    # Verify it's gone
+    r = requests.get(f"{base_url}/api/v1/notifications/{dismiss_id}", headers=headers1)
+    assert r.status_code == 404, "Notification still exists after dismiss"
+    print("✅ Verified notification was deleted")
+else:
+    print("⚠️ No notifications available to dismiss")
     
     # 10. Test pagination
     print("\n10. Testing pagination...")
@@ -224,12 +228,15 @@ def test_notifications(base_url, token1, token2):
     print("\n✅ All notification tests passed!")
     
     # Cleanup
-    print("\n12. Cleanup...")
-    # Unfollow
-    r = requests.post(f"{base_url}/api/v1/accounts/{user1['id']}/unfollow", headers=headers2)
-    # Delete status
-    r = requests.delete(f"{base_url}/api/v1/statuses/{status['id']}", headers=headers1)
-    print("✅ Cleanup complete")
+print("\n12. Cleanup...")
+# Unfollow
+r = requests.post(f"{base_url}/api/v1/accounts/{user1['id']}/unfollow", headers=headers2)
+assert r.status_code in [200, 204], f"Failed to unfollow during cleanup: {r.status_code}"
+print("✅ User2 unfollowed User1")
+# Delete status
+r = requests.delete(f"{base_url}/api/v1/statuses/{status['id']}", headers=headers1)
+assert r.status_code in [200, 204, 404], f"Failed to delete status during cleanup: {r.status_code}"
+print("✅ Cleanup complete")
 
 def main():
     parser = argparse.ArgumentParser(description='Test Lesser notifications system')

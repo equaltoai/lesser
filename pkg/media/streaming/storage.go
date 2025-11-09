@@ -491,8 +491,6 @@ func (s *S3MediaStorage) initializeCloudFront() error {
 		return ErrCloudFrontNotConfigured
 	}
 
-	var cfPrivateKeyContent string
-
 	// Load private key
 	var privateKeyPEM []byte
 	var err error
@@ -516,9 +514,6 @@ func (s *S3MediaStorage) initializeCloudFront() error {
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrFailedToReadCloudFrontPrivateKeyFile, err)
 		}
-	} else if cfPrivateKeyContent != "" {
-		// Use key content directly
-		privateKeyPEM = []byte(cfPrivateKeyContent)
 	} else {
 		return ErrCloudFrontPrivateKeyNotProvided
 	}

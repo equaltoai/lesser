@@ -5,7 +5,6 @@ Create test posts for GraphQL validation
 import os
 import sys
 import time
-import json
 import requests
 
 GRAPHQL_ENDPOINT = os.getenv("GRAPHQL_ENDPOINT", "https://dev.lesser.host/api/graphql")
@@ -30,8 +29,8 @@ def graphql_request(query, variables=None):
     
     try:
         return response.json()
-    except:
-        print(f"Failed to parse response: {response.text}")
+    except ValueError as exc:
+        print(f"Failed to parse response JSON: {exc}; body={response.text}")
         return None
 
 def create_post(content, visibility="PUBLIC"):
@@ -98,4 +97,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

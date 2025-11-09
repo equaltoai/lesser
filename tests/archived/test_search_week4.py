@@ -5,7 +5,6 @@ Tests popularity search, analytics tracking, and search filters
 """
 
 import requests
-import json
 import time
 import argparse
 import sys

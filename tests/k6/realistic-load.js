@@ -371,8 +371,6 @@ export function contentInteractionJourney() {
   });
 
   if (postSuccess && postResponse.json('id')) {
-    const statusId = postResponse.json('id');
-    
     sleep(randomIntBetween(3, 8));
 
     // Get public timeline to find posts to interact with

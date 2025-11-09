@@ -4,10 +4,8 @@ Test WebAuthn/Passkey functionality
 """
 
 import requests
-import json
 import base64
 import os
-from datetime import datetime
 
 # Configuration
 BASE_URL = os.getenv('LESSER_API_URL', 'https://api.lesser.app/lab')

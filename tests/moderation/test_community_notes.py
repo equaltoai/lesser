@@ -2,7 +2,6 @@
 """Test script for Lesser Community Notes API endpoints."""
 
 import requests
-import json
 import time
 import argparse
 from datetime import datetime

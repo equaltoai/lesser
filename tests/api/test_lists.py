@@ -15,7 +15,6 @@ This script tests all list endpoints:
 """
 
 import requests
-import json
 import sys
 import time
 import argparse
@@ -33,6 +32,7 @@ def test_lists(base_url, token):
     r = requests.get(f"{base_url}/api/v1/accounts/verify_credentials", headers=headers)
     assert r.status_code == 200
     user = r.json()
+    print(f"Acting as @{user.get('username', 'unknown')} (ID: {user.get('id', 'n/a')})")
     
     # 1. Get existing lists (should be empty initially)
     print("\n1. Getting existing lists...")
@@ -229,6 +229,7 @@ def test_list_timeline_fanout(base_url, token1, token2):
     r = requests.get(f"{base_url}/api/v1/accounts/verify_credentials", headers=headers1)
     assert r.status_code == 200
     user1 = r.json()
+    print(f"User1: @{user1.get('username', 'unknown')} (ID: {user1.get('id', 'n/a')})")
     
     r = requests.get(f"{base_url}/api/v1/accounts/verify_credentials", headers=headers2)
     assert r.status_code == 200
@@ -335,10 +336,10 @@ def test_list_timeline_fanout(base_url, token1, token2):
     
     # Cleanup
     print("\n7. Cleanup...")
-    r = requests.delete(f"{base_url}/api/v1/lists/{list_id}", headers=headers1)
-    r = requests.delete(f"{base_url}/api/v1/statuses/{status['id']}", headers=headers2)
-    r = requests.delete(f"{base_url}/api/v1/statuses/{reply['id']}", headers=headers2)
-    r = requests.delete(f"{base_url}/api/v1/statuses/{reply2['id']}", headers=headers2)
+    requests.delete(f"{base_url}/api/v1/lists/{list_id}", headers=headers1)
+    requests.delete(f"{base_url}/api/v1/statuses/{status['id']}", headers=headers2)
+    requests.delete(f"{base_url}/api/v1/statuses/{reply['id']}", headers=headers2)
+    requests.delete(f"{base_url}/api/v1/statuses/{reply2['id']}", headers=headers2)
     print("✅ Cleanup complete")
     
     print("\n✅ List timeline fan-out tests passed!")

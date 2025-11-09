@@ -9,7 +9,6 @@ This script supports multiple authentication methods:
 """
 
 import requests
-import json
 import base64
 import secrets
 import hashlib
