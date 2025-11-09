@@ -13,7 +13,6 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/executor"
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/graph"
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -516,75 +515,6 @@ func (s *wsServer) handleDefaultLift(ctx *lift.Context) error {
 			zap.String("type", msg.Type))
 		return lift.NewLiftError("BAD_REQUEST", fmt.Sprintf("message type %q is not supported", msg.Type), 400)
 	}
-}
-
-func extractAuthToken(event events.APIGatewayWebsocketProxyRequest) string {
-	// Debug: Log what we're receiving
-	logger.Info("extracting auth token from websocket event",
-		zap.Any("headers", event.Headers),
-		zap.Any("query_string_parameters", event.QueryStringParameters),
-		zap.String("request_id", event.RequestContext.RequestID))
-
-	// Header authorization takes precedence
-	for key, value := range event.Headers {
-		if strings.EqualFold(key, "Authorization") {
-			if token := normalizeAuthToken(value); token != "" {
-				logger.Info("found token in Authorization header", zap.String("key", key), zap.Int("token_length", len(token)))
-				return token
-			}
-		}
-	}
-
-	if event.MultiValueHeaders != nil {
-		if values, ok := event.MultiValueHeaders["Authorization"]; ok {
-			for _, v := range values {
-				if token := normalizeAuthToken(v); token != "" {
-					logger.Info("found token in MultiValueHeaders Authorization", zap.Int("token_length", len(token)))
-					return token
-				}
-			}
-		} else {
-			for key, values := range event.MultiValueHeaders {
-				if strings.EqualFold(key, "Authorization") {
-					for _, v := range values {
-						if token := normalizeAuthToken(v); token != "" {
-							logger.Info("found token in MultiValueHeaders (case-insensitive)", zap.String("key", key), zap.Int("token_length", len(token)))
-							return token
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Query string support (e.g., wss://.../?access_token=...)
-	// NOTE: API Gateway WebSocket may pass query params differently
-	for key, value := range event.QueryStringParameters {
-		logger.Info("checking query parameter", zap.String("key", key), zap.String("value", value))
-		if strings.EqualFold(key, "access_token") || strings.EqualFold(key, "token") {
-			if token := cleanToken(value); token != "" {
-				logger.Info("found token in query string parameters", zap.String("key", key), zap.Int("token_length", len(token)))
-				return token
-			}
-		}
-	}
-
-	if event.MultiValueQueryStringParameters != nil {
-		for key, values := range event.MultiValueQueryStringParameters {
-			logger.Info("checking multi-value query parameter", zap.String("key", key), zap.Strings("values", values))
-			if strings.EqualFold(key, "access_token") || strings.EqualFold(key, "token") {
-				for _, v := range values {
-					if token := cleanToken(v); token != "" {
-						logger.Info("found token in multi-value query string parameters", zap.String("key", key), zap.Int("token_length", len(token)))
-						return token
-					}
-				}
-			}
-		}
-	}
-
-	logger.Warn("no auth token found in websocket event")
-	return ""
 }
 
 func normalizeAuthToken(raw string) string {

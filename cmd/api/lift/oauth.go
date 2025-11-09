@@ -18,232 +18,291 @@ import (
 	"go.uber.org/zap"
 )
 
+type authorizeRequest struct {
+	responseType        string
+	clientID            string
+	redirectURI         string
+	scope               string
+	state               string
+	codeChallenge       string
+	codeChallengeMethod string
+}
+
+type authorizeFlow struct {
+	request     *authorizeRequest
+	oauthSvc    *auth.OAuthService
+	username    string
+	scopes      []string
+	accessToken string
+}
+
 // HandleOAuthAuthorizeLift handles the OAuth authorization endpoint using native Lift patterns
 // GET /oauth/authorize
 func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
-	// Extract query parameters using Lift's request methods
-	responseType := ctx.Query("response_type")
-	clientID := ctx.Query("client_id")
-	redirectURI := ctx.Query("redirect_uri")
-	scope := ctx.Query("scope")
-	state := ctx.Query("state")
-	codeChallenge := ctx.Query("code_challenge")
-	codeChallengeMethod := ctx.Query("code_challenge_method")
-
-	// Validate required parameters
-	if responseType != "code" {
-		return h.oauthErrorLift(ctx, "unsupported_response_type", "Only 'code' response type is supported", redirectURI, state)
+	flow, handled, err := h.initializeAuthorizeFlow(ctx)
+	if err != nil || handled {
+		return err
 	}
 
-	// Manually validate required parameters (before calling ValidateMultipleRequiredParams
-	// to avoid error middleware converting ValidationError to JSON)
-	if clientID == "" || redirectURI == "" {
-		// If validation fails, redirect to auth-ui authorize page with error parameter
-		// This will show the error inline on the styled page
-		// Preserve OAuth params in redirect if available for better error context
-		authDomain := fmt.Sprintf("auth.%s", h.cfg.Domain)
-		errorMessage := url.QueryEscape("Invalid authorization request - missing required parameters. Please restart the authorization flow from your application.")
-
-		// Build error URL with OAuth params if available
-		errorParams := url.Values{}
-		errorParams.Set("error", errorMessage)
-		if clientID != "" {
-			errorParams.Set("client_id", clientID)
-		}
-		if redirectURI != "" {
-			errorParams.Set("redirect_uri", redirectURI)
-		}
-		if state != "" {
-			errorParams.Set("state", state)
-		}
-		if scope != "" {
-			errorParams.Set("scope", scope)
-		}
-		if responseType != "" {
-			errorParams.Set("response_type", responseType)
-		}
-
-		errorURL := fmt.Sprintf("https://%s/oauth/authorize?%s", authDomain, errorParams.Encode())
-
-		ctx.Response.Header("Location", errorURL)
-		ctx.Status(http.StatusFound)
-		return nil
+	handled, err = h.ensureConsentForFlow(ctx, flow)
+	if err != nil || handled {
+		return err
 	}
 
-	// Initialize OAuth service
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	return h.completeAuthorizationFlow(ctx, flow)
+}
 
-	// Validate client and redirect URI
-	if err := oauthSvc.ValidateRedirectURI(ctx.Context, clientID, redirectURI); err != nil {
+func (h *Handler) initializeAuthorizeFlow(ctx *lift.Context) (*authorizeFlow, bool, error) {
+	req, handled, err := h.extractAuthorizeRequest(ctx)
+	if err != nil || handled {
+		return nil, handled, err
+	}
+
+	flow := &authorizeFlow{
+		request:  req,
+		oauthSvc: createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger),
+	}
+
+	if err := flow.oauthSvc.ValidateRedirectURI(ctx.Context, req.clientID, req.redirectURI); err != nil {
 		h.logger.Error("invalid redirect URI",
-			zap.String("client_id", clientID),
-			zap.String("redirect_uri", redirectURI),
+			zap.String("client_id", req.clientID),
+			zap.String("redirect_uri", req.redirectURI),
 			zap.Error(err))
-		return errors.New("invalid redirect_uri")
+		return nil, false, errors.New("invalid redirect_uri")
 	}
 
-	// Note: We skip the general ValidateRedirectURL check here because:
-	// 1. OAuth redirect URIs are already validated via ValidateRedirectURI which checks against
-	//    the client's registered redirect URIs
-	// 2. OAuth clients can legitimately redirect to localhost (for local dev) or other registered domains
-	// 3. The OAuth spec requires exact matching of registered redirect URIs, which we enforce above
-	// The ValidateRedirectURI check at line 50 is sufficient for OAuth security
+	username, accessToken, handled, err := h.resolveAuthorizeUser(ctx, flow.oauthSvc, req)
+	if err != nil || handled {
+		return nil, handled, err
+	}
+	flow.username = username
+	flow.accessToken = accessToken
 
-	// Check if user is authenticated (from cookie, header, or query param token)
-	// Also check for access_token in query params (for cross-domain auth flow from auth subdomain)
-	// This is a temporary mechanism to pass authentication from auth.dev.lesser.host to dev.lesser.host
-	// The token is validated immediately and not exposed to the final client redirect
-	accessTokenFromQuery := ctx.Query("access_token")
-	if accessTokenFromQuery != "" {
-		if decodedToken, err := url.QueryUnescape(accessTokenFromQuery); err == nil {
-			accessTokenFromQuery = strings.ReplaceAll(decodedToken, " ", "+")
-		} else {
-			h.logger.Warn("failed to decode access_token query parameter",
-				zap.Error(err))
-		}
+	scopes, err := h.normalizeAuthorizeScopes(req.scope)
+	if err != nil {
+		return nil, false, h.oauthErrorLift(ctx, "invalid_scope", err.Error(), req.redirectURI, req.state)
+	}
+	flow.scopes = scopes
+
+	return flow, false, nil
+}
+
+func (h *Handler) extractAuthorizeRequest(ctx *lift.Context) (*authorizeRequest, bool, error) {
+	req := &authorizeRequest{
+		responseType:        ctx.Query("response_type"),
+		clientID:            ctx.Query("client_id"),
+		redirectURI:         ctx.Query("redirect_uri"),
+		scope:               ctx.Query("scope"),
+		state:               ctx.Query("state"),
+		codeChallenge:       ctx.Query("code_challenge"),
+		codeChallengeMethod: ctx.Query("code_challenge_method"),
 	}
 
+	if req.responseType != "code" {
+		return nil, true, h.oauthErrorLift(ctx, "unsupported_response_type", "Only 'code' response type is supported", req.redirectURI, req.state)
+	}
+
+	if req.clientID == "" || req.redirectURI == "" {
+		return nil, true, h.redirectMissingAuthorizeParams(ctx, req)
+	}
+
+	return req, false, nil
+}
+
+func (h *Handler) redirectMissingAuthorizeParams(ctx *lift.Context, req *authorizeRequest) error {
+	authDomain := fmt.Sprintf("auth.%s", h.cfg.Domain)
+	errorMessage := url.QueryEscape("Invalid authorization request - missing required parameters. Please restart the authorization flow from your application.")
+
+	errorParams := url.Values{}
+	errorParams.Set("error", errorMessage)
+	if req.clientID != "" {
+		errorParams.Set("client_id", req.clientID)
+	}
+	if req.redirectURI != "" {
+		errorParams.Set("redirect_uri", req.redirectURI)
+	}
+	if req.state != "" {
+		errorParams.Set("state", req.state)
+	}
+	if req.scope != "" {
+		errorParams.Set("scope", req.scope)
+	}
+	if req.responseType != "" {
+		errorParams.Set("response_type", req.responseType)
+	}
+
+	errorURL := fmt.Sprintf("https://%s/oauth/authorize?%s", authDomain, errorParams.Encode())
+
+	ctx.Response.Header("Location", errorURL)
+	ctx.Status(http.StatusFound)
+	return nil
+}
+
+func (h *Handler) resolveAuthorizeUser(ctx *lift.Context, oauthSvc *auth.OAuthService, req *authorizeRequest) (string, string, bool, error) {
+	accessToken := h.decodeAccessTokenParam(ctx.Query("access_token"))
 	username := h.getUserFromSessionLift(ctx)
 
-	// If not authenticated via normal methods and we have a token from query param,
-	// validate it and use it for authentication
-	if username == "" && accessTokenFromQuery != "" {
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		if claims, err := oauthSvc.ValidateAccessToken(accessTokenFromQuery); err == nil {
+	if username == "" && accessToken != "" {
+		if claims, err := oauthSvc.ValidateAccessToken(accessToken); err == nil {
 			username = claims.Username
 		}
 	}
 
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		// User needs to login first - redirect to passwordless auth UI
-		// Build auth subdomain from config
-		authDomain := fmt.Sprintf("auth.%s", h.cfg.Domain)
-
-		// Store authorization request in session for after login
-		authRequest := map[string]string{
-			"client_id":             clientID,
-			"redirect_uri":          redirectURI,
-			"scope":                 scope,
-			"state":                 state,
-			"response_type":         responseType, // Include response_type in auth_request
-			"code_challenge":        codeChallenge,
-			"code_challenge_method": codeChallengeMethod,
+		if err := h.redirectUserToLogin(ctx, req, accessToken); err != nil {
+			return "", "", true, err
 		}
-
-		// Encode request as query string
-		authRequestEncoded, _ := json.Marshal(authRequest)
-
-		// Redirect to passwordless login UI (hosted on auth.{domain})
-		loginURL := fmt.Sprintf("https://%s/login?return_to=%s&auth_request=%s",
-			authDomain,
-			url.QueryEscape(fmt.Sprintf("https://%s/oauth/authorize", h.cfg.Domain)),
-			url.QueryEscape(string(authRequestEncoded)))
-
-		ctx.Response.Header("Location", loginURL)
-		ctx.Status(http.StatusFound)
-		return nil
+		return "", "", true, nil
 	}
 
-	// Parse requested scopes
-	scopes := []string{"read", "write"} // Default scopes
-	if scope != "" {
+	return username, accessToken, false, nil
+}
+
+func (h *Handler) decodeAccessTokenParam(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	value, err := url.QueryUnescape(raw)
+	if err != nil {
+		h.logger.Warn("failed to decode access_token query parameter", zap.Error(err))
+		value = raw
+	}
+	return strings.ReplaceAll(value, " ", "+")
+}
+
+func (h *Handler) redirectUserToLogin(ctx *lift.Context, req *authorizeRequest, accessToken string) error {
+	authDomain := fmt.Sprintf("auth.%s", h.cfg.Domain)
+	authRequest := map[string]string{
+		"client_id":             req.clientID,
+		"redirect_uri":          req.redirectURI,
+		"scope":                 req.scope,
+		"state":                 req.state,
+		"response_type":         req.responseType,
+		"code_challenge":        req.codeChallenge,
+		"code_challenge_method": req.codeChallengeMethod,
+	}
+
+	if accessToken != "" {
+		authRequest["access_token"] = accessToken
+	}
+
+	payload, _ := json.Marshal(authRequest)
+	loginURL := fmt.Sprintf("https://%s/login?return_to=%s&auth_request=%s",
+		authDomain,
+		url.QueryEscape(fmt.Sprintf("https://%s/oauth/authorize", h.cfg.Domain)),
+		url.QueryEscape(string(payload)))
+
+	ctx.Response.Header("Location", loginURL)
+	ctx.Status(http.StatusFound)
+	return nil
+}
+
+func (h *Handler) normalizeAuthorizeScopes(scope string) ([]string, error) {
+	scopes := []string{"read", "write"}
+	if strings.TrimSpace(scope) != "" {
 		scopes = strings.Fields(scope)
 	}
 
-	// Validate scopes using centralized validation
 	scopesStr := strings.Join(scopes, " ")
 	if err := common.ValidateApplicationScopes(scopesStr); err != nil {
-		return h.oauthErrorLift(ctx, "invalid_scope", fmt.Sprintf("Invalid scopes: %v", err), redirectURI, state)
+		return nil, fmt.Errorf("invalid scopes: %v", err)
 	}
 
-	// Additional validation using auth package for backward compatibility
 	if err := auth.ValidateScopes(scopes); err != nil {
-		return h.oauthErrorLift(ctx, "invalid_scope", "One or more requested scopes are invalid", redirectURI, state)
+		return nil, errors.New("one or more requested scopes are invalid")
 	}
 
-	// Check if registry is initialized
+	return scopes, nil
+}
+
+func (h *Handler) ensureConsentForFlow(ctx *lift.Context, flow *authorizeFlow) (bool, error) {
 	if h.registry == nil {
 		h.logger.Error("service registry not initialized for OAuth authorization")
-		return h.oauthErrorLift(ctx, "server_error", "Service unavailable", redirectURI, state)
+		return false, h.oauthErrorLift(ctx, "server_error", "Service unavailable", flow.request.redirectURI, flow.request.state)
 	}
 
-	// Check if user has previously consented to this app
-	if !h.hasUserConsentedToApp(ctx.Context, username, clientID, scopes) {
-		// Store authorization request state for consent flow
-		authState := &storage.OAuthState{
-			State:               state,
-			ClientID:            clientID,
-			Username:            username,
-			Scopes:              scopes,
-			RedirectURI:         redirectURI,
-			CodeChallenge:       codeChallenge,
-			CodeChallengeMethod: codeChallengeMethod,
-			ExpiresAt:           time.Now().Add(10 * time.Minute),
-		}
-
-		if _, err := h.registry.Accounts().StoreOAuthState(ctx.Context, &accounts.StoreOAuthStateCommand{
-			State:      authState.State,
-			OAuthState: authState,
-		}); err != nil {
-			h.logger.Error("failed to save OAuth state", zap.Error(err))
-			return h.oauthErrorLift(ctx, "server_error", "Failed to save authorization state", redirectURI, state)
-		}
-
-		// Get access token from query param to pass to consent UI (for stateless auth)
-		accessToken := accessTokenFromQuery
-		if accessToken == "" {
-			// Try to get from Authorization header as fallback
-			authHeader := ctx.Header("Authorization")
-			if authHeader != "" {
-				if token, err := auth.ExtractBearerToken(authHeader); err == nil {
-					accessToken = token
-				}
-			}
-		}
-
-		h.logger.Info("redirecting to consent UI",
-			zap.String("username", username),
-			zap.String("client_id", clientID),
-			zap.Bool("has_access_token", accessToken != ""))
-
-		// Redirect to hosted consent UI instead of inline HTML
-		return h.redirectToConsentUI(ctx, authState, accessToken)
+	if h.hasUserConsentedToApp(ctx.Context, flow.username, flow.request.clientID, flow.scopes) {
+		return false, nil
 	}
 
-	// Generate authorization code
-	code, err := oauthSvc.GenerateAuthorizationCode()
+	authState := &storage.OAuthState{
+		State:               flow.request.state,
+		ClientID:            flow.request.clientID,
+		Username:            flow.username,
+		Scopes:              flow.scopes,
+		RedirectURI:         flow.request.redirectURI,
+		CodeChallenge:       flow.request.codeChallenge,
+		CodeChallengeMethod: flow.request.codeChallengeMethod,
+		ExpiresAt:           time.Now().Add(10 * time.Minute),
+	}
+
+	if _, err := h.registry.Accounts().StoreOAuthState(ctx.Context, &accounts.StoreOAuthStateCommand{
+		State:      authState.State,
+		OAuthState: authState,
+	}); err != nil {
+		h.logger.Error("failed to save OAuth state", zap.Error(err))
+		return false, h.oauthErrorLift(ctx, "server_error", "Failed to save authorization state", flow.request.redirectURI, flow.request.state)
+	}
+
+	accessToken := h.resolveConsentToken(ctx, flow.accessToken)
+	h.logger.Info("redirecting to consent UI",
+		zap.String("username", flow.username),
+		zap.String("client_id", flow.request.clientID),
+		zap.Bool("has_access_token", accessToken != ""))
+
+	return true, h.redirectToConsentUI(ctx, authState, accessToken)
+}
+
+func (h *Handler) resolveConsentToken(ctx *lift.Context, existing string) string {
+	if existing != "" {
+		return existing
+	}
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		authHeader = ctx.Header("authorization")
+	}
+	if authHeader == "" {
+		return ""
+	}
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return ""
+	}
+	return token
+}
+
+func (h *Handler) completeAuthorizationFlow(ctx *lift.Context, flow *authorizeFlow) error {
+	code, err := flow.oauthSvc.GenerateAuthorizationCode()
 	if err != nil {
 		h.logger.Error("failed to generate authorization code", zap.Error(err))
-		return h.oauthErrorLift(ctx, "server_error", "Failed to generate authorization code", redirectURI, state)
+		return h.oauthErrorLift(ctx, "server_error", "Failed to generate authorization code", flow.request.redirectURI, flow.request.state)
 	}
 
-	// Store authorization code
 	authCode := &storage.AuthorizationCode{
 		Code:          code,
-		ClientID:      clientID,
-		Username:      username,
-		CodeChallenge: codeChallenge,
+		ClientID:      flow.request.clientID,
+		Username:      flow.username,
+		CodeChallenge: flow.request.codeChallenge,
 		ExpiresAt:     time.Now().Add(10 * time.Minute),
-		Scopes:        scopes,
+		Scopes:        flow.scopes,
 	}
 
 	if _, err := h.registry.Accounts().CreateAuthorizationCode(ctx.Context, &accounts.CreateAuthorizationCodeCommand{
 		AuthCode: authCode,
 	}); err != nil {
 		h.logger.Error("failed to store authorization code", zap.Error(err))
-		return h.oauthErrorLift(ctx, "server_error", "Failed to store authorization code", redirectURI, state)
+		return h.oauthErrorLift(ctx, "server_error", "Failed to store authorization code", flow.request.redirectURI, flow.request.state)
 	}
 
-	// Build redirect URL
-	u, _ := url.Parse(redirectURI)
-	q := u.Query()
-	q.Set("code", code)
-	if state != "" {
-		q.Set("state", state)
+	redirectURL, _ := url.Parse(flow.request.redirectURI)
+	query := redirectURL.Query()
+	query.Set("code", code)
+	if flow.request.state != "" {
+		query.Set("state", flow.request.state)
 	}
-	u.RawQuery = q.Encode()
+	redirectURL.RawQuery = query.Encode()
 
-	ctx.Response.Header("Location", u.String())
+	ctx.Response.Header("Location", redirectURL.String())
 	ctx.Status(http.StatusFound)
 	return nil
 }

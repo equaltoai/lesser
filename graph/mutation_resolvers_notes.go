@@ -30,63 +30,9 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 		return nil, err
 	}
 
-	// Validate input
-	if err := common.ValidateContentOrAttachments(input.Content, input.AttachmentIds); err != nil {
+	cmd, quoteTargetID, err := r.buildCreateNoteCommand(username, input)
+	if err != nil {
 		return nil, err
-	}
-
-	var quoteTargetID string
-	if input.QuoteID != nil {
-		quoteTargetID = strings.TrimSpace(*input.QuoteID)
-	}
-
-	// Build create command
-	cmd := &notes.CreateNoteCommand{
-		AuthorID:   username,
-		Content:    input.Content,
-		Visibility: strings.ToLower(input.Visibility.String()),
-		Sensitive:  input.Sensitive != nil && *input.Sensitive,
-	}
-
-	if input.SpoilerText != nil {
-		cmd.SpoilerText = *input.SpoilerText
-	}
-
-	if input.InReplyToID != nil {
-		cmd.InReplyToID = *input.InReplyToID
-	}
-
-	if input.AttachmentIds != nil {
-		cmd.MediaIDs = input.AttachmentIds
-	}
-
-	if input.Poll != nil {
-		pollOptionsAny := make([]any, len(input.Poll.Options))
-		for i, option := range input.Poll.Options {
-			pollOptionsAny[i] = option
-		}
-
-		pollParams := map[string]any{
-			"options":    pollOptionsAny,
-			"expires_in": float64(input.Poll.ExpiresIn),
-		}
-
-		if input.Poll.Multiple != nil {
-			pollParams["multiple"] = *input.Poll.Multiple
-		}
-
-		if input.Poll.HideTotals != nil {
-			pollParams["hide_totals"] = *input.Poll.HideTotals
-		}
-
-		if err := common.ValidatePollParams(pollParams); err != nil {
-			return nil, err
-		}
-
-		cmd.PollOptions = input.Poll.Options
-		cmd.PollExpiresIn = input.Poll.ExpiresIn
-		cmd.PollMultiple = input.Poll.Multiple != nil && *input.Poll.Multiple
-		cmd.PollHideTotals = input.Poll.HideTotals != nil && *input.Poll.HideTotals
 	}
 
 	// Handle mentions and tags
@@ -199,6 +145,71 @@ func (r *mutationResolver) attachQuoteToTarget(ctx context.Context, username, ta
 			zap.String("target_status_id", targetStatusID))
 	}
 
+	return nil
+}
+
+func (r *mutationResolver) buildCreateNoteCommand(username string, input model.CreateNoteInput) (*notes.CreateNoteCommand, string, error) {
+	if err := common.ValidateContentOrAttachments(input.Content, input.AttachmentIds); err != nil {
+		return nil, "", err
+	}
+
+	quoteTargetID := ""
+	if input.QuoteID != nil {
+		quoteTargetID = strings.TrimSpace(*input.QuoteID)
+	}
+
+	cmd := &notes.CreateNoteCommand{
+		AuthorID:   username,
+		Content:    input.Content,
+		Visibility: strings.ToLower(input.Visibility.String()),
+		Sensitive:  input.Sensitive != nil && *input.Sensitive,
+	}
+
+	if input.SpoilerText != nil {
+		cmd.SpoilerText = *input.SpoilerText
+	}
+	if input.InReplyToID != nil {
+		cmd.InReplyToID = *input.InReplyToID
+	}
+	if input.AttachmentIds != nil {
+		cmd.MediaIDs = input.AttachmentIds
+	}
+
+	if input.Poll != nil {
+		if err := r.applyPollInput(cmd, input.Poll); err != nil {
+			return nil, "", err
+		}
+	}
+
+	return cmd, quoteTargetID, nil
+}
+
+func (r *mutationResolver) applyPollInput(cmd *notes.CreateNoteCommand, pollInput *model.PollParamsInput) error {
+	pollOptionsAny := make([]any, len(pollInput.Options))
+	for i, option := range pollInput.Options {
+		pollOptionsAny[i] = option
+	}
+
+	pollParams := map[string]any{
+		"options":    pollOptionsAny,
+		"expires_in": float64(pollInput.ExpiresIn),
+	}
+
+	if pollInput.Multiple != nil {
+		pollParams["multiple"] = *pollInput.Multiple
+	}
+	if pollInput.HideTotals != nil {
+		pollParams["hide_totals"] = *pollInput.HideTotals
+	}
+
+	if err := common.ValidatePollParams(pollParams); err != nil {
+		return err
+	}
+
+	cmd.PollOptions = pollInput.Options
+	cmd.PollExpiresIn = pollInput.ExpiresIn
+	cmd.PollMultiple = pollInput.Multiple != nil && *pollInput.Multiple
+	cmd.PollHideTotals = pollInput.HideTotals != nil && *pollInput.HideTotals
 	return nil
 }
 

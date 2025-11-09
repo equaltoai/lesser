@@ -1137,124 +1137,24 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		poll = r.resolvePollForStatus(ctx, status)
 	}
 
-	viewerBoosted := false
-	viewerUsername := getUsernameFromContext(ctx)
-	if viewerUsername != "" && status.StatusID != "" {
-		if boosted, err := viewerBoostStateResolverFunc(ctx, r, viewerUsername, status.StatusID); err != nil {
-			if convertLogger != nil {
-				convertLogger.Warn("failed to resolve viewer boost state",
-					zap.String("status_id", status.StatusID),
-					zap.String("viewer", viewerUsername),
-					zap.Error(err))
-			}
-		} else {
-			viewerBoosted = boosted
-		}
-	}
-
+	viewerBoosted := r.viewerBoostState(ctx, status, convertLogger)
 	objectType := model.ObjectTypeNote
-
-	visibility := model.VisibilityPublic
-	switch status.Visibility {
-	case VisibilityUnlisted:
-		visibility = model.VisibilityUnlisted
-	case VisibilityPrivate, EventTypeFollowers:
-		visibility = model.VisibilityFollowers
-	case TimelineTypeDirect:
-		visibility = model.VisibilityDirect
-	}
-
-	var actor *activitypub.Actor
-	if status.AuthorUsername != "" {
-		accountStart := time.Now()
-		result, err := r.Registry.Accounts().GetAccount(ctx, status.AuthorUsername)
-		if convertLogger != nil {
-			convertLogger.Info("convertStatusToObject account lookup",
-				zap.String("status_id", status.StatusID),
-				zap.String("author_username", status.AuthorUsername),
-				zap.Duration("duration", time.Since(accountStart)),
-				zap.Bool("found", err == nil && result != nil),
-				zap.Error(err))
-		}
-		if err == nil && result != nil {
-			actor = r.convertAccountToActor(result)
-		}
-	}
-
-	attachments := make([]*activitypub.Attachment, 0)
-	if status.Note != nil && status.Note.Get() != nil {
-		for _, att := range status.Note.Get().Attachment {
-			attachments = append(attachments, &att)
-		}
-	}
-
-	tags := make([]*activitypub.Tag, 0)
-	if status.Note != nil && status.Note.Get() != nil {
-		for _, tag := range status.Note.Get().Tag {
-			tags = append(tags, &tag)
-		}
-	}
-
-	var quoteURL *string
-	var quoteContext *activitypub.QuoteContext
-	if status != nil {
-		quoteURL, quoteContext = r.resolveQuoteMetadata(ctx, status)
-	}
-
-	quoteable := true
-	if status.Note != nil && status.Note.Get() != nil && status.Note.Get().Quoteable {
-		quoteable = status.Note.Get().Quoteable
-	}
-
-	mentions := make([]*model.Mention, 0)
-	if status.Mentions != nil {
-		for _, mentionURL := range status.Mentions {
-			// Enhanced: use improved URL parsing with domain detection
-			username, domain := r.parseMentionURL(mentionURL)
-			if username != "" {
-				mentions = append(mentions, &model.Mention{
-					ID:       mentionURL,
-					Username: username,
-					URL:      mentionURL,
-					Domain:   domain,
-				})
-			}
-		}
-	}
-
-	var inReplyTo *model.Object
-	// Fetch parent status if this is a reply (with depth limiting to avoid infinite recursion)
-	if status.InReplyToID != "" {
-		// Check context for conversion depth to prevent infinite loops
-		depth := r.getConversionDepth(ctx)
-		if depth < 3 { // Limit to 3 levels of nesting
-			newCtx := r.setConversionDepth(ctx, depth+1)
-			parentLookupStart := time.Now()
-			parentStatus, err := r.Registry.Notes().GetNote(newCtx, status.InReplyToID)
-			if convertLogger != nil {
-				convertLogger.Info("convertStatusToObject parent lookup",
-					zap.String("status_id", status.StatusID),
-					zap.String("in_reply_to", status.InReplyToID),
-					zap.Duration("duration", time.Since(parentLookupStart)),
-					zap.Error(err))
-			}
-			if err == nil && parentStatus != nil {
-				inReplyTo = r.convertStatusToObject(newCtx, parentStatus)
-			}
-		}
-	}
-
-	var summary *string
-	if status.Note != nil && status.Note.Get() != nil && status.Note.Get().Summary != "" {
-		summary = &status.Note.Get().Summary
-	}
+	visibility := mapStatusVisibility(status)
+	actor := r.resolveActorForStatus(ctx, status, convertLogger)
+	attachments := cloneNoteAttachments(status)
+	tags := cloneNoteTags(status)
+	quoteURL, quoteContext := r.resolveQuoteMetadata(ctx, status)
+	quoteable := determineQuoteable(status)
+	mentions := r.buildMentions(status)
+	inReplyTo := r.resolveInReplyToObject(ctx, status, convertLogger)
+	summary := extractStatusSummary(status)
 
 	obj := &model.Object{
 		ID:               status.StatusID,
 		Type:             objectType,
 		Actor:            actor,
 		Content:          status.Content,
-		ContentMap:       r.extractContentMaps(status.Content), // Enhanced: extract content maps with language detection
+		ContentMap:       r.extractContentMaps(status.Content),
 		InReplyTo:        inReplyTo,
 		Visibility:       visibility,
 		Sensitive:        status.Sensitive,
