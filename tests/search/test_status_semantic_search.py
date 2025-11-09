@@ -7,7 +7,7 @@ Tests semantic search, fuzzy search, and multi-strategy status search.
 import requests
 import time
 import argparse
-from typing import Dict, List
+from typing import Dict
 
 
 class StatusSemanticSearchTester:
