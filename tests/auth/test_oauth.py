@@ -1,23 +1,19 @@
 #!/usr/bin/env python3
 """Test OAuth2 implementation in Lesser."""
 
-import base64
-import hashlib
-import secrets
-from urllib.parse import urlencode, urlparse, parse_qs, parse_qsl
-
 import requests
+import json
+import time
+import hashlib
+import base64
+import secrets
+from urllib.parse import urlencode, urlparse, parse_qs
 
 # Configuration
 BASE_URL = "http://localhost:8080/api/v1"  # Update with your API URL
 CLIENT_ID = None  # Will be set after app registration
 CLIENT_SECRET = None
 REDIRECT_URI = "http://localhost:3000/callback"
-
-
-def report_secret(label: str) -> None:
-    """Consistently acknowledge secret handling without exposing values."""
-    print(f"{label}: <redacted>")
 
 def register_oauth_app():
     """Register an OAuth application."""
@@ -35,11 +31,12 @@ def register_oauth_app():
     
     if response.status_code == 200:
         app = response.json()
-        print("App registered successfully!")
-        print("OAuth client credentials retrieved.")
+        print(f"App registered successfully!")
+        print(f"Client ID: {app['client_id']}")
+        print(f"Client Secret: {app['client_secret']}")
         return app['client_id'], app['client_secret']
     else:
-        print(f"Error: status={response.status_code}")
+        print(f"Error: {response.text}")
         return None, None
 
 def test_authorization_flow(username, password):
@@ -65,7 +62,7 @@ def test_authorization_flow(username, password):
     }
     
     auth_url = f"{BASE_URL}/oauth/authorize?{urlencode(auth_params)}"
-    print("Authorization URL generated for OAuth flow.")
+    print(f"Authorization URL: {auth_url}")
     
     # Simulate user login and authorization
     # In a real app, the user would be redirected to login
@@ -78,7 +75,7 @@ def test_authorization_flow(username, password):
     })
     
     if login_response.status_code != 200:
-        print(f"Login failed: status={login_response.status_code}")
+        print(f"Login failed: {login_response.text}")
         return None
     
     auth_token = login_response.json()['access_token']
@@ -91,7 +88,7 @@ def test_authorization_flow(username, password):
     if auth_response.status_code == 302:
         # Parse authorization code from redirect
         redirect_url = auth_response.headers.get('Location')
-        print("Received redirect from authorization endpoint.")
+        print(f"Redirect URL: {redirect_url}")
         
         parsed = urlparse(redirect_url)
         params = parse_qs(parsed.query)
@@ -100,6 +97,7 @@ def test_authorization_flow(username, password):
             auth_code = params['code'][0]
             returned_state = params.get('state', [None])[0]
             
+            print(f"Authorization code: {auth_code}")
             print(f"State matches: {returned_state == state}")
             
             # Step 2: Exchange code for tokens
@@ -118,18 +116,18 @@ def test_authorization_flow(username, password):
             
             if token_response.status_code == 200:
                 tokens = token_response.json()
-                report_secret("Access token")
-                if 'refresh_token' in tokens:
-                    report_secret("Refresh token")
+                print(f"Access token: {tokens['access_token'][:50]}...")
+                print(f"Refresh token: {tokens['refresh_token'][:20]}...")
                 print(f"Token type: {tokens['token_type']}")
                 print(f"Expires in: {tokens['expires_in']} seconds")
                 return tokens
             else:
-                print(f"Token exchange failed with status {token_response.status_code}.")
+                print(f"Token exchange failed: {token_response.text}")
         else:
             print(f"No authorization code in redirect: {params}")
     else:
-        print(f"Authorization failed with status {auth_response.status_code}.")
+        print(f"Authorization failed: {auth_response.status_code}")
+        print(auth_response.text)
     
     return None
 
@@ -149,11 +147,11 @@ def test_refresh_token(refresh_token):
     
     if response.status_code == 200:
         tokens = response.json()
-        report_secret("Refreshed access token")
+        print(f"New access token: {tokens['access_token'][:50]}...")
         print(f"Token refreshed successfully!")
         return tokens['access_token']
     else:
-        print(f"Error: status={response.status_code}")
+        print(f"Error: {response.text}")
         return None
 
 def test_token_revocation(token):
@@ -173,7 +171,7 @@ def test_token_revocation(token):
     if response.status_code == 200:
         print("Token revoked successfully!")
     else:
-        print(f"Error: status={response.status_code}")
+        print(f"Error: {response.text}")
 
 def test_api_with_oauth_token(access_token):
     """Test API access with OAuth token."""
@@ -193,7 +191,7 @@ def test_api_with_oauth_token(access_token):
         print(f"Display name: {user.get('display_name', 'N/A')}")
         return True
     else:
-        print(f"Error: status={response.status_code}")
+        print(f"Error: {response.text}")
         return False
 
 def test_external_oauth():
@@ -207,24 +205,15 @@ def test_external_oauth():
     
     if response.status_code == 200:
         data = response.json()
-        auth_url = data['auth_url']
-        parsed_url = urlparse(auth_url)
-        masked_query = []
-        for key, value in parse_qsl(parsed_url.query):
-            if key.lower() in {"client_id", "state"}:
-                masked_query.append(f"{key}=<redacted>")
-            else:
-                masked_query.append(f"{key}={value}")
-        safe_url = parsed_url._replace(query="&".join(masked_query)).geturl()
-        print(f"GitHub Auth URL: {safe_url}")
-        report_secret("OAuth state parameter")
+        print(f"GitHub Auth URL: {data['auth_url']}")
+        print(f"State: {data['state']}")
         print("\nTo test GitHub OAuth:")
         print("1. Visit the auth URL in your browser")
         print("2. Authorize the app on GitHub")
         print("3. You'll be redirected back with a code")
         print("4. The callback handler will exchange it for tokens")
     else:
-        print(f"Error: status={response.status_code}")
+        print(f"Error: {response.text}")
 
 def main():
     """Run OAuth tests."""

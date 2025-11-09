@@ -2,8 +2,9 @@
 """Test hashtag search implementation."""
 
 import requests
+import json
 import time
-from typing import Dict
+from typing import Dict, Any
 
 # Test configuration
 BASE_URL = "https://lab.lesser.aronprice.com/api/v1"
@@ -186,7 +187,7 @@ if __name__ == "__main__":
     print("Testing Hashtag Search Implementation\n")
     
     # Create a status with hashtags
-    _, unique_tag = test_hashtag_indexing()
+    status_id, unique_tag = test_hashtag_indexing()
     
     if unique_tag:
         # Wait a moment for indexing

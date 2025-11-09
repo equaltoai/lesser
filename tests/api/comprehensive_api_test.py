@@ -11,7 +11,7 @@ import json
 import uuid
 import logging
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from urllib.parse import urljoin
 
 # Set up logging

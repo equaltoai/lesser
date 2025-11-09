@@ -31,6 +31,45 @@ const (
 	allOperationsValue = "All"
 )
 
+func firstNonZeroTime(times ...*time.Time) *time.Time {
+	for _, t := range times {
+		if t != nil && !t.IsZero() {
+			c := t.UTC()
+			return &c
+		}
+	}
+	return nil
+}
+
+func timePtrOrNil(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	clone := t.UTC()
+	return &clone
+}
+
+func deriveUsernameFromIRI(iri string) string {
+	candidate := strings.TrimSpace(iri)
+	if candidate == "" {
+		return ""
+	}
+
+	// Trim protocol and query params if present
+	if idx := strings.Index(candidate, "?"); idx > -1 {
+		candidate = candidate[:idx]
+	}
+
+	candidate = strings.TrimSuffix(candidate, ".json")
+	candidate = strings.TrimRight(candidate, "/")
+	if slash := strings.LastIndex(candidate, "/"); slash >= 0 {
+		candidate = candidate[slash+1:]
+	}
+
+	candidate = strings.TrimPrefix(candidate, "@")
+	return candidate
+}
+
 // generateID generates a unique ID for objects
 func generateID() string {
 	b := make([]byte, 16)
@@ -524,7 +563,7 @@ func (r *queryResolver) estimateStorageCost(obj any) float64 {
 	return sizeGB * 0.25
 }
 
-func (r *Resolver) convertThreadContextResultToModel(_ context.Context, result *threads.ThreadContextResult) *model.ThreadContext {
+func (r *Resolver) convertThreadContextResultToModel(ctx context.Context, result *threads.ThreadContextResult) *model.ThreadContext {
 	if result == nil {
 		return nil
 	}
@@ -532,11 +571,9 @@ func (r *Resolver) convertThreadContextResultToModel(_ context.Context, result *
 	// Convert the root note to a GraphQL Object
 	var rootNoteObj *model.Object
 	if result.RootNote != nil {
-		rootNoteObj = &model.Object{
-			ID:        result.RootNote.ID,
-			Type:      model.ObjectTypeNote,
-			Content:   result.RootNote.Content,
-			CreatedAt: model.Time(*result.RootNote.Published),
+		rootNoteObj = r.convertNoteToObject(ctx, result.RootNote)
+		if rootNoteObj == nil {
+			rootNoteObj = r.buildMinimalThreadNote(result.RootNote)
 		}
 	}
 
@@ -559,6 +596,47 @@ func (r *Resolver) convertThreadContextResultToModel(_ context.Context, result *
 		MissingPosts:     result.MissingCount,
 		LastActivity:     model.Time(result.LastActivity),
 		SyncStatus:       syncStatus,
+	}
+}
+
+func (r *Resolver) buildMinimalThreadNote(note *activitypub.Note) *model.Object {
+	if note == nil {
+		return nil
+	}
+
+	createdAt := firstNonZeroTime(note.Published, note.Updated)
+	if createdAt == nil {
+		now := time.Now().UTC()
+		createdAt = &now
+	}
+	updatedAt := firstNonZeroTime(note.Updated, note.Published)
+	if updatedAt == nil {
+		clone := createdAt.UTC()
+		updatedAt = &clone
+	}
+
+	actorID := strings.TrimSpace(note.AttributedTo)
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:        actorID,
+			Type:      activitypub.PersonType,
+			Published: createdAt,
+			Updated:   updatedAt,
+		},
+		PreferredUsername: deriveUsernameFromIRI(actorID),
+	}
+
+	return &model.Object{
+		ID:         note.ID,
+		Type:       model.ObjectTypeNote,
+		Actor:      actor,
+		Content:    note.Content,
+		ContentMap: r.extractContentMaps(note.Content),
+		Mentions:   r.extractMentionsFromNote(note),
+		CreatedAt:  model.Time(*createdAt),
+		UpdatedAt:  model.Time(*updatedAt),
+		Visibility: model.VisibilityPublic,
+		Sensitive:  note.Sensitive,
 	}
 }
 

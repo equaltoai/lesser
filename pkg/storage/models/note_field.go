@@ -1,9 +1,9 @@
 package models
 
 import (
-	"encoding/json"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 )
@@ -11,7 +11,7 @@ import (
 // NoteField wraps activitypub.Note to handle DynamORM marshaling/unmarshaling
 // properly, including the case where the database contains the string "null"
 // instead of a DynamoDB NULL value.
-// 
+//
 // For Mastodon/Twitter-like UI compatibility:
 // - Note is always populated when creating user statuses
 // - Note contains the full ActivityPub representation as JSON
@@ -26,14 +26,12 @@ func (nf NoteField) MarshalDynamoDBAttributeValue() (types.AttributeValue, error
 		return &types.AttributeValueMemberNULL{Value: true}, nil
 	}
 
-	// Marshal the Note as JSON string - this is the canonical format
-	// Expected format: {"@context":[...],"id":"...","type":"Note","content":"...","attributedTo":"..."}
-	data, err := json.Marshal(nf.Note)
+	avMap, err := attributevalue.MarshalMap(nf.Note)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal Note to JSON: %w", err)
+		return nil, fmt.Errorf("failed to marshal Note to Dynamo map: %w", err)
 	}
 
-	return &types.AttributeValueMemberS{Value: string(data)}, nil
+	return &types.AttributeValueMemberM{Value: avMap}, nil
 }
 
 // UnmarshalDynamoDBAttributeValue implements DynamORM's Unmarshaler interface
@@ -44,26 +42,14 @@ func (nf *NoteField) UnmarshalDynamoDBAttributeValue(av types.AttributeValue) er
 		return nil
 	}
 
-	// Handle string attribute value (JSON string)
-	strVal, ok := av.(*types.AttributeValueMemberS)
+	mVal, ok := av.(*types.AttributeValueMemberM)
 	if !ok {
-		return fmt.Errorf("invalid NoteField format: expected string AttributeValue, got %T", av)
+		return fmt.Errorf("invalid NoteField format: expected map AttributeValue, got %T", av)
 	}
 
-	jsonStr := strVal.Value
-
-	// Handle the case where the database contains the literal string "null"
-	// This should not happen with proper usage, but we handle it gracefully
-	if jsonStr == "" || jsonStr == "null" {
-		nf.Note = nil
-		return nil
-	}
-
-	// Unmarshal the JSON string into activitypub.Note
-	// Expected format: {"@context":[...],"id":"...","type":"Note","content":"...","attributedTo":"..."}
 	var note activitypub.Note
-	if err := json.Unmarshal([]byte(jsonStr), &note); err != nil {
-		return fmt.Errorf("failed to unmarshal Note JSON: %w", err)
+	if err := attributevalue.UnmarshalMap(mVal.Value, &note); err != nil {
+		return fmt.Errorf("failed to unmarshal Note map: %w", err)
 	}
 
 	nf.Note = &note
@@ -79,4 +65,3 @@ func (nf *NoteField) Get() *activitypub.Note {
 func (nf *NoteField) Set(note *activitypub.Note) {
 	nf.Note = note
 }
-

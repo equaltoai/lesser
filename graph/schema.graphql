@@ -1,3 +1,6 @@
+# DO NOT EDIT: aggregated schema for client consumption
+# Generated 2025-11-08T22:01:41Z via scripts/generate_schema.sh
+
 # Lesser GraphQL Schema
 
 scalar Time
@@ -12,6 +15,7 @@ enum TimelineType {
   HASHTAG
   LIST
   DIRECT
+  ACTOR
 }
 
 enum ActorType {
@@ -538,6 +542,7 @@ input CreateNoteInput {
   content: String!
   contentMap: [ContentMapInput!]
   inReplyToId: ID
+  quoteId: ID
   visibility: Visibility!
   sensitive: Boolean
   spoilerText: String
@@ -753,6 +758,7 @@ type Query {
     type: TimelineType!
     hashtag: String
     listId: ID
+    actorId: ID
     first: Int = 20
     after: Cursor
     mediaOnly: Boolean = false
@@ -1508,4 +1514,940 @@ type ReconnectionPayload {
   reconnected: Int!
   failed: Int!
   errors: [String!]
+}
+
+# Lesser GraphQL Schema - Phase 2 Federation Enhancements
+
+# Cost Analytics Dashboard Types
+type FederationCost {
+  domain: String!
+  ingressBytes: Int!
+  egressBytes: Int!
+  requestCount: Int!
+  errorRate: Float!
+  monthlyCostUSD: Float!
+  healthScore: Float!
+  recommendation: String
+  lastUpdated: Time!
+  breakdown: CostBreakdown!
+}
+
+type FederationCostConnection {
+  edges: [FederationCostEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type FederationCostEdge {
+  node: FederationCost!
+  cursor: Cursor!
+}
+
+type InstanceHealthReport {
+  domain: String!
+  status: InstanceHealthStatus!
+  metrics: InstanceHealthMetrics!
+  issues: [HealthIssue!]!
+  recommendations: [String!]!
+  lastChecked: Time!
+}
+
+enum InstanceHealthStatus {
+  HEALTHY
+  WARNING
+  CRITICAL
+  OFFLINE
+  UNKNOWN
+}
+
+type InstanceHealthMetrics {
+  responseTime: Float!
+  errorRate: Float!
+  federationDelay: Float!
+  queueDepth: Int!
+  costEfficiency: Float!
+}
+
+type HealthIssue {
+  type: String!
+  severity: IssueSeverity!
+  description: String!
+  detectedAt: Time!
+  impact: String!
+}
+
+enum IssueSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+# Media Streaming Integration Types
+type MediaStream {
+  id: ID!
+  url: String!
+  hlsPlaylistUrl: String
+  dashManifestUrl: String
+  thumbnailUrl: String!
+  duration: Int!
+  bitrates: [Bitrate!]!
+  expiresAt: Time!
+}
+
+type Bitrate {
+  quality: StreamQuality!
+  bitsPerSecond: Int!
+  width: Int!
+  height: Int!
+  codec: String!
+}
+
+enum StreamQuality {
+  AUTO
+  LOW     # 480p
+  MEDIUM  # 720p
+  HIGH    # 1080p
+  ULTRA   # 4K
+}
+
+# Advanced Moderation Tools Types
+type ModerationPattern {
+  id: ID!
+  pattern: String!
+  type: PatternType!
+  severity: ModerationSeverity!
+  matchCount: Int!
+  falsePositiveRate: Float!
+  createdAt: Time!
+  updatedAt: Time!
+  createdBy: Actor!
+  active: Boolean!
+}
+
+enum PatternType {
+  REGEX
+  KEYWORD
+  PHRASE
+  ML_PATTERN
+}
+
+enum ModerationSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+type TrainingResult {
+  success: Boolean!
+  status: String!          # SUBMITTED, IN_PROGRESS, COMPLETED, FAILED
+  jobId: String!           # Bedrock job ARN/ID
+  jobName: String!         # Human-readable job name
+  datasetS3Key: String!    # S3 key of training dataset
+  modelVersion: String!    # Model version (empty when SUBMITTED)
+  accuracy: Float!         # Training accuracy (0 when SUBMITTED)
+  precision: Float!        # Training precision (0 when SUBMITTED)
+  recall: Float!           # Training recall (0 when SUBMITTED)
+  f1Score: Float!          # Training F1 score (0 when SUBMITTED)
+  samplesUsed: Int!        # Number of training samples
+  trainingTime: Int!       # Training duration in seconds (0 when SUBMITTED)
+  improvements: [String!]! # Improvements (empty when SUBMITTED)
+}
+
+type ModerationAlert {
+  id: ID!
+  severity: ModerationSeverity!
+  pattern: ModerationPattern
+  content: Object!
+  matchedText: String!
+  confidence: Float!
+  suggestedAction: ModerationAction!
+  timestamp: Time!
+  handled: Boolean!
+}
+
+# Federation Management Types
+type FederationLimit {
+  domain: String!
+  ingressLimitMB: Int!
+  egressLimitMB: Int!
+  requestsPerMinute: Int!
+  monthlyBudgetUSD: Float
+  active: Boolean!
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type FederationManagementStatus {
+  domain: String!
+  status: FederationState!
+  reason: String
+  pausedUntil: Time
+  limits: FederationLimit
+  metrics: FederationMetrics!
+}
+
+enum FederationState {
+  ACTIVE
+  PAUSED
+  LIMITED
+  BLOCKED
+  ERROR
+}
+
+type FederationMetrics {
+  currentMonthCostUSD: Float!
+  currentMonthRequests: Int!
+  currentMonthBandwidthMB: Int!
+  averageResponseTime: Float!
+  errorRate: Float!
+}
+
+type InstanceBudget {
+  domain: String!
+  monthlyBudgetUSD: Float!
+  currentSpendUSD: Float!
+  remainingBudgetUSD: Float!
+  projectedOverspend: Float
+  alertThreshold: Float!
+  autoLimit: Boolean!
+  period: String!
+}
+
+# Input Types for Phase 2
+input ModerationPatternInput {
+  pattern: String!
+  type: PatternType!
+  severity: ModerationSeverity!
+  active: Boolean
+}
+
+input ModerationSampleInput {
+  objectId: ID!
+  objectType: String!
+  label: String!
+  confidence: Float!
+}
+
+input BedrockTrainingOptions {
+  baseModelId: String
+  datasetS3Path: String
+  outputS3Path: String
+  maxTrainingTime: Int
+  earlyStoppingEnabled: Boolean
+}
+
+input FederationLimitInput {
+  ingressLimitMB: Int
+  egressLimitMB: Int
+  requestsPerMinute: Int
+  monthlyBudgetUSD: Float
+}
+
+# Phase 2 Query Extensions
+extend type Query {
+  # Cost Analytics
+  federationCosts(first: Int, after: String, orderBy: CostOrderBy): FederationCostConnection!
+  instanceHealthReport(domain: String!): InstanceHealthReport!
+  costProjections(period: Period!): CostProjection!
+  
+  # Media Streaming
+  mediaStreamUrl(mediaId: ID!): MediaStream!
+  supportedBitrates(mediaId: ID!): [Bitrate!]!
+  
+  # Advanced Moderation
+  moderationPatterns(active: Boolean, severity: ModerationSeverity, first: Int, after: String): [ModerationPattern!]!
+  moderationEffectiveness(patternId: ID!, period: ModerationPeriod!): ModerationEffectiveness!
+  
+  # Federation Management
+  federationLimits(active: Boolean, first: Int, after: String): [FederationLimit!]!
+  instanceBudgets(exceeded: Boolean): [InstanceBudget!]!
+  federationHealth(threshold: Float): [FederationManagementStatus!]!
+}
+
+# Phase 2 Mutation Extensions
+extend type Mutation {
+  # Media Streaming
+  requestStreamingUrl(mediaId: ID!, quality: StreamQuality): MediaStream!
+  preloadMedia(mediaIds: [ID!]!): [MediaStream!]!
+  
+  # Advanced Moderation
+  createModerationPattern(input: ModerationPatternInput!): ModerationPattern!
+  updateModerationPattern(id: ID!, input: ModerationPatternInput!): ModerationPattern!
+  deleteModerationPattern(id: ID!): Boolean!
+  trainModerationModel(samples: [ModerationSampleInput!]!, options: BedrockTrainingOptions): TrainingResult!
+  
+  # Federation Management
+  setFederationLimit(domain: String!, limit: FederationLimitInput!): FederationLimit!
+  pauseFederation(domain: String!, reason: String!, until: Time): FederationManagementStatus!
+  resumeFederation(domain: String!): FederationManagementStatus!
+  setInstanceBudget(domain: String!, monthlyUSD: Float!, autoLimit: Boolean): InstanceBudget!
+  
+  # Cost Management
+  optimizeFederationCosts(threshold: Float!): CostOptimizationResult!
+}
+
+# Phase 2 Subscription Extensions
+extend type Subscription {
+  # Moderation Alerts
+  moderationAlerts(severity: ModerationSeverity): ModerationAlert!
+  
+  # Cost Alerts
+  costAlerts(thresholdUSD: Float!): CostAlert!
+  budgetAlerts(domain: String): BudgetAlert!
+  
+  # Federation Health
+  federationHealthUpdates(domain: String): FederationHealthUpdate!
+}
+
+# Additional Phase 2 Types
+type CostProjection {
+  period: Period!
+  currentCost: Float!
+  projectedCost: Float!
+  variance: Float!
+  topDrivers: [Driver!]!
+  recommendations: [String!]!
+}
+
+type Driver {
+  type: String!
+  domain: String
+  cost: Float!
+  percentOfTotal: Float!
+  trend: Trend!
+}
+
+enum Trend {
+  INCREASING
+  STABLE
+  DECREASING
+}
+
+type ModerationEffectiveness {
+  patternId: ID!
+  matchCount: Int!
+  truePositives: Int!
+  falsePositives: Int!
+  missedCount: Int!
+  precision: Float!
+  recall: Float!
+  f1Score: Float!
+}
+
+type CostOptimizationResult {
+  optimized: Int!
+  savedMonthlyUSD: Float!
+  actions: [OptimizationAction!]!
+}
+
+type OptimizationAction {
+  domain: String!
+  action: String!
+  savingsUSD: Float!
+  impact: String!
+}
+
+type CostAlert {
+  id: ID!
+  type: String!
+  amount: Float!
+  threshold: Float!
+  domain: String
+  message: String!
+  timestamp: Time!
+}
+
+type BudgetAlert {
+  id: ID!
+  domain: String!
+  budgetUSD: Float!
+  spentUSD: Float!
+  percentUsed: Float!
+  projectedOverspend: Float
+  alertLevel: AlertLevel!
+  timestamp: Time!
+}
+
+enum AlertLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+type FederationHealthUpdate {
+  domain: String!
+  previousStatus: InstanceHealthStatus!
+  currentStatus: InstanceHealthStatus!
+  issues: [HealthIssue!]!
+  timestamp: Time!
+}
+
+enum CostOrderBy {
+  TOTAL_COST_DESC
+  TOTAL_COST_ASC
+  ERROR_RATE_DESC
+  REQUEST_COUNT_DESC
+  DOMAIN_ASC
+}
+
+enum ModerationPeriod {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
 } 
+# Lesser GraphQL Schema - Phase 3 Federation Visualization
+
+# Federation Relationship Visualization Types
+type FederationGraph {
+  nodes: [InstanceNode!]!
+  edges: [FederationEdge!]!
+  clusters: [InstanceCluster!]!
+  healthScore: Float!
+}
+
+type InstanceNode {
+  domain: String!
+  displayName: String!
+  software: String!
+  version: String!
+  userCount: Int!
+  statusCount: Int!
+  federatingWith: Int!
+  healthStatus: InstanceHealthStatus!
+  coordinates: Coordinates!
+  metadata: InstanceMetadata!
+}
+
+type Coordinates {
+  x: Float!
+  y: Float!
+}
+
+type InstanceMetadata {
+  firstSeen: Time!
+  lastActivity: Time!
+  monthlyActiveUsers: Int!
+  registrationsOpen: Boolean!
+  approvalRequired: Boolean!
+  primaryLanguage: String!
+  description: String
+}
+
+type FederationEdge {
+  source: String!
+  target: String!
+  weight: Float!
+  volumePerDay: Int!
+  errorRate: Float!
+  latency: Float!
+  bidirectional: Boolean!
+  healthScore: Float!
+}
+
+type InstanceCluster {
+  id: ID!
+  name: String!
+  members: [String!]!
+  commonality: String!
+  avgHealthScore: Float!
+  totalVolume: Int!
+  description: String!
+}
+
+type InstanceRelations {
+  domain: String!
+  directConnections: [InstanceConnection!]!
+  indirectConnections: [InstanceConnection!]!
+  blockedBy: [String!]!
+  blocking: [String!]!
+  federationScore: Float!
+  recommendations: [FederationRecommendation!]!
+}
+
+type InstanceConnection {
+  domain: String!
+  connectionType: ConnectionType!
+  strength: Float!
+  volumeIn: Int!
+  volumeOut: Int!
+  sharedUsers: Int!
+  lastActivity: Time!
+}
+
+enum ConnectionType {
+  FOLLOWS
+  MENTIONS
+  REPLIES
+  BOOSTS
+  QUOTES
+  MIXED
+}
+
+type FederationRecommendation {
+  type: RecommendationType!
+  priority: Priority!
+  domain: String
+  reason: String!
+  potentialImpact: String!
+  action: String!
+}
+
+enum RecommendationType {
+  PERFORMANCE
+  COST
+  SECURITY
+  CONNECTIVITY
+  CONTENT
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+type FederationFlow {
+  topSources: [FlowNode!]!
+  topDestinations: [FlowNode!]!
+  volumeByHour: [HourlyVolume!]!
+  costByInstance: [InstanceCost!]!
+}
+
+type FlowNode {
+  domain: String!
+  volume: Int!
+  percentage: Float!
+  trend: Trend!
+  avgMessageSize: Int!
+}
+
+type HourlyVolume {
+  hour: Time!
+  inbound: Int!
+  outbound: Int!
+  errors: Int!
+  avgLatency: Float!
+}
+
+type InstanceCost {
+  domain: String!
+  costUSD: Float!
+  percentage: Float!
+  breakdown: CostBreakdown!
+}
+
+# Streaming Analytics Types
+type StreamingAnalytics {
+  totalViews: Int!
+  uniqueViewers: Int!
+  averageWatchTime: Duration!
+  qualityDistribution: [QualityStats!]!
+  bufferingEvents: Int!
+  completionRate: Float!
+}
+
+type QualityStats {
+  quality: StreamQuality!
+  viewCount: Int!
+  percentage: Float!
+  avgBandwidth: Float!
+}
+
+scalar Duration
+
+type StreamConnection {
+  edges: [StreamEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type StreamEdge {
+  node: Stream!
+  cursor: Cursor!
+}
+
+type Stream {
+  id: ID!
+  mediaId: ID!
+  title: String!
+  thumbnail: String!
+  duration: Duration!
+  viewCount: Int!
+  quality: StreamQuality!
+  popularity: Float!
+  createdAt: Time!
+}
+
+type BandwidthReport {
+  period: TimePeriod!
+  totalGB: Float!
+  peakMbps: Float!
+  avgMbps: Float!
+  byQuality: [QualityBandwidth!]!
+  byHour: [HourlyBandwidth!]!
+  cost: Float!
+}
+
+type QualityBandwidth {
+  quality: StreamQuality!
+  totalGB: Float!
+  percentage: Float!
+}
+
+type HourlyBandwidth {
+  hour: Time!
+  totalGB: Float!
+  peakMbps: Float!
+}
+
+enum TimePeriod {
+  HOUR
+  DAY
+  WEEK
+  MONTH
+}
+
+# Moderation Dashboard Types
+type ModerationDashboard {
+  pendingReviews: Int!
+  recentDecisions: [ModerationDecision!]!
+  topPatterns: [PatternStats!]!
+  falsePositiveRate: Float!
+  averageResponseTime: Duration!
+  threatTrends: [ThreatTrend!]!
+}
+
+type PatternStats {
+  pattern: ModerationPattern!
+  matchCount: Int!
+  accuracy: Float!
+  lastMatch: Time!
+  trend: Trend!
+}
+
+type ThreatTrend {
+  type: String!
+  severity: ModerationSeverity!
+  count: Int!
+  change: Float!
+  instances: [String!]!
+}
+
+type ModeratorStats {
+  moderatorId: ID!
+  period: TimePeriod!
+  decisionsCount: Int!
+  avgResponseTime: Duration!
+  accuracy: Float!
+  overturned: Int!
+  categories: [CategoryStats!]!
+}
+
+type CategoryStats {
+  category: String!
+  count: Int!
+  accuracy: Float!
+}
+
+type ModerationItem {
+  id: ID!
+  content: Object!
+  reportCount: Int!
+  severity: ModerationSeverity!
+  priority: Priority!
+  assignedTo: Actor
+  deadline: Time!
+}
+
+type ThreatAlert {
+  id: ID!
+  type: String!
+  severity: ModerationSeverity!
+  source: String!
+  description: String!
+  affectedInstances: [String!]!
+  mitigationSteps: [String!]!
+  timestamp: Time!
+}
+
+# Performance Monitoring Types
+type PerformanceReport {
+  service: ServiceCategory!
+  p50Latency: Duration!
+  p95Latency: Duration!
+  p99Latency: Duration!
+  errorRate: Float!
+  throughput: Float!
+  coldStarts: Int!
+  period: TimePeriod!
+}
+
+enum ServiceCategory {
+  GRAPHQL_API
+  FEDERATION_DELIVERY
+  MEDIA_PROCESSOR
+  MODERATION_ENGINE
+  SEARCH_INDEXER
+  STREAMING_SERVICE
+}
+
+type QueryPerformance {
+  query: String!
+  count: Int!
+  avgDuration: Duration!
+  p95Duration: Duration!
+  errorCount: Int!
+  lastSeen: Time!
+}
+
+type InfrastructureStatus {
+  healthy: Boolean!
+  services: [ServiceStatus!]!
+  databases: [DatabaseStatus!]!
+  queues: [QueueStatus!]!
+  alerts: [InfrastructureAlert!]!
+}
+
+type ServiceStatus {
+  name: String!
+  type: ServiceCategory!
+  status: HealthStatus!
+  uptime: Float!
+  lastRestart: Time
+  errorRate: Float!
+}
+
+enum HealthStatus {
+  HEALTHY
+  DEGRADED
+  DOWN
+  UNKNOWN
+}
+
+type DatabaseStatus {
+  name: String!
+  type: String!
+  status: HealthStatus!
+  connections: Int!
+  latency: Duration!
+  throughput: Float!
+}
+
+type QueueStatus {
+  name: String!
+  depth: Int!
+  processingRate: Float!
+  oldestMessage: Time
+  dlqCount: Int!
+}
+
+type InfrastructureAlert {
+  id: ID!
+  service: String!
+  severity: AlertSeverity!
+  message: String!
+  timestamp: Time!
+  resolved: Boolean!
+}
+
+type PerformanceAlert {
+  id: ID!
+  service: ServiceCategory!
+  metric: String!
+  threshold: Float!
+  actualValue: Float!
+  severity: AlertSeverity!
+  timestamp: Time!
+}
+
+type InfrastructureEvent {
+  id: ID!
+  type: InfrastructureEventType!
+  service: String!
+  description: String!
+  impact: String!
+  timestamp: Time!
+}
+
+enum InfrastructureEventType {
+  DEPLOYMENT
+  SCALING
+  FAILURE
+  RECOVERY
+  MAINTENANCE
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+# Input Types
+input StreamingQualityInput {
+  mediaId: ID!
+  quality: StreamQuality!
+  bufferingEvents: Int!
+  watchTime: Int!
+}
+
+input StreamingPreferencesInput {
+  defaultQuality: StreamQuality
+  autoQuality: Boolean
+  preloadNext: Boolean
+  dataSaver: Boolean
+}
+
+input ReblogFilterInput {
+  key: String!
+  enabled: Boolean!
+}
+
+input UpdateUserPreferencesInput {
+  language: String
+  defaultPostingVisibility: Visibility
+  defaultMediaSensitive: Boolean
+  expandSpoilers: Boolean
+  expandMedia: ExpandMediaPreference
+  autoplayGifs: Boolean
+  showFollowCounts: Boolean
+  preferredTimelineOrder: TimelineOrder
+  searchSuggestionsEnabled: Boolean
+  personalizedSearchEnabled: Boolean
+  reblogFilters: [ReblogFilterInput!]
+  streaming: StreamingPreferencesInput
+}
+
+input ModerationFilter {
+  severity: ModerationSeverity
+  assignedTo: ID
+  priority: Priority
+  unhandled: Boolean
+}
+
+# Phase 3 Query Extensions
+extend type Query {
+  # Federation Visualization
+  federationMap(depth: Int = 2): FederationGraph!
+  instanceRelationships(domain: String!): InstanceRelations!
+  federationFlow(period: TimePeriod!): FederationFlow!
+  
+  # Streaming Analytics
+  streamingAnalytics(mediaId: ID!): StreamingAnalytics!
+  popularStreams(first: Int!, after: String): StreamConnection!
+  bandwidthUsage(period: TimePeriod!): BandwidthReport!
+  
+  # Moderation Dashboard
+  moderationDashboard(filter: ModerationFilter): ModerationDashboard!
+  patternEffectiveness(patternId: ID!): PatternStats!
+  moderatorActivity(moderatorId: ID!, period: TimePeriod!): ModeratorStats!
+  
+  # Performance Monitoring
+  performanceMetrics(service: ServiceCategory!): PerformanceReport!
+  slowQueries(threshold: Duration!): [QueryPerformance!]!
+  infrastructureHealth: InfrastructureStatus!
+}
+
+# Phase 3 Mutation Extensions
+extend type Mutation {
+  # Streaming Quality
+  reportStreamingQuality(input: StreamingQualityInput!): StreamingQualityReport!
+}
+
+# Phase 3 Subscription Extensions
+extend type Subscription {
+  # Moderation Queue
+  moderationQueueUpdate(priority: Priority): ModerationItem!
+  threatIntelligence: ThreatAlert!
+  
+  # Performance Alerts
+  performanceAlert(severity: AlertSeverity!): PerformanceAlert!
+  infrastructureEvent: InfrastructureEvent!
+}
+
+# Additional Types
+type StreamingQualityReport {
+  success: Boolean!
+  mediaId: ID!
+  quality: StreamQuality!
+  reportId: ID!
+}
+
+type UserPreferences {
+  actorId: ID!
+  posting: PostingPreferences!
+  reading: ReadingPreferences!
+  discovery: DiscoveryPreferences!
+  streaming: StreamingPreferences!
+  notifications: NotificationPreferences!
+  privacy: PrivacyPreferences!
+  reblogFilters: [ReblogFilter!]!
+}
+
+type PostingPreferences {
+  defaultVisibility: Visibility!
+  defaultSensitive: Boolean!
+  defaultLanguage: String!
+}
+
+type ReadingPreferences {
+  expandSpoilers: Boolean!
+  expandMedia: ExpandMediaPreference!
+  autoplayGifs: Boolean!
+  timelineOrder: TimelineOrder!
+}
+
+type DiscoveryPreferences {
+  showFollowCounts: Boolean!
+  searchSuggestionsEnabled: Boolean!
+  personalizedSearchEnabled: Boolean!
+}
+
+type StreamingPreferences {
+  defaultQuality: StreamQuality!
+  autoQuality: Boolean!
+  preloadNext: Boolean!
+  dataSaver: Boolean!
+}
+
+type NotificationPreferences {
+  email: Boolean! # Always false - Email notifications are not supported by Lesser
+  push: Boolean!
+  inApp: Boolean!
+  digest: DigestFrequency!
+}
+
+enum DigestFrequency {
+  NEVER
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+type PrivacyPreferences {
+  defaultVisibility: Visibility!
+  indexable: Boolean!
+  showOnlineStatus: Boolean!
+}
+
+type ReblogFilter {
+  key: String!
+  enabled: Boolean!
+}
+
+enum ExpandMediaPreference {
+  DEFAULT
+  SHOW_ALL
+  HIDE_ALL
+}
+
+enum TimelineOrder {
+  NEWEST
+  OLDEST
+}

@@ -7,6 +7,8 @@ Tests public endpoints only
 from mastodon import Mastodon
 import json
 import requests
+import base64
+import time
 import sys
 from datetime import datetime
 
@@ -151,6 +153,7 @@ def test_nodeinfo():
             # Follow NodeInfo 2.0 link
             for link in data.get('links', []):
                 if link.get('rel') == 'http://nodeinfo.diaspora.software/ns/schema/2.0':
+                    nodeinfo_url = link.get('href')
                     break
         else:
             log_test(False, "GET /.well-known/nodeinfo", f"Status {response.status_code}")
@@ -179,9 +182,11 @@ def test_pagination():
         ("/api/v1/custom_emojis", "custom emojis")
     ]
     
-    for endpoint, _ in endpoints:
+    for endpoint, name in endpoints:
         try:
             response = requests.get(f"{INSTANCE_URL}{endpoint}")
+            has_link = 'Link' in response.headers
+            has_pagination = 'X-Total-Count' in response.headers or 'Link' in response.headers
             
             # Show what headers are actually present
             header_info = []

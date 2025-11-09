@@ -3,10 +3,13 @@ package quotes
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -101,6 +104,8 @@ func (qs *QuoteService) CreateQuotePost(ctx context.Context, req *CreateQuoteReq
 		return nil, ErrCreateQuoteRelationship
 	}
 
+	qs.setQuoteReference(ctx, quoteStatus, targetStatus)
+
 	// Update quote counts
 	if err := qs.updateQuoteCounts(ctx, targetStatus.StatusID, 1); err != nil {
 		qs.logger.Warn("failed to update quote count", zap.Error(err))
@@ -118,6 +123,98 @@ func (qs *QuoteService) CreateQuotePost(ctx context.Context, req *CreateQuoteReq
 		QuoteRelationship: quoteRel,
 		TargetStatus:      targetStatus,
 	}, nil
+}
+
+// AttachQuoteToStatus links an existing status to a target status as a quote
+func (qs *QuoteService) AttachQuoteToStatus(ctx context.Context, quoteStatus *models.Status, targetStatusID string) (*QuotePostResult, error) {
+	if quoteStatus == nil || quoteStatus.StatusID == "" || quoteStatus.AuthorUsername == "" {
+		qs.logger.Error("invalid quote status provided for attachment")
+		return nil, ErrInvalidQuoteRequest
+	}
+
+	if err := common.ValidateRequiredParam("target_status_id", targetStatusID); err != nil {
+		return nil, err
+	}
+
+	targetStatus, err := qs.storage.Status().GetStatus(ctx, targetStatusID)
+	if err != nil {
+		qs.logger.Error("failed to get target status for quote attachment",
+			zap.String("quote_status_id", quoteStatus.StatusID),
+			zap.String("target_status_id", targetStatusID),
+			zap.Error(err))
+		return nil, ErrGetTargetStatus(err)
+	}
+	if targetStatus == nil {
+		return nil, ErrTargetStatusNotFound
+	}
+
+	if !qs.isStatusQuotable(targetStatus) {
+		return nil, ErrTargetStatusNotQuotable
+	}
+
+	canQuote, err := qs.checkQuotePermissions(ctx, quoteStatus.AuthorUsername, targetStatus)
+	if err != nil {
+		return nil, ErrCheckQuotePermissions(err)
+	}
+	if !canQuote {
+		return nil, ErrNotAuthorizedToQuote
+	}
+
+	quoteRel, err := qs.createQuoteRelationship(ctx, quoteStatus, targetStatus)
+	if err != nil {
+		qs.logger.Error("failed to create quote relationship for existing status",
+			zap.String("quote_status_id", quoteStatus.StatusID),
+			zap.String("target_status_id", targetStatusID),
+			zap.Error(err))
+		return nil, ErrCreateQuoteRelationship
+	}
+
+	if err := qs.updateQuoteCounts(ctx, targetStatus.StatusID, 1); err != nil {
+		qs.logger.Warn("failed to update quote count for attachment",
+			zap.String("target_status_id", targetStatusID),
+			zap.Error(err))
+	}
+
+	if err := qs.createQuoteNotification(ctx, quoteStatus, targetStatus); err != nil {
+		qs.logger.Warn("failed to create quote notification for attachment",
+			zap.String("quote_status_id", quoteStatus.StatusID),
+			zap.String("target_status_id", targetStatusID),
+			zap.Error(err))
+	}
+
+	qs.setQuoteReference(ctx, quoteStatus, targetStatus)
+
+	return &QuotePostResult{
+		QuoteStatus:       quoteStatus,
+		QuoteRelationship: quoteRel,
+		TargetStatus:      targetStatus,
+	}, nil
+}
+
+func (qs *QuoteService) setQuoteReference(ctx context.Context, quoteStatus, targetStatus *models.Status) {
+	if quoteStatus == nil || targetStatus == nil {
+		return
+	}
+
+	targetAuthorID := targetStatus.AuthorID
+	if targetAuthorID == "" {
+		targetAuthorID = targetStatus.AuthorUsername
+	}
+
+	if quoteStatus.QuoteTargetStatusID == targetStatus.StatusID &&
+		quoteStatus.QuoteTargetAuthorID == targetAuthorID {
+		return
+	}
+
+	quoteStatus.QuoteTargetStatusID = targetStatus.StatusID
+	quoteStatus.QuoteTargetAuthorID = targetAuthorID
+
+	if err := qs.storage.Status().UpdateStatus(ctx, quoteStatus); err != nil {
+		qs.logger.Warn("failed to persist quote reference",
+			zap.String("quote_status_id", quoteStatus.StatusID),
+			zap.String("target_status_id", targetStatus.StatusID),
+			zap.Error(err))
+	}
 }
 
 // GetQuotesForStatus retrieves quote posts for a given status
@@ -200,6 +297,8 @@ func (qs *QuoteService) GetQuotePermissions(ctx context.Context, username string
 
 	// If no permissions exist, return defaults
 	if permissions == nil {
+		qs.logger.Warn("quote permissions missing; applying defaults",
+			zap.String("username", username))
 		permissions = &models.QuotePermissions{
 			Username: username,
 		}
@@ -382,7 +481,15 @@ func (qs *QuoteService) saveQuoteRelationship(ctx context.Context, rel *models.Q
 }
 
 func (qs *QuoteService) getQuotePermissions(ctx context.Context, username string) (*models.QuotePermissions, error) {
-	return qs.storage.Quote().GetQuotePermissions(ctx, username)
+	permissions, err := qs.storage.Quote().GetQuotePermissions(ctx, username)
+	if err != nil {
+		if stdErrors.Is(err, storage.ErrNotFound) || apperrors.HasCode(err, apperrors.CodeNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return permissions, nil
 }
 
 func (qs *QuoteService) updateQuoteCounts(_ context.Context, statusID string, delta int) error {

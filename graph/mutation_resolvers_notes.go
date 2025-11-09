@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
@@ -32,6 +33,11 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	// Validate input
 	if err := common.ValidateContentOrAttachments(input.Content, input.AttachmentIds); err != nil {
 		return nil, err
+	}
+
+	var quoteTargetID string
+	if input.QuoteID != nil {
+		quoteTargetID = strings.TrimSpace(*input.QuoteID)
 	}
 
 	// Build create command
@@ -103,6 +109,13 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 			zap.Error(err))
 		return nil, errors.Join(errors.New("failed to create note"), err)
 	}
+
+	if quoteTargetID != "" && result != nil && result.Note != nil {
+		if err := r.attachQuoteToTarget(ctx, username, quoteTargetID, result.Note); err != nil {
+			return nil, err
+		}
+	}
+
 	if requestLogger != nil && result != nil && result.Note != nil {
 		requestLogger.Info("createNote service completed",
 			zap.String("user", username),
@@ -154,6 +167,39 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	}
 
 	return payload, nil
+}
+
+func (r *mutationResolver) attachQuoteToTarget(ctx context.Context, username, targetStatusID string, quoteStatus *models.Status) error {
+	if quoteStatus == nil {
+		return errors.New("quote status not available for attachment")
+	}
+
+	quotesService := r.Registry.Quotes()
+	if quotesService == nil {
+		r.Logger.Error("quotes service not available for quote attachment")
+		return errors.New("quotes service is not available")
+	}
+
+	_, err := quotesService.AttachQuoteToStatus(ctx, quoteStatus, targetStatusID)
+	if err != nil {
+		r.Logger.Error("failed to attach quote relationship",
+			zap.String("user", username),
+			zap.String("quote_status_id", quoteStatus.StatusID),
+			zap.String("target_status_id", targetStatusID),
+			zap.Error(err))
+		return err
+	}
+
+	r.trackDynamoOperation(ctx, "write", 1)
+
+	if r.Logger != nil {
+		r.Logger.Info("attached quote relationship",
+			zap.String("user", username),
+			zap.String("quote_status_id", quoteStatus.StatusID),
+			zap.String("target_status_id", targetStatusID))
+	}
+
+	return nil
 }
 
 // DeleteObject is the resolver for the deleteObject field.

@@ -1269,7 +1269,7 @@ func (r *StatusRepository) removeEngagement(ctx context.Context, userID, statusI
 	if err := common.ValidateSliceNotEmpty("engagements", engagements); err == nil {
 		pk := fmt.Sprintf("status#%s", statusID)
 		sk := fmt.Sprintf("status#%s", statusID)
-		
+
 		err = r.db.WithContext(ctx).Model(&models.Status{}).
 			Where("PK", "=", pk).
 			Where("SK", "=", sk).
@@ -1429,21 +1429,55 @@ func (r *StatusRepository) GetStatusEngagement(ctx context.Context, statusID, us
 	return liked, reblogged, bookmarked, nil
 }
 
-// GetStatusesByIDs gets multiple statuses by their IDs
+// GetStatusesByIDs gets multiple statuses by their IDs using batched BatchGetItem calls to minimize Dynamo round-trips.
 func (r *StatusRepository) GetStatusesByIDs(ctx context.Context, statusIDs []string) ([]*models.Status, error) {
-	result := make([]*models.Status, 0, len(statusIDs))
-
-	for _, statusID := range statusIDs {
-		status, err := r.GetStatus(ctx, statusID)
-		if err != nil {
-			// Skip statuses that can't be found rather than failing entirely
-			r.logger.Warn("failed to get status by ID", zap.String("statusID", statusID), zap.Error(err))
-			continue
-		}
-		result = append(result, status)
+	if len(statusIDs) == 0 {
+		return []*models.Status{}, nil
 	}
 
-	return result, nil
+	keySet := make(map[string]struct{}, len(statusIDs))
+	keys := make([]struct {
+		PK string
+		SK string
+	}, 0, len(statusIDs))
+
+	for _, id := range statusIDs {
+		if id == "" {
+			continue
+		}
+		if _, exists := keySet[id]; exists {
+			continue
+		}
+		keySet[id] = struct{}{}
+
+		pk := fmt.Sprintf("status#%s", id)
+		keys = append(keys, struct {
+			PK string
+			SK string
+		}{PK: pk, SK: pk})
+	}
+
+	records, err := r.BatchGet(ctx, keys)
+	if err != nil {
+		return nil, err
+	}
+
+	statusMap := make(map[string]*models.Status, len(records))
+	for _, status := range records {
+		if status == nil {
+			continue
+		}
+		statusMap[status.StatusID] = status
+	}
+
+	ordered := make([]*models.Status, 0, len(statusMap))
+	for _, id := range statusIDs {
+		if status, ok := statusMap[id]; ok {
+			ordered = append(ordered, status)
+		}
+	}
+
+	return ordered, nil
 }
 
 // GetPublicTimeline retrieves the public timeline with pagination

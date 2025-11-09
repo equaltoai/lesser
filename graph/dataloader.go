@@ -9,23 +9,31 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/graph-gophers/dataloader"
 	"go.uber.org/zap"
 )
 
+var (
+	errLoadersNotFound              = errors.New("graph dataloaders not found in context")
+	errQuoteTargetLoaderUnavailable = errors.New("quote target loader unavailable")
+)
+
 // Loaders holds all the dataloaders for the GraphQL server
 type Loaders struct {
-	ActorLoader      *dataloader.Loader
-	ObjectLoader     *dataloader.Loader
-	TrustScoreLoader *dataloader.Loader
+	ActorLoader       *dataloader.Loader
+	ObjectLoader      *dataloader.Loader
+	TrustScoreLoader  *dataloader.Loader
+	QuoteTargetLoader *dataloader.Loader
 }
 
 // NewLoaders creates new instances of all dataloaders
 func NewLoaders(repos core.RepositoryStorage, logger *zap.Logger) *Loaders {
 	return &Loaders{
-		ActorLoader:      newActorLoader(repos, logger),
-		ObjectLoader:     newObjectLoader(repos, logger),
-		TrustScoreLoader: newTrustScoreLoader(repos, logger),
+		ActorLoader:       newActorLoader(repos, logger),
+		ObjectLoader:      newObjectLoader(repos, logger),
+		TrustScoreLoader:  newTrustScoreLoader(repos, logger),
+		QuoteTargetLoader: newQuoteTargetLoader(repos, logger),
 	}
 }
 
@@ -123,6 +131,53 @@ func newTrustScoreLoader(repos core.RepositoryStorage, logger *zap.Logger) *data
 	return dataloader.NewBatchedLoader(batchFn, dataloader.WithWait(2*time.Millisecond))
 }
 
+// Quote target loader batches quote target lookups so timelines with many quotes avoid N+1 lookups.
+func newQuoteTargetLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
+	batchFn := func(ctx context.Context, keys dataloader.Keys) []*dataloader.Result {
+		results := make([]*dataloader.Result, len(keys))
+
+		if repos.Status() == nil {
+			for i := range results {
+				results[i] = &dataloader.Result{Error: ErrStatusRepositoryUnavailable}
+			}
+			return results
+		}
+
+		statusIDs := make([]string, len(keys))
+		for i, key := range keys {
+			statusIDs[i] = key.String()
+		}
+
+		statuses, err := repos.Status().GetStatusesByIDs(ctx, statusIDs)
+		if err != nil {
+			for i := range results {
+				results[i] = &dataloader.Result{Error: err}
+			}
+			return results
+		}
+
+		statusMap := make(map[string]*models.Status, len(statuses))
+		for _, status := range statuses {
+			if status == nil {
+				continue
+			}
+			statusMap[status.StatusID] = status
+		}
+
+		for i, key := range keys {
+			if status, ok := statusMap[key.String()]; ok {
+				results[i] = &dataloader.Result{Data: status}
+			} else {
+				results[i] = &dataloader.Result{Data: (*models.Status)(nil)}
+			}
+		}
+
+		return results
+	}
+
+	return dataloader.NewBatchedLoader(batchFn, dataloader.WithWait(2*time.Millisecond))
+}
+
 // Middleware to attach loaders to context
 type contextKey string
 
@@ -135,16 +190,16 @@ func WithLoaders(ctx context.Context, loaders *Loaders) context.Context {
 
 // GetLoaders retrieves loaders from context
 func GetLoaders(ctx context.Context) *Loaders {
-	loaders, ok := ctx.Value(loadersKey).(*Loaders)
-	if !ok {
-		panic("loaders not found in context")
-	}
+	loaders, _ := ctx.Value(loadersKey).(*Loaders)
 	return loaders
 }
 
 // LoadActor loads an actor using DataLoader
 func LoadActor(ctx context.Context, username string) (*activitypub.Actor, error) {
 	loaders := GetLoaders(ctx)
+	if loaders == nil || loaders.ActorLoader == nil {
+		return nil, errLoadersNotFound
+	}
 	thunk := loaders.ActorLoader.Load(ctx, dataloader.StringKey(username))
 	result, err := thunk()
 	if err != nil {
@@ -156,6 +211,9 @@ func LoadActor(ctx context.Context, username string) (*activitypub.Actor, error)
 // LoadObject loads an object using DataLoader
 func LoadObject(ctx context.Context, id string) (any, error) {
 	loaders := GetLoaders(ctx)
+	if loaders == nil || loaders.ObjectLoader == nil {
+		return nil, errLoadersNotFound
+	}
 	thunk := loaders.ObjectLoader.Load(ctx, dataloader.StringKey(id))
 	result, err := thunk()
 	if err != nil {
@@ -167,6 +225,9 @@ func LoadObject(ctx context.Context, id string) (any, error) {
 // LoadTrustScore loads a trust score using DataLoader
 func LoadTrustScore(ctx context.Context, actorID, category string) (any, error) {
 	loaders := GetLoaders(ctx)
+	if loaders == nil || loaders.TrustScoreLoader == nil {
+		return nil, errLoadersNotFound
+	}
 	key := fmt.Sprintf("%s:%s", actorID, category)
 	thunk := loaders.TrustScoreLoader.Load(ctx, dataloader.StringKey(key))
 	result, err := thunk()
@@ -174,4 +235,26 @@ func LoadTrustScore(ctx context.Context, actorID, category string) (any, error) 
 		return nil, err
 	}
 	return result, nil
+}
+
+// LoadQuoteTargetStatus loads a quote target status using the dedicated DataLoader
+func LoadQuoteTargetStatus(ctx context.Context, statusID string) (*models.Status, error) {
+	loaders := GetLoaders(ctx)
+	if loaders == nil {
+		return nil, errLoadersNotFound
+	}
+	if loaders.QuoteTargetLoader == nil {
+		return nil, errQuoteTargetLoaderUnavailable
+	}
+
+	thunk := loaders.QuoteTargetLoader.Load(ctx, dataloader.StringKey(statusID))
+	result, err := thunk()
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, nil
+	}
+	status, _ := result.(*models.Status)
+	return status, nil
 }

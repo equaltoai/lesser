@@ -3,18 +3,30 @@
 Fixed version of the test script with better error handling
 """
 
+from mastodon import Mastodon
+import time
+import sys
 import requests
+from datetime import datetime
 
 # Your lesser instance
 INSTANCE_URL = 'https://lesser.host'
 
+# Global counters for test results
+tests_passed = 0
+tests_failed = 0
+
 def log_test(success, test_name, details=""):
     """Log test result with consistent formatting"""
+    global tests_passed, tests_failed
+    
     if success:
+        tests_passed += 1
         print(f"✓ {test_name}")
         if details:
             print(f"  {details}")
     else:
+        tests_failed += 1
         print(f"✗ {test_name}")
         if details:
             print(f"  ERROR: {details}")
@@ -41,11 +53,11 @@ def test_search(mastodon):
     try:
         # Search with resolve - also handle different API versions
         try:
-            resolved_results = mastodon.search_v2('test', resolve=True)
+            results = mastodon.search_v2('test', resolve=True)
         except TypeError:
             try:
-                resolved_results = mastodon.search(q='test', resolve=True, version=2)
-            except Exception as raw_exc:
+                results = mastodon.search(q='test', resolve=True, version=2)
+            except:
                 # Fall back to raw request
                 response = requests.get(
                     f"{INSTANCE_URL}/api/v2/search",
@@ -53,21 +65,11 @@ def test_search(mastodon):
                     headers={'Authorization': f'Bearer {mastodon.access_token}'}
                 )
                 if response.status_code == 200:
-                    resolved_results = response.json()
+                    results = response.json()
                 else:
-                    raise Exception(f"Status {response.status_code}") from raw_exc
-
-        if isinstance(resolved_results, dict):
-            accounts = len(resolved_results.get('accounts', []))
-            statuses = len(resolved_results.get('statuses', []))
-            hashtags = len(resolved_results.get('hashtags', []))
-            log_test(
-                True,
-                "GET /api/v2/search?resolve=true",
-                f"Accounts: {accounts}, Statuses: {statuses}, Hashtags: {hashtags}"
-            )
-        else:
-            log_test(True, "GET /api/v2/search?resolve=true", "Search with resolve")
+                    raise Exception(f"Status {response.status_code}")
+                    
+        log_test(True, "GET /api/v2/search?resolve=true", "Search with resolve")
     except Exception as e:
         log_test(False, "GET /api/v2/search?resolve=true", str(e))
 

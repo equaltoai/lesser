@@ -176,15 +176,13 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 	noteID := fmt.Sprintf("%d-%s", time.Now().Unix(), generateRandomStringForBoost())
 
 	// Create the QuoteNote object with quote content
-	note := &activitypub.QuoteNote{
-		Note: activitypub.Note{
-			BaseObject: activitypub.BaseObject{
-				ID:   fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), noteID),
-				Type: "Note",
-			},
-			Content:      comment,
-			AttributedTo: actor.ID,
+	note := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			ID:   fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), noteID),
+			Type: "Note",
 		},
+		Content:            comment,
+		AttributedTo:       actor.ID,
 		QuoteURL:           objectID,
 		Quoteable:          true,
 		QuoteNotifications: true,

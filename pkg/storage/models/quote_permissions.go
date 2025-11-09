@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 )
 
 // QuotePermissions represents quote permissions for a user's statuses
@@ -88,6 +89,25 @@ func (q *QuotePermissions) SetDefaults() {
 	q.AllowPublic = true
 	q.AllowFollowers = true
 	q.AllowMentioned = true
+	q.BlockList = []string{}
+}
+
+// ApplyVisibilityDefaults aligns permissions with the user's default posting visibility.
+func (q *QuotePermissions) ApplyVisibilityDefaults(visibility string) {
+	switch strings.ToLower(strings.TrimSpace(visibility)) {
+	case "direct":
+		q.AllowPublic = false
+		q.AllowFollowers = false
+		q.AllowMentioned = true
+	case "private", "followers", "followers-only":
+		q.AllowPublic = false
+		q.AllowFollowers = true
+		q.AllowMentioned = true
+	default:
+		q.SetDefaults()
+		return
+	}
+
 	q.BlockList = []string{}
 }
 

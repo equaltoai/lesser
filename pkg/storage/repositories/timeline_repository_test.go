@@ -98,6 +98,7 @@ func TestRemoveFromTimelines(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	expectWithContext(mockDB)
 	mockQuery := new(mocks.MockQuery)
+	deleteQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
 	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
@@ -121,10 +122,8 @@ func TestRemoveFromTimelines(t *testing.T) {
 	// Set up expectations for finding entries
 	expectWithContext(mockDB)
 
-	mockDB.On("Model", mock.MatchedBy(func(model any) bool {
-		t, ok := model.(*models.Timeline)
-		return ok && t != nil
-	})).Return(mockQuery).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Timeline")).Return(mockQuery).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Timeline")).Return(deleteQuery).Times(len(testTimelines))
 	mockQuery.On("Index", "post-timeline-index").Return(mockQuery)
 	mockQuery.On("Where", "GSI1PK", "=", fmt.Sprintf("POST#%s", objectID)).Return(mockQuery)
 	mockQuery.On("OrderBy", "GSI1SK", "ASC").Return(mockQuery)
@@ -138,11 +137,6 @@ func TestRemoveFromTimelines(t *testing.T) {
 	}).Return(nil)
 
 	// Set up expectations for deletion
-	deleteQuery := new(mocks.MockQuery)
-	mockDB.On("Model", mock.MatchedBy(func(model any) bool {
-		t, ok := model.(*models.Timeline)
-		return ok && t == nil
-	})).Return(deleteQuery).Twice()
 	deleteQuery.On("Where", "PK", "=", mock.Anything).Return(deleteQuery).Maybe()
 	deleteQuery.On("Where", "SK", "=", mock.Anything).Return(deleteQuery).Maybe()
 	deleteQuery.On("Delete").Return(nil).Twice()
@@ -154,6 +148,7 @@ func TestRemoveFromTimelines(t *testing.T) {
 	assert.NoError(t, err)
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
+	deleteQuery.AssertExpectations(t)
 }
 
 func TestCreateTimelineEntry_ValidEntry(t *testing.T) {

@@ -242,15 +242,15 @@ type Note struct {
 	Tag            []Tag        `json:"tag,omitempty"`
 	ConversationID string       `json:"conversationId,omitempty"` // For tracking conversation threads
 	Visibility     string       `json:"_:visibility,omitempty"`   // Lesser extension for preserving visibility
+	QuoteURL           string        `json:"quoteUrl,omitempty"`
+	Quoteable          bool          `json:"_:quoteable,omitempty"`
+	QuoteNotifications bool          `json:"_:quoteNotifications,omitempty"`
+	QuoteContext       *QuoteContext `json:"_:quoteContext,omitempty"`
 }
 
-// QuoteNote represents a note that quotes another note
+// QuoteNote is retained for backwards compatibility; it now simply aliases Note.
 type QuoteNote struct {
 	Note
-	QuoteURL           string        `json:"quoteUrl"`
-	Quoteable          bool          `json:"_:quoteable"`
-	QuoteNotifications bool          `json:"_:quoteNotifications"`
-	QuoteContext       *QuoteContext `json:"_:quoteContext,omitempty"`
 }
 
 // QuoteContext provides metadata about a quoted note

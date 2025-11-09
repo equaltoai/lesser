@@ -272,6 +272,7 @@ type CreateNoteInput struct {
 	Content       string             `json:"content"`
 	ContentMap    []*ContentMapInput `json:"contentMap,omitempty"`
 	InReplyToID   *string            `json:"inReplyToId,omitempty"`
+	QuoteID       *string            `json:"quoteId,omitempty"`
 	Visibility    Visibility         `json:"visibility"`
 	Sensitive     *bool              `json:"sensitive,omitempty"`
 	SpoilerText   *string            `json:"spoilerText,omitempty"`

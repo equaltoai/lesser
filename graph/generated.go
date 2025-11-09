@@ -10674,7 +10674,7 @@ func (ec *executionContext) introspectType(name string) (*introspection.Type, er
 	return introspection.WrapTypeFromDef(ec.Schema(), ec.Schema().Types[name]), nil
 }
 
-//go:embed "phase2.graphql" "phase3.graphql" "schema.graphql"
+//go:embed "core.graphql" "phase2.graphql" "phase3.graphql"
 var sourcesFS embed.FS
 
 func sourceData(filename string) string {
@@ -10686,9 +10686,9 @@ func sourceData(filename string) string {
 }
 
 var sources = []*ast.Source{
+	{Name: "core.graphql", Input: sourceData("core.graphql"), BuiltIn: false},
 	{Name: "phase2.graphql", Input: sourceData("phase2.graphql"), BuiltIn: false},
 	{Name: "phase3.graphql", Input: sourceData("phase3.graphql"), BuiltIn: false},
-	{Name: "schema.graphql", Input: sourceData("schema.graphql"), BuiltIn: false},
 }
 var parsedSchema = gqlparser.MustLoadSchema(sources...)
 
@@ -71669,7 +71669,7 @@ func (ec *executionContext) unmarshalInputCreateNoteInput(ctx context.Context, o
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"content", "contentMap", "inReplyToId", "visibility", "sensitive", "spoilerText", "attachmentIds", "mentions", "tags", "poll"}
+	fieldsInOrder := [...]string{"content", "contentMap", "inReplyToId", "quoteId", "visibility", "sensitive", "spoilerText", "attachmentIds", "mentions", "tags", "poll"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -71697,6 +71697,13 @@ func (ec *executionContext) unmarshalInputCreateNoteInput(ctx context.Context, o
 				return it, err
 			}
 			it.InReplyToID = data
+		case "quoteId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("quoteId"))
+			data, err := ec.unmarshalOID2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.QuoteID = data
 		case "visibility":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("visibility"))
 			data, err := ec.unmarshalNVisibility2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐVisibility(ctx, v)

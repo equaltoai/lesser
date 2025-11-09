@@ -235,7 +235,7 @@ func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*mode
 	}
 
 	threadMetrics := r.calculateThreadMetrics(ctx, statusRepo, status, replies)
-	rootNote := r.createRootNoteObject(status, replies, engagement)
+	rootNote := r.createRootNoteObject(ctx, status, replies, engagement)
 	syncStatus := r.determineSyncStatus(replies)
 
 	return &model.ThreadContext{

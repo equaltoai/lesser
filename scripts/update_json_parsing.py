@@ -5,6 +5,8 @@ This identifies patterns and suggests replacements.
 """
 
 import re
+import os
+import sys
 from pathlib import Path
 
 # Patterns to find and their replacements

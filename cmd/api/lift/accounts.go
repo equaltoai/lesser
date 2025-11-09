@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -47,12 +48,13 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 	// Use Accounts service to register the account
 	accountsService := h.registry.Accounts()
 	result, err := accountsService.RegisterAccount(ctx.Context, &accounts.RegisterAccountCommand{
-		Username:  req.Username,
-		Email:     "", // Email is forbidden - always empty
-		Password:  req.Password,
-		Locale:    req.Locale,
-		Agreement: req.Agreement,
-		Reason:    req.Reason,
+		Username:                 req.Username,
+		Email:                    "", // Email is forbidden - always empty
+		Password:                 req.Password,
+		Locale:                   req.Locale,
+		Agreement:                req.Agreement,
+		Reason:                   req.Reason,
+		DefaultPostingVisibility: req.DefaultPostingVisibility,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "username already taken") || strings.Contains(err.Error(), "Username is already taken") {
@@ -62,7 +64,7 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
 		// Log the full error for debugging
-		h.logger.Error("failed to register account", 
+		h.logger.Error("failed to register account",
 			zap.String("username", req.Username),
 			zap.Error(err))
 		// Return error message instead of generic internal server error
@@ -574,6 +576,15 @@ func (h *Handler) validateRegistrationRequestLift(req models.AccountRegistration
 	// Validate agreement
 	if !req.Agreement {
 		return errors.New("you must agree to the terms of service")
+	}
+
+	if req.DefaultPostingVisibility != "" {
+		switch strings.ToLower(req.DefaultPostingVisibility) {
+		case storageModels.VisibilityPublic, storageModels.VisibilityUnlisted,
+			storageModels.VisibilityPrivate, storageModels.VisibilityDirect:
+		default:
+			return fmt.Errorf("default_posting_visibility must be one of public, unlisted, private, or direct")
+		}
 	}
 
 	return nil

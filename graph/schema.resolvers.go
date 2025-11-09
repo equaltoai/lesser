@@ -867,6 +867,17 @@ func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.No
 		}
 	}
 
+	createdAt := firstNonZeroTime(note.Published, note.Updated)
+	if createdAt == nil {
+		now := time.Now().UTC()
+		createdAt = &now
+	}
+	updatedAt := firstNonZeroTime(note.Updated, note.Published)
+	if updatedAt == nil {
+		clone := createdAt.UTC()
+		updatedAt = &clone
+	}
+
 	return &model.Object{
 		ID:             note.ID,
 		Type:           objectType,
@@ -880,8 +891,8 @@ func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.No
 		Attachments:    attachments,
 		Tags:           tags,
 		Mentions:       r.extractMentionsFromNote(note), // Enhanced: extract mentions from note tags
-		CreatedAt:      model.Time(*note.Published),
-		UpdatedAt:      model.Time(*note.Updated),
+		CreatedAt:      model.Time(*createdAt),
+		UpdatedAt:      model.Time(*updatedAt),
 		RepliesCount:   r.getReplyCount(ctx, note.ID), // Use efficient count method
 		LikesCount:     0,
 		SharesCount:    0,
@@ -1154,6 +1165,17 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		}
 	}
 
+	var quoteURL *string
+	var quoteContext *activitypub.QuoteContext
+	if status != nil {
+		quoteURL, quoteContext = r.resolveQuoteMetadata(ctx, status)
+	}
+
+	quoteable := true
+	if status.Note != nil && status.Note.Get() != nil && status.Note.Get().Quoteable {
+		quoteable = status.Note.Get().Quoteable
+	}
+
 	mentions := make([]*model.Mention, 0)
 	if status.Mentions != nil {
 		for _, mentionURL := range status.Mentions {
@@ -1217,7 +1239,9 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		LikesCount:       status.LikeCount,
 		SharesCount:      status.ReblogCount,
 		CommunityNotes:   []*model.CommunityNote{},
-		Quoteable:        true,
+		QuoteURL:         quoteURL,
+		QuoteContext:     quoteContext,
+		Quoteable:        quoteable,
 		QuotePermissions: model.QuotePermissionEveryone,
 		QuoteCount:       status.QuoteCount,
 		Quotes: &model.QuoteConnection{
@@ -1237,6 +1261,97 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 	}
 
 	return obj
+}
+
+func (r *Resolver) resolveQuoteMetadata(ctx context.Context, status *models.Status) (*string, *activitypub.QuoteContext) {
+	if status == nil || status.QuoteTargetStatusID == "" {
+		return nil, nil
+	}
+
+	var targetStatus *models.Status
+	lookupStart := time.Now()
+	var err error
+	targetStatus, err = r.loadQuoteTargetStatus(ctx, status.QuoteTargetStatusID)
+	if err != nil && r.Logger != nil {
+		r.Logger.Warn("failed to resolve quote target",
+			zap.String("status_id", status.StatusID),
+			zap.String("target_status_id", status.QuoteTargetStatusID),
+			zap.Duration("duration", time.Since(lookupStart)),
+			zap.Error(err))
+	}
+
+	originalAuthor := status.QuoteTargetAuthorID
+	if targetStatus != nil {
+		if targetStatus.AuthorID != "" {
+			originalAuthor = targetStatus.AuthorID
+		} else if targetStatus.AuthorUsername != "" && originalAuthor == "" {
+			originalAuthor = targetStatus.AuthorUsername
+		}
+	}
+	if originalAuthor == "" {
+		originalAuthor = status.QuoteTargetStatusID
+	}
+
+	quoteCount := 0
+	if targetStatus != nil {
+		quoteCount = targetStatus.QuoteCount
+	}
+
+	quoteURLValue := ""
+	if targetStatus != nil {
+		quoteURLValue = extractQuoteURLFromStatus(targetStatus)
+	}
+	if quoteURLValue == "" {
+		quoteURLValue = status.QuoteTargetStatusID
+	}
+
+	var quoteURL *string
+	if quoteURLValue != "" {
+		quoteURL = &quoteURLValue
+	}
+
+	quoteContext := &activitypub.QuoteContext{
+		OriginalNoteID:  status.QuoteTargetStatusID,
+		OriginalAuthor:  originalAuthor,
+		QuoteCount:      quoteCount,
+		AllowWithdrawal: true,
+	}
+
+	return quoteURL, quoteContext
+}
+
+func (r *Resolver) loadQuoteTargetStatus(ctx context.Context, statusID string) (*models.Status, error) {
+	if statusID == "" {
+		return nil, nil
+	}
+
+	targetStatus, err := LoadQuoteTargetStatus(ctx, statusID)
+	if err == nil {
+		return targetStatus, nil
+	}
+
+	// If loaders aren't available, fall back to direct Notes service lookup.
+	if errors.Is(err, errLoadersNotFound) || errors.Is(err, errQuoteTargetLoaderUnavailable) {
+		if r.Registry != nil && r.Registry.Notes() != nil {
+			return r.Registry.Notes().GetNote(ctx, statusID)
+		}
+		return nil, err
+	}
+
+	return nil, err
+}
+
+func extractQuoteURLFromStatus(status *models.Status) string {
+	if status == nil || status.Note == nil {
+		return ""
+	}
+
+	note := status.Note.Get()
+	if note == nil || note.ID == "" {
+		return ""
+	}
+
+	return note.ID
 }
 
 func (r *Resolver) resolvePollForStatus(ctx context.Context, status *models.Status) *model.Poll {
@@ -2670,7 +2785,7 @@ func (r *queryResolver) processReply(ctx context.Context, statusRepo *repositori
 }
 
 // createRootNoteObject creates the root note object for the thread context
-func (r *queryResolver) createRootNoteObject(status *models.Status, replies []*models.Status, engagement *engagementMetrics) *model.Object {
+func (r *queryResolver) createRootNoteObject(ctx context.Context, status *models.Status, replies []*models.Status, engagement *engagementMetrics) *model.Object {
 	// Enhanced: extract mentions from status data
 	mentions := make([]*model.Mention, 0)
 	if status.Mentions != nil {
@@ -2687,20 +2802,29 @@ func (r *queryResolver) createRootNoteObject(status *models.Status, replies []*m
 		}
 	}
 
-	return &model.Object{
-		ID:      status.StatusID,
-		Type:    model.ObjectTypeNote,
-		Content: status.Content,
-		Actor: &activitypub.Actor{
+	actor := r.resolveStatusActor(ctx, status)
+	if actor == nil {
+		domain := r.getDomain()
+		username := strings.TrimSpace(status.AuthorUsername)
+		actor = &activitypub.Actor{
 			BaseObject: activitypub.BaseObject{
-				ID:   status.AuthorID,
-				Type: "Person",
+				ID:        status.AuthorID,
+				Type:      activitypub.PersonType,
+				Published: timePtrOrNil(status.CreatedAt),
+				Updated:   timePtrOrNil(status.UpdatedAt),
 			},
-			PreferredUsername: status.AuthorUsername,
-			Name:              status.AuthorUsername,
-			Inbox:             fmt.Sprintf("https://%s/users/%s/inbox", "localhost", status.AuthorUsername),
-			Outbox:            fmt.Sprintf("https://%s/users/%s/outbox", "localhost", status.AuthorUsername),
-		},
+			PreferredUsername: username,
+			Name:              username,
+			Inbox:             fmt.Sprintf("https://%s/users/%s/inbox", domain, username),
+			Outbox:            fmt.Sprintf("https://%s/users/%s/outbox", domain, username),
+		}
+	}
+
+	return &model.Object{
+		ID:           status.StatusID,
+		Type:         model.ObjectTypeNote,
+		Content:      status.Content,
+		Actor:        actor,
 		CreatedAt:    model.Time(status.PublishedAt),
 		UpdatedAt:    model.Time(status.UpdatedAt),
 		RepliesCount: len(replies),
@@ -2713,6 +2837,29 @@ func (r *queryResolver) createRootNoteObject(status *models.Status, replies []*m
 		Mentions:     mentions,                             // Enhanced: processed mentions with domain detection
 		ContentMap:   r.extractContentMaps(status.Content), // Enhanced: extract content maps with language detection
 	}
+}
+
+func (r *queryResolver) resolveStatusActor(ctx context.Context, status *models.Status) *activitypub.Actor {
+	if status == nil || status.AuthorUsername == "" || r.Registry == nil {
+		return nil
+	}
+
+	accountsService := r.Registry.Accounts()
+	if accountsService == nil {
+		return nil
+	}
+
+	account, err := accountsService.GetAccount(ctx, status.AuthorUsername)
+	if err != nil || account == nil {
+		if r.Logger != nil {
+			r.Logger.Debug("failed to resolve actor for status",
+				zap.String("username", status.AuthorUsername),
+				zap.Error(err))
+		}
+		return nil
+	}
+
+	return r.convertAccountToActor(account)
 }
 
 // determineSyncStatus determines the sync status based on replies

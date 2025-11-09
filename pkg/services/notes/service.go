@@ -209,23 +209,25 @@ func NewService(
 
 // CreateNoteCommand contains all data needed to create a new note
 type CreateNoteCommand struct {
-	AuthorID       string   `json:"author_id" validate:"required"`
-	Content        string   `json:"content" validate:"required,max=5000"`
-	Visibility     string   `json:"visibility" validate:"required,oneof=public unlisted private direct"`
-	Sensitive      bool     `json:"sensitive"`
-	SpoilerText    string   `json:"spoiler_text"`
-	Language       string   `json:"language"`
-	InReplyToID    string   `json:"in_reply_to_id"`
-	ConversationID string   `json:"conversation_id"`
-	MediaIDs       []string `json:"media_ids"`
-	PollOptions    []string `json:"poll_options"`
-	PollExpiresIn  int      `json:"poll_expires_in"`  // Duration in seconds
-	PollMultiple   bool     `json:"poll_multiple"`    // Allow multiple choices
-	PollHideTotals bool     `json:"poll_hide_totals"` // Hide vote counts until poll ends
-	ToRecipients   []string `json:"to_recipients"`
-	CcRecipients   []string `json:"cc_recipients"`
-	BtoRecipients  []string `json:"bto_recipients"`
-	BccRecipients  []string `json:"bcc_recipients"`
+	AuthorID            string   `json:"author_id" validate:"required"`
+	Content             string   `json:"content" validate:"required,max=5000"`
+	Visibility          string   `json:"visibility" validate:"required,oneof=public unlisted private direct"`
+	Sensitive           bool     `json:"sensitive"`
+	SpoilerText         string   `json:"spoiler_text"`
+	Language            string   `json:"language"`
+	InReplyToID         string   `json:"in_reply_to_id"`
+	ConversationID      string   `json:"conversation_id"`
+	MediaIDs            []string `json:"media_ids"`
+	PollOptions         []string `json:"poll_options"`
+	PollExpiresIn       int      `json:"poll_expires_in"`  // Duration in seconds
+	PollMultiple        bool     `json:"poll_multiple"`    // Allow multiple choices
+	PollHideTotals      bool     `json:"poll_hide_totals"` // Hide vote counts until poll ends
+	ToRecipients        []string `json:"to_recipients"`
+	CcRecipients        []string `json:"cc_recipients"`
+	BtoRecipients       []string `json:"bto_recipients"`
+	BccRecipients       []string `json:"bcc_recipients"`
+	QuoteTargetStatusID string   `json:"quote_target_status_id"`
+	QuoteTargetAuthorID string   `json:"quote_target_author_id"`
 }
 
 // UpdateNoteCommand contains all data needed to update an existing note
@@ -359,23 +361,25 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 
 func (s *Service) composeStatus(cmd *CreateNoteCommand, author *storage.Account, statusID string, note *activitypub.Note, hashtags []string, attachments []activitypub.Attachment, timestamp time.Time) *models.Status {
 	status := &models.Status{
-		StatusID:       statusID,
-		Note:           &models.NoteField{Note: note}, // Wrap Note in NoteField for proper DynamORM handling
-		AuthorID:       cmd.AuthorID,
-		AuthorUsername: author.User.Username,
-		Content:        cmd.Content,
-		Visibility:     cmd.Visibility,
-		Sensitive:      cmd.Sensitive,
-		Language:       cmd.Language,
-		InReplyToID:    cmd.InReplyToID,
-		ConversationID: cmd.ConversationID,
-		ToRecipients:   cmd.ToRecipients,
-		CcRecipients:   cmd.CcRecipients,
-		BtoRecipients:  cmd.BtoRecipients,
-		BccRecipients:  cmd.BccRecipients,
-		PublishedAt:    timestamp,
-		CreatedAt:      timestamp,
-		ModifiedAt:     timestamp,
+		StatusID:            statusID,
+		Note:                &models.NoteField{Note: note}, // Wrap Note in NoteField for proper DynamORM handling
+		AuthorID:            cmd.AuthorID,
+		AuthorUsername:      author.User.Username,
+		Content:             cmd.Content,
+		Visibility:          cmd.Visibility,
+		Sensitive:           cmd.Sensitive,
+		Language:            cmd.Language,
+		InReplyToID:         cmd.InReplyToID,
+		ConversationID:      cmd.ConversationID,
+		ToRecipients:        cmd.ToRecipients,
+		CcRecipients:        cmd.CcRecipients,
+		BtoRecipients:       cmd.BtoRecipients,
+		BccRecipients:       cmd.BccRecipients,
+		QuoteTargetStatusID: cmd.QuoteTargetStatusID,
+		QuoteTargetAuthorID: cmd.QuoteTargetAuthorID,
+		PublishedAt:         timestamp,
+		CreatedAt:           timestamp,
+		ModifiedAt:          timestamp,
 	}
 
 	if len(hashtags) > 0 {

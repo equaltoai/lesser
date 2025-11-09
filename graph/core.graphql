@@ -1,0 +1,1514 @@
+# Lesser GraphQL Schema
+
+scalar Time
+scalar Cursor
+scalar Upload
+
+# Enums
+enum TimelineType {
+  HOME
+  PUBLIC
+  LOCAL
+  HASHTAG
+  LIST
+  DIRECT
+  ACTOR
+}
+
+enum ActorType {
+  PERSON
+  GROUP
+  APPLICATION
+  SERVICE
+  ORGANIZATION
+}
+
+enum ObjectType {
+  NOTE
+  ARTICLE
+  IMAGE
+  VIDEO
+  QUESTION
+  EVENT
+  PAGE
+}
+
+enum Visibility {
+  PUBLIC
+  UNLISTED
+  FOLLOWERS
+  DIRECT
+}
+
+enum Period {
+  HOUR
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
+enum ActivityType {
+  CREATE
+  UPDATE
+  DELETE
+  FOLLOW
+  LIKE
+  ANNOUNCE
+  UNDO
+  ACCEPT
+  REJECT
+  FLAG
+}
+
+enum TrustCategory {
+  CONTENT
+  BEHAVIOR
+  TECHNICAL
+}
+
+# Core Types
+type Actor {
+  id: ID!
+  username: String!
+  domain: String
+  displayName: String
+  summary: String
+  avatar: String
+  header: String
+  followers: Int!
+  following: Int!
+  statusesCount: Int!
+  bot: Boolean!
+  locked: Boolean!
+  createdAt: Time!
+  updatedAt: Time!
+  fields: [Field!]!
+  
+  # Lesser enhancements
+  trustScore: Float!
+  reputation: Reputation
+  vouches: [Vouch!]!
+}
+
+type Field {
+  name: String!
+  value: String!
+  verifiedAt: Time
+}
+
+type Object {
+  id: ID!
+  type: ObjectType!
+  actor: Actor!
+  content: String!
+  contentMap: [ContentMap!]!
+  inReplyTo: Object
+  visibility: Visibility!
+  sensitive: Boolean!
+  spoilerText: String
+  attachments: [Attachment!]!
+  tags: [Tag!]!
+  mentions: [Mention!]!
+  createdAt: Time!
+  updatedAt: Time!
+  poll: Poll
+  
+  # Engagement metrics
+  repliesCount: Int!
+  likesCount: Int!
+  sharesCount: Int!
+  
+  # Lesser enhancements
+  estimatedCost: Int!
+  moderationScore: Float
+  communityNotes: [CommunityNote!]!
+  
+  # Quote Posts extensions
+  quoteUrl: String
+  quoteable: Boolean!
+  quotePermissions: QuotePermission!
+  quoteContext: QuoteContext
+  quoteCount: Int!
+  quotes(first: Int, after: String): QuoteConnection!
+}
+
+type ContentMap {
+  language: String!
+  content: String!
+}
+
+type Attachment {
+  id: ID!
+  type: String!
+  url: String!
+  preview: String
+  description: String
+  blurhash: String
+  width: Int
+  height: Int
+  duration: Float
+}
+
+type Tag {
+  name: String!
+  url: String!
+}
+
+type Mention {
+  id: ID!
+  username: String!
+  domain: String
+  url: String!
+}
+
+type Activity {
+  id: ID!
+  type: ActivityType!
+  actor: Actor!
+  object: Object
+  target: Object
+  published: Time!
+  
+  # Lesser enhancement
+  cost: Int!
+}
+
+# Connections for pagination
+type ObjectConnection {
+  edges: [ObjectEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ObjectEdge {
+  node: Object!
+  cursor: Cursor!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: Cursor
+  endCursor: Cursor
+}
+
+type ActorListPage {
+  actors: [Actor!]!
+  nextCursor: Cursor
+  totalCount: Int!
+}
+
+# Instance Metrics
+type InstanceMetrics {
+  activeUsers: Int!
+  requestsPerMinute: Int!
+  averageLatencyMs: Float!
+  storageUsedGB: Float!
+  estimatedMonthlyCost: Float!
+  lastUpdated: Time!
+}
+
+type CostBreakdown {
+  period: Period!
+  totalCost: Float!
+  dynamoDBCost: Float!
+  s3StorageCost: Float!
+  lambdaCost: Float!
+  dataTransferCost: Float!
+  breakdown: [CostItem!]!
+}
+
+type CostItem {
+  operation: String!
+  count: Int!
+  cost: Float!
+}
+
+# Trust & Moderation
+type TrustEdge {
+  from: Actor!
+  to: Actor!
+  category: TrustCategory!
+  score: Float!
+  updatedAt: Time!
+}
+
+type ModerationDecision {
+  id: ID!
+  object: Object!
+  decision: String!
+  confidence: Float!
+  evidence: [String!]!
+  reviewers: [Actor!]!
+  timestamp: Time!
+}
+
+type CommunityNote {
+  id: ID!
+  author: Actor!
+  content: String!
+  helpful: Int!
+  notHelpful: Int!
+  createdAt: Time!
+}
+
+# Notification type
+type Notification {
+  id: ID!
+  type: String! # follow, mention, favourite, reblog
+  account: Actor! # Who triggered the notification
+  status: Object # Related status (if any)
+  read: Boolean!
+  createdAt: Time!
+}
+
+# Notification connection for pagination
+type NotificationConnection {
+  edges: [NotificationEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type NotificationEdge {
+  node: Notification!
+  cursor: Cursor!
+}
+
+type PushSubscription {
+  id: ID!
+  endpoint: String!
+  keys: PushSubscriptionKeys!
+  alerts: PushSubscriptionAlerts!
+  policy: String!
+  serverKey: String
+  createdAt: Time
+  updatedAt: Time
+}
+
+type PushSubscriptionKeys {
+  auth: String!
+  p256dh: String!
+}
+
+type PushSubscriptionAlerts {
+  follow: Boolean!
+  favourite: Boolean!
+  reblog: Boolean!
+  mention: Boolean!
+  poll: Boolean!
+  followRequest: Boolean!
+  status: Boolean!
+  update: Boolean!
+  adminSignUp: Boolean!
+  adminReport: Boolean!
+}
+
+# Quote Posts types
+type QuoteContext {
+  originalAuthor: Actor!
+  originalNote: Object
+  quoteAllowed: Boolean!
+  quoteType: QuoteType!
+  withdrawn: Boolean!
+}
+
+enum QuotePermission {
+  EVERYONE
+  FOLLOWERS
+  NONE
+}
+
+enum QuoteType {
+  FULL
+  PARTIAL
+  COMMENTARY
+  REACTION
+}
+
+type QuoteConnection {
+  edges: [QuoteEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type QuoteEdge {
+  node: Object!
+  cursor: Cursor!
+}
+
+# Quote Posts payloads
+type WithdrawQuotePayload {
+  success: Boolean!
+  note: Object!
+  withdrawnCount: Int!
+}
+
+type UpdateQuotePermissionsPayload {
+  success: Boolean!
+  note: Object!
+  affectedQuotes: Int!
+}
+
+# Conversation type
+type Conversation {
+  id: ID!
+  lastStatus: Object
+  unread: Boolean!
+  accounts: [Actor!]!
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+# List type
+type List {
+  id: ID!
+  title: String!
+  repliesPolicy: RepliesPolicy!
+  exclusive: Boolean!
+  accountCount: Int!
+  accounts: [Actor!]!
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+enum RepliesPolicy {
+  FOLLOWED
+  LIST
+  NONE
+}
+
+# Media type
+type Media {
+  id: ID!
+  type: MediaType!
+  url: String!
+  previewUrl: String
+  description: String
+  sensitive: Boolean!
+  spoilerText: String
+  mediaCategory: MediaCategory!
+  blurhash: String
+  width: Int
+  height: Int
+  duration: Float
+  size: Int!
+  mimeType: String!
+  uploadedBy: Actor!
+  createdAt: Time!
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  AUDIO
+  UNKNOWN
+}
+
+enum MediaCategory {
+  IMAGE
+  VIDEO
+  AUDIO
+  GIFV
+  DOCUMENT
+  UNKNOWN
+}
+
+type MediaEdge {
+  node: Media!
+  cursor: Cursor!
+}
+
+type MediaConnection {
+  edges: [MediaEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input MediaFilterInput {
+  ownerId: ID
+  ownerUsername: String
+  mediaType: MediaType
+  mimeType: String
+  since: Time
+  until: Time
+}
+
+# Custom Emoji type
+type CustomEmoji {
+  id: ID!
+  shortcode: String!
+  url: String!
+  staticUrl: String!
+  visibleInPicker: Boolean!
+  category: String
+  domain: String
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+# Scheduled Status type
+type ScheduledStatus {
+  id: ID!
+  scheduledAt: Time!
+  params: StatusParams!
+  mediaAttachments: [Media!]!
+  createdAt: Time!
+}
+
+type StatusParams {
+  text: String!
+  visibility: Visibility!
+  sensitive: Boolean!
+  spoilerText: String
+  inReplyToId: ID
+  language: String
+  poll: PollParams
+}
+
+type PollParams {
+  options: [String!]!
+  expiresIn: Int!
+  multiple: Boolean
+  hideTotals: Boolean
+}
+
+type Poll {
+  id: ID!
+  expiresAt: Time
+  expired: Boolean!
+  multiple: Boolean!
+  hideTotals: Boolean!
+  votesCount: Int!
+  votersCount: Int!
+  voted: Boolean!
+  ownVotes: [Int!]
+  options: [PollOption!]!
+}
+
+type PollOption {
+  title: String!
+  votesCount: Int!
+}
+
+# Enhanced Search types
+type SearchResult {
+  accounts: [Actor!]!
+  statuses: [Object!]!
+  hashtags: [Tag!]!
+}
+
+type AccountSuggestion {
+  account: Actor!
+  source: SuggestionSource!
+  reason: String
+}
+
+enum SuggestionSource {
+  STAFF
+  PAST_INTERACTIONS
+  GLOBAL
+  SIMILAR_PROFILES
+}
+
+# Directory type for profile discovery
+type ProfileDirectory {
+  accounts: [Actor!]!
+  totalCount: Int!
+}
+
+# Relationship type
+type Relationship {
+  id: ID!
+  following: Boolean!
+  followedBy: Boolean!
+  blocking: Boolean!
+  blockedBy: Boolean!
+  muting: Boolean!
+  mutingNotifications: Boolean!
+  requested: Boolean!
+  domainBlocking: Boolean!
+  showingReblogs: Boolean!
+  notifying: Boolean!
+  languages: [String!]
+  note: String
+}
+
+# Input Types
+input CreateNoteInput {
+  content: String!
+  contentMap: [ContentMapInput!]
+  inReplyToId: ID
+  quoteId: ID
+  visibility: Visibility!
+  sensitive: Boolean
+  spoilerText: String
+  attachmentIds: [ID!]
+  mentions: [String!]
+  tags: [String!]
+  poll: PollParamsInput
+}
+
+input ContentMapInput {
+  language: String!
+  content: String!
+}
+
+input TrustInput {
+  targetActorId: ID!
+  category: TrustCategory!
+  score: Float!
+}
+
+input FlagInput {
+  objectId: ID!
+  reason: String!
+  evidence: [String!]
+}
+
+input CommunityNoteInput {
+  objectId: ID!
+  content: String!
+}
+
+input CreateQuoteNoteInput {
+  content: String!
+  quoteUrl: String!
+  quoteType: QuoteType
+  visibility: Visibility
+  quoteable: Boolean
+  sensitive: Boolean
+  spoilerText: String
+  mediaIds: [ID!]
+}
+
+# List inputs
+input CreateListInput {
+  title: String!
+  repliesPolicy: RepliesPolicy
+  exclusive: Boolean
+}
+
+input UpdateListInput {
+  title: String
+  repliesPolicy: RepliesPolicy
+  exclusive: Boolean
+}
+
+# Media inputs
+input UploadMediaInput {
+  file: Upload!
+  filename: String
+  description: String
+  focus: FocusInput
+  sensitive: Boolean
+  spoilerText: String
+  mediaType: MediaCategory
+}
+
+input UpdateMediaInput {
+  description: String
+  focus: FocusInput
+}
+
+input FocusInput {
+  x: Float!
+  y: Float!
+}
+
+# Scheduled status inputs
+input ScheduleStatusInput {
+  text: String!
+  scheduledAt: Time!
+  visibility: Visibility
+  sensitive: Boolean
+  spoilerText: String
+  inReplyToId: ID
+  language: String
+  mediaIds: [ID!]
+  poll: PollParamsInput
+}
+
+input PollParamsInput {
+  options: [String!]!
+  expiresIn: Int!
+  multiple: Boolean
+  hideTotals: Boolean
+}
+
+input UpdateScheduledStatusInput {
+  scheduledAt: Time!
+}
+
+# Relationship inputs
+input UpdateRelationshipInput {
+  notify: Boolean
+  showReblogs: Boolean
+  languages: [String!]
+  note: String
+}
+
+input ProfileFieldInput {
+  name: String!
+  value: String!
+  verifiedAt: Time
+}
+
+input UpdateProfileInput {
+  displayName: String
+  bio: String
+  avatar: String
+  header: String
+  locked: Boolean
+  bot: Boolean
+  discoverable: Boolean
+  noIndex: Boolean
+  sensitive: Boolean
+  language: String
+  fields: [ProfileFieldInput!]
+}
+
+input PushSubscriptionKeysInput {
+  auth: String!
+  p256dh: String!
+}
+
+input PushSubscriptionAlertsInput {
+  follow: Boolean
+  favourite: Boolean
+  reblog: Boolean
+  mention: Boolean
+  poll: Boolean
+  followRequest: Boolean
+  status: Boolean
+  update: Boolean
+  adminSignUp: Boolean
+  adminReport: Boolean
+}
+
+input RegisterPushSubscriptionInput {
+  endpoint: String!
+  keys: PushSubscriptionKeysInput!
+  alerts: PushSubscriptionAlertsInput!
+}
+
+input UpdatePushSubscriptionInput {
+  alerts: PushSubscriptionAlertsInput!
+}
+
+# Emoji inputs
+input CreateEmojiInput {
+  shortcode: String!
+  image: String! # URL or base64
+  category: String
+  visibleInPicker: Boolean
+}
+
+input UpdateEmojiInput {
+  category: String
+  visibleInPicker: Boolean
+}
+
+# Search/Discovery inputs
+input DirectoryFiltersInput {
+  local: Boolean
+  remote: Boolean
+  active: Boolean
+  order: DirectoryOrder
+}
+
+enum DirectoryOrder {
+  ACTIVE
+  NEW
+}
+
+# Payloads
+type CreateNotePayload {
+  object: Object!
+  activity: Activity!
+  cost: CostUpdate!
+}
+
+type FlagPayload {
+  moderationId: ID!
+  queued: Boolean!
+}
+
+type CommunityNotePayload {
+  note: CommunityNote!
+  object: Object!
+}
+
+# Updates
+type CostUpdate {
+  operationCost: Int!
+  dailyTotal: Float!
+  monthlyProjection: Float!
+}
+
+# Queries
+type Query {
+  # Mastodon compatibility
+  actor(id: ID, username: String): Actor
+  object(id: ID!): Object
+  timeline(
+    type: TimelineType!
+    hashtag: String
+    listId: ID
+    actorId: ID
+    first: Int = 20
+    after: Cursor
+    mediaOnly: Boolean = false
+  ): ObjectConnection!
+  search(query: String!, type: String, first: Int = 20, after: Cursor): SearchResult!
+  notifications(types: [String!], excludeTypes: [String!], first: Int = 20, after: Cursor): NotificationConnection!
+  
+  # Conversations
+  conversations(first: Int = 20, after: Cursor): [Conversation!]!
+  conversation(id: ID!): Conversation
+  
+  # Lists
+  lists: [List!]!
+  list(id: ID!): List
+  listAccounts(id: ID!): [Actor!]!
+  
+  # Media
+  media(id: ID!): Media
+  mediaLibrary(filter: MediaFilterInput, first: Int = 20, after: Cursor): MediaConnection!
+  
+  # Custom Emojis
+  customEmojis: [CustomEmoji!]!
+  
+  # Scheduled Statuses
+  scheduledStatuses(first: Int = 20, after: Cursor): [ScheduledStatus!]!
+  scheduledStatus(id: ID!): ScheduledStatus
+  
+  # Relationships
+  relationship(id: ID!): Relationship
+  relationships(ids: [ID!]!): [Relationship!]!
+  followers(username: String!, limit: Int = 40, cursor: Cursor): ActorListPage!
+  following(username: String!, limit: Int = 40, cursor: Cursor): ActorListPage!
+  userPreferences: UserPreferences!
+  pushSubscription: PushSubscription
+  
+  # Discovery
+  profileDirectory(filters: DirectoryFiltersInput, first: Int = 40, after: Cursor): ProfileDirectory!
+  suggestions(limit: Int = 40): [AccountSuggestion!]!
+  removeSuggestion(accountId: ID!): Boolean!
+  
+  # Lesser enhancements
+  instanceMetrics: InstanceMetrics!
+  costBreakdown(period: Period = DAY): CostBreakdown!
+  trustGraph(actorId: ID!, category: TrustCategory): [TrustEdge!]!
+  moderationQueue(first: Int = 20, after: Cursor): [ModerationDecision!]!
+  
+  # Debug endpoints
+  explainObject(id: ID!): ObjectExplanation!
+  federationStatus(domain: String!): FederationStatus!
+  
+  # AI Analysis
+  aiAnalysis(objectId: ID!): AIAnalysis
+  aiStats(period: Period!): AIStats!
+  aiCapabilities: AICapabilities!
+  
+  # Hashtag Following queries
+  hashtag(name: String!): Hashtag
+  followedHashtags(first: Int, after: String): HashtagConnection!
+  hashtagTimeline(hashtag: String!, first: Int, after: String, mediaOnly: Boolean = false): PostConnection!
+  multiHashtagTimeline(
+    hashtags: [String!]!
+    mode: HashtagMode!
+    first: Int
+    after: String
+  ): PostConnection!
+  suggestedHashtags(limit: Int): [HashtagSuggestion!]!
+  
+  # Thread Synchronization queries
+  threadContext(noteId: ID!): ThreadContext
+  
+  # Severed Relationships queries
+  severedRelationships(
+    instance: String
+    first: Int
+    after: String
+  ): SeveredRelationshipConnection!
+  
+  affectedRelationships(
+    severedRelationshipId: ID!
+  ): AffectedRelationshipConnection!
+}
+
+# Mutations
+type Mutation {
+  # Mastodon compatibility - Status operations
+  createNote(input: CreateNoteInput!): CreateNotePayload!
+  deleteObject(id: ID!): Boolean!
+  likeObject(id: ID!): Activity!
+  unlikeObject(id: ID!): Boolean!
+  shareObject(id: ID!): Activity!
+  unshareObject(id: ID!): Boolean!
+  bookmarkObject(id: ID!): Object!
+  unbookmarkObject(id: ID!): Boolean!
+  pinObject(id: ID!): Object!
+  unpinObject(id: ID!): Boolean!
+  
+  # Relationship operations
+  followActor(id: ID!): Activity!
+  unfollowActor(id: ID!): Boolean!
+  blockActor(id: ID!): Relationship!
+  unblockActor(id: ID!): Boolean!
+  muteActor(id: ID!, notifications: Boolean): Relationship!
+  unmuteActor(id: ID!): Boolean!
+  updateRelationship(id: ID!, input: UpdateRelationshipInput!): Relationship!
+  updateProfile(input: UpdateProfileInput!): Actor!
+  
+  # List operations
+  createList(input: CreateListInput!): List!
+  updateList(id: ID!, input: UpdateListInput!): List!
+  deleteList(id: ID!): Boolean!
+  addAccountsToList(id: ID!, accountIds: [ID!]!): List!
+  removeAccountsFromList(id: ID!, accountIds: [ID!]!): List!
+  
+  # Conversation operations
+  markConversationAsRead(id: ID!): Conversation!
+  deleteConversation(id: ID!): Boolean!
+  
+  # Media operations
+  uploadMedia(input: UploadMediaInput!): UploadMediaPayload!
+  updateMedia(id: ID!, input: UpdateMediaInput!): Media!
+  
+  # Notification operations
+  dismissNotification(id: ID!): Boolean!
+  clearNotifications: Boolean!
+  updateUserPreferences(input: UpdateUserPreferencesInput!): UserPreferences!
+  updateStreamingPreferences(input: StreamingPreferencesInput!): UserPreferences!
+  registerPushSubscription(input: RegisterPushSubscriptionInput!): PushSubscription!
+  updatePushSubscription(input: UpdatePushSubscriptionInput!): PushSubscription!
+  deletePushSubscription: Boolean!
+  
+  # Scheduled status operations
+  scheduleStatus(input: ScheduleStatusInput!): ScheduledStatus!
+  updateScheduledStatus(id: ID!, input: UpdateScheduledStatusInput!): ScheduledStatus!
+  cancelScheduledStatus(id: ID!): Boolean!
+  
+  # Custom emoji operations (admin)
+  createEmoji(input: CreateEmojiInput!): CustomEmoji!
+  updateEmoji(shortcode: String!, input: UpdateEmojiInput!): CustomEmoji!
+  deleteEmoji(shortcode: String!): Boolean!
+  
+  # Lesser enhancements
+  updateTrust(input: TrustInput!): TrustEdge!
+  flagObject(input: FlagInput!): FlagPayload!
+  addCommunityNote(input: CommunityNoteInput!): CommunityNotePayload!
+  voteCommunityNote(id: ID!, helpful: Boolean!): CommunityNote!
+  
+  # AI Analysis
+  requestAIAnalysis(objectId: ID!, objectType: String, force: Boolean): AIAnalysisRequest!
+  
+  # Quote Posts mutations
+  createQuoteNote(input: CreateQuoteNoteInput!): CreateNotePayload!
+  withdrawFromQuotes(noteId: ID!): WithdrawQuotePayload!
+  updateQuotePermissions(
+    noteId: ID!
+    quoteable: Boolean!
+    permission: QuotePermission!
+  ): UpdateQuotePermissionsPayload!
+  
+  # Hashtag Following mutations
+  followHashtag(hashtag: String!, notifyLevel: NotificationLevel): HashtagFollowPayload!
+  unfollowHashtag(hashtag: String!): UnfollowHashtagPayload!
+  updateHashtagNotifications(
+    hashtag: String!
+    settings: HashtagNotificationSettingsInput!
+  ): UpdateHashtagNotificationsPayload!
+  muteHashtag(hashtag: String!, until: Time): MuteHashtagPayload!
+  
+  # Thread Synchronization mutations
+  syncThread(noteUrl: String!, depth: Int): SyncThreadPayload!
+  syncMissingReplies(noteId: ID!): SyncRepliesPayload!
+  
+  # Severed Relationships mutations
+  acknowledgeSeverance(id: ID!): AcknowledgePayload!
+  attemptReconnection(id: ID!): ReconnectionPayload!
+}
+
+type UploadMediaPayload {
+  media: Media!
+  uploadId: ID!
+  warnings: [String!]
+}
+
+# Subscriptions (via WebSocket Lambda)
+type Subscription {
+  # Activity streams
+  activityStream(types: [ActivityType!]): Activity!
+  timelineUpdates(type: TimelineType!, listId: ID): Object!
+  
+  # Notification stream
+  notificationStream(types: [String!]): Notification!
+  
+  # Conversation updates
+  conversationUpdates: Conversation!
+  
+  # List updates
+  listUpdates(listId: ID!): ListUpdate!
+  
+  # Relationship changes
+  relationshipUpdates(actorId: ID): RelationshipUpdate!
+  
+  # Lesser enhancements
+  costUpdates(threshold: Int): CostUpdate!
+  moderationEvents(actorId: ID): ModerationDecision!
+  trustUpdates(actorId: ID!): TrustEdge!
+  
+  # AI Analysis
+  aiAnalysisUpdates(objectId: ID): AIAnalysis!
+  
+  # Quote Posts subscription
+  quoteActivity(noteId: ID!): QuoteActivityUpdate!
+  
+  # Hashtag Following subscription
+  hashtagActivity(hashtags: [String!]!): HashtagActivityUpdate!
+  
+  # Real-time Metrics Updates subscription
+  metricsUpdates(categories: [String!], services: [String!], threshold: Float): MetricsUpdate!
+}
+
+# Quote activity update type
+type QuoteActivityUpdate {
+  type: String! # "quoted", "withdrawn", "permission_changed"
+  quote: Object
+  quoter: Actor
+  timestamp: Time!
+}
+
+# List update type
+type ListUpdate {
+  type: String! # "created", "updated", "deleted", "account_added", "account_removed"
+  list: List!
+  account: Actor
+  timestamp: Time!
+}
+
+# Relationship update type
+type RelationshipUpdate {
+  type: String! # "followed", "unfollowed", "blocked", "unblocked", "muted", "unmuted"
+  relationship: Relationship!
+  actor: Actor!
+  timestamp: Time!
+}
+
+# Hashtag Following types
+type Hashtag {
+  name: String!
+  displayName: String!
+  url: String!
+  followerCount: Int!
+  postCount: Int!
+  trendingScore: Float!
+  isFollowing: Boolean!
+  followedAt: Time
+  notificationSettings: HashtagNotificationSettings
+  posts(first: Int, after: String): PostConnection!
+  relatedHashtags: [Hashtag!]!
+  analytics: HashtagAnalytics!
+}
+
+type HashtagNotificationSettings {
+  level: NotificationLevel!
+  muted: Boolean!
+  mutedUntil: Time
+  filters: [NotificationFilter!]!
+}
+
+enum NotificationLevel {
+  ALL
+  MUTUALS
+  FOLLOWING
+  NONE
+}
+
+type NotificationFilter {
+  type: String!
+  value: String!
+}
+
+type PostConnection {
+  edges: [PostEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type PostEdge {
+  node: Object!
+  cursor: Cursor!
+}
+
+type HashtagConnection {
+  edges: [HashtagEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type HashtagEdge {
+  node: Hashtag!
+  cursor: Cursor!
+}
+
+type HashtagSuggestion {
+  hashtag: Hashtag!
+  reason: String!
+  score: Float!
+}
+
+type HashtagAnalytics {
+  hourlyPosts: [Int!]!
+  dailyPosts: [Int!]!
+  topPosters: [Actor!]!
+  sentiment: Float!
+  engagement: Float!
+}
+
+enum HashtagMode {
+  ANY    # Posts with any of the hashtags
+  ALL    # Posts with all of the hashtags
+}
+
+# Hashtag Following payloads
+type HashtagFollowPayload {
+  success: Boolean!
+  hashtag: Hashtag!
+}
+
+type UnfollowHashtagPayload {
+  success: Boolean!
+  hashtag: Hashtag!
+}
+
+type UpdateHashtagNotificationsPayload {
+  success: Boolean!
+  hashtag: Hashtag!
+  settings: HashtagNotificationSettings!
+}
+
+type MuteHashtagPayload {
+  success: Boolean!
+  hashtag: Hashtag!
+  mutedUntil: Time
+}
+
+type HashtagActivityUpdate {
+  hashtag: String!
+  post: Object!
+  author: Actor!
+  timestamp: Time!
+}
+
+# Real-time metrics update type for GraphQL subscriptions
+type MetricsUpdate {
+  metricId: String!
+  serviceName: String!
+  metricType: String!
+  subscriptionCategory: String! # moderation, security, performance, federation, cost, etc.
+  aggregationLevel: String!     # raw, 5min, hourly, daily
+  timestamp: Time!
+  count: Int!
+  sum: Float!
+  min: Float!
+  max: Float!
+  average: Float!
+  p50: Float
+  p95: Float
+  p99: Float
+  unit: String
+  userCostMicrocents: Int
+  totalCostMicrocents: Int
+  dimensions: [MetricsDimension!]!
+  userId: String
+  tenantId: String
+  instanceDomain: String
+}
+
+# Key-value pair for metrics dimensions
+type MetricsDimension {
+  key: String!
+  value: String!
+}
+
+input HashtagNotificationSettingsInput {
+  level: NotificationLevel!
+  muted: Boolean
+  mutedUntil: Time
+  filters: [NotificationFilterInput!]
+}
+
+input NotificationFilterInput {
+  type: String!
+  value: String!
+}
+
+# Debug types
+type ObjectExplanation {
+  object: Object!
+  storageLocation: String!
+  sizeBytes: Int!
+  storageCost: Float!
+  accessPattern: [AccessLog!]!
+}
+
+type AccessLog {
+  timestamp: Time!
+  operation: String!
+  cost: Int!
+}
+
+type FederationStatus {
+  domain: String!
+  reachable: Boolean!
+  lastContact: Time
+  sharedInbox: String
+  publicKey: String
+  software: String
+  version: String
+}
+
+# Reputation types
+type Reputation {
+  actorId: ID!
+  instance: String!
+  totalScore: Int!
+  trustScore: Int!
+  activityScore: Int!
+  moderationScore: Int!
+  communityScore: Int!
+  calculatedAt: Time!
+  version: String!
+  evidence: ReputationEvidence!
+  signature: String
+}
+
+type ReputationEvidence {
+  totalPosts: Int!
+  totalFollowers: Int!
+  accountAge: Int!
+  vouchCount: Int!
+  trustingActors: Int!
+  averageTrustScore: Float!
+}
+
+type Vouch {
+  id: ID!
+  from: Actor!
+  to: Actor!
+  confidence: Float!
+  context: String!
+  voucherReputation: Int!
+  createdAt: Time!
+  expiresAt: Time!
+  active: Boolean!
+  revoked: Boolean!
+  revokedAt: Time
+}
+
+type PortableReputation {
+  context: [String!]!
+  type: String!
+  actor: String!
+  reputation: Reputation!
+  vouches: [Vouch!]!
+  issuedAt: Time!
+  expiresAt: Time!
+  issuer: String!
+  issuerProof: String!
+}
+
+type ReputationVerificationResult {
+  valid: Boolean!
+  actorId: String!
+  issuer: String!
+  issuedAt: Time!
+  expiresAt: Time!
+  signatureValid: Boolean!
+  notExpired: Boolean!
+  issuerTrusted: Boolean!
+  error: String
+}
+
+type ReputationImportResult {
+  success: Boolean!
+  actorId: String!
+  previousScore: Int!
+  importedScore: Int!
+  vouchesImported: Int!
+  message: String
+  error: String
+}
+
+"""
+AI Analysis types
+"""
+type AIAnalysis {
+  id: ID!
+  objectId: ID!
+  objectType: String!
+  textAnalysis: TextAnalysis
+  imageAnalysis: ImageAnalysis
+  aiDetection: AIDetection
+  spamAnalysis: SpamAnalysis
+  overallRisk: Float!
+  moderationAction: ModerationAction!
+  confidence: Float!
+  analyzedAt: Time!
+}
+
+type TextAnalysis {
+  sentiment: Sentiment!
+  sentimentScores: SentimentScores!
+  toxicityScore: Float!
+  toxicityLabels: [String!]!
+  containsPII: Boolean!
+  dominantLanguage: String!
+  entities: [Entity!]!
+  keyPhrases: [String!]!
+}
+
+type SentimentScores {
+  positive: Float!
+  negative: Float!
+  neutral: Float!
+  mixed: Float!
+}
+
+type Entity {
+  type: String!
+  text: String!
+  score: Float!
+}
+
+type ImageAnalysis {
+  moderationLabels: [ModerationLabel!]!
+  isNSFW: Boolean!
+  nsfwConfidence: Float!
+  violenceScore: Float!
+  weaponsDetected: Boolean!
+  detectedText: [String!]!
+  textToxicity: Float!
+  celebrityFaces: [Celebrity!]!
+  deepfakeScore: Float!
+}
+
+type ModerationLabel {
+  name: String!
+  confidence: Float!
+  parentName: String
+}
+
+type Celebrity {
+  name: String!
+  confidence: Float!
+  urls: [String!]!
+}
+
+type AIDetection {
+  aiGeneratedProbability: Float!
+  generationModel: String
+  patternConsistency: Float!
+  styleDeviation: Float!
+  semanticCoherence: Float!
+  suspiciousPatterns: [String!]!
+}
+
+type SpamAnalysis {
+  spamScore: Float!
+  spamIndicators: [SpamIndicator!]!
+  postingVelocity: Float!
+  repetitionScore: Float!
+  linkDensity: Float!
+  followerRatio: Float!
+  interactionRate: Float!
+  accountAgeDays: Int!
+}
+
+type SpamIndicator {
+  type: String!
+  description: String!
+  severity: Float!
+}
+
+type AIStats {
+  period: String!
+  totalAnalyses: Int!
+  toxicContent: Int!
+  spamDetected: Int!
+  aiGenerated: Int!
+  nsfwContent: Int!
+  piiDetected: Int!
+  toxicityRate: Float!
+  spamRate: Float!
+  aiContentRate: Float!
+  nsfwRate: Float!
+  moderationActions: ModerationActionCounts!
+}
+
+type ModerationActionCounts {
+  none: Int!
+  flag: Int!
+  hide: Int!
+  remove: Int!
+  shadowBan: Int!
+  review: Int!
+}
+
+type AIAnalysisRequest {
+  message: String!
+  objectId: ID!
+  estimatedTime: String!
+}
+
+enum Sentiment {
+  POSITIVE
+  NEGATIVE
+  NEUTRAL
+  MIXED
+}
+
+enum ModerationAction {
+  NONE
+  FLAG
+  HIDE
+  REMOVE
+  SHADOW_BAN
+  REVIEW
+}
+
+type AICapabilities {
+  textAnalysis: TextAnalysisCapabilities!
+  imageAnalysis: ImageAnalysisCapabilities!
+  aiDetection: AIDetectionCapabilities!
+  moderationActions: [String!]!
+  costPerAnalysis: CostBreakdown!
+}
+
+type TextAnalysisCapabilities {
+  sentimentAnalysis: Boolean!
+  toxicityDetection: Boolean!
+  spamDetection: Boolean!
+  piiDetection: Boolean!
+  entityExtraction: Boolean!
+  languageDetection: Boolean!
+}
+
+type ImageAnalysisCapabilities {
+  nsfwDetection: Boolean!
+  violenceDetection: Boolean!
+  textExtraction: Boolean!
+  celebrityRecognition: Boolean!
+  deepfakeDetection: Boolean!
+}
+
+type AIDetectionCapabilities {
+  aiGeneratedContent: Boolean!
+  patternAnalysis: Boolean!
+  styleConsistency: Boolean!
+}
+
+# Thread Synchronization types
+type ThreadContext {
+  rootNote: Object!
+  replyCount: Int!
+  participantCount: Int!
+  lastActivity: Time!
+  missingPosts: Int!
+  syncStatus: SyncStatus!
+}
+
+enum SyncStatus {
+  COMPLETE
+  PARTIAL
+  SYNCING
+  FAILED
+}
+
+type SyncThreadPayload {
+  success: Boolean!
+  thread: ThreadContext!
+  syncedPosts: Int!
+  errors: [String!]
+}
+
+type SyncRepliesPayload {
+  success: Boolean!
+  syncedReplies: Int!
+  thread: ThreadContext!
+}
+
+# Severed Relationships types
+type SeveredRelationship {
+  id: ID!
+  localInstance: String!
+  remoteInstance: String!
+  reason: SeveranceReason!
+  affectedFollowers: Int!
+  affectedFollowing: Int!
+  timestamp: Time!
+  reversible: Boolean!
+  details: SeveranceDetails
+}
+
+enum SeveranceReason {
+  DOMAIN_BLOCK
+  INSTANCE_DOWN
+  DEFEDERATION
+  POLICY_VIOLATION
+  OTHER
+}
+
+type SeveranceDetails {
+  description: String!
+  metadata: [String!]!
+  adminNotes: String
+  autoDetected: Boolean!
+}
+
+type SeveredRelationshipConnection {
+  edges: [SeveredRelationshipEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type SeveredRelationshipEdge {
+  node: SeveredRelationship!
+  cursor: Cursor!
+}
+
+type AffectedRelationship {
+  actor: Actor!
+  relationshipType: String! # "follower" or "following"
+  establishedAt: Time!
+  lastInteraction: Time
+}
+
+type AffectedRelationshipConnection {
+  edges: [AffectedRelationshipEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type AffectedRelationshipEdge {
+  node: AffectedRelationship!
+  cursor: Cursor!
+}
+
+type AcknowledgePayload {
+  success: Boolean!
+  severedRelationship: SeveredRelationship!
+  acknowledged: Boolean!
+}
+
+type ReconnectionPayload {
+  success: Boolean!
+  severedRelationship: SeveredRelationship!
+  reconnected: Int!
+  failed: Int!
+  errors: [String!]
+}

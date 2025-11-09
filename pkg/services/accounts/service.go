@@ -97,6 +97,9 @@ var (
 	ErrCannotUnpinAccountForOtherUser      = errors.New("cannot unpin account for another user")
 	ErrCannotSetNoteForOtherUser           = errors.New("cannot set note for another user")
 	ErrCannotRemoveFollowerForOtherUser    = errors.New("cannot remove follower for another user")
+
+	// Quote permissions errors
+	ErrQuoteRepositoryNotAvailable = errors.New("quote repository not available")
 )
 
 // Collection type constants
@@ -139,6 +142,23 @@ type AuthService interface {
 	ValidatePassword(password, username string) error
 	PasswordStrength(password string) int
 }
+
+// quotePermissionsCreator captures the subset of quote repository capabilities needed during registration.
+type quotePermissionsCreator interface {
+	CreateQuotePermissions(ctx context.Context, permissions *models.QuotePermissions) error
+}
+
+// accountRegistrationRepository captures account operations needed during registration.
+type accountRegistrationRepository interface {
+	UpdateAccountPreferences(ctx context.Context, username string, preferences map[string]interface{}) error
+	DeleteAccount(ctx context.Context, username string) error
+}
+
+// Compile-time checks ensuring the concrete repositories satisfy the narrow interfaces above.
+var (
+	_ quotePermissionsCreator       = (*repositories.QuoteRepository)(nil)
+	_ accountRegistrationRepository = (*repositories.AccountRepository)(nil)
+)
 
 // streamingEventEmitter adapts streaming.Publisher to common.EventEmitter interface
 type streamingEventEmitter struct {
@@ -225,13 +245,14 @@ func NewService(
 
 // RegisterAccountCommand contains all data needed to register a new account
 type RegisterAccountCommand struct {
-	Username   string `json:"username" validate:"required,min=3,max=30"`
-	Email      string `json:"email" validate:"required,email"`
-	Password   string `json:"password"` // Optional for WebAuthn registration
-	Locale     string `json:"locale"`
-	Agreement  bool   `json:"agreement" validate:"required"`
-	Reason     string `json:"reason"` // Registration reason (for approval)
-	InviteCode string `json:"invite_code"`
+	Username                 string `json:"username" validate:"required,min=3,max=30"`
+	Email                    string `json:"email" validate:"required,email"`
+	Password                 string `json:"password"` // Optional for WebAuthn registration
+	Locale                   string `json:"locale"`
+	Agreement                bool   `json:"agreement" validate:"required"`
+	Reason                   string `json:"reason"` // Registration reason (for approval)
+	InviteCode               string `json:"invite_code"`
+	DefaultPostingVisibility string `json:"default_posting_visibility"`
 }
 
 // UpdateProfileCommand contains all data needed to update a user's profile
@@ -260,7 +281,7 @@ type GetPreferencesQuery struct {
 type UpdatePreferencesCommand struct {
 	Username                  string          `json:"username" validate:"required"`
 	Language                  string          `json:"language"`
-	DefaultPostingVisibility  string          `json:"default_posting_visibility" validate:"oneof=public unlisted private"`
+	DefaultPostingVisibility  string          `json:"default_posting_visibility" validate:"oneof=public unlisted private direct"`
 	DefaultMediaSensitive     bool            `json:"default_media_sensitive"`
 	ExpandSpoilers            bool            `json:"expand_spoilers"`
 	ExpandMedia               string          `json:"expand_media" validate:"oneof=default show_all hide_all"`
@@ -693,13 +714,7 @@ func (s *Service) validateUpdatePreferencesCommand(_ context.Context, cmd *Updat
 		return ErrUpdaterIDRequired
 	}
 
-	validVisibilities := map[string]bool{
-		models.VisibilityPublic:   true,
-		models.VisibilityUnlisted: true,
-		models.VisibilityPrivate:  true,
-	}
-
-	if cmd.DefaultPostingVisibility != "" && !validVisibilities[cmd.DefaultPostingVisibility] {
+	if cmd.DefaultPostingVisibility != "" && !isValidPostingVisibility(cmd.DefaultPostingVisibility) {
 		return common.ErrValidation("default_posting_visibility", fmt.Sprintf("Visibility '%s' is not valid", cmd.DefaultPostingVisibility)).InternalError
 	}
 
@@ -1696,8 +1711,13 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		return nil, ErrValidationFailed
 	}
 
+	accountRepo := s.storage.Account()
+	if accountRepo == nil {
+		return nil, ErrAccountRepositoryNotAvailable
+	}
+
 	// Check if username is already taken
-	existingAccount, _ := s.storage.Account().GetAccount(ctx, cmd.Username)
+	existingAccount, _ := accountRepo.GetAccount(ctx, cmd.Username)
 	if existingAccount != nil {
 		return nil, ErrUsernameAlreadyTaken
 	}
@@ -1774,15 +1794,26 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	}
 
 	// Save to storage
-	if err := s.storage.Account().CreateAccount(ctx, account); err != nil {
+	if err := accountRepo.CreateAccount(ctx, account); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			return nil, ErrUsernameAlreadyTaken
 		}
-		s.logger.Error("failed to create account", 
+		s.logger.Error("failed to create account",
 			zap.String("username", cmd.Username),
 			zap.Error(err))
 		// Return the actual error instead of wrapping it
 		return nil, fmt.Errorf("failed to create account: %w", err)
+	}
+
+	initialVisibility := s.initialPostingVisibility(cmd.DefaultPostingVisibility)
+	if err := s.ensureQuotePermissionsForNewUser(ctx, s.storage.Quote(), cmd.Username, initialVisibility); err != nil {
+		s.rollbackAccountCreation(ctx, accountRepo, cmd.Username, err)
+		return nil, fmt.Errorf("failed to create default quote permissions: %w", err)
+	}
+
+	if err := s.persistDefaultPostingVisibility(ctx, accountRepo, cmd.Username, initialVisibility); err != nil {
+		s.rollbackAccountCreation(ctx, accountRepo, cmd.Username, err)
+		return nil, err
 	}
 
 	s.logger.Info("account created successfully, recording activity",
@@ -1826,8 +1857,88 @@ func (s *Service) validateRegisterAccountCommand(_ context.Context, cmd *Registe
 	if !cmd.Agreement {
 		return ErrMustAgreeToTerms
 	}
+
+	if cmd.DefaultPostingVisibility != "" && !isValidPostingVisibility(cmd.DefaultPostingVisibility) {
+		return common.ErrValidation("default_posting_visibility", fmt.Sprintf("Visibility '%s' is not valid", cmd.DefaultPostingVisibility)).InternalError
+	}
 	// Additional validation can be added here
 	return nil
+}
+
+func isValidPostingVisibility(value string) bool {
+	switch value {
+	case models.VisibilityPublic, models.VisibilityUnlisted, models.VisibilityPrivate, models.VisibilityDirect:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Service) initialPostingVisibility(requested string) string {
+	if requested != "" {
+		return strings.ToLower(requested)
+	}
+
+	defaultPrefs := models.GetDefaultPreferences()
+	if defaultPrefs != nil && defaultPrefs.DefaultPostingVisibility != "" {
+		return strings.ToLower(defaultPrefs.DefaultPostingVisibility)
+	}
+
+	return models.VisibilityPublic
+}
+
+func (s *Service) ensureQuotePermissionsForNewUser(ctx context.Context, repo quotePermissionsCreator, username, visibility string) error {
+	if repo == nil {
+		return ErrQuoteRepositoryNotAvailable
+	}
+
+	perms := &models.QuotePermissions{
+		Username: username,
+	}
+	perms.ApplyVisibilityDefaults(visibility)
+
+	if err := perms.UpdateKeys(); err != nil {
+		return err
+	}
+
+	return repo.CreateQuotePermissions(ctx, perms)
+}
+
+func (s *Service) persistDefaultPostingVisibility(ctx context.Context, repo accountRegistrationRepository, username, visibility string) error {
+	if repo == nil {
+		return ErrAccountRepositoryNotAvailable
+	}
+
+	preferences := map[string]interface{}{
+		"default_posting_visibility": visibility,
+	}
+
+	if err := repo.UpdateAccountPreferences(ctx, username, preferences); err != nil {
+		return fmt.Errorf("failed to store default posting visibility: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) rollbackAccountCreation(ctx context.Context, repo accountRegistrationRepository, username string, cause error) {
+	if repo == nil {
+		s.logger.Error("unable to rollback account creation; account repository unavailable",
+			zap.String("username", username),
+			zap.NamedError("cause", cause))
+		return
+	}
+
+	if err := repo.DeleteAccount(ctx, username); err != nil {
+		s.logger.Error("failed to rollback account after registration failure",
+			zap.String("username", username),
+			zap.NamedError("rollback_error", err),
+			zap.NamedError("cause", cause))
+		return
+	}
+
+	s.logger.Warn("rolled back account after registration failure",
+		zap.String("username", username),
+		zap.NamedError("cause", cause))
 }
 
 // Helper methods for account registration
