@@ -471,6 +471,17 @@
             }
         }
 
+        // Helper function to escape HTML special characters
+        function escapeHTML(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/\//g, '&#x2F;');
+        }
+
         function showAuthenticatedUI() {
             document.getElementById('authSection').style.display = 'none';
             document.getElementById('accountSection').style.display = 'none';
@@ -479,7 +490,7 @@
             document.getElementById('userSection').style.display = 'block';
             
             document.getElementById('userInfo').innerHTML = 
-                `<div>Username: ${currentUser || 'Unknown'}</div>
+                `<div>Username: ${escapeHTML(currentUser || 'Unknown')}</div>
                  <div>Authenticated via: Wallet</div>`;
         }
 
