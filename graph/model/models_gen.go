@@ -943,6 +943,7 @@ type Object struct {
 	RepliesCount     int                       `json:"repliesCount"`
 	LikesCount       int                       `json:"likesCount"`
 	SharesCount      int                       `json:"sharesCount"`
+	Boosted          bool                      `json:"boosted"`
 	EstimatedCost    int                       `json:"estimatedCost"`
 	ModerationScore  *float64                  `json:"moderationScore,omitempty"`
 	CommunityNotes   []*CommunityNote          `json:"communityNotes"`

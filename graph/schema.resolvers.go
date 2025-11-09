@@ -1103,6 +1103,21 @@ func (r *Resolver) parseMentionURL(url string) (username string, domain *string)
 	return usernamePart, domainPtr
 }
 
+var viewerBoostStateResolverFunc = loadViewerBoostState
+
+func loadViewerBoostState(ctx context.Context, r *Resolver, viewerID, statusID string) (bool, error) {
+	if r == nil || viewerID == "" || statusID == "" {
+		return false, nil
+	}
+
+	notesService := r.notesService()
+	if notesService == nil {
+		return false, nil
+	}
+
+	return notesService.HasReblogged(ctx, viewerID, statusID)
+}
+
 func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Status) *model.Object {
 	if status == nil {
 		return nil
@@ -1120,6 +1135,21 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 	var poll *model.Poll
 	if status.StatusID != "" {
 		poll = r.resolvePollForStatus(ctx, status)
+	}
+
+	viewerBoosted := false
+	viewerUsername := getUsernameFromContext(ctx)
+	if viewerUsername != "" && status.StatusID != "" {
+		if boosted, err := viewerBoostStateResolverFunc(ctx, r, viewerUsername, status.StatusID); err != nil {
+			if convertLogger != nil {
+				convertLogger.Warn("failed to resolve viewer boost state",
+					zap.String("status_id", status.StatusID),
+					zap.String("viewer", viewerUsername),
+					zap.Error(err))
+			}
+		} else {
+			viewerBoosted = boosted
+		}
 	}
 
 	objectType := model.ObjectTypeNote
@@ -1250,6 +1280,7 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 			TotalCount: status.QuoteCount,
 		},
 		EstimatedCost: 1,
+		Boosted:       viewerBoosted,
 	}
 
 	if convertLogger != nil {

@@ -3,7 +3,6 @@ package graph
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -36,18 +35,24 @@ func (r *mutationResolver) UnlikeObject(ctx context.Context, id string) (bool, e
 	})
 }
 
+var errNotesServiceUnavailable = errors.New("notes service unavailable")
+
 // ShareObject is the resolver for the shareObject field.
-func (r *mutationResolver) ShareObject(ctx context.Context, id string) (*activitypub.Activity, error) {
+func (r *mutationResolver) ShareObject(ctx context.Context, id string) (*model.Object, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := r.Registry.Notes().ReblogNote(ctx, &notes.ReblogNoteCommand{
+	notesService := r.notesService()
+	if notesService == nil {
+		return nil, errNotesServiceUnavailable
+	}
+
+	if _, err := notesService.ReblogNote(ctx, &notes.ReblogNoteCommand{
 		StatusID:    id,
 		RebloggerID: username,
-	})
-	if err != nil {
+	}); err != nil {
 		r.Logger.Error("Failed to share object",
 			zap.String("user", username),
 			zap.String("object", id),
@@ -55,40 +60,56 @@ func (r *mutationResolver) ShareObject(ctx context.Context, id string) (*activit
 		return nil, ErrSocialActionFailedWithContext("share", err)
 	}
 
+	updatedStatus, err := notesService.GetNote(ctx, id)
+	if err != nil {
+		r.Logger.Error("Failed to load updated object after share",
+			zap.String("user", username),
+			zap.String("object", id),
+			zap.Error(err))
+		return nil, errors.Join(errors.New("failed to load updated object after share"), err)
+	}
+
 	// Track the write for cost attribution
 	r.trackDynamoOperation(ctx, "write", 1)
 
-	if result != nil {
-		if activity := buildActivityFromAnnounce(username, id, result.Announce); activity != nil {
-			return activity, nil
-		}
-	}
-
-	r.Logger.Debug("share result missing announce metadata; returning synthetic activity",
-		zap.String("user", username),
-		zap.String("object", id))
-
-	now := time.Now()
-	return &activitypub.Activity{
-		BaseObject: activitypub.BaseObject{
-			ID:        generateID(),
-			Type:      activitypub.AnnounceType,
-			Published: &now,
-		},
-		Actor:  username,
-		Object: id,
-	}, nil
+	return r.convertStatusToObject(ctx, updatedStatus), nil
 }
 
 // UnshareObject is the resolver for the unshareObject field.
-func (r *mutationResolver) UnshareObject(ctx context.Context, id string) (bool, error) {
-	return r.executeSocialUndo(ctx, id, "unshare", func(ctx context.Context, objectID, username string) error {
-		_, err := r.Registry.Notes().UnreblogNote(ctx, &notes.UnreblogNoteCommand{
-			StatusID:      objectID,
-			UnrebloggerID: username,
-		})
-		return err
-	})
+func (r *mutationResolver) UnshareObject(ctx context.Context, id string) (*model.Object, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	notesService := r.notesService()
+	if notesService == nil {
+		return nil, errNotesServiceUnavailable
+	}
+
+	if _, err := notesService.UnreblogNote(ctx, &notes.UnreblogNoteCommand{
+		StatusID:      id,
+		UnrebloggerID: username,
+	}); err != nil {
+		r.Logger.Error("Failed to unshare object",
+			zap.String("user", username),
+			zap.String("object", id),
+			zap.Error(err))
+		return nil, ErrSocialUndoFailedWithContext("unshare", err)
+	}
+
+	updatedStatus, err := notesService.GetNote(ctx, id)
+	if err != nil {
+		r.Logger.Error("Failed to load updated object after unshare",
+			zap.String("user", username),
+			zap.String("object", id),
+			zap.Error(err))
+		return nil, errors.Join(errors.New("failed to load updated object after unshare"), err)
+	}
+
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
+	return r.convertStatusToObject(ctx, updatedStatus), nil
 }
 
 // BookmarkObject is the resolver for the bookmarkObject field.

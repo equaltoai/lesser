@@ -9,9 +9,18 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/services"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
+
+type notesService interface {
+	ReblogNote(context.Context, *notes.ReblogNoteCommand) (*notes.LikeResult, error)
+	UnreblogNote(context.Context, *notes.UnreblogNoteCommand) (*notes.LikeResult, error)
+	GetNote(context.Context, string) (*models.Status, error)
+	HasReblogged(context.Context, string, string) (bool, error)
+}
 
 // This file will not be regenerated automatically.
 //
@@ -22,6 +31,8 @@ import (
 type Resolver struct {
 	// Service registry - primary source for all business operations
 	Registry *services.Registry
+	// Optional override used in tests to bypass the service registry
+	notesClient notesService
 
 	// Legacy fields (to be phased out)
 	Config              *config.Config
@@ -35,6 +46,19 @@ type Resolver struct {
 	SubscriptionManager *SubscriptionManager // For GraphQL subscriptions
 	DynamoClient        *dynamodb.Client     // Needed for subscription manager
 	AIService           *ai.AIService        // AI analysis service
+}
+
+func (r *Resolver) notesService() notesService {
+	if r == nil {
+		return nil
+	}
+	if r.notesClient != nil {
+		return r.notesClient
+	}
+	if r.Registry != nil {
+		return r.Registry.Notes()
+	}
+	return nil
 }
 
 // Activity returns the ActivityResolver implementation

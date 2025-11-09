@@ -813,6 +813,7 @@ func (r *Registry) Notes() *notes.Service {
 			}
 
 			analyticsService := r.ensureAnalyticsLocked()
+			notificationsService := r.ensureNotificationsServiceLocked()
 
 			r.notesService = notes.NewService(
 				statusRepo,
@@ -830,6 +831,7 @@ func (r *Registry) Notes() *notes.Service {
 				r.publisher,
 				analyticsService,                         // Analytics service
 				r.createNotesFederationAdapterUnlocked(), // Federation service adapter
+				notificationsService,
 				r.logger,
 				domainName,
 			)
@@ -1357,6 +1359,10 @@ func (r *Registry) Notifications() *notifications.Service {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	return r.ensureNotificationsServiceLocked()
+}
+
+func (r *Registry) ensureNotificationsServiceLocked() *notifications.Service {
 	if r.notificationsService == nil && r.storage != nil {
 		// Initialize the Notifications service with repository interfaces
 		notificationRepo := r.storage.Notification()
@@ -1395,11 +1401,11 @@ func (r *Registry) Notifications() *notifications.Service {
 				pushService,
 			)
 			notificationRepo.SetDispatcher(r.notificationsService)
-			r.initialized["Notifications"] = true
-		} else {
-			if r.logger != nil {
-				r.logger.Warn("failed to initialize Notifications service: required repositories not available")
+			if r.initialized != nil {
+				r.initialized["Notifications"] = true
 			}
+		} else if r.logger != nil {
+			r.logger.Warn("failed to initialize Notifications service: required repositories not available")
 		}
 	}
 

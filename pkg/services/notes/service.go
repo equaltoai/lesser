@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	svcErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -50,11 +51,16 @@ type Service struct {
 	logger            *zap.Logger
 	domainName        string
 	federation        FederationService // Interface to be defined
+	notifications     notificationsService
 
 	// Business logic services
 	businessLogic    *common.BusinessLogicService
 	activityPubLogic *common.ActivityPubBusinessLogic
 	mastodonLogic    *common.MastodonBusinessLogic
+}
+
+type notificationsService interface {
+	CreateNotification(ctx context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error)
 }
 
 // ScheduledStatusRepository defines the interface for scheduled status operations
@@ -159,6 +165,7 @@ func NewService(
 	publisher streaming.Publisher,
 	analytics AnalyticsService,
 	federation FederationService,
+	notifier notificationsService,
 	logger *zap.Logger,
 	domainName string,
 ) *Service {
@@ -197,6 +204,7 @@ func NewService(
 		publisher:         publisher,
 		analytics:         analytics,
 		federation:        federation,
+		notifications:     notifier,
 		logger:            logger,
 		domainName:        domainName,
 		businessLogic:     businessLogic,
@@ -1521,13 +1529,18 @@ func (s *Service) emitReblogEvents(ctx context.Context, status *models.Status, r
 
 	// Create reblog event
 	event := &streaming.Event{
-		Type:      "status.reblogged",
+		Type:      streaming.StatusBoosted,
 		Timestamp: time.Now(),
 		Payload: map[string]interface{}{
 			"status":    status,
 			"reblogger": rebloggerUsername,
 		},
 	}
+
+	s.logger.Debug("emitting status.boosted event",
+		zap.String("status_id", status.StatusID),
+		zap.String("reblogger", rebloggerUsername),
+		zap.Int("shares_count", status.ReblogCount))
 
 	// Emit to user's stream
 	userEvent := *event
@@ -1557,7 +1570,7 @@ func (s *Service) emitUnreblogEvents(ctx context.Context, status *models.Status,
 
 	// Create unreblog event
 	event := &streaming.Event{
-		Type:      "status.unreblogged",
+		Type:      streaming.StatusUnboosted,
 		Timestamp: time.Now(),
 		Payload: map[string]interface{}{
 			"status":      status,
@@ -1828,6 +1841,9 @@ func (s *Service) executeNoteActionGeneric(ctx context.Context, params noteActio
 		return nil, errors.Join(ErrExecuteAction, err)
 	}
 
+	// Refresh status so counters and derived state stay consistent
+	note = s.refreshStatus(ctx, params.statusID, note)
+
 	// Emit events
 	events := params.emitEventsFn(ctx, note, params.actorID)
 
@@ -1925,8 +1941,13 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 		return nil, ErrReblogStatus
 	}
 
+	// Refresh status so downstream consumers receive updated counters/state
+	note = s.refreshStatus(ctx, cmd.StatusID, note)
+
 	// Emit events
 	events := s.emitReblogEvents(ctx, note, cmd.RebloggerID)
+	s.queueAnnounceActivity(ctx, note, announce)
+	s.notifyBoost(ctx, note, cmd.RebloggerID)
 
 	return &LikeResult{
 		Status:   note,
@@ -2360,6 +2381,124 @@ func (s *Service) getRebloggers(ctx context.Context, statusID string, pagination
 	}
 
 	return accounts, result, nil
+}
+
+func (s *Service) refreshStatus(ctx context.Context, statusID string, fallback *models.Status) *models.Status {
+	if s.noteRepo == nil {
+		return fallback
+	}
+
+	updated, err := s.noteRepo.GetStatus(ctx, statusID)
+	if err != nil {
+		s.logger.Warn("failed to refresh status after engagement",
+			zap.String("status_id", statusID),
+			zap.Error(err))
+		return fallback
+	}
+
+	return updated
+}
+
+func (s *Service) notifyBoost(ctx context.Context, status *models.Status, boosterUsername string) {
+	if s.notifications == nil || status == nil {
+		return
+	}
+
+	s.ensureAuthorUsername(ctx, status)
+	recipient := strings.TrimSpace(status.AuthorUsername)
+	if recipient == "" || recipient == boosterUsername {
+		return
+	}
+
+	statusURL := s.buildStatusURL(status)
+	title := fmt.Sprintf("%s boosted your post", boosterUsername)
+
+	cmd := &notifications.CreateNotificationCommand{
+		UserID:     recipient,
+		Type:       common.NotificationTypeReblog,
+		ActorID:    boosterUsername,
+		ActorType:  "user",
+		TargetID:   status.StatusID,
+		TargetType: "status",
+		Title:      title,
+		Body:       title,
+		GroupKey:   fmt.Sprintf("reblog:%s", status.StatusID),
+		Data: map[string]interface{}{
+			"status_id":  status.StatusID,
+			"status_url": statusURL,
+			"booster":    boosterUsername,
+		},
+	}
+
+	if _, err := s.notifications.CreateNotification(ctx, cmd); err != nil {
+		s.logger.Error("failed to create boost notification",
+			zap.String("status_id", status.StatusID),
+			zap.String("recipient", recipient),
+			zap.Error(err))
+	}
+}
+
+func (s *Service) buildStatusURL(status *models.Status) string {
+	if status == nil || status.StatusID == "" {
+		return ""
+	}
+
+	domain := strings.TrimSpace(s.domainName)
+	if domain == "" {
+		domain = "localhost"
+	}
+	author := strings.TrimSpace(status.AuthorUsername)
+	if author == "" && status.AuthorID != "" {
+		trimmed := strings.TrimSuffix(strings.TrimPrefix(status.AuthorID, "https://"), "/")
+		if strings.Contains(trimmed, "/") {
+			parts := strings.Split(trimmed, "/")
+			author = parts[len(parts)-1]
+		} else {
+			author = trimmed
+		}
+	}
+	if author == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("https://%s/users/%s/statuses/%s", domain, author, status.StatusID)
+}
+
+func (s *Service) queueAnnounceActivity(ctx context.Context, status *models.Status, announce *storage.Announce) {
+	if s.federation == nil || status == nil || announce == nil {
+		return
+	}
+
+	published := announce.Published
+	if published.IsZero() {
+		published = time.Now()
+	}
+	publishedCopy := published
+
+	activity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			Type:      activitypub.AnnounceType,
+			ID:        announce.ID,
+			Published: &publishedCopy,
+			To:        status.ToRecipients,
+			CC:        status.CcRecipients,
+		},
+		Actor:  announce.Actor,
+		Object: announce.Object,
+	}
+
+	if err := s.federation.QueueActivity(ctx, activity); err != nil {
+		s.logger.Error("failed to queue announce activity",
+			zap.String("status_id", status.StatusID),
+			zap.String("actor", announce.Actor),
+			zap.Error(err))
+		return
+	}
+
+	s.logger.Debug("queued announce activity",
+		zap.String("status_id", status.StatusID),
+		zap.String("announce_id", announce.ID))
 }
 
 func (s *Service) pinStatus(ctx context.Context, userID, statusID string) error {

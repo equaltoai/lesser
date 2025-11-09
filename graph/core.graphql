@@ -118,6 +118,7 @@ type Object {
   repliesCount: Int!
   likesCount: Int!
   sharesCount: Int!
+  boosted: Boolean!
   
   # Lesser enhancements
   estimatedCost: Int!
@@ -845,8 +846,8 @@ type Mutation {
   deleteObject(id: ID!): Boolean!
   likeObject(id: ID!): Activity!
   unlikeObject(id: ID!): Boolean!
-  shareObject(id: ID!): Activity!
-  unshareObject(id: ID!): Boolean!
+  shareObject(id: ID!): Object!
+  unshareObject(id: ID!): Object!
   bookmarkObject(id: ID!): Object!
   unbookmarkObject(id: ID!): Boolean!
   pinObject(id: ID!): Object!

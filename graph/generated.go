@@ -1022,6 +1022,7 @@ type ComplexityRoot struct {
 	Object struct {
 		Actor            func(childComplexity int) int
 		Attachments      func(childComplexity int) int
+		Boosted          func(childComplexity int) int
 		CommunityNotes   func(childComplexity int) int
 		Content          func(childComplexity int) int
 		ContentMap       func(childComplexity int) int
@@ -1796,8 +1797,8 @@ type MutationResolver interface {
 	DeleteObject(ctx context.Context, id string) (bool, error)
 	LikeObject(ctx context.Context, id string) (*activitypub.Activity, error)
 	UnlikeObject(ctx context.Context, id string) (bool, error)
-	ShareObject(ctx context.Context, id string) (*activitypub.Activity, error)
-	UnshareObject(ctx context.Context, id string) (bool, error)
+	ShareObject(ctx context.Context, id string) (*model.Object, error)
+	UnshareObject(ctx context.Context, id string) (*model.Object, error)
 	BookmarkObject(ctx context.Context, id string) (*model.Object, error)
 	UnbookmarkObject(ctx context.Context, id string) (bool, error)
 	PinObject(ctx context.Context, id string) (*model.Object, error)
@@ -1929,9 +1930,8 @@ type QueryResolver interface {
 type QuoteContextResolver interface {
 	OriginalAuthor(ctx context.Context, obj *activitypub.QuoteContext) (*activitypub.Actor, error)
 	OriginalNote(ctx context.Context, obj *activitypub.QuoteContext) (*model.Object, error)
-	QuoteAllowed(ctx context.Context, obj *activitypub.QuoteContext) (bool, error)
+
 	QuoteType(ctx context.Context, obj *activitypub.QuoteContext) (model.QuoteType, error)
-	Withdrawn(ctx context.Context, obj *activitypub.QuoteContext) (bool, error)
 }
 type SubscriptionResolver interface {
 	ActivityStream(ctx context.Context, types []model.ActivityType) (<-chan *activitypub.Activity, error)
@@ -6830,6 +6830,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Object.Attachments(childComplexity), true
+
+	case "Object.boosted":
+		if e.complexity.Object.Boosted == nil {
+			break
+		}
+
+		return e.complexity.Object.Boosted(childComplexity), true
 
 	case "Object.communityNotes":
 		if e.complexity.Object.CommunityNotes == nil {
@@ -15263,6 +15270,8 @@ func (ec *executionContext) fieldContext_Activity_object(_ context.Context, fiel
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -15360,6 +15369,8 @@ func (ec *executionContext) fieldContext_Activity_target(_ context.Context, fiel
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -18897,6 +18908,8 @@ func (ec *executionContext) fieldContext_CommunityNotePayload_object(_ context.C
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -19126,6 +19139,8 @@ func (ec *executionContext) fieldContext_Conversation_lastStatus(_ context.Conte
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -20831,6 +20846,8 @@ func (ec *executionContext) fieldContext_CreateNotePayload_object(_ context.Cont
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -26405,6 +26422,8 @@ func (ec *executionContext) fieldContext_HashtagActivityUpdate_post(_ context.Co
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -36205,6 +36224,8 @@ func (ec *executionContext) fieldContext_ModerationAlert_content(_ context.Conte
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -36873,6 +36894,8 @@ func (ec *executionContext) fieldContext_ModerationDecision_object(_ context.Con
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -37627,6 +37650,8 @@ func (ec *executionContext) fieldContext_ModerationItem_content(_ context.Contex
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -39100,9 +39125,9 @@ func (ec *executionContext) _Mutation_shareObject(ctx context.Context, field gra
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*activitypub.Activity)
+	res := resTmp.(*model.Object)
 	fc.Result = res
-	return ec.marshalNActivity2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋactivitypubᚐActivity(ctx, field.Selections, res)
+	return ec.marshalNObject2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐObject(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Mutation_shareObject(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -39114,21 +39139,63 @@ func (ec *executionContext) fieldContext_Mutation_shareObject(ctx context.Contex
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Activity_id(ctx, field)
+				return ec.fieldContext_Object_id(ctx, field)
 			case "type":
-				return ec.fieldContext_Activity_type(ctx, field)
+				return ec.fieldContext_Object_type(ctx, field)
 			case "actor":
-				return ec.fieldContext_Activity_actor(ctx, field)
-			case "object":
-				return ec.fieldContext_Activity_object(ctx, field)
-			case "target":
-				return ec.fieldContext_Activity_target(ctx, field)
-			case "published":
-				return ec.fieldContext_Activity_published(ctx, field)
-			case "cost":
-				return ec.fieldContext_Activity_cost(ctx, field)
+				return ec.fieldContext_Object_actor(ctx, field)
+			case "content":
+				return ec.fieldContext_Object_content(ctx, field)
+			case "contentMap":
+				return ec.fieldContext_Object_contentMap(ctx, field)
+			case "inReplyTo":
+				return ec.fieldContext_Object_inReplyTo(ctx, field)
+			case "visibility":
+				return ec.fieldContext_Object_visibility(ctx, field)
+			case "sensitive":
+				return ec.fieldContext_Object_sensitive(ctx, field)
+			case "spoilerText":
+				return ec.fieldContext_Object_spoilerText(ctx, field)
+			case "attachments":
+				return ec.fieldContext_Object_attachments(ctx, field)
+			case "tags":
+				return ec.fieldContext_Object_tags(ctx, field)
+			case "mentions":
+				return ec.fieldContext_Object_mentions(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Object_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
+			case "repliesCount":
+				return ec.fieldContext_Object_repliesCount(ctx, field)
+			case "likesCount":
+				return ec.fieldContext_Object_likesCount(ctx, field)
+			case "sharesCount":
+				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
+			case "estimatedCost":
+				return ec.fieldContext_Object_estimatedCost(ctx, field)
+			case "moderationScore":
+				return ec.fieldContext_Object_moderationScore(ctx, field)
+			case "communityNotes":
+				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "quoteUrl":
+				return ec.fieldContext_Object_quoteUrl(ctx, field)
+			case "quoteable":
+				return ec.fieldContext_Object_quoteable(ctx, field)
+			case "quotePermissions":
+				return ec.fieldContext_Object_quotePermissions(ctx, field)
+			case "quoteContext":
+				return ec.fieldContext_Object_quoteContext(ctx, field)
+			case "quoteCount":
+				return ec.fieldContext_Object_quoteCount(ctx, field)
+			case "quotes":
+				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Activity", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	defer func() {
@@ -39171,9 +39238,9 @@ func (ec *executionContext) _Mutation_unshareObject(ctx context.Context, field g
 		}
 		return graphql.Null
 	}
-	res := resTmp.(bool)
+	res := resTmp.(*model.Object)
 	fc.Result = res
-	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+	return ec.marshalNObject2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐObject(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Mutation_unshareObject(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -39183,7 +39250,65 @@ func (ec *executionContext) fieldContext_Mutation_unshareObject(ctx context.Cont
 		IsMethod:   true,
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type Boolean does not have child fields")
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Object_id(ctx, field)
+			case "type":
+				return ec.fieldContext_Object_type(ctx, field)
+			case "actor":
+				return ec.fieldContext_Object_actor(ctx, field)
+			case "content":
+				return ec.fieldContext_Object_content(ctx, field)
+			case "contentMap":
+				return ec.fieldContext_Object_contentMap(ctx, field)
+			case "inReplyTo":
+				return ec.fieldContext_Object_inReplyTo(ctx, field)
+			case "visibility":
+				return ec.fieldContext_Object_visibility(ctx, field)
+			case "sensitive":
+				return ec.fieldContext_Object_sensitive(ctx, field)
+			case "spoilerText":
+				return ec.fieldContext_Object_spoilerText(ctx, field)
+			case "attachments":
+				return ec.fieldContext_Object_attachments(ctx, field)
+			case "tags":
+				return ec.fieldContext_Object_tags(ctx, field)
+			case "mentions":
+				return ec.fieldContext_Object_mentions(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Object_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
+			case "repliesCount":
+				return ec.fieldContext_Object_repliesCount(ctx, field)
+			case "likesCount":
+				return ec.fieldContext_Object_likesCount(ctx, field)
+			case "sharesCount":
+				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
+			case "estimatedCost":
+				return ec.fieldContext_Object_estimatedCost(ctx, field)
+			case "moderationScore":
+				return ec.fieldContext_Object_moderationScore(ctx, field)
+			case "communityNotes":
+				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "quoteUrl":
+				return ec.fieldContext_Object_quoteUrl(ctx, field)
+			case "quoteable":
+				return ec.fieldContext_Object_quoteable(ctx, field)
+			case "quotePermissions":
+				return ec.fieldContext_Object_quotePermissions(ctx, field)
+			case "quoteContext":
+				return ec.fieldContext_Object_quoteContext(ctx, field)
+			case "quoteCount":
+				return ec.fieldContext_Object_quoteCount(ctx, field)
+			case "quotes":
+				return ec.fieldContext_Object_quotes(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	defer func() {
@@ -39275,6 +39400,8 @@ func (ec *executionContext) fieldContext_Mutation_bookmarkObject(ctx context.Con
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -39441,6 +39568,8 @@ func (ec *executionContext) fieldContext_Mutation_pinObject(ctx context.Context,
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -43825,6 +43954,8 @@ func (ec *executionContext) fieldContext_Notification_status(_ context.Context, 
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -44788,6 +44919,8 @@ func (ec *executionContext) fieldContext_Object_inReplyTo(_ context.Context, fie
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -45388,6 +45521,50 @@ func (ec *executionContext) fieldContext_Object_sharesCount(_ context.Context, f
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Object_boosted(ctx context.Context, field graphql.CollectedField, obj *model.Object) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Object_boosted(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Boosted, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Object_boosted(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Object",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
 		},
 	}
 	return fc, nil
@@ -46048,6 +46225,8 @@ func (ec *executionContext) fieldContext_ObjectEdge_node(_ context.Context, fiel
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -46192,6 +46371,8 @@ func (ec *executionContext) fieldContext_ObjectExplanation_object(_ context.Cont
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -49014,6 +49195,8 @@ func (ec *executionContext) fieldContext_PostEdge_node(_ context.Context, field 
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -50842,6 +51025,8 @@ func (ec *executionContext) fieldContext_Query_object(ctx context.Context, field
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -55743,6 +55928,8 @@ func (ec *executionContext) fieldContext_QuoteActivityUpdate_quote(_ context.Con
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -56193,6 +56380,8 @@ func (ec *executionContext) fieldContext_QuoteContext_originalNote(_ context.Con
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -56232,7 +56421,7 @@ func (ec *executionContext) _QuoteContext_quoteAllowed(ctx context.Context, fiel
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.QuoteContext().QuoteAllowed(rctx, obj)
+		return obj.QuoteAllowed, nil
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -56253,8 +56442,8 @@ func (ec *executionContext) fieldContext_QuoteContext_quoteAllowed(_ context.Con
 	fc = &graphql.FieldContext{
 		Object:     "QuoteContext",
 		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
+		IsMethod:   false,
+		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Boolean does not have child fields")
 		},
@@ -56320,7 +56509,7 @@ func (ec *executionContext) _QuoteContext_withdrawn(ctx context.Context, field g
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.QuoteContext().Withdrawn(rctx, obj)
+		return obj.Withdrawn, nil
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -56341,8 +56530,8 @@ func (ec *executionContext) fieldContext_QuoteContext_withdrawn(_ context.Contex
 	fc = &graphql.FieldContext{
 		Object:     "QuoteContext",
 		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
+		IsMethod:   false,
+		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Boolean does not have child fields")
 		},
@@ -56425,6 +56614,8 @@ func (ec *executionContext) fieldContext_QuoteEdge_node(_ context.Context, field
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -59684,6 +59875,8 @@ func (ec *executionContext) fieldContext_SearchResult_statuses(_ context.Context
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -63278,6 +63471,8 @@ func (ec *executionContext) fieldContext_Subscription_timelineUpdates(ctx contex
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -66024,6 +66219,8 @@ func (ec *executionContext) fieldContext_ThreadContext_rootNote(_ context.Contex
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -68110,6 +68307,8 @@ func (ec *executionContext) fieldContext_UpdateQuotePermissionsPayload_note(_ co
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -69430,6 +69629,8 @@ func (ec *executionContext) fieldContext_WithdrawQuotePayload_note(_ context.Con
 				return ec.fieldContext_Object_likesCount(ctx, field)
 			case "sharesCount":
 				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -81704,6 +81905,11 @@ func (ec *executionContext) _Object(ctx context.Context, sel ast.SelectionSet, o
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "boosted":
+			out.Values[i] = ec._Object_boosted(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "estimatedCost":
 			out.Values[i] = ec._Object_estimatedCost(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -84700,41 +84906,10 @@ func (ec *executionContext) _QuoteContext(ctx context.Context, sel ast.Selection
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "quoteAllowed":
-			field := field
-
-			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
-				defer func() {
-					if r := recover(); r != nil {
-						ec.Error(ctx, ec.Recover(ctx, r))
-					}
-				}()
-				res = ec._QuoteContext_quoteAllowed(ctx, field, obj)
-				if res == graphql.Null {
-					atomic.AddUint32(&fs.Invalids, 1)
-				}
-				return res
+			out.Values[i] = ec._QuoteContext_quoteAllowed(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
 			}
-
-			if field.Deferrable != nil {
-				dfs, ok := deferred[field.Deferrable.Label]
-				di := 0
-				if ok {
-					dfs.AddField(field)
-					di = len(dfs.Values) - 1
-				} else {
-					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
-					deferred[field.Deferrable.Label] = dfs
-				}
-				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
-					return innerFunc(ctx, dfs)
-				})
-
-				// don't run the out.Concurrently() call below
-				out.Values[i] = graphql.Null
-				continue
-			}
-
-			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "quoteType":
 			field := field
 
@@ -84772,41 +84947,10 @@ func (ec *executionContext) _QuoteContext(ctx context.Context, sel ast.Selection
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "withdrawn":
-			field := field
-
-			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
-				defer func() {
-					if r := recover(); r != nil {
-						ec.Error(ctx, ec.Recover(ctx, r))
-					}
-				}()
-				res = ec._QuoteContext_withdrawn(ctx, field, obj)
-				if res == graphql.Null {
-					atomic.AddUint32(&fs.Invalids, 1)
-				}
-				return res
+			out.Values[i] = ec._QuoteContext_withdrawn(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
 			}
-
-			if field.Deferrable != nil {
-				dfs, ok := deferred[field.Deferrable.Label]
-				di := 0
-				if ok {
-					dfs.AddField(field)
-					di = len(dfs.Values) - 1
-				} else {
-					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
-					deferred[field.Deferrable.Label] = dfs
-				}
-				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
-					return innerFunc(ctx, dfs)
-				})
-
-				// don't run the out.Concurrently() call below
-				out.Values[i] = graphql.Null
-				continue
-			}
-
-			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
