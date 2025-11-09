@@ -164,6 +164,16 @@ func (hc *HealthChecker) DetailedHandler(w http.ResponseWriter, r *http.Request)
 	checks := []HealthCheck{}
 	overallStatus := HealthStatusHealthy
 	summary := make(map[string]interface{})
+	updateOverallStatus := func(status string) {
+		switch status {
+		case HealthStatusCritical:
+			overallStatus = HealthStatusCritical
+		case HealthStatusWarning:
+			if overallStatus == HealthStatusHealthy {
+				overallStatus = HealthStatusWarning
+			}
+		}
+	}
 
 	// Runtime information
 	checks = append(checks, hc.checkRuntime())
@@ -174,26 +184,14 @@ func (hc *HealthChecker) DetailedHandler(w http.ResponseWriter, r *http.Request)
 		if hc.config.TableName != "" {
 			check := hc.checkDynamoDBDetailed(ctx)
 			checks = append(checks, check)
-			if check.Status == HealthStatusCritical {
-				overallStatus = HealthStatusCritical
-			} else if check.Status == HealthStatusWarning {
-				if overallStatus == HealthStatusHealthy {
-					overallStatus = HealthStatusWarning
-				}
-			}
+			updateOverallStatus(check.Status)
 		}
 
 		// SQS detailed check
 		if hc.config.QueueURL != "" {
 			check := hc.checkSQSDetailed(ctx)
 			checks = append(checks, check)
-			if check.Status == HealthStatusCritical {
-				overallStatus = HealthStatusCritical
-			} else if check.Status == HealthStatusWarning {
-				if overallStatus == HealthStatusHealthy {
-					overallStatus = HealthStatusWarning
-				}
-			}
+			updateOverallStatus(check.Status)
 		}
 	}
 
