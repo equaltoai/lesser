@@ -2,7 +2,6 @@
 """Test OAuth2 implementation in Lesser."""
 
 import requests
-import time
 import hashlib
 import base64
 import secrets

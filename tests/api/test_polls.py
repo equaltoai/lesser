@@ -13,7 +13,6 @@ Tests:
 """
 
 import requests
-import time
 import argparse
 
 def test_polls(base_url, token):

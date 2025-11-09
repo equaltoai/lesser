@@ -571,7 +571,6 @@ class ComprehensiveAPITest:
             return
         
         # Create a small test image
-        from io import BytesIO
         import base64
         
         # 1x1 pixel PNG

@@ -339,7 +339,7 @@ func (r *queryResolver) AffectedRelationships(ctx context.Context, severedRelati
 
 	// Determine pagination info
 	hasNextPage := nextCursor != ""
-	hasPreviousPage := cursor != ""
+	hasPreviousPage := false // no pagination cursor support yet
 
 	var startCursor, endCursor *model.Cursor
 	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {

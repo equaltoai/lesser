@@ -2,7 +2,6 @@
 """Test Phase 2 status features for Lesser - Status pinning and conversation muting"""
 
 import requests
-import time
 import sys
 
 # Configuration

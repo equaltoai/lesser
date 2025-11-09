@@ -133,8 +133,8 @@ def test_oauth_flow(client_id, client_secret):
             code=auth_code,
             scopes=['read', 'write', 'follow', 'push']
         )
-        shortened = f\"{access_token[:4]}...\" if access_token else \"<empty>\"
-        log_test(True, \"POST /oauth/token\", f\"Access token obtained ({shortened})\")
+        shortened = f"{access_token[:4]}..." if access_token else "<empty>"
+        log_test(True, "POST /oauth/token", f"Access token obtained ({shortened})")
         
         return mastodon
         

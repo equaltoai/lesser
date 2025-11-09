@@ -7,7 +7,6 @@ Tests popularity search, analytics tracking, and search filters
 import requests
 import time
 import argparse
-import sys
 from datetime import datetime
 
 # ANSI color codes
