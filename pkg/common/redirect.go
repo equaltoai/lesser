@@ -15,42 +15,51 @@ var allowedRedirectHosts = map[string]bool{
 	"auth.lesser.example.com": true,
 }
 
-// ValidateRedirectURL validates that a redirect URL is safe and allowed
-func ValidateRedirectURL(redirectURL string, currentHost string) error {
+// ValidateRedirectURL validates that a redirect URL is safe and allowed and returns the sanitized value.
+func ValidateRedirectURL(redirectURL string, currentHost string) (string, error) {
+	redirectURL = strings.TrimSpace(redirectURL)
 	if redirectURL == "" {
-		return ErrRedirectURLEmpty
+		return "", ErrRedirectURLEmpty
 	}
 
 	// Parse the URL
 	u, err := url.Parse(redirectURL)
 	if err != nil {
-		return fmt.Errorf("invalid redirect URL: %w", err)
+		return "", fmt.Errorf("invalid redirect URL: %w", err)
 	}
+
+	scheme := strings.ToLower(u.Scheme)
 
 	// Relative URLs are safe (same origin)
 	if u.Host == "" {
 		// But check for protocol-relative URLs
 		if strings.HasPrefix(redirectURL, "//") {
-			return ErrProtocolRelativeURLsNotAllowed
+			return "", ErrProtocolRelativeURLsNotAllowed
 		}
 		// Check for javascript: or data: URLs
-		if u.Scheme == "javascript" || u.Scheme == "data" {
-			return ErrJavascriptDataURLsNotAllowed
+		if scheme == "javascript" || scheme == "data" {
+			return "", ErrJavascriptDataURLsNotAllowed
 		}
-		return nil
+		return u.String(), nil
 	}
 
+	if scheme != "" && scheme != "http" && scheme != "https" {
+		return "", fmt.Errorf("redirect scheme %q is not allowed", scheme)
+	}
+
+	host := strings.ToLower(u.Host)
+
 	// Check against whitelist
-	if allowedRedirectHosts[u.Host] {
-		return nil
+	if allowedRedirectHosts[host] {
+		return u.String(), nil
 	}
 
 	// Allow same host
-	if u.Host == currentHost {
-		return nil
+	if strings.EqualFold(u.Host, currentHost) {
+		return u.String(), nil
 	}
 
-	return fmt.Errorf("redirect to external host not allowed: %s", u.Host)
+	return "", fmt.Errorf("redirect to external host not allowed: %s", u.Host)
 }
 
 // SafeRedirect performs a safe redirect with validation
@@ -63,12 +72,17 @@ func SafeRedirect(w http.ResponseWriter, r *http.Request, defaultPath string) {
 		redirectTo = r.URL.Query().Get("next")
 	}
 
-	// Validate the redirect URL
-	err := ValidateRedirectURL(redirectTo, r.Host)
-	if err != nil {
-		Logger().Warn("Invalid redirect attempt",
-			zap.String("url", redirectTo),
-			zap.Error(err))
+	if redirectTo != "" {
+		sanitized, err := ValidateRedirectURL(redirectTo, r.Host)
+		if err != nil {
+			Logger().Warn("Invalid redirect attempt",
+				zap.String("url", redirectTo),
+				zap.Error(err))
+			redirectTo = defaultPath
+		} else {
+			redirectTo = sanitized
+		}
+	} else {
 		redirectTo = defaultPath
 	}
 
@@ -77,12 +91,18 @@ func SafeRedirect(w http.ResponseWriter, r *http.Request, defaultPath string) {
 
 // SafeRedirectOrDefault redirects to the given URL if safe, otherwise to default
 func SafeRedirectOrDefault(w http.ResponseWriter, r *http.Request, redirectURL, defaultPath string) {
-	err := ValidateRedirectURL(redirectURL, r.Host)
-	if err != nil {
-		Logger().Warn("Invalid redirect, using default",
-			zap.String("requested_url", redirectURL),
-			zap.String("default_url", defaultPath),
-			zap.Error(err))
+	if redirectURL != "" {
+		sanitized, err := ValidateRedirectURL(redirectURL, r.Host)
+		if err != nil {
+			Logger().Warn("Invalid redirect, using default",
+				zap.String("requested_url", redirectURL),
+				zap.String("default_url", defaultPath),
+				zap.Error(err))
+			redirectURL = defaultPath
+		} else {
+			redirectURL = sanitized
+		}
+	} else {
 		redirectURL = defaultPath
 	}
 
@@ -93,16 +113,19 @@ func SafeRedirectOrDefault(w http.ResponseWriter, r *http.Request, redirectURL, 
 func ConfigureAllowedRedirectHosts(hosts []string) {
 	newAllowed := make(map[string]bool)
 	for _, host := range hosts {
-		newAllowed[host] = true
+		newAllowed[strings.ToLower(host)] = true
 	}
 	allowedRedirectHosts = newAllowed
 }
 
 // GetSafeRedirectURL returns a validated redirect URL or the default
 func GetSafeRedirectURL(redirectURL, currentHost, defaultPath string) string {
-	err := ValidateRedirectURL(redirectURL, currentHost)
+	if redirectURL == "" {
+		return defaultPath
+	}
+	sanitized, err := ValidateRedirectURL(redirectURL, currentHost)
 	if err != nil {
 		return defaultPath
 	}
-	return redirectURL
+	return sanitized
 }
