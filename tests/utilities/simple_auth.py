@@ -5,7 +5,6 @@ Simple auth token generator for Lesser that uses the direct login endpoint
 
 import requests
 import sys
-import json
 
 def get_auth_token(username, password, base_url="http://localhost:8080"):
     """Get auth token using Lesser's direct login endpoint"""

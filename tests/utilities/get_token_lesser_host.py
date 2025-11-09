@@ -59,8 +59,10 @@ def main():
     try:
         webbrowser.open(auth_url)
         print("(Browser should open automatically)")
-    except:
-        pass
+    except webbrowser.Error as exc:
+        print(f"(Unable to open browser automatically: {exc})")
+    except Exception as exc:
+        print(f"(Unable to open browser automatically: {exc})")
     
     # Step 3: Get authorization code from user
     auth_code = input("\nPaste the authorization code here: ").strip()

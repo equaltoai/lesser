@@ -4,8 +4,6 @@ Test script for Filters & Mutes functionality
 """
 
 import requests
-import json
-import time
 import sys
 from datetime import datetime
 
@@ -113,6 +111,8 @@ class FiltersMutesTest:
                     print_success(f"Successfully muted account {test_account}")
                     self.test_account_id = test_account
                     return True
+                print_error("Mute endpoint returned success but response was missing 'muting'")
+                return False
             else:
                 print_error(f"Mute failed: {resp.status_code} - {resp.text}")
                 return False
@@ -200,6 +200,8 @@ class FiltersMutesTest:
                 if not relationship.get('muting'):
                     print_success(f"Successfully unmuted account {self.test_account_id}")
                     return True
+                print_error("Unmute endpoint succeeded but relationship is still muted")
+                return False
             else:
                 print_error(f"Unmute failed: {resp.status_code} - {resp.text}")
                 return False

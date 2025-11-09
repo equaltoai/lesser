@@ -6,9 +6,8 @@ Tests social interactions, content operations, and other features
 import os
 import sys
 import time
-import json
 import requests
-from typing import Dict, Optional, Any
+from typing import Dict, Optional
 
 GRAPHQL_ENDPOINT = os.getenv("GRAPHQL_ENDPOINT", "https://dev.lesser.host/api/graphql")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
@@ -329,6 +328,19 @@ def main():
             reply_data = reply_result.data.get("createNote", {}).get("object", {})
             reply_id = reply_data.get("id")
         
+        if reply_id:
+            validator.test("Fetch Reply Details", f"""
+                query {{
+                    object(id: "{reply_id}") {{
+                        id
+                        content
+                        inReplyTo {{
+                            id
+                        }}
+                    }}
+                }}
+            """)
+        
         validator.test("Bookmark Post", f"""
             mutation {{
                 bookmarkObject(id: "{post_id}") {{
@@ -602,4 +614,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

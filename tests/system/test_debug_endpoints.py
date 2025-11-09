@@ -12,7 +12,6 @@ Tests the developer experience debug endpoints:
 import requests
 import json
 import sys
-import time
 from datetime import datetime, timezone
 
 # Configuration

@@ -51,7 +51,7 @@ def test_endpoint(base_url, method, path, token=None, data=None, params=None):
             response_data = response.json()
             print(f"\nBody:")
             print(json.dumps(response_data, indent=2))
-        except:
+        except ValueError:
             # Not JSON, print raw
             print(f"\nBody (raw):")
             print(response.text[:500])
@@ -106,7 +106,7 @@ def main():
     if len(sys.argv) > 4:
         try:
             data = json.loads(sys.argv[4])
-        except:
+        except json.JSONDecodeError:
             print(f"Warning: Could not parse data as JSON: {sys.argv[4]}")
     
     # Extract params from path if present

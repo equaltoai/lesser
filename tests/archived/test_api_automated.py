@@ -7,8 +7,6 @@ Tests public endpoints only
 from mastodon import Mastodon
 import json
 import requests
-import base64
-import time
 import sys
 from datetime import datetime
 
@@ -142,6 +140,7 @@ def test_nodeinfo():
     """Test NodeInfo endpoints"""
     print("\n=== Testing NodeInfo ===")
     
+    nodeinfo_url = None
     # NodeInfo discovery
     try:
         response = requests.get(f"{INSTANCE_URL}/.well-known/nodeinfo")
@@ -162,11 +161,13 @@ def test_nodeinfo():
     
     # NodeInfo 2.0
     try:
-        response = requests.get(f"{INSTANCE_URL}/nodeinfo/2.0")
+        target_url = nodeinfo_url or f"{INSTANCE_URL}/nodeinfo/2.0"
+        response = requests.get(target_url)
         if response.status_code == 200:
             data = response.json()
             log_test(True, "GET /nodeinfo/2.0", 
-                    f"Software: {data.get('software', {}).get('name', 'N/A')} {data.get('software', {}).get('version', 'N/A')}")
+                    f"Software: {data.get('software', {}).get('name', 'N/A')} "
+                    f"{data.get('software', {}).get('version', 'N/A')} (source: {target_url})")
         else:
             log_test(False, "GET /nodeinfo/2.0", f"Status {response.status_code}")
     except Exception as e:
@@ -185,8 +186,6 @@ def test_pagination():
     for endpoint, name in endpoints:
         try:
             response = requests.get(f"{INSTANCE_URL}{endpoint}")
-            has_link = 'Link' in response.headers
-            has_pagination = 'X-Total-Count' in response.headers or 'Link' in response.headers
             
             # Show what headers are actually present
             header_info = []

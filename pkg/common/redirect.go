@@ -72,25 +72,24 @@ func SafeRedirect(w http.ResponseWriter, r *http.Request, defaultPath string) {
 		redirectTo = r.URL.Query().Get("next")
 	}
 
+	target := defaultPath
 	if redirectTo != "" {
 		sanitized, err := ValidateRedirectURL(redirectTo, r.Host)
 		if err != nil {
 			Logger().Warn("Invalid redirect attempt",
 				zap.String("url", redirectTo),
 				zap.Error(err))
-			redirectTo = defaultPath
 		} else {
-			redirectTo = sanitized
+			target = sanitized
 		}
-	} else {
-		redirectTo = defaultPath
 	}
 
-	http.Redirect(w, r, redirectTo, http.StatusFound)
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 // SafeRedirectOrDefault redirects to the given URL if safe, otherwise to default
 func SafeRedirectOrDefault(w http.ResponseWriter, r *http.Request, redirectURL, defaultPath string) {
+	target := defaultPath
 	if redirectURL != "" {
 		sanitized, err := ValidateRedirectURL(redirectURL, r.Host)
 		if err != nil {
@@ -98,15 +97,12 @@ func SafeRedirectOrDefault(w http.ResponseWriter, r *http.Request, redirectURL, 
 				zap.String("requested_url", redirectURL),
 				zap.String("default_url", defaultPath),
 				zap.Error(err))
-			redirectURL = defaultPath
 		} else {
-			redirectURL = sanitized
+			target = sanitized
 		}
-	} else {
-		redirectURL = defaultPath
 	}
 
-	http.Redirect(w, r, redirectURL, http.StatusFound)
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 // ConfigureAllowedRedirectHosts updates the allowed redirect hosts

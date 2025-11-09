@@ -4,10 +4,7 @@ Basic test script for the Reactive Moderation Mesh
 Demonstrates the flow of flagging content, reviewing it, and reaching consensus
 """
 
-import requests
 import json
-import time
-import sys
 
 BASE_URL = "https://your-instance.com"  # Replace with your instance URL
 
@@ -68,6 +65,7 @@ def test_moderation_flow():
         print(f"     - Action: {mod['action']}")
         print(f"     - Confidence: {mod['confidence']}")
         print(f"     - Weight: {mod['trust_score'] * mod['confidence']:.2f}")
+        print(f"     - Payload: {json.dumps(review_data)}")
         
         # Would make API call:
         # response = requests.post(f"{BASE_URL}/api/v1/moderation/review", json=review_data, headers=mod_headers)

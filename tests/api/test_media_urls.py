@@ -2,7 +2,6 @@
 
 import requests
 import sys
-import os
 import io
 from PIL import Image
 

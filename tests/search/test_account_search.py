@@ -5,7 +5,6 @@ Tests the advanced search features including exact match, prefix search, and fuz
 """
 
 import requests
-import json
 import time
 import sys
 from typing import List, Dict, Any

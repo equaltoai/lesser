@@ -3,8 +3,6 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { execSync } = require("child_process");
-const bcrypt = require("bcrypt");
 
 // Parse command line arguments
 const args = process.argv.slice(2);

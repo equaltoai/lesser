@@ -2,8 +2,7 @@
 """Test the search v2 endpoint implementation."""
 
 import requests
-import json
-from typing import Dict, Any
+from typing import Dict
 
 # Test configuration
 BASE_URL = "https://lab.lesser.aronprice.com/api/v1"
@@ -100,20 +99,20 @@ def test_search_v2():
         headers=headers
     )
     
-    if response.status_code == 200:
-        data = response.json()
-        # When type=accounts, only accounts should have results
-        has_accounts = len(data.get('accounts', [])) > 0 or True  # Allow empty results
-        has_statuses = len(data.get('statuses', [])) == 0
-        has_hashtags = len(data.get('hashtags', [])) == 0
-        
-        if has_statuses and has_hashtags:
-            print("✅ Type filter works correctly")
-        else:
-            print(f"⚠️  Type filter may not be working properly:")
-            print(f"   Accounts: {len(data.get('accounts', []))}")
-            print(f"   Statuses: {len(data.get('statuses', []))}")
-            print(f"   Hashtags: {len(data.get('hashtags', []))}")
+	if response.status_code == 200:
+		data = response.json()
+		# When type=accounts, only accounts should have results
+		account_count = len(data.get('accounts', []))
+		has_statuses = len(data.get('statuses', [])) == 0
+		has_hashtags = len(data.get('hashtags', [])) == 0
+		
+		if has_statuses and has_hashtags:
+			print(f"✅ Type filter works correctly (accounts returned: {account_count})")
+		else:
+			print(f"⚠️  Type filter may not be working properly:")
+			print(f"   Accounts: {account_count}")
+			print(f"   Statuses: {len(data.get('statuses', []))}")
+			print(f"   Hashtags: {len(data.get('hashtags', []))}")
     else:
         print(f"❌ Failed: {response.text}")
 
