@@ -9,6 +9,9 @@ import (
 	"go.uber.org/zap"
 )
 
+// Maximum number of fields allowed in logging to avoid allocation overflow/panic.
+const maxLogQueueFields = 1000
+
 // NewQueuePublisher creates a publisher that enqueues streaming events to the DynamoDB-backed stream queue.
 func NewQueuePublisher(queue StreamQueueService, logger *zap.Logger) Publisher {
 	return &queuePublisher{
@@ -94,7 +97,13 @@ func (p *queuePublisher) logQueueError(message string, err error, fields map[str
 		return
 	}
 
-	zapFields := make([]zap.Field, 0, len(fields)+1)
+	fieldCount := len(fields)
+	if fieldCount > maxLogQueueFields {
+		p.logger.Error("logQueueError: too many fields, possible malformed input", zap.Int("field_count", fieldCount), zap.Error(err))
+		return
+	}
+
+	zapFields := make([]zap.Field, 0, fieldCount+1)
 	for k, v := range fields {
 		zapFields = append(zapFields, zap.Any(k, v))
 	}
