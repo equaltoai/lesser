@@ -2872,29 +2872,6 @@ func (r *queryResolver) createRootNoteObject(ctx context.Context, status *models
 	return obj
 }
 
-func (r *queryResolver) resolveStatusActor(ctx context.Context, status *models.Status) *activitypub.Actor {
-	if status == nil || status.AuthorUsername == "" || r.Registry == nil {
-		return nil
-	}
-
-	accountsService := r.Registry.Accounts()
-	if accountsService == nil {
-		return nil
-	}
-
-	account, err := accountsService.GetAccount(ctx, status.AuthorUsername)
-	if err != nil || account == nil {
-		if r.Logger != nil {
-			r.Logger.Debug("failed to resolve actor for status",
-				zap.String("username", status.AuthorUsername),
-				zap.Error(err))
-		}
-		return nil
-	}
-
-	return r.convertAccountToActor(account)
-}
-
 // determineSyncStatus determines the sync status based on replies
 func (r *queryResolver) determineSyncStatus(replies []*models.Status) model.SyncStatus {
 	if len(replies) >= 100 {

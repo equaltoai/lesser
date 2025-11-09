@@ -294,7 +294,7 @@ func (r *AccountRepository) GetUser(ctx context.Context, username string) (*stor
 // GetUserByEmail is OBSOLETE - email is forbidden
 // This function exists for backwards compatibility but always returns an error
 func (r *AccountRepository) GetUserByEmail(_ context.Context, email string) (*storage.User, error) {
-	return nil, fmt.Errorf("email-based authentication is not supported - use wallet or passkey authentication")
+	return nil, fmt.Errorf("email-based authentication is not supported for %s - use wallet or passkey authentication", strings.TrimSpace(email))
 }
 
 // UpdateUser updates user authentication data

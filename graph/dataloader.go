@@ -134,10 +134,23 @@ func newTrustScoreLoader(repos core.RepositoryStorage, logger *zap.Logger) *data
 
 // Quote target loader batches quote target lookups so timelines with many quotes avoid N+1 lookups.
 func newQuoteTargetLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
+	logDebug := func(msg string, fields ...zap.Field) {
+		if logger != nil {
+			logger.Debug(msg, fields...)
+		}
+	}
+	logError := func(msg string, fields ...zap.Field) {
+		if logger != nil {
+			logger.Error(msg, fields...)
+		}
+	}
+
 	batchFn := func(ctx context.Context, keys dataloader.Keys) []*dataloader.Result {
 		results := make([]*dataloader.Result, len(keys))
 
 		if repos.Status() == nil {
+			logError("quote target loader unavailable: status repository missing",
+				zap.Int("requested_keys", len(keys)))
 			for i := range results {
 				results[i] = &dataloader.Result{Error: ErrStatusRepositoryUnavailable}
 			}
@@ -149,13 +162,23 @@ func newQuoteTargetLoader(repos core.RepositoryStorage, logger *zap.Logger) *dat
 			statusIDs[i] = key.String()
 		}
 
+		logDebug("quote target loader fetching statuses",
+			zap.Int("requested_keys", len(statusIDs)))
+
 		statuses, err := repos.Status().GetStatusesByIDs(ctx, statusIDs)
 		if err != nil {
+			logError("quote target loader failed to fetch statuses",
+				zap.Int("requested_keys", len(statusIDs)),
+				zap.Error(err))
 			for i := range results {
 				results[i] = &dataloader.Result{Error: err}
 			}
 			return results
 		}
+
+		logDebug("quote target loader resolved statuses",
+			zap.Int("requested_keys", len(statusIDs)),
+			zap.Int("resolved_statuses", len(statuses)))
 
 		statusMap := make(map[string]*models.Status, len(statuses))
 		for _, status := range statuses {

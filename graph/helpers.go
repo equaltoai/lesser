@@ -41,14 +41,6 @@ func firstNonZeroTime(times ...*time.Time) *time.Time {
 	return nil
 }
 
-func timePtrOrNil(t time.Time) *time.Time {
-	if t.IsZero() {
-		return nil
-	}
-	clone := t.UTC()
-	return &clone
-}
-
 func deriveUsernameFromIRI(iri string) string {
 	candidate := strings.TrimSpace(iri)
 	if candidate == "" {
@@ -206,33 +198,6 @@ func (r *mutationResolver) executeSocialAction(
 		Actor:  username,
 		Object: objectID,
 	}, nil
-}
-
-func buildActivityFromAnnounce(actorUsername, objectID string, announce *storage.Announce) *activitypub.Activity {
-	if announce == nil {
-		return nil
-	}
-
-	published := announce.Published
-	if published.IsZero() {
-		published = time.Now()
-	}
-
-	publishedCopy := published
-	to := append([]string(nil), announce.To...)
-	cc := append([]string(nil), announce.CC...)
-
-	return &activitypub.Activity{
-		BaseObject: activitypub.BaseObject{
-			ID:        announce.ID,
-			Type:      activitypub.AnnounceType,
-			Published: &publishedCopy,
-			To:        to,
-			CC:        cc,
-		},
-		Actor:  actorUsername,
-		Object: objectID,
-	}
 }
 
 // executeSocialUndo executes a social undo action (unlike, unshare) and returns success

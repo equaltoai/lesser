@@ -2,6 +2,7 @@
 // +build !production
 
 // Package common provides shared utilities for the Lesser application.
+// revive:disable-next-line var-naming // legacy package name used across public APIs
 package common
 
 import (

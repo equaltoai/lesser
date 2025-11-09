@@ -670,33 +670,6 @@ func (h *Handler) handleAuthServiceError(ctx *lift.Context, err error, operation
 	}
 }
 
-// validateAuthenticatedUser validates that the token belongs to the specified user
-// Returns empty string if validation fails, or the validated username if successful
-func (h *Handler) validateAuthenticatedUser(ctx *lift.Context, expectedUsername string) (string, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return "", h.respondUnauthorized(ctx)
-	}
-
-	authService, err := h.getAuthService()
-	if err != nil {
-		h.logger.Error("failed to get auth service", zap.Error(err))
-		return "", h.respondWithError(ctx, 500, "internal server error")
-	}
-
-	claims, err := authService.ValidateAccessToken(token)
-	if err != nil {
-		return "", h.respondUnauthorized(ctx)
-	}
-
-	// If expectedUsername is provided, ensure it matches
-	if expectedUsername != "" && claims.Username != expectedUsername {
-		return "", h.respondForbidden(ctx, "cannot perform action for another user")
-	}
-
-	return claims.Username, nil
-}
-
 // requireAuthService gets the auth service or returns an error response
 func (h *Handler) requireAuthService(ctx *lift.Context) (*auth.AuthService, error) {
 	authService, err := h.getAuthService()
