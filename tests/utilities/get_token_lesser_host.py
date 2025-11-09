@@ -4,15 +4,9 @@ Get auth token from lesser.host for testing
 Since lesser.host doesn't support password grant, this script helps you get a token manually
 """
 
-import urllib.parse
-import webbrowser
-
 import requests
-
-
-def report_secret(label: str) -> None:
-    """Consistently acknowledge secret handling without printing it."""
-    print(f"{label}: <redacted>")
+import webbrowser
+import urllib.parse
 
 def create_app():
     """Create an OAuth app on lesser.host"""
@@ -28,8 +22,9 @@ def create_app():
     
     if response.status_code == 200:
         app = response.json()
-        print("✅ OAuth app created!")
-        print("Client credentials retrieved (values redacted).")
+        print(f"✅ OAuth app created!")
+        print(f"Client ID: {app['client_id']}")
+        print(f"Client Secret: {app['client_secret']}")
         return app['client_id'], app['client_secret']
     else:
         print(f"❌ Failed to create app: {response.status_code} - {response.text}")
@@ -54,8 +49,8 @@ def main():
     print("\n" + "="*60)
     print("MANUAL STEPS REQUIRED:")
     print("="*60)
-    print("\n1. The authorization URL will open in your default browser.")
-    print("   (If the browser does not open, rerun with a manual workflow and construct the URL locally.)\n")
+    print("\n1. Open this URL in your browser:")
+    print(f"\n   {auth_url}\n")
     print("2. Log in with your Lesser account")
     print("3. Authorize the app")
     print("4. Copy the authorization code shown\n")
@@ -64,15 +59,15 @@ def main():
     try:
         webbrowser.open(auth_url)
         print("(Browser should open automatically)")
-    except Exception as exc:
-        print(f"Unable to open browser automatically: {exc}")
+    except:
+        pass
     
     # Step 3: Get authorization code from user
     auth_code = input("\nPaste the authorization code here: ").strip()
     
     # URL decode the code if needed
     auth_code = urllib.parse.unquote(auth_code)
-    print("Authorization code captured.")
+    print(f"Using code: {auth_code}")
     
     # Step 4: Exchange code for token
     print("\nExchanging code for token...")
@@ -87,21 +82,17 @@ def main():
     
     if token_response.status_code == 200:
         tokens = token_response.json()
-        print("\n✅ Success! Tokens retrieved (values redacted).")
-        report_secret("Access token")
-        refresh_token = tokens.get('refresh_token')
-        if refresh_token:
-            report_secret("Refresh token")
-        else:
-            print("Refresh token: N/A")
-
+        print("\n✅ Success! Here are your tokens:\n")
+        print(f"Access Token: {tokens['access_token']}")
+        print(f"\nRefresh Token: {tokens.get('refresh_token', 'N/A')}")
+        
         print("\n" + "="*60)
         print("To use these tokens in tests:")
         print("="*60)
-        print("\nexport LESSER_AUTH_TOKEN='<access token>'")
-        print("export LESSER_URL='https://lesser.host'")
-        print("export LESSER_CLIENT_ID='<client id>'")
-        print("export LESSER_CLIENT_SECRET='<client secret>'")
+        print(f"\nexport LESSER_AUTH_TOKEN='{tokens['access_token']}'")
+        print(f"export LESSER_URL='https://lesser.host'")
+        print(f"export LESSER_CLIENT_ID='{client_id}'")
+        print(f"export LESSER_CLIENT_SECRET='{client_secret}'")
         
         # Verify the token works
         print("\nVerifying token...")

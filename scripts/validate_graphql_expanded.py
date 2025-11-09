@@ -10,7 +10,7 @@ import json
 import subprocess
 from pathlib import Path
 import requests
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 import jwt
 
 GRAPHQL_ENDPOINT = os.getenv("GRAPHQL_ENDPOINT", "https://dev.lesser.host/api/graphql")
@@ -725,7 +725,7 @@ def main():
     
     if original_post_id:
         # Get the post URL for quoting
-        validator.test("Get Object (for quote URL)", f"""
+        get_post_result = validator.test("Get Object (for quote URL)", f"""
             query {{
                 object(id: "{original_post_id}") {{
                     id
@@ -815,7 +815,7 @@ def main():
     print("\n--- Hashtag Following ---")
     
     # Create a post with hashtag first
-    validator.test("Create Post with Hashtag", """
+    hashtag_post_result = validator.test("Create Post with Hashtag", """
         mutation {
             createNote(input: {
                 content: "Post with #validation hashtag for testing"
@@ -1339,3 +1339,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

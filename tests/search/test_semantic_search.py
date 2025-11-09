@@ -5,9 +5,11 @@ Tests AWS Bedrock embeddings, Comprehend query analysis, and semantic search.
 """
 
 import requests
+import json
 import time
 import argparse
-from typing import Dict, List
+import sys
+from typing import Dict, List, Optional
 
 
 class SemanticSearchTester:
@@ -71,7 +73,7 @@ class SemanticSearchTester:
         # Compare results
         print("\n📊 Similarity analysis:")
         for i, query1 in enumerate(queries):
-            for _, query2 in enumerate(queries[i+1:], i+1):
+            for j, query2 in enumerate(queries[i+1:], i+1):
                 set1 = set(results_by_query.get(query1, []))
                 set2 = set(results_by_query.get(query2, []))
                 

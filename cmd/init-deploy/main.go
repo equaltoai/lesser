@@ -146,7 +146,6 @@ func main() {
 	fmt.Printf("✅ Admin account created successfully\n")
 	fmt.Printf("   Username: %s\n", adminUsername)
 	fmt.Printf("   Email: %s\n", adminUser.Email)
-	fmt.Printf("   Password: [stored securely in Secrets Manager]\n")
 	fmt.Printf("   Credentials stored in: %s\n", adminSecretName)
 
 	fmt.Printf("\n🎉 Initial deployment setup complete!\n")
@@ -157,9 +156,9 @@ func main() {
 	fmt.Printf("   JWT_SECRET_NAME=%s\n", fmt.Sprintf("lesser/%s/jwt-secret", domain))
 	fmt.Printf("   ADMIN_SECRET_NAME=%s\n", adminSecretName)
 
-	fmt.Printf("\n⚠️  IMPORTANT: Retrieve credentials from Secrets Manager and store them securely.\n")
+	fmt.Printf("\n⚠️  IMPORTANT: Save these credentials securely!\n")
 	fmt.Printf("   Admin Username: %s\n", adminUsername)
-	fmt.Printf("   Admin Password: [stored securely in Secrets Manager]\n")
+	fmt.Printf("   Admin Password: retrieve from AWS Secrets Manager secret %s\n", adminSecretName)
 }
 
 // generateVAPIDKeys generates ECDSA P-256 keys for VAPID

@@ -36,7 +36,7 @@ func (r *queryResolver) Object(ctx context.Context, id string) (*model.Object, e
 }
 
 // Timeline is the resolver for the timeline field.
-func (r *queryResolver) Timeline(ctx context.Context, timelineType model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor, mediaOnly *bool) (*model.ObjectConnection, error) {
+func (r *queryResolver) Timeline(ctx context.Context, timelineType model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool) (*model.ObjectConnection, error) {
 	username := r.optionalAuth(ctx)
 
 	// Build pagination
@@ -97,6 +97,15 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 			return nil, ErrAuthRequiredForDirect
 		}
 		query.TimelineType = TimelineTypeDirect
+	case model.TimelineTypeActor:
+		if actorID == nil {
+			return nil, ErrActorIDParameterRequired
+		}
+		if err := common.ValidateRequiredParam("actorID", *actorID); err != nil {
+			return nil, ErrActorIDParameterRequired
+		}
+		query.TimelineType = "user" // Map to internal "user" timeline
+		query.AuthorID = *actorID
 	default:
 		return nil, ErrUnsupportedTimelineTypeWithValue(timelineType)
 	}
@@ -226,7 +235,7 @@ func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*mode
 	}
 
 	threadMetrics := r.calculateThreadMetrics(ctx, statusRepo, status, replies)
-	rootNote := r.createRootNoteObject(status, replies, engagement)
+	rootNote := r.createRootNoteObject(ctx, status, replies, engagement)
 	syncStatus := r.determineSyncStatus(replies)
 
 	return &model.ThreadContext{

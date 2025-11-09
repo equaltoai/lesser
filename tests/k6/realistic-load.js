@@ -371,6 +371,8 @@ export function contentInteractionJourney() {
   });
 
   if (postSuccess && postResponse.json('id')) {
+    const statusId = postResponse.json('id');
+    
     sleep(randomIntBetween(3, 8));
 
     // Get public timeline to find posts to interact with
@@ -668,7 +670,7 @@ export function backgroundLoad() {
 }
 
 // Test teardown
-export function teardown() {
+export function teardown(data) {
   console.log('Load test completed');
   console.log(`Total estimated cost: ${costTracker.count} microcents`);
   console.log(`Total DB operations: ${dbOperations.count}`);

@@ -2,7 +2,9 @@
 """Test script for account pinning and notes functionality."""
 
 import requests
+import json
 import sys
+from datetime import datetime
 
 # Configuration
 BASE_URL = "http://localhost:8080"

@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -409,13 +410,21 @@ func (ec *EventConverter) ConvertToMetricsUpdate(event *streaming.InternalEvent)
 
 // convertMetricRecordToUpdate converts a MetricRecord to MetricsUpdate
 func (ec *EventConverter) convertMetricRecordToUpdate(record *models.MetricRecord, event *streaming.InternalEvent) *model.MetricsUpdate {
+	countValue, ok := safeIntFromInt64(record.Count)
+	if !ok {
+		ec.logger.Warn("metric record count exceeds supported range",
+			zap.Int64("count", record.Count),
+			zap.String("metric_id", record.MetricID))
+		countValue = 0
+	}
+
 	update := &model.MetricsUpdate{
 		MetricID:         record.MetricID,
 		ServiceName:      record.ServiceName,
 		MetricType:       record.MetricType,
 		AggregationLevel: record.AggregationLevel,
 		Timestamp:        model.Time(record.Timestamp),
-		Count:            int(record.Count),
+		Count:            countValue,
 		Sum:              record.Sum,
 		Min:              record.Min,
 		Max:              record.Max,
@@ -492,6 +501,13 @@ func (ec *EventConverter) convertMetricRecordToUpdate(record *models.MetricRecor
 
 // convertMetricsPayloadToUpdate converts a MetricsEventPayload to MetricsUpdate
 func (ec *EventConverter) convertMetricsPayloadToUpdate(payload *streaming.MetricsEventPayload, _ *streaming.InternalEvent) *model.MetricsUpdate {
+	countValue, ok := safeIntFromInt64(payload.Count)
+	if !ok {
+		ec.logger.Warn("metrics count exceeds supported range",
+			zap.Int64("count", payload.Count))
+		countValue = 0
+	}
+
 	update := &model.MetricsUpdate{
 		MetricID:             payload.MetricID,
 		ServiceName:          payload.ServiceName,
@@ -499,7 +515,7 @@ func (ec *EventConverter) convertMetricsPayloadToUpdate(payload *streaming.Metri
 		SubscriptionCategory: payload.SubscriptionCategory,
 		AggregationLevel:     payload.AggregationLevel,
 		Timestamp:            model.Time(payload.Timestamp),
-		Count:                int(payload.Count),
+		Count:                countValue,
 		Sum:                  payload.Sum,
 		Min:                  payload.Min,
 		Max:                  payload.Max,
@@ -520,12 +536,20 @@ func (ec *EventConverter) convertMetricsPayloadToUpdate(payload *streaming.Metri
 		update.Unit = &payload.Unit
 	}
 	if payload.UserCostMicrocents > 0 {
-		userCost := int(payload.UserCostMicrocents)
-		update.UserCostMicrocents = &userCost
+		if userCost, ok := safeIntFromInt64(payload.UserCostMicrocents); ok {
+			update.UserCostMicrocents = &userCost
+		} else {
+			ec.logger.Warn("user cost exceeds supported range",
+				zap.Int64("user_cost_microcents", payload.UserCostMicrocents))
+		}
 	}
 	if payload.TotalCostMicrocents > 0 {
-		totalCost := int(payload.TotalCostMicrocents)
-		update.TotalCostMicrocents = &totalCost
+		if totalCost, ok := safeIntFromInt64(payload.TotalCostMicrocents); ok {
+			update.TotalCostMicrocents = &totalCost
+		} else {
+			ec.logger.Warn("total cost exceeds supported range",
+				zap.Int64("total_cost_microcents", payload.TotalCostMicrocents))
+		}
 	}
 	if payload.UserID != "" {
 		update.UserID = &payload.UserID
@@ -682,15 +706,22 @@ func (ec *EventConverter) extractDimensions(metadata map[string]string, update *
 
 // Helper functions for parsing metadata strings
 func parseIntFromString(s string) (int, error) {
-	value, err := strconv.ParseInt(s, 10, strconv.IntSize)
+	parsed, err := strconv.ParseInt(s, 10, strconv.IntSize)
 	if err != nil {
 		return 0, err
 	}
-	return int(value), nil
+	return int(parsed), nil
 }
 
 func parseFloatFromString(s string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
+}
+
+func safeIntFromInt64(value int64) (int, bool) {
+	if strconv.IntSize == 32 && (value > math.MaxInt32 || value < math.MinInt32) {
+		return 0, false
+	}
+	return int(value), true
 }
 
 // ConvertToListUpdate converts a streaming event to a GraphQL ListUpdate

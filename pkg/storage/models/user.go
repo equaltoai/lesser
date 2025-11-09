@@ -16,11 +16,10 @@ type User struct {
 
 	// GSI1 - User listing and pagination (legacy uses GSI1 for user lists)
 	GSI1PK string `dynamorm:"index:user-list-index,pk" json:"gsi1_pk"` // Format: "USERS"
-	GSI1SK string `dynamorm:"index:user-list-index,sk" json:"gsi1_sk"` // Format: "{created_at}#{username}"
+	GSI1SK string `dynamorm:"index:user-list-index,sk" json:"gsi1_sk"` // Format: "{created_at}#{username}"`
 
-	// GSI2 - Email lookup for authentication (legacy uses GSI2 for email)
-	GSI2PK string `dynamorm:"index:email-index,pk" json:"gsi2_pk,omitempty"` // Format: "EMAIL#{email}"
-	GSI2SK string `dynamorm:"index:email-index,sk" json:"gsi2_sk,omitempty"` // Format: "USERNAME#{username}"
+	// GSI2 - REMOVED: Email lookup is obsolete - email is forbidden
+	// Email-based authentication is not supported - wallet/passkey only
 
 	// GSI3 - Role-based queries
 	GSI3PK string `dynamorm:"index:role-index,pk" json:"gsi3_pk"` // Format: "ROLE#{role}"
@@ -77,6 +76,11 @@ func (u *User) BeforeCreate() error {
 	u.CreatedAt = now
 	u.UpdatedAt = now
 
+	// Email is DISALLOWED - wallet-based auth only
+	if strings.TrimSpace(u.Email) != "" {
+		return fmt.Errorf("email is not supported - wallet authentication only")
+	}
+
 	// Set default role if not specified
 	if err := common.ValidateRequiredParam("u.Role", u.Role); err != nil {
 		u.Role = "user"
@@ -100,6 +104,11 @@ func (u *User) BeforeCreate() error {
 func (u *User) BeforeUpdate() error {
 	u.UpdatedAt = time.Now()
 
+	// Email is DISALLOWED - wallet-based auth only
+	if strings.TrimSpace(u.Email) != "" {
+		return fmt.Errorf("email is not supported - wallet authentication only")
+	}
+
 	// Update GSI keys in case email or other indexed fields changed
 	u.setupGSIKeys()
 
@@ -114,14 +123,7 @@ func (u *User) setupGSIKeys() {
 	u.GSI1PK = "USERS"
 	u.GSI1SK = fmt.Sprintf("%s#%s", u.CreatedAt.Format(time.RFC3339), username)
 
-	// GSI2 - Email lookup (legacy GSI2 pattern - only if email is provided)
-	if u.Email != "" {
-		u.GSI2PK = "EMAIL#" + strings.ToLower(u.Email)
-		u.GSI2SK = "USERNAME#" + username
-	} else {
-		u.GSI2PK = ""
-		u.GSI2SK = ""
-	}
+	// GSI2 - REMOVED: No email index needed - email is forbidden
 
 	// GSI3 - Role-based queries
 	u.GSI3PK = "ROLE#" + u.Role

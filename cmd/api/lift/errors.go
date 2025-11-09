@@ -171,16 +171,6 @@ func failedToStoreNewRefreshToken() *errors.AppError {
 	return errors.CredentialStorageFailed(nil)
 }
 
-// failedToCreateOAuthSession creates an error when OAuth session creation fails.
-func failedToCreateOAuthSession() *errors.AppError {
-	return errors.SessionStorageFailed(nil)
-}
-
-// failedToCreateUserSession creates an error when user session creation fails.
-func failedToCreateUserSession() *errors.AppError {
-	return errors.SessionStorageFailed(nil)
-}
-
 // VAPID key operations errors - using Auth domain functions
 
 // failedToGenerateVAPIDPrivateKey creates an error when VAPID private key generation fails.

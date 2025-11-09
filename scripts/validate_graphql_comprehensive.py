@@ -6,10 +6,14 @@ Tests social interactions, content operations, and other features
 import os
 import sys
 import time
-from typing import Dict, Optional
+import json
+import requests
+from typing import Dict, Optional, Any
 
 GRAPHQL_ENDPOINT = os.getenv("GRAPHQL_ENDPOINT", "https://dev.lesser.host/api/graphql")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
+MEMBER_TOKEN = os.getenv("MEMBER_TOKEN")
+MOD_TOKEN = os.getenv("MOD_TOKEN")
 # Delay between tests to avoid Lambda throttling (in seconds)
 TEST_DELAY = float(os.getenv("GRAPHQL_TEST_DELAY", "0.5"))
 
@@ -302,7 +306,7 @@ def main():
         """)
         
         # Create a reply
-        validator.test("Create Reply", f"""
+        reply_result = validator.test("Create Reply", f"""
             mutation {{
                 createNote(input: {{
                     content: "This is a reply to the test post"
@@ -319,6 +323,11 @@ def main():
                 }}
             }}
         """)
+        
+        reply_id = None
+        if reply_result.success and reply_result.data:
+            reply_data = reply_result.data.get("createNote", {}).get("object", {})
+            reply_id = reply_data.get("id")
         
         validator.test("Bookmark Post", f"""
             mutation {{
@@ -593,3 +602,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

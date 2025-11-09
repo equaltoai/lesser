@@ -2,7 +2,6 @@ package media
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -185,34 +184,12 @@ func (m *MockJobQueueService) QueueMediaJob(ctx context.Context, msg JobMessage)
 	return args.Error(0)
 }
 
-type MockS3Service struct {
-	mock.Mock
-}
-
-func (m *MockS3Service) UploadFile(ctx context.Context, bucket, key string, data []byte, contentType string) (string, error) {
-	args := m.Called(ctx, bucket, key, data, contentType)
-	location, _ := args.Get(0).(string)
-	return location, args.Error(1)
-}
-
-func (m *MockS3Service) DeleteFile(ctx context.Context, bucket, key string) error {
-	args := m.Called(ctx, bucket, key)
-	return args.Error(0)
-}
-
-func (m *MockS3Service) GeneratePresignedURL(ctx context.Context, bucket, key string, expiry time.Duration) (string, error) {
-	args := m.Called(ctx, bucket, key, expiry)
-	url, _ := args.Get(0).(string)
-	return url, args.Error(1)
-}
-
 // Test helper functions
 
-func createTestService(t *testing.T) (*Service, *MockMediaRepository, *MockJobQueueService, streaming.Publisher, *MockS3Service) {
+func createTestService(t *testing.T) (*Service, *MockMediaRepository, *MockJobQueueService, streaming.Publisher) {
 	mediaRepo := new(MockMediaRepository)
 	publisher := streaming.NewMockPublisher()
 	jobQueue := new(MockJobQueueService)
-	storageClient := new(MockS3Service)
 	logger := zaptest.NewLogger(t)
 
 	service := NewService(
@@ -225,13 +202,11 @@ func createTestService(t *testing.T) (*Service, *MockMediaRepository, *MockJobQu
 		"cdn.example.com",
 	)
 
-	service.SetStorageClient(storageClient)
-
-	return service, mediaRepo, jobQueue, publisher, storageClient
+	return service, mediaRepo, jobQueue, publisher
 }
 
 func TestService_ListMedia_Defaults(t *testing.T) {
-	service, mediaRepo, _, _, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	ctx := context.Background()
 
 	items := []*models.Media{
@@ -256,7 +231,7 @@ func TestService_ListMedia_Defaults(t *testing.T) {
 }
 
 func TestService_ListMedia_WithFilters(t *testing.T) {
-	service, mediaRepo, _, _, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	ctx := context.Background()
 
 	since := time.Now().Add(-24 * time.Hour)
@@ -288,7 +263,7 @@ func TestService_ListMedia_WithFilters(t *testing.T) {
 }
 
 func TestService_ListMedia_InvalidOwner(t *testing.T) {
-	service, _, _, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 	ctx := context.Background()
 
 	_, err := service.ListMedia(ctx, &ListMediaQuery{})
@@ -344,12 +319,11 @@ func createTestMedia() *models.Media {
 // Test UploadMedia method
 
 func TestService_UploadMedia_Success(t *testing.T) {
-	service, mediaRepo, jobQueue, _, mockS3 := createTestService(t)
+	service, mediaRepo, jobQueue, _ := createTestService(t)
 	cmd := createValidUploadCommand()
 	ctx := context.Background()
 
 	// Mock expectations
-	mockS3.On("UploadFile", mock.Anything, "test-bucket", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("string")).Return("https://cdn.example.com/media/uploaded.jpg", nil).Once()
 	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(nil)
 	jobQueue.On("QueueMediaJob", ctx, mock.AnythingOfType("media.JobMessage")).Return(nil)
 
@@ -384,11 +358,10 @@ func TestService_UploadMedia_Success(t *testing.T) {
 
 	// Verify repository was called
 	mediaRepo.AssertExpectations(t)
-	mockS3.AssertExpectations(t)
 }
 
 func TestService_UploadMedia_ValidationErrors(t *testing.T) {
-	service, _, _, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -483,12 +456,11 @@ func TestService_UploadMedia_ValidationErrors(t *testing.T) {
 }
 
 func TestService_UploadMedia_RepositoryError(t *testing.T) {
-	service, mediaRepo, _, _, mockS3 := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	cmd := createValidUploadCommand()
 	ctx := context.Background()
 
 	// Mock repository error
-	mockS3.On("UploadFile", mock.Anything, "test-bucket", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("string")).Return("https://cdn.example.com/media/uploaded.jpg", nil).Once()
 	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(ErrDatabaseOperation)
 
 	// Execute
@@ -501,66 +473,12 @@ func TestService_UploadMedia_RepositoryError(t *testing.T) {
 	assert.Contains(t, err.Error(), "database error")
 
 	mediaRepo.AssertExpectations(t)
-	mockS3.AssertExpectations(t)
-}
-
-func TestService_UploadMedia_MissingStorageClient(t *testing.T) {
-	service, mediaRepo, jobQueue, _, mockS3 := createTestService(t)
-	ctx := context.Background()
-
-	service.SetStorageClient(nil)
-
-	result, err := service.UploadMedia(ctx, createValidUploadCommand())
-
-	assert.Error(t, err)
-	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "media storage client not configured")
-
-	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
-	jobQueue.AssertNotCalled(t, "QueueMediaJob", mock.Anything, mock.Anything)
-	mockS3.AssertNotCalled(t, "UploadFile", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-}
-
-func TestService_UploadMedia_MissingBucket(t *testing.T) {
-	service, mediaRepo, jobQueue, _, mockS3 := createTestService(t)
-	ctx := context.Background()
-
-	service.s3Bucket = ""
-
-	result, err := service.UploadMedia(ctx, createValidUploadCommand())
-
-	assert.Error(t, err)
-	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "media storage bucket not configured")
-
-	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
-	jobQueue.AssertNotCalled(t, "QueueMediaJob", mock.Anything, mock.Anything)
-	mockS3.AssertNotCalled(t, "UploadFile", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-}
-
-func TestService_UploadMedia_StorageUploadError(t *testing.T) {
-	service, mediaRepo, jobQueue, _, mockS3 := createTestService(t)
-	cmd := createValidUploadCommand()
-	ctx := context.Background()
-
-	uploadErr := errors.New("upload failed")
-	mockS3.On("UploadFile", mock.Anything, "test-bucket", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("string")).Return("", uploadErr).Once()
-
-	result, err := service.UploadMedia(ctx, cmd)
-
-	assert.Error(t, err)
-	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "upload failed")
-
-	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
-	jobQueue.AssertNotCalled(t, "QueueMediaJob", mock.Anything, mock.Anything)
-	mockS3.AssertExpectations(t)
 }
 
 // Test UpdateMedia method
 
 func TestService_UpdateMedia_Success(t *testing.T) {
-	service, mediaRepo, _, _, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	cmd := createValidUpdateCommand()
 	ctx := context.Background()
 
@@ -591,7 +509,7 @@ func TestService_UpdateMedia_Success(t *testing.T) {
 }
 
 func TestService_UpdateMedia_ValidationErrors(t *testing.T) {
-	service, _, _, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -644,7 +562,7 @@ func TestService_UpdateMedia_ValidationErrors(t *testing.T) {
 }
 
 func TestService_UpdateMedia_NotFound(t *testing.T) {
-	service, mediaRepo, _, _, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	cmd := createValidUpdateCommand()
 	ctx := context.Background()
 
@@ -663,7 +581,7 @@ func TestService_UpdateMedia_NotFound(t *testing.T) {
 }
 
 func TestService_UpdateMedia_Unauthorized(t *testing.T) {
-	service, mediaRepo, _, _, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	cmd := createValidUpdateCommand()
 	cmd.UserID = "different-user" // Different user
 	ctx := context.Background()
@@ -687,7 +605,7 @@ func TestService_UpdateMedia_Unauthorized(t *testing.T) {
 // Test GetMedia method
 
 func TestService_GetMedia_Success(t *testing.T) {
-	service, mediaRepo, _, _, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	query := &GetMediaQuery{
 		MediaID:  "media123",
 		ViewerID: "user123",
@@ -714,7 +632,7 @@ func TestService_GetMedia_Success(t *testing.T) {
 }
 
 func TestService_GetMedia_NotReady(t *testing.T) {
-	service, mediaRepo, _, _, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	query := &GetMediaQuery{
 		MediaID:  "media123",
 		ViewerID: "different-user",
@@ -741,7 +659,7 @@ func TestService_GetMedia_NotReady(t *testing.T) {
 // Test processing callback methods
 
 func TestService_MarkMediaProcessed_Success(t *testing.T) {
-	service, mediaRepo, _, _, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	mediaID := "media123"
 	variants := map[string]models.MediaVariant{
 		"thumbnail": {
@@ -776,7 +694,7 @@ func TestService_MarkMediaProcessed_Success(t *testing.T) {
 }
 
 func TestService_MarkMediaFailed_Success(t *testing.T) {
-	service, mediaRepo, _, _, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	mediaID := "media123"
 	errorMsg := "Processing failed"
 	ctx := context.Background()
@@ -804,7 +722,7 @@ func TestService_MarkMediaFailed_Success(t *testing.T) {
 // Test validation helper methods
 
 func TestService_IsValidMediaType(t *testing.T) {
-	service, _, _, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 
 	tests := []struct {
 		contentType string
@@ -828,7 +746,7 @@ func TestService_IsValidMediaType(t *testing.T) {
 }
 
 func TestService_ValidateFileExtension(t *testing.T) {
-	service, _, _, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 
 	tests := []struct {
 		fileName    string
@@ -852,7 +770,7 @@ func TestService_ValidateFileExtension(t *testing.T) {
 }
 
 func TestService_IsValidFocusPoint(t *testing.T) {
-	service, _, _, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 
 	tests := []struct {
 		focus    string
@@ -877,7 +795,7 @@ func TestService_IsValidFocusPoint(t *testing.T) {
 }
 
 func TestService_GenerateS3Key(t *testing.T) {
-	service, _, _, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 
 	mediaID := "test-media-123"
 	fileName := "test.jpg"
@@ -893,7 +811,7 @@ func TestService_GenerateS3Key(t *testing.T) {
 // Test service configuration
 
 func TestService_SetMaxFileSize(t *testing.T) {
-	service, _, _, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 
 	// Default should be 50MB
 	assert.Equal(t, int64(50*1024*1024), service.maxFileSize)
@@ -906,11 +824,10 @@ func TestService_SetMaxFileSize(t *testing.T) {
 
 // Benchmark tests
 
-func createTestServiceForBenchmark() (*Service, *MockMediaRepository, *MockJobQueueService, streaming.Publisher, *MockS3Service) {
+func createTestServiceForBenchmark() (*Service, *MockMediaRepository, *MockJobQueueService, streaming.Publisher) {
 	mediaRepo := new(MockMediaRepository)
 	publisher := streaming.NewMockPublisher()
 	jobQueue := new(MockJobQueueService)
-	storageClient := new(MockS3Service)
 	logger := zaptest.NewLogger(&testing.T{})
 
 	service := NewService(
@@ -923,18 +840,15 @@ func createTestServiceForBenchmark() (*Service, *MockMediaRepository, *MockJobQu
 		"cdn.example.com",
 	)
 
-	service.SetStorageClient(storageClient)
-
-	return service, mediaRepo, jobQueue, publisher, storageClient
+	return service, mediaRepo, jobQueue, publisher
 }
 
 func BenchmarkService_UploadMedia(b *testing.B) {
-	service, mediaRepo, jobQueue, _, mockS3 := createTestServiceForBenchmark()
+	service, mediaRepo, jobQueue, _ := createTestServiceForBenchmark()
 	ctx := context.Background()
 
 	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(nil)
 	jobQueue.On("QueueMediaJob", ctx, mock.AnythingOfType("media.JobMessage")).Return(nil)
-	mockS3.On("UploadFile", mock.Anything, "test-bucket", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("string")).Return("https://cdn.example.com/media/uploaded.jpg", nil).Maybe()
 
 	cmd := createValidUploadCommand()
 
@@ -948,7 +862,7 @@ func BenchmarkService_UploadMedia(b *testing.B) {
 }
 
 func BenchmarkService_UpdateMedia(b *testing.B) {
-	service, mediaRepo, _, _, _ := createTestServiceForBenchmark()
+	service, mediaRepo, _, _ := createTestServiceForBenchmark()
 	ctx := context.Background()
 
 	testMedia := createTestMedia()
@@ -969,12 +883,11 @@ func BenchmarkService_UpdateMedia(b *testing.B) {
 // Test event emission edge cases
 
 func TestService_EmitEvents_PublisherError(t *testing.T) {
-	service, mediaRepo, jobQueue, _, mockS3 := createTestService(t)
+	service, mediaRepo, jobQueue, _ := createTestService(t)
 	cmd := createValidUploadCommand()
 	ctx := context.Background()
 
 	// Mock expectations
-	mockS3.On("UploadFile", mock.Anything, "test-bucket", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("string")).Return("https://cdn.example.com/media/uploaded.jpg", nil).Once()
 	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(nil)
 	jobQueue.On("QueueMediaJob", ctx, mock.AnythingOfType("media.JobMessage")).Return(nil)
 
@@ -989,5 +902,4 @@ func TestService_EmitEvents_PublisherError(t *testing.T) {
 	assert.Equal(t, "media.uploaded", result.Events[0].Type)
 
 	mediaRepo.AssertExpectations(t)
-	mockS3.AssertExpectations(t)
 }

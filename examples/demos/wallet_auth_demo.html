@@ -152,118 +152,10 @@
         let authToken = null;
         let currentUser = null;
 
-        const STATUS_VARIANTS = ['success', 'error'];
-
-        function setElementStatus(target, message, variant) {
-            const element = typeof target === 'string' ? document.getElementById(target) : target;
-            if (!element) {
-                return;
-            }
-            element.textContent = message;
-            STATUS_VARIANTS.forEach((cls) => {
-                element.classList.remove(cls);
-            });
-            if (variant && STATUS_VARIANTS.includes(variant)) {
-                element.classList.add(variant);
-            }
-        }
-
-        function clearElement(target) {
-            const element = typeof target === 'string' ? document.getElementById(target) : target;
-            if (!element) {
-                return;
-            }
-            element.textContent = '';
-            STATUS_VARIANTS.forEach((cls) => {
-                element.classList.remove(cls);
-            });
-        }
-
-        function updateWalletInfo(address, chainId) {
-            const container = document.getElementById('walletInfo');
-            if (!container) {
-                return;
-            }
-            container.textContent = '';
-            if (!address) {
-                return;
-            }
-            const addressDiv = document.createElement('div');
-            addressDiv.className = 'address';
-            addressDiv.textContent = `Address: ${address}`;
-
-            const chainDiv = document.createElement('div');
-            chainDiv.textContent = `Chain ID: ${chainId}`;
-
-            container.append(addressDiv, chainDiv);
-        }
-
-function renderWalletList(wallets) {
-    const list = document.getElementById('walletsList');
-    if (!list) {
-        return;
-    }
-            list.textContent = '';
-            if (!wallets || wallets.length === 0) {
-                const emptyItem = document.createElement('li');
-                emptyItem.textContent = 'No wallets linked';
-                list.appendChild(emptyItem);
-                return;
-            }
-
-            wallets.forEach((wallet) => {
-                const item = document.createElement('li');
-                item.className = 'wallet-item';
-
-                const details = document.createElement('div');
-
-                const addressDiv = document.createElement('div');
-                addressDiv.className = 'address';
-                addressDiv.textContent = `Address: ${wallet.address || ''}`;
-
-                const typeDiv = document.createElement('div');
-                const type = wallet.type || 'unknown';
-                const chainId = wallet.chainId == null ? 'unknown' : wallet.chainId;
-                typeDiv.textContent = `Type: ${type} | Chain: ${chainId}`;
-
-                const linkedDiv = document.createElement('div');
-                linkedDiv.textContent = `Linked: ${wallet.linkedAt ? new Date(wallet.linkedAt).toLocaleString() : 'Unknown'}`;
-
-                details.append(addressDiv, typeDiv, linkedDiv);
-
-                const unlinkButton = document.createElement('button');
-                unlinkButton.type = 'button';
-                unlinkButton.textContent = 'Unlink';
-                if (wallet.address) {
-                    unlinkButton.addEventListener('click', () => unlinkWallet(wallet.address));
-                } else {
-                    unlinkButton.disabled = true;
-                }
-
-                item.append(details, unlinkButton);
-        list.appendChild(item);
-    });
-}
-
-        function updateUserInfo(username) {
-            const container = document.getElementById('userInfo');
-            if (!container) {
-                return;
-            }
-            container.textContent = '';
-
-            const usernameDiv = document.createElement('div');
-            usernameDiv.textContent = `Username: ${username || 'Unknown'}`;
-
-            const methodDiv = document.createElement('div');
-            methodDiv.textContent = 'Authenticated via: Wallet';
-
-            container.append(usernameDiv, methodDiv);
-        }
-
         // Check if MetaMask is installed
         if (typeof window.ethereum === 'undefined') {
-            setElementStatus('connectionStatus', 'MetaMask not detected! Please install MetaMask to use wallet authentication.', 'error');
+            document.getElementById('connectionStatus').innerHTML = 
+                '<span class="error">MetaMask not detected! Please install MetaMask to use wallet authentication.</span>';
         }
 
         async function connectWallet() {
@@ -284,8 +176,11 @@ function renderWalletList(wallets) {
                         method: 'eth_chainId' 
                     });
                     
-                    setElementStatus('connectionStatus', 'Connected!', 'success');
-                    updateWalletInfo(currentAccount, parseInt(chainId, 16));
+                    document.getElementById('connectionStatus').innerHTML = 
+                        '<span class="success">Connected!</span>';
+                    document.getElementById('walletInfo').innerHTML = 
+                        `<div class="address">Address: ${currentAccount}</div>
+                         <div>Chain ID: ${parseInt(chainId, 16)}</div>`;
                     
                     document.getElementById('authSection').style.display = 'block';
                     
@@ -298,7 +193,8 @@ function renderWalletList(wallets) {
                 }
             } catch (error) {
                 console.error('Error connecting wallet:', error);
-                setElementStatus('connectionStatus', 'Failed to connect wallet', 'error');
+                document.getElementById('connectionStatus').innerHTML = 
+                    '<span class="error">Failed to connect wallet</span>';
             }
         }
 
@@ -309,7 +205,7 @@ function renderWalletList(wallets) {
             }
 
             try {
-                setElementStatus('authStatus', 'Creating challenge...');
+                document.getElementById('authStatus').innerHTML = 'Creating challenge...';
                 
                 // Step 1: Get challenge
                 const challengeResponse = await fetch(`${AUTH_API_URL}/auth/wallet/challenge`, {
@@ -329,7 +225,7 @@ function renderWalletList(wallets) {
 
                 const challenge = await challengeResponse.json();
                 
-                setElementStatus('authStatus', 'Please sign the message in MetaMask...');
+                document.getElementById('authStatus').innerHTML = 'Please sign the message in MetaMask...';
                 
                 // Step 2: Sign message
                 const signature = await window.ethereum.request({
@@ -337,7 +233,7 @@ function renderWalletList(wallets) {
                     params: [challenge.message, currentAccount]
                 });
 
-                setElementStatus('authStatus', 'Verifying signature...');
+                document.getElementById('authStatus').innerHTML = 'Verifying signature...';
                 
                 // Step 3: Verify signature
                 const verifyResponse = await fetch(`${AUTH_API_URL}/auth/wallet/verify`, {
@@ -356,20 +252,23 @@ function renderWalletList(wallets) {
                 const result = await verifyResponse.json();
 
                 if (result.authenticated === false) {
-                    setElementStatus('authStatus', 'Wallet not linked to any account. Please create an account first.', 'error');
+                    document.getElementById('authStatus').innerHTML = 
+                        '<span class="error">Wallet not linked to any account. Please create an account first.</span>';
                     document.getElementById('accountSection').style.display = 'block';
                 } else if (result.access_token) {
                     authToken = result.access_token;
                     currentUser = result.me;
                     localStorage.setItem('authToken', authToken);
-
-                    setElementStatus('authStatus', 'Authentication successful!', 'success');
-
+                    
+                    document.getElementById('authStatus').innerHTML = 
+                        '<span class="success">Authentication successful!</span>';
+                    
                     showAuthenticatedUI();
                 }
             } catch (error) {
                 console.error('Authentication error:', error);
-                setElementStatus('authStatus', `Authentication failed: ${error.message}`, 'error');
+                document.getElementById('authStatus').innerHTML = 
+                    `<span class="error">Authentication failed: ${error.message}</span>`;
             }
         }
 
@@ -384,7 +283,7 @@ function renderWalletList(wallets) {
             }
 
             try {
-                setElementStatus('accountStatus', 'Creating account...');
+                document.getElementById('accountStatus').innerHTML = 'Creating account...';
                 
                 // Create account
                 const response = await fetch(`${API_URL}/auth/register`, {
@@ -411,13 +310,15 @@ function renderWalletList(wallets) {
                 currentUser = username;
                 localStorage.setItem('authToken', authToken);
 
-                setElementStatus('accountStatus', 'Account created! Now linking your wallet...', 'success');
+                document.getElementById('accountStatus').innerHTML = 
+                    '<span class="success">Account created! Now linking your wallet...</span>';
 
                 // Auto-link the wallet
                 await linkWallet();
                 
             } catch (error) {
-                setElementStatus('accountStatus', `Failed to create account: ${error.message}`, 'error');
+                document.getElementById('accountStatus').innerHTML = 
+                    `<span class="error">Failed to create account: ${error.message}</span>`;
             }
         }
 
@@ -429,7 +330,7 @@ function renderWalletList(wallets) {
 
             try {
                 const statusEl = document.getElementById('linkStatus') || document.getElementById('accountStatus');
-                setElementStatus(statusEl, 'Creating challenge for wallet linking...');
+                statusEl.innerHTML = 'Creating challenge for wallet linking...';
                 
                 // Get challenge
                 const challengeResponse = await fetch(`${AUTH_API_URL}/auth/wallet/challenge`, {
@@ -446,7 +347,7 @@ function renderWalletList(wallets) {
 
                 const challenge = await challengeResponse.json();
                 
-                setElementStatus(statusEl, 'Please sign the message in MetaMask...');
+                statusEl.innerHTML = 'Please sign the message in MetaMask...';
                 
                 // Sign message
                 const signature = await window.ethereum.request({
@@ -454,7 +355,7 @@ function renderWalletList(wallets) {
                     params: [challenge.message, currentAccount]
                 });
 
-                setElementStatus(statusEl, 'Linking wallet...');
+                statusEl.innerHTML = 'Linking wallet...';
                 
                 // Link wallet
                 const linkResponse = await fetch(`${AUTH_API_URL}/auth/wallet/link`, {
@@ -477,14 +378,14 @@ function renderWalletList(wallets) {
                     throw new Error('Failed to link wallet');
                 }
 
-                setElementStatus(statusEl, 'Wallet linked successfully!', 'success');
+                statusEl.innerHTML = '<span class="success">Wallet linked successfully!</span>';
                 
                 showAuthenticatedUI();
                 loadWallets();
                 
             } catch (error) {
                 const statusEl = document.getElementById('linkStatus') || document.getElementById('accountStatus');
-                setElementStatus(statusEl, `Failed to link wallet: ${error.message}`, 'error');
+                statusEl.innerHTML = `<span class="error">Failed to link wallet: ${error.message}</span>`;
             }
         }
 
@@ -499,7 +400,22 @@ function renderWalletList(wallets) {
                 });
 
                 const data = await response.json();
-                renderWalletList(data.wallets);
+                const walletsList = document.getElementById('walletsList');
+                
+                if (data.wallets && data.wallets.length > 0) {
+                    walletsList.innerHTML = data.wallets.map(wallet => `
+                        <li class="wallet-item">
+                            <div>
+                                <div class="address">${wallet.address}</div>
+                                <div>Type: ${wallet.type} | Chain: ${wallet.chainId}</div>
+                                <div>Linked: ${new Date(wallet.linkedAt).toLocaleString()}</div>
+                            </div>
+                            <button onclick="unlinkWallet('${wallet.address}')">Unlink</button>
+                        </li>
+                    `).join('');
+                } else {
+                    walletsList.innerHTML = '<li>No wallets linked</li>';
+                }
             } catch (error) {
                 console.error('Failed to load wallets:', error);
             }
@@ -542,7 +458,8 @@ function renderWalletList(wallets) {
                 if (response.ok) {
                     // Token is valid
                     showAuthenticatedUI();
-                    setElementStatus('authStatus', 'Authenticated with stored token', 'success');
+                    document.getElementById('authStatus').innerHTML = 
+                        '<span class="success">Authenticated with stored token</span>';
                 } else {
                     // Token expired or invalid
                     localStorage.removeItem('authToken');
@@ -554,6 +471,17 @@ function renderWalletList(wallets) {
             }
         }
 
+        // Helper function to escape HTML special characters
+        function escapeHTML(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/\//g, '&#x2F;');
+        }
+
         function showAuthenticatedUI() {
             document.getElementById('authSection').style.display = 'none';
             document.getElementById('accountSection').style.display = 'none';
@@ -561,7 +489,9 @@ function renderWalletList(wallets) {
             document.getElementById('walletsSection').style.display = 'block';
             document.getElementById('userSection').style.display = 'block';
             
-            updateUserInfo(currentUser);
+            document.getElementById('userInfo').innerHTML = 
+                `<div>Username: ${escapeHTML(currentUser || 'Unknown')}</div>
+                 <div>Authenticated via: Wallet</div>`;
         }
 
         function logout() {
@@ -573,7 +503,7 @@ function renderWalletList(wallets) {
             document.getElementById('linkSection').style.display = 'none';
             document.getElementById('walletsSection').style.display = 'none';
             document.getElementById('userSection').style.display = 'none';
-            setElementStatus('authStatus', 'Logged out');
+            document.getElementById('authStatus').innerHTML = 'Logged out';
         }
 
         // Listen for account changes
@@ -582,8 +512,8 @@ function renderWalletList(wallets) {
                 if (accounts.length === 0) {
                     // User disconnected wallet
                     currentAccount = null;
-                    setElementStatus('connectionStatus', 'Disconnected');
-                    updateWalletInfo(null);
+                    document.getElementById('connectionStatus').innerHTML = 'Disconnected';
+                    document.getElementById('walletInfo').innerHTML = '';
                     document.getElementById('authSection').style.display = 'none';
                 } else if (accounts[0] !== currentAccount) {
                     // User switched accounts

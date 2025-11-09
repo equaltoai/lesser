@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -23,11 +24,24 @@ func (r *queryResolver) Relationship(ctx context.Context, id string) (*model.Rel
 		return nil, err
 	}
 
-	relationship, err := r.Registry.Relationships().GetRelationship(ctx, username, id)
+	targetID := strings.TrimSpace(id)
+	if err := common.ValidateRequiredParam("id", targetID); err != nil {
+		return nil, err
+	}
+
+	relationship, err := r.Registry.Relationships().GetRelationship(ctx, username, targetID)
 	if err != nil {
+		var validationErr common.ValidationError
+		if errors.As(err, &validationErr) && validationErr.Field == "target_id" {
+			return nil, common.ValidationError{
+				Field:   "id",
+				Message: validationErr.Message,
+			}
+		}
+
 		r.Logger.Error("Failed to get relationship",
 			zap.String("user", username),
-			zap.String("target", id),
+			zap.String("target", targetID),
 			zap.Error(err))
 		return nil, errors.Join(errors.New("failed to get relationship"), err)
 	}

@@ -9,8 +9,9 @@ import (
 
 // Account represents the combined User and Actor data
 type Account struct {
-	User  *User              `json:"user"`
-	Actor *activitypub.Actor `json:"actor,omitempty"`
+	User       *User              `json:"user"`
+	Actor      *activitypub.Actor `json:"actor,omitempty"`
+	PrivateKey string             `json:"-"` // Temporary field for passing private key during creation
 }
 
 // LoginAttempt represents a login attempt

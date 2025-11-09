@@ -147,8 +147,19 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 
 	// Create Actor if provided (with rollback on failure)
 	if actor != nil {
-		if err := r.createActorWithRollback(ctx, actor, userModel); err != nil {
-			return err
+		// Private key is REQUIRED - must be provided in account.PrivateKey
+		privateKey := account.PrivateKey
+		if privateKey == "" {
+			return fmt.Errorf("private key is required for actor creation but was not provided")
+		}
+
+		if err := r.createActorWithRollback(ctx, actor, userModel, privateKey); err != nil {
+			// Log the full error for debugging
+			r.logger.Error("failed to create actor during account creation",
+				zap.String("username", user.Username),
+				zap.String("actor_id", actor.ID),
+				zap.Error(err))
+			return fmt.Errorf("failed to create actor: %w", err)
 		}
 	}
 
@@ -175,9 +186,11 @@ func (r *AccountRepository) setUserDefaults(userModel *models.User) {
 }
 
 // createActorWithRollback creates an actor with automatic user rollback on failure
-func (r *AccountRepository) createActorWithRollback(ctx context.Context, actor interface{}, userModel *models.User) error {
-	// Generate a default private key if none provided
-	privateKey := "" // In real implementation, you'd generate a key
+// Private key is REQUIRED for ActivityPub signing
+func (r *AccountRepository) createActorWithRollback(ctx context.Context, actor interface{}, userModel *models.User, privateKey string) error {
+	if privateKey == "" {
+		return common.ValidationError{Field: "privateKey", Message: "private key is required for actor creation"}
+	}
 
 	// Type assert the actor to the expected type
 	actorPtr, ok := actor.(*activitypub.Actor)
@@ -198,8 +211,7 @@ func (r *AccountRepository) createActorWithRollback(ctx context.Context, actor i
 	return nil
 }
 
-// CreateAccountLegacy creates both User and Actor entities atomically (legacy signature)
-// This ensures consistency between authentication and federation data
+// CreateAccountLegacy ensures consistency between authentication and federation data.
 func (r *AccountRepository) CreateAccountLegacy(ctx context.Context, username, email, passwordHash string, approved bool, actor *activitypub.Actor, _ string) error {
 	// Convert to new interface
 	account := &storage.Account{
@@ -279,23 +291,10 @@ func (r *AccountRepository) GetUser(ctx context.Context, username string) (*stor
 	return r.modelToStorageUser(user), nil
 }
 
-// GetUserByEmail retrieves a user by email address
-func (r *AccountRepository) GetUserByEmail(ctx context.Context, email string) (*storage.User, error) {
-	var user models.User
-
-	// Use existing utility for consistent key generation
-	emailKey := Utils.GSI.EmailIndexKey(email)
-
-	err := r.db.WithContext(ctx).Model(&user).
-		Index("email-index").
-		Where("GSI2PK", "=", emailKey).
-		First(&user)
-
-	if err != nil {
-		return nil, ErrorHandler.HandleGetError(err, EntityUser, email)
-	}
-
-	return r.modelToStorageUser(&user), nil
+// GetUserByEmail is OBSOLETE - email is forbidden
+// This function exists for backwards compatibility but always returns an error
+func (r *AccountRepository) GetUserByEmail(_ context.Context, email string) (*storage.User, error) {
+	return nil, fmt.Errorf("email-based authentication is not supported for %s - use wallet or passkey authentication", strings.TrimSpace(email))
 }
 
 // UpdateUser updates user authentication data
@@ -387,13 +386,24 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 		zap.String("username", username),
 		zap.String("actor_id", actor.ID))
 
-	// Encrypt private key if available
-	encryptedKey := privateKey
-	if encryptor, err := r.getEncryptor(); err == nil {
-		if encrypted, err := encryptor.Encrypt([]byte(privateKey)); err == nil {
-			encryptedKey = base64.StdEncoding.EncodeToString(encrypted)
-		}
+	// Encrypt private key - REQUIRED for security
+	encryptor, err := r.getEncryptor()
+	if err != nil {
+		r.logger.Error("encryption not available for private key storage",
+			zap.String("username", username),
+			zap.Error(err))
+		return fmt.Errorf("encryption is required for private key storage but not configured: %w", err)
 	}
+
+	encrypted, err := encryptor.Encrypt([]byte(privateKey))
+	if err != nil {
+		r.logger.Error("failed to encrypt private key",
+			zap.String("username", username),
+			zap.Error(err))
+		return fmt.Errorf("failed to encrypt private key: %w", err)
+	}
+
+	encryptedKey := base64.StdEncoding.EncodeToString(encrypted)
 
 	// Create actor model
 	actorModel := &models.Actor{
@@ -481,17 +491,35 @@ func (r *AccountRepository) GetActorPrivateKey(ctx context.Context, username str
 		return "", ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
-	// Decrypt private key if encrypted
-	privateKey := actorModel.PrivateKey
-	if encryptor, err := r.getEncryptor(); err == nil {
-		if decoded, err := base64.StdEncoding.DecodeString(privateKey); err == nil {
-			if decrypted, err := encryptor.Decrypt(decoded); err == nil {
-				privateKey = string(decrypted)
-			}
-		}
+	// Decrypt private key - REQUIRED
+	encryptor, err := r.getEncryptor()
+	if err != nil {
+		r.logger.Error("encryption not available for private key retrieval",
+			zap.String("username", username),
+			zap.Error(err))
+		return "", fmt.Errorf("encryption is required for private key retrieval but not configured: %w", err)
 	}
 
-	return privateKey, nil
+	privateKey := actorModel.PrivateKey
+	// Decode base64
+	decoded, err := base64.StdEncoding.DecodeString(privateKey)
+	if err != nil {
+		r.logger.Error("failed to decode private key (not base64)",
+			zap.String("username", username),
+			zap.Error(err))
+		return "", fmt.Errorf("private key is not in expected encrypted format: %w", err)
+	}
+
+	// Decrypt
+	decrypted, err := encryptor.Decrypt(decoded)
+	if err != nil {
+		r.logger.Error("failed to decrypt private key",
+			zap.String("username", username),
+			zap.Error(err))
+		return "", fmt.Errorf("failed to decrypt private key: %w", err)
+	}
+
+	return string(decrypted), nil
 }
 
 // ===== Helper Methods =====
@@ -509,7 +537,7 @@ func (r *AccountRepository) modelToStorageUser(model *models.User) *storage.User
 	user := &storage.User{
 		ID:                 id,
 		Username:           model.Username,
-		Email:              model.Email,
+		Email:              "", // Email is forbidden - always empty
 		PasswordHash:       model.PasswordHash,
 		DisplayName:        model.DisplayName,
 		Note:               model.Note,
@@ -838,25 +866,16 @@ func (r *AccountRepository) applyUserUpdates(user *models.User, updates map[stri
 	return nil
 }
 
-// getEncryptor returns an encryptor for private keys
+// getEncryptor returns an encryptor for actor private keys using KMS
 func (r *AccountRepository) getEncryptor() (marshalers.Encryptor, error) {
-	// For now, use the JWT secret as encryption key
-	// In production, you'd want a dedicated encryption key
-	jwtSecret := config.Get().JWTSecret
-	if err := common.ValidateRequiredParam("jwt_secret", jwtSecret); err != nil {
-		return nil, ErrorHandler.HandleGetError(errors.New("not configured"), "JWT secret", "encryption")
+	cfg := config.Get()
+
+	kmsKeyID := cfg.KMSKeyID
+	if kmsKeyID == "" {
+		return nil, errors.New("KMS_KEY_ID not configured")
 	}
 
-	// Use first 32 bytes of JWT secret as AES key
-	key := []byte(jwtSecret)
-	if len(key) > 32 {
-		key = key[:32]
-	}
-	for len(key) < 32 {
-		key = append(key, 0) // Pad with zeros if needed
-	}
-
-	return marshalers.NewAESEncryptorWithKey(key)
+	return marshalers.NewKMSEncryptor(kmsKeyID)
 }
 
 // isAccountNotFound checks if an error is a not found error
@@ -1212,7 +1231,7 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 			r.logger.Warn("failed to hydrate user version for update account, defaulting to 1",
 				zap.String("username", username),
 				zap.Error(err))
-			userModel.Version = 1 // Default to 1 if hydration fails
+			userModel.Version = 1     // Default to 1 if hydration fails
 			versionExistsInDB = false // Version doesn't exist in DB
 		} else if versionProjection.Value > 0 {
 			userModel.Version = versionProjection.Value

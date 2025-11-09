@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/severance"
 	"go.uber.org/zap"
 )
@@ -290,7 +291,7 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 	hasPreviousPage := cursor != ""
 
 	var startCursor, endCursor *model.Cursor
-	if len(edges) > 0 {
+	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {
 		sc := edges[0].Cursor
 		ec := edges[len(edges)-1].Cursor
 		startCursor = &sc
@@ -338,10 +339,10 @@ func (r *queryResolver) AffectedRelationships(ctx context.Context, severedRelati
 
 	// Determine pagination info
 	hasNextPage := nextCursor != ""
-	hasPreviousPage := false
+	hasPreviousPage := cursor != ""
 
 	var startCursor, endCursor *model.Cursor
-	if len(edges) > 0 {
+	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {
 		sc := edges[0].Cursor
 		ec := edges[len(edges)-1].Cursor
 		startCursor = &sc
@@ -429,7 +430,7 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 
 	// Handle empty edges case
 	var startCursor, endCursor *model.Cursor
-	if len(edges) > 0 {
+	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {
 		sc := edges[0].Cursor
 		ec := edges[len(edges)-1].Cursor
 		startCursor = &sc

@@ -272,6 +272,7 @@ type CreateNoteInput struct {
 	Content       string             `json:"content"`
 	ContentMap    []*ContentMapInput `json:"contentMap,omitempty"`
 	InReplyToID   *string            `json:"inReplyToId,omitempty"`
+	QuoteID       *string            `json:"quoteId,omitempty"`
 	Visibility    Visibility         `json:"visibility"`
 	Sensitive     *bool              `json:"sensitive,omitempty"`
 	SpoilerText   *string            `json:"spoilerText,omitempty"`
@@ -942,6 +943,7 @@ type Object struct {
 	RepliesCount     int                       `json:"repliesCount"`
 	LikesCount       int                       `json:"likesCount"`
 	SharesCount      int                       `json:"sharesCount"`
+	Boosted          bool                      `json:"boosted"`
 	EstimatedCost    int                       `json:"estimatedCost"`
 	ModerationScore  *float64                  `json:"moderationScore,omitempty"`
 	CommunityNotes   []*CommunityNote          `json:"communityNotes"`
@@ -3874,6 +3876,7 @@ const (
 	TimelineTypeHashtag TimelineType = "HASHTAG"
 	TimelineTypeList    TimelineType = "LIST"
 	TimelineTypeDirect  TimelineType = "DIRECT"
+	TimelineTypeActor   TimelineType = "ACTOR"
 )
 
 var AllTimelineType = []TimelineType{
@@ -3883,11 +3886,12 @@ var AllTimelineType = []TimelineType{
 	TimelineTypeHashtag,
 	TimelineTypeList,
 	TimelineTypeDirect,
+	TimelineTypeActor,
 }
 
 func (e TimelineType) IsValid() bool {
 	switch e {
-	case TimelineTypeHome, TimelineTypePublic, TimelineTypeLocal, TimelineTypeHashtag, TimelineTypeList, TimelineTypeDirect:
+	case TimelineTypeHome, TimelineTypePublic, TimelineTypeLocal, TimelineTypeHashtag, TimelineTypeList, TimelineTypeDirect, TimelineTypeActor:
 		return true
 	}
 	return false

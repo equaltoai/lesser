@@ -184,7 +184,8 @@ func main() {
 	stages := defaultZones
 
 	// Create shared stack (only once per account)
-	sharedStack := stacks.NewSharedStack(app, "LesserSharedStack", &stacks.SharedStackProps{
+	// Resources are published to SSM Parameter Store and imported by environment stacks
+	_ = stacks.NewSharedStack(app, "LesserSharedStack", &stacks.SharedStackProps{
 		StackProps: awscdk.StackProps{
 			Env:         getEnv(config),
 			Description: jsii.String("Lesser shared resources - KMS keys, secrets"),
@@ -215,28 +216,24 @@ func main() {
 
 	configMap := configToMap(config)
 
-	// Create main application stack (creates its own certificate like Pulumi did)
+	// Create main application stack
+	// Note: Shared resources are imported from SSM Parameter Store, not passed directly
 	lesserApiStack := stacks.NewLesserApiStack(app, fmt.Sprintf("LesserApiStack-%s", env), &stacks.LesserApiStackProps{
 		StackProps: awscdk.StackProps{
 			Env:         getEnv(config),
 			Description: jsii.String(fmt.Sprintf("Lesser serverless application - %s", env)),
 		},
-		Environment:            env,
-		Domain:                 config.Domain,
-		Config:                 configMap,
-		HostedZoneDomain:       rootDomain,
-		HostedZoneId:           config.DNS.HostedZoneID,
-		CloudFrontDomain:       config.Media.CloudfrontDomain,
-		APICertificate:         sharedStack.APICertificate,
-		CDNCertificate:         sharedStack.CDNCertificate,
-		GraphQLWSCertificate:   sharedStack.GraphQLWSCertificate,
-		StreamingWSCertificate: sharedStack.StreamingWSCertificate,
-		JWTSecret:              sharedStack.JWTSecret,
-		ActorPrivateKey:        sharedStack.ActorPrivateKey,
+		Environment:      env,
+		Domain:           config.Domain,
+		Config:           configMap,
+		HostedZoneDomain: rootDomain,
+		HostedZoneId:     config.DNS.HostedZoneID,
+		CloudFrontDomain: config.Media.CloudfrontDomain,
+		AppName:          "lesser", // Hard-coded to match SharedStack SSM parameter prefix
 	})
 
 	// Add dependencies
-	lesserApiStack.AddDependency(sharedStack.Stack, jsii.String("Shared resources must be created first"))
+	// Note: No explicit dependency on SharedStack needed - SSM parameters will be resolved at deploy time
 	lesserApiStack.AddDependency(monitoringStack.Stack, jsii.String("Monitoring must be set up before application"))
 
 	app.Synth(nil)

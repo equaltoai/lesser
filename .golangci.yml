@@ -250,7 +250,8 @@ issues:
         - gosec
     
     # Common package name is part of public API; suppress revive var-naming warnings there
-    - path: "pkg/common/.*\\.go$"
+    - path: "(^|.*/)pkg/common/.*\\.go$"
+      text: "var-naming: avoid meaningless package names"
       linters:
         - revive
     

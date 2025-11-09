@@ -15,6 +15,7 @@ import requests
 import json
 import sys
 import time
+from datetime import datetime
 
 # Configuration
 BASE_URL = "https://lab.lesser.social"
@@ -22,11 +23,13 @@ API_BASE = f"{BASE_URL}/api/v1"
 
 # Test credentials (you'll need valid tokens)
 TOKEN_USER1 = "your_token_here"  # User with high reputation
+TOKEN_USER2 = "your_token_here"  # User to vouch for
 TOKEN_USER3 = "your_token_here"  # User importing reputation
 
 # Actor IDs
 ACTOR1 = "https://lab.lesser.social/users/testuser1"
 ACTOR2 = "https://lab.lesser.social/users/testuser2"
+ACTOR3 = "https://lab.lesser.social/users/testuser3"
 
 
 def print_section(title):
@@ -164,7 +167,18 @@ def test_export_reputation():
         print(f"   Total Score: {portable_rep['reputation']['totalScore']}")
         print(f"   Vouches Included: {len(portable_rep['vouches'])}")
         
-        print("\n   Document preview available (sensitive fields omitted).")
+        # Pretty print a sample
+        print("\n   Document Preview:")
+        preview = {
+            "@context": portable_rep.get("@context", []),
+            "@type": portable_rep.get("@type"),
+            "actor": portable_rep.get("actor"),
+            "reputation": {
+                "totalScore": portable_rep["reputation"]["totalScore"],
+                "calculatedAt": portable_rep["reputation"]["calculatedAt"]
+            }
+        }
+        print(json.dumps(preview, indent=4))
         
         return portable_rep
     else:
@@ -181,7 +195,15 @@ def test_verify_reputation(document):
     
     if response and response.status_code == 200:
         result = response.json()
-        print("✅ Verification completed (response redacted for safety).")
+        print(f"✅ Verification completed")
+        print(f"   Valid: {result['valid']}")
+        print(f"   Actor: {result['actorId']}")
+        print(f"   Issuer: {result['issuer']}")
+        print(f"   Signature Valid: {result['signatureValid']}")
+        print(f"   Not Expired: {result['notExpired']}")
+        print(f"   Issuer Trusted: {result['issuerTrusted']}")
+        if result.get('error'):
+            print(f"   Error: {result['error']}")
         return result
     else:
         print(f"❌ Failed to verify reputation: {response.status_code if response else 'No response'}")
@@ -253,20 +275,20 @@ def run_all_tests():
     print("=" * 60)
     
     # Test 1: Get reputation
-    test_get_reputation()
+    reputation = test_get_reputation()
     
     # Test 2: Create vouch
     vouch = test_create_vouch()
     
     # Test 3: Get vouches
-    test_get_vouches()
+    vouches = test_get_vouches()
     
     # Test 4: Export reputation
     portable_rep = test_export_reputation()
     
     # Test 5: Verify reputation (if we have a document)
     if portable_rep:
-        test_verify_reputation(portable_rep)
+        verification = test_verify_reputation(portable_rep)
     
     # Test 6: Import reputation (would need a document from another instance)
     # Skipping actual import as it would need a real document from another instance
@@ -276,10 +298,10 @@ def run_all_tests():
     # Test 7: Revoke vouch (if we created one)
     if vouch:
         time.sleep(2)  # Wait a bit before revoking
-        test_revoke_vouch(vouch['id'])
+        revoked = test_revoke_vouch(vouch['id'])
     
     # Test 8: Get reputation keys
-    test_reputation_keys()
+    keys = test_reputation_keys()
     
     print("\n" + "=" * 60)
     print("✅ Test suite completed!")

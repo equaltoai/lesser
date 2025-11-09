@@ -9,6 +9,7 @@ This script supports multiple authentication methods:
 """
 
 import requests
+import json
 import base64
 import secrets
 import hashlib
@@ -20,11 +21,6 @@ from typing import Optional, Dict, Tuple
 # Configuration - can be overridden with environment variables
 BASE_URL = os.getenv('LESSER_URL', 'http://localhost:8080')
 DEFAULT_SCOPES = 'read write follow push'
-
-
-def report_secret(label: str) -> None:
-    """Consistently note when a secret value is handled."""
-    print(f"{label}: <redacted>")
 
 
 class LesserAuthTokenGenerator:
@@ -49,9 +45,10 @@ class LesserAuthTokenGenerator:
         app = response.json()
         self.client_id = app['client_id']
         self.client_secret = app['client_secret']
-
+        
         print(f"✅ Created OAuth app: {app_name}")
-        print("   OAuth client credentials retrieved.")
+        print(f"   Client ID: {self.client_id}")
+        print(f"   Client Secret: {self.client_secret[:20]}...")
         
         return self.client_id, self.client_secret
     
@@ -108,11 +105,11 @@ class LesserAuthTokenGenerator:
         if response.status_code == 200:
             tokens = response.json()
             print(f"✅ Access token obtained for user '{username}'")
-            print("   Access token acquired.")
+            print(f"   Token: {tokens['access_token'][:50]}...")
             print(f"   Type: {tokens['token_type']}")
             print(f"   Expires in: {tokens.get('expires_in', 'N/A')} seconds")
             if 'refresh_token' in tokens:
-                print("   Refresh token issued.")
+                print(f"   Refresh token: {tokens['refresh_token'][:30]}...")
             return tokens
         else:
             print(f"❌ Failed to get token: {response.status_code} - {response.text}")
@@ -146,15 +143,7 @@ class LesserAuthTokenGenerator:
         }
         
         auth_url = f"{self.base_url}/oauth/authorize?{urllib.parse.urlencode(auth_params)}"
-        parsed_auth = urllib.parse.urlparse(auth_url)
-        masked_pairs = []
-        for key, value in urllib.parse.parse_qsl(parsed_auth.query):
-            if key.lower() in {"client_id", "state", "code_challenge"}:
-                masked_pairs.append(f"{key}=<redacted>")
-            else:
-                masked_pairs.append(f"{key}={value}")
-        safe_auth_url = parsed_auth._replace(query="&".join(masked_pairs)).geturl()
-        print(f"🔐 Authorization URL: {safe_auth_url}")
+        print(f"🔐 Authorization URL: {auth_url}")
         
         # Step 2: Login to get a session token
         print("📝 Logging in to authorize the app...")
@@ -188,7 +177,7 @@ class LesserAuthTokenGenerator:
             return None
         
         auth_code = query_params['code'][0]
-        print("✅ Received authorization code.")
+        print(f"✅ Got authorization code: {auth_code[:20]}...")
         
         # Step 4: Exchange code for token
         token_data = {
@@ -208,10 +197,9 @@ class LesserAuthTokenGenerator:
         
         if token_response.status_code == 200:
             tokens = token_response.json()
-            print("✅ Tokens obtained via authorization code flow")
-            print("   Access token issued.")
-            if 'refresh_token' in tokens:
-                print("   Refresh token issued.")
+            print(f"✅ Tokens obtained via authorization code flow")
+            print(f"   Access token: {tokens['access_token'][:50]}...")
+            print(f"   Refresh token: {tokens['refresh_token'][:30]}...")
             return tokens
         else:
             print(f"❌ Token exchange failed: {token_response.text}")
@@ -246,7 +234,7 @@ class LesserAuthTokenGenerator:
         if response.status_code == 200:
             tokens = response.json()
             print(f"✅ App-only access token obtained")
-            print("   Access token acquired.")
+            print(f"   Token: {tokens['access_token'][:50]}...")
             print(f"   Scope: {tokens.get('scope', 'N/A')}")
             return tokens
         else:
@@ -278,9 +266,7 @@ class LesserAuthTokenGenerator:
         if response.status_code == 200:
             tokens = response.json()
             print(f"✅ Access token refreshed")
-            print("   Replacement access token acquired.")
-            if 'refresh_token' in tokens:
-                print("   New refresh token issued.")
+            print(f"   New token: {tokens['access_token'][:50]}...")
             return tokens
         else:
             print(f"❌ Failed to refresh token: {response.status_code} - {response.text}")
@@ -343,18 +329,30 @@ def interactive_mode():
             
         if tokens:
             print("\n" + "=" * 50)
-            print("🎉 SUCCESS! Tokens generated (values redacted).")
-            report_secret("Access token")
+            print("🎉 SUCCESS! Your tokens:")
+            print(f"Access Token: {tokens['access_token']}")
             if 'refresh_token' in tokens:
-                report_secret("Refresh token")
+                print(f"Refresh Token: {tokens['refresh_token']}")
             print("=" * 50)
-            print("Use the returned dictionary in code to access actual values.")
+            
+            # Save to file option
+            save = input("\nSave tokens to file? (y/N): ").strip().lower() == 'y'
+            if save:
+                filename = input("Filename (default: .env.lesser): ").strip() or ".env.lesser"
+                with open(filename, 'w') as f:
+                    f.write(f"# Generated by generate_auth_token.py\n")
+                    f.write(f"LESSER_URL={generator.base_url}\n")
+                    f.write(f"LESSER_CLIENT_ID={generator.client_id}\n")
+                    f.write(f"LESSER_CLIENT_SECRET={generator.client_secret}\n")
+                    f.write(f"LESSER_ACCESS_TOKEN={tokens['access_token']}\n")
+                    if 'refresh_token' in tokens:
+                        f.write(f"LESSER_REFRESH_TOKEN={tokens['refresh_token']}\n")
+                print(f"✅ Tokens saved to {filename}")
     
     elif choice == '3':
         tokens = generator.client_credentials_token()
         if tokens:
-            print("\n🎉 App-only token generated.")
-            report_secret("App-only token")
+            print(f"\n🎉 App-only token: {tokens['access_token']}")
     
     elif choice == '4':
         token = input("\nEnter existing access token: ").strip()
@@ -385,7 +383,7 @@ if __name__ == "__main__":
         
         token = quick_token(username, password, base_url)
         if token:
-            report_secret("\nAccess token")
+            print(f"\nAccess Token: {token}")
         else:
             sys.exit(1)
     else:

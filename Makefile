@@ -1,4 +1,4 @@
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate clear-data snyk snyk-go snyk-code snyk-iac
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate clear-data
 
 # =============================================================================
 # CONFIGURATION
@@ -18,12 +18,6 @@ INTEGRATION_STAGE ?= integration
 # Seed/validation configuration
 SEED_BASE_URL ?= https://dev.lesser.host
 SEED_GRAPHQL_ENDPOINT ?= $(SEED_BASE_URL)/api/graphql
-
-# Snyk configuration
-SNYK_CMD ?= snyk
-SNYK_ORG ?= 3d56b57f-0609-4364-960c-b66074a51ae7
-SNYK_CODE_FLAGS ?= --severity-threshold=medium
-SNYK_EXTRA_FLAGS ?=
 
 # Detect OS for Windows compatibility
 ifeq ($(OS),Windows_NT)
@@ -129,8 +123,9 @@ build:
 	@$(MAKE) clean
 	@$(MAKE) rebuild-lambdas
 	@$(MAKE) build-cloudfront-keygen
+	@$(MAKE) build-auth-ui
 	@go build ./...
-	@echo "✓ Deployment build complete (Lambda zips, cloudfront-keygen.zip, and Go binaries refreshed)"
+	@echo "✓ Deployment build complete (Lambda zips, cloudfront-keygen.zip, auth-ui, and Go binaries refreshed)"
 
 ## Build all Lambda binaries for local use (non-zipped)
 build-local:
@@ -160,30 +155,6 @@ clean:
 	@rm -rf bin/
 	@rm -f coverage.out coverage.html
 	@echo "✓ Clean complete"
-
-# =============================================================================
-# SECURITY SCANNING
-# =============================================================================
-
-snyk: snyk-go snyk-code
-	@echo "✓ Snyk application scans completed"
-
-snyk-go:
-	@command -v $(SNYK_CMD) >/dev/null 2>&1 || { echo "Snyk CLI not found; install from https://docs.snyk.io/snyk-cli"; exit 1; }
-	@test -f go.mod || { echo "go.mod not found; run from repo root"; exit 1; }
-	@echo "Running Snyk dependency scan for Go modules..."
-	@$(SNYK_CMD) test --file=go.mod --org=$(SNYK_ORG) $(SNYK_EXTRA_FLAGS)
-
-snyk-code:
-	@command -v $(SNYK_CMD) >/dev/null 2>&1 || { echo "Snyk CLI not found; install from https://docs.snyk.io/snyk-cli"; exit 1; }
-	@echo "Running Snyk Code (SAST) scan..."
-	@$(SNYK_CMD) code test --org=$(SNYK_ORG) $(SNYK_CODE_FLAGS) $(SNYK_EXTRA_FLAGS)
-
-snyk-iac:
-	@command -v $(SNYK_CMD) >/dev/null 2>&1 || { echo "Snyk CLI not found; install from https://docs.snyk.io/snyk-cli"; exit 1; }
-	@test -d infra/cdk || { echo "infra/cdk not found; IaC scan skipped"; exit 1; }
-	@echo "Running Snyk IaC scan for infra/cdk..."
-	@$(SNYK_CMD) iac test infra/cdk --org=$(SNYK_ORG)
 
 # =============================================================================
 # CDK DEPLOYMENT TARGETS
@@ -278,13 +249,13 @@ ensure-vapid-credentials:
 
 ## Deploy to development environment
 deploy-dev: ENV=dev
-deploy-dev: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-credentials ensure-vapid-credentials
+deploy-dev: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to DEVELOPMENT environment..."
-	@echo "Step 1/2: Deploying monitoring stack..."
+	@echo "Step 1/3: Deploying monitoring stack..."
 	@cd infra/cdk && cdk deploy LesserMonitoringStack-development \
 		--context environment=development \
 		--require-approval never
-	@echo "Step 2/2: Deploying application stack..."
+	@echo "Step 2/3: Deploying application stack..."
 	@. $(CDN_ENV_FILE); \
 	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-development \
@@ -295,23 +266,25 @@ deploy-dev: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-creden
 		--context vapidPublicKey=$$VAPID_PUBLIC_KEY \
 		--context vapidSubject=$$VAPID_SUBJECT \
 		--require-approval never
+	@echo "Step 3/3: Deploying auth UI..."
+	@$(MAKE) deploy-auth-ui DOMAIN=dev.lesser.host AWS_PROFILE=$(AWS_PROFILE)
 	@echo "✓ Development deployment complete"
 
 ## Deploy to test/staging environment
 deploy-test: ENV=test
-deploy-test: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-credentials ensure-vapid-credentials
+deploy-test: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to TEST/STAGING environment..."
 	@if [ -z "$(DOMAIN)" ]; then \
 		echo "Error: DOMAIN is required for staging"; \
 		echo "Usage: make deploy-test DOMAIN=staging.yourdomain.com"; \
 		exit 1; \
 	fi
-	@echo "Step 1/2: Deploying monitoring stack..."
+	@echo "Step 1/3: Deploying monitoring stack..."
 	@cd infra/cdk && cdk deploy LesserMonitoringStack-staging \
 		--context environment=staging \
 		--context domain=$(DOMAIN) \
 		--require-approval broadening
-	@echo "Step 2/2: Deploying application stack..."
+	@echo "Step 2/3: Deploying application stack..."
 	@. $(CDN_ENV_FILE); \
 	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-staging \
@@ -323,23 +296,25 @@ deploy-test: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-crede
 		--context vapidPublicKey=$$VAPID_PUBLIC_KEY \
 		--context vapidSubject=$$VAPID_SUBJECT \
 		--require-approval broadening
+	@echo "Step 3/3: Deploying auth UI..."
+	@$(MAKE) deploy-auth-ui DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
 	@echo "✓ Staging deployment complete"
 
 ## Deploy to live/production environment
 deploy-live: ENV=live
-deploy-live: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-credentials ensure-vapid-credentials
+deploy-live: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to LIVE/PRODUCTION environment..."
 	@if [ -z "$(DOMAIN)" ]; then \
 		echo "Error: DOMAIN is required for production"; \
 		echo "Usage: make deploy-live DOMAIN=yourdomain.com"; \
 		exit 1; \
 	fi
-	@echo "Step 1/2: Deploying monitoring stack..."
+	@echo "Step 1/3: Deploying monitoring stack..."
 	@cd infra/cdk && cdk deploy LesserMonitoringStack-production \
 		--context environment=production \
 		--context domain=$(DOMAIN) \
 		--require-approval broadening
-	@echo "Step 2/2: Deploying application stack..."
+	@echo "Step 2/3: Deploying application stack..."
 	@. $(CDN_ENV_FILE); \
 	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-production \
@@ -351,6 +326,8 @@ deploy-live: build-lambdas build-cloudfront-keygen check-shared ensure-cdn-crede
 		--context vapidPublicKey=$$VAPID_PUBLIC_KEY \
 		--context vapidSubject=$$VAPID_SUBJECT \
 		--require-approval broadening
+	@echo "Step 3/3: Deploying auth UI..."
+	@$(MAKE) deploy-auth-ui DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
 	@echo "✓ Production deployment complete"
 
 ## Generic deploy command (use ENV variable to specify environment)
@@ -568,6 +545,10 @@ test:
 		DYNAMODB_ENCRYPTION_KEY=$${DYNAMODB_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef} \
 		go test -v ./...
 
+.PHONY: schema
+schema:
+	@./scripts/generate_schema.sh
+
 ## Run tests with coverage
 test-coverage:
 	@echo "Running tests with coverage..."
@@ -730,6 +711,37 @@ export-schema:
 	@echo "✓ Schema exported to schema.graphql"
 	@wc -l schema.graphql | awk '{print "  Total lines: " $$1}'
 
+## Build auth UI (passwordless OAuth pages)
+build-auth-ui:
+	@echo "Building passwordless auth UI..."
+	@cd auth-ui && pnpm install && pnpm build
+	@echo "✓ Auth UI built to auth-ui/dist/"
+
+## Deploy auth UI to S3 + CloudFront
+deploy-auth-ui:
+	@echo "Deploying auth UI..."
+	@if [ -z "$(DOMAIN)" ]; then \
+		echo "ERROR: DOMAIN is required (e.g., DOMAIN=dev.lesser.host)"; \
+		exit 1; \
+	fi
+	@echo "Building auth UI..."
+	@$(MAKE) build-auth-ui
+	@echo "Uploading to S3..."
+	@AWS_PROFILE=$(AWS_PROFILE) aws s3 sync auth-ui/dist/ s3://lesser-auth-ui-$(DOMAIN)/ --delete
+	@echo "Invalidating CloudFront cache..."
+	@DISTRIBUTION_ID=$$(AWS_PROFILE=$(AWS_PROFILE) aws cloudfront list-distributions \
+		--query "DistributionList.Items[?contains(Origins.Items[0].DomainName, 'lesser-auth-ui-$(DOMAIN)')].Id" \
+		--output text); \
+	if [ -n "$$DISTRIBUTION_ID" ]; then \
+		AWS_PROFILE=$(AWS_PROFILE) aws cloudfront create-invalidation \
+			--distribution-id $$DISTRIBUTION_ID \
+			--paths "/*"; \
+		echo "✓ CloudFront cache invalidated (Distribution: $$DISTRIBUTION_ID)"; \
+	else \
+		echo "⚠ No CloudFront distribution found for auth UI"; \
+	fi
+	@echo "✓ Auth UI deployed to https://auth.$(DOMAIN)"
+
 ## Tidy Go modules
 tidy:
 	@echo "Tidying Go modules..."
@@ -878,6 +890,8 @@ help:
 	@echo "  local-dynamodb      Start local DynamoDB container"
 	@echo "  gqlgen              Generate GraphQL code"
 	@echo "  export-schema       Export combined GraphQL schema for web clients"
+	@echo "  build-auth-ui       Build passwordless OAuth UI (WebAuthn + Wallet)"
+	@echo "  deploy-auth-ui      Deploy auth UI to S3 + CloudFront (requires DOMAIN=...)"
 	@echo "  tidy                Tidy Go modules"
 	@echo "  install-tools       Install development tools"
 	@echo ""

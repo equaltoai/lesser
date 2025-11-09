@@ -1,4 +1,5 @@
 // Package common provides shared error constants for the Lesser application.
+// revive:disable-next-line var-naming // historical package name kept for backwards compatibility
 package common
 
 // Common Error Messages

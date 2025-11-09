@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"mime"
-	"net/mail"
 	"strings"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -48,29 +48,33 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 	// Use Accounts service to register the account
 	accountsService := h.registry.Accounts()
 	result, err := accountsService.RegisterAccount(ctx.Context, &accounts.RegisterAccountCommand{
-		Username:  req.Username,
-		Email:     req.Email,
-		Password:  req.Password,
-		Locale:    req.Locale,
-		Agreement: req.Agreement,
-		Reason:    req.Reason,
+		Username:                 req.Username,
+		Email:                    "", // Email is forbidden - always empty
+		Password:                 req.Password,
+		Locale:                   req.Locale,
+		Agreement:                req.Agreement,
+		Reason:                   req.Reason,
+		DefaultPostingVisibility: req.DefaultPostingVisibility,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "username already taken") || strings.Contains(err.Error(), "Username is already taken") {
 			return common.RespondAlreadyExists(ctx, "Username")
 		}
-		if strings.Contains(err.Error(), "validation failed") {
+		if strings.Contains(err.Error(), "validation failed") || strings.Contains(err.Error(), "is required") {
 			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
-		h.logger.Error("failed to register account", zap.Error(err))
-		return common.RespondInternalServerError(ctx)
+		// Log the full error for debugging
+		h.logger.Error("failed to register account",
+			zap.String("username", req.Username),
+			zap.Error(err))
+		// Return error message instead of generic internal server error
+		return common.RespondUnprocessableEntity(ctx, fmt.Sprintf("registration failed: %v", err))
 	}
 
 	// Return response using common helper
 	resp := models.AccountRegistrationResponse{
 		ID:       result.Actor.ID,
 		Username: result.Account.User.Username,
-		Email:    result.Account.User.Email,
 		Created:  true,
 	}
 
@@ -567,16 +571,20 @@ func (h *Handler) validateRegistrationRequestLift(req models.AccountRegistration
 		return err
 	}
 
-	// Validate email (optional for email-free auth)
-	if req.Email != "" {
-		if _, err := mail.ParseAddress(req.Email); err != nil {
-			return errors.New("invalid email address")
-		}
-	}
+	// Email validation removed - email is forbidden
 
 	// Validate agreement
 	if !req.Agreement {
 		return errors.New("you must agree to the terms of service")
+	}
+
+	if req.DefaultPostingVisibility != "" {
+		switch strings.ToLower(req.DefaultPostingVisibility) {
+		case storageModels.VisibilityPublic, storageModels.VisibilityUnlisted,
+			storageModels.VisibilityPrivate, storageModels.VisibilityDirect:
+		default:
+			return fmt.Errorf("default_posting_visibility must be one of public, unlisted, private, or direct")
+		}
 	}
 
 	return nil

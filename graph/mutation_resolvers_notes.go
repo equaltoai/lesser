@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
@@ -29,70 +30,43 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 		return nil, err
 	}
 
-	// Validate input
-	if err := common.ValidateContentOrAttachments(input.Content, input.AttachmentIds); err != nil {
+	cmd, quoteTargetID, err := r.buildCreateNoteCommand(username, input)
+	if err != nil {
 		return nil, err
-	}
-
-	// Build create command
-	cmd := &notes.CreateNoteCommand{
-		AuthorID:   username,
-		Content:    input.Content,
-		Visibility: strings.ToLower(input.Visibility.String()),
-		Sensitive:  input.Sensitive != nil && *input.Sensitive,
-	}
-
-	if input.SpoilerText != nil {
-		cmd.SpoilerText = *input.SpoilerText
-	}
-
-	if input.InReplyToID != nil {
-		cmd.InReplyToID = *input.InReplyToID
-	}
-
-	if input.AttachmentIds != nil {
-		cmd.MediaIDs = input.AttachmentIds
-	}
-
-	if input.Poll != nil {
-		pollOptionsAny := make([]any, len(input.Poll.Options))
-		for i, option := range input.Poll.Options {
-			pollOptionsAny[i] = option
-		}
-
-		pollParams := map[string]any{
-			"options":    pollOptionsAny,
-			"expires_in": float64(input.Poll.ExpiresIn),
-		}
-
-		if input.Poll.Multiple != nil {
-			pollParams["multiple"] = *input.Poll.Multiple
-		}
-
-		if input.Poll.HideTotals != nil {
-			pollParams["hide_totals"] = *input.Poll.HideTotals
-		}
-
-		if err := common.ValidatePollParams(pollParams); err != nil {
-			return nil, err
-		}
-
-		cmd.PollOptions = input.Poll.Options
-		cmd.PollExpiresIn = input.Poll.ExpiresIn
-		cmd.PollMultiple = input.Poll.Multiple != nil && *input.Poll.Multiple
-		cmd.PollHideTotals = input.Poll.HideTotals != nil && *input.Poll.HideTotals
 	}
 
 	// Handle mentions and tags
 	// These would be parsed from content in the service
 
+	var requestLogger *zap.Logger
+	if r.Logger != nil {
+		requestLogger = r.Logger
+		requestLogger.Info("createNote resolver started",
+			zap.String("user", username),
+			zap.Int("content_length", len(input.Content)))
+	}
+
 	// Create note using service
+	serviceStart := time.Now()
 	result, err := r.Registry.Notes().CreateNote(ctx, cmd)
 	if err != nil {
 		r.Logger.Error("Failed to create note",
 			zap.String("user", username),
 			zap.Error(err))
 		return nil, errors.Join(errors.New("failed to create note"), err)
+	}
+
+	if quoteTargetID != "" && result != nil && result.Note != nil {
+		if err := r.attachQuoteToTarget(ctx, username, quoteTargetID, result.Note); err != nil {
+			return nil, err
+		}
+	}
+
+	if requestLogger != nil && result != nil && result.Note != nil {
+		requestLogger.Info("createNote service completed",
+			zap.String("user", username),
+			zap.String("status_id", result.Note.StatusID),
+			zap.Duration("duration", time.Since(serviceStart)))
 	}
 
 	// Track costs
@@ -105,8 +79,17 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 
 	// Build response
 	now := time.Now()
-	return &model.CreateNotePayload{
-		Object: r.convertStatusToObject(ctx, result.Note),
+	convertStart := time.Now()
+	objectModel := r.convertStatusToObject(ctx, result.Note)
+	if requestLogger != nil && result != nil && result.Note != nil {
+		requestLogger.Info("createNote object conversion completed",
+			zap.String("status_id", result.Note.StatusID),
+			zap.Duration("duration", time.Since(convertStart)),
+			zap.Bool("actor_loaded", objectModel != nil && objectModel.Actor != nil))
+	}
+
+	payload := &model.CreateNotePayload{
+		Object: objectModel,
 		Activity: &activitypub.Activity{
 			BaseObject: activitypub.BaseObject{
 				ID:        generateID(),
@@ -121,7 +104,113 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 			DailyTotal:        0.10, // Estimated daily total
 			MonthlyProjection: 3.00, // Estimated monthly projection
 		},
-	}, nil
+	}
+
+	if requestLogger != nil && result != nil && result.Note != nil {
+		requestLogger.Info("createNote resolver completed",
+			zap.String("status_id", result.Note.StatusID),
+			zap.Duration("total_duration", time.Since(serviceStart)))
+	}
+
+	return payload, nil
+}
+
+func (r *mutationResolver) attachQuoteToTarget(ctx context.Context, username, targetStatusID string, quoteStatus *models.Status) error {
+	if quoteStatus == nil {
+		return errors.New("quote status not available for attachment")
+	}
+
+	quotesService := r.Registry.Quotes()
+	if quotesService == nil {
+		r.Logger.Error("quotes service not available for quote attachment")
+		return errors.New("quotes service is not available")
+	}
+
+	_, err := quotesService.AttachQuoteToStatus(ctx, quoteStatus, targetStatusID)
+	if err != nil {
+		r.Logger.Error("failed to attach quote relationship",
+			zap.String("user", username),
+			zap.String("quote_status_id", quoteStatus.StatusID),
+			zap.String("target_status_id", targetStatusID),
+			zap.Error(err))
+		return err
+	}
+
+	r.trackDynamoOperation(ctx, "write", 1)
+
+	if r.Logger != nil {
+		r.Logger.Info("attached quote relationship",
+			zap.String("user", username),
+			zap.String("quote_status_id", quoteStatus.StatusID),
+			zap.String("target_status_id", targetStatusID))
+	}
+
+	return nil
+}
+
+func (r *mutationResolver) buildCreateNoteCommand(username string, input model.CreateNoteInput) (*notes.CreateNoteCommand, string, error) {
+	if err := common.ValidateContentOrAttachments(input.Content, input.AttachmentIds); err != nil {
+		return nil, "", err
+	}
+
+	quoteTargetID := ""
+	if input.QuoteID != nil {
+		quoteTargetID = strings.TrimSpace(*input.QuoteID)
+	}
+
+	cmd := &notes.CreateNoteCommand{
+		AuthorID:   username,
+		Content:    input.Content,
+		Visibility: strings.ToLower(input.Visibility.String()),
+		Sensitive:  input.Sensitive != nil && *input.Sensitive,
+	}
+
+	if input.SpoilerText != nil {
+		cmd.SpoilerText = *input.SpoilerText
+	}
+	if input.InReplyToID != nil {
+		cmd.InReplyToID = *input.InReplyToID
+	}
+	if input.AttachmentIds != nil {
+		cmd.MediaIDs = input.AttachmentIds
+	}
+
+	if input.Poll != nil {
+		if err := r.applyPollInput(cmd, input.Poll); err != nil {
+			return nil, "", err
+		}
+	}
+
+	return cmd, quoteTargetID, nil
+}
+
+func (r *mutationResolver) applyPollInput(cmd *notes.CreateNoteCommand, pollInput *model.PollParamsInput) error {
+	pollOptionsAny := make([]any, len(pollInput.Options))
+	for i, option := range pollInput.Options {
+		pollOptionsAny[i] = option
+	}
+
+	pollParams := map[string]any{
+		"options":    pollOptionsAny,
+		"expires_in": float64(pollInput.ExpiresIn),
+	}
+
+	if pollInput.Multiple != nil {
+		pollParams["multiple"] = *pollInput.Multiple
+	}
+	if pollInput.HideTotals != nil {
+		pollParams["hide_totals"] = *pollInput.HideTotals
+	}
+
+	if err := common.ValidatePollParams(pollParams); err != nil {
+		return err
+	}
+
+	cmd.PollOptions = pollInput.Options
+	cmd.PollExpiresIn = pollInput.ExpiresIn
+	cmd.PollMultiple = pollInput.Multiple != nil && *pollInput.Multiple
+	cmd.PollHideTotals = pollInput.HideTotals != nil && *pollInput.HideTotals
+	return nil
 }
 
 // DeleteObject is the resolver for the deleteObject field.
@@ -318,16 +407,6 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 	}
 
 	return &model.CreateNotePayload{
-		Object: &model.Object{
-			ID:           result.Note.StatusID,
-			Content:      result.Note.Content,
-			CreatedAt:    model.Time(result.Note.CreatedAt),
-			UpdatedAt:    model.Time(result.Note.UpdatedAt),
-			Visibility:   model.Visibility(result.Note.Visibility),
-			Sensitive:    result.Note.Sensitive,
-			RepliesCount: 0,
-			LikesCount:   0,
-			SharesCount:  0,
-		},
+		Object: r.convertStatusToObject(ctx, result.Note),
 	}, nil
 }

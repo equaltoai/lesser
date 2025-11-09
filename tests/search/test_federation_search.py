@@ -9,6 +9,7 @@ This script tests:
 """
 
 import requests
+import json
 import sys
 import time
 import argparse

@@ -155,6 +155,10 @@ Lesser provides three API interfaces:
 - 60+ operations for queries, mutations, and subscriptions
 - DataLoader for N+1 query prevention
 - Real-time subscriptions via WebSocket
+- **Published schema**: The canonical schema we ship to clients lives at `graph/schema.graphql`.
+  It is generated from the modular source files (`graph/core.graphql`, `graph/phase2.graphql`,
+  `graph/phase3.graphql`) by running `./scripts/generate_schema.sh`. Always rerun that script
+  before sharing or checking in schema changes so frontend teams see every type in one place.
 
 ### WebSocket Streaming
 - Real-time timeline updates

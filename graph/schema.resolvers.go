@@ -232,7 +232,7 @@ func (r *mutationResolver) UpdateTrust(ctx context.Context, input model.TrustInp
 		Created: time.Now(),
 		Updated: time.Now(),
 	}
-	
+
 	// Note: UpdateKeys() will be called by the repository's UpdateTrustRelationship
 
 	// Get trust repository and update/create the relationship (upsert)
@@ -867,6 +867,17 @@ func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.No
 		}
 	}
 
+	createdAt := firstNonZeroTime(note.Published, note.Updated)
+	if createdAt == nil {
+		now := time.Now().UTC()
+		createdAt = &now
+	}
+	updatedAt := firstNonZeroTime(note.Updated, note.Published)
+	if updatedAt == nil {
+		clone := createdAt.UTC()
+		updatedAt = &clone
+	}
+
 	return &model.Object{
 		ID:             note.ID,
 		Type:           objectType,
@@ -880,8 +891,8 @@ func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.No
 		Attachments:    attachments,
 		Tags:           tags,
 		Mentions:       r.extractMentionsFromNote(note), // Enhanced: extract mentions from note tags
-		CreatedAt:      model.Time(*note.Published),
-		UpdatedAt:      model.Time(*note.Updated),
+		CreatedAt:      model.Time(*createdAt),
+		UpdatedAt:      model.Time(*updatedAt),
 		RepliesCount:   r.getReplyCount(ctx, note.ID), // Use efficient count method
 		LikesCount:     0,
 		SharesCount:    0,
@@ -1092,91 +1103,58 @@ func (r *Resolver) parseMentionURL(url string) (username string, domain *string)
 	return usernamePart, domainPtr
 }
 
+var viewerBoostStateResolverFunc = loadViewerBoostState
+
+func loadViewerBoostState(ctx context.Context, r *Resolver, viewerID, statusID string) (bool, error) {
+	if r == nil || viewerID == "" || statusID == "" {
+		return false, nil
+	}
+
+	notesService := r.notesService()
+	if notesService == nil {
+		return false, nil
+	}
+
+	return notesService.HasReblogged(ctx, viewerID, statusID)
+}
+
 func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Status) *model.Object {
 	if status == nil {
 		return nil
 	}
+
+	var convertLogger *zap.Logger
+	if r.Logger != nil {
+		convertLogger = r.Logger
+		convertLogger.Info("convertStatusToObject started",
+			zap.String("status_id", status.StatusID))
+	}
+
+	start := time.Now()
 
 	var poll *model.Poll
 	if status.StatusID != "" {
 		poll = r.resolvePollForStatus(ctx, status)
 	}
 
+	viewerBoosted := r.viewerBoostState(ctx, status, convertLogger)
 	objectType := model.ObjectTypeNote
-
-	visibility := model.VisibilityPublic
-	switch status.Visibility {
-	case VisibilityUnlisted:
-		visibility = model.VisibilityUnlisted
-	case VisibilityPrivate, EventTypeFollowers:
-		visibility = model.VisibilityFollowers
-	case TimelineTypeDirect:
-		visibility = model.VisibilityDirect
-	}
-
-	var actor *activitypub.Actor
-	if status.AuthorUsername != "" {
-		result, err := r.Registry.Accounts().GetAccount(ctx, status.AuthorUsername)
-		if err == nil && result != nil {
-			actor = r.convertAccountToActor(result)
-		}
-	}
-
-	attachments := make([]*activitypub.Attachment, 0)
-	if status.Note != nil && status.Note.Get() != nil {
-		for _, att := range status.Note.Get().Attachment {
-			attachments = append(attachments, &att)
-		}
-	}
-
-	tags := make([]*activitypub.Tag, 0)
-	if status.Note != nil && status.Note.Get() != nil {
-		for _, tag := range status.Note.Get().Tag {
-			tags = append(tags, &tag)
-		}
-	}
-
-	mentions := make([]*model.Mention, 0)
-	if status.Mentions != nil {
-		for _, mentionURL := range status.Mentions {
-			// Enhanced: use improved URL parsing with domain detection
-			username, domain := r.parseMentionURL(mentionURL)
-			if username != "" {
-				mentions = append(mentions, &model.Mention{
-					ID:       mentionURL,
-					Username: username,
-					URL:      mentionURL,
-					Domain:   domain,
-				})
-			}
-		}
-	}
-
-	var inReplyTo *model.Object
-	// Fetch parent status if this is a reply (with depth limiting to avoid infinite recursion)
-	if status.InReplyToID != "" {
-		// Check context for conversion depth to prevent infinite loops
-		depth := r.getConversionDepth(ctx)
-		if depth < 3 { // Limit to 3 levels of nesting
-			newCtx := r.setConversionDepth(ctx, depth+1)
-			parentStatus, err := r.Registry.Notes().GetNote(newCtx, status.InReplyToID)
-			if err == nil && parentStatus != nil {
-				inReplyTo = r.convertStatusToObject(newCtx, parentStatus)
-			}
-		}
-	}
-
-	var summary *string
-	if status.Note != nil && status.Note.Get() != nil && status.Note.Get().Summary != "" {
-		summary = &status.Note.Get().Summary
-	}
+	visibility := mapStatusVisibility(status)
+	actor := r.resolveActorForStatus(ctx, status, convertLogger)
+	attachments := cloneNoteAttachments(status)
+	tags := cloneNoteTags(status)
+	quoteURL, quoteContext := r.resolveQuoteMetadata(ctx, status)
+	quoteable := determineQuoteable(status)
+	mentions := r.buildMentions(status)
+	inReplyTo := r.resolveInReplyToObject(ctx, status, convertLogger)
+	summary := extractStatusSummary(status)
 
 	obj := &model.Object{
 		ID:               status.StatusID,
 		Type:             objectType,
 		Actor:            actor,
 		Content:          status.Content,
-		ContentMap:       r.extractContentMaps(status.Content), // Enhanced: extract content maps with language detection
+		ContentMap:       r.extractContentMaps(status.Content),
 		InReplyTo:        inReplyTo,
 		Visibility:       visibility,
 		Sensitive:        status.Sensitive,
@@ -1191,7 +1169,9 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		LikesCount:       status.LikeCount,
 		SharesCount:      status.ReblogCount,
 		CommunityNotes:   []*model.CommunityNote{},
-		Quoteable:        true,
+		QuoteURL:         quoteURL,
+		QuoteContext:     quoteContext,
+		Quoteable:        quoteable,
 		QuotePermissions: model.QuotePermissionEveryone,
 		QuoteCount:       status.QuoteCount,
 		Quotes: &model.QuoteConnection{
@@ -1199,10 +1179,147 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 			PageInfo:   &model.PageInfo{HasNextPage: false, HasPreviousPage: false},
 			TotalCount: status.QuoteCount,
 		},
-		EstimatedCost:    1,
+		EstimatedCost: 1,
+		Boosted:       viewerBoosted,
+	}
+
+	if convertLogger != nil {
+		convertLogger.Info("convertStatusToObject finished",
+			zap.String("status_id", status.StatusID),
+			zap.Duration("duration", time.Since(start)),
+			zap.Bool("actor_loaded", actor != nil),
+			zap.Int("attachment_count", len(attachments)))
 	}
 
 	return obj
+}
+
+func (r *Resolver) resolveQuoteMetadata(ctx context.Context, status *models.Status) (*string, *activitypub.QuoteContext) {
+	if status == nil || status.QuoteTargetStatusID == "" {
+		return nil, nil
+	}
+
+	var (
+		targetStatus *models.Status
+		lookupStart  = time.Now()
+		err          error
+	)
+
+	targetStatus, err = r.loadQuoteTargetStatus(ctx, status.QuoteTargetStatusID)
+	if err != nil && r.Logger != nil {
+		r.Logger.Warn("failed to resolve quote target",
+			zap.String("status_id", status.StatusID),
+			zap.String("target_status_id", status.QuoteTargetStatusID),
+			zap.Duration("duration", time.Since(lookupStart)),
+			zap.Error(err))
+	}
+
+	originalAuthor := status.QuoteTargetAuthorID
+	originalAuthorUsername := ""
+	if targetStatus != nil {
+		if targetStatus.AuthorID != "" {
+			originalAuthor = targetStatus.AuthorID
+		} else if targetStatus.AuthorUsername != "" && originalAuthor == "" {
+			originalAuthor = targetStatus.AuthorUsername
+		}
+		if targetStatus.AuthorUsername != "" {
+			originalAuthorUsername = targetStatus.AuthorUsername
+		}
+	}
+	if originalAuthor == "" {
+		originalAuthor = status.QuoteTargetStatusID
+	}
+	if originalAuthorUsername == "" {
+		originalAuthorUsername = extractUsernameFromActorIdentifier(originalAuthor)
+	}
+
+	quoteCount := 0
+	if targetStatus != nil {
+		quoteCount = targetStatus.QuoteCount
+	}
+
+	quoteURLValue := ""
+	if targetStatus != nil {
+		quoteURLValue = extractQuoteURLFromStatus(targetStatus)
+	}
+	if quoteURLValue == "" {
+		quoteURLValue = status.QuoteTargetStatusID
+	}
+
+	var quoteURL *string
+	if quoteURLValue != "" {
+		quoteURL = &quoteURLValue
+	}
+
+	quoteAllowed := true
+	withdrawn := false
+	if targetStatus != nil && targetStatus.Deleted {
+		withdrawn = true
+		quoteAllowed = false
+	}
+
+	quoteContext := &activitypub.QuoteContext{
+		OriginalNoteID:         status.QuoteTargetStatusID,
+		OriginalAuthor:         originalAuthor,
+		OriginalAuthorUsername: originalAuthorUsername,
+		QuoteCount:             quoteCount,
+		AllowWithdrawal:        true,
+		QuoteAllowed:           quoteAllowed,
+		Withdrawn:              withdrawn,
+		OriginalStatus:         targetStatus,
+	}
+
+	if r.Logger != nil {
+		url := ""
+		if quoteURL != nil {
+			url = *quoteURL
+		}
+		r.Logger.Debug("resolved quote metadata",
+			zap.String("status_id", status.StatusID),
+			zap.String("target_status_id", status.QuoteTargetStatusID),
+			zap.String("quote_url", url),
+			zap.Int("quote_count", quoteContext.QuoteCount),
+			zap.Bool("quote_allowed", quoteContext.QuoteAllowed),
+			zap.Bool("withdrawn", quoteContext.Withdrawn))
+	}
+	return quoteURL, quoteContext
+}
+
+var quoteTargetStatusLoaderFunc = LoadQuoteTargetStatus
+var actorLoaderFunc = LoadActor
+
+func (r *Resolver) loadQuoteTargetStatus(ctx context.Context, statusID string) (*models.Status, error) {
+	if statusID == "" {
+		return nil, nil
+	}
+
+	targetStatus, err := quoteTargetStatusLoaderFunc(ctx, statusID)
+	if err == nil {
+		return targetStatus, nil
+	}
+
+	// If loaders aren't available, fall back to direct Notes service lookup.
+	if errors.Is(err, errLoadersNotFound) || errors.Is(err, errQuoteTargetLoaderUnavailable) {
+		if r.Registry != nil && r.Registry.Notes() != nil {
+			return r.Registry.Notes().GetNote(ctx, statusID)
+		}
+		return nil, err
+	}
+
+	return nil, err
+}
+
+func extractQuoteURLFromStatus(status *models.Status) string {
+	if status == nil || status.Note == nil {
+		return ""
+	}
+
+	note := status.Note.Get()
+	if note == nil || note.ID == "" {
+		return ""
+	}
+
+	return note.ID
 }
 
 func (r *Resolver) resolvePollForStatus(ctx context.Context, status *models.Status) *model.Poll {
@@ -1534,7 +1651,7 @@ func (r *queryResolver) getDomainHealthScore(ctx context.Context, federationRepo
 				zap.Any("panic", rec))
 		}
 	}()
-	
+
 	repo, ok := federationRepo.(interface {
 		GetDomainHealthScore(context.Context, string) (float64, error)
 	})
@@ -1563,7 +1680,7 @@ func (r *queryResolver) getRecentFederationMetrics(ctx context.Context, federati
 				zap.Any("panic", rec))
 		}
 	}()
-	
+
 	repo, ok := federationRepo.(interface {
 		GetDetailedMetricsByPeriod(context.Context, string, time.Time, time.Time, int) ([]*models.FederationAnalyticsTimeSeries, error)
 	})
@@ -1572,7 +1689,7 @@ func (r *queryResolver) getRecentFederationMetrics(ctx context.Context, federati
 			zap.String("domain", domain))
 		return []*models.FederationAnalyticsTimeSeries{}
 	}
-	
+
 	endTime := time.Now()
 	startTime := endTime.Add(-30 * time.Minute) // Last 30 minutes of activity
 
@@ -1633,7 +1750,7 @@ func (r *queryResolver) getInstanceInfo(ctx context.Context, federationRepo inte
 				zap.Any("panic", rec))
 		}
 	}()
-	
+
 	repo, ok := federationRepo.(interface {
 		GetInstanceInfo(context.Context, string) (*models.FederationInstance, error)
 	})
@@ -1642,7 +1759,7 @@ func (r *queryResolver) getInstanceInfo(ctx context.Context, federationRepo inte
 			zap.String("domain", domain))
 		return nil
 	}
-	
+
 	instanceInfo, err := repo.GetInstanceInfo(ctx, domain)
 	if err != nil {
 		r.Logger.Debug("could not get instance information",
@@ -2636,49 +2753,23 @@ func (r *queryResolver) processReply(ctx context.Context, statusRepo *repositori
 }
 
 // createRootNoteObject creates the root note object for the thread context
-func (r *queryResolver) createRootNoteObject(status *models.Status, replies []*models.Status, engagement *engagementMetrics) *model.Object {
-	// Enhanced: extract mentions from status data
-	mentions := make([]*model.Mention, 0)
-	if status.Mentions != nil {
-		for _, mentionURL := range status.Mentions {
-			username, domain := r.parseMentionURL(mentionURL)
-			if username != "" {
-				mentions = append(mentions, &model.Mention{
-					ID:       mentionURL,
-					Username: username,
-					URL:      mentionURL,
-					Domain:   domain,
-				})
-			}
-		}
+func (r *queryResolver) createRootNoteObject(ctx context.Context, status *models.Status, replies []*models.Status, engagement *engagementMetrics) *model.Object {
+	if status == nil {
+		return nil
 	}
 
-	return &model.Object{
-		ID:      status.StatusID,
-		Type:    model.ObjectTypeNote,
-		Content: status.Content,
-		Actor: &activitypub.Actor{
-			BaseObject: activitypub.BaseObject{
-				ID:   status.AuthorID,
-				Type: "Person",
-			},
-			PreferredUsername: status.AuthorUsername,
-			Name:              status.AuthorUsername,
-			Inbox:             fmt.Sprintf("https://%s/users/%s/inbox", "localhost", status.AuthorUsername),
-			Outbox:            fmt.Sprintf("https://%s/users/%s/outbox", "localhost", status.AuthorUsername),
-		},
-		CreatedAt:    model.Time(status.PublishedAt),
-		UpdatedAt:    model.Time(status.UpdatedAt),
-		RepliesCount: len(replies),
-		LikesCount:   int(engagement.likeCount),
-		SharesCount:  engagement.reblogCount,
-		Visibility:   model.VisibilityPublic,
-		Sensitive:    false,
-		Attachments:  []*activitypub.Attachment{},
-		Tags:         []*activitypub.Tag{},
-		Mentions:     mentions,                             // Enhanced: processed mentions with domain detection
-		ContentMap:   r.extractContentMaps(status.Content), // Enhanced: extract content maps with language detection
+	obj := r.convertStatusToObject(ctx, status)
+	if obj == nil {
+		return nil
 	}
+
+	obj.RepliesCount = len(replies)
+	if engagement != nil {
+		obj.LikesCount = int(engagement.likeCount)
+		obj.SharesCount = engagement.reblogCount
+	}
+
+	return obj
 }
 
 // determineSyncStatus determines the sync status based on replies
@@ -2874,23 +2965,43 @@ func (r *actorResolver) Fields(_ context.Context, obj *activitypub.Actor) ([]*mo
 
 // TrustScore implements ActorResolver
 func (r *actorResolver) TrustScore(ctx context.Context, obj *activitypub.Actor) (float64, error) {
+	var trustLogger *zap.Logger
+	if r.Logger != nil {
+		trustLogger = r.Logger
+		trustLogger.Info("actor trust score resolution started",
+			zap.String("actor", obj.PreferredUsername))
+	}
+	start := time.Now()
+
 	// Get trust score from DataLoader for performance
 	result, err := LoadTrustScore(ctx, obj.PreferredUsername, string(trust.TrustCategoryGeneral))
 	if err != nil {
-		r.Logger.Warn("failed to load trust score, returning default",
-			zap.String("actor", obj.PreferredUsername),
-			zap.Error(err))
+		if trustLogger != nil {
+			trustLogger.Warn("failed to load trust score, returning default",
+				zap.String("actor", obj.PreferredUsername),
+				zap.Duration("duration", time.Since(start)),
+				zap.Error(err))
+		}
 		return 0.5, nil
 	}
 
 	// Cast the result to float64 (should be a trust score)
 	if score, ok := result.(float64); ok {
+		if trustLogger != nil {
+			trustLogger.Info("actor trust score resolution completed",
+				zap.String("actor", obj.PreferredUsername),
+				zap.Duration("duration", time.Since(start)),
+				zap.Float64("score", score))
+		}
 		return score, nil
 	}
 
-	r.Logger.Warn("unexpected trust score type, returning default",
-		zap.String("actor", obj.PreferredUsername),
-		zap.Any("result", result))
+	if trustLogger != nil {
+		trustLogger.Warn("unexpected trust score type, returning default",
+			zap.String("actor", obj.PreferredUsername),
+			zap.Duration("duration", time.Since(start)),
+			zap.Any("result", result))
+	}
 	return 0.5, nil
 }
 
@@ -3418,32 +3529,55 @@ func (r *moderationPatternResolver) CreatedBy(_ context.Context, _ *moderation.M
 // ====================================================================
 
 // OriginalAuthor implements QuoteContextResolver
-func (r *quoteContextResolver) OriginalAuthor(_ context.Context, obj *activitypub.QuoteContext) (*activitypub.Actor, error) {
-	// Create minimal actor from OriginalAuthor field
-	if obj.OriginalAuthor != "" {
-		return &activitypub.Actor{
-			PreferredUsername: obj.OriginalAuthor,
-		}, nil
+func (r *quoteContextResolver) OriginalAuthor(ctx context.Context, obj *activitypub.QuoteContext) (*activitypub.Actor, error) {
+	if obj == nil {
+		return nil, nil
 	}
-	return nil, nil
+
+	candidates := r.collectQuoteAuthorCandidates(obj)
+	for _, candidate := range candidates {
+		actor, err := r.loadQuoteAuthor(ctx, candidate)
+		if err != nil {
+			if r.Logger != nil {
+				r.Logger.Debug("quote context author lookup failed",
+					zap.String("candidate", candidate),
+					zap.Error(err))
+			}
+			continue
+		}
+		if actor != nil {
+			return actor, nil
+		}
+	}
+
+	if obj.OriginalAuthor == "" {
+		return nil, nil
+	}
+	return r.fallbackQuoteAuthorActor(obj.OriginalAuthor), nil
 }
 
 // OriginalNote implements QuoteContextResolver
 func (r *quoteContextResolver) OriginalNote(ctx context.Context, obj *activitypub.QuoteContext) (*model.Object, error) {
-	if err := common.ValidateRequiredParam("originalNoteID", obj.OriginalNoteID); err != nil {
+	if obj == nil || obj.Withdrawn || obj.OriginalNoteID == "" {
 		return nil, nil
 	}
 
-	// Get object using notes service
-	note, err := r.Registry.Notes().GetNote(ctx, obj.OriginalNoteID)
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+	if cached, ok := obj.OriginalStatus.(*models.Status); ok && cached != nil {
+		if cached.Deleted {
 			return nil, nil
 		}
+		return r.convertStatusToObject(ctx, cached), nil
+	}
+
+	note, err := r.loadQuoteTargetStatus(ctx, obj.OriginalNoteID)
+	if err != nil {
 		r.Logger.Error("Failed to get original note for quote context",
 			zap.String("note_id", obj.OriginalNoteID),
 			zap.Error(err))
 		return nil, errors.Join(errors.New("failed to get original note"), err)
+	}
+	if note == nil || note.Deleted {
+		return nil, nil
 	}
 
 	return r.convertStatusToObject(ctx, note), nil
@@ -3451,9 +3585,10 @@ func (r *quoteContextResolver) OriginalNote(ctx context.Context, obj *activitypu
 
 // QuoteAllowed implements QuoteContextResolver
 func (r *quoteContextResolver) QuoteAllowed(_ context.Context, obj *activitypub.QuoteContext) (bool, error) {
-	// QuoteAllowed is always true unless explicitly disabled by withdrawal
-	// Check if withdrawal is allowed and the quote is not withdrawn
-	return !obj.AllowWithdrawal || obj.QuoteCount > 0, nil
+	if obj == nil {
+		return true, nil
+	}
+	return obj.QuoteAllowed, nil
 }
 
 // QuoteType implements QuoteContextResolver
@@ -3470,9 +3605,75 @@ func (r *quoteContextResolver) QuoteType(_ context.Context, obj *activitypub.Quo
 
 // Withdrawn implements QuoteContextResolver
 func (r *quoteContextResolver) Withdrawn(_ context.Context, obj *activitypub.QuoteContext) (bool, error) {
-	// A quote is considered withdrawn if withdrawal is allowed and quote count is 0
-	// This indicates the original author has withdrawn permission to quote
-	return obj.AllowWithdrawal && obj.QuoteCount == 0, nil
+	if obj == nil {
+		return false, nil
+	}
+	return obj.Withdrawn, nil
+}
+
+func (r *quoteContextResolver) collectQuoteAuthorCandidates(obj *activitypub.QuoteContext) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, 3)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+
+	add(obj.OriginalAuthorUsername)
+	add(extractUsernameFromActorIdentifier(obj.OriginalAuthor))
+	add(obj.OriginalAuthor)
+	return result
+}
+
+func (r *quoteContextResolver) loadQuoteAuthor(ctx context.Context, username string) (*activitypub.Actor, error) {
+	if username == "" {
+		return nil, nil
+	}
+
+	if actorLoaderFunc != nil {
+		actor, err := actorLoaderFunc(ctx, username)
+		switch {
+		case err == nil && actor != nil:
+			return actor, nil
+		case err != nil:
+			var notFound common.ActorNotFoundError
+			if errors.Is(err, errLoadersNotFound) || errors.As(err, &notFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+	}
+
+	return nil, nil
+}
+
+func (r *quoteContextResolver) fallbackQuoteAuthorActor(identifier string) *activitypub.Actor {
+	username := extractUsernameFromActorIdentifier(identifier)
+	if username == "" {
+		username = identifier
+	}
+
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			Type: activitypub.PersonType,
+			ID:   identifier,
+		},
+		PreferredUsername: username,
+		Name:              username,
+	}
+
+	if identifier != "" && strings.Contains(identifier, "://") {
+		actor.URL = identifier
+	}
+
+	return actor
 }
 
 // ====================================================================

@@ -5,9 +5,11 @@ Tests semantic search, fuzzy search, and multi-strategy status search.
 """
 
 import requests
+import json
 import time
 import argparse
-from typing import Dict
+import sys
+from typing import Dict, List, Optional
 
 
 class StatusSemanticSearchTester:

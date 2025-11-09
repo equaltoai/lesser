@@ -83,17 +83,24 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 	username := actor.PreferredUsername
 	numericID := common.GenerateNumericID(username)
 
-	// Encrypt private key if encryption is available
-	encryptedKey := privateKey
-	if encryptor, err := getEncryptor(); err == nil {
-		if encrypted, err := encryptor.Encrypt([]byte(privateKey)); err == nil {
-			encryptedKey = base64.StdEncoding.EncodeToString(encrypted)
-		} else {
-			common.WithContext(ctx).Warn("failed to encrypt private key", zap.Error(err))
-		}
-	} else {
-		common.WithContext(ctx).Warn("encryption not available, storing private key in plaintext", zap.Error(err))
+	// Encrypt private key - REQUIRED for security
+	encryptor, err := getEncryptor()
+	if err != nil {
+		common.WithContext(ctx).Error("encryption not available for private key storage",
+			zap.String("username", username),
+			zap.Error(err))
+		return fmt.Errorf("encryption is required for private key storage but not configured: %w", err)
 	}
+
+	encrypted, err := encryptor.Encrypt([]byte(privateKey))
+	if err != nil {
+		common.WithContext(ctx).Error("failed to encrypt private key",
+			zap.String("username", username),
+			zap.Error(err))
+		return fmt.Errorf("failed to encrypt private key: %w", err)
+	}
+
+	encryptedKey := base64.StdEncoding.EncodeToString(encrypted)
 
 	// Create the DynamORM model
 	actorModel := &models.Actor{
@@ -114,7 +121,7 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 	}
 
 	// Create the actor using BaseRepository
-	err := r.Create(ctx, actorModel)
+	err = r.Create(ctx, actorModel)
 	if err != nil {
 		if dynamormerrors.IsConditionFailed(err) {
 			return common.ConflictError{
@@ -202,19 +209,35 @@ func (r *ActorRepository) GetActorPrivateKey(ctx context.Context, username strin
 		return "", ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
-	// Decrypt private key if it's encrypted
-	privateKey := actorModel.PrivateKey
-	if encryptor, err := getEncryptor(); err == nil {
-		// Try to decode as base64 - if it fails, assume it's plaintext
-		if decoded, err := base64.StdEncoding.DecodeString(privateKey); err == nil {
-			if decrypted, err := encryptor.Decrypt(decoded); err == nil {
-				privateKey = string(decrypted)
-			} else {
-				common.WithContext(ctx).Warn("failed to decrypt private key", zap.Error(err))
-			}
-		}
+	// Decrypt private key - REQUIRED
+	encryptor, err := getEncryptor()
+	if err != nil {
+		common.WithContext(ctx).Error("encryption not available for private key retrieval",
+			zap.String("username", username),
+			zap.Error(err))
+		return "", fmt.Errorf("encryption is required for private key retrieval but not configured: %w", err)
 	}
-	return privateKey, nil
+
+	privateKey := actorModel.PrivateKey
+	// Decode base64
+	decoded, err := base64.StdEncoding.DecodeString(privateKey)
+	if err != nil {
+		common.WithContext(ctx).Error("failed to decode private key (not base64)",
+			zap.String("username", username),
+			zap.Error(err))
+		return "", fmt.Errorf("private key is not in expected encrypted format: %w", err)
+	}
+
+	// Decrypt
+	decrypted, err := encryptor.Decrypt(decoded)
+	if err != nil {
+		common.WithContext(ctx).Error("failed to decrypt private key",
+			zap.String("username", username),
+			zap.Error(err))
+		return "", fmt.Errorf("failed to decrypt private key: %w", err)
+	}
+
+	return string(decrypted), nil
 }
 
 // UpdateActor updates an existing actor
@@ -578,28 +601,16 @@ func followerCountBucket(count int) string {
 	}
 }
 
-// getEncryptor returns an encryptor for private key encryption using DynamORM AES encryption
+// getEncryptor returns an encryptor for actor private keys using KMS
 func getEncryptor() (marshalers.Encryptor, error) {
-	// Use DynamORM AES encryption from centralized config
 	cfg := lesserconfig.Get()
-	encryptionKey := cfg.DynamoDBEncryptionKey
-	if err := common.ValidateRequiredParam("encryption_key", encryptionKey); err != nil {
-		// Try alternative config field
-		encryptionKey = cfg.ActorPrivateKeyEncryption
+	
+	kmsKeyID := cfg.KMSKeyID
+	if kmsKeyID == "" {
+		return nil, errors.New("KMS_KEY_ID not configured")
 	}
-
-	if encryptionKey != "" {
-		// Decode base64 key
-		key, err := base64.StdEncoding.DecodeString(encryptionKey)
-		if err != nil {
-			return nil, ErrorHandler.HandleCreateError(err, "encryption key", "AES format")
-		}
-		zap.L().Info("Using DynamORM AES encryption for actor private keys")
-		return marshalers.NewAESEncryptorWithKey(key)
-	}
-
-	err := errors.New("no encryption key available - DYNAMODB_ENCRYPTION_KEY not configured")
-	return nil, ErrorHandler.HandleCreateError(err, "encryptor", "configuration")
+	
+	return marshalers.NewKMSEncryptor(kmsKeyID)
 }
 
 // GetActorByUsername retrieves an actor by username

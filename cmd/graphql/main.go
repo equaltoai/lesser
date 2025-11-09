@@ -78,7 +78,15 @@ type oauthMiddlewareAdapter struct {
 }
 
 func (a *oauthMiddlewareAdapter) ValidateAccessToken(token string) (common.Claims, error) {
-	return a.service.ValidateAccessToken(token)
+	claims, err := a.service.ValidateAccessToken(token)
+	if err != nil {
+		logger.Warn("OAuthService.ValidateAccessToken failed",
+			zap.Error(err),
+			zap.String("error_type", fmt.Sprintf("%T", err)),
+		)
+		return nil, err
+	}
+	return claims, nil
 }
 
 func init() {
@@ -342,16 +350,45 @@ func handleGraphQL(ctx *lift.Context) error {
 	}
 
 	// Propagate claims for resolvers that require authentication
-	if claimsVal, ok := ctx.Get("claims").(common.Claims); ok && claimsVal != nil {
-		requestCtx = context.WithValue(requestCtx, common.ContextKeyClaims, claimsVal)
-		// Ensure contextKeyUser is set even if username wasn't populated separately
-		if claimsVal.GetUsername() != "" {
-			requestCtx = context.WithValue(requestCtx, contextKeyUser, claimsVal.GetUsername())
+	claimsVal := ctx.Get("claims")
+	if claimsVal != nil {
+		logger.Info("GraphQL claims found in context",
+			zap.String("claims_type", fmt.Sprintf("%T", claimsVal)),
+			zap.Bool("is_common_claims", claimsVal != nil),
+		)
+		if claims, ok := claimsVal.(common.Claims); ok && claims != nil {
+			logger.Info("GraphQL claims type assertion successful",
+				zap.String("username", claims.GetUsername()),
+			)
+			requestCtx = context.WithValue(requestCtx, common.ContextKeyClaims, claims)
+			// Ensure contextKeyUser is set even if username wasn't populated separately
+			if username := claims.GetUsername(); username != "" {
+				requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
+			} else {
+				logger.Warn("GraphQL claims have empty username",
+					zap.String("claims_type", fmt.Sprintf("%T", claims)),
+				)
+			}
+		} else {
+			logger.Warn("GraphQL claims type assertion failed",
+				zap.String("actual_type", fmt.Sprintf("%T", claimsVal)),
+			)
 		}
 	}
 
 	requestCtx = context.WithValue(requestCtx, contextKeyCostTracker, ctx.Get("cost_tracker"))
-	requestCtx = context.WithValue(requestCtx, contextKeyLoaders, ctx.Get("loaders"))
+
+	// Attach DataLoaders to request context so resolvers can batch fetches safely
+	if loadersVal := ctx.Get("loaders"); loadersVal != nil {
+		if loaders, ok := loadersVal.(*graph.Loaders); ok {
+			requestCtx = graph.WithLoaders(requestCtx, loaders)
+			requestCtx = context.WithValue(requestCtx, contextKeyLoaders, loaders)
+		} else {
+			logger.Warn("GraphQL loaders type assertion failed",
+				zap.String("actual_type", fmt.Sprintf("%T", loadersVal)))
+			requestCtx = context.WithValue(requestCtx, contextKeyLoaders, loadersVal)
+		}
+	}
 
 	// Create HTTP request wrapper for GraphQL handler
 	liftURL := ctx.Request.URL()
@@ -376,7 +413,20 @@ func handleGraphQL(ctx *lift.Context) error {
 	}
 
 	// Process GraphQL request
+	handlerStart := time.Now()
+	logger.Info("GraphQL handler invocation started",
+		zap.String("path", ctx.Request.Path),
+		zap.String("method", ctx.Request.Method))
 	graphQLHandler.ServeHTTP(responseWriter, httpReq)
+	if hits, misses := graph.QuoteLoaderMetrics(requestCtx); hits > 0 || misses > 0 {
+		logger.Info("quote target loader usage",
+			zap.Int64("cache_hits", hits),
+			zap.Int64("misses", misses))
+	}
+	logger.Info("GraphQL handler invocation completed",
+		zap.String("path", ctx.Request.Path),
+		zap.String("method", ctx.Request.Method),
+		zap.Duration("duration", time.Since(handlerStart)))
 
 	return nil
 }
@@ -637,7 +687,14 @@ func main() {
 	_ = app.GET("/graphql", handleGraphQL)
 	_ = app.POST("/api/graphql", handleGraphQL)
 	_ = app.GET("/api/graphql", handleGraphQL)
-	// OPTIONS requests are handled by CORS middleware
+
+	// OPTIONS handlers for CORS preflight (CORS headers set by middleware)
+	optionsHandler := func(ctx *lift.Context) error {
+		// CORS headers are already set by middleware, just return 204 No Content
+		return ctx.Status(204).Text("")
+	}
+	_ = app.Handle("OPTIONS", "/graphql", optionsHandler)
+	_ = app.Handle("OPTIONS", "/api/graphql", optionsHandler)
 
 	// GraphQL playground (development only)
 	_ = app.GET("/playground", handlePlayground)

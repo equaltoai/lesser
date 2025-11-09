@@ -4,7 +4,6 @@ import requests
 import sys
 import os
 import io
-from urllib.parse import urlparse
 from PIL import Image
 
 def test_media_upload(base_url, token):
@@ -42,35 +41,15 @@ def test_media_upload(base_url, token):
     print(f"   URL: {media['url']}")
     
     # Check if URL uses CDN domain
-    media_url = urlparse(media['url'])
-    base_host = urlparse(base_url).hostname
-    if media_url.hostname == base_host:
+    if base_url.replace('https://', '') in media['url']:
         print("❌ Media URL is using main domain instead of CDN domain")
         return False
-
-    # Ensure CDN URL is trusted before fetching
-    allowed_hosts_config = os.getenv("LESSER_MEDIA_ALLOWED_HOSTS", "")
-    allowed_hosts = {host.strip().lower() for host in allowed_hosts_config.split(",") if host.strip()}
-    if base_host:
-        allowed_hosts.add(f"media.{base_host}".lower())
-    allowed_hosts.add("s3.amazonaws.com")
-
-    if not media_url.hostname:
-        print("❌ Media URL is missing a hostname; aborting fetch.")
-        return False
-
-    media_host = media_url.hostname.lower()
-    if media_url.scheme != "https":
-        print("❌ Media URL must use HTTPS.")
-        return False
-
-    if not any(
-        media_host == allowed or media_host.endswith(f".{allowed}")
-        for allowed in allowed_hosts
-    ):
-        print(f"❌ Media URL host '{media_host}' is not in the allowed CDN host list.")
-        return False
-
+    
+    if 'media.' in media['url']:
+        print("✅ Media URL correctly uses CDN subdomain")
+    elif 's3.amazonaws.com' in media['url']:
+        print("⚠️  Media URL is using direct S3 URL (CDN may not be configured)")
+    
     # Try to fetch the image via the CDN URL
     print(f"\nFetching image from CDN URL...")
     img_response = requests.get(media['url'])

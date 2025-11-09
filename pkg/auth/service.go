@@ -461,28 +461,86 @@ func (as *AuthService) CreateWalletChallenge(ctx context.Context, address string
 	return as.walletService.CreateChallenge(ctx, address, chainID, username)
 }
 
-// VerifyWalletSignature verifies a wallet signature and creates a session
-func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVerifyRequest, deviceName, userAgent, ipAddress string) (*AuthResponse, error) {
+// VerifyWalletSignature verifies a wallet signature (for registration)
+// This only verifies the signature - it does NOT create a session
+func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVerifyRequest) error {
+	// Verify signature
+	_, err := as.walletService.VerifySignature(ctx, req)
+	if err != nil {
+		return errors.Join(ErrSignatureVerificationFailed, err)
+	}
+	return nil
+}
+
+// LoginWithWallet logs in a user with a wallet (wallet must already be linked)
+func (as *AuthService) LoginWithWallet(ctx context.Context, req *WalletVerifyRequest, deviceName, userAgent, ipAddress string) (*AuthResponse, error) {
 	// Verify signature and get username
 	username, err := as.walletService.VerifySignature(ctx, req)
 	if err != nil {
 		return nil, errors.Join(ErrSignatureVerificationFailed, err)
 	}
 
-	// If no username returned, this is a new wallet
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return &AuthResponse{
-			AccessToken:  "", // No token for unlinked wallet
-			TokenType:    "Bearer",
-			ExpiresIn:    0,
-			RefreshToken: "",
-			Scope:        "",
-			CreatedAt:    time.Now().Unix(),
-			Me:           "", // No username yet
-		}, nil
+		return nil, errors.New("username required for wallet login")
 	}
 
-	// Check if user is active
+	// Check that this wallet address is linked to the requesting username
+	wallets, err := as.repos.Account().GetUserWalletCredentials(ctx, username)
+	if err != nil {
+		return nil, errors.Join(ErrWalletCheck, err)
+	}
+
+	linked := false
+	for _, w := range wallets {
+		if strings.EqualFold(w.Address, req.Address) {
+			linked = true
+			break
+		}
+	}
+
+	if !linked {
+		return nil, errors.Join(ErrWalletCheck, errors.New("wallet not linked to this username"))
+	}
+
+	// Get user and verify account status
+	user, err := as.repos.Account().GetUser(ctx, username)
+	if err != nil {
+		return nil, errors.Join(ErrUserRetrievalFailed, err)
+	}
+	if user.Suspended {
+		return nil, ErrUserSuspended
+	}
+	if !user.Approved {
+		return nil, ErrUserNotApproved
+	}
+
+	// Create session with wallet auth method
+	session, err := as.sessionManager.CreateSession(ctx, username, deviceName, userAgent, ipAddress, "wallet")
+	if err != nil {
+		return nil, errors.Join(ErrSessionCreationFailed, err)
+	}
+
+	// Generate tokens
+	accessToken, err := as.generateShortLivedAccessToken(username, session.SessionID, session.DeviceID, DefaultScopes())
+	if err != nil {
+		return nil, errors.Join(ErrAccessTokenGenerationFailed, err)
+	}
+
+	return &AuthResponse{
+		AccessToken:  accessToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    int(ShortAccessTokenDuration.Seconds()),
+		RefreshToken: session.RefreshToken,
+		Scope:        "read write",
+		CreatedAt:    time.Now().Unix(),
+		Me:           username,
+	}, nil
+}
+
+// LoginWithWalletAfterLinking creates a session and access token for a wallet-linked user without re-verifying signature
+// Used after wallet linking during registration when signature was already verified
+func (as *AuthService) LoginWithWalletAfterLinking(ctx context.Context, username, deviceName, userAgent, ipAddress string) (*AuthResponse, error) {
+	// Get user and verify account status
 	user, err := as.repos.Account().GetUser(ctx, username)
 	if err != nil {
 		return nil, errors.Join(ErrUserRetrievalFailed, err)
@@ -520,6 +578,16 @@ func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVer
 // LinkWallet links a wallet to an existing user account
 func (as *AuthService) LinkWallet(ctx context.Context, username, address string, chainID int, walletType string) error {
 	return as.walletService.LinkWallet(ctx, username, address, chainID, walletType)
+}
+
+// MarkWalletChallengeSpent marks a wallet challenge as spent (second verification)
+func (as *AuthService) MarkWalletChallengeSpent(ctx context.Context, challengeID string) error {
+	return as.repos.Account().MarkWalletChallengeSpent(ctx, challengeID)
+}
+
+// GetWalletChallenge retrieves a wallet challenge by ID
+func (as *AuthService) GetWalletChallenge(ctx context.Context, challengeID string) (*storage.WalletChallenge, error) {
+	return as.repos.Account().GetWalletChallenge(ctx, challengeID)
 }
 
 // UnlinkWallet removes a wallet link from a user account

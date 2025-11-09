@@ -110,6 +110,17 @@ func OptionalAuth(config MiddlewareConfig) lift.Middleware {
 				ctx.Set("is_authenticated", true)
 			} else {
 				ctx.Set("is_authenticated", false)
+				// Log when auth header is present but validation fails
+				if config.Logger != nil {
+					authHeader := common.ExtractAuthHeader(ctx)
+					if authHeader != "" {
+						config.Logger.Warn("optional authentication failed - header present but validation failed",
+							zap.String("service", config.ServiceName),
+							zap.String("path", ctx.Request.Path),
+							zap.Bool("has_auth_header", true),
+						)
+					}
+				}
 			}
 
 			if config.Logger != nil && authResult.Context.Username != "" {

@@ -236,29 +236,33 @@ type Activity struct {
 // Note represents a basic text post
 type Note struct {
 	BaseObject
-	Content        string       `json:"content"`
-	AttributedTo   string       `json:"attributedTo"`
-	Attachment     []Attachment `json:"attachment,omitempty"`
-	Tag            []Tag        `json:"tag,omitempty"`
-	ConversationID string       `json:"conversationId,omitempty"` // For tracking conversation threads
-	Visibility     string       `json:"_:visibility,omitempty"`   // Lesser extension for preserving visibility
+	Content            string        `json:"content"`
+	AttributedTo       string        `json:"attributedTo"`
+	Attachment         []Attachment  `json:"attachment,omitempty"`
+	Tag                []Tag         `json:"tag,omitempty"`
+	ConversationID     string        `json:"conversationId,omitempty"` // For tracking conversation threads
+	Visibility         string        `json:"_:visibility,omitempty"`   // Lesser extension for preserving visibility
+	QuoteURL           string        `json:"quoteUrl,omitempty"`
+	Quoteable          bool          `json:"_:quoteable,omitempty"`
+	QuoteNotifications bool          `json:"_:quoteNotifications,omitempty"`
+	QuoteContext       *QuoteContext `json:"_:quoteContext,omitempty"`
 }
 
-// QuoteNote represents a note that quotes another note
+// QuoteNote is retained for backwards compatibility; it now simply aliases Note.
 type QuoteNote struct {
 	Note
-	QuoteURL           string        `json:"quoteUrl"`
-	Quoteable          bool          `json:"_:quoteable"`
-	QuoteNotifications bool          `json:"_:quoteNotifications"`
-	QuoteContext       *QuoteContext `json:"_:quoteContext,omitempty"`
 }
 
 // QuoteContext provides metadata about a quoted note
 type QuoteContext struct {
-	OriginalNoteID  string `json:"originalNoteId,omitempty"`
-	OriginalAuthor  string `json:"originalAuthor"`
-	QuoteCount      int    `json:"quoteCount"`
-	AllowWithdrawal bool   `json:"allowWithdrawal"`
+	OriginalNoteID         string `json:"originalNoteId,omitempty"`
+	OriginalAuthor         string `json:"originalAuthor"`
+	OriginalAuthorUsername string `json:"originalAuthorUsername,omitempty"`
+	QuoteCount             int    `json:"quoteCount"`
+	AllowWithdrawal        bool   `json:"allowWithdrawal"`
+	QuoteAllowed           bool   `json:"quoteAllowed"`
+	Withdrawn              bool   `json:"withdrawn"`
+	OriginalStatus         any    `json:"-"`
 }
 
 // Article represents long-form content

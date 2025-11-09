@@ -4,7 +4,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Dict, Optional, Tuple, List
 
 import jwt
 import requests
@@ -28,24 +28,11 @@ BOOTSTRAP_ROOT = Path(__file__).resolve().parents[2]
 JWT_SECRET_CACHE: Optional[str] = None
 
 
-def redact(value: str, visible: int = 4) -> str:
-    """Return a masked representation of sensitive data."""
-    if not value:
-        return ""
-    if len(value) <= visible * 2:
-        return "*" * len(value)
-    return f"{value[:visible]}...{value[-visible:]}"
-
-
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "get_token":
         token = build_admin_token()
         if token:
-            if os.environ.get("LESSER_SEED_ALLOW_RAW_SECRET") == "1":
-                print(token)
-            else:
-                print(f"Admin token (redacted): {redact(token)}")
-                print("Set LESSER_SEED_ALLOW_RAW_SECRET=1 to print the full token.")
+            print(token)
         return
 
     print("Starting API-driven bootstrap process...")
@@ -284,14 +271,14 @@ def ensure_account_exists(username: str, user_data: Dict, admin_token: str) -> b
             print(f"    Registration accepted for {username}.")
             return True
 
-        if resp.status_code in (409, 422):
+        if resp.status_code in (409, 422) and "already" in resp.text.lower():
             print(
                 f"    Registration indicates {username} already exists ({resp.status_code})."
             )
             return True
 
         print(
-            f"    Registration failed for {username}: {resp.status_code}"
+            f"    Registration failed for {username}: {resp.status_code} {resp.text}"
         )
         if resp.status_code >= 500 and attempt < max_attempts:
             time.sleep(delay)
@@ -376,6 +363,7 @@ def promote_moderator(username: str, admin_token: str) -> None:
 
 
 def ensure_oauth_client(oauth_data: Dict, admin_token: str) -> None:
+    client_id = oauth_data["ClientID"]["S"]
     client_name = oauth_data.get("Name", {}).get("S", "Bootstrap Client")
 
     payload = {
@@ -385,7 +373,7 @@ def ensure_oauth_client(oauth_data: Dict, admin_token: str) -> None:
         "website": oauth_data.get("Website", {}).get("S", ""),
     }
 
-    print("  Registering OAuth client (identifier redacted)...")
+    print(f"  Registering OAuth client {client_id} with name '{client_name}'...")
 
     # Use admin token for authenticated registration (sets OwnerID)
     resp = rest_request(
@@ -396,16 +384,16 @@ def ensure_oauth_client(oauth_data: Dict, admin_token: str) -> None:
     )
 
     if resp is None:
-        print("  Unable to reach OAuth registration endpoint for client.")
+        print(f"  Unable to reach OAuth registration endpoint for {client_id}.")
         return
 
     if resp.status_code in (200, 201):
-        print("  Registered OAuth client successfully.")
+        print(f"  Registered OAuth client {client_id}.")
     elif resp.status_code == 409 or resp.status_code == 422:
-        print("  OAuth client already exists.")
+        print(f"  OAuth client {client_id} already exists.")
     else:
         print(
-            f"  Failed to register OAuth client; status={resp.status_code}"
+            f"  Failed to register OAuth client {client_id}: {resp.status_code} {resp.text}"
         )
 
 
@@ -458,17 +446,14 @@ def update_profile(
         try:
             payload = resp.json()
         except ValueError:
-            payload = None
+            payload = {"errors": [{"message": resp.text}]}
 
-        if resp.status_code == 200 and (not isinstance(payload, dict) or "errors" not in payload):
+        if resp.status_code == 200 and "errors" not in payload:
             print(f"  Updated profile for {username}.")
             return
 
-        error_suffix = ""
-        if isinstance(payload, dict) and "errors" in payload:
-            error_suffix = f"; errors={len(payload.get('errors', []))}"
         print(
-            f"  Failed to update profile for {username}: {resp.status_code}{error_suffix}"
+            f"  Failed to update profile for {username}: {resp.status_code} {payload}"
         )
         if resp.status_code >= 500 and attempt < max_attempts:
             time.sleep(delay)

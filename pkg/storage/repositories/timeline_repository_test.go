@@ -94,6 +94,63 @@ func TestGetConversations(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+func TestRemoveFromTimelines(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	expectWithContext(mockDB)
+	mockQuery := new(mocks.MockQuery)
+	deleteQuery := new(mocks.MockQuery)
+	logger := zap.NewNop()
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
+
+	ctx := context.Background()
+	objectID := "post123"
+
+	// Set up test timeline entries to be deleted
+	testTimelines := []models.Timeline{
+		{
+			TimelineType: "HOME",
+			TimelineID:   "user1",
+			PostID:       objectID,
+		},
+		{
+			TimelineType: "HOME",
+			TimelineID:   "user2",
+			PostID:       objectID,
+		},
+	}
+
+	// Set up expectations for finding entries
+	expectWithContext(mockDB)
+
+	mockDB.On("Model", mock.AnythingOfType("*models.Timeline")).Return(mockQuery).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Timeline")).Return(deleteQuery).Times(len(testTimelines))
+	mockQuery.On("Index", "post-timeline-index").Return(mockQuery)
+	mockQuery.On("Where", "GSI1PK", "=", fmt.Sprintf("POST#%s", objectID)).Return(mockQuery)
+	mockQuery.On("OrderBy", "GSI1SK", "ASC").Return(mockQuery)
+	mockQuery.On("Limit", 1001).Return(mockQuery)
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.Timeline")).Run(func(args mock.Arguments) {
+		timelines := args.Get(0).(*[]*models.Timeline)
+		*timelines = []*models.Timeline{
+			&testTimelines[0],
+			&testTimelines[1],
+		}
+	}).Return(nil)
+
+	// Set up expectations for deletion
+	deleteQuery.On("Where", "PK", "=", mock.Anything).Return(deleteQuery).Maybe()
+	deleteQuery.On("Where", "SK", "=", mock.Anything).Return(deleteQuery).Maybe()
+	deleteQuery.On("Delete").Return(nil).Twice()
+
+	// Execute
+	err := repo.RemoveFromTimelines(ctx, objectID)
+
+	// Assert
+	assert.NoError(t, err)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+	deleteQuery.AssertExpectations(t)
+}
+
 func TestCreateTimelineEntry_ValidEntry(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	expectWithContext(mockDB)

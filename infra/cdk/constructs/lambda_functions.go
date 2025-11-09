@@ -5,6 +5,7 @@ import (
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslogs"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
@@ -28,6 +29,8 @@ type LambdaFunctionsProps struct {
 	MediaConvertRoleArn *string
 	ModelMetadataTable  *string
 	Config              map[string]interface{}
+	EncryptionRole      awsiam.IRole
+	BasicRole           awsiam.IRole
 }
 
 type LambdaFunctions struct {
@@ -67,16 +70,8 @@ type LambdaFunctions struct {
 func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *LambdaFunctions {
 	functions := &LambdaFunctions{}
 
-	// Create security constructs with comprehensive IAM policies (Phase 6.7)
-	security := CreateSecurityConstructs(stack, &SecurityProps{
-		Environment:     props.Environment,
-		Table:           props.Table,
-		RateLimitTable:  props.RateLimitTable,
-		MediaBucket:     props.MediaBucket,
-		FederationQueue: props.FederationQueue,
-		FederationDLQ:   props.FederationDLQ,
-		PushQueue:       props.PushQueue,
-	})
+	// Note: Policies are attached to roles in SharedStack, not here
+	// Roles are imported fully configured from SharedStack
 
 	// Helper to get config values
 	getConfigString := func(key string, defaultVal string) *string {
@@ -108,7 +103,7 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		"PUSH_NOTIFICATION_QUEUE_URL": props.PushQueue.QueueUrl(),
 		"DOMAIN":                      jsii.String(domainValue),
 		"ACTOR_PRIVATE_KEY_ARN":       props.PrivateKey.SecretArn(),             // Reference to actor key in SharedStack
-		"KMS_KEY_ID":                  jsii.String("alias/lesser-encryption"),   // SharedStack KMS key
+		"KMS_KEY_ID":                  jsii.String("alias/lesser-encryption"),   // KMS key for encrypting actor private keys
 		"CDN_DOMAIN":                  jsii.String("REPLACE_WITH_MEDIA_DOMAIN"), // Set by CDK context
 		"INSTANCE_TITLE":              jsii.String("Lesser Instance"),
 		"INSTANCE_SHORT_DESC":         jsii.String("A personal ActivityPub server"),
@@ -166,7 +161,7 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		logRetention = awslogs.RetentionDays_ONE_WEEK
 	}
 
-	// Common Lambda configuration with security role
+	// Common Lambda configuration (role assigned per function)
 	commonProps := awslambda.FunctionProps{
 		Runtime:      awslambda.Runtime_PROVIDED_AL2023(),
 		Architecture: awslambda.Architecture_ARM_64(),
@@ -174,52 +169,59 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		Timeout:      awscdk.Duration_Seconds(jsii.Number(props.Config["timeout"].(float64))),
 		Environment:  commonEnv,
 		Tracing:      awslambda.Tracing_ACTIVE,
-		Role:         security.LambdaRole, // Use comprehensive security role
 	}
 
 	// Create Lambda functions - Lift-based implementation
-	functions.APIFunction = createFunction(stack, "api", props.Environment, &commonProps, "../../bin/api.zip", logRetention)
-	functions.GraphQLFunction = createFunction(stack, "graphql", props.Environment, &commonProps, "../../bin/graphql.zip", logRetention)
-	functions.GraphQLWSFunction = createFunction(stack, "graphql-ws", props.Environment, &commonProps, "../../bin/graphql-ws.zip", logRetention)
+	// Functions needing encryption (use EncryptionRole)
+	functions.APIFunction = createFunction(stack, "api", props.Environment, &commonProps, "../../bin/api.zip", logRetention, props.EncryptionRole)
+	functions.InboxFunction = createFunction(stack, "inbox", props.Environment, &commonProps, "../../bin/inbox.zip", logRetention, props.EncryptionRole)
+	functions.OutboxFunction = createFunction(stack, "outbox", props.Environment, &commonProps, "../../bin/outbox.zip", logRetention, props.EncryptionRole)
+
+	// GraphQL function needs encryption role for JWT secret access
+	functions.GraphQLFunction = createFunction(stack, "graphql", props.Environment, &commonProps, "../../bin/graphql.zip", logRetention, props.EncryptionRole)
+	
+	// GraphQL WebSocket function needs encryption role for JWT secret access (OAuth token validation)
+	functions.GraphQLWSFunction = createFunction(stack, "graphql-ws", props.Environment, &commonProps, "../../bin/graphql-ws.zip", logRetention, props.EncryptionRole)
+	
+	// All other functions use BasicRole
 
 	// Create federation functions (Pulumi lines 668-691)
-	functions.InboxFunction = createFunction(stack, "inbox", props.Environment, &commonProps, "../../bin/inbox.zip", logRetention)
-	functions.OutboxFunction = createFunction(stack, "outbox", props.Environment, &commonProps, "../../bin/outbox.zip", logRetention)
-	functions.WebfingerFunction = createFunction(stack, "webfinger", props.Environment, &commonProps, "../../bin/webfinger.zip", logRetention)
+	functions.WebfingerFunction = createFunction(stack, "webfinger", props.Environment, &commonProps, "../../bin/webfinger.zip", logRetention, props.BasicRole)
 
 	// Create stream processors with higher memory and longer timeout (lines 700-792)
 	streamProps := commonProps
 	streamProps.MemorySize = jsii.Number(1024)
 	streamProps.Timeout = awscdk.Duration_Minutes(jsii.Number(5))
 
-	functions.ActivityProcessor = createFunction(stack, "activity-processor", props.Environment, &streamProps, "../../bin/activity-processor.zip", logRetention)
-	functions.NotificationProcessor = createFunction(stack, "push-delivery", props.Environment, &commonProps, "../../bin/push-delivery.zip", logRetention)
-	functions.ModerationProcessor = createFunction(stack, "moderation-processor", props.Environment, &commonProps, "../../bin/moderation-processor.zip", logRetention)
+	functions.ActivityProcessor = createFunction(stack, "activity-processor", props.Environment, &streamProps, "../../bin/activity-processor.zip", logRetention, props.BasicRole)
+	functions.NotificationProcessor = createFunction(stack, "push-delivery", props.Environment, &commonProps, "../../bin/push-delivery.zip", logRetention, props.BasicRole)
+	functions.ModerationProcessor = createFunction(stack, "moderation-processor", props.Environment, &commonProps, "../../bin/moderation-processor.zip", logRetention, props.BasicRole)
 
 	// Severance Processor - handles federation severance detection (Phase 2.4)
 	severanceProps := streamProps
 	severanceProps.Timeout = awscdk.Duration_Seconds(jsii.Number(30))
-	functions.SeveranceProcessor = createFunction(stack, "severance-processor", props.Environment, &severanceProps, "../../bin/severance-processor.zip", logRetention)
+	functions.SeveranceProcessor = createFunction(stack, "severance-processor", props.Environment, &severanceProps, "../../bin/severance-processor.zip", logRetention, props.BasicRole)
 
 	// ML Training Processor - handles ML model training job lifecycle (Phase 2.3)
 	mlTrainingProps := streamProps
 	mlTrainingProps.Timeout = awscdk.Duration_Minutes(jsii.Number(15)) // Longer timeout for Bedrock polling
-	functions.MLTrainingProcessor = createFunction(stack, "ml-training-processor", props.Environment, &mlTrainingProps, "../../bin/ml-training-processor.zip", logRetention)
+	functions.MLTrainingProcessor = createFunction(stack, "ml-training-processor", props.Environment, &mlTrainingProps, "../../bin/ml-training-processor.zip", logRetention, props.BasicRole)
 
 	// Create WebSocket functions (Pulumi lines 945-954)
-	functions.StreamingFunction = createFunction(stack, "streaming", props.Environment, &commonProps, "../../bin/streaming.zip", logRetention)
-	functions.StreamRouterFunction = createFunction(stack, "stream-router", props.Environment, &commonProps, "../../bin/stream-router.zip", logRetention)
+	// Both streaming lambdas read the JWT secret from Secrets Manager, so they need the encryption role for KMS decrypt.
+	functions.StreamingFunction = createFunction(stack, "streaming", props.Environment, &commonProps, "../../bin/streaming.zip", logRetention, props.EncryptionRole)
+	functions.StreamRouterFunction = createFunction(stack, "stream-router", props.Environment, &commonProps, "../../bin/stream-router.zip", logRetention, props.EncryptionRole)
 
 	// Create specialized processors matching Pulumi
-	functions.AIProcessorFunction = createFunction(stack, "ai-processor", props.Environment, &streamProps, "../../bin/ai-processor.zip", logRetention)
-	functions.SearchIndexerFunction = createFunction(stack, "status-indexer", props.Environment, &commonProps, "../../bin/status-indexer.zip", logRetention)
-	functions.MediaProcessorFunction = createFunction(stack, "media-processor", props.Environment, &commonProps, "../../bin/media-processor.zip", logRetention)
-	functions.EmailProcessorFunction = createFunction(stack, "federation-delivery", props.Environment, &streamProps, "../../bin/federation-delivery.zip", logRetention)
-	functions.TimelineProcessorFunction = createFunction(stack, "trend-aggregator", props.Environment, &commonProps, "../../bin/trend-aggregator.zip", logRetention)
-	functions.CleanupFunction = createFunction(stack, "cost-aggregator", props.Environment, &commonProps, "../../bin/cost-aggregator.zip", logRetention)
-	functions.ConfigureInstanceFunction = createFunction(stack, "note-processor", props.Environment, &commonProps, "../../bin/note-processor.zip", logRetention)
-	functions.HealthFunction = createFunction(stack, "federation-tracker", props.Environment, &commonProps, "../../bin/federation-tracker.zip", logRetention)
-	functions.RecoveryFunction = createFunction(stack, "import-processor", props.Environment, &streamProps, "../../bin/import-processor.zip", logRetention)
+	functions.AIProcessorFunction = createFunction(stack, "ai-processor", props.Environment, &streamProps, "../../bin/ai-processor.zip", logRetention, props.BasicRole)
+	functions.SearchIndexerFunction = createFunction(stack, "status-indexer", props.Environment, &commonProps, "../../bin/status-indexer.zip", logRetention, props.BasicRole)
+	functions.MediaProcessorFunction = createFunction(stack, "media-processor", props.Environment, &commonProps, "../../bin/media-processor.zip", logRetention, props.BasicRole)
+	functions.EmailProcessorFunction = createFunction(stack, "federation-delivery", props.Environment, &streamProps, "../../bin/federation-delivery.zip", logRetention, props.BasicRole)
+	functions.TimelineProcessorFunction = createFunction(stack, "trend-aggregator", props.Environment, &commonProps, "../../bin/trend-aggregator.zip", logRetention, props.BasicRole)
+	functions.CleanupFunction = createFunction(stack, "cost-aggregator", props.Environment, &commonProps, "../../bin/cost-aggregator.zip", logRetention, props.BasicRole)
+	functions.ConfigureInstanceFunction = createFunction(stack, "note-processor", props.Environment, &commonProps, "../../bin/note-processor.zip", logRetention, props.BasicRole)
+	functions.HealthFunction = createFunction(stack, "federation-tracker", props.Environment, &commonProps, "../../bin/federation-tracker.zip", logRetention, props.BasicRole)
+	functions.RecoveryFunction = createFunction(stack, "import-processor", props.Environment, &streamProps, "../../bin/import-processor.zip", logRetention, props.BasicRole)
 
 	// Note: Secrets Manager permissions are granted via the security role (security.go)
 	// We don't use GrantRead() here to avoid circular dependencies between SharedStack and LesserApiStack
@@ -231,7 +233,7 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	return functions
 }
 
-func createFunction(stack awscdk.Stack, name string, environment string, props *awslambda.FunctionProps, codePath string, logRetention awslogs.RetentionDays) awslambda.Function {
+func createFunction(stack awscdk.Stack, name string, environment string, props *awslambda.FunctionProps, codePath string, logRetention awslogs.RetentionDays, role awsiam.IRole) awslambda.Function {
 	// Create log group with explicit retention (replaces deprecated logRetention)
 	// Include environment in log group name for isolation between environments
 	logGroup := awslogs.NewLogGroup(stack, jsii.String(name+"LogGroup"), &awslogs.LogGroupProps{
@@ -245,6 +247,7 @@ func createFunction(stack awscdk.Stack, name string, environment string, props *
 	funcProps.Code = awslambda.Code_FromAsset(jsii.String(codePath), nil)
 	funcProps.Handler = jsii.String("bootstrap")
 	funcProps.LogGroup = logGroup // Use new logGroup property instead of deprecated logRetention
+	funcProps.Role = role
 
 	return awslambda.NewFunction(stack, jsii.String(name+"Function"), &funcProps)
 }

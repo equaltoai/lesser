@@ -24,6 +24,8 @@ type WalletChallenge struct {
 	Message   string    `json:"message"`
 	IssuedAt  time.Time `json:"issued_at"`
 	ExpiresAt time.Time `json:"expires_at"`
+	Used      bool      `json:"used"`  // Set after first verification (wallet/verify)
+	Spent     bool      `json:"spent"` // Set after second verification (wallet/link)
 }
 
 // TableName returns the DynamoDB table name
@@ -130,7 +132,28 @@ type WalletIndex struct {
 	SK string `dynamorm:"sk" json:"-"`
 
 	// Business fields
-	Username string `json:"username"`
+	Username   string `json:"username"`
+	WalletType string `json:"wallet_type"` // Need to store these for BeforeCreate
+	Address    string `json:"address"`
+}
+
+// GetPK returns the partition key
+func (w *WalletIndex) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key
+func (w *WalletIndex) GetSK() string {
+	return w.SK
+}
+
+// BeforeCreate sets up the keys before creation
+func (w *WalletIndex) BeforeCreate() error {
+	if w.WalletType == "" {
+		w.WalletType = "ethereum" // Default
+	}
+	w.UpdateKeys(w.WalletType, w.Address, w.Username)
+	return nil
 }
 
 // UpdateKeys updates the primary and sort keys based on the model data
@@ -141,6 +164,8 @@ func (w *WalletIndex) UpdateKeys(walletType, address, username string) {
 	w.PK = fmt.Sprintf("WALLET#%s#%s", walletType, address)
 	w.SK = fmt.Sprintf(KeyPatternUser, username)
 	w.Username = username
+	w.WalletType = walletType
+	w.Address = address
 }
 
 // TableName returns the DynamoDB table backing WalletIndex.

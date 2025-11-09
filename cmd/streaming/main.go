@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -247,18 +248,18 @@ func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIG
 	// Extract token from query parameters or headers
 	token := ""
 	if event.QueryStringParameters != nil {
-		token = event.QueryStringParameters["access_token"] // Mastodon uses access_token
+		token = decodeQueryToken(event.QueryStringParameters["access_token"]) // Mastodon uses access_token
 	}
 
 	if event.Headers != nil {
 		authHeader := event.Headers["Authorization"]
 		if strings.HasPrefix(authHeader, "Bearer ") {
-			token = strings.TrimPrefix(authHeader, "Bearer ")
+			token = decodeQueryToken(strings.TrimPrefix(authHeader, "Bearer "))
 		} else {
 			// Check lowercase
 			authHeader = event.Headers["authorization"]
 			if strings.HasPrefix(authHeader, "Bearer ") {
-				token = strings.TrimPrefix(authHeader, "Bearer ")
+				token = decodeQueryToken(strings.TrimPrefix(authHeader, "Bearer "))
 			}
 		}
 	}
@@ -292,7 +293,7 @@ func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIG
 	}
 
 	// Create connection record using DynamORM repository
-	if err := sh.connectionRepo.WriteConnection(ctx, event.RequestContext.ConnectionID, userID, username, []string{}); err != nil {
+	if _, err := sh.connectionRepo.WriteConnection(ctx, event.RequestContext.ConnectionID, userID, username, []string{}); err != nil {
 		sh.logger.Error("failed to write connection", zap.Error(err))
 		return errors.Join(streaming.ErrConnectionWriteFailed, err)
 	}
@@ -333,6 +334,19 @@ func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIG
 	}()
 
 	return nil
+}
+
+func decodeQueryToken(raw string) string {
+	token := strings.TrimSpace(raw)
+	if token == "" {
+		return ""
+	}
+
+	if decoded, err := url.QueryUnescape(token); err == nil {
+		token = decoded
+	}
+
+	return strings.ReplaceAll(token, " ", "+")
 }
 
 // handleDisconnect handles WebSocket disconnection events

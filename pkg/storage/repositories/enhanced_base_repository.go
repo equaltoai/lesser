@@ -3,6 +3,8 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"strings"
 	"time"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -208,13 +210,36 @@ func (r *EnhancedBaseRepository[T]) ValidateAndUpdate(ctx context.Context, model
 func (r *EnhancedBaseRepository[T]) ValidateAndDelete(ctx context.Context, pk, sk string) error {
 	// 1. Check permissions (get entity first if needed)
 	if r.permissions != nil {
-		var model T
-		if err := r.Get(ctx, pk, sk, model); err != nil {
-			// Note: Need to implement IsItemNotFound check later
-			return err
+		// Create a pointer to T for DynamORM - Get needs a pointer to populate
+		// Use reflection to get the type of T
+		var zeroValue T
+		var modelPtr T
+
+		// Get the type of T
+		tType := reflect.TypeOf(zeroValue)
+
+		// Create a pointer instance
+		if tType.Kind() == reflect.Ptr {
+			// T is already a pointer type (e.g., *models.User)
+			// Create a new instance of the element type
+			elemType := tType.Elem()
+			ptrValue := reflect.New(elemType)
+			modelPtr = ptrValue.Interface().(T)
+		} else {
+			// T is a value type (e.g., models.User)
+			// Create a pointer to it
+			ptrValue := reflect.New(tType)
+			modelPtr = ptrValue.Interface().(T)
 		}
 
-		if err := r.checkDeletePermissions(ctx, model); err != nil {
+		if err := r.Get(ctx, pk, sk, modelPtr); err != nil {
+			// If item doesn't exist, skip permission check (item may already be deleted)
+			errStr := err.Error()
+			if !strings.Contains(errStr, "not found") && !strings.Contains(errStr, "NotFound") {
+				return err
+			}
+		} else if err := r.checkDeletePermissions(ctx, modelPtr); err != nil {
+			// Use the model directly for permission check (it's already populated)
 			return err
 		}
 	}

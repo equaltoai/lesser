@@ -128,42 +128,31 @@ func ObjectToStatusBase(obj map[string]interface{}, actor *activitypub.Actor, ba
 // Helper functions for transformations
 
 func getAvatarURL(icon interface{}, baseURL string) string {
-	if url := extractImageURL(icon); url != "" {
-		return url
+	if icon == nil {
+		return baseURL + "/avatars/original/missing.png"
 	}
+
+	if iconMap, ok := icon.(map[string]interface{}); ok {
+		if url, ok := iconMap["url"].(string); ok {
+			return url
+		}
+	}
+
 	return baseURL + "/avatars/original/missing.png"
 }
 
 func getHeaderURL(image interface{}, baseURL string) string {
-	if url := extractImageURL(image); url != "" {
-		return url
+	if image == nil {
+		return baseURL + "/headers/original/missing.png"
 	}
-	return baseURL + "/headers/original/missing.png"
-}
 
-func extractImageURL(image interface{}) string {
-	switch v := image.(type) {
-	case nil:
-		return ""
-	case string:
-		return strings.TrimSpace(v)
-	case map[string]interface{}:
-		if url, ok := v["url"].(string); ok && strings.TrimSpace(url) != "" {
-			return strings.TrimSpace(url)
-		}
-		if href, ok := v["href"].(string); ok && strings.TrimSpace(href) != "" {
-			return strings.TrimSpace(href)
-		}
-	case *activitypub.Image:
-		if v != nil && strings.TrimSpace(v.URL) != "" {
-			return strings.TrimSpace(v.URL)
-		}
-	case activitypub.Image:
-		if strings.TrimSpace(v.URL) != "" {
-			return strings.TrimSpace(v.URL)
+	if imageMap, ok := image.(map[string]interface{}); ok {
+		if url, ok := imageMap["url"].(string); ok {
+			return url
 		}
 	}
-	return ""
+
+	return baseURL + "/headers/original/missing.png"
 }
 
 func isBot(actorType string) bool {

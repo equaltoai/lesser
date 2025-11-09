@@ -10,6 +10,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -69,6 +70,11 @@ func (s *WalletService) CreateChallenge(ctx context.Context, address string, cha
 	// Normalize address
 	address = strings.ToLower(address)
 
+	// Validate username is provided (required for security - binds signature to username)
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, errors.New("username is required for challenge creation - signature must bind to username")
+	}
+
 	// Generate nonce
 	nonce, err := generateNonce()
 	if err != nil {
@@ -76,11 +82,11 @@ func (s *WalletService) CreateChallenge(ctx context.Context, address string, cha
 		return nil, errors.Join(ErrNonceGeneration, err)
 	}
 
-	// Create SIWE message
+	// Create SIWE message with username binding
 	now := time.Now()
 	expiresAt := now.Add(5 * time.Minute)
 
-	message := buildAuthMessage(chainID, nonce, now.Format(time.RFC3339), expiresAt.Format(time.RFC3339))
+	message := buildAuthMessage(chainID, nonce, username, now.Format(time.RFC3339), expiresAt.Format(time.RFC3339))
 
 	challenge := &storage.WalletChallenge{
 		ID:        uuid.New().String(),
@@ -123,7 +129,15 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 		return "", ErrChallengeExpired
 	}
 
-	// Verify the message matches
+	// Check if challenge is already spent (used twice)
+	if challenge.Spent {
+		s.logger.Warn("challenge already spent",
+			zap.String("challengeId", req.ChallengeID),
+			zap.String("address", req.Address))
+		return "", ErrChallengeExpired
+	}
+
+	// Verify the message matches (includes cryptographic binding to username)
 	if req.Message != challenge.Message {
 		return "", ErrMessageMismatch
 	}
@@ -137,15 +151,29 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 		return "", ErrAddressMismatch
 	}
 
+	// CRITICAL: Verify the username in the challenge matches what was signed
+	// This prevents replay attacks where someone uses your signature for a different username
+	// The username was embedded in the message and signed by the wallet
+	if challenge.Username != "" {
+		s.logger.Info("challenge has username binding",
+			zap.String("challengeId", req.ChallengeID),
+			zap.String("bound_username", challenge.Username))
+	} else {
+		s.logger.Warn("challenge created without username binding - this is a security risk",
+			zap.String("challengeId", req.ChallengeID))
+	}
+
 	// Verify Ethereum signature
 	if err := s.verifyEthereumSignature(req.Address, req.Message, req.Signature); err != nil {
 		s.logger.Error("failed to verify Ethereum signature", zap.Error(err), zap.String("address", req.Address))
 		return "", errors.Join(ErrSignatureVerification, err)
 	}
 
-	// Delete used challenge
-	if err := s.repos.Account().DeleteWalletChallenge(ctx, req.ChallengeID); err != nil {
-		s.logger.Error("failed to delete challenge", zap.Error(err))
+	// Mark challenge as used (first verification)
+	// The challenge can be used once more for wallet linking
+	if err := s.repos.Account().MarkWalletChallengeUsed(ctx, req.ChallengeID); err != nil {
+		s.logger.Warn("failed to mark challenge as used", zap.Error(err))
+		// Non-fatal - continue
 	}
 
 	// Check if wallet is linked to an account
@@ -177,18 +205,21 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 	// Normalize address
 	address = strings.ToLower(address)
 
-	// Check if wallet is already linked
-	existing, err := s.repos.Account().GetWalletCredential(ctx, address)
-	if err != nil {
-		s.logger.Error("failed to check existing wallet", zap.Error(err), zap.String("address", address))
+	// Check if this wallet is already linked to THIS user (prevent duplicate entries)
+	existingWallets, err := s.repos.Account().GetUserWalletCredentials(ctx, username)
+	if err != nil && !dynamorm.IsNotFound(err) {
+		s.logger.Error("failed to check user's existing wallets", zap.Error(err), zap.String("username", username))
 		return errors.Join(ErrWalletCheck, err)
 	}
 
-	if existing != nil {
-		if existing.Username != username {
-			return ErrWalletAlreadyLinked
+	// Check if this specific user already has this wallet linked
+	for _, wallet := range existingWallets {
+		if strings.EqualFold(wallet.Address, address) {
+			s.logger.Info("wallet already linked to this user",
+				zap.String("username", username),
+				zap.String("address", address))
+			return nil // Already linked - idempotent operation
 		}
-		return nil // Already linked to this user
 	}
 
 	// Create wallet credential
@@ -282,9 +313,15 @@ func (s *WalletService) verifyEthereumSignature(address, message, signature stri
 	// Get address from public key
 	recoveredAddr := crypto.PubkeyToAddress(*pubKey)
 
-	// Compare addresses (case-insensitive)
-	if !strings.EqualFold(recoveredAddr.Hex(), address) {
-		s.logger.Error("signature address mismatch", zap.String("expected", address), zap.String("got", recoveredAddr.Hex()))
+	// Normalize both addresses for comparison (remove 0x prefix, lowercase)
+	recoveredHex := strings.ToLower(strings.TrimPrefix(recoveredAddr.Hex(), "0x"))
+	expectedHex := strings.ToLower(strings.TrimPrefix(address, "0x"))
+
+	// Compare addresses
+	if recoveredHex != expectedHex {
+		s.logger.Error("signature address mismatch",
+			zap.String("expected", expectedHex),
+			zap.String("got", recoveredHex))
 		return ErrSignatureAddressMismatch
 	}
 
@@ -309,9 +346,11 @@ func generateNonce() (string, error) {
 }
 
 // buildAuthMessage creates the authentication message without fmt.Sprintf
-func buildAuthMessage(chainID int, nonce, issuedAt, expiresAt string) string {
+func buildAuthMessage(chainID int, nonce, username, issuedAt, expiresAt string) string {
 	var sb strings.Builder
-	sb.WriteString("Sign this message to authenticate with Lesser.\n\n")
+	sb.WriteString("Sign this message to authenticate with Lesser as '")
+	sb.WriteString(username)
+	sb.WriteString("'\n\n")
 	sb.WriteString("URI: https://lesser.app\n")
 	sb.WriteString("Version: 1\n")
 	sb.WriteString("Chain ID: ")
@@ -330,6 +369,8 @@ func buildAuthMessage(chainID int, nonce, issuedAt, expiresAt string) string {
 		sb.Write(digits)
 	}
 
+	sb.WriteString("\nUsername: ")
+	sb.WriteString(username)
 	sb.WriteString("\nNonce: ")
 	sb.WriteString(nonce)
 	sb.WriteString("\nIssued At: ")

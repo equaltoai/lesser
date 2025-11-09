@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import requests
+import json
+import time
 import sys
 
 BASE_URL = "https://5r2w65d6qhymglxbtwlqauvqda0mtwem.lambda-url.us-east-1.on.aws/api/v1"

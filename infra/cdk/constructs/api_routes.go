@@ -130,6 +130,7 @@ func addHttpRoutes(api awsapigatewayv2.HttpApi, functions *LambdaFunctions) {
 	// GraphQL routes
 	addRoute(api, "GET /api/graphql", functions.GraphQLFunction)
 	addRoute(api, "POST /api/graphql", functions.GraphQLFunction)
+	addRoute(api, "OPTIONS /api/graphql", functions.GraphQLFunction)
 
     // Account registration endpoint (Mastodon-compatible)
     addRoute(api, "POST /api/v1/accounts", functions.APIFunction)
@@ -214,6 +215,9 @@ func addRoute(api awsapigatewayv2.HttpApi, path string, handler awslambda.Functi
 	case strings.HasPrefix(path, "PATCH "):
 		method = awsapigatewayv2.HttpMethod_PATCH
 		routePath = path[6:]
+	case strings.HasPrefix(path, "OPTIONS "):
+		method = awsapigatewayv2.HttpMethod_OPTIONS
+		routePath = path[8:]
 	case strings.HasPrefix(path, "ANY "):
 		method = awsapigatewayv2.HttpMethod_ANY
 		routePath = path[4:]

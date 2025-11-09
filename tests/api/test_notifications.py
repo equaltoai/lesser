@@ -16,6 +16,8 @@ It also tests notification generation for:
 """
 
 import requests
+import json
+import sys
 import time
 import argparse
 from datetime import datetime
@@ -71,6 +73,7 @@ def test_notifications(base_url, token1, token2):
     
     if follow_notif:
         print(f"✅ Follow notification created: {follow_notif['account']['username']} followed you")
+        notif_id = follow_notif['id']
     else:
         print("❌ No follow notification found")
     
@@ -223,9 +226,9 @@ def test_notifications(base_url, token1, token2):
     # Cleanup
     print("\n12. Cleanup...")
     # Unfollow
-    requests.post(f"{base_url}/api/v1/accounts/{user1['id']}/unfollow", headers=headers2)
+    r = requests.post(f"{base_url}/api/v1/accounts/{user1['id']}/unfollow", headers=headers2)
     # Delete status
-    requests.delete(f"{base_url}/api/v1/statuses/{status['id']}", headers=headers1)
+    r = requests.delete(f"{base_url}/api/v1/statuses/{status['id']}", headers=headers1)
     print("✅ Cleanup complete")
 
 def main():

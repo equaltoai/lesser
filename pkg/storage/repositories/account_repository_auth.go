@@ -284,6 +284,14 @@ func (r *AccountRepository) CreateSession(ctx context.Context, username, ipAddre
 		IsRevoked:   false,
 	}
 
+	// BeforeCreate will set keys
+	if err := session.BeforeCreate(); err != nil {
+		r.logger.Error("failed to prepare session for creation",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, ErrorHandler.HandleCreateError(err, EntitySession, session.SessionID)
+	}
+
 	err := r.db.WithContext(ctx).Model(session).Create()
 	if err != nil {
 		r.logger.Error("failed to create session",
@@ -974,6 +982,14 @@ func (r *AccountRepository) CreateSessionFromStruct(ctx context.Context, session
 
 	// Set scopes if needed (empty for now since not in storage.Session)
 	modelSession.Scopes = []string{}
+
+	// BeforeCreate will set keys
+	if err := modelSession.BeforeCreate(); err != nil {
+		r.logger.Error("failed to prepare session for creation",
+			zap.String("sessionID", session.SessionID),
+			zap.Error(err))
+		return ErrorHandler.HandleCreateError(err, EntitySession, session.SessionID)
+	}
 
 	err := r.db.WithContext(ctx).Model(modelSession).Create()
 	if err != nil {

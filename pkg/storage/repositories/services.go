@@ -196,7 +196,8 @@ func (v *DefaultValidationService) isFieldEmpty(field reflect.Value) bool {
 // isCommonRequiredField checks if a field name indicates it should be required
 func (v *DefaultValidationService) isCommonRequiredField(fieldName string) bool {
 	commonRequired := []string{
-		"ID", "Id", "Username", "Email", "Name", "Title", "Type", "Status",
+		"ID", "Id", "Username", "Name", "Title", "Type", "Status",
+		// Note: Email is NOT in this list - email is optional for wallet-based auth
 	}
 
 	for _, req := range commonRequired {
