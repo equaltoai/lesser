@@ -43,7 +43,7 @@ func ValidateRedirectURL(redirectURL string, currentHost string) (string, error)
 		return u.String(), nil
 	}
 
-	if scheme != "" && scheme != "http" && scheme != "https" {
+	if scheme != "" && scheme != SchemeHTTP && scheme != SchemeHTTPS {
 		return "", fmt.Errorf("redirect scheme %q is not allowed", scheme)
 	}
 
