@@ -210,7 +210,8 @@ func (r *AccountRepository) createActorWithRollback(ctx context.Context, actor i
 	}
 	return nil
 }
-// This ensures consistency between authentication and federation data
+
+// CreateAccountLegacy ensures consistency between authentication and federation data.
 func (r *AccountRepository) CreateAccountLegacy(ctx context.Context, username, email, passwordHash string, approved bool, actor *activitypub.Actor, _ string) error {
 	// Convert to new interface
 	account := &storage.Account{
@@ -292,7 +293,7 @@ func (r *AccountRepository) GetUser(ctx context.Context, username string) (*stor
 
 // GetUserByEmail is OBSOLETE - email is forbidden
 // This function exists for backwards compatibility but always returns an error
-func (r *AccountRepository) GetUserByEmail(ctx context.Context, email string) (*storage.User, error) {
+func (r *AccountRepository) GetUserByEmail(_ context.Context, email string) (*storage.User, error) {
 	return nil, fmt.Errorf("email-based authentication is not supported - use wallet or passkey authentication")
 }
 
@@ -868,12 +869,12 @@ func (r *AccountRepository) applyUserUpdates(user *models.User, updates map[stri
 // getEncryptor returns an encryptor for actor private keys using KMS
 func (r *AccountRepository) getEncryptor() (marshalers.Encryptor, error) {
 	cfg := config.Get()
-	
+
 	kmsKeyID := cfg.KMSKeyID
 	if kmsKeyID == "" {
 		return nil, errors.New("KMS_KEY_ID not configured")
 	}
-	
+
 	return marshalers.NewKMSEncryptor(kmsKeyID)
 }
 
@@ -1230,7 +1231,7 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 			r.logger.Warn("failed to hydrate user version for update account, defaulting to 1",
 				zap.String("username", username),
 				zap.Error(err))
-			userModel.Version = 1 // Default to 1 if hydration fails
+			userModel.Version = 1     // Default to 1 if hydration fails
 			versionExistsInDB = false // Version doesn't exist in DB
 		} else if versionProjection.Value > 0 {
 			userModel.Version = versionProjection.Value

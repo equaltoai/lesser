@@ -328,7 +328,7 @@ func (r *TrustRepository) GetTrustScore(ctx context.Context, actorID, category s
 	// Try to get cached score first
 	cacheModel := &models.TrustScore{}
 	pk := fmt.Sprintf("SCORE#%s#%s", actorID, category)
-	sk := "CURRENT"
+	sk := StatusCurrent
 
 	err := r.scoreRepo.Get(ctx, pk, sk, cacheModel)
 	if err == nil && !cacheModel.CacheTTL.Before(time.Now()) {

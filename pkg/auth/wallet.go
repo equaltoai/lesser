@@ -213,14 +213,12 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 	}
 
 	// Check if this specific user already has this wallet linked
-	if existingWallets != nil {
-		for _, wallet := range existingWallets {
-			if strings.EqualFold(wallet.Address, address) {
-				s.logger.Info("wallet already linked to this user",
-					zap.String("username", username),
-					zap.String("address", address))
-				return nil // Already linked - idempotent operation
-			}
+	for _, wallet := range existingWallets {
+		if strings.EqualFold(wallet.Address, address) {
+			s.logger.Info("wallet already linked to this user",
+				zap.String("username", username),
+				zap.String("address", address))
+			return nil // Already linked - idempotent operation
 		}
 	}
 
@@ -321,8 +319,8 @@ func (s *WalletService) verifyEthereumSignature(address, message, signature stri
 
 	// Compare addresses
 	if recoveredHex != expectedHex {
-		s.logger.Error("signature address mismatch", 
-			zap.String("expected", expectedHex), 
+		s.logger.Error("signature address mismatch",
+			zap.String("expected", expectedHex),
 			zap.String("got", recoveredHex))
 		return ErrSignatureAddressMismatch
 	}

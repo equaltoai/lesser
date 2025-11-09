@@ -214,10 +214,10 @@ func (r *EnhancedBaseRepository[T]) ValidateAndDelete(ctx context.Context, pk, s
 		// Use reflection to get the type of T
 		var zeroValue T
 		var modelPtr T
-		
+
 		// Get the type of T
 		tType := reflect.TypeOf(zeroValue)
-		
+
 		// Create a pointer instance
 		if tType.Kind() == reflect.Ptr {
 			// T is already a pointer type (e.g., *models.User)
@@ -231,20 +231,16 @@ func (r *EnhancedBaseRepository[T]) ValidateAndDelete(ctx context.Context, pk, s
 			ptrValue := reflect.New(tType)
 			modelPtr = ptrValue.Interface().(T)
 		}
-		
+
 		if err := r.Get(ctx, pk, sk, modelPtr); err != nil {
 			// If item doesn't exist, skip permission check (item may already be deleted)
 			errStr := err.Error()
-			if strings.Contains(errStr, "not found") || strings.Contains(errStr, "NotFound") {
-				// Continue with delete - it's idempotent and may already be deleted
-			} else {
-			return err
-		}
-		} else {
-			// Use the model directly for permission check (it's already populated)
-			if err := r.checkDeletePermissions(ctx, modelPtr); err != nil {
-			return err
+			if !strings.Contains(errStr, "not found") && !strings.Contains(errStr, "NotFound") {
+				return err
 			}
+		} else if err := r.checkDeletePermissions(ctx, modelPtr); err != nil {
+			// Use the model directly for permission check (it's already populated)
+			return err
 		}
 	}
 
