@@ -396,16 +396,6 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 	}
 
 	return &model.CreateNotePayload{
-		Object: &model.Object{
-			ID:           result.Note.StatusID,
-			Content:      result.Note.Content,
-			CreatedAt:    model.Time(result.Note.CreatedAt),
-			UpdatedAt:    model.Time(result.Note.UpdatedAt),
-			Visibility:   model.Visibility(result.Note.Visibility),
-			Sensitive:    result.Note.Sensitive,
-			RepliesCount: 0,
-			LikesCount:   0,
-			SharesCount:  0,
-		},
+		Object: r.convertStatusToObject(ctx, result.Note),
 	}, nil
 }

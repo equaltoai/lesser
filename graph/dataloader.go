@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -181,11 +182,46 @@ func newQuoteTargetLoader(repos core.RepositoryStorage, logger *zap.Logger) *dat
 // Middleware to attach loaders to context
 type contextKey string
 
-const loadersKey contextKey = "dataloaders"
+const (
+	loadersKey          contextKey = "dataloaders"
+	quoteLoaderStatsKey contextKey = "quoteLoaderStats"
+)
+
+type quoteLoaderStats struct {
+	hitCount  int64
+	missCount int64
+}
+
+func recordQuoteLoaderHit(ctx context.Context) {
+	if stats := getQuoteLoaderStats(ctx); stats != nil {
+		atomic.AddInt64(&stats.hitCount, 1)
+	}
+}
+
+func recordQuoteLoaderMiss(ctx context.Context) {
+	if stats := getQuoteLoaderStats(ctx); stats != nil {
+		atomic.AddInt64(&stats.missCount, 1)
+	}
+}
+
+func getQuoteLoaderStats(ctx context.Context) *quoteLoaderStats {
+	stats, _ := ctx.Value(quoteLoaderStatsKey).(*quoteLoaderStats)
+	return stats
+}
+
+// QuoteLoaderMetrics exposes aggregated loader cache metrics for logging/monitoring.
+func QuoteLoaderMetrics(ctx context.Context) (hits, misses int64) {
+	if stats := getQuoteLoaderStats(ctx); stats != nil {
+		hits = atomic.LoadInt64(&stats.hitCount)
+		misses = atomic.LoadInt64(&stats.missCount)
+	}
+	return
+}
 
 // WithLoaders attaches loaders to the context
 func WithLoaders(ctx context.Context, loaders *Loaders) context.Context {
-	return context.WithValue(ctx, loadersKey, loaders)
+	ctx = context.WithValue(ctx, loadersKey, loaders)
+	return context.WithValue(ctx, quoteLoaderStatsKey, &quoteLoaderStats{})
 }
 
 // GetLoaders retrieves loaders from context
@@ -241,17 +277,21 @@ func LoadTrustScore(ctx context.Context, actorID, category string) (any, error) 
 func LoadQuoteTargetStatus(ctx context.Context, statusID string) (*models.Status, error) {
 	loaders := GetLoaders(ctx)
 	if loaders == nil {
+		recordQuoteLoaderMiss(ctx)
 		return nil, errLoadersNotFound
 	}
 	if loaders.QuoteTargetLoader == nil {
+		recordQuoteLoaderMiss(ctx)
 		return nil, errQuoteTargetLoaderUnavailable
 	}
 
 	thunk := loaders.QuoteTargetLoader.Load(ctx, dataloader.StringKey(statusID))
 	result, err := thunk()
 	if err != nil {
+		recordQuoteLoaderMiss(ctx)
 		return nil, err
 	}
+	recordQuoteLoaderHit(ctx)
 	if result == nil {
 		return nil, nil
 	}

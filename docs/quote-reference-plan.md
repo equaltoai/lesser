@@ -12,6 +12,7 @@
 - Status rows now include `QuoteTargetStatusID`/`QuoteTargetAuthorID`, so every quote keeps a canonical pointer to the original.
 - The quote service (`pkg/services/quotes/quote_service.go`) writes these references via `setQuoteReference` and no longer mutates the serialized `activitypub.Note`.
 - GraphQL (`graph/schema.resolvers.go`) derives `quoteUrl`/`quoteContext` by following the stored reference at read time, so no fallbacks or embedded metadata remain.
+- Quote target lookups are always routed through the per-request `QuoteTargetLoader`, and each GraphQL request logs cache hits/misses so we can spot contexts that fail to attach loaders.
 - `NoteField` is once again purely responsible for ActivityPub serialization; the note payload stays quote-free except for federation-only knobs like `quoteable`.
 
 ## Target Architecture
@@ -55,6 +56,7 @@
    - ✅ A dedicated `QuoteTargetLoader` batches those lookups so timelines with lots of quotes avoid N+1 Dynamo traffic.
 2. Ensure `pkg/services/quotes` exposes a helper for retrieving quote metadata so we don’t duplicate logic in the resolver.
 3. Decide whether to expose a richer GraphQL shape (e.g., `quotedObject`) rather than only metadata—document tradeoffs for future work.
+4. ✅ Loader contexts are attached for GraphQL and REST bridges, and we emit metrics for cache hits vs. misses so operational dashboards can catch regressions.
 
 ### Phase 3 – Migration / Data Hygiene
 1. Write an admin script (Go or Python) that:

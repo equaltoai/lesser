@@ -1320,12 +1320,14 @@ func (r *Resolver) resolveQuoteMetadata(ctx context.Context, status *models.Stat
 	return quoteURL, quoteContext
 }
 
+var quoteTargetStatusLoaderFunc = LoadQuoteTargetStatus
+
 func (r *Resolver) loadQuoteTargetStatus(ctx context.Context, statusID string) (*models.Status, error) {
 	if statusID == "" {
 		return nil, nil
 	}
 
-	targetStatus, err := LoadQuoteTargetStatus(ctx, statusID)
+	targetStatus, err := quoteTargetStatusLoaderFunc(ctx, statusID)
 	if err == nil {
 		return targetStatus, nil
 	}
@@ -2786,57 +2788,22 @@ func (r *queryResolver) processReply(ctx context.Context, statusRepo *repositori
 
 // createRootNoteObject creates the root note object for the thread context
 func (r *queryResolver) createRootNoteObject(ctx context.Context, status *models.Status, replies []*models.Status, engagement *engagementMetrics) *model.Object {
-	// Enhanced: extract mentions from status data
-	mentions := make([]*model.Mention, 0)
-	if status.Mentions != nil {
-		for _, mentionURL := range status.Mentions {
-			username, domain := r.parseMentionURL(mentionURL)
-			if username != "" {
-				mentions = append(mentions, &model.Mention{
-					ID:       mentionURL,
-					Username: username,
-					URL:      mentionURL,
-					Domain:   domain,
-				})
-			}
-		}
+	if status == nil {
+		return nil
 	}
 
-	actor := r.resolveStatusActor(ctx, status)
-	if actor == nil {
-		domain := r.getDomain()
-		username := strings.TrimSpace(status.AuthorUsername)
-		actor = &activitypub.Actor{
-			BaseObject: activitypub.BaseObject{
-				ID:        status.AuthorID,
-				Type:      activitypub.PersonType,
-				Published: timePtrOrNil(status.CreatedAt),
-				Updated:   timePtrOrNil(status.UpdatedAt),
-			},
-			PreferredUsername: username,
-			Name:              username,
-			Inbox:             fmt.Sprintf("https://%s/users/%s/inbox", domain, username),
-			Outbox:            fmt.Sprintf("https://%s/users/%s/outbox", domain, username),
-		}
+	obj := r.convertStatusToObject(ctx, status)
+	if obj == nil {
+		return nil
 	}
 
-	return &model.Object{
-		ID:           status.StatusID,
-		Type:         model.ObjectTypeNote,
-		Content:      status.Content,
-		Actor:        actor,
-		CreatedAt:    model.Time(status.PublishedAt),
-		UpdatedAt:    model.Time(status.UpdatedAt),
-		RepliesCount: len(replies),
-		LikesCount:   int(engagement.likeCount),
-		SharesCount:  engagement.reblogCount,
-		Visibility:   model.VisibilityPublic,
-		Sensitive:    false,
-		Attachments:  []*activitypub.Attachment{},
-		Tags:         []*activitypub.Tag{},
-		Mentions:     mentions,                             // Enhanced: processed mentions with domain detection
-		ContentMap:   r.extractContentMaps(status.Content), // Enhanced: extract content maps with language detection
+	obj.RepliesCount = len(replies)
+	if engagement != nil {
+		obj.LikesCount = int(engagement.likeCount)
+		obj.SharesCount = engagement.reblogCount
 	}
+
+	return obj
 }
 
 func (r *queryResolver) resolveStatusActor(ctx context.Context, status *models.Status) *activitypub.Actor {

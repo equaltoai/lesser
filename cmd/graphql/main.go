@@ -418,6 +418,11 @@ func handleGraphQL(ctx *lift.Context) error {
 		zap.String("path", ctx.Request.Path),
 		zap.String("method", ctx.Request.Method))
 	graphQLHandler.ServeHTTP(responseWriter, httpReq)
+	if hits, misses := graph.QuoteLoaderMetrics(requestCtx); hits > 0 || misses > 0 {
+		logger.Info("quote target loader usage",
+			zap.Int64("cache_hits", hits),
+			zap.Int64("misses", misses))
+	}
 	logger.Info("GraphQL handler invocation completed",
 		zap.String("path", ctx.Request.Path),
 		zap.String("method", ctx.Request.Method),
