@@ -72,6 +72,7 @@ type RepositoryFactory struct {
 	metricRecordRepo        *repositories.MetricRecordRepository
 	cloudWatchMetricsRepo   *repositories.CloudWatchMetricsRepository
 	streamingCloudWatchRepo *repositories.StreamingCloudWatchRepository
+	bookmarkRepo            *repositories.BookmarkRepository
 	publicKeyCacheRepo      *repositories.PublicKeyCacheRepository
 	auditRepo               *repositories.AuditRepository
 	oauthRepo               *repositories.OAuthRepository
@@ -119,6 +120,7 @@ func NewRepositoryFactory(db dynamormCore.DB, tableName string, logger *zap.Logg
 func (f *RepositoryFactory) initializeRepositories() {
 	// Core repositories from main.go (only these are actually used)
 	f.accountRepo = repositories.NewAccountRepository(f.db, f.tableName, f.cfg.Domain, f.logger)
+	f.bookmarkRepo = repositories.NewBookmarkRepository(f.db, f.tableName, f.logger)
 	f.actorRepo = repositories.NewActorRepository(f.db, f.tableName, f.logger)
 	f.objectRepo = repositories.NewObjectRepository(f.db, f.tableName, f.cfg.Domain, f.logger)
 	f.activityRepo = repositories.NewActivityRepository(f.db, f.tableName, f.logger, nil)
@@ -218,6 +220,19 @@ func (f *RepositoryFactory) setupDependencies() {
 		f.scheduledStatusRepo.SetMediaRepository(f.mediaRepo)
 	}
 
+	// Wire bookmark repository dependencies
+	if f.bookmarkRepo != nil {
+		if f.accountRepo != nil {
+			f.accountRepo.SetBookmarkRepository(f.bookmarkRepo)
+		}
+		if f.userRepo != nil {
+			f.userRepo.SetBookmarkRepository(f.bookmarkRepo)
+		}
+		if f.statusRepo != nil {
+			f.statusRepo.SetBookmarkRepository(f.bookmarkRepo)
+		}
+	}
+
 	// Set up search repository dependencies for privacy enforcement
 	if f.searchRepo != nil && f.relationshipRepo != nil {
 		// Create a deps adapter that implements SearchRepositoryDeps
@@ -278,6 +293,11 @@ func (d *searchRepositoryDeps) GetFollowers(ctx context.Context, username string
 // Account returns the Account repository instance
 func (f *RepositoryFactory) Account() *repositories.AccountRepository {
 	return f.accountRepo
+}
+
+// Bookmark returns the Bookmark repository instance
+func (f *RepositoryFactory) Bookmark() *repositories.BookmarkRepository {
+	return f.bookmarkRepo
 }
 
 // Actor returns the Actor repository instance

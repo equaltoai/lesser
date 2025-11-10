@@ -35,6 +35,7 @@ const (
 type Service struct {
 	noteRepo          *repositories.StatusRepository
 	accountRepo       interfaces.AccountRepository
+	bookmarkRepo      *repositories.BookmarkRepository
 	relationshipRepo  *repositories.RelationshipRepository
 	mediaRepo         interfaces.MediaRepository
 	likeRepo          *repositories.LikeRepository
@@ -152,6 +153,7 @@ func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common
 func NewService(
 	noteRepo *repositories.StatusRepository,
 	accountRepo interfaces.AccountRepository,
+	bookmarkRepo *repositories.BookmarkRepository,
 	relationshipRepo *repositories.RelationshipRepository,
 	mediaRepo interfaces.MediaRepository,
 	likeRepo *repositories.LikeRepository,
@@ -191,6 +193,7 @@ func NewService(
 	return &Service{
 		noteRepo:          noteRepo,
 		accountRepo:       accountRepo,
+		bookmarkRepo:      bookmarkRepo,
 		relationshipRepo:  relationshipRepo,
 		mediaRepo:         mediaRepo,
 		likeRepo:          likeRepo,
@@ -1636,8 +1639,11 @@ func (s *Service) BookmarkNote(ctx context.Context, cmd *BookmarkNoteCommand) (*
 		return nil, ErrStatusNotFound
 	}
 
-	// Add bookmark through account repository
-	if err := s.accountRepo.AddBookmark(ctx, cmd.BookmarkerID, cmd.StatusID); err != nil {
+	if s.bookmarkRepo == nil {
+		return nil, ErrBookmarkStatus
+	}
+
+	if _, err := s.bookmarkRepo.CreateBookmark(ctx, cmd.BookmarkerID, cmd.StatusID); err != nil {
 		return nil, ErrBookmarkStatus
 	}
 
@@ -1658,8 +1664,11 @@ func (s *Service) UnbookmarkNote(ctx context.Context, cmd *UnbookmarkNoteCommand
 		return nil, ErrStatusNotFound
 	}
 
-	// Remove bookmark through account repository
-	if err := s.accountRepo.RemoveBookmark(ctx, cmd.UnbookmarkerID, cmd.StatusID); err != nil {
+	if s.bookmarkRepo == nil {
+		return nil, ErrUnbookmarkStatus
+	}
+
+	if err := s.bookmarkRepo.DeleteBookmark(ctx, cmd.UnbookmarkerID, cmd.StatusID); err != nil {
 		return nil, ErrUnbookmarkStatus
 	}
 
@@ -1674,15 +1683,73 @@ func (s *Service) UnbookmarkNote(ctx context.Context, cmd *UnbookmarkNoteCommand
 
 // GetBookmarks retrieves user's bookmarked statuses
 func (s *Service) GetBookmarks(ctx context.Context, query *GetBookmarksQuery) (*Result, error) {
-	// Get bookmarked statuses through account repository
-	result, err := s.accountRepo.GetBookmarkedStatuses(ctx, query.UserID, query.Pagination)
+	if s.bookmarkRepo == nil {
+		return nil, ErrGetBookmarks
+	}
+
+	limit := query.Pagination.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+
+	bookmarks, nextCursor, err := s.bookmarkRepo.GetUserBookmarks(ctx, query.UserID, limit, query.Pagination.Cursor)
 	if err != nil {
 		return nil, ErrGetBookmarks
 	}
 
+	if len(bookmarks) == 0 {
+		empty := &interfaces.PaginatedResult[*models.Status]{
+			Items:      []*models.Status{},
+			NextCursor: "",
+			HasMore:    false,
+			Total:      0,
+		}
+		return &Result{
+			Notes:      empty.Items,
+			Pagination: empty,
+		}, nil
+	}
+
+	statusIDs := make([]string, 0, len(bookmarks))
+	for _, bookmark := range bookmarks {
+		if bookmark == nil {
+			continue
+		}
+		statusIDs = append(statusIDs, bookmark.ObjectID)
+	}
+
+	statuses, err := s.noteRepo.GetStatusesByIDs(ctx, statusIDs)
+	if err != nil {
+		return nil, ErrGetBookmarks
+	}
+
+	statusMap := make(map[string]*models.Status, len(statuses))
+	for _, status := range statuses {
+		if status != nil {
+			statusMap[status.StatusID] = status
+		}
+	}
+
+	ordered := make([]*models.Status, 0, len(statusMap))
+	for _, bookmark := range bookmarks {
+		if bookmark == nil {
+			continue
+		}
+		if status, ok := statusMap[bookmark.ObjectID]; ok {
+			ordered = append(ordered, status)
+		}
+	}
+
+	pagination := &interfaces.PaginatedResult[*models.Status]{
+		Items:      ordered,
+		NextCursor: nextCursor,
+		HasMore:    nextCursor != "",
+		Total:      -1,
+	}
+
 	return &Result{
-		Notes:      result.Items,
-		Pagination: result,
+		Notes:      ordered,
+		Pagination: pagination,
 	}, nil
 }
 

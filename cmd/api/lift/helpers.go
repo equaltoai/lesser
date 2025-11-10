@@ -259,13 +259,15 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 		reblogged = true
 	}
 
-	// Check if bookmarked
-	if bookmarks, _, err := h.repos.Account().GetBookmarks(ctx, currentUsername, 100, ""); err == nil {
-		for _, bookmark := range bookmarks {
-			if bookmark.ObjectID == statusObjectID {
-				bookmarked = true
-				break
-			}
+	// Check if bookmarked using bookmark repository
+	if bookmarkRepo := h.repos.Bookmark(); bookmarkRepo != nil {
+		if isMarked, err := bookmarkRepo.IsBookmarked(ctx, currentUsername, storageStatus.StatusID); err == nil {
+			bookmarked = isMarked
+		} else if h.logger != nil {
+			h.logger.Debug("failed to check bookmark status",
+				zap.String("username", currentUsername),
+				zap.String("status_id", storageStatus.StatusID),
+				zap.Error(err))
 		}
 	}
 

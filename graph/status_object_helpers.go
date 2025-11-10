@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
@@ -120,16 +121,35 @@ func (r *Resolver) viewerBoostState(ctx context.Context, status *models.Status, 
 }
 
 func (r *Resolver) resolveActorForStatus(ctx context.Context, status *models.Status, convertLogger *zap.Logger) *activitypub.Actor {
-	if status == nil || status.AuthorUsername == "" || r.Registry == nil {
+	if status == nil || r.Registry == nil {
+		return nil
+	}
+
+	username := resolveStatusAuthorUsername(status)
+	if username == "" {
+		if convertLogger != nil {
+			convertLogger.Warn("status missing author username",
+				zap.String("status_id", status.StatusID),
+				zap.String("author_id", status.AuthorID))
+		}
+		return nil
+	}
+
+	if r.Registry.Accounts() == nil {
+		if convertLogger != nil {
+			convertLogger.Warn("account service unavailable while resolving actor",
+				zap.String("status_id", status.StatusID),
+				zap.String("username", username))
+		}
 		return nil
 	}
 
 	accountStart := time.Now()
-	result, err := r.Registry.Accounts().GetAccount(ctx, status.AuthorUsername)
+	result, err := r.Registry.Accounts().GetAccount(ctx, username)
 	if convertLogger != nil {
 		convertLogger.Info("convertStatusToObject account lookup",
 			zap.String("status_id", status.StatusID),
-			zap.String("author_username", status.AuthorUsername),
+			zap.String("author_username", username),
 			zap.Duration("duration", time.Since(accountStart)),
 			zap.Bool("found", err == nil && result != nil),
 			zap.Error(err))
@@ -165,4 +185,16 @@ func (r *Resolver) resolveInReplyToObject(ctx context.Context, status *models.St
 	}
 
 	return r.convertStatusToObject(newCtx, parentStatus)
+}
+
+func resolveStatusAuthorUsername(status *models.Status) string {
+	if status == nil {
+		return ""
+	}
+
+	if trimmed := strings.TrimSpace(status.AuthorUsername); trimmed != "" {
+		return trimmed
+	}
+
+	return extractUsernameFromActorIdentifier(status.AuthorID)
 }

@@ -290,6 +290,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 }
 
 func (m *MockRepositoryStorage) Account() *repositories.AccountRepository           { return nil }
+func (m *MockRepositoryStorage) Bookmark() *repositories.BookmarkRepository         { return nil }
 func (m *MockRepositoryStorage) Actor() *repositories.ActorRepository               { return nil }
 func (m *MockRepositoryStorage) Object() *repositories.ObjectRepository             { return nil }
 func (m *MockRepositoryStorage) Activity() *repositories.ActivityRepository         { return nil }

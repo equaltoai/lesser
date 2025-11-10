@@ -479,96 +479,52 @@ func (r *AccountRepository) GetMutes(ctx context.Context, username string) ([]*s
 
 // AddBookmark bookmarks an object for a user
 func (r *AccountRepository) AddBookmark(ctx context.Context, username, objectID string) error {
-	bookmark := &models.Bookmark{
-		Username:  username,
-		ObjectID:  objectID,
-		CreatedAt: time.Now(),
+	repo := r.getBookmarkRepository()
+	if repo == nil {
+		return ErrorHandler.HandleCreateError(fmt.Errorf("bookmark repository not configured"), EntityUser, objectID)
 	}
-
-	// Update keys using the model's UpdateKeys method
-	_ = bookmark.UpdateKeys() // Ignore error as this is internal model operation
-
-	err := r.db.WithContext(ctx).Model(bookmark).Create()
+	_, err := repo.CreateBookmark(ctx, username, objectID)
 	if err != nil {
-		if errors.IsConditionFailed(err) {
-			// Already bookmarked
-			return nil
-		}
 		r.logger.Error("failed to add bookmark",
 			zap.String("username", username),
-			zap.String("objectID", objectID),
+			zap.String("object_id", objectID),
 			zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, EntityUser, fmt.Sprintf("%s bookmark %s", username, objectID))
 	}
-
 	return nil
 }
 
 // RemoveBookmark removes a bookmark
 func (r *AccountRepository) RemoveBookmark(ctx context.Context, username, objectID string) error {
-	// We need to find the bookmark first since SK includes timestamp
-	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", fmt.Sprintf("BOOKMARK#%s", username)).
-		Where("SK", "CONTAINS", objectID).
-		Delete()
-
-	if err != nil && !errors.IsNotFound(err) {
+	repo := r.getBookmarkRepository()
+	if repo == nil {
+		return ErrorHandler.HandleDeleteError(fmt.Errorf("bookmark repository not configured"), EntityUser, fmt.Sprintf("%s unbookmark %s", username, objectID))
+	}
+	if err := repo.DeleteBookmark(ctx, username, objectID); err != nil {
 		r.logger.Error("failed to remove bookmark",
 			zap.String("username", username),
-			zap.String("objectID", objectID),
+			zap.String("object_id", objectID),
 			zap.Error(err))
 		return ErrorHandler.HandleDeleteError(err, EntityUser, fmt.Sprintf("%s unbookmark %s", username, objectID))
 	}
-
 	return nil
 }
 
 // GetBookmarks retrieves paginated bookmarks for a user
 func (r *AccountRepository) GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]*storage.Bookmark, string, error) {
-	var bookmarks []models.Bookmark
-
-	safeLimit := clampBookmarkLimit(limit)
-
-	query := r.db.WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", fmt.Sprintf("BOOKMARK#%s", username)).
-		OrderBy("SK", "ASC").
-		Limit(safeLimit + 1)
-
-	if cursor != "" {
-		query = query.Where("SK", ">", cursor)
+	repo := r.getBookmarkRepository()
+	if repo == nil {
+		return nil, "", ErrorHandler.HandleQueryError(fmt.Errorf("bookmark repository not configured"), EntityUser, fmt.Sprintf("bookmarks for %s", username))
 	}
-
-	err := query.All(&bookmarks)
+	safeLimit := clampBookmarkLimit(limit)
+	bookmarks, nextCursor, err := repo.GetBookmarks(ctx, username, safeLimit, cursor)
 	if err != nil {
 		r.logger.Error("failed to get bookmarks",
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("bookmarks for %s", username))
 	}
-
-	hasMore := len(bookmarks) > safeLimit
-	if hasMore {
-		bookmarks = bookmarks[:safeLimit]
-	}
-
-	// Convert to storage type
-	result := make([]*storage.Bookmark, len(bookmarks))
-	for i, bookmark := range bookmarks {
-		result[i] = &storage.Bookmark{
-			Username:  bookmark.Username,
-			ObjectID:  bookmark.ObjectID,
-			CreatedAt: bookmark.CreatedAt,
-		}
-	}
-
-	// Determine next cursor
-	nextCursor := ""
-	if hasMore && len(bookmarks) > 0 {
-		lastBookmark := bookmarks[len(bookmarks)-1]
-		nextCursor = lastBookmark.SK
-	}
-
-	return result, nextCursor, nil
+	return bookmarks, nextCursor, nil
 }
 
 // GetBookmarkedStatuses retrieves paginated bookmarked statuses for a user

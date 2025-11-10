@@ -36,8 +36,9 @@ type AccountRepository struct {
 
 	// Dependencies for cross-repository operations
 	// Note: storage.Storage dependency removed in Phase 5.6
-	statusRepo interfaces.StatusRepository // For accessing status objects
-	actorRepo  *ActorRepository
+	statusRepo   interfaces.StatusRepository // For accessing status objects
+	actorRepo    *ActorRepository
+	bookmarkRepo *BookmarkRepository
 }
 
 type userVersionProjection struct {
@@ -99,6 +100,18 @@ func NewAccountRepositoryWithCostTracking(db core.DB, tableName string, domain s
 // SetStatusRepository sets the status repository dependency for cross-repository operations
 func (r *AccountRepository) SetStatusRepository(statusRepo interfaces.StatusRepository) {
 	r.statusRepo = statusRepo
+}
+
+// SetBookmarkRepository wires the bookmark repository for dual-write operations
+func (r *AccountRepository) SetBookmarkRepository(bookmarkRepo *BookmarkRepository) {
+	r.bookmarkRepo = bookmarkRepo
+}
+
+func (r *AccountRepository) getBookmarkRepository() *BookmarkRepository {
+	if r.bookmarkRepo == nil {
+		r.bookmarkRepo = NewBookmarkRepository(r.db, r.tableName, r.logger)
+	}
+	return r.bookmarkRepo
 }
 
 // SetStorage is deprecated - storage dependency removed in Phase 5.6

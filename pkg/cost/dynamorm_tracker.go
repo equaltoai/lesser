@@ -365,6 +365,30 @@ func (ctq *TrackingQuery) OrFilterGroup(fn func(core.Query)) core.Query {
 	return ctq
 }
 
+// IfNotExists wraps the IfNotExists method
+func (ctq *TrackingQuery) IfNotExists() core.Query {
+	ctq.query = ctq.query.IfNotExists()
+	return ctq
+}
+
+// IfExists wraps the IfExists method
+func (ctq *TrackingQuery) IfExists() core.Query {
+	ctq.query = ctq.query.IfExists()
+	return ctq
+}
+
+// WithCondition wraps the WithCondition method
+func (ctq *TrackingQuery) WithCondition(field, operator string, value any) core.Query {
+	ctq.query = ctq.query.WithCondition(field, operator, value)
+	return ctq
+}
+
+// WithConditionExpression wraps the WithConditionExpression method
+func (ctq *TrackingQuery) WithConditionExpression(expr string, values map[string]any) core.Query {
+	ctq.query = ctq.query.WithConditionExpression(expr, values)
+	return ctq
+}
+
 // OrderBy wraps the OrderBy method
 func (ctq *TrackingQuery) OrderBy(field string, order string) core.Query {
 	ctq.query = ctq.query.OrderBy(field, order)
@@ -1008,6 +1032,33 @@ func (ctq *TrackingQuery) BatchGet(keys []any, dest any) error {
 	return err
 }
 
+// BatchGetWithOptions wraps the BatchGetWithOptions method with cost tracking
+func (ctq *TrackingQuery) BatchGetWithOptions(keys []any, dest any, opts *core.BatchGetOptions) error {
+	err := ctq.query.BatchGetWithOptions(keys, dest, opts)
+	if err == nil && ctq.tracker != nil {
+		_ = ctq.tracker.TrackDynamoRead(len(keys))
+	}
+
+	if ctq.logger != nil {
+		ctq.logger.Debug("dynamodb_batch_get_with_options_tracked",
+			zap.Int("read_units", len(keys)),
+			zap.Int("key_count", len(keys)),
+			zap.Error(err),
+		)
+	}
+
+	return err
+}
+
+// BatchGetBuilder wraps the BatchGetBuilder for additional tracking
+func (ctq *TrackingQuery) BatchGetBuilder() core.BatchGetBuilder {
+	return &trackingBatchGetBuilder{
+		builder: ctq.query.BatchGetBuilder(),
+		tracker: ctq.tracker,
+		logger:  ctq.logger,
+	}
+}
+
 // BatchCreate wraps the BatchCreate method with enhanced batch tracking
 func (ctq *TrackingQuery) BatchCreate(items any) error {
 	// Count items for precise cost tracking
@@ -1107,5 +1158,68 @@ func (ctq *TrackingQuery) BatchUpdateWithOptions(items []any, fields []string, o
 		)
 	}
 
+	return err
+}
+
+type trackingBatchGetBuilder struct {
+	builder core.BatchGetBuilder
+	tracker *Tracker
+	logger  *zap.Logger
+	keys    []any
+}
+
+func (t *trackingBatchGetBuilder) Keys(keys []any) core.BatchGetBuilder {
+	t.keys = keys
+	t.builder = t.builder.Keys(keys)
+	return t
+}
+
+func (t *trackingBatchGetBuilder) ChunkSize(size int) core.BatchGetBuilder {
+	t.builder = t.builder.ChunkSize(size)
+	return t
+}
+
+func (t *trackingBatchGetBuilder) ConsistentRead() core.BatchGetBuilder {
+	t.builder = t.builder.ConsistentRead()
+	return t
+}
+
+func (t *trackingBatchGetBuilder) Parallel(maxConcurrency int) core.BatchGetBuilder {
+	t.builder = t.builder.Parallel(maxConcurrency)
+	return t
+}
+
+func (t *trackingBatchGetBuilder) WithRetry(policy *core.RetryPolicy) core.BatchGetBuilder {
+	t.builder = t.builder.WithRetry(policy)
+	return t
+}
+
+func (t *trackingBatchGetBuilder) Select(fields ...string) core.BatchGetBuilder {
+	t.builder = t.builder.Select(fields...)
+	return t
+}
+
+func (t *trackingBatchGetBuilder) OnProgress(callback core.BatchProgressCallback) core.BatchGetBuilder {
+	t.builder = t.builder.OnProgress(callback)
+	return t
+}
+
+func (t *trackingBatchGetBuilder) OnError(handler core.BatchChunkErrorHandler) core.BatchGetBuilder {
+	t.builder = t.builder.OnError(handler)
+	return t
+}
+
+func (t *trackingBatchGetBuilder) Execute(dest any) error {
+	err := t.builder.Execute(dest)
+	if err == nil && t.tracker != nil {
+		_ = t.tracker.TrackDynamoRead(len(t.keys))
+	}
+	if t.logger != nil {
+		t.logger.Debug("dynamodb_batch_get_builder_tracked",
+			zap.Int("read_units", len(t.keys)),
+			zap.Int("key_count", len(t.keys)),
+			zap.Error(err),
+		)
+	}
 	return err
 }

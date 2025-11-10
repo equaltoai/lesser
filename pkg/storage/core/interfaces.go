@@ -12,6 +12,7 @@ import (
 type RepositoryStorage interface {
 	// Repository access methods - only expose the core repositories that are actually used
 	Account() *repositories.AccountRepository
+	Bookmark() *repositories.BookmarkRepository
 	Actor() *repositories.ActorRepository
 	Object() *repositories.ObjectRepository
 	Activity() *repositories.ActivityRepository

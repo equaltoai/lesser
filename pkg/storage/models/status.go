@@ -52,12 +52,12 @@ type Status struct {
 	GSI7SK string `dynamorm:"column:gsI7SK,index:GSI7,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// Core status data
-	StatusID            string     `json:"status_id"`
-	Note                *NoteField `json:"note"`                             // The actual ActivityPub Note (wrapped for proper DynamORM handling)
-	AuthorID            string     `json:"author_id"`                        // AttributedTo from the Note
-	AuthorUsername      string     `json:"author_username"`                  // Extracted username for efficient queries
-	Content             string     `json:"content"`                          // Cached content for search
-	ConversationID      string     `json:"conversation_id,omitempty"`        // Thread/conversation ID
+	StatusID            string     `dynamodb:"statusID" json:"status_id"`
+	Note                *NoteField `dynamodb:"note" json:"note"`                             // The actual ActivityPub Note (wrapped for proper DynamORM handling)
+	AuthorID            string     `dynamodb:"authorID" json:"author_id"`                        // AttributedTo from the Note
+	AuthorUsername      string     `dynamodb:"authorUsername" json:"author_username"`                  // Extracted username for efficient queries
+	Content             string     `dynamodb:"content" json:"content"`                          // Cached content for search
+	ConversationID      string     `dynamodb:"conversationID" json:"conversation_id,omitempty"`        // Thread/conversation ID
 	InReplyToID         string     `json:"in_reply_to_id,omitempty"`         // Parent status ID
 	ReblogOfID          string     `json:"reblog_of_id,omitempty"`           // If this is a reblog, the original status ID
 	QuoteTargetStatusID string     `json:"quote_target_status_id,omitempty"` // If this status quotes another, the original status ID

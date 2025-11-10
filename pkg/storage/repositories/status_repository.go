@@ -27,6 +27,7 @@ import (
 type StatusRepository struct {
 	*EnhancedBaseRepository[*models.Status]
 	relationshipRepo interface{} // Temporarily use interface to avoid circular dependency
+	bookmarkRepo     *BookmarkRepository
 }
 
 // NewStatusRepository creates a new status repository with enhanced functionality
@@ -48,6 +49,18 @@ func NewStatusRepository(db core.DB, tableName string, logger *zap.Logger, costS
 // SetRelationshipRepository sets the relationship repository dependency for cross-repository operations
 func (r *StatusRepository) SetRelationshipRepository(relationshipRepo interface{}) {
 	r.relationshipRepo = relationshipRepo
+}
+
+// SetBookmarkRepository wires the bookmark repository dependency.
+func (r *StatusRepository) SetBookmarkRepository(bookmarkRepo *BookmarkRepository) {
+	r.bookmarkRepo = bookmarkRepo
+}
+
+func (r *StatusRepository) getBookmarkRepository() *BookmarkRepository {
+	if r.bookmarkRepo == nil {
+		r.bookmarkRepo = NewBookmarkRepository(r.db, r.tableName, r.logger)
+	}
+	return r.bookmarkRepo
 }
 
 const (
@@ -238,6 +251,8 @@ func (r *StatusRepository) queryPublicTimelineDirect(ctx context.Context, opts i
 		}
 		r.logger.Debug("unmarshalled public timeline status",
 			zap.String("status_id", status.StatusID),
+			zap.String("author_id", status.AuthorID),
+			zap.String("author_username", status.AuthorUsername),
 			zap.String("visibility", status.Visibility),
 			zap.Bool("deleted", status.Deleted))
 		statuses = append(statuses, &status)
@@ -1303,44 +1318,26 @@ func (r *StatusRepository) UnreblogStatus(ctx context.Context, userID, statusID 
 
 // BookmarkStatus bookmarks a status for a user
 func (r *StatusRepository) BookmarkStatus(ctx context.Context, userID, statusID string) error {
-	// Create a bookmark record using the existing Bookmark model
-	now := time.Now()
-	bookmark := &models.Bookmark{
-		Username:  userID,
-		ObjectID:  statusID,
-		CreatedAt: now,
-		TTL:       0, // No TTL for bookmarks
+	repo := r.getBookmarkRepository()
+	if repo == nil {
+		return ErrorHandler.HandleCreateError(fmt.Errorf("bookmark repository not configured"), EntityBookmark, statusID)
 	}
-	_ = bookmark.UpdateKeys() // Ignore error as this is internal model operation
-
-	err := r.db.WithContext(ctx).Model(bookmark).Create()
+	_, err := repo.CreateBookmark(ctx, userID, statusID)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, EntityBookmark, statusID)
 	}
-
 	return nil
 }
 
 // UnbookmarkStatus unbookmarks a status for a user
 func (r *StatusRepository) UnbookmarkStatus(ctx context.Context, userID, statusID string) error {
-	// Find and delete the bookmark record
-	var bookmarks []models.Bookmark
-	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", fmt.Sprintf("BOOKMARK#%s", userID)).
-		Filter("ObjectID", "=", statusID).
-		All(&bookmarks)
-	if err != nil {
-		return ErrorHandler.HandleQueryError(err, EntityBookmark, "find for removal")
+	repo := r.getBookmarkRepository()
+	if repo == nil {
+		return ErrorHandler.HandleDeleteError(fmt.Errorf("bookmark repository not configured"), EntityBookmark, statusID)
 	}
-
-	// Delete the first matching record (there should only be one)
-	if err := common.ValidateSliceNotEmpty("bookmarks", bookmarks); err == nil {
-		err = r.db.WithContext(ctx).Model(&bookmarks[0]).Delete()
-		if err != nil {
-			return ErrorHandler.HandleDeleteError(err, EntityBookmark, statusID)
-		}
+	if err := repo.DeleteBookmark(ctx, userID, statusID); err != nil {
+		return ErrorHandler.HandleDeleteError(err, EntityBookmark, statusID)
 	}
-
 	return nil
 }
 
@@ -1422,13 +1419,12 @@ func (r *StatusRepository) GetStatusEngagement(ctx context.Context, statusID, us
 		All(&boostEngagements)
 	reblogged = (err == nil && len(boostEngagements) > 0)
 
-	// Check for bookmark
-	var bookmarks []models.Bookmark
-	err = r.db.WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", fmt.Sprintf("BOOKMARK#%s", userID)).
-		Filter("ObjectID", "=", statusID).
-		All(&bookmarks)
-	bookmarked = (err == nil && len(bookmarks) > 0)
+	// Check for bookmark via bookmark repository
+	if repo := r.getBookmarkRepository(); repo != nil {
+		bookmarked, err = repo.IsBookmarked(ctx, userID, statusID)
+	} else {
+		err = fmt.Errorf("bookmark repository not configured")
+	}
 
 	return liked, reblogged, bookmarked, nil
 }

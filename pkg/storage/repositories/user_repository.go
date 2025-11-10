@@ -37,6 +37,7 @@ type UserRepository struct {
 	urlValidator *URLValidator
 	logger       *zap.Logger // Keep reference for complex business logic
 	tableName    string      // Keep reference for cost tracking
+	bookmarkRepo *BookmarkRepository
 }
 
 // NewUserRepository creates a new user repository with enhanced functionality
@@ -80,6 +81,18 @@ func NewUserRepositoryWithCostTracking(db core.DB, tableName string, logger *zap
 // SetDependencies sets the dependencies for cross-repository operations
 func (r *UserRepository) SetDependencies(deps UserRepositoryDeps) {
 	r.deps = deps
+}
+
+// SetBookmarkRepository injects the bookmark repository dependency.
+func (r *UserRepository) SetBookmarkRepository(bookmarkRepo *BookmarkRepository) {
+	r.bookmarkRepo = bookmarkRepo
+}
+
+func (r *UserRepository) getBookmarkRepository() *BookmarkRepository {
+	if r.bookmarkRepo == nil {
+		r.bookmarkRepo = NewBookmarkRepository(r.GetDB(), r.tableName, r.logger)
+	}
+	return r.bookmarkRepo
 }
 
 // CreateUser creates a new user in DynamoDB using BaseRepository pattern
@@ -2452,123 +2465,49 @@ func (r *UserRepository) CacheRemoteActor(ctx context.Context, handle string, ac
 
 // CreateBookmark creates a new bookmark for a user
 func (r *UserRepository) CreateBookmark(ctx context.Context, username, objectID string) error {
-	r.logger.Debug("creating bookmark",
-		zap.String("username", username),
-		zap.String("object_id", objectID))
-
-	// Create the bookmark record
-	now := time.Now()
-	bookmark := &models.Bookmark{
-		Username:  username,
-		ObjectID:  objectID,
-		CreatedAt: now,
+	repo := r.getBookmarkRepository()
+	if repo == nil {
+		return ErrorHandler.HandleCreateError(fmt.Errorf("bookmark repository not configured"), EntityBookmark, objectID)
 	}
-	_ = bookmark.UpdateKeys() // Ignore error as this is internal model operation
-
-	// Create the bookmark using DynamORM with condition check to prevent duplicates
-	// Note: DynamORM Create will overwrite if the same keys exist, so we need to check first
-	err := r.GetDB().WithContext(ctx).Model(bookmark).Create()
+	_, err := repo.CreateBookmark(ctx, username, objectID)
 	if err != nil {
-		// Check if already bookmarked by trying a conditional create
-		// Since DynamORM doesn't have built-in conditional creates, we log and continue
-		// This matches the legacy behavior where duplicate bookmarks are silently ignored
-		r.logger.Debug("bookmark creation result",
+		r.logger.Error("failed to create bookmark",
 			zap.String("username", username),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-
-		// Check for specific error types to handle appropriately
-		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
-			// Bookmark already exists, this is expected behavior
-			return nil
-		}
-		// For other errors, return them to the caller
 		return ErrorHandler.HandleCreateError(err, EntityBookmark, objectID)
 	}
-
-	r.logger.Info("bookmark created successfully",
-		zap.String("username", username),
-		zap.String("object_id", objectID))
-
 	return nil
 }
 
 // RemoveBookmark removes a bookmark for a user
 func (r *UserRepository) RemoveBookmark(ctx context.Context, username, objectID string) error {
-	r.logger.Debug("removing bookmark",
-		zap.String("username", username),
-		zap.String("object_id", objectID))
-
-	// Query to find bookmarks with the specific objectID
-	pk := fmt.Sprintf("BOOKMARK#%s", username)
-
-	var bookmarks []models.Bookmark
-	err := r.GetDB().WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", pk).
-		Filter("ObjectID", "=", objectID).
-		All(&bookmarks)
-
-	if err != nil {
-		r.logger.Error("failed to query bookmark for removal",
+	repo := r.getBookmarkRepository()
+	if repo == nil {
+		return ErrorHandler.HandleDeleteError(fmt.Errorf("bookmark repository not configured"), EntityBookmark, objectID)
+	}
+	if err := repo.DeleteBookmark(ctx, username, objectID); err != nil {
+		r.logger.Error("failed to delete bookmark",
 			zap.String("username", username),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return ErrorHandler.HandleQueryError(err, EntityBookmark, "query")
+		return ErrorHandler.HandleDeleteError(err, EntityBookmark, objectID)
 	}
-
-	// Delete all found bookmarks (should typically be 0 or 1)
-	for _, bookmark := range bookmarks {
-		err = r.GetDB().WithContext(ctx).Model(&models.Bookmark{}).
-			Where("PK", "=", bookmark.PK).
-			Where("SK", "=", bookmark.SK).
-			Delete()
-
-		if err != nil {
-			r.logger.Error("failed to delete bookmark",
-				zap.String("username", username),
-				zap.String("object_id", objectID),
-				zap.Error(err))
-			return ErrorHandler.HandleDeleteError(err, EntityBookmark, objectID)
-		}
-	}
-
-	r.logger.Info("bookmark removed successfully",
-		zap.String("username", username),
-		zap.String("object_id", objectID),
-		zap.Int("removed_count", len(bookmarks)))
-
 	return nil
 }
 
 // GetBookmarks retrieves bookmarks for a user with pagination
 func (r *UserRepository) GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	r.logger.Debug("getting bookmarks",
-		zap.String("username", username),
-		zap.Int("limit", limit),
-		zap.String("cursor", cursor))
+	repo := r.getBookmarkRepository()
+	if repo == nil {
+		return nil, "", ErrorHandler.HandleQueryError(fmt.Errorf("bookmark repository not configured"), EntityBookmark, "query")
+	}
 
-	// Validate limit
-	// Validate limit using centralized validation
 	if err := common.ValidateQueryLimit(int(limit), 100, "user listing"); err != nil {
 		limit = 20
 	}
 
-	// Build query
-	pk := fmt.Sprintf("BOOKMARK#%s", username)
-	query := r.GetDB().WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", pk).
-		OrderBy("SK", "DESC"). // Newest first (descending order)
-		Limit(limit + 1)       // Request one extra to determine if there's a next page
-
-	// Add cursor if provided
-	if cursor != "" {
-		// For DynamORM, we need to use the exact SK value as cursor
-		query = query.Filter("SK", "<", cursor)
-	}
-
-	// Execute query
-	var bookmarks []models.Bookmark
-	err := query.All(&bookmarks)
+	bookmarks, nextCursor, err := repo.GetUserBookmarks(ctx, username, limit, cursor)
 	if err != nil {
 		r.logger.Error("failed to query bookmarks",
 			zap.String("username", username),
@@ -2576,63 +2515,21 @@ func (r *UserRepository) GetBookmarks(ctx context.Context, username string, limi
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityBookmark, "query")
 	}
 
-	// Extract object IDs
 	objectIDs := make([]string, 0, len(bookmarks))
-	for i, bookmark := range bookmarks {
-		// Skip the extra item used for pagination
-		if i >= limit {
-			break
-		}
+	for _, bookmark := range bookmarks {
 		objectIDs = append(objectIDs, bookmark.ObjectID)
 	}
-
-	// Determine next cursor
-	var nextCursor string
-	if len(bookmarks) > limit && len(objectIDs) > 0 {
-		// Use the SK of the last returned item as cursor
-		nextCursor = bookmarks[limit-1].SK
-	}
-
-	r.logger.Debug("retrieved bookmarks",
-		zap.String("username", username),
-		zap.Int("count", len(objectIDs)),
-		zap.String("next_cursor", nextCursor))
 
 	return objectIDs, nextCursor, nil
 }
 
 // IsBookmarked checks if a user has bookmarked an object
 func (r *UserRepository) IsBookmarked(ctx context.Context, username, objectID string) (bool, error) {
-	r.logger.Debug("checking if bookmarked",
-		zap.String("username", username),
-		zap.String("object_id", objectID))
-
-	// Query to find the bookmark with the specific objectID
-	pk := fmt.Sprintf("BOOKMARK#%s", username)
-
-	var bookmarks []models.Bookmark
-	err := r.GetDB().WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", pk).
-		Filter("ObjectID", "=", objectID).
-		Limit(1).
-		All(&bookmarks)
-
-	if err != nil {
-		r.logger.Error("failed to query bookmark status",
-			zap.String("username", username),
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		return false, ErrorHandler.HandleQueryError(err, EntityBookmark, "query")
+	repo := r.getBookmarkRepository()
+	if repo == nil {
+		return false, ErrorHandler.HandleQueryError(fmt.Errorf("bookmark repository not configured"), EntityBookmark, "query")
 	}
-
-	isBookmarked := len(bookmarks) > 0
-
-	r.logger.Debug("bookmark status checked",
-		zap.String("username", username),
-		zap.String("object_id", objectID),
-		zap.Bool("is_bookmarked", isBookmarked))
-
-	return isBookmarked, nil
+	return repo.IsBookmarked(ctx, username, objectID)
 }
 
 // DeleteFromTimeline removes a specific timeline entry
