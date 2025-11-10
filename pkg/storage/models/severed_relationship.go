@@ -35,36 +35,38 @@ const (
 
 // SeveredRelationship represents a broken federation relationship
 type SeveredRelationship struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"` // SEVERED#{localInstance}
-	SK string `dynamorm:"sk" json:"-"` // INSTANCE#{remoteInstance}#{timestamp}
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // SEVERED#{localInstance}
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // INSTANCE#{remoteInstance}#{timestamp}
 
 	// GSI1 for filtering by status
-	GSI1PK string `dynamorm:"gsi1pk" json:"-"` // STATUS#{status}
-	GSI1SK string `dynamorm:"gsi1sk" json:"-"` // TIMESTAMP#{timestamp}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"` // STATUS#{status}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"` // TIMESTAMP#{timestamp}
 
 	// Fields
-	ID                  string          `json:"id"`
-	LocalInstance       string          `json:"local_instance"`
-	RemoteInstance      string          `json:"remote_instance"`
-	Reason              SeveranceReason `json:"reason"`
-	Status              SeveranceStatus `json:"status"`
-	Severity            string          `json:"severity"` // "low", "medium", "high"
-	AffectedFollowers   int             `json:"affected_followers"`
-	AffectedFollowing   int             `json:"affected_following"`
-	DetectedAt          time.Time       `json:"detected_at"`
-	AcknowledgedAt      *time.Time      `json:"acknowledged_at,omitempty"`
-	Reversible          bool            `json:"reversible"`
-	Details             string          `json:"details,omitempty"`
-	Metadata            map[string]any  `json:"metadata,omitempty"`
-	AutoDetected        bool            `json:"auto_detected"`
-	AdminNotes          string          `json:"admin_notes,omitempty"`
-	ReconnectionAttempt bool            `json:"reconnection_attempt"`
-	CreatedAt           time.Time       `json:"created_at"`
-	UpdatedAt           time.Time       `json:"updated_at"`
+	ID                  string          `dynamorm:"attr:id" json:"id"`
+	LocalInstance       string          `dynamorm:"attr:localInstance" json:"local_instance"`
+	RemoteInstance      string          `dynamorm:"attr:remoteInstance" json:"remote_instance"`
+	Reason              SeveranceReason `dynamorm:"attr:reason" json:"reason"`
+	Status              SeveranceStatus `dynamorm:"attr:status" json:"status"`
+	Severity            string          `dynamorm:"attr:severity" json:"severity"` // "low", "medium", "high"
+	AffectedFollowers   int             `dynamorm:"attr:affectedFollowers" json:"affected_followers"`
+	AffectedFollowing   int             `dynamorm:"attr:affectedFollowing" json:"affected_following"`
+	DetectedAt          time.Time       `dynamorm:"attr:detectedAt" json:"detected_at"`
+	AcknowledgedAt      *time.Time      `dynamorm:"attr:acknowledgedAt" json:"acknowledged_at,omitempty"`
+	Reversible          bool            `dynamorm:"attr:reversible" json:"reversible"`
+	Details             string          `dynamorm:"attr:details" json:"details,omitempty"`
+	Metadata            map[string]any  `dynamorm:"attr:metadata" json:"metadata,omitempty"`
+	AutoDetected        bool            `dynamorm:"attr:autoDetected" json:"auto_detected"`
+	AdminNotes          string          `dynamorm:"attr:adminNotes" json:"admin_notes,omitempty"`
+	ReconnectionAttempt bool            `dynamorm:"attr:reconnectionAttempt" json:"reconnection_attempt"`
+	CreatedAt           time.Time       `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt           time.Time       `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for auto-cleanup (180 days)
-	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing SeveredRelationship.
@@ -74,26 +76,28 @@ func (SeveredRelationship) TableName() string {
 
 // AffectedRelationship represents a single affected follow/follower relationship
 type AffectedRelationship struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"` // SEVERED#{severanceID}
-	SK string `dynamorm:"sk" json:"-"` // AFFECTED#{actorID}
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // SEVERED#{severanceID}
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // AFFECTED#{actorID}
 
 	// GSI1 for reverse lookup by actor
-	GSI1PK string `dynamorm:"gsi1pk" json:"-"` // ACTOR#{actorID}
-	GSI1SK string `dynamorm:"gsi1sk" json:"-"` // SEVERED#{severanceID}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"` // ACTOR#{actorID}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"` // SEVERED#{severanceID}
 
 	// Fields
-	SeveranceID      string     `json:"severance_id"`
-	ActorID          string     `json:"actor_id"`
-	ActorHandle      string     `json:"actor_handle"`
-	ActorDomain      string     `json:"actor_domain"`
-	RelationshipType string     `json:"relationship_type"` // "follower" or "following"
-	EstablishedAt    time.Time  `json:"established_at"`
-	LastInteraction  *time.Time `json:"last_interaction,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
+	SeveranceID      string     `dynamorm:"attr:severanceID" json:"severance_id"`
+	ActorID          string     `dynamorm:"attr:actorID" json:"actor_id"`
+	ActorHandle      string     `dynamorm:"attr:actorHandle" json:"actor_handle"`
+	ActorDomain      string     `dynamorm:"attr:actorDomain" json:"actor_domain"`
+	RelationshipType string     `dynamorm:"attr:relationshipType" json:"relationship_type"` // "follower" or "following"
+	EstablishedAt    time.Time  `dynamorm:"attr:establishedAt" json:"established_at"`
+	LastInteraction  *time.Time `dynamorm:"attr:lastInteraction" json:"last_interaction,omitempty"`
+	CreatedAt        time.Time  `dynamorm:"attr:createdAt" json:"created_at"`
 
 	// TTL for auto-cleanup (180 days)
-	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing AffectedRelationship.
@@ -103,26 +107,28 @@ func (AffectedRelationship) TableName() string {
 
 // SeveranceReconnectionAttempt represents an attempt to restore severed relationships
 type SeveranceReconnectionAttempt struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"` // SEVERED#{severanceID}
-	SK string `dynamorm:"sk" json:"-"` // RECONNECT#{attemptID}
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // SEVERED#{severanceID}
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // RECONNECT#{attemptID}
 
 	// Fields
-	ID            string     `json:"id"`
-	SeveranceID   string     `json:"severance_id"`
-	InitiatedBy   string     `json:"initiated_by"` // User ID who initiated
-	Status        string     `json:"status"`       // "pending", "in_progress", "completed", "failed"
-	AttemptedAt   time.Time  `json:"attempted_at"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	SuccessCount  int        `json:"success_count"`
-	FailureCount  int        `json:"failure_count"`
-	Notes         string     `json:"notes,omitempty"`
-	ErrorMessages []string   `json:"error_messages,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID            string     `dynamorm:"attr:id" json:"id"`
+	SeveranceID   string     `dynamorm:"attr:severanceID" json:"severance_id"`
+	InitiatedBy   string     `dynamorm:"attr:initiatedBy" json:"initiated_by"` // User ID who initiated
+	Status        string     `dynamorm:"attr:status" json:"status"`            // "pending", "in_progress", "completed", "failed"
+	AttemptedAt   time.Time  `dynamorm:"attr:attemptedAt" json:"attempted_at"`
+	CompletedAt   *time.Time `dynamorm:"attr:completedAt" json:"completed_at,omitempty"`
+	SuccessCount  int        `dynamorm:"attr:successCount" json:"success_count"`
+	FailureCount  int        `dynamorm:"attr:failureCount" json:"failure_count"`
+	Notes         string     `dynamorm:"attr:notes" json:"notes,omitempty"`
+	ErrorMessages []string   `dynamorm:"attr:errorMessages" json:"error_messages,omitempty"`
+	CreatedAt     time.Time  `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt     time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for auto-cleanup (90 days)
-	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing SeveranceReconnectionAttempt.

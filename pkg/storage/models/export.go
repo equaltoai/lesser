@@ -9,39 +9,41 @@ import (
 
 // Export represents a data export request
 type Export struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - export records use EXPORT#{export_id} pattern
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for user queries - USER#{username}, CREATED#{timestamp}
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// Export metadata
-	ID           string           `json:"id"`
-	Username     string           `json:"username"`
-	Type         string           `json:"type"`   // archive, followers, following, etc.
-	Format       string           `json:"format"` // activitypub, mastodon, csv
-	Status       string           `json:"status"` // pending, processing, completed, failed
-	Options      map[string]any   `json:"options"`
-	IncludeMedia bool             `json:"include_media"`
-	DateRange    *ExportDateRange `json:"date_range"`
+	ID           string           `dynamorm:"attr:id" json:"id"`
+	Username     string           `dynamorm:"attr:username" json:"username"`
+	Type         string           `dynamorm:"attr:type" json:"type"`     // archive, followers, following, etc.
+	Format       string           `dynamorm:"attr:format" json:"format"` // activitypub, mastodon, csv
+	Status       string           `dynamorm:"attr:status" json:"status"` // pending, processing, completed, failed
+	Options      map[string]any   `dynamorm:"attr:options" json:"options"`
+	IncludeMedia bool             `dynamorm:"attr:includeMedia" json:"include_media"`
+	DateRange    *ExportDateRange `dynamorm:"attr:dateRange" json:"date_range"`
 
 	// Status tracking
-	DownloadURL string     `json:"download_url,omitempty"`
-	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
-	FileSize    int64      `json:"file_size,omitempty"`
-	RecordCount int64      `json:"record_count,omitempty"`
-	S3Key       string     `json:"s3_key,omitempty"`
-	Error       string     `json:"error,omitempty"`
+	DownloadURL string     `dynamorm:"attr:downloadURL" json:"download_url,omitempty"`
+	ExpiresAt   *time.Time `dynamorm:"attr:expiresAt" json:"expires_at,omitempty"`
+	FileSize    int64      `dynamorm:"attr:fileSize" json:"file_size,omitempty"`
+	RecordCount int64      `dynamorm:"attr:recordCount" json:"record_count,omitempty"`
+	S3Key       string     `dynamorm:"attr:s3Key" json:"s3_key,omitempty"`
+	Error       string     `dynamorm:"attr:error" json:"error,omitempty"`
 
 	// TTL for automatic cleanup
-	TTL int64 `json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Timestamps
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	CreatedAt   time.Time  `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt   time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CompletedAt *time.Time `dynamorm:"attr:completedAt" json:"completed_at,omitempty"`
 }
 
 // ExportDateRange for filtering exports

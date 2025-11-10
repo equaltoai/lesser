@@ -11,126 +11,130 @@ import (
 
 // DynamoDBCostRecord represents detailed cost tracking data from DynamoDB operations
 type DynamoDBCostRecord struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using operation type as partition key with timestamp sort key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "cost#{operation_type}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "ts#{timestamp}#{id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "cost#{operation_type}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Table queries
-	GSI1PK string `dynamorm:"index:table-index,pk" json:"gsi1_pk"` // Format: "COST_TABLE#{table_name}"
-	GSI1SK string `dynamorm:"index:table-index,sk" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
+	GSI1PK string `dynamorm:"index:table-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "COST_TABLE#{table_name}"
+	GSI1SK string `dynamorm:"index:table-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// GSI2 - Aggregation queries
-	GSI2PK string `dynamorm:"index:aggregate-index,pk" json:"gsi2_pk"` // Format: "COST_AGG#{period}#{operation_type}"
-	GSI2SK string `dynamorm:"index:aggregate-index,sk" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
+	GSI2PK string `dynamorm:"index:aggregate-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "COST_AGG#{period}#{operation_type}"
+	GSI2SK string `dynamorm:"index:aggregate-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
 	// Core cost tracking data
-	ID            string    `json:"id"`
-	OperationType string    `json:"operation_type"` // GetItem, PutItem, Query, Scan, BatchWrite, etc.
-	Table         string    `json:"table_name"`
-	Timestamp     time.Time `json:"timestamp"`
-	Period        string    `json:"period"` // minute, hour, day
+	ID            string    `dynamorm:"attr:id" json:"id"`
+	OperationType string    `dynamorm:"attr:operationType" json:"operation_type"` // GetItem, PutItem, Query, Scan, BatchWrite, etc.
+	Table         string    `dynamorm:"attr:tableName" json:"table_name"`
+	Timestamp     time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	Period        string    `dynamorm:"attr:period" json:"period"` // minute, hour, day
 
 	// Capacity units consumed
-	ReadCapacityUnits  float64 `json:"read_capacity_units"`
-	WriteCapacityUnits float64 `json:"write_capacity_units"`
+	ReadCapacityUnits  float64 `dynamorm:"attr:readCapacityUnits" json:"read_capacity_units"`
+	WriteCapacityUnits float64 `dynamorm:"attr:writeCapacityUnits" json:"write_capacity_units"`
 
 	// Cost calculations (in microcents for precision)
-	ReadCostMicroCents  int64 `json:"read_cost_micro_cents"`
-	WriteCostMicroCents int64 `json:"write_cost_micro_cents"`
-	TotalCostMicroCents int64 `json:"total_cost_micro_cents"`
+	ReadCostMicroCents  int64 `dynamorm:"attr:readCostMicroCents" json:"read_cost_micro_cents"`
+	WriteCostMicroCents int64 `dynamorm:"attr:writeCostMicroCents" json:"write_cost_micro_cents"`
+	TotalCostMicroCents int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
 
 	// Estimated cost in dollars for easy display
-	EstimatedCostDollars float64 `json:"estimated_cost_dollars"`
+	EstimatedCostDollars float64 `dynamorm:"attr:estimatedCostDollars" json:"estimated_cost_dollars"`
 
 	// Operation details
-	ItemCount       int    `json:"item_count"`           // Number of items in operation
-	RequestDuration int64  `json:"request_duration"`     // Duration in milliseconds
-	IndexName       string `json:"index_name,omitempty"` // GSI name if used
-	ConsistentRead  bool   `json:"consistent_read"`
+	ItemCount       int    `dynamorm:"attr:itemCount" json:"item_count"`             // Number of items in operation
+	RequestDuration int64  `dynamorm:"attr:requestDuration" json:"request_duration"` // Duration in milliseconds
+	IndexName       string `dynamorm:"attr:indexName" json:"index_name,omitempty"`   // GSI name if used
+	ConsistentRead  bool   `dynamorm:"attr:consistentRead" json:"consistent_read"`
 
 	// Service and function information
-	ServiceName     string `json:"service_name"`     // Lambda function or service
-	RequestID       string `json:"request_id"`       // AWS Request ID
-	FunctionName    string `json:"function_name"`    // Lambda function name
-	FunctionVersion string `json:"function_version"` // Lambda function version
+	ServiceName     string `dynamorm:"attr:serviceName" json:"service_name"`         // Lambda function or service
+	RequestID       string `dynamorm:"attr:requestID" json:"request_id"`             // AWS Request ID
+	FunctionName    string `dynamorm:"attr:functionName" json:"function_name"`       // Lambda function name
+	FunctionVersion string `dynamorm:"attr:functionVersion" json:"function_version"` // Lambda function version
 
 	// Additional metadata
-	Tags       map[string]string      `json:"tags,omitempty"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
+	Tags       map[string]string      `dynamorm:"attr:tags" json:"tags,omitempty"`
+	Properties map[string]interface{} `dynamorm:"attr:properties" json:"properties,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (30 days for raw, 90 days for aggregated)
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
 }
 
 // DynamoDBCostAggregation represents pre-computed cost aggregations
 type DynamoDBCostAggregation struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "cost_agg#{period}#{operation_type}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "window#{windowStart}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "cost_agg#{period}#{operation_type}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "window#{windowStart}"
 
 	// Aggregation details
-	Period        string    `json:"period"`         // minute, hour, day, week, month
-	OperationType string    `json:"operation_type"` // Same as CostTracking.OperationType
-	Table         string    `json:"table_name"`     // Specific table or "all" for all tables
-	WindowStart   time.Time `json:"window_start"`   // Start of aggregation window
-	WindowEnd     time.Time `json:"window_end"`     // End of aggregation window
+	Period        string    `dynamorm:"attr:period" json:"period"`                // minute, hour, day, week, month
+	OperationType string    `dynamorm:"attr:operationType" json:"operation_type"` // Same as CostTracking.OperationType
+	Table         string    `dynamorm:"attr:tableName" json:"table_name"`         // Specific table or "all" for all tables
+	WindowStart   time.Time `dynamorm:"attr:windowStart" json:"window_start"`     // Start of aggregation window
+	WindowEnd     time.Time `dynamorm:"attr:windowEnd" json:"window_end"`         // End of aggregation window
 
 	// Aggregated capacity units
-	TotalReadCapacityUnits  float64 `json:"total_read_capacity_units"`
-	TotalWriteCapacityUnits float64 `json:"total_write_capacity_units"`
+	TotalReadCapacityUnits  float64 `dynamorm:"attr:totalReadCapacityUnits" json:"total_read_capacity_units"`
+	TotalWriteCapacityUnits float64 `dynamorm:"attr:totalWriteCapacityUnits" json:"total_write_capacity_units"`
 
 	// Aggregated costs
-	TotalReadCostMicroCents  int64   `json:"total_read_cost_micro_cents"`
-	TotalWriteCostMicroCents int64   `json:"total_write_cost_micro_cents"`
-	TotalCostMicroCents      int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars         float64 `json:"total_cost_dollars"`
+	TotalReadCostMicroCents  int64   `dynamorm:"attr:totalReadCostMicroCents" json:"total_read_cost_micro_cents"`
+	TotalWriteCostMicroCents int64   `dynamorm:"attr:totalWriteCostMicroCents" json:"total_write_cost_micro_cents"`
+	TotalCostMicroCents      int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars         float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
 
 	// Operation statistics
-	TotalOperations         int64   `json:"total_operations"`
-	TotalItemCount          int64   `json:"total_item_count"`
-	AverageCostPerOperation float64 `json:"average_cost_per_operation"`
-	AverageDuration         float64 `json:"average_duration"` // milliseconds
+	TotalOperations         int64   `dynamorm:"attr:totalOperations" json:"total_operations"`
+	TotalItemCount          int64   `dynamorm:"attr:totalItemCount" json:"total_item_count"`
+	AverageCostPerOperation float64 `dynamorm:"attr:averageCostPerOperation" json:"average_cost_per_operation"`
+	AverageDuration         float64 `dynamorm:"attr:averageDuration" json:"average_duration"` // milliseconds
 
 	// Cost breakdown by table
-	TableBreakdown map[string]*DynamoDBTableCostStats `json:"table_breakdown,omitempty"`
+	TableBreakdown map[string]*DynamoDBTableCostStats `dynamorm:"attr:tableBreakdown" json:"table_breakdown,omitempty"`
 
 	// Cost breakdown by service
-	ServiceBreakdown map[string]*DynamoDBServiceCostStats `json:"service_breakdown,omitempty"`
+	ServiceBreakdown map[string]*DynamoDBServiceCostStats `dynamorm:"attr:serviceBreakdown" json:"service_breakdown,omitempty"`
 
 	// Percentiles for cost distribution
-	CostPercentiles map[string]float64 `json:"cost_percentiles,omitempty"` // p50, p90, p95, p99
+	CostPercentiles map[string]float64 `dynamorm:"attr:costPercentiles" json:"cost_percentiles,omitempty"` // p50, p90, p95, p99
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL (longer for aggregated data)
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"`
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"`
 }
 
 // DynamoDBTableCostStats represents cost statistics for a specific table
 type DynamoDBTableCostStats struct {
-	Table               string  `json:"table_name"`
-	OperationCount      int64   `json:"operation_count"`
-	ReadCapacityUnits   float64 `json:"read_capacity_units"`
-	WriteCapacityUnits  float64 `json:"write_capacity_units"`
-	TotalCostMicroCents int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars    float64 `json:"total_cost_dollars"`
-	UniqueUsers         int64   `json:"unique_users"` // Number of unique users for this table
+	Table               string  `dynamorm:"attr:tableName" json:"table_name"`
+	OperationCount      int64   `dynamorm:"attr:operationCount" json:"operation_count"`
+	ReadCapacityUnits   float64 `dynamorm:"attr:readCapacityUnits" json:"read_capacity_units"`
+	WriteCapacityUnits  float64 `dynamorm:"attr:writeCapacityUnits" json:"write_capacity_units"`
+	TotalCostMicroCents int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars    float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
+	UniqueUsers         int64   `dynamorm:"attr:uniqueUsers" json:"unique_users"` // Number of unique users for this table
 }
 
 // DynamoDBServiceCostStats represents cost statistics for a specific service
 type DynamoDBServiceCostStats struct {
-	ServiceName         string  `json:"service_name"`
-	OperationCount      int64   `json:"operation_count"`
-	TotalCostMicroCents int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars    float64 `json:"total_cost_dollars"`
-	AverageCostPerOp    float64 `json:"average_cost_per_op"`
-	DataTransferBytes   int64   `json:"data_transfer_bytes"` // Data transfer for this service
+	ServiceName         string  `dynamorm:"attr:serviceName" json:"service_name"`
+	OperationCount      int64   `dynamorm:"attr:operationCount" json:"operation_count"`
+	TotalCostMicroCents int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars    float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
+	AverageCostPerOp    float64 `dynamorm:"attr:averageCostPerOp" json:"average_cost_per_op"`
+	DataTransferBytes   int64   `dynamorm:"attr:dataTransferBytes" json:"data_transfer_bytes"` // Data transfer for this service
 }
 
 // TableName returns the DynamoDB table backing DynamoDBCostRecord.

@@ -10,16 +10,18 @@ import (
 // NotificationLegacy represents a notification with legacy key patterns
 // Used for compatibility with existing notification data
 type NotificationLegacy struct {
-	PK        string `dynamorm:"pk" json:"PK"` // NOTIFICATIONS#username
-	SK        string `dynamorm:"sk" json:"SK"` // timestamp#notificationID
-	ID        string `json:"ID"`
-	Type      string `json:"Type"`
-	Username  string `json:"Username"`
-	AccountID string `json:"AccountID"`
-	StatusID  string `json:"StatusID,omitempty"`
-	Read      bool   `json:"Read"`
-	CreatedAt int64  `json:"CreatedAt"`          // Unix timestamp for sorting
-	TTL       int64  `dynamorm:"ttl" json:"TTL"` // 30 days auto-deletion
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK        string `dynamorm:"pk,attr:PK" json:"PK"` // NOTIFICATIONS#username
+	SK        string `dynamorm:"sk,attr:SK" json:"SK"` // timestamp#notificationID
+	ID        string `dynamorm:"attr:id" json:"ID"`
+	Type      string `dynamorm:"attr:type" json:"Type"`
+	Username  string `dynamorm:"attr:username" json:"Username"`
+	AccountID string `dynamorm:"attr:accountID" json:"AccountID"`
+	StatusID  string `dynamorm:"attr:statusID" json:"StatusID,omitempty"`
+	Read      bool   `dynamorm:"attr:read" json:"Read"`
+	CreatedAt int64  `dynamorm:"attr:createdAt" json:"CreatedAt"` // Unix timestamp for sorting
+	TTL       int64  `dynamorm:"ttl,attr:ttl" json:"TTL"`         // 30 days auto-deletion
 }
 
 // TableName returns the DynamoDB table name

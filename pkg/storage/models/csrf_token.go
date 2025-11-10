@@ -10,23 +10,25 @@ import (
 
 // CSRFToken represents a CSRF token stored in DynamoDB
 type CSRFToken struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using token as partition key for fast lookups
-	PK string `dynamorm:"pk" json:"pk"` // Format: "CSRF#{token}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "TOKEN"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "CSRF#{token}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TOKEN"
 
 	// GSI1 - User CSRF tokens lookup for rate limiting
-	GSI1PK string `dynamorm:"index:user-csrf-index,pk" json:"gsi1_pk"` // Format: "USER_CSRF#{userID}"
-	GSI1SK string `dynamorm:"index:user-csrf-index,sk" json:"gsi1_sk"` // Format: "{created_at}#{token}"
+	GSI1PK string `dynamorm:"index:user-csrf-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_CSRF#{userID}"
+	GSI1SK string `dynamorm:"index:user-csrf-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{token}"
 
 	// Core CSRF token data
-	Token     string `json:"token"`
-	UserID    string `json:"user_id"`
-	CreatedAt int64  `json:"created_at"` // Unix timestamp
-	ExpiresAt int64  `json:"expires_at"` // Unix timestamp
-	Used      bool   `json:"used"`
+	Token     string `dynamorm:"attr:token" json:"token"`
+	UserID    string `dynamorm:"attr:userID" json:"user_id"`
+	CreatedAt int64  `dynamorm:"attr:createdAt" json:"created_at"` // Unix timestamp
+	ExpiresAt int64  `dynamorm:"attr:expiresAt" json:"expires_at"` // Unix timestamp
+	Used      bool   `dynamorm:"attr:used" json:"used"`
 
 	// TTL for automatic cleanup - DynamoDB will automatically delete expired tokens
-	TTL int64 `dynamorm:"ttl" json:"ttl"` // Same as ExpiresAt for automatic cleanup
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"` // Same as ExpiresAt for automatic cleanup
 }
 
 // TableName returns the DynamoDB table name for the CSRFToken model

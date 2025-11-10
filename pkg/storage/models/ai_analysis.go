@@ -9,36 +9,38 @@ import (
 
 // AIAnalysis represents an AI analysis result stored in DynamoDB
 type AIAnalysis struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "AI#{object_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "ANALYSIS#{analysis_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "AI#{object_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ANALYSIS#{analysis_id}"
 
 	// GSI4 for temporal queries (reusing cost tracking GSI)
-	GSI4PK string `dynamorm:"index:cost-date-index,pk" json:"gsi4_pk"` // Format: "AI#ANALYSIS#{date}"
-	GSI4SK string `dynamorm:"index:cost-date-index,sk" json:"gsi4_sk"` // Format: "{timestamp}"
+	GSI4PK string `dynamorm:"index:cost-date-index,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "AI#ANALYSIS#{date}"
+	GSI4SK string `dynamorm:"index:cost-date-index,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{timestamp}"
 
 	// Core fields
-	ID         string    `json:"id"`
-	ObjectID   string    `json:"object_id"`
-	ObjectType string    `json:"object_type"`
-	AnalyzedAt time.Time `json:"analyzed_at"`
-	Version    string    `json:"version"`
+	ID         string    `dynamorm:"attr:id" json:"id"`
+	ObjectID   string    `dynamorm:"attr:objectID" json:"object_id"`
+	ObjectType string    `dynamorm:"attr:objectType" json:"object_type"`
+	AnalyzedAt time.Time `dynamorm:"attr:analyzedAt" json:"analyzed_at"`
+	Version    string    `dynamorm:"attr:version" json:"version"`
 
 	// Analysis results
-	TextAnalysis  *ai.TextAnalysis  `json:"text_analysis,omitempty"`
-	ImageAnalysis *ai.ImageAnalysis `json:"image_analysis,omitempty"`
-	AIDetection   *ai.AIDetection   `json:"ai_detection,omitempty"`
-	SpamAnalysis  *ai.SpamAnalysis  `json:"spam_analysis,omitempty"`
+	TextAnalysis  *ai.TextAnalysis  `dynamorm:"attr:textAnalysis" json:"text_analysis,omitempty"`
+	ImageAnalysis *ai.ImageAnalysis `dynamorm:"attr:imageAnalysis" json:"image_analysis,omitempty"`
+	AIDetection   *ai.AIDetection   `dynamorm:"attr:aiDetection" json:"ai_detection,omitempty"`
+	SpamAnalysis  *ai.SpamAnalysis  `dynamorm:"attr:spamAnalysis" json:"spam_analysis,omitempty"`
 
 	// Composite scores
-	OverallRisk      float64 `json:"overall_risk"`
-	ModerationAction string  `json:"moderation_action"`
-	Confidence       float64 `json:"confidence"`
+	OverallRisk      float64 `dynamorm:"attr:overallRisk" json:"overall_risk"`
+	ModerationAction string  `dynamorm:"attr:moderationAction" json:"moderation_action"`
+	Confidence       float64 `dynamorm:"attr:confidence" json:"confidence"`
 
 	// DynamoDB metadata
-	Type      string    `json:"type"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Type      string    `dynamorm:"attr:type" json:"type"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // UpdateKeys updates the GSI keys for the AI analysis
@@ -83,13 +85,15 @@ func (AIAnalysis) TableName() string {
 
 // AIAnalysisQueue represents a queued object for AI analysis
 type AIAnalysisQueue struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Using object keys for updating
-	PK string `dynamorm:"pk" json:"pk"` // Format: "OBJECT#{object_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "OBJECT#{object_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "OBJECT#{object_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "OBJECT#{object_id}"
 
 	// Queue metadata
-	ForceAnalysis bool      `json:"force_analysis"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ForceAnalysis bool      `dynamorm:"attr:forceAnalysis" json:"force_analysis"`
+	UpdatedAt     time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // UpdateKeys updates the keys for the queue entry

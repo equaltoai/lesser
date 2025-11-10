@@ -7,18 +7,20 @@ import (
 
 // SearchSuggestion represents search autocomplete suggestions
 type SearchSuggestion struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"`
-	SK string `dynamorm:"sk" json:"-"`
+	PK string `dynamorm:"pk,attr:PK" json:"-"`
+	SK string `dynamorm:"sk,attr:SK" json:"-"`
 
 	// Fields
-	Type      string    `json:"type"`  // hashtag, account, username, display_name
-	Term      string    `json:"term"`  // the search term
-	Score     float64   `json:"score"` // popularity/relevance score
-	LastUsed  time.Time `json:"last_used"`
-	UseCount  int       `json:"use_count"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Type      string    `dynamorm:"attr:type" json:"type"`   // hashtag, account, username, display_name
+	Term      string    `dynamorm:"attr:term" json:"term"`   // the search term
+	Score     float64   `dynamorm:"attr:score" json:"score"` // popularity/relevance score
+	LastUsed  time.Time `dynamorm:"attr:lastUsed" json:"last_used"`
+	UseCount  int       `dynamorm:"attr:useCount" json:"use_count"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing SearchSuggestion.

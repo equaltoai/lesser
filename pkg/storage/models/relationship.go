@@ -9,33 +9,35 @@ import (
 // RelationshipRecord represents a follow relationship between users
 // This model preserves the EXACT key patterns from the legacy implementation
 type RelationshipRecord struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - MUST match legacy exactly (UPPERCASE prefixes!)
-	PK string `dynamorm:"pk" json:"PK"` // FOLLOW#{followerUsername}
-	SK string `dynamorm:"sk" json:"SK"` // FOLLOWING#{followingUsername}
+	PK string `dynamorm:"pk,attr:PK" json:"PK"` // FOLLOW#{followerUsername}
+	SK string `dynamorm:"sk,attr:SK" json:"SK"` // FOLLOWING#{followingUsername}
 
 	// GSI1 for reverse lookups (who follows me)
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // FOLLOW#{followedUsername}
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // FOLLOWER#{followerUsername}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:GSI1PK" json:"GSI1PK"` // FOLLOW#{followedUsername}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:GSI1SK" json:"GSI1SK"` // FOLLOWER#{followerUsername}
 
 	// GSI2 for follower domain queries (Phase 2.4 - severance detection)
-	GSI2PK string `dynamorm:"index:GSI2,pk,omitempty" json:"GSI2PK,omitempty"` // FOLLOWER_DOMAIN#{domain}
-	GSI2SK string `dynamorm:"index:GSI2,sk,omitempty" json:"GSI2SK,omitempty"` // FOLLOWING#{username}
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:GSI2PK" json:"GSI2PK,omitempty"` // FOLLOWER_DOMAIN#{domain}
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:GSI2SK" json:"GSI2SK,omitempty"` // FOLLOWING#{username}
 
 	// GSI3 for following domain queries (Phase 2.4 - severance detection)
-	GSI3PK string `dynamorm:"index:GSI3,pk,omitempty" json:"GSI3PK,omitempty"` // FOLLOWING_DOMAIN#{domain}
-	GSI3SK string `dynamorm:"index:GSI3,sk,omitempty" json:"GSI3SK,omitempty"` // FOLLOWER#{username}
+	GSI3PK string `dynamorm:"index:GSI3,pk,attr:GSI3PK" json:"GSI3PK,omitempty"` // FOLLOWING_DOMAIN#{domain}
+	GSI3SK string `dynamorm:"index:GSI3,sk,attr:GSI3SK" json:"GSI3SK,omitempty"` // FOLLOWER#{username}
 
 	// Core fields from legacy
-	ActivityID string    `json:"ActivityID"`
-	State      string    `json:"State"` // pending, accepted, rejected
-	CreatedAt  time.Time `json:"CreatedAt"`
-	UpdatedAt  time.Time `json:"UpdatedAt"`
+	ActivityID string    `dynamorm:"attr:activityID" json:"ActivityID"`
+	State      string    `dynamorm:"attr:state" json:"State"` // pending, accepted, rejected
+	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`
+	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"UpdatedAt"`
 
 	// Relationship preferences
-	Notifying      bool     `json:"Notifying"`           // Receive notifications for this user's posts
-	ShowingReblogs bool     `json:"ShowingReblogs"`      // Show reblogs from this user in timeline
-	Languages      []string `json:"Languages,omitempty"` // Filter to specific languages (empty = all)
-	Note           string   `json:"Note,omitempty"`      // Private note about this relationship
+	Notifying      bool     `dynamorm:"attr:notifying" json:"Notifying"`                     // Receive notifications for this user's posts
+	ShowingReblogs bool     `dynamorm:"attr:showingReblogs" json:"ShowingReblogs"`           // Show reblogs from this user in timeline
+	Languages      []string `dynamorm:"attr:languages" json:"Languages,omitempty"`           // Filter to specific languages (empty = all)
+	Note           string   `dynamorm:"attr:note" json:"Note,omitempty"`                     // Private note about this relationship
 }
 
 // Follow relationship state constants (from legacy)

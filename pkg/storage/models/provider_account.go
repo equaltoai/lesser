@@ -10,46 +10,48 @@ import (
 
 // ProviderAccount represents an OAuth provider account linked to a user
 type ProviderAccount struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using composite key for user + provider relationship
-	PK string `dynamorm:"pk" json:"pk"` // Format: "user#{userID}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "provider#{provider}#{providerID}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "user#{userID}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "provider#{provider}#{providerID}"
 
 	// GSI1 - Provider lookup (find user by provider account)
-	GSI1PK string `dynamorm:"index:provider-index,pk" json:"gsi1_pk"` // Format: "PROVIDER#{provider}"
-	GSI1SK string `dynamorm:"index:provider-index,sk" json:"gsi1_sk"` // Format: "{providerID}#{userID}"
+	GSI1PK string `dynamorm:"index:provider-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "PROVIDER#{provider}"
+	GSI1SK string `dynamorm:"index:provider-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{providerID}#{userID}"
 
 	// GSI2 - User's provider accounts
-	GSI2PK string `dynamorm:"index:user-providers-index,pk" json:"gsi2_pk"` // Format: "USER_PROVIDERS#{userID}"
-	GSI2SK string `dynamorm:"index:user-providers-index,sk" json:"gsi2_sk"` // Format: "{provider}#{created_at}"
+	GSI2PK string `dynamorm:"index:user-providers-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "USER_PROVIDERS#{userID}"
+	GSI2SK string `dynamorm:"index:user-providers-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{provider}#{created_at}"
 
 	// Core provider data
-	UserID       string `json:"user_id"`
-	Provider     string `json:"provider"`                // "google", "github", "twitter", etc.
-	ProviderID   string `json:"provider_id"`             // Provider's unique ID for the user
-	ProviderName string `json:"provider_name,omitempty"` // Display name from provider
+	UserID       string `dynamorm:"attr:userID" json:"user_id"`
+	Provider     string `dynamorm:"attr:provider" json:"provider"`                // "google", "github", "twitter", etc.
+	ProviderID   string `dynamorm:"attr:providerID" json:"provider_id"`          // Provider's unique ID for the user
+	ProviderName string `dynamorm:"attr:providerName" json:"provider_name,omitempty"` // Display name from provider
 
 	// OAuth tokens (stored encrypted)
-	AccessToken  string    `json:"access_token,omitempty"`
-	RefreshToken string    `json:"refresh_token,omitempty"`
-	TokenExpiry  time.Time `json:"token_expiry,omitempty"`
+	AccessToken  string    `dynamorm:"attr:accessToken" json:"access_token,omitempty"`
+	RefreshToken string    `dynamorm:"attr:refreshToken" json:"refresh_token,omitempty"`
+	TokenExpiry  time.Time `dynamorm:"attr:tokenExpiry" json:"token_expiry,omitempty"`
 
 	// Profile data from provider
-	Email       string `json:"email,omitempty"`
-	Username    string `json:"username,omitempty"`
-	DisplayName string `json:"display_name,omitempty"`
-	AvatarURL   string `json:"avatar_url,omitempty"`
+	Email       string `dynamorm:"attr:email" json:"email,omitempty"`
+	Username    string `dynamorm:"attr:username" json:"username,omitempty"`
+	DisplayName string `dynamorm:"attr:displayName" json:"display_name,omitempty"`
+	AvatarURL   string `dynamorm:"attr:avatarURL" json:"avatar_url,omitempty"`
 
 	// Status
-	IsActive  bool `json:"is_active"`
-	IsPrimary bool `json:"is_primary"` // Is this the primary auth method?
+	IsActive  bool `dynamorm:"attr:isActive" json:"is_active"`
+	IsPrimary bool `dynamorm:"attr:isPrimary" json:"is_primary"` // Is this the primary auth method?
 
 	// Metadata
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	CreatedAt  time.Time  `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt  time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`
+	LastUsedAt *time.Time `dynamorm:"attr:lastUsedAt" json:"last_used_at,omitempty"`
 
 	// Version for optimistic locking
-	Version int `dynamorm:"version" json:"version"`
+	Version int `dynamorm:"version,attr:version" json:"version"`
 }
 
 // TableName returns the DynamoDB table name for the ProviderAccount model

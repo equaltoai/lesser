@@ -7,15 +7,17 @@ import (
 
 // Trustee represents a trusted contact for social recovery
 type Trustee struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys
-	PK string `dynamorm:"pk"` // USER#username
-	SK string `dynamorm:"sk"` // TRUSTEE#actorID
+	PK string `dynamorm:"pk,attr:PK"` // USER#username
+	SK string `dynamorm:"sk,attr:SK"` // TRUSTEE#actorID
 
 	// Business fields
-	Username  string    `json:"username"` // Who owns this trustee relationship
-	ActorID   string    `json:"actor_id"` // @friend@mastodon.social
-	AddedAt   time.Time `json:"added_at"`
-	Confirmed bool      `json:"confirmed"`
+	Username  string    `dynamorm:"attr:username" json:"username"` // Who owns this trustee relationship
+	ActorID   string    `dynamorm:"attr:actorID" json:"actor_id"`  // @friend@mastodon.social
+	AddedAt   time.Time `dynamorm:"attr:addedAt" json:"added_at"`
+	Confirmed bool      `dynamorm:"attr:confirmed" json:"confirmed"`
 }
 
 // TableName returns the DynamoDB table backing Trustee.
@@ -42,26 +44,28 @@ func (t *Trustee) GetSK() string {
 
 // RecoveryRequest represents an active social recovery request
 type RecoveryRequest struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys
-	PK string `dynamorm:"pk"` // RECOVERY#id
-	SK string `dynamorm:"sk"` // REQUEST
+	PK string `dynamorm:"pk,attr:PK"` // RECOVERY#id
+	SK string `dynamorm:"sk,attr:SK"` // REQUEST
 
 	// GSI1 for querying by username
-	GSI1PK string `dynamorm:"index:GSI1,pk"` // USER#username
-	GSI1SK string `dynamorm:"index:GSI1,sk"` // RECOVERY#timestamp
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK"` // USER#username
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK"` // RECOVERY#timestamp
 
 	// Business fields
-	ID            string          `json:"id"`
-	Username      string          `json:"username"`
-	InitiatedAt   time.Time       `json:"initiated_at"`
-	ExpiresAt     time.Time       `json:"expires_at"`
-	RequiredVotes int             `json:"required_votes"`
-	ReceivedVotes map[string]bool `json:"received_votes"` // trustee_id -> voted
-	RecoveryToken string          `json:"recovery_token"`
-	Status        string          `json:"status"` // pending, approved, expired, cancelled
+	ID            string          `dynamorm:"attr:id" json:"id"`
+	Username      string          `dynamorm:"attr:username" json:"username"`
+	InitiatedAt   time.Time       `dynamorm:"attr:initiatedAt" json:"initiated_at"`
+	ExpiresAt     time.Time       `dynamorm:"attr:expiresAt" json:"expires_at"`
+	RequiredVotes int             `dynamorm:"attr:requiredVotes" json:"required_votes"`
+	ReceivedVotes map[string]bool `dynamorm:"attr:receivedVotes" json:"received_votes"` // trustee_id -> voted
+	RecoveryToken string          `dynamorm:"attr:recoveryToken" json:"recovery_token"`
+	Status        string          `dynamorm:"attr:status" json:"status"` // pending, approved, expired, cancelled
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing RecoveryRequest.
@@ -93,16 +97,18 @@ func (r *RecoveryRequest) GetSK() string {
 
 // RecoveryCode represents a single recovery code
 type RecoveryCode struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys
-	PK string `dynamorm:"pk"` // USER#username
-	SK string `dynamorm:"sk"` // RECOVERY_CODE#position
+	PK string `dynamorm:"pk,attr:PK"` // USER#username
+	SK string `dynamorm:"sk,attr:SK"` // RECOVERY_CODE#position
 
 	// Business fields
-	Username  string     `json:"username"`
-	CodeHash  string     `json:"code_hash"` // bcrypt hash of the code
-	CreatedAt time.Time  `json:"created_at"`
-	UsedAt    *time.Time `json:"used_at,omitempty"`
-	Position  int        `json:"position"` // Position in the list (0-7 typically)
+	Username  string     `dynamorm:"attr:username" json:"username"`
+	CodeHash  string     `dynamorm:"attr:codeHash" json:"code_hash"` // bcrypt hash of the code
+	CreatedAt time.Time  `dynamorm:"attr:createdAt" json:"created_at"`
+	UsedAt    *time.Time `dynamorm:"attr:usedAt" json:"used_at,omitempty"`
+	Position  int        `dynamorm:"attr:position" json:"position"` // Position in the list (0-7 typically)
 }
 
 // TableName returns the DynamoDB table backing RecoveryCode.
@@ -129,16 +135,18 @@ func (c *RecoveryCode) GetSK() string {
 
 // RecoveryToken represents a generic recovery token with custom data
 type RecoveryToken struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys
-	PK string `dynamorm:"pk"` // The key parameter directly
-	SK string `dynamorm:"sk"` // TOKEN
+	PK string `dynamorm:"pk,attr:PK"` // The key parameter directly
+	SK string `dynamorm:"sk,attr:SK"` // TOKEN
 
 	// Business fields
-	Data      map[string]any `json:"data"`
-	CreatedAt time.Time      `json:"created_at"`
+	Data      map[string]any `dynamorm:"attr:data" json:"data"`
+	CreatedAt time.Time      `dynamorm:"attr:createdAt" json:"created_at"`
 
 	// TTL for automatic cleanup (24 hours)
-	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing RecoveryToken.

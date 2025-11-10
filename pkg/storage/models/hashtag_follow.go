@@ -7,17 +7,19 @@ import (
 
 // HashtagFollow represents a user following a hashtag
 type HashtagFollow struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"` // user#{userID}
-	SK string `dynamorm:"sk" json:"-"` // hashtag#{name}
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // user#{userID}
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // hashtag#{name}
 
 	// Fields
-	UserID               string    `json:"user_id"`
-	Hashtag              string    `json:"hashtag"`
-	NotificationsEnabled bool      `json:"notifications_enabled"`
-	Muted                bool      `json:"muted"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	UserID               string    `dynamorm:"attr:userID" json:"user_id"`
+	Hashtag              string    `dynamorm:"attr:hashtag" json:"hashtag"`
+	NotificationsEnabled bool      `dynamorm:"attr:notificationsEnabled" json:"notifications_enabled"`
+	Muted                bool      `dynamorm:"attr:muted" json:"muted"`
+	CreatedAt            time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt            time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // UpdateKeysWithParams updates the primary and sort keys for DynamoDB

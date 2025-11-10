@@ -7,19 +7,21 @@ import (
 
 // HealthCheckResult represents a stored health check result in DynamoDB
 type HealthCheckResult struct {
-	PK            string                 `dynamorm:"pk" json:"pk"`                 // HEALTH_CHECK#timestamp
-	SK            string                 `dynamorm:"sk" json:"sk"`                 // RESULT#component_type#identifier
-	GSI1PK        string                 `dynamorm:"index:gsi1,pk" json:"gsi1_pk"` // COMPONENT#component_type#identifier
-	GSI1SK        string                 `dynamorm:"index:gsi1,sk" json:"gsi1_sk"` // timestamp
-	Component     string                 `json:"component"`                        // component identifier
-	ComponentType string                 `json:"component_type"`                   // "dynamodb", "lambda", "sqs"
-	Status        string                 `json:"status"`                           // "healthy", "warning", "critical", "unknown"
-	CheckTime     time.Time              `json:"check_time"`
-	LatencyMs     int64                  `json:"latency_ms"`
-	Error         string                 `json:"error,omitempty"`
-	Metadata      map[string]interface{} `json:"metadata,omitempty"`
-	RequestID     string                 `json:"request_id"`
-	TTL           int64                  `dynamorm:"ttl" json:"ttl"` // Auto-expire after 30 days
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK            string                 `dynamorm:"pk,attr:PK" json:"pk"`                 // HEALTH_CHECK#timestamp
+	SK            string                 `dynamorm:"sk,attr:SK" json:"sk"`                 // RESULT#component_type#identifier
+	GSI1PK        string                 `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // COMPONENT#component_type#identifier
+	GSI1SK        string                 `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // timestamp
+	Component     string                 `dynamorm:"attr:component" json:"component"`          // component identifier
+	ComponentType string                 `dynamorm:"attr:componentType" json:"component_type"` // "dynamodb", "lambda", "sqs"
+	Status        string                 `dynamorm:"attr:status" json:"status"`               // "healthy", "warning", "critical", "unknown"
+	CheckTime     time.Time              `dynamorm:"attr:checkTime" json:"check_time"`
+	LatencyMs     int64                  `dynamorm:"attr:latencyMs" json:"latency_ms"`
+	Error         string                 `dynamorm:"attr:error" json:"error,omitempty"`
+	Metadata      map[string]interface{} `dynamorm:"attr:metadata" json:"metadata,omitempty"`
+	RequestID     string                 `dynamorm:"attr:requestID" json:"request_id"`
+	TTL           int64                  `dynamorm:"ttl,attr:ttl" json:"ttl"` // Auto-expire after 30 days
 }
 
 // TableName returns the DynamoDB table backing HealthCheckResult.
@@ -63,22 +65,24 @@ func NewHealthCheckResult(componentType, component, status, requestID string, ch
 
 // HealthCheckSummaryResult represents aggregated health check data
 type HealthCheckSummaryResult struct {
-	PK             string    `dynamorm:"pk" json:"pk"`                 // HEALTH_SUMMARY#date
-	SK             string    `dynamorm:"sk" json:"sk"`                 // SUMMARY#hour
-	GSI1PK         string    `dynamorm:"index:gsi1,pk" json:"gsi1_pk"` // DATE#date
-	GSI1SK         string    `dynamorm:"index:gsi1,sk" json:"gsi1_sk"` // HOUR#hour
-	Date           string    `json:"date"`                             // YYYY-MM-DD
-	Hour           int       `json:"hour"`                             // 0-23
-	TotalChecks    int       `json:"total_checks"`
-	HealthyChecks  int       `json:"healthy_checks"`
-	WarningChecks  int       `json:"warning_checks"`
-	CriticalChecks int       `json:"critical_checks"`
-	UnknownChecks  int       `json:"unknown_checks"`
-	AvgLatencyMs   float64   `json:"avg_latency_ms"`
-	MaxLatencyMs   int64     `json:"max_latency_ms"`
-	MinLatencyMs   int64     `json:"min_latency_ms"`
-	LastUpdated    time.Time `json:"last_updated"`
-	TTL            int64     `dynamorm:"ttl" json:"ttl"` // Auto-expire after 90 days
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK             string    `dynamorm:"pk,attr:PK" json:"pk"`                 // HEALTH_SUMMARY#date
+	SK             string    `dynamorm:"sk,attr:SK" json:"sk"`                 // SUMMARY#hour
+	GSI1PK         string    `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // DATE#date
+	GSI1SK         string    `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // HOUR#hour
+	Date           string    `dynamorm:"attr:date" json:"date"`                     // YYYY-MM-DD
+	Hour           int       `dynamorm:"attr:hour" json:"hour"`                     // 0-23
+	TotalChecks    int       `dynamorm:"attr:totalChecks" json:"total_checks"`
+	HealthyChecks  int       `dynamorm:"attr:healthyChecks" json:"healthy_checks"`
+	WarningChecks  int       `dynamorm:"attr:warningChecks" json:"warning_checks"`
+	CriticalChecks int       `dynamorm:"attr:criticalChecks" json:"critical_checks"`
+	UnknownChecks  int       `dynamorm:"attr:unknownChecks" json:"unknown_checks"`
+	AvgLatencyMs   float64   `dynamorm:"attr:avgLatencyMs" json:"avg_latency_ms"`
+	MaxLatencyMs   int64     `dynamorm:"attr:maxLatencyMs" json:"max_latency_ms"`
+	MinLatencyMs   int64     `dynamorm:"attr:minLatencyMs" json:"min_latency_ms"`
+	LastUpdated    time.Time `dynamorm:"attr:lastUpdated" json:"last_updated"`
+	TTL            int64     `dynamorm:"ttl,attr:ttl" json:"ttl"` // Auto-expire after 90 days
 }
 
 // TableName returns the DynamoDB table backing HealthCheckSummaryResult.
@@ -148,15 +152,17 @@ func (h *HealthCheckSummaryResult) AddCheckResult(status string, latencyMs int64
 
 // ComponentHealthHistory represents historical health data for a specific component
 type ComponentHealthHistory struct {
-	PK            string    `dynamorm:"pk" json:"pk"` // COMPONENT_HISTORY#{component_type}#{component}
-	SK            string    `dynamorm:"sk" json:"sk"` // HISTORY#{timestamp}
-	Component     string    `json:"component"`
-	ComponentType string    `json:"component_type"`
-	Status        string    `json:"status"`
-	CheckTime     time.Time `json:"check_time"`
-	LatencyMs     int64     `json:"latency_ms"`
-	Error         string    `json:"error,omitempty"`
-	TTL           int64     `dynamorm:"ttl" json:"ttl"` // Auto-expire after 7 days
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK            string    `dynamorm:"pk,attr:PK" json:"pk"` // COMPONENT_HISTORY#{component_type}#{component}
+	SK            string    `dynamorm:"sk,attr:SK" json:"sk"` // HISTORY#{timestamp}
+	Component     string    `dynamorm:"attr:component" json:"component"`
+	ComponentType string    `dynamorm:"attr:componentType" json:"component_type"`
+	Status        string    `dynamorm:"attr:status" json:"status"`
+	CheckTime     time.Time `dynamorm:"attr:checkTime" json:"check_time"`
+	LatencyMs     int64     `dynamorm:"attr:latencyMs" json:"latency_ms"`
+	Error         string    `dynamorm:"attr:error" json:"error,omitempty"`
+	TTL           int64     `dynamorm:"ttl,attr:ttl" json:"ttl"` // Auto-expire after 7 days
 }
 
 // TableName returns the DynamoDB table backing ComponentHealthHistory.

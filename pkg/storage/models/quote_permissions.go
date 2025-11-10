@@ -7,16 +7,18 @@ import (
 
 // QuotePermissions represents quote permissions for a user's statuses
 type QuotePermissions struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key fields
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// Business fields
-	Username       string   `json:"username"`
-	AllowPublic    bool     `json:"allow_public"`
-	AllowFollowers bool     `json:"allow_followers"`
-	AllowMentioned bool     `json:"allow_mentioned"`
-	BlockList      []string `json:"block_list"` // List of usernames blocked from quoting
+	Username       string   `dynamorm:"attr:username" json:"username"`
+	AllowPublic    bool     `dynamorm:"attr:allowPublic" json:"allow_public"`
+	AllowFollowers bool     `dynamorm:"attr:allowFollowers" json:"allow_followers"`
+	AllowMentioned bool     `dynamorm:"attr:allowMentioned" json:"allow_mentioned"`
+	BlockList      []string `dynamorm:"attr:blockList" json:"block_list"` // List of usernames blocked from quoting
 }
 
 // UpdateKeys updates the composite keys based on the quote permissions

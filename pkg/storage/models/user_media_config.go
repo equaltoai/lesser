@@ -10,72 +10,74 @@ import (
 
 // UserMediaConfig represents a user's media processing configuration and limits
 type UserMediaConfig struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using user ID as partition key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "USER_MEDIA_CONFIG#{userID}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "CONFIG"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "USER_MEDIA_CONFIG#{userID}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "CONFIG"
 
 	// Core config data
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
+	UserID   string `dynamorm:"attr:userID" json:"user_id"`
+	Username string `dynamorm:"attr:username" json:"username"`
 
 	// Processing preferences
-	VideoProcessingEnabled   bool `json:"video_processing_enabled"`
-	AudioProcessingEnabled   bool `json:"audio_processing_enabled"`
-	VideoThumbnailsEnabled   bool `json:"video_thumbnails_enabled"`
-	ContentModerationEnabled bool `json:"content_moderation_enabled"`
+	VideoProcessingEnabled   bool `dynamorm:"attr:videoProcessingEnabled" json:"video_processing_enabled"`
+	AudioProcessingEnabled   bool `dynamorm:"attr:audioProcessingEnabled" json:"audio_processing_enabled"`
+	VideoThumbnailsEnabled   bool `dynamorm:"attr:videoThumbnailsEnabled" json:"video_thumbnails_enabled"`
+	ContentModerationEnabled bool `dynamorm:"attr:contentModerationEnabled" json:"content_moderation_enabled"`
 
 	// Limits and quotas
-	MaxFileSize          int64 `json:"max_file_size"`           // bytes
-	MaxVideoSize         int64 `json:"max_video_size"`          // bytes
-	MaxAudioSize         int64 `json:"max_audio_size"`          // bytes
-	MaxImageSize         int64 `json:"max_image_size"`          // bytes
-	MaxVideoDuration     int   `json:"max_video_duration"`      // seconds
-	MaxDailyUploads      int   `json:"max_daily_uploads"`       // files per day
-	MaxMonthlyUploads    int   `json:"max_monthly_uploads"`     // files per month
-	MaxStorageUsage      int64 `json:"max_storage_usage"`       // bytes
-	MaxBandwidthPerMonth int64 `json:"max_bandwidth_per_month"` // bytes
+	MaxFileSize          int64 `dynamorm:"attr:maxFileSize" json:"max_file_size"`                    // bytes
+	MaxVideoSize         int64 `dynamorm:"attr:maxVideoSize" json:"max_video_size"`                  // bytes
+	MaxAudioSize         int64 `dynamorm:"attr:maxAudioSize" json:"max_audio_size"`                  // bytes
+	MaxImageSize         int64 `dynamorm:"attr:maxImageSize" json:"max_image_size"`                  // bytes
+	MaxVideoDuration     int   `dynamorm:"attr:maxVideoDuration" json:"max_video_duration"`          // seconds
+	MaxDailyUploads      int   `dynamorm:"attr:maxDailyUploads" json:"max_daily_uploads"`            // files per day
+	MaxMonthlyUploads    int   `dynamorm:"attr:maxMonthlyUploads" json:"max_monthly_uploads"`        // files per month
+	MaxStorageUsage      int64 `dynamorm:"attr:maxStorageUsage" json:"max_storage_usage"`            // bytes
+	MaxBandwidthPerMonth int64 `dynamorm:"attr:maxBandwidthPerMonth" json:"max_bandwidth_per_month"` // bytes
 
 	// Budget limits (in microdollars - $1 = 1,000,000 microdollars)
-	MonthlyBudgetMicros    int64 `json:"monthly_budget_micros"`
-	DailyBudgetMicros      int64 `json:"daily_budget_micros"`
-	ProcessingBudgetMicros int64 `json:"processing_budget_micros"` // For MediaConvert, Rekognition, etc.
-	StorageBudgetMicros    int64 `json:"storage_budget_micros"`    // For S3 storage
-	BandwidthBudgetMicros  int64 `json:"bandwidth_budget_micros"`  // For CDN/transfer
+	MonthlyBudgetMicros    int64 `dynamorm:"attr:monthlyBudgetMicros" json:"monthly_budget_micros"`
+	DailyBudgetMicros      int64 `dynamorm:"attr:dailyBudgetMicros" json:"daily_budget_micros"`
+	ProcessingBudgetMicros int64 `dynamorm:"attr:processingBudgetMicros" json:"processing_budget_micros"` // For MediaConvert, Rekognition, etc.
+	StorageBudgetMicros    int64 `dynamorm:"attr:storageBudgetMicros" json:"storage_budget_micros"`       // For S3 storage
+	BandwidthBudgetMicros  int64 `dynamorm:"attr:bandwidthBudgetMicros" json:"bandwidth_budget_micros"`   // For CDN/transfer
 
 	// Allowed content types
-	AllowedImageTypes []string `json:"allowed_image_types"`
-	AllowedVideoTypes []string `json:"allowed_video_types"`
-	AllowedAudioTypes []string `json:"allowed_audio_types"`
+	AllowedImageTypes []string `dynamorm:"attr:allowedImageTypes" json:"allowed_image_types"`
+	AllowedVideoTypes []string `dynamorm:"attr:allowedVideoTypes" json:"allowed_video_types"`
+	AllowedAudioTypes []string `dynamorm:"attr:allowedAudioTypes" json:"allowed_audio_types"`
 
 	// Processing quality settings
-	ImageQuality     string `json:"image_quality"`     // "low", "medium", "high"
-	VideoQuality     string `json:"video_quality"`     // "low", "medium", "high"
-	EnableBlurhash   bool   `json:"enable_blurhash"`   // Generate blurhashes for images
-	EnableThumbnails bool   `json:"enable_thumbnails"` // Generate thumbnails
+	ImageQuality     string `dynamorm:"attr:imageQuality" json:"image_quality"`         // "low", "medium", "high"
+	VideoQuality     string `dynamorm:"attr:videoQuality" json:"video_quality"`         // "low", "medium", "high"
+	EnableBlurhash   bool   `dynamorm:"attr:enableBlurhash" json:"enable_blurhash"`     // Generate blurhashes for images
+	EnableThumbnails bool   `dynamorm:"attr:enableThumbnails" json:"enable_thumbnails"` // Generate thumbnails
 
 	// Content moderation settings
-	ModerationThreshold float64  `json:"moderation_threshold"` // 0.0-1.0, above this is flagged
-	AutoRejectNSFW      bool     `json:"auto_reject_nsfw"`
-	RequiredLabels      []string `json:"required_labels"` // Required content labels
-	BlockedLabels       []string `json:"blocked_labels"`  // Automatically blocked labels
+	ModerationThreshold float64  `dynamorm:"attr:moderationThreshold" json:"moderation_threshold"` // 0.0-1.0, above this is flagged
+	AutoRejectNSFW      bool     `dynamorm:"attr:autoRejectNSFW" json:"auto_reject_nsfw"`
+	RequiredLabels      []string `dynamorm:"attr:requiredLabels" json:"required_labels"` // Required content labels
+	BlockedLabels       []string `dynamorm:"attr:blockedLabels" json:"blocked_labels"`   // Automatically blocked labels
 
 	// Plan/tier information
-	PlanTier       string     `json:"plan_tier"` // "free", "basic", "premium", "enterprise"
-	PlanExpiresAt  *time.Time `json:"plan_expires_at,omitempty"`
-	IsTrialUser    bool       `json:"is_trial_user"`
-	TrialExpiresAt *time.Time `json:"trial_expires_at,omitempty"`
+	PlanTier       string     `dynamorm:"attr:planTier" json:"plan_tier"` // "free", "basic", "premium", "enterprise"
+	PlanExpiresAt  *time.Time `dynamorm:"attr:planExpiresAt" json:"plan_expires_at,omitempty"`
+	IsTrialUser    bool       `dynamorm:"attr:isTrialUser" json:"is_trial_user"`
+	TrialExpiresAt *time.Time `dynamorm:"attr:trialExpiresAt" json:"trial_expires_at,omitempty"`
 
 	// Usage tracking references
-	CurrentStorageUsage int64     `json:"current_storage_usage"` // bytes
-	CurrentMonthlyUsage int64     `json:"current_monthly_usage"` // bytes processed this month
-	LastResetAt         time.Time `json:"last_reset_at"`         // When monthly counters were last reset
+	CurrentStorageUsage int64     `dynamorm:"attr:currentStorageUsage" json:"current_storage_usage"` // bytes
+	CurrentMonthlyUsage int64     `dynamorm:"attr:currentMonthlyUsage" json:"current_monthly_usage"` // bytes processed this month
+	LastResetAt         time.Time `dynamorm:"attr:lastResetAt" json:"last_reset_at"`                 // When monthly counters were last reset
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// Version for optimistic locking
-	ModelVersion int `dynamorm:"version" json:"model_version"`
+	ModelVersion int `dynamorm:"version,attr:modelVersion" json:"model_version"`
 }
 
 // TableName returns the DynamoDB table name for the UserMediaConfig model

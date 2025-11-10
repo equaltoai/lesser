@@ -9,18 +9,20 @@ import (
 
 // ConversationMute represents a muted conversation thread in DynamoDB
 type ConversationMute struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Composite keys
-	PK string `dynamorm:"pk" json:"-"`
-	SK string `dynamorm:"sk" json:"-"`
+	PK string `dynamorm:"pk,attr:PK" json:"-"`
+	SK string `dynamorm:"sk,attr:SK" json:"-"`
 
 	// TTL for auto-expiration
-	TTL int64 `dynamorm:"ttl" json:"-"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"-"`
 
 	// Business fields
-	Username       string    `json:"username"`
-	ConversationID string    `json:"conversation_id"`
-	CreatedAt      time.Time `json:"created_at"`
-	ExpiresAt      time.Time `json:"expires_at,omitempty"`
+	Username       string    `dynamorm:"attr:username" json:"username"`
+	ConversationID string    `dynamorm:"attr:conversationID" json:"conversation_id"`
+	CreatedAt      time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	ExpiresAt      time.Time `dynamorm:"attr:expiresAt" json:"expires_at,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

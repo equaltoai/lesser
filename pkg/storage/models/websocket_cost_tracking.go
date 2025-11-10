@@ -14,227 +14,235 @@ const (
 
 // WebSocketCostRecord represents detailed cost tracking for WebSocket operations
 type WebSocketCostRecord struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using operation type and timestamp for optimal access patterns
-	PK string `dynamorm:"pk" json:"pk"` // Format: "WS_COST#{operation_type}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "ts#{timestamp}#{id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "WS_COST#{operation_type}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Connection-based queries
-	GSI1PK string `dynamorm:"index:connection-index,pk" json:"gsi1_pk"` // Format: "WS_CONN#{connection_id}"
-	GSI1SK string `dynamorm:"index:connection-index,sk" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
+	GSI1PK string `dynamorm:"index:connection-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_CONN#{connection_id}"
+	GSI1SK string `dynamorm:"index:connection-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// GSI2 - User-based queries
-	GSI2PK string `dynamorm:"index:user-index,pk" json:"gsi2_pk"` // Format: "WS_USER#{user_id}"
-	GSI2SK string `dynamorm:"index:user-index,sk" json:"gsi2_sk"` // Format: "{timestamp}#{operation_type}#{id}"
+	GSI2PK string `dynamorm:"index:user-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "WS_USER#{user_id}"
+	GSI2SK string `dynamorm:"index:user-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// Core cost tracking data
-	ID            string    `json:"id"`
-	OperationType string    `json:"operation_type"` // connect, disconnect, message_in, message_out, idle_time
-	ConnectionID  string    `json:"connection_id"`  // API Gateway connection ID
-	UserID        string    `json:"user_id"`        // User associated with connection
-	Username      string    `json:"username"`       // Username for easier queries
-	Timestamp     time.Time `json:"timestamp"`
+	ID            string    `dynamorm:"attr:id" json:"id"`
+	OperationType string    `dynamorm:"attr:operationType" json:"operation_type"` // connect, disconnect, message_in, message_out, idle_time
+	ConnectionID  string    `dynamorm:"attr:connectionID" json:"connection_id"`   // API Gateway connection ID
+	UserID        string    `dynamorm:"attr:userID" json:"user_id"`               // User associated with connection
+	Username      string    `dynamorm:"attr:username" json:"username"`            // Username for easier queries
+	Timestamp     time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
 
 	// Connection details
-	ConnectionDurationMs int64 `json:"connection_duration_ms,omitempty"` // For connection lifecycle tracking
-	IdleTimeMs           int64 `json:"idle_time_ms,omitempty"`           // Time connection was idle
-	MessageCount         int   `json:"message_count,omitempty"`          // Number of messages (for message operations)
-	MessageSizeBytes     int64 `json:"message_size_bytes,omitempty"`     // Size of messages sent/received
-	StreamCount          int   `json:"stream_count,omitempty"`           // Number of streams subscribed
+	ConnectionDurationMs int64 `dynamorm:"attr:connectionDurationMs" json:"connection_duration_ms,omitempty"` // For connection lifecycle tracking
+	IdleTimeMs           int64 `dynamorm:"attr:idleTimeMs" json:"idle_time_ms,omitempty"`                     // Time connection was idle
+	MessageCount         int   `dynamorm:"attr:messageCount" json:"message_count,omitempty"`                  // Number of messages (for message operations)
+	MessageSizeBytes     int64 `dynamorm:"attr:messageSizeBytes" json:"message_size_bytes,omitempty"`         // Size of messages sent/received
+	StreamCount          int   `dynamorm:"attr:streamCount" json:"stream_count,omitempty"`                    // Number of streams subscribed
 
 	// AWS costs in microcents for precision
 	// API Gateway WebSocket costs: $0.25 per million connection minutes, $1.00 per million messages
-	APIGatewayConnectionCost int64 `json:"api_gateway_connection_cost"` // Connection time cost in microcents
-	APIGatewayMessageCost    int64 `json:"api_gateway_message_cost"`    // Message sending cost in microcents
-	LambdaExecutionCost      int64 `json:"lambda_execution_cost"`       // Lambda execution cost in microcents
-	DynamoDBCost             int64 `json:"dynamodb_cost"`               // DynamoDB operations cost in microcents
-	DataTransferCost         int64 `json:"data_transfer_cost"`          // Data transfer cost in microcents
-	TotalCostMicroCents      int64 `json:"total_cost_micro_cents"`      // Total cost in microcents
+	APIGatewayConnectionCost int64 `dynamorm:"attr:apiGatewayConnectionCost" json:"api_gateway_connection_cost"` // Connection time cost in microcents
+	APIGatewayMessageCost    int64 `dynamorm:"attr:apiGatewayMessageCost" json:"api_gateway_message_cost"`       // Message sending cost in microcents
+	LambdaExecutionCost      int64 `dynamorm:"attr:lambdaExecutionCost" json:"lambda_execution_cost"`            // Lambda execution cost in microcents
+	DynamoDBCost             int64 `dynamorm:"attr:dynamoDBCost" json:"dynamodb_cost"`                           // DynamoDB operations cost in microcents
+	DataTransferCost         int64 `dynamorm:"attr:dataTransferCost" json:"data_transfer_cost"`                  // Data transfer cost in microcents
+	TotalCostMicroCents      int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`           // Total cost in microcents
 
 	// Cost breakdown by category
-	ConnectionMinuteCost  int64 `json:"connection_minute_cost"`  // Cost per minute of connection
-	MessageProcessingCost int64 `json:"message_processing_cost"` // Cost per message processed
-	SubscriptionCost      int64 `json:"subscription_cost"`       // Cost for managing subscriptions
+	ConnectionMinuteCost  int64 `dynamorm:"attr:connectionMinuteCost" json:"connection_minute_cost"`   // Cost per minute of connection
+	MessageProcessingCost int64 `dynamorm:"attr:messageProcessingCost" json:"message_processing_cost"` // Cost per message processed
+	SubscriptionCost      int64 `dynamorm:"attr:subscriptionCost" json:"subscription_cost"`            // Cost for managing subscriptions
 
 	// Performance metrics
-	ProcessingTimeMs  int64   `json:"processing_time_ms"`            // Time to process the operation
-	ResponseLatencyMs int64   `json:"response_latency_ms,omitempty"` // Response latency for messages
-	MemoryUsedMB      float64 `json:"memory_used_mb,omitempty"`      // Lambda memory usage
+	ProcessingTimeMs  int64   `dynamorm:"attr:processingTimeMs" json:"processing_time_ms"`             // Time to process the operation
+	ResponseLatencyMs int64   `dynamorm:"attr:responseLatencyMs" json:"response_latency_ms,omitempty"` // Response latency for messages
+	MemoryUsedMB      float64 `dynamorm:"attr:memoryUsedMB" json:"memory_used_mb,omitempty"`           // Lambda memory usage
 
 	// Service information
-	ServiceName     string `json:"service_name"`     // streaming or stream-router
-	RequestID       string `json:"request_id"`       // AWS Request ID
-	FunctionName    string `json:"function_name"`    // Lambda function name
-	FunctionVersion string `json:"function_version"` // Lambda function version
+	ServiceName     string `dynamorm:"attr:serviceName" json:"service_name"`         // streaming or stream-router
+	RequestID       string `dynamorm:"attr:requestID" json:"request_id"`             // AWS Request ID
+	FunctionName    string `dynamorm:"attr:functionName" json:"function_name"`       // Lambda function name
+	FunctionVersion string `dynamorm:"attr:functionVersion" json:"function_version"` // Lambda function version
 
 	// Connection context
-	ClientIP         string `json:"client_ip,omitempty"`   // Client IP address
-	UserAgent        string `json:"user_agent,omitempty"`  // User agent string
-	ConnectionSource string `json:"connection_source"`     // web, mobile, api
-	AuthMethod       string `json:"auth_method,omitempty"` // oauth, bearer, anonymous
+	ClientIP         string `dynamorm:"attr:clientIP" json:"client_ip,omitempty"`       // Client IP address
+	UserAgent        string `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`     // User agent string
+	ConnectionSource string `dynamorm:"attr:connectionSource" json:"connection_source"` // web, mobile, api
+	AuthMethod       string `dynamorm:"attr:authMethod" json:"auth_method,omitempty"`   // oauth, bearer, anonymous
 
 	// Stream information
-	ActiveStreams []string `json:"active_streams,omitempty"` // Streams active during operation
-	StreamTypes   []string `json:"stream_types,omitempty"`   // Types of streams (public, user, notification)
+	ActiveStreams []string `dynamorm:"attr:activeStreams" json:"active_streams,omitempty"` // Streams active during operation
+	StreamTypes   []string `dynamorm:"attr:streamTypes" json:"stream_types,omitempty"`     // Types of streams (public, user, notification)
 
 	// Additional metadata
-	Tags       map[string]string      `json:"tags,omitempty"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
+	Tags       map[string]string      `dynamorm:"attr:tags" json:"tags,omitempty"`
+	Properties map[string]interface{} `dynamorm:"attr:properties" json:"properties,omitempty"`
 
 	// Estimated cost in dollars for easy display
-	EstimatedCostDollars float64 `json:"estimated_cost_dollars"`
+	EstimatedCostDollars float64 `dynamorm:"attr:estimatedCostDollars" json:"estimated_cost_dollars"`
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (30 days for detailed records)
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
 }
 
 // WebSocketCostBudget represents per-user WebSocket usage budgets
 type WebSocketCostBudget struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "WS_BUDGET#{user_id}#{period}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "BUDGET#{period}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "WS_BUDGET#{user_id}#{period}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "BUDGET#{period}"
 
 	// GSI1 - User budget queries
-	GSI1PK string `dynamorm:"index:user-budget-index,pk" json:"gsi1_pk"` // Format: "WS_USER_BUDGET#{user_id}"
-	GSI1SK string `dynamorm:"index:user-budget-index,sk" json:"gsi1_sk"` // Format: "{period}#{status}"
+	GSI1PK string `dynamorm:"index:user-budget-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_USER_BUDGET#{user_id}"
+	GSI1SK string `dynamorm:"index:user-budget-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{period}#{status}"
 
 	// Budget configuration
-	UserID           string    `json:"user_id"`
-	Username         string    `json:"username"`
-	Period           string    `json:"period"`             // daily, weekly, monthly
-	BudgetMicroCents int64     `json:"budget_micro_cents"` // Budget limit in microcents
-	WindowStart      time.Time `json:"window_start"`       // Budget period start
-	WindowEnd        time.Time `json:"window_end"`         // Budget period end
+	UserID           string    `dynamorm:"attr:userID" json:"user_id"`
+	Username         string    `dynamorm:"attr:username" json:"username"`
+	Period           string    `dynamorm:"attr:period" json:"period"`                       // daily, weekly, monthly
+	BudgetMicroCents int64     `dynamorm:"attr:budgetMicroCents" json:"budget_micro_cents"` // Budget limit in microcents
+	WindowStart      time.Time `dynamorm:"attr:windowStart" json:"window_start"`            // Budget period start
+	WindowEnd        time.Time `dynamorm:"attr:windowEnd" json:"window_end"`                // Budget period end
 
 	// Current usage tracking
-	UsedMicroCents           int64 `json:"used_micro_cents"`           // Currently used amount
-	RemainingMicroCents      int64 `json:"remaining_micro_cents"`      // Remaining budget
-	ConnectionMinutesUsed    int64 `json:"connection_minutes_used"`    // Total connection time used
-	MessagesUsed             int64 `json:"messages_used"`              // Total messages sent/received
-	ActiveConnections        int   `json:"active_connections"`         // Current active connections
-	MaxConcurrentConnections int   `json:"max_concurrent_connections"` // Max concurrent connections allowed
+	UsedMicroCents           int64 `dynamorm:"attr:usedMicroCents" json:"used_micro_cents"`                     // Currently used amount
+	RemainingMicroCents      int64 `dynamorm:"attr:remainingMicroCents" json:"remaining_micro_cents"`           // Remaining budget
+	ConnectionMinutesUsed    int64 `dynamorm:"attr:connectionMinutesUsed" json:"connection_minutes_used"`       // Total connection time used
+	MessagesUsed             int64 `dynamorm:"attr:messagesUsed" json:"messages_used"`                          // Total messages sent/received
+	ActiveConnections        int   `dynamorm:"attr:activeConnections" json:"active_connections"`                // Current active connections
+	MaxConcurrentConnections int   `dynamorm:"attr:maxConcurrentConnections" json:"max_concurrent_connections"` // Max concurrent connections allowed
 
 	// Budget status
-	Status       string  `json:"status"`        // active, warning, exceeded, suspended
-	UsagePercent float64 `json:"usage_percent"` // Percentage of budget used
+	Status       string  `dynamorm:"attr:status" json:"status"`              // active, warning, exceeded, suspended
+	UsagePercent float64 `dynamorm:"attr:usagePercent" json:"usage_percent"` // Percentage of budget used
 
 	// Alerts and limits
-	AlertThresholds []int     `json:"alert_thresholds"`          // Alert at these usage percentages (e.g., [50, 75, 90])
-	AlertsSent      []string  `json:"alerts_sent,omitempty"`     // Track which alerts have been sent
-	SuspendAt       int       `json:"suspend_at"`                // Suspend connections at this usage percentage
-	LastAlertSent   time.Time `json:"last_alert_sent,omitempty"` // Last time an alert was sent
+	AlertThresholds []int     `dynamorm:"attr:alertThresholds" json:"alert_thresholds"`        // Alert at these usage percentages (e.g., [50, 75, 90])
+	AlertsSent      []string  `dynamorm:"attr:alertsSent" json:"alerts_sent,omitempty"`        // Track which alerts have been sent
+	SuspendAt       int       `dynamorm:"attr:suspendAt" json:"suspend_at"`                    // Suspend connections at this usage percentage
+	LastAlertSent   time.Time `dynamorm:"attr:lastAlertSent" json:"last_alert_sent,omitempty"` // Last time an alert was sent
 
 	// Rate limiting
-	ConnectionsPerMinute int `json:"connections_per_minute"` // Max new connections per minute
-	MessagesPerMinute    int `json:"messages_per_minute"`    // Max messages per minute
+	ConnectionsPerMinute int `dynamorm:"attr:connectionsPerMinute" json:"connections_per_minute"` // Max new connections per minute
+	MessagesPerMinute    int `dynamorm:"attr:messagesPerMinute" json:"messages_per_minute"`       // Max messages per minute
 
 	// Billing tier
-	BillingTier string `json:"billing_tier"` // free, basic, premium, enterprise
+	BillingTier string `dynamorm:"attr:billingTier" json:"billing_tier"` // free, basic, premium, enterprise
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL - refresh budgets periodically
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
 }
 
 // WebSocketCostAggregation represents pre-computed WebSocket cost aggregations
 type WebSocketCostAggregation struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "WS_AGG#{period}#{operation_type}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "window#{windowStart}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "WS_AGG#{period}#{operation_type}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "window#{windowStart}"
 
 	// GSI1 - User aggregation queries
-	GSI1PK string `dynamorm:"index:user-agg-index,pk" json:"gsi1_pk"` // Format: "WS_USER_AGG#{user_id}#{period}"
-	GSI1SK string `dynamorm:"index:user-agg-index,sk" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}"
+	GSI1PK string `dynamorm:"index:user-agg-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_USER_AGG#{user_id}#{period}"
+	GSI1SK string `dynamorm:"index:user-agg-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}"
 
 	// Aggregation details
-	Period        string    `json:"period"`            // minute, hour, day, week, month
-	OperationType string    `json:"operation_type"`    // Same as WebSocketCostRecord.OperationType
-	UserID        string    `json:"user_id,omitempty"` // Specific user or empty for global
-	WindowStart   time.Time `json:"window_start"`      // Start of aggregation window
-	WindowEnd     time.Time `json:"window_end"`        // End of aggregation window
+	Period        string    `dynamorm:"attr:period" json:"period"`                // minute, hour, day, week, month
+	OperationType string    `dynamorm:"attr:operationType" json:"operation_type"` // Same as WebSocketCostRecord.OperationType
+	UserID        string    `dynamorm:"attr:userID" json:"user_id,omitempty"`     // Specific user or empty for global
+	WindowStart   time.Time `dynamorm:"attr:windowStart" json:"window_start"`     // Start of aggregation window
+	WindowEnd     time.Time `dynamorm:"attr:windowEnd" json:"window_end"`         // End of aggregation window
 
 	// Connection metrics
-	TotalConnections          int64   `json:"total_connections"`           // Total connections in period
-	UniqueUsers               int64   `json:"unique_users"`                // Unique users connected
-	AverageConnectionDuration float64 `json:"average_connection_duration"` // Average connection time in minutes
-	MaxConcurrentConnections  int     `json:"max_concurrent_connections"`  // Peak concurrent connections
-	TotalConnectionMinutes    int64   `json:"total_connection_minutes"`    // Total connection time
+	TotalConnections          int64   `dynamorm:"attr:totalConnections" json:"total_connections"`                    // Total connections in period
+	UniqueUsers               int64   `dynamorm:"attr:uniqueUsers" json:"unique_users"`                              // Unique users connected
+	AverageConnectionDuration float64 `dynamorm:"attr:averageConnectionDuration" json:"average_connection_duration"` // Average connection time in minutes
+	MaxConcurrentConnections  int     `dynamorm:"attr:maxConcurrentConnections" json:"max_concurrent_connections"`   // Peak concurrent connections
+	TotalConnectionMinutes    int64   `dynamorm:"attr:totalConnectionMinutes" json:"total_connection_minutes"`       // Total connection time
 
 	// Message metrics
-	TotalMessagesIn         int64   `json:"total_messages_in"`          // Messages received from clients
-	TotalMessagesOut        int64   `json:"total_messages_out"`         // Messages sent to clients
-	TotalMessageBytes       int64   `json:"total_message_bytes"`        // Total message data transferred
-	AverageMessageSize      float64 `json:"average_message_size"`       // Average message size
-	MessageThroughputPerSec float64 `json:"message_throughput_per_sec"` // Messages per second
+	TotalMessagesIn         int64   `dynamorm:"attr:totalMessagesIn" json:"total_messages_in"`                  // Messages received from clients
+	TotalMessagesOut        int64   `dynamorm:"attr:totalMessagesOut" json:"total_messages_out"`                // Messages sent to clients
+	TotalMessageBytes       int64   `dynamorm:"attr:totalMessageBytes" json:"total_message_bytes"`              // Total message data transferred
+	AverageMessageSize      float64 `dynamorm:"attr:averageMessageSize" json:"average_message_size"`            // Average message size
+	MessageThroughputPerSec float64 `dynamorm:"attr:messageThroughputPerSec" json:"message_throughput_per_sec"` // Messages per second
 
 	// Stream metrics
-	TotalStreamSubscriptions int64            `json:"total_stream_subscriptions"` // Stream subscriptions created
-	UniqueStreamsUsed        int64            `json:"unique_streams_used"`        // Number of unique streams
-	StreamPopularity         map[string]int64 `json:"stream_popularity"`          // Stream name -> subscription count
-	StreamTypeBreakdown      map[string]int64 `json:"stream_type_breakdown"`      // Stream type -> count
+	TotalStreamSubscriptions int64            `dynamorm:"attr:totalStreamSubscriptions" json:"total_stream_subscriptions"` // Stream subscriptions created
+	UniqueStreamsUsed        int64            `dynamorm:"attr:uniqueStreamsUsed" json:"unique_streams_used"`               // Number of unique streams
+	StreamPopularity         map[string]int64 `dynamorm:"attr:streamPopularity" json:"stream_popularity"`                  // Stream name -> subscription count
+	StreamTypeBreakdown      map[string]int64 `dynamorm:"attr:streamTypeBreakdown" json:"stream_type_breakdown"`           // Stream type -> count
 
 	// Cost aggregations (in microcents)
-	TotalAPIGatewayConnectionCost int64   `json:"total_api_gateway_connection_cost"`
-	TotalAPIGatewayMessageCost    int64   `json:"total_api_gateway_message_cost"`
-	TotalLambdaExecutionCost      int64   `json:"total_lambda_execution_cost"`
-	TotalDynamoDBCost             int64   `json:"total_dynamodb_cost"`
-	TotalDataTransferCost         int64   `json:"total_data_transfer_cost"`
-	TotalCostMicroCents           int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars              float64 `json:"total_cost_dollars"`
+	TotalAPIGatewayConnectionCost int64   `dynamorm:"attr:totalAPIGatewayConnectionCost" json:"total_api_gateway_connection_cost"`
+	TotalAPIGatewayMessageCost    int64   `dynamorm:"attr:totalAPIGatewayMessageCost" json:"total_api_gateway_message_cost"`
+	TotalLambdaExecutionCost      int64   `dynamorm:"attr:totalLambdaExecutionCost" json:"total_lambda_execution_cost"`
+	TotalDynamoDBCost             int64   `dynamorm:"attr:totalDynamoDBCost" json:"total_dynamodb_cost"`
+	TotalDataTransferCost         int64   `dynamorm:"attr:totalDataTransferCost" json:"total_data_transfer_cost"`
+	TotalCostMicroCents           int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars              float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
 
 	// Performance metrics
-	AverageProcessingTime  float64 `json:"average_processing_time"`  // Average processing time in ms
-	AverageResponseLatency float64 `json:"average_response_latency"` // Average response latency in ms
-	AverageMemoryUsage     float64 `json:"average_memory_usage"`     // Average memory usage in MB
+	AverageProcessingTime  float64 `dynamorm:"attr:averageProcessingTime" json:"average_processing_time"`   // Average processing time in ms
+	AverageResponseLatency float64 `dynamorm:"attr:averageResponseLatency" json:"average_response_latency"` // Average response latency in ms
+	AverageMemoryUsage     float64 `dynamorm:"attr:averageMemoryUsage" json:"average_memory_usage"`         // Average memory usage in MB
 
 	// Cost efficiency metrics
-	CostPerConnection float64 `json:"cost_per_connection"` // Average cost per connection
-	CostPerMessage    float64 `json:"cost_per_message"`    // Average cost per message
-	CostPerMinute     float64 `json:"cost_per_minute"`     // Average cost per connection minute
-	CostPerUser       float64 `json:"cost_per_user"`       // Average cost per unique user
+	CostPerConnection float64 `dynamorm:"attr:costPerConnection" json:"cost_per_connection"` // Average cost per connection
+	CostPerMessage    float64 `dynamorm:"attr:costPerMessage" json:"cost_per_message"`       // Average cost per message
+	CostPerMinute     float64 `dynamorm:"attr:costPerMinute" json:"cost_per_minute"`         // Average cost per connection minute
+	CostPerUser       float64 `dynamorm:"attr:costPerUser" json:"cost_per_user"`             // Average cost per unique user
 
 	// Error and reliability metrics
-	FailedConnections       int64   `json:"failed_connections"`        // Connections that failed to establish
-	DroppedConnections      int64   `json:"dropped_connections"`       // Connections dropped unexpectedly
-	MessageDeliveryFailures int64   `json:"message_delivery_failures"` // Failed message deliveries
-	ErrorRate               float64 `json:"error_rate"`                // Percentage of operations that failed
+	FailedConnections       int64   `dynamorm:"attr:failedConnections" json:"failed_connections"`              // Connections that failed to establish
+	DroppedConnections      int64   `dynamorm:"attr:droppedConnections" json:"dropped_connections"`            // Connections dropped unexpectedly
+	MessageDeliveryFailures int64   `dynamorm:"attr:messageDeliveryFailures" json:"message_delivery_failures"` // Failed message deliveries
+	ErrorRate               float64 `dynamorm:"attr:errorRate" json:"error_rate"`                              // Percentage of operations that failed
 
 	// User behavior metrics
-	UserEngagementScore  float64            `json:"user_engagement_score"`  // Engagement score based on activity
-	TopUsers             []string           `json:"top_users"`              // Most active users by cost/usage
-	UserBehaviorPatterns map[string]float64 `json:"user_behavior_patterns"` // Usage patterns by behavior type
+	UserEngagementScore  float64            `dynamorm:"attr:userEngagementScore" json:"user_engagement_score"`   // Engagement score based on activity
+	TopUsers             []string           `dynamorm:"attr:topUsers" json:"top_users"`                          // Most active users by cost/usage
+	UserBehaviorPatterns map[string]float64 `dynamorm:"attr:userBehaviorPatterns" json:"user_behavior_patterns"` // Usage patterns by behavior type
 
 	// Cost breakdown by user tier
-	CostByTier map[string]*WebSocketTierCostStats `json:"cost_by_tier,omitempty"`
+	CostByTier map[string]*WebSocketTierCostStats `dynamorm:"attr:costByTier" json:"cost_by_tier,omitempty"`
 
 	// Percentiles for cost and performance distribution
-	CostPercentiles               map[string]float64 `json:"cost_percentiles,omitempty"`                // p50, p90, p95, p99
-	LatencyPercentiles            map[string]float64 `json:"latency_percentiles,omitempty"`             // p50, p90, p95, p99
-	ConnectionDurationPercentiles map[string]float64 `json:"connection_duration_percentiles,omitempty"` // p50, p90, p95, p99
+	CostPercentiles               map[string]float64 `dynamorm:"attr:costPercentiles" json:"cost_percentiles,omitempty"`                              // p50, p90, p95, p99
+	LatencyPercentiles            map[string]float64 `dynamorm:"attr:latencyPercentiles" json:"latency_percentiles,omitempty"`                        // p50, p90, p95, p99
+	ConnectionDurationPercentiles map[string]float64 `dynamorm:"attr:connectionDurationPercentiles" json:"connection_duration_percentiles,omitempty"` // p50, p90, p95, p99
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL (longer for aggregated data)
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"`
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"`
 }
 
 // WebSocketTierCostStats represents cost statistics for a billing tier
 type WebSocketTierCostStats struct {
-	TierName            string  `json:"tier_name"`
-	UserCount           int64   `json:"user_count"`
-	TotalCostMicroCents int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars    float64 `json:"total_cost_dollars"`
-	AverageCostPerUser  float64 `json:"average_cost_per_user"`
-	ConnectionMinutes   int64   `json:"connection_minutes"`
-	MessageCount        int64   `json:"message_count"`
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	TierName            string  `dynamorm:"attr:tierName" json:"tier_name"`
+	UserCount           int64   `dynamorm:"attr:userCount" json:"user_count"`
+	TotalCostMicroCents int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars    float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
+	AverageCostPerUser  float64 `dynamorm:"attr:averageCostPerUser" json:"average_cost_per_user"`
+	ConnectionMinutes   int64   `dynamorm:"attr:connectionMinutes" json:"connection_minutes"`
+	MessageCount        int64   `dynamorm:"attr:messageCount" json:"message_count"`
 }
 
 // TableName returns the DynamoDB table backing WebSocketCostRecord.

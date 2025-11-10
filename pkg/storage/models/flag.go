@@ -9,25 +9,28 @@ import (
 
 // Flag represents a content moderation flag with DynamORM tags
 type Flag struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK     string `dynamorm:"pk"`                                  // FLAG#objectID (first object if multiple)
-	SK     string `dynamorm:"sk"`                                  // TIME#timestamp#flagID
-	GSI1PK string `dynamorm:"index:GSI1,pk,omitempty"` // ACTOR#actorID
-	GSI1SK string `dynamorm:"index:GSI1,sk,omitempty"` // FLAG#timestamp
-	GSI2PK string `dynamorm:"index:GSI2,pk,omitempty"` // FLAG_STATUS#status
-	GSI2SK string `dynamorm:"index:GSI2,sk,omitempty"` // TIME#timestamp
+	PK string `dynamorm:"pk,attr:PK"` // FLAG#objectID (first object if multiple)
+	SK string `dynamorm:"sk,attr:SK"` // TIME#timestamp#flagID
+
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK"` // ACTOR#actorID
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK"` // FLAG#timestamp
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK"` // FLAG_STATUS#status
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK"` // TIME#timestamp
 
 	// Flag fields
-	ID         string     `json:"id"`          // The flag activity ID
-	Actor      string     `json:"actor"`       // Who flagged
-	Object     []string   `json:"object"`      // What was flagged (can be multiple objects)
-	Content    string     `json:"content"`     // Reason/description for the flag
-	Published  time.Time  `json:"published"`   // When it was flagged
-	Status     string     `json:"status"`      // Current status of the flag (pending, reviewed, resolved, dismissed)
-	ReviewedBy string     `json:"reviewed_by"` // Moderator who reviewed (if reviewed)
-	ReviewedAt *time.Time `json:"reviewed_at"` // When it was reviewed
-	ReviewNote string     `json:"review_note"` // Note from reviewer
-	CreatedAt  time.Time  `json:"created_at"`  // Database timestamp
+	ID         string     `dynamorm:"attr:id" json:"id"`                        // The flag activity ID
+	Actor      string     `dynamorm:"attr:actor" json:"actor"`                  // Who flagged
+	Object     []string   `dynamorm:"attr:object" json:"object"`               // What was flagged (can be multiple objects)
+	Content    string     `dynamorm:"attr:content" json:"content"`             // Reason/description for the flag
+	Published  time.Time  `dynamorm:"attr:published" json:"published"`         // When it was flagged
+	Status     string     `dynamorm:"attr:status" json:"status"`               // Current status of the flag (pending, reviewed, resolved, dismissed)
+	ReviewedBy string     `dynamorm:"attr:reviewedBy" json:"reviewed_by"`      // Moderator who reviewed (if reviewed)
+	ReviewedAt *time.Time `dynamorm:"attr:reviewedAt" json:"reviewed_at"`      // When it was reviewed
+	ReviewNote string     `dynamorm:"attr:reviewNote" json:"review_note"`      // Note from reviewer
+	CreatedAt  time.Time  `dynamorm:"attr:createdAt" json:"created_at"`        // Database timestamp
 }
 
 // TableName returns the DynamoDB table name

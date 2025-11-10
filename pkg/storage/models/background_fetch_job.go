@@ -7,43 +7,45 @@ import (
 
 // BackgroundFetchJob represents a job for fetching remote content
 type BackgroundFetchJob struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key fields
-	PK string `dynamorm:"pk" json:"pk"` // Format: "FETCH_JOB#{job_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "JOB#{timestamp}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "FETCH_JOB#{job_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "JOB#{timestamp}"
 
 	// GSI for querying by status
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"-"` // STATUS#{status_id}
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"-"` // FETCH#{timestamp}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // STATUS#{status_id}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // FETCH#{timestamp}
 
 	// Job identification
-	JobID    string `json:"job_id"`    // Unique job identifier
-	StatusID string `json:"status_id"` // Status/object to fetch
+	JobID    string `dynamorm:"attr:jobID" json:"job_id"`       // Unique job identifier
+	StatusID string `dynamorm:"attr:statusID" json:"status_id"` // Status/object to fetch
 
 	// Job configuration
-	FetchType  string `json:"fetch_type"`  // "thread_sync", "object_fetch", "media_fetch"
-	Priority   string `json:"priority"`    // "low", "normal", "high", "urgent"
-	MaxRetries int    `json:"max_retries"` // Maximum retry attempts
+	FetchType  string `dynamorm:"attr:fetchType" json:"fetch_type"`   // "thread_sync", "object_fetch", "media_fetch"
+	Priority   string `dynamorm:"attr:priority" json:"priority"`      // "low", "normal", "high", "urgent"
+	MaxRetries int    `dynamorm:"attr:maxRetries" json:"max_retries"` // Maximum retry attempts
 
 	// Job state
-	Status       string     `json:"status"`        // "pending", "running", "completed", "failed"
-	Attempts     int        `json:"attempts"`      // Current attempt count
-	LastAttempt  *time.Time `json:"last_attempt"`  // Last attempt timestamp
-	NextAttempt  *time.Time `json:"next_attempt"`  // Next scheduled attempt
-	CompletedAt  *time.Time `json:"completed_at"`  // Completion timestamp
-	LastError    string     `json:"last_error"`    // Last error message
-	ErrorDetails string     `json:"error_details"` // Detailed error information
+	Status       string     `dynamorm:"attr:status" json:"status"`              // "pending", "running", "completed", "failed"
+	Attempts     int        `dynamorm:"attr:attempts" json:"attempts"`          // Current attempt count
+	LastAttempt  *time.Time `dynamorm:"attr:lastAttempt" json:"last_attempt"`   // Last attempt timestamp
+	NextAttempt  *time.Time `dynamorm:"attr:nextAttempt" json:"next_attempt"`   // Next scheduled attempt
+	CompletedAt  *time.Time `dynamorm:"attr:completedAt" json:"completed_at"`   // Completion timestamp
+	LastError    string     `dynamorm:"attr:lastError" json:"last_error"`       // Last error message
+	ErrorDetails string     `dynamorm:"attr:errorDetails" json:"error_details"` // Detailed error information
 
 	// Fetch metadata
-	RemoteURL     string            `json:"remote_url"`     // URL to fetch from
-	FetchMetadata map[string]string `json:"fetch_metadata"` // Additional fetch parameters
-	UserAgent     string            `json:"user_agent"`     // User agent for fetching
+	RemoteURL     string            `dynamorm:"attr:remoteURL" json:"remote_url"`         // URL to fetch from
+	FetchMetadata map[string]string `dynamorm:"attr:fetchMetadata" json:"fetch_metadata"` // Additional fetch parameters
+	UserAgent     string            `dynamorm:"attr:userAgent" json:"user_agent"`         // User agent for fetching
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"created_at" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"updated_at" json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for auto-cleanup (7 days)
-	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // NewBackgroundFetchJob creates a new background fetch job

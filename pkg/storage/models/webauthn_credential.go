@@ -6,29 +6,31 @@ import (
 
 // WebAuthnCredential represents a WebAuthn credential for passwordless authentication
 type WebAuthnCredential struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB keys - MUST match legacy exactly
-	PK string `dynamorm:"pk" json:"-"` // USER#username
-	SK string `dynamorm:"sk" json:"-"` // WEBAUTHN_CRED#credentialID
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // USER#username
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // WEBAUTHN_CRED#credentialID
 	// GSI for credential lookup by ID
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"-"`
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"-"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"`
 
 	// Core fields from legacy storage.WebAuthnCredential
-	ID              string    `json:"id"`
-	UserID          string    `json:"user_id"`
-	PublicKey       []byte    `json:"public_key"`
-	AttestationType string    `json:"attestation_type"`
-	AAGUID          []byte    `json:"aaguid"`
-	SignCount       uint32    `json:"sign_count"`
-	CloneWarning    bool      `json:"clone_warning"`
-	BackupEligible  bool      `json:"backup_eligible"`
-	BackupState     bool      `json:"backup_state"`
-	CreatedAt       time.Time `json:"created_at"`
-	LastUsedAt      time.Time `json:"last_used_at"`
-	Name            string    `json:"name"` // User-friendly name
+	ID              string    `dynamorm:"attr:id" json:"id"`
+	UserID          string    `dynamorm:"attr:userID" json:"user_id"`
+	PublicKey       []byte    `dynamorm:"attr:publicKey" json:"public_key"`
+	AttestationType string    `dynamorm:"attr:attestationType" json:"attestation_type"`
+	AAGUID          []byte    `dynamorm:"attr:aaguid" json:"aaguid"`
+	SignCount       uint32    `dynamorm:"attr:signCount" json:"sign_count"`
+	CloneWarning    bool      `dynamorm:"attr:cloneWarning" json:"clone_warning"`
+	BackupEligible  bool      `dynamorm:"attr:backupEligible" json:"backup_eligible"`
+	BackupState     bool      `dynamorm:"attr:backupState" json:"backup_state"`
+	CreatedAt       time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	LastUsedAt      time.Time `dynamorm:"attr:lastUsedAt" json:"last_used_at"`
+	Name            string    `dynamorm:"attr:name" json:"name"` // User-friendly name
 
 	// Additional fields for DynamoDB queries
-	Type string `json:"Type"` // "WebAuthnCredential"
+	Type string `dynamorm:"attr:Type" json:"Type"` // "WebAuthnCredential"
 }
 
 // TableName returns the DynamoDB table name

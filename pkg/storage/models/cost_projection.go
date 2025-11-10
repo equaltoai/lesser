@@ -7,22 +7,24 @@ import (
 
 // CostProjection represents projected costs for federation
 type CostProjection struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"` // COST#PROJECTION
-	SK string `dynamorm:"sk" json:"-"` // {period}#{timestamp}
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // COST#PROJECTION
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // {period}#{timestamp}
 
 	// Attributes from interface
-	Period          string   `json:"period"`
-	CurrentCost     float64  `json:"current_cost"`
-	ProjectedCost   float64  `json:"projected_cost"`
-	Variance        float64  `json:"variance"`
-	TopDrivers      []Driver `json:"top_drivers"`
-	Recommendations []string `json:"recommendations"`
+	Period          string   `dynamorm:"attr:period" json:"period"`
+	CurrentCost     float64  `dynamorm:"attr:currentCost" json:"current_cost"`
+	ProjectedCost   float64  `dynamorm:"attr:projectedCost" json:"projected_cost"`
+	Variance        float64  `dynamorm:"attr:variance" json:"variance"`
+	TopDrivers      []Driver `dynamorm:"attr:topDrivers" json:"top_drivers"`
+	Recommendations []string `dynamorm:"attr:recommendations" json:"recommendations"`
 
 	// Additional metadata
-	Timestamp    time.Time `json:"timestamp"`
-	CalculatedAt time.Time `json:"calculated_at"`
-	TTL          int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days retention
+	Timestamp    time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	CalculatedAt time.Time `dynamorm:"attr:calculatedAt" json:"calculated_at"`
+	TTL          int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // 90 days retention
 }
 
 // UpdateKeys updates the partition and sort keys

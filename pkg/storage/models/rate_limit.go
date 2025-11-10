@@ -7,15 +7,17 @@ import (
 
 // LoginAttempt represents a login attempt record for rate limiting
 type LoginAttempt struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys
-	PK string `dynamorm:"pk" json:"pk"` // RATELIMIT#{identifier}
-	SK string `dynamorm:"sk" json:"sk"` // timestamp in RFC3339Nano format
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // RATELIMIT#{identifier}
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // timestamp in RFC3339Nano format
 
 	// Attributes
-	Type      string    `json:"type"`               // "LoginAttempt"
-	Success   bool      `json:"success"`            // whether the login was successful
-	Timestamp time.Time `json:"timestamp"`          // when the attempt occurred
-	TTL       int64     `json:"ttl" dynamorm:"ttl"` // automatic cleanup after 24 hours
+	Type      string    `dynamorm:"attr:type" json:"type"`                 // "LoginAttempt"
+	Success   bool      `dynamorm:"attr:success" json:"success"`           // whether the login was successful
+	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`       // when the attempt occurred
+	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl"`               // automatic cleanup after 24 hours
 }
 
 // UpdateKeys updates the DynamoDB keys for the LoginAttempt model
@@ -63,14 +65,16 @@ func NewLoginAttempt(identifier string, success bool) *LoginAttempt {
 
 // RateLimitLockout represents an active rate limit lockout
 type RateLimitLockout struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys
-	PK string `dynamorm:"pk" json:"pk"` // RATELIMIT#{identifier}
-	SK string `dynamorm:"sk" json:"sk"` // "LOCKOUT"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // RATELIMIT#{identifier}
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // "LOCKOUT"
 
 	// Attributes
-	Type       string    `json:"type"`               // "RateLimitLockout"
-	UnlockTime time.Time `json:"unlock_time"`        // when the lockout expires
-	TTL        int64     `json:"ttl" dynamorm:"ttl"` // automatic cleanup
+	Type       string    `dynamorm:"attr:type" json:"type"`                 // "RateLimitLockout"
+	UnlockTime time.Time `dynamorm:"attr:unlockTime" json:"unlock_time"`    // when the lockout expires
+	TTL        int64     `dynamorm:"ttl,attr:ttl" json:"ttl"`               // automatic cleanup
 }
 
 // UpdateKeys updates the DynamoDB keys for the RateLimitLockout model
@@ -115,26 +119,28 @@ func NewRateLimitLockout(identifier string, unlockTime time.Time) *RateLimitLock
 
 // APIRateLimit represents a rate limit counter for API endpoints
 type APIRateLimit struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys
-	PK string `dynamorm:"pk" json:"pk"` // RATELIMIT#{userID|domain}#{endpoint}
-	SK string `dynamorm:"sk" json:"sk"` // WINDOW#{window_start}
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // RATELIMIT#{userID|domain}#{endpoint}
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // WINDOW#{window_start}
 
 	// Attributes
-	Type         string    `json:"type"`               // "APIRateLimit"
-	UserID       string    `json:"user_id"`            // User identifier
-	Domain       string    `json:"domain,omitempty"`   // Domain for federation limits
-	Endpoint     string    `json:"endpoint"`           // API endpoint pattern
-	Count        int       `json:"count"`              // Current request count
-	Window       time.Time `json:"window"`             // Window start time
-	Blocked      bool      `json:"blocked"`            // Whether user is blocked
-	BlockedUntil time.Time `json:"blocked_until"`      // When block expires
-	UpdatedAt    time.Time `json:"updated_at"`         // Last update time
-	TTL          int64     `json:"ttl" dynamorm:"ttl"` // Automatic cleanup
+	Type         string    `dynamorm:"attr:type" json:"type"`                 // "APIRateLimit"
+	UserID       string    `dynamorm:"attr:userID" json:"user_id"`            // User identifier
+	Domain       string    `dynamorm:"attr:domain" json:"domain,omitempty"`   // Domain for federation limits
+	Endpoint     string    `dynamorm:"attr:endpoint" json:"endpoint"`         // API endpoint pattern
+	Count        int       `dynamorm:"attr:count" json:"count"`               // Current request count
+	Window       time.Time `dynamorm:"attr:window" json:"window"`             // Window start time
+	Blocked      bool      `dynamorm:"attr:blocked" json:"blocked"`           // Whether user is blocked
+	BlockedUntil time.Time `dynamorm:"attr:blockedUntil" json:"blocked_until"` // When block expires
+	UpdatedAt    time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`      // Last update time
+	TTL          int64     `dynamorm:"ttl,attr:ttl" json:"ttl"`               // Automatic cleanup
 
 	// Escalating penalty tracking
-	ViolationCount int       `json:"violation_count"` // Number of violations
-	FirstViolation time.Time `json:"first_violation"` // When first violation occurred
-	LastViolation  time.Time `json:"last_violation"`  // Most recent violation
+	ViolationCount int       `dynamorm:"attr:violationCount" json:"violation_count"` // Number of violations
+	FirstViolation time.Time `dynamorm:"attr:firstViolation" json:"first_violation"` // When first violation occurred
+	LastViolation  time.Time `dynamorm:"attr:lastViolation" json:"last_violation"`   // Most recent violation
 }
 
 // UpdateKeys updates the DynamoDB keys for the APIRateLimit model
@@ -208,19 +214,21 @@ func NewFederationRateLimit(domain, endpoint string, windowStart time.Time) *API
 
 // RateLimitViolation represents a rate limit violation for escalating penalties
 type RateLimitViolation struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys
-	PK string `dynamorm:"pk" json:"pk"` // RATELIMIT_VIOLATION#{userID|domain}
-	SK string `dynamorm:"sk" json:"sk"` // timestamp of violation
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // RATELIMIT_VIOLATION#{userID|domain}
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // timestamp of violation
 
 	// Attributes
-	Type           string    `json:"type"`               // "RateLimitViolation"
-	UserID         string    `json:"user_id"`            // User identifier
-	Domain         string    `json:"domain,omitempty"`   // Domain for federation violations
-	Endpoint       string    `json:"endpoint"`           // Endpoint that was rate limited
-	ViolationType  string    `json:"violation_type"`     // "api" or "federation"
-	Timestamp      time.Time `json:"timestamp"`          // When violation occurred
-	PenaltyMinutes int       `json:"penalty_minutes"`    // Minutes of penalty applied
-	TTL            int64     `json:"ttl" dynamorm:"ttl"` // Cleanup after 7 days
+	Type           string    `dynamorm:"attr:type" json:"type"`                   // "RateLimitViolation"
+	UserID         string    `dynamorm:"attr:userID" json:"user_id"`              // User identifier
+	Domain         string    `dynamorm:"attr:domain" json:"domain,omitempty"`     // Domain for federation violations
+	Endpoint       string    `dynamorm:"attr:endpoint" json:"endpoint"`           // Endpoint that was rate limited
+	ViolationType  string    `dynamorm:"attr:violationType" json:"violation_type"` // "api" or "federation"
+	Timestamp      time.Time `dynamorm:"attr:timestamp" json:"timestamp"`         // When violation occurred
+	PenaltyMinutes int       `dynamorm:"attr:penaltyMinutes" json:"penalty_minutes"` // Minutes of penalty applied
+	TTL            int64     `dynamorm:"ttl,attr:ttl" json:"ttl"`                 // Cleanup after 7 days
 }
 
 // UpdateKeys updates the DynamoDB keys for the RateLimitViolation model

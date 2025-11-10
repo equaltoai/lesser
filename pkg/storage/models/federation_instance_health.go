@@ -9,45 +9,47 @@ import (
 
 // FederationInstanceHealthTracking tracks health metrics for federated instances
 type FederationInstanceHealthTracking struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - INSTANCE#{domain}, HEALTH
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for time-based queries - HEALTH_CHECK#{date}, TS#{timestamp}
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for unhealthy instances - UNHEALTHY (if unhealthy), SCORE#{health_score}#{domain}
-	GSI2PK string `dynamorm:"index:GSI2,pk" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:GSI2,sk" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Instance identification
-	Domain string `json:"domain"` // Remote instance domain
+	Domain string `dynamorm:"attr:domain" json:"domain"` // Remote instance domain
 
 	// Health metrics
-	HealthScore      float64 `json:"health_score"`      // 0.0 to 1.0 (1.0 = perfect health)
-	ResponseTimeP95  int64   `json:"response_time_p95"` // 95th percentile response time in ms
-	SuccessRate      float64 `json:"success_rate"`      // 0.0 to 1.0 (1.0 = 100% success)
-	ConsecutiveFails int     `json:"consecutive_fails"` // Number of consecutive failed requests
-	IsHealthy        bool    `json:"is_healthy"`        // Overall health status
+	HealthScore      float64 `dynamorm:"attr:healthScore" json:"health_score"`      // 0.0 to 1.0 (1.0 = perfect health)
+	ResponseTimeP95  int64   `dynamorm:"attr:responseTimeP95" json:"response_time_p95"` // 95th percentile response time in ms
+	SuccessRate      float64 `dynamorm:"attr:successRate" json:"success_rate"`         // 0.0 to 1.0 (1.0 = 100% success)
+	ConsecutiveFails int     `dynamorm:"attr:consecutiveFails" json:"consecutive_fails"` // Number of consecutive failed requests
+	IsHealthy        bool    `dynamorm:"attr:isHealthy" json:"is_healthy"`             // Overall health status
 
 	// Performance metrics
-	AverageResponseTime int64 `json:"average_response_time"` // Average response time in ms
-	TotalRequests       int64 `json:"total_requests"`        // Total requests in measurement period
-	FailedRequests      int64 `json:"failed_requests"`       // Failed requests in measurement period
+	AverageResponseTime int64 `dynamorm:"attr:averageResponseTime" json:"average_response_time"` // Average response time in ms
+	TotalRequests       int64 `dynamorm:"attr:totalRequests" json:"total_requests"`              // Total requests in measurement period
+	FailedRequests      int64 `dynamorm:"attr:failedRequests" json:"failed_requests"`            // Failed requests in measurement period
 
 	// Capacity metrics
-	RateLimitRemaining int    `json:"rate_limit_remaining"` // Remaining rate limit capacity
-	RateLimitReset     int64  `json:"rate_limit_reset"`     // Unix timestamp when rate limit resets
-	BackoffUntil       *int64 `json:"backoff_until"`        // Unix timestamp to back off until (if applicable)
+	RateLimitRemaining int    `dynamorm:"attr:rateLimitRemaining" json:"rate_limit_remaining"` // Remaining rate limit capacity
+	RateLimitReset     int64  `dynamorm:"attr:rateLimitReset" json:"rate_limit_reset"`         // Unix timestamp when rate limit resets
+	BackoffUntil       *int64 `dynamorm:"attr:backoffUntil" json:"backoff_until"`             // Unix timestamp to back off until (if applicable)
 
 	// Timestamps
-	LastHealthCheck time.Time `json:"last_health_check"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	LastHealthCheck time.Time `dynamorm:"attr:lastHealthCheck" json:"last_health_check"`
+	CreatedAt       time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt       time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (7 days for health records)
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the primary and GSI keys for the health tracking model

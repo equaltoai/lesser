@@ -7,25 +7,27 @@ import (
 
 // TrendingHashtag tracks trending hashtags with usage statistics
 type TrendingHashtag struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Key fields - EXACT pattern from legacy: PK=`TRENDING#date`, SK=`HASHTAG#score#tag`
-	PK string `dynamorm:"pk"`
-	SK string `dynamorm:"sk"`
+	PK string `dynamorm:"pk,attr:PK"`
+	SK string `dynamorm:"sk,attr:SK"`
 
 	// GSI fields for trending queries
-	GSI8PK string `dynamorm:"index:GSI8,pk"`
-	GSI8SK string `dynamorm:"index:GSI8,sk"`
+	GSI8PK string `dynamorm:"index:GSI8,pk,attr:gsi8PK"`
+	GSI8SK string `dynamorm:"index:GSI8,sk,attr:gsi8SK"`
 
 	// Business fields from legacy
-	Hashtag   string    `json:"hashtag"`
-	Date      string    `json:"date"`  // YYYY-MM-DD format
-	Score     float64   `json:"score"` // trending score
-	UseCount  int64     `json:"use_count"`
-	UserCount int64     `json:"user_count"` // unique users
-	History   []float64 `json:"history"`    // 7-day trend
-	UpdatedAt time.Time `json:"updated_at"`
+	Hashtag   string    `dynamorm:"attr:hashtag" json:"hashtag"`
+	Date      string    `dynamorm:"attr:date" json:"date"`   // YYYY-MM-DD format
+	Score     float64   `dynamorm:"attr:score" json:"score"` // trending score
+	UseCount  int64     `dynamorm:"attr:useCount" json:"use_count"`
+	UserCount int64     `dynamorm:"attr:userCount" json:"user_count"` // unique users
+	History   []float64 `dynamorm:"attr:history" json:"history"`      // 7-day trend
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL field - 30 days as per legacy
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing TrendingHashtag.

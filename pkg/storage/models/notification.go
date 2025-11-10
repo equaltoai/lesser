@@ -11,64 +11,66 @@ import (
 
 // Notification represents a user notification
 type Notification struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using user ID as partition key with notification sort key
 	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "user#{userID}"
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "notif#{timestamp}#{notificationID}"
 
 	// GSI1 - Notification type queries
-	GSI1PK string `dynamorm:"index:type-index,pk" json:"gsi1_pk"` // Format: "NOTIF_TYPE#{type}"
-	GSI1SK string `dynamorm:"index:type-index,sk" json:"gsi1_sk"` // Format: "{created_at}#{userID}#{id}"
+	GSI1PK string `dynamorm:"index:type-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "NOTIF_TYPE#{type}"
+	GSI1SK string `dynamorm:"index:type-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{userID}#{id}"
 
 	// GSI2 - Actor notifications (who triggered notifications)
-	GSI2PK string `dynamorm:"index:actor-index,pk" json:"gsi2_pk"` // Format: "NOTIF_ACTOR#{actorID}"
-	GSI2SK string `dynamorm:"index:actor-index,sk" json:"gsi2_sk"` // Format: "{created_at}#{userID}#{id}"
+	GSI2PK string `dynamorm:"index:actor-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "NOTIF_ACTOR#{actorID}"
+	GSI2SK string `dynamorm:"index:actor-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{created_at}#{userID}#{id}"
 
 	// GSI3 - Group key for notification consolidation
-	GSI3PK string `dynamorm:"index:group-index,pk" json:"gsi3_pk"` // Format: "NOTIF_GROUP#{groupKey}"
-	GSI3SK string `dynamorm:"index:group-index,sk" json:"gsi3_sk"` // Format: "{created_at}#{id}"
+	GSI3PK string `dynamorm:"index:group-index,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "NOTIF_GROUP#{groupKey}"
+	GSI3SK string `dynamorm:"index:group-index,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{created_at}#{id}"
 
 	// Core notification data
-	ID     string `json:"id"`
-	UserID string `json:"user_id"` // User receiving the notification
-	Type   string `json:"type"`    // "mention", "reblog", "favourite", "follow", "follow_request", etc.
+	ID     string `dynamorm:"attr:id" json:"id"`
+	UserID string `dynamorm:"attr:userID" json:"user_id"` // User receiving the notification
+	Type   string `dynamorm:"attr:type" json:"type"`      // "mention", "reblog", "favourite", "follow", "follow_request", etc.
 
 	// Actor information (who triggered the notification)
-	ActorID   string `json:"actor_id"`
-	ActorType string `json:"actor_type,omitempty"` // "user", "remote_actor"
+	ActorID   string `dynamorm:"attr:actorID" json:"actor_id"`
+	ActorType string `dynamorm:"attr:actorType" json:"actor_type,omitempty"` // "user", "remote_actor"
 
 	// Target information (what the notification is about)
-	TargetID   string `json:"target_id,omitempty"`
-	TargetType string `json:"target_type,omitempty"` // "status", "user", "account"
+	TargetID   string `dynamorm:"attr:targetID" json:"target_id,omitempty"`
+	TargetType string `dynamorm:"attr:targetType" json:"target_type,omitempty"` // "status", "user", "account"
 
 	// Notification content
-	Title string `json:"title,omitempty"`
-	Body  string `json:"body,omitempty"`
+	Title string `dynamorm:"attr:title" json:"title,omitempty"`
+	Body  string `dynamorm:"attr:body" json:"body,omitempty"`
 
 	// Additional data payload
-	Data map[string]interface{} `json:"data,omitempty"`
+	Data map[string]interface{} `dynamorm:"attr:data" json:"data,omitempty"`
 
 	// Status tracking
-	IsRead bool       `json:"is_read"`
-	ReadAt *time.Time `json:"read_at,omitempty"`
+	IsRead bool       `dynamorm:"attr:isRead" json:"is_read"`
+	ReadAt *time.Time `dynamorm:"attr:readAt" json:"read_at,omitempty"`
 
 	// Push notification status
-	PushSent   bool       `json:"push_sent"`
-	PushSentAt *time.Time `json:"push_sent_at,omitempty"`
-	PushError  string     `json:"push_error,omitempty"`
+	PushSent   bool       `dynamorm:"attr:pushSent" json:"push_sent"`
+	PushSentAt *time.Time `dynamorm:"attr:pushSentAt" json:"push_sent_at,omitempty"`
+	PushError  string     `dynamorm:"attr:pushError" json:"push_error,omitempty"`
 
 	// Grouping for similar notifications
-	GroupKey   string `json:"group_key"`   // Key for grouping similar notifications
-	GroupCount int    `json:"group_count"` // Number of notifications in this group
+	GroupKey   string `dynamorm:"attr:groupKey" json:"group_key"`     // Key for grouping similar notifications
+	GroupCount int    `dynamorm:"attr:groupCount" json:"group_count"` // Number of notifications in this group
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (30 days)
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
 
 	// Version for optimistic locking
-	Version int `dynamorm:"version" json:"version"`
+	Version int `dynamorm:"version,attr:version" json:"version"`
 }
 
 // NotificationBuilder helps create notifications with proper defaults

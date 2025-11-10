@@ -7,26 +7,28 @@ import (
 
 // ModerationMetricsEntry represents a single metrics entry in DynamoDB
 type ModerationMetricsEntry struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - metrics by date
-	PK string `dynamorm:"pk" json:"pk"` // Format: "METRICS#{YYYY-MM-DD}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "STATS#{hour}#{metric_type}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "METRICS#{YYYY-MM-DD}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "STATS#{hour}#{metric_type}"
 
 	// GSI1 - Metric type queries
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "METRIC_TYPE#{metric_type}"
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "DATE#{YYYY-MM-DD}#{hour}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "METRIC_TYPE#{metric_type}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "DATE#{YYYY-MM-DD}#{hour}"
 
 	// Type marker
-	Type string `json:"type"` // "METRIC_STATS"
+	Type string `dynamorm:"attr:type" json:"type"` // "METRIC_STATS"
 
 	// Metric data
-	MetricType string `json:"metric_type"` // e.g., "content_type:text", "decision:allow"
-	Count      int64  `json:"count"`
-	Hour       string `json:"hour"`
-	Date       string `json:"date"`
+	MetricType string `dynamorm:"attr:metricType" json:"metric_type"` // e.g., "content_type:text", "decision:allow"
+	Count      int64  `dynamorm:"attr:count" json:"count"`
+	Hour       string `dynamorm:"attr:hour" json:"hour"`
+	Date       string `dynamorm:"attr:date" json:"date"`
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	TTL       int64     `dynamorm:"ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -66,26 +68,28 @@ func (m *ModerationMetricsEntry) UpdateKeys() error {
 
 // ModerationFalsePositive represents a false positive record
 type ModerationFalsePositive struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - false positives by date
-	PK string `dynamorm:"pk" json:"pk"` // Format: "METRICS#{YYYY-MM-DD}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "FP#{content_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "METRICS#{YYYY-MM-DD}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "FP#{content_id}"
 
 	// GSI1 - False positive queries
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // "FALSE_POSITIVES"
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "DATE#{YYYY-MM-DD}#{timestamp}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "FALSE_POSITIVES"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "DATE#{YYYY-MM-DD}#{timestamp}"
 
 	// Type marker
-	Type string `json:"type"` // "FALSE_POSITIVE"
+	Type string `dynamorm:"attr:type" json:"type"` // "FALSE_POSITIVE"
 
 	// False positive data
-	ContentID        string  `json:"content_id"`
-	OriginalDecision string  `json:"original_decision"`
-	Confidence       float64 `json:"confidence"`
-	Date             string  `json:"date"`
+	ContentID        string  `dynamorm:"attr:contentID" json:"content_id"`
+	OriginalDecision string  `dynamorm:"attr:originalDecision" json:"original_decision"`
+	Confidence       float64 `dynamorm:"attr:confidence" json:"confidence"`
+	Date             string  `dynamorm:"attr:date" json:"date"`
 
 	// Timestamps
-	Timestamp time.Time `json:"timestamp"`
-	TTL       int64     `dynamorm:"ttl" json:"ttl,omitempty"`
+	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -125,29 +129,31 @@ func (m *ModerationFalsePositive) UpdateKeys() error {
 
 // ModerationDecisionSample represents a decision sample for analysis
 type ModerationDecisionSample struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - samples by date
-	PK string `dynamorm:"pk" json:"pk"` // Format: "SAMPLES#{YYYY-MM-DD}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "{unix_nano}#{content_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "SAMPLES#{YYYY-MM-DD}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "{unix_nano}#{content_id}"
 
 	// GSI1 - Decision type queries
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "DECISION#{decision}"
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "DATE#{YYYY-MM-DD}#{timestamp}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "DECISION#{decision}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "DATE#{YYYY-MM-DD}#{timestamp}"
 
 	// Type marker
-	Type string `json:"type"` // "DECISION_SAMPLE"
+	Type string `dynamorm:"attr:type" json:"type"` // "DECISION_SAMPLE"
 
 	// Sample data
-	ContentID      string  `json:"content_id"`
-	Decision       string  `json:"decision"`
-	Confidence     float64 `json:"confidence"`
-	ProcessingTime int64   `json:"processing_time"` // milliseconds
-	ReasonCount    int     `json:"reason_count"`
-	RequiresReview bool    `json:"requires_review"`
-	Date           string  `json:"date"`
+	ContentID      string  `dynamorm:"attr:contentID" json:"content_id"`
+	Decision       string  `dynamorm:"attr:decision" json:"decision"`
+	Confidence     float64 `dynamorm:"attr:confidence" json:"confidence"`
+	ProcessingTime int64   `dynamorm:"attr:processingTime" json:"processing_time"` // milliseconds
+	ReasonCount    int     `dynamorm:"attr:reasonCount" json:"reason_count"`
+	RequiresReview bool    `dynamorm:"attr:requiresReview" json:"requires_review"`
+	Date           string  `dynamorm:"attr:date" json:"date"`
 
 	// Timestamps
-	Timestamp time.Time `json:"timestamp"`
-	TTL       int64     `dynamorm:"ttl" json:"ttl,omitempty"`
+	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -187,27 +193,29 @@ func (m *ModerationDecisionSample) UpdateKeys() error {
 
 // ModerationPatternStats represents pattern matching statistics
 type ModerationPatternStats struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - pattern stats by ID
-	PK string `dynamorm:"pk" json:"pk"` // Format: "PATTERN_STATS#{pattern_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "STATS"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "PATTERN_STATS#{pattern_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "STATS"
 
 	// GSI1 - Hit count ranking
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // "PATTERN_HITS"
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "{hit_count_padded}#{pattern_id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "PATTERN_HITS"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "{hit_count_padded}#{pattern_id}"
 
 	// Type marker
-	Type string `json:"type"` // "PATTERN_STATS"
+	Type string `dynamorm:"attr:type" json:"type"` // "PATTERN_STATS"
 
 	// Pattern stats data
-	PatternID   string    `json:"pattern_id"`
-	PatternName string    `json:"pattern_name"`
-	HitCount    int64     `json:"hit_count"`
-	LastHit     time.Time `json:"last_hit"`
+	PatternID   string    `dynamorm:"attr:patternID" json:"pattern_id"`
+	PatternName string    `dynamorm:"attr:patternName" json:"pattern_name"`
+	HitCount    int64     `dynamorm:"attr:hitCount" json:"hit_count"`
+	LastHit     time.Time `dynamorm:"attr:lastHit" json:"last_hit"`
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	TTL       int64     `dynamorm:"ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

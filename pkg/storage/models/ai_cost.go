@@ -9,110 +9,112 @@ import (
 
 // AICost represents AI/ML operation costs with detailed Bedrock usage tracking
 type AICost struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - AI cost uses AI_COST#{operation_id} pattern
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for time-based queries - AI_COSTS#{date}, TS#{timestamp}#{operation_id}
-	GSI1PK string `dynamorm:"index:time-index,pk" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:time-index,sk" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:time-index,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:time-index,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for operation type queries - AI_TYPE#{operation_type}, MODEL#{model}#{timestamp}
-	GSI2PK string `dynamorm:"index:operation-type-index,pk" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:operation-type-index,sk" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:operation-type-index,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:operation-type-index,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// GSI3 for cost analysis - AI_COST_RANGE#{cost_tier}, COST#{cost_microcents}#{timestamp}
-	GSI3PK string `dynamorm:"index:cost-analysis-index,pk" json:"gsi3_pk"`
-	GSI3SK string `dynamorm:"index:cost-analysis-index,sk" json:"gsi3_sk"`
+	GSI3PK string `dynamorm:"index:cost-analysis-index,pk,attr:gsi3PK" json:"gsi3_pk"`
+	GSI3SK string `dynamorm:"index:cost-analysis-index,sk,attr:gsi3SK" json:"gsi3_sk"`
 
 	// Core operation metadata
-	OperationID   string `json:"operation_id"`
-	OperationType string `json:"operation_type"` // sentiment_analysis, content_moderation, text_summarization
-	RequestID     string `json:"request_id"`     // Associated request ID for tracing
-	UserID        string `json:"user_id,omitempty"`
-	ActorID       string `json:"actor_id,omitempty"`
-	ObjectID      string `json:"object_id,omitempty"` // Note ID, post ID, etc.
+	OperationID   string `dynamorm:"attr:operationID" json:"operation_id"`
+	OperationType string `dynamorm:"attr:operationType" json:"operation_type"` // sentiment_analysis, content_moderation, text_summarization
+	RequestID     string `dynamorm:"attr:requestID" json:"request_id"`         // Associated request ID for tracing
+	UserID        string `dynamorm:"attr:userID" json:"user_id,omitempty"`
+	ActorID       string `dynamorm:"attr:actorID" json:"actor_id,omitempty"`
+	ObjectID      string `dynamorm:"attr:objectID" json:"object_id,omitempty"` // Note ID, post ID, etc.
 
 	// AI Model details
-	ModelFamily   string `json:"model_family"`   // claude, titan, jurassic
-	ModelName     string `json:"model_name"`     // claude-3-haiku, claude-3-sonnet, claude-3-opus
-	ModelVersion  string `json:"model_version"`  // 20240307, etc.
-	ModelRegion   string `json:"model_region"`   // us-east-1, us-west-2
-	ModelEndpoint string `json:"model_endpoint"` // Bedrock endpoint used
+	ModelFamily   string `dynamorm:"attr:modelFamily" json:"model_family"`     // claude, titan, jurassic
+	ModelName     string `dynamorm:"attr:modelName" json:"model_name"`         // claude-3-haiku, claude-3-sonnet, claude-3-opus
+	ModelVersion  string `dynamorm:"attr:modelVersion" json:"model_version"`   // 20240307, etc.
+	ModelRegion   string `dynamorm:"attr:modelRegion" json:"model_region"`     // us-east-1, us-west-2
+	ModelEndpoint string `dynamorm:"attr:modelEndpoint" json:"model_endpoint"` // Bedrock endpoint used
 
 	// Input/Output token tracking
-	InputTokens        int64   `json:"input_tokens"`
-	OutputTokens       int64   `json:"output_tokens"`
-	TotalTokens        int64   `json:"total_tokens"`
-	InputCharacters    int64   `json:"input_characters"`
-	OutputCharacters   int64   `json:"output_characters"`
-	TokensPerSecond    float64 `json:"tokens_per_second"`
-	CharactersPerToken float64 `json:"characters_per_token"`
+	InputTokens        int64   `dynamorm:"attr:inputTokens" json:"input_tokens"`
+	OutputTokens       int64   `dynamorm:"attr:outputTokens" json:"output_tokens"`
+	TotalTokens        int64   `dynamorm:"attr:totalTokens" json:"total_tokens"`
+	InputCharacters    int64   `dynamorm:"attr:inputCharacters" json:"input_characters"`
+	OutputCharacters   int64   `dynamorm:"attr:outputCharacters" json:"output_characters"`
+	TokensPerSecond    float64 `dynamorm:"attr:tokensPerSecond" json:"tokens_per_second"`
+	CharactersPerToken float64 `dynamorm:"attr:charactersPerToken" json:"characters_per_token"`
 
 	// Content complexity analysis
-	ComplexityScore    float64  `json:"complexity_score"`   // 0.0-1.0 based on content analysis
-	ComplexityFactors  []string `json:"complexity_factors"` // factors that contributed to complexity
-	LanguageDetected   string   `json:"language_detected"`
-	ContentLength      int64    `json:"content_length"`
-	ContentType        string   `json:"content_type"` // text, markdown, json, etc.
-	SentimentPolarity  float64  `json:"sentiment_polarity,omitempty"`
-	SentimentMagnitude float64  `json:"sentiment_magnitude,omitempty"`
+	ComplexityScore    float64  `dynamorm:"attr:complexityScore" json:"complexity_score"`     // 0.0-1.0 based on content analysis
+	ComplexityFactors  []string `dynamorm:"attr:complexityFactors" json:"complexity_factors"` // factors that contributed to complexity
+	LanguageDetected   string   `dynamorm:"attr:languageDetected" json:"language_detected"`
+	ContentLength      int64    `dynamorm:"attr:contentLength" json:"content_length"`
+	ContentType        string   `dynamorm:"attr:contentType" json:"content_type"` // text, markdown, json, etc.
+	SentimentPolarity  float64  `dynamorm:"attr:sentimentPolarity" json:"sentiment_polarity,omitempty"`
+	SentimentMagnitude float64  `dynamorm:"attr:sentimentMagnitude" json:"sentiment_magnitude,omitempty"`
 
 	// Cost breakdown (all in microcents)
-	InputTokenCost        int64 `json:"input_token_cost"`        // Cost for input tokens
-	OutputTokenCost       int64 `json:"output_token_cost"`       // Cost for output tokens
-	ModelInferenceCost    int64 `json:"model_inference_cost"`    // Base inference cost
-	ComplexityPenaltyCost int64 `json:"complexity_penalty_cost"` // Additional cost for complex operations
-	TotalCostMicroCents   int64 `json:"total_cost_micro_cents"`
+	InputTokenCost        int64 `dynamorm:"attr:inputTokenCost" json:"input_token_cost"`               // Cost for input tokens
+	OutputTokenCost       int64 `dynamorm:"attr:outputTokenCost" json:"output_token_cost"`             // Cost for output tokens
+	ModelInferenceCost    int64 `dynamorm:"attr:modelInferenceCost" json:"model_inference_cost"`       // Base inference cost
+	ComplexityPenaltyCost int64 `dynamorm:"attr:complexityPenaltyCost" json:"complexity_penalty_cost"` // Additional cost for complex operations
+	TotalCostMicroCents   int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
 
 	// Performance metrics
-	RequestLatencyMs    int64 `json:"request_latency_ms"`     // Total request latency
-	ModelLatencyMs      int64 `json:"model_latency_ms"`       // Model processing time
-	QueueWaitTimeMs     int64 `json:"queue_wait_time_ms"`     // Time waiting in queue
-	TokenGenerationMs   int64 `json:"token_generation_ms"`    // Token generation time
-	FirstTokenLatencyMs int64 `json:"first_token_latency_ms"` // Time to first token
-	StreamingEnabled    bool  `json:"streaming_enabled"`
+	RequestLatencyMs    int64 `dynamorm:"attr:requestLatencyMs" json:"request_latency_ms"`        // Total request latency
+	ModelLatencyMs      int64 `dynamorm:"attr:modelLatencyMs" json:"model_latency_ms"`            // Model processing time
+	QueueWaitTimeMs     int64 `dynamorm:"attr:queueWaitTimeMs" json:"queue_wait_time_ms"`         // Time waiting in queue
+	TokenGenerationMs   int64 `dynamorm:"attr:tokenGenerationMs" json:"token_generation_ms"`      // Token generation time
+	FirstTokenLatencyMs int64 `dynamorm:"attr:firstTokenLatencyMs" json:"first_token_latency_ms"` // Time to first token
+	StreamingEnabled    bool  `dynamorm:"attr:streamingEnabled" json:"streaming_enabled"`
 
 	// Error tracking
-	Success      bool   `json:"success"`
-	ErrorCode    string `json:"error_code,omitempty"`
-	ErrorMessage string `json:"error_message,omitempty"`
-	RetryCount   int    `json:"retry_count"`
-	RetryCost    int64  `json:"retry_cost"` // Additional cost from retries
+	Success      bool   `dynamorm:"attr:success" json:"success"`
+	ErrorCode    string `dynamorm:"attr:errorCode" json:"error_code,omitempty"`
+	ErrorMessage string `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
+	RetryCount   int    `dynamorm:"attr:retryCount" json:"retry_count"`
+	RetryCost    int64  `dynamorm:"attr:retryCost" json:"retry_cost"` // Additional cost from retries
 
 	// Context and configuration
-	Temperature    float64                `json:"temperature,omitempty"`
-	MaxTokens      int64                  `json:"max_tokens,omitempty"`
-	TopP           float64                `json:"top_p,omitempty"`
-	ModelConfig    map[string]interface{} `json:"model_config,omitempty"`
-	SystemPrompt   string                 `json:"system_prompt,omitempty"` // Truncated for storage
-	UserPrompt     string                 `json:"user_prompt,omitempty"`   // Truncated for storage
-	ResponseFormat string                 `json:"response_format,omitempty"`
+	Temperature    float64                `dynamorm:"attr:temperature" json:"temperature,omitempty"`
+	MaxTokens      int64                  `dynamorm:"attr:maxTokens" json:"max_tokens,omitempty"`
+	TopP           float64                `dynamorm:"attr:topP" json:"top_p,omitempty"`
+	ModelConfig    map[string]interface{} `dynamorm:"attr:modelConfig" json:"model_config,omitempty"`
+	SystemPrompt   string                 `dynamorm:"attr:systemPrompt" json:"system_prompt,omitempty"` // Truncated for storage
+	UserPrompt     string                 `dynamorm:"attr:userPrompt" json:"user_prompt,omitempty"`     // Truncated for storage
+	ResponseFormat string                 `dynamorm:"attr:responseFormat" json:"response_format,omitempty"`
 
 	// Business context
-	OperationContext map[string]string `json:"operation_context,omitempty"` // Additional context
-	BillingPeriod    string            `json:"billing_period"`              // YYYY-MM format
-	CostTier         string            `json:"cost_tier"`                   // low, medium, high, premium
-	Priority         string            `json:"priority"`                    // low, normal, high, urgent
+	OperationContext map[string]string `dynamorm:"attr:operationContext" json:"operation_context,omitempty"` // Additional context
+	BillingPeriod    string            `dynamorm:"attr:billingPeriod" json:"billing_period"`                 // YYYY-MM format
+	CostTier         string            `dynamorm:"attr:costTier" json:"cost_tier"`                           // low, medium, high, premium
+	Priority         string            `dynamorm:"attr:priority" json:"priority"`                            // low, normal, high, urgent
 
 	// Efficiency metrics
-	CostPerInputToken     float64 `json:"cost_per_input_token"`
-	CostPerOutputToken    float64 `json:"cost_per_output_token"`
-	CostPerCharacter      float64 `json:"cost_per_character"`
-	EfficiencyScore       float64 `json:"efficiency_score"`        // Quality/cost ratio
-	QualityScore          float64 `json:"quality_score"`           // Output quality assessment
-	RelevanceScore        float64 `json:"relevance_score"`         // Output relevance to prompt
-	ComprehensivenesScore float64 `json:"comprehensiveness_score"` // How complete the output is
+	CostPerInputToken     float64 `dynamorm:"attr:costPerInputToken" json:"cost_per_input_token"`
+	CostPerOutputToken    float64 `dynamorm:"attr:costPerOutputToken" json:"cost_per_output_token"`
+	CostPerCharacter      float64 `dynamorm:"attr:costPerCharacter" json:"cost_per_character"`
+	EfficiencyScore       float64 `dynamorm:"attr:efficiencyScore" json:"efficiency_score"`              // Quality/cost ratio
+	QualityScore          float64 `dynamorm:"attr:qualityScore" json:"quality_score"`                    // Output quality assessment
+	RelevanceScore        float64 `dynamorm:"attr:relevanceScore" json:"relevance_score"`                // Output relevance to prompt
+	ComprehensivenesScore float64 `dynamorm:"attr:comprehensivenesScore" json:"comprehensiveness_score"` // How complete the output is
 
 	// Timestamps
-	Timestamp       time.Time `json:"timestamp"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
-	ProcessingStart time.Time `json:"processing_start"`
-	ProcessingEnd   time.Time `json:"processing_end"`
+	Timestamp       time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	CreatedAt       time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt       time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	ProcessingStart time.Time `dynamorm:"attr:processingStart" json:"processing_start"`
+	ProcessingEnd   time.Time `dynamorm:"attr:processingEnd" json:"processing_end"`
 
 	// TTL for automatic cleanup (90 days for AI cost records)
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the primary keys for the AICost model

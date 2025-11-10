@@ -7,19 +7,21 @@ import (
 
 // ListMember represents membership of an account in a list
 type ListMember struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys for list membership
-	PK string `dynamorm:"pk" json:"PK"` // LIST_MEMBERS#listID
-	SK string `dynamorm:"sk" json:"SK"` // accountID
+	PK string `dynamorm:"pk,attr:PK" json:"PK"` // LIST_MEMBERS#listID
+	SK string `dynamorm:"sk,attr:SK" json:"SK"` // accountID
 
 	// GSI1 for reverse lookup (what lists is an account in)
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK,omitempty"` // ACCOUNT_LISTS#accountID
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK,omitempty"` // listID#username
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"GSI1PK,omitempty"` // ACCOUNT_LISTS#accountID
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"GSI1SK,omitempty"` // listID#username
 
 	// Core fields
-	ListID       string    `json:"list_id"`
-	AccountID    string    `json:"account_id"`
-	ListUsername string    `json:"list_username"` // Owner of the list (for reverse index)
-	AddedAt      time.Time `json:"added_at"`
+	ListID       string    `dynamorm:"attr:listID" json:"list_id"`
+	AccountID    string    `dynamorm:"attr:accountID" json:"account_id"`
+	ListUsername string    `dynamorm:"attr:listUsername" json:"list_username"` // Owner of the list (for reverse index)
+	AddedAt      time.Time `dynamorm:"attr:addedAt" json:"added_at"`
 }
 
 // TableName returns the DynamoDB table name

@@ -55,47 +55,49 @@ func (ConnectionInfo) TableName() string {
 
 // WebSocketConnection represents a WebSocket connection with complete lifecycle management
 type WebSocketConnection struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB Keys - preserving legacy patterns
-	PK string `dynamorm:"pk" json:"pk"` // CONN#{connectionID}
-	SK string `dynamorm:"sk" json:"sk"` // CONN#{connectionID}
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // CONN#{connectionID}
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // CONN#{connectionID}
 
 	// GSI keys for querying
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1pk"` // USER#{userID}
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1sk"` // CONN#{timestamp}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // USER#{userID}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // CONN#{timestamp}
 
 	// GSI2 for state-based queries
-	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2pk"` // STATE#{state}
-	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2sk"` // CONN#{connectionID}
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // STATE#{state}
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // CONN#{connectionID}
 
 	// Business fields
-	ConnectionID string    `json:"connection_id"`
-	UserID       string    `json:"user_id"`
-	Username     string    `json:"username"`
-	Streams      []string  `json:"streams"` // subscribed streams
-	Established  time.Time `json:"established"`
-	LastActivity time.Time `json:"last_activity"`
+	ConnectionID string    `dynamorm:"attr:connectionID" json:"connection_id"`
+	UserID       string    `dynamorm:"attr:userID" json:"user_id"`
+	Username     string    `dynamorm:"attr:username" json:"username"`
+	Streams      []string  `dynamorm:"attr:streams" json:"streams"` // subscribed streams
+	Established  time.Time `dynamorm:"attr:established" json:"established"`
+	LastActivity time.Time `dynamorm:"attr:lastActivity" json:"last_activity"`
 
 	// Connection lifecycle fields
-	State          ConnectionState `json:"state"`
-	StateChangedAt time.Time       `json:"state_changed_at"`
-	CloseReason    string          `json:"close_reason,omitempty"`
-	CloseCode      int             `json:"close_code,omitempty"`
-	RetryCount     int             `json:"retry_count"`
-	MaxRetries     int             `json:"max_retries"`
+	State          ConnectionState `dynamorm:"attr:state" json:"state"`
+	StateChangedAt time.Time       `dynamorm:"attr:stateChangedAt" json:"state_changed_at"`
+	CloseReason    string          `dynamorm:"attr:closeReason" json:"close_reason,omitempty"`
+	CloseCode      int             `dynamorm:"attr:closeCode" json:"close_code,omitempty"`
+	RetryCount     int             `dynamorm:"attr:retryCount" json:"retry_count"`
+	MaxRetries     int             `dynamorm:"attr:maxRetries" json:"max_retries"`
 
 	// Connection metadata and metrics
-	Metrics ConnectionMetrics `json:"metrics"`
-	Info    ConnectionInfo    `json:"info"`
+	Metrics ConnectionMetrics `dynamorm:"attr:metrics" json:"metrics"`
+	Info    ConnectionInfo    `dynamorm:"attr:info" json:"info"`
 
 	// Resource management
-	IdleTimeout    time.Duration `json:"idle_timeout"`
-	MaxMessageSize int64         `json:"max_message_size"`
-	RateLimit      int           `json:"rate_limit"` // messages per minute
-	CurrentRate    int           `json:"current_rate"`
-	RateLimitReset time.Time     `json:"rate_limit_reset"`
+	IdleTimeout    time.Duration `dynamorm:"attr:idleTimeout" json:"idle_timeout"`
+	MaxMessageSize int64         `dynamorm:"attr:maxMessageSize" json:"max_message_size"`
+	RateLimit      int           `dynamorm:"attr:rateLimit" json:"rate_limit"` // messages per minute
+	CurrentRate    int           `dynamorm:"attr:currentRate" json:"current_rate"`
+	RateLimitReset time.Time     `dynamorm:"attr:rateLimitReset" json:"rate_limit_reset"`
 
 	// TTL for automatic cleanup
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the GSI keys based on the current values
@@ -220,22 +222,24 @@ func (w *WebSocketConnection) RecordPong() {
 
 // WebSocketSubscription represents a stream subscription for a WebSocket connection
 type WebSocketSubscription struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB Keys - preserving legacy patterns
-	PK string `dynamorm:"pk" json:"pk"` // SUB#{stream}
-	SK string `dynamorm:"sk" json:"sk"` // CONN#{connectionID}
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // SUB#{stream}
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // CONN#{connectionID}
 
 	// GSI keys for querying
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1pk"` // CONN#{connectionID}
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1sk"` // STREAM#{stream}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // CONN#{connectionID}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // STREAM#{stream}
 
 	// Business fields
-	ConnectionID string    `json:"connection_id"`
-	UserID       string    `json:"user_id"`
-	Stream       string    `json:"stream"`
-	SubscribedAt time.Time `json:"subscribed_at"`
+	ConnectionID string    `dynamorm:"attr:connectionID" json:"connection_id"`
+	UserID       string    `dynamorm:"attr:userID" json:"user_id"`
+	Stream       string    `dynamorm:"attr:stream" json:"stream"`
+	SubscribedAt time.Time `dynamorm:"attr:subscribedAt" json:"subscribed_at"`
 
 	// TTL for automatic cleanup
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the GSI keys based on the current values

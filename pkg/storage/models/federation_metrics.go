@@ -9,85 +9,87 @@ import (
 
 // FederationAnalyticsTimeSeries represents time series federation metrics with 5-minute primary aggregation
 type FederationAnalyticsTimeSeries struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - PK: FEDERATION_TIMESERIES#domain#period, SK: timestamp
-	PK string `dynamorm:"pk" json:"-"` // FEDERATION_TIMESERIES#{domain}#{period}
-	SK string `dynamorm:"sk" json:"-"` // {timestamp}
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // FEDERATION_TIMESERIES#{domain}#{period}
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // {timestamp}
 
 	// GSI1 - Domain-based queries: GSI1PK: DOMAIN#{domain}, GSI1SK: {period}#{timestamp}
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 - Period-based queries: GSI2PK: PERIOD#{period}, GSI2SK: {timestamp}#{domain}
-	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Core time series data
-	Domain    string    `json:"domain"`
-	Period    string    `json:"period"`    // 5min, hourly, daily, monthly
-	Timestamp time.Time `json:"timestamp"` // Start time of the time window
+	Domain    string    `dynamorm:"attr:domain" json:"domain"`
+	Period    string    `dynamorm:"attr:period" json:"period"`       // 5min, hourly, daily, monthly
+	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"` // Start time of the time window
 
 	// Critical federation health metrics (following federation-analytics-guidance.md)
 
 	// 1. Availability Metrics (40% weight in health scoring)
-	InstanceReachability  float64    `json:"instance_reachability"` // % instances responding (0-1)
-	EndpointAvailability  float64    `json:"endpoint_availability"` // % endpoints up (0-1)
-	LastSuccessfulContact *time.Time `json:"last_successful_contact,omitempty"`
-	ConsecutiveFailures   int64      `json:"consecutive_failures"`
-	CircuitBreakerActive  bool       `json:"circuit_breaker_active"`
+	InstanceReachability  float64    `dynamorm:"attr:instanceReachability" json:"instance_reachability"`   // % instances responding (0-1)
+	EndpointAvailability  float64    `dynamorm:"attr:endpointAvailability" json:"endpoint_availability"`   // % endpoints up (0-1)
+	LastSuccessfulContact *time.Time `dynamorm:"attr:lastSuccessfulContact" json:"last_successful_contact,omitempty"`
+	ConsecutiveFailures   int64      `dynamorm:"attr:consecutiveFailures" json:"consecutive_failures"`
+	CircuitBreakerActive  bool       `dynamorm:"attr:circuitBreakerActive" json:"circuit_breaker_active"`
 
 	// 2. Performance Metrics (30% weight)
-	InboxDeliveryP50          int64 `json:"inbox_delivery_p50_ms"`     // ms
-	InboxDeliveryP95          int64 `json:"inbox_delivery_p95_ms"`     // ms
-	InboxDeliveryP99          int64 `json:"inbox_delivery_p99_ms"`     // ms
-	OutboxProcessingTime      int64 `json:"outbox_processing_time_ms"` // ms
-	SignatureVerificationTime int64 `json:"signature_verification_ms"` // ms
-	MediaDeliveryTime         int64 `json:"media_delivery_time_ms"`    // ms
+	InboxDeliveryP50          int64 `dynamorm:"attr:inboxDeliveryP50" json:"inbox_delivery_p50_ms"`         // ms
+	InboxDeliveryP95          int64 `dynamorm:"attr:inboxDeliveryP95" json:"inbox_delivery_p95_ms"`         // ms
+	InboxDeliveryP99          int64 `dynamorm:"attr:inboxDeliveryP99" json:"inbox_delivery_p99_ms"`         // ms
+	OutboxProcessingTime      int64 `dynamorm:"attr:outboxProcessingTime" json:"outbox_processing_time_ms"` // ms
+	SignatureVerificationTime int64 `dynamorm:"attr:signatureVerificationTime" json:"signature_verification_ms"` // ms
+	MediaDeliveryTime         int64 `dynamorm:"attr:mediaDeliveryTime" json:"media_delivery_time_ms"`       // ms
 
 	// 3. Throughput Metrics (20% weight)
-	IncomingActivitiesPerSec float64 `json:"incoming_activities_per_sec"`
-	OutgoingActivitiesPerSec float64 `json:"outgoing_activities_per_sec"`
-	QueueDepth               int64   `json:"queue_depth"`
-	ProcessingBacklog        int64   `json:"processing_backlog_ms"`
-	BurstCapacity            float64 `json:"burst_capacity"`
+	IncomingActivitiesPerSec float64 `dynamorm:"attr:incomingActivitiesPerSec" json:"incoming_activities_per_sec"`
+	OutgoingActivitiesPerSec float64 `dynamorm:"attr:outgoingActivitiesPerSec" json:"outgoing_activities_per_sec"`
+	QueueDepth               int64   `dynamorm:"attr:queueDepth" json:"queue_depth"`
+	ProcessingBacklog        int64   `dynamorm:"attr:processingBacklog" json:"processing_backlog_ms"`
+	BurstCapacity            float64 `dynamorm:"attr:burstCapacity" json:"burst_capacity"`
 
 	// 4. Error Metrics (10% weight)
-	SignatureFailures   int64   `json:"signature_failures"`
-	TimeoutRate         float64 `json:"timeout_rate"` // 0-1
-	RateLimitHits       int64   `json:"rate_limit_hits"`
-	MalformedActivities int64   `json:"malformed_activities"`
-	ValidationFailures  int64   `json:"validation_failures"`
-	ErrorRate           float64 `json:"error_rate"` // Total error rate (0-1)
+	SignatureFailures   int64   `dynamorm:"attr:signatureFailures" json:"signature_failures"`
+	TimeoutRate         float64 `dynamorm:"attr:timeoutRate" json:"timeout_rate"` // 0-1
+	RateLimitHits       int64   `dynamorm:"attr:rateLimitHits" json:"rate_limit_hits"`
+	MalformedActivities int64   `dynamorm:"attr:malformedActivities" json:"malformed_activities"`
+	ValidationFailures  int64   `dynamorm:"attr:validationFailures" json:"validation_failures"`
+	ErrorRate           float64 `dynamorm:"attr:errorRate" json:"error_rate"` // Total error rate (0-1)
 
 	// 5. Cost Efficiency Metrics
-	PerActivityCost float64 `json:"per_activity_cost_usd"`
-	BandwidthCost   float64 `json:"bandwidth_cost_usd"`
-	ComputeCost     float64 `json:"compute_cost_usd"`
-	StorageCost     float64 `json:"storage_cost_usd"`
-	EgressCost      float64 `json:"egress_cost_usd"`
+	PerActivityCost float64 `dynamorm:"attr:perActivityCost" json:"per_activity_cost_usd"`
+	BandwidthCost   float64 `dynamorm:"attr:bandwidthCost" json:"bandwidth_cost_usd"`
+	ComputeCost     float64 `dynamorm:"attr:computeCost" json:"compute_cost_usd"`
+	StorageCost     float64 `dynamorm:"attr:storageCost" json:"storage_cost_usd"`
+	EgressCost      float64 `dynamorm:"attr:egressCost" json:"egress_cost_usd"`
 
 	// Volume metrics for aggregation
-	TotalInboundVolume   int64 `json:"total_inbound_volume"`  // bytes
-	TotalOutboundVolume  int64 `json:"total_outbound_volume"` // bytes
-	ActivityCount        int64 `json:"activity_count"`
-	SuccessfulActivities int64 `json:"successful_activities"`
-	FailedActivities     int64 `json:"failed_activities"`
+	TotalInboundVolume   int64 `dynamorm:"attr:totalInboundVolume" json:"total_inbound_volume"`   // bytes
+	TotalOutboundVolume  int64 `dynamorm:"attr:totalOutboundVolume" json:"total_outbound_volume"` // bytes
+	ActivityCount        int64 `dynamorm:"attr:activityCount" json:"activity_count"`
+	SuccessfulActivities int64 `dynamorm:"attr:successfulActivities" json:"successful_activities"`
+	FailedActivities     int64 `dynamorm:"attr:failedActivities" json:"failed_activities"`
 
 	// Health Score (calculated field)
-	HealthScore float64 `json:"health_score"` // 0-100
+	HealthScore float64 `dynamorm:"attr:healthScore" json:"health_score"` // 0-100
 
 	// Aggregation metadata
-	WindowStart      time.Time `json:"window_start"`
-	WindowEnd        time.Time `json:"window_end"`
-	SampleCount      int64     `json:"sample_count"`              // Number of raw samples aggregated
-	AggregationLevel string    `json:"aggregation_level"`         // raw, 5min, hourly, daily, monthly
-	CompressedData   []byte    `json:"compressed_data,omitempty"` // Compressed historical data
+	WindowStart      time.Time `dynamorm:"attr:windowStart" json:"window_start"`
+	WindowEnd        time.Time `dynamorm:"attr:windowEnd" json:"window_end"`
+	SampleCount      int64     `dynamorm:"attr:sampleCount" json:"sample_count"`                        // Number of raw samples aggregated
+	AggregationLevel string    `dynamorm:"attr:aggregationLevel" json:"aggregation_level"`              // raw, 5min, hourly, daily, monthly
+	CompressedData   []byte    `dynamorm:"attr:compressedData" json:"compressed_data,omitempty"`        // Compressed historical data
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup based on aggregation level
-	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"` // Unix timestamp
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // Unix timestamp
 }
 
 // TableName returns the DynamoDB table backing FederationAnalyticsTimeSeries.

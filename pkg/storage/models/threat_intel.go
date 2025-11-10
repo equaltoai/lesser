@@ -7,32 +7,34 @@ import (
 
 // ThreatIntel represents threat intelligence data in DynamoDB
 type ThreatIntel struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key fields - EXACT pattern from legacy
-	PK string `dynamorm:"pk"`
-	SK string `dynamorm:"sk"`
+	PK string `dynamorm:"pk,attr:PK"`
+	SK string `dynamorm:"sk,attr:SK"`
 
 	// GSI keys for querying
-	GSI1PK string `dynamorm:"index:gsi1,pk"`
-	GSI1SK string `dynamorm:"index:gsi1,sk"`
-	GSI2PK string `dynamorm:"index:gsi2,pk"`
-	GSI2SK string `dynamorm:"index:gsi2,sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"`
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"`
 
 	// Threat data fields
-	ID          string    `json:"id"`
-	ThreatType  string    `json:"threat_type"`
-	Severity    string    `json:"severity"`
-	Description string    `json:"description"`
-	Indicators  []string  `json:"indicators"`
-	FirstSeen   time.Time `json:"first_seen"`
-	LastSeen    time.Time `json:"last_seen"`
-	HitCount    int64     `json:"hit_count"`
-	Confidence  float64   `json:"confidence"`
+	ID          string    `dynamorm:"attr:id" json:"id"`
+	ThreatType  string    `dynamorm:"attr:threatType" json:"threat_type"`
+	Severity    string    `dynamorm:"attr:severity" json:"severity"`
+	Description string    `dynamorm:"attr:description" json:"description"`
+	Indicators  []string  `dynamorm:"attr:indicators" json:"indicators"`
+	FirstSeen   time.Time `dynamorm:"attr:firstSeen" json:"first_seen"`
+	LastSeen    time.Time `dynamorm:"attr:lastSeen" json:"last_seen"`
+	HitCount    int64     `dynamorm:"attr:hitCount" json:"hit_count"`
+	Confidence  float64   `dynamorm:"attr:confidence" json:"confidence"`
 
 	// Source tracking
-	SourceDomain string `json:"source_domain"`
+	SourceDomain string `dynamorm:"attr:sourceDomain" json:"source_domain"`
 
 	// TTL for automatic expiration
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys updates the PK, SK, and GSI keys based on threat data
@@ -68,15 +70,17 @@ func (ThreatIntel) TableName() string {
 
 // ThreatIndicator represents an indicator mapping for fast lookup
 type ThreatIndicator struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key fields
-	PK string `dynamorm:"pk"`
-	SK string `dynamorm:"sk"`
+	PK string `dynamorm:"pk,attr:PK"`
+	SK string `dynamorm:"sk,attr:SK"`
 
 	// Indicator data
-	ThreatID string `json:"threat_id"`
+	ThreatID string `dynamorm:"attr:threatID" json:"threat_id"`
 
 	// TTL for automatic cleanup
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys updates the PK and SK for indicator lookup

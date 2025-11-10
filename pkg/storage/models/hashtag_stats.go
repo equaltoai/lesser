@@ -12,17 +12,20 @@ import (
 // PK: HASHTAG#name
 // SK: STATS
 type HashtagStats struct {
-	PK            string                `dynamorm:"pk" json:"-"`
-	SK            string                `dynamorm:"sk" json:"-"`
-	Name          string                `json:"name"`
-	UsageCount    int64                 `json:"usage_count"`
-	UniqueUsers   int64                 `json:"unique_users"`
-	FirstSeen     time.Time             `json:"first_seen"`
-	LastUsed      time.Time             `json:"last_used"`
-	TrendingScore float64               `json:"trending_score"`
-	TotalUses     int64                 `json:"total_uses"`     // Total usage count
-	TotalAccounts int64                 `json:"total_accounts"` // Total unique accounts
-	History       []HashtagHistoryEntry `json:"history"`        // Historical data
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK string `dynamorm:"pk,attr:PK" json:"-"`
+	SK string `dynamorm:"sk,attr:SK" json:"-"`
+
+	Name          string                `dynamorm:"attr:name" json:"name"`
+	UsageCount    int64                 `dynamorm:"attr:usageCount" json:"usage_count"`
+	UniqueUsers   int64                 `dynamorm:"attr:uniqueUsers" json:"unique_users"`
+	FirstSeen     time.Time             `dynamorm:"attr:firstSeen" json:"first_seen"`
+	LastUsed      time.Time             `dynamorm:"attr:lastUsed" json:"last_used"`
+	TrendingScore float64               `dynamorm:"attr:trendingScore" json:"trending_score"`
+	TotalUses     int64                 `dynamorm:"attr:totalUses" json:"total_uses"`         // Total usage count
+	TotalAccounts int64                 `dynamorm:"attr:totalAccounts" json:"total_accounts"` // Total unique accounts
+	History       []HashtagHistoryEntry `dynamorm:"attr:history" json:"history"`             // Historical data
 }
 
 // UpdateKeys updates the DynamoDB keys based on the hashtag name

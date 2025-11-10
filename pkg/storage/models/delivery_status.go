@@ -14,25 +14,27 @@ const (
 
 // DeliveryStatus tracks the delivery status of activities to remote instances
 type DeliveryStatus struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key fields
-	PK string `dynamorm:"pk"`
-	SK string `dynamorm:"sk"`
+	PK string `dynamorm:"pk,attr:PK"`
+	SK string `dynamorm:"sk,attr:SK"`
 
 	// GSI fields for failed delivery queries
-	GSI1PK string `dynamorm:"index:gsi1,pk"`
-	GSI1SK string `dynamorm:"index:gsi1,sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
 
 	// Business fields
-	ActivityID   string    `json:"activity_id"`
-	TargetDomain string    `json:"target_domain"`
-	Status       string    `json:"status"`          // pending/delivered/failed
-	Attempts     int       `json:"attempts"`        // Number of delivery attempts
-	LastAttempt  time.Time `json:"last_attempt"`    // Time of last delivery attempt
-	Error        string    `json:"error,omitempty"` // Error message if failed
-	CreatedAt    time.Time `json:"created_at"`
-	DeliveredAt  time.Time `json:"delivered_at,omitempty"`
-	NextRetry    time.Time `json:"next_retry,omitempty"`
-	TTL          int64     `json:"ttl,omitempty" dynamorm:"ttl"` // For automatic cleanup
+	ActivityID   string    `dynamorm:"attr:activityID" json:"activity_id"`
+	TargetDomain string    `dynamorm:"attr:targetDomain" json:"target_domain"`
+	Status       string    `dynamorm:"attr:status" json:"status"`            // pending/delivered/failed
+	Attempts     int       `dynamorm:"attr:attempts" json:"attempts"`        // Number of delivery attempts
+	LastAttempt  time.Time `dynamorm:"attr:lastAttempt" json:"last_attempt"` // Time of last delivery attempt
+	Error        string    `dynamorm:"attr:error" json:"error,omitempty"`    // Error message if failed
+	CreatedAt    time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	DeliveredAt  time.Time `dynamorm:"attr:deliveredAt" json:"delivered_at,omitempty"`
+	NextRetry    time.Time `dynamorm:"attr:nextRetry" json:"next_retry,omitempty"`
+	TTL          int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // For automatic cleanup
 }
 
 // UpdateKeys updates the composite keys based on the delivery status data

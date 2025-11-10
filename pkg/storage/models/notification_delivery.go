@@ -9,25 +9,27 @@ import (
 
 // NotificationDelivery tracks delivery attempts for notifications
 type NotificationDelivery struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - using notification ID and delivery method
-	PK string `dynamorm:"pk" json:"pk"` // Format: "NOTIFICATION#{notificationID}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "DELIVERY#{method}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "NOTIFICATION#{notificationID}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "DELIVERY#{method}"
 
 	// Core fields
-	NotificationID string    `json:"notification_id"`
-	DeliveryMethod string    `json:"delivery_method"` // "push", "websocket", "web"
-	Status         string    `json:"status"`          // "pending", "sent", "failed"
-	AttemptCount   int       `json:"attempt_count"`
-	LastAttempt    time.Time `json:"last_attempt"`
-	Error          string    `json:"error,omitempty"` // Error message if failed
-	SentAt         time.Time `json:"sent_at,omitempty"`
+	NotificationID string    `dynamorm:"attr:notificationID" json:"notification_id"`
+	DeliveryMethod string    `dynamorm:"attr:deliveryMethod" json:"delivery_method"` // "push", "websocket", "web"
+	Status         string    `dynamorm:"attr:status" json:"status"`                  // "pending", "sent", "failed"
+	AttemptCount   int       `dynamorm:"attr:attemptCount" json:"attempt_count"`
+	LastAttempt    time.Time `dynamorm:"attr:lastAttempt" json:"last_attempt"`
+	Error          string    `dynamorm:"attr:error" json:"error,omitempty"` // Error message if failed
+	SentAt         time.Time `dynamorm:"attr:sentAt" json:"sent_at,omitempty"`
 
 	// Metadata
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for cleanup (7 days after creation)
-	TTL int64 `dynamorm:"ttl" json:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
 }
 
 // TableName returns the DynamoDB table name

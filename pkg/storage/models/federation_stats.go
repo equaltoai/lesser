@@ -8,19 +8,21 @@ import (
 
 // FederationStats represents federation activity statistics
 type FederationStats struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"` // FEDERATION#STATS
-	SK string `dynamorm:"sk" json:"-"` // {date} (e.g., 2024-01-30)
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // FEDERATION#STATS
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // {date} (e.g., 2024-01-30)
 
 	// Attributes from interface
-	ActiveInstances int   `json:"active_instances"`
-	TotalMessages   int64 `json:"total_messages"`
-	TotalUsers      int   `json:"total_users"`
+	ActiveInstances int   `dynamorm:"attr:activeInstances" json:"active_instances"`
+	TotalMessages   int64 `dynamorm:"attr:totalMessages" json:"total_messages"`
+	TotalUsers      int   `dynamorm:"attr:totalUsers" json:"total_users"`
 
 	// Additional metadata
-	Date      string    `json:"date"`                         // The date these stats are for
-	UpdatedAt time.Time `json:"updated_at"`                   // Last update time
-	TTL       int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days retention
+	Date      string    `dynamorm:"attr:date" json:"date"`                             // The date these stats are for
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`                  // Last update time
+	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`                 // 90 days retention
 }
 
 // TableName returns the DynamoDB table backing FederationStats.

@@ -9,34 +9,36 @@ import (
 
 // ThreadContext represents the context of a status thread stored in DynamoDB
 type ThreadContext struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key fields
-	PK string `dynamorm:"pk" json:"-"` // THREAD#{rootStatusID}
-	SK string `dynamorm:"sk" json:"-"` // CONTEXT#{statusID}
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // THREAD#{rootStatusID}
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // CONTEXT#{statusID}
 
 	// GSI for querying by status
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"-"` // STATUS#{statusID}
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"-"` // THREAD
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // STATUS#{statusID}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // THREAD
 
 	// Thread data
-	RootStatusID   string     `json:"root_status_id"`            // The root/original status ID
-	StatusID       string     `json:"status_id"`                 // The status this context is for
-	ParentID       string     `json:"parent_id"`                 // Direct parent status ID
-	Depth          int        `json:"depth"`                     // Depth in the thread (0 for root)
-	Path           string     `json:"path"`                      // Path from root (e.g., "root/reply1/reply2")
-	AuthorID       string     `json:"author_id"`                 // Author of this status
-	AuthorHandle   string     `json:"author_handle"`             // For quick display
-	CreatedAt      time.Time  `json:"created_at"`                // When the status was created
-	UpdatedAt      time.Time  `json:"updated_at"`                // Last update
-	ReplyCount     int        `json:"reply_count"`               // Number of direct replies
-	TotalReplies   int        `json:"total_replies"`             // Total replies in subtree
-	Participants   []string   `json:"participants"`              // Unique participants in this branch
-	LastReplyAt    *time.Time `json:"last_reply_at,omitempty"`   // When the last reply was made
-	Visibility     string     `json:"visibility"`                // Visibility of this status
-	Sensitive      bool       `json:"sensitive"`                 // Content warning flag
-	ConversationID string     `json:"conversation_id,omitempty"` // Associated conversation ID
+	RootStatusID   string     `dynamorm:"attr:rootStatusID" json:"root_status_id"`              // The root/original status ID
+	StatusID       string     `dynamorm:"attr:statusID" json:"status_id"`                       // The status this context is for
+	ParentID       string     `dynamorm:"attr:parentID" json:"parent_id"`                       // Direct parent status ID
+	Depth          int        `dynamorm:"attr:depth" json:"depth"`                              // Depth in the thread (0 for root)
+	Path           string     `dynamorm:"attr:path" json:"path"`                                // Path from root (e.g., "root/reply1/reply2")
+	AuthorID       string     `dynamorm:"attr:authorID" json:"author_id"`                       // Author of this status
+	AuthorHandle   string     `dynamorm:"attr:authorHandle" json:"author_handle"`               // For quick display
+	CreatedAt      time.Time  `dynamorm:"attr:createdAt" json:"created_at"`                     // When the status was created
+	UpdatedAt      time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`                     // Last update
+	ReplyCount     int        `dynamorm:"attr:replyCount" json:"reply_count"`                   // Number of direct replies
+	TotalReplies   int        `dynamorm:"attr:totalReplies" json:"total_replies"`               // Total replies in subtree
+	Participants   []string   `dynamorm:"attr:participants" json:"participants"`                // Unique participants in this branch
+	LastReplyAt    *time.Time `dynamorm:"attr:lastReplyAt" json:"last_reply_at,omitempty"`      // When the last reply was made
+	Visibility     string     `dynamorm:"attr:visibility" json:"visibility"`                    // Visibility of this status
+	Sensitive      bool       `dynamorm:"attr:sensitive" json:"sensitive"`                      // Content warning flag
+	ConversationID string     `dynamorm:"attr:conversationID" json:"conversation_id,omitempty"` // Associated conversation ID
 
 	// TTL for auto-cleanup (7 days after last activity)
-	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys updates the GSI keys based on the thread context data

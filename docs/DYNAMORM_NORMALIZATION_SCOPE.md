@@ -295,46 +295,35 @@ Process in batches of 20 files:
 3. **Documentation**: Update CONTRIBUTING.md with DynamORM tagging requirements
 4. **Testing**: Integration tests verify no fields come back empty after queries
 
-## Questions for DynamORM Team
+## DynamORM Normalization Rules
 
-1. **Should we use `dynamodb:"camelCase"` or `dynamorm:"attr:camelCase"`?**
-   - We're currently using `dynamodb:` but want to confirm best practice
+We aligned with the DynamORM team and now enforce a **zero-legacy policy**: once a file is touched, it must not contain any `dynamodb:"..."` tags or mixed conventions. Every DynamoDB model must follow these rules:
 
-2. **Is there a way to set a default naming convention at the model level?**
-   - e.g., `dynamorm:"naming:camelCase"` on the struct to avoid tagging every field?
+1. **Struct-level naming** – add a marker field with `dynamorm:"naming:camelCase"` (or `snake_case` where explicitly documented) so camelCase becomes the default for every attribute in the struct.
+2. **Field-level attributes** – every persisted field, including PK/SK, GSI keys, TTL, version counters, etc., must declare `dynamorm:"...,attr:attributeName"`, matching the camelCase schema unless we have a documented exception.
+3. **Embedded JSON-only payloads** – when a field stores a nested document wholesale (e.g., `Metadata MetadataPayload`), tag the parent with `attr:metadata` and leave the nested struct untagged unless DynamoORM projects its inner fields separately.
+4. **Performance is validated** – we have already profiled the additional fields; always prefer completeness over selective hydration.
 
-3. **Do non-DynamoDB structs (embedded types used only in JSON) need tags?**
-   - e.g., `StatusAttachment`, `StatusTag` are nested in Status but not top-level tables
+## Appendix: Canonical Example
 
-4. **Performance impact of unmarshaling 4,000+ additional fields?**
-   - Should we be concerned about Lambda cold start times?
-
-## Appendix: Example Before/After
-
-### Before (Broken)
 ```go
 type Status struct {
-    PK              string     `dynamorm:"pk" json:"pk"`
-    SK              string     `dynamorm:"sk" json:"sk"`
-    AuthorUsername  string     `json:"author_username"` // ❌ Missing dynamodb tag
-    Content         string     `json:"content"`          // ❌ Missing dynamodb tag
-    Visibility      string     `json:"visibility"`       // ❌ Missing dynamodb tag
-    LikeCount       int        `json:"like_count"`       // ❌ Missing dynamodb tag
+    _ struct{} `dynamorm:"naming:camelCase"`
+
+    PK string `dynamorm:"pk,attr:PK" json:"pk"`
+    SK string `dynamorm:"sk,attr:SK" json:"sk"`
+
+    AuthorUsername string         `dynamorm:"attr:authorUsername" json:"author_username"`
+    Content        string         `dynamorm:"attr:content" json:"content"`
+    Visibility     string         `dynamorm:"attr:visibility" json:"visibility"`
+    LikeCount      int            `dynamorm:"attr:likeCount" json:"like_count"`
+    Metadata       StatusMetadata `dynamorm:"attr:metadata" json:"metadata"` // Stored as a single attribute
+}
+
+type StatusMetadata struct {
+    Attachments []StatusAttachment `json:"attachments"`
+    Tags        []StatusTag        `json:"tags"`
 }
 ```
 
-### After (Fixed)
-```go
-type Status struct {
-    PK              string     `dynamorm:"pk" json:"pk"`
-    SK              string     `dynamorm:"sk" json:"sk"`
-    AuthorUsername  string     `dynamodb:"authorUsername" json:"author_username"` // ✅ Has dynamodb tag
-    Content         string     `dynamodb:"content" json:"content"`                // ✅ Has dynamodb tag
-    Visibility      string     `dynamodb:"visibility" json:"visibility"`          // ✅ Has dynamodb tag
-    LikeCount       int        `dynamodb:"likeCount" json:"like_count"`           // ✅ Has dynamodb tag
-}
-```
-
-### Result
-- Before: `AuthorUsername=""` (empty despite DB having `authorUsername="greater"`)
-- After: `AuthorUsername="greater"` (correctly unmarshaled from DB)
+Result: the struct advertises camelCase naming once, every persisted field declares its attribute, embedded structs stay JSON-only, and the file contains no `dynamodb:` tags.

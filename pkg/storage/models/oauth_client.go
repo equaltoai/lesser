@@ -8,28 +8,30 @@ import (
 
 // OAuthClient represents an OAuth 2.0 client application
 type OAuthClient struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB keys - MUST match legacy exactly
-	PK             string `dynamorm:"pk" json:"-"`                           // OAUTH_CLIENT#clientID
-	SK             string `dynamorm:"sk" json:"-"`                           // METADATA
-	GSI1PK         string `dynamorm:"index:gsi1,pk,omitempty" json:"-"`                // OWNER#ownerID (for owner index)
-	GSI1SK         string `dynamorm:"index:gsi1,sk,omitempty" json:"-"`                // CLIENT#clientID
-	OAuthClientsPK string `dynamorm:"index:oauth-clients-index,pk" json:"-"` // OAUTH_CLIENTS
-	OAuthClientsSK string `dynamorm:"index:oauth-clients-index,sk" json:"-"` // CREATED_AT#{ts_desc}#CLIENT#{clientID}
+	PK             string `dynamorm:"pk,attr:PK" json:"-"`                                             // OAUTH_CLIENT#clientID
+	SK             string `dynamorm:"sk,attr:SK" json:"-"`                                             // METADATA
+	GSI1PK         string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"`                              // OWNER#ownerID (for owner index)
+	GSI1SK         string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"`                              // CLIENT#clientID
+	OAuthClientsPK string `dynamorm:"index:oauth-clients-index,pk,attr:oauthClientsPK" json:"-"`      // OAUTH_CLIENTS
+	OAuthClientsSK string `dynamorm:"index:oauth-clients-index,sk,attr:oauthClientsSK" json:"-"`      // CREATED_AT#{ts_desc}#CLIENT#{clientID}
 
 	// Core fields from legacy storage.OAuthClient
-	ID           string    `json:"id,omitempty"`
-	ClientID     string    `json:"client_id"`
-	ClientSecret string    `json:"client_secret"`
-	Name         string    `json:"name"`
-	Description  string    `json:"description,omitempty"`
-	Website      string    `json:"website,omitempty"`
-	RedirectURIs []string  `json:"redirect_uris"`
-	GrantTypes   []string  `json:"grant_types,omitempty"`
-	Scopes       []string  `json:"scopes,omitempty"`
-	OwnerID      string    `json:"owner_id,omitempty"`
-	Confidential bool      `json:"confidential"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+	ID           string    `dynamorm:"attr:id" json:"id,omitempty"`
+	ClientID     string    `dynamorm:"attr:clientID" json:"client_id"`
+	ClientSecret string    `dynamorm:"attr:clientSecret" json:"client_secret"`
+	Name         string    `dynamorm:"attr:name" json:"name"`
+	Description  string    `dynamorm:"attr:description" json:"description,omitempty"`
+	Website      string    `dynamorm:"attr:website" json:"website,omitempty"`
+	RedirectURIs []string  `dynamorm:"attr:redirectURIs" json:"redirect_uris"`
+	GrantTypes   []string  `dynamorm:"attr:grantTypes" json:"grant_types,omitempty"`
+	Scopes       []string  `dynamorm:"attr:scopes" json:"scopes,omitempty"`
+	OwnerID      string    `dynamorm:"attr:ownerID" json:"owner_id,omitempty"`
+	Confidential bool      `dynamorm:"attr:confidential" json:"confidential"`
+	CreatedAt    time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt    time.Time `dynamorm:"attr:updatedAt" json:"updated_at,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

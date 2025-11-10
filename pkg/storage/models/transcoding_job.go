@@ -10,79 +10,81 @@ import (
 
 // TranscodingJob tracks detailed metrics and costs for individual transcoding operations
 type TranscodingJob struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using job ID as partition key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "TRANSCODING_JOB#{jobID}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "JOB_METRICS"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "TRANSCODING_JOB#{jobID}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "JOB_METRICS"
 
 	// GSI1 - User-based queries for transcoding jobs
-	GSI1PK string `dynamorm:"index:user-jobs-index,pk" json:"gsi1_pk"` // Format: "USER_TRANSCODING#{userID}"
-	GSI1SK string `dynamorm:"index:user-jobs-index,sk" json:"gsi1_sk"` // Format: "{timestamp}#{jobID}"
+	GSI1PK string `dynamorm:"index:user-jobs-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_TRANSCODING#{userID}"
+	GSI1SK string `dynamorm:"index:user-jobs-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{jobID}"
 
 	// GSI2 - Media-based queries
-	GSI2PK string `dynamorm:"index:media-jobs-index,pk" json:"gsi2_pk"` // Format: "MEDIA_TRANSCODING#{mediaID}"
-	GSI2SK string `dynamorm:"index:media-jobs-index,sk" json:"gsi2_sk"` // Format: "{timestamp}#{jobID}"
+	GSI2PK string `dynamorm:"index:media-jobs-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "MEDIA_TRANSCODING#{mediaID}"
+	GSI2SK string `dynamorm:"index:media-jobs-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{jobID}"
 
 	// Core job data
-	JobID    string `json:"job_id"`
-	MediaID  string `json:"media_id"`
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	JobType  string `json:"job_type"` // "video", "audio", "image"
-	Status   string `json:"status"`   // "processing", "completed", "failed"
+	JobID    string `dynamorm:"attr:jobID" json:"job_id"`
+	MediaID  string `dynamorm:"attr:mediaID" json:"media_id"`
+	UserID   string `dynamorm:"attr:userID" json:"user_id"`
+	Username string `dynamorm:"attr:username" json:"username"`
+	JobType  string `dynamorm:"attr:jobType" json:"job_type"` // "video", "audio", "image"
+	Status   string `dynamorm:"attr:status" json:"status"`   // "processing", "completed", "failed"
 
 	// Input details
-	InputFormat     string `json:"input_format"`     // "video/mp4", "audio/mpeg", etc.
-	InputSize       int64  `json:"input_size"`       // bytes
-	InputDuration   int64  `json:"input_duration"`   // milliseconds (for video/audio)
-	InputResolution string `json:"input_resolution"` // "1920x1080" (for video)
+	InputFormat     string `dynamorm:"attr:inputFormat" json:"input_format"`         // "video/mp4", "audio/mpeg", etc.
+	InputSize       int64  `dynamorm:"attr:inputSize" json:"input_size"`             // bytes
+	InputDuration   int64  `dynamorm:"attr:inputDuration" json:"input_duration"`     // milliseconds (for video/audio)
+	InputResolution string `dynamorm:"attr:inputResolution" json:"input_resolution"` // "1920x1080" (for video)
 
 	// Output details
-	OutputVariants  map[string]string `json:"output_variants"`   // quality -> format mapping
-	OutputSizes     map[string]int64  `json:"output_sizes"`      // quality -> size in bytes
-	TotalOutputSize int64             `json:"total_output_size"` // sum of all output sizes
+	OutputVariants  map[string]string `dynamorm:"attr:outputVariants" json:"output_variants"`     // quality -> format mapping
+	OutputSizes     map[string]int64  `dynamorm:"attr:outputSizes" json:"output_sizes"`           // quality -> size in bytes
+	TotalOutputSize int64             `dynamorm:"attr:totalOutputSize" json:"total_output_size"` // sum of all output sizes
 
 	// Processing metrics
-	ProcessingTimeMs int64      `json:"processing_time_ms"`
-	StartedAt        time.Time  `json:"started_at"`
-	CompletedAt      *time.Time `json:"completed_at,omitempty"`
-	ErrorMessage     string     `json:"error_message,omitempty"`
+	ProcessingTimeMs int64      `dynamorm:"attr:processingTimeMs" json:"processing_time_ms"`
+	StartedAt        time.Time  `dynamorm:"attr:startedAt" json:"started_at"`
+	CompletedAt      *time.Time `dynamorm:"attr:completedAt" json:"completed_at,omitempty"`
+	ErrorMessage     string     `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
 
 	// Cost breakdown (in microdollars)
-	TotalCostMicros        int64            `json:"total_cost_micros"`
-	CostBreakdown          map[string]int64 `json:"cost_breakdown"` // service -> cost
-	MediaConvertCostMicros int64            `json:"mediaconvert_cost_micros"`
-	S3StorageCostMicros    int64            `json:"s3_storage_cost_micros"`
-	S3RequestCostMicros    int64            `json:"s3_request_cost_micros"`
-	LambdaCostMicros       int64            `json:"lambda_cost_micros"`
-	RekognitionCostMicros  int64            `json:"rekognition_cost_micros"`
+	TotalCostMicros        int64            `dynamorm:"attr:totalCostMicros" json:"total_cost_micros"`
+	CostBreakdown          map[string]int64 `dynamorm:"attr:costBreakdown" json:"cost_breakdown"` // service -> cost
+	MediaConvertCostMicros int64            `dynamorm:"attr:mediaConvertCostMicros" json:"mediaconvert_cost_micros"`
+	S3StorageCostMicros    int64            `dynamorm:"attr:s3StorageCostMicros" json:"s3_storage_cost_micros"`
+	S3RequestCostMicros    int64            `dynamorm:"attr:s3RequestCostMicros" json:"s3_request_cost_micros"`
+	LambdaCostMicros       int64            `dynamorm:"attr:lambdaCostMicros" json:"lambda_cost_micros"`
+	RekognitionCostMicros  int64            `dynamorm:"attr:rekognitionCostMicros" json:"rekognition_cost_micros"`
 
 	// Quality and transcoding settings
-	QualityLevels   []string `json:"quality_levels"`   // ["480p", "720p", "1080p"]
-	ThumbnailCount  int      `json:"thumbnail_count"`  // number of thumbnails generated
-	AnalysisEnabled bool     `json:"analysis_enabled"` // whether content analysis was performed
+	QualityLevels   []string `dynamorm:"attr:qualityLevels" json:"quality_levels"`       // ["480p", "720p", "1080p"]
+	ThumbnailCount  int      `dynamorm:"attr:thumbnailCount" json:"thumbnail_count"`     // number of thumbnails generated
+	AnalysisEnabled bool     `dynamorm:"attr:analysisEnabled" json:"analysis_enabled"`   // whether content analysis was performed
 
 	// AWS service job IDs for tracking
-	MediaConvertJobID string   `json:"mediaconvert_job_id,omitempty"`
-	S3Keys            []string `json:"s3_keys"` // all S3 keys created by this job
+	MediaConvertJobID string   `dynamorm:"attr:mediaConvertJobID" json:"mediaconvert_job_id,omitempty"`
+	S3Keys            []string `dynamorm:"attr:s3Keys" json:"s3_keys"` // all S3 keys created by this job
 
 	// Efficiency metrics
-	CompressionRatio    float64 `json:"compression_ratio"`     // output_size / input_size
-	CostPerMB           float64 `json:"cost_per_mb"`           // cost per MB processed
-	ProcessingSpeedMBps float64 `json:"processing_speed_mbps"` // MB/second processing speed
+	CompressionRatio    float64 `dynamorm:"attr:compressionRatio" json:"compression_ratio"`         // output_size / input_size
+	CostPerMB           float64 `dynamorm:"attr:costPerMB" json:"cost_per_mb"`                       // cost per MB processed
+	ProcessingSpeedMBps float64 `dynamorm:"attr:processingSpeedMBps" json:"processing_speed_mbps"`  // MB/second processing speed
 
 	// Budget tracking
-	EstimatedCostMicros int64 `json:"estimated_cost_micros"` // initial cost estimate
-	CostVariance        int64 `json:"cost_variance"`         // actual - estimated cost
+	EstimatedCostMicros int64 `dynamorm:"attr:estimatedCostMicros" json:"estimated_cost_micros"` // initial cost estimate
+	CostVariance        int64 `dynamorm:"attr:costVariance" json:"cost_variance"`               // actual - estimated cost
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for old transcoding jobs (keep for 1 year)
-	ExpiresAt *int64 `dynamorm:"ttl" json:"expires_at,omitempty"` // Unix timestamp
+	ExpiresAt *int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at,omitempty"` // Unix timestamp
 
 	// Version for optimistic locking
-	ModelVersion int `dynamorm:"version" json:"model_version"`
+	ModelVersion int `dynamorm:"version,attr:modelVersion" json:"model_version"`
 }
 
 // TableName returns the DynamoDB table name for TranscodingJob

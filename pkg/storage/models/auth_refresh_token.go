@@ -8,33 +8,35 @@ import (
 // AuthRefreshToken represents a refresh token with advanced security features
 // This implements the token family pattern with rotation and reuse detection
 type AuthRefreshToken struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB keys - using token as partition key
-	PK string `dynamorm:"pk" json:"-"` // token (the actual token value)
-	SK string `dynamorm:"sk" json:"-"` // TOKEN (constant sort key)
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // token (the actual token value)
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // TOKEN (constant sort key)
 
 	// GSI keys for querying by user and family
-	UserID      string `dynamorm:"index:user-index,pk" json:"user_id"`                                            // GSI PK for user-index
-	Family      string `dynamorm:"index:family-index,pk" json:"family"`                                           // GSI PK for family-index
-	UserFamily  string `dynamorm:"index:user-family-index,pk" json:"user_family"`                                 // GSI PK for user-family queries
-	CreatedAtSK string `dynamorm:"index:user-index,sk;index:family-index,sk;index:user-family-index,sk" json:"-"` // SK for all GSIs
+	UserID      string `dynamorm:"index:user-index,pk,attr:userID" json:"user_id"`                                                 // GSI PK for user-index
+	Family      string `dynamorm:"index:family-index,pk,attr:family" json:"family"`                                                // GSI PK for family-index
+	UserFamily  string `dynamorm:"index:user-family-index,pk,attr:userFamily" json:"user_family"`                                  // GSI PK for user-family queries
+	CreatedAtSK string `dynamorm:"index:user-index,sk,attr:createdAtSK;index:family-index,sk;index:user-family-index,sk" json:"-"` // SK for all GSIs
 
 	// Core token data
-	Token      string `json:"token"`        // The actual token value
-	Generation int    `json:"generation"`   // Rotation generation number
-	CreatedAt  int64  `json:"created_at"`   // Unix timestamp
-	ExpiresAt  int64  `json:"expires_at"`   // Unix timestamp
-	LastUsedAt int64  `json:"last_used_at"` // Unix timestamp for tracking
+	Token      string `dynamorm:"attr:token" json:"token"`             // The actual token value
+	Generation int    `dynamorm:"attr:generation" json:"generation"`   // Rotation generation number
+	CreatedAt  int64  `dynamorm:"attr:createdAt" json:"created_at"`    // Unix timestamp
+	ExpiresAt  int64  `dynamorm:"attr:expiresAt" json:"expires_at"`    // Unix timestamp
+	LastUsedAt int64  `dynamorm:"attr:lastUsedAt" json:"last_used_at"` // Unix timestamp for tracking
 
 	// Security fields
-	Revoked       bool   `json:"revoked"`        // Whether token is revoked
-	RevokedReason string `json:"revoked_reason"` // Reason for revocation
+	Revoked       bool   `dynamorm:"attr:revoked" json:"revoked"`              // Whether token is revoked
+	RevokedReason string `dynamorm:"attr:revokedReason" json:"revoked_reason"` // Reason for revocation
 
 	// Tracking fields
-	DeviceName string `json:"device_name"` // Optional device identifier
-	IPAddress  string `json:"ip_address"`  // IP address for security monitoring
+	DeviceName string `dynamorm:"attr:deviceName" json:"device_name"` // Optional device identifier
+	IPAddress  string `dynamorm:"attr:ipAddress" json:"ip_address"`   // IP address for security monitoring
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl" json:"-"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"-"`
 }
 
 // TableName returns the DynamoDB table name

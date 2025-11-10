@@ -7,41 +7,43 @@ import (
 
 // CommunityNote represents a fact-checking note on an ActivityPub object
 type CommunityNote struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk"` // NOTE#<id>
-	SK string `dynamorm:"sk"` // METADATA
+	PK string `dynamorm:"pk,attr:PK"` // NOTE#<id>
+	SK string `dynamorm:"sk,attr:SK"` // METADATA
 
 	// GSI fields for querying
-	GSI1PK string `dynamorm:"index:gsi1,pk"` // OBJECT#<object_id>#NOTES
-	GSI1SK string `dynamorm:"index:gsi1,sk"` // SCORE#<score>#<id>
-	GSI2PK string `dynamorm:"index:gsi2,pk"` // NOTES#<visibility_status>
-	GSI2SK string `dynamorm:"index:gsi2,sk"` // <created_at>#<id>
-	GSI3PK string `dynamorm:"index:gsi3,pk"` // AUTHOR#<author_id>#NOTES
-	GSI3SK string `dynamorm:"index:gsi3,sk"` // <created_at>#<id>
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"` // OBJECT#<object_id>#NOTES
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"` // SCORE#<score>#<id>
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"` // NOTES#<visibility_status>
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"` // <created_at>#<id>
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK"` // AUTHOR#<author_id>#NOTES
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK"` // <created_at>#<id>
 
 	// Core fields matching storage.CommunityNote
-	ID               string   `json:"id"`
-	ObjectID         string   `json:"object_id"`
-	ObjectType       string   `json:"object_type"`
-	AuthorID         string   `json:"author_id"`
-	Content          string   `json:"content"`
-	Language         string   `json:"language"`
-	Sources          []string `json:"sources"`
-	HelpfulVotes     int      `json:"helpful_votes"`
-	NotHelpfulVotes  int      `json:"not_helpful_votes"`
-	Score            float64  `json:"score"`
-	VisibilityStatus string   `json:"visibility_status"`
+	ID               string   `dynamorm:"attr:id" json:"id"`
+	ObjectID         string   `dynamorm:"attr:objectID" json:"object_id"`
+	ObjectType       string   `dynamorm:"attr:objectType" json:"object_type"`
+	AuthorID         string   `dynamorm:"attr:authorID" json:"author_id"`
+	Content          string   `dynamorm:"attr:content" json:"content"`
+	Language         string   `dynamorm:"attr:language" json:"language"`
+	Sources          []string `dynamorm:"attr:sources" json:"sources"`
+	HelpfulVotes     int      `dynamorm:"attr:helpfulVotes" json:"helpful_votes"`
+	NotHelpfulVotes  int      `dynamorm:"attr:notHelpfulVotes" json:"not_helpful_votes"`
+	Score            float64  `dynamorm:"attr:score" json:"score"`
+	VisibilityStatus string   `dynamorm:"attr:visibilityStatus" json:"visibility_status"`
 
 	// AI Analysis fields
-	Sentiment     float64 `json:"sentiment"`
-	Objectivity   float64 `json:"objectivity"`
-	SourceQuality float64 `json:"source_quality"`
+	Sentiment     float64 `dynamorm:"attr:sentiment" json:"sentiment"`
+	Objectivity   float64 `dynamorm:"attr:objectivity" json:"objectivity"`
+	SourceQuality float64 `dynamorm:"attr:sourceQuality" json:"source_quality"`
 
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL field
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing CommunityNote.
@@ -81,20 +83,22 @@ func (n *CommunityNote) GetSK() string {
 
 // CommunityNoteVote represents a vote on a community note
 type CommunityNoteVote struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk"` // NOTE#<note_id>
-	SK string `dynamorm:"sk"` // VOTE#<voter_id>
+	PK string `dynamorm:"pk,attr:PK"` // NOTE#<note_id>
+	SK string `dynamorm:"sk,attr:SK"` // VOTE#<voter_id>
 
 	// Core fields matching storage.CommunityNoteVote
-	NoteID    string    `json:"note_id"`
-	VoterID   string    `json:"voter_id"`
-	VoteType  string    `json:"vote_type"` // helpful, not_helpful, neutral
-	Helpful   bool      `json:"helpful"`   // For simplified access
-	Weight    float64   `json:"weight"`
-	CreatedAt time.Time `json:"created_at"`
+	NoteID    string    `dynamorm:"attr:noteID" json:"note_id"`
+	VoterID   string    `dynamorm:"attr:voterID" json:"voter_id"`
+	VoteType  string    `dynamorm:"attr:voteType" json:"vote_type"` // helpful, not_helpful, neutral
+	Helpful   bool      `dynamorm:"attr:helpful" json:"helpful"`    // For simplified access
+	Weight    float64   `dynamorm:"attr:weight" json:"weight"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
 
 	// TTL field
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing CommunityNoteVote.

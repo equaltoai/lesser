@@ -13,29 +13,31 @@ import (
 
 // TrendingLink represents a trending link
 type TrendingLink struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"` // TRENDING#{date}
-	SK string `dynamorm:"sk" json:"-"` // LINK#{score}#{linkID}
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // TRENDING#{date}
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // LINK#{score}#{linkID}
 
 	// Attributes from interface
-	URL         string    `json:"url"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Type        string    `json:"type"` // link, photo, video
-	AuthorName  string    `json:"author_name"`
-	Image       string    `json:"image"`
-	ImageURL    string    `json:"image_url"` // Additional field for image URL
-	ShareCount  int64     `json:"share_count"`
-	UserID      string    `json:"user_id"`    // User who shared the link
-	CreatedAt   time.Time `json:"created_at"` // When this share was recorded
+	URL         string    `dynamorm:"attr:url" json:"url"`
+	Title       string    `dynamorm:"attr:title" json:"title"`
+	Description string    `dynamorm:"attr:description" json:"description"`
+	Type        string    `dynamorm:"attr:type" json:"type"` // link, photo, video
+	AuthorName  string    `dynamorm:"attr:authorName" json:"author_name"`
+	Image       string    `dynamorm:"attr:image" json:"image"`
+	ImageURL    string    `dynamorm:"attr:imageURL" json:"image_url"` // Additional field for image URL
+	ShareCount  int64     `dynamorm:"attr:shareCount" json:"share_count"`
+	UserID      string    `dynamorm:"attr:userID" json:"user_id"`       // User who shared the link
+	CreatedAt   time.Time `dynamorm:"attr:createdAt" json:"created_at"` // When this share was recorded
 
 	// Additional fields for trending
-	Date          string  `json:"date"`                         // Date for trending (YYYY-MM-DD)
-	LinkID        string  `json:"link_id"`                      // Unique ID for this trending entry
-	TrendingScore float64 `json:"trending_score"`               // Calculated trending score
-	Domain        string  `json:"domain"`                       // Extracted domain from URL
-	Rank          int     `json:"rank"`                         // Position in trending list
-	TTL           int64   `json:"ttl,omitempty" dynamorm:"ttl"` // 7 days retention
+	Date          string  `dynamorm:"attr:date" json:"date"`                    // Date for trending (YYYY-MM-DD)
+	LinkID        string  `dynamorm:"attr:linkID" json:"link_id"`               // Unique ID for this trending entry
+	TrendingScore float64 `dynamorm:"attr:trendingScore" json:"trending_score"` // Calculated trending score
+	Domain        string  `dynamorm:"attr:domain" json:"domain"`                // Extracted domain from URL
+	Rank          int     `dynamorm:"attr:rank" json:"rank"`                    // Position in trending list
+	TTL           int64   `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`        // 7 days retention
 }
 
 // UpdateKeys updates the partition and sort keys based on date and score

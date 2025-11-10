@@ -19,82 +19,84 @@ const (
 
 // Status represents an ActivityPub Note/status stored in DynamoDB using DynamORM
 type Status struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using status ID as the primary identifier
-	PK string `dynamorm:"pk" json:"pk"` // Format: "status#{status_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "status#{status_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "status#{status_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "status#{status_id}"
 
 	// GSI1 - Author timeline (all statuses by an author)
-	GSI1PK string `dynamorm:"column:gsI1PK,index:GSI1,pk" json:"-"` // Format: "AUTHOR#{author_id}"
-	GSI1SK string `dynamorm:"column:gsI1SK,index:GSI1,sk" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // Format: "AUTHOR#{author_id}"
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI2 - Public timeline (public statuses)
-	GSI2PK string `dynamorm:"column:gsI2PK,index:GSI2,pk,omitempty" json:"-"` // Format: "PUBLIC_TIMELINE"
-	GSI2SK string `dynamorm:"column:gsI2SK,index:GSI2,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"-"` // Format: "PUBLIC_TIMELINE"
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI3 - Conversation/thread tracking
-	GSI3PK string `dynamorm:"column:gsI3PK,index:GSI3,pk,omitempty" json:"-"` // Format: "CONVERSATION#{conversation_id}"
-	GSI3SK string `dynamorm:"column:gsI3SK,index:GSI3,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI3PK string `dynamorm:"index:GSI3,pk,attr:gsi3PK" json:"-"` // Format: "CONVERSATION#{conversation_id}"
+	GSI3SK string `dynamorm:"index:GSI3,sk,attr:gsi3SK" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI4 - Replies to a specific status
-	GSI4PK string `dynamorm:"column:gsI4PK,index:GSI4,pk,omitempty" json:"-"` // Format: "REPLIES#{parent_status_id}"
-	GSI4SK string `dynamorm:"column:gsI4SK,index:GSI4,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI4PK string `dynamorm:"index:GSI4,pk,attr:gsi4PK" json:"-"` // Format: "REPLIES#{parent_status_id}"
+	GSI4SK string `dynamorm:"index:GSI4,sk,attr:gsi4SK" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI5 - Hashtag timeline
-	GSI5PK string `dynamorm:"column:gsI5PK,index:GSI5,pk,omitempty" json:"-"` // Format: "HASHTAG#{hashtag}"
-	GSI5SK string `dynamorm:"column:gsI5SK,index:GSI5,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI5PK string `dynamorm:"index:GSI5,pk,attr:gsi5PK" json:"-"` // Format: "HASHTAG#{hashtag}"
+	GSI5SK string `dynamorm:"index:GSI5,sk,attr:gsi5SK" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI6 - Flagged content moderation
-	GSI6PK string `dynamorm:"column:gsI6PK,index:GSI6,pk,omitempty" json:"-"` // Format: "FLAGGED_CONTENT"
-	GSI6SK string `dynamorm:"column:gsI6SK,index:GSI6,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI6PK string `dynamorm:"index:GSI6,pk,attr:gsi6PK" json:"-"` // Format: "FLAGGED_CONTENT"
+	GSI6SK string `dynamorm:"index:GSI6,sk,attr:gsi6SK" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// GSI7 - URL index for link searches
-	GSI7PK string `dynamorm:"column:gsI7PK,index:GSI7,pk,omitempty" json:"-"` // Format: "URL#{normalized_url}"
-	GSI7SK string `dynamorm:"column:gsI7SK,index:GSI7,sk,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+	GSI7PK string `dynamorm:"index:GSI7,pk,attr:gsi7PK" json:"-"` // Format: "URL#{normalized_url}"
+	GSI7SK string `dynamorm:"index:GSI7,sk,attr:gsi7SK" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// Core status data
-	StatusID            string     `dynamodb:"statusID" json:"status_id"`
-	Note                *NoteField `dynamodb:"note" json:"note"`                             // The actual ActivityPub Note (wrapped for proper DynamORM handling)
-	AuthorID            string     `dynamodb:"authorID" json:"author_id"`                        // AttributedTo from the Note
-	AuthorUsername      string     `dynamodb:"authorUsername" json:"author_username"`                  // Extracted username for efficient queries
-	Content             string     `dynamodb:"content" json:"content"`                          // Cached content for search
-	ConversationID      string     `dynamodb:"conversationID" json:"conversation_id,omitempty"`        // Thread/conversation ID
-	InReplyToID         string     `json:"in_reply_to_id,omitempty"`         // Parent status ID
-	ReblogOfID          string     `json:"reblog_of_id,omitempty"`           // If this is a reblog, the original status ID
-	QuoteTargetStatusID string     `json:"quote_target_status_id,omitempty"` // If this status quotes another, the original status ID
-	QuoteTargetAuthorID string     `json:"quote_target_author_id,omitempty"` // Author ID of the quoted status
-	Visibility          string     `json:"visibility"`                       // public, unlisted, private, direct
-	Sensitive           bool       `json:"sensitive"`                        // Content warning flag
-	Language            string     `json:"language,omitempty"`               // Content language
-	Hashtags            []string   `json:"hashtags,omitempty"`               // Extracted hashtags
-	Mentions            []string   `json:"mentions,omitempty"`               // Extracted mentions
-	URLs                []string   `json:"urls,omitempty"`                   // Extracted URLs
-	MediaCount          int        `json:"media_count"`                      // Number of media attachments
+	StatusID            string     `dynamorm:"attr:statusID" json:"status_id"`
+	Note                *NoteField `dynamorm:"attr:note" json:"note"` // The actual ActivityPub Note (wrapped for proper DynamORM handling)
+	AuthorID            string     `dynamorm:"attr:authorID" json:"author_id"`                        // AttributedTo from the Note
+	AuthorUsername      string     `dynamorm:"attr:authorUsername" json:"author_username"`            // Extracted username for efficient queries
+	Content             string     `dynamorm:"attr:content" json:"content"`                           // Cached content for search
+	ConversationID      string     `dynamorm:"attr:conversationID" json:"conversation_id,omitempty"`  // Thread/conversation ID
+	InReplyToID         string     `dynamorm:"attr:inReplyToID" json:"in_reply_to_id,omitempty"`      // Parent status ID
+	ReblogOfID          string     `dynamorm:"attr:reblogOfID" json:"reblog_of_id,omitempty"`         // If this is a reblog, the original status ID
+	QuoteTargetStatusID string     `dynamorm:"attr:quoteTargetStatusID" json:"quote_target_status_id,omitempty"` // If this status quotes another, the original status ID
+	QuoteTargetAuthorID string     `dynamorm:"attr:quoteTargetAuthorID" json:"quote_target_author_id,omitempty"` // Author ID of the quoted status
+	Visibility          string     `dynamorm:"attr:visibility" json:"visibility"`                     // public, unlisted, private, direct
+	Sensitive           bool       `dynamorm:"attr:sensitive" json:"sensitive"`                       // Content warning flag
+	Language            string     `dynamorm:"attr:language" json:"language,omitempty"`               // Content language
+	Hashtags            []string   `dynamorm:"attr:hashtags" json:"hashtags,omitempty"`               // Extracted hashtags
+	Mentions            []string   `dynamorm:"attr:mentions" json:"mentions,omitempty"`               // Extracted mentions
+	URLs                []string   `dynamorm:"attr:urls" json:"urls,omitempty"`                       // Extracted URLs
+	MediaCount          int        `dynamorm:"attr:mediaCount" json:"media_count"`                    // Number of media attachments
 
 	// Addressing fields for direct messages and limited visibility
-	ToRecipients  []string `json:"to_recipients,omitempty"`  // Primary recipients (visible to all)
-	CcRecipients  []string `json:"cc_recipients,omitempty"`  // Carbon copy recipients (visible to all)
-	BtoRecipients []string `json:"bto_recipients,omitempty"` // Blind to recipients (hidden from others)
-	BccRecipients []string `json:"bcc_recipients,omitempty"` // Blind carbon copy (hidden from all)
+	ToRecipients  []string `dynamorm:"attr:toRecipients" json:"to_recipients,omitempty"`  // Primary recipients (visible to all)
+	CcRecipients  []string `dynamorm:"attr:ccRecipients" json:"cc_recipients,omitempty"`  // Carbon copy recipients (visible to all)
+	BtoRecipients []string `dynamorm:"attr:btoRecipients" json:"bto_recipients,omitempty"` // Blind to recipients (hidden from others)
+	BccRecipients []string `dynamorm:"attr:bccRecipients" json:"bcc_recipients,omitempty"` // Blind carbon copy (hidden from all)
 
 	// Engagement metrics (cached for performance)
-	LikeCount   int `json:"like_count"`
-	ReblogCount int `json:"reblog_count"`
-	ReplyCount  int `json:"reply_count"`
-	QuoteCount  int `json:"quote_count,omitempty"`
+	LikeCount   int `dynamorm:"attr:likeCount" json:"like_count"`
+	ReblogCount int `dynamorm:"attr:reblogCount" json:"reblog_count"`
+	ReplyCount  int `dynamorm:"attr:replyCount" json:"reply_count"`
+	QuoteCount  int `dynamorm:"attr:quoteCount" json:"quote_count,omitempty"`
 
 	// Timestamps
-	PublishedAt time.Time `json:"published_at"`
-	UpdatedAt   time.Time `json:"updated_at,omitempty"`
-	CreatedAt   time.Time `dynamorm:"created_at" json:"created_at"`
-	ModifiedAt  time.Time `dynamorm:"updated_at" json:"modified_at"`
+	PublishedAt time.Time `dynamorm:"attr:publishedAt" json:"published_at"`
+	UpdatedAt   time.Time `dynamorm:"attr:updatedAt" json:"updated_at,omitempty"`
+	CreatedAt   time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	ModifiedAt  time.Time `dynamorm:"attr:modifiedAt" json:"modified_at"`
 
 	// Moderation and flags
-	Flagged   bool       `json:"flagged,omitempty"`
-	Deleted   bool       `json:"deleted,omitempty"`
-	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+	Flagged   bool       `dynamorm:"attr:flagged" json:"flagged,omitempty"`
+	Deleted   bool       `dynamorm:"attr:deleted" json:"deleted,omitempty"`
+	DeletedAt *time.Time `dynamorm:"attr:deletedAt" json:"deleted_at,omitempty"`
 
 	// Version for optimistic locking
-	Version int `dynamorm:"version" json:"version"`
+	Version int `dynamorm:"version,attr:version" json:"version"`
 }
 
 // StatusAttachment represents a media attachment on a status

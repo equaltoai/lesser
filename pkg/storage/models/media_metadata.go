@@ -11,42 +11,44 @@ import (
 // MediaMetadata represents metadata about media files stored in S3
 // This model handles the DynamoDB storage of metadata while S3 handles actual file storage
 type MediaMetadata struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys following legacy patterns
-	PK string `dynamorm:"pk" json:"pk"` // MEDIA#{mediaID}
-	SK string `dynamorm:"sk" json:"sk"` // METADATA
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // MEDIA#{mediaID}
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // METADATA
 
 	// GSI keys for queries
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1pk"` // STATUS#{status}
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1sk"` // PROCESSED#{timestamp}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // STATUS#{status}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // PROCESSED#{timestamp}
 
 	// Media identification
-	MediaID string `json:"media_id"`
+	MediaID string `dynamorm:"attr:mediaID" json:"media_id"`
 
 	// Basic metadata
-	OriginalURL        string    `json:"original_url,omitempty"`
-	Duration           float64   `json:"duration"`            // Duration in seconds
-	Width              int       `json:"width"`               // Video width in pixels
-	Height             int       `json:"height"`              // Video height in pixels
-	Bitrate            int       `json:"bitrate"`             // Bitrate in kbps
-	FileSize           int64     `json:"file_size"`           // Size in bytes
-	Blurhash           string    `json:"blurhash,omitempty"`  // Blurhash for images/video thumbnails
-	ProcessedAt        time.Time `json:"processed_at"`        // When processing completed
-	AvailableQualities []string  `json:"available_qualities"` // Available quality levels
-	Status             string    `json:"status"`              // pending, processing, complete, failed
+	OriginalURL        string    `dynamorm:"attr:originalURL" json:"original_url,omitempty"`
+	Duration           float64   `dynamorm:"attr:duration" json:"duration"`                      // Duration in seconds
+	Width              int       `dynamorm:"attr:width" json:"width"`                            // Video width in pixels
+	Height             int       `dynamorm:"attr:height" json:"height"`                          // Video height in pixels
+	Bitrate            int       `dynamorm:"attr:bitrate" json:"bitrate"`                        // Bitrate in kbps
+	FileSize           int64     `dynamorm:"attr:fileSize" json:"file_size"`                     // Size in bytes
+	Blurhash           string    `dynamorm:"attr:blurhash" json:"blurhash,omitempty"`            // Blurhash for images/video thumbnails
+	ProcessedAt        time.Time `dynamorm:"attr:processedAt" json:"processed_at"`               // When processing completed
+	AvailableQualities []string  `dynamorm:"attr:availableQualities" json:"available_qualities"` // Available quality levels
+	Status             string    `dynamorm:"attr:status" json:"status"`                          // pending, processing, complete, failed
 
 	// Codec information for HLS/DASH manifest generation
-	VideoCodec      string                      `json:"video_codec,omitempty"`      // e.g., "avc1.640028"
-	AudioCodec      string                      `json:"audio_codec,omitempty"`      // e.g., "mp4a.40.2"
-	VideoProfile    string                      `json:"video_profile,omitempty"`    // e.g., "High", "Main", "Baseline"
-	VideoLevel      string                      `json:"video_level,omitempty"`      // e.g., "4.0", "3.1"
-	QualitySettings map[string]QualityCodecInfo `json:"quality_settings,omitempty"` // Per-quality codec info
+	VideoCodec      string                      `dynamorm:"attr:videoCodec" json:"video_codec,omitempty"`           // e.g., "avc1.640028"
+	AudioCodec      string                      `dynamorm:"attr:audioCodec" json:"audio_codec,omitempty"`           // e.g., "mp4a.40.2"
+	VideoProfile    string                      `dynamorm:"attr:videoProfile" json:"video_profile,omitempty"`       // e.g., "High", "Main", "Baseline"
+	VideoLevel      string                      `dynamorm:"attr:videoLevel" json:"video_level,omitempty"`           // e.g., "4.0", "3.1"
+	QualitySettings map[string]QualityCodecInfo `dynamorm:"attr:qualitySettings" json:"quality_settings,omitempty"` // Per-quality codec info
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for cleanup of failed/temporary media
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // QualityCodecInfo contains codec information for a specific quality level

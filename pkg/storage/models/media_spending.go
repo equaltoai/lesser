@@ -10,122 +10,126 @@ import (
 
 // MediaSpending tracks spending and costs for media processing operations per user
 type MediaSpending struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using user ID as partition key with time period as sort key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "MEDIA_SPENDING#{userID}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "PERIOD#{year}-{month}" or "DAILY#{year}-{month}-{day}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "MEDIA_SPENDING#{userID}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "PERIOD#{year}-{month}" or "DAILY#{year}-{month}-{day}"
 
 	// GSI1 - Global spending queries across all users
-	GSI1PK string `dynamorm:"index:spending-time-index,pk" json:"gsi1_pk"` // Format: "SPENDING#{period_type}"
-	GSI1SK string `dynamorm:"index:spending-time-index,sk" json:"gsi1_sk"` // Format: "{year}-{month}-{day}#{userID}"
+	GSI1PK string `dynamorm:"index:spending-time-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "SPENDING#{period_type}"
+	GSI1SK string `dynamorm:"index:spending-time-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{year}-{month}-{day}#{userID}"
 
 	// GSI2 - Cost category queries
-	GSI2PK string `dynamorm:"index:cost-category-index,pk" json:"gsi2_pk"` // Format: "COST_CATEGORY#{category}"
-	GSI2SK string `dynamorm:"index:cost-category-index,sk" json:"gsi2_sk"` // Format: "{timestamp}#{userID}"
+	GSI2PK string `dynamorm:"index:cost-category-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "COST_CATEGORY#{category}"
+	GSI2SK string `dynamorm:"index:cost-category-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{userID}"
 
 	// Core spending data
-	UserID     string `json:"user_id"`
-	Username   string `json:"username"`
-	Period     string `json:"period"`      // "2024-01", "2024-01-15" (monthly or daily)
-	PeriodType string `json:"period_type"` // "monthly", "daily"
+	UserID     string `dynamorm:"attr:userID" json:"user_id"`
+	Username   string `dynamorm:"attr:username" json:"username"`
+	Period     string `dynamorm:"attr:period" json:"period"`          // "2024-01", "2024-01-15" (monthly or daily)
+	PeriodType string `dynamorm:"attr:periodType" json:"period_type"` // "monthly", "daily"
 
 	// Spending totals (in microdollars - $1 = 1,000,000 microdollars)
-	TotalSpendMicros      int64 `json:"total_spend_micros"`
-	ProcessingSpendMicros int64 `json:"processing_spend_micros"` // MediaConvert, Rekognition, etc.
-	StorageSpendMicros    int64 `json:"storage_spend_micros"`    // S3 storage costs
-	BandwidthSpendMicros  int64 `json:"bandwidth_spend_micros"`  // CloudFront/CDN costs
-	ComputeSpendMicros    int64 `json:"compute_spend_micros"`    // Lambda compute costs
+	TotalSpendMicros      int64 `dynamorm:"attr:totalSpendMicros" json:"total_spend_micros"`
+	ProcessingSpendMicros int64 `dynamorm:"attr:processingSpendMicros" json:"processing_spend_micros"` // MediaConvert, Rekognition, etc.
+	StorageSpendMicros    int64 `dynamorm:"attr:storageSpendMicros" json:"storage_spend_micros"`       // S3 storage costs
+	BandwidthSpendMicros  int64 `dynamorm:"attr:bandwidthSpendMicros" json:"bandwidth_spend_micros"`   // CloudFront/CDN costs
+	ComputeSpendMicros    int64 `dynamorm:"attr:computeSpendMicros" json:"compute_spend_micros"`       // Lambda compute costs
 
 	// Operation counts
-	TotalOperations    int64 `json:"total_operations"`
-	ImageProcessingOps int64 `json:"image_processing_ops"`
-	VideoProcessingOps int64 `json:"video_processing_ops"`
-	AudioProcessingOps int64 `json:"audio_processing_ops"`
-	StorageOperations  int64 `json:"storage_operations"` // S3 PUT/GET operations
-	BandwidthBytes     int64 `json:"bandwidth_bytes"`    // Bytes transferred
-	ComputeTimeMs      int64 `json:"compute_time_ms"`    // Lambda execution time
+	TotalOperations    int64 `dynamorm:"attr:totalOperations" json:"total_operations"`
+	ImageProcessingOps int64 `dynamorm:"attr:imageProcessingOps" json:"image_processing_ops"`
+	VideoProcessingOps int64 `dynamorm:"attr:videoProcessingOps" json:"video_processing_ops"`
+	AudioProcessingOps int64 `dynamorm:"attr:audioProcessingOps" json:"audio_processing_ops"`
+	StorageOperations  int64 `dynamorm:"attr:storageOperations" json:"storage_operations"` // S3 PUT/GET operations
+	BandwidthBytes     int64 `dynamorm:"attr:bandwidthBytes" json:"bandwidth_bytes"`       // Bytes transferred
+	ComputeTimeMs      int64 `dynamorm:"attr:computeTimeMs" json:"compute_time_ms"`        // Lambda execution time
 
 	// Detailed cost breakdown by service
-	S3StorageCostMicros    int64 `json:"s3_storage_cost_micros"`
-	S3RequestCostMicros    int64 `json:"s3_request_cost_micros"`
-	CloudFrontCostMicros   int64 `json:"cloudfront_cost_micros"`
-	MediaConvertCostMicros int64 `json:"mediaconvert_cost_micros"`
-	RekognitionCostMicros  int64 `json:"rekognition_cost_micros"`
-	LambdaCostMicros       int64 `json:"lambda_cost_micros"`
+	S3StorageCostMicros    int64 `dynamorm:"attr:s3StorageCostMicros" json:"s3_storage_cost_micros"`
+	S3RequestCostMicros    int64 `dynamorm:"attr:s3RequestCostMicros" json:"s3_request_cost_micros"`
+	CloudFrontCostMicros   int64 `dynamorm:"attr:cloudFrontCostMicros" json:"cloudfront_cost_micros"`
+	MediaConvertCostMicros int64 `dynamorm:"attr:mediaConvertCostMicros" json:"mediaconvert_cost_micros"`
+	RekognitionCostMicros  int64 `dynamorm:"attr:rekognitionCostMicros" json:"rekognition_cost_micros"`
+	LambdaCostMicros       int64 `dynamorm:"attr:lambdaCostMicros" json:"lambda_cost_micros"`
 
 	// Usage statistics
-	FilesProcessed      int64 `json:"files_processed"`
-	BytesProcessed      int64 `json:"bytes_processed"`
-	StorageBytesUsed    int64 `json:"storage_bytes_used"`
-	MediaConvertMinutes int64 `json:"mediaconvert_minutes"` // Total minutes processed
-	RekognitionImages   int64 `json:"rekognition_images"`   // Images analyzed
-	ThumbnailsGenerated int64 `json:"thumbnails_generated"`
+	FilesProcessed      int64 `dynamorm:"attr:filesProcessed" json:"files_processed"`
+	BytesProcessed      int64 `dynamorm:"attr:bytesProcessed" json:"bytes_processed"`
+	StorageBytesUsed    int64 `dynamorm:"attr:storageBytesUsed" json:"storage_bytes_used"`
+	MediaConvertMinutes int64 `dynamorm:"attr:mediaConvertMinutes" json:"mediaconvert_minutes"` // Total minutes processed
+	RekognitionImages   int64 `dynamorm:"attr:rekognitionImages" json:"rekognition_images"`     // Images analyzed
+	ThumbnailsGenerated int64 `dynamorm:"attr:thumbnailsGenerated" json:"thumbnails_generated"`
 
 	// Error tracking
-	FailedOperations int64 `json:"failed_operations"`
-	ErrorCostMicros  int64 `json:"error_cost_micros"` // Costs from failed operations
+	FailedOperations int64 `dynamorm:"attr:failedOperations" json:"failed_operations"`
+	ErrorCostMicros  int64 `dynamorm:"attr:errorCostMicros" json:"error_cost_micros"` // Costs from failed operations
 
 	// Budget tracking
-	BudgetLimitMicros  int64      `json:"budget_limit_micros"`          // User's budget limit
-	BudgetUsagePercent float64    `json:"budget_usage_percent"`         // Percentage of budget used
-	BudgetExceeded     bool       `json:"budget_exceeded"`              // True if over budget
-	BudgetExceededAt   *time.Time `json:"budget_exceeded_at,omitempty"` // When budget was exceeded
+	BudgetLimitMicros  int64      `dynamorm:"attr:budgetLimitMicros" json:"budget_limit_micros"`         // User's budget limit
+	BudgetUsagePercent float64    `dynamorm:"attr:budgetUsagePercent" json:"budget_usage_percent"`       // Percentage of budget used
+	BudgetExceeded     bool       `dynamorm:"attr:budgetExceeded" json:"budget_exceeded"`                // True if over budget
+	BudgetExceededAt   *time.Time `dynamorm:"attr:budgetExceededAt" json:"budget_exceeded_at,omitempty"` // When budget was exceeded
 
 	// Timestamps
-	PeriodStartAt time.Time `json:"period_start_at"`
-	PeriodEndAt   time.Time `json:"period_end_at"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	PeriodStartAt time.Time `dynamorm:"attr:periodStartAt" json:"period_start_at"`
+	PeriodEndAt   time.Time `dynamorm:"attr:periodEndAt" json:"period_end_at"`
+	CreatedAt     time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt     time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for old spending records (keep for 2 years)
-	ExpiresAt *int64 `dynamorm:"ttl" json:"expires_at,omitempty"` // Unix timestamp
+	ExpiresAt *int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at,omitempty"` // Unix timestamp
 
 	// Version for optimistic locking
-	ModelVersion int `dynamorm:"version" json:"model_version"`
+	ModelVersion int `dynamorm:"version,attr:modelVersion" json:"model_version"`
 }
 
 // MediaSpendingTransaction represents a single spending transaction
 type MediaSpendingTransaction struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using user ID as partition key with transaction ID as sort key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "SPENDING_TXN#{userID}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "TXN#{timestamp}#{transactionID}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "SPENDING_TXN#{userID}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TXN#{timestamp}#{transactionID}"
 
 	// GSI1 - Time-based transaction queries
-	GSI1PK string `dynamorm:"index:transaction-time-index,pk" json:"gsi1_pk"` // Format: "TXN_TIME#{date}"
-	GSI1SK string `dynamorm:"index:transaction-time-index,sk" json:"gsi1_sk"` // Format: "{timestamp}#{userID}#{transactionID}"
+	GSI1PK string `dynamorm:"index:transaction-time-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "TXN_TIME#{date}"
+	GSI1SK string `dynamorm:"index:transaction-time-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{userID}#{transactionID}"
 
 	// Core transaction data
-	TransactionID string `json:"transaction_id"`
-	UserID        string `json:"user_id"`
-	Username      string `json:"username"`
+	TransactionID string `dynamorm:"attr:transactionID" json:"transaction_id"`
+	UserID        string `dynamorm:"attr:userID" json:"user_id"`
+	Username      string `dynamorm:"attr:username" json:"username"`
 
 	// Cost details
-	CostMicros  int64  `json:"cost_micros"` // Cost in microdollars
-	Category    string `json:"category"`    // "processing", "storage", "bandwidth", "compute"
-	Service     string `json:"service"`     // "s3", "mediaconvert", "cloudfront", "lambda", "rekognition"
-	Operation   string `json:"operation"`   // "image_resize", "video_transcode", "storage_put", etc.
-	Description string `json:"description"` // Human-readable description
+	CostMicros  int64  `dynamorm:"attr:costMicros" json:"cost_micros"`  // Cost in microdollars
+	Category    string `dynamorm:"attr:category" json:"category"`       // "processing", "storage", "bandwidth", "compute"
+	Service     string `dynamorm:"attr:service" json:"service"`         // "s3", "mediaconvert", "cloudfront", "lambda", "rekognition"
+	Operation   string `dynamorm:"attr:operation" json:"operation"`     // "image_resize", "video_transcode", "storage_put", etc.
+	Description string `dynamorm:"attr:description" json:"description"` // Human-readable description
 
 	// Associated media
-	MediaID     string `json:"media_id,omitempty"`
-	JobID       string `json:"job_id,omitempty"`
-	FileName    string `json:"file_name,omitempty"`
-	FileSize    int64  `json:"file_size,omitempty"`
-	ContentType string `json:"content_type,omitempty"`
+	MediaID     string `dynamorm:"attr:mediaID" json:"media_id,omitempty"`
+	JobID       string `dynamorm:"attr:jobID" json:"job_id,omitempty"`
+	FileName    string `dynamorm:"attr:fileName" json:"file_name,omitempty"`
+	FileSize    int64  `dynamorm:"attr:fileSize" json:"file_size,omitempty"`
+	ContentType string `dynamorm:"attr:contentType" json:"content_type,omitempty"`
 
 	// Processing details
-	ProcessingTimeMs int64 `json:"processing_time_ms,omitempty"` // How long the operation took
-	BytesProcessed   int64 `json:"bytes_processed,omitempty"`    // Bytes processed
-	UnitsConsumed    int64 `json:"units_consumed,omitempty"`     // Service-specific units
+	ProcessingTimeMs int64 `dynamorm:"attr:processingTimeMs" json:"processing_time_ms,omitempty"` // How long the operation took
+	BytesProcessed   int64 `dynamorm:"attr:bytesProcessed" json:"bytes_processed,omitempty"`      // Bytes processed
+	UnitsConsumed    int64 `dynamorm:"attr:unitsConsumed" json:"units_consumed,omitempty"`        // Service-specific units
 
 	// Error information
-	IsError      bool   `json:"is_error"`
-	ErrorMessage string `json:"error_message,omitempty"`
+	IsError      bool   `dynamorm:"attr:isError" json:"is_error"`
+	ErrorMessage string `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
 
 	// TTL for old transactions (keep for 1 year)
-	ExpiresAt *int64 `dynamorm:"ttl" json:"expires_at,omitempty"` // Unix timestamp
+	ExpiresAt *int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at,omitempty"` // Unix timestamp
 }
 
 // TableName returns the DynamoDB table name for MediaSpending

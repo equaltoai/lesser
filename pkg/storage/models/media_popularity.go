@@ -10,40 +10,42 @@ import (
 // MediaPopularity tracks aggregated popularity metrics for media items
 // This is maintained by streaming analytics ingestion for efficient trending queries
 type MediaPopularity struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB Keys (STABLE - never change)
-	PK string `dynamorm:"pk" json:"pk"` // MEDIA_POPULARITY#{period}
-	SK string `dynamorm:"sk" json:"sk"` // MEDIA#{mediaID}
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // MEDIA_POPULARITY#{period}
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // MEDIA#{mediaID}
 
 	// GSI1 - Sorted by popularity (UPDATEABLE)
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1pk"` // PERIOD#{period}
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1sk"` // {inverted_view_count} for descending sort
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // PERIOD#{period}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {inverted_view_count} for descending sort
 
 	// GSI2 - Query by date
-	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2pk"` // DATE#{date}
-	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2sk"` // MEDIA#{mediaID}
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // DATE#{date}
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // MEDIA#{mediaID}
 
 	// Business fields
-	MediaID         string    `json:"media_id"`
-	ViewCount       int64     `json:"view_count"`
-	UniqueViewers   int64     `json:"unique_viewers"`
-	CompletionCount int64     `json:"completion_count"`
-	TotalWatchTime  int64     `json:"total_watch_time"` // seconds
-	BufferingEvents int64     `json:"buffering_events"`
-	LastViewed      time.Time `json:"last_viewed"`
-	FirstViewed     time.Time `json:"first_viewed"`
-	Period          string    `json:"period"` // DAY, WEEK, MONTH
-	Date            string    `json:"date"`   // YYYY-MM-DD
-	Timestamp       time.Time `json:"timestamp"`
+	MediaID         string    `dynamorm:"attr:mediaID" json:"media_id"`
+	ViewCount       int64     `dynamorm:"attr:viewCount" json:"view_count"`
+	UniqueViewers   int64     `dynamorm:"attr:uniqueViewers" json:"unique_viewers"`
+	CompletionCount int64     `dynamorm:"attr:completionCount" json:"completion_count"`
+	TotalWatchTime  int64     `dynamorm:"attr:totalWatchTime" json:"total_watch_time"` // seconds
+	BufferingEvents int64     `dynamorm:"attr:bufferingEvents" json:"buffering_events"`
+	LastViewed      time.Time `dynamorm:"attr:lastViewed" json:"last_viewed"`
+	FirstViewed     time.Time `dynamorm:"attr:firstViewed" json:"first_viewed"`
+	Period          string    `dynamorm:"attr:period" json:"period"` // DAY, WEEK, MONTH
+	Date            string    `dynamorm:"attr:date" json:"date"`     // YYYY-MM-DD
+	Timestamp       time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
 
 	// Quality distribution
-	QualityViews map[string]int64 `json:"quality_views"` // quality -> view count
+	QualityViews map[string]int64 `dynamorm:"attr:qualityViews" json:"quality_views"` // quality -> view count
 
 	// Popularity score (calculated)
-	PopularityScore float64 `json:"popularity_score"`
-	TrendScore      float64 `json:"trend_score"`
+	PopularityScore float64 `dynamorm:"attr:popularityScore" json:"popularity_score"`
+	TrendScore      float64 `dynamorm:"attr:trendScore" json:"trend_score"`
 
 	// TTL for automatic cleanup
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the keys based on the current values

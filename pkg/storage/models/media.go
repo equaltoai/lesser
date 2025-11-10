@@ -33,76 +33,78 @@ var validMediaCategories = map[MediaCategory]struct{}{
 
 // Media represents a media file (image, video, audio) stored in the system
 type Media struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using media ID as partition key with version as sort key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "media#{mediaID}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "version#{version}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "media#{mediaID}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "version#{version}"
 
 	// GSI1 - User media lookup
-	GSI1PK string `dynamorm:"index:user-media-index,pk" json:"gsi1_pk"` // Format: "USER_MEDIA#{userID}"
-	GSI1SK string `dynamorm:"index:user-media-index,sk" json:"gsi1_sk"` // Format: "{uploaded_at}#{mediaID}"
+	GSI1PK string `dynamorm:"index:user-media-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_MEDIA#{userID}"
+	GSI1SK string `dynamorm:"index:user-media-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{uploaded_at}#{mediaID}"
 
 	// GSI2 - Status-based queries (pending, processing, ready, failed)
-	GSI2PK string `dynamorm:"index:status-index,pk" json:"gsi2_pk"` // Format: "MEDIA_STATUS#{status}"
-	GSI2SK string `dynamorm:"index:status-index,sk" json:"gsi2_sk"` // Format: "{uploaded_at}#{mediaID}"
+	GSI2PK string `dynamorm:"index:status-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "MEDIA_STATUS#{status}"
+	GSI2SK string `dynamorm:"index:status-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{uploaded_at}#{mediaID}"
 
 	// GSI3 - Content type queries
-	GSI3PK string `dynamorm:"index:content-type-index,pk" json:"gsi3_pk"` // Format: "CONTENT_TYPE#{content_type}"
-	GSI3SK string `dynamorm:"index:content-type-index,sk" json:"gsi3_sk"` // Format: "{uploaded_at}#{mediaID}"
+	GSI3PK string `dynamorm:"index:content-type-index,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "CONTENT_TYPE#{content_type}"
+	GSI3SK string `dynamorm:"index:content-type-index,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{uploaded_at}#{mediaID}"
 
 	// Core media data
-	MediaID     string `json:"media_id"`
-	Version     string `json:"version"`      // "original", "v1", "v2", etc.
-	UserID      string `json:"user_id"`      // Owner of the media
-	FileName    string `json:"file_name"`    // Original filename
-	ContentType string `json:"content_type"` // MIME type
-	FileSize    int64  `json:"file_size"`    // Size in bytes
+	MediaID     string `dynamorm:"attr:mediaID" json:"media_id"`
+	Version     string `dynamorm:"attr:version" json:"version"`          // "original", "v1", "v2", etc.
+	UserID      string `dynamorm:"attr:userID" json:"user_id"`           // Owner of the media
+	FileName    string `dynamorm:"attr:fileName" json:"file_name"`       // Original filename
+	ContentType string `dynamorm:"attr:contentType" json:"content_type"` // MIME type
+	FileSize    int64  `dynamorm:"attr:fileSize" json:"file_size"`       // Size in bytes
 
 	// Storage details
-	S3Bucket string `json:"s3_bucket"`
-	S3Key    string `json:"s3_key"`
-	CDNUrl   string `json:"cdn_url,omitempty"`
+	S3Bucket string `dynamorm:"attr:s3Bucket" json:"s3_bucket"`
+	S3Key    string `dynamorm:"attr:s3Key" json:"s3_key"`
+	CDNUrl   string `dynamorm:"attr:cdnUrl" json:"cdn_url,omitempty"`
 
 	// Processing status
-	Status      string     `json:"status"` // "pending", "processing", "ready", "failed"
-	ProcessedAt *time.Time `json:"processed_at,omitempty"`
-	Error       string     `json:"error,omitempty"`
+	Status      string     `dynamorm:"attr:status" json:"status"` // "pending", "processing", "ready", "failed"
+	ProcessedAt *time.Time `dynamorm:"attr:processedAt" json:"processed_at,omitempty"`
+	Error       string     `dynamorm:"attr:error" json:"error,omitempty"`
 
 	// Media analysis results
-	Width    int    `json:"width,omitempty"`    // For images/videos
-	Height   int    `json:"height,omitempty"`   // For images/videos
-	Duration int    `json:"duration,omitempty"` // For videos/audio in seconds
-	Blurhash string `json:"blurhash,omitempty"` // For images
+	Width    int    `dynamorm:"attr:width" json:"width,omitempty"`       // For images/videos
+	Height   int    `dynamorm:"attr:height" json:"height,omitempty"`     // For images/videos
+	Duration int    `dynamorm:"attr:duration" json:"duration,omitempty"` // For videos/audio in seconds
+	Blurhash string `dynamorm:"attr:blurhash" json:"blurhash,omitempty"` // For images
 
 	// Media variants (thumbnails, different sizes, formats)
-	Variants map[string]MediaVariant `json:"variants,omitempty"`
+	Variants map[string]MediaVariant `dynamorm:"attr:variants" json:"variants,omitempty"`
 
 	// Media metadata for Mastodon API compatibility
-	Description string `json:"description,omitempty"` // Alt text description
-	Focus       string `json:"focus,omitempty"`       // Focus point for cropping (x,y)
-	SpoilerText string `json:"spoiler_text,omitempty"`
+	Description string `dynamorm:"attr:description" json:"description,omitempty"` // Alt text description
+	Focus       string `dynamorm:"attr:focus" json:"focus,omitempty"`             // Focus point for cropping (x,y)
+	SpoilerText string `dynamorm:"attr:spoilerText" json:"spoiler_text,omitempty"`
 
 	// Content moderation
-	IsNSFW          bool     `json:"is_nsfw"`
-	ModerationScore float64  `json:"moderation_score"` // 0.0 - 1.0
-	Labels          []string `json:"labels,omitempty"` // Content labels from moderation
+	IsNSFW          bool     `dynamorm:"attr:isNSFW" json:"is_nsfw"`
+	ModerationScore float64  `dynamorm:"attr:moderationScore" json:"moderation_score"` // 0.0 - 1.0
+	Labels          []string `dynamorm:"attr:labels" json:"labels,omitempty"`          // Content labels from moderation
 
 	// Client-provided classification (image/video/gifv/etc.)
-	MediaCategory MediaCategory `json:"media_category,omitempty"`
+	MediaCategory MediaCategory `dynamorm:"attr:mediaCategory" json:"media_category,omitempty"`
 
 	// Usage tracking
-	UsageCount int        `json:"usage_count"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	UsageCount int        `dynamorm:"attr:usageCount" json:"usage_count"`
+	LastUsedAt *time.Time `dynamorm:"attr:lastUsedAt" json:"last_used_at,omitempty"`
 
 	// Timestamps
-	UploadedAt time.Time `json:"uploaded_at"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	UploadedAt time.Time `dynamorm:"attr:uploadedAt" json:"uploaded_at"`
+	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for unused media (30 days)
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at,omitempty"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at,omitempty"` // Unix timestamp
 
 	// Version for optimistic locking
-	ModelVersion int `dynamorm:"version" json:"model_version"`
+	ModelVersion int `dynamorm:"version,attr:modelVersion" json:"model_version"`
 }
 
 // MediaVariant represents a processed variant of the original media

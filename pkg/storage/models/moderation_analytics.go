@@ -4,31 +4,33 @@ import "time"
 
 // ModerationAnalytics tracks moderation actions and statistics
 type ModerationAnalytics struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Key fields - Pattern from legacy: PK=`MOD_ANALYTICS#date`, SK=`type#count`
-	PK string `dynamorm:"pk" json:"-"`
-	SK string `dynamorm:"sk" json:"-"`
+	PK string `dynamorm:"pk,attr:PK" json:"-"`
+	SK string `dynamorm:"sk,attr:SK" json:"-"`
 
 	// GSI fields for querying by type
-	GSI2PK string `dynamorm:"index:GSI2,pk"`
-	GSI2SK string `dynamorm:"index:GSI2,sk"`
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK"`
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK"`
 
 	// Business fields from legacy
-	Date                  string           `json:"date"` // YYYY-MM-DD format
-	ReportType            string           `json:"report_type"`
-	Count                 int64            `json:"count"`
-	ResolvedCount         int64            `json:"resolved_count"`
-	AverageResolutionTime float64          `json:"average_resolution_time"` // in hours
-	ModeratorActions      map[string]int64 `json:"moderator_actions"`       // moderator -> action count
-	UpdatedAt             time.Time        `json:"updated_at"`
+	Date                  string           `dynamorm:"attr:date" json:"date"` // YYYY-MM-DD format
+	ReportType            string           `dynamorm:"attr:reportType" json:"report_type"`
+	Count                 int64            `dynamorm:"attr:count" json:"count"`
+	ResolvedCount         int64            `dynamorm:"attr:resolvedCount" json:"resolved_count"`
+	AverageResolutionTime float64          `dynamorm:"attr:averageResolutionTime" json:"average_resolution_time"` // in hours
+	ModeratorActions      map[string]int64 `dynamorm:"attr:moderatorActions" json:"moderator_actions"`            // moderator -> action count
+	UpdatedAt             time.Time        `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// Additional fields for pattern analytics (keeping compatibility)
-	PatternID string    `json:"pattern_id,omitempty"`
-	Matched   bool      `json:"matched,omitempty"`
-	Timestamp time.Time `json:"timestamp,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	PatternID string    `dynamorm:"attr:patternID" json:"pattern_id,omitempty"`
+	Matched   bool      `dynamorm:"attr:matched" json:"matched,omitempty"`
+	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp,omitempty"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
 
 	// TTL field - 90 days as per legacy
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing ModerationAnalytics.

@@ -7,23 +7,25 @@ import (
 
 // PasswordReset represents a password reset token
 type PasswordReset struct {
-	PK string `dynamorm:"pk" json:"pk"` // USER#{username}
-	SK string `dynamorm:"sk" json:"sk"` // RESET#{token}
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // USER#{username}
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // RESET#{token}
 
 	// GSI1 for token lookup
-	GSI1PK string `dynamorm:"index:token-index,pk" json:"gsi1_pk"` // RESET_TOKEN#{token}
-	GSI1SK string `dynamorm:"index:token-index,sk" json:"gsi1_sk"` // USERNAME#{username}
+	GSI1PK string `dynamorm:"index:token-index,pk,attr:gsi1PK" json:"gsi1_pk"` // RESET_TOKEN#{token}
+	GSI1SK string `dynamorm:"index:token-index,sk,attr:gsi1SK" json:"gsi1_sk"` // USERNAME#{username}
 
-	Username  string    `json:"username"`
-	Token     string    `json:"token"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Used      bool      `json:"used"`
-	UsedAt    time.Time `json:"used_at,omitempty"`
+	Username  string    `dynamorm:"attr:username" json:"username"`
+	Token     string    `dynamorm:"attr:token" json:"token"`
+	Email     string    `dynamorm:"attr:email" json:"email"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	ExpiresAt time.Time `dynamorm:"attr:expiresAt" json:"expires_at"`
+	Used      bool      `dynamorm:"attr:used" json:"used"`
+	UsedAt    time.Time `dynamorm:"attr:usedAt" json:"used_at,omitempty"`
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

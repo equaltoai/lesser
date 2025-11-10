@@ -31,28 +31,30 @@ func (PushSubscriptionAlerts) TableName() string {
 
 // PushSubscription represents a push subscription stored in DynamoDB
 type PushSubscription struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys
-	PK string `dynamorm:"pk" json:"pk"` // PUSH#username
-	SK string `dynamorm:"sk" json:"sk"` // SUB#subscriptionID
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // PUSH#username
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // SUB#subscriptionID
 
 	// GSI for endpoint lookup (to prevent duplicates)
-	GSI1PK string `dynamorm:"index:endpoint-index,pk" json:"gsi1_pk"` // PUSH_ENDPOINT#endpoint_hash
-	GSI1SK string `dynamorm:"index:endpoint-index,sk" json:"gsi1_sk"` // username
+	GSI1PK string `dynamorm:"index:endpoint-index,pk,attr:gsi1PK" json:"gsi1_pk"` // PUSH_ENDPOINT#endpoint_hash
+	GSI1SK string `dynamorm:"index:endpoint-index,sk,attr:gsi1SK" json:"gsi1_sk"` // username
 
 	// Core subscription data
-	ID        string                 `json:"id"`
-	Username  string                 `json:"username"`
-	Endpoint  string                 `json:"endpoint"`
-	P256dh    string                 `json:"p256dh"` // Public key for encryption
-	Auth      string                 `json:"auth"`   // Auth secret
-	Alerts    PushSubscriptionAlerts `json:"alerts"` // Which notifications to send
-	Policy    string                 `json:"policy,omitempty"`
-	UserAgent string                 `json:"user_agent,omitempty"`
+	ID        string                 `dynamorm:"attr:id" json:"id"`
+	Username  string                 `dynamorm:"attr:username" json:"username"`
+	Endpoint  string                 `dynamorm:"attr:endpoint" json:"endpoint"`
+	P256dh    string                 `dynamorm:"attr:p256dh" json:"p256dh"` // Public key for encryption
+	Auth      string                 `dynamorm:"attr:auth" json:"auth"`     // Auth secret
+	Alerts    PushSubscriptionAlerts `dynamorm:"attr:alerts" json:"alerts"` // Which notifications to send
+	Policy    string                 `dynamorm:"attr:policy" json:"policy,omitempty"`
+	UserAgent string                 `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	LastUsed  time.Time `json:"last_used,omitempty"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	LastUsed  time.Time `dynamorm:"attr:lastUsed" json:"last_used,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

@@ -11,88 +11,92 @@ import (
 
 // Metrics represents system metrics data
 type Metrics struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using metric type as partition key with timestamp sort key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "metrics#{type}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "ts#{timestamp}#{id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "metrics#{type}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Service queries
-	GSI1PK string `dynamorm:"index:service-index,pk" json:"gsi1_pk"` // Format: "METRICS_SVC#{service}"
-	GSI1SK string `dynamorm:"index:service-index,sk" json:"gsi1_sk"` // Format: "{timestamp}#{type}#{id}"
+	GSI1PK string `dynamorm:"index:service-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "METRICS_SVC#{service}"
+	GSI1SK string `dynamorm:"index:service-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{type}#{id}"
 
 	// GSI2 - Aggregation queries
-	GSI2PK string `dynamorm:"index:aggregate-index,pk" json:"gsi2_pk"` // Format: "METRICS_AGG#{period}#{type}"
-	GSI2SK string `dynamorm:"index:aggregate-index,sk" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
+	GSI2PK string `dynamorm:"index:aggregate-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "METRICS_AGG#{period}#{type}"
+	GSI2SK string `dynamorm:"index:aggregate-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
 	// Core metrics data
-	ID        string    `json:"id"`
-	Type      string    `json:"type"`    // request, error, latency, throughput, etc.
-	Service   string    `json:"service"` // api, auth, federation, etc.
-	Timestamp time.Time `json:"timestamp"`
-	Period    string    `json:"period"` // minute, hour, day
+	ID        string    `dynamorm:"attr:id" json:"id"`
+	Type      string    `dynamorm:"attr:type" json:"type"`       // request, error, latency, throughput, etc.
+	Service   string    `dynamorm:"attr:service" json:"service"` // api, auth, federation, etc.
+	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	Period    string    `dynamorm:"attr:period" json:"period"` // minute, hour, day
 
 	// Metric values
-	Value       float64            `json:"value"`
-	Count       int64              `json:"count"`
-	Sum         float64            `json:"sum"`
-	Min         float64            `json:"min"`
-	Max         float64            `json:"max"`
-	Average     float64            `json:"average"`
-	Percentiles map[string]float64 `json:"percentiles,omitempty"` // p50, p90, p95, p99
+	Value       float64            `dynamorm:"attr:value" json:"value"`
+	Count       int64              `dynamorm:"attr:count" json:"count"`
+	Sum         float64            `dynamorm:"attr:sum" json:"sum"`
+	Min         float64            `dynamorm:"attr:min" json:"min"`
+	Max         float64            `dynamorm:"attr:max" json:"max"`
+	Average     float64            `dynamorm:"attr:average" json:"average"`
+	Percentiles map[string]float64 `dynamorm:"attr:percentiles" json:"percentiles,omitempty"` // p50, p90, p95, p99
 
 	// Dimensions for filtering
-	Dimensions map[string]string `json:"dimensions,omitempty"`
+	Dimensions map[string]string `dynamorm:"attr:dimensions" json:"dimensions,omitempty"`
 
 	// Resource information
-	ResourceID   string `json:"resource_id,omitempty"`   // Lambda function name, etc.
-	ResourceType string `json:"resource_type,omitempty"` // lambda, dynamodb, etc.
+	ResourceID   string `dynamorm:"attr:resourceID" json:"resource_id,omitempty"`     // Lambda function name, etc.
+	ResourceType string `dynamorm:"attr:resourceType" json:"resource_type,omitempty"` // lambda, dynamodb, etc.
 
 	// Additional metadata
-	Unit       string                 `json:"unit,omitempty"` // ms, count, bytes, etc.
-	Tags       map[string]string      `json:"tags,omitempty"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
+	Unit       string                 `dynamorm:"attr:unit" json:"unit,omitempty"` // ms, count, bytes, etc.
+	Tags       map[string]string      `dynamorm:"attr:tags" json:"tags,omitempty"`
+	Properties map[string]interface{} `dynamorm:"attr:properties" json:"properties,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (30 days for raw, 90 days for aggregated)
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
 }
 
 // AggregatedMetrics represents pre-computed metrics aggregations
 type AggregatedMetrics struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "metrics_agg#{period}#{type}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "window#{windowStart}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "metrics_agg#{period}#{type}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "window#{windowStart}"
 
 	// Aggregation details
-	Period      string    `json:"period"`       // minute, hour, day, week, month
-	Type        string    `json:"type"`         // Same as Metrics.Type
-	Service     string    `json:"service"`      // Service name
-	WindowStart time.Time `json:"window_start"` // Start of aggregation window
-	WindowEnd   time.Time `json:"window_end"`   // End of aggregation window
+	Period      string    `dynamorm:"attr:period" json:"period"`            // minute, hour, day, week, month
+	Type        string    `dynamorm:"attr:type" json:"type"`                // Same as Metrics.Type
+	Service     string    `dynamorm:"attr:service" json:"service"`          // Service name
+	WindowStart time.Time `dynamorm:"attr:windowStart" json:"window_start"` // Start of aggregation window
+	WindowEnd   time.Time `dynamorm:"attr:windowEnd" json:"window_end"`     // End of aggregation window
 
 	// Aggregated values
-	TotalCount  int64              `json:"total_count"`
-	TotalSum    float64            `json:"total_sum"`
-	Average     float64            `json:"average"`
-	Min         float64            `json:"min"`
-	Max         float64            `json:"max"`
-	StdDev      float64            `json:"std_dev"`
-	Percentiles map[string]float64 `json:"percentiles"`
+	TotalCount  int64              `dynamorm:"attr:totalCount" json:"total_count"`
+	TotalSum    float64            `dynamorm:"attr:totalSum" json:"total_sum"`
+	Average     float64            `dynamorm:"attr:average" json:"average"`
+	Min         float64            `dynamorm:"attr:min" json:"min"`
+	Max         float64            `dynamorm:"attr:max" json:"max"`
+	StdDev      float64            `dynamorm:"attr:stdDev" json:"std_dev"`
+	Percentiles map[string]float64 `dynamorm:"attr:percentiles" json:"percentiles"`
 
 	// Breakdown by dimensions
-	DimensionBreakdown map[string]DimensionStats `json:"dimension_breakdown,omitempty"`
+	DimensionBreakdown map[string]DimensionStats `dynamorm:"attr:dimensionBreakdown" json:"dimension_breakdown,omitempty"`
 
 	// Service-specific metrics
-	ServiceMetrics map[string]interface{} `json:"service_metrics,omitempty"`
+	ServiceMetrics map[string]interface{} `dynamorm:"attr:serviceMetrics" json:"service_metrics,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL (longer for aggregated data)
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"`
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"`
 }
 
 // DimensionStats represents statistics for a specific dimension value

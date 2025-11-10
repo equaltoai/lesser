@@ -38,64 +38,66 @@ func (RetryPolicy) TableName() string {
 
 // FederationInstanceConfigTracking stores configuration for federated instances
 type FederationInstanceConfigTracking struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - INSTANCE#{domain}, CONFIG
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for tier queries - TIER#{tier}, DOMAIN#{domain}
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for budget queries - BUDGET_OVERRIDE, BUDGET#{budget}#{domain}
-	GSI2PK string `dynamorm:"index:GSI2,pk" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:GSI2,sk" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Instance identification
-	Domain string `json:"domain"` // Remote instance domain
+	Domain string `dynamorm:"attr:domain" json:"domain"` // Remote instance domain
 
 	// Tier and budget configuration
-	Tier              FederationTier `json:"tier"`                          // Federation tier
-	CustomBudgetUSD   *float64       `json:"custom_budget_usd,omitempty"`   // Custom monthly budget (if set)
-	RateLimitOverride *int           `json:"rate_limit_override,omitempty"` // Custom rate limit (requests/hour)
+	Tier              FederationTier `dynamorm:"attr:tier" json:"tier"`                                    // Federation tier
+	CustomBudgetUSD   *float64       `dynamorm:"attr:customBudgetUSD" json:"custom_budget_usd,omitempty"`   // Custom monthly budget (if set)
+	RateLimitOverride *int           `dynamorm:"attr:rateLimitOverride" json:"rate_limit_override,omitempty"` // Custom rate limit (requests/hour)
 
 	// Retry configuration
-	RetryPolicy *RetryPolicy `json:"retry_policy,omitempty"` // Custom retry policy
+	RetryPolicy *RetryPolicy `dynamorm:"attr:retryPolicy" json:"retry_policy,omitempty"` // Custom retry policy
 
 	// Feature flags
-	EnableSignatureValidation bool `json:"enable_signature_validation"` // Whether to validate HTTP signatures
-	EnableRateLimiting        bool `json:"enable_rate_limiting"`        // Whether to apply rate limits
-	EnableBudgetEnforcement   bool `json:"enable_budget_enforcement"`   // Whether to enforce budget limits
-	AllowPublicActivities     bool `json:"allow_public_activities"`     // Whether to accept public activities
-	AllowFollowers            bool `json:"allow_followers"`             // Whether to accept follow requests
-	AllowMentions             bool `json:"allow_mentions"`              // Whether to process mentions
+	EnableSignatureValidation bool `dynamorm:"attr:enableSignatureValidation" json:"enable_signature_validation"` // Whether to validate HTTP signatures
+	EnableRateLimiting        bool `dynamorm:"attr:enableRateLimiting" json:"enable_rate_limiting"`               // Whether to apply rate limits
+	EnableBudgetEnforcement   bool `dynamorm:"attr:enableBudgetEnforcement" json:"enable_budget_enforcement"`     // Whether to enforce budget limits
+	AllowPublicActivities     bool `dynamorm:"attr:allowPublicActivities" json:"allow_public_activities"`         // Whether to accept public activities
+	AllowFollowers            bool `dynamorm:"attr:allowFollowers" json:"allow_followers"`                        // Whether to accept follow requests
+	AllowMentions             bool `dynamorm:"attr:allowMentions" json:"allow_mentions"`                          // Whether to process mentions
 
 	// Caching configuration
-	CacheTTLSeconds int  `json:"cache_ttl_seconds"` // Actor/object cache TTL
-	MaxCacheSize    int  `json:"max_cache_size"`    // Maximum cached items per instance
-	EnableCaching   bool `json:"enable_caching"`    // Whether to cache instance data
+	CacheTTLSeconds int  `dynamorm:"attr:cacheTTLSeconds" json:"cache_ttl_seconds"` // Actor/object cache TTL
+	MaxCacheSize    int  `dynamorm:"attr:maxCacheSize" json:"max_cache_size"`       // Maximum cached items per instance
+	EnableCaching   bool `dynamorm:"attr:enableCaching" json:"enable_caching"`     // Whether to cache instance data
 
 	// Performance tuning
-	MaxConcurrentRequests int `json:"max_concurrent_requests"` // Max concurrent outbound requests
-	RequestTimeoutSeconds int `json:"request_timeout_seconds"` // HTTP request timeout
-	ConnectionPoolSize    int `json:"connection_pool_size"`    // HTTP connection pool size
-	CompressionThreshold  int `json:"compression_threshold"`   // Bytes threshold for compression
+	MaxConcurrentRequests int `dynamorm:"attr:maxConcurrentRequests" json:"max_concurrent_requests"` // Max concurrent outbound requests
+	RequestTimeoutSeconds int `dynamorm:"attr:requestTimeoutSeconds" json:"request_timeout_seconds"` // HTTP request timeout
+	ConnectionPoolSize    int `dynamorm:"attr:connectionPoolSize" json:"connection_pool_size"`       // HTTP connection pool size
+	CompressionThreshold  int `dynamorm:"attr:compressionThreshold" json:"compression_threshold"`    // Bytes threshold for compression
 
 	// Trust and reputation
-	TrustScore           float64 `json:"trust_score"`           // 0.0 to 1.0 trust score
-	ReputationMultiplier float64 `json:"reputation_multiplier"` // Cost multiplier based on reputation
-	RequireVouch         bool    `json:"require_vouch"`         // Whether vouching is required
-	AutoAcceptThreshold  float64 `json:"auto_accept_threshold"` // Trust score for auto-accept
+	TrustScore           float64 `dynamorm:"attr:trustScore" json:"trust_score"`                     // 0.0 to 1.0 trust score
+	ReputationMultiplier float64 `dynamorm:"attr:reputationMultiplier" json:"reputation_multiplier"` // Cost multiplier based on reputation
+	RequireVouch         bool    `dynamorm:"attr:requireVouch" json:"require_vouch"`                 // Whether vouching is required
+	AutoAcceptThreshold  float64 `dynamorm:"attr:autoAcceptThreshold" json:"auto_accept_threshold"`  // Trust score for auto-accept
 
 	// Admin notes
-	Notes        string `json:"notes,omitempty"`         // Admin notes about the instance
-	ContactEmail string `json:"contact_email,omitempty"` // Admin contact email
+	Notes        string `dynamorm:"attr:notes" json:"notes,omitempty"`               // Admin notes about the instance
+	ContactEmail string `dynamorm:"attr:contactEmail" json:"contact_email,omitempty"` // Admin contact email
 
 	// Type marker for queries
-	Type string `json:"type"` // Always "InstanceConfig"
+	Type string `dynamorm:"attr:type" json:"type"` // Always "InstanceConfig"
 
 	// Timestamps
-	Created      time.Time `json:"created"`
-	LastModified time.Time `json:"last_modified"`
+	Created      time.Time `dynamorm:"attr:created" json:"created"`
+	LastModified time.Time `dynamorm:"attr:lastModified" json:"last_modified"`
 
 	// No TTL - configurations are permanent until explicitly deleted
 }

@@ -11,59 +11,61 @@ import (
 
 // OAuthAuthSession represents an OAuth authorization session during the auth flow
 type OAuthAuthSession struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB keys for authorization sessions
-	PK string `dynamorm:"pk" json:"-"` // OAUTH_AUTH#sessionID
-	SK string `dynamorm:"sk" json:"-"` // SESSION#sessionID
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // OAUTH_AUTH#sessionID
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // SESSION#sessionID
 
 	// GSI1 - User sessions lookup (optional - for authenticated users)
-	GSI1PK string `dynamorm:"index:user-sessions-index,pk" json:"gsi1_pk,omitempty"` // USER_OAUTH#username
-	GSI1SK string `dynamorm:"index:user-sessions-index,sk" json:"gsi1_sk,omitempty"` // created_at#sessionID
+	GSI1PK string `dynamorm:"index:user-sessions-index,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // USER_OAUTH#username
+	GSI1SK string `dynamorm:"index:user-sessions-index,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // created_at#sessionID
 
 	// GSI2 - State lookup for OAuth flow
-	GSI2PK string `dynamorm:"index:state-index,pk" json:"gsi2_pk,omitempty"` // OAUTH_STATE#state
-	GSI2SK string `dynamorm:"index:state-index,sk" json:"gsi2_sk,omitempty"` // sessionID
+	GSI2PK string `dynamorm:"index:state-index,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // OAUTH_STATE#state
+	GSI2SK string `dynamorm:"index:state-index,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // sessionID
 
 	// Core session data
-	SessionID string `json:"session_id"`
-	State     string `json:"state,omitempty"` // OAuth state parameter
+	SessionID string `dynamorm:"attr:sessionID" json:"session_id"`
+	State     string `dynamorm:"attr:state" json:"state,omitempty"` // OAuth state parameter
 
 	// OAuth flow data
-	ClientID            string   `json:"client_id"`
-	RedirectURI         string   `json:"redirect_uri"`
-	Scopes              []string `json:"scopes,omitempty"`
-	CodeChallenge       string   `json:"code_challenge,omitempty"`        // PKCE
-	CodeChallengeMethod string   `json:"code_challenge_method,omitempty"` // PKCE method
+	ClientID            string   `dynamorm:"attr:clientID" json:"client_id"`
+	RedirectURI         string   `dynamorm:"attr:redirectURI" json:"redirect_uri"`
+	Scopes              []string `dynamorm:"attr:scopes" json:"scopes,omitempty"`
+	CodeChallenge       string   `dynamorm:"attr:codeChallenge" json:"code_challenge,omitempty"`               // PKCE
+	CodeChallengeMethod string   `dynamorm:"attr:codeChallengeMethod" json:"code_challenge_method,omitempty"` // PKCE method
 
 	// User data (populated after login)
-	Username     string     `json:"username,omitempty"`      // Set after user authenticates
-	IsAuthorized bool       `json:"is_authorized"`           // User has authorized the app
-	AuthorizedAt *time.Time `json:"authorized_at,omitempty"` // When user authorized
+	Username     string     `dynamorm:"attr:username" json:"username,omitempty"`      // Set after user authenticates
+	IsAuthorized bool       `dynamorm:"attr:isAuthorized" json:"is_authorized"`       // User has authorized the app
+	AuthorizedAt *time.Time `dynamorm:"attr:authorizedAt" json:"authorized_at,omitempty"` // When user authorized
 
 	// Security and tracking
-	IPAddress string `json:"ip_address,omitempty"`
-	UserAgent string `json:"user_agent,omitempty"`
-	DeviceID  string `json:"device_id,omitempty"`
+	IPAddress string `dynamorm:"attr:ipAddress" json:"ip_address,omitempty"`
+	UserAgent string `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`
+	DeviceID  string `dynamorm:"attr:deviceID" json:"device_id,omitempty"`
 
 	// Session flow tracking
-	FlowStep  string                 `json:"flow_step"`            // login, consent, authorized, error
-	FlowData  map[string]interface{} `json:"flow_data,omitempty"`  // Additional flow context
-	ReturnURL string                 `json:"return_url,omitempty"` // URL to return to after login
+	FlowStep  string                 `dynamorm:"attr:flowStep" json:"flow_step"`            // login, consent, authorized, error
+	FlowData  map[string]interface{} `dynamorm:"attr:flowData" json:"flow_data,omitempty"`  // Additional flow context
+	ReturnURL string                 `dynamorm:"attr:returnURL" json:"return_url,omitempty"` // URL to return to after login
 
 	// Security measures
-	CSRFToken    string `json:"csrf_token"`              // CSRF protection
-	SessionNonce string `json:"session_nonce,omitempty"` // Additional entropy
-	IsSecure     bool   `json:"is_secure"`               // Created over HTTPS
+	CSRFToken    string `dynamorm:"attr:csrfToken" json:"csrf_token"`                // CSRF protection
+	SessionNonce string `dynamorm:"attr:sessionNonce" json:"session_nonce,omitempty"` // Additional entropy
+	IsSecure     bool   `dynamorm:"attr:isSecure" json:"is_secure"`                   // Created over HTTPS
 
 	// Timestamps
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
-	LastUsedAt time.Time `json:"last_used_at"`
+	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	LastUsedAt time.Time `dynamorm:"attr:lastUsedAt" json:"last_used_at"`
 
 	// TTL for automatic cleanup (OAuth sessions are short-lived)
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"` // Unix timestamp for DynamoDB TTL
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp for DynamoDB TTL
 
 	// Session validation
-	Version int `json:"version"` // For optimistic locking
+	Version int `dynamorm:"attr:version" json:"version"` // For optimistic locking
 }
 
 // TableName returns the DynamoDB table name

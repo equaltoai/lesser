@@ -6,22 +6,24 @@ import (
 
 // WebAuthnChallenge represents a temporary challenge for WebAuthn registration/authentication
 type WebAuthnChallenge struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB keys - MUST match legacy exactly
-	PK string `dynamorm:"pk" json:"-"` // CHALLENGE#challenge
-	SK string `dynamorm:"sk" json:"-"` // WEBAUTHN
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // CHALLENGE#challenge
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // WEBAUTHN
 
 	// Core fields from legacy storage.WebAuthnChallenge
-	Challenge   string    `json:"challenge"`
-	UserID      string    `json:"user_id"`
-	SessionData []byte    `json:"session_data"` // Serialized session data
-	ExpiresAt   time.Time `json:"expires_at"`
-	Type        string    `json:"type"` // "registration" or "authentication"
+	Challenge   string    `dynamorm:"attr:challenge" json:"challenge"`
+	UserID      string    `dynamorm:"attr:userID" json:"user_id"`
+	SessionData []byte    `dynamorm:"attr:sessionData" json:"session_data"` // Serialized session data
+	ExpiresAt   time.Time `dynamorm:"attr:expiresAt" json:"expires_at"`
+	Type        string    `dynamorm:"attr:type" json:"type"` // "registration" or "authentication"
 
 	// Additional fields for DynamoDB
-	ItemType string `json:"ItemType"` // "WebAuthnChallenge"
+	ItemType string `dynamorm:"attr:ItemType" json:"ItemType"` // "WebAuthnChallenge"
 
 	// TTL field for automatic expiration
-	TTL int64 `dynamorm:"ttl" json:"-"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"-"`
 }
 
 // TableName returns the DynamoDB table name

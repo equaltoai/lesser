@@ -14,48 +14,50 @@ import (
 
 // Session represents a user session with OAuth tokens
 type Session struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using session ID as partition key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "session#{sessionID}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "session#{sessionID}" (same as PK for simple key)
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "session#{sessionID}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "session#{sessionID}" (same as PK for simple key)
 
 	// GSI1 - User sessions lookup
-	GSI1PK string `dynamorm:"index:user-sessions-index,pk" json:"gsi1_pk"` // Format: "USER_SESSIONS#{userID}"
-	GSI1SK string `dynamorm:"index:user-sessions-index,sk" json:"gsi1_sk"` // Format: "{created_at}#{sessionID}"
+	GSI1PK string `dynamorm:"index:user-sessions-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_SESSIONS#{userID}"
+	GSI1SK string `dynamorm:"index:user-sessions-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{sessionID}"
 
 	// GSI2 - Access token lookup
-	GSI2PK string `dynamorm:"index:token-index,pk" json:"gsi2_pk,omitempty"` // Format: "TOKEN#{access_token_hash}"
-	GSI2SK string `dynamorm:"index:token-index,sk" json:"gsi2_sk,omitempty"` // Format: "{userID}"
+	GSI2PK string `dynamorm:"index:token-index,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TOKEN#{access_token_hash}"
+	GSI2SK string `dynamorm:"index:token-index,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "{userID}"
 
 	// Core session data
-	SessionID    string   `json:"session_id"`
-	UserID       string   `json:"user_id"`
-	AccessToken  string   `json:"access_token"`            // Stored encrypted
-	RefreshToken string   `json:"refresh_token,omitempty"` // Stored encrypted
-	Scopes       []string `json:"scopes,omitempty"`
+	SessionID    string   `dynamorm:"attr:sessionID" json:"session_id"`
+	UserID       string   `dynamorm:"attr:userID" json:"user_id"`
+	AccessToken  string   `dynamorm:"attr:accessToken" json:"access_token"`            // Stored encrypted
+	RefreshToken string   `dynamorm:"attr:refreshToken" json:"refresh_token,omitempty"` // Stored encrypted
+	Scopes       []string `dynamorm:"attr:scopes" json:"scopes,omitempty"`
 
 	// Session metadata
-	IPAddress string `json:"ip_address,omitempty"`
-	UserAgent string `json:"user_agent,omitempty"`
-	DeviceID  string `json:"device_id,omitempty"`
+	IPAddress string `dynamorm:"attr:ipAddress" json:"ip_address,omitempty"`
+	UserAgent string `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`
+	DeviceID  string `dynamorm:"attr:deviceID" json:"device_id,omitempty"`
 
 	// Security and tracking
-	IsRevoked    bool       `json:"is_revoked"`
-	RevokedAt    *time.Time `json:"revoked_at,omitempty"`
-	RevokeReason string     `json:"revoke_reason,omitempty"`
+	IsRevoked    bool       `dynamorm:"attr:isRevoked" json:"is_revoked"`
+	RevokedAt    *time.Time `dynamorm:"attr:revokedAt" json:"revoked_at,omitempty"`
+	RevokeReason string     `dynamorm:"attr:revokeReason" json:"revoke_reason,omitempty"`
 
 	// Timestamps
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
-	LastUsedAt time.Time `json:"last_used_at"`
+	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	LastUsedAt time.Time `dynamorm:"attr:lastUsedAt" json:"last_used_at"`
 
 	// TTL for automatic cleanup
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"` // Unix timestamp for DynamoDB TTL
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp for DynamoDB TTL
 
 	// Additional context data
-	Context map[string]interface{} `json:"context,omitempty"`
+	Context map[string]interface{} `dynamorm:"attr:context" json:"context,omitempty"`
 
 	// Version for optimistic locking
-	Version int `dynamorm:"version" json:"version"`
+	Version int `dynamorm:"version,attr:version" json:"version"`
 }
 
 // TableName returns the DynamoDB table name for the Session model

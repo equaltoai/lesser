@@ -7,20 +7,22 @@ import (
 
 // PublicKeyCache represents a cached public key for ActivityPub signature verification
 type PublicKeyCache struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"`
-	SK string `dynamorm:"sk" json:"-"`
+	PK string `dynamorm:"pk,attr:PK" json:"-"`
+	SK string `dynamorm:"sk,attr:SK" json:"-"`
 
 	// Fields
-	ActorURL     string    `json:"actor_url"`                    // URL of the actor
-	KeyID        string    `json:"key_id"`                       // Public key ID
-	PublicKeyPEM string    `json:"public_key_pem"`               // PEM-encoded public key
-	Algorithm    string    `json:"algorithm"`                    // Signature algorithm (rsa-sha256, etc.)
-	FetchedAt    time.Time `json:"fetched_at"`                   // When the key was fetched
-	LastUsed     time.Time `json:"last_used"`                    // Last time this key was used
-	SuccessCount int       `json:"success_count"`                // Number of successful verifications
-	FailureCount int       `json:"failure_count"`                // Number of failed verifications
-	TTL          int64     `json:"ttl,omitempty" dynamorm:"ttl"` // Unix timestamp for DynamoDB TTL
+	ActorURL     string    `dynamorm:"attr:actorURL" json:"actor_url"`         // URL of the actor
+	KeyID        string    `dynamorm:"attr:keyID" json:"key_id"`               // Public key ID
+	PublicKeyPEM string    `dynamorm:"attr:publicKeyPEM" json:"public_key_pem"` // PEM-encoded public key
+	Algorithm    string    `dynamorm:"attr:algorithm" json:"algorithm"`        // Signature algorithm (rsa-sha256, etc.)
+	FetchedAt    time.Time `dynamorm:"attr:fetchedAt" json:"fetched_at"`       // When the key was fetched
+	LastUsed     time.Time `dynamorm:"attr:lastUsed" json:"last_used"`         // Last time this key was used
+	SuccessCount int       `dynamorm:"attr:successCount" json:"success_count"` // Number of successful verifications
+	FailureCount int       `dynamorm:"attr:failureCount" json:"failure_count"` // Number of failed verifications
+	TTL          int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`      // Unix timestamp for DynamoDB TTL
 }
 
 // NewPublicKeyCache creates a new public key cache entry

@@ -7,23 +7,25 @@ import (
 
 // Move represents an account move/migration activity
 type Move struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - MUST match legacy exactly
-	PK string `dynamorm:"pk" json:"PK"` // MOVE#ACTOR#{actor}
-	SK string `dynamorm:"sk" json:"SK"` // TARGET#{target}
+	PK string `dynamorm:"pk,attr:PK" json:"PK"` // MOVE#ACTOR#{actor}
+	SK string `dynamorm:"sk,attr:SK" json:"SK"` // TARGET#{target}
 
 	// GSI1 for reverse lookups (moves to a target)
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // MOVE#TARGET#{target}
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // ACTOR#{actor}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"GSI1PK"` // MOVE#TARGET#{target}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"GSI1SK"` // ACTOR#{actor}
 
 	// Move data (nested in legacy)
-	ID        string    `json:"ID"`        // The move activity ID
-	Actor     string    `json:"Actor"`     // The old account moving
-	Target    string    `json:"Target"`    // The new account location
-	Published time.Time `json:"Published"` // When the move was announced
-	CreatedAt time.Time `json:"CreatedAt"` // Database timestamp
+	ID        string    `dynamorm:"attr:id" json:"ID"`               // The move activity ID
+	Actor     string    `dynamorm:"attr:actor" json:"Actor"`         // The old account moving
+	Target    string    `dynamorm:"attr:target" json:"Target"`       // The new account location
+	Published time.Time `dynamorm:"attr:published" json:"Published"` // When the move was announced
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"` // Database timestamp
 
 	// Optional TTL for cleanup
-	TTL *int64 `dynamorm:"ttl" json:"TTL,omitempty"`
+	TTL *int64 `dynamorm:"ttl,attr:ttl" json:"TTL,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

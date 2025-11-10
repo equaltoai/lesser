@@ -7,44 +7,46 @@ import (
 
 // StreamingPreferences model for DynamORM
 type StreamingPreferences struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB Keys - preserving legacy patterns
-	PK string `dynamorm:"pk" json:"pk"` // STREAMING_PREFS#{username}
-	SK string `dynamorm:"sk" json:"sk"` // CURRENT or VERSION#{version}#{timestamp} or DEVICE#{deviceID}
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // STREAMING_PREFS#{username}
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // CURRENT or VERSION#{version}#{timestamp} or DEVICE#{deviceID}
 
 	// GSI keys for querying
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1pk"` // USER#{username}
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1sk"` // STREAMING_PREFS#{timestamp}
-	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2pk"` // DEVICE#{deviceID}
-	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2sk"` // STREAMING_PREFS#{username}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // USER#{username}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // STREAMING_PREFS#{timestamp}
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // DEVICE#{deviceID}
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // STREAMING_PREFS#{username}
 
 	// Business fields
-	Username          string `json:"username"`
-	DeviceID          string `json:"device_id,omitempty"`
-	DefaultQuality    string `json:"default_quality"` // auto/4k/1080p/720p/480p
-	AutoQuality       bool   `json:"auto_quality"`
-	PreloadNext       bool   `json:"preload_next"`
-	DataSaverMode     bool   `json:"data_saver_mode"`
-	PreferredCodec    string `json:"preferred_codec"`    // h264/h265/av1/vp9
-	MaxBandwidthMbps  int64  `json:"max_bandwidth_mbps"` // 0 means unlimited
-	BufferSizeSeconds int    `json:"buffer_size_seconds"`
+	Username          string `dynamorm:"attr:username" json:"username"`
+	DeviceID          string `dynamorm:"attr:deviceID" json:"device_id,omitempty"`
+	DefaultQuality    string `dynamorm:"attr:defaultQuality" json:"default_quality"` // auto/4k/1080p/720p/480p
+	AutoQuality       bool   `dynamorm:"attr:autoQuality" json:"auto_quality"`
+	PreloadNext       bool   `dynamorm:"attr:preloadNext" json:"preload_next"`
+	DataSaverMode     bool   `dynamorm:"attr:dataSaverMode" json:"data_saver_mode"`
+	PreferredCodec    string `dynamorm:"attr:preferredCodec" json:"preferred_codec"`    // h264/h265/av1/vp9
+	MaxBandwidthMbps  int64  `dynamorm:"attr:maxBandwidthMbps" json:"max_bandwidth_mbps"` // 0 means unlimited
+	BufferSizeSeconds int    `dynamorm:"attr:bufferSizeSeconds" json:"buffer_size_seconds"`
 
 	// Version control
-	Version       int `json:"version"`
-	SchemaVersion int `json:"schema_version"`
+	Version       int `dynamorm:"attr:version" json:"version"`
+	SchemaVersion int `dynamorm:"attr:schemaVersion" json:"schema_version"`
 
 	// Optional features - using pointers to detect nil vs false
-	HDREnabled              *bool  `json:"hdr_enabled,omitempty"`
-	ColorSpace              string `json:"color_space,omitempty"`
-	SubtitleEnabled         *bool  `json:"subtitle_enabled,omitempty"`
-	SubtitleLanguage        string `json:"subtitle_language,omitempty"`
-	AudioDescriptionEnabled *bool  `json:"audio_description_enabled,omitempty"`
-	ClosedCaptionsEnabled   *bool  `json:"closed_captions_enabled,omitempty"`
+	HDREnabled              *bool  `dynamorm:"attr:hdrEnabled" json:"hdr_enabled,omitempty"`
+	ColorSpace              string `dynamorm:"attr:colorSpace" json:"color_space,omitempty"`
+	SubtitleEnabled         *bool  `dynamorm:"attr:subtitleEnabled" json:"subtitle_enabled,omitempty"`
+	SubtitleLanguage        string `dynamorm:"attr:subtitleLanguage" json:"subtitle_language,omitempty"`
+	AudioDescriptionEnabled *bool  `dynamorm:"attr:audioDescriptionEnabled" json:"audio_description_enabled,omitempty"`
+	ClosedCaptionsEnabled   *bool  `dynamorm:"attr:closedCaptionsEnabled" json:"closed_captions_enabled,omitempty"`
 
 	// Timestamps
-	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup of old versions
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing StreamingPreferences.

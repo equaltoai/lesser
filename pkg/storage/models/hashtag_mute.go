@@ -7,12 +7,14 @@ import (
 
 // HashtagMute represents a user muting a hashtag
 type HashtagMute struct {
-	PK        string    `dynamorm:"pk" json:"pk"` // user#{userID}
-	SK        string    `dynamorm:"sk" json:"sk"` // mute#{name}
-	Username  string    `json:"username"`
-	Hashtag   string    `json:"hashtag"`
-	CreatedAt time.Time `json:"created_at"`
-	TTL       int64     `dynamorm:"ttl" json:"ttl,omitempty"` // Optional expiration
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK        string    `dynamorm:"pk,attr:PK" json:"pk"`                  // user#{userID}
+	SK        string    `dynamorm:"sk,attr:SK" json:"sk"`                  // mute#{name}
+	Username  string    `dynamorm:"attr:username" json:"username"`
+	Hashtag   string    `dynamorm:"attr:hashtag" json:"hashtag"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // Optional expiration
 }
 
 // UpdateKeys updates the PK/SK for a hashtag mute

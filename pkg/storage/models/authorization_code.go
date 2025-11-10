@@ -6,23 +6,25 @@ import (
 
 // AuthorizationCode represents an OAuth 2.0 authorization code
 type AuthorizationCode struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB keys - MUST match legacy exactly
-	PK string `dynamorm:"pk" json:"-"` // AUTHCODE#code
-	SK string `dynamorm:"sk" json:"-"` // CODE
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // AUTHCODE#code
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // CODE
 
 	// Core fields from legacy storage.AuthorizationCode
-	Code          string    `json:"Code"`
-	ClientID      string    `json:"ClientID"`
-	Username      string    `json:"Username"`
-	CodeChallenge string    `json:"CodeChallenge"`
-	ExpiresAt     time.Time `json:"ExpiresAt"`
-	Scopes        []string  `json:"Scopes"`
+	Code          string    `dynamorm:"attr:code" json:"Code"`
+	ClientID      string    `dynamorm:"attr:clientID" json:"ClientID"`
+	Username      string    `dynamorm:"attr:username" json:"Username"`
+	CodeChallenge string    `dynamorm:"attr:codeChallenge" json:"CodeChallenge"`
+	ExpiresAt     time.Time `dynamorm:"attr:expiresAt" json:"ExpiresAt"`
+	Scopes        []string  `dynamorm:"attr:scopes" json:"Scopes"`
 
 	// Tracking fields
-	CreatedAt time.Time `json:"CreatedAt"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`
 
 	// TTL field for automatic expiration
-	TTL int64 `dynamorm:"ttl" json:"-"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"-"`
 }
 
 // TableName returns the DynamoDB table name

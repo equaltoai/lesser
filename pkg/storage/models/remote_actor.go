@@ -10,31 +10,33 @@ import (
 
 // RemoteActor represents a cached remote actor in DynamoDB using DynamORM
 type RemoteActor struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key: REMOTE_ACTOR#{handle}
-	PK string `dynamorm:"pk" json:"pk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
 	// Sort key: PROFILE
-	SK string `dynamorm:"sk" json:"sk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// Actor data (ActivityPub actor object)
-	Actor *activitypub.Actor `json:"actor"`
+	Actor *activitypub.Actor `dynamorm:"attr:actor" json:"actor"`
 
 	// Handle (user@domain format)
-	Handle string `json:"handle"`
+	Handle string `dynamorm:"attr:handle" json:"handle"`
 
 	// Domain extracted from handle
-	Domain string `json:"domain"`
+	Domain string `dynamorm:"attr:domain" json:"domain"`
 
 	// Cache expiration time
-	ExpiresAt time.Time `json:"expires_at"`
+	ExpiresAt time.Time `dynamorm:"attr:expiresAt" json:"expires_at"`
 
 	// When this was first cached
-	CachedAt time.Time `json:"cached_at"`
+	CachedAt time.Time `dynamorm:"attr:cachedAt" json:"cached_at"`
 
 	// When this was last updated
-	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for DynamoDB automatic cleanup
-	TTL int64 `dynamorm:"ttl" json:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
 }
 
 // UpdateKeys updates the key fields for DynamORM
