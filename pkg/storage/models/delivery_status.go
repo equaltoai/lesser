@@ -21,8 +21,8 @@ type DeliveryStatus struct {
 	SK string `dynamorm:"sk,attr:SK"`
 
 	// GSI fields for failed delivery queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
 
 	// Business fields
 	ActivityID   string    `dynamorm:"attr:activityID" json:"activity_id"`

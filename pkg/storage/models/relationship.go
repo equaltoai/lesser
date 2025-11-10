@@ -16,16 +16,16 @@ type RelationshipRecord struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // FOLLOWING#{followingUsername}
 
 	// GSI1 for reverse lookups (who follows me)
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"GSI1PK"` // FOLLOW#{followedUsername}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"GSI1SK"` // FOLLOWER#{followerUsername}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK"` // FOLLOW#{followedUsername}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK"` // FOLLOWER#{followerUsername}
 
 	// GSI2 for follower domain queries (Phase 2.4 - severance detection)
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsI2PK" json:"GSI2PK,omitempty"` // FOLLOWER_DOMAIN#{domain}
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsI2SK" json:"GSI2SK,omitempty"` // FOLLOWING#{username}
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2PK,omitempty"` // FOLLOWER_DOMAIN#{domain}
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2SK,omitempty"` // FOLLOWING#{username}
 
 	// GSI3 for following domain queries (Phase 2.4 - severance detection)
-	GSI3PK string `dynamorm:"index:GSI3,pk,attr:gsI3PK" json:"GSI3PK,omitempty"` // FOLLOWING_DOMAIN#{domain}
-	GSI3SK string `dynamorm:"index:GSI3,sk,attr:gsI3SK" json:"GSI3SK,omitempty"` // FOLLOWER#{username}
+	GSI3PK string `dynamorm:"index:GSI3,pk,attr:gsi3PK" json:"gsi3PK,omitempty"` // FOLLOWING_DOMAIN#{domain}
+	GSI3SK string `dynamorm:"index:GSI3,sk,attr:gsi3SK" json:"gsi3SK,omitempty"` // FOLLOWER#{username}
 
 	// Core fields from legacy
 	ActivityID string    `dynamorm:"attr:activityID" json:"ActivityID"`

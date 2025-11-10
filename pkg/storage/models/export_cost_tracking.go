@@ -16,12 +16,12 @@ type ExportCostTracking struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for user queries - USER#{username}, COST#{timestamp}
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for date range queries - EXPORT_COSTS#{date}, TS#{timestamp}
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsI2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsI2SK" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Export metadata
 	ExportID     string `dynamorm:"attr:exportID" json:"export_id"`

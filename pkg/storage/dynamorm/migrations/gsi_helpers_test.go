@@ -24,9 +24,9 @@ func TestGSIHelper_CreateGSI_PersistsRecord(t *testing.T) {
 	include := []string{"field1", "field2"}
 	definition := GSIDefinition{
 		Name:           "GSI7",
-		HashKey:        "GSI7PK",
+		HashKey:        "gsi7PK",
 		HashKeyType:    "S",
-		RangeKey:       "GSI7SK",
+		RangeKey:       "gsi7SK",
 		RangeKeyType:   "S",
 		ProjectionType: projectionTypeInclude,
 		IncludeFields:  append([]string(nil), include...),

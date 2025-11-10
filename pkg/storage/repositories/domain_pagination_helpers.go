@@ -43,11 +43,11 @@ func buildPaginationQuery(
 
 	query := db.WithContext(ctx).Model(modelPtr).
 		Index("GSI1").
-		Where("GSI1PK", "=", config.GSIPKValue).
-		OrderBy("GSI1SK", "DESC") // Newest first
+		Where("gsi1PK", "=", config.GSIPKValue).
+		OrderBy("gsi1SK", "DESC") // Newest first
 
 	if cursor != "" {
-		query = query.Where("GSI1SK", "<", cursor)
+		query = query.Where("gsi1SK", "<", cursor)
 	}
 
 	// Fetch one more item than requested to determine if there are more results
@@ -235,7 +235,7 @@ func genericDeleteByID[T DomainItem](ctx context.Context, db core.DB, _ *zap.Log
 	var items []T
 	err := db.WithContext(ctx).Model(modelPtr).
 		Index("GSI1").
-		Where("GSI1PK", "=", gsipkValue).
+		Where("gsi1PK", "=", gsipkValue).
 		Limit(100). // Need to scan to find by ID
 		All(&items)
 

@@ -60,8 +60,8 @@ func TestRateLimitRepository_CheckCommunityNoteRateLimit_WithinLimit(t *testing.
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.CommunityNote")).Return(mockQuery)
 	mockQuery.On("Index", "gsi3").Return(mockQuery)
-	mockQuery.On("Where", "GSI3PK", "=", "AUTHOR#test-user#NOTES").Return(mockQuery)
-	mockQuery.On("Where", "GSI3SK", ">", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("Where", "gsi3PK", "=", "AUTHOR#test-user#NOTES").Return(mockQuery)
+	mockQuery.On("Where", "gsi3SK", ">", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.CommunityNote")).Run(func(args mock.Arguments) {
 		result := args.Get(0).(*[]*models.CommunityNote)
 		*result = notes

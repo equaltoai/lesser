@@ -130,7 +130,7 @@ func (r *FederationRepository) UpsertInstanceInfo(ctx context.Context, info *sto
 func (r *FederationRepository) GetKnownInstances(ctx context.Context, limit int, _ string) ([]*storage.InstanceInfo, string, error) {
 	query := r.db.WithContext(ctx).Model(&models.FederationInstance{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", "FEDERATION_ACTIVE").
+		Where("gsi1PK", "=", "FEDERATION_ACTIVE").
 		Limit(limit)
 
 	var instances []models.FederationInstance
@@ -172,9 +172,9 @@ func (r *FederationRepository) GetFederationStatistics(ctx context.Context, star
 
 	err := r.db.WithContext(ctx).Model(&models.FederationInstance{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", "FEDERATION_ACTIVE").
-		Where("GSI1SK", ">=", startTime.Format(time.RFC3339)).
-		Where("GSI1SK", "<=", endTime.Format(time.RFC3339)).
+		Where("gsi1PK", "=", "FEDERATION_ACTIVE").
+		Where("gsi1SK", ">=", startTime.Format(time.RFC3339)).
+		Where("gsi1SK", "<=", endTime.Format(time.RFC3339)).
 		Scan(&instances)
 
 	if err != nil {
@@ -522,7 +522,7 @@ func (r *FederationRepository) GetFederationNodes(ctx context.Context, depth int
 
 	err := r.db.WithContext(ctx).Model(&models.FederationNode{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", "FEDERATION_ACTIVE").
+		Where("gsi1PK", "=", "FEDERATION_ACTIVE").
 		Limit(100). // Limit to 100 nodes initially
 		Scan(&nodes)
 
@@ -567,7 +567,7 @@ func (r *FederationRepository) GetFederationNodesByHealth(ctx context.Context, h
 
 	query := r.db.WithContext(ctx).Model(&models.FederationNode{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", "FEDERATION_ACTIVE")
+		Where("gsi1PK", "=", "FEDERATION_ACTIVE")
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -1021,7 +1021,7 @@ func (r *FederationRepository) GetInstanceConnections(ctx context.Context, domai
 
 	err := r.db.WithContext(ctx).Model(&models.InstanceConnection{}).
 		Index("gsi2").
-		Where("GSI2PK", "=", pkValue).
+		Where("gsi2PK", "=", pkValue).
 		Limit(100).
 		Scan(&connections)
 
@@ -1579,8 +1579,8 @@ func (r *FederationRepository) GetRecentInstanceConnections(ctx context.Context,
 
 	err := r.db.WithContext(ctx).Model(&models.InstanceConnection{}).
 		Index("gsi2").
-		Where("GSI2PK", "=", fmt.Sprintf(storage.InstanceConnectionsKey, domain)).
-		Where("GSI2SK", ">", fmt.Sprintf("%d", cutoffTime.Unix())).
+		Where("gsi2PK", "=", fmt.Sprintf(storage.InstanceConnectionsKey, domain)).
+		Where("gsi2SK", ">", fmt.Sprintf("%d", cutoffTime.Unix())).
 		Limit(1000).
 		Scan(&connections)
 
@@ -2196,8 +2196,8 @@ func (r *FederationRepository) ListFailedDeliveries(ctx context.Context, limit i
 	var deliveries []models.DeliveryStatus
 	err := r.db.WithContext(ctx).Model(&models.DeliveryStatus{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", "FAILED_DELIVERIES").
-		Where("GSI1SK", "<=", fmt.Sprintf("%d", now.Unix())).
+		Where("gsi1PK", "=", "FAILED_DELIVERIES").
+		Where("gsi1SK", "<=", fmt.Sprintf("%d", now.Unix())).
 		Limit(limit).
 		Scan(&deliveries)
 
@@ -2330,12 +2330,12 @@ func (r *FederationRepository) getActivitiesFromBoxItems(
 ) ([]*activitypub.Activity, string, error) {
 	query := r.db.WithContext(ctx).Model(modelType).
 		Index("gsi1").
-		Where("GSI1PK", "=", fmt.Sprintf("%s#%s", boxType, actorID)).
+		Where("gsi1PK", "=", fmt.Sprintf("%s#%s", boxType, actorID)).
 		Limit(limit)
 
 	// Add cursor if provided
 	if cursor != "" {
-		query = query.Where("GSI1SK", "<", cursor)
+		query = query.Where("gsi1SK", "<", cursor)
 	}
 
 	// Execute query based on model type
@@ -2482,7 +2482,7 @@ func (r *FederationRepository) GetStrongestConnectionsByType(ctx context.Context
 
 	// Filter by connection type if specified and not "all"
 	if connectionType != "" && connectionType != ConnectionTypeAll {
-		query = query.Where("GSI2PK", "begins_with", "INSTANCE#")
+		query = query.Where("gsi2PK", "begins_with", "INSTANCE#")
 	}
 
 	err := query.Scan(&edges)
@@ -2624,16 +2624,16 @@ func (r *FederationRepository) GetDetailedMetricsByPeriod(ctx context.Context, p
 	// Use GSI2 to query by period across all domains
 	query := r.db.WithContext(ctx).Model(&models.FederationAnalyticsTimeSeries{}).
 		Index("gsi2").
-		Where("GSI2PK", "=", fmt.Sprintf("PERIOD#%s", period))
+		Where("gsi2PK", "=", fmt.Sprintf("PERIOD#%s", period))
 
 	// Add time range filter
 	if !startTime.IsZero() {
-		query = query.Where("GSI2SK", ">=", startTime.Format(time.RFC3339))
+		query = query.Where("gsi2SK", ">=", startTime.Format(time.RFC3339))
 	}
 	if !endTime.IsZero() && !startTime.IsZero() {
 		// For range queries, we need to construct the sort key properly
 		endKey := fmt.Sprintf("%s#zzzz", endTime.Format(time.RFC3339)) // zzzz ensures we get all domains
-		query = query.Where("GSI2SK", "<=", endKey)
+		query = query.Where("gsi2SK", "<=", endKey)
 	}
 
 	if limit > 0 {
@@ -3202,11 +3202,11 @@ func (r *FederationRepository) fetchActivitiesForDay(ctx context.Context, day, s
 func (r *FederationRepository) fetchActivityPage(ctx context.Context, dayKey, lastSK string, pageLimit int) ([]models.FederationCostActivity, error) {
 	query := r.db.WithContext(ctx).Model(&models.FederationCostActivity{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", dayKey).
+		Where("gsi1PK", "=", dayKey).
 		Limit(pageLimit + 1) // Request one extra to detect more pages
 
 	if lastSK != "" {
-		query = query.Where("GSI1SK", ">", lastSK)
+		query = query.Where("gsi1SK", ">", lastSK)
 	}
 
 	var activities []models.FederationCostActivity

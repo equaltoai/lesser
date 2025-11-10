@@ -16,8 +16,8 @@ type ThreadContext struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // CONTEXT#{statusID}
 
 	// GSI for querying by status
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"-"` // STATUS#{statusID}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"-"` // THREAD
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // STATUS#{statusID}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // THREAD
 
 	// Thread data
 	RootStatusID   string     `dynamorm:"attr:rootStatusID" json:"root_status_id"`              // The root/original status ID

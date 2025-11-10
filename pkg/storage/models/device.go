@@ -14,12 +14,12 @@ type Device struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // DEVICE#deviceID
 
 	// GSI for querying devices by last seen
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"-"` // USER#username#DEVICES
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"-"` // {lastSeenAt}#{deviceID}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // USER#username#DEVICES
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // {lastSeenAt}#{deviceID}
 
 	// GSI for trust level monitoring
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsI2PK" json:"-"` // TRUST_LEVEL#{trustLevel}
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsI2SK" json:"-"` // {lastSeenAt}#{deviceID}
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"-"` // TRUST_LEVEL#{trustLevel}
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"-"` // {lastSeenAt}#{deviceID}
 
 	// Device data
 	DeviceID      string    `dynamorm:"attr:deviceID" json:"device_id"`

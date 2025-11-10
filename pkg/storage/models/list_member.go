@@ -14,8 +14,8 @@ type ListMember struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // accountID
 
 	// GSI1 for reverse lookup (what lists is an account in)
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"GSI1PK,omitempty"` // ACCOUNT_LISTS#accountID
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"GSI1SK,omitempty"` // listID#username
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"` // ACCOUNT_LISTS#accountID
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"` // listID#username
 
 	// Core fields
 	ListID       string    `dynamorm:"attr:listID" json:"list_id"`

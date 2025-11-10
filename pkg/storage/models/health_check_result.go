@@ -11,8 +11,8 @@ type HealthCheckResult struct {
 
 	PK            string                 `dynamorm:"pk,attr:PK" json:"pk"`                 // HEALTH_CHECK#timestamp
 	SK            string                 `dynamorm:"sk,attr:SK" json:"sk"`                 // RESULT#component_type#identifier
-	GSI1PK        string                 `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk"` // COMPONENT#component_type#identifier
-	GSI1SK        string                 `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk"` // timestamp
+	GSI1PK        string                 `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // COMPONENT#component_type#identifier
+	GSI1SK        string                 `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // timestamp
 	Component     string                 `dynamorm:"attr:component" json:"component"`          // component identifier
 	ComponentType string                 `dynamorm:"attr:componentType" json:"component_type"` // "dynamodb", "lambda", "sqs"
 	Status        string                 `dynamorm:"attr:status" json:"status"`               // "healthy", "warning", "critical", "unknown"
@@ -69,8 +69,8 @@ type HealthCheckSummaryResult struct {
 
 	PK             string    `dynamorm:"pk,attr:PK" json:"pk"`                 // HEALTH_SUMMARY#date
 	SK             string    `dynamorm:"sk,attr:SK" json:"sk"`                 // SUMMARY#hour
-	GSI1PK         string    `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk"` // DATE#date
-	GSI1SK         string    `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk"` // HOUR#hour
+	GSI1PK         string    `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // DATE#date
+	GSI1SK         string    `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // HOUR#hour
 	Date           string    `dynamorm:"attr:date" json:"date"`                     // YYYY-MM-DD
 	Hour           int       `dynamorm:"attr:hour" json:"hour"`                     // 0-23
 	TotalChecks    int       `dynamorm:"attr:totalChecks" json:"total_checks"`

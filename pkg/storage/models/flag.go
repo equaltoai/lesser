@@ -15,10 +15,10 @@ type Flag struct {
 	PK string `dynamorm:"pk,attr:PK"` // FLAG#objectID (first object if multiple)
 	SK string `dynamorm:"sk,attr:SK"` // TIME#timestamp#flagID
 
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK"` // ACTOR#actorID
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK"` // FLAG#timestamp
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsI2PK"` // FLAG_STATUS#status
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsI2SK"` // TIME#timestamp
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK"` // ACTOR#actorID
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK"` // FLAG#timestamp
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK"` // FLAG_STATUS#status
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK"` // TIME#timestamp
 
 	// Flag fields
 	ID         string     `dynamorm:"attr:id" json:"id"`                        // The flag activity ID

@@ -14,8 +14,8 @@ type InstanceMetrics struct {
 	SK string `dynamorm:"sk,attr:SK"`
 
 	// GSI fields for time-based queries
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK"`
 
 	// Business fields from legacy
 	Date       string    `dynamorm:"attr:date" json:"date"`               // YYYY-MM-DD format

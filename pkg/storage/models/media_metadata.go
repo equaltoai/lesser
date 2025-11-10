@@ -18,8 +18,8 @@ type MediaMetadata struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // METADATA
 
 	// GSI keys for queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1pk"` // STATUS#{status}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1sk"` // PROCESSED#{timestamp}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // STATUS#{status}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // PROCESSED#{timestamp}
 
 	// Media identification
 	MediaID string `dynamorm:"attr:mediaID" json:"media_id"`

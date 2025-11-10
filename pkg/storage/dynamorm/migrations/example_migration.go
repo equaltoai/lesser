@@ -67,9 +67,9 @@ func NewExampleGSIMigration() Migration {
 		"lesser-production", // table name
 		GSIDefinition{
 			Name:           "GSI7",
-			HashKey:        "GSI7PK",
+			HashKey:        "gsi7PK",
 			HashKeyType:    "S",
-			RangeKey:       "GSI7SK",
+			RangeKey:       "gsi7SK",
 			RangeKeyType:   "S",
 			ProjectionType: "ALL",
 		},

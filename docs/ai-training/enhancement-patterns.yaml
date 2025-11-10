@@ -293,8 +293,8 @@ database_schema_patterns:
           CreatedAt   time.Time `dynamorm:"created_at"`
           
           // GSI projections
-          GSI1PK      string    `dynamorm:"gsi1pk"`
-          GSI1SK      string    `dynamorm:"gsi1sk"`
+          gsi1PK      string    `dynamorm:"gsi1pk"`
+          gsi1SK      string    `dynamorm:"gsi1sk"`
       }
 
   adding_relationship:

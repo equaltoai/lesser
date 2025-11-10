@@ -133,10 +133,10 @@ func (r *RoutingMetricsRepository) GetGlobalMetricsWindows(ctx context.Context, 
 
 	err := r.globalMetricsRepo.GetDB().WithContext(ctx).Model(&models.GlobalMetricsWindow{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", "METRICS#GLOBAL").
-		Where("GSI1SK", ">", sinceKey).
+		Where("gsi1PK", "=", "METRICS#GLOBAL").
+		Where("gsi1SK", ">", sinceKey).
 		Limit(limit).
-		OrderBy("GSI1SK", "DESC"). // Most recent first
+		OrderBy("gsi1SK", "DESC"). // Most recent first
 		All(&windows)
 
 	if err != nil {

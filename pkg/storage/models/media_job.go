@@ -20,12 +20,12 @@ type MediaJob struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "JOB#{jobID}"
 
 	// GSI1 - User jobs lookup
-	GSI1PK string `dynamorm:"index:user-jobs-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "USER_JOBS#{userID}"
-	GSI1SK string `dynamorm:"index:user-jobs-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{created_at}#{jobID}"
+	GSI1PK string `dynamorm:"index:user-jobs-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_JOBS#{userID}"
+	GSI1SK string `dynamorm:"index:user-jobs-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{jobID}"
 
 	// GSI2 - Status-based queries
-	GSI2PK string `dynamorm:"index:status-index,pk,attr:gsI2PK" json:"gsi2_pk"` // Format: "STATUS#{status}"
-	GSI2SK string `dynamorm:"index:status-index,sk,attr:gsI2SK" json:"gsi2_sk"` // Format: "UPDATED#{updated_at}"
+	GSI2PK string `dynamorm:"index:status-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "STATUS#{status}"
+	GSI2SK string `dynamorm:"index:status-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "UPDATED#{updated_at}"
 
 	// Core job data
 	JobID           string         `dynamorm:"attr:jobID" json:"job_id"`

@@ -17,8 +17,8 @@ type Conversation struct {
 
 	// GSI1 is used for participant records (additional records per participant)
 	// Note: The main conversation record doesn't use GSI1, only participant records do
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"GSI1PK,omitempty"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"GSI1SK,omitempty"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"`
 
 	// Core fields from legacy
 	ID           string    `dynamorm:"attr:id" json:"id"`
@@ -100,8 +100,8 @@ type ConversationParticipantRecord struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // timestamp#conversationID (for sorting by recent)
 
 	// GSI1 for reverse lookup (find participants by conversation)
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"GSI1PK"` // CONVERSATION#conversationID
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"GSI1SK"` // PARTICIPANT#username
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK"` // CONVERSATION#conversationID
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK"` // PARTICIPANT#username
 
 	// Embed the full conversation data
 	*Conversation `dynamorm:"attr:conversation" json:",inline"`
@@ -149,8 +149,8 @@ type ConversationParticipantKey struct {
 
 	PK     string `dynamorm:"pk,attr:PK" json:"PK"`
 	SK     string `dynamorm:"sk,attr:SK" json:"SK"`
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"GSI1PK"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"GSI1SK,omitempty"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"`
 
 	ConversationID string `dynamorm:"attr:conversationID" json:"conversation_id"`
 }

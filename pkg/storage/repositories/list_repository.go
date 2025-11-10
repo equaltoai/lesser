@@ -156,12 +156,12 @@ func (r *ListRepository) GetListsForUserPaginated(ctx context.Context, username 
 
 	query := r.db.WithContext(ctx).Model(&models.List{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER_LISTS#%s", username)).
-		OrderBy("GSI1SK", "ASC")
+		Where("gsi1PK", "=", fmt.Sprintf("USER_LISTS#%s", username)).
+		OrderBy("gsi1SK", "ASC")
 
 	// Resume from the provided cursor when set
 	if cursor != "" {
-		query = query.Where("GSI1SK", ">", cursor)
+		query = query.Where("gsi1SK", ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results
@@ -208,8 +208,8 @@ func (r *ListRepository) GetUserLists(ctx context.Context, username string, opts
 	// Query lists with pagination
 	query := r.db.WithContext(ctx).Model(&models.List{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER_LISTS#%s", username)).
-		OrderBy("GSI1SK", "ASC")
+		Where("gsi1PK", "=", fmt.Sprintf("USER_LISTS#%s", username)).
+		OrderBy("gsi1SK", "ASC")
 
 	if opts.Limit <= 0 {
 		opts.Limit = 20
@@ -217,7 +217,7 @@ func (r *ListRepository) GetUserLists(ctx context.Context, username string, opts
 	query = query.Limit(opts.Limit)
 
 	if opts.Cursor != "" {
-		query = query.Where("GSI1SK", ">", opts.Cursor)
+		query = query.Where("gsi1SK", ">", opts.Cursor)
 	}
 
 	var lists []models.List
@@ -280,7 +280,7 @@ func (r *ListRepository) GetListsByMember(ctx context.Context, memberUsername st
 	// First get list IDs where user is a member
 	query := r.db.WithContext(ctx).Model(&models.ListMember{}).
 		Index("GSI2"). // Assuming GSI2 is AccountID-based index
-		Where("GSI2PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", memberUsername))
+		Where("gsi2PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", memberUsername))
 
 	if opts.Limit <= 0 {
 		opts.Limit = 20
@@ -325,7 +325,7 @@ func (r *ListRepository) CountUserLists(ctx context.Context, username string) (i
 	// BaseRepository.Count works with main table PK only
 	count, err := r.db.WithContext(ctx).Model(&models.List{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER_LISTS#%s", username)).
+		Where("gsi1PK", "=", fmt.Sprintf("USER_LISTS#%s", username)).
 		Count()
 
 	if err != nil {
@@ -481,12 +481,12 @@ func (r *ListRepository) GetAccountListsPaginated(ctx context.Context, accountID
 	// Query the reverse index
 	query := r.db.WithContext(ctx).Model(&models.ListMember{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)).
-		OrderBy("GSI1SK", "ASC")
+		Where("gsi1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)).
+		OrderBy("gsi1SK", "ASC")
 
 	// Resume from the provided cursor when set
 	if cursor != "" {
-		query = query.Where("GSI1SK", ">", cursor)
+		query = query.Where("gsi1SK", ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results
@@ -542,7 +542,7 @@ func (r *ListRepository) GetAccountListsForUser(ctx context.Context, accountID, 
 	var members []models.ListMember
 	err := r.db.WithContext(ctx).Model(&models.ListMember{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)).
+		Where("gsi1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)).
 		Scan(&members)
 
 	if err != nil {
@@ -594,7 +594,7 @@ func (r *ListRepository) RemoveAccountFromAllLists(ctx context.Context, accountI
 	var members []models.ListMember
 	err := r.db.WithContext(ctx).Model(&models.ListMember{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)).
+		Where("gsi1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)).
 		Scan(&members)
 
 	if err != nil {
@@ -759,7 +759,7 @@ func (r *ListRepository) GetListTimeline(ctx context.Context, listID string, opt
 		var statuses []models.Status
 		query := r.db.WithContext(ctx).Model(&models.Status{}).
 			Index("GSI1").
-			Where("GSI1PK", "=", fmt.Sprintf("USER_TIMELINE#%s", username)).
+			Where("gsi1PK", "=", fmt.Sprintf("USER_TIMELINE#%s", username)).
 			Limit(opts.Limit)
 
 		if opts.Cursor != "" {

@@ -11,8 +11,8 @@ type FederationSeverance struct {
 
 	PK     string `dynamorm:"pk,attr:PK"`
 	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
 
 	UserID       string    `dynamorm:"attr:userID" json:"user_id"`
 	Domain       string    `dynamorm:"attr:domain" json:"domain"`
@@ -101,8 +101,8 @@ type FederationTimeSeries struct {
 
 	PK     string `dynamorm:"pk,attr:PK"`
 	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
 
 	Domain         string                 `dynamorm:"attr:domain" json:"domain"`
 	Period         string                 `dynamorm:"attr:period" json:"period"` // "hourly", "daily", "weekly"

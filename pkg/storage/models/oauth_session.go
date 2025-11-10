@@ -18,12 +18,12 @@ type OAuthAuthSession struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // SESSION#sessionID
 
 	// GSI1 - User sessions lookup (optional - for authenticated users)
-	GSI1PK string `dynamorm:"index:user-sessions-index,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // USER_OAUTH#username
-	GSI1SK string `dynamorm:"index:user-sessions-index,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // created_at#sessionID
+	GSI1PK string `dynamorm:"index:user-sessions-index,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // USER_OAUTH#username
+	GSI1SK string `dynamorm:"index:user-sessions-index,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // created_at#sessionID
 
 	// GSI2 - State lookup for OAuth flow
-	GSI2PK string `dynamorm:"index:state-index,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // OAUTH_STATE#state
-	GSI2SK string `dynamorm:"index:state-index,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // sessionID
+	GSI2PK string `dynamorm:"index:state-index,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // OAUTH_STATE#state
+	GSI2SK string `dynamorm:"index:state-index,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // sessionID
 
 	// Core session data
 	SessionID string `dynamorm:"attr:sessionID" json:"session_id"`

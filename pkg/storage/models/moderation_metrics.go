@@ -14,8 +14,8 @@ type ModerationMetricsEntry struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "STATS#{hour}#{metric_type}"
 
 	// GSI1 - Metric type queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // Format: "METRIC_TYPE#{metric_type}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "DATE#{YYYY-MM-DD}#{hour}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "METRIC_TYPE#{metric_type}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "DATE#{YYYY-MM-DD}#{hour}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "METRIC_STATS"
@@ -75,8 +75,8 @@ type ModerationFalsePositive struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "FP#{content_id}"
 
 	// GSI1 - False positive queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // "FALSE_POSITIVES"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "DATE#{YYYY-MM-DD}#{timestamp}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "FALSE_POSITIVES"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "DATE#{YYYY-MM-DD}#{timestamp}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "FALSE_POSITIVE"
@@ -136,8 +136,8 @@ type ModerationDecisionSample struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "{unix_nano}#{content_id}"
 
 	// GSI1 - Decision type queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // Format: "DECISION#{decision}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "DATE#{YYYY-MM-DD}#{timestamp}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "DECISION#{decision}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "DATE#{YYYY-MM-DD}#{timestamp}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "DECISION_SAMPLE"
@@ -200,8 +200,8 @@ type ModerationPatternStats struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "STATS"
 
 	// GSI1 - Hit count ranking
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // "PATTERN_HITS"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "{hit_count_padded}#{pattern_id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "PATTERN_HITS"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "{hit_count_padded}#{pattern_id}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "PATTERN_STATS"

@@ -16,12 +16,12 @@ type HashtagStatusIndex struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "STATUS#{timestamp_desc}#{status_id}"
 
 	// GSI1 - Status-to-hashtag reverse index for cleanup
-	GSI1PK string `dynamorm:"index:status-hashtag-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "STATUS_HASHTAGS#{status_id}"
-	GSI1SK string `dynamorm:"index:status-hashtag-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "HASHTAG#{hashtag_name}"
+	GSI1PK string `dynamorm:"index:status-hashtag-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "STATUS_HASHTAGS#{status_id}"
+	GSI1SK string `dynamorm:"index:status-hashtag-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "HASHTAG#{hashtag_name}"
 
 	// GSI2 - Timeline by visibility for filtering
-	GSI2PK string `dynamorm:"index:hashtag-visibility-index,pk,attr:gsI2PK" json:"gsi2_pk"` // Format: "HASHTAG_VIS#{hashtag_name}#{visibility}"
-	GSI2SK string `dynamorm:"index:hashtag-visibility-index,sk,attr:gsI2SK" json:"gsi2_sk"` // Format: "TIMELINE#{timestamp_desc}"
+	GSI2PK string `dynamorm:"index:hashtag-visibility-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "HASHTAG_VIS#{hashtag_name}#{visibility}"
+	GSI2SK string `dynamorm:"index:hashtag-visibility-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "TIMELINE#{timestamp_desc}"
 
 	// Status data
 	StatusID     string    `dynamorm:"attr:statusID" json:"status_id"`
@@ -89,12 +89,12 @@ type HashtagTrendingData struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "HASHTAG#{score_padded}#{hashtag_name}"
 
 	// GSI1 - Query by hashtag across time periods
-	GSI1PK string `dynamorm:"index:hashtag-trending-history,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "HASHTAG_TREND#{hashtag_name}"
-	GSI1SK string `dynamorm:"index:hashtag-trending-history,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "TIME#{timestamp}"
+	GSI1PK string `dynamorm:"index:hashtag-trending-history,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "HASHTAG_TREND#{hashtag_name}"
+	GSI1SK string `dynamorm:"index:hashtag-trending-history,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "TIME#{timestamp}"
 
 	// GSI2 - Query trending for time period
-	GSI2PK string `dynamorm:"index:trending-by-period,pk,attr:gsI2PK" json:"gsi2_pk"` // Format: "TRENDING_PERIOD#{time_window}"
-	GSI2SK string `dynamorm:"index:trending-by-period,sk,attr:gsI2SK" json:"gsi2_sk"` // Format: "SCORE#{score_padded}#{hashtag_name}"
+	GSI2PK string `dynamorm:"index:trending-by-period,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "TRENDING_PERIOD#{time_window}"
+	GSI2SK string `dynamorm:"index:trending-by-period,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "SCORE#{score_padded}#{hashtag_name}"
 
 	// Hashtag info
 	HashtagName string    `dynamorm:"attr:hashtagName" json:"hashtag_name"`
@@ -159,8 +159,8 @@ type HashtagSearchCache struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "CACHE#{params_hash}"
 
 	// GSI1 - Cleanup by creation time
-	GSI1PK string `dynamorm:"index:search-cache-cleanup,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "SEARCH_CACHE"
-	GSI1SK string `dynamorm:"index:search-cache-cleanup,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "CREATED#{timestamp}"
+	GSI1PK string `dynamorm:"index:search-cache-cleanup,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "SEARCH_CACHE"
+	GSI1SK string `dynamorm:"index:search-cache-cleanup,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "CREATED#{timestamp}"
 
 	// Cache data
 	Query        string                 `dynamorm:"attr:query" json:"query"`

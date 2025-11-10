@@ -15,8 +15,8 @@ type Hashtag struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "METADATA"
 
 	// GSI3 - Hashtag search by prefix
-	GSI3PK string `dynamorm:"index:hashtag-search-index,pk,attr:gsI3PK" json:"gsi3_pk"` // Format: "HASHTAG_SEARCH#{first_2_chars}"
-	GSI3SK string `dynamorm:"index:hashtag-search-index,sk,attr:gsI3SK" json:"gsi3_sk"` // Format: "{hashtag_name}"
+	GSI3PK string `dynamorm:"index:hashtag-search-index,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "HASHTAG_SEARCH#{first_2_chars}"
+	GSI3SK string `dynamorm:"index:hashtag-search-index,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{hashtag_name}"
 
 	// Core hashtag data
 	Name       string    `dynamorm:"attr:name" json:"name"`                   // Hashtag name (lowercase, no #)

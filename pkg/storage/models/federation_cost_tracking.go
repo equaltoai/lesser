@@ -16,12 +16,12 @@ type FederationCostTracking struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for time-based queries - FED_COSTS#{date}, TS#{timestamp}
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for activity type queries - FED_TYPE#{activity_type}, DOMAIN#{domain}#{timestamp}
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsI2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsI2SK" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Federation activity metadata
 	ActivityID     string `dynamorm:"attr:activityID" json:"activity_id"`
@@ -362,8 +362,8 @@ type FederationBudget struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for active budget queries - ACTIVE_BUDGETS, DOMAIN#{domain}#{period}
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// Budget configuration
 	Domain string `dynamorm:"attr:domain" json:"domain"`

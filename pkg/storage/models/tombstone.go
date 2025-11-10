@@ -14,12 +14,12 @@ type Tombstone struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // TOMBSTONE
 
 	// GSI keys for querying tombstones by actor and type
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"GSI1PK"` // ACTOR#{actor_id}#TOMBSTONES
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"GSI1SK"` // DELETED#{timestamp}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK"` // ACTOR#{actor_id}#TOMBSTONES
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK"` // DELETED#{timestamp}
 
 	// GSI for querying tombstones by type
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsI2PK" json:"GSI2PK"` // TOMBSTONE#{former_type}
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsI2SK" json:"GSI2SK"` // DELETED#{timestamp}
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2PK"` // TOMBSTONE#{former_type}
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2SK"` // DELETED#{timestamp}
 
 	// Core fields from legacy
 	ID         string    `dynamorm:"attr:id" json:"id"`                          // Original object ID

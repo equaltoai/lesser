@@ -107,6 +107,16 @@ func (m *MockQuery) OrFilterGroup(fn func(core.Query)) core.Query {
 	return args.Get(0).(core.Query)
 }
 
+func (m *MockQuery) WithCondition(field, operator string, value any) core.Query {
+	args := m.Called(field, operator, value)
+	return args.Get(0).(core.Query)
+}
+
+func (m *MockQuery) WithConditionExpression(expr string, values map[string]any) core.Query {
+	args := m.Called(expr, values)
+	return args.Get(0).(core.Query)
+}
+
 func (m *MockQuery) OrderBy(field string, order string) core.Query {
 	args := m.Called(field, order)
 	return args.Get(0).(core.Query)
@@ -187,6 +197,16 @@ func (m *MockQuery) Cursor(cursor string) core.Query {
 	return args.Get(0).(core.Query)
 }
 
+func (m *MockQuery) IfExists() core.Query {
+	args := m.Called()
+	return args.Get(0).(core.Query)
+}
+
+func (m *MockQuery) IfNotExists() core.Query {
+	args := m.Called()
+	return args.Get(0).(core.Query)
+}
+
 func (m *MockQuery) SetCursor(cursor string) error {
 	args := m.Called(cursor)
 	return args.Error(0)
@@ -215,6 +235,24 @@ func (m *MockQuery) ScanAllSegments(dest any, totalSegments int32) error {
 func (m *MockQuery) BatchGet(keys []any, dest any) error {
 	args := m.Called(keys, dest)
 	return args.Error(0)
+}
+
+func (m *MockQuery) BatchGetWithOptions(keys []any, dest any, opts *core.BatchGetOptions) error {
+	args := m.Called(keys, dest, opts)
+	return args.Error(0)
+}
+
+func (m *MockQuery) BatchGetBuilder() core.BatchGetBuilder {
+	if len(m.ExpectedCalls) == 0 {
+		return nil
+	}
+	args := m.Called()
+	if len(args) > 0 {
+		if builder, ok := args.Get(0).(core.BatchGetBuilder); ok {
+			return builder
+		}
+	}
+	return nil
 }
 
 func (m *MockQuery) BatchCreate(items any) error {

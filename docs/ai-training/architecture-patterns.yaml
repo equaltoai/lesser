@@ -205,50 +205,50 @@ system_components:
       global_secondary_indexes:
         GSI1:
           purpose: "Timeline queries"
-          pk: "GSI1PK"
-          sk: "GSI1SK"
+          pk: "gsi1PK"
+          sk: "gsi1SK"
           projection: "ALL"
           
         GSI2:
           purpose: "Federation lookups"
-          pk: "GSI2PK"
-          sk: "GSI2SK"
+          pk: "gsi2PK"
+          sk: "gsi2SK"
           projection: "ALL"
           
         GSI3:
           purpose: "Search indices"
-          pk: "GSI3PK"
-          sk: "GSI3SK"
+          pk: "gsi3PK"
+          sk: "gsi3SK"
           projection: "INCLUDE"
           
         GSI4:
           purpose: "Notification queries"
-          pk: "GSI4PK"
-          sk: "GSI4SK"
+          pk: "gsi4PK"
+          sk: "gsi4SK"
           projection: "ALL"
           
         GSI5:
           purpose: "Media references"
-          pk: "GSI5PK"
-          sk: "GSI5SK"
+          pk: "gsi5PK"
+          sk: "gsi5SK"
           projection: "KEYS_ONLY"
           
         GSI6:
           purpose: "Moderation queue"
-          pk: "GSI6PK"
-          sk: "GSI6SK"
+          pk: "gsi6PK"
+          sk: "gsi6SK"
           projection: "ALL"
           
         GSI7:
           purpose: "Cost tracking"
-          pk: "GSI7PK"
-          sk: "GSI7SK"
+          pk: "gsi7PK"
+          sk: "gsi7SK"
           projection: "ALL"
           
         GSI8:
           purpose: "Analytics queries"
-          pk: "GSI8PK"
-          sk: "GSI8SK"
+          pk: "gsi8PK"
+          sk: "gsi8SK"
           projection: "ALL"
 
   storage_layer:

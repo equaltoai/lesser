@@ -17,16 +17,16 @@ type NotificationCostTracking struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for user queries - USER#{username}, COST#{timestamp}
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for delivery method queries - METHOD#{delivery_method}, TIMESTAMP#{timestamp}
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// GSI3 for daily aggregation - DAILY#{date}, COST#{timestamp}
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsI3PK" json:"gsi3_pk"`
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsI3SK" json:"gsi3_sk"`
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"`
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"`
 
 	// Core tracking fields
 	ID               string `dynamorm:"attr:id" json:"id"`

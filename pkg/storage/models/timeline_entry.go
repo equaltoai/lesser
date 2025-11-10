@@ -16,8 +16,8 @@ type TimelineEntry struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // {timestamp}#{entryID}
 
 	// GSI for public timeline queries
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"-"` // TIMELINE#PUBLIC#{local/federated}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"-"` // {timestamp}#{entryID}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // TIMELINE#PUBLIC#{local/federated}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // {timestamp}#{entryID}
 
 	// Entry data
 	TimelineType string    `dynamorm:"attr:timelineType" json:"timeline_type"` // HOME, PUBLIC, LIST, DIRECT

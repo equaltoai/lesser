@@ -14,8 +14,8 @@ type CloudWatchMetrics struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // METRICS#{timestamp}
 
 	// GSI keys for time-based queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1pk"` // METRIC_DATE#{date}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1sk"` // {serviceName}#{timestamp}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // METRIC_DATE#{date}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {serviceName}#{timestamp}
 
 	// Business fields
 	ServiceName string    `dynamorm:"attr:serviceName" json:"service_name"`

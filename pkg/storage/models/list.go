@@ -16,8 +16,8 @@ type List struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // METADATA
 
 	// GSI1 for user's lists index
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"GSI1PK,omitempty"` // USER_LISTS#username
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"GSI1SK,omitempty"` // listID
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"` // USER_LISTS#username
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"` // listID
 
 	// Core fields from legacy
 	ID            string    `dynamorm:"attr:id" json:"id"`

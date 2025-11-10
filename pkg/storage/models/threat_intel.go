@@ -14,10 +14,10 @@ type ThreatIntel struct {
 	SK string `dynamorm:"sk,attr:SK"`
 
 	// GSI keys for querying
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK"`
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"`
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"`
 
 	// Threat data fields
 	ID          string    `dynamorm:"attr:id" json:"id"`

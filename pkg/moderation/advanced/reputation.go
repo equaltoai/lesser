@@ -404,8 +404,8 @@ func (rs *ReputationScorer) saveScore(ctx context.Context, score *ReputationScor
 		"UpdatedAt":          &types.AttributeValueMemberS{Value: score.UpdatedAt.Format(time.RFC3339)},
 
 		// GSI for querying by level
-		"GSI1PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("LEVEL#%s", score.Level)},
-		"GSI1SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("SCORE#%06.2f#%s", score.Score, score.ActorID)},
+		"gsi1PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("LEVEL#%s", score.Level)},
+		"gsi1SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("SCORE#%06.2f#%s", score.Score, score.ActorID)},
 	}
 
 	// Add last violation if exists

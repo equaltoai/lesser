@@ -277,7 +277,7 @@ func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trustee
 	var trustModels []*models.TrustRelationship
 	query := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
 		Index("GSI1"). // Try GSI1 first (common DynamORM pattern)
-		Where("GSI1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
+		Where("gsi1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
 
 	if cursor != "" {
 		query = query.Cursor(cursor)
@@ -291,7 +291,7 @@ func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trustee
 		r.logger.Debug("GSI1 query failed, trying gsi1-index", zap.Error(err))
 		query = r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
 			Index("gsi1-index").
-			Where("GSI1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
+			Where("gsi1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
 		if cursor != "" {
 			query = query.Cursor(cursor)
 		}

@@ -13,8 +13,8 @@ type OAuthClient struct {
 	// DynamoDB keys - MUST match legacy exactly
 	PK             string `dynamorm:"pk,attr:PK" json:"-"`                                             // OAUTH_CLIENT#clientID
 	SK             string `dynamorm:"sk,attr:SK" json:"-"`                                             // METADATA
-	GSI1PK         string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"-"`                              // OWNER#ownerID (for owner index)
-	GSI1SK         string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"-"`                              // CLIENT#clientID
+	GSI1PK         string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"`                              // OWNER#ownerID (for owner index)
+	GSI1SK         string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"`                              // CLIENT#clientID
 	OAuthClientsPK string `dynamorm:"index:oauth-clients-index,pk,attr:oauthClientsPK" json:"-"`      // OAUTH_CLIENTS
 	OAuthClientsSK string `dynamorm:"index:oauth-clients-index,sk,attr:oauthClientsSK" json:"-"`      // CREATED_AT#{ts_desc}#CLIENT#{clientID}
 

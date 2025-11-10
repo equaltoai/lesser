@@ -16,8 +16,8 @@ type InboxItem struct {
 	SK string `dynamorm:"sk,attr:SK"`
 
 	// GSI fields for inbox queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
 
 	// Business fields
 	ActorID    string                `dynamorm:"attr:actorID" json:"actor_id"`       // The recipient actor ID

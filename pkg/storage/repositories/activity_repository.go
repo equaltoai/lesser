@@ -140,9 +140,9 @@ func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username st
 	// Note: Using direct DynamORM query since BaseRepository doesn't have GSI query with custom cursor handling
 	query := r.db.WithContext(ctx).Model(&models.Activity{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", "INBOX#"+username).
+		Where("gsi1PK", "=", "INBOX#"+username).
 		Limit(safeLimit+1).
-		OrderBy("GSI1SK", "DESC") // Newest first
+		OrderBy("gsi1SK", "DESC") // Newest first
 
 	// If cursor provided, decode and set it
 	if cursor != "" {
@@ -196,8 +196,8 @@ func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username st
 		// There might be more results
 		lastItem := activities[len(activities)-1]
 		cursorData := map[string]string{
-			"GSI1PK": lastItem.GSI1PK,
-			"GSI1SK": lastItem.GSI1SK,
+			"gsi1PK": lastItem.GSI1PK,
+			"gsi1SK": lastItem.GSI1SK,
 			"PK":     lastItem.PK,
 			"SK":     lastItem.SK,
 		}

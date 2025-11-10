@@ -14,8 +14,8 @@ type Move struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // TARGET#{target}
 
 	// GSI1 for reverse lookups (moves to a target)
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"GSI1PK"` // MOVE#TARGET#{target}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"GSI1SK"` // ACTOR#{actor}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK"` // MOVE#TARGET#{target}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK"` // ACTOR#{actor}
 
 	// Move data (nested in legacy)
 	ID        string    `dynamorm:"attr:id" json:"ID"`               // The move activity ID

@@ -13,8 +13,8 @@ type PasswordReset struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // RESET#{token}
 
 	// GSI1 for token lookup
-	GSI1PK string `dynamorm:"index:token-index,pk,attr:gsI1PK" json:"gsi1_pk"` // RESET_TOKEN#{token}
-	GSI1SK string `dynamorm:"index:token-index,sk,attr:gsI1SK" json:"gsi1_sk"` // USERNAME#{username}
+	GSI1PK string `dynamorm:"index:token-index,pk,attr:gsi1PK" json:"gsi1_pk"` // RESET_TOKEN#{token}
+	GSI1SK string `dynamorm:"index:token-index,sk,attr:gsi1SK" json:"gsi1_sk"` // USERNAME#{username}
 
 	Username  string    `dynamorm:"attr:username" json:"username"`
 	Token     string    `dynamorm:"attr:token" json:"token"`

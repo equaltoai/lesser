@@ -14,12 +14,12 @@ type CommunityNote struct {
 	SK string `dynamorm:"sk,attr:SK"` // METADATA
 
 	// GSI fields for querying
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK"` // OBJECT#<object_id>#NOTES
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK"` // SCORE#<score>#<id>
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK"` // NOTES#<visibility_status>
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK"` // <created_at>#<id>
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsI3PK"` // AUTHOR#<author_id>#NOTES
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsI3SK"` // <created_at>#<id>
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"` // OBJECT#<object_id>#NOTES
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"` // SCORE#<score>#<id>
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"` // NOTES#<visibility_status>
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"` // <created_at>#<id>
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK"` // AUTHOR#<author_id>#NOTES
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK"` // <created_at>#<id>
 
 	// Core fields matching storage.CommunityNote
 	ID               string   `dynamorm:"attr:id" json:"id"`

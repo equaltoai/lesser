@@ -18,12 +18,12 @@ type Metrics struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Service queries
-	GSI1PK string `dynamorm:"index:service-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "METRICS_SVC#{service}"
-	GSI1SK string `dynamorm:"index:service-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{timestamp}#{type}#{id}"
+	GSI1PK string `dynamorm:"index:service-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "METRICS_SVC#{service}"
+	GSI1SK string `dynamorm:"index:service-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{type}#{id}"
 
 	// GSI2 - Aggregation queries
-	GSI2PK string `dynamorm:"index:aggregate-index,pk,attr:gsI2PK" json:"gsi2_pk"` // Format: "METRICS_AGG#{period}#{type}"
-	GSI2SK string `dynamorm:"index:aggregate-index,sk,attr:gsI2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
+	GSI2PK string `dynamorm:"index:aggregate-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "METRICS_AGG#{period}#{type}"
+	GSI2SK string `dynamorm:"index:aggregate-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
 	// Core metrics data
 	ID        string    `dynamorm:"attr:id" json:"id"`

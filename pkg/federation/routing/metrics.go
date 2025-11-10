@@ -504,8 +504,8 @@ func (rm *RoutingMetrics) persistWindow(ctx context.Context) error {
 		"ActiveRoutes":    &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", len(rm.aggregator.routeMetrics))},
 
 		// GSI for time-based queries
-		"GSI1PK": &types.AttributeValueMemberS{Value: "METRICS#GLOBAL"},
-		"GSI1SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%d", windowID)},
+		"gsi1PK": &types.AttributeValueMemberS{Value: "METRICS#GLOBAL"},
+		"gsi1SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%d", windowID)},
 
 		"TTL": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Add(30*24*time.Hour).Unix())},
 	}

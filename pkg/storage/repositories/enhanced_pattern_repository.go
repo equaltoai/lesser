@@ -135,7 +135,7 @@ func (r *EnhancedPatternRepository) GetActivePatterns(ctx context.Context, limit
 	patterns := []*models.EnhancedModerationPattern{}
 
 	query := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
-		Where("GSI1PK", "=", "ENHANCED_PATTERNS#ACTIVE")
+		Where("gsi1PK", "=", "ENHANCED_PATTERNS#ACTIVE")
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -154,8 +154,8 @@ func (r *EnhancedPatternRepository) GetPatternsByType(ctx context.Context, patte
 	patterns := []*models.EnhancedModerationPattern{}
 
 	query := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
-		Where("GSI2PK", "=", fmt.Sprintf("ENHANCED_PATTERNS#%s", patternType)).
-		OrderBy("GSI2SK", "DESC") // Descending order for best effectiveness first
+		Where("gsi2PK", "=", fmt.Sprintf("ENHANCED_PATTERNS#%s", patternType)).
+		OrderBy("gsi2SK", "DESC") // Descending order for best effectiveness first
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -174,8 +174,8 @@ func (r *EnhancedPatternRepository) GetPatternsByCategory(ctx context.Context, c
 	patterns := []*models.EnhancedModerationPattern{}
 
 	query := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
-		Where("GSI3PK", "=", fmt.Sprintf("PATTERN_METRICS#%s", category)).
-		OrderBy("GSI3SK", "DESC") // Descending order for best effectiveness first
+		Where("gsi3PK", "=", fmt.Sprintf("PATTERN_METRICS#%s", category)).
+		OrderBy("gsi3SK", "DESC") // Descending order for best effectiveness first
 
 	if limit > 0 {
 		query = query.Limit(limit)

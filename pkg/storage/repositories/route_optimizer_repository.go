@@ -99,9 +99,9 @@ func (r *RouteOptimizerRepository) GetRecentResults(ctx context.Context, since t
 
 	query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", "RESULTS").
-		Where("GSI1SK", ">", sinceKey).
-		OrderBy("GSI1SK", "DESC"). // Most recent first
+		Where("gsi1PK", "=", "RESULTS").
+		Where("gsi1SK", ">", sinceKey).
+		OrderBy("gsi1SK", "DESC"). // Most recent first
 		Limit(limit)
 
 	err := query.All(&results)
@@ -344,15 +344,15 @@ func (r *RouteOptimizerRepository) GetMetricsInRange(ctx context.Context, routeI
 		startKey := fmt.Sprintf("%d", start.Unix())
 		query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 			Index("GSI1").
-			Where("GSI1PK", "=", "RESULTS").
-			Where("GSI1SK", ">=", startKey)
+			Where("gsi1PK", "=", "RESULTS").
+			Where("gsi1SK", ">=", startKey)
 
 		if !end.IsZero() {
 			endKey := fmt.Sprintf("%d", end.Unix())
-			query = query.Where("GSI1SK", "<=", endKey)
+			query = query.Where("gsi1SK", "<=", endKey)
 		}
 
-		query = query.OrderBy("GSI1SK", "DESC").Limit(limit)
+		query = query.OrderBy("gsi1SK", "DESC").Limit(limit)
 
 		err := query.All(&results)
 		if err != nil {

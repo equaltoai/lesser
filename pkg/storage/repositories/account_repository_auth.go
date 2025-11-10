@@ -156,7 +156,7 @@ func (r *AccountRepository) ValidatePasswordResetToken(ctx context.Context, toke
 	// Use GSI for token lookup
 	err := r.db.WithContext(ctx).Model(&reset).
 		Index("token-index").
-		Where("GSI1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
+		Where("gsi1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
 		First(&reset)
 
 	if err != nil {
@@ -1188,7 +1188,7 @@ func (r *AccountRepository) UpdateWebAuthnCredential(ctx context.Context, creden
 
 	query := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", "WEBAUTHN_CREDENTIAL#"+credentialID).
+		Where("gsi1PK", "=", "WEBAUTHN_CREDENTIAL#"+credentialID).
 		Limit(1)
 
 	err := query.First(&credential)
@@ -1275,7 +1275,7 @@ func (r *AccountRepository) GetLinkedProviders(ctx context.Context, username str
 	// Query GSI2 to get all provider accounts for the user
 	err := r.db.WithContext(ctx).Model(&models.ProviderAccount{}).
 		Index("user-providers-index").
-		Where("GSI2PK", "=", fmt.Sprintf("USER_PROVIDERS#%s", username)).
+		Where("gsi2PK", "=", fmt.Sprintf("USER_PROVIDERS#%s", username)).
 		All(&providerAccounts)
 
 	if err != nil {

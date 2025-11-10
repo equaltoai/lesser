@@ -499,12 +499,12 @@ func buildObjectSK(objectID string) string {
 	return fmt.Sprintf("%s#%s", models.BookmarkSortKeyPrefixObject, objectID)
 }
 
-func sanitizeLimit(limit, defaultLimit, max int) int {
+func sanitizeLimit(limit, defaultLimit, maxSize int) int {
 	switch {
 	case limit <= 0:
 		return defaultLimit
-	case limit > max:
-		return max
+	case limit > maxSize:
+		return maxSize
 	default:
 		return limit
 	}

@@ -49,8 +49,8 @@ func (s *Storage) SaveOperationCost(ctx context.Context, cost *OperationCost) er
 	item := map[string]types.AttributeValue{
 		"PK":                  &types.AttributeValueMemberS{Value: pk},
 		"SK":                  &types.AttributeValueMemberS{Value: sk},
-		"GSI1PK":              &types.AttributeValueMemberS{Value: gsi1pk},
-		"GSI1SK":              &types.AttributeValueMemberS{Value: gsi1sk},
+		"gsi1PK":              &types.AttributeValueMemberS{Value: gsi1pk},
+		"gsi1SK":              &types.AttributeValueMemberS{Value: gsi1sk},
 		"RequestID":           &types.AttributeValueMemberS{Value: cost.RequestID},
 		"OperationType":       &types.AttributeValueMemberS{Value: cost.OperationType},
 		"Timestamp":           &types.AttributeValueMemberS{Value: cost.Timestamp.Format(time.RFC3339)},

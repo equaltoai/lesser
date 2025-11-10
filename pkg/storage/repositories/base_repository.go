@@ -917,8 +917,8 @@ type CollectionQueryConfig struct {
 
 // GSIQueryConfig configures GSI-specific query behavior
 type GSIQueryConfig struct {
-	PKField   string // GSI PK field name (e.g., "GSI1PK", "GSI2PK")
-	SKField   string // GSI SK field name (e.g., "GSI1SK", "GSI2SK")
+	PKField   string // GSI PK field name (e.g., "gsi1PK", "gsi2PK")
+	SKField   string // GSI SK field name (e.g., "gsi1SK", "gsi2SK")
 	PKValue   string // PK value for the GSI
 	SKPattern string // SK pattern (for BEGINS_WITH, range queries, etc.)
 	UseCursor bool   // Enables cursor-based pagination on the configured sort key
@@ -1190,7 +1190,7 @@ func QueryMetricsByTimeRange[M BaseModel](
 
 // ReportConversionConfig configures report model to storage type conversion
 type ReportConversionConfig struct {
-	CursorField string // Field to use for cursor (e.g., "GSI2SK", "GSI3SK")
+	CursorField string // Field to use for cursor (e.g., "gsi2SK", "gsi3SK")
 	LogContext  string // Context for logging (e.g., "status", "category")
 }
 
@@ -1228,7 +1228,7 @@ func ConvertAndPaginateReports[M interface{}](
 
 // AuditLogConversionConfig configures audit log model to storage type conversion
 type AuditLogConversionConfig struct {
-	GSIField   string // GSI field for cursor (e.g., "GSI1SK", "GSI2SK")
+	GSIField   string // GSI field for cursor (e.g., "gsi1SK", "gsi2SK")
 	LogContext string // Context for logging
 }
 

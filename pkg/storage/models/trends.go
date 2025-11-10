@@ -13,8 +13,8 @@ type HashtagTrend struct {
 
 	PK          string    `dynamorm:"pk,attr:PK"`
 	SK          string    `dynamorm:"sk,attr:SK"`
-	GSI8PK      string    `dynamorm:"index:gsi8,pk,attr:gsI8PK"`
-	GSI8SK      string    `dynamorm:"index:gsi8,sk,attr:gsI8SK"`
+	GSI8PK      string    `dynamorm:"index:gsi8,pk,attr:gsi8PK"`
+	GSI8SK      string    `dynamorm:"index:gsi8,sk,attr:gsi8SK"`
 	Name        string    `dynamorm:"attr:name" json:"name"`
 	URL         string    `dynamorm:"attr:url" json:"url"`
 	UsageCount  int64     `dynamorm:"attr:usageCount" json:"usage_count"`
@@ -66,8 +66,8 @@ type StatusTrend struct {
 
 	PK          string    `dynamorm:"pk,attr:PK"`
 	SK          string    `dynamorm:"sk,attr:SK"`
-	GSI8PK      string    `dynamorm:"index:gsi8,pk,attr:gsI8PK"`
-	GSI8SK      string    `dynamorm:"index:gsi8,sk,attr:gsI8SK"`
+	GSI8PK      string    `dynamorm:"index:gsi8,pk,attr:gsi8PK"`
+	GSI8SK      string    `dynamorm:"index:gsi8,sk,attr:gsi8SK"`
 	ID          string    `dynamorm:"attr:id" json:"id"`
 	URL         string    `dynamorm:"attr:url" json:"url"`
 	AuthorID    string    `dynamorm:"attr:authorID" json:"author_id"`
@@ -110,8 +110,8 @@ type LinkTrend struct {
 
 	PK          string    `dynamorm:"pk,attr:PK"`
 	SK          string    `dynamorm:"sk,attr:SK"`
-	GSI8PK      string    `dynamorm:"index:gsi8,pk,attr:gsI8PK"`
-	GSI8SK      string    `dynamorm:"index:gsi8,sk,attr:gsI8SK"`
+	GSI8PK      string    `dynamorm:"index:gsi8,pk,attr:gsi8PK"`
+	GSI8SK      string    `dynamorm:"index:gsi8,sk,attr:gsi8SK"`
 	URL         string    `dynamorm:"attr:url" json:"url"`
 	Title       string    `dynamorm:"attr:title" json:"title"`
 	Description string    `dynamorm:"attr:description" json:"description"`
@@ -197,8 +197,8 @@ type PopularQueryCounter struct {
 	// Key fields for atomic counter operations
 	PK     string `dynamorm:"pk,attr:PK"`                // POPULAR_QUERY#query_hash
 	SK     string `dynamorm:"sk,attr:SK"`                // COUNTER#time_bucket (daily, weekly, monthly)
-	GSI8PK string `dynamorm:"index:gsi8,pk,attr:gsI8PK"` // For time-based queries
-	GSI8SK string `dynamorm:"index:gsi8,sk,attr:gsI8SK"` // For ranking by count
+	GSI8PK string `dynamorm:"index:gsi8,pk,attr:gsi8PK"` // For time-based queries
+	GSI8SK string `dynamorm:"index:gsi8,sk,attr:gsi8SK"` // For ranking by count
 
 	// Business fields
 	QueryHash    string    `dynamorm:"attr:queryHash" json:"query_hash"`       // Hashed query for privacy

@@ -81,13 +81,13 @@ func (r *TimelineRepository) GetPublicTimeline(_ context.Context, local bool, li
 
 	query := r.db.Model(&models.Timeline{}).
 		Index("post-timeline-index"). // GSI1
-		Where("GSI1PK", "=", gsi1pk).
-		OrderBy("GSI1SK", "ASC") // ASC because we use reverse timestamp
+		Where("gsi1PK", "=", gsi1pk).
+		OrderBy("gsi1SK", "ASC") // ASC because we use reverse timestamp
 
 	// Resume from the supplied cursor value when available
 	if cursor != "" {
 		// With reverse timestamp, we use > for getting older entries
-		query = query.Where("GSI1SK", ">", cursor)
+		query = query.Where("gsi1SK", ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results
@@ -173,13 +173,13 @@ func (r *TimelineRepository) getTimelineEntriesByGSI(_ context.Context, indexNam
 		// We got more results than requested, so there are more pages
 		// Use reflection to get the correct SK field value for cursor
 		switch skField {
-		case "GSI1SK":
+		case "gsi1SK":
 			nextCursor = entries[limit-1].GSI1SK
-		case "GSI2SK":
+		case "gsi2SK":
 			nextCursor = entries[limit-1].GSI2SK
-		case "GSI3SK":
+		case "gsi3SK":
 			nextCursor = entries[limit-1].GSI3SK
-		case "GSI4SK":
+		case "gsi4SK":
 			nextCursor = entries[limit-1].GSI4SK
 		}
 		entries = entries[:limit] // Trim to requested limit
@@ -190,22 +190,22 @@ func (r *TimelineRepository) getTimelineEntriesByGSI(_ context.Context, indexNam
 
 // GetTimelineEntriesByPost retrieves all timeline entries for a specific post
 func (r *TimelineRepository) GetTimelineEntriesByPost(ctx context.Context, postID string, limit int, cursor string) ([]*models.Timeline, string, error) {
-	return r.getTimelineEntriesByGSI(ctx, "post-timeline-index", "GSI1PK", "GSI1SK", "POST#", postID, limit, cursor, "post")
+	return r.getTimelineEntriesByGSI(ctx, "post-timeline-index", "gsi1PK", "gsi1SK", "POST#", postID, limit, cursor, "post")
 }
 
 // GetTimelineEntriesByActor retrieves all timeline entries by a specific actor
 func (r *TimelineRepository) GetTimelineEntriesByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Timeline, string, error) {
-	return r.getTimelineEntriesByGSI(ctx, "actor-timeline-index", "GSI2PK", "GSI2SK", "ACTOR#", actorID, limit, cursor, "actor")
+	return r.getTimelineEntriesByGSI(ctx, "actor-timeline-index", "gsi2PK", "gsi2SK", "ACTOR#", actorID, limit, cursor, "actor")
 }
 
 // GetTimelineEntriesByVisibility retrieves timeline entries by visibility level
 func (r *TimelineRepository) GetTimelineEntriesByVisibility(ctx context.Context, visibility string, limit int, cursor string) ([]*models.Timeline, string, error) {
-	return r.getTimelineEntriesByGSI(ctx, "visibility-timeline-index", "GSI3PK", "GSI3SK", "VISIBILITY#", visibility, limit, cursor, "visibility")
+	return r.getTimelineEntriesByGSI(ctx, "visibility-timeline-index", "gsi3PK", "gsi3SK", "VISIBILITY#", visibility, limit, cursor, "visibility")
 }
 
 // GetTimelineEntriesByLanguage retrieves timeline entries by language
 func (r *TimelineRepository) GetTimelineEntriesByLanguage(ctx context.Context, language string, limit int, cursor string) ([]*models.Timeline, string, error) {
-	return r.getTimelineEntriesByGSI(ctx, "language-timeline-index", "GSI4PK", "GSI4SK", "LANGUAGE#", language, limit, cursor, "language")
+	return r.getTimelineEntriesByGSI(ctx, "language-timeline-index", "gsi4PK", "gsi4SK", "LANGUAGE#", language, limit, cursor, "language")
 }
 
 // GetTimelineEntry retrieves a specific timeline entry using BaseRepository

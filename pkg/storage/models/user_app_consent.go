@@ -14,8 +14,8 @@ type UserAppConsent struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // CONSENT#appID
 
 	// GSI for querying by app
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"-"` // APP#appID
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"-"` // USER#userID
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // APP#appID
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // USER#userID
 
 	// Consent data
 	UserID    string     `dynamorm:"attr:userID" json:"user_id"`

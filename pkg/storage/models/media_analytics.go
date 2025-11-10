@@ -16,12 +16,12 @@ type MediaAnalytics struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // {timestamp}#{mediaID} or {date}#{mediaID}
 
 	// GSI keys for querying
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1pk"` // DATE#{date}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1sk"` // {format}#{timestamp}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // DATE#{date}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {format}#{timestamp}
 
 	// GSI2 for variant-level queries
-	GSI2PK string `dynamorm:"index:cost-variant-index,pk,attr:gsI2PK" json:"gsi2pk"` // VARIANT#{variant_key}
-	GSI2SK string `dynamorm:"index:cost-variant-index,sk,attr:gsI2SK" json:"gsi2sk"` // COST#{timestamp}
+	GSI2PK string `dynamorm:"index:cost-variant-index,pk,attr:gsi2PK" json:"gsi2pk"` // VARIANT#{variant_key}
+	GSI2SK string `dynamorm:"index:cost-variant-index,sk,attr:gsi2SK" json:"gsi2sk"` // COST#{timestamp}
 
 	// Business fields
 	MediaID   string    `dynamorm:"attr:mediaID" json:"media_id"`

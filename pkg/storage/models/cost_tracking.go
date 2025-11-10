@@ -18,12 +18,12 @@ type DynamoDBCostRecord struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Table queries
-	GSI1PK string `dynamorm:"index:table-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "COST_TABLE#{table_name}"
-	GSI1SK string `dynamorm:"index:table-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
+	GSI1PK string `dynamorm:"index:table-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "COST_TABLE#{table_name}"
+	GSI1SK string `dynamorm:"index:table-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// GSI2 - Aggregation queries
-	GSI2PK string `dynamorm:"index:aggregate-index,pk,attr:gsI2PK" json:"gsi2_pk"` // Format: "COST_AGG#{period}#{operation_type}"
-	GSI2SK string `dynamorm:"index:aggregate-index,sk,attr:gsI2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
+	GSI2PK string `dynamorm:"index:aggregate-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "COST_AGG#{period}#{operation_type}"
+	GSI2SK string `dynamorm:"index:aggregate-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
 	// Core cost tracking data
 	ID            string    `dynamorm:"attr:id" json:"id"`

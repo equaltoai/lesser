@@ -146,9 +146,9 @@ func (r *moderationMetricsRepository) GetFalsePositives(ctx context.Context, tim
 	// Query by GSI1 for efficient time range queries
 	err := r.falsePositiveRepo.GetDB().WithContext(ctx).Model(&models.ModerationFalsePositive{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", "FALSE_POSITIVES").
-		Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
-		Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
+		Where("gsi1PK", "=", "FALSE_POSITIVES").
+		Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
+		Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
 		All(&results)
 
 	if err != nil {
@@ -172,9 +172,9 @@ func (r *moderationMetricsRepository) GetDecisionSamples(ctx context.Context, ti
 		// Query by specific decision type using GSI1
 		err := r.decisionSampleRepo.GetDB().WithContext(ctx).Model(&models.ModerationDecisionSample{}).
 			Index("gsi1").
-			Where("GSI1PK", "=", fmt.Sprintf("DECISION#%s", decision)).
-			Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
-			Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
+			Where("gsi1PK", "=", fmt.Sprintf("DECISION#%s", decision)).
+			Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
+			Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
 			All(&results)
 
 		if err != nil {
@@ -216,7 +216,7 @@ func (r *moderationMetricsRepository) GetTopPatterns(ctx context.Context, limit 
 	// Query by GSI1 ordered by hit count (descending)
 	err := r.patternStatsRepo.GetDB().WithContext(ctx).Model(&models.ModerationPatternStats{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", "PATTERN_HITS").
+		Where("gsi1PK", "=", "PATTERN_HITS").
 		Limit(limit).
 		All(&results)
 
@@ -269,9 +269,9 @@ func (r *moderationMetricsRepository) GetMetricsEntries(ctx context.Context, tim
 			var results []*models.ModerationMetricsEntry
 			err := r.GetDB().WithContext(ctx).Model(&models.ModerationMetricsEntry{}).
 				Index("gsi1").
-				Where("GSI1PK", "=", fmt.Sprintf("METRIC_TYPE#%s", metricType)).
-				Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
-				Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
+				Where("gsi1PK", "=", fmt.Sprintf("METRIC_TYPE#%s", metricType)).
+				Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
+				Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
 				All(&results)
 
 			if err == nil {

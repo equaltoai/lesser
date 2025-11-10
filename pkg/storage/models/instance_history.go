@@ -16,8 +16,8 @@ type InstanceHistory struct {
 	SK string `dynamorm:"sk,attr:SK"` // DAILY#{date} or MONTHLY#{date} or WEEKLY#{date}
 
 	// GSI1 for metric-specific time queries
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK"` // METRIC#{metric_type}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK"` // DATE#{YYYY-MM-DD}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK"` // METRIC#{metric_type}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK"` // DATE#{YYYY-MM-DD}
 
 	// Business fields
 	Date        string    `dynamorm:"attr:date" json:"date"`               // YYYY-MM-DD format

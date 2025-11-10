@@ -15,16 +15,16 @@ type Object struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "object#{id}"
 
 	// GSI1 - by actor
-	GSI1PK string `dynamorm:"index:gsi1-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "actor#{actor_id}"
-	GSI1SK string `dynamorm:"index:gsi1-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "object#{published}#{id}"
+	GSI1PK string `dynamorm:"index:gsi1-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "actor#{actor_id}"
+	GSI1SK string `dynamorm:"index:gsi1-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "object#{published}#{id}"
 
 	// GSI2 - by type
-	GSI2PK string `dynamorm:"index:gsi2-index,pk,attr:gsI2PK" json:"gsi2_pk"` // Format: "object#type#{type}"
-	GSI2SK string `dynamorm:"index:gsi2-index,sk,attr:gsI2SK" json:"gsi2_sk"` // Format: "{published}#{id}"
+	GSI2PK string `dynamorm:"index:gsi2-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "object#type#{type}"
+	GSI2SK string `dynamorm:"index:gsi2-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{published}#{id}"
 
 	// GSI6 - for replies (used when InReplyTo is set)
-	GSI6PK string `dynamorm:"index:gsi6-index,pk,attr:gsI6PK" json:"gsi6_pk,omitempty"` // Format: "REPLIES#{parent_object_id}"
-	GSI6SK string `dynamorm:"index:gsi6-index,sk,attr:gsI6SK" json:"gsi6_sk,omitempty"` // Format: "{timestamp}#{id}"
+	GSI6PK string `dynamorm:"index:gsi6-index,pk,attr:gsi6PK" json:"gsi6_pk,omitempty"` // Format: "REPLIES#{parent_object_id}"
+	GSI6SK string `dynamorm:"index:gsi6-index,sk,attr:gsi6SK" json:"gsi6_sk,omitempty"` // Format: "{timestamp}#{id}"
 
 	// Object data - stored as JSON
 	ID           string    `dynamorm:"attr:id" json:"id"`

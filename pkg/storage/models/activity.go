@@ -17,8 +17,8 @@ type Activity struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // Format: "ACTIVITY#{timestamp}#{activity_id}"
 
 	// GSI for inbox activities - MUST match legacy patterns exactly
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"GSI1PK,omitempty"` // Format: "INBOX#{username}" (only for inbox activities)
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"GSI1SK,omitempty"` // Format: timestamp (only for inbox activities)
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"` // Format: "INBOX#{username}" (only for inbox activities)
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"` // Format: timestamp (only for inbox activities)
 
 	// Activity data
 	Activity  *activitypub.Activity `dynamorm:"attr:activity" json:"Activity"`

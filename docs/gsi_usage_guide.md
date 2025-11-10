@@ -27,13 +27,13 @@ This model uses three GSIs to manage user relationships (follows).
 -   **GSI1: Inverted Index for Reverse Lookups**
     -   **Purpose:** To efficiently find all followers of a given user. The primary key allows finding who a user *is following*, but not who *is following them*.
     -   **PK/SK:** `FOLLOW#{followerUsername}` / `FOLLOWING#{followingUsername}`
-    -   **GSI1PK/GSI1SK:** `FOLLOW#{followedUsername}` / `FOLLOWER#{followerUsername}`
+    -   **gsi1PK/gsi1SK:** `FOLLOW#{followedUsername}` / `FOLLOWER#{followerUsername}`
     -   **Pattern:** This classic **inverted index** pattern allows for a fast reverse lookup without scanning the entire table.
 
 -   **GSI2 & GSI3: Domain-Specific Queries**
     -   **Purpose:** To query relationships by domain, which is critical for federation and detecting server-wide "severance" events.
-    -   **GSI2PK:** `FOLLOWER_DOMAIN#{domain}` (Finds all remote users from a specific domain that follow local users)
-    -   **GSI3PK:** `FOLLOWING_DOMAIN#{domain}` (Finds all remote users that local users are following on a specific domain)
+    -   **gsi2PK:** `FOLLOWER_DOMAIN#{domain}` (Finds all remote users from a specific domain that follow local users)
+    -   **gsi3PK:** `FOLLOWING_DOMAIN#{domain}` (Finds all remote users that local users are following on a specific domain)
     -   **Pattern:** This demonstrates using GSIs to create secondary indexes on specific attributes (in this case, a derived one like the domain).
 
 ### b. `ModerationSample` (`pkg/storage/models/moderation_ml.go`)
@@ -42,16 +42,16 @@ This model uses GSIs to support various query patterns for the machine learning 
 
 -   **GSI1: Query by Secondary Attribute**
     -   **Purpose:** To find all moderation samples submitted by a specific reviewer.
-    -   **GSI1PK:** `REVIEWER#{reviewer_id}`
+    -   **gsi1PK:** `REVIEWER#{reviewer_id}`
 
 -   **GSI2: Query by Category and Score**
     -   **Purpose:** To find samples with a specific label, sorted by confidence score.
-    -   **GSI2PK:** `LABEL#{label}`
-    -   **GSI2SK:** `CONFIDENCE#{confidence}#{RFC3339}`
+    -   **gsi2PK:** `LABEL#{label}`
+    -   **gsi2SK:** `CONFIDENCE#{confidence}#{RFC3339}`
 
 -   **GSI3: Direct ID Lookup**
     -   **Purpose:** To allow a direct lookup of a moderation sample by its unique ID, which is not part of the primary key.
-    -   **GSI3PK/GSI3SK:** `SAMPLEID#{sample_id}` / `SAMPLEID#{sample_id}`
+    -   **gsi3PK/gsi3SK:** `SAMPLEID#{sample_id}` / `SAMPLEID#{sample_id}`
 
 ### c. `TranscodingJob` (`pkg/storage/models/transcoding_job.go`)
 
@@ -59,8 +59,8 @@ This model uses GSIs to track media transcoding jobs.
 
 -   **GSI1 & GSI2: Querying by Associated Entities**
     -   **Purpose:** To find all transcoding jobs associated with a specific user or a specific media item.
-    -   **GSI1PK:** `USER_TRANSCODING#{userID}`
-    -   **GSI2PK:** `MEDIA_TRANSCODING#{mediaID}`
+    -   **gsi1PK:** `USER_TRANSCODING#{userID}`
+    -   **gsi2PK:** `MEDIA_TRANSCODING#{mediaID}`
 
 **Note on Naming Consistency:** The `TranscodingJob` model uses descriptive names in its struct tags (e.g., `index:user-jobs-index`). The `dynamorm` library maps this to an available GSI. While functionally correct, this is an inconsistency with other models that directly reference `GSI1`, etc. For clarity, it is recommended to standardize on one approach.
 
@@ -88,8 +88,8 @@ type User struct {
     SK     string `dynamorm:"sk"` // METADATA
 
     // GSI4 for role-based queries
-    GSI4PK string `dynamorm:"index:gsi4,pk" json:"gsi4pk,omitempty"` // ROLE#{role}
-    GSI4SK string `dynamorm:"index:gsi4,sk" json:"gsi4sk,omitempty"` // USER#{username}
+    gsi4PK string `dynamorm:"index:gsi4,pk" json:"gsi4pk,omitempty"` // ROLE#{role}
+    gsi4SK string `dynamorm:"index:gsi4,sk" json:"gsi4sk,omitempty"` // USER#{username}
 
     Role   string `json:"role"`
     // ... other fields ...
@@ -106,12 +106,12 @@ func (u *User) BeforeUpdate() error {
 
     // Populate GSI4 keys
     if u.Role != "" {
-        u.GSI4PK = fmt.Sprintf("ROLE#%s", u.Role)
-        u.GSI4SK = fmt.Sprintf("USER#%s", u.Username)
+        u.gsi4PK = fmt.Sprintf("ROLE#%s", u.Role)
+        u.gsi4SK = fmt.Sprintf("USER#%s", u.Username)
     } else {
         // Ensure keys are empty if the attribute is not set, creating a sparse GSI
-        u.GSI4PK = ""
-        u.GSI4SK = ""
+        u.gsi4PK = ""
+        u.gsi4SK = ""
     }
 
     return nil

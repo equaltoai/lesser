@@ -44,8 +44,8 @@ type InstanceDomainBlock struct {
 
 	PK             string    `dynamorm:"pk,attr:PK"`
 	SK             string    `dynamorm:"sk,attr:SK"`
-	GSI1PK         string    `dynamorm:"index:GSI1,pk,attr:gsI1PK"`
-	GSI1SK         string    `dynamorm:"index:GSI1,sk,attr:gsI1SK"`
+	GSI1PK         string    `dynamorm:"index:GSI1,pk,attr:gsi1PK"`
+	GSI1SK         string    `dynamorm:"index:GSI1,sk,attr:gsi1SK"`
 	ID             string    `dynamorm:"attr:id" json:"ID"`
 	Domain         string    `dynamorm:"attr:domain" json:"Domain"`
 	Severity       string    `dynamorm:"attr:severity" json:"Severity"` // "silence" or "suspend"
@@ -92,8 +92,8 @@ type EmailDomainBlock struct {
 
 	PK        string    `dynamorm:"pk,attr:PK"`
 	SK        string    `dynamorm:"sk,attr:SK"`
-	GSI1PK    string    `dynamorm:"index:GSI1,pk,attr:gsI1PK"`
-	GSI1SK    string    `dynamorm:"index:GSI1,sk,attr:gsI1SK"`
+	GSI1PK    string    `dynamorm:"index:GSI1,pk,attr:gsi1PK"`
+	GSI1SK    string    `dynamorm:"index:GSI1,sk,attr:gsi1SK"`
 	ID        string    `dynamorm:"attr:id" json:"ID"`
 	Domain    string    `dynamorm:"attr:domain" json:"Domain"`
 	CreatedBy string    `dynamorm:"attr:createdBy" json:"CreatedBy"`
@@ -140,8 +140,8 @@ type DomainAllow struct {
 
 	PK        string    `dynamorm:"pk,attr:PK"`
 	SK        string    `dynamorm:"sk,attr:SK"`
-	GSI1PK    string    `dynamorm:"index:GSI1,pk,attr:gsI1PK"`
-	GSI1SK    string    `dynamorm:"index:GSI1,sk,attr:gsI1SK"`
+	GSI1PK    string    `dynamorm:"index:GSI1,pk,attr:gsi1PK"`
+	GSI1SK    string    `dynamorm:"index:GSI1,sk,attr:gsi1SK"`
 	ID        string    `dynamorm:"attr:id" json:"ID"`
 	Domain    string    `dynamorm:"attr:domain" json:"Domain"`
 	CreatedBy string    `dynamorm:"attr:createdBy" json:"CreatedBy"`

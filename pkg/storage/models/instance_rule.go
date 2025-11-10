@@ -14,8 +14,8 @@ type InstanceRule struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // RULE#{order}#{id}
 
 	// GSI for active rules
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"-"` // INSTANCE#ACTIVE_RULES
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"-"` // {order}#{id}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // INSTANCE#ACTIVE_RULES
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // {order}#{id}
 
 	// Rule data
 	ID          string     `dynamorm:"attr:id" json:"id"`

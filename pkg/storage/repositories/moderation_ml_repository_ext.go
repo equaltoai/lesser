@@ -103,9 +103,9 @@ func (r *ModerationMLRepository) GetPredictionsByModelVersion(ctx context.Contex
 	var pred models.MLPrediction
 	query := r.db.WithContext(ctx).
 		Model(&pred).
-		Where("GSI1PK", "=", gsi1pk).
-		Where("GSI1SK", ">=", startSK).
-		Where("GSI1SK", "<=", endSK).
+		Where("gsi1PK", "=", gsi1pk).
+		Where("gsi1SK", ">=", startSK).
+		Where("gsi1SK", "<=", endSK).
 		Index("gsi1").
 		Limit(limit)
 
@@ -143,9 +143,9 @@ func (r *ModerationMLRepository) GetPredictionsByReviewStatus(ctx context.Contex
 	var pred models.MLPrediction
 	query := r.db.WithContext(ctx).
 		Model(&pred).
-		Where("GSI2PK", "=", gsi2pk).
-		Where("GSI2SK", ">=", startSK).
-		Where("GSI2SK", "<=", endSK).
+		Where("gsi2PK", "=", gsi2pk).
+		Where("gsi2SK", ">=", startSK).
+		Where("gsi2SK", "<=", endSK).
 		Index("gsi2").
 		Limit(limit)
 

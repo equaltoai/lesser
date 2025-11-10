@@ -107,7 +107,7 @@ func (r *EmojiRepository) GetCustomEmoji(ctx context.Context, shortcode string) 
 // GetCustomEmojis retrieves all custom emojis (not disabled)
 func (r *EmojiRepository) GetCustomEmojis(ctx context.Context) ([]*storage.CustomEmoji, error) {
 	// Query using GSI1 for all emojis
-	emojiModels, err := r.queryEmojiGSI(ctx, "gsi1", "GSI1PK", "ALL_EMOJIS", 0)
+	emojiModels, err := r.queryEmojiGSI(ctx, "gsi1", "gsi1PK", "ALL_EMOJIS", 0)
 	if err != nil {
 		// If GSI doesn't exist or query fails, return empty list (graceful degradation)
 		// This allows the system to work even if emojis haven't been set up yet
@@ -220,7 +220,7 @@ func (r *EmojiRepository) DeleteCustomEmoji(ctx context.Context, shortcode strin
 // GetCustomEmojisByCategory retrieves custom emojis by category
 func (r *EmojiRepository) GetCustomEmojisByCategory(ctx context.Context, category string) ([]*storage.CustomEmoji, error) {
 	// Query using GSI2 for category
-	emojiModels, err := r.queryEmojiGSI(ctx, "gsi2", "GSI2PK", fmt.Sprintf("CATEGORY#%s", category), 0)
+	emojiModels, err := r.queryEmojiGSI(ctx, "gsi2", "gsi2PK", fmt.Sprintf("CATEGORY#%s", category), 0)
 	if err != nil {
 		return nil, err
 	}
@@ -254,14 +254,14 @@ func (r *EmojiRepository) SearchEmojis(ctx context.Context, query string, limit 
 	// Strategy 1: Prefix search using GSI3
 	if len(normalizedQuery) >= 3 {
 		prefix := normalizedQuery[:3]
-		prefixModels, err := r.queryEmojiGSI(ctx, "gsi3", "GSI3PK", fmt.Sprintf("SEARCH#%s", prefix), 0)
+		prefixModels, err := r.queryEmojiGSI(ctx, "gsi3", "gsi3PK", fmt.Sprintf("SEARCH#%s", prefix), 0)
 		if err == nil {
 			allModels = append(allModels, prefixModels...)
 		}
 	}
 
 	// Strategy 2: Get all emojis and perform in-memory search for broader matching
-	allEmojis, err := r.queryEmojiGSI(ctx, "gsi1", "GSI1PK", "ALL_EMOJIS", 0)
+	allEmojis, err := r.queryEmojiGSI(ctx, "gsi1", "gsi1PK", "ALL_EMOJIS", 0)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +318,7 @@ func (r *EmojiRepository) GetPopularEmojis(ctx context.Context, domain string, l
 	}
 
 	// Query using GSI4 for usage statistics, which sorts by usage count
-	emojiModels, err := r.queryEmojiGSI(ctx, "gsi4", "GSI4PK", fmt.Sprintf("USAGE#%s", domainKey), limit*2)
+	emojiModels, err := r.queryEmojiGSI(ctx, "gsi4", "gsi4PK", fmt.Sprintf("USAGE#%s", domainKey), limit*2)
 	if err != nil {
 		return nil, err
 	}

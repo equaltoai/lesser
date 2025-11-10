@@ -253,9 +253,9 @@ func (r *ScheduledStatusRepository) GetDueScheduledStatuses(ctx context.Context,
 
 	query := r.db.WithContext(ctx).Model(&models.ScheduledStatus{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", "SCHEDULED#DUE").
-		Where("GSI1SK", "<", gsi1sk).
-		OrderBy("GSI1SK", "ASC").
+		Where("gsi1PK", "=", "SCHEDULED#DUE").
+		Where("gsi1SK", "<", gsi1sk).
+		OrderBy("gsi1SK", "ASC").
 		Limit(limit)
 
 	var scheduledModels []*models.ScheduledStatus

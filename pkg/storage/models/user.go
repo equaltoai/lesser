@@ -17,23 +17,23 @@ type User struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "METADATA" - MUST match legacy exactly
 
 	// GSI1 - User listing and pagination (legacy uses GSI1 for user lists)
-	GSI1PK string `dynamorm:"index:user-list-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "USERS"
-	GSI1SK string `dynamorm:"index:user-list-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{created_at}#{username}"`
+	GSI1PK string `dynamorm:"index:user-list-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USERS"
+	GSI1SK string `dynamorm:"index:user-list-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{username}"`
 
 	// GSI2 - REMOVED: Email lookup is obsolete - email is forbidden
 	// Email-based authentication is not supported - wallet/passkey only
 
 	// GSI3 - Role-based queries
-	GSI3PK string `dynamorm:"index:role-index,pk,attr:gsI3PK" json:"gsi3_pk"` // Format: "ROLE#{role}"
-	GSI3SK string `dynamorm:"index:role-index,sk,attr:gsI3SK" json:"gsi3_sk"` // Format: "{username}"
+	GSI3PK string `dynamorm:"index:role-index,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "ROLE#{role}"
+	GSI3SK string `dynamorm:"index:role-index,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{username}"
 
 	// GSI4 - Status-based queries (approved, suspended, etc.)
-	GSI4PK string `dynamorm:"index:status-index,pk,attr:gsI4PK" json:"gsi4_pk"` // Format: "STATUS#{status}"
-	GSI4SK string `dynamorm:"index:status-index,sk,attr:gsI4SK" json:"gsi4_sk"` // Format: "{username}"
+	GSI4PK string `dynamorm:"index:status-index,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "STATUS#{status}"
+	GSI4SK string `dynamorm:"index:status-index,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{username}"
 
 	// GSI5 - Handle prefix search (optimized begins_with queries)
-	GSI5PK string `dynamorm:"index:gsi5,pk,attr:gsI5PK" json:"gsi5_pk"`
-	GSI5SK string `dynamorm:"index:gsi5,sk,attr:gsI5SK" json:"gsi5_sk"`
+	GSI5PK string `dynamorm:"index:gsi5,pk,attr:gsi5PK" json:"gsi5_pk"`
+	GSI5SK string `dynamorm:"index:gsi5,sk,attr:gsi5SK" json:"gsi5_sk"`
 
 	// Core user data
 	Username     string              `dynamorm:"attr:username" json:"username"`

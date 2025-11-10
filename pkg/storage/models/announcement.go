@@ -58,12 +58,12 @@ type Announcement struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"`
 
 	// GSI1 - Status-based queries (active/inactive)
-	GSI1PK string `dynamorm:"index:status-date-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "ANNOUNCEMENT#active" or "ANNOUNCEMENT#inactive"
-	GSI1SK string `dynamorm:"index:status-date-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "reverse_timestamp" for chronological order
+	GSI1PK string `dynamorm:"index:status-date-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "ANNOUNCEMENT#active" or "ANNOUNCEMENT#inactive"
+	GSI1SK string `dynamorm:"index:status-date-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "reverse_timestamp" for chronological order
 
 	// GSI2 - Created by queries (admin management)
-	GSI2PK string `dynamorm:"index:admin-index,pk,attr:gsI2PK" json:"gsi2_pk"` // Format: "ADMIN#{admin_username}"
-	GSI2SK string `dynamorm:"index:admin-index,sk,attr:gsI2SK" json:"gsi2_sk"` // Format: "{published_at}#{id}"
+	GSI2PK string `dynamorm:"index:admin-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "ADMIN#{admin_username}"
+	GSI2SK string `dynamorm:"index:admin-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{published_at}#{id}"
 
 	// Announcement fields
 	ID          string        `dynamorm:"attr:id" json:"id"`

@@ -297,35 +297,35 @@ func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Ac
 	updateBuilder.Set("UpdatedAt", now)
 
 	gsi1PK, gsi1SK := buildActorGSI1Keys(username)
-	updateBuilder.Set("GSI1PK", gsi1PK)
-	updateBuilder.Set("GSI1SK", gsi1SK)
+	updateBuilder.Set("gsi1PK", gsi1PK)
+	updateBuilder.Set("gsi1SK", gsi1SK)
 
 	displayName := strings.TrimSpace(actor.Name)
 	if displayName != "" {
 		gsi2PK, gsi2SK := buildActorGSI2Keys(displayName, username)
-		updateBuilder.Set("GSI2PK", gsi2PK)
-		updateBuilder.Set("GSI2SK", gsi2SK)
+		updateBuilder.Set("gsi2PK", gsi2PK)
+		updateBuilder.Set("gsi2SK", gsi2SK)
 	} else {
-		updateBuilder.Remove("GSI2PK")
-		updateBuilder.Remove("GSI2SK")
+		updateBuilder.Remove("gsi2PK")
+		updateBuilder.Remove("gsi2SK")
 	}
 
 	domainName := r.resolveActorDomain(actor)
 	if domainName != "" {
-		updateBuilder.Set("GSI3PK", fmt.Sprintf("DOMAIN#%s", domainName))
-		updateBuilder.Set("GSI3SK", username)
+		updateBuilder.Set("gsi3PK", fmt.Sprintf("DOMAIN#%s", domainName))
+		updateBuilder.Set("gsi3SK", username)
 	} else {
-		updateBuilder.Remove("GSI3PK")
-		updateBuilder.Remove("GSI3SK")
+		updateBuilder.Remove("gsi3PK")
+		updateBuilder.Remove("gsi3SK")
 	}
 
 	gsi4PK, gsi4SK := buildActorGSI4Keys(actorModel.FollowerCount, username)
-	updateBuilder.Set("GSI4PK", gsi4PK)
-	updateBuilder.Set("GSI4SK", gsi4SK)
+	updateBuilder.Set("gsi4PK", gsi4PK)
+	updateBuilder.Set("gsi4SK", gsi4SK)
 
 	gsi5PK, gsi5SK := buildActorGSI5Keys(now, username)
-	updateBuilder.Set("GSI5PK", gsi5PK)
-	updateBuilder.Set("GSI5SK", gsi5SK)
+	updateBuilder.Set("gsi5PK", gsi5PK)
+	updateBuilder.Set("gsi5SK", gsi5SK)
 
 	if actorModel.Version > 0 {
 		updateBuilder.ConditionVersion(int64(actorModel.Version))
@@ -428,8 +428,8 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 		prefix := normalizedQuery[:2]
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("username-search-index").
-			Where("GSI1PK", "=", "USERNAME_SEARCH#"+prefix).
-			Filter("GSI1SK", "BEGINS_WITH", normalizedQuery).
+			Where("gsi1PK", "=", "USERNAME_SEARCH#"+prefix).
+			Filter("gsi1SK", "BEGINS_WITH", normalizedQuery).
 			Limit(limit).
 			All(&actors)
 		if err != nil {
@@ -442,8 +442,8 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 		prefix := normalizedQuery[:2]
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("name-search-index").
-			Where("GSI2PK", "=", "NAME_SEARCH#"+prefix).
-			Filter("GSI2SK", "BEGINS_WITH", normalizedQuery).
+			Where("gsi2PK", "=", "NAME_SEARCH#"+prefix).
+			Filter("gsi2SK", "BEGINS_WITH", normalizedQuery).
 			Limit(limit).
 			All(&actors)
 		if err != nil {
@@ -474,8 +474,8 @@ func (r *ActorRepository) GetSearchSuggestions(ctx context.Context, prefix strin
 	var actors []models.Actor
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("username-search-index").
-		Where("GSI1PK", "=", "USERNAME_SEARCH#"+prefixKey).
-		Filter("GSI1SK", "BEGINS_WITH", normalizedPrefix).
+		Where("gsi1PK", "=", "USERNAME_SEARCH#"+prefixKey).
+		Filter("gsi1SK", "BEGINS_WITH", normalizedPrefix).
 		Limit(10).
 		All(&actors)
 	if err != nil {
@@ -1097,8 +1097,8 @@ func (r *ActorRepository) getRecentActiveActors(ctx context.Context, limit int) 
 		var actors []models.Actor
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("activity-index").
-			Where("GSI5PK", "=", dateKey).
-			OrderBy("GSI5SK", "DESC"). // Get most recent first
+			Where("gsi5PK", "=", dateKey).
+			OrderBy("gsi5SK", "DESC"). // Get most recent first
 			Limit(limit).
 			All(&actors)
 		if err != nil {
@@ -1155,8 +1155,8 @@ func (r *ActorRepository) getPopularActors(ctx context.Context, limit int) ([]*a
 		var actors []models.Actor
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("popularity-index").
-			Where("GSI4PK", "=", "ACTOR_RANK#"+bucket).
-			OrderBy("GSI4SK", "DESC"). // Highest follower count first
+			Where("gsi4PK", "=", "ACTOR_RANK#"+bucket).
+			OrderBy("gsi4SK", "DESC"). // Highest follower count first
 			Limit(limit - len(allActors)).
 			All(&actors)
 		if err != nil {

@@ -14,8 +14,8 @@ type WebSocketEventConnection struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // METADATA
 
 	// GSI keys for querying by user
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1pk"` // USER#{userID}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1sk"` // CONNECTION#{connectionID}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // USER#{userID}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // CONNECTION#{connectionID}
 
 	// Business fields
 	ConnectionID string    `dynamorm:"attr:connectionID" json:"connection_id"`
@@ -65,8 +65,8 @@ type WebSocketEventSubscription struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // SUBSCRIPTION#{subscriptionType}
 
 	// GSI keys for querying by subscription type
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1pk"` // SUBSCRIPTION#{subscriptionType}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1sk"` // CONNECTION#{connectionID}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // SUBSCRIPTION#{subscriptionType}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // CONNECTION#{connectionID}
 
 	// Business fields
 	ConnectionID     string         `dynamorm:"attr:connectionID" json:"connection_id"`

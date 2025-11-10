@@ -14,12 +14,12 @@ type RelayInfo struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI fields for querying active relays
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"gsi1pk,omitempty"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"gsi1sk,omitempty"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1pk,omitempty"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1sk,omitempty"`
 
 	// GSI fields for querying by status
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsI2PK" json:"gsi2pk,omitempty"`
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsI2SK" json:"gsi2sk,omitempty"`
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2pk,omitempty"`
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2sk,omitempty"`
 
 	// Business fields
 	URL        string    `dynamorm:"attr:url" json:"url"`

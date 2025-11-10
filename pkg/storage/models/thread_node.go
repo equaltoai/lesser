@@ -15,8 +15,8 @@ type ThreadNode struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // NODE#{statusID}
 
 	// GSI for querying by status
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"-"` // STATUS#{statusID}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"-"` // THREAD_NODE
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // STATUS#{statusID}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // THREAD_NODE
 
 	// Node data
 	RootStatusID    string     `dynamorm:"attr:rootStatusID" json:"root_status_id"`            // The root of the thread

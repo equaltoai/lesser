@@ -128,14 +128,14 @@ func (r *WebSocketCostRepository) ListByOperationType(ctx context.Context, opera
 
 // ListByConnection lists WebSocket cost tracking records by connection ID within a time range using GSI
 func (r *WebSocketCostRepository) ListByConnection(ctx context.Context, connectionID string, startTime, endTime time.Time, limit int) ([]*models.WebSocketCostRecord, error) {
-	return r.queryByGSIWithTimeRange(ctx, "connection-index", "GSI1PK", "GSI1SK",
+	return r.queryByGSIWithTimeRange(ctx, "connection-index", "gsi1PK", "gsi1SK",
 		fmt.Sprintf("WS_CONN#%s", connectionID), startTime, endTime, limit,
 		"failed to list WebSocket cost tracking by connection")
 }
 
 // ListByUser lists WebSocket cost tracking records by user ID within a time range using GSI
 func (r *WebSocketCostRepository) ListByUser(ctx context.Context, userID string, startTime, endTime time.Time, limit int) ([]*models.WebSocketCostRecord, error) {
-	return r.queryByGSIWithTimeRange(ctx, "user-index", "GSI2PK", "GSI2SK",
+	return r.queryByGSIWithTimeRange(ctx, "user-index", "gsi2PK", "gsi2SK",
 		fmt.Sprintf("WS_USER#%s", userID), startTime, endTime, limit,
 		"failed to list WebSocket cost tracking by user")
 }
@@ -205,7 +205,7 @@ func (r *WebSocketCostRepository) queryBudgetsByGSI(ctx context.Context, indexNa
 	query := db.WithContext(ctx).Model(&models.WebSocketCostBudget{}).
 		Index(indexName).
 		Where(pkField, "=", pkValue).
-		OrderBy("GSI1SK", "ASC")
+		OrderBy("gsi1SK", "ASC")
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -572,7 +572,7 @@ func (r *WebSocketCostRepository) GetBudget(ctx context.Context, userID, period 
 
 // GetUserBudgets retrieves all budgets for a user using BaseRepository GSI query
 func (r *WebSocketCostRepository) GetUserBudgets(ctx context.Context, userID string) ([]*models.WebSocketCostBudget, error) {
-	return r.queryBudgetsByGSI(ctx, "user-budget-index", "GSI1PK",
+	return r.queryBudgetsByGSI(ctx, "user-budget-index", "gsi1PK",
 		fmt.Sprintf("WS_USER_BUDGET#%s", userID), 0, "failed to get user WebSocket budgets")
 }
 
@@ -719,7 +719,7 @@ func (r *WebSocketCostRepository) GetAggregation(ctx context.Context, period, op
 
 // GetUserAggregation retrieves WebSocket cost aggregation for a specific user using BaseRepository GSI query
 func (r *WebSocketCostRepository) GetUserAggregation(ctx context.Context, userID, period, operationType string, windowStart time.Time) (*models.WebSocketCostAggregation, error) {
-	aggregations, err := r.queryAggregationsByGSI(ctx, "user-agg-index", "GSI1PK", "GSI1SK",
+	aggregations, err := r.queryAggregationsByGSI(ctx, "user-agg-index", "gsi1PK", "gsi1SK",
 		fmt.Sprintf("WS_USER_AGG#%s#%s", userID, period),
 		fmt.Sprintf("%s#%s", windowStart.Format(time.RFC3339), operationType),
 		1, "failed to get user WebSocket cost aggregation")

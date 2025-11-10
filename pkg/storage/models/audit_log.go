@@ -49,14 +49,14 @@ type AuthAuditLog struct {
 	Metadata string `dynamorm:"attr:metadata" json:"metadata,omitempty"`
 
 	// GSI keys for querying
-	GSI1PK string `dynamorm:"attr:gsI1PK" json:"-"` // USER#username
-	GSI1SK string `dynamorm:"attr:gsI1SK" json:"-"` // AUDIT#timestamp
-	GSI2PK string `dynamorm:"attr:gsI2PK" json:"-"` // IP#address
-	GSI2SK string `dynamorm:"attr:gsI2SK" json:"-"` // AUDIT#timestamp
-	GSI3PK string `dynamorm:"attr:gsI3PK" json:"-"` // SESSION#id
-	GSI3SK string `dynamorm:"attr:gsI3SK" json:"-"` // AUDIT#timestamp
-	GSI4PK string `dynamorm:"attr:gsI4PK" json:"-"` // SEVERITY#level
-	GSI4SK string `dynamorm:"attr:gsI4SK" json:"-"` // AUDIT#timestamp
+	GSI1PK string `dynamorm:"attr:gsi1PK" json:"-"` // USER#username
+	GSI1SK string `dynamorm:"attr:gsi1SK" json:"-"` // AUDIT#timestamp
+	GSI2PK string `dynamorm:"attr:gsi2PK" json:"-"` // IP#address
+	GSI2SK string `dynamorm:"attr:gsi2SK" json:"-"` // AUDIT#timestamp
+	GSI3PK string `dynamorm:"attr:gsi3PK" json:"-"` // SESSION#id
+	GSI3SK string `dynamorm:"attr:gsi3SK" json:"-"` // AUDIT#timestamp
+	GSI4PK string `dynamorm:"attr:gsi4PK" json:"-"` // SEVERITY#level
+	GSI4SK string `dynamorm:"attr:gsi4SK" json:"-"` // AUDIT#timestamp
 
 	// TTL for automatic deletion
 	TTL int64 `dynamorm:"ttl,attr:ttl" json:"-"`
