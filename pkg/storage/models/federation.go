@@ -13,8 +13,8 @@ type FederationInstance struct {
 
 	PK     string `dynamorm:"pk,attr:PK"`
 	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK"`
 
 	Domain        string    `dynamorm:"attr:domain" json:"domain"`
 	Software      string    `dynamorm:"attr:software" json:"software"`             // mastodon, pleroma, etc.
@@ -50,8 +50,8 @@ type FederationCostActivity struct {
 
 	PK     string `dynamorm:"pk,attr:PK"`
 	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK"`
 
 	ID           string    `dynamorm:"attr:id" json:"id"`
 	Domain       string    `dynamorm:"attr:domain" json:"domain"`
@@ -156,10 +156,10 @@ type FederationNode struct {
 
 	PK     string `dynamorm:"pk,attr:PK"`
 	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK"`
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK"`
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsI3PK"`
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsI3SK"`
 
 	Domain            string         `dynamorm:"attr:domain" json:"domain"`
 	DisplayName       string         `dynamorm:"attr:displayName" json:"display_name"`
@@ -206,8 +206,8 @@ type FederationEdge struct {
 
 	PK     string `dynamorm:"pk,attr:PK"`
 	SK     string `dynamorm:"sk,attr:SK"`
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"`
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK"`
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK"`
 
 	SourceDomain   string    `dynamorm:"attr:sourceDomain" json:"source_domain"`
 	TargetDomain   string    `dynamorm:"attr:targetDomain" json:"target_domain"`
@@ -277,8 +277,8 @@ type InstanceCluster struct {
 
 	PK     string `dynamorm:"pk,attr:PK"`
 	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK"`
 
 	ClusterID   string    `dynamorm:"attr:clusterID" json:"cluster_id"`
 	Name        string    `dynamorm:"attr:name" json:"name"`
@@ -311,8 +311,8 @@ type InstanceConnection struct {
 
 	PK     string `dynamorm:"pk,attr:PK"`
 	SK     string `dynamorm:"sk,attr:SK"`
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"`
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK"`
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK"`
 
 	Domain         string    `dynamorm:"attr:domain" json:"domain"`
 	TargetDomain   string    `dynamorm:"attr:targetDomain" json:"target_domain"`

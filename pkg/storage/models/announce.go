@@ -18,8 +18,8 @@ type Announce struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // ACTOR#{actor_id}
 
 	// GSI4 for actor lookups
-	GSI4PK string `dynamorm:"index:GSI4,pk,attr:gsi4PK" json:"GSI4PK"` // ACTOR#{actor_id}#ANNOUNCES
-	GSI4SK string `dynamorm:"index:GSI4,sk,attr:gsi4SK" json:"GSI4SK"` // PUBLISHED#{timestamp}#OBJECT#{object_id}
+	GSI4PK string `dynamorm:"index:GSI4,pk,attr:gsI4PK" json:"GSI4PK"` // ACTOR#{actor_id}#ANNOUNCES
+	GSI4SK string `dynamorm:"index:GSI4,sk,attr:gsI4SK" json:"GSI4SK"` // PUBLISHED#{timestamp}#OBJECT#{object_id}
 
 	// Core fields from legacy (embedded storage.Announce)
 	Actor     string    `dynamorm:"attr:actor" json:"actor"`          // Who announced

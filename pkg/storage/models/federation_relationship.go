@@ -30,10 +30,10 @@ type FederationRelationship struct {
 
 	PK     string `dynamorm:"pk,attr:PK"`
 	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"` // State-based queries
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"` // Last activity timestamp
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"` // User-based queries
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"` // Target instance + timestamp
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK"` // State-based queries
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK"` // Last activity timestamp
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK"` // User-based queries
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK"` // Target instance + timestamp
 	TTL    int64  `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Core relationship data

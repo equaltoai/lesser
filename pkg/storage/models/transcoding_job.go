@@ -17,12 +17,12 @@ type TranscodingJob struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "JOB_METRICS"
 
 	// GSI1 - User-based queries for transcoding jobs
-	GSI1PK string `dynamorm:"index:user-jobs-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_TRANSCODING#{userID}"
-	GSI1SK string `dynamorm:"index:user-jobs-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{jobID}"
+	GSI1PK string `dynamorm:"index:user-jobs-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "USER_TRANSCODING#{userID}"
+	GSI1SK string `dynamorm:"index:user-jobs-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{timestamp}#{jobID}"
 
 	// GSI2 - Media-based queries
-	GSI2PK string `dynamorm:"index:media-jobs-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "MEDIA_TRANSCODING#{mediaID}"
-	GSI2SK string `dynamorm:"index:media-jobs-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{jobID}"
+	GSI2PK string `dynamorm:"index:media-jobs-index,pk,attr:gsI2PK" json:"gsi2_pk"` // Format: "MEDIA_TRANSCODING#{mediaID}"
+	GSI2SK string `dynamorm:"index:media-jobs-index,sk,attr:gsI2SK" json:"gsi2_sk"` // Format: "{timestamp}#{jobID}"
 
 	// Core job data
 	JobID    string `dynamorm:"attr:jobID" json:"job_id"`

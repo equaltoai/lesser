@@ -17,12 +17,12 @@ type MediaPopularity struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // MEDIA#{mediaID}
 
 	// GSI1 - Sorted by popularity (UPDATEABLE)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // PERIOD#{period}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {inverted_view_count} for descending sort
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1pk"` // PERIOD#{period}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1sk"` // {inverted_view_count} for descending sort
 
 	// GSI2 - Query by date
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // DATE#{date}
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // MEDIA#{mediaID}
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2pk"` // DATE#{date}
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2sk"` // MEDIA#{mediaID}
 
 	// Business fields
 	MediaID         string    `dynamorm:"attr:mediaID" json:"media_id"`

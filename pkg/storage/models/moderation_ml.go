@@ -14,16 +14,16 @@ type ModerationSample struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "VERSION#{version}#{sample_id}"
 
 	// GSI1 - Reviewer queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "REVIEWER#{reviewer_id}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // Format: "REVIEWER#{reviewer_id}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// GSI2 - Label/Severity queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "LABEL#{label}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // Format: "LABEL#{label}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
 
 	// GSI3 - Sample ID lookups
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk,omitempty"` // Format: "SAMPLEID#{sample_id}"
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk,omitempty"` // Format: "SAMPLEID#{sample_id}"
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsI3PK" json:"gsi3_pk,omitempty"` // Format: "SAMPLEID#{sample_id}"
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsI3SK" json:"gsi3_sk,omitempty"` // Format: "SAMPLEID#{sample_id}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "ML_SAMPLE"
@@ -90,12 +90,12 @@ type ModerationModelVersion struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "VERSION#{version_id}"
 
 	// GSI1 - Active model queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "MLMODEL#ACTIVE"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "ACCURACY#{accuracy}#VERSION#{version_id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // Format: "MLMODEL#ACTIVE"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "ACCURACY#{accuracy}#VERSION#{version_id}"
 
 	// GSI2 - Training job queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TRAININGJOB#{job_id}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "TRAININGJOB#{job_id}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // Format: "TRAININGJOB#{job_id}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // Format: "TRAININGJOB#{job_id}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "ML_MODEL_VERSION"
@@ -168,8 +168,8 @@ type ModerationEffectivenessMetric struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "PERIOD#{period}#{start_time}"
 
 	// GSI1 - Timeframe queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "METRICS#{period}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "F1SCORE#{f1}#{pattern_id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // Format: "METRICS#{period}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "F1SCORE#{f1}#{pattern_id}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "ML_METRICS"
@@ -256,12 +256,12 @@ type ModelTrainingJob struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "JOB"
 
 	// GSI1 - Status queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "MLJOB#{status}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // Format: "MLJOB#{status}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// GSI2 - Tenant queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TENANT#{tenant_id}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // Format: "TENANT#{tenant_id}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "ML_TRAINING_JOB"
@@ -346,8 +346,8 @@ type MLPollRequest struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "REQUEST#{timestamp}"
 
 	// GSI1 - Status queries (for finding pending polls)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "MLPOLL#PENDING"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // Format: "MLPOLL#PENDING"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "ML_POLL_REQUEST"
@@ -409,12 +409,12 @@ type MLPrediction struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}#{prediction_id}"
 
 	// GSI1 - Model version queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "MODEL#{model_version}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // Format: "MODEL#{model_version}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// GSI2 - Human label queries (for validation)
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "REVIEW#{reviewed}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // Format: "REVIEW#{reviewed}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "ML_PREDICTION"

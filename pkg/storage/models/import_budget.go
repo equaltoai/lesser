@@ -14,8 +14,8 @@ type ImportBudget struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for period queries - BUDGET#{period}, USER#{username}
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"gsi1_sk"`
 
 	// Budget configuration
 	Username string `dynamorm:"attr:username" json:"username"`

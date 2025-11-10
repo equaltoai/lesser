@@ -21,12 +21,12 @@ type WebSocketCostRecord struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Connection-based queries
-	GSI1PK string `dynamorm:"index:connection-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_CONN#{connection_id}"
-	GSI1SK string `dynamorm:"index:connection-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
+	GSI1PK string `dynamorm:"index:connection-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "WS_CONN#{connection_id}"
+	GSI1SK string `dynamorm:"index:connection-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// GSI2 - User-based queries
-	GSI2PK string `dynamorm:"index:user-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "WS_USER#{user_id}"
-	GSI2SK string `dynamorm:"index:user-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{operation_type}#{id}"
+	GSI2PK string `dynamorm:"index:user-index,pk,attr:gsI2PK" json:"gsi2_pk"` // Format: "WS_USER#{user_id}"
+	GSI2SK string `dynamorm:"index:user-index,sk,attr:gsI2SK" json:"gsi2_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// Core cost tracking data
 	ID            string    `dynamorm:"attr:id" json:"id"`
@@ -102,8 +102,8 @@ type WebSocketCostBudget struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "BUDGET#{period}"
 
 	// GSI1 - User budget queries
-	GSI1PK string `dynamorm:"index:user-budget-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_USER_BUDGET#{user_id}"
-	GSI1SK string `dynamorm:"index:user-budget-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{period}#{status}"
+	GSI1PK string `dynamorm:"index:user-budget-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "WS_USER_BUDGET#{user_id}"
+	GSI1SK string `dynamorm:"index:user-budget-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{period}#{status}"
 
 	// Budget configuration
 	UserID           string    `dynamorm:"attr:userID" json:"user_id"`
@@ -155,8 +155,8 @@ type WebSocketCostAggregation struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "window#{windowStart}"
 
 	// GSI1 - User aggregation queries
-	GSI1PK string `dynamorm:"index:user-agg-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_USER_AGG#{user_id}#{period}"
-	GSI1SK string `dynamorm:"index:user-agg-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}"
+	GSI1PK string `dynamorm:"index:user-agg-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "WS_USER_AGG#{user_id}#{period}"
+	GSI1SK string `dynamorm:"index:user-agg-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}"
 
 	// Aggregation details
 	Period        string    `dynamorm:"attr:period" json:"period"`                // minute, hour, day, week, month

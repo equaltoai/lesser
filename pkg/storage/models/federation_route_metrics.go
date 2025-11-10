@@ -25,16 +25,16 @@ type FederationRouteMetrics struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for time-based route queries - FED_ROUTES#{date}, ROUTE#{route_id}#{timestamp}
-	GSI1PK string `dynamorm:"index:route-time-index,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:route-time-index,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:route-time-index,pk,attr:gsI1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:route-time-index,sk,attr:gsI1SK" json:"gsi1_sk"`
 
 	// GSI2 for domain-route queries - FED_DOMAIN_ROUTES#{domain}, ROUTE#{route_id}#{timestamp}
-	GSI2PK string `dynamorm:"index:domain-route-index,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:domain-route-index,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:domain-route-index,pk,attr:gsI2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:domain-route-index,sk,attr:gsI2SK" json:"gsi2_sk"`
 
 	// GSI3 for performance queries - FED_ROUTE_PERF#{performance_tier}, LATENCY#{avg_latency}#{route_id}
-	GSI3PK string `dynamorm:"index:route-performance-index,pk,attr:gsi3PK" json:"gsi3_pk"`
-	GSI3SK string `dynamorm:"index:route-performance-index,sk,attr:gsi3SK" json:"gsi3_sk"`
+	GSI3PK string `dynamorm:"index:route-performance-index,pk,attr:gsI3PK" json:"gsi3_pk"`
+	GSI3SK string `dynamorm:"index:route-performance-index,sk,attr:gsI3SK" json:"gsi3_sk"`
 
 	// Route identification
 	RouteID           string `dynamorm:"attr:routeID" json:"route_id"`                         // Unique route identifier

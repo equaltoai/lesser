@@ -14,8 +14,8 @@ type Poll struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // METADATA
 
 	// GSI keys for querying by status
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // STATUS#{statusId}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // POLL
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"-"` // STATUS#{statusId}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"-"` // POLL
 
 	// Business fields
 	ID          string           `dynamorm:"attr:id" json:"id"`

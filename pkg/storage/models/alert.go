@@ -16,21 +16,21 @@ type Alert struct {
 
 	// GSI1: Alert type index for querying by alert type
 	// GSI1PK: ALERT_TYPE#{type}
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"gsi1_pk"`
 	// GSI1SK: TIMESTAMP#{timestamp}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"gsi1_sk"`
 
 	// GSI2: Service index for querying alerts by service
 	// GSI2PK: SERVICE#{service}
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsI2PK" json:"gsi2_pk"`
 	// GSI2SK: SEVERITY#{severity}#TIMESTAMP#{timestamp}
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsI2SK" json:"gsi2_sk"`
 
 	// GSI3: Status index for querying alerts by status
 	// GSI3PK: STATUS#{status}
-	GSI3PK string `dynamorm:"index:GSI3,pk,attr:gsi3PK" json:"gsi3_pk"`
+	GSI3PK string `dynamorm:"index:GSI3,pk,attr:gsI3PK" json:"gsi3_pk"`
 	// GSI3SK: PRIORITY#{priority}#TIMESTAMP#{timestamp}
-	GSI3SK string `dynamorm:"index:GSI3,sk,attr:gsi3SK" json:"gsi3_sk"`
+	GSI3SK string `dynamorm:"index:GSI3,sk,attr:gsI3SK" json:"gsi3_sk"`
 
 	// Alert identification
 	AlertID  string `dynamorm:"attr:alertID" json:"alert_id"`
@@ -255,15 +255,15 @@ type WebhookDelivery struct {
 
 	// GSI1: Alert index for querying deliveries by alert
 	// GSI1PK: ALERT#{alert_id}
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"gsi1_pk"`
 	// GSI1SK: STATUS#{status}#TIMESTAMP#{timestamp}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"gsi1_sk"`
 
 	// GSI2: Status index for querying by delivery status
 	// GSI2PK: STATUS#{status}
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsI2PK" json:"gsi2_pk"`
 	// GSI2SK: TIMESTAMP#{timestamp}
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsI2SK" json:"gsi2_sk"`
 
 	// Delivery identification
 	DeliveryID string `dynamorm:"attr:deliveryID" json:"delivery_id"`

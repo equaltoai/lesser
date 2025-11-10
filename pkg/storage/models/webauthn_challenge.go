@@ -20,7 +20,7 @@ type WebAuthnChallenge struct {
 	Type        string    `dynamorm:"attr:type" json:"type"` // "registration" or "authentication"
 
 	// Additional fields for DynamoDB
-	ItemType string `dynamorm:"attr:ItemType" json:"ItemType"` // "WebAuthnChallenge"
+	ItemType string `dynamorm:"attr:itemType" json:"ItemType"` // "WebAuthnChallenge"
 
 	// TTL field for automatic expiration
 	TTL int64 `dynamorm:"ttl,attr:ttl" json:"-"`

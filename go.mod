@@ -40,7 +40,7 @@ require (
 	github.com/graph-gophers/dataloader v5.0.0+incompatible
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/oklog/ulid/v2 v2.1.1
-	github.com/pay-theory/dynamorm v1.0.37-0.20251110054050-bd20fc148bc0
+	github.com/pay-theory/dynamorm v1.0.37-0.20251110184323-29ba7b5cedfb
 	github.com/pay-theory/lift v1.0.73-0.20251110141054-9957e652601a
 	github.com/shopspring/decimal v1.4.0
 	github.com/spruceid/siwe-go v0.2.1
@@ -53,7 +53,7 @@ require (
 	golang.org/x/text v0.30.0
 )
 
-replace github.com/pay-theory/dynamorm => github.com/pay-theory/dynamorm v1.0.37-0.20251110054050-bd20fc148bc0
+replace github.com/pay-theory/dynamorm => github.com/pay-theory/dynamorm v1.0.37-0.20251110184323-29ba7b5cedfb
 
 require (
 	github.com/PaesslerAG/gval v1.2.4 // indirect

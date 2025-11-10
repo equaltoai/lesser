@@ -42,12 +42,12 @@ type TrustRelationship struct {
 	SK string `dynamorm:"sk,attr:SK"` // TRUSTEE#trusteeID
 
 	// GSI1 - for reverse lookups (who trusts this trustee)
-	GSI1PK string `dynamorm:"index:gsi1-index,pk,attr:gsi1PK"` // TRUSTED#trusteeID#category
-	GSI1SK string `dynamorm:"index:gsi1-index,sk,attr:gsi1SK"` // TRUSTER#trusterID
+	GSI1PK string `dynamorm:"index:gsi1-index,pk,attr:gsI1PK"` // TRUSTED#trusteeID#category
+	GSI1SK string `dynamorm:"index:gsi1-index,sk,attr:gsI1SK"` // TRUSTER#trusterID
 
 	// GSI2 - for domain-based queries
-	GSI2PK string `dynamorm:"index:gsi2-index,pk,attr:gsi2PK"` // DOMAIN#domain
-	GSI2SK string `dynamorm:"index:gsi2-index,sk,attr:gsi2SK"` // TRUST#category#score
+	GSI2PK string `dynamorm:"index:gsi2-index,pk,attr:gsI2PK"` // DOMAIN#domain
+	GSI2SK string `dynamorm:"index:gsi2-index,sk,attr:gsI2SK"` // TRUST#category#score
 
 	// Business fields
 	ID         string          `dynamorm:"attr:id" json:"id"`

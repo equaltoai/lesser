@@ -16,20 +16,20 @@ type Timeline struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// GSI1 - Post timeline (all timeline entries for a specific post)
-	GSI1PK string `dynamorm:"index:post-timeline-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "POST#{post_id}"
-	GSI1SK string `dynamorm:"index:post-timeline-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	GSI1PK string `dynamorm:"index:post-timeline-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "POST#{post_id}"
+	GSI1SK string `dynamorm:"index:post-timeline-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// GSI2 - Actor timeline (all timeline entries by an actor)
-	GSI2PK string `dynamorm:"index:actor-timeline-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "ACTOR#{actor_id}"
-	GSI2SK string `dynamorm:"index:actor-timeline-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	GSI2PK string `dynamorm:"index:actor-timeline-index,pk,attr:gsI2PK" json:"gsi2_pk"` // Format: "ACTOR#{actor_id}"
+	GSI2SK string `dynamorm:"index:actor-timeline-index,sk,attr:gsI2SK" json:"gsi2_sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// GSI3 - Visibility timeline (entries by visibility level)
-	GSI3PK string `dynamorm:"index:visibility-timeline-index,pk,attr:gsi3PK" json:"gsi3_pk,omitempty"` // Format: "VISIBILITY#{visibility}"
-	GSI3SK string `dynamorm:"index:visibility-timeline-index,sk,attr:gsi3SK" json:"gsi3_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	GSI3PK string `dynamorm:"index:visibility-timeline-index,pk,attr:gsI3PK" json:"gsi3_pk,omitempty"` // Format: "VISIBILITY#{visibility}"
+	GSI3SK string `dynamorm:"index:visibility-timeline-index,sk,attr:gsI3SK" json:"gsi3_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// GSI4 - Language timeline (entries by language)
-	GSI4PK string `dynamorm:"index:language-timeline-index,pk,attr:gsi4PK" json:"gsi4_pk,omitempty"` // Format: "LANGUAGE#{language}"
-	GSI4SK string `dynamorm:"index:language-timeline-index,sk,attr:gsi4SK" json:"gsi4_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	GSI4PK string `dynamorm:"index:language-timeline-index,pk,attr:gsI4PK" json:"gsi4_pk,omitempty"` // Format: "LANGUAGE#{language}"
+	GSI4SK string `dynamorm:"index:language-timeline-index,sk,attr:gsI4SK" json:"gsi4_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// Core timeline data
 	TimelineType string `dynamorm:"attr:timelineType" json:"timeline_type"` // HOME, PUBLIC, LIST, DIRECT, HASHTAG

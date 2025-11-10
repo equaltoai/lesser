@@ -19,12 +19,12 @@ type StreamingCloudWatchMetrics struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // {media_id}#{timestamp}
 
 	// GSI keys for time-based queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // METRIC_TIME#{date}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {metric_type}#{timestamp}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1pk"` // METRIC_TIME#{date}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1sk"` // {metric_type}#{timestamp}
 
 	// GSI2 for media-specific queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // MEDIA#{media_id}
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // {metric_type}#{timestamp}
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2pk"` // MEDIA#{media_id}
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2sk"` // {metric_type}#{timestamp}
 
 	// Business fields
 	MediaID    string    `dynamorm:"attr:mediaID" json:"media_id"`

@@ -51,8 +51,8 @@ type RecoveryRequest struct {
 	SK string `dynamorm:"sk,attr:SK"` // REQUEST
 
 	// GSI1 for querying by username
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK"` // USER#username
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK"` // RECOVERY#timestamp
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK"` // USER#username
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK"` // RECOVERY#timestamp
 
 	// Business fields
 	ID            string          `dynamorm:"attr:id" json:"id"`

@@ -16,8 +16,8 @@ type Mute struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // MUTED#{muted_username}
 
 	// GSI1 for reverse lookup
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"GSI1PK"` // MUTED#{muted_username}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"GSI1SK"` // MUTER#{username}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"GSI1PK"` // MUTED#{muted_username}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"GSI1SK"` // MUTER#{username}
 
 	// Core fields from legacy
 	Type              string    `dynamorm:"attr:type" json:"Type"`                           // Always "Mute"

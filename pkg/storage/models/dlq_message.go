@@ -18,16 +18,16 @@ type DLQMessage struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "MSG#timestamp#messageId"
 
 	// GSI1 - Error type analysis
-	GSI1PK string `dynamorm:"index:error-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "DLQ_ERROR#errorType"
-	GSI1SK string `dynamorm:"index:error-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{service}#{messageId}"
+	GSI1PK string `dynamorm:"index:error-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "DLQ_ERROR#errorType"
+	GSI1SK string `dynamorm:"index:error-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{timestamp}#{service}#{messageId}"
 
 	// GSI2 - Retry analysis and reprocessing
-	GSI2PK string `dynamorm:"index:retry-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "DLQ_RETRY#{service}#{status}"
-	GSI2SK string `dynamorm:"index:retry-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{messageId}"
+	GSI2PK string `dynamorm:"index:retry-index,pk,attr:gsI2PK" json:"gsi2_pk"` // Format: "DLQ_RETRY#{service}#{status}"
+	GSI2SK string `dynamorm:"index:retry-index,sk,attr:gsI2SK" json:"gsi2_sk"` // Format: "{timestamp}#{messageId}"
 
 	// GSI3 - Service-wide analysis
-	GSI3PK string `dynamorm:"index:service-index,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "DLQ_SERVICE#{service}"
-	GSI3SK string `dynamorm:"index:service-index,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{timestamp}#{errorType}#{messageId}"
+	GSI3PK string `dynamorm:"index:service-index,pk,attr:gsI3PK" json:"gsi3_pk"` // Format: "DLQ_SERVICE#{service}"
+	GSI3SK string `dynamorm:"index:service-index,sk,attr:gsI3SK" json:"gsi3_sk"` // Format: "{timestamp}#{errorType}#{messageId}"
 
 	// Core message data
 	ID                string `dynamorm:"attr:id" json:"id"`                                 // Unique DLQ message ID

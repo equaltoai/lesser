@@ -17,12 +17,12 @@ type ScheduledJobCostRecord struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "RUN#{timestamp}#{id}"
 
 	// GSI1 - Job status and performance queries
-	GSI1PK string `dynamorm:"index:job-status-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "SCHEDULED_JOB_STATUS#{status}"
-	GSI1SK string `dynamorm:"index:job-status-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{jobName}#{id}"
+	GSI1PK string `dynamorm:"index:job-status-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "SCHEDULED_JOB_STATUS#{status}"
+	GSI1SK string `dynamorm:"index:job-status-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{timestamp}#{jobName}#{id}"
 
 	// GSI2 - Date range queries across all jobs
-	GSI2PK string `dynamorm:"index:job-date-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "SCHEDULED_JOB_DATE#{dateStr}"
-	GSI2SK string `dynamorm:"index:job-date-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{jobName}#{id}"
+	GSI2PK string `dynamorm:"index:job-date-index,pk,attr:gsI2PK" json:"gsi2_pk"` // Format: "SCHEDULED_JOB_DATE#{dateStr}"
+	GSI2SK string `dynamorm:"index:job-date-index,sk,attr:gsI2SK" json:"gsi2_sk"` // Format: "{timestamp}#{jobName}#{id}"
 
 	// Core job information
 	ID          string    `dynamorm:"attr:id" json:"id"`                              // Unique execution ID

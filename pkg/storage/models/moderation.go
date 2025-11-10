@@ -86,16 +86,16 @@ type ModerationEvent struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}#{event_id}"
 
 	// GSI1 - Actor queries (find events by who created the content)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "ACTOR#{actor_id}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // Format: "ACTOR#{actor_id}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// GSI2 - Type/Category/Severity queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TYPE#{event_type}#{category}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "SEVERITY#{severity}#{RFC3339}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // Format: "TYPE#{event_type}#{category}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // Format: "SEVERITY#{severity}#{RFC3339}"
 
 	// GSI3 - Event ID lookups
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk,omitempty"` // Format: "EVENTID#{event_id}"
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk,omitempty"` // Format: "EVENTID#{event_id}"
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsI3PK" json:"gsi3_pk,omitempty"` // Format: "EVENTID#{event_id}"
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsI3SK" json:"gsi3_sk,omitempty"` // Format: "EVENTID#{event_id}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "EVENT"
@@ -219,8 +219,8 @@ type ModerationDecision struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}"
 
 	// GSI1 - Active decisions lookup
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "ACTIVE_DECISIONS"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "OBJECT#{object_id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // "ACTIVE_DECISIONS"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // "OBJECT#{object_id}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "DECISION"
@@ -272,12 +272,12 @@ type ModerationPattern struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // "METADATA"
 
 	// GSI1 - Active pattern queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "MODERATION_PATTERNS#ACTIVE" (when active)
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "{severity}#{type}#{pattern_id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // "MODERATION_PATTERNS#ACTIVE" (when active)
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // "{severity}#{type}#{pattern_id}"
 
 	// GSI2 - Severity-based queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // "MODERATION_PATTERNS#{severity}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // "{updated_at}#{pattern_id}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // "MODERATION_PATTERNS#{severity}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // "{updated_at}#{pattern_id}"
 
 	// Pattern data
 	PatternID   string    `dynamorm:"attr:patternID" json:"pattern_id"`
@@ -475,12 +475,12 @@ type ModerationAnalysisResult struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "RESULT#{timestamp}#{analysis_id}"
 
 	// GSI1 - Author queries (find analyses by content author)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "AUTHOR#{author_id}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // Format: "AUTHOR#{author_id}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// GSI2 - Analysis type queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "ANALYSIS_TYPE#{type}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // Format: "ANALYSIS_TYPE#{type}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "ANALYSIS_RESULT"
@@ -543,12 +543,12 @@ type ModerationDecisionResult struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}#{decision_id}"
 
 	// GSI1 - Active decisions lookup
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "ACTIVE_DECISIONS"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "CONTENT#{content_id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // "ACTIVE_DECISIONS"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // "CONTENT#{content_id}"
 
 	// GSI2 - Action type queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "ACTION#{action}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // Format: "ACTION#{action}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "DECISION_RESULT"
@@ -619,12 +619,12 @@ type ModerationReviewQueue struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "PRIORITY#{priority}#{RFC3339}#{item_id}"
 
 	// GSI1 - Content lookups
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "QUEUE_CONTENT#{content_id}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "STATUS#{status}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // Format: "QUEUE_CONTENT#{content_id}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "STATUS#{status}"
 
 	// GSI2 - Assignee queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "ASSIGNEE#{assignee_id}" (when assigned)
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "PRIORITY#{priority}#{RFC3339}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // Format: "ASSIGNEE#{assignee_id}" (when assigned)
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // Format: "PRIORITY#{priority}#{RFC3339}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "REVIEW_QUEUE"
@@ -695,12 +695,12 @@ type AuditLog struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}#{log_id}"
 
 	// GSI1 - Actor queries (find actions by who performed them)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "ADMIN#{admin_id}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1_pk,omitempty"` // Format: "ADMIN#{admin_id}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// GSI2 - Target queries (find actions on specific targets)
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TARGET#{target_id}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "ACTION#{action}#{RFC3339}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // Format: "TARGET#{target_id}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // Format: "ACTION#{action}#{RFC3339}"
 
 	// Type marker
 	Type string `dynamorm:"attr:type" json:"type"` // "AUDIT_LOG"

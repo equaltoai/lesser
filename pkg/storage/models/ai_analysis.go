@@ -16,8 +16,8 @@ type AIAnalysis struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ANALYSIS#{analysis_id}"
 
 	// GSI4 for temporal queries (reusing cost tracking GSI)
-	GSI4PK string `dynamorm:"index:cost-date-index,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "AI#ANALYSIS#{date}"
-	GSI4SK string `dynamorm:"index:cost-date-index,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{timestamp}"
+	GSI4PK string `dynamorm:"index:cost-date-index,pk,attr:gsI4PK" json:"gsi4_pk"` // Format: "AI#ANALYSIS#{date}"
+	GSI4SK string `dynamorm:"index:cost-date-index,sk,attr:gsI4SK" json:"gsi4_sk"` // Format: "{timestamp}"
 
 	// Core fields
 	ID         string    `dynamorm:"attr:id" json:"id"`

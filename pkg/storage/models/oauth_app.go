@@ -14,8 +14,8 @@ type OAuthApp struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // METADATA
 
 	// GSI for querying by name
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // OAUTH_APPS
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // {name}#{clientID}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"-"` // OAUTH_APPS
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"-"` // {name}#{clientID}
 
 	// OAuth app data
 	ClientID     string    `dynamorm:"attr:clientID" json:"client_id"`

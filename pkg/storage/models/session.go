@@ -21,12 +21,12 @@ type Session struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "session#{sessionID}" (same as PK for simple key)
 
 	// GSI1 - User sessions lookup
-	GSI1PK string `dynamorm:"index:user-sessions-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_SESSIONS#{userID}"
-	GSI1SK string `dynamorm:"index:user-sessions-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{sessionID}"
+	GSI1PK string `dynamorm:"index:user-sessions-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "USER_SESSIONS#{userID}"
+	GSI1SK string `dynamorm:"index:user-sessions-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{created_at}#{sessionID}"
 
 	// GSI2 - Access token lookup
-	GSI2PK string `dynamorm:"index:token-index,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TOKEN#{access_token_hash}"
-	GSI2SK string `dynamorm:"index:token-index,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "{userID}"
+	GSI2PK string `dynamorm:"index:token-index,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // Format: "TOKEN#{access_token_hash}"
+	GSI2SK string `dynamorm:"index:token-index,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // Format: "{userID}"
 
 	// Core session data
 	SessionID    string   `dynamorm:"attr:sessionID" json:"session_id"`

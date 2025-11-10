@@ -14,8 +14,8 @@ type RouteDeliveryResult struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // RESULT#{timestampNano}
 
 	// GSI keys for time-based queries
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1pk"` // RESULTS
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1sk"` // {timestamp}#{routeID}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"gsi1pk"` // RESULTS
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"gsi1sk"` // {timestamp}#{routeID}
 
 	// Delivery data
 	MessageID    string    `dynamorm:"attr:messageID" json:"message_id"`

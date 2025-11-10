@@ -14,8 +14,8 @@ type TrendingHashtag struct {
 	SK string `dynamorm:"sk,attr:SK"`
 
 	// GSI fields for trending queries
-	GSI8PK string `dynamorm:"index:GSI8,pk,attr:gsi8PK"`
-	GSI8SK string `dynamorm:"index:GSI8,sk,attr:gsi8SK"`
+	GSI8PK string `dynamorm:"index:GSI8,pk,attr:gsI8PK"`
+	GSI8SK string `dynamorm:"index:GSI8,sk,attr:gsI8SK"`
 
 	// Business fields from legacy
 	Hashtag   string    `dynamorm:"attr:hashtag" json:"hashtag"`

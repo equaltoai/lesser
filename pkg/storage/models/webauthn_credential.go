@@ -12,8 +12,8 @@ type WebAuthnCredential struct {
 	PK string `dynamorm:"pk,attr:PK" json:"-"` // USER#username
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // WEBAUTHN_CRED#credentialID
 	// GSI for credential lookup by ID
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"-"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"-"`
 
 	// Core fields from legacy storage.WebAuthnCredential
 	ID              string    `dynamorm:"attr:id" json:"id"`
@@ -30,7 +30,7 @@ type WebAuthnCredential struct {
 	Name            string    `dynamorm:"attr:name" json:"name"` // User-friendly name
 
 	// Additional fields for DynamoDB queries
-	Type string `dynamorm:"attr:Type" json:"Type"` // "WebAuthnCredential"
+	Type string `dynamorm:"attr:type" json:"Type"` // "WebAuthnCredential"
 }
 
 // TableName returns the DynamoDB table name

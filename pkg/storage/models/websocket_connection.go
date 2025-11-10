@@ -62,12 +62,12 @@ type WebSocketConnection struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // CONN#{connectionID}
 
 	// GSI keys for querying
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // USER#{userID}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // CONN#{timestamp}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1pk"` // USER#{userID}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1sk"` // CONN#{timestamp}
 
 	// GSI2 for state-based queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // STATE#{state}
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // CONN#{connectionID}
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsI2PK" json:"gsi2pk"` // STATE#{state}
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsI2SK" json:"gsi2sk"` // CONN#{connectionID}
 
 	// Business fields
 	ConnectionID string    `dynamorm:"attr:connectionID" json:"connection_id"`
@@ -229,8 +229,8 @@ type WebSocketSubscription struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // CONN#{connectionID}
 
 	// GSI keys for querying
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // CONN#{connectionID}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // STREAM#{stream}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsI1PK" json:"gsi1pk"` // CONN#{connectionID}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsI1SK" json:"gsi1sk"` // STREAM#{stream}
 
 	// Business fields
 	ConnectionID string    `dynamorm:"attr:connectionID" json:"connection_id"`

@@ -18,24 +18,24 @@ type Actor struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "PROFILE" - MUST match legacy exactly
 
 	// GSI1 - Username search with prefix partitioning for efficient queries
-	GSI1PK string `dynamorm:"index:username-search-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USERNAME_SEARCH#{first_2_chars}"
-	GSI1SK string `dynamorm:"index:username-search-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{lowercase_username}"
+	GSI1PK string `dynamorm:"index:username-search-index,pk,attr:gsI1PK" json:"gsi1_pk"` // Format: "USERNAME_SEARCH#{first_2_chars}"
+	GSI1SK string `dynamorm:"index:username-search-index,sk,attr:gsI1SK" json:"gsi1_sk"` // Format: "{lowercase_username}"
 
 	// GSI2 - Display name search
-	GSI2PK string `dynamorm:"index:name-search-index,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "NAME_SEARCH#{first_2_chars}"
-	GSI2SK string `dynamorm:"index:name-search-index,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "{lowercase_name}#{username}"
+	GSI2PK string `dynamorm:"index:name-search-index,pk,attr:gsI2PK" json:"gsi2_pk,omitempty"` // Format: "NAME_SEARCH#{first_2_chars}"
+	GSI2SK string `dynamorm:"index:name-search-index,sk,attr:gsI2SK" json:"gsi2_sk,omitempty"` // Format: "{lowercase_name}#{username}"
 
 	// GSI3 - Domain-based queries for federation
-	GSI3PK string `dynamorm:"index:domain-index,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "DOMAIN#{domain}"
-	GSI3SK string `dynamorm:"index:domain-index,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{username}"
+	GSI3PK string `dynamorm:"index:domain-index,pk,attr:gsI3PK" json:"gsi3_pk"` // Format: "DOMAIN#{domain}"
+	GSI3SK string `dynamorm:"index:domain-index,sk,attr:gsI3SK" json:"gsi3_sk"` // Format: "{username}"
 
 	// GSI4 - Popularity ranking by follower count
-	GSI4PK string `dynamorm:"index:popularity-index,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "ACTOR_RANK#{bucket}"
-	GSI4SK string `dynamorm:"index:popularity-index,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{padded_count}#{username}"
+	GSI4PK string `dynamorm:"index:popularity-index,pk,attr:gsI4PK" json:"gsi4_pk"` // Format: "ACTOR_RANK#{bucket}"
+	GSI4SK string `dynamorm:"index:popularity-index,sk,attr:gsI4SK" json:"gsi4_sk"` // Format: "{padded_count}#{username}"
 
 	// GSI5 - Recent activity tracking
-	GSI5PK string `dynamorm:"index:activity-index,pk,attr:gsi5PK" json:"gsi5_pk"` // Format: "ACTIVE#{date}"
-	GSI5SK string `dynamorm:"index:activity-index,sk,attr:gsi5SK" json:"gsi5_sk"` // Format: "{timestamp}#{username}"
+	GSI5PK string `dynamorm:"index:activity-index,pk,attr:gsI5PK" json:"gsi5_pk"` // Format: "ACTIVE#{date}"
+	GSI5SK string `dynamorm:"index:activity-index,sk,attr:gsI5SK" json:"gsi5_sk"` // Format: "{timestamp}#{username}"
 
 	// Core actor data
 	Actor      *activitypub.Actor `dynamorm:"json,attr:actor" json:"actor"`

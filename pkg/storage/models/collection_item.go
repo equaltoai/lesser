@@ -14,8 +14,8 @@ type CollectionItem struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // ITEM#{itemID}
 
 	// GSI1 for reverse lookups (what collections is an item in)
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"GSI1PK"` // ITEM#{itemID}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"GSI1SK"` // COLLECTION#{collection}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsI1PK" json:"GSI1PK"` // ITEM#{itemID}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsI1SK" json:"GSI1SK"` // COLLECTION#{collection}
 
 	// Collection item data
 	Collection string    `dynamorm:"attr:collection" json:"Collection"` // The collection ID (e.g., featured, likes, etc.)

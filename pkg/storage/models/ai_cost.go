@@ -16,16 +16,16 @@ type AICost struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for time-based queries - AI_COSTS#{date}, TS#{timestamp}#{operation_id}
-	GSI1PK string `dynamorm:"index:time-index,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:time-index,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:time-index,pk,attr:gsI1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:time-index,sk,attr:gsI1SK" json:"gsi1_sk"`
 
 	// GSI2 for operation type queries - AI_TYPE#{operation_type}, MODEL#{model}#{timestamp}
-	GSI2PK string `dynamorm:"index:operation-type-index,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:operation-type-index,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:operation-type-index,pk,attr:gsI2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:operation-type-index,sk,attr:gsI2SK" json:"gsi2_sk"`
 
 	// GSI3 for cost analysis - AI_COST_RANGE#{cost_tier}, COST#{cost_microcents}#{timestamp}
-	GSI3PK string `dynamorm:"index:cost-analysis-index,pk,attr:gsi3PK" json:"gsi3_pk"`
-	GSI3SK string `dynamorm:"index:cost-analysis-index,sk,attr:gsi3SK" json:"gsi3_sk"`
+	GSI3PK string `dynamorm:"index:cost-analysis-index,pk,attr:gsI3PK" json:"gsi3_pk"`
+	GSI3SK string `dynamorm:"index:cost-analysis-index,sk,attr:gsI3SK" json:"gsi3_sk"`
 
 	// Core operation metadata
 	OperationID   string `dynamorm:"attr:operationID" json:"operation_id"`
