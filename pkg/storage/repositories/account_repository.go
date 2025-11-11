@@ -36,8 +36,9 @@ type AccountRepository struct {
 
 	// Dependencies for cross-repository operations
 	// Note: storage.Storage dependency removed in Phase 5.6
-	statusRepo interfaces.StatusRepository // For accessing status objects
-	actorRepo  *ActorRepository
+	statusRepo   interfaces.StatusRepository // For accessing status objects
+	actorRepo    *ActorRepository
+	bookmarkRepo *BookmarkRepository
 }
 
 type userVersionProjection struct {
@@ -101,6 +102,18 @@ func (r *AccountRepository) SetStatusRepository(statusRepo interfaces.StatusRepo
 	r.statusRepo = statusRepo
 }
 
+// SetBookmarkRepository wires the bookmark repository for dual-write operations
+func (r *AccountRepository) SetBookmarkRepository(bookmarkRepo *BookmarkRepository) {
+	r.bookmarkRepo = bookmarkRepo
+}
+
+func (r *AccountRepository) getBookmarkRepository() *BookmarkRepository {
+	if r.bookmarkRepo == nil {
+		r.bookmarkRepo = NewBookmarkRepository(r.db, r.tableName, r.logger)
+	}
+	return r.bookmarkRepo
+}
+
 // SetStorage is deprecated - storage dependency removed in Phase 5.6
 func (r *AccountRepository) SetStorage(_ interface{}) {
 	// No-op: storage dependency removed
@@ -115,6 +128,7 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 		return common.ValidationError{Field: "account", Message: "account and user are required"}
 	}
 
+	account.User.Username = r.canonicalUsername(account.User.Username)
 	user := account.User
 	actor := account.Actor
 
@@ -229,6 +243,7 @@ func (r *AccountRepository) CreateAccountLegacy(ctx context.Context, username, e
 
 // GetAccount retrieves complete account information (User + Actor)
 func (r *AccountRepository) GetAccount(ctx context.Context, username string) (*storage.Account, error) {
+	username = r.canonicalUsername(username)
 	// Get user data
 	user, err := r.GetUser(ctx, username)
 	if err != nil {
@@ -252,6 +267,7 @@ func (r *AccountRepository) GetAccount(ctx context.Context, username string) (*s
 
 // DeleteAccount removes both User and Actor entities
 func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) error {
+	username = r.canonicalUsername(username)
 	// Delete actor first (it's optional)
 	if err := r.deleteActor(ctx, username); err != nil && !isAccountNotFound(err) {
 		r.logger.Error("failed to delete actor",
@@ -274,6 +290,7 @@ func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) 
 
 // GetUser retrieves user authentication data
 func (r *AccountRepository) GetUser(ctx context.Context, username string) (*storage.User, error) {
+	username = r.canonicalUsername(username)
 	user := &models.User{}
 
 	// Use consistent key pattern
@@ -299,6 +316,7 @@ func (r *AccountRepository) GetUserByEmail(_ context.Context, email string) (*st
 
 // UpdateUser updates user authentication data
 func (r *AccountRepository) UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error {
+	username = r.canonicalUsername(username)
 	// Get existing user
 	user := &models.User{}
 	pk := fmt.Sprintf("USER#%s", username)
@@ -351,6 +369,7 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, username string, upd
 
 // GetActor retrieves an actor by username
 func (r *AccountRepository) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
+	username = r.canonicalUsername(username)
 	var actorModel models.Actor
 
 	// Use key utilities for consistent key generation
@@ -371,6 +390,61 @@ func (r *AccountRepository) GetActor(ctx context.Context, username string) (*act
 // GetActorByUsername is an alias for GetActor (for compatibility)
 func (r *AccountRepository) GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error) {
 	return r.GetActor(ctx, username)
+}
+
+func (r *AccountRepository) canonicalUsername(username string) string {
+	trimmed := strings.TrimSpace(username)
+	if trimmed == "" {
+		return trimmed
+	}
+
+	trimmed = strings.TrimPrefix(trimmed, "acct:")
+	trimmed = strings.TrimPrefix(trimmed, "@")
+	trimmed = strings.TrimSuffix(trimmed, "/")
+
+	if strings.HasPrefix(trimmed, "https://") || strings.HasPrefix(trimmed, "http://") {
+		urlWithoutScheme := strings.TrimSuffix(trimmed, "/")
+		if idx := strings.Index(urlWithoutScheme, "/users/"); idx != -1 && idx+7 < len(urlWithoutScheme) {
+			trimmed = urlWithoutScheme[idx+7:]
+		} else if idx := strings.LastIndex(urlWithoutScheme, "/@"); idx != -1 && idx+2 < len(urlWithoutScheme) {
+			trimmed = urlWithoutScheme[idx+2:]
+		} else {
+			parts := strings.Split(urlWithoutScheme, "/")
+			if len(parts) > 0 {
+				trimmed = parts[len(parts)-1]
+			}
+		}
+		trimmed = strings.TrimPrefix(trimmed, "@")
+	}
+
+	if at := strings.LastIndex(trimmed, "@"); at != -1 {
+		localPart := trimmed[:at]
+		domainPart := trimmed[at+1:]
+		if r.isLocalDomain(domainPart) {
+			trimmed = localPart
+		}
+	}
+
+	return strings.TrimSpace(trimmed)
+}
+
+func (r *AccountRepository) isLocalDomain(domain string) bool {
+	if domain == "" {
+		return false
+	}
+	repoDomain := r.domain
+	if strings.TrimSpace(repoDomain) == "" {
+		repoDomain = config.Get().Domain
+	}
+	return normalizeDomainValue(domain) == normalizeDomainValue(repoDomain)
+}
+
+func normalizeDomainValue(domain string) string {
+	normalized := strings.ToLower(strings.TrimSpace(domain))
+	normalized = strings.TrimPrefix(normalized, "https://")
+	normalized = strings.TrimPrefix(normalized, "http://")
+	normalized = strings.TrimSuffix(normalized, "/")
+	return normalized
 }
 
 // createActor creates an actor (internal helper)
@@ -1591,9 +1665,9 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 	var users []models.User
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("gsi5").
-		Where("GSI5PK", "=", prefixKey).
-		Where("GSI5SK", "BEGINS_WITH", normalizedQuery).
-		OrderBy("GSI5SK", "ASC").
+		Where("gsi5PK", "=", prefixKey).
+		Where("gsi5SK", "BEGINS_WITH", normalizedQuery).
+		OrderBy("gsi5SK", "ASC").
 		Limit(searchLimit + 1)
 
 	if opts.Cursor != "" {
@@ -1608,7 +1682,7 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 					zap.String("expected_prefix", prefixKey),
 					zap.String("cursor_prefix", pkCursor))
 			} else {
-				queryBuilder = queryBuilder.Where("GSI5SK", ">", skCursor)
+				queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor)
 			}
 		}
 	}
@@ -1651,8 +1725,8 @@ func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, _ string, 
 
 	var users []models.User
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("user-list-index").
-		Where("GSI1PK", "=", "USERS")
+		Index("GSI1").
+		Where("gsi1PK", "=", "USERS")
 
 	limit := opts.Limit
 	if err := common.ValidateQueryLimit(limit, 50, "user suggestions"); err != nil {
@@ -1663,7 +1737,7 @@ func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, _ string, 
 	if opts.Cursor != "" {
 		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
 		if err == nil && sk != "" {
-			queryBuilder = queryBuilder.Where("GSI1SK", ">", sk)
+			queryBuilder = queryBuilder.Where("gsi1SK", ">", sk)
 		}
 	}
 
@@ -1710,8 +1784,8 @@ func (r *AccountRepository) GetFeaturedAccounts(ctx context.Context, opts interf
 	// Featured accounts are typically admins and moderators
 	var users []models.User
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("role-index").
-		Where("GSI3PK", "IN", []string{"ROLE#admin", "ROLE#moderator"})
+		Index("GSI3").
+		Where("gsi3PK", "IN", []string{"ROLE#admin", "ROLE#moderator"})
 
 	limit := opts.Limit
 	if limit <= 0 || limit > 50 {
@@ -1722,7 +1796,7 @@ func (r *AccountRepository) GetFeaturedAccounts(ctx context.Context, opts interf
 	if opts.Cursor != "" {
 		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
 		if err == nil && sk != "" {
-			queryBuilder = queryBuilder.Where("GSI3SK", ">", sk)
+			queryBuilder = queryBuilder.Where("gsi3SK", ">", sk)
 		}
 	}
 
@@ -1945,7 +2019,7 @@ func (r *AccountRepository) GetPasswordReset(ctx context.Context, token string) 
 	var resetModel models.PasswordReset
 	err := r.db.WithContext(ctx).Model(&resetModel).
 		Index("token-index").
-		Where("GSI1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
+		Where("gsi1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
 		First(&resetModel)
 
 	if err != nil {
@@ -1983,7 +2057,7 @@ func (r *AccountRepository) UsePasswordReset(ctx context.Context, token string) 
 
 	err := r.db.WithContext(ctx).Model(resetModel).
 		Index("token-index").
-		Where("GSI1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
+		Where("gsi1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
 		First(resetModel)
 
 	if err != nil {
@@ -2121,11 +2195,11 @@ func (r *AccountRepository) GetAccountsByUsernames(ctx context.Context, username
 
 // GetAccountsCount retrieves the total number of accounts
 func (r *AccountRepository) GetAccountsCount(ctx context.Context) (int64, error) {
-	// Count users using the user-list-index
+	// Count users using GSI1 (user listing index)
 	var users []models.User
 	err := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("user-list-index").
-		Where("GSI1PK", "=", "USERS").
+		Index("GSI1").
+		Where("gsi1PK", "=", "USERS").
 		Scan(&users)
 
 	if err != nil {

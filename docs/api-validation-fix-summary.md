@@ -91,13 +91,13 @@
 
 ### 6. DynamORM GSI Attribute Naming ⏳ IN PROGRESS
 
-**Problem**: DynamoDB table uses uppercase `GSI1PK/GSI1SK` but DynamORM expects camelCase `gsI1PK/gsI1SK`
+**Problem**: DynamoDB table uses uppercase GSI attribute names but DynamORM expects camelCase `gsi1PK/gsi1SK`
 
 **Root Cause**: Mismatch between table schema (uppercase) and DynamORM conventions (camelCase)
 
 **DynamORM Team Guidance**:
 - DynamORM enforces camelCase for attribute names
-- Using `attr:GSI1PK` is rejected as invalid
+- Using `attr:gsi1PK` is the only accepted form
 - Canonical solution: Let DynamORM handle naming, align table schema with DynamORM conventions
 
 **Solution In Progress**:
@@ -109,11 +109,11 @@
 
 **Expected Table Schema After Redeploy**:
 ```
-GSI1: gsI1PK (hash), gsI1SK (range)
-GSI2: gsI2PK (hash), gsI2SK (range)
-GSI3: gsI3PK (hash), gsI3SK (range)
-GSI4: gsI4PK (hash), gsI4SK (range)
-GSI5: gsI5PK (hash), gsI5SK (range)
+GSI1: gsi1PK (hash), gsi1SK (range)
+GSI2: gsi2PK (hash), gsi2SK (range)
+GSI3: gsi3PK (hash), gsi3SK (range)
+GSI4: gsi4PK (hash), gsi4SK (range)
+GSI5: gsi5PK (hash), gsi5SK (range)
 ```
 
 ---
@@ -151,7 +151,7 @@ AWS_PROFILE=Lesser make seed-and-validate
 Before marking complete:
 
 - [ ] CDK deployment completes successfully
-- [ ] DynamoDB table recreated with camelCase GSI attributes (gsI1PK, etc.)
+- [ ] DynamoDB table recreated with camelCase GSI attributes (gsi1PK, etc.)
 - [ ] Lambdas deployed with reverted attr: tags
 - [ ] Bootstrap credentials generated with correct JWT secret
 - [ ] seed-and-validate runs without errors

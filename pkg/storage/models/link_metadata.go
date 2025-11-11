@@ -10,27 +10,29 @@ import (
 
 // LinkMetadata represents metadata about a link
 type LinkMetadata struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"` // LINK#{url}
-	SK string `dynamorm:"sk" json:"-"` // METADATA
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // LINK#{url}
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // METADATA
 
 	// Attributes from interface
-	URL         string `json:"url"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Image       string `json:"image"`
-	Domain      string `json:"domain"`
+	URL         string `dynamorm:"attr:url" json:"url"`
+	Title       string `dynamorm:"attr:title" json:"title"`
+	Description string `dynamorm:"attr:description" json:"description"`
+	Image       string `dynamorm:"attr:image" json:"image"`
+	Domain      string `dynamorm:"attr:domain" json:"domain"`
 
 	// Additional metadata
-	FetchedAt    time.Time  `json:"fetched_at"`
-	LastAccessed time.Time  `json:"last_accessed"`
-	AccessCount  int64      `json:"access_count"`
-	ContentType  string     `json:"content_type,omitempty"`       // MIME type
-	Language     string     `json:"language,omitempty"`           // Detected language
-	Author       string     `json:"author,omitempty"`             // Article author if available
-	PublishedAt  *time.Time `json:"published_at,omitempty"`       // Publication date if available
-	Keywords     []string   `json:"keywords,omitempty"`           // SEO keywords
-	TTL          int64      `json:"ttl,omitempty" dynamorm:"ttl"` // 30 days cache
+	FetchedAt    time.Time  `dynamorm:"attr:fetchedAt" json:"fetched_at"`
+	LastAccessed time.Time  `dynamorm:"attr:lastAccessed" json:"last_accessed"`
+	AccessCount  int64      `dynamorm:"attr:accessCount" json:"access_count"`
+	ContentType  string     `dynamorm:"attr:contentType" json:"content_type,omitempty"` // MIME type
+	Language     string     `dynamorm:"attr:language" json:"language,omitempty"`        // Detected language
+	Author       string     `dynamorm:"attr:author" json:"author,omitempty"`            // Article author if available
+	PublishedAt  *time.Time `dynamorm:"attr:publishedAt" json:"published_at,omitempty"` // Publication date if available
+	Keywords     []string   `dynamorm:"attr:keywords" json:"keywords,omitempty"`        // SEO keywords
+	TTL          int64      `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`              // 30 days cache
 }
 
 // UpdateKeys updates the partition and sort keys

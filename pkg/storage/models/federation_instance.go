@@ -10,49 +10,51 @@ import (
 
 // FederationInstanceRegistry represents a federated instance in the routing registry
 type FederationInstanceRegistry struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - using pattern: PK=INSTANCE#<domain>, SK=METADATA
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI keys for status-based queries (GSI1)
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI keys for tier-based queries (GSI2)
-	GSI2PK string `dynamorm:"index:GSI2,pk" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:GSI2,sk" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Core instance attributes
-	ID             string `json:"id"`
-	Domain         string `json:"domain"`
-	InboxURL       string `json:"inbox_url"`
-	SharedInboxURL string `json:"shared_inbox_url"`
-	PublicKeyPEM   string `json:"public_key_pem"`
+	ID             string `dynamorm:"attr:id" json:"id"`
+	Domain         string `dynamorm:"attr:domain" json:"domain"`
+	InboxURL       string `dynamorm:"attr:inboxURL" json:"inbox_url"`
+	SharedInboxURL string `dynamorm:"attr:sharedInboxURL" json:"shared_inbox_url"`
+	PublicKeyPEM   string `dynamorm:"attr:publicKeyPEM" json:"public_key_pem"`
 
 	// Capabilities
-	SupportedTypes []string `json:"supported_types"`
-	MaxMessageSize int64    `json:"max_message_size"`
+	SupportedTypes []string `dynamorm:"attr:supportedTypes" json:"supported_types"`
+	MaxMessageSize int64    `dynamorm:"attr:maxMessageSize" json:"max_message_size"`
 
 	// Rate limits (stored as nested JSON)
-	RateLimits map[string]interface{} `json:"rate_limits"`
+	RateLimits map[string]interface{} `dynamorm:"attr:rateLimits" json:"rate_limits"`
 
 	// Status and timestamps
-	Status       string    `json:"status"`
-	LastSeen     time.Time `json:"last_seen"`
-	RegisteredAt time.Time `json:"registered_at"`
+	Status       string    `dynamorm:"attr:status" json:"status"`
+	LastSeen     time.Time `dynamorm:"attr:lastSeen" json:"last_seen"`
+	RegisteredAt time.Time `dynamorm:"attr:registeredAt" json:"registered_at"`
 
 	// Performance metrics
-	AvgResponseTime int64   `json:"avg_response_time"` // milliseconds
-	SuccessRate     float64 `json:"success_rate"`
-	ErrorRate       float64 `json:"error_rate"`
+	AvgResponseTime int64   `dynamorm:"attr:avgResponseTime" json:"avg_response_time"` // milliseconds
+	SuccessRate     float64 `dynamorm:"attr:successRate" json:"success_rate"`
+	ErrorRate       float64 `dynamorm:"attr:errorRate" json:"error_rate"`
 
 	// Cost tracking
-	TierLevel    string `json:"tier_level"`
-	MonthlyQuota int64  `json:"monthly_quota"`
-	CurrentUsage int64  `json:"current_usage"`
+	TierLevel    string `dynamorm:"attr:tierLevel" json:"tier_level"`
+	MonthlyQuota int64  `dynamorm:"attr:monthlyQuota" json:"monthly_quota"`
+	CurrentUsage int64  `dynamorm:"attr:currentUsage" json:"current_usage"`
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl" json:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
 }
 
 // TableName returns the DynamoDB table backing FederationInstanceRegistry.
@@ -92,22 +94,24 @@ func (f *FederationInstanceRegistry) GetSK() string {
 
 // FederationInstanceRegistryHealthHistory represents health history records
 type FederationInstanceRegistryHealthHistory struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - using pattern: PK=INSTANCE#<instanceID>, SK=HEALTH#<timestamp>
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// Health status fields
-	Reachable       bool      `json:"reachable"`
-	ResponseTime    int64     `json:"response_time"` // milliseconds
-	StatusCode      int       `json:"status_code"`
-	ErrorRate       float64   `json:"error_rate"`
-	InboxBacklog    int       `json:"inbox_backlog"`
-	ProcessingDelay int64     `json:"processing_delay"` // milliseconds
-	ErrorMessage    string    `json:"error_message,omitempty"`
-	Timestamp       time.Time `json:"timestamp"`
+	Reachable       bool      `dynamorm:"attr:reachable" json:"reachable"`
+	ResponseTime    int64     `dynamorm:"attr:responseTime" json:"response_time"` // milliseconds
+	StatusCode      int       `dynamorm:"attr:statusCode" json:"status_code"`
+	ErrorRate       float64   `dynamorm:"attr:errorRate" json:"error_rate"`
+	InboxBacklog    int       `dynamorm:"attr:inboxBacklog" json:"inbox_backlog"`
+	ProcessingDelay int64     `dynamorm:"attr:processingDelay" json:"processing_delay"` // milliseconds
+	ErrorMessage    string    `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
+	Timestamp       time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
 
 	// TTL for automatic cleanup (keep 7 days)
-	TTL int64 `dynamorm:"ttl" json:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
 }
 
 // TableName returns the DynamoDB table backing FederationInstanceRegistryHealthHistory.

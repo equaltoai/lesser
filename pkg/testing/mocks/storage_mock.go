@@ -4095,6 +4095,7 @@ func (m *MockStorage) CheckRateLimit(ctx context.Context, key string, limit int,
 type MockRepositoryStorage struct {
 	mock.Mock
 	accountRepo          *repositories.AccountRepository
+	bookmarkRepo         *repositories.BookmarkRepository
 	actorRepo            *repositories.ActorRepository
 	objectRepo           *repositories.ObjectRepository
 	activityRepo         *repositories.ActivityRepository
@@ -4145,6 +4146,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	// Create repository instances with nil DB - they'll return "not implemented" errors
 	// which is what we expect during testing phase
 	accountRepo := repositories.NewAccountRepository(nil, "test-table", "test.example.com", logger)
+	bookmarkRepo := repositories.NewBookmarkRepository(nil, "test-table", logger)
 	actorRepo := repositories.NewActorRepository(nil, "test-table", logger)
 	objectRepo := repositories.NewObjectRepository(nil, "test-table", "test.example.com", logger)
 	activityRepo := repositories.NewActivityRepository(nil, "test-table", logger, nil)
@@ -4186,6 +4188,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 
 	return &MockRepositoryStorage{
 		accountRepo:          accountRepo,
+		bookmarkRepo:         bookmarkRepo,
 		actorRepo:            actorRepo,
 		objectRepo:           objectRepo,
 		activityRepo:         activityRepo,
@@ -4231,6 +4234,11 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 // Account returns the mock account repository
 func (m *MockRepositoryStorage) Account() *repositories.AccountRepository {
 	return m.accountRepo
+}
+
+// Bookmark returns the mock bookmark repository
+func (m *MockRepositoryStorage) Bookmark() *repositories.BookmarkRepository {
+	return m.bookmarkRepo
 }
 
 // Actor returns the mock actor repository

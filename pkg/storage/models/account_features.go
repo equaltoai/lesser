@@ -9,15 +9,17 @@ import (
 // AccountPin represents a pinned/endorsed account in DynamoDB
 // Key pattern: PK=ACCOUNT_PIN#{username}, SK=PIN#{pinned_actor_id}
 type AccountPin struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key components
-	PK string `dynamorm:"pk" json:"pk"` // Format: "ACCOUNT_PIN#{username}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "PIN#{pinned_actor_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "ACCOUNT_PIN#{username}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "PIN#{pinned_actor_id}"
 
 	// Pin data - matches storage.AccountPin fields
-	Username       string    `json:"username"`        // Who pinned the account
-	PinnedActorID  string    `json:"pinned_actor_id"` // The actor ID that was pinned
-	PinnedUsername string    `json:"pinned_username"` // The username that was pinned
-	CreatedAt      time.Time `json:"created_at"`
+	Username       string    `dynamorm:"attr:username" json:"username"`              // Who pinned the account
+	PinnedActorID  string    `dynamorm:"attr:pinnedActorID" json:"pinned_actor_id"`  // The actor ID that was pinned
+	PinnedUsername string    `dynamorm:"attr:pinnedUsername" json:"pinned_username"` // The username that was pinned
+	CreatedAt      time.Time `dynamorm:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table name
@@ -60,16 +62,18 @@ func (p *AccountPin) GetSK() string {
 // AccountNote represents a private note on an account in DynamoDB
 // Key pattern: PK=ACCOUNT_NOTE#{username}, SK=NOTE#{target_actor_id}
 type AccountNote struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key components
-	PK string `dynamorm:"pk" json:"pk"` // Format: "ACCOUNT_NOTE#{username}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "NOTE#{target_actor_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "ACCOUNT_NOTE#{username}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "NOTE#{target_actor_id}"
 
 	// Note data - matches storage.AccountNote fields
-	Username      string    `json:"username"`        // Who wrote the note
-	TargetActorID string    `json:"target_actor_id"` // The actor the note is about
-	Note          string    `json:"note"`            // The note content
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	Username      string    `dynamorm:"attr:username" json:"username"`             // Who wrote the note
+	TargetActorID string    `dynamorm:"attr:targetActorID" json:"target_actor_id"` // The actor the note is about
+	Note          string    `dynamorm:"attr:note" json:"note"`                     // The note content
+	CreatedAt     time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt     time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table name

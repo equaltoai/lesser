@@ -9,19 +9,21 @@ import (
 
 // SearchAnalytics represents search event analytics
 type SearchAnalytics struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"`
-	SK string `dynamorm:"sk" json:"-"`
+	PK string `dynamorm:"pk,attr:PK" json:"-"`
+	SK string `dynamorm:"sk,attr:SK" json:"-"`
 
 	// Fields
-	Query         string    `json:"query"`
-	ResultCount   int       `json:"result_count"`
-	SearchTime    int64     `json:"search_time"`       // milliseconds
-	UserID        *string   `json:"user_id,omitempty"` // optional
-	Timestamp     time.Time `json:"timestamp"`
-	ClickedResult *string   `json:"clicked_result,omitempty"`     // optional
-	SearchType    string    `json:"search_type"`                  // accounts, statuses, hashtags
-	TTL           int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days expiration
+	Query         string    `dynamorm:"attr:query" json:"query"`
+	ResultCount   int       `dynamorm:"attr:resultCount" json:"result_count"`
+	SearchTime    int64     `dynamorm:"attr:searchTime" json:"search_time"`   // milliseconds
+	UserID        *string   `dynamorm:"attr:userID" json:"user_id,omitempty"` // optional
+	Timestamp     time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	ClickedResult *string   `dynamorm:"attr:clickedResult" json:"clicked_result,omitempty"` // optional
+	SearchType    string    `dynamorm:"attr:searchType" json:"search_type"`                 // accounts, statuses, hashtags
+	TTL           int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`                  // 90 days expiration
 }
 
 // TableName returns the DynamoDB table backing SearchAnalytics.

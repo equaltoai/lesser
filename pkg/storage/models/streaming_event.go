@@ -8,32 +8,34 @@ import (
 // StreamingEvent represents a queued streaming event in DynamoDB
 // These events are picked up by DynamoDB Streams and processed by the stream-router Lambda
 type StreamingEvent struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - unique event ID
-	PK string `dynamorm:"pk" json:"pk"` // Format: "STREAM_EVENT#{eventID}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "EVENT"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "STREAM_EVENT#{eventID}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "EVENT"
 
 	// GSI1 - Query by target (user, stream, conversation, followers)
-	GSI1PK string `dynamorm:"index:stream-target-index,pk" json:"gsi1_pk"` // Format: "STREAM_TARGET#{targetType}#{targetID}"
-	GSI1SK string `dynamorm:"index:stream-target-index,sk" json:"gsi1_sk"` // Format: "{createdAt}#{eventID}"
+	GSI1PK string `dynamorm:"index:stream-target-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "STREAM_TARGET#{targetType}#{targetID}"
+	GSI1SK string `dynamorm:"index:stream-target-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{createdAt}#{eventID}"
 
 	// GSI2 - Query by event type
-	GSI2PK string `dynamorm:"index:stream-type-index,pk" json:"gsi2_pk"` // Format: "STREAM_TYPE#{eventType}"
-	GSI2SK string `dynamorm:"index:stream-type-index,sk" json:"gsi2_sk"` // Format: "{createdAt}#{eventID}"
+	GSI2PK string `dynamorm:"index:stream-type-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "STREAM_TYPE#{eventType}"
+	GSI2SK string `dynamorm:"index:stream-type-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{createdAt}#{eventID}"
 
 	// Core event data
-	EventID    string                 `json:"event_id"`
-	EventType  string                 `json:"event_type"`  // e.g., "status.created", "notification.created"
-	TargetType string                 `json:"target_type"` // "user", "stream", "conversation", "followers"
-	TargetID   string                 `json:"target_id"`   // The specific user/stream/conversation ID
-	Payload    map[string]interface{} `json:"payload"`     // The event data to send
+	EventID    string                 `dynamorm:"attr:eventID" json:"event_id"`
+	EventType  string                 `dynamorm:"attr:eventType" json:"event_type"`   // e.g., "status.created", "notification.created"
+	TargetType string                 `dynamorm:"attr:targetType" json:"target_type"` // "user", "stream", "conversation", "followers"
+	TargetID   string                 `dynamorm:"attr:targetID" json:"target_id"`     // The specific user/stream/conversation ID
+	Payload    map[string]interface{} `dynamorm:"attr:payload" json:"payload"`        // The event data to send
 
 	// Metadata
-	CreatedAt   time.Time  `json:"created_at"`
-	ProcessedAt *time.Time `json:"processed_at,omitempty"` // When stream-router processed it
-	DeliveredTo []string   `json:"delivered_to,omitempty"` // Connection IDs it was delivered to
+	CreatedAt   time.Time  `dynamorm:"attr:createdAt" json:"created_at"`
+	ProcessedAt *time.Time `dynamorm:"attr:processedAt" json:"processed_at,omitempty"` // When stream-router processed it
+	DeliveredTo []string   `dynamorm:"attr:deliveredTo" json:"delivered_to,omitempty"` // Connection IDs it was delivered to
 
 	// TTL for automatic cleanup (Unix timestamp)
-	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys updates the GSI keys based on the event data

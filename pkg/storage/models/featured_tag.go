@@ -7,19 +7,21 @@ import (
 
 // FeaturedTag represents a featured hashtag for a user
 type FeaturedTag struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key: USER#username
-	PK string `dynamorm:"pk"`
+	PK string `dynamorm:"pk,attr:PK"`
 	// Sort key: FEATURED_TAG#id
-	SK string `dynamorm:"sk"`
+	SK string `dynamorm:"sk,attr:SK"`
 
 	// Core fields (must match legacy exactly)
-	ID            string    `json:"id"`
-	Username      string    `json:"username"`       // Who featured the tag
-	Name          string    `json:"name"`           // The tag name (without #)
-	URL           string    `json:"url"`            // URL to the tag
-	StatusesCount int       `json:"statuses_count"` // Number of statuses with this tag
-	LastStatusAt  string    `json:"last_status_at"` // Last time the user posted with this tag
-	CreatedAt     time.Time `json:"created_at"`
+	ID            string    `dynamorm:"attr:id" json:"id"`
+	Username      string    `dynamorm:"attr:username" json:"username"`            // Who featured the tag
+	Name          string    `dynamorm:"attr:name" json:"name"`                    // The tag name (without #)
+	URL           string    `dynamorm:"attr:url" json:"url"`                      // URL to the tag
+	StatusesCount int       `dynamorm:"attr:statusesCount" json:"statuses_count"` // Number of statuses with this tag
+	LastStatusAt  string    `dynamorm:"attr:lastStatusAt" json:"last_status_at"`  // Last time the user posted with this tag
+	CreatedAt     time.Time `dynamorm:"attr:createdAt" json:"created_at"`
 }
 
 // UpdateKeys sets the PK and SK based on the username and ID

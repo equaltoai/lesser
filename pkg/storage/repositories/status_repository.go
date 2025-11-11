@@ -3,30 +3,25 @@ package repositories
 import (
 	"context"
 	"fmt"
-	"sort"
-	"strings"
-	"time"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"sort"
+	"strings"
+	"time"
 )
 
 // StatusRepository implements status operations using DynamORM with EnhancedBaseRepository
 type StatusRepository struct {
 	*EnhancedBaseRepository[*models.Status]
 	relationshipRepo interface{} // Temporarily use interface to avoid circular dependency
+	bookmarkRepo     *BookmarkRepository
 }
 
 // NewStatusRepository creates a new status repository with enhanced functionality
@@ -50,25 +45,24 @@ func (r *StatusRepository) SetRelationshipRepository(relationshipRepo interface{
 	r.relationshipRepo = relationshipRepo
 }
 
+// SetBookmarkRepository wires the bookmark repository dependency.
+func (r *StatusRepository) SetBookmarkRepository(bookmarkRepo *BookmarkRepository) {
+	r.bookmarkRepo = bookmarkRepo
+}
+
+func (r *StatusRepository) getBookmarkRepository() *BookmarkRepository {
+	if r.bookmarkRepo == nil {
+		r.bookmarkRepo = NewBookmarkRepository(r.db, r.tableName, r.logger)
+	}
+	return r.bookmarkRepo
+}
+
 const (
 	defaultHomeTimelinePageLimit    = 20
 	maxHomeTimelinePageLimit        = 40
 	homeTimelineStatusesPerActor    = 20
 	homeTimelineFollowingSampleSize = 1000
-	maxInt32                        = 2147483647 // Maximum value for int32
 )
-
-// limitInt32 safely converts int to int32, clamping to maxInt32 to prevent overflow
-func limitInt32(limit int) int32 {
-	if limit > maxInt32 {
-		return maxInt32
-	}
-	if limit < 0 {
-		return 0
-	}
-	// nolint:gosec // Conversion is safe: we've checked bounds above
-	return int32(limit)
-}
 
 // CreateStatus creates a new status using enhanced validation and event emission
 func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Status) error {
@@ -91,6 +85,23 @@ func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Stat
 	}
 
 	return nil
+}
+
+// CreateBoostStatus persists a boost wrapper as a first-class status.
+func (r *StatusRepository) CreateBoostStatus(ctx context.Context, status *models.Status) error {
+	if status == nil {
+		return fmt.Errorf("boost status payload is required")
+	}
+
+	if status.BoostOfStatusID == "" && status.ReblogOfID == "" {
+		return fmt.Errorf("boost status missing target reference")
+	}
+
+	if status.AuthorID == "" {
+		return fmt.Errorf("boost status missing author id")
+	}
+
+	return r.CreateStatus(ctx, status)
 }
 
 // createHashtagTimelineIndexes persists supplemental hashtag index records so hashtag timelines can query efficiently.
@@ -185,11 +196,11 @@ func (r *StatusRepository) canonicalizeStatusIndexes(ctx context.Context, status
 		partitionKey := "PUBLIC_TIMELINE"
 		sortKey := fmt.Sprintf("%s#%s", timestampStr, status.StatusID)
 
-		builder.Set("gsI2PK", partitionKey)
-		builder.Set("gsI2SK", sortKey)
+		builder.Set("gsi2PK", partitionKey)
+		builder.Set("gsi2SK", sortKey)
 	} else {
-		builder.Remove("gsI2PK")
-		builder.Remove("gsI2SK")
+		builder.Remove("gsi2PK")
+		builder.Remove("gsi2SK")
 	}
 
 	return builder.Execute()
@@ -200,51 +211,25 @@ func (r *StatusRepository) queryPublicTimelineDirect(ctx context.Context, opts i
 		opts.Limit = defaultHomeTimelinePageLimit
 	}
 
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(config.Get().Region))
+	var statusModels []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("GSI2").
+		Where("gsi2PK", "=", "PUBLIC_TIMELINE").
+		OrderBy("gsi2SK", "DESC").
+		Limit(opts.Limit).
+		All(&statusModels)
 	if err != nil {
-		return nil, fmt.Errorf("load aws config: %w", err)
+		return nil, fmt.Errorf("query public timeline: %w", err)
 	}
 
-	client := dynamodb.NewFromConfig(awsCfg)
-	input := &dynamodb.QueryInput{
-		TableName:              aws.String(r.tableName),
-		IndexName:              aws.String("GSI2"),
-		KeyConditionExpression: aws.String("#pk = :pk"),
-		ExpressionAttributeNames: map[string]string{
-			"#pk": "gsI2PK",
-		},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: "PUBLIC_TIMELINE"},
-		},
-		ScanIndexForward: aws.Bool(false),
-		Limit:            aws.Int32(limitInt32(opts.Limit)),
-	}
-
-	output, err := client.Query(ctx, input)
-	if err != nil {
-		return nil, err
+	statuses := make([]*models.Status, len(statusModels))
+	for i := range statusModels {
+		statuses[i] = &statusModels[i]
 	}
 
 	r.logger.Info("public timeline query completed",
-		zap.Int("items_returned", len(output.Items)),
-		zap.Int("limit", int(opts.Limit)))
-
-	statuses := make([]*models.Status, 0, len(output.Items))
-	for _, item := range output.Items {
-		var status models.Status
-		if err := dynamorm.UnmarshalItem(item, &status); err != nil {
-			r.logger.Warn("failed to unmarshal status from public timeline query", zap.Error(err))
-			continue
-		}
-		r.logger.Debug("unmarshalled public timeline status",
-			zap.String("status_id", status.StatusID),
-			zap.String("visibility", status.Visibility),
-			zap.Bool("deleted", status.Deleted))
-		statuses = append(statuses, &status)
-	}
-
-	r.logger.Info("public timeline unmarshal completed",
-		zap.Int("statuses_unmarshalled", len(statuses)))
+		zap.Int("items_returned", len(statuses)),
+		zap.Int("limit", opts.Limit))
 
 	return statuses, nil
 }
@@ -363,11 +348,60 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 	return nil
 }
 
+// DeleteBoostStatus removes the boost wrapper for a given booster/target pair.
+func (r *StatusRepository) DeleteBoostStatus(ctx context.Context, boosterID, targetStatusID string) (*models.Status, error) {
+	if err := common.ValidateRequiredParam("booster_id", boosterID); err != nil {
+		return nil, err
+	}
+	if err := common.ValidateRequiredParam("target_status_id", targetStatusID); err != nil {
+		return nil, err
+	}
+
+	boostStatus, err := r.findBoostStatus(ctx, boosterID, targetStatusID)
+	if err != nil {
+		if errors.IsNotFound(err) || err == storage.ErrNotFound {
+			r.logger.Debug("no boost status found to delete",
+				zap.String("booster_id", boosterID),
+				zap.String("target_status_id", targetStatusID))
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if err := r.DeleteStatus(ctx, boostStatus.StatusID); err != nil {
+		return nil, err
+	}
+
+	return boostStatus, nil
+}
+
+func (r *StatusRepository) findBoostStatus(ctx context.Context, boosterID, targetStatusID string) (*models.Status, error) {
+	var statuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("GSI1").
+		Where("gsi1PK", "=", fmt.Sprintf("AUTHOR#%s", boosterID)).
+		Filter("BoostOfStatusID", "=", targetStatusID).
+		Limit(1).
+		All(&statuses)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, storage.ErrNotFound
+		}
+		return nil, err
+	}
+
+	if len(statuses) == 0 {
+		return nil, storage.ErrNotFound
+	}
+
+	return &statuses[0], nil
+}
+
 // CountStatusesByAuthor counts the total number of statuses by an author
 func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID string) (int, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)).
+		Where("gsi1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)).
 		Count()
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, EntityStatus, "count by author")
@@ -380,7 +414,7 @@ func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID s
 func (r *StatusRepository) CountReplies(ctx context.Context, statusID string) (int, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI4").
-		Where("GSI4PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
+		Where("gsi4PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
 		Count()
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "reply", "count")
@@ -554,7 +588,7 @@ func (r *StatusRepository) GetStatusesByURL(ctx context.Context, targetURL strin
 
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI7").
-		Where("GSI7PK", "=", "URL#"+normalizedURL).
+		Where("gsi7PK", "=", "URL#"+normalizedURL).
 		Limit(limit).
 		All(&matchingStatuses)
 
@@ -767,7 +801,7 @@ func (r *StatusRepository) extractDomainFromEnv() string {
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		// Check if there's an alternative domain configured
 		// Note: INSTANCE_DOMAIN is not in config yet, but Domain should be the primary source
-		if cfg.Domain == "" || cfg.Domain == "localhost" {
+		if cfg.Domain == "" || cfg.Domain == DefaultDomain {
 			// Fallback logic can be added here if needed
 			// Currently using the extracted domain as-is
 			// Future enhancement: implement alternate domain resolution
@@ -786,7 +820,7 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI7").
-		Where("GSI7PK", "=", "URL#"+normalizedURL).
+		Where("gsi7PK", "=", "URL#"+normalizedURL).
 		Scan(&statuses)
 
 	if err != nil {
@@ -926,8 +960,8 @@ func (r *StatusRepository) fetchStatusesForActor(ctx context.Context, userID str
 	var userStatuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", actorID)).
-		OrderBy("GSI1SK", "DESC").
+		Where("gsi1PK", "=", fmt.Sprintf("AUTHOR#%s", actorID)).
+		OrderBy("gsi1SK", "DESC").
 		Limit(homeTimelineStatusesPerActor).
 		All(&userStatuses)
 
@@ -1038,15 +1072,15 @@ func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gs
 			nextCursor = last.GSI1SK
 		case gsi2SKField:
 			nextCursor = last.GSI2SK
-		case "GSI3SK":
+		case "gsi3SK":
 			nextCursor = last.GSI3SK
-		case "GSI4SK":
+		case "gsi4SK":
 			nextCursor = last.GSI4SK
-		case "GSI5SK":
+		case "gsi5SK":
 			nextCursor = last.GSI5SK
-		case "GSI6SK":
+		case "gsi6SK":
 			nextCursor = last.GSI6SK
-		case "GSI7SK":
+		case "gsi7SK":
 			nextCursor = last.GSI7SK
 		default:
 			nextCursor = last.SK
@@ -1063,12 +1097,12 @@ func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gs
 
 // GetUserTimeline retrieves user's own statuses
 func (r *StatusRepository) GetUserTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	return r.queryStatusesByGSI(ctx, "GSI1", "GSI1PK", fmt.Sprintf("AUTHOR#%s", userID), "GSI1SK", "DESC", opts, "failed to get user timeline")
+	return r.queryStatusesByGSI(ctx, "GSI1", "gsi1PK", fmt.Sprintf("AUTHOR#%s", userID), "gsi1SK", "DESC", opts, "failed to get user timeline")
 }
 
 // GetConversationThread retrieves all statuses in a conversation thread
 func (r *StatusRepository) GetConversationThread(ctx context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	return r.queryStatusesByGSI(ctx, "GSI3", "GSI3PK", fmt.Sprintf("CONVERSATION#%s", conversationID), "GSI3SK", "ASC", opts, "failed to get conversation thread")
+	return r.queryStatusesByGSI(ctx, "GSI3", "gsi3PK", fmt.Sprintf("CONVERSATION#%s", conversationID), "gsi3SK", "ASC", opts, "failed to get conversation thread")
 }
 
 // SearchStatuses searches statuses by query string
@@ -1125,8 +1159,8 @@ func (r *StatusRepository) GetStatusesByHashtag(ctx context.Context, hashtag str
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI5").
-		Where("GSI5PK", "=", fmt.Sprintf("HASHTAG#%s", hashtag)).
-		OrderBy("GSI5SK", "DESC").
+		Where("gsi5PK", "=", fmt.Sprintf("HASHTAG#%s", hashtag)).
+		OrderBy("gsi5SK", "DESC").
 		Limit(limit).
 		All(&statuses)
 	if err != nil {
@@ -1178,9 +1212,9 @@ func (r *StatusRepository) GetTrendingStatuses(ctx context.Context, opts interfa
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI2").
-		Where("GSI2PK", "=", "PUBLIC_TIMELINE").
+		Where("gsi2PK", "=", "PUBLIC_TIMELINE").
 		Filter("LikeCount", ">", 0). // Only statuses with likes
-		OrderBy("GSI2SK", "DESC").
+		OrderBy("gsi2SK", "DESC").
 		Limit(opts.Limit).
 		All(&statuses)
 	if err != nil {
@@ -1303,44 +1337,26 @@ func (r *StatusRepository) UnreblogStatus(ctx context.Context, userID, statusID 
 
 // BookmarkStatus bookmarks a status for a user
 func (r *StatusRepository) BookmarkStatus(ctx context.Context, userID, statusID string) error {
-	// Create a bookmark record using the existing Bookmark model
-	now := time.Now()
-	bookmark := &models.Bookmark{
-		Username:  userID,
-		ObjectID:  statusID,
-		CreatedAt: now,
-		TTL:       0, // No TTL for bookmarks
+	repo := r.getBookmarkRepository()
+	if repo == nil {
+		return ErrorHandler.HandleCreateError(fmt.Errorf("bookmark repository not configured"), EntityBookmark, statusID)
 	}
-	_ = bookmark.UpdateKeys() // Ignore error as this is internal model operation
-
-	err := r.db.WithContext(ctx).Model(bookmark).Create()
+	_, err := repo.CreateBookmark(ctx, userID, statusID)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, EntityBookmark, statusID)
 	}
-
 	return nil
 }
 
 // UnbookmarkStatus unbookmarks a status for a user
 func (r *StatusRepository) UnbookmarkStatus(ctx context.Context, userID, statusID string) error {
-	// Find and delete the bookmark record
-	var bookmarks []models.Bookmark
-	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", fmt.Sprintf("BOOKMARK#%s", userID)).
-		Filter("ObjectID", "=", statusID).
-		All(&bookmarks)
-	if err != nil {
-		return ErrorHandler.HandleQueryError(err, EntityBookmark, "find for removal")
+	repo := r.getBookmarkRepository()
+	if repo == nil {
+		return ErrorHandler.HandleDeleteError(fmt.Errorf("bookmark repository not configured"), EntityBookmark, statusID)
 	}
-
-	// Delete the first matching record (there should only be one)
-	if err := common.ValidateSliceNotEmpty("bookmarks", bookmarks); err == nil {
-		err = r.db.WithContext(ctx).Model(&bookmarks[0]).Delete()
-		if err != nil {
-			return ErrorHandler.HandleDeleteError(err, EntityBookmark, statusID)
-		}
+	if err := repo.DeleteBookmark(ctx, userID, statusID); err != nil {
+		return ErrorHandler.HandleDeleteError(err, EntityBookmark, statusID)
 	}
-
 	return nil
 }
 
@@ -1422,15 +1438,14 @@ func (r *StatusRepository) GetStatusEngagement(ctx context.Context, statusID, us
 		All(&boostEngagements)
 	reblogged = (err == nil && len(boostEngagements) > 0)
 
-	// Check for bookmark
-	var bookmarks []models.Bookmark
-	err = r.db.WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", fmt.Sprintf("BOOKMARK#%s", userID)).
-		Filter("ObjectID", "=", statusID).
-		All(&bookmarks)
-	bookmarked = (err == nil && len(bookmarks) > 0)
+	// Check for bookmark via bookmark repository
+	if repo := r.getBookmarkRepository(); repo != nil {
+		bookmarked, err = repo.IsBookmarked(ctx, userID, statusID)
+	} else {
+		err = fmt.Errorf("bookmark repository not configured")
+	}
 
-	return liked, reblogged, bookmarked, nil
+	return liked, reblogged, bookmarked, err
 }
 
 // GetStatusesByIDs gets multiple statuses by their IDs using batched BatchGetItem calls to minimize Dynamo round-trips.
@@ -1507,8 +1522,8 @@ func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("GSI4").
-		Where("GSI4PK", "=", fmt.Sprintf("REPLIES#%s", parentStatusID)).
-		OrderBy("GSI4SK", "ASC"). // Chronological order for replies
+		Where("gsi4PK", "=", fmt.Sprintf("REPLIES#%s", parentStatusID)).
+		OrderBy("gsi4SK", "ASC"). // Chronological order for replies
 		Limit(opts.Limit).
 		All(&statuses)
 	if err != nil {
@@ -1532,7 +1547,7 @@ func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string
 // GetFlaggedStatuses retrieves flagged statuses with pagination using GSI6
 func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	// Use GSI6 for efficient flagged content queries
-	return r.queryStatusesByGSI(ctx, "GSI6", "GSI6PK", "FLAGGED_CONTENT", "GSI6SK", "DESC", opts, "failed to get flagged statuses")
+	return r.queryStatusesByGSI(ctx, "GSI6", "gsi6PK", "FLAGGED_CONTENT", "gsi6SK", "DESC", opts, "failed to get flagged statuses")
 }
 
 // FlagStatus marks a status as flagged for moderation

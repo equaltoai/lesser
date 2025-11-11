@@ -107,8 +107,8 @@ func (r *ScheduledJobCostRepository) GetByID(ctx context.Context, id string) (*m
 
 		err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 			Index("job-status-index").
-			Where("GSI1PK", "=", fmt.Sprintf("SCHEDULED_JOB_STATUS#%s", status)).
-			Where("GSI1SK", "contains", fmt.Sprintf("#%s", id)).
+			Where("gsi1PK", "=", fmt.Sprintf("SCHEDULED_JOB_STATUS#%s", status)).
+			Where("gsi1SK", "contains", fmt.Sprintf("#%s", id)).
 			All(&statusRecords)
 
 		if err != nil {
@@ -163,10 +163,10 @@ func (r *ScheduledJobCostRepository) ListByStatus(ctx context.Context, status st
 
 	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 		Index("job-status-index").
-		Where("GSI1PK", "=", fmt.Sprintf("SCHEDULED_JOB_STATUS#%s", status)).
-		Where("GSI1SK", ">=", startSK).
-		Where("GSI1SK", "<=", endSK).
-		OrderBy("GSI1SK", "DESC").
+		Where("gsi1PK", "=", fmt.Sprintf("SCHEDULED_JOB_STATUS#%s", status)).
+		Where("gsi1SK", ">=", startSK).
+		Where("gsi1SK", "<=", endSK).
+		OrderBy("gsi1SK", "DESC").
 		Limit(limit)
 
 	err := query.All(&records)
@@ -189,8 +189,8 @@ func (r *ScheduledJobCostRepository) ListByDateRange(ctx context.Context, startD
 		var dailyRecords []*models.ScheduledJobCostRecord
 		query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 			Index("job-date-index").
-			Where("GSI2PK", "=", fmt.Sprintf("SCHEDULED_JOB_DATE#%s", dateStr)).
-			OrderBy("GSI2SK", "DESC").
+			Where("gsi2PK", "=", fmt.Sprintf("SCHEDULED_JOB_DATE#%s", dateStr)).
+			OrderBy("gsi2SK", "DESC").
 			Limit(limit)
 
 		err := query.All(&dailyRecords)

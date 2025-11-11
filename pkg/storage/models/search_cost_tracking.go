@@ -9,60 +9,62 @@ import (
 
 // SearchCostTracking tracks costs for search operations
 type SearchCostTracking struct {
-	PK   string `dynamorm:"pk"` // SEARCH_COST#date#user_id
-	SK   string `dynamorm:"sk"` // OPERATION#timestamp#operation_type
-	Type string `json:"type"`   // Always "SearchCostTracking"
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK   string `dynamorm:"pk,attr:PK"`            // SEARCH_COST#date#user_id
+	SK   string `dynamorm:"sk,attr:SK"`            // OPERATION#timestamp#operation_type
+	Type string `dynamorm:"attr:type" json:"type"` // Always "SearchCostTracking"
 
 	// Core identifiers
-	UserID        string `json:"user_id"`
-	RequestID     string `json:"request_id"`
-	OperationType string `json:"operation_type"` // text_search, hashtag_search, user_search, semantic_search, search_suggestions, search_indexing
+	UserID        string `dynamorm:"attr:userID" json:"user_id"`
+	RequestID     string `dynamorm:"attr:requestID" json:"request_id"`
+	OperationType string `dynamorm:"attr:operationType" json:"operation_type"` // text_search, hashtag_search, user_search, semantic_search, search_suggestions, search_indexing
 
 	// Search-specific details
-	Query           string  `json:"query"`
-	SearchType      string  `json:"search_type"`      // accounts, statuses, hashtags, all, suggestions, semantic
-	ResultCount     int     `json:"result_count"`     // Number of results returned
-	QueryLength     int     `json:"query_length"`     // Length of search query
-	CacheHit        bool    `json:"cache_hit"`        // Whether result was cached
-	QueryComplexity float64 `json:"query_complexity"` // Complexity score for the query
+	Query           string  `dynamorm:"attr:query" json:"query"`
+	SearchType      string  `dynamorm:"attr:searchType" json:"search_type"`           // accounts, statuses, hashtags, all, suggestions, semantic
+	ResultCount     int     `dynamorm:"attr:resultCount" json:"result_count"`         // Number of results returned
+	QueryLength     int     `dynamorm:"attr:queryLength" json:"query_length"`         // Length of search query
+	CacheHit        bool    `dynamorm:"attr:cacheHit" json:"cache_hit"`               // Whether result was cached
+	QueryComplexity float64 `dynamorm:"attr:queryComplexity" json:"query_complexity"` // Complexity score for the query
 
 	// DynamoDB costs
-	DynamoReads    int64 `json:"dynamo_reads"`    // Read capacity units consumed
-	DynamoWrites   int64 `json:"dynamo_writes"`   // Write capacity units consumed
-	DynamoQueries  int   `json:"dynamo_queries"`  // Number of DynamoDB queries executed
-	GSIQueries     int   `json:"gsi_queries"`     // Number of GSI queries executed
-	ScanOperations int   `json:"scan_operations"` // Number of scan operations
+	DynamoReads    int64 `dynamorm:"attr:dynamoReads" json:"dynamo_reads"`       // Read capacity units consumed
+	DynamoWrites   int64 `dynamorm:"attr:dynamoWrites" json:"dynamo_writes"`     // Write capacity units consumed
+	DynamoQueries  int   `dynamorm:"attr:dynamoQueries" json:"dynamo_queries"`   // Number of DynamoDB queries executed
+	GSIQueries     int   `dynamorm:"attr:gsiQueries" json:"gsi_queries"`         // Number of GSI queries executed
+	ScanOperations int   `dynamorm:"attr:scanOperations" json:"scan_operations"` // Number of scan operations
 
 	// Bedrock/AI costs (for semantic search)
-	BedrockRequests    int   `json:"bedrock_requests"`    // Number of Bedrock API calls
-	EmbeddingTokens    int   `json:"embedding_tokens"`    // Tokens used for embedding generation
-	EmbeddingDimension int   `json:"embedding_dimension"` // Dimension of embeddings
-	VectorComparisons  int   `json:"vector_comparisons"`  // Number of vector similarity comparisons
-	BedrockCostMicros  int64 `json:"bedrock_cost_micros"` // Bedrock cost in microcents
+	BedrockRequests    int   `dynamorm:"attr:bedrockRequests" json:"bedrock_requests"`       // Number of Bedrock API calls
+	EmbeddingTokens    int   `dynamorm:"attr:embeddingTokens" json:"embedding_tokens"`       // Tokens used for embedding generation
+	EmbeddingDimension int   `dynamorm:"attr:embeddingDimension" json:"embedding_dimension"` // Dimension of embeddings
+	VectorComparisons  int   `dynamorm:"attr:vectorComparisons" json:"vector_comparisons"`   // Number of vector similarity comparisons
+	BedrockCostMicros  int64 `dynamorm:"attr:bedrockCostMicros" json:"bedrock_cost_micros"`  // Bedrock cost in microcents
 
 	// Lambda execution costs
-	LambdaDurationMs int64 `json:"lambda_duration_ms"` // Lambda execution time
-	LambdaMemoryMB   int64 `json:"lambda_memory_mb"`   // Lambda memory allocation
+	LambdaDurationMs int64 `dynamorm:"attr:lambdaDurationMs" json:"lambda_duration_ms"` // Lambda execution time
+	LambdaMemoryMB   int64 `dynamorm:"attr:lambdaMemoryMB" json:"lambda_memory_mb"`     // Lambda memory allocation
 
 	// Search performance metrics
-	ResponseTimeMs    int64 `json:"response_time_ms"`     // Total response time
-	IndexLookupTimeMs int64 `json:"index_lookup_time_ms"` // Time spent on index lookups
-	FilteringTimeMs   int64 `json:"filtering_time_ms"`    // Time spent filtering results
-	RankingTimeMs     int64 `json:"ranking_time_ms"`      // Time spent ranking/sorting results
+	ResponseTimeMs    int64 `dynamorm:"attr:responseTimeMs" json:"response_time_ms"`        // Total response time
+	IndexLookupTimeMs int64 `dynamorm:"attr:indexLookupTimeMs" json:"index_lookup_time_ms"` // Time spent on index lookups
+	FilteringTimeMs   int64 `dynamorm:"attr:filteringTimeMs" json:"filtering_time_ms"`      // Time spent filtering results
+	RankingTimeMs     int64 `dynamorm:"attr:rankingTimeMs" json:"ranking_time_ms"`          // Time spent ranking/sorting results
 
 	// Cost calculations
-	TotalCostMicros  int64 `json:"total_cost_micros"`  // Total cost in microcents
-	DynamoCostMicros int64 `json:"dynamo_cost_micros"` // DynamoDB cost in microcents
-	LambdaCostMicros int64 `json:"lambda_cost_micros"` // Lambda cost in microcents
-	CostPerResult    int64 `json:"cost_per_result"`    // Cost per result in microcents
-	EstimatedSavings int64 `json:"estimated_savings"`  // Savings from caching in microcents
+	TotalCostMicros  int64 `dynamorm:"attr:totalCostMicros" json:"total_cost_micros"`   // Total cost in microcents
+	DynamoCostMicros int64 `dynamorm:"attr:dynamoCostMicros" json:"dynamo_cost_micros"` // DynamoDB cost in microcents
+	LambdaCostMicros int64 `dynamorm:"attr:lambdaCostMicros" json:"lambda_cost_micros"` // Lambda cost in microcents
+	CostPerResult    int64 `dynamorm:"attr:costPerResult" json:"cost_per_result"`       // Cost per result in microcents
+	EstimatedSavings int64 `dynamorm:"attr:estimatedSavings" json:"estimated_savings"`  // Savings from caching in microcents
 
 	// Timestamps
-	Timestamp time.Time `json:"timestamp"`
-	Date      string    `json:"date"` // YYYY-MM-DD for aggregation
+	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	Date      string    `dynamorm:"attr:date" json:"date"` // YYYY-MM-DD for aggregation
 
 	// TTL for cleanup
-	TTL int64 `dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl"`
 }
 
 // TableName returns the DynamoDB table backing SearchCostTracking.
@@ -109,42 +111,44 @@ func (sct *SearchCostTracking) GetSK() string {
 
 // SearchBudget tracks search budgets and limits per user
 type SearchBudget struct {
-	PK   string `dynamorm:"pk"` // SEARCH_BUDGET#user_id
-	SK   string `dynamorm:"sk"` // PERIOD#date_period
-	Type string `json:"type"`   // Always "SearchBudget"
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK   string `dynamorm:"pk,attr:PK"`            // SEARCH_BUDGET#user_id
+	SK   string `dynamorm:"sk,attr:SK"`            // PERIOD#date_period
+	Type string `dynamorm:"attr:type" json:"type"` // Always "SearchBudget"
 
 	// Budget identifiers
-	UserID     string `json:"user_id"`
-	Period     string `json:"period"`      // daily, monthly, yearly
-	PeriodDate string `json:"period_date"` // 2024-01-15, 2024-01, 2024
+	UserID     string `dynamorm:"attr:userID" json:"user_id"`
+	Period     string `dynamorm:"attr:period" json:"period"`          // daily, monthly, yearly
+	PeriodDate string `dynamorm:"attr:periodDate" json:"period_date"` // 2024-01-15, 2024-01, 2024
 
 	// Budget limits (in microcents)
-	BudgetLimitMicros    int64 `json:"budget_limit_micros"`    // Total budget limit
-	SearchBudgetMicros   int64 `json:"search_budget_micros"`   // Budget for regular search
-	SemanticBudgetMicros int64 `json:"semantic_budget_micros"` // Budget for semantic search
-	IndexingBudgetMicros int64 `json:"indexing_budget_micros"` // Budget for search indexing
+	BudgetLimitMicros    int64 `dynamorm:"attr:budgetLimitMicros" json:"budget_limit_micros"`       // Total budget limit
+	SearchBudgetMicros   int64 `dynamorm:"attr:searchBudgetMicros" json:"search_budget_micros"`     // Budget for regular search
+	SemanticBudgetMicros int64 `dynamorm:"attr:semanticBudgetMicros" json:"semantic_budget_micros"` // Budget for semantic search
+	IndexingBudgetMicros int64 `dynamorm:"attr:indexingBudgetMicros" json:"indexing_budget_micros"` // Budget for search indexing
 
 	// Current usage (in microcents)
-	UsedBudgetMicros   int64 `json:"used_budget_micros"`   // Total used budget
-	SearchUsedMicros   int64 `json:"search_used_micros"`   // Used for regular search
-	SemanticUsedMicros int64 `json:"semantic_used_micros"` // Used for semantic search
-	IndexingUsedMicros int64 `json:"indexing_used_micros"` // Used for indexing
+	UsedBudgetMicros   int64 `dynamorm:"attr:usedBudgetMicros" json:"used_budget_micros"`     // Total used budget
+	SearchUsedMicros   int64 `dynamorm:"attr:searchUsedMicros" json:"search_used_micros"`     // Used for regular search
+	SemanticUsedMicros int64 `dynamorm:"attr:semanticUsedMicros" json:"semantic_used_micros"` // Used for semantic search
+	IndexingUsedMicros int64 `dynamorm:"attr:indexingUsedMicros" json:"indexing_used_micros"` // Used for indexing
 
 	// Request limits
-	MaxRequestsPerHour      int `json:"max_requests_per_hour"`     // Max search requests per hour
-	MaxSemanticPerHour      int `json:"max_semantic_per_hour"`     // Max semantic searches per hour
-	CurrentRequests         int `json:"current_requests"`          // Current requests in period
-	CurrentSemanticRequests int `json:"current_semantic_requests"` // Current semantic requests
+	MaxRequestsPerHour      int `dynamorm:"attr:maxRequestsPerHour" json:"max_requests_per_hour"`          // Max search requests per hour
+	MaxSemanticPerHour      int `dynamorm:"attr:maxSemanticPerHour" json:"max_semantic_per_hour"`          // Max semantic searches per hour
+	CurrentRequests         int `dynamorm:"attr:currentRequests" json:"current_requests"`                  // Current requests in period
+	CurrentSemanticRequests int `dynamorm:"attr:currentSemanticRequests" json:"current_semantic_requests"` // Current semantic requests
 
 	// Budget status
-	BudgetExceeded bool      `json:"budget_exceeded"` // Whether budget is exceeded
-	LastResetTime  time.Time `json:"last_reset_time"` // When budget was last reset
-	LastUsageTime  time.Time `json:"last_usage_time"` // When budget was last used
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	BudgetExceeded bool      `dynamorm:"attr:budgetExceeded" json:"budget_exceeded"` // Whether budget is exceeded
+	LastResetTime  time.Time `dynamorm:"attr:lastResetTime" json:"last_reset_time"`  // When budget was last reset
+	LastUsageTime  time.Time `dynamorm:"attr:lastUsageTime" json:"last_usage_time"`  // When budget was last used
+	CreatedAt      time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt      time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for cleanup
-	TTL int64 `dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl"`
 }
 
 // TableName returns the DynamoDB table backing SearchBudget.

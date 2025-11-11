@@ -5,19 +5,48 @@ import (
 	"time"
 )
 
-// Bookmark represents a user's bookmark of a status/object
+// BookmarkRecordType identifies the storage strategy used for a bookmark record.
+const (
+	BookmarkRecordTypeTime   = "TIME"
+	BookmarkRecordTypeObject = "OBJECT"
+	bookmarkKeyPrefixTime    = "TIME"
+	bookmarkKeyPrefixObject  = "OBJECT"
+	bookmarkKeyPrefixPK      = "BOOKMARK"
+)
+
+// Bookmark key prefixes exported for repository logic.
+const (
+	BookmarkSortKeyPrefixTime   = bookmarkKeyPrefixTime
+	BookmarkSortKeyPrefixObject = bookmarkKeyPrefixObject
+	BookmarkPartitionPrefix     = bookmarkKeyPrefixPK
+)
+
+// Bookmark represents a user's bookmark of a status/object.
+// Phase 1 introduces a dual-write pattern where each logical bookmark is written twice:
+//  1. A TIME# record keyed by TIME#{timestamp}#{objectID} for chronological reads
+//  2. An OBJECT# record keyed by OBJECT#{objectID} for O(1) batch membership checks
+//
+// The data payload (Username, ObjectID, CreatedAt, etc.) remains identical across both
+// physical records so that either copy can service downstream reads.
 type Bookmark struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB keys
-	PK string `dynamorm:"pk" json:"-"` // BOOKMARK#username
-	SK string `dynamorm:"sk" json:"-"` // timestamp#objectID
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // BOOKMARK#username
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // TIME#timestamp#objectID or OBJECT#objectID
 
 	// Core fields
-	Username  string    `json:"username"`
-	ObjectID  string    `json:"object_id"`
-	CreatedAt time.Time `json:"created_at"`
+	Username  string    `dynamorm:"attr:username" json:"username"`
+	ObjectID  string    `dynamorm:"attr:objectID" json:"object_id"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+
+	// Record metadata for dual-write coordination
+	RecordType   string `dynamorm:"attr:recordType" json:"record_type,omitempty"`
+	Locked       bool   `dynamorm:"attr:locked" json:"locked,omitempty"`
+	TimeRecordSK string `dynamorm:"attr:timeRecordSK" json:"time_record_sk,omitempty"` // OBJECT records keep a pointer to the TIME SK
 
 	// TTL field for automatic cleanup (optional)
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing Bookmark.
@@ -25,14 +54,84 @@ func (Bookmark) TableName() string {
 	return MainTableName
 }
 
-// UpdateKeys sets the DynamoDB partition and sort keys for the bookmark
-func (b *Bookmark) UpdateKeys() error {
-	// PK: BOOKMARK#username (matches legacy pattern exactly)
-	b.PK = fmt.Sprintf("BOOKMARK#%s", b.Username)
+// NewTimeOrderedBookmark returns a bookmark configured for chronological reads.
+func NewTimeOrderedBookmark(username, objectID string, createdAt time.Time) (*Bookmark, error) {
+	b := &Bookmark{
+		Username:   username,
+		ObjectID:   objectID,
+		CreatedAt:  createdAt,
+		RecordType: BookmarkRecordTypeTime,
+		Locked:     true,
+	}
+	if err := b.UpdateKeys(); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
 
-	// SK: timestamp#objectID (matches legacy pattern exactly)
-	// Use RFC3339Nano for timestamp precision matching legacy
-	b.SK = fmt.Sprintf("%s#%s", b.CreatedAt.Format(time.RFC3339Nano), b.ObjectID)
+// NewObjectIndexedBookmark returns a bookmark configured for batch membership checks.
+func NewObjectIndexedBookmark(username, objectID string, createdAt time.Time, timeRecordSK string) (*Bookmark, error) {
+	if timeRecordSK == "" {
+		return nil, fmt.Errorf("time_record_sk must be provided for OBJECT bookmarks")
+	}
+
+	b := &Bookmark{
+		Username:     username,
+		ObjectID:     objectID,
+		CreatedAt:    createdAt,
+		RecordType:   BookmarkRecordTypeObject,
+		TimeRecordSK: timeRecordSK,
+	}
+	if err := b.UpdateKeys(); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// UpdateKeys sets the DynamoDB partition and sort keys for the bookmark.
+// RecordType must be one of the BookmarkRecordType* constants; legacy callers that do not
+// set a value default to the TIME record format for backwards compatibility.
+func (b *Bookmark) UpdateKeys() error {
+	if b.Username == "" {
+		return fmt.Errorf("bookmark username must be set")
+	}
+	if b.ObjectID == "" {
+		return fmt.Errorf("bookmark object_id must be set")
+	}
+
+	recordType := b.RecordType
+	if recordType == "" {
+		recordType = BookmarkRecordTypeTime
+	}
+
+	createdAt := b.CreatedAt
+	if recordType == BookmarkRecordTypeTime {
+		if createdAt.IsZero() {
+			return fmt.Errorf("created_at must be set for TIME bookmarks")
+		}
+		createdAt = createdAt.UTC()
+	}
+	b.CreatedAt = createdAt
+
+	// PK: BOOKMARK#username (matches legacy pattern exactly)
+	b.PK = fmt.Sprintf("%s#%s", bookmarkKeyPrefixPK, b.Username)
+
+	switch recordType {
+	case BookmarkRecordTypeTime:
+		// SK: TIME#{timestamp}#{objectID}
+		b.SK = fmt.Sprintf("%s#%s#%s", bookmarkKeyPrefixTime, createdAt.Format(time.RFC3339Nano), b.ObjectID)
+		b.TimeRecordSK = b.SK
+	case BookmarkRecordTypeObject:
+		if b.TimeRecordSK == "" {
+			return fmt.Errorf("time_record_sk must be set for OBJECT bookmarks")
+		}
+		// SK: OBJECT#{objectID}
+		b.SK = fmt.Sprintf("%s#%s", bookmarkKeyPrefixObject, b.ObjectID)
+	default:
+		return fmt.Errorf("unsupported bookmark record type %q", recordType)
+	}
+
+	b.RecordType = recordType
 	return nil
 }
 

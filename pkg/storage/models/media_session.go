@@ -7,31 +7,33 @@ import (
 
 // MediaSession represents a streaming session using DynamORM
 type MediaSession struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB Keys - preserving legacy patterns
-	PK string `dynamorm:"pk" json:"pk"` // SESSION#{sessionID}
-	SK string `dynamorm:"sk" json:"sk"` // METADATA
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // SESSION#{sessionID}
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // METADATA
 
 	// GSI keys for querying by user and media
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1pk"` // USER#{userID}
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1sk"` // SESSION#{startTime}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // USER#{userID}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // SESSION#{startTime}
 
 	// Business fields
-	SessionID        string     `json:"session_id"`
-	UserID           string     `json:"user_id"`
-	MediaID          string     `json:"media_id"`
-	Format           string     `json:"format"`          // hls, dash
-	CurrentQuality   string     `json:"current_quality"` // 4k, 1080p, 720p, etc.
-	StartTime        time.Time  `json:"start_time"`
-	EndTime          *time.Time `json:"end_time,omitempty"`
-	LastSegmentIndex int        `json:"last_segment_index"`
-	BytesTransferred int64      `json:"bytes_transferred"`
-	BufferHealth     float64    `json:"buffer_health"` // 0.0 to 1.0
-	Active           bool       `json:"active"`
-	Duration         float64    `json:"duration,omitempty"` // in seconds
-	LastUpdate       *time.Time `json:"last_update,omitempty"`
+	SessionID        string     `dynamorm:"attr:sessionID" json:"session_id"`
+	UserID           string     `dynamorm:"attr:userID" json:"user_id"`
+	MediaID          string     `dynamorm:"attr:mediaID" json:"media_id"`
+	Format           string     `dynamorm:"attr:format" json:"format"`                  // hls, dash
+	CurrentQuality   string     `dynamorm:"attr:currentQuality" json:"current_quality"` // 4k, 1080p, 720p, etc.
+	StartTime        time.Time  `dynamorm:"attr:startTime" json:"start_time"`
+	EndTime          *time.Time `dynamorm:"attr:endTime" json:"end_time,omitempty"`
+	LastSegmentIndex int        `dynamorm:"attr:lastSegmentIndex" json:"last_segment_index"`
+	BytesTransferred int64      `dynamorm:"attr:bytesTransferred" json:"bytes_transferred"`
+	BufferHealth     float64    `dynamorm:"attr:bufferHealth" json:"buffer_health"` // 0.0 to 1.0
+	Active           bool       `dynamorm:"attr:active" json:"active"`
+	Duration         float64    `dynamorm:"attr:duration" json:"duration,omitempty"` // in seconds
+	LastUpdate       *time.Time `dynamorm:"attr:lastUpdate" json:"last_update,omitempty"`
 
 	// TTL for automatic cleanup (24 hours default)
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the GSI keys based on the current values
@@ -68,17 +70,19 @@ func (MediaSession) TableName() string {
 
 // QualityChange represents a quality change event for analytics
 type QualityChange struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB Keys
-	PK string `dynamorm:"pk" json:"pk"` // QUALITY#{sessionID}
-	SK string `dynamorm:"sk" json:"sk"` // timestamp (nanoseconds)
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // QUALITY#{sessionID}
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // timestamp (nanoseconds)
 
 	// Business fields
-	SessionID string    `json:"session_id"`
-	Quality   string    `json:"quality"`
-	Timestamp time.Time `json:"timestamp"`
+	SessionID string    `dynamorm:"attr:sessionID" json:"session_id"`
+	Quality   string    `dynamorm:"attr:quality" json:"quality"`
+	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
 
 	// TTL for analytics cleanup (7 days)
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the keys for quality change tracking

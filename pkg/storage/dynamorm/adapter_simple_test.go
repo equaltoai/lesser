@@ -55,6 +55,7 @@ func (s *SimpleRepositoryStorage) GetLogger() *zap.Logger { return s.logger }
 // Repository access methods - return nil repositories for testing
 // This is sufficient to test interface compliance and basic adapter functionality
 func (s *SimpleRepositoryStorage) Account() *repositories.AccountRepository             { return nil }
+func (s *SimpleRepositoryStorage) Bookmark() *repositories.BookmarkRepository           { return nil }
 func (s *SimpleRepositoryStorage) Actor() *repositories.ActorRepository                 { return nil }
 func (s *SimpleRepositoryStorage) Object() *repositories.ObjectRepository               { return nil }
 func (s *SimpleRepositoryStorage) Activity() *repositories.ActivityRepository           { return nil }

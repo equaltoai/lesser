@@ -7,29 +7,31 @@ import (
 
 // NotificationPreferences represents user notification preferences in DynamoDB
 type NotificationPreferences struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys - using legacy pattern
-	PK string `dynamorm:"pk" json:"-"` // USER#username
-	SK string `dynamorm:"sk" json:"-"` // NOTIFICATION_PREFS
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // USER#username
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // NOTIFICATION_PREFS
 
 	// Fields matching legacy storage.NotificationPreferences
-	Username        string    `json:"username"`
-	EmailEnabled    bool      `json:"email_enabled"`
-	PushEnabled     bool      `json:"push_enabled"`
-	FollowEnabled   bool      `json:"follow_enabled"`
-	MentionEnabled  bool      `json:"mention_enabled"`
-	ReblogEnabled   bool      `json:"reblog_enabled"`
-	FavoriteEnabled bool      `json:"favorite_enabled"`
-	PollEnabled     bool      `json:"poll_enabled"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	Username        string    `dynamorm:"attr:username" json:"username"`
+	EmailEnabled    bool      `dynamorm:"attr:emailEnabled" json:"email_enabled"`
+	PushEnabled     bool      `dynamorm:"attr:pushEnabled" json:"push_enabled"`
+	FollowEnabled   bool      `dynamorm:"attr:followEnabled" json:"follow_enabled"`
+	MentionEnabled  bool      `dynamorm:"attr:mentionEnabled" json:"mention_enabled"`
+	ReblogEnabled   bool      `dynamorm:"attr:reblogEnabled" json:"reblog_enabled"`
+	FavoriteEnabled bool      `dynamorm:"attr:favoriteEnabled" json:"favorite_enabled"`
+	PollEnabled     bool      `dynamorm:"attr:pollEnabled" json:"poll_enabled"`
+	UpdatedAt       time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// Additional notification preferences
-	FollowNotifications      bool `json:"follow_notifications"`
-	MentionNotifications     bool `json:"mention_notifications"`
-	ReblogNotifications      bool `json:"reblog_notifications"`
-	FavoriteNotifications    bool `json:"favorite_notifications"`
-	PollNotifications        bool `json:"poll_notifications"`
-	NewFollowerNotifications bool `json:"new_follower_notifications"`
-	DigestEmail              bool `json:"digest_email"`
+	FollowNotifications      bool `dynamorm:"attr:followNotifications" json:"follow_notifications"`
+	MentionNotifications     bool `dynamorm:"attr:mentionNotifications" json:"mention_notifications"`
+	ReblogNotifications      bool `dynamorm:"attr:reblogNotifications" json:"reblog_notifications"`
+	FavoriteNotifications    bool `dynamorm:"attr:favoriteNotifications" json:"favorite_notifications"`
+	PollNotifications        bool `dynamorm:"attr:pollNotifications" json:"poll_notifications"`
+	NewFollowerNotifications bool `dynamorm:"attr:newFollowerNotifications" json:"new_follower_notifications"`
+	DigestEmail              bool `dynamorm:"attr:digestEmail" json:"digest_email"`
 }
 
 // TableName returns the DynamoDB table backing NotificationPreferences.

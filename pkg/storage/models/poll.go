@@ -7,30 +7,32 @@ import (
 
 // Poll represents a poll entity in DynamoDB
 type Poll struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys
-	PK string `dynamorm:"pk" json:"-"` // POLL#{pollId}
-	SK string `dynamorm:"sk" json:"-"` // METADATA
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // POLL#{pollId}
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // METADATA
 
 	// GSI keys for querying by status
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"-"` // STATUS#{statusId}
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"-"` // POLL
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // STATUS#{statusId}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // POLL
 
 	// Business fields
-	ID          string           `json:"id"`
-	StatusID    string           `json:"statusId"`
-	CreatedBy   string           `json:"createdBy"`
-	Options     []string         `json:"options"`
-	Multiple    bool             `json:"multiple"`
-	HideTotals  bool             `json:"hideTotals"`
-	ExpiresAt   time.Time        `json:"expiresAt"`
-	CreatedAt   time.Time        `json:"createdAt"`
-	UpdatedAt   time.Time        `json:"updatedAt"`
-	VotesCount  int              `json:"votesCount"`
-	VotersCount int              `json:"votersCount"`
-	Votes       map[string][]int `json:"votes"` // Map of voter ID to option indices
+	ID          string           `dynamorm:"attr:id" json:"id"`
+	StatusID    string           `dynamorm:"attr:statusId" json:"statusId"`
+	CreatedBy   string           `dynamorm:"attr:createdBy" json:"createdBy"`
+	Options     []string         `dynamorm:"attr:options" json:"options"`
+	Multiple    bool             `dynamorm:"attr:multiple" json:"multiple"`
+	HideTotals  bool             `dynamorm:"attr:hideTotals" json:"hideTotals"`
+	ExpiresAt   time.Time        `dynamorm:"attr:expiresAt" json:"expiresAt"`
+	CreatedAt   time.Time        `dynamorm:"attr:createdAt" json:"createdAt"`
+	UpdatedAt   time.Time        `dynamorm:"attr:updatedAt" json:"updatedAt"`
+	VotesCount  int              `dynamorm:"attr:votesCount" json:"votesCount"`
+	VotersCount int              `dynamorm:"attr:votersCount" json:"votersCount"`
+	Votes       map[string][]int `dynamorm:"attr:votes" json:"votes"` // Map of voter ID to option indices
 
 	// TTL for expiration
-	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name for Poll records
@@ -64,14 +66,16 @@ func (p *Poll) GetSK() string {
 
 // PollVote represents an individual vote on a poll
 type PollVote struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys
-	PK string `dynamorm:"pk" json:"-"` // POLL#{pollId}
-	SK string `dynamorm:"sk" json:"-"` // VOTE#{voterId}
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // POLL#{pollId}
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // VOTE#{voterId}
 
 	// Business fields
-	VoterID string    `json:"voterId"`
-	Choices []int     `json:"choices"`
-	VotedAt time.Time `json:"votedAt"`
+	VoterID string    `dynamorm:"attr:voterId" json:"voterId"`
+	Choices []int     `dynamorm:"attr:choices" json:"choices"`
+	VotedAt time.Time `dynamorm:"attr:votedAt" json:"votedAt"`
 }
 
 // TableName returns the DynamoDB table name for PollVote records

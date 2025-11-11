@@ -58,6 +58,7 @@ type MockAnalytics struct {
 
 // Implement all required methods returning nil (only Analytics is used in tests)
 func (m *MockAnalytics) Account() *repositories.AccountRepository                         { return nil }
+func (m *MockAnalytics) Bookmark() *repositories.BookmarkRepository                       { return nil }
 func (m *MockAnalytics) Actor() *repositories.ActorRepository                             { return nil }
 func (m *MockAnalytics) Object() *repositories.ObjectRepository                           { return nil }
 func (m *MockAnalytics) Activity() *repositories.ActivityRepository                       { return nil }

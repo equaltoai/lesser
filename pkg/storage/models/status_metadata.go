@@ -8,39 +8,41 @@ import (
 // StatusMetadata represents additional metadata for a status/object
 // This handles features like quote permissions, withdrawal status, etc.
 type StatusMetadata struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key fields
-	PK string `dynamorm:"pk" json:"pk"` // Format: "STATUS_META#{status_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "METADATA"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "STATUS_META#{status_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "METADATA"
 
 	// Core identification
-	StatusID string `json:"status_id"`
+	StatusID string `dynamorm:"attr:statusID" json:"status_id"`
 
 	// Quote-related metadata
-	QuoteType           string `json:"quote_type"`            // "public", "followers", "mentioned", "disabled"
-	WithdrawnFromQuotes bool   `json:"withdrawn_from_quotes"` // Whether status is withdrawn from quotes
-	AllowQuotes         bool   `json:"allow_quotes"`          // Whether quotes are allowed at all
-	QuotePermissions    string `json:"quote_permissions"`     // JSON serialized quote permissions
+	QuoteType           string `dynamorm:"attr:quoteType" json:"quote_type"`                      // "public", "followers", "mentioned", "disabled"
+	WithdrawnFromQuotes bool   `dynamorm:"attr:withdrawnFromQuotes" json:"withdrawn_from_quotes"` // Whether status is withdrawn from quotes
+	AllowQuotes         bool   `dynamorm:"attr:allowQuotes" json:"allow_quotes"`                  // Whether quotes are allowed at all
+	QuotePermissions    string `dynamorm:"attr:quotePermissions" json:"quote_permissions"`        // JSON serialized quote permissions
 
 	// Reply-related metadata
-	AllowReplies     bool   `json:"allow_replies"`     // Whether replies are allowed
-	ReplyPermissions string `json:"reply_permissions"` // JSON serialized reply permissions
-	ReplyCount       int    `json:"reply_count"`       // Cache of reply count
+	AllowReplies     bool   `dynamorm:"attr:allowReplies" json:"allow_replies"`         // Whether replies are allowed
+	ReplyPermissions string `dynamorm:"attr:replyPermissions" json:"reply_permissions"` // JSON serialized reply permissions
+	ReplyCount       int    `dynamorm:"attr:replyCount" json:"reply_count"`             // Cache of reply count
 
 	// Moderation metadata
-	ContentWarning  string   `json:"content_warning"`  // Content warning text
-	ModerationFlags []string `json:"moderation_flags"` // Applied moderation flags
-	ModerationNotes string   `json:"moderation_notes"` // Internal moderation notes
+	ContentWarning  string   `dynamorm:"attr:contentWarning" json:"content_warning"`  // Content warning text
+	ModerationFlags []string `dynamorm:"attr:moderationFlags" json:"moderation_flags"` // Applied moderation flags
+	ModerationNotes string   `dynamorm:"attr:moderationNotes" json:"moderation_notes"` // Internal moderation notes
 
 	// Engagement settings
-	DisableLikes   bool `json:"disable_likes"`   // Whether likes are disabled
-	DisableReblogs bool `json:"disable_reblogs"` // Whether reblogs are disabled
+	DisableLikes   bool `dynamorm:"attr:disableLikes" json:"disable_likes"`     // Whether likes are disabled
+	DisableReblogs bool `dynamorm:"attr:disableReblogs" json:"disable_reblogs"` // Whether reblogs are disabled
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"created_at" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"updated_at" json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// Version for optimistic locking
-	Version int `dynamorm:"version" json:"version"`
+	Version int `dynamorm:"version,attr:version" json:"version"`
 }
 
 // NewStatusMetadata creates a new status metadata record

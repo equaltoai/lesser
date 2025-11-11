@@ -27,6 +27,15 @@ func (m *MockRepositoryStorage) Account() *repositories.AccountRepository {
 	return args.Get(0).(*repositories.AccountRepository)
 }
 
+// Bookmark returns a mock bookmark repository for testing
+func (m *MockRepositoryStorage) Bookmark() *repositories.BookmarkRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.BookmarkRepository)
+}
+
 // Actor returns a mock actor repository for testing
 func (m *MockRepositoryStorage) Actor() *repositories.ActorRepository {
 	args := m.Called()

@@ -1023,6 +1023,7 @@ type ComplexityRoot struct {
 		Actor            func(childComplexity int) int
 		Attachments      func(childComplexity int) int
 		Boosted          func(childComplexity int) int
+		BoostedObject    func(childComplexity int) int
 		CommunityNotes   func(childComplexity int) int
 		Content          func(childComplexity int) int
 		ContentMap       func(childComplexity int) int
@@ -1040,6 +1041,7 @@ type ComplexityRoot struct {
 		QuoteURL         func(childComplexity int) int
 		Quoteable        func(childComplexity int) int
 		Quotes           func(childComplexity int, first *int, after *string) int
+		RelationshipType func(childComplexity int) int
 		RepliesCount     func(childComplexity int) int
 		Sensitive        func(childComplexity int) int
 		SharesCount      func(childComplexity int) int
@@ -6838,6 +6840,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Object.Boosted(childComplexity), true
 
+	case "Object.boostedObject":
+		if e.complexity.Object.BoostedObject == nil {
+			break
+		}
+
+		return e.complexity.Object.BoostedObject(childComplexity), true
+
 	case "Object.communityNotes":
 		if e.complexity.Object.CommunityNotes == nil {
 			break
@@ -6961,6 +6970,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Object.Quotes(childComplexity, args["first"].(*int), args["after"].(*string)), true
+
+	case "Object.relationshipType":
+		if e.complexity.Object.RelationshipType == nil {
+			break
+		}
+
+		return e.complexity.Object.RelationshipType(childComplexity), true
 
 	case "Object.repliesCount":
 		if e.complexity.Object.RepliesCount == nil {
@@ -15272,6 +15288,10 @@ func (ec *executionContext) fieldContext_Activity_object(_ context.Context, fiel
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -15371,6 +15391,10 @@ func (ec *executionContext) fieldContext_Activity_target(_ context.Context, fiel
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -18910,6 +18934,10 @@ func (ec *executionContext) fieldContext_CommunityNotePayload_object(_ context.C
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -19141,6 +19169,10 @@ func (ec *executionContext) fieldContext_Conversation_lastStatus(_ context.Conte
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -20848,6 +20880,10 @@ func (ec *executionContext) fieldContext_CreateNotePayload_object(_ context.Cont
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -26424,6 +26460,10 @@ func (ec *executionContext) fieldContext_HashtagActivityUpdate_post(_ context.Co
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -36226,6 +36266,10 @@ func (ec *executionContext) fieldContext_ModerationAlert_content(_ context.Conte
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -36896,6 +36940,10 @@ func (ec *executionContext) fieldContext_ModerationDecision_object(_ context.Con
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -37652,6 +37700,10 @@ func (ec *executionContext) fieldContext_ModerationItem_content(_ context.Contex
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -39176,6 +39228,10 @@ func (ec *executionContext) fieldContext_Mutation_shareObject(ctx context.Contex
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -39289,6 +39345,10 @@ func (ec *executionContext) fieldContext_Mutation_unshareObject(ctx context.Cont
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -39402,6 +39462,10 @@ func (ec *executionContext) fieldContext_Mutation_bookmarkObject(ctx context.Con
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -39570,6 +39634,10 @@ func (ec *executionContext) fieldContext_Mutation_pinObject(ctx context.Context,
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -43956,6 +44024,10 @@ func (ec *executionContext) fieldContext_Notification_status(_ context.Context, 
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -44921,6 +44993,10 @@ func (ec *executionContext) fieldContext_Object_inReplyTo(_ context.Context, fie
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -45565,6 +45641,153 @@ func (ec *executionContext) fieldContext_Object_boosted(_ context.Context, field
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Object_relationshipType(ctx context.Context, field graphql.CollectedField, obj *model.Object) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Object_relationshipType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RelationshipType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.ObjectRelationshipType)
+	fc.Result = res
+	return ec.marshalNObjectRelationshipType2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐObjectRelationshipType(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Object_relationshipType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Object",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ObjectRelationshipType does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Object_boostedObject(ctx context.Context, field graphql.CollectedField, obj *model.Object) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Object_boostedObject(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.BoostedObject, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Object)
+	fc.Result = res
+	return ec.marshalOObject2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐObject(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Object_boostedObject(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Object",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Object_id(ctx, field)
+			case "type":
+				return ec.fieldContext_Object_type(ctx, field)
+			case "actor":
+				return ec.fieldContext_Object_actor(ctx, field)
+			case "content":
+				return ec.fieldContext_Object_content(ctx, field)
+			case "contentMap":
+				return ec.fieldContext_Object_contentMap(ctx, field)
+			case "inReplyTo":
+				return ec.fieldContext_Object_inReplyTo(ctx, field)
+			case "visibility":
+				return ec.fieldContext_Object_visibility(ctx, field)
+			case "sensitive":
+				return ec.fieldContext_Object_sensitive(ctx, field)
+			case "spoilerText":
+				return ec.fieldContext_Object_spoilerText(ctx, field)
+			case "attachments":
+				return ec.fieldContext_Object_attachments(ctx, field)
+			case "tags":
+				return ec.fieldContext_Object_tags(ctx, field)
+			case "mentions":
+				return ec.fieldContext_Object_mentions(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Object_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
+			case "repliesCount":
+				return ec.fieldContext_Object_repliesCount(ctx, field)
+			case "likesCount":
+				return ec.fieldContext_Object_likesCount(ctx, field)
+			case "sharesCount":
+				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
+			case "estimatedCost":
+				return ec.fieldContext_Object_estimatedCost(ctx, field)
+			case "moderationScore":
+				return ec.fieldContext_Object_moderationScore(ctx, field)
+			case "communityNotes":
+				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "quoteUrl":
+				return ec.fieldContext_Object_quoteUrl(ctx, field)
+			case "quoteable":
+				return ec.fieldContext_Object_quoteable(ctx, field)
+			case "quotePermissions":
+				return ec.fieldContext_Object_quotePermissions(ctx, field)
+			case "quoteContext":
+				return ec.fieldContext_Object_quoteContext(ctx, field)
+			case "quoteCount":
+				return ec.fieldContext_Object_quoteCount(ctx, field)
+			case "quotes":
+				return ec.fieldContext_Object_quotes(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -46227,6 +46450,10 @@ func (ec *executionContext) fieldContext_ObjectEdge_node(_ context.Context, fiel
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -46373,6 +46600,10 @@ func (ec *executionContext) fieldContext_ObjectExplanation_object(_ context.Cont
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -49197,6 +49428,10 @@ func (ec *executionContext) fieldContext_PostEdge_node(_ context.Context, field 
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -51027,6 +51262,10 @@ func (ec *executionContext) fieldContext_Query_object(ctx context.Context, field
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -55930,6 +56169,10 @@ func (ec *executionContext) fieldContext_QuoteActivityUpdate_quote(_ context.Con
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -56382,6 +56625,10 @@ func (ec *executionContext) fieldContext_QuoteContext_originalNote(_ context.Con
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -56616,6 +56863,10 @@ func (ec *executionContext) fieldContext_QuoteEdge_node(_ context.Context, field
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -59877,6 +60128,10 @@ func (ec *executionContext) fieldContext_SearchResult_statuses(_ context.Context
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -63473,6 +63728,10 @@ func (ec *executionContext) fieldContext_Subscription_timelineUpdates(ctx contex
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -66221,6 +66480,10 @@ func (ec *executionContext) fieldContext_ThreadContext_rootNote(_ context.Contex
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -68309,6 +68572,10 @@ func (ec *executionContext) fieldContext_UpdateQuotePermissionsPayload_note(_ co
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -69631,6 +69898,10 @@ func (ec *executionContext) fieldContext_WithdrawQuotePayload_note(_ context.Con
 				return ec.fieldContext_Object_sharesCount(ctx, field)
 			case "boosted":
 				return ec.fieldContext_Object_boosted(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
 			case "estimatedCost":
 				return ec.fieldContext_Object_estimatedCost(ctx, field)
 			case "moderationScore":
@@ -81910,6 +82181,13 @@ func (ec *executionContext) _Object(ctx context.Context, sel ast.SelectionSet, o
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "relationshipType":
+			out.Values[i] = ec._Object_relationshipType(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "boostedObject":
+			out.Values[i] = ec._Object_boostedObject(ctx, field, obj)
 		case "estimatedCost":
 			out.Values[i] = ec._Object_estimatedCost(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -92179,6 +92457,16 @@ func (ec *executionContext) marshalNObjectExplanation2ᚖgithubᚗcomᚋequaltoa
 		return graphql.Null
 	}
 	return ec._ObjectExplanation(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNObjectRelationshipType2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐObjectRelationshipType(ctx context.Context, v any) (model.ObjectRelationshipType, error) {
+	var res model.ObjectRelationshipType
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNObjectRelationshipType2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐObjectRelationshipType(ctx context.Context, sel ast.SelectionSet, v model.ObjectRelationshipType) graphql.Marshaler {
+	return v
 }
 
 func (ec *executionContext) unmarshalNObjectType2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐObjectType(ctx context.Context, v any) (model.ObjectType, error) {

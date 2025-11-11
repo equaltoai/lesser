@@ -7,22 +7,24 @@ import (
 
 // UserAppConsent represents user consent for an OAuth app stored in DynamoDB
 type UserAppConsent struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key fields
-	PK string `dynamorm:"pk" json:"-"` // USER#userID
-	SK string `dynamorm:"sk" json:"-"` // CONSENT#appID
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // USER#userID
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // CONSENT#appID
 
 	// GSI for querying by app
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"-"` // APP#appID
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"-"` // USER#userID
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // APP#appID
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // USER#userID
 
 	// Consent data
-	UserID    string     `json:"user_id"`
-	AppID     string     `json:"app_id"` // OAuth app client ID
-	Scopes    []string   `json:"scopes"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	RevokedAt *time.Time `json:"revoked_at,omitempty"`
-	Active    bool       `json:"active"`
+	UserID    string     `dynamorm:"attr:userID" json:"user_id"`
+	AppID     string     `dynamorm:"attr:appID" json:"app_id"` // OAuth app client ID
+	Scopes    []string   `dynamorm:"attr:scopes" json:"scopes"`
+	CreatedAt time.Time  `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`
+	RevokedAt *time.Time `dynamorm:"attr:revokedAt" json:"revoked_at,omitempty"`
+	Active    bool       `dynamorm:"attr:active" json:"active"`
 }
 
 // GetPK returns the partition key for BaseModel interface

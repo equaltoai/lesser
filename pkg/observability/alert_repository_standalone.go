@@ -152,8 +152,8 @@ func (r *StandaloneAlertRepository) GetActiveAlerts(ctx context.Context, limit i
 	// Query GSI3 for firing alerts
 	err := r.db.WithContext(ctx).Model(&models.Alert{}).
 		Index("GSI3").
-		Where("GSI3PK", "=", "STATUS#firing").
-		OrderBy("GSI3SK", "DESC").
+		Where("gsi3PK", "=", "STATUS#firing").
+		OrderBy("gsi3SK", "DESC").
 		Limit(limit).
 		All(&alerts)
 
@@ -172,10 +172,10 @@ func (r *StandaloneAlertRepository) GetAlertsNeedingRetry(ctx context.Context, l
 	// This is a simplified query - in practice you might need a more complex query
 	err := r.db.WithContext(ctx).Model(&models.Alert{}).
 		Index("GSI3").
-		Where("GSI3PK", "=", "STATUS#firing").
+		Where("gsi3PK", "=", "STATUS#firing").
 		Filter("DeliveryAttempts", "<", 5).
 		Filter("NextRetryAt", "<=", time.Now().Unix()).
-		OrderBy("GSI3SK", "ASC").
+		OrderBy("gsi3SK", "ASC").
 		Limit(limit).
 		All(&alerts)
 
@@ -219,8 +219,8 @@ func (r *StandaloneAlertRepository) CleanupOldAlerts(ctx context.Context, olderT
 		var typeAlerts []*models.Alert
 		err := r.db.WithContext(ctx).Model(&models.Alert{}).
 			Index("GSI1").
-			Where("GSI1PK", "=", fmt.Sprintf("ALERT_TYPE#%s", alertType)).
-			Where("GSI1SK", "<", cutoffTimestamp).
+			Where("gsi1PK", "=", fmt.Sprintf("ALERT_TYPE#%s", alertType)).
+			Where("gsi1SK", "<", cutoffTimestamp).
 			Limit(100). // Process in batches
 			All(&typeAlerts)
 
@@ -314,9 +314,9 @@ func (r *StandaloneWebhookRepository) GetPendingRetries(ctx context.Context, lim
 	// Query GSI2 for failed deliveries ready for retry
 	err := r.db.WithContext(ctx).Model(&models.WebhookDelivery{}).
 		Index("GSI2").
-		Where("GSI2PK", "=", "STATUS#retrying").
+		Where("gsi2PK", "=", "STATUS#retrying").
 		Filter("NextRetryAt", "<=", time.Now().Unix()).
-		OrderBy("GSI2SK", "ASC").
+		OrderBy("gsi2SK", "ASC").
 		Limit(limit).
 		All(&deliveries)
 
@@ -343,8 +343,8 @@ func (r *StandaloneWebhookRepository) GetDeliveriesByAlert(ctx context.Context, 
 	// Query GSI1 for deliveries by alert
 	err := r.db.WithContext(ctx).Model(&models.WebhookDelivery{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("ALERT#%s", alertID)).
-		OrderBy("GSI1SK", "DESC").
+		Where("gsi1PK", "=", fmt.Sprintf("ALERT#%s", alertID)).
+		OrderBy("gsi1SK", "DESC").
 		Limit(limit).
 		All(&deliveries)
 

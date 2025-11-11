@@ -253,7 +253,7 @@ aws dynamodb query --table-name lesser-production-main --key-condition-expressio
 aws application-autoscaling register-scalable-target --service-namespace dynamodb --resource-id table/lesser-production-main --scalable-dimension dynamodb:table:ReadCapacityUnits --min-capacity 5 --max-capacity 100
 
 # Consider using Global Secondary Indexes for alternate access patterns
-aws dynamodb update-table --table-name lesser-production-main --global-secondary-index-updates '[{"Create":{"IndexName":"GSI1","KeySchema":[{"AttributeName":"GSI1PK","KeyType":"HASH"},{"AttributeName":"GSI1SK","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"},"ProvisionedThroughput":{"ReadCapacityUnits":5,"WriteCapacityUnits":5}}}]'
+aws dynamodb update-table --table-name lesser-production-main --global-secondary-index-updates '[{"Create":{"IndexName":"GSI1","KeySchema":[{"AttributeName":"gsi1PK","KeyType":"HASH"},{"AttributeName":"gsi1SK","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"},"ProvisionedThroughput":{"ReadCapacityUnits":5,"WriteCapacityUnits":5}}}]'
 ```
 
 ### Issue: High Lambda Cold Start Times

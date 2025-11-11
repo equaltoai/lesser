@@ -13,61 +13,63 @@ import (
 
 // MediaJob represents a media processing job in the system
 type MediaJob struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using job ID
-	PK string `dynamorm:"pk" json:"pk"` // Format: "JOB#{jobID}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "JOB#{jobID}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "JOB#{jobID}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "JOB#{jobID}"
 
 	// GSI1 - User jobs lookup
-	GSI1PK string `dynamorm:"index:user-jobs-index,pk" json:"gsi1_pk"` // Format: "USER_JOBS#{userID}"
-	GSI1SK string `dynamorm:"index:user-jobs-index,sk" json:"gsi1_sk"` // Format: "{created_at}#{jobID}"
+	GSI1PK string `dynamorm:"index:user-jobs-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_JOBS#{userID}"
+	GSI1SK string `dynamorm:"index:user-jobs-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{jobID}"
 
 	// GSI2 - Status-based queries
-	GSI2PK string `dynamorm:"index:status-index,pk" json:"gsi2_pk"` // Format: "STATUS#{status}"
-	GSI2SK string `dynamorm:"index:status-index,sk" json:"gsi2_sk"` // Format: "UPDATED#{updated_at}"
+	GSI2PK string `dynamorm:"index:status-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "STATUS#{status}"
+	GSI2SK string `dynamorm:"index:status-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "UPDATED#{updated_at}"
 
 	// Core job data
-	JobID           string         `json:"job_id"`
-	MediaID         string         `json:"media_id"`
-	Username        string         `json:"username"`
-	Status          string         `json:"status"` // pending, processing, completed, failed, cancelled
-	ProcessingTasks []string       `json:"processing_tasks"`
-	S3Key           string         `json:"s3_key"`
-	MimeType        string         `json:"mime_type"`
-	Results         map[string]any `json:"results,omitempty"`
-	Error           string         `json:"error,omitempty"`
+	JobID           string         `dynamorm:"attr:jobID" json:"job_id"`
+	MediaID         string         `dynamorm:"attr:mediaID" json:"media_id"`
+	Username        string         `dynamorm:"attr:username" json:"username"`
+	Status          string         `dynamorm:"attr:status" json:"status"` // pending, processing, completed, failed, cancelled
+	ProcessingTasks []string       `dynamorm:"attr:processingTasks" json:"processing_tasks"`
+	S3Key           string         `dynamorm:"attr:s3Key" json:"s3_key"`
+	MimeType        string         `dynamorm:"attr:mimeType" json:"mime_type"`
+	Results         map[string]any `dynamorm:"attr:results" json:"results,omitempty"`
+	Error           string         `dynamorm:"attr:error" json:"error,omitempty"`
 
 	// Idempotency and duplicate prevention
-	IdempotencyKey string `json:"idempotency_key"` // Hash of user_id + file_hash + timestamp
-	FileHash       string `json:"file_hash"`       // SHA256 hash of file contents
-	FileSize       int64  `json:"file_size"`       // File size in bytes
+	IdempotencyKey string `dynamorm:"attr:idempotencyKey" json:"idempotency_key"` // Hash of user_id + file_hash + timestamp
+	FileHash       string `dynamorm:"attr:fileHash" json:"file_hash"`             // SHA256 hash of file contents
+	FileSize       int64  `dynamorm:"attr:fileSize" json:"file_size"`             // File size in bytes
 
 	// Processing state tracking
-	StartedAt     *time.Time `json:"started_at,omitempty"`      // When processing actually began
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`    // When processing completed
-	LastAttemptAt *time.Time `json:"last_attempt_at,omitempty"` // Last retry attempt
-	Progress      int        `json:"progress"`                  // Progress percentage (0-100)
+	StartedAt     *time.Time `dynamorm:"attr:startedAt" json:"started_at,omitempty"`          // When processing actually began
+	CompletedAt   *time.Time `dynamorm:"attr:completedAt" json:"completed_at,omitempty"`      // When processing completed
+	LastAttemptAt *time.Time `dynamorm:"attr:lastAttemptAt" json:"last_attempt_at,omitempty"` // Last retry attempt
+	Progress      int        `dynamorm:"attr:progress" json:"progress"`                       // Progress percentage (0-100)
 
 	// Retry logic
-	RetryCount       int        `json:"retry_count"`                  // Number of retries attempted
-	MaxRetries       int        `json:"max_retries"`                  // Maximum retries allowed
-	LastError        string     `json:"last_error,omitempty"`         // Last error encountered
-	RetryScheduledAt *time.Time `json:"retry_scheduled_at,omitempty"` // When next retry is scheduled
+	RetryCount       int        `dynamorm:"attr:retryCount" json:"retry_count"`                        // Number of retries attempted
+	MaxRetries       int        `dynamorm:"attr:maxRetries" json:"max_retries"`                        // Maximum retries allowed
+	LastError        string     `dynamorm:"attr:lastError" json:"last_error,omitempty"`                // Last error encountered
+	RetryScheduledAt *time.Time `dynamorm:"attr:retryScheduledAt" json:"retry_scheduled_at,omitempty"` // When next retry is scheduled
 
 	// Budget and timeout enforcement
-	EstimatedCostMicros int64         `json:"estimated_cost_micros"`           // Estimated processing cost
-	ActualCostMicros    int64         `json:"actual_cost_micros"`              // Actual cost incurred
-	MaxProcessingTime   time.Duration `json:"max_processing_time"`             // Maximum allowed processing time
-	ProcessingStartedAt *time.Time    `json:"processing_started_at,omitempty"` // When current processing attempt started
+	EstimatedCostMicros int64         `dynamorm:"attr:estimatedCostMicros" json:"estimated_cost_micros"`           // Estimated processing cost
+	ActualCostMicros    int64         `dynamorm:"attr:actualCostMicros" json:"actual_cost_micros"`                 // Actual cost incurred
+	MaxProcessingTime   time.Duration `dynamorm:"attr:maxProcessingTime" json:"max_processing_time"`               // Maximum allowed processing time
+	ProcessingStartedAt *time.Time    `dynamorm:"attr:processingStartedAt" json:"processing_started_at,omitempty"` // When current processing attempt started
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for abandoned jobs (24 hours)
-	ExpiresAt *int64 `dynamorm:"ttl" json:"expires_at,omitempty"` // Unix timestamp
+	ExpiresAt *int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at,omitempty"` // Unix timestamp
 
 	// Version for optimistic locking
-	ModelVersion int `dynamorm:"version" json:"model_version"`
+	ModelVersion int `dynamorm:"version,attr:modelVersion" json:"model_version"`
 }
 
 // TableName returns the DynamoDB table name for the MediaJob model

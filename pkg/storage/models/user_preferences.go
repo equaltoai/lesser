@@ -6,29 +6,31 @@ import (
 
 // UserPreferences represents user preferences in DynamoDB
 type UserPreferences struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// DynamoDB keys
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// User preferences fields (matching storage.UserPreferences exactly)
-	Language                  string          `json:"language"`
-	DefaultPostingVisibility  string          `json:"default_posting_visibility"`
-	DefaultMediaSensitive     bool            `json:"default_media_sensitive"`
-	ExpandSpoilers            bool            `json:"expand_spoilers"`
-	ExpandMedia               string          `json:"expand_media"`
-	AutoplayGifs              bool            `json:"autoplay_gifs"`
-	ShowFollowCounts          bool            `json:"show_follow_counts"`
-	PreferredTimelineOrder    string          `json:"preferred_timeline_order"`
-	SearchSuggestionsEnabled  bool            `json:"search_suggestions_enabled"`
-	PersonalizedSearchEnabled bool            `json:"personalized_search_enabled"`
-	ReblogFilters             map[string]bool `json:"reblog_filters,omitempty"`
-	StreamingDefaultQuality   string          `json:"streaming_default_quality"`
-	StreamingAutoQuality      bool            `json:"streaming_auto_quality"`
-	StreamingPreloadNext      bool            `json:"streaming_preload_next"`
-	StreamingDataSaver        bool            `json:"streaming_data_saver"`
+	Language                  string          `dynamorm:"attr:language" json:"language"`
+	DefaultPostingVisibility  string          `dynamorm:"attr:defaultPostingVisibility" json:"default_posting_visibility"`
+	DefaultMediaSensitive     bool            `dynamorm:"attr:defaultMediaSensitive" json:"default_media_sensitive"`
+	ExpandSpoilers            bool            `dynamorm:"attr:expandSpoilers" json:"expand_spoilers"`
+	ExpandMedia               string          `dynamorm:"attr:expandMedia" json:"expand_media"`
+	AutoplayGifs              bool            `dynamorm:"attr:autoplayGifs" json:"autoplay_gifs"`
+	ShowFollowCounts          bool            `dynamorm:"attr:showFollowCounts" json:"show_follow_counts"`
+	PreferredTimelineOrder    string          `dynamorm:"attr:preferredTimelineOrder" json:"preferred_timeline_order"`
+	SearchSuggestionsEnabled  bool            `dynamorm:"attr:searchSuggestionsEnabled" json:"search_suggestions_enabled"`
+	PersonalizedSearchEnabled bool            `dynamorm:"attr:personalizedSearchEnabled" json:"personalized_search_enabled"`
+	ReblogFilters             map[string]bool `dynamorm:"attr:reblogFilters" json:"reblog_filters,omitempty"`
+	StreamingDefaultQuality   string          `dynamorm:"attr:streamingDefaultQuality" json:"streaming_default_quality"`
+	StreamingAutoQuality      bool            `dynamorm:"attr:streamingAutoQuality" json:"streaming_auto_quality"`
+	StreamingPreloadNext      bool            `dynamorm:"attr:streamingPreloadNext" json:"streaming_preload_next"`
+	StreamingDataSaver        bool            `dynamorm:"attr:streamingDataSaver" json:"streaming_data_saver"`
 
 	// Metadata
-	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// Username for key generation
 	Username string `json:"-"`

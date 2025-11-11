@@ -7,25 +7,27 @@ import (
 
 // CollectionItem represents an item in an ActivityPub collection
 type CollectionItem struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - MUST match legacy exactly
-	PK string `dynamorm:"pk" json:"PK"` // COLLECTION#{collection}
-	SK string `dynamorm:"sk" json:"SK"` // ITEM#{itemID}
+	PK string `dynamorm:"pk,attr:PK" json:"PK"` // COLLECTION#{collection}
+	SK string `dynamorm:"sk,attr:SK" json:"SK"` // ITEM#{itemID}
 
 	// GSI1 for reverse lookups (what collections is an item in)
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // ITEM#{itemID}
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // COLLECTION#{collection}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK"` // ITEM#{itemID}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK"` // COLLECTION#{collection}
 
 	// Collection item data
-	Collection string    `json:"Collection"` // The collection ID (e.g., featured, likes, etc.)
-	ItemID     string    `json:"ItemID"`     // The item being added/removed
-	ItemType   string    `json:"ItemType"`   // Type of the item (Note, Article, etc.)
-	AddedBy    string    `json:"AddedBy"`    // Who added the item
-	AddedAt    time.Time `json:"AddedAt"`    // When it was added
-	Position   int       `json:"Position"`   // Optional position in ordered collections
-	CreatedAt  time.Time `json:"CreatedAt"`  // Database timestamp
+	Collection string    `dynamorm:"attr:collection" json:"Collection"` // The collection ID (e.g., featured, likes, etc.)
+	ItemID     string    `dynamorm:"attr:itemID" json:"ItemID"`         // The item being added/removed
+	ItemType   string    `dynamorm:"attr:itemType" json:"ItemType"`     // Type of the item (Note, Article, etc.)
+	AddedBy    string    `dynamorm:"attr:addedBy" json:"AddedBy"`       // Who added the item
+	AddedAt    time.Time `dynamorm:"attr:addedAt" json:"AddedAt"`       // When it was added
+	Position   int       `dynamorm:"attr:position" json:"Position"`     // Optional position in ordered collections
+	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`   // Database timestamp
 
 	// Optional TTL for cleanup
-	TTL *int64 `dynamorm:"ttl" json:"TTL,omitempty"`
+	TTL *int64 `dynamorm:"ttl,attr:ttl" json:"TTL,omitempty"`
 }
 
 // Common collection types

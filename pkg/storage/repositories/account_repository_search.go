@@ -58,7 +58,7 @@ func (r *AccountRepository) searchAllActors(ctx context.Context, query string, l
 	// Search local actors
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("domain-index").
-		Where("GSI3PK", "=", fmt.Sprintf("DOMAIN#%s", r.domain)).
+		Where("gsi3PK", "=", fmt.Sprintf("DOMAIN#%s", r.domain)).
 		Limit(limit + offset).
 		All(&actorModels)
 
@@ -187,7 +187,7 @@ func (r *AccountRepository) getPopularAccountSuggestions(ctx context.Context, us
 
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("follower-count-index").
-		Where("GSI5PK", "=", "ACTORS_BY_FOLLOWERS").
+		Where("gsi5PK", "=", "ACTORS_BY_FOLLOWERS").
 		Limit(limit * 2). // Get extra to account for filtering
 		All(&actors)
 
@@ -275,8 +275,8 @@ func (r *AccountRepository) GetTrendingActors(ctx context.Context, limit int) ([
 	// Use activity index to find trending actors
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("activity-index").
-		Where("GSI6PK", "=", "TRENDING_ACTORS").
-		Where("GSI6SK", ">", time.Now().Add(-24*time.Hour).Format(time.RFC3339)).
+		Where("gsi6PK", "=", "TRENDING_ACTORS").
+		Where("gsi6SK", ">", time.Now().Add(-24*time.Hour).Format(time.RFC3339)).
 		Limit(limit).
 		All(&actors)
 
@@ -315,7 +315,7 @@ func (r *AccountRepository) SearchByWebfinger(ctx context.Context, webfinger str
 
 	err := r.db.WithContext(ctx).Model(&actor).
 		Index("webfinger-index").
-		Where("GSI7PK", "=", fmt.Sprintf("WEBFINGER#%s", webfinger)).
+		Where("gsi7PK", "=", fmt.Sprintf("WEBFINGER#%s", webfinger)).
 		First(&actor)
 
 	if err != nil {
@@ -392,8 +392,8 @@ func (r *AccountRepository) GetActiveUsers(ctx context.Context, since time.Time,
 	// Use activity index
 	err := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("activity-index").
-		Where("GSI5PK", "=", "ACTIVE_USERS").
-		Where("GSI5SK", ">", since.Format(time.RFC3339)).
+		Where("gsi5PK", "=", "ACTIVE_USERS").
+		Where("gsi5SK", ">", since.Format(time.RFC3339)).
 		Limit(limit).
 		All(&users)
 
@@ -418,8 +418,8 @@ func (r *AccountRepository) GetInactiveUsers(ctx context.Context, inactiveSince 
 	// Use activity index (reverse query)
 	err := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("activity-index").
-		Where("GSI5PK", "=", "ACTIVE_USERS").
-		Where("GSI5SK", "<", inactiveSince.Format(time.RFC3339)).
+		Where("gsi5PK", "=", "ACTIVE_USERS").
+		Where("gsi5SK", "<", inactiveSince.Format(time.RFC3339)).
 		Limit(limit).
 		All(&users)
 

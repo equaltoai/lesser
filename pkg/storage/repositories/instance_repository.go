@@ -310,7 +310,7 @@ func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, err
 	// Since we only need the count, we'll use a projection that minimizes data transfer
 	err := r.metricsRepo.GetDB().WithContext(ctx).Model(&models.Status{}).
 		Index("GSI4").
-		Where("GSI4PK", "begins_with", "REPLIES#").
+		Where("gsi4PK", "begins_with", "REPLIES#").
 		All(&comments)
 
 	if err != nil {
@@ -410,8 +410,8 @@ func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.Ac
 	// Look for the first admin user to serve as contact account
 	var users []models.User
 	err := r.metricsRepo.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("role-index").
-		Where("GSI3PK", "=", "ROLE#admin").
+		Index("GSI3").
+		Where("gsi3PK", "=", "ROLE#admin").
 		Limit(1).
 		All(&users)
 
@@ -492,9 +492,9 @@ func (r *InstanceRepository) getMetricHistory(ctx context.Context, days int, met
 	var histories []models.InstanceHistory
 	err := r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
-		Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
-		Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
+		Where("gsi1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
+		Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
+		Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
 		All(&histories)
 
 	if err != nil {
@@ -686,9 +686,9 @@ func (r *InstanceRepository) GetMetricsSummary(ctx context.Context, timeRange st
 		var histories []models.InstanceHistory
 		err := r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
 			Index("GSI1").
-			Where("GSI1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
-			Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
-			Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
+			Where("gsi1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
+			Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
+			Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
 			All(&histories)
 
 		if err != nil {
@@ -735,8 +735,8 @@ func (r *InstanceRepository) getPreviousDayValue(ctx context.Context, currentDat
 	history := &models.InstanceHistory{}
 	err = r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
-		Where("GSI1SK", "=", fmt.Sprintf("DATE#%s", prevDate)).
+		Where("gsi1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
+		Where("gsi1SK", "=", fmt.Sprintf("DATE#%s", prevDate)).
 		First(history)
 
 	if err != nil {

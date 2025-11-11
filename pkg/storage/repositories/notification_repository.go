@@ -234,13 +234,13 @@ func (r *NotificationRepository) GetNotificationsByType(ctx context.Context, use
 	gsi1pk := "NOTIF_TYPE#" + notificationType
 	query := r.db.WithContext(ctx).Model(&models.Notification{}).
 		Index("type-index").
-		Where("GSI1PK", "=", gsi1pk).
+		Where("gsi1PK", "=", gsi1pk).
 		Filter("UserID", "=", userID).
-		OrderBy("GSI1SK", "DESC") // Most recent first
+		OrderBy("gsi1SK", "DESC") // Most recent first
 
 	// Resume from the supplied cursor value when available
 	if opts.Cursor != "" {
-		query = query.Where("GSI1SK", "<", opts.Cursor)
+		query = query.Where("gsi1SK", "<", opts.Cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results
@@ -555,7 +555,7 @@ func (r *NotificationRepository) ConsolidateNotifications(ctx context.Context, g
 	const consolidationLimit = 100
 	err := r.db.WithContext(ctx).Model(&models.Notification{}).
 		Index("group-index").
-		Where("GSI3PK", "=", "NOTIF_GROUP#"+groupKey).
+		Where("gsi3PK", "=", "NOTIF_GROUP#"+groupKey).
 		Limit(consolidationLimit).
 		All(&notifications)
 	if err != nil {

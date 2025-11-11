@@ -114,7 +114,7 @@ func (r *ModerationRepository) GetModerationEvent(ctx context.Context, eventID s
 	// Query using GSI3 for event ID lookup
 	err := r.db.WithContext(ctx).Model(&model).
 		Index("gsi3").
-		Where("GSI3PK", "=", fmt.Sprintf("EVENTID#%s", eventID)).
+		Where("gsi3PK", "=", fmt.Sprintf("EVENTID#%s", eventID)).
 		First(&model)
 
 	if err != nil {
@@ -155,7 +155,7 @@ func (r *ModerationRepository) GetModerationQueue(ctx context.Context, filter *s
 	// Query using GSI2 for type/category
 	query := r.db.WithContext(ctx).Model(&models).
 		Index("gsi2").
-		Where("GSI2PK", "=", fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)).
+		Where("gsi2PK", "=", fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)).
 		Limit(limit)
 
 	if err := query.All(&models); err != nil {
@@ -230,7 +230,7 @@ func (r *ModerationRepository) GetModerationQueuePaginated(ctx context.Context, 
 
 	query := r.db.WithContext(ctx).Model(&models).
 		Index("gsi2").
-		Where("GSI2PK", "=", fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)).
+		Where("gsi2PK", "=", fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)).
 		Limit(limit)
 
 	if cursor != "" {
@@ -374,7 +374,7 @@ func (r *ModerationRepository) GetModerationEventsByActor(ctx context.Context, a
 
 	query := r.db.WithContext(ctx).Model(&models).
 		Index("gsi1").
-		Where("GSI1PK", "=", fmt.Sprintf("ACTOR#%s", actorID)).
+		Where("gsi1PK", "=", fmt.Sprintf("ACTOR#%s", actorID)).
 		Limit(limit)
 
 	if cursor != "" {
@@ -550,7 +550,7 @@ func (r *ModerationRepository) GetModerationDecision(ctx context.Context, object
 	// Query using GSI1 for active decisions
 	err := r.db.WithContext(ctx).Model(&model).
 		Index("gsi1").
-		Where("GSI1PK", "=", "ACTIVE_DECISIONS").
+		Where("gsi1PK", "=", "ACTIVE_DECISIONS").
 		Where(gsi1SKField, "=", fmt.Sprintf("OBJECT#%s", objectID)).
 		First(&model)
 
@@ -631,7 +631,7 @@ func (r *ModerationRepository) GetModerationPatterns(ctx context.Context, active
 		// Query by active status and severity using GSI2
 		err := r.db.WithContext(ctx).Model(&patternModels).
 			Index("gsi2").
-			Where("GSI2PK", "=", fmt.Sprintf("MODERATION_PATTERNS#%s", severity)).
+			Where("gsi2PK", "=", fmt.Sprintf("MODERATION_PATTERNS#%s", severity)).
 			Limit(limit).
 			All(&patternModels)
 		if err != nil {
@@ -641,7 +641,7 @@ func (r *ModerationRepository) GetModerationPatterns(ctx context.Context, active
 		// Query by active status only using GSI1
 		err := r.db.WithContext(ctx).Model(&patternModels).
 			Index("gsi1").
-			Where("GSI1PK", "=", "MODERATION_PATTERNS#ACTIVE").
+			Where("gsi1PK", "=", "MODERATION_PATTERNS#ACTIVE").
 			Limit(limit).
 			All(&patternModels)
 		if err != nil {
@@ -1030,7 +1030,7 @@ func (r *ModerationRepository) executeGSI2Query(ctx context.Context, gsi2pk stri
 	var models []models.ModerationEvent
 	query := r.db.WithContext(ctx).Model(&models).
 		Index("gsi2").
-		Where("GSI2PK", "=", gsi2pk).
+		Where("gsi2PK", "=", gsi2pk).
 		Limit(limit + 1) // Get one more to check for pagination
 
 	if cursor != "" {
@@ -1322,7 +1322,7 @@ func (r *ModerationRepository) GetModerationQueueCount(ctx context.Context) (int
 	// Count pending moderation events
 	count, err := r.db.WithContext(ctx).Model(&models.ModerationEvent{}).
 		Index("gsi2").
-		Where("GSI2PK", "=", fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)).
+		Where("gsi2PK", "=", fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)).
 		Count()
 
 	if err != nil {
@@ -1972,7 +1972,7 @@ func (r *ModerationRepository) GetOpenReportsCount(ctx context.Context) (int, er
 	// Count reports with status "open" using GSI3
 	count, err := r.db.WithContext(ctx).Model(&models.Report{}).
 		Index("GSI3").
-		Where("GSI3PK", "=", "STATUS#open").
+		Where("gsi3PK", "=", "STATUS#open").
 		Count()
 
 	if err != nil {
@@ -2146,7 +2146,7 @@ func (r *ModerationRepository) GetFlagsByActor(ctx context.Context, actorID stri
 
 	query := r.db.WithContext(ctx).Model(&models).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("ACTOR#%s", actorID)).
+		Where("gsi1PK", "=", fmt.Sprintf("ACTOR#%s", actorID)).
 		Limit(limit)
 
 	if cursor != "" {
@@ -2193,7 +2193,7 @@ func (r *ModerationRepository) GetPendingFlags(ctx context.Context, limit int, c
 
 	query := r.db.WithContext(ctx).Model(&models).
 		Index("GSI2").
-		Where("GSI2PK", "=", "FLAG_STATUS#pending").
+		Where("gsi2PK", "=", "FLAG_STATUS#pending").
 		Limit(limit)
 
 	if cursor != "" {
@@ -2287,7 +2287,7 @@ func (r *ModerationRepository) CountPendingFlags(ctx context.Context) (int, erro
 	// Count flags with status "pending" using GSI2
 	count, err := r.db.WithContext(ctx).Model(&models.Flag{}).
 		Index("GSI2").
-		Where("GSI2PK", "=", "FLAG_STATUS#pending").
+		Where("gsi2PK", "=", "FLAG_STATUS#pending").
 		Count()
 
 	if err != nil {
@@ -2452,7 +2452,7 @@ func (r *ModerationRepository) GetUserReports(ctx context.Context, username stri
 
 	query := r.db.WithContext(ctx).Model(&models).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username)).
+		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", username)).
 		Limit(limit)
 
 	if cursor != "" {
@@ -2578,7 +2578,7 @@ func (r *ModerationRepository) GetReportsByTarget(ctx context.Context, targetAcc
 
 	query := r.db.WithContext(ctx).Model(&models).
 		Index("GSI2").
-		Where("GSI2PK", "=", fmt.Sprintf("REPORTED#%s", targetAccountID)).
+		Where("gsi2PK", "=", fmt.Sprintf("REPORTED#%s", targetAccountID)).
 		Limit(limit)
 
 	if cursor != "" {
@@ -2643,7 +2643,7 @@ func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status st
 
 	query := r.db.WithContext(ctx).Model(&models).
 		Index("GSI3").
-		Where("GSI3PK", "=", fmt.Sprintf("STATUS#%s", string(status))).
+		Where("gsi3PK", "=", fmt.Sprintf("STATUS#%s", string(status))).
 		Limit(limit)
 
 	if cursor != "" {
@@ -2921,12 +2921,12 @@ func (r *ModerationRepository) getAuditLogsByGSI(ctx context.Context, gsiIndex, 
 
 // GetAuditLogsByAdmin retrieves audit log entries for a specific admin
 func (r *ModerationRepository) GetAuditLogsByAdmin(ctx context.Context, adminID string, limit int, cursor string) ([]*storage.AuditLog, string, error) {
-	return r.getAuditLogsByGSI(ctx, "gsi1", "GSI1PK", gsi1SKField, "ADMIN", adminID, limit, cursor, "admin")
+	return r.getAuditLogsByGSI(ctx, "gsi1", "gsi1PK", gsi1SKField, "ADMIN", adminID, limit, cursor, "admin")
 }
 
 // GetAuditLogsByTarget retrieves audit log entries for a specific target
 func (r *ModerationRepository) GetAuditLogsByTarget(ctx context.Context, targetID string, limit int, cursor string) ([]*storage.AuditLog, string, error) {
-	return r.getAuditLogsByGSI(ctx, "gsi2", "GSI2PK", "GSI2SK", "TARGET", targetID, limit, cursor, "target")
+	return r.getAuditLogsByGSI(ctx, "gsi2", "gsi2PK", "gsi2SK", "TARGET", targetID, limit, cursor, "target")
 }
 
 // GetPendingModerationCount returns the count of pending moderation tasks for a specific moderator

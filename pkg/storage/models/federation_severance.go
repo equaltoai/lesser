@@ -7,16 +7,19 @@ import (
 
 // FederationSeverance represents a severed federation relationship
 type FederationSeverance struct {
-	PK           string    `dynamorm:"pk"`
-	SK           string    `dynamorm:"sk"`
-	GSI1PK       string    `dynamorm:"index:gsi1,pk"`
-	GSI1SK       string    `dynamorm:"index:gsi1,sk"`
-	UserID       string    `json:"user_id"`
-	Domain       string    `json:"domain"`
-	SeveredAt    time.Time `json:"severed_at"`
-	Acknowledged bool      `json:"acknowledged"`
-	Reason       string    `json:"reason"`
-	Type         string    `json:"type"` // "domain_block", "suspension", "defederation"
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK     string `dynamorm:"pk,attr:PK"`
+	SK     string `dynamorm:"sk,attr:SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+
+	UserID       string    `dynamorm:"attr:userID" json:"user_id"`
+	Domain       string    `dynamorm:"attr:domain" json:"domain"`
+	SeveredAt    time.Time `dynamorm:"attr:severedAt" json:"severed_at"`
+	Acknowledged bool      `dynamorm:"attr:acknowledged" json:"acknowledged"`
+	Reason       string    `dynamorm:"attr:reason" json:"reason"`
+	Type         string    `dynamorm:"attr:type" json:"type"` // "domain_block", "suspension", "defederation"
 }
 
 // TableName returns the DynamoDB table backing FederationSeverance.
@@ -36,15 +39,18 @@ func (f *FederationSeverance) UpdateKeys() {
 
 // FederationIssue tracks federation issues for monitoring
 type FederationIssue struct {
-	PK          string    `dynamorm:"pk"`
-	SK          string    `dynamorm:"sk"`
-	Domain      string    `json:"domain"`
-	IssueType   string    `json:"issue_type"` // "timeout", "error", "unreachable", "blocked"
-	Timestamp   time.Time `json:"timestamp"`
-	Description string    `json:"description,omitempty"`
-	Severity    string    `json:"severity"` // "low", "medium", "high", "critical"
-	Resolved    bool      `json:"resolved"`
-	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"`
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK string `dynamorm:"pk,attr:PK"`
+	SK string `dynamorm:"sk,attr:SK"`
+
+	Domain      string    `dynamorm:"attr:domain" json:"domain"`
+	IssueType   string    `dynamorm:"attr:issueType" json:"issue_type"` // "timeout", "error", "unreachable", "blocked"
+	Timestamp   time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	Description string    `dynamorm:"attr:description" json:"description,omitempty"`
+	Severity    string    `dynamorm:"attr:severity" json:"severity"` // "low", "medium", "high", "critical"
+	Resolved    bool      `dynamorm:"attr:resolved" json:"resolved"`
+	TTL         int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing FederationIssue.
@@ -65,14 +71,17 @@ func (f *FederationIssue) UpdateKeys() {
 
 // ReconnectionAttempt tracks attempts to reconnect to severed domains
 type ReconnectionAttempt struct {
-	PK           string    `dynamorm:"pk"`
-	SK           string    `dynamorm:"sk"`
-	UserID       string    `json:"user_id"`
-	Domain       string    `json:"domain"`
-	AttemptedAt  time.Time `json:"attempted_at"`
-	Success      bool      `json:"success"`
-	ErrorMessage string    `json:"error_message,omitempty"`
-	Method       string    `json:"method"` // "manual", "automatic", "scheduled"
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK string `dynamorm:"pk,attr:PK"`
+	SK string `dynamorm:"sk,attr:SK"`
+
+	UserID       string    `dynamorm:"attr:userID" json:"user_id"`
+	Domain       string    `dynamorm:"attr:domain" json:"domain"`
+	AttemptedAt  time.Time `dynamorm:"attr:attemptedAt" json:"attempted_at"`
+	Success      bool      `dynamorm:"attr:success" json:"success"`
+	ErrorMessage string    `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
+	Method       string    `dynamorm:"attr:method" json:"method"` // "manual", "automatic", "scheduled"
 }
 
 // TableName returns the DynamoDB table backing ReconnectionAttempt.
@@ -88,18 +97,21 @@ func (r *ReconnectionAttempt) UpdateKeys() {
 
 // FederationTimeSeries stores time-series federation metrics
 type FederationTimeSeries struct {
-	PK             string                 `dynamorm:"pk"`
-	SK             string                 `dynamorm:"sk"`
-	GSI1PK         string                 `dynamorm:"index:gsi1,pk"`
-	GSI1SK         string                 `dynamorm:"index:gsi1,sk"`
-	Domain         string                 `json:"domain"`
-	Period         string                 `json:"period"` // "hourly", "daily", "weekly"
-	Timestamp      time.Time              `json:"timestamp"`
-	Metrics        map[string]interface{} `json:"metrics"`
-	ActivityVolume int64                  `json:"activity_volume"`
-	ErrorCount     int64                  `json:"error_count"`
-	SuccessCount   int64                  `json:"success_count"`
-	TTL            int64                  `json:"ttl,omitempty" dynamorm:"ttl"`
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK     string `dynamorm:"pk,attr:PK"`
+	SK     string `dynamorm:"sk,attr:SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+
+	Domain         string                 `dynamorm:"attr:domain" json:"domain"`
+	Period         string                 `dynamorm:"attr:period" json:"period"` // "hourly", "daily", "weekly"
+	Timestamp      time.Time              `dynamorm:"attr:timestamp" json:"timestamp"`
+	Metrics        map[string]interface{} `dynamorm:"attr:metrics" json:"metrics"`
+	ActivityVolume int64                  `dynamorm:"attr:activityVolume" json:"activity_volume"`
+	ErrorCount     int64                  `dynamorm:"attr:errorCount" json:"error_count"`
+	SuccessCount   int64                  `dynamorm:"attr:successCount" json:"success_count"`
+	TTL            int64                  `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing FederationTimeSeries.

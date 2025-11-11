@@ -7,34 +7,36 @@ import (
 
 // InstanceHealth represents health status for a federated instance
 type InstanceHealth struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys - Using same pattern as legacy health checker
-	PK string `dynamorm:"pk" json:"-"` // INSTANCE#domain
-	SK string `dynamorm:"sk" json:"-"` // HEALTH#timestamp_nano
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // INSTANCE#domain
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // HEALTH#timestamp_nano
 
 	// Core health data
-	Domain       string        `json:"domain"`
-	Timestamp    time.Time     `json:"timestamp"`
-	Reachable    bool          `json:"reachable"`
-	ResponseTime time.Duration `json:"response_time"`
-	StatusCode   int           `json:"status_code"`
-	ErrorMessage string        `json:"error_message,omitempty"`
+	Domain       string        `dynamorm:"attr:domain" json:"domain"`
+	Timestamp    time.Time     `dynamorm:"attr:timestamp" json:"timestamp"`
+	Reachable    bool          `dynamorm:"attr:reachable" json:"reachable"`
+	ResponseTime time.Duration `dynamorm:"attr:responseTime" json:"response_time"`
+	StatusCode   int           `dynamorm:"attr:statusCode" json:"status_code"`
+	ErrorMessage string        `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
 
 	// Resource usage metrics
-	CPUUsage    float64 `json:"cpu_usage,omitempty"`
-	MemoryUsage float64 `json:"memory_usage,omitempty"`
-	DiskUsage   float64 `json:"disk_usage,omitempty"`
+	CPUUsage    float64 `dynamorm:"attr:cpuUsage" json:"cpu_usage,omitempty"`
+	MemoryUsage float64 `dynamorm:"attr:memoryUsage" json:"memory_usage,omitempty"`
+	DiskUsage   float64 `dynamorm:"attr:diskUsage" json:"disk_usage,omitempty"`
 
 	// Federation metrics
-	InboxBacklog    int           `json:"inbox_backlog,omitempty"`
-	ProcessingDelay time.Duration `json:"processing_delay,omitempty"`
-	ErrorRate       float64       `json:"error_rate,omitempty"`
+	InboxBacklog    int           `dynamorm:"attr:inboxBacklog" json:"inbox_backlog,omitempty"`
+	ProcessingDelay time.Duration `dynamorm:"attr:processingDelay" json:"processing_delay,omitempty"`
+	ErrorRate       float64       `dynamorm:"attr:errorRate" json:"error_rate,omitempty"`
 
 	// Additional metadata
-	CheckerVersion string `json:"checker_version,omitempty"`
-	UserAgent      string `json:"user_agent,omitempty"`
+	CheckerVersion string `dynamorm:"attr:checkerVersion" json:"checker_version,omitempty"`
+	UserAgent      string `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`
 
 	// TTL for automatic cleanup (7 days)
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing InstanceHealth.
@@ -124,30 +126,32 @@ func (h *InstanceHealth) GetHealthScore() float64 {
 
 // InstanceHealthSummary represents aggregated health data for an instance
 type InstanceHealthSummary struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys for summary data
-	PK string `dynamorm:"pk" json:"-"` // INSTANCE#domain
-	SK string `dynamorm:"sk" json:"-"` // SUMMARY#window (e.g., SUMMARY#1h, SUMMARY#24h)
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // INSTANCE#domain
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // SUMMARY#window (e.g., SUMMARY#1h, SUMMARY#24h)
 
 	// Metadata
-	Domain      string        `json:"domain"`
-	Window      time.Duration `json:"window"` // Time window for aggregation
-	LastUpdated time.Time     `json:"last_updated"`
-	SampleCount int           `json:"sample_count"`
+	Domain      string        `dynamorm:"attr:domain" json:"domain"`
+	Window      time.Duration `dynamorm:"attr:window" json:"window"` // Time window for aggregation
+	LastUpdated time.Time     `dynamorm:"attr:lastUpdated" json:"last_updated"`
+	SampleCount int           `dynamorm:"attr:sampleCount" json:"sample_count"`
 
 	// Aggregated metrics
-	Availability    float64       `json:"availability"` // Percentage of successful checks
-	AvgResponseTime time.Duration `json:"avg_response_time"`
-	MaxResponseTime time.Duration `json:"max_response_time"`
-	ErrorRate       float64       `json:"error_rate"`
-	AvgInboxBacklog int           `json:"avg_inbox_backlog"`
-	MaxInboxBacklog int           `json:"max_inbox_backlog"`
-	HealthScore     float64       `json:"health_score"` // 0-100
+	Availability    float64       `dynamorm:"attr:availability" json:"availability"` // Percentage of successful checks
+	AvgResponseTime time.Duration `dynamorm:"attr:avgResponseTime" json:"avg_response_time"`
+	MaxResponseTime time.Duration `dynamorm:"attr:maxResponseTime" json:"max_response_time"`
+	ErrorRate       float64       `dynamorm:"attr:errorRate" json:"error_rate"`
+	AvgInboxBacklog int           `dynamorm:"attr:avgInboxBacklog" json:"avg_inbox_backlog"`
+	MaxInboxBacklog int           `dynamorm:"attr:maxInboxBacklog" json:"max_inbox_backlog"`
+	HealthScore     float64       `dynamorm:"attr:healthScore" json:"health_score"` // 0-100
 
 	// Status code distribution
-	StatusCodeCounts map[string]int `json:"status_code_counts"` // JSON serialized map
+	StatusCodeCounts map[string]int `dynamorm:"attr:statusCodeCounts" json:"status_code_counts"` // JSON serialized map
 
 	// TTL for cleanup (summaries kept longer - 30 days)
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing InstanceHealthSummary.

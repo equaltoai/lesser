@@ -63,8 +63,8 @@ func TestGetUserByProviderID_Success(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
 	mockQuery.On("Index", "provider-index").Return(mockQuery)
-	mockQuery.On("Where", "GSI1PK", "=", "PROVIDER#google").Return(mockQuery)
-	mockQuery.On("Where", "GSI1SK", "=", "123#").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "PROVIDER#google").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "=", "123#").Return(mockQuery)
 	mockQuery.On("Limit", 1).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(nil) // Return success but empty
 
@@ -115,7 +115,7 @@ func TestUnlinkProviderAccount_Success(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery).Once()
 	mockQuery.On("Index", "user-providers-index").Return(mockQuery)
-	mockQuery.On("Where", "GSI2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
+	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(nil) // Return empty list
 
 	// Since no provider accounts found, no delete will be called
@@ -140,7 +140,7 @@ func TestGetLinkedProviders_ReturnsEmpty(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
 	mockQuery.On("Index", "user-providers-index").Return(mockQuery)
-	mockQuery.On("Where", "GSI2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
+	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(nil) // Return empty list
 
 	providers, err := repo.GetLinkedProviders(context.Background(), "testuser")

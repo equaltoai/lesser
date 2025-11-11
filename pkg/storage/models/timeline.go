@@ -9,57 +9,59 @@ import (
 
 // Timeline represents an entry in a user's timeline stored in DynamoDB using DynamORM
 type Timeline struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - using composite key for timeline entries
-	PK string `dynamorm:"pk" json:"pk"` // Format: "timeline#{timeline_type}#{timeline_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "timeline#{timeline_type}#{timeline_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// GSI1 - Post timeline (all timeline entries for a specific post)
-	GSI1PK string `dynamorm:"index:post-timeline-index,pk" json:"gsi1_pk"` // Format: "POST#{post_id}"
-	GSI1SK string `dynamorm:"index:post-timeline-index,sk" json:"gsi1_sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	GSI1PK string `dynamorm:"index:post-timeline-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "POST#{post_id}"
+	GSI1SK string `dynamorm:"index:post-timeline-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// GSI2 - Actor timeline (all timeline entries by an actor)
-	GSI2PK string `dynamorm:"index:actor-timeline-index,pk" json:"gsi2_pk"` // Format: "ACTOR#{actor_id}"
-	GSI2SK string `dynamorm:"index:actor-timeline-index,sk" json:"gsi2_sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	GSI2PK string `dynamorm:"index:actor-timeline-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "ACTOR#{actor_id}"
+	GSI2SK string `dynamorm:"index:actor-timeline-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// GSI3 - Visibility timeline (entries by visibility level)
-	GSI3PK string `dynamorm:"index:visibility-timeline-index,pk" json:"gsi3_pk,omitempty"` // Format: "VISIBILITY#{visibility}"
-	GSI3SK string `dynamorm:"index:visibility-timeline-index,sk" json:"gsi3_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	GSI3PK string `dynamorm:"index:visibility-timeline-index,pk,attr:gsi3PK" json:"gsi3_pk,omitempty"` // Format: "VISIBILITY#{visibility}"
+	GSI3SK string `dynamorm:"index:visibility-timeline-index,sk,attr:gsi3SK" json:"gsi3_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// GSI4 - Language timeline (entries by language)
-	GSI4PK string `dynamorm:"index:language-timeline-index,pk" json:"gsi4_pk,omitempty"` // Format: "LANGUAGE#{language}"
-	GSI4SK string `dynamorm:"index:language-timeline-index,sk" json:"gsi4_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	GSI4PK string `dynamorm:"index:language-timeline-index,pk,attr:gsi4PK" json:"gsi4_pk,omitempty"` // Format: "LANGUAGE#{language}"
+	GSI4SK string `dynamorm:"index:language-timeline-index,sk,attr:gsi4SK" json:"gsi4_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// Core timeline data
-	TimelineType string `json:"timeline_type"` // HOME, PUBLIC, LIST, DIRECT, HASHTAG
-	TimelineID   string `json:"timeline_id"`   // Username for HOME, LOCAL/FEDERATED for PUBLIC, list ID for LIST, hashtag for HASHTAG
-	EntryID      string `json:"entry_id"`      // Unique ID for this entry (usually timestamp + post ID)
-	PostID       string `json:"post_id"`       // The actual post/object ID
-	ActorID      string `json:"actor_id"`      // Who created the post
-	ActorHandle  string `json:"actor_handle"`  // Actor's handle for quick display
+	TimelineType string `dynamorm:"attr:timelineType" json:"timeline_type"` // HOME, PUBLIC, LIST, DIRECT, HASHTAG
+	TimelineID   string `dynamorm:"attr:timelineID" json:"timeline_id"`     // Username for HOME, LOCAL/FEDERATED for PUBLIC, list ID for LIST, hashtag for HASHTAG
+	EntryID      string `dynamorm:"attr:entryID" json:"entry_id"`           // Unique ID for this entry (usually timestamp + post ID)
+	PostID       string `dynamorm:"attr:postID" json:"post_id"`             // The actual post/object ID
+	ActorID      string `dynamorm:"attr:actorID" json:"actor_id"`           // Who created the post
+	ActorHandle  string `dynamorm:"attr:actorHandle" json:"actor_handle"`   // Actor's handle for quick display
 
 	// Content preview for performance
-	Content     string `json:"content"`      // First 500 chars for preview
-	ContentType string `json:"content_type"` // Note, Article, etc.
+	Content     string `dynamorm:"attr:content" json:"content"`           // First 500 chars for preview
+	ContentType string `dynamorm:"attr:contentType" json:"content_type"`  // Note, Article, etc.
 
 	// Quick flags for filtering
-	HasMedia    bool   `json:"has_media"`    // Quick flag for media
-	IsReply     bool   `json:"is_reply"`     // Is this a reply?
-	InReplyTo   string `json:"in_reply_to"`  // ID of post being replied to
-	IsBoost     bool   `json:"is_boost"`     // Is this a boost/announce?
-	BoostedBy   string `json:"boosted_by"`   // Who boosted it (if applicable)
-	Visibility  string `json:"visibility"`   // public, unlisted, private, direct
-	Language    string `json:"language"`     // Language code
-	Sensitive   bool   `json:"sensitive"`    // Content warning flag
-	SpoilerText string `json:"spoiler_text"` // Content warning text
+	HasMedia    bool   `dynamorm:"attr:hasMedia" json:"has_media"`        // Quick flag for media
+	IsReply     bool   `dynamorm:"attr:isReply" json:"is_reply"`          // Is this a reply?
+	InReplyTo   string `dynamorm:"attr:inReplyTo" json:"in_reply_to"`     // ID of post being replied to
+	IsBoost     bool   `dynamorm:"attr:isBoost" json:"is_boost"`          // Is this a boost/announce?
+	BoostedBy   string `dynamorm:"attr:boostedBy" json:"boosted_by"`      // Who boosted it (if applicable)
+	Visibility  string `dynamorm:"attr:visibility" json:"visibility"`     // public, unlisted, private, direct
+	Language    string `dynamorm:"attr:language" json:"language"`         // Language code
+	Sensitive   bool   `dynamorm:"attr:sensitive" json:"sensitive"`       // Content warning flag
+	SpoilerText string `dynamorm:"attr:spoilerText" json:"spoiler_text"`  // Content warning text
 
 	// Timestamps
-	CreatedAt  time.Time `json:"created_at"`                   // When the post was created
-	TimelineAt time.Time `json:"timeline_at"`                  // When it was added to timeline (for sorting)
-	TTL        int64     `dynamorm:"ttl" json:"ttl,omitempty"` // DynamoDB TTL (Unix timestamp)
+	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"created_at"`    // When the post was created
+	TimelineAt time.Time `dynamorm:"attr:timelineAt" json:"timeline_at"`  // When it was added to timeline (for sorting)
+	TTL        int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`   // DynamoDB TTL (Unix timestamp)
 
 	// DynamORM metadata
-	ModifiedAt time.Time `dynamorm:"updated_at" json:"modified_at"`
-	Version    int       `dynamorm:"version" json:"version"`
+	ModifiedAt time.Time `dynamorm:"attr:modifiedAt" json:"modified_at"`
+	Version    int       `dynamorm:"version,attr:version" json:"version"`
 }
 
 // TableName returns the DynamoDB table name for the Timeline model

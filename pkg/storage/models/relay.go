@@ -7,28 +7,30 @@ import (
 
 // Relay represents a relay server for federation
 type Relay struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key fields
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI fields for querying active relays
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"gsi1pk,omitempty"`
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"gsi1sk,omitempty"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1pk,omitempty"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1sk,omitempty"`
 
 	// GSI fields for querying by domain
-	GSI2PK string `dynamorm:"index:GSI2,pk" json:"gsi2pk,omitempty"`
-	GSI2SK string `dynamorm:"index:GSI2,sk" json:"gsi2sk,omitempty"`
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2pk,omitempty"`
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2sk,omitempty"`
 
 	// Business fields matching storage.RelayInfo
-	URL        string    `json:"url"`
-	InboxURL   string    `json:"inbox_url"`
-	Active     bool      `json:"active"`
-	CreatedAt  time.Time `json:"created_at"`
-	LastSeenAt time.Time `json:"last_seen_at"`
-	Domain     string    `json:"domain,omitempty"`
-	Status     string    `json:"status,omitempty"` // pending/active/rejected/error
-	ErrorCount int       `json:"error_count,omitempty"`
-	TTL        int64     `json:"ttl,omitempty" dynamorm:"ttl"` // For automatic cleanup
+	URL        string    `dynamorm:"attr:url" json:"url"`
+	InboxURL   string    `dynamorm:"attr:inboxURL" json:"inbox_url"`
+	Active     bool      `dynamorm:"attr:active" json:"active"`
+	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	LastSeenAt time.Time `dynamorm:"attr:lastSeenAt" json:"last_seen_at"`
+	Domain     string    `dynamorm:"attr:domain" json:"domain,omitempty"`
+	Status     string    `dynamorm:"attr:status" json:"status,omitempty"` // pending/active/rejected/error
+	ErrorCount int       `dynamorm:"attr:errorCount" json:"error_count,omitempty"`
+	TTL        int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // For automatic cleanup
 }
 
 // TableName returns the DynamoDB table backing Relay.

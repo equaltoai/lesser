@@ -7,20 +7,22 @@ import (
 
 // QueryCacheEntry represents a cached query result in DynamoDB
 type QueryCacheEntry struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - using pattern: PK=CACHE#{cacheKey}, SK=ENTRY
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// Cache data
-	CacheKey  string    `json:"cache_key"`
-	Value     string    `json:"value"`      // JSON-encoded cached value
-	Size      int       `json:"size"`       // Size for LRU calculations
-	ExpiresAt time.Time `json:"expires_at"` // Manual expiry tracking
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CacheKey  string    `dynamorm:"attr:cacheKey" json:"cache_key"`
+	Value     string    `dynamorm:"attr:value" json:"value"`           // JSON-encoded cached value
+	Size      int       `dynamorm:"attr:size" json:"size"`             // Size for LRU calculations
+	ExpiresAt time.Time `dynamorm:"attr:expiresAt" json:"expires_at"`  // Manual expiry tracking
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl" json:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
 }
 
 // UpdateKeys ensures keys are properly set before saving
@@ -60,17 +62,19 @@ func (QueryCacheEntry) TableName() string {
 
 // BatchGetKeys represents batch get keys for instances
 type BatchGetKeys struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - using pattern: PK=BATCH#{batchType}, SK=KEY#{key}
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// Batch data
-	BatchType string    `json:"batch_type"` // "instance", "metrics", etc.
-	Key       string    `json:"key"`        // The actual key being batched
-	CreatedAt time.Time `json:"created_at"`
+	BatchType string    `dynamorm:"attr:batchType" json:"batch_type"` // "instance", "metrics", etc.
+	Key       string    `dynamorm:"attr:key" json:"key"`              // The actual key being batched
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
 
 	// TTL for cleanup (short-lived for batching)
-	TTL int64 `dynamorm:"ttl" json:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
 }
 
 // UpdateKeys ensures keys are properly set for batch keys

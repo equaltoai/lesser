@@ -7,30 +7,32 @@ import (
 
 // ReviewerStats represents statistics about a moderation reviewer
 type ReviewerStats struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"` // REVIEWER#{reviewerID}
-	SK string `dynamorm:"sk" json:"-"` // STATS
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // REVIEWER#{reviewerID}
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // STATS
 
 	// Attributes from interface
-	ReviewerID        string         `json:"reviewer_id"`
-	TotalReviews      int            `json:"total_reviews"`
-	AccurateReviews   int            `json:"accurate_reviews"`
-	AccuracyRate      float64        `json:"accuracy_rate"`
-	LastReviewAt      time.Time      `json:"last_review_at"`
-	TrustScore        float64        `json:"trust_score"`
-	JoinedAt          time.Time      `json:"joined_at"`
-	ReviewsByCategory map[string]int `json:"reviews_by_category"`
+	ReviewerID        string         `dynamorm:"attr:reviewerID" json:"reviewer_id"`
+	TotalReviews      int            `dynamorm:"attr:totalReviews" json:"total_reviews"`
+	AccurateReviews   int            `dynamorm:"attr:accurateReviews" json:"accurate_reviews"`
+	AccuracyRate      float64        `dynamorm:"attr:accuracyRate" json:"accuracy_rate"`
+	LastReviewAt      time.Time      `dynamorm:"attr:lastReviewAt" json:"last_review_at"`
+	TrustScore        float64        `dynamorm:"attr:trustScore" json:"trust_score"`
+	JoinedAt          time.Time      `dynamorm:"attr:joinedAt" json:"joined_at"`
+	ReviewsByCategory map[string]int `dynamorm:"attr:reviewsByCategory" json:"reviews_by_category"`
 
 	// Additional statistics
-	ConsecutiveAccurate   int                `json:"consecutive_accurate"`  // Current streak
-	MaxStreak             int                `json:"max_streak"`            // Best streak
-	RecentAccuracy        float64            `json:"recent_accuracy"`       // Last 100 reviews
-	ResponseTimeAvg       float64            `json:"response_time_avg"`     // Average response time in seconds
-	DisagreementRate      float64            `json:"disagreement_rate"`     // Rate of disagreeing with consensus
-	SpecializationScores  map[string]float64 `json:"specialization_scores"` // Accuracy by category
-	LastTrainingCompleted *time.Time         `json:"last_training_completed,omitempty"`
-	BadgesEarned          []string           `json:"badges_earned,omitempty"`
-	UpdatedAt             time.Time          `json:"updated_at"`
+	ConsecutiveAccurate   int                `dynamorm:"attr:consecutiveAccurate" json:"consecutive_accurate"`   // Current streak
+	MaxStreak             int                `dynamorm:"attr:maxStreak" json:"max_streak"`                       // Best streak
+	RecentAccuracy        float64            `dynamorm:"attr:recentAccuracy" json:"recent_accuracy"`             // Last 100 reviews
+	ResponseTimeAvg       float64            `dynamorm:"attr:responseTimeAvg" json:"response_time_avg"`          // Average response time in seconds
+	DisagreementRate      float64            `dynamorm:"attr:disagreementRate" json:"disagreement_rate"`         // Rate of disagreeing with consensus
+	SpecializationScores  map[string]float64 `dynamorm:"attr:specializationScores" json:"specialization_scores"` // Accuracy by category
+	LastTrainingCompleted *time.Time         `dynamorm:"attr:lastTrainingCompleted" json:"last_training_completed,omitempty"`
+	BadgesEarned          []string           `dynamorm:"attr:badgesEarned" json:"badges_earned,omitempty"`
+	UpdatedAt             time.Time          `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // UpdateKeys updates the partition and sort keys

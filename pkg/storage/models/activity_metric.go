@@ -8,14 +8,16 @@ import (
 // ActivityMetric represents a lightweight activity metric record written to the main table.
 // These records power coarse-grained analytics such as push delivery counts.
 type ActivityMetric struct {
-	PK string `dynamorm:"pk" json:"PK"`
-	SK string `dynamorm:"sk" json:"SK"`
+	_ struct{} `dynamorm:"naming:camelCase"`
 
-	ActivityType string    `json:"ActivityType"`
-	ActorID      string    `json:"ActorID"`
-	Timestamp    string    `json:"Timestamp"`
-	CreatedAt    time.Time `json:"CreatedAt"`
-	Type         string    `json:"Type"`
+	PK string `dynamorm:"pk,attr:PK" json:"PK"`
+	SK string `dynamorm:"sk,attr:SK" json:"SK"`
+
+	ActivityType string    `dynamorm:"attr:activityType" json:"ActivityType"`
+	ActorID      string    `dynamorm:"attr:actorID" json:"ActorID"`
+	Timestamp    string    `dynamorm:"attr:timestamp" json:"Timestamp"`
+	CreatedAt    time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`
+	Type         string    `dynamorm:"attr:type" json:"Type"`
 }
 
 // TableName ensures activity metrics live in the shared single table.

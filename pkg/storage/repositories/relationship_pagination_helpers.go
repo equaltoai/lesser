@@ -146,7 +146,7 @@ func generateBlockCursor(items []models.Block, limit int, skField string) string
 		return ""
 	}
 
-	if skField == "GSI5SK" {
+	if skField == "gsi5SK" {
 		return items[limit-1].GSI5SK
 	}
 	return items[limit-1].SK

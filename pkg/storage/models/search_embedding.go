@@ -7,17 +7,19 @@ import (
 
 // SearchEmbedding represents vector embeddings for semantic search
 type SearchEmbedding struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"`
-	SK string `dynamorm:"sk" json:"-"`
+	PK string `dynamorm:"pk,attr:PK" json:"-"`
+	SK string `dynamorm:"sk,attr:SK" json:"-"`
 
 	// Fields
-	ContentID   string            `json:"content_id"`   // status/actor ID
-	ContentType string            `json:"content_type"` // actor, status
-	Embedding   []float32         `json:"embedding"`    // vector representation
-	Score       float64           `json:"score"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
+	ContentID   string            `dynamorm:"attr:contentID" json:"content_id"`     // status/actor ID
+	ContentType string            `dynamorm:"attr:contentType" json:"content_type"` // actor, status
+	Embedding   []float32         `dynamorm:"attr:embedding" json:"embedding"`      // vector representation
+	Score       float64           `dynamorm:"attr:score" json:"score"`
+	Metadata    map[string]string `dynamorm:"attr:metadata" json:"metadata,omitempty"`
+	CreatedAt   time.Time         `dynamorm:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table backing SearchEmbedding.

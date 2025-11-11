@@ -10,25 +10,27 @@ import (
 
 // PatternFeedback represents feedback on pattern matching results
 type PatternFeedback struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"` // PATTERN#{patternID}
-	SK string `dynamorm:"sk" json:"-"` // FEEDBACK#{timestamp}#{feedbackID}
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // PATTERN#{patternID}
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // FEEDBACK#{timestamp}#{feedbackID}
 
 	// Attributes from interface
-	WasMatch         bool `json:"was_match"`
-	WasFalsePositive bool `json:"was_false_positive"`
+	WasMatch         bool `dynamorm:"attr:wasMatch" json:"was_match"`
+	WasFalsePositive bool `dynamorm:"attr:wasFalsePositive" json:"was_false_positive"`
 
 	// Additional attributes
-	PatternID   string    `json:"pattern_id"`
-	FeedbackID  string    `json:"feedback_id"`
-	SubmittedBy string    `json:"submitted_by"` // User or system that submitted feedback
-	SubmittedAt time.Time `json:"submitted_at"`
-	ContentID   string    `json:"content_id"`                   // ID of content that was evaluated
-	ContentType string    `json:"content_type"`                 // Type of content (status, user, etc)
-	PatternType string    `json:"pattern_type"`                 // spam, abuse, etc
-	Confidence  float64   `json:"confidence"`                   // Original confidence score
-	Notes       string    `json:"notes,omitempty"`              // Additional feedback notes
-	TTL         int64     `json:"ttl,omitempty" dynamorm:"ttl"` // 90 days retention
+	PatternID   string    `dynamorm:"attr:patternID" json:"pattern_id"`
+	FeedbackID  string    `dynamorm:"attr:feedbackID" json:"feedback_id"`
+	SubmittedBy string    `dynamorm:"attr:submittedBy" json:"submitted_by"` // User or system that submitted feedback
+	SubmittedAt time.Time `dynamorm:"attr:submittedAt" json:"submitted_at"`
+	ContentID   string    `dynamorm:"attr:contentID" json:"content_id"`                   // ID of content that was evaluated
+	ContentType string    `dynamorm:"attr:contentType" json:"content_type"`               // Type of content (status, user, etc)
+	PatternType string    `dynamorm:"attr:patternType" json:"pattern_type"`               // spam, abuse, etc
+	Confidence  float64   `dynamorm:"attr:confidence" json:"confidence"`                  // Original confidence score
+	Notes       string    `dynamorm:"attr:notes" json:"notes,omitempty"`                  // Additional feedback notes
+	TTL         int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`                  // 90 days retention
 }
 
 // UpdateKeys updates the partition and sort keys

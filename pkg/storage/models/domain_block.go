@@ -7,11 +7,13 @@ import (
 
 // UserDomainBlock represents a user-level domain block
 type UserDomainBlock struct {
-	PK        string    `dynamorm:"pk"`
-	SK        string    `dynamorm:"sk"`
-	Username  string    `json:"username"`
-	Domain    string    `json:"domain"`
-	CreatedAt time.Time `json:"created_at"`
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK        string    `dynamorm:"pk,attr:PK"`
+	SK        string    `dynamorm:"sk,attr:SK"`
+	Username  string    `dynamorm:"attr:username" json:"username"`
+	Domain    string    `dynamorm:"attr:domain" json:"domain"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table backing UserDomainBlock.
@@ -38,23 +40,25 @@ func (d *UserDomainBlock) GetSK() string {
 
 // InstanceDomainBlock represents an instance-level domain block
 type InstanceDomainBlock struct {
-	PK             string    `dynamorm:"pk"`
-	SK             string    `dynamorm:"sk"`
-	GSI1PK         string    `dynamorm:"index:GSI1,pk"`
-	GSI1SK         string    `dynamorm:"index:GSI1,sk"`
-	ID             string    `json:"ID"`
-	Domain         string    `json:"Domain"`
-	Severity       string    `json:"Severity"` // "silence" or "suspend"
-	RejectMedia    bool      `json:"RejectMedia"`
-	RejectReports  bool      `json:"RejectReports"`
-	PrivateComment string    `json:"PrivateComment"` // Admin-only notes
-	PublicComment  string    `json:"PublicComment"`  // Public reason
-	Obfuscate      bool      `json:"Obfuscate"`      // Whether to obfuscate in public lists
-	CreatedBy      string    `json:"CreatedBy"`      // Admin username who created
-	CreatedByID    string    `json:"CreatedByID"`    // Admin actor ID
-	CreatedAt      time.Time `json:"CreatedAt"`
-	UpdatedAt      time.Time `json:"UpdatedAt"`
-	Type           string    `json:"Type"`
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK             string    `dynamorm:"pk,attr:PK"`
+	SK             string    `dynamorm:"sk,attr:SK"`
+	GSI1PK         string    `dynamorm:"index:GSI1,pk,attr:gsi1PK"`
+	GSI1SK         string    `dynamorm:"index:GSI1,sk,attr:gsi1SK"`
+	ID             string    `dynamorm:"attr:id" json:"ID"`
+	Domain         string    `dynamorm:"attr:domain" json:"Domain"`
+	Severity       string    `dynamorm:"attr:severity" json:"Severity"` // "silence" or "suspend"
+	RejectMedia    bool      `dynamorm:"attr:rejectMedia" json:"RejectMedia"`
+	RejectReports  bool      `dynamorm:"attr:rejectReports" json:"RejectReports"`
+	PrivateComment string    `dynamorm:"attr:privateComment" json:"PrivateComment"` // Admin-only notes
+	PublicComment  string    `dynamorm:"attr:publicComment" json:"PublicComment"`   // Public reason
+	Obfuscate      bool      `dynamorm:"attr:obfuscate" json:"Obfuscate"`           // Whether to obfuscate in public lists
+	CreatedBy      string    `dynamorm:"attr:createdBy" json:"CreatedBy"`           // Admin username who created
+	CreatedByID    string    `dynamorm:"attr:createdByID" json:"CreatedByID"`       // Admin actor ID
+	CreatedAt      time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`
+	UpdatedAt      time.Time `dynamorm:"attr:updatedAt" json:"UpdatedAt"`
+	Type           string    `dynamorm:"attr:type" json:"Type"`
 }
 
 // TableName returns the DynamoDB table backing InstanceDomainBlock.
@@ -84,14 +88,16 @@ func (d *InstanceDomainBlock) GetSK() string {
 
 // EmailDomainBlock represents an email domain block
 type EmailDomainBlock struct {
-	PK        string    `dynamorm:"pk"`
-	SK        string    `dynamorm:"sk"`
-	GSI1PK    string    `dynamorm:"index:GSI1,pk"`
-	GSI1SK    string    `dynamorm:"index:GSI1,sk"`
-	ID        string    `json:"ID"`
-	Domain    string    `json:"Domain"`
-	CreatedBy string    `json:"CreatedBy"`
-	CreatedAt time.Time `json:"CreatedAt"`
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK        string    `dynamorm:"pk,attr:PK"`
+	SK        string    `dynamorm:"sk,attr:SK"`
+	GSI1PK    string    `dynamorm:"index:GSI1,pk,attr:gsi1PK"`
+	GSI1SK    string    `dynamorm:"index:GSI1,sk,attr:gsi1SK"`
+	ID        string    `dynamorm:"attr:id" json:"ID"`
+	Domain    string    `dynamorm:"attr:domain" json:"Domain"`
+	CreatedBy string    `dynamorm:"attr:createdBy" json:"CreatedBy"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`
 }
 
 // TableName returns the DynamoDB table backing EmailDomainBlock.
@@ -130,14 +136,16 @@ func (d *EmailDomainBlock) GetDomain() string {
 
 // DomainAllow represents a domain in the allowlist
 type DomainAllow struct {
-	PK        string    `dynamorm:"pk"`
-	SK        string    `dynamorm:"sk"`
-	GSI1PK    string    `dynamorm:"index:GSI1,pk"`
-	GSI1SK    string    `dynamorm:"index:GSI1,sk"`
-	ID        string    `json:"ID"`
-	Domain    string    `json:"Domain"`
-	CreatedBy string    `json:"CreatedBy"`
-	CreatedAt time.Time `json:"CreatedAt"`
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK        string    `dynamorm:"pk,attr:PK"`
+	SK        string    `dynamorm:"sk,attr:SK"`
+	GSI1PK    string    `dynamorm:"index:GSI1,pk,attr:gsi1PK"`
+	GSI1SK    string    `dynamorm:"index:GSI1,sk,attr:gsi1SK"`
+	ID        string    `dynamorm:"attr:id" json:"ID"`
+	Domain    string    `dynamorm:"attr:domain" json:"Domain"`
+	CreatedBy string    `dynamorm:"attr:createdBy" json:"CreatedBy"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`
 }
 
 // TableName returns the DynamoDB table backing DomainAllow.

@@ -8,17 +8,19 @@ import (
 // UserPreference represents a single user preference key-value pair
 // Key pattern: PK=USER#{username}, SK=PREFERENCE#{key}
 type UserPreference struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key components
-	PK string `dynamorm:"pk" json:"pk"` // Format: "USER#{username}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "PREFERENCE#{key}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "USER#{username}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "PREFERENCE#{key}"
 
 	// Preference data
-	Username string `json:"username"` // Who owns the preference
-	Key      string `json:"key"`      // Preference key (e.g., "language", "theme")
-	Value    string `json:"value"`    // Preference value (JSON encoded)
+	Username string `dynamorm:"attr:username" json:"username"` // Who owns the preference
+	Key      string `dynamorm:"attr:key" json:"key"`           // Preference key (e.g., "language", "theme")
+	Value    string `dynamorm:"attr:value" json:"value"`       // Preference value (JSON encoded)
 
 	// Metadata
-	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table name
@@ -48,18 +50,20 @@ func (p *UserPreference) UpdateKeys() {
 // FollowRequestState represents a follow request state
 // Key pattern: PK=FOLLOW_REQUEST#{requester_id}, SK=TARGET#{target_id}
 type FollowRequestState struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key components
-	PK string `dynamorm:"pk" json:"pk"` // Format: "FOLLOW_REQUEST#{requester_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "TARGET#{target_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "FOLLOW_REQUEST#{requester_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TARGET#{target_id}"
 
 	// Follow request data
-	RequesterID string `json:"requester_id"` // Who made the request
-	TargetID    string `json:"target_id"`    // Who the request is for
-	State       string `json:"state"`        // pending, accepted, rejected
+	RequesterID string `dynamorm:"attr:requesterID" json:"requester_id"` // Who made the request
+	TargetID    string `dynamorm:"attr:targetID" json:"target_id"`       // Who the request is for
+	State       string `dynamorm:"attr:state" json:"state"`              // pending, accepted, rejected
 
 	// Metadata
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table name
@@ -92,17 +96,19 @@ func (f *FollowRequestState) UpdateKeys() {
 // FieldVerification represents a verified field on a user's profile
 // Key pattern: PK=USER#{username}, SK=FIELD_VERIFICATION#{field_name}
 type FieldVerification struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key components
-	PK string `dynamorm:"pk" json:"pk"` // Format: "USER#{username}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "FIELD_VERIFICATION#{field_name}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "USER#{username}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "FIELD_VERIFICATION#{field_name}"
 
 	// Field verification data
-	Username   string    `json:"username"`    // Who owns the field
-	FieldName  string    `json:"field_name"`  // Field name (e.g., "website", "github")
-	FieldValue string    `json:"field_value"` // Field value
-	VerifiedAt time.Time `json:"verified_at"` // When verified
-	VerifiedBy string    `json:"verified_by"` // How verified (e.g., "link", "dns", "manual")
-	ExpiresAt  time.Time `json:"expires_at"`  // When verification expires
+	Username   string    `dynamorm:"attr:username" json:"username"`      // Who owns the field
+	FieldName  string    `dynamorm:"attr:fieldName" json:"field_name"`   // Field name (e.g., "website", "github")
+	FieldValue string    `dynamorm:"attr:fieldValue" json:"field_value"` // Field value
+	VerifiedAt time.Time `dynamorm:"attr:verifiedAt" json:"verified_at"` // When verified
+	VerifiedBy string    `dynamorm:"attr:verifiedBy" json:"verified_by"` // How verified (e.g., "link", "dns", "manual")
+	ExpiresAt  time.Time `dynamorm:"attr:expiresAt" json:"expires_at"`   // When verification expires
 }
 
 // TableName returns the DynamoDB table name

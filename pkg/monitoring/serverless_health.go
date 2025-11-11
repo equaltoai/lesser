@@ -375,7 +375,7 @@ func (s *ServerlessHealthMonitor) GetStoredResults(ctx context.Context, componen
 	gsi1PK := fmt.Sprintf("COMPONENT#%s#%s", componentType, component)
 
 	query := s.db.WithContext(ctx).Model(&models.HealthCheckResult{}).
-		Where("GSI1PK", "=", gsi1PK).
+		Where("gsi1PK", "=", gsi1PK).
 		Limit(limit)
 
 	err := query.All(&results)

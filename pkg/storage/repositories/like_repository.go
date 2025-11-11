@@ -142,8 +142,8 @@ func (r *LikeRepository) GetActorLikes(ctx context.Context, actorID string, limi
 		LogName:     "actor likes",
 		ErrorPrefix: "get actor likes",
 		GSIConfig: &GSIQueryConfig{
-			PKField:   "GSI1PK",
-			SKField:   "GSI1SK",
+			PKField:   "gsi1PK",
+			SKField:   "gsi1SK",
 			PKValue:   "actor#%s#likes",
 			UseCursor: true,
 			OrderBy:   "ASC",
@@ -161,7 +161,7 @@ func (r *LikeRepository) GetActorLikes(ctx context.Context, actorID string, limi
 func (r *LikeRepository) CountActorLikes(ctx context.Context, actorID string) (int64, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.Like{}).
 		Index("gsi1-index").
-		Where("GSI1PK", "=", fmt.Sprintf("actor#%s#likes", actorID)).
+		Where("gsi1PK", "=", fmt.Sprintf("actor#%s#likes", actorID)).
 		Count()
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "like", fmt.Sprintf("actor %s count", actorID))

@@ -1034,20 +1034,12 @@ func (p *ImportProcessor) bookmarkStatus(ctx context.Context, username, statusUR
 	// This is simplified - would need proper URL parsing
 	statusID := strings.TrimPrefix(statusURL, p.baseURL+"/")
 
-	// Create bookmark using the Bookmark model
-	bookmark := &models.Bookmark{
-		Username:  username,
-		ObjectID:  statusID,
-		CreatedAt: time.Now(),
+	bookmarkRepo := p.repos.Bookmark()
+	if bookmarkRepo == nil {
+		return fmt.Errorf("bookmark repository not available")
 	}
 
-	// Prepare the bookmark for creation
-	if err := bookmark.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update bookmark keys: %w", err)
-	}
-
-	// Create the bookmark in storage
-	if err := p.repos.Object().CreateObject(ctx, bookmark); err != nil {
+	if _, err := bookmarkRepo.CreateBookmark(ctx, username, statusID); err != nil {
 		return ErrBookmarkCreate(err)
 	}
 

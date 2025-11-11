@@ -7,23 +7,25 @@ import (
 
 // Vouch represents a reputation vouch between actors
 type Vouch struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys
-	PK string `dynamorm:"pk"`
-	SK string `dynamorm:"sk"`
+	PK string `dynamorm:"pk,attr:PK"`
+	SK string `dynamorm:"sk,attr:SK"`
 
 	// GSI1 for vouches given by an actor
-	GSI1PK string `dynamorm:"index:gsi1-index,pk"`
-	GSI1SK string `dynamorm:"index:gsi1-index,sk"`
+	GSI1PK string `dynamorm:"index:gsi1-index,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:gsi1-index,sk,attr:gsi1SK"`
 
 	// GSI2 for vouches received by an actor
-	GSI2PK string `dynamorm:"index:gsi2-index,pk"`
-	GSI2SK string `dynamorm:"index:gsi2-index,sk"`
+	GSI2PK string `dynamorm:"index:gsi2-index,pk,attr:gsi2PK"`
+	GSI2SK string `dynamorm:"index:gsi2-index,sk,attr:gsi2SK"`
 
 	// Data fields
-	VouchData string    `json:"vouch_data"` // JSON encoded vouch
-	Active    bool      `json:"active"`
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt int64     `json:"ttl" dynamorm:"ttl"` // Unix timestamp for TTL
+	VouchData string    `dynamorm:"attr:vouchData" json:"vouch_data"` // JSON encoded vouch
+	Active    bool      `dynamorm:"attr:active" json:"active"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	ExpiresAt int64     `dynamorm:"ttl,attr:ttl" json:"ttl"` // Unix timestamp for TTL
 }
 
 // UpdateKeys sets all the DynamoDB keys based on the vouch data

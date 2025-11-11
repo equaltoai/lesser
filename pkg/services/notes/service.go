@@ -6,6 +6,8 @@ package notes
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -35,6 +37,7 @@ const (
 type Service struct {
 	noteRepo          *repositories.StatusRepository
 	accountRepo       interfaces.AccountRepository
+	bookmarkRepo      *repositories.BookmarkRepository
 	relationshipRepo  *repositories.RelationshipRepository
 	mediaRepo         interfaces.MediaRepository
 	likeRepo          *repositories.LikeRepository
@@ -152,6 +155,7 @@ func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common
 func NewService(
 	noteRepo *repositories.StatusRepository,
 	accountRepo interfaces.AccountRepository,
+	bookmarkRepo *repositories.BookmarkRepository,
 	relationshipRepo *repositories.RelationshipRepository,
 	mediaRepo interfaces.MediaRepository,
 	likeRepo *repositories.LikeRepository,
@@ -191,6 +195,7 @@ func NewService(
 	return &Service{
 		noteRepo:          noteRepo,
 		accountRepo:       accountRepo,
+		bookmarkRepo:      bookmarkRepo,
 		relationshipRepo:  relationshipRepo,
 		mediaRepo:         mediaRepo,
 		likeRepo:          likeRepo,
@@ -750,7 +755,8 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 		zap.String("timeline_type", query.TimelineType),
 		zap.Int("items_count", len(result.Items)))
 
-	filteredNotes := s.filterNotesForViewer(result.Items, query)
+	hydratedItems := s.hydrateTimelineStatuses(ctx, result.Items)
+	filteredNotes := s.filterNotesForViewer(hydratedItems, query)
 
 	return s.buildNotesResult(filteredNotes, result), nil
 }
@@ -832,6 +838,105 @@ func (s *Service) filterNotesForViewer(notes []*models.Status, query *ListNotesQ
 	return filteredNotes
 }
 
+func (s *Service) hydrateTimelineStatuses(ctx context.Context, statuses []*models.Status) []*models.Status {
+	if len(statuses) == 0 {
+		return statuses
+	}
+
+	hydrated := make([]*models.Status, 0, len(statuses))
+	for _, status := range statuses {
+		h, err := s.ensureStatusHydrated(ctx, status)
+		if err != nil {
+			if s.logger != nil {
+				s.logger.Error("dropping incomplete timeline status",
+					zap.String("pk", safeKey(status, true)),
+					zap.String("sk", safeKey(status, false)),
+					zap.Error(err))
+			}
+			continue
+		}
+		hydrated = append(hydrated, h)
+	}
+	return hydrated
+}
+
+func (s *Service) ensureStatusHydrated(ctx context.Context, status *models.Status) (*models.Status, error) {
+	if status == nil {
+		return nil, errors.New("nil status reference")
+	}
+
+	if status.StatusID == "" {
+		status.StatusID = deriveStatusIDFromKeys(status.PK, status.SK)
+	}
+	if status.StatusID == "" && status.Note != nil && status.Note.Get() != nil {
+		status.StatusID = extractStatusIDFromObjectURL(status.Note.Get().ID)
+	}
+	if status.StatusID == "" {
+		return nil, fmt.Errorf("missing status identifier (pk=%s, sk=%s)", status.PK, status.SK)
+	}
+
+	noteMissing := status.Note == nil || status.Note.Get() == nil
+	if status.ReblogOfID != "" {
+		noteMissing = false
+	}
+
+	contentMissing := status.Content == "" && status.ReblogOfID == ""
+
+	needsReload := noteMissing ||
+		status.AuthorUsername == "" ||
+		contentMissing ||
+		status.PublishedAt.IsZero()
+
+	if needsReload {
+		if s.noteRepo == nil {
+			return nil, fmt.Errorf("status repository unavailable while hydrating %s", status.StatusID)
+		}
+		refreshed, err := s.noteRepo.GetStatus(ctx, status.StatusID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to reload status %s: %w", status.StatusID, err)
+		}
+		status = refreshed
+	}
+
+	s.ensureAuthorUsername(ctx, status)
+
+	if status.AuthorUsername == "" {
+		return nil, fmt.Errorf("status %s missing author username after hydration", status.StatusID)
+	}
+
+	return status, nil
+}
+
+func deriveStatusIDFromKeys(pk, sk string) string {
+	if id := trimStatusKey(pk); id != "" {
+		return id
+	}
+	if id := trimStatusKey(sk); id != "" {
+		return id
+	}
+	return ""
+}
+
+func trimStatusKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	if strings.HasPrefix(key, "status#") {
+		return strings.TrimPrefix(key, "status#")
+	}
+	return ""
+}
+
+func safeKey(status *models.Status, isPK bool) string {
+	if status == nil {
+		return ""
+	}
+	if isPK {
+		return status.PK
+	}
+	return status.SK
+}
+
 // shouldIncludeStatus determines if a status should be included based on filters
 func (s *Service) shouldIncludeStatus(status *models.Status, query *ListNotesQuery, isPublicTimeline bool) bool {
 	// Skip deleted posts
@@ -860,7 +965,10 @@ func (s *Service) shouldIncludeStatus(status *models.Status, query *ListNotesQue
 	if query.ExcludeReplies && status.IsReply() {
 		return false
 	}
-	// Note: ExcludeReblogs and PinnedOnly would require additional data
+	if query.ExcludeReblogs && status.IsReblog() {
+		return false
+	}
+	// Note: PinnedOnly would require additional data
 
 	return true
 }
@@ -1172,6 +1280,165 @@ func extractStatusIDFromObjectURL(objectURL string) string {
 		return ""
 	}
 	return parts[len(parts)-1]
+}
+
+func boostStatusIDFromAnnounceID(announceID string) string {
+	if announceID == "" {
+		return ""
+	}
+
+	hash := sha256.Sum256([]byte(announceID))
+	return "boost_" + hex.EncodeToString(hash[:])
+}
+
+func boostStatusIDFromActors(boosterID, targetStatusID string) string {
+	if boosterID == "" || targetStatusID == "" {
+		return ""
+	}
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%s", boosterID, targetStatusID)))
+	return "boost_" + hex.EncodeToString(hash[:])
+}
+
+func deriveBoostStatusID(original *models.Status, booster *storage.Account, announce *storage.Announce) string {
+	if announce != nil {
+		if id := boostStatusIDFromAnnounceID(announce.ID); id != "" {
+			return id
+		}
+	}
+
+	boosterID := ""
+	if booster != nil && booster.Actor != nil {
+		boosterID = booster.Actor.ID
+	}
+	if id := boostStatusIDFromActors(boosterID, safeStatusID(original)); id != "" {
+		return id
+	}
+
+	return uuid.New().String()
+}
+
+func cloneRecipients(input []string) []string {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make([]string, len(input))
+	copy(cloned, input)
+	return cloned
+}
+
+func (s *Service) buildBoostStatus(original *models.Status, booster *storage.Account, announce *storage.Announce) *models.Status {
+	if original == nil || booster == nil || booster.Actor == nil || booster.User == nil || announce == nil {
+		return nil
+	}
+
+	statusID := deriveBoostStatusID(original, booster, announce)
+
+	publishedAt := announce.Published
+	if publishedAt.IsZero() {
+		publishedAt = time.Now()
+	}
+
+	boost := &models.Status{
+		StatusID:        statusID,
+		AuthorID:        booster.Actor.ID,
+		AuthorUsername:  booster.User.Username,
+		Visibility:      original.Visibility,
+		Sensitive:       original.Sensitive,
+		Language:        original.Language,
+		ConversationID:  original.ConversationID,
+		ToRecipients:    cloneRecipients(original.ToRecipients),
+		CcRecipients:    cloneRecipients(original.CcRecipients),
+		BtoRecipients:   cloneRecipients(original.BtoRecipients),
+		BccRecipients:   cloneRecipients(original.BccRecipients),
+		Mentions:        nil,
+		Hashtags:        nil,
+		URLs:            nil,
+		ReblogOfID:      original.StatusID,
+		BoostOfStatusID: original.StatusID,
+		BoostOfAuthorID: original.AuthorID,
+		PublishedAt:     publishedAt,
+		UpdatedAt:       publishedAt,
+		CreatedAt:       publishedAt,
+		ModifiedAt:      publishedAt,
+		BoostAnnounceID: announce.ID,
+	}
+
+	return boost
+}
+
+func (s *Service) persistBoostStatus(ctx context.Context, original *models.Status, booster *storage.Account, announce *storage.Announce) *models.Status {
+	if s.noteRepo == nil {
+		s.logger.Warn("status repository unavailable while building boost status",
+			zap.String("original_status_id", safeStatusID(original)))
+		return nil
+	}
+
+	boost := s.buildBoostStatus(original, booster, announce)
+	if boost == nil {
+		s.logger.Warn("unable to construct boost status payload",
+			zap.String("original_status_id", safeStatusID(original)))
+		return nil
+	}
+
+	if err := s.noteRepo.CreateBoostStatus(ctx, boost); err != nil {
+		if isAlreadyExistsError(err) {
+			s.logger.Debug("boost status already exists, treating as idempotent",
+				zap.String("status_id", boost.StatusID),
+				zap.String("original_status_id", safeStatusID(original)))
+			return nil
+		}
+
+		s.logger.Error("failed to persist boost status",
+			zap.String("status_id", boost.StatusID),
+			zap.String("original_status_id", safeStatusID(original)),
+			zap.Error(err))
+		return nil
+	}
+
+	return boost
+}
+
+func safeStatusID(status *models.Status) string {
+	if status == nil {
+		return ""
+	}
+	return status.StatusID
+}
+
+func (s *Service) deleteBoostStatus(ctx context.Context, boosterID, targetStatusID string) {
+	if s.noteRepo == nil {
+		return
+	}
+
+	if err := common.ValidateRequiredParam("boost_booster_id", boosterID); err != nil {
+		s.logger.Debug("booster identifier missing; skipping status deletion",
+			zap.Error(err))
+		return
+	}
+
+	if err := common.ValidateRequiredParam("boost_target_status_id", targetStatusID); err != nil {
+		s.logger.Debug("boost target missing; skipping status deletion",
+			zap.Error(err))
+		return
+	}
+
+	result, err := s.noteRepo.DeleteBoostStatus(ctx, boosterID, targetStatusID)
+	if err != nil {
+		s.logger.Error("failed to delete boost status",
+			zap.String("booster_id", boosterID),
+			zap.String("target_status_id", targetStatusID),
+			zap.Error(err))
+		return
+	}
+
+	if result == nil {
+		return
+	}
+
+	now := time.Now()
+	result.Deleted = true
+	result.DeletedAt = &now
+	s.emitStatusDeletedEvents(ctx, result)
 }
 
 func isAlreadyExistsError(err error) bool {
@@ -1636,8 +1903,11 @@ func (s *Service) BookmarkNote(ctx context.Context, cmd *BookmarkNoteCommand) (*
 		return nil, ErrStatusNotFound
 	}
 
-	// Add bookmark through account repository
-	if err := s.accountRepo.AddBookmark(ctx, cmd.BookmarkerID, cmd.StatusID); err != nil {
+	if s.bookmarkRepo == nil {
+		return nil, ErrBookmarkStatus
+	}
+
+	if _, err := s.bookmarkRepo.CreateBookmark(ctx, cmd.BookmarkerID, cmd.StatusID); err != nil {
 		return nil, ErrBookmarkStatus
 	}
 
@@ -1658,8 +1928,11 @@ func (s *Service) UnbookmarkNote(ctx context.Context, cmd *UnbookmarkNoteCommand
 		return nil, ErrStatusNotFound
 	}
 
-	// Remove bookmark through account repository
-	if err := s.accountRepo.RemoveBookmark(ctx, cmd.UnbookmarkerID, cmd.StatusID); err != nil {
+	if s.bookmarkRepo == nil {
+		return nil, ErrUnbookmarkStatus
+	}
+
+	if err := s.bookmarkRepo.DeleteBookmark(ctx, cmd.UnbookmarkerID, cmd.StatusID); err != nil {
 		return nil, ErrUnbookmarkStatus
 	}
 
@@ -1674,15 +1947,73 @@ func (s *Service) UnbookmarkNote(ctx context.Context, cmd *UnbookmarkNoteCommand
 
 // GetBookmarks retrieves user's bookmarked statuses
 func (s *Service) GetBookmarks(ctx context.Context, query *GetBookmarksQuery) (*Result, error) {
-	// Get bookmarked statuses through account repository
-	result, err := s.accountRepo.GetBookmarkedStatuses(ctx, query.UserID, query.Pagination)
+	if s.bookmarkRepo == nil {
+		return nil, ErrGetBookmarks
+	}
+
+	limit := query.Pagination.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+
+	bookmarks, nextCursor, err := s.bookmarkRepo.GetUserBookmarks(ctx, query.UserID, limit, query.Pagination.Cursor)
 	if err != nil {
 		return nil, ErrGetBookmarks
 	}
 
+	if len(bookmarks) == 0 {
+		empty := &interfaces.PaginatedResult[*models.Status]{
+			Items:      []*models.Status{},
+			NextCursor: "",
+			HasMore:    false,
+			Total:      0,
+		}
+		return &Result{
+			Notes:      empty.Items,
+			Pagination: empty,
+		}, nil
+	}
+
+	statusIDs := make([]string, 0, len(bookmarks))
+	for _, bookmark := range bookmarks {
+		if bookmark == nil {
+			continue
+		}
+		statusIDs = append(statusIDs, bookmark.ObjectID)
+	}
+
+	statuses, err := s.noteRepo.GetStatusesByIDs(ctx, statusIDs)
+	if err != nil {
+		return nil, ErrGetBookmarks
+	}
+
+	statusMap := make(map[string]*models.Status, len(statuses))
+	for _, status := range statuses {
+		if status != nil {
+			statusMap[status.StatusID] = status
+		}
+	}
+
+	ordered := make([]*models.Status, 0, len(statusMap))
+	for _, bookmark := range bookmarks {
+		if bookmark == nil {
+			continue
+		}
+		if status, ok := statusMap[bookmark.ObjectID]; ok {
+			ordered = append(ordered, status)
+		}
+	}
+
+	pagination := &interfaces.PaginatedResult[*models.Status]{
+		Items:      ordered,
+		NextCursor: nextCursor,
+		HasMore:    nextCursor != "",
+		Total:      -1,
+	}
+
 	return &Result{
-		Notes:      result.Items,
-		Pagination: result,
+		Notes:      ordered,
+		Pagination: pagination,
 	}, nil
 }
 
@@ -1855,7 +2186,7 @@ func (s *Service) executeNoteActionGeneric(ctx context.Context, params noteActio
 
 // LikeNote adds a like to a status
 func (s *Service) LikeNote(ctx context.Context, cmd *LikeNoteCommand) (*LikeResult, error) {
-	return s.executeNoteActionGeneric(ctx, noteActionParams{
+	result, err := s.executeNoteActionGeneric(ctx, noteActionParams{
 		statusID:     cmd.StatusID,
 		actorID:      cmd.LikerID,
 		actorType:    "liker",
@@ -1863,11 +2194,28 @@ func (s *Service) LikeNote(ctx context.Context, cmd *LikeNoteCommand) (*LikeResu
 		emitEventsFn: s.emitLikeEvents,
 		errorMsg:     "failed to like status",
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	if s.noteRepo == nil {
+		return nil, ErrStatusRepositoryUnavailable
+	}
+
+	if err := s.noteRepo.LikeStatus(ctx, cmd.LikerID, cmd.StatusID); err != nil {
+		s.logger.Error("failed to increment like counter",
+			zap.String("status_id", cmd.StatusID),
+			zap.String("liker", cmd.LikerID),
+			zap.Error(err))
+		return nil, errors.Join(ErrExecuteAction, err)
+	}
+
+	return result, nil
 }
 
 // UnlikeNote removes a like from a status
 func (s *Service) UnlikeNote(ctx context.Context, cmd *UnlikeNoteCommand) (*LikeResult, error) {
-	return s.executeNoteActionGeneric(ctx, noteActionParams{
+	result, err := s.executeNoteActionGeneric(ctx, noteActionParams{
 		statusID:     cmd.StatusID,
 		actorID:      cmd.UnlikerID,
 		actorType:    "unliker",
@@ -1875,6 +2223,23 @@ func (s *Service) UnlikeNote(ctx context.Context, cmd *UnlikeNoteCommand) (*Like
 		emitEventsFn: s.emitUnlikeEvents,
 		errorMsg:     "failed to unlike status",
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	if s.noteRepo == nil {
+		return nil, ErrStatusRepositoryUnavailable
+	}
+
+	if err := s.noteRepo.UnlikeStatus(ctx, cmd.UnlikerID, cmd.StatusID); err != nil {
+		s.logger.Error("failed to decrement like counter",
+			zap.String("status_id", cmd.StatusID),
+			zap.String("unliker", cmd.UnlikerID),
+			zap.Error(err))
+		return nil, errors.Join(ErrExecuteAction, err)
+	}
+
+	return result, nil
 }
 
 // GetLikers retrieves users who liked a status
@@ -1925,6 +2290,14 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 		return nil, ErrStatusNotFound
 	}
 
+	if !note.CanBeReblogged() {
+		s.logger.Warn("status cannot be boosted due to visibility or deletion state",
+			zap.String("status_id", cmd.StatusID),
+			zap.String("visibility", note.Visibility),
+			zap.Bool("deleted", note.Deleted))
+		return nil, ErrReblogStatus
+	}
+
 	// Get reblogger's account
 	reblogger, err := s.accountRepo.GetAccount(ctx, cmd.RebloggerID)
 	if err != nil {
@@ -1948,6 +2321,10 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 	events := s.emitReblogEvents(ctx, note, cmd.RebloggerID)
 	s.queueAnnounceActivity(ctx, note, announce)
 	s.notifyBoost(ctx, note, cmd.RebloggerID)
+
+	if boostStatus := s.persistBoostStatus(ctx, note, reblogger, announce); boostStatus != nil {
+		s.emitStatusCreatedEvents(ctx, boostStatus)
+	}
 
 	return &LikeResult{
 		Status:   note,
@@ -2352,6 +2729,8 @@ func (s *Service) deleteReblog(ctx context.Context, actorURL, objectURL, _ strin
 			zap.Error(err))
 		return ErrDeleteReblog
 	}
+
+	s.deleteBoostStatus(ctx, actorURL, statusID)
 
 	return nil
 }

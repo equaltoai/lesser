@@ -33,6 +33,9 @@ var (
 	// ErrStatusIDRequired is returned when status ID is required but missing
 	ErrStatusIDRequired = errors.RequiredFieldMissing("status_id")
 
+	// ErrStatusRepositoryUnavailable is returned when the status repository dependency is missing
+	ErrStatusRepositoryUnavailable = errors.RepositoryNotAvailable("status")
+
 	// ErrCheckViewPermissions is returned when checking view permissions fails
 	ErrCheckViewPermissions = errors.ProcessingFailed("view permissions check", stdErrors.New("view permissions check failed"))
 

@@ -11,22 +11,24 @@ import (
 
 // Announce represents a reblog/boost activity
 type Announce struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - MUST match legacy exactly
-	PK string `dynamorm:"pk" json:"PK"` // OBJECT#{object_id}#ANNOUNCES
-	SK string `dynamorm:"sk" json:"SK"` // ACTOR#{actor_id}
+	PK string `dynamorm:"pk,attr:PK" json:"PK"` // OBJECT#{object_id}#ANNOUNCES
+	SK string `dynamorm:"sk,attr:SK" json:"SK"` // ACTOR#{actor_id}
 
 	// GSI4 for actor lookups
-	GSI4PK string `dynamorm:"index:GSI4,pk" json:"GSI4PK"` // ACTOR#{actor_id}#ANNOUNCES
-	GSI4SK string `dynamorm:"index:GSI4,sk" json:"GSI4SK"` // PUBLISHED#{timestamp}#OBJECT#{object_id}
+	GSI4PK string `dynamorm:"index:GSI4,pk,attr:gsi4PK" json:"gsi4PK"` // ACTOR#{actor_id}#ANNOUNCES
+	GSI4SK string `dynamorm:"index:GSI4,sk,attr:gsi4SK" json:"gsi4SK"` // PUBLISHED#{timestamp}#OBJECT#{object_id}
 
 	// Core fields from legacy (embedded storage.Announce)
-	Actor     string    `json:"actor"`        // Who announced
-	Object    string    `json:"object"`       // What was announced
-	ID        string    `json:"id"`           // Announce activity ID
-	Published time.Time `json:"published"`    // When it was announced
-	CreatedAt time.Time `json:"created_at"`   // When stored in DB
-	To        []string  `json:"to,omitempty"` // Audience
-	CC        []string  `json:"cc,omitempty"` // CC audience
+	Actor     string    `dynamorm:"attr:actor" json:"actor"`          // Who announced
+	Object    string    `dynamorm:"attr:object" json:"object"`        // What was announced
+	ID        string    `dynamorm:"attr:id" json:"id"`                // Announce activity ID
+	Published time.Time `dynamorm:"attr:published" json:"published"`  // When it was announced
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"` // When stored in DB
+	To        []string  `dynamorm:"attr:to" json:"to,omitempty"`      // Audience
+	CC        []string  `dynamorm:"attr:cc" json:"cc,omitempty"`      // CC audience
 }
 
 // TableName returns the DynamoDB table name

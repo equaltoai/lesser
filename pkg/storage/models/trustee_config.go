@@ -7,26 +7,28 @@ import (
 
 // TrusteeConfig represents a trusted contact for social recovery
 type TrusteeConfig struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"` // TRUSTEE#CONFIG
-	SK string `dynamorm:"sk" json:"-"` // {category} (e.g., recovery#{username}, moderation#{username})
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // TRUSTEE#CONFIG
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // {category} (e.g., recovery#{username}, moderation#{username})
 
 	// Attributes from interface
-	Username  string    `json:"username"` // Who owns this trustee relationship
-	ActorID   string    `json:"actor_id"` // @friend@mastodon.social
-	AddedAt   time.Time `json:"added_at"`
-	Confirmed bool      `json:"confirmed"`
+	Username  string    `dynamorm:"attr:username" json:"username"` // Who owns this trustee relationship
+	ActorID   string    `dynamorm:"attr:actorID" json:"actor_id"`  // @friend@mastodon.social
+	AddedAt   time.Time `dynamorm:"attr:addedAt" json:"added_at"`
+	Confirmed bool      `dynamorm:"attr:confirmed" json:"confirmed"`
 
 	// Additional attributes
-	Category         string     `json:"category"`    // recovery, moderation, emergency
-	TrustLevel       string     `json:"trust_level"` // full, limited, emergency_only
-	ConfirmedAt      *time.Time `json:"confirmed_at,omitempty"`
-	LastUsed         *time.Time `json:"last_used,omitempty"`
-	UsageCount       int        `json:"usage_count"`
-	RecoveryPriority int        `json:"recovery_priority"`     // Order in recovery process (1 = first)
-	Permissions      []string   `json:"permissions,omitempty"` // Specific permissions granted
-	Notes            string     `json:"notes,omitempty"`       // User notes about this trustee
-	UpdatedAt        time.Time  `json:"updated_at"`
+	Category         string     `dynamorm:"attr:category" json:"category"`      // recovery, moderation, emergency
+	TrustLevel       string     `dynamorm:"attr:trustLevel" json:"trust_level"` // full, limited, emergency_only
+	ConfirmedAt      *time.Time `dynamorm:"attr:confirmedAt" json:"confirmed_at,omitempty"`
+	LastUsed         *time.Time `dynamorm:"attr:lastUsed" json:"last_used,omitempty"`
+	UsageCount       int        `dynamorm:"attr:usageCount" json:"usage_count"`
+	RecoveryPriority int        `dynamorm:"attr:recoveryPriority" json:"recovery_priority"` // Order in recovery process (1 = first)
+	Permissions      []string   `dynamorm:"attr:permissions" json:"permissions,omitempty"`  // Specific permissions granted
+	Notes            string     `dynamorm:"attr:notes" json:"notes,omitempty"`              // User notes about this trustee
+	UpdatedAt        time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing TrusteeConfig.

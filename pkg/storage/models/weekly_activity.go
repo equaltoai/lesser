@@ -12,13 +12,15 @@ import (
 // PK: USER#username
 // SK: ACTIVITY#WEEK#{weekStartDate}
 type WeeklyActivity struct {
-	PK            string `dynamorm:"pk" json:"-"`
-	SK            string `dynamorm:"sk" json:"-"`
-	UserID        string `json:"user_id,omitempty"` // Optional: for user-specific activity
-	Week          int64  `json:"week"`              // Unix timestamp of week start
-	Statuses      int64  `json:"statuses"`          // Number of statuses created
-	Logins        int64  `json:"logins"`            // Number of unique logins
-	Registrations int64  `json:"registrations"`     // Number of new registrations
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK            string `dynamorm:"pk,attr:PK" json:"-"`
+	SK            string `dynamorm:"sk,attr:SK" json:"-"`
+	UserID        string `dynamorm:"attr:userID" json:"user_id,omitempty"`    // Optional: for user-specific activity
+	Week          int64  `dynamorm:"attr:week" json:"week"`                   // Unix timestamp of week start
+	Statuses      int64  `dynamorm:"attr:statuses" json:"statuses"`           // Number of statuses created
+	Logins        int64  `dynamorm:"attr:logins" json:"logins"`               // Number of unique logins
+	Registrations int64  `dynamorm:"attr:registrations" json:"registrations"` // Number of new registrations
 }
 
 // UpdateKeys updates the DynamoDB keys based on the activity data

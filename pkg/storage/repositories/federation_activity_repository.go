@@ -117,7 +117,7 @@ func (r *FederationActivityRepository) ListByDomain(ctx context.Context, domain 
 // ListByType lists federation activities by type - ActivityPub protocol compliance queries preserved
 func (r *FederationActivityRepository) ListByType(ctx context.Context, activityType string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
 	items, _, err := r.QueryGSIWithTimeRangeHelper(ctx,
-		"type-index", "GSI1PK", "GSI1SK",
+		"type-index", "gsi1PK", "gsi1SK",
 		fmt.Sprintf("FED_TYPE#%s", activityType),
 		startTime, endTime, limit, "", SortOrderDesc,
 		"list federation activities by type")
@@ -127,7 +127,7 @@ func (r *FederationActivityRepository) ListByType(ctx context.Context, activityT
 // ListByActor lists federation activities by actor - ActivityPub actor tracking preserved
 func (r *FederationActivityRepository) ListByActor(ctx context.Context, actorID string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
 	items, _, err := r.QueryGSIWithTimeRangeHelper(ctx,
-		"actor-index", "GSI2PK", "GSI2SK",
+		"actor-index", "gsi2PK", "gsi2SK",
 		fmt.Sprintf("FED_ACTOR#%s", actorID),
 		startTime, endTime, limit, "", SortOrderDesc,
 		"list federation activities by actor")
@@ -144,8 +144,8 @@ func (r *FederationActivityRepository) GetRecentActivities(ctx context.Context, 
 	// Use BaseRepository's underlying db but preserve federation-specific recent query logic
 	err := r.db.WithContext(ctx).Model(&models.FederationActivity{}).
 		Index("type-index").
-		Where("GSI1SK", ">=", startSK).
-		OrderBy("GSI1SK", "DESC").
+		Where("gsi1SK", ">=", startSK).
+		OrderBy("gsi1SK", "DESC").
 		Limit(limit).
 		All(&activities)
 

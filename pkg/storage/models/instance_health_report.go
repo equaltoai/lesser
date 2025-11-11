@@ -7,24 +7,26 @@ import (
 
 // InstanceHealthReport represents health metrics for a federated instance
 type InstanceHealthReport struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys
-	PK string `dynamorm:"pk" json:"-"` // INSTANCE#domain
-	SK string `dynamorm:"sk" json:"-"` // HEALTH#{timestamp}
+	PK string `dynamorm:"pk,attr:PK" json:"-"` // INSTANCE#domain
+	SK string `dynamorm:"sk,attr:SK" json:"-"` // HEALTH#{timestamp}
 
 	// Attributes from interface
-	Domain          string    `json:"domain"`
-	Status          string    `json:"status"` // healthy/warning/critical
-	ResponseTime    float64   `json:"response_time"`
-	ErrorRate       float64   `json:"error_rate"`
-	FederationDelay float64   `json:"federation_delay"`
-	QueueDepth      int       `json:"queue_depth"`
-	Issues          []string  `json:"issues"`
-	Recommendations []string  `json:"recommendations"`
-	LastChecked     time.Time `json:"last_checked"`
+	Domain          string    `dynamorm:"attr:domain" json:"domain"`
+	Status          string    `dynamorm:"attr:status" json:"status"` // healthy/warning/critical
+	ResponseTime    float64   `dynamorm:"attr:responseTime" json:"response_time"`
+	ErrorRate       float64   `dynamorm:"attr:errorRate" json:"error_rate"`
+	FederationDelay float64   `dynamorm:"attr:federationDelay" json:"federation_delay"`
+	QueueDepth      int       `dynamorm:"attr:queueDepth" json:"queue_depth"`
+	Issues          []string  `dynamorm:"attr:issues" json:"issues"`
+	Recommendations []string  `dynamorm:"attr:recommendations" json:"recommendations"`
+	LastChecked     time.Time `dynamorm:"attr:lastChecked" json:"last_checked"`
 
 	// Additional metadata
-	Timestamp string `json:"timestamp"`                    // ISO timestamp for sorting
-	TTL       int64  `json:"ttl,omitempty" dynamorm:"ttl"` // 30 days retention
+	Timestamp string `dynamorm:"attr:timestamp" json:"timestamp"`                 // ISO timestamp for sorting
+	TTL       int64  `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`               // 30 days retention
 }
 
 // TableName returns the DynamoDB table backing InstanceHealthReport.

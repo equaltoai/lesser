@@ -7,28 +7,30 @@ import (
 
 // SocialRecoveryRequest represents a request for social account recovery
 type SocialRecoveryRequest struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key fields
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI fields for querying by status
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"gsi1pk,omitempty"`
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"gsi1sk,omitempty"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1pk,omitempty"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1sk,omitempty"`
 
 	// GSI fields for querying by username
-	GSI2PK string `dynamorm:"index:GSI2,pk" json:"gsi2pk,omitempty"`
-	GSI2SK string `dynamorm:"index:GSI2,sk" json:"gsi2sk,omitempty"`
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2pk,omitempty"`
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2sk,omitempty"`
 
 	// Business fields
-	ID            string          `json:"id"`
-	Username      string          `json:"username"`
-	InitiatedAt   time.Time       `json:"initiated_at"`
-	ExpiresAt     time.Time       `json:"expires_at"`
-	RequiredVotes int             `json:"required_votes"`
-	ReceivedVotes map[string]bool `json:"received_votes"` // trustee_id -> voted
-	RecoveryToken string          `json:"recovery_token"`
-	Status        string          `json:"status"` // pending, approved, expired, cancelled
-	TTL           int64           `json:"ttl,omitempty" dynamorm:"ttl"`
+	ID            string          `dynamorm:"attr:id" json:"id"`
+	Username      string          `dynamorm:"attr:username" json:"username"`
+	InitiatedAt   time.Time       `dynamorm:"attr:initiatedAt" json:"initiated_at"`
+	ExpiresAt     time.Time       `dynamorm:"attr:expiresAt" json:"expires_at"`
+	RequiredVotes int             `dynamorm:"attr:requiredVotes" json:"required_votes"`
+	ReceivedVotes map[string]bool `dynamorm:"attr:receivedVotes" json:"received_votes"` // trustee_id -> voted
+	RecoveryToken string          `dynamorm:"attr:recoveryToken" json:"recovery_token"`
+	Status        string          `dynamorm:"attr:status" json:"status"` // pending, approved, expired, cancelled
+	TTL           int64           `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing SocialRecoveryRequest.

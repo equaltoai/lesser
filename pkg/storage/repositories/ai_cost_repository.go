@@ -91,8 +91,8 @@ func (r *AICostRepository) GetAICostsByTimeRange(ctx context.Context, startTime,
 
 	query := r.db.WithContext(ctx).Model(&models.AICost{}).
 		Index("time-index").
-		Where("GSI1PK", ">=", fmt.Sprintf("AI_COSTS#%s", startDate)).
-		Where("GSI1PK", "<=", fmt.Sprintf("AI_COSTS#%s", endDate))
+		Where("gsi1PK", ">=", fmt.Sprintf("AI_COSTS#%s", startDate)).
+		Where("gsi1PK", "<=", fmt.Sprintf("AI_COSTS#%s", endDate))
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -134,10 +134,10 @@ func (r *AICostRepository) GetAICostsByTimeRange(ctx context.Context, startTime,
 func (r *AICostRepository) GetAICostsByOperationType(ctx context.Context, operationType string, startTime time.Time, limit int) ([]*models.AICost, error) {
 	query := r.db.WithContext(ctx).Model(&models.AICost{}).
 		Index("operation-type-index").
-		Where("GSI2PK", "=", fmt.Sprintf("AI_TYPE#%s", operationType))
+		Where("gsi2PK", "=", fmt.Sprintf("AI_TYPE#%s", operationType))
 
 	if !startTime.IsZero() {
-		query = query.Where("GSI2SK", ">=", fmt.Sprintf("MODEL#%s", startTime.Format(common.CompactTimeFormat)))
+		query = query.Where("gsi2SK", ">=", fmt.Sprintf("MODEL#%s", startTime.Format(common.CompactTimeFormat)))
 	}
 
 	if limit > 0 {
@@ -170,7 +170,7 @@ func (r *AICostRepository) GetTopCostlyOperations(ctx context.Context, costTier 
 
 	query := r.db.WithContext(ctx).Model(&models.AICost{}).
 		Index("cost-analysis-index").
-		Where("GSI3PK", "=", fmt.Sprintf("AI_COST_RANGE#%s", costTier))
+		Where("gsi3PK", "=", fmt.Sprintf("AI_COST_RANGE#%s", costTier))
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -701,7 +701,7 @@ func (r *AICostRepository) GetAggregatedCosts(ctx context.Context, period string
 	// Note: This uses the AIAggregatedCost model directly since BaseRepository is typed for AICost
 	query := r.db.WithContext(ctx).Model(&models.AIAggregatedCost{}).
 		Index("time-index").
-		Where("GSI1PK", "=", fmt.Sprintf("AI_AGG_TIME#%s", period))
+		Where("gsi1PK", "=", fmt.Sprintf("AI_AGG_TIME#%s", period))
 
 	// Add time range filter
 	if !startTime.IsZero() {
@@ -709,7 +709,7 @@ func (r *AICostRepository) GetAggregatedCosts(ctx context.Context, period string
 		if period == models.PeriodTimeHour {
 			startStr = startTime.Format(common.CompactTimeFormat)[:13]
 		}
-		query = query.Where("GSI1SK", ">=", startStr)
+		query = query.Where("gsi1SK", ">=", startStr)
 	}
 
 	if !endTime.IsZero() {
@@ -717,7 +717,7 @@ func (r *AICostRepository) GetAggregatedCosts(ctx context.Context, period string
 		if period == models.PeriodTimeHour {
 			endStr = endTime.Format(common.CompactTimeFormat)[:13]
 		}
-		query = query.Where("GSI1SK", "<=", endStr)
+		query = query.Where("gsi1SK", "<=", endStr)
 	}
 
 	var aggregatedCosts []models.AIAggregatedCost

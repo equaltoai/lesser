@@ -138,7 +138,7 @@ func (r *MediaPopularityRepository) GetPopularMediaByPeriod(ctx context.Context,
 
 	var popularityRecords []*models.MediaPopularity
 	query := r.GetDB().WithContext(ctx).Model(&models.MediaPopularity{}).
-		Where("GSI1PK", "=", gsi1pk).
+		Where("gsi1PK", "=", gsi1pk).
 		Limit(pageLimit)
 
 	// Apply cursor if provided

@@ -9,22 +9,24 @@ import (
 
 // Mute represents a mute relationship between actors
 type Mute struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - MUST match legacy exactly
-	PK string `dynamorm:"pk" json:"PK"` // MUTE#{username}
-	SK string `dynamorm:"sk" json:"SK"` // MUTED#{muted_username}
+	PK string `dynamorm:"pk,attr:PK" json:"PK"` // MUTE#{username}
+	SK string `dynamorm:"sk,attr:SK" json:"SK"` // MUTED#{muted_username}
 
 	// GSI1 for reverse lookup
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // MUTED#{muted_username}
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // MUTER#{username}
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK"` // MUTED#{muted_username}
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK"` // MUTER#{username}
 
 	// Core fields from legacy
-	Type              string    `json:"Type"`              // Always "Mute"
-	Actor             string    `json:"Actor"`             // Full actor ID who is muting
-	Object            string    `json:"Object"`            // Full actor ID being muted
-	ID                string    `json:"ID"`                // Mute activity ID
-	HideNotifications bool      `json:"HideNotifications"` // Whether to hide notifications from this user
-	Published         time.Time `json:"Published"`         // When the mute was published
-	CreatedAt         time.Time `json:"CreatedAt"`         // When stored in DB
+	Type              string    `dynamorm:"attr:type" json:"Type"`                           // Always "Mute"
+	Actor             string    `dynamorm:"attr:actor" json:"Actor"`                         // Full actor ID who is muting
+	Object            string    `dynamorm:"attr:object" json:"Object"`                       // Full actor ID being muted
+	ID                string    `dynamorm:"attr:id" json:"ID"`                               // Mute activity ID
+	HideNotifications bool      `dynamorm:"attr:hideNotifications" json:"HideNotifications"` // Whether to hide notifications from this user
+	Published         time.Time `dynamorm:"attr:published" json:"Published"`                 // When the mute was published
+	CreatedAt         time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`                 // When stored in DB
 }
 
 // TableName returns the DynamoDB table name

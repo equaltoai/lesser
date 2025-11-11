@@ -764,6 +764,26 @@ func (m *MockQuery) BatchGet(keys []any, dest any) error {
 	return args.Error(0)
 }
 
+// BatchGetWithOptions mocks the BatchGetWithOptions method of the core.Query interface
+func (m *MockQuery) BatchGetWithOptions(keys []any, dest any, opts *core.BatchGetOptions) error {
+	args := m.Called(keys, dest, opts)
+	return args.Error(0)
+}
+
+// BatchGetBuilder mocks the BatchGetBuilder method of the core.Query interface
+func (m *MockQuery) BatchGetBuilder() core.BatchGetBuilder {
+	if len(m.ExpectedCalls) == 0 {
+		return nil
+	}
+	args := m.Called()
+	if len(args) > 0 {
+		if builder, ok := args.Get(0).(core.BatchGetBuilder); ok {
+			return builder
+		}
+	}
+	return nil
+}
+
 // BatchUpdateWithOptions mocks the BatchUpdateWithOptions method of the core.Query interface
 func (m *MockQuery) BatchUpdateWithOptions(items []any, fields []string, options ...any) error {
 	args := m.Called(items, fields, options)
@@ -800,6 +820,18 @@ func (m *MockQuery) OrFilterGroup(fn func(core.Query)) core.Query {
 	return args.Get(0).(core.Query)
 }
 
+// WithCondition mocks the WithCondition method of the core.Query interface
+func (m *MockQuery) WithCondition(field, operator string, value any) core.Query {
+	args := m.Called(field, operator, value)
+	return args.Get(0).(core.Query)
+}
+
+// WithConditionExpression mocks the WithConditionExpression method of the core.Query interface
+func (m *MockQuery) WithConditionExpression(expr string, values map[string]any) core.Query {
+	args := m.Called(expr, values)
+	return args.Get(0).(core.Query)
+}
+
 // Offset mocks the Offset method of the core.Query interface
 func (m *MockQuery) Offset(offset int) core.Query {
 	args := m.Called(offset)
@@ -833,6 +865,18 @@ func (m *MockQuery) CreateOrUpdate() error {
 // Cursor mocks the Cursor method of the core.Query interface
 func (m *MockQuery) Cursor(cursor string) core.Query {
 	args := m.Called(cursor)
+	return args.Get(0).(core.Query)
+}
+
+// IfExists mocks the IfExists method of the core.Query interface
+func (m *MockQuery) IfExists() core.Query {
+	args := m.Called()
+	return args.Get(0).(core.Query)
+}
+
+// IfNotExists mocks the IfNotExists method of the core.Query interface
+func (m *MockQuery) IfNotExists() core.Query {
+	args := m.Called()
 	return args.Get(0).(core.Query)
 }
 

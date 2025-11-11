@@ -9,62 +9,64 @@ import (
 
 // ExportCostTracking represents cost tracking for export operations
 type ExportCostTracking struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - export cost tracking uses EXPORT_COST#{export_id}#{timestamp} pattern
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for user queries - USER#{username}, COST#{timestamp}
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for date range queries - EXPORT_COSTS#{date}, TS#{timestamp}
-	GSI2PK string `dynamorm:"index:GSI2,pk" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:GSI2,sk" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Export metadata
-	ExportID     string `json:"export_id"`
-	Username     string `json:"username"`
-	Type         string `json:"type"`   // archive, followers, following, etc.
-	Format       string `json:"format"` // activitypub, mastodon, csv
-	IncludeMedia bool   `json:"include_media"`
+	ExportID     string `dynamorm:"attr:exportID" json:"export_id"`
+	Username     string `dynamorm:"attr:username" json:"username"`
+	Type         string `dynamorm:"attr:type" json:"type"`     // archive, followers, following, etc.
+	Format       string `dynamorm:"attr:format" json:"format"` // activitypub, mastodon, csv
+	IncludeMedia bool   `dynamorm:"attr:includeMedia" json:"include_media"`
 
 	// Cost breakdown (all in microcents)
-	LambdaExecutionCost int64 `json:"lambda_execution_cost"` // Lambda compute cost
-	LambdaDurationMs    int64 `json:"lambda_duration_ms"`    // Lambda execution time
+	LambdaExecutionCost int64 `dynamorm:"attr:lambdaExecutionCost" json:"lambda_execution_cost"` // Lambda compute cost
+	LambdaDurationMs    int64 `dynamorm:"attr:lambdaDurationMs" json:"lambda_duration_ms"`       // Lambda execution time
 
-	S3StorageCost      int64 `json:"s3_storage_cost"`       // S3 storage for export file
-	S3PutRequestCost   int64 `json:"s3_put_request_cost"`   // S3 PUT operations
-	S3GetRequestCost   int64 `json:"s3_get_request_cost"`   // S3 GET operations for media
-	S3DataTransferCost int64 `json:"s3_data_transfer_cost"` // Data transfer costs
+	S3StorageCost      int64 `dynamorm:"attr:s3StorageCost" json:"s3_storage_cost"`            // S3 storage for export file
+	S3PutRequestCost   int64 `dynamorm:"attr:s3PutRequestCost" json:"s3_put_request_cost"`     // S3 PUT operations
+	S3GetRequestCost   int64 `dynamorm:"attr:s3GetRequestCost" json:"s3_get_request_cost"`     // S3 GET operations for media
+	S3DataTransferCost int64 `dynamorm:"attr:s3DataTransferCost" json:"s3_data_transfer_cost"` // Data transfer costs
 
-	DynamoDBReadCost   int64   `json:"dynamodb_read_cost"`  // DynamoDB read operations
-	DynamoDBReadUnits  float64 `json:"dynamodb_read_units"` // Read capacity consumed
-	DynamoDBOperations int64   `json:"dynamodb_operations"` // Number of DB operations
+	DynamoDBReadCost   int64   `dynamorm:"attr:dynamoDBReadCost" json:"dynamodb_read_cost"`    // DynamoDB read operations
+	DynamoDBReadUnits  float64 `dynamorm:"attr:dynamoDBReadUnits" json:"dynamodb_read_units"`  // Read capacity consumed
+	DynamoDBOperations int64   `dynamorm:"attr:dynamoDBOperations" json:"dynamodb_operations"` // Number of DB operations
 
-	TotalCostMicroCents int64 `json:"total_cost_micro_cents"` // Total cost in microcents
+	TotalCostMicroCents int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"` // Total cost in microcents
 
 	// Operation metrics
-	FileSize           int64 `json:"file_size"`            // Size of exported file in bytes
-	RecordCount        int64 `json:"record_count"`         // Number of records exported
-	MediaFilesIncluded int64 `json:"media_files_included"` // Number of media files included
-	MediaSizeBytes     int64 `json:"media_size_bytes"`     // Total size of media files
+	FileSize           int64 `dynamorm:"attr:fileSize" json:"file_size"`                      // Size of exported file in bytes
+	RecordCount        int64 `dynamorm:"attr:recordCount" json:"record_count"`                // Number of records exported
+	MediaFilesIncluded int64 `dynamorm:"attr:mediaFilesIncluded" json:"media_files_included"` // Number of media files included
+	MediaSizeBytes     int64 `dynamorm:"attr:mediaSizeBytes" json:"media_size_bytes"`         // Total size of media files
 
-	S3PutRequests     int64 `json:"s3_put_requests"`     // Number of S3 PUT requests
-	S3GetRequests     int64 `json:"s3_get_requests"`     // Number of S3 GET requests
-	DataTransferBytes int64 `json:"data_transfer_bytes"` // Bytes transferred
+	S3PutRequests     int64 `dynamorm:"attr:s3PutRequests" json:"s3_put_requests"`         // Number of S3 PUT requests
+	S3GetRequests     int64 `dynamorm:"attr:s3GetRequests" json:"s3_get_requests"`         // Number of S3 GET requests
+	DataTransferBytes int64 `dynamorm:"attr:dataTransferBytes" json:"data_transfer_bytes"` // Bytes transferred
 
 	// Status tracking
-	Status      string     `json:"status"`                 // pending, processing, completed, failed
-	StartedAt   time.Time  `json:"started_at"`             // When export processing started
-	CompletedAt *time.Time `json:"completed_at,omitempty"` // When export completed
+	Status      string     `dynamorm:"attr:status" json:"status"`                      // pending, processing, completed, failed
+	StartedAt   time.Time  `dynamorm:"attr:startedAt" json:"started_at"`               // When export processing started
+	CompletedAt *time.Time `dynamorm:"attr:completedAt" json:"completed_at,omitempty"` // When export completed
 
 	// TTL for automatic cleanup
-	TTL int64 `json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Timestamps
-	Timestamp time.Time `json:"timestamp"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // UpdateKeys sets the primary keys for the ExportCostTracking model
@@ -135,28 +137,28 @@ func (e *ExportCostTracking) TableName() string {
 
 // ExportCostSummary represents aggregated export costs
 type ExportCostSummary struct {
-	Username  string    `json:"username"`
-	Period    string    `json:"period"` // daily, weekly, monthly
-	StartDate time.Time `json:"start_date"`
-	EndDate   time.Time `json:"end_date"`
+	Username  string    `dynamorm:"attr:username" json:"username"`
+	Period    string    `dynamorm:"attr:period" json:"period"` // daily, weekly, monthly
+	StartDate time.Time `dynamorm:"attr:startDate" json:"start_date"`
+	EndDate   time.Time `dynamorm:"attr:endDate" json:"end_date"`
 
-	TotalExports     int64 `json:"total_exports"`
-	CompletedExports int64 `json:"completed_exports"`
-	FailedExports    int64 `json:"failed_exports"`
+	TotalExports     int64 `dynamorm:"attr:totalExports" json:"total_exports"`
+	CompletedExports int64 `dynamorm:"attr:completedExports" json:"completed_exports"`
+	FailedExports    int64 `dynamorm:"attr:failedExports" json:"failed_exports"`
 
-	TotalLambdaCost     int64 `json:"total_lambda_cost"`
-	TotalS3Cost         int64 `json:"total_s3_cost"`
-	TotalDynamoDBCost   int64 `json:"total_dynamodb_cost"`
-	TotalCostMicroCents int64 `json:"total_cost_micro_cents"`
+	TotalLambdaCost     int64 `dynamorm:"attr:totalLambdaCost" json:"total_lambda_cost"`
+	TotalS3Cost         int64 `dynamorm:"attr:totalS3Cost" json:"total_s3_cost"`
+	TotalDynamoDBCost   int64 `dynamorm:"attr:totalDynamoDBCost" json:"total_dynamodb_cost"`
+	TotalCostMicroCents int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
 
-	TotalFileSize    int64 `json:"total_file_size"`
-	TotalRecordCount int64 `json:"total_record_count"`
-	TotalMediaFiles  int64 `json:"total_media_files"`
+	TotalFileSize    int64 `dynamorm:"attr:totalFileSize" json:"total_file_size"`
+	TotalRecordCount int64 `dynamorm:"attr:totalRecordCount" json:"total_record_count"`
+	TotalMediaFiles  int64 `dynamorm:"attr:totalMediaFiles" json:"total_media_files"`
 
-	AverageCostPerExport float64 `json:"average_cost_per_export"`
-	AverageExportSize    int64   `json:"average_export_size"`
+	AverageCostPerExport float64 `dynamorm:"attr:averageCostPerExport" json:"average_cost_per_export"`
+	AverageExportSize    int64   `dynamorm:"attr:averageExportSize" json:"average_export_size"`
 
-	TypeBreakdown map[string]*ExportTypeCostStats `json:"type_breakdown"`
+	TypeBreakdown map[string]*ExportTypeCostStats `dynamorm:"attr:typeBreakdown" json:"type_breakdown"`
 }
 
 // TableName returns the DynamoDB table backing ExportCostSummary.
@@ -166,13 +168,13 @@ func (ExportCostSummary) TableName() string {
 
 // ExportTypeCostStats represents cost statistics for a specific export type
 type ExportTypeCostStats struct {
-	Type                  string  `json:"type"`
-	Count                 int64   `json:"count"`
-	TotalCostMicroCents   int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars      float64 `json:"total_cost_dollars"`
-	AverageCostMicroCents int64   `json:"average_cost_micro_cents"`
-	AverageFileSize       int64   `json:"average_file_size"`
-	AverageRecordCount    int64   `json:"average_record_count"`
+	Type                  string  `dynamorm:"attr:type" json:"type"`
+	Count                 int64   `dynamorm:"attr:count" json:"count"`
+	TotalCostMicroCents   int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars      float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
+	AverageCostMicroCents int64   `dynamorm:"attr:averageCostMicroCents" json:"average_cost_micro_cents"`
+	AverageFileSize       int64   `dynamorm:"attr:averageFileSize" json:"average_file_size"`
+	AverageRecordCount    int64   `dynamorm:"attr:averageRecordCount" json:"average_record_count"`
 }
 
 // TableName returns the DynamoDB table backing ExportTypeCostStats.

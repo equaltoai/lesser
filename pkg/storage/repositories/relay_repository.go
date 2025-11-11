@@ -138,7 +138,7 @@ func (r *RelayRepository) GetActiveRelays(ctx context.Context) ([]*storage.Relay
 	var relayModels []models.Relay
 	err := r.GetDB().WithContext(ctx).Model(&models.Relay{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", "ACTIVE_RELAYS").
+		Where("gsi1PK", "=", "ACTIVE_RELAYS").
 		Limit(1000).
 		All(&relayModels)
 

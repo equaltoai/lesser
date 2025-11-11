@@ -10,178 +10,184 @@ import (
 
 // ScheduledJobCostRecord represents detailed cost tracking for scheduled/cron jobs
 type ScheduledJobCostRecord struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "SCHEDULED_JOB_COST#{jobName}#{schedule}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "RUN#{timestamp}#{id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "SCHEDULED_JOB_COST#{jobName}#{schedule}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "RUN#{timestamp}#{id}"
 
 	// GSI1 - Job status and performance queries
-	GSI1PK string `dynamorm:"index:job-status-index,pk" json:"gsi1_pk"` // Format: "SCHEDULED_JOB_STATUS#{status}"
-	GSI1SK string `dynamorm:"index:job-status-index,sk" json:"gsi1_sk"` // Format: "{timestamp}#{jobName}#{id}"
+	GSI1PK string `dynamorm:"index:job-status-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "SCHEDULED_JOB_STATUS#{status}"
+	GSI1SK string `dynamorm:"index:job-status-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{jobName}#{id}"
 
 	// GSI2 - Date range queries across all jobs
-	GSI2PK string `dynamorm:"index:job-date-index,pk" json:"gsi2_pk"` // Format: "SCHEDULED_JOB_DATE#{dateStr}"
-	GSI2SK string `dynamorm:"index:job-date-index,sk" json:"gsi2_sk"` // Format: "{timestamp}#{jobName}#{id}"
+	GSI2PK string `dynamorm:"index:job-date-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "SCHEDULED_JOB_DATE#{dateStr}"
+	GSI2SK string `dynamorm:"index:job-date-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{jobName}#{id}"
 
 	// Core job information
-	ID          string    `json:"id"`                     // Unique execution ID
-	JobName     string    `json:"job_name"`               // e.g., "cost-aggregation", "cleanup-expired-data"
-	Schedule    string    `json:"schedule"`               // e.g., "hourly", "daily", "weekly", "monthly"
-	CronPattern string    `json:"cron_pattern,omitempty"` // Actual cron expression if available
-	Timestamp   time.Time `json:"timestamp"`              // When the job ran
-	StartTime   time.Time `json:"start_time"`             // Job start time
-	EndTime     time.Time `json:"end_time"`               // Job end time
-	Duration    int64     `json:"duration_ms"`            // Duration in milliseconds
+	ID          string    `dynamorm:"attr:id" json:"id"`                              // Unique execution ID
+	JobName     string    `dynamorm:"attr:jobName" json:"job_name"`                   // e.g., "cost-aggregation", "cleanup-expired-data"
+	Schedule    string    `dynamorm:"attr:schedule" json:"schedule"`                  // e.g., "hourly", "daily", "weekly", "monthly"
+	CronPattern string    `dynamorm:"attr:cronPattern" json:"cron_pattern,omitempty"` // Actual cron expression if available
+	Timestamp   time.Time `dynamorm:"attr:timestamp" json:"timestamp"`                // When the job ran
+	StartTime   time.Time `dynamorm:"attr:startTime" json:"start_time"`               // Job start time
+	EndTime     time.Time `dynamorm:"attr:endTime" json:"end_time"`                   // Job end time
+	Duration    int64     `dynamorm:"attr:durationMs" json:"duration_ms"`             // Duration in milliseconds
 
 	// Job execution status
-	Status       string `json:"status"`                  // "success", "failed", "timeout", "cancelled"
-	Success      bool   `json:"success"`                 // Whether job completed successfully
-	ErrorMessage string `json:"error_message,omitempty"` // Error details if failed
-	RetryCount   int    `json:"retry_count"`             // Number of retries attempted
-	MaxRetries   int    `json:"max_retries"`             // Maximum retries configured
+	Status       string `dynamorm:"attr:status" json:"status"`                        // "success", "failed", "timeout", "cancelled"
+	Success      bool   `dynamorm:"attr:success" json:"success"`                      // Whether job completed successfully
+	ErrorMessage string `dynamorm:"attr:errorMessage" json:"error_message,omitempty"` // Error details if failed
+	RetryCount   int    `dynamorm:"attr:retryCount" json:"retry_count"`               // Number of retries attempted
+	MaxRetries   int    `dynamorm:"attr:maxRetries" json:"max_retries"`               // Maximum retries configured
 
 	// Resource usage tracking
-	LambdaInvocations  int64 `json:"lambda_invocations"`    // Number of Lambda invocations
-	LambdaDurationMs   int64 `json:"lambda_duration_ms"`    // Total Lambda execution time
-	LambdaMemoryUsedMB int   `json:"lambda_memory_used_mb"` // Peak memory usage
-	LambdaRequestCount int64 `json:"lambda_request_count"`  // Total Lambda requests
+	LambdaInvocations  int64 `dynamorm:"attr:lambdaInvocations" json:"lambda_invocations"`     // Number of Lambda invocations
+	LambdaDurationMs   int64 `dynamorm:"attr:lambdaDurationMs" json:"lambda_duration_ms"`      // Total Lambda execution time
+	LambdaMemoryUsedMB int   `dynamorm:"attr:lambdaMemoryUsedMB" json:"lambda_memory_used_mb"` // Peak memory usage
+	LambdaRequestCount int64 `dynamorm:"attr:lambdaRequestCount" json:"lambda_request_count"`  // Total Lambda requests
 
 	// DynamoDB operations performed by the job
-	DynamoDBReadOperations  int64   `json:"dynamodb_read_operations"`  // Read operations count
-	DynamoDBWriteOperations int64   `json:"dynamodb_write_operations"` // Write operations count
-	DynamoDBReadCapacity    float64 `json:"dynamodb_read_capacity"`    // Read capacity consumed
-	DynamoDBWriteCapacity   float64 `json:"dynamodb_write_capacity"`   // Write capacity consumed
+	DynamoDBReadOperations  int64   `dynamorm:"attr:dynamoDBReadOperations" json:"dynamodb_read_operations"`   // Read operations count
+	DynamoDBWriteOperations int64   `dynamorm:"attr:dynamoDBWriteOperations" json:"dynamodb_write_operations"` // Write operations count
+	DynamoDBReadCapacity    float64 `dynamorm:"attr:dynamoDBReadCapacity" json:"dynamodb_read_capacity"`       // Read capacity consumed
+	DynamoDBWriteCapacity   float64 `dynamorm:"attr:dynamoDBWriteCapacity" json:"dynamodb_write_capacity"`     // Write capacity consumed
 
 	// Other AWS service usage
-	SQSMessages         int64 `json:"sqs_messages"`          // SQS messages processed
-	S3Operations        int64 `json:"s3_operations"`         // S3 operations performed
-	CloudWatchLogs      int64 `json:"cloudwatch_logs"`       // Log entries written
-	DataTransferBytes   int64 `json:"data_transfer_bytes"`   // Data transfer volume
-	ExternalAPIRequests int64 `json:"external_api_requests"` // External API calls made
+	SQSMessages         int64 `dynamorm:"attr:sqsMessages" json:"sqs_messages"`                  // SQS messages processed
+	S3Operations        int64 `dynamorm:"attr:s3Operations" json:"s3_operations"`                // S3 operations performed
+	CloudWatchLogs      int64 `dynamorm:"attr:cloudWatchLogs" json:"cloudwatch_logs"`            // Log entries written
+	DataTransferBytes   int64 `dynamorm:"attr:dataTransferBytes" json:"data_transfer_bytes"`     // Data transfer volume
+	ExternalAPIRequests int64 `dynamorm:"attr:externalAPIRequests" json:"external_api_requests"` // External API calls made
 
 	// Cost breakdown (in microcents for precision)
-	LambdaCostMicroCents       int64 `json:"lambda_cost_micro_cents"`        // Lambda execution cost
-	DynamoDBCostMicroCents     int64 `json:"dynamodb_cost_micro_cents"`      // DynamoDB operations cost
-	SQSCostMicroCents          int64 `json:"sqs_cost_micro_cents"`           // SQS cost
-	S3CostMicroCents           int64 `json:"s3_cost_micro_cents"`            // S3 operations cost
-	CloudWatchCostMicroCents   int64 `json:"cloudwatch_cost_micro_cents"`    // CloudWatch logs cost
-	DataTransferCostMicroCents int64 `json:"data_transfer_cost_micro_cents"` // Data transfer cost
-	ExternalAPICostMicroCents  int64 `json:"external_api_cost_micro_cents"`  // External API costs
-	TotalCostMicroCents        int64 `json:"total_cost_micro_cents"`         // Total cost
+	LambdaCostMicroCents       int64 `dynamorm:"attr:lambdaCostMicroCents" json:"lambda_cost_micro_cents"`              // Lambda execution cost
+	DynamoDBCostMicroCents     int64 `dynamorm:"attr:dynamodbCostMicroCents" json:"dynamodb_cost_micro_cents"`          // DynamoDB operations cost
+	SQSCostMicroCents          int64 `dynamorm:"attr:sqsCostMicroCents" json:"sqs_cost_micro_cents"`                    // SQS cost
+	S3CostMicroCents           int64 `dynamorm:"attr:s3CostMicroCents" json:"s3_cost_micro_cents"`                      // S3 operations cost
+	CloudWatchCostMicroCents   int64 `dynamorm:"attr:cloudWatchCostMicroCents" json:"cloudwatch_cost_micro_cents"`      // CloudWatch logs cost
+	DataTransferCostMicroCents int64 `dynamorm:"attr:dataTransferCostMicroCents" json:"data_transfer_cost_micro_cents"` // Data transfer cost
+	ExternalAPICostMicroCents  int64 `dynamorm:"attr:externalAPICostMicroCents" json:"external_api_cost_micro_cents"`   // External API costs
+	TotalCostMicroCents        int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`                // Total cost
 
 	// Cost in dollars for display
-	TotalCostDollars float64 `json:"total_cost_dollars"`
+	TotalCostDollars float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
 
 	// Job-specific metrics and properties
-	ItemsProcessed     int64                  `json:"items_processed"`               // Number of items/records processed
-	ItemsSkipped       int64                  `json:"items_skipped"`                 // Items skipped due to conditions
-	ItemsErrored       int64                  `json:"items_errored"`                 // Items that failed processing
-	BatchSize          int                    `json:"batch_size"`                    // Batch size used
-	JobProperties      map[string]interface{} `json:"job_properties,omitempty"`      // Job-specific properties
-	PerformanceMetrics map[string]float64     `json:"performance_metrics,omitempty"` // Performance indicators
+	ItemsProcessed     int64                  `dynamorm:"attr:itemsProcessed" json:"items_processed"`                   // Number of items/records processed
+	ItemsSkipped       int64                  `dynamorm:"attr:itemsSkipped" json:"items_skipped"`                       // Items skipped due to conditions
+	ItemsErrored       int64                  `dynamorm:"attr:itemsErrored" json:"items_errored"`                       // Items that failed processing
+	BatchSize          int                    `dynamorm:"attr:batchSize" json:"batch_size"`                             // Batch size used
+	JobProperties      map[string]interface{} `dynamorm:"attr:jobProperties" json:"job_properties,omitempty"`           // Job-specific properties
+	PerformanceMetrics map[string]float64     `dynamorm:"attr:performanceMetrics" json:"performance_metrics,omitempty"` // Performance indicators
 
 	// Cascading costs (costs triggered by this job)
-	TriggeredJobs           []string `json:"triggered_jobs,omitempty"`   // Jobs triggered by this execution
-	CascadingCostMicroCents int64    `json:"cascading_cost_micro_cents"` // Cost of triggered operations
-	DownstreamOperations    int64    `json:"downstream_operations"`      // Operations triggered downstream
+	TriggeredJobs           []string `dynamorm:"attr:triggeredJobs" json:"triggered_jobs,omitempty"`             // Jobs triggered by this execution
+	CascadingCostMicroCents int64    `dynamorm:"attr:cascadingCostMicroCents" json:"cascading_cost_micro_cents"` // Cost of triggered operations
+	DownstreamOperations    int64    `dynamorm:"attr:downstreamOperations" json:"downstream_operations"`         // Operations triggered downstream
 
 	// Job context and metadata
-	Environment  string            `json:"environment"`    // "production", "staging", etc.
-	Region       string            `json:"region"`         // AWS region
-	FunctionName string            `json:"function_name"`  // Lambda function name
-	RequestID    string            `json:"request_id"`     // AWS request ID
-	Tags         map[string]string `json:"tags,omitempty"` // Custom tags
-	JobCategory  string            `json:"job_category"`   // "maintenance", "aggregation", "cleanup", etc.
-	Priority     string            `json:"priority"`       // "low", "normal", "high", "critical"
+	Environment  string            `dynamorm:"attr:environment" json:"environment"`    // "production", "staging", etc.
+	Region       string            `dynamorm:"attr:region" json:"region"`              // AWS region
+	FunctionName string            `dynamorm:"attr:functionName" json:"function_name"` // Lambda function name
+	RequestID    string            `dynamorm:"attr:requestID" json:"request_id"`       // AWS request ID
+	Tags         map[string]string `dynamorm:"attr:tags" json:"tags,omitempty"`        // Custom tags
+	JobCategory  string            `dynamorm:"attr:jobCategory" json:"job_category"`   // "maintenance", "aggregation", "cleanup", etc.
+	Priority     string            `dynamorm:"attr:priority" json:"priority"`          // "low", "normal", "high", "critical"
 
 	// Scheduling context
-	ScheduledTime     time.Time `json:"scheduled_time"`      // When job was scheduled to run
-	ActualStartDelay  int64     `json:"actual_start_delay"`  // Delay between scheduled and actual start (ms)
-	NextScheduledTime time.Time `json:"next_scheduled_time"` // Next scheduled execution
+	ScheduledTime     time.Time `dynamorm:"attr:scheduledTime" json:"scheduled_time"`          // When job was scheduled to run
+	ActualStartDelay  int64     `dynamorm:"attr:actualStartDelay" json:"actual_start_delay"`   // Delay between scheduled and actual start (ms)
+	NextScheduledTime time.Time `dynamorm:"attr:nextScheduledTime" json:"next_scheduled_time"` // Next scheduled execution
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (90 days for job execution records)
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
 }
 
 // ScheduledJobCostAggregation represents pre-computed aggregations for scheduled job costs
 type ScheduledJobCostAggregation struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key
-	PK string `dynamorm:"pk" json:"pk"` // Format: "SCHEDULED_JOB_AGG#{period}#{jobName}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "WINDOW#{windowStart}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "SCHEDULED_JOB_AGG#{period}#{jobName}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "WINDOW#{windowStart}"
 
 	// Aggregation details
-	JobName     string    `json:"job_name"`     // Specific job or "all" for all jobs
-	Period      string    `json:"period"`       // "hour", "day", "week", "month"
-	Schedule    string    `json:"schedule"`     // Job schedule pattern
-	WindowStart time.Time `json:"window_start"` // Start of aggregation window
-	WindowEnd   time.Time `json:"window_end"`   // End of aggregation window
+	JobName     string    `dynamorm:"attr:jobName" json:"job_name"`         // Specific job or "all" for all jobs
+	Period      string    `dynamorm:"attr:period" json:"period"`            // "hour", "day", "week", "month"
+	Schedule    string    `dynamorm:"attr:schedule" json:"schedule"`        // Job schedule pattern
+	WindowStart time.Time `dynamorm:"attr:windowStart" json:"window_start"` // Start of aggregation window
+	WindowEnd   time.Time `dynamorm:"attr:windowEnd" json:"window_end"`     // End of aggregation window
 
 	// Execution statistics
-	TotalExecutions      int64   `json:"total_executions"`       // Total job executions
-	SuccessfulExecutions int64   `json:"successful_executions"`  // Successful executions
-	FailedExecutions     int64   `json:"failed_executions"`      // Failed executions
-	TimeoutExecutions    int64   `json:"timeout_executions"`     // Timed out executions
-	CancelledExecutions  int64   `json:"cancelled_executions"`   // Cancelled executions
-	SuccessRate          float64 `json:"success_rate"`           // Success rate percentage
-	AverageExecutionTime float64 `json:"average_execution_time"` // Average execution time (ms)
-	MedianExecutionTime  float64 `json:"median_execution_time"`  // Median execution time (ms)
-	P95ExecutionTime     float64 `json:"p95_execution_time"`     // 95th percentile execution time (ms)
+	TotalExecutions      int64   `dynamorm:"attr:totalExecutions" json:"total_executions"`            // Total job executions
+	SuccessfulExecutions int64   `dynamorm:"attr:successfulExecutions" json:"successful_executions"`  // Successful executions
+	FailedExecutions     int64   `dynamorm:"attr:failedExecutions" json:"failed_executions"`          // Failed executions
+	TimeoutExecutions    int64   `dynamorm:"attr:timeoutExecutions" json:"timeout_executions"`        // Timed out executions
+	CancelledExecutions  int64   `dynamorm:"attr:cancelledExecutions" json:"cancelled_executions"`    // Cancelled executions
+	SuccessRate          float64 `dynamorm:"attr:successRate" json:"success_rate"`                    // Success rate percentage
+	AverageExecutionTime float64 `dynamorm:"attr:averageExecutionTime" json:"average_execution_time"` // Average execution time (ms)
+	MedianExecutionTime  float64 `dynamorm:"attr:medianExecutionTime" json:"median_execution_time"`   // Median execution time (ms)
+	P95ExecutionTime     float64 `dynamorm:"attr:p95ExecutionTime" json:"p95_execution_time"`         // 95th percentile execution time (ms)
 
 	// Resource aggregations
-	TotalLambdaInvocations    int64   `json:"total_lambda_invocations"`
-	TotalLambdaDurationMs     int64   `json:"total_lambda_duration_ms"`
-	AverageLambdaMemoryUsedMB float64 `json:"average_lambda_memory_used_mb"`
-	TotalDynamoDBOperations   int64   `json:"total_dynamodb_operations"`
-	TotalDynamoDBCapacity     float64 `json:"total_dynamodb_capacity"`
-	TotalItemsProcessed       int64   `json:"total_items_processed"`
-	TotalItemsErrored         int64   `json:"total_items_errored"`
+	TotalLambdaInvocations    int64   `dynamorm:"attr:totalLambdaInvocations" json:"total_lambda_invocations"`
+	TotalLambdaDurationMs     int64   `dynamorm:"attr:totalLambdaDurationMs" json:"total_lambda_duration_ms"`
+	AverageLambdaMemoryUsedMB float64 `dynamorm:"attr:averageLambdaMemoryUsedMB" json:"average_lambda_memory_used_mb"`
+	TotalDynamoDBOperations   int64   `dynamorm:"attr:totalDynamoDBOperations" json:"total_dynamodb_operations"`
+	TotalDynamoDBCapacity     float64 `dynamorm:"attr:totalDynamoDBCapacity" json:"total_dynamodb_capacity"`
+	TotalItemsProcessed       int64   `dynamorm:"attr:totalItemsProcessed" json:"total_items_processed"`
+	TotalItemsErrored         int64   `dynamorm:"attr:totalItemsErrored" json:"total_items_errored"`
 
 	// Cost aggregations
-	TotalLambdaCostMicroCents       int64   `json:"total_lambda_cost_micro_cents"`
-	TotalDynamoDBCostMicroCents     int64   `json:"total_dynamodb_cost_micro_cents"`
-	TotalSQSCostMicroCents          int64   `json:"total_sqs_cost_micro_cents"`
-	TotalS3CostMicroCents           int64   `json:"total_s3_cost_micro_cents"`
-	TotalCloudWatchCostMicroCents   int64   `json:"total_cloudwatch_cost_micro_cents"`
-	TotalDataTransferCostMicroCents int64   `json:"total_data_transfer_cost_micro_cents"`
-	TotalExternalAPICostMicroCents  int64   `json:"total_external_api_cost_micro_cents"`
-	TotalCascadingCostMicroCents    int64   `json:"total_cascading_cost_micro_cents"`
-	TotalCostMicroCents             int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars                float64 `json:"total_cost_dollars"`
-	AverageCostPerExecution         float64 `json:"average_cost_per_execution"`
+	TotalLambdaCostMicroCents       int64   `dynamorm:"attr:totalLambdaCostMicroCents" json:"total_lambda_cost_micro_cents"`
+	TotalDynamoDBCostMicroCents     int64   `dynamorm:"attr:totalDynamoDBCostMicroCents" json:"total_dynamodb_cost_micro_cents"`
+	TotalSQSCostMicroCents          int64   `dynamorm:"attr:totalSQSCostMicroCents" json:"total_sqs_cost_micro_cents"`
+	TotalS3CostMicroCents           int64   `dynamorm:"attr:totalS3CostMicroCents" json:"total_s3_cost_micro_cents"`
+	TotalCloudWatchCostMicroCents   int64   `dynamorm:"attr:totalCloudWatchCostMicroCents" json:"total_cloudwatch_cost_micro_cents"`
+	TotalDataTransferCostMicroCents int64   `dynamorm:"attr:totalDataTransferCostMicroCents" json:"total_data_transfer_cost_micro_cents"`
+	TotalExternalAPICostMicroCents  int64   `dynamorm:"attr:totalExternalAPICostMicroCents" json:"total_external_api_cost_micro_cents"`
+	TotalCascadingCostMicroCents    int64   `dynamorm:"attr:totalCascadingCostMicroCents" json:"total_cascading_cost_micro_cents"`
+	TotalCostMicroCents             int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars                float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
+	AverageCostPerExecution         float64 `dynamorm:"attr:averageCostPerExecution" json:"average_cost_per_execution"`
 
 	// Cost efficiency metrics
-	CostPerItemProcessed       float64 `json:"cost_per_item_processed"`       // Cost efficiency
-	CostPerSuccessfulExecution float64 `json:"cost_per_successful_execution"` // Cost of successful runs
-	CostEfficiencyTrend        float64 `json:"cost_efficiency_trend"`         // Trend in cost efficiency
+	CostPerItemProcessed       float64 `dynamorm:"attr:costPerItemProcessed" json:"cost_per_item_processed"`             // Cost efficiency
+	CostPerSuccessfulExecution float64 `dynamorm:"attr:costPerSuccessfulExecution" json:"cost_per_successful_execution"` // Cost of successful runs
+	CostEfficiencyTrend        float64 `dynamorm:"attr:costEfficiencyTrend" json:"cost_efficiency_trend"`                // Trend in cost efficiency
 
 	// Breakdown by job properties
-	JobCategoryBreakdown map[string]*ScheduledJobCategoryStats    `json:"job_category_breakdown,omitempty"`
-	EnvironmentBreakdown map[string]*ScheduledJobEnvironmentStats `json:"environment_breakdown,omitempty"`
-	ScheduleBreakdown    map[string]*ScheduledJobScheduleStats    `json:"schedule_breakdown,omitempty"`
+	JobCategoryBreakdown map[string]*ScheduledJobCategoryStats    `dynamorm:"attr:jobCategoryBreakdown" json:"job_category_breakdown,omitempty"`
+	EnvironmentBreakdown map[string]*ScheduledJobEnvironmentStats `dynamorm:"attr:environmentBreakdown" json:"environment_breakdown,omitempty"`
+	ScheduleBreakdown    map[string]*ScheduledJobScheduleStats    `dynamorm:"attr:scheduleBreakdown" json:"schedule_breakdown,omitempty"`
 
 	// Performance trends
-	ExecutionTimePercentiles map[string]float64 `json:"execution_time_percentiles,omitempty"` // p50, p90, p95, p99
-	CostPercentiles          map[string]float64 `json:"cost_percentiles,omitempty"`           // Cost distribution
+	ExecutionTimePercentiles map[string]float64 `dynamorm:"attr:executionTimePercentiles" json:"execution_time_percentiles,omitempty"` // p50, p90, p95, p99
+	CostPercentiles          map[string]float64 `dynamorm:"attr:costPercentiles" json:"cost_percentiles,omitempty"`                    // Cost distribution
 
 	// Timestamps
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL (longer for aggregated data - 365 days)
-	ExpiresAt int64 `dynamorm:"ttl" json:"expires_at"`
+	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"`
 }
 
 // ScheduledJobCategoryStats represents cost statistics for a job category
 type ScheduledJobCategoryStats struct {
-	Category                string  `json:"category"`
-	ExecutionCount          int64   `json:"execution_count"`
-	TotalCostMicroCents     int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars        float64 `json:"total_cost_dollars"`
-	AverageCostPerExecution float64 `json:"average_cost_per_execution"`
-	SuccessRate             float64 `json:"success_rate"`
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	Category                string  `dynamorm:"attr:category" json:"category"`
+	ExecutionCount          int64   `dynamorm:"attr:executionCount" json:"execution_count"`
+	TotalCostMicroCents     int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars        float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
+	AverageCostPerExecution float64 `dynamorm:"attr:averageCostPerExecution" json:"average_cost_per_execution"`
+	SuccessRate             float64 `dynamorm:"attr:successRate" json:"success_rate"`
 }
 
 // TableName returns the DynamoDB table backing ScheduledJobCategoryStats.
@@ -191,11 +197,13 @@ func (ScheduledJobCategoryStats) TableName() string {
 
 // ScheduledJobEnvironmentStats represents cost statistics for an environment
 type ScheduledJobEnvironmentStats struct {
-	Environment             string  `json:"environment"`
-	ExecutionCount          int64   `json:"execution_count"`
-	TotalCostMicroCents     int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars        float64 `json:"total_cost_dollars"`
-	AverageCostPerExecution float64 `json:"average_cost_per_execution"`
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	Environment             string  `dynamorm:"attr:environment" json:"environment"`
+	ExecutionCount          int64   `dynamorm:"attr:executionCount" json:"execution_count"`
+	TotalCostMicroCents     int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars        float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
+	AverageCostPerExecution float64 `dynamorm:"attr:averageCostPerExecution" json:"average_cost_per_execution"`
 }
 
 // TableName returns the DynamoDB table backing ScheduledJobEnvironmentStats.
@@ -205,12 +213,14 @@ func (ScheduledJobEnvironmentStats) TableName() string {
 
 // ScheduledJobScheduleStats represents cost statistics for a schedule pattern
 type ScheduledJobScheduleStats struct {
-	Schedule                string  `json:"schedule"`
-	ExecutionCount          int64   `json:"execution_count"`
-	TotalCostMicroCents     int64   `json:"total_cost_micro_cents"`
-	TotalCostDollars        float64 `json:"total_cost_dollars"`
-	AverageCostPerExecution float64 `json:"average_cost_per_execution"`
-	AverageExecutionTime    float64 `json:"average_execution_time"`
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	Schedule                string  `dynamorm:"attr:schedule" json:"schedule"`
+	ExecutionCount          int64   `dynamorm:"attr:executionCount" json:"execution_count"`
+	TotalCostMicroCents     int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars        float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
+	AverageCostPerExecution float64 `dynamorm:"attr:averageCostPerExecution" json:"average_cost_per_execution"`
+	AverageExecutionTime    float64 `dynamorm:"attr:averageExecutionTime" json:"average_execution_time"`
 }
 
 // TableName returns the DynamoDB table backing ScheduledJobScheduleStats.

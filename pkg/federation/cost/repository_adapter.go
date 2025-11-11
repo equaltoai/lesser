@@ -119,7 +119,7 @@ func (r *repositoryAdapter) GetCostMetrics(ctx context.Context, period string) (
 	var costs []models.FederationCostTracking
 	err := r.db.WithContext(ctx).Model(&models.FederationCostTracking{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", "PERIOD#"+period).
+		Where("gsi1PK", "=", "PERIOD#"+period).
 		All(&costs)
 
 	if err != nil {
@@ -205,8 +205,8 @@ func (r *repositoryAdapter) ListUnhealthyInstances(ctx context.Context) ([]*Inst
 	var healthModels []models.FederationInstanceHealthTracking
 	err := r.db.WithContext(ctx).Model(&models.FederationInstanceHealthTracking{}).
 		Index("gsi2").
-		Where("GSI2PK", "=", "UNHEALTHY").
-		OrderBy("GSI2SK", "ASC"). // Ascending order - lowest health scores first
+		Where("gsi2PK", "=", "UNHEALTHY").
+		OrderBy("gsi2SK", "ASC"). // Ascending order - lowest health scores first
 		Limit(50).
 		All(&healthModels)
 

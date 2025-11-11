@@ -791,6 +791,7 @@ func (r *Registry) Notes() *notes.Service {
 		// Initialize the Notes service with repository interfaces
 		statusRepo := r.storage.Status()
 		accountRepo := r.storage.Account()
+		bookmarkRepo := r.storage.Bookmark()
 		likeRepo := r.storage.Like()
 		socialRepo := r.storage.Social()
 		conversationRepo := r.storage.Conversation()
@@ -818,6 +819,7 @@ func (r *Registry) Notes() *notes.Service {
 			r.notesService = notes.NewService(
 				statusRepo,
 				accountRepo,
+				bookmarkRepo,
 				r.storage.Relationship(), // Add relationship repository
 				r.storage.Media(),
 				likeRepo,

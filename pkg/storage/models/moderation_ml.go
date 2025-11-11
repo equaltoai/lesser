@@ -7,39 +7,41 @@ import (
 
 // ModerationSample represents a labeled training sample for ML moderation
 type ModerationSample struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - Samples by object
-	PK string `dynamorm:"pk" json:"pk"` // Format: "MLSAMPLE#{object_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "VERSION#{version}#{sample_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "MLSAMPLE#{object_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "VERSION#{version}#{sample_id}"
 
 	// GSI1 - Reviewer queries
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "REVIEWER#{reviewer_id}"
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "REVIEWER#{reviewer_id}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// GSI2 - Label/Severity queries
-	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk,omitempty"` // Format: "LABEL#{label}"
-	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "LABEL#{label}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
 
 	// GSI3 - Sample ID lookups
-	GSI3PK string `dynamorm:"index:gsi3,pk" json:"gsi3_pk,omitempty"` // Format: "SAMPLEID#{sample_id}"
-	GSI3SK string `dynamorm:"index:gsi3,sk" json:"gsi3_sk,omitempty"` // Format: "SAMPLEID#{sample_id}"
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk,omitempty"` // Format: "SAMPLEID#{sample_id}"
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk,omitempty"` // Format: "SAMPLEID#{sample_id}"
 
 	// Type marker
-	Type string `json:"type"` // "ML_SAMPLE"
+	Type string `dynamorm:"attr:type" json:"type"` // "ML_SAMPLE"
 
 	// Sample fields
-	ID         string                 `json:"id"`                 // Unique sample ID
-	ObjectID   string                 `json:"object_id"`          // Object being labeled
-	ObjectType string                 `json:"object_type"`        // status, account, media
-	Label      string                 `json:"label"`              // The moderation label (spam, hate_speech, etc.)
-	ReviewerID string                 `json:"reviewer_id"`        // Who labeled this sample
-	Timestamp  time.Time              `json:"timestamp"`          // When sample was created
-	Confidence float64                `json:"confidence"`         // Reviewer confidence (0.0-1.0)
-	Metadata   map[string]interface{} `json:"metadata,omitempty"` // Additional context
+	ID         string                 `dynamorm:"attr:id" json:"id"`                       // Unique sample ID
+	ObjectID   string                 `dynamorm:"attr:objectID" json:"object_id"`          // Object being labeled
+	ObjectType string                 `dynamorm:"attr:objectType" json:"object_type"`      // status, account, media
+	Label      string                 `dynamorm:"attr:label" json:"label"`                 // The moderation label (spam, hate_speech, etc.)
+	ReviewerID string                 `dynamorm:"attr:reviewerID" json:"reviewer_id"`      // Who labeled this sample
+	Timestamp  time.Time              `dynamorm:"attr:timestamp" json:"timestamp"`         // When sample was created
+	Confidence float64                `dynamorm:"attr:confidence" json:"confidence"`       // Reviewer confidence (0.0-1.0)
+	Metadata   map[string]interface{} `dynamorm:"attr:metadata" json:"metadata,omitempty"` // Additional context
 
 	// DynamoDB TTL (samples can expire after use)
-	TTL       int64     `json:"ttl,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table name
@@ -81,38 +83,40 @@ func (m *ModerationSample) UpdateKeys() error {
 
 // ModerationModelVersion represents metadata about a trained ML model version
 type ModerationModelVersion struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - Model versions
-	PK string `dynamorm:"pk" json:"pk"` // Format: "MLMODEL#bedrock"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "VERSION#{version_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "MLMODEL#bedrock"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "VERSION#{version_id}"
 
 	// GSI1 - Active model queries
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "MLMODEL#ACTIVE"
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "ACCURACY#{accuracy}#VERSION#{version_id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "MLMODEL#ACTIVE"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "ACCURACY#{accuracy}#VERSION#{version_id}"
 
 	// GSI2 - Training job queries
-	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk,omitempty"` // Format: "TRAININGJOB#{job_id}"
-	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // Format: "TRAININGJOB#{job_id}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TRAININGJOB#{job_id}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "TRAININGJOB#{job_id}"
 
 	// Type marker
-	Type string `json:"type"` // "ML_MODEL_VERSION"
+	Type string `dynamorm:"attr:type" json:"type"` // "ML_MODEL_VERSION"
 
 	// Model version fields
-	VersionID      string                 `json:"version_id"`         // Model version identifier
-	DatasetHash    string                 `json:"dataset_hash"`       // Hash of training dataset
-	Accuracy       float64                `json:"accuracy"`           // Model accuracy
-	Precision      float64                `json:"precision"`          // Model precision
-	Recall         float64                `json:"recall"`             // Model recall
-	F1Score        float64                `json:"f1_score"`           // F1 score
-	SamplesUsed    int                    `json:"samples_used"`       // Number of training samples
-	TrainingJobID  string                 `json:"training_job_id"`    // Bedrock training job ID
-	TrainingStatus string                 `json:"training_status"`    // pending, in_progress, completed, failed
-	TrainingTime   int                    `json:"training_time"`      // Training duration in seconds
-	IsActive       bool                   `json:"is_active"`          // Whether this is the active model
-	ModelARN       string                 `json:"model_arn"`          // Bedrock model ARN
-	Metadata       map[string]interface{} `json:"metadata,omitempty"` // Training config, hyperparams, etc.
+	VersionID      string                 `dynamorm:"attr:versionID" json:"version_id"`           // Model version identifier
+	DatasetHash    string                 `dynamorm:"attr:datasetHash" json:"dataset_hash"`       // Hash of training dataset
+	Accuracy       float64                `dynamorm:"attr:accuracy" json:"accuracy"`              // Model accuracy
+	Precision      float64                `dynamorm:"attr:precision" json:"precision"`            // Model precision
+	Recall         float64                `dynamorm:"attr:recall" json:"recall"`                  // Model recall
+	F1Score        float64                `dynamorm:"attr:f1Score" json:"f1_score"`               // F1 score
+	SamplesUsed    int                    `dynamorm:"attr:samplesUsed" json:"samples_used"`       // Number of training samples
+	TrainingJobID  string                 `dynamorm:"attr:trainingJobID" json:"training_job_id"`  // Bedrock training job ID
+	TrainingStatus string                 `dynamorm:"attr:trainingStatus" json:"training_status"` // pending, in_progress, completed, failed
+	TrainingTime   int                    `dynamorm:"attr:trainingTime" json:"training_time"`     // Training duration in seconds
+	IsActive       bool                   `dynamorm:"attr:isActive" json:"is_active"`             // Whether this is the active model
+	ModelARN       string                 `dynamorm:"attr:modelARN" json:"model_arn"`             // Bedrock model ARN
+	Metadata       map[string]interface{} `dynamorm:"attr:metadata" json:"metadata,omitempty"`    // Training config, hyperparams, etc.
 
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table name
@@ -157,33 +161,35 @@ func (m *ModerationModelVersion) UpdateKeys() error {
 
 // ModerationEffectivenessMetric represents effectiveness metrics for a moderation pattern or model
 type ModerationEffectivenessMetric struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - Metrics by pattern/model
-	PK string `dynamorm:"pk" json:"pk"` // Format: "MLMETRICS#{pattern_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "PERIOD#{period}#{start_time}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "MLMETRICS#{pattern_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "PERIOD#{period}#{start_time}"
 
 	// GSI1 - Timeframe queries
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "METRICS#{period}"
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "F1SCORE#{f1}#{pattern_id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "METRICS#{period}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "F1SCORE#{f1}#{pattern_id}"
 
 	// Type marker
-	Type string `json:"type"` // "ML_METRICS"
+	Type string `dynamorm:"attr:type" json:"type"` // "ML_METRICS"
 
 	// Metric fields
-	PatternID      string    `json:"pattern_id"`      // Pattern or model ID
-	Period         string    `json:"period"`          // hourly, daily, weekly, monthly
-	StartTime      time.Time `json:"start_time"`      // Start of measurement period
-	EndTime        time.Time `json:"end_time"`        // End of measurement period
-	TruePositives  int       `json:"true_positives"`  // Correctly flagged content
-	FalsePositives int       `json:"false_positives"` // Incorrectly flagged content
-	TrueNegatives  int       `json:"true_negatives"`  // Correctly passed content
-	FalseNegatives int       `json:"false_negatives"` // Missed problematic content
-	Precision      float64   `json:"precision"`       // TP / (TP + FP)
-	Recall         float64   `json:"recall"`          // TP / (TP + FN)
-	F1Score        float64   `json:"f1_score"`        // 2 * (precision * recall) / (precision + recall)
-	TotalReviewed  int       `json:"total_reviewed"`  // Total items reviewed
+	PatternID      string    `dynamorm:"attr:patternID" json:"pattern_id"`           // Pattern or model ID
+	Period         string    `dynamorm:"attr:period" json:"period"`                  // hourly, daily, weekly, monthly
+	StartTime      time.Time `dynamorm:"attr:startTime" json:"start_time"`           // Start of measurement period
+	EndTime        time.Time `dynamorm:"attr:endTime" json:"end_time"`               // End of measurement period
+	TruePositives  int       `dynamorm:"attr:truePositives" json:"true_positives"`   // Correctly flagged content
+	FalsePositives int       `dynamorm:"attr:falsePositives" json:"false_positives"` // Incorrectly flagged content
+	TrueNegatives  int       `dynamorm:"attr:trueNegatives" json:"true_negatives"`   // Correctly passed content
+	FalseNegatives int       `dynamorm:"attr:falseNegatives" json:"false_negatives"` // Missed problematic content
+	Precision      float64   `dynamorm:"attr:precision" json:"precision"`            // TP / (TP + FP)
+	Recall         float64   `dynamorm:"attr:recall" json:"recall"`                  // TP / (TP + FN)
+	F1Score        float64   `dynamorm:"attr:f1Score" json:"f1_score"`               // 2 * (precision * recall) / (precision + recall)
+	TotalReviewed  int       `dynamorm:"attr:totalReviewed" json:"total_reviewed"`   // Total items reviewed
 
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table name
@@ -243,41 +249,43 @@ func (m *ModerationEffectivenessMetric) CalculateMetrics() {
 
 // ModelTrainingJob tracks asynchronous ML model training jobs
 type ModelTrainingJob struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - Training jobs
-	PK string `dynamorm:"pk" json:"pk"` // Format: "MLJOB#{job_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "JOB"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "MLJOB#{job_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "JOB"
 
 	// GSI1 - Status queries
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "MLJOB#{status}"
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "MLJOB#{status}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// GSI2 - Tenant queries
-	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk,omitempty"` // Format: "TENANT#{tenant_id}"
-	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TENANT#{tenant_id}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// Type marker
-	Type string `json:"type"` // "ML_TRAINING_JOB"
+	Type string `dynamorm:"attr:type" json:"type"` // "ML_TRAINING_JOB"
 
 	// Job fields
-	JobID          string                 `json:"job_id"`             // Bedrock job ARN/ID
-	JobName        string                 `json:"job_name"`           // Human-readable job name
-	Status         string                 `json:"status"`             // SUBMITTED, IN_PROGRESS, COMPLETED, FAILED, STOPPED
-	TenantID       string                 `json:"tenant_id"`          // Tenant that initiated training
-	InitiatedBy    string                 `json:"initiated_by"`       // User who started the training
-	DatasetS3Key   string                 `json:"dataset_s3_key"`     // S3 key of training dataset
-	DatasetSamples int                    `json:"dataset_samples"`    // Number of samples in dataset
-	BaseModelID    string                 `json:"base_model_id"`      // Base Bedrock model
-	ModelARN       string                 `json:"model_arn"`          // Output model ARN (when completed)
-	ErrorMessage   string                 `json:"error_message"`      // Error details (when failed)
-	StartedAt      time.Time              `json:"started_at"`         // When job was submitted
-	CompletedAt    time.Time              `json:"completed_at"`       // When job finished
-	Metrics        TrainingMetrics        `json:"metrics"`            // Training metrics (when completed)
-	Metadata       map[string]interface{} `json:"metadata,omitempty"` // Additional context
+	JobID          string                 `dynamorm:"attr:jobID" json:"job_id"`                   // Bedrock job ARN/ID
+	JobName        string                 `dynamorm:"attr:jobName" json:"job_name"`               // Human-readable job name
+	Status         string                 `dynamorm:"attr:status" json:"status"`                  // SUBMITTED, IN_PROGRESS, COMPLETED, FAILED, STOPPED
+	TenantID       string                 `dynamorm:"attr:tenantID" json:"tenant_id"`             // Tenant that initiated training
+	InitiatedBy    string                 `dynamorm:"attr:initiatedBy" json:"initiated_by"`       // User who started the training
+	DatasetS3Key   string                 `dynamorm:"attr:datasetS3Key" json:"dataset_s3_key"`    // S3 key of training dataset
+	DatasetSamples int                    `dynamorm:"attr:datasetSamples" json:"dataset_samples"` // Number of samples in dataset
+	BaseModelID    string                 `dynamorm:"attr:baseModelID" json:"base_model_id"`      // Base Bedrock model
+	ModelARN       string                 `dynamorm:"attr:modelARN" json:"model_arn"`             // Output model ARN (when completed)
+	ErrorMessage   string                 `dynamorm:"attr:errorMessage" json:"error_message"`     // Error details (when failed)
+	StartedAt      time.Time              `dynamorm:"attr:startedAt" json:"started_at"`           // When job was submitted
+	CompletedAt    time.Time              `dynamorm:"attr:completedAt" json:"completed_at"`       // When job finished
+	Metrics        TrainingMetrics        `dynamorm:"attr:metrics" json:"metrics"`                // Training metrics (when completed)
+	Metadata       map[string]interface{} `dynamorm:"attr:metadata" json:"metadata,omitempty"`    // Additional context
 
 	// DynamoDB TTL (jobs can expire after 90 days)
-	TTL       int64     `json:"ttl,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // TrainingMetrics holds training job metrics
@@ -331,29 +339,31 @@ func (m *ModelTrainingJob) UpdateKeys() error {
 
 // MLPollRequest tracks pending status checks for training jobs
 type MLPollRequest struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - Poll requests
-	PK string `dynamorm:"pk" json:"pk"` // Format: "MLPOLL#{job_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "REQUEST#{timestamp}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "MLPOLL#{job_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "REQUEST#{timestamp}"
 
 	// GSI1 - Status queries (for finding pending polls)
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "MLPOLL#PENDING"
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "MLPOLL#PENDING"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// Type marker
-	Type string `json:"type"` // "ML_POLL_REQUEST"
+	Type string `dynamorm:"attr:type" json:"type"` // "ML_POLL_REQUEST"
 
 	// Poll fields
-	JobID         string    `json:"job_id"`          // Bedrock job ARN
-	JobName       string    `json:"job_name"`        // Human-readable job name
-	Attempt       int       `json:"attempt"`         // Poll attempt number
-	MaxAttempts   int       `json:"max_attempts"`    // Maximum poll attempts
-	NextPollAfter time.Time `json:"next_poll_after"` // When to poll next
-	Status        string    `json:"status"`          // PENDING, PROCESSING, COMPLETED, FAILED
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	JobID         string    `dynamorm:"attr:jobID" json:"job_id"`                  // Bedrock job ARN
+	JobName       string    `dynamorm:"attr:jobName" json:"job_name"`              // Human-readable job name
+	Attempt       int       `dynamorm:"attr:attempt" json:"attempt"`               // Poll attempt number
+	MaxAttempts   int       `dynamorm:"attr:maxAttempts" json:"max_attempts"`      // Maximum poll attempts
+	NextPollAfter time.Time `dynamorm:"attr:nextPollAfter" json:"next_poll_after"` // When to poll next
+	Status        string    `dynamorm:"attr:status" json:"status"`                 // PENDING, PROCESSING, COMPLETED, FAILED
+	CreatedAt     time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt     time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// DynamoDB TTL (poll requests expire after completion or timeout)
-	TTL int64 `json:"ttl,omitempty"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -392,39 +402,41 @@ func (m *MLPollRequest) UpdateKeys() error {
 
 // MLPrediction tracks ML model inference predictions for effectiveness metrics
 type MLPrediction struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key - Predictions by object
-	PK string `dynamorm:"pk" json:"pk"` // Format: "MLPRED#{object_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "TIME#{RFC3339}#{prediction_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "MLPRED#{object_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}#{prediction_id}"
 
 	// GSI1 - Model version queries
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk,omitempty"` // Format: "MODEL#{model_version}"
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "MODEL#{model_version}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// GSI2 - Human label queries (for validation)
-	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk,omitempty"` // Format: "REVIEW#{reviewed}"
-	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "REVIEW#{reviewed}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// Type marker
-	Type string `json:"type"` // "ML_PREDICTION"
+	Type string `dynamorm:"attr:type" json:"type"` // "ML_PREDICTION"
 
 	// Prediction fields
-	PredictionID   string                 `json:"prediction_id"`
-	ObjectID       string                 `json:"object_id"`
-	ObjectType     string                 `json:"object_type"`
-	ModelVersion   string                 `json:"model_version"`
-	PredictedLabel string                 `json:"predicted_label"`
-	Confidence     float64                `json:"confidence"`
-	HumanLabel     string                 `json:"human_label"` // Set when human reviews
-	Reviewed       bool                   `json:"reviewed"`    // Whether human has reviewed
-	ReviewedBy     string                 `json:"reviewed_by"` // Who reviewed
-	ReviewedAt     time.Time              `json:"reviewed_at"` // When reviewed
-	Timestamp      time.Time              `json:"timestamp"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+	PredictionID   string                 `dynamorm:"attr:predictionID" json:"prediction_id"`
+	ObjectID       string                 `dynamorm:"attr:objectID" json:"object_id"`
+	ObjectType     string                 `dynamorm:"attr:objectType" json:"object_type"`
+	ModelVersion   string                 `dynamorm:"attr:modelVersion" json:"model_version"`
+	PredictedLabel string                 `dynamorm:"attr:predictedLabel" json:"predicted_label"`
+	Confidence     float64                `dynamorm:"attr:confidence" json:"confidence"`
+	HumanLabel     string                 `dynamorm:"attr:humanLabel" json:"human_label"` // Set when human reviews
+	Reviewed       bool                   `dynamorm:"attr:reviewed" json:"reviewed"`      // Whether human has reviewed
+	ReviewedBy     string                 `dynamorm:"attr:reviewedBy" json:"reviewed_by"` // Who reviewed
+	ReviewedAt     time.Time              `dynamorm:"attr:reviewedAt" json:"reviewed_at"` // When reviewed
+	Timestamp      time.Time              `dynamorm:"attr:timestamp" json:"timestamp"`
+	Metadata       map[string]interface{} `dynamorm:"attr:metadata" json:"metadata,omitempty"`
 
 	// DynamoDB TTL (predictions can expire after 90 days)
-	TTL       int64     `json:"ttl,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table name

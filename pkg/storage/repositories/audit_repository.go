@@ -149,13 +149,13 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 
 	query := r.db.WithContext(ctx).Model(&models.AuthAuditLog{}).
 		Index("GSI4").
-		Where("GSI4PK", "=", fmt.Sprintf("SEVERITY#%s", severity))
+		Where("gsi4PK", "=", fmt.Sprintf("SEVERITY#%s", severity))
 
 	// Add time range filter for enhanced security monitoring
 	if !startTime.IsZero() && !endTime.IsZero() {
 		startTimestamp := fmt.Sprintf("AUDIT#%d", startTime.Unix())
 		endTimestamp := fmt.Sprintf("AUDIT#%d", endTime.Unix())
-		query = query.Where("GSI4SK", ">=", startTimestamp).Where("GSI4SK", "<=", endTimestamp)
+		query = query.Where("gsi4SK", ">=", startTimestamp).Where("gsi4SK", "<=", endTimestamp)
 	}
 
 	// Apply limit with security bounds
@@ -165,10 +165,10 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 	if limit > auditSecurityMaxLimit {
 		limit = auditSecurityMaxLimit // Maximum security event limit
 	}
-	query = query.OrderBy("GSI4SK", "ASC").Limit(limit + 1)
+	query = query.OrderBy("gsi4SK", "ASC").Limit(limit + 1)
 
 	if cursor != "" {
-		query = query.Where("GSI4SK", ">", cursor)
+		query = query.Where("gsi4SK", ">", cursor)
 	}
 
 	// Execute query with enhanced error handling

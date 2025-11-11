@@ -66,8 +66,8 @@ const (
 
 // GSI field name constants
 const (
-	gsi1SKField = "GSI1SK"
-	gsi2SKField = "GSI2SK"
+	gsi1SKField = "gsi1SK"
+	gsi2SKField = "gsi2SK"
 )
 
 // User preference keys

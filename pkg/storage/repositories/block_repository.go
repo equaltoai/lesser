@@ -188,7 +188,7 @@ func (r *BlockRepository) GetUsersWhoBlocked(ctx context.Context, blockedActor s
 	config := RelationshipPaginationConfig{
 		IndexName:   "GSI5",                    // Use GSI5 for reverse lookup
 		PKFormat:    "BLOCKED#%s",              // GSI5PK format
-		SKField:     "GSI5SK",                  // Sort key field for GSI5
+		SKField:     "gsi5SK",                  // Sort key field for GSI5
 		ActorField:  "Actor",                   // Extract blocker users (Actor field)
 		ErrorPrefix: "users who blocked actor", // Error message prefix
 	}
@@ -250,7 +250,7 @@ func (r *BlockRepository) CountUsersWhoBlocked(ctx context.Context, blockedActor
 
 	count, err := r.db.WithContext(ctx).Model(&models.Block{}).
 		Index("GSI5").
-		Where("GSI5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
+		Where("gsi5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
 		Count()
 	if err != nil {
 		r.logger.Error("failed to count users who blocked actor",

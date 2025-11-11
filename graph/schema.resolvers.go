@@ -1183,6 +1183,12 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		Boosted:       viewerBoosted,
 	}
 
+	obj.RelationshipType = model.ObjectRelationshipTypeOriginal
+	if status.IsReblog() {
+		obj.RelationshipType = model.ObjectRelationshipTypeBoost
+		obj.BoostedObject = r.resolveBoostedObject(ctx, status, convertLogger)
+	}
+
 	if convertLogger != nil {
 		convertLogger.Info("convertStatusToObject finished",
 			zap.String("status_id", status.StatusID),

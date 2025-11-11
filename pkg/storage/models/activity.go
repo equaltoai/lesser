@@ -10,17 +10,19 @@ import (
 // Activity represents an ActivityPub activity in DynamoDB
 // This matches the legacy storage.ActivityRecord structure
 type Activity struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - MUST match legacy patterns exactly
-	PK string `dynamorm:"pk" json:"PK"` // Format: "ACTOR#{username}"
-	SK string `dynamorm:"sk" json:"SK"` // Format: "ACTIVITY#{timestamp}#{activity_id}"
+	PK string `dynamorm:"pk,attr:PK" json:"PK"` // Format: "ACTOR#{username}"
+	SK string `dynamorm:"sk,attr:SK" json:"SK"` // Format: "ACTIVITY#{timestamp}#{activity_id}"
 
 	// GSI for inbox activities - MUST match legacy patterns exactly
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK,omitempty"` // Format: "INBOX#{username}" (only for inbox activities)
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK,omitempty"` // Format: timestamp (only for inbox activities)
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"` // Format: "INBOX#{username}" (only for inbox activities)
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"` // Format: timestamp (only for inbox activities)
 
 	// Activity data
-	Activity  *activitypub.Activity `json:"Activity"`
-	CreatedAt time.Time             `json:"CreatedAt"`
+	Activity  *activitypub.Activity `dynamorm:"attr:activity" json:"Activity"`
+	CreatedAt time.Time             `dynamorm:"attr:createdAt" json:"CreatedAt"`
 }
 
 // TableName returns the DynamoDB table backing Activity.

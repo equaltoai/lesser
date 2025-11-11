@@ -128,12 +128,12 @@ type MLPrediction struct {
     Type string // "ML_PREDICTION"
     
     // GSI1 - Query by model version
-    GSI1PK string  // "MODEL#{model_version}"
-    GSI1SK string  // "TIME#{RFC3339}"
+    gsi1PK string  // "MODEL#{model_version}"
+    gsi1SK string  // "TIME#{RFC3339}"
     
     // GSI2 - Query by review status
-    GSI2PK string  // "REVIEW#{true|false}"
-    GSI2SK string  // "TIME#{RFC3339}"
+    gsi2PK string  // "REVIEW#{true|false}"
+    gsi2SK string  // "TIME#{RFC3339}"
     
     PredictionID    string
     ObjectID        string
@@ -158,8 +158,8 @@ type ModerationModelVersion struct {
     Type string // "ML_MODEL_VERSION"
     
     // GSI9 - Active model lookup
-    GSI9PK string  // "MLACTIVE#{tenant_id}"
-    GSI9SK string  // "VERSION#{version}"
+    gsi9PK string  // "MLACTIVE#{tenant_id}"
+    gsi9SK string  // "VERSION#{version}"
     
     TenantID        string
     Version         string
@@ -627,7 +627,7 @@ Recommended CloudWatch Alarms:
 **Diagnosis**:
 1. Check if any predictions have human labels
 2. Verify time window (default 7 days)
-3. Check for prediction records: `GSI1PK=MODEL#{version}`
+3. Check for prediction records: `gsi1PK=MODEL#{version}`
 
 **Resolution**:
 1. Human reviewers must set labels on moderation actions
@@ -654,4 +654,3 @@ Recommended CloudWatch Alarms:
 - [DynamoDB Streams](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html)
 - [Lesser Architecture Docs](./architecture/SYSTEM_DESIGN.md)
 - [GraphQL Schema](../graph/phase2.graphql)
-

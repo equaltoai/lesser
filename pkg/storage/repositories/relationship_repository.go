@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -20,10 +21,11 @@ import (
 type RelationshipRepository struct {
 	*EnhancedBaseRepository[*models.RelationshipRecord]
 	// Repository dependencies for complex relationship operations
-	blockRepo  *BlockRepository
-	muteRepo   *MuteRepository
-	socialRepo *SocialRepository
-	queryUtils *QueryUtils
+	blockRepo   *BlockRepository
+	muteRepo    *MuteRepository
+	socialRepo  *SocialRepository
+	queryUtils  *QueryUtils
+	localDomain string
 }
 
 const (
@@ -33,43 +35,30 @@ const (
 
 // NewRelationshipRepository creates a new relationship repository with enhanced functionality
 func NewRelationshipRepository(db core.DB, tableName string, logger *zap.Logger) *RelationshipRepository {
-	// Create enhanced repository with social-specific services
-	enhancedRepo := NewEnhancedBaseRepository[*models.RelationshipRecord](db, tableName, logger, nil, "RelationshipRepository", "relationship")
-
-	// Set up enhanced services optimized for social relationships
-	enhancedRepo.SetValidationService(NewDefaultValidationService())
-	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Relationships are frequently accessed
-	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for federation events
-
-	return &RelationshipRepository{
-		EnhancedBaseRepository: enhancedRepo,
-		// Initialize repository dependencies
-		blockRepo:  NewBlockRepository(db, tableName, logger, nil),
-		muteRepo:   NewMuteRepository(db, tableName, logger, nil),
-		socialRepo: NewSocialRepository(db, tableName, logger, nil),
-		queryUtils: NewQueryUtils(db, logger),
-	}
+	return newRelationshipRepository(db, tableName, logger, nil)
 }
 
 // NewRelationshipRepositoryWithCostTracking creates a new relationship repository with cost tracking
 func NewRelationshipRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RelationshipRepository {
-	// Create enhanced repository with cost tracking and full service integration
-	enhancedRepo := NewEnhancedBaseRepository[*models.RelationshipRecord](db, tableName, logger, costService, "RelationshipRepository", "relationship")
+	return newRelationshipRepository(db, tableName, logger, costService)
+}
 
-	// Set up enhanced services optimized for social relationships with cost tracking
+func newRelationshipRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RelationshipRepository {
+	enhancedRepo := NewEnhancedBaseRepository[*models.RelationshipRecord](db, tableName, logger, costService, "RelationshipRepository", "relationship")
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Relationships are frequently accessed
-	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for federation events
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())
+	enhancedRepo.SetEventService(NewDefaultEventService())
+
+	localDomain := resolveLocalDomain()
 
 	return &RelationshipRepository{
 		EnhancedBaseRepository: enhancedRepo,
-		// Initialize repository dependencies with cost tracking
-		blockRepo:  NewBlockRepository(db, tableName, logger, costService),
-		muteRepo:   NewMuteRepository(db, tableName, logger, costService),
-		socialRepo: NewSocialRepository(db, tableName, logger, costService),
-		queryUtils: NewQueryUtils(db, logger),
+		blockRepo:              NewBlockRepository(db, tableName, logger, costService),
+		muteRepo:               NewMuteRepository(db, tableName, logger, costService),
+		socialRepo:             NewSocialRepository(db, tableName, logger, costService),
+		queryUtils:             NewQueryUtils(db, logger),
+		localDomain:            localDomain,
 	}
 }
 
@@ -120,6 +109,8 @@ func (r *RelationshipRepository) HasFollowRequest(ctx context.Context, requester
 func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followerUsername, followingUsername, activityID string) error {
 	relationship := models.NewRelationshipRecord(followerUsername, followingUsername, activityID)
 
+	r.ensureDomainIndexes(relationship)
+
 	r.logger.Info("attempting to persist follow relationship",
 		zap.String("follower", followerUsername),
 		zap.String("following", followingUsername),
@@ -158,6 +149,38 @@ func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followe
 		zap.Bool("caching_enabled", r.HasCaching()))
 
 	return nil
+}
+
+func resolveLocalDomain() string {
+	domain := normalizeDomain(config.Get().Domain)
+	if domain == "" {
+		return "localhost"
+	}
+	return domain
+}
+
+func normalizeDomain(raw string) string {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	normalized = strings.TrimPrefix(normalized, "https://")
+	normalized = strings.TrimPrefix(normalized, "http://")
+	normalized = strings.TrimSuffix(normalized, "/")
+	return normalized
+}
+
+func (r *RelationshipRepository) ensureDomainIndexes(record *models.RelationshipRecord) {
+	if record == nil {
+		return
+	}
+
+	if record.GSI2PK == "" && record.SK != "" {
+		record.GSI2PK = fmt.Sprintf("FOLLOWER_DOMAIN#%s", r.localDomain)
+		record.GSI2SK = record.SK
+	}
+
+	if record.GSI3PK == "" && record.GSI1SK != "" {
+		record.GSI3PK = fmt.Sprintf("FOLLOWING_DOMAIN#%s", r.localDomain)
+		record.GSI3SK = record.GSI1SK
+	}
 }
 
 // DeleteRelationship removes a follow relationship
@@ -214,7 +237,7 @@ func (r *RelationshipRepository) getRelationshipsByState(ctx context.Context, us
 
 	query := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", basePK).
+		Where("gsi1PK", "=", basePK).
 		Filter("State", "=", state)
 
 	if cursor != "" {
@@ -234,7 +257,7 @@ func (r *RelationshipRepository) getRelationshipsByState(ctx context.Context, us
 		}
 
 		if decodedSK != "" {
-			query = query.Where("GSI1SK", ">", decodedSK)
+			query = query.Where("gsi1SK", ">", decodedSK)
 		}
 	}
 
@@ -344,7 +367,7 @@ func (r *RelationshipRepository) CountFollowers(ctx context.Context, username st
 	// BaseRepository doesn't have a method for filtered counts on GSI
 	count, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
+		Where("gsi1PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
 		Filter("State", "=", models.RelationshipAccepted).
 		Count()
 
@@ -410,7 +433,7 @@ func (r *RelationshipRepository) CountRelationshipsByDomain(ctx context.Context,
 	// Uses GSI2: FOLLOWER_DOMAIN#{domain} → FOLLOWING#{username}
 	followerCount, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Index("gsi2").
-		Where("GSI2PK", "=", followerKey).
+		Where("gsi2PK", "=", followerKey).
 		Filter("State", "=", models.RelationshipAccepted).
 		Count()
 
@@ -425,7 +448,7 @@ func (r *RelationshipRepository) CountRelationshipsByDomain(ctx context.Context,
 	// Uses GSI3: FOLLOWING_DOMAIN#{domain} → FOLLOWER#{username}
 	followingCount, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Index("gsi3").
-		Where("GSI3PK", "=", followingKey).
+		Where("gsi3PK", "=", followingKey).
 		Filter("State", "=", models.RelationshipAccepted).
 		Count()
 
@@ -791,7 +814,7 @@ func (r *RelationshipRepository) GetPendingMoves(ctx context.Context, limit int)
 func (r *RelationshipRepository) GetMoveByTarget(ctx context.Context, target string) ([]*storage.Move, error) {
 	query := r.db.WithContext(ctx).Model(&models.Move{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("MOVE#TARGET#%s", target))
+		Where("gsi1PK", "=", fmt.Sprintf("MOVE#TARGET#%s", target))
 
 	var moveRecords []models.Move
 	if err := query.Limit(defaultMoveQueryLimit).All(&moveRecords); err != nil {

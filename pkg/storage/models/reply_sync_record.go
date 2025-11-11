@@ -7,31 +7,33 @@ import (
 
 // ReplySyncRecord tracks remote reply synchronization attempts
 type ReplySyncRecord struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key fields
-	PK string `dynamorm:"pk" json:"pk"` // Format: "REPLY_SYNC#{status_id}"
-	SK string `dynamorm:"sk" json:"sk"` // Format: "SYNC#{timestamp}"
+	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "REPLY_SYNC#{status_id}"
+	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "SYNC#{timestamp}"
 
 	// Core fields
-	StatusID    string    `json:"status_id"`    // The status we're syncing replies for
-	SyncAttempt time.Time `json:"sync_attempt"` // When the sync was attempted
-	SyncResult  string    `json:"sync_result"`  // "success", "partial", "failed"
+	StatusID    string    `dynamorm:"attr:statusID" json:"status_id"`       // The status we're syncing replies for
+	SyncAttempt time.Time `dynamorm:"attr:syncAttempt" json:"sync_attempt"` // When the sync was attempted
+	SyncResult  string    `dynamorm:"attr:syncResult" json:"sync_result"`   // "success", "partial", "failed"
 
 	// Sync details
-	TotalReplies   int `json:"total_replies"`   // Total replies known to exist
-	FetchedReplies int `json:"fetched_replies"` // Successfully fetched replies
-	FailedReplies  int `json:"failed_replies"`  // Failed to fetch
+	TotalReplies   int `dynamorm:"attr:totalReplies" json:"total_replies"`     // Total replies known to exist
+	FetchedReplies int `dynamorm:"attr:fetchedReplies" json:"fetched_replies"` // Successfully fetched replies
+	FailedReplies  int `dynamorm:"attr:failedReplies" json:"failed_replies"`   // Failed to fetch
 
 	// Error tracking
-	LastError   string     `json:"last_error,omitempty"`    // Last error message
-	RetryCount  int        `json:"retry_count"`             // Number of retries
-	NextRetryAt *time.Time `json:"next_retry_at,omitempty"` // When to retry next
+	LastError   string     `dynamorm:"attr:lastError" json:"last_error,omitempty"`      // Last error message
+	RetryCount  int        `dynamorm:"attr:retryCount" json:"retry_count"`              // Number of retries
+	NextRetryAt *time.Time `dynamorm:"attr:nextRetryAt" json:"next_retry_at,omitempty"` // When to retry next
 
 	// TTL for automatic cleanup (30 days)
-	TTL int64 `dynamorm:"ttl" json:"ttl"`
+	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"created_at" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"updated_at" json:"updated_at"`
+	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }
 
 // NewReplySyncRecord creates a new reply sync record

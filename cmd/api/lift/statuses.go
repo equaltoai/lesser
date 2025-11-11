@@ -81,21 +81,18 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to create status")
 	}
 
-	// Get the author actor for proper conversion
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
+	// Convert to Mastodon API format with storage-aware helper
+	apiStatus, err := h.convertStorageStatusToAPI(result.Note, claims.Username)
 	if err != nil {
-		h.logger.Error("failed to get author account", zap.Error(err))
+		h.logger.Error("failed to convert created status", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to create status")
 	}
-
-	// Convert to Mastodon API format using transformations
-	mastodonStatus := transformations.ObjectToStatusAny(result.Note, account.Actor, h.cfg.BaseURL())
 
 	h.logger.Info("created status",
 		zap.String("id", result.Note.StatusID),
 		zap.String("content", req.Status))
 
-	return ctx.Status(http.StatusCreated).JSON(mastodonStatus)
+	return ctx.Status(http.StatusCreated).JSON(apiStatus)
 }
 
 // HandleDeleteStatusLift deletes a status using the Notes service
@@ -137,16 +134,12 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to delete status")
 	}
 
-	// Get the author actor for proper conversion
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, transformations.ExtractUsernameFromActorID(status.AuthorID))
-	if err != nil {
-		h.logger.Error("failed to get author account for deleted status", zap.Error(err))
-		// Return a basic response if we can't get the author
-		return ctx.JSON(map[string]interface{}{"id": statusID, "deleted": true})
-	}
-
 	// Return the deleted status in Mastodon format
-	mastodonStatus := transformations.ObjectToStatusAny(status, account.Actor, h.cfg.BaseURL())
+	mastodonStatus, err := h.convertStorageStatusToAPI(status, claims.Username)
+	if err != nil {
+		h.logger.Error("failed to convert deleted status", zap.Error(err))
+		return common.RespondInternalServerError(ctx, "failed to delete status")
+	}
 
 	h.logger.Info("deleted status", zap.String("id", statusID))
 
@@ -530,13 +523,14 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 	// Convert to Mastodon API format
 	timeline := make([]interface{}, len(result.Notes))
 	for i, status := range result.Notes {
-		// Get author actor for conversion
-		account, err := h.registry.Accounts().GetAccount(ctx.Context, transformations.ExtractUsernameFromActorID(status.AuthorID))
+		apiStatus, err := h.convertStorageStatusToAPI(status, claims.Username)
 		if err != nil {
-			h.logger.Warn("failed to get author for timeline status", zap.Error(err))
+			h.logger.Warn("failed to convert home timeline status",
+				zap.String("status_id", status.StatusID),
+				zap.Error(err))
 			continue
 		}
-		timeline[i] = transformations.ObjectToStatusAny(status, account.Actor, h.cfg.BaseURL())
+		timeline[i] = apiStatus
 	}
 
 	return ctx.JSON(timeline)
@@ -584,13 +578,14 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 	// Convert to Mastodon API format
 	timeline := make([]interface{}, len(result.Notes))
 	for i, status := range result.Notes {
-		// Get author actor for conversion
-		account, err := h.registry.Accounts().GetAccount(ctx.Context, transformations.ExtractUsernameFromActorID(status.AuthorID))
+		apiStatus, err := h.convertStorageStatusToAPI(status, viewerUsername)
 		if err != nil {
-			h.logger.Warn("failed to get author for timeline status", zap.Error(err))
+			h.logger.Warn("failed to convert public timeline status",
+				zap.String("status_id", status.StatusID),
+				zap.Error(err))
 			continue
 		}
-		timeline[i] = transformations.ObjectToStatusAny(status, account.Actor, h.cfg.BaseURL())
+		timeline[i] = apiStatus
 	}
 
 	return ctx.JSON(timeline)

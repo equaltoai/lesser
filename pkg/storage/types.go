@@ -1353,8 +1353,8 @@ type SeveredRelationship struct {
 type RelationshipRecord struct {
 	PK            string                 `json:"PK"`
 	SK            string                 `json:"SK"`
-	GSI1PK        string                 `json:"GSI1PK"`
-	GSI1SK        string                 `json:"GSI1SK"`
+	GSI1PK        string                 `json:"gsi1PK"`
+	GSI1SK        string                 `json:"gsi1SK"`
 	ActivityID    string                 `json:"activity_id"`
 	SourceID      string                 `json:"source_id"`
 	TargetID      string                 `json:"target_id"`

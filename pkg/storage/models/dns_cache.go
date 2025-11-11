@@ -7,16 +7,18 @@ import (
 
 // DNSCache represents a cached DNS lookup result in DynamoDB
 type DNSCache struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Keys - EXACT pattern from legacy: PK=DNSCACHE#hostname, SK=ENTRY
-	PK string `dynamorm:"pk" json:"-"`
-	SK string `dynamorm:"sk" json:"-"`
+	PK string `dynamorm:"pk,attr:PK" json:"-"`
+	SK string `dynamorm:"sk,attr:SK" json:"-"`
 
 	// Business fields matching legacy implementation
-	Hostname   string    `json:"hostname"`
-	IPs        []string  `json:"ips"`
-	ResolvedAt time.Time `json:"resolved_at"`
-	TTL        int       `json:"ttl"`                       // seconds
-	ExpiresAt  int64     `json:"expires_at" dynamorm:"ttl"` // Unix timestamp for DynamoDB TTL
+	Hostname   string    `dynamorm:"attr:hostname" json:"hostname"`
+	IPs        []string  `dynamorm:"attr:ips" json:"ips"`
+	ResolvedAt time.Time `dynamorm:"attr:resolvedAt" json:"resolved_at"`
+	TTL        int       `dynamorm:"attr:ttl" json:"ttl"`                  // seconds
+	ExpiresAt  int64     `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp for DynamoDB TTL
 }
 
 // UpdateKeys sets the composite key values for DynamoDB

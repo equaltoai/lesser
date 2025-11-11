@@ -91,6 +91,10 @@ func (m *MockNoteRepository) CreateStatus(ctx context.Context, status *models.St
 	return args.Error(0)
 }
 
+func (m *MockNoteRepository) CreateBoostStatus(ctx context.Context, status *models.Status) error {
+	return m.CreateStatus(ctx, status)
+}
+
 func (m *MockNoteRepository) GetStatus(ctx context.Context, statusID string) (*models.Status, error) {
 	args := m.Called(ctx, statusID)
 	return args.Get(0).(*models.Status), args.Error(1)
@@ -214,6 +218,10 @@ func (m *MockNoteRepository) GetStatusContext(ctx context.Context, statusID stri
 func (m *MockNoteRepository) GetStatusEngagement(ctx context.Context, statusID, userID string) (liked, reblogged, bookmarked bool, err error) {
 	args := m.Called(ctx, statusID, userID)
 	return args.Bool(0), args.Bool(1), args.Bool(2), args.Error(3)
+}
+
+func (m *MockNoteRepository) DeleteBoostStatus(context.Context, string, string) (*models.Status, error) {
+	return nil, nil
 }
 
 type MockPublisher struct {

@@ -86,9 +86,9 @@ func (r *FederationCostRepository) GetFederationCosts(ctx context.Context, domai
 
 	query := r.GetDB().WithContext(ctx).Model(&models.FederationCostTracking{}).
 		Index("GSI1").
-		Where("GSI1PK", ">=", fmt.Sprintf("FED_COSTS#%s", startDate)).
-		Where("GSI1PK", "<=", fmt.Sprintf("FED_COSTS#%s", endDate)).
-		Filter("GSI1SK", "CONTAINS", domain). // Filter for specific domain
+		Where("gsi1PK", ">=", fmt.Sprintf("FED_COSTS#%s", startDate)).
+		Where("gsi1PK", "<=", fmt.Sprintf("FED_COSTS#%s", endDate)).
+		Filter("gsi1SK", "CONTAINS", domain). // Filter for specific domain
 		Limit(limit)
 
 	err := query.All(&costs)
@@ -115,9 +115,9 @@ func (r *FederationCostRepository) GetFederationCostsByActivityType(ctx context.
 
 	query := r.GetDB().WithContext(ctx).Model(&models.FederationCostTracking{}).
 		Index("GSI2").
-		Where("GSI2PK", "=", fmt.Sprintf("FED_TYPE#%s", activityType)).
-		Where("GSI2SK", ">=", fmt.Sprintf("DOMAIN#%s", timestampStart)).
-		Where("GSI2SK", "<=", fmt.Sprintf("DOMAIN#%s", timestampEnd)).
+		Where("gsi2PK", "=", fmt.Sprintf("FED_TYPE#%s", activityType)).
+		Where("gsi2SK", ">=", fmt.Sprintf("DOMAIN#%s", timestampStart)).
+		Where("gsi2SK", "<=", fmt.Sprintf("DOMAIN#%s", timestampEnd)).
 		Limit(limit)
 
 	err := query.All(&costs)
@@ -282,7 +282,7 @@ func (r *FederationCostRepository) GetActiveBudgets(ctx context.Context, limit i
 
 	query := r.GetDB().WithContext(ctx).Model(&models.FederationBudget{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", "ACTIVE_BUDGETS").
+		Where("gsi1PK", "=", "ACTIVE_BUDGETS").
 		Filter("IsActive", "=", true).
 		Limit(limit)
 

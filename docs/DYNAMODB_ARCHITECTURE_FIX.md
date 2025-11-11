@@ -71,7 +71,7 @@ func GetConnectionCountByState(ctx, state) (int, error) {
     return r.GetDB().WithContext(ctx).
         Model(&models.WebSocketConnection{}).
         Index("GSI2").
-        Where("GSI2PK", "=", fmt.Sprintf("STATE#%s", state)).
+        Where("gsi2PK", "=", fmt.Sprintf("STATE#%s", state)).
         Count()
 }
 ```
@@ -91,7 +91,7 @@ func GetConnectionsByUser(ctx, userID) ([]Connection, error) {
     var connections []Connection
     err := r.GetDB().Model(&Connection{}).
         Index("GSI1").
-        Where("GSI1PK", "=", fmt.Sprintf("USER#%s", userID)).
+        Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
         All(&connections)  // ❌ No limit
     return connections, err
 }
@@ -107,7 +107,7 @@ func GetConnectionsByUser(ctx, userID string, limit int) ([]Connection, error) {
     var connections []Connection
     err := r.GetDB().Model(&Connection{}).
         Index("GSI1").
-        Where("GSI1PK", "=", fmt.Sprintf("USER#%s", userID)).
+        Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
         Limit(limit).
         All(&connections)
     return connections, err

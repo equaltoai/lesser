@@ -8,28 +8,30 @@ import (
 
 // OAuthClient represents an OAuth 2.0 client application
 type OAuthClient struct {
-	// DynamoDB keys - MUST match legacy exactly
-	PK             string `dynamorm:"pk" json:"-"`                           // OAUTH_CLIENT#clientID
-	SK             string `dynamorm:"sk" json:"-"`                           // METADATA
-	GSI1PK         string `dynamorm:"index:gsi1,pk,omitempty" json:"-"`                // OWNER#ownerID (for owner index)
-	GSI1SK         string `dynamorm:"index:gsi1,sk,omitempty" json:"-"`                // CLIENT#clientID
-	OAuthClientsPK string `dynamorm:"index:oauth-clients-index,pk" json:"-"` // OAUTH_CLIENTS
-	OAuthClientsSK string `dynamorm:"index:oauth-clients-index,sk" json:"-"` // CREATED_AT#{ts_desc}#CLIENT#{clientID}
+	_ struct{} `dynamorm:"naming:camelCase"`
 
-	// Core fields from legacy storage.OAuthClient
-	ID           string    `json:"id,omitempty"`
-	ClientID     string    `json:"client_id"`
-	ClientSecret string    `json:"client_secret"`
-	Name         string    `json:"name"`
-	Description  string    `json:"description,omitempty"`
-	Website      string    `json:"website,omitempty"`
-	RedirectURIs []string  `json:"redirect_uris"`
-	GrantTypes   []string  `json:"grant_types,omitempty"`
-	Scopes       []string  `json:"scopes,omitempty"`
-	OwnerID      string    `json:"owner_id,omitempty"`
-	Confidential bool      `json:"confidential"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+	// DynamoDB keys
+	PK             string  `dynamorm:"pk,attr:PK" json:"-"`                                       // OAUTH_CLIENT#clientID
+	SK             string  `dynamorm:"sk,attr:SK" json:"-"`                                       // METADATA
+	GSI1PK         *string `dynamorm:"index:GSI1,pk,attr:gsi1PK,omitempty" json:"-"`              // OWNER#ownerID (for owner index)
+	GSI1SK         *string `dynamorm:"index:GSI1,sk,attr:gsi1SK,omitempty" json:"-"`              // CLIENT#clientID
+	OAuthClientsPK string  `dynamorm:"index:oauth-clients-index,pk,attr:oauthClientsPK" json:"-"` // OAUTH_CLIENTS
+	OAuthClientsSK string  `dynamorm:"index:oauth-clients-index,sk,attr:oauthClientsSK" json:"-"` // CREATED_AT#{ts_desc}#CLIENT#{clientID}
+
+	// Core fields 
+	ID           string    `dynamorm:"attr:id" json:"id,omitempty"`
+	ClientID     string    `dynamorm:"attr:clientID" json:"client_id"`
+	ClientSecret string    `dynamorm:"attr:clientSecret" json:"client_secret"`
+	Name         string    `dynamorm:"attr:name" json:"name"`
+	Description  string    `dynamorm:"attr:description" json:"description,omitempty"`
+	Website      string    `dynamorm:"attr:website" json:"website,omitempty"`
+	RedirectURIs []string  `dynamorm:"attr:redirectURIs" json:"redirect_uris"`
+	GrantTypes   []string  `dynamorm:"attr:grantTypes" json:"grant_types,omitempty"`
+	Scopes       []string  `dynamorm:"attr:scopes" json:"scopes,omitempty"`
+	OwnerID      string    `dynamorm:"attr:ownerID,omitempty" json:"owner_id,omitempty"`
+	Confidential bool      `dynamorm:"attr:confidential" json:"confidential"`
+	CreatedAt    time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt    time.Time `dynamorm:"attr:updatedAt" json:"updated_at,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -74,20 +76,21 @@ func (o *OAuthClient) GetSK() string {
 func (o *OAuthClient) UpdateKeys() error {
 	o.PK = "OAUTH_CLIENT#" + o.ClientID
 	o.SK = SKMetadata
-	
+
 	// GSI1 is for owner-based queries - only set if OwnerID exists
 	// DynamoDB requires GSI keys to be non-empty if they're part of the index
 	// So we either set them or leave them empty (and DynamORM should skip them)
 	if o.OwnerID != "" {
-		o.GSI1PK = "OWNER#" + o.OwnerID
-		o.GSI1SK = "CLIENT#" + o.ClientID
+		pk := "OWNER#" + o.OwnerID
+		sk := "CLIENT#" + o.ClientID
+		o.GSI1PK = &pk
+		o.GSI1SK = &sk
 	} else {
-		// Clear GSI1 keys when OwnerID is empty to avoid empty string errors
-		// DynamORM should handle omitted GSI keys gracefully
-		o.GSI1PK = ""
-		o.GSI1SK = ""
+		// Clear pointers when OwnerID is empty so DynamoDB omits the index attributes
+		o.GSI1PK = nil
+		o.GSI1SK = nil
 	}
-	
+
 	desc := encodeDescendingTimestamp(o.CreatedAt)
 	o.OAuthClientsPK = "OAUTH_CLIENTS"
 	o.OAuthClientsSK = fmt.Sprintf("CREATED_AT#%019d#CLIENT#%s", desc, o.ClientID)

@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"time"
 
@@ -9,14 +10,26 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/pay-theory/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	errors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
 // BookmarkRepository implements bookmark operations using enhanced DynamORM patterns
 type BookmarkRepository struct {
 	*EnhancedBaseRepository[*models.Bookmark]
+
+	getObjectBookmarkFn  func(ctx context.Context, username, objectID string) (*models.Bookmark, error)
+	findTimeBookmarkFn   func(ctx context.Context, username, objectID string) (*models.Bookmark, error)
+	transactWriteFn      func(ctx context.Context, fn func(core.TransactionBuilder) error) error
+	batchGetFn           func(ctx context.Context, keys []any) ([]*models.Bookmark, error)
+	queryTimeBookmarksFn func(ctx context.Context, username string, limit int, cursor string) ([]models.Bookmark, string, error)
+}
+
+type transactionalDB interface {
+	core.DB
+	TransactWrite(ctx context.Context, fn func(core.TransactionBuilder) error) error
 }
 
 // NewBookmarkRepository creates a new bookmark repository with enhanced functionality
@@ -30,9 +43,11 @@ func NewBookmarkRepository(db core.DB, tableName string, logger *zap.Logger) *Bo
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Bookmarks are frequently checked
 	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for user notifications
 
-	return &BookmarkRepository{
+	repo := &BookmarkRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
+	repo.initHooks()
+	return repo
 }
 
 // NewBookmarkRepositoryWithCostTracking creates a new bookmark repository with cost tracking
@@ -46,159 +61,268 @@ func NewBookmarkRepositoryWithCostTracking(db core.DB, tableName string, logger 
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Bookmarks are frequently checked
 	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for user notifications
 
-	return &BookmarkRepository{
+	repo := &BookmarkRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
+	repo.initHooks()
+	return repo
 }
 
-// CreateBookmark creates a new bookmark
+func (r *BookmarkRepository) initHooks() {
+	r.getObjectBookmarkFn = r.dynamoGetObjectBookmark
+	r.findTimeBookmarkFn = r.dynamoFindTimeBookmarkByObject
+	r.transactWriteFn = r.transactWrite
+	r.batchGetFn = r.batchGetBookmarks
+	r.queryTimeBookmarksFn = r.queryUnlockedTimeBookmarks
+}
+
+// CreateBookmark creates a new bookmark using the TIME/OBJECT dual-write pattern.
 func (r *BookmarkRepository) CreateBookmark(ctx context.Context, username, objectID string) (*models.Bookmark, error) {
-	bookmark := &models.Bookmark{
-		Username:  username,
-		ObjectID:  objectID,
-		CreatedAt: time.Now(),
-	}
-	if err := bookmark.UpdateKeys(); err != nil {
-		return nil, ErrorHandler.HandleCreateError(err, EntityBookmark, "key generation")
+	if existing, err := r.getObjectBookmarkFn(ctx, username, objectID); err == nil {
+		return existing, nil
+	} else if !errors.IsNotFound(err) {
+		return nil, ErrorHandler.HandleGetError(err, EntityBookmark, objectID)
 	}
 
-	// Use enhanced validation and creation with automatic permission checking and event emission
-	if err := r.ValidateAndCreate(ctx, bookmark); err != nil {
-		// Check if it's a duplicate key error (already bookmarked)
-		if errors.IsConditionFailed(err) {
-			r.logger.Debug("bookmark already exists",
-				zap.String("username", username),
-				zap.String("object_id", objectID),
-				zap.Bool("validation_enabled", r.HasValidation()),
-				zap.Bool("events_enabled", r.HasEvents()))
-			return bookmark, nil
+	now := time.Now().UTC()
+	var (
+		timeRecord        *models.Bookmark
+		createTimeRecord  bool
+		legacyTimeAttempt bool
+	)
+
+	if legacy, legacyErr := r.findTimeBookmarkFn(ctx, username, objectID); legacyErr == nil && legacy != nil && legacy.Locked {
+		timeRecord = legacy
+		createTimeRecord = false
+		legacyTimeAttempt = true
+	} else {
+		var err error
+		timeRecord, err = models.NewTimeOrderedBookmark(username, objectID, now)
+		if err != nil {
+			return nil, ErrorHandler.HandleCreateError(err, EntityBookmark, "time record build")
 		}
-		r.logger.Error("failed to create bookmark with enhanced validation",
-			zap.String("username", username),
-			zap.String("object_id", objectID),
-			zap.Bool("validation_enabled", r.HasValidation()),
-			zap.Bool("events_enabled", r.HasEvents()),
-			zap.Error(err))
-		return nil, ErrorHandler.HandleCreateError(err, EntityBookmark, objectID)
+		createTimeRecord = true
 	}
 
-	r.logger.Info("created bookmark with enhanced patterns",
-		zap.String("bookmark_id", fmt.Sprintf("%s:%s", username, objectID)),
-		zap.String("username", username),
-		zap.String("object_id", objectID))
+	objectRecord, err := models.NewObjectIndexedBookmark(username, objectID, timeRecord.CreatedAt, timeRecord.SK)
+	if err != nil {
+		return nil, ErrorHandler.HandleCreateError(err, EntityBookmark, "object record build")
+	}
 
-	return bookmark, nil
+	unlockExistingTimeRecord := !createTimeRecord && timeRecord.Locked
+	if createTimeRecord && timeRecord.Locked {
+		// New records can be written in the unlocked state because the object record
+		// is created in the same transaction — no need for a follow-up update.
+		timeRecord.Locked = false
+	}
+
+	writeErr := r.transactWriteFn(ctx, func(tx core.TransactionBuilder) error {
+		if createTimeRecord {
+			tx.Create(timeRecord, dynamorm.IfNotExists())
+		}
+		tx.Create(objectRecord, dynamorm.IfNotExists())
+		if unlockExistingTimeRecord {
+			tx.UpdateWithBuilder(newBookmarkKey(timeRecord.PK, timeRecord.SK), func(ub core.UpdateBuilder) error {
+				ub.Set("Locked", false)
+				return nil
+			}, dynamorm.Condition("Locked", "=", true))
+		}
+		return nil
+	})
+
+	if writeErr != nil {
+		r.logTransactionError("bookmark dual-write failed", writeErr,
+			zap.String("username", username),
+			zap.String("object_id", objectID))
+
+		if errors.IsConditionFailed(writeErr) {
+			if existing, err := r.getObjectBookmarkFn(ctx, username, objectID); err == nil {
+				return existing, nil
+			} else if errors.IsNotFound(err) {
+				if repaired, repairErr := r.repairLegacyBookmark(ctx, username, objectID); repairErr == nil && repaired != nil {
+					return repaired, nil
+				}
+			} else {
+				return nil, ErrorHandler.HandleCreateError(err, EntityBookmark, objectID)
+			}
+		}
+
+		return nil, ErrorHandler.HandleCreateError(writeErr, EntityBookmark, objectID)
+	}
+
+	r.logger.Info("created bookmark with transactional dual-write",
+		zap.String("username", username),
+		zap.String("object_id", objectID),
+		zap.String("time_record_sk", timeRecord.SK),
+		zap.Bool("legacy_time_reused", legacyTimeAttempt))
+
+	return objectRecord, nil
 }
 
-// DeleteBookmark removes a bookmark
+// DeleteBookmark removes both the OBJECT and TIME bookmark records.
 func (r *BookmarkRepository) DeleteBookmark(ctx context.Context, username, objectID string) error {
-	// We need to find the bookmark first since SK includes timestamp
-	var bookmarks []models.Bookmark
-	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", fmt.Sprintf("BOOKMARK#%s", username)).
-		Where("SK", "CONTAINS", objectID).
-		All(&bookmarks)
-
+	objectBookmark, err := r.getObjectBookmarkFn(ctx, username, objectID)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// No bookmark found, operation is idempotent
-			return nil
+			return r.deleteLegacyTimeBookmark(ctx, username, objectID)
 		}
-		r.logger.Error("failed to find bookmark for deletion",
-			zap.String("username", username),
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		return ErrorHandler.HandleQueryError(err, EntityBookmark, "deletion search")
+		return ErrorHandler.HandleGetError(err, EntityBookmark, objectID)
 	}
 
-	// Delete all found bookmarks (should typically be 0 or 1)
-	for _, bookmark := range bookmarks {
-		err = r.Delete(ctx, bookmark.PK, bookmark.SK)
-		if err != nil {
-			r.logger.Error("failed to delete bookmark",
-				zap.String("pk", bookmark.PK),
-				zap.String("sk", bookmark.SK),
-				zap.Error(err))
-			return ErrorHandler.HandleDeleteError(err, EntityBookmark, objectID)
+	timeSK := objectBookmark.TimeRecordSK
+	if timeSK == "" {
+		if fallback, findErr := r.findTimeBookmarkFn(ctx, username, objectID); findErr == nil && fallback != nil {
+			timeSK = fallback.SK
+		} else if findErr != nil && !errors.IsNotFound(findErr) {
+			return ErrorHandler.HandleDeleteError(findErr, EntityBookmark, objectID)
 		}
+	}
+
+	deleteErr := r.transactWriteFn(ctx, func(tx core.TransactionBuilder) error {
+		tx.Delete(newBookmarkKey(objectBookmark.PK, objectBookmark.SK))
+		if timeSK != "" {
+			tx.Delete(newBookmarkKey(objectBookmark.PK, timeSK))
+		}
+		return nil
+	})
+
+	if deleteErr != nil {
+		r.logTransactionError("bookmark delete transaction failed", deleteErr,
+			zap.String("username", username),
+			zap.String("object_id", objectID))
+		if errors.IsNotFound(deleteErr) {
+			return nil
+		}
+		return ErrorHandler.HandleDeleteError(deleteErr, EntityBookmark, objectID)
 	}
 
 	r.logger.Info("deleted bookmark",
 		zap.String("username", username),
-		zap.String("object_id", objectID),
-		zap.Int("deleted_count", len(bookmarks)))
-
+		zap.String("object_id", objectID))
 	return nil
 }
 
 // GetBookmark retrieves a specific bookmark
 func (r *BookmarkRepository) GetBookmark(ctx context.Context, username, objectID string) (*models.Bookmark, error) {
-	var bookmarks []models.Bookmark
-	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", fmt.Sprintf("BOOKMARK#%s", username)).
-		Where("SK", "CONTAINS", objectID).
-		Limit(1).
-		All(&bookmarks)
-
+	bookmark, err := r.getObjectBookmarkFn(ctx, username, objectID)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			legacy, legacyErr := r.findTimeBookmarkFn(ctx, username, objectID)
+			if legacyErr != nil && !errors.IsNotFound(legacyErr) {
+				return nil, ErrorHandler.HandleGetError(legacyErr, EntityBookmark, objectID)
+			}
+			if legacy == nil || legacy.Locked {
+				return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityBookmark, objectID)
+			}
+			return legacy, nil
+		}
 		return nil, ErrorHandler.HandleGetError(err, EntityBookmark, objectID)
 	}
 
-	if err := common.ValidateSliceNotEmpty("bookmarks", bookmarks); err != nil {
-		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityBookmark, objectID)
-	}
-
-	return &bookmarks[0], nil
+	return bookmark, nil
 }
 
 // GetUserBookmarks retrieves all bookmarks for a user with pagination
 func (r *BookmarkRepository) GetUserBookmarks(ctx context.Context, username string, limit int, cursor string) ([]*models.Bookmark, string, error) {
-	pk := fmt.Sprintf("BOOKMARK#%s", username)
-
-	opts := BasePaginationOptions{
-		Limit:  limit,
-		Cursor: cursor,
-		Order:  "DESC", // Most recent first
-	}
-
-	result, err := r.FindWithPagination(ctx, pk, opts)
+	bookmarks, nextCursor, err := r.queryTimeBookmarksFn(ctx, username, limit, cursor)
 	if err != nil {
-		r.logger.Error("failed to get user bookmarks",
-			zap.String("username", username),
-			zap.Error(err))
-		return nil, "", ErrorHandler.HandleQueryError(err, EntityBookmark, "user bookmarks")
+		return nil, "", err
 	}
 
-	// Convert to pointer slice
-	bookmarkPtrs := make([]*models.Bookmark, len(result.Items))
-	copy(bookmarkPtrs, result.Items)
+	result := make([]*models.Bookmark, len(bookmarks))
+	for i := range bookmarks {
+		result[i] = &bookmarks[i]
+	}
 
-	return bookmarkPtrs, result.NextCursor, nil
+	return result, nextCursor, nil
 }
 
 // IsBookmarked checks if a user has bookmarked an object
 func (r *BookmarkRepository) IsBookmarked(ctx context.Context, username, objectID string) (bool, error) {
-	bookmark, err := r.GetBookmark(ctx, username, objectID)
-	if err != nil {
-		if err.Error() == "bookmark not found" {
+	if _, err := r.getObjectBookmarkFn(ctx, username, objectID); err != nil {
+		if errors.IsNotFound(err) {
+			legacy, legacyErr := r.findTimeBookmarkFn(ctx, username, objectID)
+			if legacyErr != nil && !errors.IsNotFound(legacyErr) {
+				return false, legacyErr
+			}
+			if legacy != nil && !legacy.Locked {
+				return true, nil
+			}
 			return false, nil
 		}
 		return false, err
 	}
-	return bookmark != nil, nil
+	return true, nil
 }
 
 // CountUserBookmarks returns the total number of bookmarks by a user
 func (r *BookmarkRepository) CountUserBookmarks(ctx context.Context, username string) (int64, error) {
-	pk := fmt.Sprintf("BOOKMARK#%s", username)
-	count, err := r.Count(ctx, pk)
+	pk := buildBookmarkPK(username)
+
+	query := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		Where("PK", "=", pk).
+		Where("SK", "BEGINS_WITH", models.BookmarkSortKeyPrefixTime).
+		Filter("Locked", "=", false)
+
+	count, err := query.Count()
 	if err != nil {
 		r.logger.Error("failed to count user bookmarks",
 			zap.String("username", username),
 			zap.Error(err))
 		return 0, ErrorHandler.HandleQueryError(err, EntityBookmark, "count")
 	}
-	return int64(count), nil
+	return count, nil
+}
+
+// CheckBookmarksForStatuses returns a map of statusID -> bookmarked for the provided IDs.
+func (r *BookmarkRepository) CheckBookmarksForStatuses(ctx context.Context, username string, statusIDs []string) (map[string]bool, error) {
+	result := make(map[string]bool)
+	if len(statusIDs) == 0 {
+		return result, nil
+	}
+
+	pk := buildBookmarkPK(username)
+	uniqueIDs := deduplicate(statusIDs)
+
+	for start := 0; start < len(uniqueIDs); start += 100 {
+		end := start + 100
+		if end > len(uniqueIDs) {
+			end = len(uniqueIDs)
+		}
+
+		batch := uniqueIDs[start:end]
+		keys := make([]any, 0, len(batch))
+		for _, statusID := range batch {
+			keys = append(keys, dynamorm.NewKeyPair(pk, buildObjectSK(statusID)))
+		}
+
+		items, err := r.batchGetFn(ctx, keys)
+		if err != nil {
+			return nil, ErrorHandler.HandleQueryError(err, EntityBookmark, "batch bookmark lookup")
+		}
+
+		for _, bookmark := range items {
+			if bookmark == nil {
+				continue
+			}
+			result[bookmark.ObjectID] = true
+		}
+
+		for _, statusID := range batch {
+			if result[statusID] {
+				continue
+			}
+			fallback, legacyErr := r.findTimeBookmarkFn(ctx, username, statusID)
+			if legacyErr != nil && !errors.IsNotFound(legacyErr) {
+				return nil, ErrorHandler.HandleQueryError(legacyErr, EntityBookmark, "legacy bookmark lookup")
+			}
+			if fallback != nil && !fallback.Locked {
+				result[statusID] = true
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // Storage interface compatibility methods
@@ -370,4 +494,230 @@ func (r *BookmarkRepository) CascadeDeleteObjectBookmarks(ctx context.Context, o
 		zap.Int("deleted_count", deletedCount))
 
 	return nil
+}
+
+// Helper utilities ----------------------------------------------------------
+
+func buildBookmarkPK(username string) string {
+	return fmt.Sprintf("%s#%s", models.BookmarkPartitionPrefix, username)
+}
+
+func buildObjectSK(objectID string) string {
+	return fmt.Sprintf("%s#%s", models.BookmarkSortKeyPrefixObject, objectID)
+}
+
+func sanitizeLimit(limit, defaultLimit, maxSize int) int {
+	switch {
+	case limit <= 0:
+		return defaultLimit
+	case limit > maxSize:
+		return maxSize
+	default:
+		return limit
+	}
+}
+
+func deduplicate(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, v := range values {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		result = append(result, v)
+	}
+	return result
+}
+
+func (r *BookmarkRepository) queryUnlockedTimeBookmarks(ctx context.Context, username string, limit int, cursor string) ([]models.Bookmark, string, error) {
+	pk := buildBookmarkPK(username)
+	limit = sanitizeLimit(limit, 20, 100)
+
+	var bookmarks []models.Bookmark
+	query := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		Where("PK", "=", pk).
+		Where("SK", "BEGINS_WITH", models.BookmarkSortKeyPrefixTime).
+		Filter("Locked", "=", false).
+		OrderBy("SK", SortOrderDesc).
+		Limit(limit + 1)
+
+	if cursor != "" {
+		query = query.Where("SK", "<", cursor)
+	}
+
+	if err := query.All(&bookmarks); err != nil {
+		r.logger.Error("failed to get user bookmarks",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityBookmark, "user bookmarks")
+	}
+
+	hasMore := len(bookmarks) > limit
+	if hasMore {
+		bookmarks = bookmarks[:limit]
+	}
+
+	nextCursor := ""
+	if hasMore && len(bookmarks) > 0 {
+		nextCursor = bookmarks[len(bookmarks)-1].SK
+	}
+
+	return bookmarks, nextCursor, nil
+}
+
+func (r *BookmarkRepository) repairLegacyBookmark(ctx context.Context, username, objectID string) (*models.Bookmark, error) {
+	legacy, err := r.findTimeBookmarkFn(ctx, username, objectID)
+	if err != nil || legacy == nil {
+		return nil, err
+	}
+
+	objectRecord, err := models.NewObjectIndexedBookmark(username, objectID, legacy.CreatedAt, legacy.SK)
+	if err != nil {
+		return nil, err
+	}
+
+	recoverErr := r.transactWriteFn(ctx, func(tx core.TransactionBuilder) error {
+		tx.Create(objectRecord, dynamorm.IfNotExists())
+		if legacy.Locked {
+			tx.UpdateWithBuilder(newBookmarkKey(legacy.PK, legacy.SK), func(ub core.UpdateBuilder) error {
+				ub.Set("Locked", false)
+				return nil
+			}, dynamorm.Condition("Locked", "=", true))
+		}
+		return nil
+	})
+	if recoverErr != nil {
+		return nil, recoverErr
+	}
+
+	return objectRecord, nil
+}
+
+func (r *BookmarkRepository) deleteLegacyTimeBookmark(ctx context.Context, username, objectID string) error {
+	legacy, err := r.findTimeBookmarkFn(ctx, username, objectID)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return ErrorHandler.HandleDeleteError(err, EntityBookmark, objectID)
+	}
+	if legacy == nil {
+		return nil
+	}
+
+	deleteErr := r.transactWriteFn(ctx, func(tx core.TransactionBuilder) error {
+		tx.Delete(newBookmarkKey(legacy.PK, legacy.SK))
+		return nil
+	})
+	if deleteErr != nil && !errors.IsNotFound(deleteErr) {
+		return ErrorHandler.HandleDeleteError(deleteErr, EntityBookmark, objectID)
+	}
+
+	r.logger.Info("deleted legacy bookmark time record",
+		zap.String("username", username),
+		zap.String("object_id", objectID))
+	return nil
+}
+
+func (r *BookmarkRepository) transactWrite(ctx context.Context, fn func(core.TransactionBuilder) error) error {
+	txDB, err := r.transactionalDB()
+	if err != nil {
+		return err
+	}
+	return txDB.TransactWrite(ctx, fn)
+}
+
+func (r *BookmarkRepository) transactionalDB() (transactionalDB, error) {
+	if txDB, ok := r.db.(transactionalDB); ok && txDB != nil {
+		return txDB, nil
+	}
+	return nil, fmt.Errorf("database does not support transact write operations")
+}
+
+func (r *BookmarkRepository) batchGetBookmarks(ctx context.Context, keys []any) ([]*models.Bookmark, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
+	builder := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		BatchGetBuilder().
+		Keys(keys).
+		Parallel(4).
+		WithRetry(&core.RetryPolicy{
+			MaxRetries:    5,
+			InitialDelay:  75 * time.Millisecond,
+			MaxDelay:      2 * time.Second,
+			BackoffFactor: 1.8,
+			Jitter:        0.35,
+		}).
+		OnError(func(chunk []any, err error) error {
+			r.logger.Warn("bookmark batch chunk failed",
+				zap.Int("chunk_size", len(chunk)),
+				zap.Error(err))
+			return err
+		})
+
+	var raw []models.Bookmark
+	if err := builder.Execute(&raw); err != nil {
+		return nil, err
+	}
+
+	results := make([]*models.Bookmark, 0, len(raw))
+	for i := range raw {
+		results = append(results, &raw[i])
+	}
+	return results, nil
+}
+
+func (r *BookmarkRepository) logTransactionError(message string, err error, fields ...zap.Field) {
+	var txErr *errors.TransactionError
+	if stdErrors.As(err, &txErr) {
+		fields = append(fields,
+			zap.Int("transaction_op_index", txErr.OperationIndex),
+			zap.String("transaction_operation", txErr.Operation),
+			zap.String("transaction_reason", txErr.Reason),
+		)
+	}
+
+	r.logger.Warn(message, append(fields, zap.Error(err))...)
+}
+
+func newBookmarkKey(pk, sk string) *models.Bookmark {
+	return &models.Bookmark{
+		PK: pk,
+		SK: sk,
+	}
+}
+
+func (r *BookmarkRepository) dynamoGetObjectBookmark(ctx context.Context, username, objectID string) (*models.Bookmark, error) {
+	pk := buildBookmarkPK(username)
+	var bookmark models.Bookmark
+	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		ConsistentRead().
+		Where("PK", "=", pk).
+		Where("SK", "=", buildObjectSK(objectID)).
+		First(&bookmark)
+	if err != nil {
+		return nil, err
+	}
+	return &bookmark, nil
+}
+
+func (r *BookmarkRepository) dynamoFindTimeBookmarkByObject(ctx context.Context, username, objectID string) (*models.Bookmark, error) {
+	pk := buildBookmarkPK(username)
+	var bookmarks []models.Bookmark
+	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		Where("PK", "=", pk).
+		Where("SK", "BEGINS_WITH", models.BookmarkSortKeyPrefixTime).
+		Filter("ObjectID", "=", objectID).
+		Limit(1).
+		All(&bookmarks)
+	if err != nil && !errors.IsNotFound(err) {
+		return nil, err
+	}
+	if len(bookmarks) == 0 {
+		return nil, nil
+	}
+	return &bookmarks[0], nil
 }

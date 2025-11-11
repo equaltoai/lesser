@@ -512,7 +512,7 @@ func (rt *RelationshipTracker) processStateTransitions(ctx context.Context) erro
 
 		err := rt.db.WithContext(ctx).Model(&models.FederationRelationship{}).
 			Index("gsi1").
-			Where("GSI1PK", "=", fmt.Sprintf("FEDERATION_STATE#%s", state)).
+			Where("gsi1PK", "=", fmt.Sprintf("FEDERATION_STATE#%s", state)).
 			Limit(100). // Process in batches
 			Scan(&relationships)
 
@@ -552,8 +552,8 @@ func (rt *RelationshipTracker) archiveDormantRelationships(ctx context.Context) 
 
 	err := rt.db.WithContext(ctx).Model(&models.FederationRelationship{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", fmt.Sprintf("FEDERATION_STATE#%s", models.StateDormant)).
-		Where("GSI1SK", "<", fmt.Sprintf("%d", time.Now().Add(-rt.archiveAfter).Unix())).
+		Where("gsi1PK", "=", fmt.Sprintf("FEDERATION_STATE#%s", models.StateDormant)).
+		Where("gsi1SK", "<", fmt.Sprintf("%d", time.Now().Add(-rt.archiveAfter).Unix())).
 		Limit(100).
 		Scan(&relationships)
 
@@ -818,7 +818,7 @@ func (rt *RelationshipTracker) GetRelationshipsByState(ctx context.Context, stat
 
 	query := rt.db.WithContext(ctx).Model(&models.FederationRelationship{}).
 		Index("gsi1").
-		Where("GSI1PK", "=", fmt.Sprintf("FEDERATION_STATE#%s", state)).
+		Where("gsi1PK", "=", fmt.Sprintf("FEDERATION_STATE#%s", state)).
 		Limit(limit)
 
 	err := query.Scan(&relationships)

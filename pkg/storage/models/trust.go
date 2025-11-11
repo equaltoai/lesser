@@ -35,32 +35,34 @@ func (TrustEvidence) TableName() string {
 
 // TrustRelationship represents a trust relationship between two actors
 type TrustRelationship struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - exact patterns from legacy
-	PK string `dynamorm:"pk"` // TRUST#trusterID#category
-	SK string `dynamorm:"sk"` // TRUSTEE#trusteeID
+	PK string `dynamorm:"pk,attr:PK"` // TRUST#trusterID#category
+	SK string `dynamorm:"sk,attr:SK"` // TRUSTEE#trusteeID
 
 	// GSI1 - for reverse lookups (who trusts this trustee)
-	GSI1PK string `dynamorm:"index:gsi1-index,pk"` // TRUSTED#trusteeID#category
-	GSI1SK string `dynamorm:"index:gsi1-index,sk"` // TRUSTER#trusterID
+	GSI1PK string `dynamorm:"index:gsi1-index,pk,attr:gsi1PK"` // TRUSTED#trusteeID#category
+	GSI1SK string `dynamorm:"index:gsi1-index,sk,attr:gsi1SK"` // TRUSTER#trusterID
 
 	// GSI2 - for domain-based queries
-	GSI2PK string `dynamorm:"index:gsi2-index,pk"` // DOMAIN#domain
-	GSI2SK string `dynamorm:"index:gsi2-index,sk"` // TRUST#category#score
+	GSI2PK string `dynamorm:"index:gsi2-index,pk,attr:gsi2PK"` // DOMAIN#domain
+	GSI2SK string `dynamorm:"index:gsi2-index,sk,attr:gsi2SK"` // TRUST#category#score
 
 	// Business fields
-	ID         string          `json:"id"`
-	TrusterID  string          `json:"truster_id"`
-	TrusteeID  string          `json:"trustee_id"`
-	Category   TrustCategory   `json:"category"`
-	Score      float64         `json:"score"`      // -1.0 to 1.0
-	Confidence float64         `json:"confidence"` // 0.0 to 1.0
-	Evidence   []TrustEvidence `json:"evidence,omitempty"`
-	TTL        int64           `json:"ttl,omitempty" dynamorm:"ttl"`
-	Created    time.Time       `json:"created"`
-	Updated    time.Time       `json:"updated"`
+	ID         string          `dynamorm:"attr:id" json:"id"`
+	TrusterID  string          `dynamorm:"attr:trusterID" json:"truster_id"`
+	TrusteeID  string          `dynamorm:"attr:trusteeID" json:"trustee_id"`
+	Category   TrustCategory   `dynamorm:"attr:category" json:"category"`
+	Score      float64         `dynamorm:"attr:score" json:"score"`           // -1.0 to 1.0
+	Confidence float64         `dynamorm:"attr:confidence" json:"confidence"` // 0.0 to 1.0
+	Evidence   []TrustEvidence `dynamorm:"attr:evidence" json:"evidence,omitempty"`
+	TTL        int64           `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	Created    time.Time       `dynamorm:"attr:created" json:"created"`
+	Updated    time.Time       `dynamorm:"attr:updated" json:"updated"`
 
 	// Type marker for filtering
-	Type string `json:"type"` // Always "RELATIONSHIP"
+	Type string `dynamorm:"attr:type" json:"type"` // Always "RELATIONSHIP"
 }
 
 // TableName returns the DynamoDB table backing TrustRelationship.
@@ -100,25 +102,27 @@ func (tr *TrustRelationship) GetSK() string {
 
 // TrustScore represents a cached trust score for an actor
 type TrustScore struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys for cached scores
-	PK string `dynamorm:"pk"` // SCORE#actorID#category
-	SK string `dynamorm:"sk"` // CURRENT
+	PK string `dynamorm:"pk,attr:PK"` // SCORE#actorID#category
+	SK string `dynamorm:"sk,attr:SK"` // CURRENT
 
 	// Business fields
-	ActorID         string             `json:"actor_id"`
-	Category        TrustCategory      `json:"category"`
-	Score           float64            `json:"score"`            // Aggregated score
-	DirectScore     float64            `json:"direct_score"`     // Score from direct relationships
-	PropagatedScore float64            `json:"propagated_score"` // Score from network propagation
-	Confidence      float64            `json:"confidence"`       // Confidence in score
-	TrusterCount    int                `json:"truster_count"`    // Number of direct trusters
-	CategoryScores  map[string]float64 `json:"category_scores"`  // Scores by category
-	LastCalculated  time.Time          `json:"last_calculated"`
-	CacheTTL        time.Time          `json:"cache_ttl"`
-	TTL             int64              `json:"ttl,omitempty" dynamorm:"ttl"`
+	ActorID         string             `dynamorm:"attr:actorID" json:"actor_id"`
+	Category        TrustCategory      `dynamorm:"attr:category" json:"category"`
+	Score           float64            `dynamorm:"attr:score" json:"score"`                      // Aggregated score
+	DirectScore     float64            `dynamorm:"attr:directScore" json:"direct_score"`         // Score from direct relationships
+	PropagatedScore float64            `dynamorm:"attr:propagatedScore" json:"propagated_score"` // Score from network propagation
+	Confidence      float64            `dynamorm:"attr:confidence" json:"confidence"`            // Confidence in score
+	TrusterCount    int                `dynamorm:"attr:trusterCount" json:"truster_count"`       // Number of direct trusters
+	CategoryScores  map[string]float64 `dynamorm:"attr:categoryScores" json:"category_scores"`   // Scores by category
+	LastCalculated  time.Time          `dynamorm:"attr:lastCalculated" json:"last_calculated"`
+	CacheTTL        time.Time          `dynamorm:"attr:cacheTTL" json:"cache_ttl"`
+	TTL             int64              `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Type marker
-	Type string `json:"type"` // Always "SCORE"
+	Type string `dynamorm:"attr:type" json:"type"` // Always "SCORE"
 }
 
 // TableName returns the DynamoDB table backing TrustScore.
@@ -151,21 +155,23 @@ func (ts *TrustScore) GetSK() string {
 
 // TrustUpdate represents a trust score update event
 type TrustUpdate struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys for update history
-	PK string `dynamorm:"pk"` // UPDATES#actorID
-	SK string `dynamorm:"sk"` // TIME#timestamp#eventID
+	PK string `dynamorm:"pk,attr:PK"` // UPDATES#actorID
+	SK string `dynamorm:"sk,attr:SK"` // TIME#timestamp#eventID
 
 	// Business fields
-	ActorID   string        `json:"actor_id"`
-	EventID   string        `json:"event_id"`
-	Category  TrustCategory `json:"category"`
-	Delta     float64       `json:"delta"`  // Change in trust score
-	Reason    string        `json:"reason"` // Why the update occurred
-	Timestamp time.Time     `json:"timestamp"`
-	TTL       int64         `json:"ttl,omitempty" dynamorm:"ttl"`
+	ActorID   string        `dynamorm:"attr:actorID" json:"actor_id"`
+	EventID   string        `dynamorm:"attr:eventID" json:"event_id"`
+	Category  TrustCategory `dynamorm:"attr:category" json:"category"`
+	Delta     float64       `dynamorm:"attr:delta" json:"delta"`   // Change in trust score
+	Reason    string        `dynamorm:"attr:reason" json:"reason"` // Why the update occurred
+	Timestamp time.Time     `dynamorm:"attr:timestamp" json:"timestamp"`
+	TTL       int64         `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Type marker
-	Type string `json:"type"` // Always "UPDATE"
+	Type string `dynamorm:"attr:type" json:"type"` // Always "UPDATE"
 }
 
 // TableName returns the DynamoDB table backing TrustUpdate.
@@ -202,14 +208,14 @@ func getDomainFromActorID(actorID string) string {
 	if u, err := url.Parse(actorID); err == nil && u.Host != "" {
 		return u.Host
 	}
-	
+
 	// Look for the last @ in the actor ID (handles @user@domain.com format)
 	for i := len(actorID) - 1; i >= 0; i-- {
 		if actorID[i] == '@' {
 			return actorID[i+1:]
 		}
 	}
-	
+
 	// Default to "local" if no domain found
 	return "local"
 }

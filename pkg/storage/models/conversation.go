@@ -9,26 +9,28 @@ import (
 
 // Conversation represents a direct message conversation between users
 type Conversation struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - MUST match legacy exactly
-	PK string `dynamorm:"pk" json:"PK"` // CONVERSATION#conversationID
-	SK string `dynamorm:"sk" json:"SK"` // METADATA
+	PK string `dynamorm:"pk,attr:PK" json:"PK"` // CONVERSATION#conversationID
+	SK string `dynamorm:"sk,attr:SK" json:"SK"` // METADATA
 
 	// GSI1 is used for participant records (additional records per participant)
 	// Note: The main conversation record doesn't use GSI1, only participant records do
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK,omitempty"`
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK,omitempty"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"`
 
 	// Core fields from legacy
-	ID           string    `json:"id"`
-	Participants []string  `json:"participants"` // Actor IDs/usernames
-	LastStatusID string    `json:"last_status_id,omitempty"`
-	Unread       bool      `json:"unread"` // Whether conversation has unread messages
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           string    `dynamorm:"attr:id" json:"id"`
+	Participants []string  `dynamorm:"attr:participants" json:"participants"` // Actor IDs/usernames
+	LastStatusID string    `dynamorm:"attr:lastStatusID" json:"last_status_id,omitempty"`
+	Unread       bool      `dynamorm:"attr:unread" json:"unread"` // Whether conversation has unread messages
+	CreatedAt    time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	UpdatedAt    time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// Message counting fields
-	TotalMessageCount int64     `json:"total_message_count"`         // Total messages in conversation
-	LastMessageTime   time.Time `json:"last_message_time,omitempty"` // Time of last message
+	TotalMessageCount int64     `dynamorm:"attr:totalMessageCount" json:"total_message_count"`       // Total messages in conversation
+	LastMessageTime   time.Time `dynamorm:"attr:lastMessageTime" json:"last_message_time,omitempty"` // Time of last message
 }
 
 // TableName returns the DynamoDB table name
@@ -91,16 +93,18 @@ func (c *Conversation) GetSK() string {
 // ConversationParticipantRecord represents a participant's view of a conversation
 // This is used for querying conversations by user
 type ConversationParticipantRecord struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys for participant record
-	PK string `dynamorm:"pk" json:"PK"` // USER_CONVERSATIONS#username
-	SK string `dynamorm:"sk" json:"SK"` // timestamp#conversationID (for sorting by recent)
+	PK string `dynamorm:"pk,attr:PK" json:"PK"` // USER_CONVERSATIONS#username
+	SK string `dynamorm:"sk,attr:SK" json:"SK"` // timestamp#conversationID (for sorting by recent)
 
 	// GSI1 for reverse lookup (find participants by conversation)
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // CONVERSATION#conversationID
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // PARTICIPANT#username
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK"` // CONVERSATION#conversationID
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK"` // PARTICIPANT#username
 
 	// Embed the full conversation data
-	*Conversation `json:",inline"`
+	*Conversation `dynamorm:"attr:conversation" json:",inline"`
 }
 
 // TableName returns the DynamoDB table name
@@ -141,12 +145,14 @@ func (p *ConversationParticipantRecord) GetSK() string {
 // ConversationParticipantKey is used for looking up conversations by exact participants
 // Legacy uses GSI1PK = CONVERSATION_PARTICIPANTS#sorted_participants_list
 type ConversationParticipantKey struct {
-	PK     string `dynamorm:"pk" json:"PK"`
-	SK     string `dynamorm:"sk" json:"SK"`
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"`
-	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK,omitempty"`
+	_ struct{} `dynamorm:"naming:camelCase"`
 
-	ConversationID string `json:"conversation_id"`
+	PK     string `dynamorm:"pk,attr:PK" json:"PK"`
+	SK     string `dynamorm:"sk,attr:SK" json:"SK"`
+	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK"`
+	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"`
+
+	ConversationID string `dynamorm:"attr:conversationID" json:"conversation_id"`
 }
 
 // TableName returns the DynamoDB table name

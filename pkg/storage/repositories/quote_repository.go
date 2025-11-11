@@ -171,12 +171,12 @@ func (r *QuoteRepository) getQuotesByGSI(ctx context.Context, gsiKey, gsiValue s
 
 // GetQuotesForStatus retrieves quotes for a given status using GSI1
 func (r *QuoteRepository) GetQuotesForStatus(ctx context.Context, statusID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.QuoteRelationship], error) {
-	return r.getQuotesByGSI(ctx, "GSI1PK", fmt.Sprintf("QUOTED#%s", statusID), opts, "get quotes for status")
+	return r.getQuotesByGSI(ctx, "gsi1PK", fmt.Sprintf("QUOTED#%s", statusID), opts, "get quotes for status")
 }
 
 // GetQuotesByUser retrieves quotes created by a specific user
 func (r *QuoteRepository) GetQuotesByUser(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.QuoteRelationship], error) {
-	return r.getQuotesByGSI(ctx, "GSI2PK", fmt.Sprintf("QUOTER#%s", userID), opts, "get quotes by user")
+	return r.getQuotesByGSI(ctx, "gsi2PK", fmt.Sprintf("QUOTER#%s", userID), opts, "get quotes by user")
 }
 
 // CreateQuotePermissions creates new quote permissions for a user
@@ -259,7 +259,7 @@ func (r *QuoteRepository) DeleteQuotePermissions(ctx context.Context, username s
 func (r *QuoteRepository) GetQuoteCount(ctx context.Context, statusID string) (int64, error) {
 	db := r.relationshipRepo.GetDB()
 	count, err := db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Where("GSI1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
+		Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
 		Where("Withdrawn", "=", false).
 		Count()
 
@@ -290,7 +290,7 @@ func (r *QuoteRepository) WithdrawQuotes(ctx context.Context, noteID, userID str
 	// Query all quotes by this user on this note
 	var quotes []models.QuoteRelationship
 	err := db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Where("GSI2PK", "=", fmt.Sprintf("QUOTER#%s", userID)).
+		Where("gsi2PK", "=", fmt.Sprintf("QUOTER#%s", userID)).
 		Filter("TargetNoteID", "=", noteID).
 		Filter("Withdrawn", "=", false).
 		All(&quotes)
