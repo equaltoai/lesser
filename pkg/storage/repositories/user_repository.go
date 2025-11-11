@@ -251,7 +251,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, limit int32, cursor stri
 
 	var userModels []models.User
 	query := r.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("user-list-index").
+		Index("GSI1").
 		Where("gsi1PK", "=", "USERS").
 		Limit(int(limit) + 1) // Request one extra to detect if there are more pages
 
@@ -313,10 +313,10 @@ func (r *UserRepository) GetActiveUserCount(ctx context.Context, days int) (int6
 func (r *UserRepository) GetTotalUserCount(ctx context.Context) (int64, error) {
 	r.logger.Debug("getting total user count")
 
-	// Use GSI1 (user-list-index) where all users have GSI1PK = "USERS"
+	// Use GSI1 (user listing index) where all users have GSI1PK = "USERS"
 	// This is much more efficient than scanning the main table
 	count, err := r.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("user-list-index").
+		Index("GSI1").
 		Where("gsi1PK", "=", "USERS").
 		Count()
 

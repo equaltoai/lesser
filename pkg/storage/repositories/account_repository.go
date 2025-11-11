@@ -1664,7 +1664,7 @@ func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, _ string, 
 
 	var users []models.User
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("user-list-index").
+		Index("GSI1").
 		Where("gsi1PK", "=", "USERS")
 
 	limit := opts.Limit
@@ -1723,7 +1723,7 @@ func (r *AccountRepository) GetFeaturedAccounts(ctx context.Context, opts interf
 	// Featured accounts are typically admins and moderators
 	var users []models.User
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("role-index").
+		Index("GSI3").
 		Where("gsi3PK", "IN", []string{"ROLE#admin", "ROLE#moderator"})
 
 	limit := opts.Limit
@@ -2134,10 +2134,10 @@ func (r *AccountRepository) GetAccountsByUsernames(ctx context.Context, username
 
 // GetAccountsCount retrieves the total number of accounts
 func (r *AccountRepository) GetAccountsCount(ctx context.Context) (int64, error) {
-	// Count users using the user-list-index
+	// Count users using GSI1 (user listing index)
 	var users []models.User
 	err := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("user-list-index").
+		Index("GSI1").
 		Where("gsi1PK", "=", "USERS").
 		Scan(&users)
 

@@ -213,6 +213,8 @@ const userData = {
 const oauthClientData = {
   PK: { S: `OAUTH_CLIENT#${clientId}` },
   SK: { S: "CLIENT" },
+  GSI1PK: { S: `OWNER#${username}` },
+  GSI1SK: { S: `CLIENT#${clientId}` },
   OAuthClientsPK: { S: "OAUTH_CLIENTS" },
   OAuthClientsSK: {
     S: `CREATED_AT#${encodeDescendingTimestamp(timestamp)}#CLIENT#${clientId}`,
@@ -230,6 +232,7 @@ const oauthClientData = {
   Scopes: {
     L: [{ S: "read" }, { S: "write" }, { S: "follow" }, { S: "push" }],
   },
+  OwnerID: { S: username },
   Confidential: { BOOL: true },
   CreatedAt: { S: timestamp },
   UpdatedAt: { S: timestamp },

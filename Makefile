@@ -1,4 +1,4 @@
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate clear-data
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate clear-data build-bootstrap-owner bootstrap-owner
 
 # =============================================================================
 # CONFIGURATION
@@ -149,6 +149,32 @@ build-cloudfront-keygen:
 		rm -rf $$TMPDIR
 	@echo "✓ Built bin/cloudfront-keygen.zip ($(shell ls -lh bin/cloudfront-keygen.zip 2>/dev/null | awk '{print $$5}'))"
 
+## Build owner bootstrap utility
+build-bootstrap-owner:
+	@echo "Building owner bootstrap utility..."
+	@mkdir -p bin
+	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/bootstrap-owner ./cmd/bootstrap-owner
+	@echo "✓ Built bin/bootstrap-owner"
+
+bootstrap-owner:
+	@$(MAKE) build-bootstrap-owner
+	@OWNER_ENV=$${OWNER_ENV:-$(CDK_ENV)}; \
+	  OWNER_DOMAIN=$${OWNER_DOMAIN:-$(DOMAIN)}; \
+	  if [ -z "$$OWNER_DOMAIN" ]; then \
+	    echo "ERROR: OWNER_DOMAIN is required (e.g., OWNER_DOMAIN=dev.lesser.host)"; \
+	    exit 1; \
+	  fi; \
+	  OWNER_TABLE="lesser-$$OWNER_ENV"; \
+	  OWNER_WALLET_SECRET_NAME="lesser/$$OWNER_ENV/admin-wallet"; \
+	  OWNER_OAUTH_SECRET_NAME="lesser/$$OWNER_ENV/admin-oauth"; \
+	  echo "Bootstrapping owner (env=$$OWNER_ENV, domain=$$OWNER_DOMAIN, table=$$OWNER_TABLE)"; \
+	  AWS_PROFILE=$(AWS_PROFILE) bin/bootstrap-owner \
+	    --env=$$OWNER_ENV \
+	    --table=$$OWNER_TABLE \
+	    --domain=$$OWNER_DOMAIN \
+	    --wallet-secret=$$OWNER_WALLET_SECRET_NAME \
+	    --oauth-secret=$$OWNER_OAUTH_SECRET_NAME
+
 ## Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
@@ -251,11 +277,11 @@ ensure-vapid-credentials:
 deploy-dev: ENV=dev
 deploy-dev: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to DEVELOPMENT environment..."
-	@echo "Step 1/3: Deploying monitoring stack..."
+	@echo "Step 1/4: Deploying monitoring stack..."
 	@cd infra/cdk && cdk deploy LesserMonitoringStack-development \
 		--context environment=development \
 		--require-approval never
-	@echo "Step 2/3: Deploying application stack..."
+	@echo "Step 2/4: Deploying application stack..."
 	@. $(CDN_ENV_FILE); \
 	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-development \
@@ -266,8 +292,10 @@ deploy-dev: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ens
 		--context vapidPublicKey=$$VAPID_PUBLIC_KEY \
 		--context vapidSubject=$$VAPID_SUBJECT \
 		--require-approval never
-	@echo "Step 3/3: Deploying auth UI..."
+	@echo "Step 3/4: Deploying auth UI..."
 	@$(MAKE) deploy-auth-ui DOMAIN=dev.lesser.host AWS_PROFILE=$(AWS_PROFILE)
+	@echo "Step 4/4: Bootstrapping owner account..."
+	@$(MAKE) bootstrap-owner OWNER_ENV=development OWNER_DOMAIN=dev.lesser.host AWS_PROFILE=$(AWS_PROFILE)
 	@echo "✓ Development deployment complete"
 
 ## Deploy to test/staging environment
@@ -279,12 +307,12 @@ deploy-test: build-lambdas build-cloudfront-keygen build-auth-ui check-shared en
 		echo "Usage: make deploy-test DOMAIN=staging.yourdomain.com"; \
 		exit 1; \
 	fi
-	@echo "Step 1/3: Deploying monitoring stack..."
+	@echo "Step 1/4: Deploying monitoring stack..."
 	@cd infra/cdk && cdk deploy LesserMonitoringStack-staging \
 		--context environment=staging \
 		--context domain=$(DOMAIN) \
 		--require-approval broadening
-	@echo "Step 2/3: Deploying application stack..."
+	@echo "Step 2/4: Deploying application stack..."
 	@. $(CDN_ENV_FILE); \
 	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-staging \
@@ -296,8 +324,10 @@ deploy-test: build-lambdas build-cloudfront-keygen build-auth-ui check-shared en
 		--context vapidPublicKey=$$VAPID_PUBLIC_KEY \
 		--context vapidSubject=$$VAPID_SUBJECT \
 		--require-approval broadening
-	@echo "Step 3/3: Deploying auth UI..."
+	@echo "Step 3/4: Deploying auth UI..."
 	@$(MAKE) deploy-auth-ui DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
+	@echo "Step 4/4: Bootstrapping owner account..."
+	@$(MAKE) bootstrap-owner OWNER_ENV=staging OWNER_DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
 	@echo "✓ Staging deployment complete"
 
 ## Deploy to live/production environment
@@ -309,12 +339,12 @@ deploy-live: build-lambdas build-cloudfront-keygen build-auth-ui check-shared en
 		echo "Usage: make deploy-live DOMAIN=yourdomain.com"; \
 		exit 1; \
 	fi
-	@echo "Step 1/3: Deploying monitoring stack..."
+	@echo "Step 1/4: Deploying monitoring stack..."
 	@cd infra/cdk && cdk deploy LesserMonitoringStack-production \
 		--context environment=production \
 		--context domain=$(DOMAIN) \
 		--require-approval broadening
-	@echo "Step 2/3: Deploying application stack..."
+	@echo "Step 2/4: Deploying application stack..."
 	@. $(CDN_ENV_FILE); \
 	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-production \
@@ -326,8 +356,10 @@ deploy-live: build-lambdas build-cloudfront-keygen build-auth-ui check-shared en
 		--context vapidPublicKey=$$VAPID_PUBLIC_KEY \
 		--context vapidSubject=$$VAPID_SUBJECT \
 		--require-approval broadening
-	@echo "Step 3/3: Deploying auth UI..."
+	@echo "Step 3/4: Deploying auth UI..."
 	@$(MAKE) deploy-auth-ui DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
+	@echo "Step 4/4: Bootstrapping owner account..."
+	@$(MAKE) bootstrap-owner OWNER_ENV=production OWNER_DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
 	@echo "✓ Production deployment complete"
 
 ## Generic deploy command (use ENV variable to specify environment)

@@ -410,7 +410,7 @@ func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.Ac
 	// Look for the first admin user to serve as contact account
 	var users []models.User
 	err := r.metricsRepo.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("role-index").
+		Index("GSI3").
 		Where("gsi3PK", "=", "ROLE#admin").
 		Limit(1).
 		All(&users)

@@ -309,11 +309,11 @@ func (s *LesserApiStack) createSharedResources() {
 		s.MainTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
 			IndexName: jsii.String(fmt.Sprintf("GSI%d", i)),
 			PartitionKey: &awsdynamodb.Attribute{
-				Name: jsii.String(fmt.Sprintf("gsI%dPK", i)),
+				Name: jsii.String(fmt.Sprintf("gsi%dPK", i)),
 				Type: awsdynamodb.AttributeType_STRING,
 			},
 			SortKey: &awsdynamodb.Attribute{
-				Name: jsii.String(fmt.Sprintf("gsI%dSK", i)),
+				Name: jsii.String(fmt.Sprintf("gsi%dSK", i)),
 				Type: awsdynamodb.AttributeType_STRING,
 			},
 			ProjectionType: awsdynamodb.ProjectionType_ALL,
