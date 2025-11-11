@@ -359,8 +359,12 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 
 	// Handle reblog if this is a reblog
 	var reblogStatus *models.Status
-	if storageStatus.ReblogOfID != "" {
-		if rebloggedStatus, err := h.repos.Status().GetStatus(ctx, storageStatus.ReblogOfID); err == nil {
+	reblogTargetID := storageStatus.ReblogOfID
+	if reblogTargetID == "" {
+		reblogTargetID = storageStatus.BoostOfStatusID
+	}
+	if reblogTargetID != "" {
+		if rebloggedStatus, err := h.repos.Status().GetStatus(ctx, reblogTargetID); err == nil {
 			// Recursively convert the reblogged status
 			reblogStatus, _ = h.convertStorageStatusToAPI(rebloggedStatus, currentUsername)
 		}

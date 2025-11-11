@@ -944,6 +944,8 @@ type Object struct {
 	LikesCount       int                       `json:"likesCount"`
 	SharesCount      int                       `json:"sharesCount"`
 	Boosted          bool                      `json:"boosted"`
+	RelationshipType ObjectRelationshipType    `json:"relationshipType"`
+	BoostedObject    *Object                   `json:"boostedObject,omitempty"`
 	EstimatedCost    int                       `json:"estimatedCost"`
 	ModerationScore  *float64                  `json:"moderationScore,omitempty"`
 	CommunityNotes   []*CommunityNote          `json:"communityNotes"`
@@ -2908,6 +2910,61 @@ func (e *NotificationLevel) UnmarshalJSON(b []byte) error {
 }
 
 func (e NotificationLevel) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ObjectRelationshipType string
+
+const (
+	ObjectRelationshipTypeOriginal ObjectRelationshipType = "ORIGINAL"
+	ObjectRelationshipTypeBoost    ObjectRelationshipType = "BOOST"
+)
+
+var AllObjectRelationshipType = []ObjectRelationshipType{
+	ObjectRelationshipTypeOriginal,
+	ObjectRelationshipTypeBoost,
+}
+
+func (e ObjectRelationshipType) IsValid() bool {
+	switch e {
+	case ObjectRelationshipTypeOriginal, ObjectRelationshipTypeBoost:
+		return true
+	}
+	return false
+}
+
+func (e ObjectRelationshipType) String() string {
+	return string(e)
+}
+
+func (e *ObjectRelationshipType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ObjectRelationshipType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ObjectRelationshipType", str)
+	}
+	return nil
+}
+
+func (e ObjectRelationshipType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ObjectRelationshipType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ObjectRelationshipType) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

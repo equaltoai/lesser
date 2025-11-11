@@ -30,10 +30,12 @@ type PaginatedResult[T any] struct {
 type StatusRepository interface {
 	// Core CRUD operations
 	CreateStatus(ctx context.Context, status *models.Status) error
+	CreateBoostStatus(ctx context.Context, status *models.Status) error
 	GetStatus(ctx context.Context, statusID string) (*models.Status, error)
 	GetStatusByURL(ctx context.Context, url string) (*models.Status, error)
 	UpdateStatus(ctx context.Context, status *models.Status) error
 	DeleteStatus(ctx context.Context, statusID string) error
+	DeleteBoostStatus(ctx context.Context, boosterID, targetStatusID string) (*models.Status, error)
 
 	// Timeline operations
 	GetPublicTimeline(ctx context.Context, opts PaginationOptions) (*PaginatedResult[*models.Status], error)

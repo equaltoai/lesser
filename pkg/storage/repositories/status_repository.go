@@ -3,24 +3,18 @@ package repositories
 import (
 	"context"
 	"fmt"
-	"sort"
-	"strings"
-	"time"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"sort"
+	"strings"
+	"time"
 )
 
 // StatusRepository implements status operations using DynamORM with EnhancedBaseRepository
@@ -68,20 +62,7 @@ const (
 	maxHomeTimelinePageLimit        = 40
 	homeTimelineStatusesPerActor    = 20
 	homeTimelineFollowingSampleSize = 1000
-	maxInt32                        = 2147483647 // Maximum value for int32
 )
-
-// limitInt32 safely converts int to int32, clamping to maxInt32 to prevent overflow
-func limitInt32(limit int) int32 {
-	if limit > maxInt32 {
-		return maxInt32
-	}
-	if limit < 0 {
-		return 0
-	}
-	// nolint:gosec // Conversion is safe: we've checked bounds above
-	return int32(limit)
-}
 
 // CreateStatus creates a new status using enhanced validation and event emission
 func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Status) error {
@@ -104,6 +85,23 @@ func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Stat
 	}
 
 	return nil
+}
+
+// CreateBoostStatus persists a boost wrapper as a first-class status.
+func (r *StatusRepository) CreateBoostStatus(ctx context.Context, status *models.Status) error {
+	if status == nil {
+		return fmt.Errorf("boost status payload is required")
+	}
+
+	if status.BoostOfStatusID == "" && status.ReblogOfID == "" {
+		return fmt.Errorf("boost status missing target reference")
+	}
+
+	if status.AuthorID == "" {
+		return fmt.Errorf("boost status missing author id")
+	}
+
+	return r.CreateStatus(ctx, status)
 }
 
 // createHashtagTimelineIndexes persists supplemental hashtag index records so hashtag timelines can query efficiently.
@@ -213,53 +211,25 @@ func (r *StatusRepository) queryPublicTimelineDirect(ctx context.Context, opts i
 		opts.Limit = defaultHomeTimelinePageLimit
 	}
 
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(config.Get().Region))
+	var statusModels []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("GSI2").
+		Where("gsi2PK", "=", "PUBLIC_TIMELINE").
+		OrderBy("gsi2SK", "DESC").
+		Limit(opts.Limit).
+		All(&statusModels)
 	if err != nil {
-		return nil, fmt.Errorf("load aws config: %w", err)
+		return nil, fmt.Errorf("query public timeline: %w", err)
 	}
 
-	client := dynamodb.NewFromConfig(awsCfg)
-	input := &dynamodb.QueryInput{
-		TableName:              aws.String(r.tableName),
-		IndexName:              aws.String("GSI2"),
-		KeyConditionExpression: aws.String("#pk = :pk"),
-		ExpressionAttributeNames: map[string]string{
-			"#pk": "gsi2PK",
-		},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: "PUBLIC_TIMELINE"},
-		},
-		ScanIndexForward: aws.Bool(false),
-		Limit:            aws.Int32(limitInt32(opts.Limit)),
-	}
-
-	output, err := client.Query(ctx, input)
-	if err != nil {
-		return nil, err
+	statuses := make([]*models.Status, len(statusModels))
+	for i := range statusModels {
+		statuses[i] = &statusModels[i]
 	}
 
 	r.logger.Info("public timeline query completed",
-		zap.Int("items_returned", len(output.Items)),
-		zap.Int("limit", int(opts.Limit)))
-
-	statuses := make([]*models.Status, 0, len(output.Items))
-	for _, item := range output.Items {
-		var status models.Status
-		if err := dynamorm.UnmarshalItem(item, &status); err != nil {
-			r.logger.Warn("failed to unmarshal status from public timeline query", zap.Error(err))
-			continue
-		}
-		r.logger.Debug("unmarshalled public timeline status",
-			zap.String("status_id", status.StatusID),
-			zap.String("author_id", status.AuthorID),
-			zap.String("author_username", status.AuthorUsername),
-			zap.String("visibility", status.Visibility),
-			zap.Bool("deleted", status.Deleted))
-		statuses = append(statuses, &status)
-	}
-
-	r.logger.Info("public timeline unmarshal completed",
-		zap.Int("statuses_unmarshalled", len(statuses)))
+		zap.Int("items_returned", len(statuses)),
+		zap.Int("limit", opts.Limit))
 
 	return statuses, nil
 }
@@ -376,6 +346,55 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 	}
 
 	return nil
+}
+
+// DeleteBoostStatus removes the boost wrapper for a given booster/target pair.
+func (r *StatusRepository) DeleteBoostStatus(ctx context.Context, boosterID, targetStatusID string) (*models.Status, error) {
+	if err := common.ValidateRequiredParam("booster_id", boosterID); err != nil {
+		return nil, err
+	}
+	if err := common.ValidateRequiredParam("target_status_id", targetStatusID); err != nil {
+		return nil, err
+	}
+
+	boostStatus, err := r.findBoostStatus(ctx, boosterID, targetStatusID)
+	if err != nil {
+		if errors.IsNotFound(err) || err == storage.ErrNotFound {
+			r.logger.Debug("no boost status found to delete",
+				zap.String("booster_id", boosterID),
+				zap.String("target_status_id", targetStatusID))
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if err := r.DeleteStatus(ctx, boostStatus.StatusID); err != nil {
+		return nil, err
+	}
+
+	return boostStatus, nil
+}
+
+func (r *StatusRepository) findBoostStatus(ctx context.Context, boosterID, targetStatusID string) (*models.Status, error) {
+	var statuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("GSI1").
+		Where("gsi1PK", "=", fmt.Sprintf("AUTHOR#%s", boosterID)).
+		Filter("BoostOfStatusID", "=", targetStatusID).
+		Limit(1).
+		All(&statuses)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, storage.ErrNotFound
+		}
+		return nil, err
+	}
+
+	if len(statuses) == 0 {
+		return nil, storage.ErrNotFound
+	}
+
+	return &statuses[0], nil
 }
 
 // CountStatusesByAuthor counts the total number of statuses by an author
@@ -782,7 +801,7 @@ func (r *StatusRepository) extractDomainFromEnv() string {
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		// Check if there's an alternative domain configured
 		// Note: INSTANCE_DOMAIN is not in config yet, but Domain should be the primary source
-		if cfg.Domain == "" || cfg.Domain == "localhost" {
+		if cfg.Domain == "" || cfg.Domain == DefaultDomain {
 			// Fallback logic can be added here if needed
 			// Currently using the extracted domain as-is
 			// Future enhancement: implement alternate domain resolution

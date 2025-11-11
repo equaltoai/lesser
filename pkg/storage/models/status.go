@@ -55,26 +55,29 @@ type Status struct {
 
 	// Core status data
 	StatusID            string     `dynamorm:"attr:statusID" json:"status_id"`
-	Note                *NoteField `dynamorm:"attr:note" json:"note"` // The actual ActivityPub Note (wrapped for proper DynamORM handling)
-	AuthorID            string     `dynamorm:"attr:authorID" json:"author_id"`                        // AttributedTo from the Note
-	AuthorUsername      string     `dynamorm:"attr:authorUsername" json:"author_username"`            // Extracted username for efficient queries
-	Content             string     `dynamorm:"attr:content" json:"content"`                           // Cached content for search
-	ConversationID      string     `dynamorm:"attr:conversationID" json:"conversation_id,omitempty"`  // Thread/conversation ID
-	InReplyToID         string     `dynamorm:"attr:inReplyToID" json:"in_reply_to_id,omitempty"`      // Parent status ID
-	ReblogOfID          string     `dynamorm:"attr:reblogOfID" json:"reblog_of_id,omitempty"`         // If this is a reblog, the original status ID
+	Note                *NoteField `dynamorm:"attr:note" json:"note"`                                            // The actual ActivityPub Note (wrapped for proper DynamORM handling)
+	AuthorID            string     `dynamorm:"attr:authorID" json:"author_id"`                                   // AttributedTo from the Note
+	AuthorUsername      string     `dynamorm:"attr:authorUsername" json:"author_username"`                       // Extracted username for efficient queries
+	Content             string     `dynamorm:"attr:content" json:"content"`                                      // Cached content for search
+	ConversationID      string     `dynamorm:"attr:conversationID" json:"conversation_id,omitempty"`             // Thread/conversation ID
+	InReplyToID         string     `dynamorm:"attr:inReplyToID" json:"in_reply_to_id,omitempty"`                 // Parent status ID
+	ReblogOfID          string     `dynamorm:"attr:reblogOfID" json:"reblog_of_id,omitempty"`                    // If this is a reblog, the original status ID
+	BoostOfStatusID     string     `dynamorm:"attr:boostOfStatusID" json:"boost_of_status_id,omitempty"`         // Original status ID for boost contexts
+	BoostOfAuthorID     string     `dynamorm:"attr:boostOfAuthorID" json:"boost_of_author_id,omitempty"`         // Author ID of the boosted status
+	BoostAnnounceID     string     `dynamorm:"attr:boostActivityID" json:"boost_announce_id,omitempty"`          // ActivityPub Announce ID backing this boost (legacy attribute retained)
 	QuoteTargetStatusID string     `dynamorm:"attr:quoteTargetStatusID" json:"quote_target_status_id,omitempty"` // If this status quotes another, the original status ID
 	QuoteTargetAuthorID string     `dynamorm:"attr:quoteTargetAuthorID" json:"quote_target_author_id,omitempty"` // Author ID of the quoted status
-	Visibility          string     `dynamorm:"attr:visibility" json:"visibility"`                     // public, unlisted, private, direct
-	Sensitive           bool       `dynamorm:"attr:sensitive" json:"sensitive"`                       // Content warning flag
-	Language            string     `dynamorm:"attr:language" json:"language,omitempty"`               // Content language
-	Hashtags            []string   `dynamorm:"attr:hashtags" json:"hashtags,omitempty"`               // Extracted hashtags
-	Mentions            []string   `dynamorm:"attr:mentions" json:"mentions,omitempty"`               // Extracted mentions
-	URLs                []string   `dynamorm:"attr:urls" json:"urls,omitempty"`                       // Extracted URLs
-	MediaCount          int        `dynamorm:"attr:mediaCount" json:"media_count"`                    // Number of media attachments
+	Visibility          string     `dynamorm:"attr:visibility" json:"visibility"`                                // public, unlisted, private, direct
+	Sensitive           bool       `dynamorm:"attr:sensitive" json:"sensitive"`                                  // Content warning flag
+	Language            string     `dynamorm:"attr:language" json:"language,omitempty"`                          // Content language
+	Hashtags            []string   `dynamorm:"attr:hashtags" json:"hashtags,omitempty"`                          // Extracted hashtags
+	Mentions            []string   `dynamorm:"attr:mentions" json:"mentions,omitempty"`                          // Extracted mentions
+	URLs                []string   `dynamorm:"attr:urls" json:"urls,omitempty"`                                  // Extracted URLs
+	MediaCount          int        `dynamorm:"attr:mediaCount" json:"media_count"`                               // Number of media attachments
 
 	// Addressing fields for direct messages and limited visibility
-	ToRecipients  []string `dynamorm:"attr:toRecipients" json:"to_recipients,omitempty"`  // Primary recipients (visible to all)
-	CcRecipients  []string `dynamorm:"attr:ccRecipients" json:"cc_recipients,omitempty"`  // Carbon copy recipients (visible to all)
+	ToRecipients  []string `dynamorm:"attr:toRecipients" json:"to_recipients,omitempty"`   // Primary recipients (visible to all)
+	CcRecipients  []string `dynamorm:"attr:ccRecipients" json:"cc_recipients,omitempty"`   // Carbon copy recipients (visible to all)
 	BtoRecipients []string `dynamorm:"attr:btoRecipients" json:"bto_recipients,omitempty"` // Blind to recipients (hidden from others)
 	BccRecipients []string `dynamorm:"attr:bccRecipients" json:"bcc_recipients,omitempty"` // Blind carbon copy (hidden from all)
 
@@ -138,6 +141,8 @@ func (s *Status) BeforeCreate() error {
 	s.ModifiedAt = now
 	s.UpdatedAt = now
 
+	s.syncBoostReferenceFields()
+
 	// Set published time if not already set
 	if s.PublishedAt.IsZero() {
 		s.PublishedAt = now
@@ -163,6 +168,8 @@ func (s *Status) BeforeUpdate() error {
 	now := time.Now()
 	s.ModifiedAt = now
 	s.UpdatedAt = now
+
+	s.syncBoostReferenceFields()
 
 	// Update extracted data from Note if present
 	if s.Note != nil {
@@ -430,7 +437,21 @@ func (s *Status) IsFlagged() bool {
 
 // IsReblog returns true if the status is a reblog/boost of another status
 func (s *Status) IsReblog() bool {
-	return s.ReblogOfID != ""
+	return s.ReblogOfID != "" || s.BoostOfStatusID != ""
+}
+
+// syncBoostReferenceFields keeps boost metadata aligned so repositories can query consistently.
+func (s *Status) syncBoostReferenceFields() {
+	if s == nil {
+		return
+	}
+
+	if s.BoostOfStatusID == "" {
+		s.BoostOfStatusID = s.ReblogOfID
+	}
+	if s.ReblogOfID == "" {
+		s.ReblogOfID = s.BoostOfStatusID
+	}
 }
 
 // IsRecipient checks if the given actor ID is a recipient of this status

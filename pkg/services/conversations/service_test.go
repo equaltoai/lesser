@@ -126,6 +126,11 @@ func (m *mockNoteRepository) CreateStatus(ctx context.Context, status *models.St
 	return args.Error(0)
 }
 
+func (m *mockNoteRepository) CreateBoostStatus(ctx context.Context, status *models.Status) error {
+	// Reuse CreateStatus expectations when needed; boosts aren't exercised in these tests.
+	return m.CreateStatus(ctx, status)
+}
+
 func (m *mockNoteRepository) GetStatus(ctx context.Context, statusID string) (*models.Status, error) {
 	args := m.Called(ctx, statusID)
 	if args.Get(0) == nil {
@@ -292,6 +297,11 @@ func (m *mockNoteRepository) GetStatusContext(ctx context.Context, statusID stri
 func (m *mockNoteRepository) GetStatusEngagement(ctx context.Context, statusID, userID string) (liked, reblogged, bookmarked bool, err error) {
 	args := m.Called(ctx, statusID, userID)
 	return args.Bool(0), args.Bool(1), args.Bool(2), args.Error(3)
+}
+
+func (m *mockNoteRepository) DeleteBoostStatus(context.Context, string, string) (*models.Status, error) {
+	// Direct message tests never create boost statuses; return nil to satisfy interface.
+	return nil, nil
 }
 
 type mockAccountRepository struct {

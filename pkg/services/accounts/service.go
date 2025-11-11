@@ -241,6 +241,57 @@ func NewService(
 	return svc
 }
 
+func (s *Service) normalizeUsername(username string) string {
+	trimmed := strings.TrimSpace(username)
+	if trimmed == "" {
+		return trimmed
+	}
+
+	trimmed = strings.TrimPrefix(trimmed, "acct:")
+	trimmed = strings.TrimPrefix(trimmed, "@")
+	trimmed = strings.TrimSuffix(trimmed, "/")
+
+	if strings.HasPrefix(trimmed, "https://") || strings.HasPrefix(trimmed, "http://") {
+		urlWithoutScheme := strings.TrimSuffix(trimmed, "/")
+		if idx := strings.Index(urlWithoutScheme, "/users/"); idx != -1 && idx+7 < len(urlWithoutScheme) {
+			trimmed = urlWithoutScheme[idx+7:]
+		} else if idx := strings.LastIndex(urlWithoutScheme, "/@"); idx != -1 && idx+2 < len(urlWithoutScheme) {
+			trimmed = urlWithoutScheme[idx+2:]
+		} else {
+			parts := strings.Split(urlWithoutScheme, "/")
+			if len(parts) > 0 {
+				trimmed = parts[len(parts)-1]
+			}
+		}
+		trimmed = strings.TrimPrefix(trimmed, "@")
+	}
+
+	if at := strings.LastIndex(trimmed, "@"); at != -1 {
+		localPart := trimmed[:at]
+		domainPart := trimmed[at+1:]
+		if s.isLocalDomain(domainPart) {
+			trimmed = localPart
+		}
+	}
+
+	return strings.TrimSpace(trimmed)
+}
+
+func (s *Service) isLocalDomain(domain string) bool {
+	if domain == "" {
+		return false
+	}
+	return normalizeDomain(domain) == normalizeDomain(s.domainName)
+}
+
+func normalizeDomain(domain string) string {
+	normalized := strings.ToLower(strings.TrimSpace(domain))
+	normalized = strings.TrimPrefix(normalized, "https://")
+	normalized = strings.TrimPrefix(normalized, "http://")
+	normalized = strings.TrimSuffix(normalized, "/")
+	return normalized
+}
+
 // Command structs for operations
 
 // RegisterAccountCommand contains all data needed to register a new account
@@ -591,14 +642,16 @@ func (s *Service) UpdatePreferences(ctx context.Context, cmd *UpdatePreferencesC
 
 // GetAccount retrieves a single account with privacy-aware data
 func (s *Service) GetAccount(ctx context.Context, username string) (*storage.Account, error) {
+	canonicalUsername := s.normalizeUsername(username)
 	s.logger.Info("accounts service: getting account",
-		zap.String("username", username))
+		zap.String("username", username),
+		zap.String("canonical_username", canonicalUsername))
 
 	// Get the account
-	account, err := s.storage.Account().GetAccount(ctx, username)
+	account, err := s.storage.Account().GetAccount(ctx, canonicalUsername)
 	if err != nil {
 		s.logger.Error("accounts service: storage GetAccount failed",
-			zap.String("username", username),
+			zap.String("username", canonicalUsername),
 			zap.Error(err))
 		return nil, ErrGetAccount
 	}
@@ -611,7 +664,7 @@ func (s *Service) GetAccount(ctx context.Context, username string) (*storage.Acc
 	}
 
 	s.logger.Info("accounts service: account retrieved",
-		zap.String("username", username))
+		zap.String("username", canonicalUsername))
 
 	s.hydrateAccountActor(account)
 

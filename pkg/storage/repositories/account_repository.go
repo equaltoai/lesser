@@ -128,6 +128,7 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 		return common.ValidationError{Field: "account", Message: "account and user are required"}
 	}
 
+	account.User.Username = r.canonicalUsername(account.User.Username)
 	user := account.User
 	actor := account.Actor
 
@@ -242,6 +243,7 @@ func (r *AccountRepository) CreateAccountLegacy(ctx context.Context, username, e
 
 // GetAccount retrieves complete account information (User + Actor)
 func (r *AccountRepository) GetAccount(ctx context.Context, username string) (*storage.Account, error) {
+	username = r.canonicalUsername(username)
 	// Get user data
 	user, err := r.GetUser(ctx, username)
 	if err != nil {
@@ -265,6 +267,7 @@ func (r *AccountRepository) GetAccount(ctx context.Context, username string) (*s
 
 // DeleteAccount removes both User and Actor entities
 func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) error {
+	username = r.canonicalUsername(username)
 	// Delete actor first (it's optional)
 	if err := r.deleteActor(ctx, username); err != nil && !isAccountNotFound(err) {
 		r.logger.Error("failed to delete actor",
@@ -287,6 +290,7 @@ func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) 
 
 // GetUser retrieves user authentication data
 func (r *AccountRepository) GetUser(ctx context.Context, username string) (*storage.User, error) {
+	username = r.canonicalUsername(username)
 	user := &models.User{}
 
 	// Use consistent key pattern
@@ -312,6 +316,7 @@ func (r *AccountRepository) GetUserByEmail(_ context.Context, email string) (*st
 
 // UpdateUser updates user authentication data
 func (r *AccountRepository) UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error {
+	username = r.canonicalUsername(username)
 	// Get existing user
 	user := &models.User{}
 	pk := fmt.Sprintf("USER#%s", username)
@@ -364,6 +369,7 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, username string, upd
 
 // GetActor retrieves an actor by username
 func (r *AccountRepository) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
+	username = r.canonicalUsername(username)
 	var actorModel models.Actor
 
 	// Use key utilities for consistent key generation
@@ -384,6 +390,61 @@ func (r *AccountRepository) GetActor(ctx context.Context, username string) (*act
 // GetActorByUsername is an alias for GetActor (for compatibility)
 func (r *AccountRepository) GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error) {
 	return r.GetActor(ctx, username)
+}
+
+func (r *AccountRepository) canonicalUsername(username string) string {
+	trimmed := strings.TrimSpace(username)
+	if trimmed == "" {
+		return trimmed
+	}
+
+	trimmed = strings.TrimPrefix(trimmed, "acct:")
+	trimmed = strings.TrimPrefix(trimmed, "@")
+	trimmed = strings.TrimSuffix(trimmed, "/")
+
+	if strings.HasPrefix(trimmed, "https://") || strings.HasPrefix(trimmed, "http://") {
+		urlWithoutScheme := strings.TrimSuffix(trimmed, "/")
+		if idx := strings.Index(urlWithoutScheme, "/users/"); idx != -1 && idx+7 < len(urlWithoutScheme) {
+			trimmed = urlWithoutScheme[idx+7:]
+		} else if idx := strings.LastIndex(urlWithoutScheme, "/@"); idx != -1 && idx+2 < len(urlWithoutScheme) {
+			trimmed = urlWithoutScheme[idx+2:]
+		} else {
+			parts := strings.Split(urlWithoutScheme, "/")
+			if len(parts) > 0 {
+				trimmed = parts[len(parts)-1]
+			}
+		}
+		trimmed = strings.TrimPrefix(trimmed, "@")
+	}
+
+	if at := strings.LastIndex(trimmed, "@"); at != -1 {
+		localPart := trimmed[:at]
+		domainPart := trimmed[at+1:]
+		if r.isLocalDomain(domainPart) {
+			trimmed = localPart
+		}
+	}
+
+	return strings.TrimSpace(trimmed)
+}
+
+func (r *AccountRepository) isLocalDomain(domain string) bool {
+	if domain == "" {
+		return false
+	}
+	repoDomain := r.domain
+	if strings.TrimSpace(repoDomain) == "" {
+		repoDomain = config.Get().Domain
+	}
+	return normalizeDomainValue(domain) == normalizeDomainValue(repoDomain)
+}
+
+func normalizeDomainValue(domain string) string {
+	normalized := strings.ToLower(strings.TrimSpace(domain))
+	normalized = strings.TrimPrefix(normalized, "https://")
+	normalized = strings.TrimPrefix(normalized, "http://")
+	normalized = strings.TrimSuffix(normalized, "/")
+	return normalized
 }
 
 // createActor creates an actor (internal helper)

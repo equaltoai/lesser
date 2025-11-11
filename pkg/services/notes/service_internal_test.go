@@ -156,6 +156,78 @@ func TestNotifyBoostCreatesNotification(t *testing.T) {
 	assert.Equal(t, "reblog", cmd.Type)
 }
 
+func TestBoostStatusIDFromAnnounceID(t *testing.T) {
+	first := boostStatusIDFromAnnounceID("https://example.com/activities/123")
+	second := boostStatusIDFromAnnounceID("https://example.com/activities/123")
+	third := boostStatusIDFromAnnounceID("https://example.com/activities/456")
+
+	require.NotEmpty(t, first)
+	require.Equal(t, first, second)
+	require.NotEqual(t, first, third)
+}
+
+func TestDeriveBoostStatusIDUsesActorFallback(t *testing.T) {
+	original := &models.Status{StatusID: "orig-42"}
+	booster := &storage.Account{
+		User: &storage.User{Username: "bob"},
+		Actor: &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://example.com/users/bob"},
+		},
+	}
+
+	announce := &storage.Announce{ID: ""}
+	id := deriveBoostStatusID(original, booster, announce)
+
+	require.NotEmpty(t, id)
+	assert.Equal(t, boostStatusIDFromActors(booster.Actor.ID, original.StatusID), id)
+}
+
+func TestBuildBoostStatusCopiesMetadata(t *testing.T) {
+	service := &Service{}
+	original := &models.Status{
+		StatusID:       "orig-1",
+		AuthorID:       "https://example.com/users/alice",
+		AuthorUsername: "alice",
+		Visibility:     VisibilityPublic,
+		Sensitive:      true,
+		Language:       "en",
+		ConversationID: "conv-1",
+		ToRecipients:   []string{"https://www.w3.org/ns/activitystreams#Public"},
+		CcRecipients:   []string{"https://example.com/users/alice/followers"},
+	}
+
+	booster := &storage.Account{
+		User: &storage.User{
+			Username: "bob",
+		},
+		Actor: &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://example.com/users/bob"},
+		},
+	}
+
+	announce := &storage.Announce{
+		ID:        "https://example.com/activities/boost-1",
+		Published: time.Unix(100, 0),
+	}
+
+	boost := service.buildBoostStatus(original, booster, announce)
+	require.NotNil(t, boost)
+	assert.Equal(t, "bob", boost.AuthorUsername)
+	assert.Equal(t, booster.Actor.ID, boost.AuthorID)
+	assert.Equal(t, original.Visibility, boost.Visibility)
+	assert.Equal(t, original.Sensitive, boost.Sensitive)
+	assert.Equal(t, original.Language, boost.Language)
+	assert.Equal(t, original.ConversationID, boost.ConversationID)
+	assert.Equal(t, original.ReblogCount, boost.ReblogCount)
+	assert.Equal(t, original.ToRecipients, boost.ToRecipients)
+	assert.Equal(t, original.CcRecipients, boost.CcRecipients)
+	assert.Equal(t, original.StatusID, boost.ReblogOfID)
+	assert.Equal(t, original.StatusID, boost.BoostOfStatusID)
+	assert.Equal(t, original.AuthorID, boost.BoostOfAuthorID)
+	assert.Equal(t, announce.ID, boost.BoostAnnounceID)
+	assert.Equal(t, announce.Published, boost.PublishedAt)
+}
+
 func TestQueueAnnounceActivityEnqueuesFederation(t *testing.T) {
 	fed := &stubFederation{}
 	service := &Service{

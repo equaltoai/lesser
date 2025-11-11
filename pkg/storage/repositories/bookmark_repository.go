@@ -109,12 +109,19 @@ func (r *BookmarkRepository) CreateBookmark(ctx context.Context, username, objec
 		return nil, ErrorHandler.HandleCreateError(err, EntityBookmark, "object record build")
 	}
 
+	unlockExistingTimeRecord := !createTimeRecord && timeRecord.Locked
+	if createTimeRecord && timeRecord.Locked {
+		// New records can be written in the unlocked state because the object record
+		// is created in the same transaction — no need for a follow-up update.
+		timeRecord.Locked = false
+	}
+
 	writeErr := r.transactWriteFn(ctx, func(tx core.TransactionBuilder) error {
 		if createTimeRecord {
 			tx.Create(timeRecord, dynamorm.IfNotExists())
 		}
 		tx.Create(objectRecord, dynamorm.IfNotExists())
-		if timeRecord.Locked {
+		if unlockExistingTimeRecord {
 			tx.UpdateWithBuilder(newBookmarkKey(timeRecord.PK, timeRecord.SK), func(ub core.UpdateBuilder) error {
 				ub.Set("Locked", false)
 				return nil

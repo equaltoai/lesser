@@ -187,6 +187,52 @@ func (r *Resolver) resolveInReplyToObject(ctx context.Context, status *models.St
 	return r.convertStatusToObject(newCtx, parentStatus)
 }
 
+func boostTargetStatusID(status *models.Status) string {
+	if status == nil {
+		return ""
+	}
+	if trimmed := strings.TrimSpace(status.ReblogOfID); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(status.BoostOfStatusID)
+}
+
+func (r *Resolver) resolveBoostedObject(ctx context.Context, status *models.Status, convertLogger *zap.Logger) *model.Object {
+	targetStatusID := boostTargetStatusID(status)
+	if targetStatusID == "" {
+		return nil
+	}
+
+	depth := r.getConversionDepth(ctx)
+	if depth >= 3 {
+		return nil
+	}
+
+	newCtx := r.setConversionDepth(ctx, depth+1)
+	notesSvc := r.notesService()
+	if notesSvc == nil {
+		if convertLogger != nil {
+			convertLogger.Warn("notes service unavailable while resolving boost target",
+				zap.String("status_id", status.StatusID),
+				zap.String("target_status_id", targetStatusID))
+		}
+		return nil
+	}
+
+	originalStatus, err := notesSvc.GetNote(newCtx, targetStatusID)
+	if err != nil {
+		if convertLogger != nil {
+			convertLogger.Warn("failed to resolve boost target",
+				zap.String("status_id", status.StatusID),
+				zap.String("target_status_id", targetStatusID),
+				zap.Error(err))
+		}
+		return nil
+	}
+
+	return r.convertStatusToObject(newCtx, originalStatus)
+}
+
 func resolveStatusAuthorUsername(status *models.Status) string {
 	if status == nil {
 		return ""

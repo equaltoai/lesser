@@ -119,7 +119,9 @@ type Object {
   likesCount: Int!
   sharesCount: Int!
   boosted: Boolean!
-  
+  relationshipType: ObjectRelationshipType!
+  boostedObject: Object
+
   # Lesser enhancements
   estimatedCost: Int!
   moderationScore: Float
@@ -161,6 +163,11 @@ type Mention {
   username: String!
   domain: String
   url: String!
+}
+
+enum ObjectRelationshipType {
+  ORIGINAL
+  BOOST
 }
 
 type Activity {
