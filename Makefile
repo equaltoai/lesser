@@ -689,7 +689,7 @@ lint-fix:
 ## Run security scan
 sec-scan:
 	@echo "Running security scan..."
-	@gosec ./...
+	@gosec -exclude-generated ./...
 
 ## Check for vulnerabilities
 vuln-check:

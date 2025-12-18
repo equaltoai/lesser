@@ -1,3 +1,4 @@
+// Package cms provides services for Content Management System functionality
 package cms
 
 import (

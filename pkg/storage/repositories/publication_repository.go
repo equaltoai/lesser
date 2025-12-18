@@ -18,7 +18,7 @@ type PublicationRepository struct {
 // NewPublicationRepository creates a new publication repository
 func NewPublicationRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PublicationRepository {
 	enhancedRepo := NewEnhancedBaseRepository[*models.Publication](db, tableName, logger, costService, "PublicationRepository", "publication")
-	
+
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService())
@@ -38,7 +38,7 @@ func (r *PublicationRepository) CreatePublication(ctx context.Context, publicati
 func (r *PublicationRepository) GetPublication(ctx context.Context, id string) (*models.Publication, error) {
 	var publication models.Publication
 	pk := fmt.Sprintf("PUBLICATION#%s", id)
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	err := r.Get(ctx, pk, sk, &publication)
 	if err != nil {

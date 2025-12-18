@@ -66,7 +66,7 @@ func (a *Article) UpdateKeys() error {
 	a.SK = fmt.Sprintf("object#%s", a.ID)
 
 	// Update GSI keys using Object's logic
-	a.Object.UpdateGSIKeys()
+	a.UpdateGSIKeys()
 
 	// Ensure timestamps are set
 	now := time.Now()

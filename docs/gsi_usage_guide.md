@@ -11,8 +11,8 @@ The primary key for the table is composed of:
 - **Sort Key (SK):** `SK`
 
 To support complex query requirements, the infrastructure pre-provisions **9 generic GSIs (`GSI1` through `GSI9`)**. Each GSI has its own key schema:
-- **Partition Key:** `GSI<N>PK`
-- **Sort Key:** `GSI<N>SK`
+- **Partition Key attribute:** `gsi<N>PK`
+- **Sort Key attribute:** `gsi<N>SK`
 
 These generic GSIs are "overloaded" by different data models to serve a wide variety of access patterns.
 
@@ -62,7 +62,7 @@ This model uses GSIs to track media transcoding jobs.
     -   **gsi1PK:** `USER_TRANSCODING#{userID}`
     -   **gsi2PK:** `MEDIA_TRANSCODING#{mediaID}`
 
-**Note on Naming Consistency:** The `TranscodingJob` model uses descriptive names in its struct tags (e.g., `index:user-jobs-index`). The `dynamorm` library maps this to an available GSI. While functionally correct, this is an inconsistency with other models that directly reference `GSI1`, etc. For clarity, it is recommended to standardize on one approach.
+**Note on Naming Consistency:** Some models and repositories use descriptive index names (e.g., `index:user-jobs-index`). DynamoDB does **not** provide index aliases, so these names must match a real DynamoDB `IndexName` on the table to work. For clarity and correctness, standardize on one physical naming scheme end-to-end (CDK ↔ DynamoDB ↔ model tags ↔ `.Index(...)` calls).
 
 ## 3. Guide to Adding a New Query Pattern
 
