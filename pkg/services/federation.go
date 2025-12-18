@@ -195,6 +195,13 @@ func (f *federationService) extractMentions(activity *activitypub.Activity) []st
 				mentions = append(mentions, tag.Href)
 			}
 		}
+	} else if article, ok := activity.Object.(*activitypub.Article); ok {
+		// Extract mentions from the activity object if it's an Article
+		for _, tag := range article.Tag {
+			if tag.Type == "Mention" && tag.Href != "" {
+				mentions = append(mentions, tag.Href)
+			}
+		}
 	}
 
 	return mentions

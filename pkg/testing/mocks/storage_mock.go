@@ -4559,5 +4559,42 @@ func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository {
 	return args.Get(0).(*repositories.FilterRepository)
 }
 
+// CMS Repository Mocks
+
+// Article returns the mock Article repository
+func (m *MockRepositoryStorage) Article() *repositories.ArticleRepository {
+	return nil // Mock can be implemented as needed
+}
+
+// Draft returns the mock Draft repository
+func (m *MockRepositoryStorage) Draft() *repositories.DraftRepository {
+	return nil // Mock can be implemented as needed
+}
+
+// Revision returns the mock Revision repository
+func (m *MockRepositoryStorage) Revision() *repositories.RevisionRepository {
+	return nil // Mock can be implemented as needed
+}
+
+// Series returns the mock Series repository
+func (m *MockRepositoryStorage) Series() *repositories.SeriesRepository {
+	return nil // Mock can be implemented as needed
+}
+
+// Category returns the mock Category repository
+func (m *MockRepositoryStorage) Category() *repositories.CategoryRepository {
+	return nil // Mock can be implemented as needed
+}
+
+// Publication returns the mock Publication repository
+func (m *MockRepositoryStorage) Publication() *repositories.PublicationRepository {
+	return nil // Mock can be implemented as needed
+}
+
+// PublicationMember returns the mock PublicationMember repository
+func (m *MockRepositoryStorage) PublicationMember() *repositories.PublicationMemberRepository {
+	return nil // Mock can be implemented as needed
+}
+
 // Ensure MockRepositoryStorage implements RepositoryStorage interface
 var _ core.RepositoryStorage = (*MockRepositoryStorage)(nil)

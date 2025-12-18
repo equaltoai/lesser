@@ -86,6 +86,15 @@ type RepositoryFactory struct {
 	mediaPopularityRepo     *repositories.MediaPopularityRepository
 	mediaSessionRepo        *repositories.MediaSessionRepository
 	streamingConnectionRepo *repositories.StreamingConnectionRepository
+
+	// CMS Repositories
+	articleRepo           *repositories.ArticleRepository
+	draftRepo             *repositories.DraftRepository
+	revisionRepo          *repositories.RevisionRepository
+	seriesRepo            *repositories.SeriesRepository
+	categoryRepo          *repositories.CategoryRepository
+	publicationRepo       *repositories.PublicationRepository
+	publicationMemberRepo *repositories.PublicationMemberRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -208,6 +217,15 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.mediaPopularityRepo = repositories.NewMediaPopularityRepository(f.db, f.tableName, f.logger, nil)
 	f.mediaSessionRepo = repositories.NewMediaSessionRepository(f.db, f.logger, nil)
 	f.streamingConnectionRepo = repositories.NewStreamingConnectionRepository(f.db, f.tableName, f.db, f.tableName, f.logger, nil)
+
+	// Initialize CMS repositories
+	f.articleRepo = repositories.NewArticleRepository(f.db, f.tableName, f.logger, nil)
+	f.draftRepo = repositories.NewDraftRepository(f.db, f.tableName, f.logger, nil)
+	f.revisionRepo = repositories.NewRevisionRepository(f.db, f.tableName, f.logger, nil)
+	f.seriesRepo = repositories.NewSeriesRepository(f.db, f.tableName, f.logger, nil)
+	f.categoryRepo = repositories.NewCategoryRepository(f.db, f.tableName, f.logger, nil)
+	f.publicationRepo = repositories.NewPublicationRepository(f.db, f.tableName, f.logger, nil)
+	f.publicationMemberRepo = repositories.NewPublicationMemberRepository(f.db, f.tableName, f.logger, nil)
 
 	// All other repositories are nil until needed/implemented
 	// This allows the factory to be created without breaking the application
@@ -573,6 +591,43 @@ func (f *RepositoryFactory) MediaSession() *repositories.MediaSessionRepository 
 // StreamingConnection returns the StreamingConnection repository instance
 func (f *RepositoryFactory) StreamingConnection() *repositories.StreamingConnectionRepository {
 	return f.streamingConnectionRepo
+}
+
+// CMS Repository Getters
+
+// Article returns the Article repository instance
+func (f *RepositoryFactory) Article() *repositories.ArticleRepository {
+	return f.articleRepo
+}
+
+// Draft returns the Draft repository instance
+func (f *RepositoryFactory) Draft() *repositories.DraftRepository {
+	return f.draftRepo
+}
+
+// Revision returns the Revision repository instance
+func (f *RepositoryFactory) Revision() *repositories.RevisionRepository {
+	return f.revisionRepo
+}
+
+// Series returns the Series repository instance
+func (f *RepositoryFactory) Series() *repositories.SeriesRepository {
+	return f.seriesRepo
+}
+
+// Category returns the Category repository instance
+func (f *RepositoryFactory) Category() *repositories.CategoryRepository {
+	return f.categoryRepo
+}
+
+// Publication returns the Publication repository instance
+func (f *RepositoryFactory) Publication() *repositories.PublicationRepository {
+	return f.publicationRepo
+}
+
+// PublicationMember returns the PublicationMember repository instance
+func (f *RepositoryFactory) PublicationMember() *repositories.PublicationMemberRepository {
+	return f.publicationMemberRepo
 }
 
 // Additional repositories can be added here as needed

@@ -76,6 +76,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/bulk"
+	"github.com/equaltoai/lesser/pkg/services/cms"
 	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/equaltoai/lesser/pkg/services/emoji"
 	"github.com/equaltoai/lesser/pkg/services/federationgraph"
@@ -157,6 +158,14 @@ type Registry struct {
 	streamingAnalyticsService *streaminganalytics.Service
 	performanceService        *performance.Service
 	queryTracker              *performance.QueryTracker
+
+	// CMS Services
+	articleService     *cms.ArticleService
+	draftService       *cms.DraftService
+	revisionService    *cms.RevisionService
+	seriesService      *cms.SeriesService
+	categoryService    *cms.CategoryService
+	publicationService *cms.PublicationService
 
 	// Service management
 	mu          sync.RWMutex
@@ -726,6 +735,235 @@ func (r *Registry) getDomainName() string {
 		}
 	}
 	return domainName
+}
+
+// Revisions returns the revision service, initializing it if necessary
+func (r *Registry) Revisions() *cms.RevisionService {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.revisionService == nil && r.storage != nil {
+		revisionRepo := r.storage.Revision()
+		articleRepo := r.storage.Article()
+
+		if revisionRepo != nil && articleRepo != nil {
+			r.revisionService = cms.NewRevisionService(
+				revisionRepo,
+				articleRepo,
+				r.logger,
+			)
+			r.initialized["Revisions"] = true
+		} else {
+			if r.logger != nil {
+				r.logger.Warn("failed to initialize Revision service: required repositories not available")
+			}
+		}
+	}
+
+	return r.revisionService
+}
+
+// Articles returns the article service, initializing it if necessary
+func (r *Registry) Articles() *cms.ArticleService {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.articleService == nil && r.storage != nil {
+		articleRepo := r.storage.Article()
+		
+		// Ensure RevisionService is initialized (we can't call r.Revisions() here because we hold the lock)
+		// So we manually initialize it if needed, or better, we create it here if it doesn't exist, 
+		// duplicating logic or extracting a helper.
+		// To avoid deadlock or complexity, we'll just instantiate it if missing, 
+		// but we need to be careful about the 'initialized' map and consistency.
+		// A better pattern used in this file is to use helper methods or just instantiate dependencies.
+		
+		// Let's use the pattern seen in other methods: check dependencies.
+		// But ArticleService needs RevisionService instance.
+		
+		// We can call r.ensureRevisionsLocked() if we extract it.
+		// Or just instantiate it here if nil.
+		if r.revisionService == nil {
+			revisionRepo := r.storage.Revision()
+			articleRepo := r.storage.Article()
+			if revisionRepo != nil && articleRepo != nil {
+				r.revisionService = cms.NewRevisionService(revisionRepo, articleRepo, r.logger)
+				r.initialized["Revisions"] = true
+			}
+		}
+
+		if articleRepo != nil && r.revisionService != nil {
+			// Ensure FederationService is initialized
+			if r.federation == nil {
+				deps := &ServiceDependencies{
+					Repos:  r.storage,
+					Config: r.config,
+					Logger: r.logger,
+				}
+				r.federation = NewFederationService(deps)
+				r.initialized["Federation"] = true
+			}
+
+			r.articleService = cms.NewArticleService(
+				articleRepo,
+				r.storage.Actor(), // Inject ActorRepository
+				r.revisionService,
+				r.federation,      // Inject FederationService
+				r.logger,
+			)
+			r.initialized["Articles"] = true
+		} else {
+			if r.logger != nil {
+				r.logger.Warn("failed to initialize Article service: required repositories or dependencies not available")
+			}
+		}
+	}
+
+	return r.articleService
+}
+
+// Drafts returns the draft service, initializing it if necessary
+func (r *Registry) Drafts() *cms.DraftService {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.draftService == nil && r.storage != nil {
+		draftRepo := r.storage.Draft()
+		
+		// Ensure ArticleService is initialized
+		if r.articleService == nil {
+			// We need to initialize ArticleService first.
+			// This duplicates logic from Articles(), but since we are locked, we can't call Articles().
+			// We need to initialize RevisionService first too.
+			
+			if r.revisionService == nil {
+				revisionRepo := r.storage.Revision()
+				articleRepo := r.storage.Article()
+				if revisionRepo != nil && articleRepo != nil {
+					r.revisionService = cms.NewRevisionService(revisionRepo, articleRepo, r.logger)
+					r.initialized["Revisions"] = true
+				}
+			}
+			
+			articleRepo := r.storage.Article()
+			if articleRepo != nil && r.revisionService != nil {
+				// Ensure FederationService is initialized
+				if r.federation == nil {
+					deps := &ServiceDependencies{
+						Repos:  r.storage,
+						Config: r.config,
+						Logger: r.logger,
+					}
+					r.federation = NewFederationService(deps)
+					r.initialized["Federation"] = true
+				}
+
+				r.articleService = cms.NewArticleService(
+					articleRepo,
+					r.storage.Actor(),
+					r.revisionService,
+					r.federation,
+					r.logger,
+				)
+				r.initialized["Articles"] = true
+			}
+		}
+
+		if draftRepo != nil && r.articleService != nil {
+			r.draftService = cms.NewDraftService(
+				draftRepo,
+				r.articleService,
+				r.logger,
+			)
+			r.initialized["Drafts"] = true
+		} else {
+			if r.logger != nil {
+				r.logger.Warn("failed to initialize Draft service: required repositories or dependencies not available")
+			}
+		}
+	}
+
+	return r.draftService
+}
+
+// Series returns the series service, initializing it if necessary
+func (r *Registry) Series() *cms.SeriesService {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.seriesService == nil && r.storage != nil {
+		// Assuming SeriesRepository is available in storage interface
+		// If not, we would need to instantiate it here using r.storage.GetDB() if available
+		seriesRepo := r.storage.Series()
+		articleRepo := r.storage.Article()
+
+		if seriesRepo != nil && articleRepo != nil {
+			r.seriesService = cms.NewSeriesService(
+				seriesRepo,
+				articleRepo,
+				r.logger,
+			)
+			r.initialized["Series"] = true
+		} else {
+			if r.logger != nil {
+				r.logger.Warn("failed to initialize Series service: required repositories not available")
+			}
+		}
+	}
+
+	return r.seriesService
+}
+
+// Categories returns the category service, initializing it if necessary
+func (r *Registry) Categories() *cms.CategoryService {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.categoryService == nil && r.storage != nil {
+		categoryRepo := r.storage.Category()
+
+		if categoryRepo != nil {
+			r.categoryService = cms.NewCategoryService(
+				categoryRepo,
+				r.logger,
+			)
+			r.initialized["Categories"] = true
+		} else {
+			if r.logger != nil {
+				r.logger.Warn("failed to initialize Category service: required repository not available")
+			}
+		}
+	}
+
+	return r.categoryService
+}
+
+// Publications returns the publication service, initializing it if necessary
+func (r *Registry) Publications() *cms.PublicationService {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.publicationService == nil && r.storage != nil {
+		pubRepo := r.storage.Publication()
+		// We assume PublicationMember repository is also available via storage
+		// If not, we might need to add it to the interface
+		pubMemberRepo := r.storage.PublicationMember()
+
+		if pubRepo != nil && pubMemberRepo != nil {
+			r.publicationService = cms.NewPublicationService(
+				pubRepo,
+				pubMemberRepo,
+				r.logger,
+			)
+			r.initialized["Publications"] = true
+		} else {
+			if r.logger != nil {
+				r.logger.Warn("failed to initialize Publication service: required repositories not available")
+			}
+		}
+	}
+
+	return r.publicationService
 }
 
 // GetInitializedServices returns a list of service names that have been initialized

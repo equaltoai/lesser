@@ -235,6 +235,29 @@ func ActivityPubObjectToStorage(obj *activitypub.Note) (*storagemodels.Object, e
 	return storageObj, nil
 }
 
+// StorageArticleToActivityPub converts a storage Article to an ActivityPub Article
+func StorageArticleToActivityPub(article *storagemodels.Article) (*activitypub.Article, error) {
+	if article == nil {
+		return nil, common.ValidationError{Field: "article", Message: "article cannot be nil"}
+	}
+
+	// Convert the embedded Object first
+	note, err := StorageObjectToActivityPub(&article.Object)
+	if err != nil {
+		return nil, err
+	}
+
+	apArticle := &activitypub.Article{
+		Note: *note,
+		Name: article.Name, // Title
+	}
+	
+	// Ensure type is correct
+	apArticle.Type = activitypub.ArticleType
+
+	return apArticle, nil
+}
+
 // StorageObjectToActivityPub converts a storage Object to an ActivityPub Note
 func StorageObjectToActivityPub(obj *storagemodels.Object) (*activitypub.Note, error) {
 	if obj == nil {

@@ -126,7 +126,181 @@ ActivityPub Objects
 
 ---
 
+## Implementation Patterns
+
+This section provides references to existing Lesser patterns that **MUST** be followed for consistency. All CMS implementations should use these patterns.
+
+### Repository Pattern (Reference: `pkg/storage/repositories/status_repository.go`)
+
+All new repositories **MUST** extend `EnhancedBaseRepository`:
+
+```go
+// pkg/storage/repositories/draft_repository.go
+package repositories
+
+type DraftRepository struct {
+    *EnhancedBaseRepository[*models.Draft]
+}
+
+func NewDraftRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *DraftRepository {
+    enhancedRepo := NewEnhancedBaseRepository[*models.Draft](db, tableName, logger, costService, "DraftRepository", "draft")
+    enhancedRepo.SetValidationService(NewDefaultValidationService())
+    enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+    enhancedRepo.SetCachingService(NewInMemoryCachingService())
+    enhancedRepo.SetEventService(NewDefaultEventService())
+    
+    return &DraftRepository{EnhancedBaseRepository: enhancedRepo}
+}
+```
+
+### CRUD Operations (Reference: `pkg/storage/repositories/status_repository.go:67-349`)
+
+**Create** - Use `ValidateAndCreate` from EnhancedBaseRepository:
+```go
+func (r *DraftRepository) CreateDraft(ctx context.Context, draft *models.Draft) error {
+    // ValidateAndCreate handles validation, key setup, and event emission
+    return r.ValidateAndCreate(ctx, draft)
+}
+```
+
+**Read** - Use `Get` from BaseRepository:
+```go
+func (r *DraftRepository) GetDraft(ctx context.Context, authorID, draftID string) (*models.Draft, error) {
+    var draft models.Draft
+    pk := fmt.Sprintf("USER#%s#DRAFT", authorID)
+    sk := fmt.Sprintf("ID#%s", draftID)
+    
+    err := r.Get(ctx, pk, sk, &draft)
+    if err != nil {
+        return nil, err
+    }
+    return &draft, nil
+}
+```
+
+**Update** - Use DynamORM UpdateBuilder for partial updates:
+```go
+func (r *DraftRepository) UpdateDraft(ctx context.Context, draft *models.Draft) error {
+    return r.db.WithContext(ctx).Model(&models.Draft{}).
+        Where("PK", "=", draft.PK).
+        Where("SK", "=", draft.SK).
+        UpdateBuilder().
+        Set("Content", draft.Content).
+        Set("Title", draft.Title).
+        Set("UpdatedAt", time.Now()).
+        Execute()
+}
+```
+
+**Delete** - Use soft delete pattern:
+```go
+func (r *DraftRepository) DeleteDraft(ctx context.Context, authorID, draftID string) error {
+    pk := fmt.Sprintf("USER#%s#DRAFT", authorID)
+    sk := fmt.Sprintf("ID#%s", draftID)
+    return r.Delete(ctx, pk, sk)
+}
+```
+
+### Query Patterns (Reference: `pkg/storage/repositories/status_repository.go:209-234`)
+
+**GSI Query with ordering:**
+```go
+func (r *DraftRepository) ListDraftsByAuthor(ctx context.Context, authorID string, limit int) ([]*models.Draft, error) {
+    var drafts []models.Draft
+    err := r.db.WithContext(ctx).Model(&models.Draft{}).
+        Index("GSI1").
+        Where("gsi1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)).
+        OrderBy("gsi1SK", "DESC").
+        Limit(limit).
+        All(&drafts)
+    if err != nil {
+        return nil, err
+    }
+    
+    result := make([]*models.Draft, len(drafts))
+    for i := range drafts {
+        result[i] = &drafts[i]
+    }
+    return result, nil
+}
+```
+
+### Service Pattern (Reference: `pkg/services/business_logic.go`)
+
+Services receive repositories through the Registry:
+
+```go
+// pkg/services/cms/draft_service.go
+package cms
+
+type DraftService struct {
+    draftRepo      *repositories.DraftRepository
+    articleService *ArticleService
+    logger         *zap.Logger
+}
+
+func NewDraftService(draftRepo *repositories.DraftRepository, articleService *ArticleService, logger *zap.Logger) *DraftService {
+    return &DraftService{
+        draftRepo:      draftRepo,
+        articleService: articleService,
+        logger:         logger,
+    }
+}
+
+func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID string) (*models.Object, error) {
+    // 1. Get draft
+    draft, err := s.draftRepo.GetDraft(ctx, authorID, draftID)
+    if err != nil {
+        return nil, err
+    }
+    
+    // 2. Convert to Article
+    article := s.convertDraftToArticle(draft)
+    
+    // 3. Save article
+    if err := s.articleService.CreateArticle(ctx, article); err != nil {
+        return nil, err
+    }
+    
+    // 4. Delete draft
+    if err := s.draftRepo.DeleteDraft(ctx, authorID, draftID); err != nil {
+        s.logger.Warn("failed to delete draft after publishing", zap.Error(err))
+    }
+    
+    return article, nil
+}
+```
+
+### Registry Integration (Reference: `pkg/services/registry.go`)
+
+New services are added to the Registry with lazy initialization:
+
+```go
+// In pkg/services/registry.go, add:
+type Registry struct {
+    // ... existing fields ...
+    draftService *cms.DraftService  // Add new service field
+}
+
+func (r *Registry) DraftService() *cms.DraftService {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    
+    if r.draftService == nil && r.storage != nil {
+        draftRepo := r.storage.Draft()
+        if draftRepo != nil {
+            r.draftService = cms.NewDraftService(draftRepo, r.ArticleService(), r.logger)
+            r.initialized["DraftService"] = true
+        }
+    }
+    return r.draftService
+}
+```
+
+---
+
 ## Data Model Extensions
+
 
 ### 1. Extended Object Model
 

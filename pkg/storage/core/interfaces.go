@@ -68,6 +68,15 @@ type RepositoryStorage interface {
 	MediaSession() *repositories.MediaSessionRepository
 	StreamingConnection() *repositories.StreamingConnectionRepository
 
+	// CMS Repositories
+	Article() *repositories.ArticleRepository
+	Draft() *repositories.DraftRepository
+	Revision() *repositories.RevisionRepository
+	Series() *repositories.SeriesRepository
+	Category() *repositories.CategoryRepository
+	Publication() *repositories.PublicationRepository
+	PublicationMember() *repositories.PublicationMemberRepository
+
 	// Utility methods
 	GetDB() dynamormCore.DB
 	GetTableName() string

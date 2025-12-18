@@ -498,6 +498,43 @@ func (m *MockRepositoryStorage) StreamingConnection() *repositories.StreamingCon
 	return nil
 }
 
+// CMS Repository Mocks
+
+// Article returns a mock article repository for testing
+func (m *MockRepositoryStorage) Article() *repositories.ArticleRepository {
+	return nil
+}
+
+// Draft returns a mock draft repository for testing
+func (m *MockRepositoryStorage) Draft() *repositories.DraftRepository {
+	return nil
+}
+
+// Revision returns a mock revision repository for testing
+func (m *MockRepositoryStorage) Revision() *repositories.RevisionRepository {
+	return nil
+}
+
+// Series returns a mock series repository for testing
+func (m *MockRepositoryStorage) Series() *repositories.SeriesRepository {
+	return nil
+}
+
+// Category returns a mock category repository for testing
+func (m *MockRepositoryStorage) Category() *repositories.CategoryRepository {
+	return nil
+}
+
+// Publication returns a mock publication repository for testing
+func (m *MockRepositoryStorage) Publication() *repositories.PublicationRepository {
+	return nil
+}
+
+// PublicationMember returns a mock publication member repository for testing
+func (m *MockRepositoryStorage) PublicationMember() *repositories.PublicationMemberRepository {
+	return nil
+}
+
 // GetDB returns a mock database connection for testing
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB {
 	args := m.Called()
