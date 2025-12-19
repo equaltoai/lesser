@@ -151,7 +151,7 @@ func (r *StandaloneAlertRepository) GetActiveAlerts(ctx context.Context, limit i
 
 	// Query GSI3 for firing alerts
 	err := r.db.WithContext(ctx).Model(&models.Alert{}).
-		Index("GSI3").
+		Index(models.IndexGSI3).
 		Where("gsi3PK", "=", "STATUS#firing").
 		OrderBy("gsi3SK", "DESC").
 		Limit(limit).
@@ -171,7 +171,7 @@ func (r *StandaloneAlertRepository) GetAlertsNeedingRetry(ctx context.Context, l
 
 	// This is a simplified query - in practice you might need a more complex query
 	err := r.db.WithContext(ctx).Model(&models.Alert{}).
-		Index("GSI3").
+		Index(models.IndexGSI3).
 		Where("gsi3PK", "=", "STATUS#firing").
 		Filter("DeliveryAttempts", "<", 5).
 		Filter("NextRetryAt", "<=", time.Now().Unix()).
@@ -218,7 +218,7 @@ func (r *StandaloneAlertRepository) CleanupOldAlerts(ctx context.Context, olderT
 	for _, alertType := range types {
 		var typeAlerts []*models.Alert
 		err := r.db.WithContext(ctx).Model(&models.Alert{}).
-			Index("GSI1").
+			Index(models.IndexGSI1).
 			Where("gsi1PK", "=", fmt.Sprintf("ALERT_TYPE#%s", alertType)).
 			Where("gsi1SK", "<", cutoffTimestamp).
 			Limit(100). // Process in batches
@@ -313,7 +313,7 @@ func (r *StandaloneWebhookRepository) GetPendingRetries(ctx context.Context, lim
 
 	// Query GSI2 for failed deliveries ready for retry
 	err := r.db.WithContext(ctx).Model(&models.WebhookDelivery{}).
-		Index("GSI2").
+		Index(models.IndexGSI2).
 		Where("gsi2PK", "=", "STATUS#retrying").
 		Filter("NextRetryAt", "<=", time.Now().Unix()).
 		OrderBy("gsi2SK", "ASC").
@@ -342,7 +342,7 @@ func (r *StandaloneWebhookRepository) GetDeliveriesByAlert(ctx context.Context, 
 
 	// Query GSI1 for deliveries by alert
 	err := r.db.WithContext(ctx).Model(&models.WebhookDelivery{}).
-		Index("GSI1").
+		Index(models.IndexGSI1).
 		Where("gsi1PK", "=", fmt.Sprintf("ALERT#%s", alertID)).
 		OrderBy("gsi1SK", "DESC").
 		Limit(limit).

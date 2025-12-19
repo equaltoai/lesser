@@ -174,7 +174,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*sto
 
 	var userModels []models.User
 	err := r.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("email-index").
+		Index("gsi2").
 		Where("gsi2PK", "=", "EMAIL#"+strings.ToLower(email)).
 		Limit(1).
 		All(&userModels)
@@ -251,7 +251,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, limit int32, cursor stri
 
 	var userModels []models.User
 	query := r.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", "USERS").
 		Limit(int(limit) + 1) // Request one extra to detect if there are more pages
 
@@ -298,7 +298,7 @@ func (r *UserRepository) GetActiveUserCount(ctx context.Context, days int) (int6
 	// Use the last_activity index if available, otherwise fall back to status check
 	var userModels []models.User
 	err := r.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("activity-index").
+		Index("gsi3").
 		Where("gsi3PK", "=", "ACTIVITY").
 		Where("gsi3SK", ">=", fmt.Sprintf("%d", cutoffTimestamp)).
 		All(&userModels)
@@ -316,7 +316,7 @@ func (r *UserRepository) GetTotalUserCount(ctx context.Context) (int64, error) {
 	// Use GSI1 (user listing index) where all users have GSI1PK = "USERS"
 	// This is much more efficient than scanning the main table
 	count, err := r.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", "USERS").
 		Count()
 
@@ -334,7 +334,7 @@ func (r *UserRepository) GetUserByProviderID(ctx context.Context, provider, prov
 	// Query the ProviderAccount by provider and providerID using GSI1
 	var providerAccounts []models.ProviderAccount
 	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
-		Index("provider-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", "PROVIDER#"+provider).
 		Where("gsi1SK", "=", providerID+"#").
 		Limit(1).
@@ -388,7 +388,7 @@ func (r *UserRepository) UnlinkProviderAccount(ctx context.Context, username, pr
 	// First get all provider accounts for this user
 	var allProviderAccounts []models.ProviderAccount
 	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
-		Index("user-providers-index").
+		Index("gsi2").
 		Where("gsi2PK", "=", "USER_PROVIDERS#"+username).
 		All(&allProviderAccounts)
 	if err != nil {
@@ -423,7 +423,7 @@ func (r *UserRepository) GetLinkedProviders(ctx context.Context, username string
 	// Query all provider accounts for this user
 	var providerAccounts []models.ProviderAccount
 	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
-		Index("user-providers-index").
+		Index("gsi2").
 		Where("gsi2PK", "=", "USER_PROVIDERS#"+username).
 		All(&providerAccounts)
 	if err != nil {
@@ -958,7 +958,7 @@ func (r *UserRepository) queryVouchesByGSI(actorID string, activeOnly bool, gsiI
 	// Query the specified GSI for vouches
 	query := r.GetDB().Model(&models.Vouch{}).
 		Index(gsiIndex).
-		Where(fmt.Sprintf("%sPK", strings.ToUpper(gsiIndex[:4])), "=", fmt.Sprintf("%s#%s", keyPrefix, actorID))
+		Where(fmt.Sprintf("%sPK", strings.ToLower(gsiIndex[:4])), "=", fmt.Sprintf("%s#%s", keyPrefix, actorID))
 
 	// Add active filter if requested
 	if activeOnly {
@@ -991,12 +991,12 @@ func (r *UserRepository) queryVouchesByGSI(actorID string, activeOnly bool, gsiI
 
 // GetVouchesByActor retrieves vouches given by an actor
 func (r *UserRepository) GetVouchesByActor(_ context.Context, actorID string, activeOnly bool) ([]*storage.Vouch, error) {
-	return r.queryVouchesByGSI(actorID, activeOnly, "gsi1-index", "VOUCHER", "by actor")
+	return r.queryVouchesByGSI(actorID, activeOnly, "gsi1", "VOUCHER", "by actor")
 }
 
 // GetVouchesForActor retrieves vouches received by an actor
 func (r *UserRepository) GetVouchesForActor(_ context.Context, actorID string, activeOnly bool) ([]*storage.Vouch, error) {
-	return r.queryVouchesByGSI(actorID, activeOnly, "gsi2-index", "VOUCHEE", "for actor")
+	return r.queryVouchesByGSI(actorID, activeOnly, "gsi2", "VOUCHEE", "for actor")
 }
 
 // UpdateVouchStatus updates the active status of a vouch
@@ -1050,7 +1050,7 @@ func (r *UserRepository) GetMonthlyVouchCount(_ context.Context, actorID string,
 
 	// Query GSI1 with date range filter
 	query := r.GetDB().Model(&models.Vouch{}).
-		Index("gsi1-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("VOUCHER#%s", actorID))
 
 	// Execute query - we'll filter in memory since DynamORM doesn't support BETWEEN on non-key attributes
@@ -1216,7 +1216,7 @@ func (r *UserRepository) GetTrustedByRelationships(_ context.Context, trusteeID 
 	// Use GSI1 to query by trustee
 	// DynamORM doesn't support begins_with, so we'll filter in memory
 	query := r.GetDB().Model(&models.TrustRelationship{}).
-		Index("gsi1-index").
+		Index("gsi1").
 		Filter("Type", "=", "RELATIONSHIP").
 		Limit(limit * 2) // Get more to account for filtering
 
@@ -2797,8 +2797,8 @@ func (r *UserRepository) ListUsersByRole(ctx context.Context, role string) ([]*s
 	// Query for users by role using GSI
 	var userModels []models.User
 	err := r.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("users-by-role").
-		Where("UserRole", "=", role).
+		Index("gsi3").
+		Where("gsi3PK", "=", "ROLE#"+role).
 		All(&userModels)
 	if err != nil {
 		// If the GSI doesn't exist or no users found, return empty list

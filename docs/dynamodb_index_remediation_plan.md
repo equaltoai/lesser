@@ -1,17 +1,32 @@
 # DynamoDB Index Remediation Plan
 
-> **Status**: Draft v2  
+> **Status**: Draft v3  
 > **Created**: 2025-12-18  
-> **Revised**: 2025-12-18 (Corrected TTL/OAuth direction, helper code issues, complete index alias inventory)  
+> **Revised**: 2025-12-19 (Completed remaining `.Index("...")` remediation, refreshed AuthRefreshToken queries, updated verification notes)  
 > **Compatibility**: No backward compatibility required (no install base)
 
 This document provides a comprehensive remediation plan for fixing DynamoDB indexing issues identified in the Lesser codebase. Since there is no existing install base, all changes can be made without migration considerations.
 
 ---
 
+## Progress Snapshot (In-Repo)
+
+This repo already contains significant remediation work. At a high level:
+
+- ✅ CDK now provisions lowercase GSIs (`gsi1..gsi9`), uses `ttl` as the table TTL attribute, and uses `oauthClientsPK/oauthClientsSK` for the dedicated OAuth index.
+- ✅ Monitoring now tracks `gsi1..gsi9` (CloudWatch dimensions must match the physical `IndexName` exactly).
+- ✅ Helper code that takes an index name now normalizes it to lowercase before deriving `gsi<N>PK/gsi<N>SK` and before calling `.Index(...)` (prevents `GSI1PK` and `Index("GSI1")`).
+- ✅ TTL struct tags are standardized to `dynamorm:"ttl,attr:ttl"` and the semicolon-based DynamORM tag has been removed from `AuthRefreshToken`.
+- ✅ All repository index usage now uses canonical index names (`gsi1..gsi9`, plus `oauth-clients-index`), including index names passed via helper configs/options.
+- ✅ AuthRefreshToken queries now use `gsi1/gsi2` and align with the redesigned key schema (`gsi*SK` is `{createdAt}`).
+
+Remaining work is mostly validation-oriented (run the verification sweep in Appendix B and validate in an actual AWS environment).
+
+---
+
 ## Executive Summary
 
-The Lesser DynamoDB design uses 9 generic GSIs (`GSI1-GSI9`) with overloaded key prefixes. However, the implementation has several critical issues:
+The Lesser DynamoDB design uses 9 generic GSIs (`gsi1-gsi9`, historically referred to as `GSI1-GSI9`) with overloaded key prefixes. However, the implementation has several critical issues:
 
 | Issue Category | Count | Severity |
 |----------------|-------|----------|
@@ -45,40 +60,41 @@ Several repository helpers derive attribute names from index names:
 
 ```go
 // query_utils.go:167, 353
-Where(fmt.Sprintf("%sPK", indexName), "=", gsiPK)
+Where(fmt.Sprintf("%sPK", strings.ToLower(indexName)), "=", gsiPK)
 
 // base_repository.go:694, 698, 1396
-skField := fmt.Sprintf("%sSK", indexName)
-Where(fmt.Sprintf("%sPK", indexName), "=", pk)
+attrPrefix := strings.ToLower(indexName)
+skField := fmt.Sprintf("%sSK", attrPrefix)
+Where(fmt.Sprintf("%sPK", attrPrefix), "=", pk)
 ```
 
-If we standardize to `GSI1`, these would produce:
-- `GSI1PK` (wrong—attribute is `gsi1PK`)
-- `GSI1SK` (wrong—attribute is `gsi1SK`)
+Before applying the lowercasing fix, passing `indexName="GSI1"` would incorrectly derive `GSI1PK/GSI1SK` (the actual key attributes are `gsi1PK/gsi1SK`).
 
-**Correct Fix**: The index names MUST be lowercase `gsi1`, `gsi2`, etc. to work with existing helper code.
+**Correct Fix**:
+- ✅ Derive attribute names from a **lowercased** prefix (so `GSI1` and `gsi1` both map to `gsi1PK/gsi1SK`)
+- ✅ Still standardize the actual DynamoDB `IndexName` and all `.Index("...")` calls to the physical lowercase names (`gsi1..gsi9`) because DynamoDB requires exact matches
 
 ### DynamoDB TTL: Table Can Only Have One TTL Attribute
 
-The main table can only have **one** TTL attribute configured. Today the codebase uses **both**:
+The main table can only have **one** TTL attribute configured. Historically, the codebase used **both**:
 - `ttl` (common) via `dynamorm:"ttl,attr:ttl"`
 - `expiresAt` (also common) via `dynamorm:"ttl,attr:expiresAt"`
 
-If CDK is updated to `TimeToLiveAttribute: "ttl"` (recommended here), then any model that marks TTL on `expiresAt` will **stop expiring automatically** until corrected.
+If the table TTL attribute is configured as `ttl`, then any model that marks TTL on `expiresAt` will **stop expiring automatically** until corrected.
 
-**Correct Fix Direction**
-- ✅ Pick **one** TTL attribute for the table (recommend `ttl` to minimize code churn)
-- ✅ Update any models using `ttl,attr:expiresAt` to use `ttl,attr:ttl` (and write the unix timestamp to that attribute)
+**Correct Fix Direction (DONE)**
+- ✅ Standardize on a single TTL attribute for the table (`ttl`)
+- ✅ Ensure all models use `ttl,attr:ttl` and write the unix timestamp to that attribute
 
 ---
 
 ## Part 1: Infrastructure Fixes (CDK)
 
-### 1.1 TTL Attribute - Fix CDK to Match DynamORM
+### 1.1 TTL Attribute - Ensure CDK Uses `ttl` (DONE)
 
-**Current CDK** (`infra/cdk/stacks/lesser_api_stack.go:277`):
+**CDK** (`infra/cdk/stacks/lesser_api_stack.go:277`):
 ```go
-TimeToLiveAttribute: jsii.String("TTL"),  // ❌ Uppercase
+TimeToLiveAttribute: jsii.String("ttl"),  // ✅ Matches DynamORM tags
 ```
 
 **Models use** (e.g., `pkg/storage/models/device.go:40`):
@@ -86,25 +102,20 @@ TimeToLiveAttribute: jsii.String("TTL"),  // ❌ Uppercase
 TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`  // ✅ Lowercase
 ```
 
-**Required Fix**: Update CDK to use lowercase `ttl`:
-```go
-TimeToLiveAttribute: jsii.String("ttl"),  // ✅ Matches model
-```
-
-**File to Update**: `infra/cdk/stacks/lesser_api_stack.go:277`
+**File**: `infra/cdk/stacks/lesser_api_stack.go:277`
 
 ---
 
-### 1.2 OAuth Client Index - Fix CDK to Match DynamORM
+### 1.2 OAuth Client Index - Ensure CDK Uses `oauthClientsPK/oauthClientsSK` (DONE)
 
-**Current CDK** (`infra/cdk/stacks/lesser_api_stack.go:332-337`):
+**CDK** (`infra/cdk/stacks/lesser_api_stack.go:332-337`):
 ```go
 PartitionKey: &awsdynamodb.Attribute{
-    Name: jsii.String("OAuthClientsPK"),  // ❌ PascalCase
+    Name: jsii.String("oauthClientsPK"),  // ✅ Matches model tags
     Type: awsdynamodb.AttributeType_STRING,
 },
 SortKey: &awsdynamodb.Attribute{
-    Name: jsii.String("OAuthClientsSK"),  // ❌ PascalCase
+    Name: jsii.String("oauthClientsSK"),  // ✅ Matches model tags
     Type: awsdynamodb.AttributeType_STRING,
 },
 ```
@@ -115,43 +126,26 @@ OAuthClientsPK string `dynamorm:"index:oauth-clients-index,pk,attr:oauthClientsP
 OAuthClientsSK string `dynamorm:"index:oauth-clients-index,sk,attr:oauthClientsSK"`  // ✅ camelCase
 ```
 
-**Required Fix**: Update CDK to use camelCase:
-```go
-PartitionKey: &awsdynamodb.Attribute{
-    Name: jsii.String("oauthClientsPK"),  // ✅ Matches model
-    Type: awsdynamodb.AttributeType_STRING,
-},
-SortKey: &awsdynamodb.Attribute{
-    Name: jsii.String("oauthClientsSK"),  // ✅ Matches model
-    Type: awsdynamodb.AttributeType_STRING,
-},
-```
-
-**File to Update**: `infra/cdk/stacks/lesser_api_stack.go:332-337`
+**File**: `infra/cdk/stacks/lesser_api_stack.go:332-337`
 
 ---
 
-### 1.3 GSI Names - Fix CDK to Use Lowercase
+### 1.3 GSI Names - Ensure CDK Uses Lowercase `gsi1..gsi9` (DONE)
 
-**Current CDK** (`infra/cdk/stacks/lesser_api_stack.go:309-310`):
+**CDK** (`infra/cdk/stacks/lesser_api_stack.go:309-310`):
 ```go
-IndexName: jsii.String(fmt.Sprintf("GSI%d", i)),  // ❌ Uppercase
+IndexName: jsii.String(fmt.Sprintf("gsi%d", i)),  // ✅ Lowercase
 ```
 
-**Required Fix**: Use lowercase to match attribute convention:
-```go
-IndexName: jsii.String(fmt.Sprintf("gsi%d", i)),  // ✅ Matches gsi%dPK/gsi%dSK
-```
+**Rationale**: The physical `IndexName` must match what callers pass to `.Index("...")` and what CloudWatch dashboards/alarms use.
 
-**Rationale**: The helper code in `base_repository.go` and `query_utils.go` derives attribute names by appending `PK`/`SK` to the index name. With lowercase `gsi1`, this produces `gsi1PK` which matches the attribute.
+**File**: `infra/cdk/stacks/lesser_api_stack.go:310` (and line 556 for GSI9)
 
-**File to Update**: `infra/cdk/stacks/lesser_api_stack.go:310` (and line 556 for GSI9)
+### 1.4 Monitoring Stack Must Track Lowercase GSI Names (DONE)
 
-### 1.4 Monitoring Stack Must Track Renamed GSI Names
+`infra/cdk/stacks/monitoring_stack.go:405` defines a list of `gsi1..gsi9` for CloudWatch metrics.
 
-`infra/cdk/stacks/monitoring_stack.go:407` hardcodes `GSI1..GSI8` for CloudWatch metrics.
-
-If you rename physical indexes to `gsi1..gsi9`, you must also update monitoring to use lowercase names; otherwise dashboards/alarms won’t populate.
+If the physical index names change, you must update monitoring to match exactly; otherwise dashboards/alarms won’t populate.
 
 ---
 
@@ -159,7 +153,7 @@ If you rename physical indexes to `gsi1..gsi9`, you must also update monitoring 
 
 ### 2.1 The Standard: Lowercase `gsi1-gsi9`
 
-All index names must use **lowercase** to work with helper code:
+All DynamoDB index names and code references should be standardized to **lowercase** `gsi1..gsi9` to match CDK and avoid drift. Helper code should derive key attribute names from a **lowercased** prefix (`gsi1` → `gsi1PK/gsi1SK`).
 
 | Physical Index | Key Attributes | Canonical Name |
 |----------------|----------------|----------------|
@@ -174,7 +168,9 @@ All index names must use **lowercase** to work with helper code:
 | `gsi9` | `gsi9PK`, `gsi9SK` | `gsi9` |
 | `oauth-clients-index` | `oauthClientsPK`, `oauthClientsSK` | `oauth-clients-index` |
 
-### 2.2 Complete Index Alias Inventory
+### 2.2 Index Alias Inventory (Partial, Code-Derived)
+
+This section is intentionally not exhaustive; it exists to show the scope of aliasing and provide examples. For a broader inventory, search the repo for `Index("...")` and `dynamorm:"index:...`.
 
 #### Aliases Using `gsi1PK/gsi1SK` → Standardize to `gsi1`
 
@@ -261,30 +257,18 @@ All index names must use **lowercase** to work with helper code:
 | `GSI8` | (various) |
 | `gsi8` | (various) |
 
-#### Non-Existent Indexes (Used But Never Provisioned)
+#### Non-Existent Indexes (Used But Never Provisioned) (RESOLVED)
 
-These are called in repositories but have **no corresponding physical GSI**:
+Earlier in remediation, several repositories referenced descriptive index names that had no corresponding physical GSI. All of those call sites have now been remapped to canonical `gsiN` names.
 
-| Index Name | Repository | Line |
-|------------|------------|------|
-| `local-timeline-index` | account_repository_timeline.go | 87 |
-| `hashtag-timeline-index` | account_repository_timeline.go | 180 |
-| `list-timeline-index` | account_repository_timeline.go | 232 |
-| `user-tokens-index` | account_repository_refresh_tokens.go | 254 |
-| `family-tokens-index` | account_repository_refresh_tokens.go | 274 |
-| `user-votes-index` | community_note_repository.go | 46 |
+Verification (expect zero matches in non-test code):
+```bash
+rg --pcre2 'Index\("(?!gsi[1-9]"|oauth-clients-index"|test-index")[^"]+"\)' pkg cmd -g'*.go'
+```
 
-**These will cause scan fallback or errors.**
+#### Index Names Used In Queries But Not Declared In Any Model (RESOLVED)
 
-In practice, if `.Index("<name>")` references an index that does not exist on the table, DynamoDB returns a `ValidationException` and the request fails. Do not rely on “fallback” behavior here.
-
-#### Index Names Used In Queries But Not Declared In Any Model
-
-These appear in `.Index("...")` calls but do **not** appear in any `dynamorm:"index:<name>,..."` struct tags, which means there is no obvious slot mapping and they are easy to drift:
-
-`display-name-index`, `email-index`, `family-tokens-index`, `follower-count-index`, `gsi4-index`, `gsi5`, `hashtag-timeline-index`, `list-timeline-index`, `local-timeline-index`, `name-index`, `tenant-entity`, `user-credentials-index`, `users-by-role`, `user-tokens-index`, `user-votes-index`, `webfinger-index`.
-
-**Fix direction**: convert each call site to `Index("gsiN")` and ensure the model declares `index:gsiN` tags for the participating key fields (`gsiNPK/gsiNSK`).
+After remediation, runtime `.Index("...")` call sites use the canonical index names (`gsi1..gsi9`, plus `oauth-clients-index` where applicable). This eliminates drift between code and the physical DynamoDB `IndexName`.
 
 ---
 
@@ -329,42 +313,28 @@ These files use `fmt.Sprintf("%sPK", indexName)` which **only works** if `indexN
 | `pkg/storage/repositories/shared_helpers_simple.go` | 41, 47, 48 | `%sPK`, `%sSK` |
 | `pkg/storage/repositories/relationship_helpers.go` | 176 | `%sPK` |
 | `pkg/storage/repositories/relationship_pagination_helpers.go` | 84 | `IndexName+"PK"` |
-| `pkg/storage/repositories/user_repository.go` | 961 | Special handling: `strings.ToUpper(gsiIndex[:4])` |
-| `pkg/storage/repositories/notification_helpers.go` | 130-131 | `GSI%sPK` (extracts number from end) |
+| `pkg/storage/repositories/user_repository.go` | 961 | Special handling: `strings.ToLower(gsiIndex[:4])` |
+| `pkg/storage/repositories/notification_helpers.go` | 130-131 | `gsi%sPK` (extracts number from end) |
 
-### 4.2 How `notification_helpers.go` Works Correctly
+### 4.2 `notification_helpers.go` Index Field Naming (FIXED)
 
 ```go
 // Line 129-131
 gsiNumber := gsiIndex[len(gsiIndex)-1:]  // Extracts "1" from "gsi1" or "GSI1"
-gsiPKField := fmt.Sprintf("GSI%sPK", gsiNumber)  // Produces "GSI1PK" ❌ Wrong!
-gsiSKField := fmt.Sprintf("GSI%sSK", gsiNumber)  // Produces "GSI1SK" ❌ Wrong!
-```
-
-**This is also broken** - it produces `GSI1PK` instead of `gsi1PK`.
-
-**Fix Required**: Change to:
-```go
 gsiPKField := fmt.Sprintf("gsi%sPK", gsiNumber)  // Produces "gsi1PK" ✅
 gsiSKField := fmt.Sprintf("gsi%sSK", gsiNumber)  // Produces "gsi1SK" ✅
 ```
 
+This avoids generating `GSI1PK/GSI1SK` when the physical key attributes are `gsi1PK/gsi1SK`.
+
 ### 4.3 How `user_repository.go:961` Works
 
 ```go
-Where(fmt.Sprintf("%sPK", strings.ToUpper(gsiIndex[:4])), "=", ...)
-// If gsiIndex = "gsi1", this produces "GSI1PK" ❌ Wrong!
+Where(fmt.Sprintf("%sPK", strings.ToLower(gsiIndex[:4])), "=", ...)
+// If gsiIndex starts with "gsi1", this produces "gsi1PK" ✅
 ```
 
-**Fix Required**: Remove the `ToUpper()`:
-```go
-Where(fmt.Sprintf("%sPK", gsiIndex[:4]), "=", ...)  // "gsi1PK" ✅
-```
-
-Or better, use the full index name if it matches the attribute prefix:
-```go
-Where(fmt.Sprintf("%sPK", gsiIndex), "=", ...)
-```
+Note: callers should still pass the canonical index name to `.Index(...)` (`gsi1`, not `gsi1-index`).
 
 ---
 
@@ -379,7 +349,7 @@ CreatedAtSK string `dynamorm:"index:user-index,sk,attr:createdAtSK;index:family-
 
 **Problem**: DynamORM doesn't support semicolon-separated multiple index tags.
 
-**Fix**: These indexes don't exist anyway. Redesign to use real GSIs:
+**Fix (DONE)**: These indexes don't exist anyway. Redesign to use real GSIs:
 ```go
 // Use GSI1 for user queries, GSI2 for family queries, GSI3 for user-family queries
 GSI1PK    string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"`     // USER#{userID}
@@ -394,7 +364,7 @@ GSI3SK    string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"-"`     // {created
 
 ## Part 6: Implementation Plan
 
-### Phase 1: CDK Fixes (Deploy First)
+### Phase 1: CDK Fixes (DONE — Deploy First)
 
 1. **Update TTL attribute** (`infra/cdk/stacks/lesser_api_stack.go:277`):
    ```go
@@ -415,20 +385,17 @@ GSI3SK    string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"-"`     // {created
 
 4. **Deploy CDK** to create new table with correct settings (or recreate if needed).
 
-### Phase 2: Helper Code Fixes
+### Phase 2: Helper Code Fixes (DONE)
 
-Fix these files to use correct attribute naming:
+Normalize derived attribute names to use a lowercased prefix (e.g., `strings.ToLower(indexName)`), so callers never generate `GSI1PK/GSI1SK` when the physical attributes are `gsi1PK/gsi1SK`.
 
-```bash
-# notification_helpers.go - Fix GSI attribute naming
-sed -i 's/fmt.Sprintf("GSI%sPK"/fmt.Sprintf("gsi%sPK"/g' pkg/storage/repositories/notification_helpers.go
-sed -i 's/fmt.Sprintf("GSI%sSK"/fmt.Sprintf("gsi%sSK"/g' pkg/storage/repositories/notification_helpers.go
+At minimum, audit helpers that build conditions like `fmt.Sprintf("%sPK", ...)` / `fmt.Sprintf("%sSK", ...)` in:
+- `pkg/storage/repositories/base_repository.go`
+- `pkg/storage/repositories/query_utils.go`
+- `pkg/storage/repositories/notification_helpers.go`
+- `pkg/storage/repositories/user_repository.go`
 
-# user_repository.go - Remove ToUpper()
-# Manual fix required - see line 961
-```
-
-### Phase 3: Model Index Tag Standardization
+### Phase 3: Model Index Tag Standardization (DONE)
 
 Standardize all index names to lowercase `gsi1`, `gsi2`, etc.:
 
@@ -451,7 +418,7 @@ find pkg/storage/models -name "*.go" -exec sed -i 's/index:GSI9,/index:gsi9,/g' 
 # Each must be reviewed for which gsiNPK/gsiNSK it uses
 ```
 
-### Phase 4: Repository `.Index()` Call Fixes
+### Phase 4: Repository `.Index()` Call Fixes (DONE)
 
 ```bash
 #!/bin/bash
@@ -478,98 +445,49 @@ find pkg/storage/repositories -name "*.go" -exec sed -i 's/Index("gsi6-index")/I
 
 ### Phase 5: Manual Fixes (Require Review)
 
-1. **Descriptive index names** - Each must be mapped to correct GSI slot based on which attributes it uses
-2. **AuthRefreshToken model** - Redesign indexes
-3. **Conflicting index names** - Resolve `service-index` and `token-index`
-4. **Non-existent indexes** - Either provision them or map to existing GSIs
+1. **Descriptive index names** - Mapped to canonical `gsiN` names based on which attributes they use (DONE)
+2. **AuthRefreshToken model** - Redesign indexes (DONE)
+3. **Conflicting index names** - Resolve `service-index` and `token-index` (DONE)
+4. **Non-existent indexes** - Either provision them or map to existing GSIs (DONE)
 
 ### Phase 6: Validation
 
 ```bash
 # 1. Verify no uppercase GSI index names remain
-grep -r 'index:GSI[0-9]' pkg/storage/models/
+rg -F 'index:GSI' pkg/storage/models -g'*.go'
 # Should return NO results
 
-grep -r 'Index("GSI[0-9]")' pkg/storage/repositories/
+rg -F 'Index("GSI' pkg/storage/repositories -g'*.go'
+# Should return NO results
+
+# No helper/config call sites passing legacy "GSI#" strings (non-test code)
+rg -n '"GSI[1-9]"' pkg/storage/repositories -g'*.go' --glob '!**/*_test.go'
 # Should return NO results
 
 # 2. Verify no descriptive index names remain (except oauth-clients-index)
-grep -r 'index:.*-index' pkg/storage/models/ | grep -v 'oauth-clients-index'
+rg 'index:.*-index' pkg/storage/models -g'*.go' | rg -v 'oauth-clients-index'
 # Should return NO results
 
 # 3. Verify CDK uses lowercase
-grep -r 'GSI%d' infra/cdk/
+rg -F 'IndexName: jsii.String("GSI' infra/cdk -g'*.go'
+rg -F 'fmt.Sprintf("GSI' infra/cdk -g'*.go'
 # Should return NO results
 
 # 4. Compile and run tests
-go build ./...
-go test ./pkg/storage/...
+mkdir -p tmp/gocache
+GOCACHE=$(pwd)/tmp/gocache go build ./...
+STAGE=test JWT_SECRET=test GOCACHE=$(pwd)/tmp/gocache go test ./pkg/storage/models ./pkg/storage/repositories
 ```
 
 ---
 
 ## Part 7: GSI Registry Constants
 
-Create a central file to document and enforce GSI usage:
+Use a central file to document and enforce GSI usage:
 
 **File**: `pkg/storage/models/gsi_registry.go`
 
-```go
-package models
-
-// GSI Slot Registry
-// This file documents which GSI slot is used for which access patterns.
-// All models and repositories MUST use these exact index names.
-
-const (
-    // Physical GSI names - must match CDK exactly (lowercase)
-    IndexGSI1 = "gsi1"
-    IndexGSI2 = "gsi2"
-    IndexGSI3 = "gsi3"
-    IndexGSI4 = "gsi4"
-    IndexGSI5 = "gsi5"
-    IndexGSI6 = "gsi6"
-    IndexGSI7 = "gsi7"
-    IndexGSI8 = "gsi8"
-    IndexGSI9 = "gsi9"
-    
-    // Dedicated OAuth index
-    IndexOAuthClients = "oauth-clients-index"
-)
-
-/*
-GSI1 Access Patterns (gsi1PK/gsi1SK):
-- INBOX#{username} - User activity inbox
-- USERNAME_SEARCH#{prefix} - Actor username search
-- TIMELINE#PUBLIC#{scope} - Public timeline queries
-- FOLLOW#{followedUsername} - Follower lookup (inverted relationship)
-- USER_SESSIONS#{userID} - User's active sessions
-- USER_JOBS#{userID} - Media/transcoding jobs
-- PUSH_ENDPOINT#{hash} - Push subscription endpoints
-- PROVIDER#{provider} - Provider accounts
-- STREAM_TARGET#{type}#{id} - Streaming events
-- COST_TABLE#{table} - Cost tracking by table
-- ... (document all patterns)
-
-GSI2 Access Patterns (gsi2PK/gsi2SK):
-- NAME_SEARCH#{prefix} - Actor display name search
-- TRUST_LEVEL#{level} - Devices by trust level
-- SESSION_TOKEN#{token} - Session token lookup
-- HASHTAG_VIS#{hashtag}#{visibility} - Hashtag visibility index
-- DLQ_RETRY#{status} - DLQ retry queue
-- USER_PROVIDERS#{userID} - User's OAuth providers
-- ... (document all patterns)
-
-GSI3 Access Patterns (gsi3PK/gsi3SK):
-- DOMAIN#{domain} - Actor by domain
-- HASHTAG_SEARCH#{prefix} - Hashtag search
-- DLQ_SERVICE#{service} - DLQ by service
-- NOTIFICATION_GROUP#{group} - Notification grouping
-- ... (document all patterns)
-
-GSI4-GSI9: (document as used)
-*/
-```
+Prefer using these constants (e.g., `models.IndexGSI1`) over ad-hoc string literals in repositories and services.
 
 ---
 
@@ -596,16 +514,47 @@ GSI4-GSI9: (document as used)
 
 ## Appendix B: Verification Checklist
 
-- [ ] CDK uses lowercase `gsi1-gsi9` for index names
-- [ ] CDK uses `ttl` (lowercase) for TTL attribute
-- [ ] CDK uses `oauthClientsPK`/`oauthClientsSK` (camelCase)
-- [ ] All model `index:` tags use lowercase `gsi1-gsi9`
-- [ ] All repository `.Index()` calls use lowercase `gsi1-gsi9`
-- [ ] Helper code produces `gsi1PK` not `GSI1PK`
-- [ ] No semicolons in DynamORM struct tags
-- [ ] `gsi_registry.go` created with documented access patterns
-- [ ] All conflicting index names resolved
-- [ ] All non-existent indexes provisioned or remapped
+- [x] CDK uses lowercase `gsi1-gsi9` for index names
+- [x] CDK uses `ttl` (lowercase) for TTL attribute
+- [x] CDK uses `oauthClientsPK`/`oauthClientsSK` (camelCase)
+- [x] All model `index:` tags use lowercase `gsi1-gsi9`
+- [x] All repository `.Index()` calls use lowercase `gsi1-gsi9`
+- [x] Helper code produces `gsi1PK` not `GSI1PK`
+- [x] No semicolons in DynamORM struct tags
+- [x] `gsi_registry.go` created with documented access patterns
+- [x] All conflicting index names resolved
+- [x] All non-existent indexes provisioned or remapped
 - [ ] All tests pass after changes
 - [ ] CDK deployment succeeds
 - [ ] Verified with `aws dynamodb describe-table` in lab environment
+
+### Scripts / Validation Sweep Notes
+Use these commands to confirm legacy index styles are fully removed (expect zero matches unless noted):
+```bash
+# No uppercase GSI tags in model struct tags
+rg "index:GSI\\d" pkg/storage -g'*.go'
+
+# No Index(\"GSI*\") usage (Go code uses method-chaining where the leading '.' is often on the previous line)
+rg "Index\\(\\\"GSI\\d\\\"\\)" pkg -g'*.go' cmd -g'*.go'
+
+# No legacy \"-index\" aliases (allow oauth-clients-index only)
+rg "Index\\(\\\"[^\\\"]+-index\\\"\\)" pkg cmd infra -g'*.go' | rg -v "oauth-clients-index"
+
+# No repository configs/helper calls still referencing legacy \"*-index\" aliases (allow oauth-clients-index and test-index)
+rg -n '"[a-z0-9-]+-index"' pkg/storage/repositories -g'*.go' | rg -v 'oauth-clients-index|test-index'
+
+# No uppercase TTL tags or CDK TTL casing
+rg "attr:TTL|TimeToLiveAttribute:\\s*jsii.String\\(\\\"TTL\\\"\\)" pkg infra -g'*.go'
+
+# No semicolons inside struct tags (DynamORM doesn't support semicolon-separated tags)
+rg '`[^`]*;[^`]*`' pkg/storage/models -g'*.go'
+
+# CDK IndexName strings are lowercase
+rg "IndexName:\\s*jsii.String\\(\\\"GSI\\d\\\"\\)|fmt\\.Sprintf\\(\\\"GSI%d\\\"\\)" infra/cdk -g'*.go'
+
+# Post-change sanity
+mkdir -p tmp/gocache
+go vet ./...
+GOCACHE=$(pwd)/tmp/gocache go build ./...
+STAGE=test JWT_SECRET=test GOCACHE=$(pwd)/tmp/gocache go test ./...
+```

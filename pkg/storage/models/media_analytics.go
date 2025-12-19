@@ -20,15 +20,15 @@ type MediaAnalytics struct {
 	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {format}#{timestamp}
 
 	// GSI2 for variant-level queries
-	GSI2PK string `dynamorm:"index:cost-variant-index,pk,attr:gsi2PK" json:"gsi2pk"` // VARIANT#{variant_key}
-	GSI2SK string `dynamorm:"index:cost-variant-index,sk,attr:gsi2SK" json:"gsi2sk"` // COST#{timestamp}
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // VARIANT#{variant_key}
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // COST#{timestamp}
 
 	// Business fields
 	MediaID   string    `dynamorm:"attr:mediaID" json:"media_id"`
-	Format    string    `dynamorm:"attr:format" json:"format"`         // hls, dash
-	Duration  float64   `dynamorm:"attr:duration" json:"duration"`     // Media duration in seconds
-	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`   // When the event occurred
-	Date      string    `dynamorm:"attr:date" json:"date"`             // YYYY-MM-DD for daily aggregation
+	Format    string    `dynamorm:"attr:format" json:"format"`       // hls, dash
+	Duration  float64   `dynamorm:"attr:duration" json:"duration"`   // Media duration in seconds
+	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"` // When the event occurred
+	Date      string    `dynamorm:"attr:date" json:"date"`           // YYYY-MM-DD for daily aggregation
 
 	// Metadata
 	EventType string `dynamorm:"attr:eventType" json:"event_type,omitempty"` // manifest_generated, quality_changed, etc.
@@ -36,16 +36,16 @@ type MediaAnalytics struct {
 	Quality   string `dynamorm:"attr:quality" json:"quality,omitempty"`      // Video quality if applicable
 
 	// NEW: Variant-level cost metrics (all costs in microdollars)
-	VariantCosts     map[string]MediaVariantCost `dynamorm:"attr:variantCosts" json:"variant_costs"`            // Per-variant cost breakdown
-	TotalVariantCost int64                       `dynamorm:"attr:totalVariantCost" json:"total_variant_cost"`   // Sum of all variant costs
-	DominantVariant  string                      `dynamorm:"attr:dominantVariant" json:"dominant_variant"`      // Most expensive variant
+	VariantCosts     map[string]MediaVariantCost `dynamorm:"attr:variantCosts" json:"variant_costs"`          // Per-variant cost breakdown
+	TotalVariantCost int64                       `dynamorm:"attr:totalVariantCost" json:"total_variant_cost"` // Sum of all variant costs
+	DominantVariant  string                      `dynamorm:"attr:dominantVariant" json:"dominant_variant"`    // Most expensive variant
 
 	// NEW: Processing cost breakdown by service
 	MediaConvertCost int64 `dynamorm:"attr:mediaConvertCost" json:"mediaconvert_cost"` // MediaConvert processing costs
 	S3StorageCost    int64 `dynamorm:"attr:s3StorageCost" json:"s3_storage_cost"`      // S3 storage costs for variants
-	CloudFrontCost   int64 `dynamorm:"attr:cloudFrontCost" json:"cloudfront_cost"`    // CDN delivery costs
-	LambdaCost       int64 `dynamorm:"attr:lambdaCost" json:"lambda_cost"`            // Lambda processing costs
-	RekognitionCost  int64 `dynamorm:"attr:rekognitionCost" json:"rekognition_cost"`  // Content analysis costs
+	CloudFrontCost   int64 `dynamorm:"attr:cloudFrontCost" json:"cloudfront_cost"`     // CDN delivery costs
+	LambdaCost       int64 `dynamorm:"attr:lambdaCost" json:"lambda_cost"`             // Lambda processing costs
+	RekognitionCost  int64 `dynamorm:"attr:rekognitionCost" json:"rekognition_cost"`   // Content analysis costs
 
 	// NEW: Bandwidth and streaming metrics
 	TotalBandwidthBytes int64            `dynamorm:"attr:totalBandwidthBytes" json:"total_bandwidth_bytes"` // Total bytes delivered
@@ -54,9 +54,9 @@ type MediaAnalytics struct {
 	QualityDistribution map[string]int   `dynamorm:"attr:qualityDistribution" json:"quality_distribution"`  // Viewer count per quality
 
 	// NEW: Performance metrics per variant
-	VariantLatency      map[string]int64   `dynamorm:"attr:variantLatency" json:"variant_latency"`              // Response time per variant (ms)
-	VariantErrorRate    map[string]float64 `dynamorm:"attr:variantErrorRate" json:"variant_error_rate"`         // Error rate per variant
-	VariantCacheHitRate map[string]float64 `dynamorm:"attr:variantCacheHitRate" json:"variant_cache_hit_rate"`  // CDN cache hit rate per variant
+	VariantLatency      map[string]int64   `dynamorm:"attr:variantLatency" json:"variant_latency"`             // Response time per variant (ms)
+	VariantErrorRate    map[string]float64 `dynamorm:"attr:variantErrorRate" json:"variant_error_rate"`        // Error rate per variant
+	VariantCacheHitRate map[string]float64 `dynamorm:"attr:variantCacheHitRate" json:"variant_cache_hit_rate"` // CDN cache hit rate per variant
 
 	// TTL for automatic cleanup
 	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`

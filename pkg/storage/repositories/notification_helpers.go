@@ -127,8 +127,8 @@ func (h *CostTrackingQueryHelper) buildTimeRangeQuery(ctx context.Context, gsiIn
 
 	// Extract GSI number from index name (e.g., "gsi1" -> "1")
 	gsiNumber := gsiIndex[len(gsiIndex)-1:]
-	gsiPKField := fmt.Sprintf("GSI%sPK", gsiNumber)
-	gsiSKField := fmt.Sprintf("GSI%sSK", gsiNumber)
+	gsiPKField := fmt.Sprintf("gsi%sPK", gsiNumber)
+	gsiSKField := fmt.Sprintf("gsi%sSK", gsiNumber)
 
 	query := h.db.WithContext(ctx).Model(&models.NotificationCostTracking{}).
 		Index(gsiIndex).

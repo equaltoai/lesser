@@ -14,8 +14,8 @@ type ImportBudget struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for period queries - BUDGET#{period}, USER#{username}
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// Budget configuration
 	Username string `dynamorm:"attr:username" json:"username"`
@@ -36,18 +36,18 @@ type ImportBudget struct {
 	ExportCount int64 `dynamorm:"attr:exportCount" json:"export_count"` // Number of exports this period
 
 	// Alert configuration
-	AlertThresholdPercent float64    `dynamorm:"attr:alertThresholdPercent" json:"alert_threshold_percent"`   // Alert when usage exceeds this percentage
-	AlertSendingEnabled   bool       `dynamorm:"attr:alertSendingEnabled" json:"alert_sending_enabled"`       // Whether to send alerts
-	LastAlertSent         *time.Time `dynamorm:"attr:lastAlertSent" json:"last_alert_sent,omitempty"`          // When last alert was sent
+	AlertThresholdPercent float64    `dynamorm:"attr:alertThresholdPercent" json:"alert_threshold_percent"` // Alert when usage exceeds this percentage
+	AlertSendingEnabled   bool       `dynamorm:"attr:alertSendingEnabled" json:"alert_sending_enabled"`     // Whether to send alerts
+	LastAlertSent         *time.Time `dynamorm:"attr:lastAlertSent" json:"last_alert_sent,omitempty"`       // When last alert was sent
 
 	// Status tracking
-	IsActive     bool       `dynamorm:"attr:isActive" json:"is_active"`                       // Whether budget enforcement is active
-	LastImportAt *time.Time `dynamorm:"attr:lastImportAt" json:"last_import_at,omitempty"`    // When last import occurred
-	LastExportAt *time.Time `dynamorm:"attr:lastExportAt" json:"last_export_at,omitempty"`    // When last export occurred
-	PeriodStart  time.Time  `dynamorm:"attr:periodStart" json:"period_start"`                 // Start of current budget period
-	PeriodEnd    time.Time  `dynamorm:"attr:periodEnd" json:"period_end"`                     // End of current budget period
-	NextResetAt  time.Time  `dynamorm:"attr:nextResetAt" json:"next_reset_at"`                // When budget will reset
-	LastResetAt  *time.Time `dynamorm:"attr:lastResetAt" json:"last_reset_at,omitempty"`      // When budget was last reset
+	IsActive     bool       `dynamorm:"attr:isActive" json:"is_active"`                    // Whether budget enforcement is active
+	LastImportAt *time.Time `dynamorm:"attr:lastImportAt" json:"last_import_at,omitempty"` // When last import occurred
+	LastExportAt *time.Time `dynamorm:"attr:lastExportAt" json:"last_export_at,omitempty"` // When last export occurred
+	PeriodStart  time.Time  `dynamorm:"attr:periodStart" json:"period_start"`              // Start of current budget period
+	PeriodEnd    time.Time  `dynamorm:"attr:periodEnd" json:"period_end"`                  // End of current budget period
+	NextResetAt  time.Time  `dynamorm:"attr:nextResetAt" json:"next_reset_at"`             // When budget will reset
+	LastResetAt  *time.Time `dynamorm:"attr:lastResetAt" json:"last_reset_at,omitempty"`   // When budget was last reset
 
 	// TTL for automatic cleanup
 	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`

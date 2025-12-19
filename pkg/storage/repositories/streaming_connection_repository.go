@@ -233,7 +233,7 @@ func (r *StreamingConnectionRepository) DeleteAllSubscriptions(ctx context.Conte
 	var subscriptions []models.WebSocketSubscription
 
 	err := r.subscriptionRepo.GetDB().WithContext(ctx).Model(&models.WebSocketSubscription{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("CONN#%s", connectionID)).
 		All(&subscriptions)
 
@@ -263,7 +263,7 @@ func (r *StreamingConnectionRepository) GetConnectionsByUser(ctx context.Context
 	var connections []models.WebSocketConnection
 
 	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
 		Limit(connectionQueryLimit).
 		All(&connections)
@@ -735,7 +735,7 @@ func (r *StreamingConnectionRepository) GetActiveConnectionsCount(ctx context.Co
 // GetConnectionCountByState returns the number of connections currently recorded in the provided state
 func (r *StreamingConnectionRepository) GetConnectionCountByState(ctx context.Context, state models.ConnectionState) (int, error) {
 	count, err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
-		Index("GSI2").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("STATE#%s", state)).
 		Count()
 	if err != nil {
@@ -745,7 +745,7 @@ func (r *StreamingConnectionRepository) GetConnectionCountByState(ctx context.Co
 		if isResourceNotFound(err) {
 			if r.logger != nil {
 				r.logger.Warn("streaming connections state index missing; treating count as zero",
-					zap.String("index", "GSI2"),
+					zap.String("index", "gsi2"),
 					zap.Error(err))
 			}
 			return 0, nil
@@ -759,7 +759,7 @@ func (r *StreamingConnectionRepository) GetConnectionCountByState(ctx context.Co
 // GetUserConnectionCount returns the number of connections associated with the supplied user
 func (r *StreamingConnectionRepository) GetUserConnectionCount(ctx context.Context, userID string) (int, error) {
 	count, err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
 		Count()
 	if err != nil {
@@ -769,7 +769,7 @@ func (r *StreamingConnectionRepository) GetUserConnectionCount(ctx context.Conte
 		if isResourceNotFound(err) {
 			if r.logger != nil {
 				r.logger.Warn("streaming connections user index missing; treating count as zero",
-					zap.String("index", "GSI1"),
+					zap.String("index", "gsi1"),
 					zap.Error(err))
 			}
 			return 0, nil
@@ -785,7 +785,7 @@ func (r *StreamingConnectionRepository) GetConnectionsByState(ctx context.Contex
 	var connections []models.WebSocketConnection
 
 	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
-		Index("GSI2").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("STATE#%s", state)).
 		Limit(connectionQueryLimit).
 		All(&connections)
@@ -797,7 +797,7 @@ func (r *StreamingConnectionRepository) GetConnectionsByState(ctx context.Contex
 		if isResourceNotFound(err) {
 			if r.logger != nil {
 				r.logger.Warn("streaming connections state index missing; returning empty set",
-					zap.String("index", "GSI2"),
+					zap.String("index", "gsi2"),
 					zap.Error(err))
 			}
 			return []models.WebSocketConnection{}, nil

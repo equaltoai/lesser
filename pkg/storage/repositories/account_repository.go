@@ -1725,7 +1725,7 @@ func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, _ string, 
 
 	var users []models.User
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("GSI1").
+		Index(models.IndexGSI1).
 		Where("gsi1PK", "=", "USERS")
 
 	limit := opts.Limit
@@ -1784,7 +1784,7 @@ func (r *AccountRepository) GetFeaturedAccounts(ctx context.Context, opts interf
 	// Featured accounts are typically admins and moderators
 	var users []models.User
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("GSI3").
+		Index(models.IndexGSI3).
 		Where("gsi3PK", "IN", []string{"ROLE#admin", "ROLE#moderator"})
 
 	limit := opts.Limit
@@ -2018,7 +2018,7 @@ func (r *AccountRepository) CreatePasswordReset(ctx context.Context, reset *stor
 func (r *AccountRepository) GetPasswordReset(ctx context.Context, token string) (*storage.PasswordReset, error) {
 	var resetModel models.PasswordReset
 	err := r.db.WithContext(ctx).Model(&resetModel).
-		Index("token-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
 		First(&resetModel)
 
@@ -2056,7 +2056,7 @@ func (r *AccountRepository) UsePasswordReset(ctx context.Context, token string) 
 	resetModel.Token = token
 
 	err := r.db.WithContext(ctx).Model(resetModel).
-		Index("token-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
 		First(resetModel)
 
@@ -2198,7 +2198,7 @@ func (r *AccountRepository) GetAccountsCount(ctx context.Context) (int64, error)
 	// Count users using GSI1 (user listing index)
 	var users []models.User
 	err := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("GSI1").
+		Index(models.IndexGSI1).
 		Where("gsi1PK", "=", "USERS").
 		Scan(&users)
 

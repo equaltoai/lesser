@@ -18,7 +18,7 @@ type CategoryRepository struct {
 // NewCategoryRepository creates a new category repository
 func NewCategoryRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *CategoryRepository {
 	enhancedRepo := NewEnhancedBaseRepository[*models.Category](db, tableName, logger, costService, "CategoryRepository", "category")
-	
+
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService())
@@ -50,20 +50,20 @@ func (r *CategoryRepository) GetCategory(ctx context.Context, id string) (*model
 // ListCategories lists all categories (optionally filtered by parent)
 func (r *CategoryRepository) ListCategories(ctx context.Context, parentID *string, limit int) ([]*models.Category, error) {
 	var categories []models.Category
-	
+
 	// If parentID is provided, use GSI1 to find children
 	if parentID != nil {
 		gsiPK := fmt.Sprintf("CATEGORY#%s", *parentID)
 		if *parentID == "" {
 			gsiPK = "CATEGORY#ROOT"
 		}
-		
+
 		err := r.db.WithContext(ctx).Model(&models.Category{}).
-			Index("GSI1").
+			Index("gsi1").
 			Where("gsi1PK", "=", gsiPK).
 			Limit(limit).
 			All(&categories)
-			
+
 		if err != nil {
 			return nil, err
 		}
@@ -74,12 +74,12 @@ func (r *CategoryRepository) ListCategories(ctx context.Context, parentID *strin
 			Where("SK", "BEGINS_WITH", "ID#").
 			Limit(limit).
 			All(&categories)
-			
+
 		if err != nil {
 			return nil, err
 		}
 	}
-	
+
 	result := make([]*models.Category, len(categories))
 	for i := range categories {
 		result[i] = &categories[i]

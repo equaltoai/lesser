@@ -90,7 +90,7 @@ func (r *AICostRepository) GetAICostsByTimeRange(ctx context.Context, startTime,
 	endDate := endTime.Format(common.CompactDateFormat)
 
 	query := r.db.WithContext(ctx).Model(&models.AICost{}).
-		Index("time-index").
+		Index("gsi1").
 		Where("gsi1PK", ">=", fmt.Sprintf("AI_COSTS#%s", startDate)).
 		Where("gsi1PK", "<=", fmt.Sprintf("AI_COSTS#%s", endDate))
 
@@ -133,7 +133,7 @@ func (r *AICostRepository) GetAICostsByTimeRange(ctx context.Context, startTime,
 // GetAICostsByOperationType retrieves AI cost records by operation type
 func (r *AICostRepository) GetAICostsByOperationType(ctx context.Context, operationType string, startTime time.Time, limit int) ([]*models.AICost, error) {
 	query := r.db.WithContext(ctx).Model(&models.AICost{}).
-		Index("operation-type-index").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("AI_TYPE#%s", operationType))
 
 	if !startTime.IsZero() {
@@ -169,7 +169,7 @@ func (r *AICostRepository) GetTopCostlyOperations(ctx context.Context, costTier 
 	}
 
 	query := r.db.WithContext(ctx).Model(&models.AICost{}).
-		Index("cost-analysis-index").
+		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("AI_COST_RANGE#%s", costTier))
 
 	if limit > 0 {
@@ -700,7 +700,7 @@ func (r *AICostRepository) CreateOrUpdateAggregatedCost(ctx context.Context, agg
 func (r *AICostRepository) GetAggregatedCosts(ctx context.Context, period string, startTime, endTime time.Time) ([]*models.AIAggregatedCost, error) {
 	// Note: This uses the AIAggregatedCost model directly since BaseRepository is typed for AICost
 	query := r.db.WithContext(ctx).Model(&models.AIAggregatedCost{}).
-		Index("time-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("AI_AGG_TIME#%s", period))
 
 	// Add time range filter

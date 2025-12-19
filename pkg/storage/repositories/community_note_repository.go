@@ -43,7 +43,7 @@ func (r *CommunityNoteRepository) GetUserVotingHistory(ctx context.Context, user
 
 	// Query using GSI to get all votes by this user - preserve community voting history functionality
 	err := r.GetDB().WithContext(ctx).Model(&models.CommunityNoteVote{}).
-		Index("user-votes-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", "VOTES#"+userID).
 		OrderBy("gsi1SK", "DESC"). // Most recent first
 		Limit(limit).

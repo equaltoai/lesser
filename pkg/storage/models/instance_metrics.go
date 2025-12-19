@@ -14,12 +14,12 @@ type InstanceMetrics struct {
 	SK string `dynamorm:"sk,attr:SK"`
 
 	// GSI fields for time-based queries
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
 
 	// Business fields from legacy
-	Date       string    `dynamorm:"attr:date" json:"date"`               // YYYY-MM-DD format
-	MetricType string    `dynamorm:"attr:metricType" json:"metric_type"`  // total_users, active_users_daily, etc.
+	Date       string    `dynamorm:"attr:date" json:"date"`              // YYYY-MM-DD format
+	MetricType string    `dynamorm:"attr:metricType" json:"metric_type"` // total_users, active_users_daily, etc.
 	Value      int64     `dynamorm:"attr:value" json:"value"`
 	Delta      int64     `dynamorm:"attr:delta" json:"delta"` // change from previous period
 	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`

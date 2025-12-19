@@ -277,8 +277,8 @@ func (rm *RoutingMetrics) GetGlobalMetrics(ctx context.Context, window time.Dura
 
 	queryInput := &dynamodb.QueryInput{
 		TableName:              aws.String(rm.tableName),
-		IndexName:              aws.String("GSI1"),
-		KeyConditionExpression: aws.String("GSI1PK = :pk AND GSI1SK > :since"),
+		IndexName:              aws.String("gsi1"),
+		KeyConditionExpression: aws.String("gsi1PK = :pk AND gsi1SK > :since"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk":    &types.AttributeValueMemberS{Value: "METRICS#GLOBAL"},
 			":since": &types.AttributeValueMemberS{Value: fmt.Sprintf("%d", since.Unix())},

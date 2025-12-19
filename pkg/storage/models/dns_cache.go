@@ -17,8 +17,8 @@ type DNSCache struct {
 	Hostname   string    `dynamorm:"attr:hostname" json:"hostname"`
 	IPs        []string  `dynamorm:"attr:ips" json:"ips"`
 	ResolvedAt time.Time `dynamorm:"attr:resolvedAt" json:"resolved_at"`
-	TTL        int       `dynamorm:"attr:ttl" json:"ttl"`                  // seconds
-	ExpiresAt  int64     `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp for DynamoDB TTL
+	TTL        int       `dynamorm:"attr:ttl" json:"ttl"`            // seconds
+	ExpiresAt  int64     `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp for DynamoDB TTL
 }
 
 // UpdateKeys sets the composite key values for DynamoDB

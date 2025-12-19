@@ -162,7 +162,7 @@ func (r *AIRepository) GetStats(ctx context.Context, period string) (*ai.AIStats
 	)
 
 	for {
-		page, err := r.QueryGSIPaginated(ctx, "cost-date-index", gsiPK, BasePaginationOptions{
+		page, err := r.QueryGSIPaginated(ctx, "gsi4", gsiPK, BasePaginationOptions{
 			Limit:  analysisPageLimit,
 			Cursor: cursor,
 			Order:  SortOrderAsc,

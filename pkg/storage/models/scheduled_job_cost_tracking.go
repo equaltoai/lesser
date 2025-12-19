@@ -17,12 +17,12 @@ type ScheduledJobCostRecord struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "RUN#{timestamp}#{id}"
 
 	// GSI1 - Job status and performance queries
-	GSI1PK string `dynamorm:"index:job-status-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "SCHEDULED_JOB_STATUS#{status}"
-	GSI1SK string `dynamorm:"index:job-status-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{jobName}#{id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "SCHEDULED_JOB_STATUS#{status}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{jobName}#{id}"
 
 	// GSI2 - Date range queries across all jobs
-	GSI2PK string `dynamorm:"index:job-date-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "SCHEDULED_JOB_DATE#{dateStr}"
-	GSI2SK string `dynamorm:"index:job-date-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{jobName}#{id}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "SCHEDULED_JOB_DATE#{dateStr}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{jobName}#{id}"
 
 	// Core job information
 	ID          string    `dynamorm:"attr:id" json:"id"`                              // Unique execution ID
@@ -105,7 +105,7 @@ type ScheduledJobCostRecord struct {
 	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (90 days for job execution records)
-	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
 }
 
 // ScheduledJobCostAggregation represents pre-computed aggregations for scheduled job costs
@@ -175,7 +175,7 @@ type ScheduledJobCostAggregation struct {
 	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL (longer for aggregated data - 365 days)
-	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"`
+	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"`
 }
 
 // ScheduledJobCategoryStats represents cost statistics for a job category

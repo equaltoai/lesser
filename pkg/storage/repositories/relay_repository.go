@@ -137,7 +137,7 @@ func (r *RelayRepository) GetActiveRelays(ctx context.Context) ([]*storage.Relay
 	// Use BaseRepository QueryGSI method to query active relays
 	var relayModels []models.Relay
 	err := r.GetDB().WithContext(ctx).Model(&models.Relay{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", "ACTIVE_RELAYS").
 		Limit(1000).
 		All(&relayModels)

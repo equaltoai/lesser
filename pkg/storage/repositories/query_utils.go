@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -164,7 +165,7 @@ func (q *QueryUtils) GSIStatusQuery(ctx context.Context, indexName, status strin
 
 	query := q.db.WithContext(ctx).Model(&results).
 		Index(indexName).
-		Where(fmt.Sprintf("%sPK", indexName), "=", gsiPK)
+		Where(fmt.Sprintf("%sPK", strings.ToLower(indexName)), "=", gsiPK)
 
 	if opts.Limit > 0 {
 		query = query.Limit(opts.Limit + 1)
@@ -350,10 +351,10 @@ func (q *QueryUtils) QueryByGSI(ctx context.Context, indexName, gsiPK, gsiSK str
 	var results []map[string]interface{}
 	query := q.db.WithContext(ctx).Model(&results).
 		Index(indexName).
-		Where(fmt.Sprintf("%sPK", indexName), "=", gsiPK)
+		Where(fmt.Sprintf("%sPK", strings.ToLower(indexName)), "=", gsiPK)
 
 	if gsiSK != "" {
-		query = query.Where(fmt.Sprintf("%sSK", indexName), "=", gsiSK)
+		query = query.Where(fmt.Sprintf("%sSK", strings.ToLower(indexName)), "=", gsiSK)
 	}
 
 	if opts.Limit > 0 {
@@ -626,7 +627,7 @@ func (c *CommonQueries) GetUserFollows(ctx context.Context, username string, lim
 
 // GetUserFollowers retrieves followers for a user with pagination
 func (c *CommonQueries) GetUserFollowers(ctx context.Context, username string, limit int, cursor string) (*QueryResult[map[string]interface{}], error) {
-	return c.GSIStatusQuery(ctx, "gsi1-index", fmt.Sprintf("follow#%s", username), &QueryOptions{
+	return c.GSIStatusQuery(ctx, "gsi1", fmt.Sprintf("follow#%s", username), &QueryOptions{
 		Limit:  limit,
 		Cursor: cursor,
 	})

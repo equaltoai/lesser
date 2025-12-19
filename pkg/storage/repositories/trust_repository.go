@@ -276,7 +276,7 @@ func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trustee
 	// Note: DynamORM uses case-sensitive index names, check actual index name in CDK
 	var trustModels []*models.TrustRelationship
 	query := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
-		Index("GSI1"). // Try GSI1 first (common DynamORM pattern)
+		Index("gsi1"). // Try gsi1 first (common DynamORM pattern)
 		Where("gsi1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
 
 	if cursor != "" {
@@ -290,7 +290,7 @@ func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trustee
 	if err != nil && strings.Contains(err.Error(), "index") {
 		r.logger.Debug("GSI1 query failed, trying gsi1-index", zap.Error(err))
 		query = r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
-			Index("gsi1-index").
+			Index("gsi1").
 			Where("gsi1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
 		if cursor != "" {
 			query = query.Cursor(cursor)

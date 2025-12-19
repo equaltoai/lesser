@@ -15,16 +15,16 @@ type Hashtag struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "METADATA"
 
 	// GSI3 - Hashtag search by prefix
-	GSI3PK string `dynamorm:"index:hashtag-search-index,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "HASHTAG_SEARCH#{first_2_chars}"
-	GSI3SK string `dynamorm:"index:hashtag-search-index,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{hashtag_name}"
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "HASHTAG_SEARCH#{first_2_chars}"
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{hashtag_name}"
 
 	// Core hashtag data
-	Name       string    `dynamorm:"attr:name" json:"name"`                   // Hashtag name (lowercase, no #)
-	URL        string    `dynamorm:"attr:url" json:"url"`                     // Public URL for the hashtag
-	UsageCount int64     `dynamorm:"attr:usageCount" json:"usage_count"`      // Total number of times used
-	FirstSeen  time.Time `dynamorm:"attr:firstSeen" json:"first_seen"`        // When first seen
-	LastUsed   time.Time `dynamorm:"attr:lastUsed" json:"last_used"`          // When last used
-	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`        // Last metadata update
+	Name       string    `dynamorm:"attr:name" json:"name"`              // Hashtag name (lowercase, no #)
+	URL        string    `dynamorm:"attr:url" json:"url"`                // Public URL for the hashtag
+	UsageCount int64     `dynamorm:"attr:usageCount" json:"usage_count"` // Total number of times used
+	FirstSeen  time.Time `dynamorm:"attr:firstSeen" json:"first_seen"`   // When first seen
+	LastUsed   time.Time `dynamorm:"attr:lastUsed" json:"last_used"`     // When last used
+	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`   // Last metadata update
 
 	// Timestamps
 	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`

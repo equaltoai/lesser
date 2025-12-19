@@ -21,12 +21,12 @@ type WebSocketCostRecord struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Connection-based queries
-	GSI1PK string `dynamorm:"index:connection-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_CONN#{connection_id}"
-	GSI1SK string `dynamorm:"index:connection-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_CONN#{connection_id}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// GSI2 - User-based queries
-	GSI2PK string `dynamorm:"index:user-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "WS_USER#{user_id}"
-	GSI2SK string `dynamorm:"index:user-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{operation_type}#{id}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "WS_USER#{user_id}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// Core cost tracking data
 	ID            string    `dynamorm:"attr:id" json:"id"`
@@ -90,7 +90,7 @@ type WebSocketCostRecord struct {
 	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (30 days for detailed records)
-	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
 }
 
 // WebSocketCostBudget represents per-user WebSocket usage budgets
@@ -102,8 +102,8 @@ type WebSocketCostBudget struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "BUDGET#{period}"
 
 	// GSI1 - User budget queries
-	GSI1PK string `dynamorm:"index:user-budget-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_USER_BUDGET#{user_id}"
-	GSI1SK string `dynamorm:"index:user-budget-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{period}#{status}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_USER_BUDGET#{user_id}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{period}#{status}"
 
 	// Budget configuration
 	UserID           string    `dynamorm:"attr:userID" json:"user_id"`
@@ -143,7 +143,7 @@ type WebSocketCostBudget struct {
 	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL - refresh budgets periodically
-	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
 }
 
 // WebSocketCostAggregation represents pre-computed WebSocket cost aggregations
@@ -155,8 +155,8 @@ type WebSocketCostAggregation struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "window#{windowStart}"
 
 	// GSI1 - User aggregation queries
-	GSI1PK string `dynamorm:"index:user-agg-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_USER_AGG#{user_id}#{period}"
-	GSI1SK string `dynamorm:"index:user-agg-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_USER_AGG#{user_id}#{period}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}"
 
 	// Aggregation details
 	Period        string    `dynamorm:"attr:period" json:"period"`                // minute, hour, day, week, month
@@ -229,7 +229,7 @@ type WebSocketCostAggregation struct {
 	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL (longer for aggregated data)
-	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"`
+	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"`
 }
 
 // WebSocketTierCostStats represents cost statistics for a billing tier

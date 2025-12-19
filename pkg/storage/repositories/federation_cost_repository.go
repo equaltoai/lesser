@@ -85,7 +85,7 @@ func (r *FederationCostRepository) GetFederationCosts(ctx context.Context, domai
 	endDate := endTime.Format(common.CompactDateFormat)
 
 	query := r.GetDB().WithContext(ctx).Model(&models.FederationCostTracking{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", ">=", fmt.Sprintf("FED_COSTS#%s", startDate)).
 		Where("gsi1PK", "<=", fmt.Sprintf("FED_COSTS#%s", endDate)).
 		Filter("gsi1SK", "CONTAINS", domain). // Filter for specific domain
@@ -114,7 +114,7 @@ func (r *FederationCostRepository) GetFederationCostsByActivityType(ctx context.
 	timestampEnd := endTime.Format(common.CompactTimeFormat)
 
 	query := r.GetDB().WithContext(ctx).Model(&models.FederationCostTracking{}).
-		Index("GSI2").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("FED_TYPE#%s", activityType)).
 		Where("gsi2SK", ">=", fmt.Sprintf("DOMAIN#%s", timestampStart)).
 		Where("gsi2SK", "<=", fmt.Sprintf("DOMAIN#%s", timestampEnd)).
@@ -281,7 +281,7 @@ func (r *FederationCostRepository) GetActiveBudgets(ctx context.Context, limit i
 	var budgets []*models.FederationBudget
 
 	query := r.GetDB().WithContext(ctx).Model(&models.FederationBudget{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", "ACTIVE_BUDGETS").
 		Filter("IsActive", "=", true).
 		Limit(limit)

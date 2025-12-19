@@ -427,7 +427,7 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 	if len(normalizedQuery) >= 2 {
 		prefix := normalizedQuery[:2]
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
-			Index("username-search-index").
+			Index("gsi1").
 			Where("gsi1PK", "=", "USERNAME_SEARCH#"+prefix).
 			Filter("gsi1SK", "BEGINS_WITH", normalizedQuery).
 			Limit(limit).
@@ -441,7 +441,7 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 	if len(actors) == 0 && len(normalizedQuery) >= 2 {
 		prefix := normalizedQuery[:2]
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
-			Index("name-search-index").
+			Index("gsi2").
 			Where("gsi2PK", "=", "NAME_SEARCH#"+prefix).
 			Filter("gsi2SK", "BEGINS_WITH", normalizedQuery).
 			Limit(limit).
@@ -473,7 +473,7 @@ func (r *ActorRepository) GetSearchSuggestions(ctx context.Context, prefix strin
 
 	var actors []models.Actor
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Index("username-search-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", "USERNAME_SEARCH#"+prefixKey).
 		Filter("gsi1SK", "BEGINS_WITH", normalizedPrefix).
 		Limit(10).
@@ -604,12 +604,12 @@ func followerCountBucket(count int) string {
 // getEncryptor returns an encryptor for actor private keys using KMS
 func getEncryptor() (marshalers.Encryptor, error) {
 	cfg := lesserconfig.Get()
-	
+
 	kmsKeyID := cfg.KMSKeyID
 	if kmsKeyID == "" {
 		return nil, errors.New("KMS_KEY_ID not configured")
 	}
-	
+
 	return marshalers.NewKMSEncryptor(kmsKeyID)
 }
 
@@ -1096,7 +1096,7 @@ func (r *ActorRepository) getRecentActiveActors(ctx context.Context, limit int) 
 
 		var actors []models.Actor
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
-			Index("activity-index").
+			Index("gsi5").
 			Where("gsi5PK", "=", dateKey).
 			OrderBy("gsi5SK", "DESC"). // Get most recent first
 			Limit(limit).
@@ -1154,7 +1154,7 @@ func (r *ActorRepository) getPopularActors(ctx context.Context, limit int) ([]*a
 
 		var actors []models.Actor
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
-			Index("popularity-index").
+			Index("gsi4").
 			Where("gsi4PK", "=", "ACTOR_RANK#"+bucket).
 			OrderBy("gsi4SK", "DESC"). // Highest follower count first
 			Limit(limit - len(allActors)).

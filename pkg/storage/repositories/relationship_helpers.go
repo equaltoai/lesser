@@ -173,7 +173,7 @@ func (h *RelationshipHelper) GetUsersWhoRelated(
 
 	query := h.DB.WithContext(ctx).Model(modelType).
 		Index(gsiIndex).
-		Where(fmt.Sprintf("%sPK", gsiIndex), "=", fmt.Sprintf(gsiPKFormat, targetUsername)).
+		Where(fmt.Sprintf("%sPK", strings.ToLower(gsiIndex)), "=", fmt.Sprintf(gsiPKFormat, targetUsername)).
 		Limit(limit)
 
 	if cursor != "" {

@@ -213,7 +213,7 @@ func (r *StatusRepository) queryPublicTimelineDirect(ctx context.Context, opts i
 
 	var statusModels []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("GSI2").
+		Index("gsi2").
 		Where("gsi2PK", "=", "PUBLIC_TIMELINE").
 		OrderBy("gsi2SK", "DESC").
 		Limit(opts.Limit).
@@ -378,7 +378,7 @@ func (r *StatusRepository) DeleteBoostStatus(ctx context.Context, boosterID, tar
 func (r *StatusRepository) findBoostStatus(ctx context.Context, boosterID, targetStatusID string) (*models.Status, error) {
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("AUTHOR#%s", boosterID)).
 		Filter("BoostOfStatusID", "=", targetStatusID).
 		Limit(1).
@@ -400,7 +400,7 @@ func (r *StatusRepository) findBoostStatus(ctx context.Context, boosterID, targe
 // CountStatusesByAuthor counts the total number of statuses by an author
 func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID string) (int, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)).
 		Count()
 	if err != nil {
@@ -413,7 +413,7 @@ func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID s
 // CountReplies counts the number of replies to a status
 func (r *StatusRepository) CountReplies(ctx context.Context, statusID string) (int, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("GSI4").
+		Index("gsi4").
 		Where("gsi4PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
 		Count()
 	if err != nil {
@@ -587,7 +587,7 @@ func (r *StatusRepository) GetStatusesByURL(ctx context.Context, targetURL strin
 	var matchingStatuses []models.Status
 
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("GSI7").
+		Index("gsi7").
 		Where("gsi7PK", "=", "URL#"+normalizedURL).
 		Limit(limit).
 		All(&matchingStatuses)
@@ -819,7 +819,7 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 	// Query GSI7 for URL-indexed statuses
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("GSI7").
+		Index("gsi7").
 		Where("gsi7PK", "=", "URL#"+normalizedURL).
 		Scan(&statuses)
 
@@ -959,7 +959,7 @@ func (r *StatusRepository) collectStatusesForActors(ctx context.Context, userID 
 func (r *StatusRepository) fetchStatusesForActor(ctx context.Context, userID string, actorID string) []models.Status {
 	var userStatuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("AUTHOR#%s", actorID)).
 		OrderBy("gsi1SK", "DESC").
 		Limit(homeTimelineStatusesPerActor).
@@ -1026,6 +1026,8 @@ func paginateHomeTimeline(allStatuses []models.Status, limit int) *interfaces.Pa
 // queryStatusesByGSI is a consolidated helper for GSI-based status queries
 func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gsiPKField, gsiPKValue, gsiSKField, orderDirection string, opts interfaces.PaginationOptions, errorMsg string) (*interfaces.PaginatedResult[*models.Status], error) {
 	var statuses []models.Status
+
+	indexName = strings.ToLower(indexName)
 
 	limit := opts.Limit
 	if limit <= 0 {
@@ -1097,12 +1099,12 @@ func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gs
 
 // GetUserTimeline retrieves user's own statuses
 func (r *StatusRepository) GetUserTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	return r.queryStatusesByGSI(ctx, "GSI1", "gsi1PK", fmt.Sprintf("AUTHOR#%s", userID), "gsi1SK", "DESC", opts, "failed to get user timeline")
+	return r.queryStatusesByGSI(ctx, "gsi1", "gsi1PK", fmt.Sprintf("AUTHOR#%s", userID), "gsi1SK", "DESC", opts, "failed to get user timeline")
 }
 
 // GetConversationThread retrieves all statuses in a conversation thread
 func (r *StatusRepository) GetConversationThread(ctx context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	return r.queryStatusesByGSI(ctx, "GSI3", "gsi3PK", fmt.Sprintf("CONVERSATION#%s", conversationID), "gsi3SK", "ASC", opts, "failed to get conversation thread")
+	return r.queryStatusesByGSI(ctx, "gsi3", "gsi3PK", fmt.Sprintf("CONVERSATION#%s", conversationID), "gsi3SK", "ASC", opts, "failed to get conversation thread")
 }
 
 // SearchStatuses searches statuses by query string
@@ -1158,7 +1160,7 @@ func (r *StatusRepository) GetStatusesByHashtag(ctx context.Context, hashtag str
 
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("GSI5").
+		Index("gsi5").
 		Where("gsi5PK", "=", fmt.Sprintf("HASHTAG#%s", hashtag)).
 		OrderBy("gsi5SK", "DESC").
 		Limit(limit).
@@ -1211,7 +1213,7 @@ func (r *StatusRepository) GetTrendingStatuses(ctx context.Context, opts interfa
 	// In production, you'd want a more sophisticated trending algorithm
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("GSI2").
+		Index("gsi2").
 		Where("gsi2PK", "=", "PUBLIC_TIMELINE").
 		Filter("LikeCount", ">", 0). // Only statuses with likes
 		OrderBy("gsi2SK", "DESC").
@@ -1521,7 +1523,7 @@ func (r *StatusRepository) GetPublicTimeline(ctx context.Context, opts interface
 func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("GSI4").
+		Index("gsi4").
 		Where("gsi4PK", "=", fmt.Sprintf("REPLIES#%s", parentStatusID)).
 		OrderBy("gsi4SK", "ASC"). // Chronological order for replies
 		Limit(opts.Limit).
@@ -1547,7 +1549,7 @@ func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string
 // GetFlaggedStatuses retrieves flagged statuses with pagination using GSI6
 func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	// Use GSI6 for efficient flagged content queries
-	return r.queryStatusesByGSI(ctx, "GSI6", "gsi6PK", "FLAGGED_CONTENT", "gsi6SK", "DESC", opts, "failed to get flagged statuses")
+	return r.queryStatusesByGSI(ctx, "gsi6", "gsi6PK", "FLAGGED_CONTENT", "gsi6SK", "DESC", opts, "failed to get flagged statuses")
 }
 
 // FlagStatus marks a status as flagged for moderation

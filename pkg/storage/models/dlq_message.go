@@ -18,16 +18,16 @@ type DLQMessage struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "MSG#timestamp#messageId"
 
 	// GSI1 - Error type analysis
-	GSI1PK string `dynamorm:"index:error-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "DLQ_ERROR#errorType"
-	GSI1SK string `dynamorm:"index:error-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{service}#{messageId}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "DLQ_ERROR#errorType"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{service}#{messageId}"
 
 	// GSI2 - Retry analysis and reprocessing
-	GSI2PK string `dynamorm:"index:retry-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "DLQ_RETRY#{service}#{status}"
-	GSI2SK string `dynamorm:"index:retry-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{messageId}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "DLQ_RETRY#{service}#{status}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{messageId}"
 
 	// GSI3 - Service-wide analysis
-	GSI3PK string `dynamorm:"index:service-index,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "DLQ_SERVICE#{service}"
-	GSI3SK string `dynamorm:"index:service-index,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{timestamp}#{errorType}#{messageId}"
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "DLQ_SERVICE#{service}"
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{timestamp}#{errorType}#{messageId}"
 
 	// Core message data
 	ID                string `dynamorm:"attr:id" json:"id"`                                 // Unique DLQ message ID
@@ -80,7 +80,7 @@ type DLQMessage struct {
 	UpdatedAt       time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (90 days for DLQ messages)
-	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
 
 	// Version for optimistic locking
 	Version int `dynamorm:"version,attr:version" json:"version"`

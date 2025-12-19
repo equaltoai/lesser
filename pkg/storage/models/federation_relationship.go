@@ -30,15 +30,15 @@ type FederationRelationship struct {
 
 	PK     string `dynamorm:"pk,attr:PK"`
 	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK"` // State-based queries
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK"` // Last activity timestamp
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK"` // User-based queries
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK"` // Target instance + timestamp
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"` // State-based queries
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"` // Last activity timestamp
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"` // User-based queries
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"` // Target instance + timestamp
 	TTL    int64  `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Core relationship data
 	ID               string `dynamorm:"attr:id" json:"id"`
-	UserID           string `dynamorm:"attr:userID" json:"user_id"`                         // Local user ID
+	UserID           string `dynamorm:"attr:userID" json:"user_id"`                        // Local user ID
 	TargetInstance   string `dynamorm:"attr:targetInstance" json:"target_instance"`        // Remote instance domain
 	TargetUserID     string `dynamorm:"attr:targetUserID" json:"target_user_id,omitempty"` // Remote user ID (if user-level)
 	RelationshipType string `dynamorm:"attr:relationshipType" json:"relationship_type"`    // follow, mention, boost, reply, etc.
@@ -63,12 +63,12 @@ type FederationRelationship struct {
 
 	// Reactivation handling
 	WarmupUntil        *time.Time `dynamorm:"attr:warmupUntil" json:"warmup_until,omitempty"`
-	CurrentRate        float64    `dynamorm:"attr:currentRate" json:"current_rate"`              // Traffic rate during warmup (0.0-1.0)
+	CurrentRate        float64    `dynamorm:"attr:currentRate" json:"current_rate"`               // Traffic rate during warmup (0.0-1.0)
 	HistoricalBaseline float64    `dynamorm:"attr:historicalBaseline" json:"historical_baseline"` // Pre-dormancy success rate
 
 	// Storage optimization
-	ArchiveLocation        string    `dynamorm:"attr:archiveLocation" json:"archive_location,omitempty"`   // S3 key if archived
-	CompressedMetrics      string    `dynamorm:"attr:compressedMetrics" json:"compressed_metrics,omitempty"` // Compressed historical data
+	ArchiveLocation        string    `dynamorm:"attr:archiveLocation" json:"archive_location,omitempty"`      // S3 key if archived
+	CompressedMetrics      string    `dynamorm:"attr:compressedMetrics" json:"compressed_metrics,omitempty"`  // Compressed historical data
 	LastCompressedAttempts int64     `dynamorm:"attr:lastCompressedAttempts" json:"last_compressed_attempts"` // Baseline for delta compression
 	LastCompressionTime    time.Time `dynamorm:"attr:lastCompressionTime" json:"last_compression_time"`       // When metrics were last compressed
 	IsCompressed           bool      `dynamorm:"attr:isCompressed" json:"is_compressed"`                      // Flag indicating compressed state
@@ -329,11 +329,13 @@ func (fr *FederationRelationship) clearSensitiveData() {
 
 // FederationRelationshipAggregate represents aggregated relationship metrics for an instance
 type FederationRelationshipAggregate struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	PK     string `dynamorm:"pk"`
 	SK     string `dynamorm:"sk"`
-	GSI1PK string `dynamorm:"index:GSI1,pk"` // Instance-based queries
-	GSI1SK string `dynamorm:"index:GSI1,sk"` // Period + timestamp
-	TTL    int64  `json:"ttl,omitempty" dynamorm:"ttl"`
+	GSI1PK string `dynamorm:"index:gsi1,pk"` // Instance-based queries
+	GSI1SK string `dynamorm:"index:gsi1,sk"` // Period + timestamp
+	TTL    int64  `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Aggregate identification
 	InstanceDomain string    `json:"instance_domain"`

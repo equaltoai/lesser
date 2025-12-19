@@ -295,7 +295,7 @@ func (r *HashtagRepository) RemoveStatusFromHashtagIndex(ctx context.Context, st
 	// Query all hashtag index entries for this status using the reverse index
 	var indexEntries []models.HashtagStatusIndex
 	err := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
-		Index("status-hashtag-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("STATUS_HASHTAGS#%s", statusID)).
 		Where("gsi1SK", "BEGINS_WITH", "HASHTAG#").
 		All(&indexEntries)
@@ -590,7 +590,7 @@ func (r *HashtagRepository) getHashtagTimelineFromIndex(ctx context.Context, has
 func (r *HashtagRepository) getHashtagTimelineByVisibility(ctx context.Context, hashtag string, maxID *string, limit int, visibility string) ([]*storage.StatusSearchResult, error) {
 	// Use the visibility-filtered GSI
 	query := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
-		Index("hashtag-visibility-index").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("HASHTAG_VIS#%s#%s", hashtag, visibility))
 
 	// Apply the maxID cursor when provided
@@ -1171,7 +1171,7 @@ func (r *HashtagRepository) UpdateHashtagNotificationSettings(ctx context.Contex
 	if err = r.db.WithContext(ctx).Model(model).Create(); err != nil {
 		// If item already exists, try Update instead (upsert behavior)
 		if strings.Contains(strings.ToLower(err.Error()), "already exists") ||
-		   strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			r.logger.Debug("hashtag notification settings already exist, updating instead",
 				zap.String("user_id", userID),
 				zap.String("hashtag", tagLower))

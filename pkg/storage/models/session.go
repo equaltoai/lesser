@@ -21,17 +21,17 @@ type Session struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "session#{sessionID}" (same as PK for simple key)
 
 	// GSI1 - User sessions lookup
-	GSI1PK string `dynamorm:"index:user-sessions-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_SESSIONS#{userID}"
-	GSI1SK string `dynamorm:"index:user-sessions-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{sessionID}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_SESSIONS#{userID}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{sessionID}"
 
 	// GSI2 - Access token lookup
-	GSI2PK string `dynamorm:"index:token-index,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TOKEN#{access_token_hash}"
-	GSI2SK string `dynamorm:"index:token-index,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "{userID}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TOKEN#{access_token_hash}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "{userID}"
 
 	// Core session data
 	SessionID    string   `dynamorm:"attr:sessionID" json:"session_id"`
 	UserID       string   `dynamorm:"attr:userID" json:"user_id"`
-	AccessToken  string   `dynamorm:"attr:accessToken" json:"access_token"`            // Stored encrypted
+	AccessToken  string   `dynamorm:"attr:accessToken" json:"access_token"`             // Stored encrypted
 	RefreshToken string   `dynamorm:"attr:refreshToken" json:"refresh_token,omitempty"` // Stored encrypted
 	Scopes       []string `dynamorm:"attr:scopes" json:"scopes,omitempty"`
 
@@ -51,7 +51,7 @@ type Session struct {
 	LastUsedAt time.Time `dynamorm:"attr:lastUsedAt" json:"last_used_at"`
 
 	// TTL for automatic cleanup
-	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp for DynamoDB TTL
+	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp for DynamoDB TTL
 
 	// Additional context data
 	Context map[string]interface{} `dynamorm:"attr:context" json:"context,omitempty"`

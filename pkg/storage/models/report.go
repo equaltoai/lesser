@@ -14,14 +14,14 @@ type Report struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // REPORT
 
 	// GSI fields
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // USER#reporterID
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // REPORT#timestamp
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"` // USER#reporterID
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"` // REPORT#timestamp
 
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"-"` // REPORTED#targetAccountID
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"-"` // REPORT#timestamp
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"-"` // REPORTED#targetAccountID
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"-"` // REPORT#timestamp
 
-	GSI3PK string `dynamorm:"index:GSI3,pk,attr:gsi3PK" json:"-"` // STATUS#status
-	GSI3SK string `dynamorm:"index:GSI3,sk,attr:gsi3SK" json:"-"` // REPORT#timestamp
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"-"` // STATUS#status
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"-"` // REPORT#timestamp
 
 	// Report fields
 	ID                string     `dynamorm:"attr:id" json:"id"`

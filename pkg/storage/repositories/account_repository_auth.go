@@ -155,7 +155,7 @@ func (r *AccountRepository) ValidatePasswordResetToken(ctx context.Context, toke
 
 	// Use GSI for token lookup
 	err := r.db.WithContext(ctx).Model(&reset).
-		Index("token-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
 		First(&reset)
 
@@ -1274,7 +1274,7 @@ func (r *AccountRepository) GetLinkedProviders(ctx context.Context, username str
 
 	// Query GSI2 to get all provider accounts for the user
 	err := r.db.WithContext(ctx).Model(&models.ProviderAccount{}).
-		Index("user-providers-index").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("USER_PROVIDERS#%s", username)).
 		All(&providerAccounts)
 

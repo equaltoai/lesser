@@ -13,12 +13,12 @@ type OAuthClient struct {
 	// DynamoDB keys
 	PK             string  `dynamorm:"pk,attr:PK" json:"-"`                                       // OAUTH_CLIENT#clientID
 	SK             string  `dynamorm:"sk,attr:SK" json:"-"`                                       // METADATA
-	GSI1PK         *string `dynamorm:"index:GSI1,pk,attr:gsi1PK,omitempty" json:"-"`              // OWNER#ownerID (for owner index)
-	GSI1SK         *string `dynamorm:"index:GSI1,sk,attr:gsi1SK,omitempty" json:"-"`              // CLIENT#clientID
+	GSI1PK         *string `dynamorm:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"`              // OWNER#ownerID (for owner index)
+	GSI1SK         *string `dynamorm:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"`              // CLIENT#clientID
 	OAuthClientsPK string  `dynamorm:"index:oauth-clients-index,pk,attr:oauthClientsPK" json:"-"` // OAUTH_CLIENTS
 	OAuthClientsSK string  `dynamorm:"index:oauth-clients-index,sk,attr:oauthClientsSK" json:"-"` // CREATED_AT#{ts_desc}#CLIENT#{clientID}
 
-	// Core fields 
+	// Core fields
 	ID           string    `dynamorm:"attr:id" json:"id,omitempty"`
 	ClientID     string    `dynamorm:"attr:clientID" json:"client_id"`
 	ClientSecret string    `dynamorm:"attr:clientSecret" json:"client_secret"`

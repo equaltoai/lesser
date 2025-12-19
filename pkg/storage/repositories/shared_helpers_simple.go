@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -36,16 +37,17 @@ func AuditLogQueryHelper(
 ) ([]*models.AuthAuditLog, error) {
 	var logs []*models.AuthAuditLog
 
+	attrPrefix := strings.ToLower(indexName)
 	query := db.WithContext(ctx).Model(&models.AuthAuditLog{}).
-		Index(indexName).
-		Where(fmt.Sprintf("%sPK", indexName), "=", pkValue)
+		Index(attrPrefix).
+		Where(fmt.Sprintf("%sPK", attrPrefix), "=", pkValue)
 
 	// Add time range filter if specified
 	if !startTime.IsZero() && !endTime.IsZero() {
 		startTimestamp := fmt.Sprintf("AUDIT#%d", startTime.Unix())
 		endTimestamp := fmt.Sprintf("AUDIT#%d", endTime.Unix())
-		query = query.Where(fmt.Sprintf("%sSK", indexName), ">=", startTimestamp).
-			Where(fmt.Sprintf("%sSK", indexName), "<=", endTimestamp)
+		query = query.Where(fmt.Sprintf("%sSK", attrPrefix), ">=", startTimestamp).
+			Where(fmt.Sprintf("%sSK", attrPrefix), "<=", endTimestamp)
 	}
 
 	// Apply limit

@@ -254,7 +254,7 @@ func (r *SocialRepository) GetBlockedByUsers(ctx context.Context, actor string, 
 	blockedUsername := extractUsername(actor)
 
 	query := r.db.WithContext(ctx).Model(&models.Block{}).
-		Index("GSI5").
+		Index("gsi5").
 		Where("gsi5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername))
 
 	if cursor != "" {
@@ -603,7 +603,7 @@ func (r *SocialRepository) GetActorAnnounces(ctx context.Context, actorID string
 	}
 
 	query := r.db.WithContext(ctx).Model(&models.Announce{}).
-		Index("GSI4").
+		Index("gsi4").
 		Where("gsi4PK", "=", fmt.Sprintf("ACTOR#%s#ANNOUNCES", actorID)).
 		OrderBy("gsi4SK", "DESC") // Most recent first
 

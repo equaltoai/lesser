@@ -229,7 +229,7 @@ func (r *RecoveryRepository) GetActiveRecoveryRequests(ctx context.Context, user
 
 	// Query using GSI1
 	err := r.BaseRepository.db.WithContext(ctx).Model(&models.RecoveryRequest{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", gsi1pk).
 		Where("gsi1SK", "begins_with", "RECOVERY#").
 		All(&requests)

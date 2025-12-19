@@ -18,16 +18,16 @@ type Notification struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "notif#{timestamp}#{notificationID}"
 
 	// GSI1 - Notification type queries
-	GSI1PK string `dynamorm:"index:type-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "NOTIF_TYPE#{type}"
-	GSI1SK string `dynamorm:"index:type-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{userID}#{id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "NOTIF_TYPE#{type}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{userID}#{id}"
 
 	// GSI2 - Actor notifications (who triggered notifications)
-	GSI2PK string `dynamorm:"index:actor-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "NOTIF_ACTOR#{actorID}"
-	GSI2SK string `dynamorm:"index:actor-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{created_at}#{userID}#{id}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "NOTIF_ACTOR#{actorID}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{created_at}#{userID}#{id}"
 
 	// GSI3 - Group key for notification consolidation
-	GSI3PK string `dynamorm:"index:group-index,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "NOTIF_GROUP#{groupKey}"
-	GSI3SK string `dynamorm:"index:group-index,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{created_at}#{id}"
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "NOTIF_GROUP#{groupKey}"
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{created_at}#{id}"
 
 	// Core notification data
 	ID     string `dynamorm:"attr:id" json:"id"`
@@ -67,7 +67,7 @@ type Notification struct {
 	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (30 days)
-	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
 
 	// Version for optimistic locking
 	Version int `dynamorm:"version,attr:version" json:"version"`

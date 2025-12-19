@@ -402,9 +402,9 @@ func (s *MonitoringStack) AddDynamoDBMetrics(table awsdynamodb.Table, tableName 
 	})
 	writeThrottleAlarm.AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
 
-	// GSI metrics for the Lesser table (has 8 GSIs)
+	// GSI metrics for the Lesser table (has 9 GSIs)
 	gsiNames := []string{
-		"GSI1", "GSI2", "GSI3", "GSI4", "GSI5", "GSI6", "GSI7", "GSI8",
+		"gsi1", "gsi2", "gsi3", "gsi4", "gsi5", "gsi6", "gsi7", "gsi8", "gsi9",
 	}
 
 	for _, gsiName := range gsiNames {
@@ -431,16 +431,16 @@ func (s *MonitoringStack) AddDynamoDBMetrics(table awsdynamodb.Table, tableName 
 		})
 
 		// Add GSI widget every 2 GSIs to keep dashboard organized
-		if gsiName == "GSI1" || gsiName == "GSI3" || gsiName == "GSI5" || gsiName == "GSI7" {
-			nextGSI := fmt.Sprintf("GSI%d",
+		if gsiName == "gsi1" || gsiName == "gsi3" || gsiName == "gsi5" || gsiName == "gsi7" {
+			nextGSI := fmt.Sprintf("gsi%d",
 				func() int {
-					if gsiName == "GSI1" {
+					if gsiName == "gsi1" {
 						return 2
 					}
-					if gsiName == "GSI3" {
+					if gsiName == "gsi3" {
 						return 4
 					}
-					if gsiName == "GSI5" {
+					if gsiName == "gsi5" {
 						return 6
 					}
 					return 8
@@ -462,6 +462,18 @@ func (s *MonitoringStack) AddDynamoDBMetrics(table awsdynamodb.Table, tableName 
 					Title:  jsii.String(fmt.Sprintf("%s - %s & %s Read Capacity", tableName, gsiName, nextGSI)),
 					Left:   &[]awscloudwatch.IMetric{gsiReadCapacity},
 					Right:  &[]awscloudwatch.IMetric{gsiReadCapacity2},
+					Width:  jsii.Number(24),
+					Height: jsii.Number(6),
+				}),
+			)
+		}
+
+		// If there's an unpaired GSI (e.g., gsi9), add a single-widget chart
+		if gsiName == "gsi9" {
+			s.Dashboard.AddWidgets(
+				awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+					Title:  jsii.String(fmt.Sprintf("%s - %s Read Capacity", tableName, gsiName)),
+					Left:   &[]awscloudwatch.IMetric{gsiReadCapacity},
 					Width:  jsii.Number(24),
 					Height: jsii.Number(6),
 				}),

@@ -14,21 +14,21 @@ type Tombstone struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // TOMBSTONE
 
 	// GSI keys for querying tombstones by actor and type
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK"` // ACTOR#{actor_id}#TOMBSTONES
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK"` // DELETED#{timestamp}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK"` // ACTOR#{actor_id}#TOMBSTONES
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK"` // DELETED#{timestamp}
 
 	// GSI for querying tombstones by type
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2PK"` // TOMBSTONE#{former_type}
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2SK"` // DELETED#{timestamp}
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2PK"` // TOMBSTONE#{former_type}
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2SK"` // DELETED#{timestamp}
 
 	// Core fields from legacy
-	ID         string    `dynamorm:"attr:id" json:"id"`                          // Original object ID
-	Type       string    `dynamorm:"attr:type" json:"type"`                      // Always "Tombstone"
-	FormerType string    `dynamorm:"attr:formerType" json:"formerType"`          // Original object type
-	Deleted    time.Time `dynamorm:"attr:deleted" json:"deleted"`                // When it was deleted
-	DeletedBy  string    `dynamorm:"attr:deletedBy" json:"deletedBy"`            // Actor who deleted it
-	Summary    string    `dynamorm:"attr:summary" json:"summary,omitempty"`      // Optional deletion reason
-	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`            // When the tombstone was created
+	ID         string    `dynamorm:"attr:id" json:"id"`                     // Original object ID
+	Type       string    `dynamorm:"attr:type" json:"type"`                 // Always "Tombstone"
+	FormerType string    `dynamorm:"attr:formerType" json:"formerType"`     // Original object type
+	Deleted    time.Time `dynamorm:"attr:deleted" json:"deleted"`           // When it was deleted
+	DeletedBy  string    `dynamorm:"attr:deletedBy" json:"deletedBy"`       // Actor who deleted it
+	Summary    string    `dynamorm:"attr:summary" json:"summary,omitempty"` // Optional deletion reason
+	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`       // When the tombstone was created
 
 	// TTL field for automatic cleanup after 30 days
 	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`

@@ -124,7 +124,7 @@ func TestRemoveFromTimelines(t *testing.T) {
 
 	mockDB.On("Model", mock.AnythingOfType("*models.Timeline")).Return(mockQuery).Once()
 	mockDB.On("Model", mock.AnythingOfType("*models.Timeline")).Return(deleteQuery).Times(len(testTimelines))
-	mockQuery.On("Index", "post-timeline-index").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", fmt.Sprintf("POST#%s", objectID)).Return(mockQuery)
 	mockQuery.On("OrderBy", "gsi1SK", "ASC").Return(mockQuery)
 	mockQuery.On("Limit", 1001).Return(mockQuery)
@@ -284,7 +284,7 @@ func TestGetPublicTimeline_LocalFlag(t *testing.T) {
 	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	// Set up expectations for local timeline
-	mockQuery.On("Index", "post-timeline-index").Return(mockQuery).Once()
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "TIMELINE#PUBLIC#LOCAL").Return(mockQuery).Once()
 	mockQuery.On("OrderBy", "gsi1SK", "ASC").Return(mockQuery).Once()
 	mockQuery.On("Limit", 21).Return(mockQuery).Once()
@@ -295,7 +295,7 @@ func TestGetPublicTimeline_LocalFlag(t *testing.T) {
 	assert.Error(t, err)
 
 	// Set up expectations for federated timeline
-	mockQuery.On("Index", "post-timeline-index").Return(mockQuery).Once()
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "TIMELINE#PUBLIC#FEDERATED").Return(mockQuery).Once()
 	mockQuery.On("OrderBy", "gsi1SK", "ASC").Return(mockQuery).Once()
 	mockQuery.On("Limit", 21).Return(mockQuery).Once()
@@ -403,7 +403,7 @@ func TestGetTimelineEntriesByPost_Parameters(t *testing.T) {
 
 	// Set up expectations
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
-	mockQuery.On("Index", "post-timeline-index").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "POST#post123").Return(mockQuery)
 	mockQuery.On("OrderBy", "gsi1SK", "ASC").Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", ">", "cursor789").Return(mockQuery)
@@ -429,7 +429,7 @@ func TestGetTimelineEntriesByActor_Parameters(t *testing.T) {
 
 	// Set up expectations
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
-	mockQuery.On("Index", "actor-timeline-index").Return(mockQuery)
+	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "ACTOR#actor456").Return(mockQuery)
 	mockQuery.On("OrderBy", "gsi2SK", "ASC").Return(mockQuery)
 	mockQuery.On("Limit", 26).Return(mockQuery)
@@ -455,7 +455,7 @@ func TestGetTimelineEntriesByVisibility_Parameters(t *testing.T) {
 
 	// Set up expectations - assuming it uses GSI3 for visibility
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
-	mockQuery.On("Index", "visibility-timeline-index").Return(mockQuery)
+	mockQuery.On("Index", "gsi3").Return(mockQuery)
 	mockQuery.On("Where", "gsi3PK", "=", "VISIBILITY#public").Return(mockQuery)
 	mockQuery.On("OrderBy", "gsi3SK", "ASC").Return(mockQuery)
 	mockQuery.On("Where", "gsi3SK", ">", "cursor999").Return(mockQuery)
@@ -481,7 +481,7 @@ func TestGetTimelineEntriesByLanguage_Parameters(t *testing.T) {
 
 	// Set up expectations - assuming it uses GSI4 for language
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
-	mockQuery.On("Index", "language-timeline-index").Return(mockQuery)
+	mockQuery.On("Index", "gsi4").Return(mockQuery)
 	mockQuery.On("Where", "gsi4PK", "=", "LANGUAGE#en").Return(mockQuery)
 	mockQuery.On("OrderBy", "gsi4SK", "ASC").Return(mockQuery)
 	mockQuery.On("Limit", 41).Return(mockQuery)
@@ -594,7 +594,7 @@ func TestDeleteTimelineEntriesByPost_Parameters(t *testing.T) {
 
 	// Set up expectations for query (matches GetTimelineEntriesByPost)
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
-	mockQuery.On("Index", "post-timeline-index").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "POST#post123").Return(mockQuery)
 	mockQuery.On("OrderBy", "gsi1SK", "ASC").Return(mockQuery)
 	mockQuery.On("Limit", 1001).Return(mockQuery) // 1000 + 1

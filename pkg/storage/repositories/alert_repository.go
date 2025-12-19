@@ -89,7 +89,7 @@ func (r *AlertRepository) GetActiveAlerts(ctx context.Context, limit int) ([]*mo
 
 	// Query GSI3 for firing alerts
 	err := r.db.WithContext(ctx).Model(&models.Alert{}).
-		Index("GSI3").
+		Index("gsi3").
 		Where("gsi3PK", "=", "STATUS#firing").
 		OrderBy("gsi3SK", "DESC").
 		Limit(limit).
@@ -111,7 +111,7 @@ func (r *AlertRepository) GetAlertsByType(ctx context.Context, alertType string,
 
 	// Query GSI1 for alerts by type
 	err := r.db.WithContext(ctx).Model(&models.Alert{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("ALERT_TYPE#%s", alertType)).
 		Where("gsi1SK", ">=", sinceTimestamp).
 		OrderBy("gsi1SK", "DESC").
@@ -134,7 +134,7 @@ func (r *AlertRepository) GetAlertsByService(ctx context.Context, service string
 
 	// Query GSI2 for alerts by service
 	err := r.db.WithContext(ctx).Model(&models.Alert{}).
-		Index("GSI2").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("SERVICE#%s", service)).
 		OrderBy("gsi2SK", "DESC").
 		Limit(limit).
@@ -159,6 +159,8 @@ func (r *AlertRepository) queryAlertsWithIndex(ctx context.Context,
 
 	var alerts []*models.Alert
 
+	indexName = strings.ToLower(indexName)
+
 	sinceTimestamp := since.Format(time.RFC3339)
 	skPattern := fmt.Sprintf("%s#%s#TIMESTAMP#%s", skFieldName, skValue, sinceTimestamp)
 
@@ -168,9 +170,9 @@ func (r *AlertRepository) queryAlertsWithIndex(ctx context.Context,
 	// Build the primary key value
 	var pkPrefix string
 	switch indexName {
-	case "GSI2":
+	case "gsi2":
 		pkPrefix = "SERVICE"
-	case "GSI3":
+	case "gsi3":
 		pkPrefix = "STATUS"
 	}
 	pkFullValue := fmt.Sprintf("%s#%s", pkPrefix, pkValue)
@@ -196,7 +198,7 @@ func (r *AlertRepository) queryAlertsWithIndex(ctx context.Context,
 // GetAlertsBySeverity retrieves alerts by severity level
 func (r *AlertRepository) GetAlertsBySeverity(ctx context.Context, service, severity string, since time.Time, limit int) ([]*models.Alert, error) {
 	return r.queryAlertsWithIndex(ctx,
-		"GSI2", "gsi2PK", service, "SEVERITY", severity,
+		"gsi2", "gsi2PK", service, "SEVERITY", severity,
 		since, limit,
 		"failed to get alerts by severity",
 		[]zap.Field{
@@ -208,7 +210,7 @@ func (r *AlertRepository) GetAlertsBySeverity(ctx context.Context, service, seve
 // GetAlertsByPriority retrieves alerts by priority level
 func (r *AlertRepository) GetAlertsByPriority(ctx context.Context, status, priority string, since time.Time, limit int) ([]*models.Alert, error) {
 	return r.queryAlertsWithIndex(ctx,
-		"GSI3", "gsi3PK", status, "PRIORITY", priority,
+		"gsi3", "gsi3PK", status, "PRIORITY", priority,
 		since, limit,
 		"failed to get alerts by priority",
 		[]zap.Field{
@@ -229,7 +231,7 @@ func (r *AlertRepository) GetAlertsNeedingRetry(ctx context.Context, limit int) 
 	// This is a simplified query - in practice you might need a more complex query
 	// or a separate GSI for alerts that need retry
 	err := r.db.WithContext(ctx).Model(&models.Alert{}).
-		Index("GSI3").
+		Index("gsi3").
 		Where("gsi3PK", "=", "STATUS#firing").
 		Filter("DeliveryAttempts", "<", 5).
 		Filter("NextRetryAt", "<=", time.Now().Unix()).
@@ -354,7 +356,7 @@ func (r *AlertRepository) countAlertsByStatus(ctx context.Context, status string
 	skPattern := fmt.Sprintf("PRIORITY#P0#TIMESTAMP#%s", sinceTimestamp)
 
 	count, err := r.db.WithContext(ctx).Model(&models.Alert{}).
-		Index("GSI3").
+		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("STATUS#%s", status)).
 		Where("gsi3SK", ">=", skPattern).
 		Count()
@@ -388,7 +390,7 @@ func (r *AlertRepository) countAlertsByType(ctx context.Context, alertType strin
 	sinceTimestamp := fmt.Sprintf("TIMESTAMP#%s", since.Format(time.RFC3339))
 
 	count, err := r.db.WithContext(ctx).Model(&models.Alert{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("ALERT_TYPE#%s", alertType)).
 		Where("gsi1SK", ">=", sinceTimestamp).
 		Count()
@@ -411,7 +413,7 @@ func (r *AlertRepository) getAllAlertsSince(ctx context.Context, since time.Time
 	for _, alertType := range types {
 		var typeAlerts []*models.Alert
 		err := r.db.WithContext(ctx).Model(&models.Alert{}).
-			Index("GSI1").
+			Index("gsi1").
 			Where("gsi1PK", "=", fmt.Sprintf("ALERT_TYPE#%s", alertType)).
 			Where("gsi1SK", ">=", sinceTimestamp).
 			Limit(limit / len(types)).
@@ -442,7 +444,7 @@ func (r *AlertRepository) CleanupOldAlerts(ctx context.Context, olderThan time.D
 	for _, alertType := range types {
 		var typeAlerts []*models.Alert
 		err := r.db.WithContext(ctx).Model(&models.Alert{}).
-			Index("GSI1").
+			Index("gsi1").
 			Where("gsi1PK", "=", fmt.Sprintf("ALERT_TYPE#%s", alertType)).
 			Where("gsi1SK", "<", cutoffTimestamp).
 			Limit(100). // Process in batches

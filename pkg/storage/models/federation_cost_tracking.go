@@ -16,31 +16,31 @@ type FederationCostTracking struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for time-based queries - FED_COSTS#{date}, TS#{timestamp}
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for activity type queries - FED_TYPE#{activity_type}, DOMAIN#{domain}#{timestamp}
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Federation activity metadata
 	ActivityID     string `dynamorm:"attr:activityID" json:"activity_id"`
-	Domain         string `dynamorm:"attr:domain" json:"domain"`                   // Remote instance domain
-	InstanceDomain string `dynamorm:"attr:instanceDomain" json:"instance_domain"`  // Alias for Domain for compatibility
-	ActivityType   string `dynamorm:"attr:activityType" json:"activity_type"`      // Create, Follow, Like, etc.
-	Direction      string `dynamorm:"attr:direction" json:"direction"`             // inbound, outbound
-	OperationType  string `dynamorm:"attr:operationType" json:"operation_type"`    // inbox_processing, outbox_delivery, signature_verification
+	Domain         string `dynamorm:"attr:domain" json:"domain"`                  // Remote instance domain
+	InstanceDomain string `dynamorm:"attr:instanceDomain" json:"instance_domain"` // Alias for Domain for compatibility
+	ActivityType   string `dynamorm:"attr:activityType" json:"activity_type"`     // Create, Follow, Like, etc.
+	Direction      string `dynamorm:"attr:direction" json:"direction"`            // inbound, outbound
+	OperationType  string `dynamorm:"attr:operationType" json:"operation_type"`   // inbox_processing, outbox_delivery, signature_verification
 
 	// Billing period tracking
 	BillingPeriod string    `dynamorm:"attr:billingPeriod" json:"billing_period"` // YYYY-MM format
 	LastUpdated   time.Time `dynamorm:"attr:lastUpdated" json:"last_updated"`     // Last update timestamp
 
 	// Legacy compatibility fields for aggregated metrics
-	IngressBytes   int64   `dynamorm:"attr:ingressBytes" json:"ingress_bytes"`       // Inbound data bytes
-	EgressBytes    int64   `dynamorm:"attr:egressBytes" json:"egress_bytes"`         // Outbound data bytes
-	RequestCount   int     `dynamorm:"attr:requestCount" json:"request_count"`       // Number of requests
-	ErrorCount     int     `dynamorm:"attr:errorCount" json:"error_count"`           // Number of errors
-	ErrorRate      float64 `dynamorm:"attr:errorRate" json:"error_rate"`             // Error rate percentage
+	IngressBytes   int64   `dynamorm:"attr:ingressBytes" json:"ingress_bytes"`      // Inbound data bytes
+	EgressBytes    int64   `dynamorm:"attr:egressBytes" json:"egress_bytes"`        // Outbound data bytes
+	RequestCount   int     `dynamorm:"attr:requestCount" json:"request_count"`      // Number of requests
+	ErrorCount     int     `dynamorm:"attr:errorCount" json:"error_count"`          // Number of errors
+	ErrorRate      float64 `dynamorm:"attr:errorRate" json:"error_rate"`            // Error rate percentage
 	AverageCostUSD float64 `dynamorm:"attr:averageCostUSD" json:"average_cost_usd"` // Average cost in USD
 
 	// Success/failure tracking
@@ -85,18 +85,18 @@ type FederationCostTracking struct {
 	RetryCost  int64 `dynamorm:"attr:retryCost" json:"retry_cost"`   // Additional cost penalties for retries
 
 	// Detailed per-delivery attribution
-	BytesSent         int64            `dynamorm:"attr:bytesSent" json:"bytes_sent"`               // Actual bytes sent per delivery attempt
-	RetryAttempts     int              `dynamorm:"attr:retryAttempts" json:"retry_attempts"`       // Number of retry attempts for this specific delivery
-	DeliveryAttempts  int              `dynamorm:"attr:deliveryAttempts" json:"delivery_attempts"` // Total delivery attempts (including first)
-	RouteID           string           `dynamorm:"attr:routeID" json:"route_id,omitempty"`         // Route used for delivery
+	BytesSent         int64            `dynamorm:"attr:bytesSent" json:"bytes_sent"`                 // Actual bytes sent per delivery attempt
+	RetryAttempts     int              `dynamorm:"attr:retryAttempts" json:"retry_attempts"`         // Number of retry attempts for this specific delivery
+	DeliveryAttempts  int              `dynamorm:"attr:deliveryAttempts" json:"delivery_attempts"`   // Total delivery attempts (including first)
+	RouteID           string           `dynamorm:"attr:routeID" json:"route_id,omitempty"`           // Route used for delivery
 	DestinationServer string           `dynamorm:"attr:destinationServer" json:"destination_server"` // Destination server domain
-	RouteBreakdown    map[string]int64 `dynamorm:"attr:routeBreakdown" json:"route_breakdown"` // Per-route cost breakdown in microcents
+	RouteBreakdown    map[string]int64 `dynamorm:"attr:routeBreakdown" json:"route_breakdown"`       // Per-route cost breakdown in microcents
 
 	// Per-route delivery metrics
-	RouteLatency      map[string]int64   `dynamorm:"attr:routeLatency" json:"route_latency"`             // Per-route response times in ms
-	RouteErrors       map[string]int     `dynamorm:"attr:routeErrors" json:"route_errors"`               // Per-route error counts
-	RouteAttempts     map[string]int     `dynamorm:"attr:routeAttempts" json:"route_attempts"`           // Per-route total attempts
-	RouteSuccessRates map[string]float64 `dynamorm:"attr:routeSuccessRates" json:"route_success_rates"`  // Per-route success rates
+	RouteLatency      map[string]int64   `dynamorm:"attr:routeLatency" json:"route_latency"`            // Per-route response times in ms
+	RouteErrors       map[string]int     `dynamorm:"attr:routeErrors" json:"route_errors"`              // Per-route error counts
+	RouteAttempts     map[string]int     `dynamorm:"attr:routeAttempts" json:"route_attempts"`          // Per-route total attempts
+	RouteSuccessRates map[string]float64 `dynamorm:"attr:routeSuccessRates" json:"route_success_rates"` // Per-route success rates
 
 	// Enhanced retry tracking
 	RetryDelaySeconds  []int64  `dynamorm:"attr:retryDelaySeconds" json:"retry_delay_seconds"`   // Delay between retry attempts
@@ -362,8 +362,8 @@ type FederationBudget struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for active budget queries - ACTIVE_BUDGETS, DOMAIN#{domain}#{period}
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// Budget configuration
 	Domain string `dynamorm:"attr:domain" json:"domain"`

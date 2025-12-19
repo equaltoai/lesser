@@ -71,8 +71,8 @@ type GlobalMetricsWindow struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // WINDOW#{windowStartUnix}
 
 	// GSI keys for time-based queries
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1pk"` // METRICS#GLOBAL
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1sk"` // {windowStartUnix}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // METRICS#GLOBAL
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {windowStartUnix}
 
 	// Time info
 	WindowStart time.Time `dynamorm:"attr:windowStart" json:"window_start"`

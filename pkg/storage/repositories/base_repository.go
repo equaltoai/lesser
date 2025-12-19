@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -691,11 +692,12 @@ func (r *BaseRepository[T]) QueryGSIPaginated(ctx context.Context, indexName, pk
 	}
 
 	var results []T
-	skField := fmt.Sprintf("%sSK", indexName)
+	attrPrefix := strings.ToLower(indexName)
+	skField := fmt.Sprintf("%sSK", attrPrefix)
 
 	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
-		Index(indexName).
-		Where(fmt.Sprintf("%sPK", indexName), "=", pk).
+		Index(attrPrefix).
+		Where(fmt.Sprintf("%sPK", attrPrefix), "=", pk).
 		OrderBy(skField, order).
 		Limit(safeLimit + 1)
 
@@ -1391,9 +1393,10 @@ func (r *BaseRepository[T]) FindByPK(ctx context.Context, pk string) ([]T, error
 func (r *BaseRepository[T]) FindBySK(ctx context.Context, sk string, gsiName string) ([]T, error) {
 	var results []T
 
+	attrPrefix := strings.ToLower(gsiName)
 	err := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Index(gsiName).
-		Where(fmt.Sprintf("%sPK", gsiName), "=", sk).
+		Where(fmt.Sprintf("%sPK", attrPrefix), "=", sk).
 		All(&results)
 
 	// Track cost if cost service is available

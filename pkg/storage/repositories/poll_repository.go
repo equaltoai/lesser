@@ -168,7 +168,7 @@ func (r *PollRepository) GetPollByStatusID(ctx context.Context, statusID string)
 	)
 
 	gsiPK := fmt.Sprintf("STATUS#%s", statusID)
-	pollModels, err := r.QueryGSI(ctx, "GSI1", gsiPK, 1)
+	pollModels, err := r.QueryGSI(ctx, "gsi1", gsiPK, 1)
 
 	if err != nil {
 		log.Error("failed to query poll by status ID",

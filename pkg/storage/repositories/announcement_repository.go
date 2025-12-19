@@ -266,7 +266,7 @@ func (r *AnnouncementRepository) GetAnnouncementsPaginated(ctx context.Context, 
 	}
 
 	query := r.db.WithContext(ctx).Model(&models.Announcement{}).
-		Index("status-date-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("ANNOUNCEMENT#%s", status)).
 		OrderBy("gsi1SK", "ASC") // ASC because we use reverse timestamps (newest first)
 
@@ -343,7 +343,7 @@ func (r *AnnouncementRepository) GetAnnouncementsByAdmin(ctx context.Context, ad
 
 	// Use GSI2 for efficient admin-based queries
 	query := r.db.WithContext(ctx).Model(&models.Announcement{}).
-		Index("admin-index").
+		Index("gsi2").
 		Where("gsi2PK", "=", "ADMIN#"+adminUsername).
 		OrderBy("gsi2SK", "DESC") // Most recent first
 

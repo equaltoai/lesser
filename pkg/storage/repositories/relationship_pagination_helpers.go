@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -16,7 +17,7 @@ const (
 
 // RelationshipPaginationConfig holds configuration for paginated relationship queries
 type RelationshipPaginationConfig struct {
-	IndexName   string // "" for main table, "GSI1", "GSI5", etc. for GSIs
+	IndexName   string // "" for main table, "gsi1", "gsi5", etc. for GSIs
 	PKFormat    string // Format string for partition key, e.g. "ACTOR#%s#BLOCKS"
 	SKField     string // Field name for sort key in cursor, e.g. "SK" or gsi1SKField
 	ActorField  string // "Actor" or "Object" - which field to extract for result
@@ -81,7 +82,8 @@ func buildRelationshipQuery(
 func configureQueryIndex(query core.Query, actorUsername string, config RelationshipPaginationConfig) core.Query {
 	if config.IndexName != "" {
 		query = query.Index(config.IndexName)
-		query = query.Where(config.IndexName+"PK", "=", fmt.Sprintf(config.PKFormat, actorUsername))
+		attrPrefix := strings.ToLower(config.IndexName)
+		query = query.Where(attrPrefix+"PK", "=", fmt.Sprintf(config.PKFormat, actorUsername))
 	} else {
 		query = query.Where("PK", "=", fmt.Sprintf(config.PKFormat, actorUsername))
 	}

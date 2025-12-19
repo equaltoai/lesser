@@ -17,17 +17,17 @@ type ProviderAccount struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "provider#{provider}#{providerID}"
 
 	// GSI1 - Provider lookup (find user by provider account)
-	GSI1PK string `dynamorm:"index:provider-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "PROVIDER#{provider}"
-	GSI1SK string `dynamorm:"index:provider-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{providerID}#{userID}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "PROVIDER#{provider}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{providerID}#{userID}"
 
 	// GSI2 - User's provider accounts
-	GSI2PK string `dynamorm:"index:user-providers-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "USER_PROVIDERS#{userID}"
-	GSI2SK string `dynamorm:"index:user-providers-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{provider}#{created_at}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "USER_PROVIDERS#{userID}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{provider}#{created_at}"
 
 	// Core provider data
 	UserID       string `dynamorm:"attr:userID" json:"user_id"`
-	Provider     string `dynamorm:"attr:provider" json:"provider"`                // "google", "github", "twitter", etc.
-	ProviderID   string `dynamorm:"attr:providerID" json:"provider_id"`          // Provider's unique ID for the user
+	Provider     string `dynamorm:"attr:provider" json:"provider"`                    // "google", "github", "twitter", etc.
+	ProviderID   string `dynamorm:"attr:providerID" json:"provider_id"`               // Provider's unique ID for the user
 	ProviderName string `dynamorm:"attr:providerName" json:"provider_name,omitempty"` // Display name from provider
 
 	// OAuth tokens (stored encrypted)

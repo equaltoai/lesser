@@ -11,8 +11,8 @@ type ModerationAnalytics struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"`
 
 	// GSI fields for querying by type
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK"`
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK"`
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"`
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"`
 
 	// Business fields from legacy
 	Date                  string           `dynamorm:"attr:date" json:"date"` // YYYY-MM-DD format

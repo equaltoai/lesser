@@ -309,7 +309,7 @@ func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, err
 	// Query GSI4 for all comments
 	// Since we only need the count, we'll use a projection that minimizes data transfer
 	err := r.metricsRepo.GetDB().WithContext(ctx).Model(&models.Status{}).
-		Index("GSI4").
+		Index("gsi4").
 		Where("gsi4PK", "begins_with", "REPLIES#").
 		All(&comments)
 
@@ -410,7 +410,7 @@ func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.Ac
 	// Look for the first admin user to serve as contact account
 	var users []models.User
 	err := r.metricsRepo.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("GSI3").
+		Index("gsi3").
 		Where("gsi3PK", "=", "ROLE#admin").
 		Limit(1).
 		All(&users)
@@ -491,7 +491,7 @@ func (r *InstanceRepository) getMetricHistory(ctx context.Context, days int, met
 	// Query daily metrics using GSI1
 	var histories []models.InstanceHistory
 	err := r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
 		Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
 		Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
@@ -685,7 +685,7 @@ func (r *InstanceRepository) GetMetricsSummary(ctx context.Context, timeRange st
 	for _, metricType := range metricTypes {
 		var histories []models.InstanceHistory
 		err := r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
-			Index("GSI1").
+			Index("gsi1").
 			Where("gsi1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
 			Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
 			Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
@@ -734,7 +734,7 @@ func (r *InstanceRepository) getPreviousDayValue(ctx context.Context, currentDat
 
 	history := &models.InstanceHistory{}
 	err = r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
 		Where("gsi1SK", "=", fmt.Sprintf("DATE#%s", prevDate)).
 		First(history)

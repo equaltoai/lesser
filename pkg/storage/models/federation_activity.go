@@ -18,12 +18,12 @@ type FederationActivity struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "activity#{timestamp}#{id}"
 
 	// GSI1 - Activity type queries
-	GSI1PK string `dynamorm:"index:type-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "FED_TYPE#{type}"
-	GSI1SK string `dynamorm:"index:type-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{domain}#{id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "FED_TYPE#{type}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{domain}#{id}"
 
 	// GSI2 - Actor queries
-	GSI2PK string `dynamorm:"index:actor-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "FED_ACTOR#{actorID}"
-	GSI2SK string `dynamorm:"index:actor-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "FED_ACTOR#{actorID}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
 	// Core activity data
 	ID           string    `dynamorm:"attr:id" json:"id"`
@@ -57,7 +57,7 @@ type FederationActivity struct {
 	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (90 days)
-	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
 }
 
 // InstanceInfo contains information about a federated instance

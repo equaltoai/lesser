@@ -36,7 +36,7 @@ type TenantModel struct {
 	StandardModel
 
 	// Tenant ID for multi-tenant applications
-	TenantID string `dynamorm:"index:tenant-index,pk" json:"tenant_id"`
+	TenantID string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"tenant_id"`
 }
 
 // KeyComponents defines the components of a composite key

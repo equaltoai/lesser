@@ -367,7 +367,7 @@ func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string
 	var objects []models.Object
 
 	query := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi1-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("actor#%s", actorID)).
 		Limit(limit)
 
@@ -412,7 +412,7 @@ func (r *ObjectRepository) CountObjectReplies(ctx context.Context, objectID stri
 	// Query objects that have InReplyTo set to this objectID
 	var objects []models.Object
 	query := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi2-index"). // Assuming GSI2 is used for reply relationships
+		Index("gsi2"). // Assuming gsi2 is used for reply relationships
 		Where("gsi2PK", "=", fmt.Sprintf("reply#%s", objectID))
 
 	if err := query.All(&objects); err != nil {
@@ -755,7 +755,7 @@ func (r *ObjectRepository) CountCollectionItems(ctx context.Context, collection 
 func (r *ObjectRepository) CountQuotes(ctx context.Context, noteID string) (int, error) {
 	// Query quotes using GSI1 where GSI1PK = QUOTED#<noteID>
 	count, err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", noteID)).
 		Count()
 
@@ -815,7 +815,7 @@ func (r *ObjectRepository) CountReplies(ctx context.Context, objectID string) (i
 
 	// Use GSI6 to efficiently count replies
 	count, err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi6-index").
+		Index("gsi6").
 		Where("gsi6PK", "=", fmt.Sprintf("REPLIES#%s", parentID)).
 		Count()
 
@@ -989,7 +989,7 @@ func (r *ObjectRepository) GetStatus(ctx context.Context, statusID string) (any,
 func (r *ObjectRepository) GetUserStatusCount(ctx context.Context, userID string) (int, error) {
 	// Use GSI1 to query by actor
 	count, err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi1-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("actor#%s", userID)).
 		Count()
 
@@ -1022,7 +1022,7 @@ func (r *ObjectRepository) GetReplies(ctx context.Context, objectID string, limi
 
 	// Use GSI6 to efficiently get replies
 	query := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi6-index").
+		Index("gsi6").
 		Where("gsi6PK", "=", fmt.Sprintf("REPLIES#%s", parentID)).
 		OrderBy("gsi6SK", "ASC"). // Oldest first
 		Limit(limit)
@@ -1249,7 +1249,7 @@ func (r *ObjectRepository) GetThreadContext(ctx context.Context, statusID string
 
 	// Try to find by GSI1 (status lookup) with proper index name
 	err := r.db.WithContext(ctx).Model(&context).
-		Index("gsi1-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("STATUS#%s", statusID)).
 		Where("gsi1SK", "=", "THREAD").
 		First(&context)
@@ -1306,7 +1306,7 @@ func (r *ObjectRepository) GetQuotesForNote(ctx context.Context, noteID string, 
 
 	// Use GSI1 to find quotes where GSI1PK = QUOTED#<noteID>
 	query := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", noteID)).
 		OrderBy("gsi1SK", "DESC"). // Newest first
 		Limit(limit)
@@ -1388,7 +1388,7 @@ func (r *ObjectRepository) WithdrawQuote(ctx context.Context, quoteNoteID string
 
 	// We need to find the quote by the quoter note ID, which could be in GSI2
 	err := r.db.WithContext(ctx).Model(&quote).
-		Index("GSI2").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("QUOTER_NOTE#%s", quoteNoteID)).
 		First(&quote)
 
@@ -1621,7 +1621,7 @@ func (r *ObjectRepository) GetQuotesOfStatus(ctx context.Context, statusID strin
 
 	// Use GSI1 to find quotes where GSI1PK = QUOTED#<statusID>
 	query := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
 		OrderBy("gsi1SK", "DESC"). // Newest first
 		Limit(limit)
@@ -1936,7 +1936,7 @@ func (r *ObjectRepository) getDirectReplies(ctx context.Context, statusID string
 	// Use GSI6 to find replies efficiently
 	var objects []models.Object
 	err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi6-index").
+		Index("gsi6").
 		Where("gsi6PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
 		All(&objects)
 
@@ -2006,7 +2006,7 @@ func (r *ObjectRepository) updateThreadContext(ctx context.Context, statusID, ac
 	// Get existing thread context
 	var threadCtx models.ThreadContext
 	err := r.db.WithContext(ctx).Model(&threadCtx).
-		Index("gsi1-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("STATUS#%s", statusID)).
 		Where("gsi1SK", "=", "THREAD").
 		First(&threadCtx)
@@ -2075,7 +2075,7 @@ func (r *ObjectRepository) withdrawExistingQuotes(ctx context.Context, statusID 
 	// Find all quotes of this status using GSI1
 	var quotes []models.QuoteRelationship
 	err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
 		All(&quotes)
 
@@ -2242,6 +2242,9 @@ func (r *ObjectRepository) IsTombstoned(ctx context.Context, objectID string) (b
 // getTombstonesByGSI is a helper function to query tombstones using different GSI patterns
 func (r *ObjectRepository) getTombstonesByGSI(ctx context.Context, gsiIndex, pkField, skField, pkValue, logField, logValue string, limit int, cursor string) ([]*models.Tombstone, string, error) {
 	var tombstones []*models.Tombstone
+
+	gsiIndex = strings.ToLower(gsiIndex)
+
 	query := r.db.WithContext(ctx).Model(&models.Tombstone{}).
 		Where(pkField, "=", pkValue)
 
@@ -2282,13 +2285,13 @@ func (r *ObjectRepository) getTombstonesByGSI(ctx context.Context, gsiIndex, pkF
 
 // GetTombstonesByActor retrieves all tombstones created by a specific actor
 func (r *ObjectRepository) GetTombstonesByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Tombstone, string, error) {
-	return r.getTombstonesByGSI(ctx, "GSI1", "gsi1PK", gsi1SKField,
+	return r.getTombstonesByGSI(ctx, "gsi1", "gsi1PK", gsi1SKField,
 		fmt.Sprintf("ACTOR#%s#TOMBSTONES", actorID), "actor_id", actorID, limit, cursor)
 }
 
 // GetTombstonesByType retrieves tombstones by their former type
 func (r *ObjectRepository) GetTombstonesByType(ctx context.Context, formerType string, limit int, cursor string) ([]*models.Tombstone, string, error) {
-	return r.getTombstonesByGSI(ctx, "GSI2", "gsi2PK", "gsi2SK",
+	return r.getTombstonesByGSI(ctx, "gsi2", "gsi2PK", "gsi2SK",
 		fmt.Sprintf("TOMBSTONE#%s", formerType), "former_type", formerType, limit, cursor)
 }
 

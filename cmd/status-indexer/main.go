@@ -503,7 +503,7 @@ func (si *StatusIndexer) getReplyCount(ctx context.Context, statusID string) (in
 	// This uses GSI to find replies efficiently
 	var objects []models.Object
 	err := si.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi3-index"). // Assuming GSI3 is for InReplyTo queries
+		Index("gsi3"). // Assuming gsi3 is for InReplyTo queries
 		Where("gsi3PK", "=", fmt.Sprintf("IN_REPLY_TO#%s", statusID)).
 		Limit(1000). // Reasonable limit to avoid timeout
 		All(&objects)

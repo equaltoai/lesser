@@ -45,19 +45,19 @@ type FederationInstanceConfigTracking struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for tier queries - TIER#{tier}, DOMAIN#{domain}
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for budget queries - BUDGET_OVERRIDE, BUDGET#{budget}#{domain}
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Instance identification
 	Domain string `dynamorm:"attr:domain" json:"domain"` // Remote instance domain
 
 	// Tier and budget configuration
-	Tier              FederationTier `dynamorm:"attr:tier" json:"tier"`                                    // Federation tier
-	CustomBudgetUSD   *float64       `dynamorm:"attr:customBudgetUSD" json:"custom_budget_usd,omitempty"`   // Custom monthly budget (if set)
+	Tier              FederationTier `dynamorm:"attr:tier" json:"tier"`                                       // Federation tier
+	CustomBudgetUSD   *float64       `dynamorm:"attr:customBudgetUSD" json:"custom_budget_usd,omitempty"`     // Custom monthly budget (if set)
 	RateLimitOverride *int           `dynamorm:"attr:rateLimitOverride" json:"rate_limit_override,omitempty"` // Custom rate limit (requests/hour)
 
 	// Retry configuration
@@ -74,7 +74,7 @@ type FederationInstanceConfigTracking struct {
 	// Caching configuration
 	CacheTTLSeconds int  `dynamorm:"attr:cacheTTLSeconds" json:"cache_ttl_seconds"` // Actor/object cache TTL
 	MaxCacheSize    int  `dynamorm:"attr:maxCacheSize" json:"max_cache_size"`       // Maximum cached items per instance
-	EnableCaching   bool `dynamorm:"attr:enableCaching" json:"enable_caching"`     // Whether to cache instance data
+	EnableCaching   bool `dynamorm:"attr:enableCaching" json:"enable_caching"`      // Whether to cache instance data
 
 	// Performance tuning
 	MaxConcurrentRequests int `dynamorm:"attr:maxConcurrentRequests" json:"max_concurrent_requests"` // Max concurrent outbound requests
@@ -89,7 +89,7 @@ type FederationInstanceConfigTracking struct {
 	AutoAcceptThreshold  float64 `dynamorm:"attr:autoAcceptThreshold" json:"auto_accept_threshold"`  // Trust score for auto-accept
 
 	// Admin notes
-	Notes        string `dynamorm:"attr:notes" json:"notes,omitempty"`               // Admin notes about the instance
+	Notes        string `dynamorm:"attr:notes" json:"notes,omitempty"`                // Admin notes about the instance
 	ContactEmail string `dynamorm:"attr:contactEmail" json:"contact_email,omitempty"` // Admin contact email
 
 	// Type marker for queries

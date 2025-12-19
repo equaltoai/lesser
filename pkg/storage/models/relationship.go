@@ -16,16 +16,16 @@ type RelationshipRecord struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // FOLLOWING#{followingUsername}
 
 	// GSI1 for reverse lookups (who follows me)
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1PK"` // FOLLOW#{followedUsername}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1SK"` // FOLLOWER#{followerUsername}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK"` // FOLLOW#{followedUsername}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK"` // FOLLOWER#{followerUsername}
 
 	// GSI2 for follower domain queries (Phase 2.4 - severance detection)
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2PK,omitempty"` // FOLLOWER_DOMAIN#{domain}
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2SK,omitempty"` // FOLLOWING#{username}
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2PK,omitempty"` // FOLLOWER_DOMAIN#{domain}
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2SK,omitempty"` // FOLLOWING#{username}
 
 	// GSI3 for following domain queries (Phase 2.4 - severance detection)
-	GSI3PK string `dynamorm:"index:GSI3,pk,attr:gsi3PK" json:"gsi3PK,omitempty"` // FOLLOWING_DOMAIN#{domain}
-	GSI3SK string `dynamorm:"index:GSI3,sk,attr:gsi3SK" json:"gsi3SK,omitempty"` // FOLLOWER#{username}
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3PK,omitempty"` // FOLLOWING_DOMAIN#{domain}
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3SK,omitempty"` // FOLLOWER#{username}
 
 	// Core fields from legacy
 	ActivityID string    `dynamorm:"attr:activityID" json:"ActivityID"`
@@ -34,10 +34,10 @@ type RelationshipRecord struct {
 	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"UpdatedAt"`
 
 	// Relationship preferences
-	Notifying      bool     `dynamorm:"attr:notifying" json:"Notifying"`                     // Receive notifications for this user's posts
-	ShowingReblogs bool     `dynamorm:"attr:showingReblogs" json:"ShowingReblogs"`           // Show reblogs from this user in timeline
-	Languages      []string `dynamorm:"attr:languages" json:"Languages,omitempty"`           // Filter to specific languages (empty = all)
-	Note           string   `dynamorm:"attr:note" json:"Note,omitempty"`                     // Private note about this relationship
+	Notifying      bool     `dynamorm:"attr:notifying" json:"Notifying"`           // Receive notifications for this user's posts
+	ShowingReblogs bool     `dynamorm:"attr:showingReblogs" json:"ShowingReblogs"` // Show reblogs from this user in timeline
+	Languages      []string `dynamorm:"attr:languages" json:"Languages,omitempty"` // Filter to specific languages (empty = all)
+	Note           string   `dynamorm:"attr:note" json:"Note,omitempty"`           // Private note about this relationship
 }
 
 // Follow relationship state constants (from legacy)

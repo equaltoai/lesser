@@ -16,8 +16,8 @@ type Block struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // BLOCKED#{blocked_username}
 
 	// GSI5 for reverse lookup
-	GSI5PK string `dynamorm:"index:GSI5,pk,attr:gsi5PK" json:"gsi5PK"` // BLOCKED#{blocked_username}
-	GSI5SK string `dynamorm:"index:GSI5,sk,attr:gsi5SK" json:"gsi5SK"` // BLOCKER#{blocker_username}
+	GSI5PK string `dynamorm:"index:gsi5,pk,attr:gsi5PK" json:"gsi5PK"` // BLOCKED#{blocked_username}
+	GSI5SK string `dynamorm:"index:gsi5,sk,attr:gsi5SK" json:"gsi5SK"` // BLOCKER#{blocker_username}
 
 	// Core fields from legacy
 	Type      string    `dynamorm:"attr:type" json:"Type"`           // Always "Block"

@@ -55,11 +55,11 @@ func (tqb *TenantQueryBuilder) QueryByEntityType(ctx context.Context, entityType
 		zap.String("entity_type", entityType),
 		zap.String("table", tqb.tableName))
 
-	// Use DynamORM's Query API with the tenant-entity GSI
+	// Use DynamORM's Query API with the tenant entity GSI
 	return tqb.db.WithContext(ctx).Model(dest).
-		Index("tenant-entity").
-		Where("tenant_id", "=", tqb.tenantID).
-		Where("entity_type", "=", entityType).
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("TENANT#%s", tqb.tenantID)).
+		Where("gsi1SK", "=", entityType).
 		All(dest)
 }
 

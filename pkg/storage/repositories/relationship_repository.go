@@ -236,7 +236,7 @@ func (r *RelationshipRepository) getRelationshipsByState(ctx context.Context, us
 	basePK := fmt.Sprintf("FOLLOW#%s", username)
 
 	query := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", basePK).
 		Filter("State", "=", state)
 
@@ -366,7 +366,7 @@ func (r *RelationshipRepository) CountFollowers(ctx context.Context, username st
 	// Note: This uses GSI and filter, so we keep the custom implementation
 	// BaseRepository doesn't have a method for filtered counts on GSI
 	count, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
 		Filter("State", "=", models.RelationshipAccepted).
 		Count()
@@ -813,7 +813,7 @@ func (r *RelationshipRepository) GetPendingMoves(ctx context.Context, limit int)
 // GetMoveByTarget retrieves all moves to a specific target account
 func (r *RelationshipRepository) GetMoveByTarget(ctx context.Context, target string) ([]*storage.Move, error) {
 	query := r.db.WithContext(ctx).Model(&models.Move{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("MOVE#TARGET#%s", target))
 
 	var moveRecords []models.Move

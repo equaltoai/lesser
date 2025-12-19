@@ -98,7 +98,7 @@ func (r *RouteOptimizerRepository) GetRecentResults(ctx context.Context, since t
 	sinceKey := fmt.Sprintf("%d", since.Unix())
 
 	query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", "RESULTS").
 		Where("gsi1SK", ">", sinceKey).
 		OrderBy("gsi1SK", "DESC"). // Most recent first
@@ -343,7 +343,7 @@ func (r *RouteOptimizerRepository) GetMetricsInRange(ctx context.Context, routeI
 		// Query across all routes using GSI1
 		startKey := fmt.Sprintf("%d", start.Unix())
 		query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
-			Index("GSI1").
+			Index("gsi1").
 			Where("gsi1PK", "=", "RESULTS").
 			Where("gsi1SK", ">=", startKey)
 

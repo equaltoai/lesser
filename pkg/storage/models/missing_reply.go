@@ -15,8 +15,8 @@ type MissingReply struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // MISSING#{replyID}
 
 	// GSI for querying by parent status
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // STATUS#{parentStatusID}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // MISSING_REPLY
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"` // STATUS#{parentStatusID}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"` // MISSING_REPLY
 
 	// Missing reply data
 	RootStatusID   string     `dynamorm:"attr:rootStatusID" json:"root_status_id"`             // Root of the thread

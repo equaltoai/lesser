@@ -57,7 +57,7 @@ func (r *AccountRepository) searchAllActors(ctx context.Context, query string, l
 
 	// Search local actors
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Index("domain-index").
+		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("DOMAIN#%s", r.domain)).
 		Limit(limit + offset).
 		All(&actorModels)
@@ -186,7 +186,7 @@ func (r *AccountRepository) getPopularAccountSuggestions(ctx context.Context, us
 	var actors []models.Actor
 
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Index("follower-count-index").
+		Index("gsi5").
 		Where("gsi5PK", "=", "ACTORS_BY_FOLLOWERS").
 		Limit(limit * 2). // Get extra to account for filtering
 		All(&actors)
@@ -274,7 +274,7 @@ func (r *AccountRepository) GetTrendingActors(ctx context.Context, limit int) ([
 
 	// Use activity index to find trending actors
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Index("activity-index").
+		Index("gsi6").
 		Where("gsi6PK", "=", "TRENDING_ACTORS").
 		Where("gsi6SK", ">", time.Now().Add(-24*time.Hour).Format(time.RFC3339)).
 		Limit(limit).
@@ -314,7 +314,7 @@ func (r *AccountRepository) SearchByWebfinger(ctx context.Context, webfinger str
 	var actor models.Actor
 
 	err := r.db.WithContext(ctx).Model(&actor).
-		Index("webfinger-index").
+		Index("gsi7").
 		Where("gsi7PK", "=", fmt.Sprintf("WEBFINGER#%s", webfinger)).
 		First(&actor)
 
@@ -391,7 +391,7 @@ func (r *AccountRepository) GetActiveUsers(ctx context.Context, since time.Time,
 
 	// Use activity index
 	err := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("activity-index").
+		Index("gsi5").
 		Where("gsi5PK", "=", "ACTIVE_USERS").
 		Where("gsi5SK", ">", since.Format(time.RFC3339)).
 		Limit(limit).
@@ -417,7 +417,7 @@ func (r *AccountRepository) GetInactiveUsers(ctx context.Context, inactiveSince 
 
 	// Use activity index (reverse query)
 	err := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("activity-index").
+		Index("gsi5").
 		Where("gsi5PK", "=", "ACTIVE_USERS").
 		Where("gsi5SK", "<", inactiveSince.Format(time.RFC3339)).
 		Limit(limit).

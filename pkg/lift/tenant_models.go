@@ -8,10 +8,14 @@ import (
 // TenantAwareModel provides base structure for tenant-isolated DynamoDB models
 // Following the official DynamORM multi-tenant pattern
 type TenantAwareModel struct {
-	PK         string    `dynamorm:"pk" json:"pk"`                              // tenant#{tenant_id}
-	SK         string    `dynamorm:"sk" json:"sk"`                              // entity#{id}
-	TenantID   string    `dynamorm:"index:tenant-entity,pk" json:"tenant_id"`   // For GSI
-	EntityType string    `dynamorm:"index:tenant-entity,sk" json:"entity_type"` // For GSI
+	_ struct{} `dynamorm:"naming:camelCase"`
+
+	PK         string    `dynamorm:"pk" json:"pk"`                             // tenant#{tenant_id}
+	SK         string    `dynamorm:"sk" json:"sk"`                             // entity#{id}
+	GSI1PK     string    `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // TENANT#{tenant_id}
+	GSI1SK     string    `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // {entity_type}
+	TenantID   string    `dynamorm:"attr:tenantID" json:"tenant_id"`
+	EntityType string    `dynamorm:"attr:entityType" json:"entity_type"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
@@ -21,6 +25,8 @@ func NewTenantAwareModel(tenantID, entityType, entityID string) TenantAwareModel
 	return TenantAwareModel{
 		PK:         fmt.Sprintf("tenant#%s", tenantID),
 		SK:         fmt.Sprintf("%s#%s", entityType, entityID),
+		GSI1PK:     fmt.Sprintf("TENANT#%s", tenantID),
+		GSI1SK:     entityType,
 		TenantID:   tenantID,
 		EntityType: entityType,
 		CreatedAt:  time.Now(),

@@ -132,7 +132,7 @@ func (r *RoutingMetricsRepository) GetGlobalMetricsWindows(ctx context.Context, 
 	sinceKey := fmt.Sprintf("%d", since.Unix())
 
 	err := r.globalMetricsRepo.GetDB().WithContext(ctx).Model(&models.GlobalMetricsWindow{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", "METRICS#GLOBAL").
 		Where("gsi1SK", ">", sinceKey).
 		Limit(limit).

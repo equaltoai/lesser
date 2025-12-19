@@ -16,11 +16,11 @@ type OutboxItem struct {
 	SK string `dynamorm:"sk,attr:SK"`
 
 	// GSI fields for public outbox queries
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
 
 	// Business fields
-	ActorID    string                `dynamorm:"attr:actorID" json:"actor_id"`    // The actor who created the activity
+	ActorID    string                `dynamorm:"attr:actorID" json:"actor_id"`       // The actor who created the activity
 	ActivityID string                `dynamorm:"attr:activityID" json:"activity_id"` // The activity ID
 	Activity   *activitypub.Activity `dynamorm:"attr:activity" json:"activity"`      // The full activity object
 	Timestamp  time.Time             `dynamorm:"attr:timestamp" json:"timestamp"`    // When the activity was created

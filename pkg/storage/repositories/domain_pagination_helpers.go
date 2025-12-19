@@ -42,7 +42,7 @@ func buildPaginationQuery(
 	safeLimit := clampDomainLimit(limit)
 
 	query := db.WithContext(ctx).Model(modelPtr).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", config.GSIPKValue).
 		OrderBy("gsi1SK", "DESC") // Newest first
 
@@ -234,7 +234,7 @@ func genericDeleteByID[T DomainItem](ctx context.Context, db core.DB, _ *zap.Log
 	// First, find the item by ID - need to query GSI1 and filter
 	var items []T
 	err := db.WithContext(ctx).Model(modelPtr).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", gsipkValue).
 		Limit(100). // Need to scan to find by ID
 		All(&items)

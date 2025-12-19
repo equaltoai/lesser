@@ -17,23 +17,23 @@ type User struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "METADATA"`
 
 	// GSI1 - User listing and pagination
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USERS"
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{username}"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USERS"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{username}"`
 
 	// GSI2 - REMOVED: Email lookup is obsolete - email is forbidden
 	// Email-based authentication is not supported - wallet/passkey only
 
 	// GSI3 - Role-based queries
-	GSI3PK string `dynamorm:"index:GSI3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "ROLE#{role}"
-	GSI3SK string `dynamorm:"index:GSI3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{username}"
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "ROLE#{role}"
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{username}"
 
 	// GSI4 - Status-based queries (approved, suspended, etc.)
-	GSI4PK string `dynamorm:"index:GSI4,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "STATUS#{status}"
-	GSI4SK string `dynamorm:"index:GSI4,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{username}"
+	GSI4PK string `dynamorm:"index:gsi4,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "STATUS#{status}"
+	GSI4SK string `dynamorm:"index:gsi4,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{username}"
 
 	// GSI5 - Handle prefix search (optimized begins_with queries)
-	GSI5PK string `dynamorm:"index:GSI5,pk,attr:gsi5PK" json:"gsi5_pk"`
-	GSI5SK string `dynamorm:"index:GSI5,sk,attr:gsi5SK" json:"gsi5_sk"`
+	GSI5PK string `dynamorm:"index:gsi5,pk,attr:gsi5PK" json:"gsi5_pk"`
+	GSI5SK string `dynamorm:"index:gsi5,sk,attr:gsi5SK" json:"gsi5_sk"`
 
 	// Core user data
 	Username     string              `dynamorm:"attr:username" json:"username"`

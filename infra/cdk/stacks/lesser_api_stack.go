@@ -274,7 +274,7 @@ func (s *LesserApiStack) createSharedResources() {
 		},
 		BillingMode:         awsdynamodb.BillingMode_PAY_PER_REQUEST,
 		Stream:              awsdynamodb.StreamViewType_NEW_AND_OLD_IMAGES,
-		TimeToLiveAttribute: jsii.String("TTL"),
+		TimeToLiveAttribute: jsii.String("ttl"),
 		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
 			PointInTimeRecoveryEnabled: jsii.Bool(isProd),
 		},
@@ -307,7 +307,7 @@ func (s *LesserApiStack) createSharedResources() {
 	// Using camelCase attribute names to match DynamORM conventions (gsi1PK, gsi2PK, etc.)
 	for i := 1; i <= 8; i++ {
 		s.MainTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
-			IndexName: jsii.String(fmt.Sprintf("GSI%d", i)),
+			IndexName: jsii.String(fmt.Sprintf("gsi%d", i)),
 			PartitionKey: &awsdynamodb.Attribute{
 				Name: jsii.String(fmt.Sprintf("gsi%dPK", i)),
 				Type: awsdynamodb.AttributeType_STRING,
@@ -329,11 +329,11 @@ func (s *LesserApiStack) createSharedResources() {
 	s.MainTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
 		IndexName: jsii.String("oauth-clients-index"),
 		PartitionKey: &awsdynamodb.Attribute{
-			Name: jsii.String("OAuthClientsPK"),
+			Name: jsii.String("oauthClientsPK"),
 			Type: awsdynamodb.AttributeType_STRING,
 		},
 		SortKey: &awsdynamodb.Attribute{
-			Name: jsii.String("OAuthClientsSK"),
+			Name: jsii.String("oauthClientsSK"),
 			Type: awsdynamodb.AttributeType_STRING,
 		},
 		ProjectionType: awsdynamodb.ProjectionType_ALL,
@@ -553,7 +553,7 @@ func (s *LesserApiStack) createStreamingAndMLInfrastructure() {
 
 	// Add GSI9 to main table for model metadata tracking
 	s.MainTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
-		IndexName: jsii.String("GSI9"),
+		IndexName: jsii.String("gsi9"),
 		PartitionKey: &awsdynamodb.Attribute{
 			Name: jsii.String("gsi9PK"),
 			Type: awsdynamodb.AttributeType_STRING,
@@ -595,7 +595,7 @@ func (s *LesserApiStack) createStreamingAndMLInfrastructure() {
 
 	awscdk.NewCfnOutput(s.Stack, jsii.String("ModelMetadataTable"), &awscdk.CfnOutputProps{
 		Value:       jsii.String(s.ModelMetadataTableName),
-		Description: jsii.String("DynamoDB table for model metadata (using GSI9)"),
+		Description: jsii.String("DynamoDB table for model metadata (using gsi9)"),
 		ExportName:  jsii.String(fmt.Sprintf("lesser-%s-model-metadata-table", s.Environment)),
 	})
 }

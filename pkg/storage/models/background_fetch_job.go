@@ -14,8 +14,8 @@ type BackgroundFetchJob struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "JOB#{timestamp}"
 
 	// GSI for querying by status
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"-"` // STATUS#{status_id}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"-"` // FETCH#{timestamp}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"` // STATUS#{status_id}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"` // FETCH#{timestamp}
 
 	// Job identification
 	JobID    string `dynamorm:"attr:jobID" json:"job_id"`       // Unique job identifier

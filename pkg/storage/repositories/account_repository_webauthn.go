@@ -90,7 +90,7 @@ func (r *AccountRepository) GetUserWebAuthnCredentials(ctx context.Context, user
 	var credentials []models.WebAuthnCredential
 
 	err := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
-		Index("user-credentials-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
 		Where("gsi1SK", "BEGINS_WITH", "WEBAUTHN#").
 		All(&credentials)
@@ -453,7 +453,7 @@ func (r *AccountRepository) GetAllUsersForWallet(ctx context.Context, walletType
 // DeleteWalletCredentialByAddress removes a wallet credential by username and address
 func (r *AccountRepository) DeleteWalletCredentialByAddress(ctx context.Context, username, address string) error {
 	address = strings.ToLower(address)
-	
+
 	err := r.db.WithContext(ctx).Model(&models.WalletCredential{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "=", fmt.Sprintf("WALLET#%s", address)).
@@ -650,7 +650,7 @@ func (r *AccountRepository) GetUserWallets(ctx context.Context, username string)
 func (r *AccountRepository) DeleteWalletCredential(ctx context.Context, username, address string) error {
 	// Normalize address
 	address = strings.ToLower(address)
-	
+
 	// Delete the main credential
 	err := r.db.WithContext(ctx).Model(&models.WalletCredential{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
@@ -672,7 +672,7 @@ func (r *AccountRepository) DeleteWalletCredential(ctx context.Context, username
 			Where("PK", "=", fmt.Sprintf("WALLET#%s#%s", wType, address)).
 			Where("SK", "=", fmt.Sprintf("USER#%s", username)).
 			Delete()
-		
+
 		if indexErr != nil && !dynamormerrors.IsNotFound(indexErr) {
 			r.logger.Warn("failed to delete wallet index entry",
 				zap.String("username", username),

@@ -20,12 +20,12 @@ type MediaJob struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "JOB#{jobID}"
 
 	// GSI1 - User jobs lookup
-	GSI1PK string `dynamorm:"index:user-jobs-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_JOBS#{userID}"
-	GSI1SK string `dynamorm:"index:user-jobs-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{jobID}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_JOBS#{userID}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{jobID}"
 
 	// GSI2 - Status-based queries
-	GSI2PK string `dynamorm:"index:status-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "STATUS#{status}"
-	GSI2SK string `dynamorm:"index:status-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "UPDATED#{updated_at}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "STATUS#{status}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "UPDATED#{updated_at}"
 
 	// Core job data
 	JobID           string         `dynamorm:"attr:jobID" json:"job_id"`
@@ -66,7 +66,7 @@ type MediaJob struct {
 	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for abandoned jobs (24 hours)
-	ExpiresAt *int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at,omitempty"` // Unix timestamp
+	ExpiresAt *int64 `dynamorm:"ttl,attr:ttl" json:"expires_at,omitempty"` // Unix timestamp
 
 	// Version for optimistic locking
 	ModelVersion int `dynamorm:"version,attr:modelVersion" json:"model_version"`

@@ -17,12 +17,12 @@ type MediaSpending struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "PERIOD#{year}-{month}" or "DAILY#{year}-{month}-{day}"
 
 	// GSI1 - Global spending queries across all users
-	GSI1PK string `dynamorm:"index:spending-time-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "SPENDING#{period_type}"
-	GSI1SK string `dynamorm:"index:spending-time-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{year}-{month}-{day}#{userID}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "SPENDING#{period_type}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{year}-{month}-{day}#{userID}"
 
 	// GSI2 - Cost category queries
-	GSI2PK string `dynamorm:"index:cost-category-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "COST_CATEGORY#{category}"
-	GSI2SK string `dynamorm:"index:cost-category-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{userID}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "COST_CATEGORY#{category}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{userID}"
 
 	// Core spending data
 	UserID     string `dynamorm:"attr:userID" json:"user_id"`
@@ -79,7 +79,7 @@ type MediaSpending struct {
 	UpdatedAt     time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for old spending records (keep for 2 years)
-	ExpiresAt *int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at,omitempty"` // Unix timestamp
+	ExpiresAt *int64 `dynamorm:"ttl,attr:ttl" json:"expires_at,omitempty"` // Unix timestamp
 
 	// Version for optimistic locking
 	ModelVersion int `dynamorm:"version,attr:modelVersion" json:"model_version"`
@@ -94,8 +94,8 @@ type MediaSpendingTransaction struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TXN#{timestamp}#{transactionID}"
 
 	// GSI1 - Time-based transaction queries
-	GSI1PK string `dynamorm:"index:transaction-time-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "TXN_TIME#{date}"
-	GSI1SK string `dynamorm:"index:transaction-time-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{userID}#{transactionID}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "TXN_TIME#{date}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{userID}#{transactionID}"
 
 	// Core transaction data
 	TransactionID string `dynamorm:"attr:transactionID" json:"transaction_id"`
@@ -129,7 +129,7 @@ type MediaSpendingTransaction struct {
 	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
 
 	// TTL for old transactions (keep for 1 year)
-	ExpiresAt *int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at,omitempty"` // Unix timestamp
+	ExpiresAt *int64 `dynamorm:"ttl,attr:ttl" json:"expires_at,omitempty"` // Unix timestamp
 }
 
 // TableName returns the DynamoDB table name for MediaSpending

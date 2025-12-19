@@ -16,8 +16,8 @@ type InstanceHistory struct {
 	SK string `dynamorm:"sk,attr:SK"` // DAILY#{date} or MONTHLY#{date} or WEEKLY#{date}
 
 	// GSI1 for metric-specific time queries
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK"` // METRIC#{metric_type}
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK"` // DATE#{YYYY-MM-DD}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"` // METRIC#{metric_type}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"` // DATE#{YYYY-MM-DD}
 
 	// Business fields
 	Date        string    `dynamorm:"attr:date" json:"date"`               // YYYY-MM-DD format
@@ -28,18 +28,18 @@ type InstanceHistory struct {
 	RecordedAt  time.Time `dynamorm:"attr:recordedAt" json:"recorded_at"`  // When this metric was recorded
 
 	// Specific metric fields for detailed tracking
-	TotalUsers      int64 `dynamorm:"attr:totalUsers" json:"total_users,omitempty"`             // Total registered users
-	ActiveUsers     int64 `dynamorm:"attr:activeUsers" json:"active_users,omitempty"`           // Users active in period
-	NewUsers        int64 `dynamorm:"attr:newUsers" json:"new_users,omitempty"`                 // New registrations in period
-	TotalPosts      int64 `dynamorm:"attr:totalPosts" json:"total_posts,omitempty"`             // Total posts/statuses
-	NewPosts        int64 `dynamorm:"attr:newPosts" json:"new_posts,omitempty"`                 // New posts in period
-	StorageBytes    int64 `dynamorm:"attr:storageBytes" json:"storage_bytes,omitempty"`         // Total storage used
-	MediaBytes      int64 `dynamorm:"attr:mediaBytes" json:"media_bytes,omitempty"`             // Media storage used
-	DatabaseBytes   int64 `dynamorm:"attr:databaseBytes" json:"database_bytes,omitempty"`       // Database storage used
-	FederatedPosts  int64 `dynamorm:"attr:federatedPosts" json:"federated_posts,omitempty"`     // Posts from other instances
-	LocalPosts      int64 `dynamorm:"attr:localPosts" json:"local_posts,omitempty"`             // Posts from local users
-	KnownInstances  int64 `dynamorm:"attr:knownInstances" json:"known_instances,omitempty"`     // Number of federated instances
-	ActiveInstances int64 `dynamorm:"attr:activeInstances" json:"active_instances,omitempty"`   // Active federation partners
+	TotalUsers      int64 `dynamorm:"attr:totalUsers" json:"total_users,omitempty"`           // Total registered users
+	ActiveUsers     int64 `dynamorm:"attr:activeUsers" json:"active_users,omitempty"`         // Users active in period
+	NewUsers        int64 `dynamorm:"attr:newUsers" json:"new_users,omitempty"`               // New registrations in period
+	TotalPosts      int64 `dynamorm:"attr:totalPosts" json:"total_posts,omitempty"`           // Total posts/statuses
+	NewPosts        int64 `dynamorm:"attr:newPosts" json:"new_posts,omitempty"`               // New posts in period
+	StorageBytes    int64 `dynamorm:"attr:storageBytes" json:"storage_bytes,omitempty"`       // Total storage used
+	MediaBytes      int64 `dynamorm:"attr:mediaBytes" json:"media_bytes,omitempty"`           // Media storage used
+	DatabaseBytes   int64 `dynamorm:"attr:databaseBytes" json:"database_bytes,omitempty"`     // Database storage used
+	FederatedPosts  int64 `dynamorm:"attr:federatedPosts" json:"federated_posts,omitempty"`   // Posts from other instances
+	LocalPosts      int64 `dynamorm:"attr:localPosts" json:"local_posts,omitempty"`           // Posts from local users
+	KnownInstances  int64 `dynamorm:"attr:knownInstances" json:"known_instances,omitempty"`   // Number of federated instances
+	ActiveInstances int64 `dynamorm:"attr:activeInstances" json:"active_instances,omitempty"` // Active federation partners
 
 	// TTL field for automatic cleanup (90 days for daily, keep monthly forever)
 	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`

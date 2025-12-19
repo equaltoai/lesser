@@ -17,12 +17,12 @@ type TranscodingJob struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "JOB_METRICS"
 
 	// GSI1 - User-based queries for transcoding jobs
-	GSI1PK string `dynamorm:"index:user-jobs-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_TRANSCODING#{userID}"
-	GSI1SK string `dynamorm:"index:user-jobs-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{jobID}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_TRANSCODING#{userID}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{jobID}"
 
 	// GSI2 - Media-based queries
-	GSI2PK string `dynamorm:"index:media-jobs-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "MEDIA_TRANSCODING#{mediaID}"
-	GSI2SK string `dynamorm:"index:media-jobs-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{jobID}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "MEDIA_TRANSCODING#{mediaID}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{jobID}"
 
 	// Core job data
 	JobID    string `dynamorm:"attr:jobID" json:"job_id"`
@@ -30,7 +30,7 @@ type TranscodingJob struct {
 	UserID   string `dynamorm:"attr:userID" json:"user_id"`
 	Username string `dynamorm:"attr:username" json:"username"`
 	JobType  string `dynamorm:"attr:jobType" json:"job_type"` // "video", "audio", "image"
-	Status   string `dynamorm:"attr:status" json:"status"`   // "processing", "completed", "failed"
+	Status   string `dynamorm:"attr:status" json:"status"`    // "processing", "completed", "failed"
 
 	// Input details
 	InputFormat     string `dynamorm:"attr:inputFormat" json:"input_format"`         // "video/mp4", "audio/mpeg", etc.
@@ -39,8 +39,8 @@ type TranscodingJob struct {
 	InputResolution string `dynamorm:"attr:inputResolution" json:"input_resolution"` // "1920x1080" (for video)
 
 	// Output details
-	OutputVariants  map[string]string `dynamorm:"attr:outputVariants" json:"output_variants"`     // quality -> format mapping
-	OutputSizes     map[string]int64  `dynamorm:"attr:outputSizes" json:"output_sizes"`           // quality -> size in bytes
+	OutputVariants  map[string]string `dynamorm:"attr:outputVariants" json:"output_variants"`    // quality -> format mapping
+	OutputSizes     map[string]int64  `dynamorm:"attr:outputSizes" json:"output_sizes"`          // quality -> size in bytes
 	TotalOutputSize int64             `dynamorm:"attr:totalOutputSize" json:"total_output_size"` // sum of all output sizes
 
 	// Processing metrics
@@ -59,29 +59,29 @@ type TranscodingJob struct {
 	RekognitionCostMicros  int64            `dynamorm:"attr:rekognitionCostMicros" json:"rekognition_cost_micros"`
 
 	// Quality and transcoding settings
-	QualityLevels   []string `dynamorm:"attr:qualityLevels" json:"quality_levels"`       // ["480p", "720p", "1080p"]
-	ThumbnailCount  int      `dynamorm:"attr:thumbnailCount" json:"thumbnail_count"`     // number of thumbnails generated
-	AnalysisEnabled bool     `dynamorm:"attr:analysisEnabled" json:"analysis_enabled"`   // whether content analysis was performed
+	QualityLevels   []string `dynamorm:"attr:qualityLevels" json:"quality_levels"`     // ["480p", "720p", "1080p"]
+	ThumbnailCount  int      `dynamorm:"attr:thumbnailCount" json:"thumbnail_count"`   // number of thumbnails generated
+	AnalysisEnabled bool     `dynamorm:"attr:analysisEnabled" json:"analysis_enabled"` // whether content analysis was performed
 
 	// AWS service job IDs for tracking
 	MediaConvertJobID string   `dynamorm:"attr:mediaConvertJobID" json:"mediaconvert_job_id,omitempty"`
 	S3Keys            []string `dynamorm:"attr:s3Keys" json:"s3_keys"` // all S3 keys created by this job
 
 	// Efficiency metrics
-	CompressionRatio    float64 `dynamorm:"attr:compressionRatio" json:"compression_ratio"`         // output_size / input_size
-	CostPerMB           float64 `dynamorm:"attr:costPerMB" json:"cost_per_mb"`                       // cost per MB processed
-	ProcessingSpeedMBps float64 `dynamorm:"attr:processingSpeedMBps" json:"processing_speed_mbps"`  // MB/second processing speed
+	CompressionRatio    float64 `dynamorm:"attr:compressionRatio" json:"compression_ratio"`        // output_size / input_size
+	CostPerMB           float64 `dynamorm:"attr:costPerMB" json:"cost_per_mb"`                     // cost per MB processed
+	ProcessingSpeedMBps float64 `dynamorm:"attr:processingSpeedMBps" json:"processing_speed_mbps"` // MB/second processing speed
 
 	// Budget tracking
 	EstimatedCostMicros int64 `dynamorm:"attr:estimatedCostMicros" json:"estimated_cost_micros"` // initial cost estimate
-	CostVariance        int64 `dynamorm:"attr:costVariance" json:"cost_variance"`               // actual - estimated cost
+	CostVariance        int64 `dynamorm:"attr:costVariance" json:"cost_variance"`                // actual - estimated cost
 
 	// Timestamps
 	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
 	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for old transcoding jobs (keep for 1 year)
-	ExpiresAt *int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at,omitempty"` // Unix timestamp
+	ExpiresAt *int64 `dynamorm:"ttl,attr:ttl" json:"expires_at,omitempty"` // Unix timestamp
 
 	// Version for optimistic locking
 	ModelVersion int `dynamorm:"version,attr:modelVersion" json:"model_version"`

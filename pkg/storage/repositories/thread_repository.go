@@ -166,7 +166,7 @@ func (r *ThreadRepository) GetThreadNodeByStatusID(ctx context.Context, statusID
 
 	var node models.ThreadNode
 	err := r.db.WithContext(ctx).Model(&models.ThreadNode{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", gsi1pk).
 		Where("gsi1SK", "=", gsi1sk).
 		First(&node)

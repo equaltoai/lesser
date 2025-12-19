@@ -1971,7 +1971,7 @@ func (r *ModerationRepository) UnassignReport(ctx context.Context, reportID stri
 func (r *ModerationRepository) GetOpenReportsCount(ctx context.Context) (int, error) {
 	// Count reports with status "open" using GSI3
 	count, err := r.db.WithContext(ctx).Model(&models.Report{}).
-		Index("GSI3").
+		Index("gsi3").
 		Where("gsi3PK", "=", "STATUS#open").
 		Count()
 
@@ -2145,7 +2145,7 @@ func (r *ModerationRepository) GetFlagsByActor(ctx context.Context, actorID stri
 	var models []models.Flag
 
 	query := r.db.WithContext(ctx).Model(&models).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("ACTOR#%s", actorID)).
 		Limit(limit)
 
@@ -2192,7 +2192,7 @@ func (r *ModerationRepository) GetPendingFlags(ctx context.Context, limit int, c
 	var models []models.Flag
 
 	query := r.db.WithContext(ctx).Model(&models).
-		Index("GSI2").
+		Index("gsi2").
 		Where("gsi2PK", "=", "FLAG_STATUS#pending").
 		Limit(limit)
 
@@ -2286,7 +2286,7 @@ func (r *ModerationRepository) UpdateFlagStatus(ctx context.Context, id string, 
 func (r *ModerationRepository) CountPendingFlags(ctx context.Context) (int, error) {
 	// Count flags with status "pending" using GSI2
 	count, err := r.db.WithContext(ctx).Model(&models.Flag{}).
-		Index("GSI2").
+		Index("gsi2").
 		Where("gsi2PK", "=", "FLAG_STATUS#pending").
 		Count()
 
@@ -2451,7 +2451,7 @@ func (r *ModerationRepository) GetUserReports(ctx context.Context, username stri
 	var models []models.Report
 
 	query := r.db.WithContext(ctx).Model(&models).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", username)).
 		Limit(limit)
 
@@ -2577,7 +2577,7 @@ func (r *ModerationRepository) GetReportsByTarget(ctx context.Context, targetAcc
 	var models []models.Report
 
 	query := r.db.WithContext(ctx).Model(&models).
-		Index("GSI2").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("REPORTED#%s", targetAccountID)).
 		Limit(limit)
 
@@ -2642,7 +2642,7 @@ func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status st
 	var models []models.Report
 
 	query := r.db.WithContext(ctx).Model(&models).
-		Index("GSI3").
+		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("STATUS#%s", string(status))).
 		Limit(limit)
 

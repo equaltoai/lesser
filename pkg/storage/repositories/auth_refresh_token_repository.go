@@ -239,7 +239,8 @@ func (r *AuthRefreshTokenRepository) RevokeUserTokens(ctx context.Context, userI
 	// Get all tokens for the user (both active and inactive for complete revocation)
 	var tokens []models.AuthRefreshToken
 	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Where("UserID", "=", userID).
+		Index("gsi1").
+		Where("gsi1PK", "=", "USER#"+userID).
 		All(&tokens)
 
 	if err != nil {
@@ -301,7 +302,8 @@ func (r *AuthRefreshTokenRepository) GetTokensByUser(ctx context.Context, userID
 
 	var tokens []models.AuthRefreshToken
 	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Where("UserID", "=", userID).
+		Index("gsi1").
+		Where("gsi1PK", "=", "USER#"+userID).
 		All(&tokens)
 
 	if err != nil {
@@ -334,7 +336,8 @@ func (r *AuthRefreshTokenRepository) GetTokensByFamily(ctx context.Context, fami
 
 	var tokens []models.AuthRefreshToken
 	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Where("Family", "=", family).
+		Index("gsi2").
+		Where("gsi2PK", "=", "FAMILY#"+family).
 		All(&tokens)
 
 	if err != nil {

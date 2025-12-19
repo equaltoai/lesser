@@ -189,7 +189,7 @@ func (r *DLQRepository) GetDLQMessagesByErrorType(ctx context.Context, errorType
 	safeLimit := clampDLQPageLimit(limit)
 
 	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
-		Index("error-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", "DLQ_ERROR#"+errorType).
 		OrderBy("gsi1SK", "DESC")
 
@@ -228,7 +228,7 @@ func (r *DLQRepository) GetDLQMessagesForReprocessing(ctx context.Context, servi
 
 	for {
 		query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
-			Index("retry-index").
+			Index("gsi2").
 			Where("gsi2PK", "=", fmt.Sprintf("DLQ_RETRY#%s#%s", service, status)).
 			OrderBy("gsi2SK", "ASC").
 			Limit(safeLimit + 1)
@@ -280,7 +280,7 @@ func (r *DLQRepository) GetDLQMessagesByStatus(ctx context.Context, service, sta
 	safeLimit := clampDLQPageLimit(limit)
 
 	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
-		Index("retry-index").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("DLQ_RETRY#%s#%s", service, status)).
 		OrderBy("gsi2SK", "DESC")
 
@@ -524,7 +524,7 @@ func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearch
 
 	// Use service-wide index for broad searches
 	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
-		Index("service-index").
+		Index("gsi3").
 		Where("gsi3PK", "=", "DLQ_SERVICE#"+filter.Service).
 		OrderBy("gsi3SK", "DESC")
 

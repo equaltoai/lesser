@@ -22,7 +22,7 @@ const (
 )
 
 const (
-	oauthClientsIndexName       = "oauth-clients-index"
+	oauthClientsIndexName       = models.IndexOAuthClients
 	oauthClientsIndexPK         = "OAUTH_CLIENTS"
 	oauthClientsPartitionAttr   = "OAuthClientsPK"
 	oauthClientsSortAttr        = "OAuthClientsSK"

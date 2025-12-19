@@ -165,9 +165,9 @@ func (r *MuteRepository) GetUsersWhoMuted(ctx context.Context, mutedActor string
 	mutedUsername := extractUsernameFromActor(mutedActor)
 
 	config := RelationshipPaginationConfig{
-		IndexName:   "GSI1",                  // Use GSI1 for reverse lookup
-		PKFormat:    "MUTED#%s",              // GSI1PK format
-		SKField:     "gsi1SK",                // Sort key field for GSI1
+		IndexName:   "gsi1",                  // Use gsi1 for reverse lookup
+		PKFormat:    "MUTED#%s",              // gsi1PK format
+		SKField:     "gsi1SK",                // Sort key field for gsi1
 		ActorField:  "Actor",                 // Extract muter users (Actor field)
 		ErrorPrefix: "users who muted actor", // Error message prefix
 	}
@@ -230,7 +230,7 @@ func (r *MuteRepository) CountUsersWhoMuted(ctx context.Context, mutedActor stri
 	mutedUsername := extractUsernameFromActor(mutedActor)
 
 	count, err := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("MUTED#%s", mutedUsername)).
 		Count()
 	if err != nil {

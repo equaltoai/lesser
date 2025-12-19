@@ -17,8 +17,8 @@ type CSRFToken struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TOKEN"
 
 	// GSI1 - User CSRF tokens lookup for rate limiting
-	GSI1PK string `dynamorm:"index:user-csrf-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_CSRF#{userID}"
-	GSI1SK string `dynamorm:"index:user-csrf-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{token}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_CSRF#{userID}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{token}"
 
 	// Core CSRF token data
 	Token     string `dynamorm:"attr:token" json:"token"`

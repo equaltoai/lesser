@@ -16,12 +16,12 @@ type ImportCostTracking struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for user queries - USER#{username}, COST#{timestamp}
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for date range queries - IMPORT_COSTS#{date}, TS#{timestamp}
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Import metadata
 	ImportID string `dynamorm:"attr:importID" json:"import_id"`
@@ -31,17 +31,17 @@ type ImportCostTracking struct {
 
 	// Cost breakdown (all in microcents)
 	LambdaExecutionCost int64 `dynamorm:"attr:lambdaExecutionCost" json:"lambda_execution_cost"` // Lambda compute cost
-	LambdaDurationMs    int64 `dynamorm:"attr:lambdaDurationMs" json:"lambda_duration_ms"`        // Lambda execution time
+	LambdaDurationMs    int64 `dynamorm:"attr:lambdaDurationMs" json:"lambda_duration_ms"`       // Lambda execution time
 
-	S3StorageCost      int64 `dynamorm:"attr:s3StorageCost" json:"s3_storage_cost"`         // S3 storage for import file
-	S3GetRequestCost   int64 `dynamorm:"attr:s3GetRequestCost" json:"s3_get_request_cost"`  // S3 GET operations to download file
+	S3StorageCost      int64 `dynamorm:"attr:s3StorageCost" json:"s3_storage_cost"`            // S3 storage for import file
+	S3GetRequestCost   int64 `dynamorm:"attr:s3GetRequestCost" json:"s3_get_request_cost"`     // S3 GET operations to download file
 	S3DataTransferCost int64 `dynamorm:"attr:s3DataTransferCost" json:"s3_data_transfer_cost"` // Data transfer costs
 
-	DynamoDBWriteCost  int64   `dynamorm:"attr:dynamodbWriteCost" json:"dynamodb_write_cost"`    // DynamoDB write operations
-	DynamoDBReadCost   int64   `dynamorm:"attr:dynamodbReadCost" json:"dynamodb_read_cost"`      // DynamoDB read operations (for lookups)
-	DynamoDBWriteUnits float64 `dynamorm:"attr:dynamodbWriteUnits" json:"dynamodb_write_units"`  // Write capacity consumed
-	DynamoDBReadUnits  float64 `dynamorm:"attr:dynamodbReadUnits" json:"dynamodb_read_units"`    // Read capacity consumed
-	DynamoDBOperations int64   `dynamorm:"attr:dynamodbOperations" json:"dynamodb_operations"`   // Number of DB operations
+	DynamoDBWriteCost  int64   `dynamorm:"attr:dynamodbWriteCost" json:"dynamodb_write_cost"`   // DynamoDB write operations
+	DynamoDBReadCost   int64   `dynamorm:"attr:dynamodbReadCost" json:"dynamodb_read_cost"`     // DynamoDB read operations (for lookups)
+	DynamoDBWriteUnits float64 `dynamorm:"attr:dynamodbWriteUnits" json:"dynamodb_write_units"` // Write capacity consumed
+	DynamoDBReadUnits  float64 `dynamorm:"attr:dynamodbReadUnits" json:"dynamodb_read_units"`   // Read capacity consumed
+	DynamoDBOperations int64   `dynamorm:"attr:dynamodbOperations" json:"dynamodb_operations"`  // Number of DB operations
 
 	ExternalAPICallCost int64 `dynamorm:"attr:externalAPICallCost" json:"external_api_call_cost"` // Cost of WebFinger/ActivityPub lookups
 	ExternalAPICalls    int64 `dynamorm:"attr:externalAPICalls" json:"external_api_calls"`        // Number of external API calls
@@ -65,8 +65,8 @@ type ImportCostTracking struct {
 	NetworkBytes int64 `dynamorm:"attr:networkBytes" json:"network_bytes"` // Network bytes transferred
 
 	// Status tracking
-	Status      string     `dynamorm:"attr:status" json:"status"`                 // pending, processing, completed, failed
-	StartedAt   time.Time  `dynamorm:"attr:startedAt" json:"started_at"`          // When import processing started
+	Status      string     `dynamorm:"attr:status" json:"status"`                      // pending, processing, completed, failed
+	StartedAt   time.Time  `dynamorm:"attr:startedAt" json:"started_at"`               // When import processing started
 	CompletedAt *time.Time `dynamorm:"attr:completedAt" json:"completed_at,omitempty"` // When import completed
 
 	// TTL for automatic cleanup

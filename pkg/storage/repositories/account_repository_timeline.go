@@ -84,7 +84,7 @@ func (r *AccountRepository) GetLocalTimeline(ctx context.Context, limit int, max
 
 	// Build query using GSI for local timeline
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
-		Index("local-timeline-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", "LOCAL_TIMELINE").
 		OrderBy("gsi1SK", "DESC").
 		Limit(safeLimit + 1)
@@ -123,17 +123,15 @@ func (r *AccountRepository) GetPublicTimeline(ctx context.Context, limit int, ma
 
 	safeLimit := clampTimelineLimit(limit)
 
-	// Choose index based on media filter
-	indexName := "public-timeline-index"
+	// Choose partition key based on media filter
 	gsiPK := "PUBLIC_TIMELINE"
 	if onlyMedia {
-		indexName = "media-timeline-index"
 		gsiPK = "MEDIA_TIMELINE"
 	}
 
 	// Build query
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
-		Index(indexName).
+		Index("gsi2").
 		Where("gsi2PK", "=", gsiPK).
 		OrderBy("gsi2SK", "DESC").
 		Limit(safeLimit + 1)
@@ -177,7 +175,7 @@ func (r *AccountRepository) GetHashtagTimeline(ctx context.Context, hashtag stri
 
 	// Build query using hashtag index
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
-		Index("hashtag-timeline-index").
+		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("HASHTAG#%s", hashtag)).
 		OrderBy("gsi3SK", "DESC").
 		Limit(safeLimit + 1)
@@ -229,7 +227,7 @@ func (r *AccountRepository) GetListTimeline(ctx context.Context, username, listI
 
 	// Build query using list timeline index
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
-		Index("list-timeline-index").
+		Index("gsi4").
 		Where("gsi4PK", "=", fmt.Sprintf("LIST#%s", listID)).
 		OrderBy("gsi4SK", "DESC").
 		Limit(safeLimit + 1)

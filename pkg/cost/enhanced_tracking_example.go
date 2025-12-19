@@ -36,7 +36,7 @@ func ExampleEnhancedUsage() {
 
 	// Enhanced tracking captures all these details automatically
 	query := trackingDB.Model(&ExampleModel{}).
-		Index("name-index").             // GSI usage tracked
+		Index("gsi1").                   // GSI usage tracked
 		Where("Name", "=", "test").      // Query condition tracked
 		Filter("Status", "=", "active"). // Filter expression tracked
 		Select("ID", "Name").            // Projection tracked

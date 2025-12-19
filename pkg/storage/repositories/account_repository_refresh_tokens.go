@@ -64,7 +64,7 @@ func (r *AccountRepository) GetAdvancedRefreshToken(ctx context.Context, token s
 	var authToken models.AuthRefreshToken
 
 	err := r.db.WithContext(ctx).Model(&authToken).
-		Where("PK", "=", fmt.Sprintf("REFRESH_TOKEN#%s", token)).
+		Where("PK", "=", token).
 		Where("SK", "=", "TOKEN").
 		First(&authToken)
 
@@ -251,9 +251,8 @@ func (r *AccountRepository) GetAdvancedTokensByUser(ctx context.Context, userID 
 	var tokens []models.AuthRefreshToken
 
 	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Index("user-tokens-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("gsi1SK", "BEGINS_WITH", "TOKEN#").
 		All(&tokens)
 
 	if err != nil {
@@ -271,9 +270,8 @@ func (r *AccountRepository) GetAdvancedTokensByFamily(ctx context.Context, famil
 	var tokens []models.AuthRefreshToken
 
 	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Index("family-tokens-index").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("FAMILY#%s", family)).
-		Where("gsi2SK", "BEGINS_WITH", "TOKEN#").
 		All(&tokens)
 
 	if err != nil {
@@ -310,7 +308,7 @@ func (r *AccountRepository) UpdateAdvancedTokenLastUsed(ctx context.Context, tok
 	// Get existing token
 	var token models.AuthRefreshToken
 	err := r.db.WithContext(ctx).Model(&token).
-		Where("PK", "=", fmt.Sprintf("REFRESH_TOKEN#%s", tokenValue)).
+		Where("PK", "=", tokenValue).
 		Where("SK", "=", "TOKEN").
 		First(&token)
 
@@ -359,7 +357,7 @@ func (r *AccountRepository) CleanupExpiredAdvancedTokens(ctx context.Context) (i
 	for _, token := range allTokens {
 		if token.ExpiresAt < now {
 			deleteErr := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-				Where("PK", "=", fmt.Sprintf("REFRESH_TOKEN#%s", token.Token)).
+				Where("PK", "=", token.Token).
 				Where("SK", "=", "TOKEN").
 				Delete()
 

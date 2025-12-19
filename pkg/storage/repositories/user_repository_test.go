@@ -62,7 +62,7 @@ func TestGetUserByProviderID_Success(t *testing.T) {
 	// Set up expectations
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
-	mockQuery.On("Index", "provider-index").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "PROVIDER#google").Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", "=", "123#").Return(mockQuery)
 	mockQuery.On("Limit", 1).Return(mockQuery)
@@ -114,7 +114,7 @@ func TestUnlinkProviderAccount_Success(t *testing.T) {
 	// Set up expectations for query
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery).Once()
-	mockQuery.On("Index", "user-providers-index").Return(mockQuery)
+	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(nil) // Return empty list
 
@@ -139,7 +139,7 @@ func TestGetLinkedProviders_ReturnsEmpty(t *testing.T) {
 	// Set up expectations
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
-	mockQuery.On("Index", "user-providers-index").Return(mockQuery)
+	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(nil) // Return empty list
 

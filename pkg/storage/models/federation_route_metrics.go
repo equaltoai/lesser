@@ -25,42 +25,42 @@ type FederationRouteMetrics struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for time-based route queries - FED_ROUTES#{date}, ROUTE#{route_id}#{timestamp}
-	GSI1PK string `dynamorm:"index:route-time-index,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:route-time-index,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for domain-route queries - FED_DOMAIN_ROUTES#{domain}, ROUTE#{route_id}#{timestamp}
-	GSI2PK string `dynamorm:"index:domain-route-index,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:domain-route-index,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// GSI3 for performance queries - FED_ROUTE_PERF#{performance_tier}, LATENCY#{avg_latency}#{route_id}
-	GSI3PK string `dynamorm:"index:route-performance-index,pk,attr:gsi3PK" json:"gsi3_pk"`
-	GSI3SK string `dynamorm:"index:route-performance-index,sk,attr:gsi3SK" json:"gsi3_sk"`
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"`
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"`
 
 	// Route identification
-	RouteID           string `dynamorm:"attr:routeID" json:"route_id"`                         // Unique route identifier
-	DestinationDomain string `dynamorm:"attr:destinationDomain" json:"destination_domain"`     // Target domain
-	RouteType         string `dynamorm:"attr:routeType" json:"route_type"`                     // primary, backup, failover
-	RoutePriority     int    `dynamorm:"attr:routePriority" json:"route_priority"`             // Priority order (1=highest)
-	ServerEndpoint    string `dynamorm:"attr:serverEndpoint" json:"server_endpoint"`           // Full endpoint URL
-	Protocol          string `dynamorm:"attr:protocol" json:"protocol"`                        // HTTP, HTTPS
-	Port              int    `dynamorm:"attr:port" json:"port"`                                // Target port
+	RouteID           string `dynamorm:"attr:routeID" json:"route_id"`                     // Unique route identifier
+	DestinationDomain string `dynamorm:"attr:destinationDomain" json:"destination_domain"` // Target domain
+	RouteType         string `dynamorm:"attr:routeType" json:"route_type"`                 // primary, backup, failover
+	RoutePriority     int    `dynamorm:"attr:routePriority" json:"route_priority"`         // Priority order (1=highest)
+	ServerEndpoint    string `dynamorm:"attr:serverEndpoint" json:"server_endpoint"`       // Full endpoint URL
+	Protocol          string `dynamorm:"attr:protocol" json:"protocol"`                    // HTTP, HTTPS
+	Port              int    `dynamorm:"attr:port" json:"port"`                            // Target port
 
 	// Performance metrics (aggregated for the time period)
-	TotalAttempts      int64   `dynamorm:"attr:totalAttempts" json:"total_attempts"`             // Total delivery attempts
-	SuccessfulAttempts int64   `dynamorm:"attr:successfulAttempts" json:"successful_attempts"`   // Successful deliveries
-	FailedAttempts     int64   `dynamorm:"attr:failedAttempts" json:"failed_attempts"`           // Failed deliveries
-	SuccessRate        float64 `dynamorm:"attr:successRate" json:"success_rate"`                 // Success percentage
-	AvgLatencyMs       int64   `dynamorm:"attr:avgLatencyMs" json:"avg_latency_ms"`              // Average response time
-	MedianLatencyMs    int64   `dynamorm:"attr:medianLatencyMs" json:"median_latency_ms"`        // Median response time
-	P95LatencyMs       int64   `dynamorm:"attr:p95LatencyMs" json:"p95_latency_ms"`              // 95th percentile latency
-	P99LatencyMs       int64   `dynamorm:"attr:p99LatencyMs" json:"p99_latency_ms"`              // 99th percentile latency
-	MinLatencyMs       int64   `dynamorm:"attr:minLatencyMs" json:"min_latency_ms"`              // Fastest response
-	MaxLatencyMs       int64   `dynamorm:"attr:maxLatencyMs" json:"max_latency_ms"`              // Slowest response
-	TimeoutCount       int64   `dynamorm:"attr:timeoutCount" json:"timeout_count"`               // Number of timeouts
-	TimeoutRate        float64 `dynamorm:"attr:timeoutRate" json:"timeout_rate"`                 // Timeout percentage
+	TotalAttempts      int64   `dynamorm:"attr:totalAttempts" json:"total_attempts"`           // Total delivery attempts
+	SuccessfulAttempts int64   `dynamorm:"attr:successfulAttempts" json:"successful_attempts"` // Successful deliveries
+	FailedAttempts     int64   `dynamorm:"attr:failedAttempts" json:"failed_attempts"`         // Failed deliveries
+	SuccessRate        float64 `dynamorm:"attr:successRate" json:"success_rate"`               // Success percentage
+	AvgLatencyMs       int64   `dynamorm:"attr:avgLatencyMs" json:"avg_latency_ms"`            // Average response time
+	MedianLatencyMs    int64   `dynamorm:"attr:medianLatencyMs" json:"median_latency_ms"`      // Median response time
+	P95LatencyMs       int64   `dynamorm:"attr:p95LatencyMs" json:"p95_latency_ms"`            // 95th percentile latency
+	P99LatencyMs       int64   `dynamorm:"attr:p99LatencyMs" json:"p99_latency_ms"`            // 99th percentile latency
+	MinLatencyMs       int64   `dynamorm:"attr:minLatencyMs" json:"min_latency_ms"`            // Fastest response
+	MaxLatencyMs       int64   `dynamorm:"attr:maxLatencyMs" json:"max_latency_ms"`            // Slowest response
+	TimeoutCount       int64   `dynamorm:"attr:timeoutCount" json:"timeout_count"`             // Number of timeouts
+	TimeoutRate        float64 `dynamorm:"attr:timeoutRate" json:"timeout_rate"`               // Timeout percentage
 
 	// Error tracking
-	ErrorBreakdown      map[string]int64 `dynamorm:"attr:errorBreakdown" json:"error_breakdown"`             // Error code -> count
+	ErrorBreakdown      map[string]int64 `dynamorm:"attr:errorBreakdown" json:"error_breakdown"`            // Error code -> count
 	ConsecutiveFailures int64            `dynamorm:"attr:consecutiveFailures" json:"consecutive_failures"`  // Current failure streak
 	MaxConsecutiveFails int64            `dynamorm:"attr:maxConsecutiveFails" json:"max_consecutive_fails"` // Longest failure streak
 	LastErrorCode       string           `dynamorm:"attr:lastErrorCode" json:"last_error_code"`             // Most recent error
@@ -76,19 +76,19 @@ type FederationRouteMetrics struct {
 	AvgPayloadSize      int64   `dynamorm:"attr:avgPayloadSize" json:"avg_payload_size"`            // Average payload size
 
 	// Retry analysis
-	TotalRetries       int64   `dynamorm:"attr:totalRetries" json:"total_retries"`             // Total retry attempts
-	AvgRetriesPerFail  float64 `dynamorm:"attr:avgRetriesPerFail" json:"avg_retries_per_fail"` // Average retries before giving up
-	RetrySuccessRate   float64 `dynamorm:"attr:retrySuccessRate" json:"retry_success_rate"`    // Success rate of retries
-	AvgRetryDelayMs    int64   `dynamorm:"attr:avgRetryDelayMs" json:"avg_retry_delay_ms"`     // Average delay between retries
+	TotalRetries       int64   `dynamorm:"attr:totalRetries" json:"total_retries"`              // Total retry attempts
+	AvgRetriesPerFail  float64 `dynamorm:"attr:avgRetriesPerFail" json:"avg_retries_per_fail"`  // Average retries before giving up
+	RetrySuccessRate   float64 `dynamorm:"attr:retrySuccessRate" json:"retry_success_rate"`     // Success rate of retries
+	AvgRetryDelayMs    int64   `dynamorm:"attr:avgRetryDelayMs" json:"avg_retry_delay_ms"`      // Average delay between retries
 	RetryBackoffFactor float64 `dynamorm:"attr:retryBackoffFactor" json:"retry_backoff_factor"` // Exponential backoff factor
 
 	// Circuit breaker state
 	CircuitBreakerState string     `dynamorm:"attr:circuitBreakerState" json:"circuit_breaker_state"` // closed, open, half_open
-	StateChangeTime     *time.Time `dynamorm:"attr:stateChangeTime" json:"state_change_time"`          // When state last changed
-	NextRetryTime       *time.Time `dynamorm:"attr:nextRetryTime" json:"next_retry_time"`              // When to try again if open
+	StateChangeTime     *time.Time `dynamorm:"attr:stateChangeTime" json:"state_change_time"`         // When state last changed
+	NextRetryTime       *time.Time `dynamorm:"attr:nextRetryTime" json:"next_retry_time"`             // When to try again if open
 
 	// Health scoring
-	HealthScore      float64   `dynamorm:"attr:healthScore" json:"health_score"`            // Overall route health (0.0-1.0)
+	HealthScore      float64   `dynamorm:"attr:healthScore" json:"health_score"`           // Overall route health (0.0-1.0)
 	ReliabilityScore float64   `dynamorm:"attr:reliabilityScore" json:"reliability_score"` // Reliability metric
 	PerformanceScore float64   `dynamorm:"attr:performanceScore" json:"performance_score"` // Speed metric
 	StabilityScore   float64   `dynamorm:"attr:stabilityScore" json:"stability_score"`     // Consistency metric
@@ -97,17 +97,17 @@ type FederationRouteMetrics struct {
 	HealthTrend      string    `dynamorm:"attr:healthTrend" json:"health_trend"`           // improving, stable, degrading
 
 	// Load balancing metrics
-	CurrentWeight      float64    `dynamorm:"attr:currentWeight" json:"current_weight"`         // Current load balancing weight
-	OptimalWeight      float64    `dynamorm:"attr:optimalWeight" json:"optimal_weight"`         // Calculated optimal weight
-	WeightAdjustments  int        `dynamorm:"attr:weightAdjustments" json:"weight_adjustments"` // Number of weight changes
-	LastWeightChange   *time.Time `dynamorm:"attr:lastWeightChange" json:"last_weight_change"`  // When weight was last adjusted
+	CurrentWeight      float64    `dynamorm:"attr:currentWeight" json:"current_weight"`            // Current load balancing weight
+	OptimalWeight      float64    `dynamorm:"attr:optimalWeight" json:"optimal_weight"`            // Calculated optimal weight
+	WeightAdjustments  int        `dynamorm:"attr:weightAdjustments" json:"weight_adjustments"`    // Number of weight changes
+	LastWeightChange   *time.Time `dynamorm:"attr:lastWeightChange" json:"last_weight_change"`     // When weight was last adjusted
 	LoadBalancingScore float64    `dynamorm:"attr:loadBalancingScore" json:"load_balancing_score"` // Effectiveness score
 
 	// Geographic and network info
 	DataCenter     string `dynamorm:"attr:dataCenter" json:"data_center"`         // Which DC the route goes through
 	NetworkPath    string `dynamorm:"attr:networkPath" json:"network_path"`       // Network routing information
 	IPAddress      string `dynamorm:"attr:ipAddress" json:"ip_address"`           // Resolved IP address
-	ASN            string `dynamorm:"attr:asn" json:"asn"`                         // Autonomous System Number
+	ASN            string `dynamorm:"attr:asn" json:"asn"`                        // Autonomous System Number
 	GeographicZone string `dynamorm:"attr:geographicZone" json:"geographic_zone"` // Geographic region
 	CDNProvider    string `dynamorm:"attr:cdnProvider" json:"cdn_provider"`       // CDN if applicable
 
@@ -119,8 +119,8 @@ type FederationRouteMetrics struct {
 	// Timestamps
 	CreatedAt   time.Time `dynamorm:"attr:createdAt" json:"created_at"`
 	UpdatedAt   time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	FirstUsed   time.Time `dynamorm:"attr:firstUsed" json:"first_used"`    // When route was first used
-	LastUsed    time.Time `dynamorm:"attr:lastUsed" json:"last_used"`      // When route was last used
+	FirstUsed   time.Time `dynamorm:"attr:firstUsed" json:"first_used"`     // When route was first used
+	LastUsed    time.Time `dynamorm:"attr:lastUsed" json:"last_used"`       // When route was last used
 	LastSuccess time.Time `dynamorm:"attr:lastSuccess" json:"last_success"` // When route last succeeded
 
 	// TTL for automatic cleanup (90 days for route metrics)
@@ -563,13 +563,15 @@ func (FederationRouteMetrics) TableName() string {
 
 // FederationRouteAggregation represents aggregated route metrics across multiple time periods
 type FederationRouteAggregation struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary keys - route aggregation uses FED_ROUTE_AGG#{period}#{route_id} pattern
 	PK string `dynamorm:"pk" json:"pk"`
 	SK string `dynamorm:"sk" json:"sk"`
 
 	// GSI1 for route comparison queries - FED_ROUTE_COMPARE#{period}, SCORE#{health_score}#{route_id}
-	GSI1PK string `dynamorm:"index:route-comparison-index,pk" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:route-comparison-index,sk" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk"`
 
 	// Aggregation metadata
 	RouteID           string    `json:"route_id"`

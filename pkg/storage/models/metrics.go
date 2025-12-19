@@ -18,12 +18,12 @@ type Metrics struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Service queries
-	GSI1PK string `dynamorm:"index:service-index,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "METRICS_SVC#{service}"
-	GSI1SK string `dynamorm:"index:service-index,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{type}#{id}"
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "METRICS_SVC#{service}"
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{type}#{id}"
 
 	// GSI2 - Aggregation queries
-	GSI2PK string `dynamorm:"index:aggregate-index,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "METRICS_AGG#{period}#{type}"
-	GSI2SK string `dynamorm:"index:aggregate-index,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "METRICS_AGG#{period}#{type}"
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
 	// Core metrics data
 	ID        string    `dynamorm:"attr:id" json:"id"`
@@ -58,7 +58,7 @@ type Metrics struct {
 	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (30 days for raw, 90 days for aggregated)
-	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
 }
 
 // AggregatedMetrics represents pre-computed metrics aggregations
@@ -96,7 +96,7 @@ type AggregatedMetrics struct {
 	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 
 	// TTL (longer for aggregated data)
-	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"`
+	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"`
 }
 
 // DimensionStats represents statistics for a specific dimension value
@@ -478,25 +478,27 @@ func (mb *MetricsBuilder) Build() *Metrics {
 // MetricRecord represents the new reporting table schema with extensive indexing
 // Following Architecture Decisions pattern: METRICS#<type>#<timestamp>
 type MetricRecord struct {
+	_ struct{} `dynamorm:"naming:camelCase"`
+
 	// Primary key pattern: METRICS#<type>#<bucket>
 	PK string `dynamorm:"pk" json:"pk"`
 	SK string `dynamorm:"sk" json:"sk"` // timestamp ISO format
 
 	// GSI1: Service-based queries - SERVICE#<name> / TIMESTAMP#<iso>
-	GSI1PK string `dynamorm:"index:service-index,pk" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:service-index,sk" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk"`
 
 	// GSI2: Metric type queries - METRIC_TYPE#<type> / TIMESTAMP#<iso>
-	GSI2PK string `dynamorm:"index:metric-type-index,pk" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:metric-type-index,sk" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk"`
 
 	// GSI3: Date-based queries - DATE#<yyyy-mm-dd> / SERVICE#<name>#<timestamp>
-	GSI3PK string `dynamorm:"index:date-index,pk" json:"gsi3_pk"`
-	GSI3SK string `dynamorm:"index:date-index,sk" json:"gsi3_sk"`
+	GSI3PK string `dynamorm:"index:gsi3,pk" json:"gsi3_pk"`
+	GSI3SK string `dynamorm:"index:gsi3,sk" json:"gsi3_sk"`
 
 	// GSI4: Aggregation queries - AGGREGATION#<level> / TIMESTAMP#<iso>
-	GSI4PK string `dynamorm:"index:aggregation-index,pk" json:"gsi4_pk"`
-	GSI4SK string `dynamorm:"index:aggregation-index,sk" json:"gsi4_sk"`
+	GSI4PK string `dynamorm:"index:gsi4,pk" json:"gsi4_pk"`
+	GSI4SK string `dynamorm:"index:gsi4,sk" json:"gsi4_sk"`
 
 	// Core fields
 	MetricType  string    `json:"metric_type"`

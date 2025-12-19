@@ -18,12 +18,12 @@ type OAuthAuthSession struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // SESSION#sessionID
 
 	// GSI1 - User sessions lookup (optional - for authenticated users)
-	GSI1PK string `dynamorm:"index:user-sessions-index,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // USER_OAUTH#username
-	GSI1SK string `dynamorm:"index:user-sessions-index,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // created_at#sessionID
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // USER_OAUTH#username
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // created_at#sessionID
 
 	// GSI2 - State lookup for OAuth flow
-	GSI2PK string `dynamorm:"index:state-index,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // OAUTH_STATE#state
-	GSI2SK string `dynamorm:"index:state-index,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // sessionID
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // OAUTH_STATE#state
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // sessionID
 
 	// Core session data
 	SessionID string `dynamorm:"attr:sessionID" json:"session_id"`
@@ -33,12 +33,12 @@ type OAuthAuthSession struct {
 	ClientID            string   `dynamorm:"attr:clientID" json:"client_id"`
 	RedirectURI         string   `dynamorm:"attr:redirectURI" json:"redirect_uri"`
 	Scopes              []string `dynamorm:"attr:scopes" json:"scopes,omitempty"`
-	CodeChallenge       string   `dynamorm:"attr:codeChallenge" json:"code_challenge,omitempty"`               // PKCE
+	CodeChallenge       string   `dynamorm:"attr:codeChallenge" json:"code_challenge,omitempty"`              // PKCE
 	CodeChallengeMethod string   `dynamorm:"attr:codeChallengeMethod" json:"code_challenge_method,omitempty"` // PKCE method
 
 	// User data (populated after login)
-	Username     string     `dynamorm:"attr:username" json:"username,omitempty"`      // Set after user authenticates
-	IsAuthorized bool       `dynamorm:"attr:isAuthorized" json:"is_authorized"`       // User has authorized the app
+	Username     string     `dynamorm:"attr:username" json:"username,omitempty"`          // Set after user authenticates
+	IsAuthorized bool       `dynamorm:"attr:isAuthorized" json:"is_authorized"`           // User has authorized the app
 	AuthorizedAt *time.Time `dynamorm:"attr:authorizedAt" json:"authorized_at,omitempty"` // When user authorized
 
 	// Security and tracking
@@ -47,12 +47,12 @@ type OAuthAuthSession struct {
 	DeviceID  string `dynamorm:"attr:deviceID" json:"device_id,omitempty"`
 
 	// Session flow tracking
-	FlowStep  string                 `dynamorm:"attr:flowStep" json:"flow_step"`            // login, consent, authorized, error
-	FlowData  map[string]interface{} `dynamorm:"attr:flowData" json:"flow_data,omitempty"`  // Additional flow context
+	FlowStep  string                 `dynamorm:"attr:flowStep" json:"flow_step"`             // login, consent, authorized, error
+	FlowData  map[string]interface{} `dynamorm:"attr:flowData" json:"flow_data,omitempty"`   // Additional flow context
 	ReturnURL string                 `dynamorm:"attr:returnURL" json:"return_url,omitempty"` // URL to return to after login
 
 	// Security measures
-	CSRFToken    string `dynamorm:"attr:csrfToken" json:"csrf_token"`                // CSRF protection
+	CSRFToken    string `dynamorm:"attr:csrfToken" json:"csrf_token"`                 // CSRF protection
 	SessionNonce string `dynamorm:"attr:sessionNonce" json:"session_nonce,omitempty"` // Additional entropy
 	IsSecure     bool   `dynamorm:"attr:isSecure" json:"is_secure"`                   // Created over HTTPS
 
@@ -62,7 +62,7 @@ type OAuthAuthSession struct {
 	LastUsedAt time.Time `dynamorm:"attr:lastUsedAt" json:"last_used_at"`
 
 	// TTL for automatic cleanup (OAuth sessions are short-lived)
-	ExpiresAt int64 `dynamorm:"ttl,attr:expiresAt" json:"expires_at"` // Unix timestamp for DynamoDB TTL
+	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp for DynamoDB TTL
 
 	// Session validation
 	Version int `dynamorm:"attr:version" json:"version"` // For optimistic locking

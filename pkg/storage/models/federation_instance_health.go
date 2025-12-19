@@ -16,22 +16,22 @@ type FederationInstanceHealthTracking struct {
 	SK string `dynamorm:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for time-based queries - HEALTH_CHECK#{date}, TS#{timestamp}
-	GSI1PK string `dynamorm:"index:GSI1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:GSI1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for unhealthy instances - UNHEALTHY (if unhealthy), SCORE#{health_score}#{domain}
-	GSI2PK string `dynamorm:"index:GSI2,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:GSI2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Instance identification
 	Domain string `dynamorm:"attr:domain" json:"domain"` // Remote instance domain
 
 	// Health metrics
-	HealthScore      float64 `dynamorm:"attr:healthScore" json:"health_score"`      // 0.0 to 1.0 (1.0 = perfect health)
-	ResponseTimeP95  int64   `dynamorm:"attr:responseTimeP95" json:"response_time_p95"` // 95th percentile response time in ms
-	SuccessRate      float64 `dynamorm:"attr:successRate" json:"success_rate"`         // 0.0 to 1.0 (1.0 = 100% success)
+	HealthScore      float64 `dynamorm:"attr:healthScore" json:"health_score"`           // 0.0 to 1.0 (1.0 = perfect health)
+	ResponseTimeP95  int64   `dynamorm:"attr:responseTimeP95" json:"response_time_p95"`  // 95th percentile response time in ms
+	SuccessRate      float64 `dynamorm:"attr:successRate" json:"success_rate"`           // 0.0 to 1.0 (1.0 = 100% success)
 	ConsecutiveFails int     `dynamorm:"attr:consecutiveFails" json:"consecutive_fails"` // Number of consecutive failed requests
-	IsHealthy        bool    `dynamorm:"attr:isHealthy" json:"is_healthy"`             // Overall health status
+	IsHealthy        bool    `dynamorm:"attr:isHealthy" json:"is_healthy"`               // Overall health status
 
 	// Performance metrics
 	AverageResponseTime int64 `dynamorm:"attr:averageResponseTime" json:"average_response_time"` // Average response time in ms
@@ -41,7 +41,7 @@ type FederationInstanceHealthTracking struct {
 	// Capacity metrics
 	RateLimitRemaining int    `dynamorm:"attr:rateLimitRemaining" json:"rate_limit_remaining"` // Remaining rate limit capacity
 	RateLimitReset     int64  `dynamorm:"attr:rateLimitReset" json:"rate_limit_reset"`         // Unix timestamp when rate limit resets
-	BackoffUntil       *int64 `dynamorm:"attr:backoffUntil" json:"backoff_until"`             // Unix timestamp to back off until (if applicable)
+	BackoffUntil       *int64 `dynamorm:"attr:backoffUntil" json:"backoff_until"`              // Unix timestamp to back off until (if applicable)
 
 	// Timestamps
 	LastHealthCheck time.Time `dynamorm:"attr:lastHealthCheck" json:"last_health_check"`

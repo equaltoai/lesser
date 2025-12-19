@@ -268,7 +268,7 @@ func (r *DomainBlockRepository) GetInstanceDomainBlockByID(ctx context.Context, 
 	// Query GSI1 to find the domain block by ID
 	var blocks []models.InstanceDomainBlock
 	err := r.db.WithContext(ctx).Model(&models.InstanceDomainBlock{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", "DOMAIN_BLOCKS").
 		Limit(100). // Need to scan to find by ID
 		All(&blocks)

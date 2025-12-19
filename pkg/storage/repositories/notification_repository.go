@@ -233,7 +233,7 @@ func (r *NotificationRepository) GetNotificationsByType(ctx context.Context, use
 	// Use GSI1 for efficient type-based queries
 	gsi1pk := "NOTIF_TYPE#" + notificationType
 	query := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Index("type-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", gsi1pk).
 		Filter("UserID", "=", userID).
 		OrderBy("gsi1SK", "DESC") // Most recent first
@@ -249,11 +249,10 @@ func (r *NotificationRepository) GetNotificationsByType(ctx context.Context, use
 	var notifications []models.Notification
 	err := query.All(&notifications)
 	if err != nil {
-		// If GSI doesn't exist or query fails, fallback to getting all notifications and filtering
-		// This allows the system to work even if the type-index GSI hasn't been set up yet
-		if strings.Contains(strings.ToLower(err.Error()), "index") || 
-		   strings.Contains(strings.ToLower(err.Error()), "not found") {
-			r.logger.Debug("type-index GSI not available, falling back to user notifications",
+		// If GSI doesn't exist or query fails, fallback to getting all notifications and filtering.
+		if strings.Contains(strings.ToLower(err.Error()), "index") ||
+			strings.Contains(strings.ToLower(err.Error()), "not found") {
+			r.logger.Debug("gsi1 not available, falling back to user notifications",
 				zap.String("user_id", userID),
 				zap.String("type", notificationType))
 			// Fallback to GetUserNotifications and filter by type
@@ -554,7 +553,7 @@ func (r *NotificationRepository) ConsolidateNotifications(ctx context.Context, g
 	var notifications []models.Notification
 	const consolidationLimit = 100
 	err := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Index("group-index").
+		Index("gsi3").
 		Where("gsi3PK", "=", "NOTIF_GROUP#"+groupKey).
 		Limit(consolidationLimit).
 		All(&notifications)

@@ -126,7 +126,7 @@ func (r *TrackingRepository) ListByTable(ctx context.Context, tableName string, 
 	endSK := endTime.Format(time.RFC3339)
 
 	query := r.db.WithContext(ctx).Model(&models.DynamoDBCostRecord{}).
-		Index("table-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("COST_TABLE#%s", tableName)).
 		Where("gsi1SK", ">=", startSK).
 		Where("gsi1SK", "<=", endSK).
@@ -1189,7 +1189,7 @@ func (r *TrackingRepository) GetRelayCostsByURL(ctx context.Context, relayURL st
 	endSK := fmt.Sprintf("TS#%s", endTime.Format(common.CompactTimeFormat))
 
 	query := r.db.WithContext(ctx).Model(&models.RelayCost{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("RELAY_COSTS#%s", relayURL)).
 		Where("gsi1SK", ">=", startSK).
 		Where("gsi1SK", "<=", endSK).
@@ -1282,7 +1282,7 @@ func (r *TrackingRepository) GetRelayCostsByDateRange(ctx context.Context, start
 
 		var dailyCosts []*models.RelayCost
 		query := r.db.WithContext(ctx).Model(&models.RelayCost{}).
-			Index("GSI2").
+			Index("gsi2").
 			Where("gsi2PK", "=", fmt.Sprintf("RELAY_COSTS_DAILY#%s", dateStr)).
 			OrderBy("gsi2SK", "DESC").
 			Limit(dayLimit + 1)
@@ -1384,7 +1384,7 @@ func (r *TrackingRepository) GetRelayMetricsHistory(ctx context.Context, relayUR
 	endSK := fmt.Sprintf("daily#%s", endTime.Format(common.CompactTimeFormat))
 
 	query := r.db.WithContext(ctx).Model(&models.RelayMetrics{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("RELAY_METRICS#%s", relayURL)).
 		Where("gsi1SK", ">=", startSK).
 		Where("gsi1SK", "<=", endSK).

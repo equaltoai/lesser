@@ -14,11 +14,17 @@ type AuthRefreshToken struct {
 	PK string `dynamorm:"pk,attr:PK" json:"-"` // token (the actual token value)
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // TOKEN (constant sort key)
 
-	// GSI keys for querying by user and family
-	UserID      string `dynamorm:"index:user-index,pk,attr:userID" json:"user_id"`                                                 // GSI PK for user-index
-	Family      string `dynamorm:"index:family-index,pk,attr:family" json:"family"`                                                // GSI PK for family-index
-	UserFamily  string `dynamorm:"index:user-family-index,pk,attr:userFamily" json:"user_family"`                                  // GSI PK for user-family queries
-	CreatedAtSK string `dynamorm:"index:user-index,sk,attr:createdAtSK;index:family-index,sk;index:user-family-index,sk" json:"-"` // SK for all GSIs
+	// GSI keys for querying by user, family, and user-family
+	UserID     string `dynamorm:"attr:userID" json:"user_id"`
+	Family     string `dynamorm:"attr:family" json:"family"`
+	UserFamily string `dynamorm:"attr:userFamily" json:"user_family"`
+
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"` // USER#{userID}
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"` // {createdAt}
+	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"-"` // FAMILY#{family}
+	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"-"` // {createdAt}
+	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"-"` // USER_FAMILY#{userID}#{family}
+	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"-"` // {createdAt}
 
 	// Core token data
 	Token      string `dynamorm:"attr:token" json:"token"`             // The actual token value
@@ -50,9 +56,15 @@ func (a *AuthRefreshToken) UpdateKeys() error {
 	a.PK = a.Token
 	a.SK = SKToken
 
-	// Set GSI keys for efficient querying
+	createdAtStr := fmt.Sprintf("%d", a.CreatedAt)
 	a.UserFamily = fmt.Sprintf("%s#%s", a.UserID, a.Family)
-	a.CreatedAtSK = fmt.Sprintf("%d", a.CreatedAt)
+
+	a.GSI1PK = fmt.Sprintf("USER#%s", a.UserID)
+	a.GSI1SK = createdAtStr
+	a.GSI2PK = fmt.Sprintf("FAMILY#%s", a.Family)
+	a.GSI2SK = createdAtStr
+	a.GSI3PK = fmt.Sprintf("USER_FAMILY#%s#%s", a.UserID, a.Family)
+	a.GSI3SK = createdAtStr
 
 	// Set TTL from ExpiresAt if not already set
 	if a.TTL == 0 && a.ExpiresAt > 0 {

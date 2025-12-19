@@ -78,7 +78,7 @@ func (r *OAuthSessionRepository) GetOAuthSessionByState(ctx context.Context, sta
 	var sessions []models.OAuthAuthSession
 
 	err := r.GetDB().WithContext(ctx).Model(&models.OAuthAuthSession{}).
-		Index("state-index").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("OAUTH_STATE#%s", state)).
 		All(&sessions)
 
@@ -134,7 +134,7 @@ func (r *OAuthSessionRepository) GetUserOAuthSessions(ctx context.Context, usern
 	var sessions []models.OAuthAuthSession
 
 	query := r.GetDB().WithContext(ctx).Model(&models.OAuthAuthSession{}).
-		Index("user-sessions-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USER_OAUTH#%s", username))
 
 	if limit > 0 {

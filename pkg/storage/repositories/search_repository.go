@@ -228,7 +228,7 @@ func (r *SearchRepository) searchUsernamePrefix(ctx context.Context, query strin
 	var prefixMatches []models.Actor
 
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Index("username-search-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USERNAME_SEARCH#%s", prefixKey)).
 		Filter("gsi1SK", "BEGINS_WITH", query).
 		Limit(limit + offset).
@@ -257,7 +257,7 @@ func (r *SearchRepository) searchDisplayName(ctx context.Context, query string, 
 	var displayNameMatches []models.Actor
 
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Index("display-name-index").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("NAME_SEARCH#%s", displayNameKey)).
 		Filter("gsi2SK", "BEGINS_WITH", query).
 		Limit(limit).
@@ -669,7 +669,7 @@ func (r *SearchRepository) searchByHashtags(ctx context.Context, hashtags []stri
 		// Use GSI5 to find statuses with this hashtag
 		var statuses []models.Status
 		err := r.db.WithContext(ctx).Model(&models.Status{}).
-			Index("GSI5").
+			Index("gsi5").
 			Where("gsi5PK", "=", fmt.Sprintf("HASHTAG#%s", strings.ToLower(hashtag))).
 			Limit(50). // Limit to prevent excessive results
 			All(&statuses)
@@ -727,7 +727,7 @@ func (r *SearchRepository) searchByContent(ctx context.Context, query string, re
 func (r *SearchRepository) getRecentStatuses(ctx context.Context) []models.Object {
 	var recentStatuses []models.Object
 	err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi2-index").
+		Index("gsi2").
 		Where("gsi2PK", "=", "object#type#Note").
 		Limit(100). // Scan last 100 statuses
 		All(&recentStatuses)
@@ -989,7 +989,7 @@ func (r *SearchRepository) SearchHashtags(ctx context.Context, query string, lim
 	// Search hashtags using GSI
 	var hashtags []models.Hashtag
 	err := r.db.WithContext(ctx).Model(&models.Hashtag{}).
-		Index("name-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", "HASHTAG").
 		Filter("gsi1SK", "BEGINS_WITH", normalizedQuery).
 		Limit(limit).
@@ -1053,7 +1053,7 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 
 	// Build query with proper cursor handling
 	hashtagQuery := r.db.WithContext(ctx).Model(&models.Hashtag{}).
-		Index("hashtag-search-index").
+		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("HASHTAG_SEARCH#%s", normalizedQuery[:2])).
 		Filter("gsi3SK", "BEGINS_WITH", normalizedQuery).
 		OrderBy("gsi3SK", "ASC")
@@ -1564,7 +1564,7 @@ func (r *SearchRepository) SearchStatusesByAuthor(ctx context.Context, authorID 
 	var statuses []models.Object
 
 	err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi4-index").
+		Index("gsi4").
 		Where("gsi4PK", "=", fmt.Sprintf("author#%s", authorID)).
 		Filter("Type", "=", ActivityTypeNote).
 		Limit(limit).

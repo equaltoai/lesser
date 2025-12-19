@@ -81,7 +81,7 @@ func (r *AuditRepository) GetUserAuditLogs(ctx context.Context, username string,
 		return nil, ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityAudit, "user logs")
 	}
 
-	return AuditLogQueryHelper(ctx, r.db, "GSI1", fmt.Sprintf("USER#%s", username), limit, startTime, endTime, "user")
+	return AuditLogQueryHelper(ctx, r.db, "gsi1", fmt.Sprintf("USER#%s", username), limit, startTime, endTime, "user")
 }
 
 // GetIPAuditLogs retrieves audit logs for a specific IP address - SECURITY CRITICAL
@@ -91,7 +91,7 @@ func (r *AuditRepository) GetIPAuditLogs(ctx context.Context, ipAddress string, 
 		return nil, ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityAudit, "IP logs")
 	}
 
-	return AuditLogQueryHelper(ctx, r.db, "GSI2", fmt.Sprintf("IP#%s", ipAddress), limit, startTime, endTime, "IP")
+	return AuditLogQueryHelper(ctx, r.db, "gsi2", fmt.Sprintf("IP#%s", ipAddress), limit, startTime, endTime, "IP")
 }
 
 // GetSessionAuditLogs retrieves audit logs for a specific session - SECURITY CRITICAL
@@ -109,7 +109,7 @@ func (r *AuditRepository) GetSessionAuditLogs(ctx context.Context, sessionID str
 	)
 
 	for {
-		page, err := r.QueryGSIPaginated(ctx, "GSI3", fmt.Sprintf("SESSION#%s", sessionID), BasePaginationOptions{
+		page, err := r.QueryGSIPaginated(ctx, "gsi3", fmt.Sprintf("SESSION#%s", sessionID), BasePaginationOptions{
 			Limit:  sessionLogChunkLimit,
 			Cursor: cursor,
 			Order:  SortOrderAsc,
@@ -148,7 +148,7 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 	var logs []models.AuthAuditLog
 
 	query := r.db.WithContext(ctx).Model(&models.AuthAuditLog{}).
-		Index("GSI4").
+		Index("gsi4").
 		Where("gsi4PK", "=", fmt.Sprintf("SEVERITY#%s", severity))
 
 	// Add time range filter for enhanced security monitoring

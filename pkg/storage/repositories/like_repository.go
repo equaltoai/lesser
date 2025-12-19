@@ -138,7 +138,7 @@ func (r *LikeRepository) GetObjectLikes(ctx context.Context, objectID string, li
 // GetActorLikes retrieves all likes by an actor
 func (r *LikeRepository) GetActorLikes(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Like, string, error) {
 	config := CollectionQueryConfig{
-		IndexName:   "gsi1-index",
+		IndexName:   "gsi1",
 		LogName:     "actor likes",
 		ErrorPrefix: "get actor likes",
 		GSIConfig: &GSIQueryConfig{
@@ -160,7 +160,7 @@ func (r *LikeRepository) GetActorLikes(ctx context.Context, actorID string, limi
 // CountActorLikes returns the total number of likes by an actor
 func (r *LikeRepository) CountActorLikes(ctx context.Context, actorID string) (int64, error) {
 	count, err := r.db.WithContext(ctx).Model(&models.Like{}).
-		Index("gsi1-index").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("actor#%s#likes", actorID)).
 		Count()
 	if err != nil {

@@ -20,11 +20,13 @@ type Model struct {
 	BaseModel
 
 	// Example GSI attributes
-	Type      string `dynamorm:"index:type-index,pk" json:"type"`
-	Timestamp string `dynamorm:"index:type-index,sk" json:"timestamp"`
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// Business data
 	ID          string `json:"id"`
+	Type        string `dynamorm:"attr:type" json:"type"`
+	Timestamp   string `dynamorm:"attr:timestamp" json:"timestamp"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Active      bool   `json:"active"`
@@ -50,6 +52,11 @@ func (r *ModelRepository) Create(_ context.Context, model *Model) error {
 	model.CreatedAt = now
 	model.UpdatedAt = now
 
+	// Set timestamp if not already set
+	if model.Timestamp == "" {
+		model.Timestamp = now.Format(time.RFC3339)
+	}
+
 	// Set primary keys if not already set
 	if err := common.ValidateRequiredParam("PK", model.PK); err != nil {
 		model.PK = fmt.Sprintf("model#%s", model.ID)
@@ -57,6 +64,10 @@ func (r *ModelRepository) Create(_ context.Context, model *Model) error {
 	if err := common.ValidateRequiredParam("SK", model.SK); err != nil {
 		model.SK = fmt.Sprintf("model#%s", model.ID)
 	}
+
+	// Set GSI1 keys for type-based listing
+	model.GSI1PK = fmt.Sprintf("MODEL_TYPE#%s", model.Type)
+	model.GSI1SK = model.Timestamp
 
 	// Create the model using the query builder pattern
 	err := r.GetDB().Model(model).Create()
@@ -96,6 +107,10 @@ func (r *ModelRepository) Update(_ context.Context, model *Model) error {
 		model.SK = fmt.Sprintf("model#%s", model.ID)
 	}
 
+	// Keep GSI1 keys in sync
+	model.GSI1PK = fmt.Sprintf("MODEL_TYPE#%s", model.Type)
+	model.GSI1SK = model.Timestamp
+
 	// Update the model
 	err := r.GetDB().Model(model).Update()
 	if err != nil {
@@ -125,9 +140,9 @@ func (r *ModelRepository) List(_ context.Context, modelType string, limit int) (
 	var models []*Model
 
 	err := r.GetDB().Model(&Model{}).
-		Index("type-index").
-		Where("Type", "=", modelType).
-		OrderBy("Timestamp", "DESC").
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("MODEL_TYPE#%s", modelType)).
+		OrderBy("gsi1SK", "DESC").
 		Limit(limit).
 		All(&models)
 

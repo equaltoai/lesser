@@ -126,7 +126,7 @@ func (r *FederationInstanceRepository) ListInstancesByStatusWithCursor(ctx conte
 	})
 
 	query := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
-		Index("GSI1").
+		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("STATUS#%s", status))
 
 	// Add cursor for pagination
@@ -196,7 +196,7 @@ func (r *FederationInstanceRepository) GetInstancesByTierWithCursor(ctx context.
 	})
 
 	query := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
-		Index("GSI2").
+		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("TIER#%s", tier)).
 		OrderBy("gsi2SK", "ASC") // Sort by usage ascending (least used first)
 
