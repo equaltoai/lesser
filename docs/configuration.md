@@ -72,30 +72,30 @@ LOG_LEVEL=INFO  # DEBUG, INFO, WARN, ERROR
 
 Located in `infra/cdk/config/`:
 
-#### dev.yaml
+#### development.yaml
 ```yaml
 environment: development
-appName: lesser-dev
-domain: dev.lesser.local
+appName: lesser
+domain: dev.lesser.host
 memorySize: 512
 timeout: 30
 logLevel: DEBUG
 features:
   enableMultiTenant: false
   enableRateLimiting: true
-  enableMonitoring: false
+  enableMonitoring: true
   enableDeletionProtection: false
 aws:
   region: us-east-1
   architecture: arm64
-  runtime: provided.al2
+  runtime: provided.al2023
 ```
 
 #### staging.yaml
 ```yaml
 environment: staging
-appName: lesser-staging
-domain: staging.lesser.app
+appName: lesser
+domain: staging.lesser.host
 memorySize: 1024
 timeout: 30
 logLevel: INFO
@@ -104,38 +104,36 @@ features:
   enableRateLimiting: true
   enableMonitoring: true
   enableDeletionProtection: true
-monitoring:
-  detailedMetrics: true
-  errorRateThreshold: 0.05
-cost:
-  optimized: true
-  reservedConcurrency: 10
+aws:
+  region: us-east-1
+  architecture: arm64
+  runtime: provided.al2023
 ```
 
-#### prod.yaml
+#### production.yaml
 ```yaml
 environment: production
-appName: lesser-prod
-domain: lesser.app
+appName: lesser
+domain: live.lesser.host
 memorySize: 3008
 timeout: 30
 logLevel: INFO
 features:
-  enableMultiTenant: true
+  enableMultiTenant: false
   enableRateLimiting: true
   enableMonitoring: true
   enableDeletionProtection: true
   enablePointInTimeRecovery: true
-monitoring:
-  detailedMetrics: true
-  businessMetrics: true
-  realTimeStreaming: true
-  errorRateThreshold: 0.01
-  latencyP99Threshold: 2000
-cost:
-  optimized: true
-  reservedConcurrency: 50
+aws:
+  region: us-east-1
+  architecture: arm64
+  runtime: provided.al2023
 ```
+
+For the full set of keys (DNS, monitoring thresholds, media/CloudFront, ML/Bedrock), see:
+- `infra/cdk/config/development.yaml`
+- `infra/cdk/config/staging.yaml`
+- `infra/cdk/config/production.yaml`
 
 ## CDK Context Variables
 

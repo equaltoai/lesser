@@ -6,7 +6,7 @@ This directory contains the AWS CDK (Cloud Development Kit) code for deploying t
 
 The CDK implementation creates the following AWS resources:
 
-- **23 Lambda Functions**: Core application logic for API, federation, and processing
+- **Lambda Functions**: Core application logic for API, federation, and processing
 - **DynamoDB Table**: Single table design with 8 GSIs and DynamoDB Streams enabled
 - **S3 Bucket**: Media storage with CloudFront CDN
 - **API Gateway**: HTTP API with custom domain support
@@ -18,7 +18,7 @@ The CDK implementation creates the following AWS resources:
 ## Prerequisites
 
 - AWS CDK v2 installed (`npm install -g aws-cdk`)
-- Go 1.24 or later
+- Go 1.25 or later
 - AWS credentials configured (`aws configure`)
 - Built Lambda function binaries in `../../bin/` directory
 
@@ -65,7 +65,7 @@ make build-lambdas
 
 # Verify all binaries exist
 ls -la bin/
-# Should see all 23 Lambda function binaries
+# Should see Lambda zip artifacts in bin/
 ```
 
 ### Environment-Specific Deployments
@@ -293,7 +293,7 @@ Each environment creates a dedicated CloudWatch dashboard with:
 #### Lambda Function Logs (per function)
 - **Path**: `/aws/lambda/lesser-{environment}-{function-name}`
 - **Retention**: 7 days (dev), 30 days (prod)
-- **Functions**: All 23 Lambda functions have dedicated log groups
+- **Functions**: Each deployed Lambda function has a dedicated log group
 
 ### Alert Configuration
 

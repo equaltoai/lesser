@@ -108,16 +108,13 @@ curl https://your-domain.com/health
 #### Infrastructure Rollback
 
 ```bash
-# Rollback Pulumi stack
-cd infra
-pulumi rollback
+cd infra/cdk
 
-# If rollback fails, restore from state backup
-pulumi stack import --file backup-$(date -d '1 day ago' +%Y%m%d).json
+# Review pending changes for your environment
+cdk diff --all --context environment=production
 
-# Force redeploy if needed
-pulumi refresh
-pulumi up --yes
+# Redeploy infrastructure (typically after checking out a known-good revision)
+cdk deploy --all --context environment=production --require-approval broadening
 ```
 
 ## Monitoring & Alerting
@@ -470,7 +467,7 @@ aws apigatewayv2 update-stage --api-id YOUR_API_ID --stage-name prod --throttle 
 # Update security patches
 go get -u all
 make build-lambdas
-pulumi up --yes
+cd infra/cdk && cdk deploy --all --context environment=production --require-approval broadening
 ```
 
 ## Backup & Recovery
@@ -512,12 +509,12 @@ aws dynamodb restore-table-from-backup --target-table-name lesser-production-mai
 # 2. Restore media files
 aws s3 sync s3://lesser-backup-media/20241225 s3://lesser-production-media-restored
 
-# 3. Update Pulumi configuration to use restored resources
-pulumi config set lesser:dynamoTable lesser-production-main-restored
-pulumi config set lesser:s3Bucket lesser-production-media-restored
+# 3. Update CDK configuration to use restored resources (if applicable)
+#    (e.g., update `infra/cdk/config/production.yaml` and/or deploy-time context overrides)
 
 # 4. Redeploy infrastructure
-pulumi up --yes
+cd infra/cdk
+cdk deploy --all --context environment=production --require-approval broadening
 
 # 5. Update DNS to point to recovered instance
 aws route53 change-resource-record-sets --hosted-zone-id Z1234567890 --change-batch file://recovery-dns-change.json

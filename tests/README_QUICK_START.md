@@ -85,17 +85,17 @@ cd tests
 # client_id = os.getenv('LESSER_CLIENT_ID')
 # client_secret = os.getenv('LESSER_CLIENT_SECRET')
 
-python integration/comprehensive_api_test.py
+python api/comprehensive_api_test.py
 ```
 
 2. **Federation Tests** (no auth needed):
 ```bash
-python integration/federation_validation_test.py
+python federation/test_federation_validation.py
 ```
 
 3. **Performance Benchmark**:
 ```bash
-python integration/performance_benchmark.py
+python load/test_api_performance.py
 ```
 
 4. **Load Test** (requires K6):

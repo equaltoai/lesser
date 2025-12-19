@@ -90,7 +90,7 @@ deployment_patterns:
     
     build_all:
       command: "make build-lambdas"
-      description: "Build all 23 Lambda functions"
+      description: "Build all Lambda functions"
       parallel: true
       architecture: "GOOS=linux GOARCH=arm64"
       
@@ -224,7 +224,7 @@ common_issues:
       - "Missing dependencies"
       - "Incorrect architecture"
     solutions:
-      - "Ensure Go 1.24+"
+      - "Ensure Go 1.25+"
       - "Run 'go mod download'"
       - "Set GOOS=linux GOARCH=arm64"
       

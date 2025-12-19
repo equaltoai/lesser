@@ -45,7 +45,7 @@ Tests all Mastodon API endpoints including:
 
 **Usage:**
 ```bash
-python3 tests/integration/comprehensive_api_test.py https://your-instance.com --token YOUR_TOKEN
+python3 tests/api/comprehensive_api_test.py https://your-instance.com --token YOUR_TOKEN
 ```
 
 ### 2. Federation Validation (`federation_validation_test.py`)
@@ -60,7 +60,7 @@ Validates ActivityPub compliance:
 
 **Usage:**
 ```bash
-python3 tests/integration/federation_validation_test.py https://your-instance.com
+python3 tests/federation/test_federation_validation.py https://your-instance.com
 ```
 
 ### 3. Load Testing (`lesser_load_test.js`)

@@ -359,8 +359,8 @@ func (s *LesserApiStack) createMediaInfrastructure(domain string) {
 	// Grant read access to the OAI directly on the bucket
 	s.MediaBucket.GrantRead(oai, jsii.String("*"))
 
-	// Enhanced CORS configuration matching Pulumi
-	s.MediaBucket.AddCorsRule(&awss3.CorsRule{
+		// Enhanced CORS configuration for media uploads and reads
+		s.MediaBucket.AddCorsRule(&awss3.CorsRule{
 		AllowedMethods: &[]awss3.HttpMethods{
 			awss3.HttpMethods_GET,
 			awss3.HttpMethods_PUT,
@@ -728,17 +728,17 @@ func (s *LesserApiStack) setupMonitoring() {
 	// Implementation will use monitoring_stack.go
 }
 
-func (s *LesserApiStack) setupSecurity() {
-	// Enhanced security setup (Phase 6.7) - comprehensive IAM policies are
-	// now integrated into Lambda functions via security constructs
-	// All policies match Pulumi configuration exactly:
-	// - DynamoDB: Full table + GSI + streams access
-	// - S3: GetObject, PutObject, DeleteObject, PutObjectAcl
-	// - SQS: Full queue operations for federation and push notifications
-	// - Bedrock: InvokeModel for amazon.titan-embed-text-v1
-	// - KMS: Encrypt/Decrypt with SharedStack key (alias/lesser-encryption)
-	// - Comprehend: AI text analysis capabilities
-}
+	func (s *LesserApiStack) setupSecurity() {
+		// Enhanced security setup (Phase 6.7) - comprehensive IAM policies are
+		// now integrated into Lambda functions via security constructs
+		// Policies should remain aligned with required service access:
+		// - DynamoDB: Full table + GSI + streams access
+		// - S3: GetObject, PutObject, DeleteObject, PutObjectAcl
+		// - SQS: Full queue operations for federation and push notifications
+		// - Bedrock: InvokeModel for amazon.titan-embed-text-v1
+		// - KMS: Encrypt/Decrypt with SharedStack key (alias/lesser-encryption)
+		// - Comprehend: AI text analysis capabilities
+	}
 
 func (s *LesserApiStack) createOutputs() {
 	awscdk.NewCfnOutput(s.Stack, jsii.String("TableName"), &awscdk.CfnOutputProps{
@@ -782,23 +782,23 @@ func (s *LesserApiStack) createOutputs() {
 	})
 }
 
-func loadEnvironmentConfig(environment string) map[string]interface{} {
-	// Configuration from Pulumi legacy - uses external domain config
-	// These will be overridden by CDK context or environment variables
-	config := map[string]interface{}{
-		"logLevel":   "INFO",
-		"memorySize": 3008.0, // ARM64 Lambda optimized (from Pulumi line 650)
-		"timeout":    30.0,
-		"features": map[string]interface{}{
-			"enableMonitoring": true,
-		},
-	}
+	func loadEnvironmentConfig(environment string) map[string]interface{} {
+		// Default configuration used when environment YAML config isn't loaded.
+		// Prefer `infra/cdk/config/*.yaml` for canonical environment settings.
+		config := map[string]interface{}{
+			"logLevel":   "INFO",
+			"memorySize": 3008.0, // ARM64 Lambda optimized default
+			"timeout":    30.0,
+			"features": map[string]interface{}{
+				"enableMonitoring": true,
+			},
+		}
 
-	// Environment-specific overrides (matching Pulumi behavior)
-	switch environment {
-	case "development":
-		config["logLevel"] = "DEBUG"
-		config["memorySize"] = 1024.0
+		// Environment-specific overrides
+		switch environment {
+		case "development":
+			config["logLevel"] = "DEBUG"
+			config["memorySize"] = 1024.0
 	case "staging":
 		config["memorySize"] = 1024.0
 	case "production":

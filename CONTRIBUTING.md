@@ -55,7 +55,7 @@ What you expected to happen.
 - OS: [e.g. Ubuntu 22.04]
 - Go version: [e.g. 1.21]
 - AWS Region: [e.g. us-east-1]
-- Deployment method: [e.g. Pulumi]
+- Deployment method: [e.g. AWS CDK]
 
 **Additional context**
 Any other relevant information.
@@ -84,9 +84,9 @@ Unsure where to begin? Look for these labels:
 
 ```bash
 # Required
-- Go 1.21 or higher
+- Go 1.25 or higher
 - AWS CLI configured
-- Pulumi CLI
+- AWS CDK v2 (npm install -g aws-cdk)
 - Docker (for local DynamoDB)
 - Make
 
@@ -106,19 +106,15 @@ Unsure where to begin? Look for these labels:
 
 2. **Install dependencies**
    ```bash
-   make deps
+   go mod download
    ```
 
 3. **Set up local environment**
    ```bash
-   # Copy example configuration
-   cp .env.example .env
-   
-   # Start local DynamoDB
-   make local-db
-   
-   # Run migrations
-   make migrate-local
+   make dev-init
+
+   # Optional: start local DynamoDB (only if you need persistence)
+   make local-dynamodb
    ```
 
 4. **Run tests**
@@ -135,15 +131,13 @@ Unsure where to begin? Look for these labels:
 
 ```
 lesser/
-├── cmd/           # Lambda function entry points
-├── pkg/           # Shared packages
-│   ├── activitypub/   # ActivityPub implementation
-│   ├── auth/          # Authentication
-│   ├── storage/       # Storage interfaces
-│   └── ...
-├── internal/      # Internal packages
-├── infra/         # Infrastructure as Code
-└── test/          # Integration tests
+├── cmd/              # Lambda handlers / entry points
+├── pkg/              # Shared domain + infrastructure logic
+├── graph/            # GraphQL schema and resolvers
+├── infra/cdk/        # AWS CDK stacks/constructs/config
+├── scripts/          # Dev + maintenance tooling
+├── docs/             # Architecture + runbooks + guides
+└── tests/            # API/federation/load/system tests
 ```
 
 ## Code Style Guidelines

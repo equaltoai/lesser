@@ -9,7 +9,7 @@ Lesser is a Mastodon-compatible federated social media platform that runs entire
 ## Key Features
 
 - **Full ActivityPub Support**: Complete federation with Mastodon and other ActivityPub servers
-- **Serverless Architecture**: 23 Lambda functions handling all operations
+- **Serverless Architecture**: Dozens of Lambda functions for API + background processing
 - **Cost Optimization**: Built-in cost tracking and budget controls for sustainable operation
 - **Multi-Tenant Support**: Run multiple instances from a single deployment
 - **GraphQL API**: Modern API with 60+ operations alongside Mastodon REST compatibility
@@ -34,7 +34,7 @@ Lesser uses AWS CDK with the Lift framework for infrastructure:
 
 - AWS Account with credentials configured (`aws configure`)
 - AWS CDK v2 installed (`npm install -g aws-cdk`)
-- Go 1.24 or later
+- Go 1.25 or later
 - Make installed for build automation
 
 ### Basic Deployment
@@ -97,9 +97,9 @@ lesser/
 
 Environment-specific settings are in `infra/cdk/config/`:
 
-- **dev.yaml**: Development environment (512MB RAM, DEBUG logging)
+- **development.yaml**: Development environment (512MB RAM, DEBUG logging)
 - **staging.yaml**: Staging environment (1GB RAM, INFO logging)
-- **prod.yaml**: Production environment (3GB RAM, full monitoring)
+- **production.yaml**: Production environment (3GB RAM, full monitoring)
 
 ### Environment Variables
 

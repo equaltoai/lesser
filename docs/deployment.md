@@ -7,7 +7,7 @@ This guide covers deploying Lesser to AWS using CDK.
 ### Required Tools
 - AWS CLI configured with credentials
 - AWS CDK v2: `npm install -g aws-cdk`
-- Go 1.24+
+- Go 1.25+
 - Make
 
 ### AWS Account Setup
@@ -61,11 +61,11 @@ aws acm request-certificate \
 
 ### 2. Configure Production Settings
 
-Review and adjust `infra/cdk/config/prod.yaml`:
+Review and adjust `infra/cdk/config/production.yaml`:
 
 ```yaml
 environment: production
-appName: lesser-prod
+appName: lesser
 domain: yourdomain.com
 memorySize: 3008
 timeout: 30

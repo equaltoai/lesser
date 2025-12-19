@@ -187,11 +187,10 @@ Thumbs.db
 .aws/
 .aws-sam/
 
-# Terraform/Pulumi
+# Terraform
 *.tfstate
 *.tfstate.*
 .terraform/
-Pulumi.*.yaml
 
 # Test outputs
 *.log

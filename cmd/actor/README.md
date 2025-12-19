@@ -114,7 +114,7 @@ All error responses follow the common error format:
 
 ## Deployment
 
-This function is designed to be deployed as an AWS Lambda function behind API Gateway. The Pulumi infrastructure code will:
+This function is designed to be deployed as an AWS Lambda function behind API Gateway. The AWS CDK infrastructure (`infra/cdk`) will:
 
 1. Create the Lambda function
 2. Configure API Gateway routes

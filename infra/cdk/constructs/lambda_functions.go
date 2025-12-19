@@ -88,7 +88,7 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		domainValue = *domainPtr
 	}
 
-	// Common environment variables matching Pulumi config (lines 620-641)
+	// Common environment variables shared across functions
 	commonEnv := &map[string]*string{
 		"ENVIRONMENT":                 jsii.String(props.Environment),
 		"DYNAMO_TABLE_NAME":           props.Table.TableName(),
@@ -185,10 +185,10 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	
 	// All other functions use BasicRole
 
-	// Create federation functions (Pulumi lines 668-691)
+	// Federation functions
 	functions.WebfingerFunction = createFunction(stack, "webfinger", props.Environment, &commonProps, "../../bin/webfinger.zip", logRetention, props.BasicRole)
 
-	// Create stream processors with higher memory and longer timeout (lines 700-792)
+	// Stream processors with higher memory and longer timeout
 	streamProps := commonProps
 	streamProps.MemorySize = jsii.Number(1024)
 	streamProps.Timeout = awscdk.Duration_Minutes(jsii.Number(5))
@@ -207,12 +207,12 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	mlTrainingProps.Timeout = awscdk.Duration_Minutes(jsii.Number(15)) // Longer timeout for Bedrock polling
 	functions.MLTrainingProcessor = createFunction(stack, "ml-training-processor", props.Environment, &mlTrainingProps, "../../bin/ml-training-processor.zip", logRetention, props.BasicRole)
 
-	// Create WebSocket functions (Pulumi lines 945-954)
+	// WebSocket functions
 	// Both streaming lambdas read the JWT secret from Secrets Manager, so they need the encryption role for KMS decrypt.
 	functions.StreamingFunction = createFunction(stack, "streaming", props.Environment, &commonProps, "../../bin/streaming.zip", logRetention, props.EncryptionRole)
 	functions.StreamRouterFunction = createFunction(stack, "stream-router", props.Environment, &commonProps, "../../bin/stream-router.zip", logRetention, props.EncryptionRole)
 
-	// Create specialized processors matching Pulumi
+	// Specialized processors
 	functions.AIProcessorFunction = createFunction(stack, "ai-processor", props.Environment, &streamProps, "../../bin/ai-processor.zip", logRetention, props.BasicRole)
 	functions.SearchIndexerFunction = createFunction(stack, "status-indexer", props.Environment, &commonProps, "../../bin/status-indexer.zip", logRetention, props.BasicRole)
 	functions.MediaProcessorFunction = createFunction(stack, "media-processor", props.Environment, &commonProps, "../../bin/media-processor.zip", logRetention, props.BasicRole)
