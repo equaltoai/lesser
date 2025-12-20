@@ -13,6 +13,18 @@ This spec defines the automated checks and minimal proof suite required to keep 
 This spec depends on:
 - Specs 01–06 (inventory exists; CDK wiring and monitoring are aligned)
 
+This spec is written to be directly actionable by PAI: it defines canonical inputs, required artifacts, and operator-run verification commands.
+
+## Canonical Inputs (Source of Truth)
+PAI must treat these as canonical, in this priority order:
+1. **Product set:** `Makefile` `LAMBDAS`
+2. **Inventory:** `infra/cdk/inventory/lambdas.go`
+3. **CDK naming and routing:** Specs 02–04
+4. **Monitoring coverage:** Spec 06 implementation in `infra/cdk/stacks/monitoring_stack.go`
+
+## Execution Constraints
+PAI must not execute commands, run tests, or deploy/synth infrastructure. PAI may add/modify code, tests, and scripts, but all verification steps are run by the operator (Codex CLI) outside PAI.
+
 ## Goals
 - Prevent regressions where a Lambda exists in one place but not another.
 - Provide a lightweight, repeatable “proof” that:
@@ -89,7 +101,14 @@ Add a lightweight doc drift check that fails on:
   - CDK can synth without drift
 - Drift check failures are actionable (print missing/extra items).
 
-## Open Questions
-- Should `cdk synth` be a required check in CI? (Toolchain availability may vary.)
-- What is the minimal “known object” fixture for `/objects/<id>` smoke tests in non-prod?
+## Operator Verification (Run Outside PAI)
+Recommended local/CI sequence (adjust for environment/tooling availability):
+- `make verify-lambda-set`
+- `make verify-inventory`
+- `make test` (or `go test -short ./...`)
+- `make verify` (once implemented)
+- `cd infra/cdk && cdk synth` (if toolchain is available)
 
+## Open Questions
+1. Should `cdk synth` be a required check in CI? (Toolchain availability may vary.)
+2. What is the minimal “known object” fixture for `/objects/<id>` smoke tests in non-prod?
