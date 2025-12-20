@@ -7,6 +7,10 @@ Lesser’s “all 9’s” work requires eliminating drift between:
 - CDK (what is deployed and wired)
 - monitoring (what is observed)
 
+A lightweight verifier (`scripts/verify_lambda_set.sh`) checks Makefile `LAMBDAS` against `cmd/*` and any built `bin/<name>.zip` artifacts to flag set drift early.
+
+Run `make verify-inventory` to assert Makefile `LAMBDAS` == `infra/cdk/inventory/LambdaInventory` and to ensure this doc is regenerated from the inventory generator.
+
 This spec defines a single, canonical **Lambda inventory matrix** that becomes the source of truth for Specs 02–07.
 
 ## Goals
@@ -21,44 +25,50 @@ This spec defines a single, canonical **Lambda inventory matrix** that becomes t
 ## Canonical Product Set (Must Match `Makefile LAMBDAS`)
 The inventory set is exactly the 36 Lambdas in `Makefile` `LAMBDAS`:
 
-| Lambda | Type (target) | Primary triggers (target) | Notes |
-|---|---|---|---|
-| `activity-processor` | `processor-stream` | DynamoDB stream | Processes Activity/Object/Status changes. |
-| `actor` | `api-http` | `GET /users/{username}` | Must register route(s) in handler and support ActivityPub negotiation. |
-| `ai-processor` | `processor-stream` | DynamoDB stream | AI enrichment/classification. |
-| `api` | `api-http` | `/api/v1/*`, `/api/v2/*`, OAuth/Auth, nodeinfo | Mastodon-compatible REST and some well-knowns. |
-| `collections` | `api-http` | `/users/{username}/followers|following|liked` | ActivityPub collection endpoints. |
-| `cost-aggregator` | `processor-stream` (or hybrid) | DynamoDB stream (and/or schedule) | Open question in Spec 04. |
-| `dlq-processor` | `processor-sqs` + `processor-scheduled` | SQS + EventBridge schedule | DLQ handling + periodic sweeps. |
-| `enhanced-federation-processor` | `processor-sqs` | SQS | Enhanced federation retry. |
-| `export-generator` | `processor-sqs` | SQS | Export job processor. |
-| `federation-aggregator` | `processor-scheduled` (and optional SQS) | EventBridge (and/or SQS) | Aggregation/cadence-driven metrics. |
-| `federation-delivery` | `processor-sqs` | SQS | Outgoing federation delivery. |
-| `federation-timeseries` | `processor-stream` | DynamoDB stream | Aggregates federation metrics/time windows. |
-| `federation-tracker` | `processor-stream` | DynamoDB stream | Tracks federation relationships/health. |
-| `graphql` | `api-http` | `GET/POST /api/graphql` | GraphQL over HTTP. |
-| `graphql-ws` | `api-ws` | WebSocket API | GraphQL subscriptions over WS. |
-| `import-processor` | `processor-sqs` | SQS | Import job processor. |
-| `inbox` | `api-http` | `/inbox/{username}` (current) | CDK routes must match actual handler routes. |
-| `media-processor` | `processor-sqs` | SQS | Media processing/transcoding. |
-| `metrics-aggregator` | `processor-stream` | DynamoDB stream | Aggregates per-record cost/metrics signals. |
-| `metrics-processor` | `processor-stream` | DynamoDB stream | Streams metrics extraction/normalization. |
-| `ml-training-processor` | `processor-stream` | DynamoDB stream | ML training job lifecycle. |
-| `moderation-processor` | `processor-stream` | DynamoDB stream | Moderation events/reviews/decisions. |
-| `note-processor` | `processor-stream` | DynamoDB stream | Note/post processing pipeline. |
-| `notification-processor` | `processor-sqs` | SQS | Notification generation/dispatch. |
-| `objects` | `api-http` | `GET /objects/{id}` | ActivityPub object dereference. |
-| `outbox` | `api-http` + `processor-sqs` | `/users/{username}/outbox` + SQS | Hybrid: serves outbox and may process queued federation/outbox work. |
-| `push-delivery` | `processor-sqs` | SQS | Web push delivery worker. |
-| `report-trust-updater` | `processor-stream` | DynamoDB stream | Updates trust from moderation/report signals. |
-| `search-indexer` | `processor-stream` | DynamoDB stream | Search indexing updates. |
-| `severance-processor` | `processor-stream` | DynamoDB stream | Federation severance detection. |
-| `status-indexer` | `processor-stream` | DynamoDB stream | Status indexing updates. |
-| `stream-router` | `processor-stream` | DynamoDB stream | Fanout/route streaming events. |
-| `streaming` | `api-ws` | WebSocket API | Mastodon-style streaming. |
-| `trend-aggregator` | `processor-scheduled` | EventBridge schedule | Trend aggregation. |
-| `webfinger` | `api-http` | `GET /.well-known/webfinger` | WebFinger discovery. |
-| `websocket-cost-aggregator` | `processor-scheduled` | EventBridge schedule | Periodic WS cost aggregation/cleanup. |
+<!-- INVENTORY_TABLE_START -->
+
+> This table is generated from `infra/cdk/inventory/LambdaInventory` via `cd infra/cdk && go run ./cmd/generate-inventory`. Do not edit the table manually; update the inventory and re-run the generator.
+
+| Name | Type | Triggers | Required Env Vars | Role | Operational Defaults |
+| --- | --- | --- | --- | --- | --- |
+| activity-processor | processor-stream | Stream: table=main-table; start=TRIM_HORIZON; batch=25; window=5s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=300s; logs=7d |
+| actor | api-http | HTTP: GET /users/{username} | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| ai-processor | processor-stream | Stream: table=main-table; start=TRIM_HORIZON; batch=25; window=5s; parallel=2; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=300s; logs=7d |
+| api | api-http | HTTP: ANY /api/v1/{proxy+}<br>HTTP: ANY /api/v2/{proxy+}<br>HTTP: GET /.well-known/nodeinfo | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| collections | api-http | HTTP: GET /users/{username}/followers<br>HTTP: GET /users/{username}/following<br>HTTP: GET /users/{username}/liked | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| cost-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=10; window=2s; parallel=1; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| dlq-processor | hybrid | HTTP: GET /health<br>HTTP: GET /analytics/{service}<br>HTTP: GET /trends/{service}<br>HTTP: POST /search<br>SQS: queue=dlq-queue; dlq=dlq-dlq; batch=10; window=1s; partialFailure=true<br>Schedule: expression=TODO-spec04-dlq-sweep-cadence | — | basic | memory=512MB; timeout=30s; logs=7d |
+| enhanced-federation-processor | processor-sqs | SQS: queue=enhanced-federation-queue; partialFailure=true | ENHANCED_RETRY_QUEUE_URL | basic | memory=512MB; timeout=30s; logs=7d |
+| export-generator | processor-sqs | SQS: queue=export-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| federation-aggregator | hybrid | SQS: queue=federation-aggregator-queue; partialFailure=true<br>Schedule: expression=TODO-spec04-federation-aggregator-cadence | — | basic | memory=512MB; timeout=30s; logs=7d |
+| federation-delivery | processor-sqs | SQS: queue=federation-delivery-queue; partialFailure=true | FEDERATION_DELIVERY_QUEUE_URL | basic | memory=512MB; timeout=30s; logs=7d |
+| federation-timeseries | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| federation-tracker | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| graphql | api-http | HTTP: GET /api/graphql<br>HTTP: POST /api/graphql | JWT_SECRET_ARN | encryption | memory=512MB; timeout=30s; logs=7d |
+| graphql-ws | api-ws | WS: api=graphql-ws; route=$connect<br>WS: api=graphql-ws; route=$disconnect<br>WS: api=graphql-ws; route=$default | JWT_SECRET_ARN | encryption | memory=512MB; timeout=30s; logs=7d |
+| import-processor | processor-sqs | SQS: queue=import-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| inbox | api-http | HTTP: GET /inbox/{username}<br>HTTP: POST /inbox/{username} | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| media-processor | processor-sqs | SQS: queue=media-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| metrics-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| metrics-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| ml-training-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=5; window=1s; parallel=1; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=900s; logs=7d |
+| moderation-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=10; window=5s; parallel=2; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| note-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| notification-processor | processor-sqs | SQS: queue=notification-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| objects | api-http | HTTP: GET /objects/{id} | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| outbox | hybrid | HTTP: POST /users/{username}/outbox<br>SQS: queue=outbox-delivery-queue; partialFailure=true | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| push-delivery | processor-sqs | SQS: queue=push-delivery-queue; partialFailure=true | VAPID_PUBLIC_KEY<br>VAPID_SUBJECT<br>VAPID_SECRET_ARN | basic | memory=512MB; timeout=30s; logs=7d |
+| report-trust-updater | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| search-indexer | processor-stream | Stream: table=main-table; start=LATEST; batch=100; window=30s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| severance-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=10; window=5s; parallel=2; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=30s; logs=7d |
+| status-indexer | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| stream-router | processor-stream | Stream: table=main-table; start=LATEST; batch=50; window=2s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | WEBSOCKET_API_URL<br>WEBSOCKET_ENDPOINT<br>STREAMING_SUBSCRIPTIONS_TABLE<br>WEBSOCKET_API_ID<br>WEBSOCKET_STAGE<br>DOMAIN_NAME | encryption | memory=512MB; timeout=30s; logs=7d |
+| streaming | api-ws | WS: api=streaming; route=$connect<br>WS: api=streaming; route=$disconnect<br>WS: api=streaming; route=$default | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| trend-aggregator | processor-scheduled | Schedule: expression=TODO-spec04-trend-aggregator-cadence | — | basic | memory=512MB; timeout=30s; logs=7d |
+| webfinger | api-http | HTTP: GET /.well-known/webfinger | — | basic | memory=512MB; timeout=30s; logs=7d |
+| websocket-cost-aggregator | processor-scheduled | Schedule: expression=TODO-spec04-websocket-cost-cadence | — | basic | memory=512MB; timeout=30s; logs=7d |
+
+<!-- INVENTORY_TABLE_END -->
 
 This table is a starting point. The final inventory must be precise enough to generate CDK wiring without inference.
 
@@ -79,7 +89,7 @@ For each Lambda, record:
 Maintain a machine-readable inventory (Go/YAML/JSON) and generate (or validate) this Markdown view from it.
 
 ## Proposed Implementation
-1. Add machine-readable inventory in `infra/cdk` (e.g., `infra/cdk/inventory/lambdas.go`).
+1. Add machine-readable inventory in `infra/cdk` (canonical source: `infra/cdk/inventory/lambdas.go`).
 2. Generate CDK functions and wiring from the inventory (Specs 02–06).
 3. Add a drift check that enforces set equality between `Makefile LAMBDAS`, inventory, CDK, and monitoring (Spec 07).
 
@@ -87,4 +97,3 @@ Maintain a machine-readable inventory (Go/YAML/JSON) and generate (or validate) 
 - The inventory is the declared source of truth for Lambdas/triggers.
 - Inventory set matches `Makefile LAMBDAS` exactly.
 - Every downstream spec references this inventory rather than re-listing Lambdas ad-hoc.
-

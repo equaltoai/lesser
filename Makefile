@@ -1,4 +1,4 @@
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate clear-data build-bootstrap-owner bootstrap-owner
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate clear-data build-bootstrap-owner bootstrap-owner generate-inventory verify-inventory verify-lambda-set
 
 # =============================================================================
 # CONFIGURATION
@@ -181,6 +181,24 @@ clean:
 	@rm -rf bin/
 	@rm -f coverage.out coverage.html
 	@echo "✓ Clean complete"
+
+# =============================================================================
+# VERIFICATION TARGETS
+# =============================================================================
+
+## Generate docs/specs/01-lambda-inventory-matrix.md from infra/cdk/inventory/LambdaInventory
+generate-inventory:
+	@mkdir -p tmp/go-cache
+	@cd infra/cdk && GOCACHE=$(CURDIR)/tmp/go-cache go run ./cmd/generate-inventory
+
+## Verify Makefile LAMBDAS == inventory.LambdaInventory and Spec 01 is fresh
+verify-inventory:
+	@mkdir -p tmp/go-cache
+	@GOCACHE=$(CURDIR)/tmp/go-cache bash scripts/verify_inventory.sh
+
+## Verify Makefile LAMBDAS == cmd/* and any existing bin/*.zip artifacts
+verify-lambda-set:
+	@bash scripts/verify_lambda_set.sh
 
 # =============================================================================
 # CDK DEPLOYMENT TARGETS
