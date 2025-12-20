@@ -17,6 +17,16 @@ type StreamProcessorsProps struct {
 }
 
 func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsProps) {
+	activityProcessor := props.Functions.Must("activity-processor")
+	notificationProcessor := props.Functions.Must("push-delivery")
+	outboxProcessor := props.Functions.Must("outbox")
+	timelineProcessor := props.Functions.Must("trend-aggregator")
+	moderationProcessor := props.Functions.Must("moderation-processor")
+	searchIndexer := props.Functions.Must("status-indexer")
+	mlTrainingProcessor := props.Functions.Must("ml-training-processor")
+	severanceProcessor := props.Functions.Must("severance-processor")
+	streamRouter := props.Functions.Must("stream-router")
+
 	// Activity processor - handles new activities and status updates
 	activityEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
 		StartingPosition:        awslambda.StartingPosition_TRIM_HORIZON,
@@ -26,9 +36,8 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 		RetryAttempts:           jsii.Number(3),
 		BisectBatchOnError:      jsii.Bool(true),
 		ReportBatchItemFailures: jsii.Bool(true),
-		// Remove filters completely to fix deployment issue
 	})
-	props.Functions.ActivityProcessor.AddEventSource(activityEventSource)
+	activityProcessor.AddEventSource(activityEventSource)
 
 	// Notification processor - handles real-time notifications via SQS
 	if props.PushQueue != nil {
@@ -37,7 +46,7 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 			MaxBatchingWindow:       awscdk.Duration_Seconds(jsii.Number(1)),
 			ReportBatchItemFailures: jsii.Bool(true),
 		})
-		props.Functions.NotificationProcessor.AddEventSource(notificationEventSource)
+		notificationProcessor.AddEventSource(notificationEventSource)
 	}
 
 	// Federation outbox processor - handles outgoing federation
@@ -50,9 +59,8 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 		BisectBatchOnError:      jsii.Bool(true),
 		ReportBatchItemFailures: jsii.Bool(true),
 		MaxRecordAge:            awscdk.Duration_Hours(jsii.Number(2)),
-		// Remove filters completely to fix deployment issue
 	})
-	props.Functions.OutboxFunction.AddEventSource(outboxEventSource)
+	outboxProcessor.AddEventSource(outboxEventSource)
 
 	// Timeline processor - handles timeline fanout
 	timelineEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
@@ -63,9 +71,8 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 		RetryAttempts:           jsii.Number(3),
 		BisectBatchOnError:      jsii.Bool(true),
 		ReportBatchItemFailures: jsii.Bool(true),
-		// Remove filters completely to fix deployment issue
 	})
-	props.Functions.TimelineProcessorFunction.AddEventSource(timelineEventSource)
+	timelineProcessor.AddEventSource(timelineEventSource)
 
 	// Moderation processor - handles content moderation
 	moderationEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
@@ -76,9 +83,8 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 		RetryAttempts:           jsii.Number(3),
 		BisectBatchOnError:      jsii.Bool(true),
 		ReportBatchItemFailures: jsii.Bool(true),
-		// Remove filters completely to fix deployment issue
 	})
-	props.Functions.ModerationProcessor.AddEventSource(moderationEventSource)
+	moderationProcessor.AddEventSource(moderationEventSource)
 
 	// Search indexer - handles search index updates
 	searchEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
@@ -89,9 +95,8 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 		RetryAttempts:           jsii.Number(3),
 		BisectBatchOnError:      jsii.Bool(true),
 		ReportBatchItemFailures: jsii.Bool(true),
-		// Remove filters completely to fix deployment issue
 	})
-	props.Functions.SearchIndexerFunction.AddEventSource(searchEventSource)
+	searchIndexer.AddEventSource(searchEventSource)
 
 	// ML Training processor - handles ML model training job lifecycle (Phase 2.3)
 	mlTrainingEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
@@ -102,10 +107,8 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 		RetryAttempts:           jsii.Number(3),
 		BisectBatchOnError:      jsii.Bool(true),
 		ReportBatchItemFailures: jsii.Bool(true),
-		// Remove filters completely to fix deployment issue
-		// Filter for MODEL_TRAINING_JOB records handled in Lambda code
 	})
-	props.Functions.MLTrainingProcessor.AddEventSource(mlTrainingEventSource)
+	mlTrainingProcessor.AddEventSource(mlTrainingEventSource)
 
 	// Severance processor - handles federation severance detection (Phase 2.4)
 	severanceEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
@@ -116,10 +119,8 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 		RetryAttempts:           jsii.Number(3),
 		BisectBatchOnError:      jsii.Bool(true),
 		ReportBatchItemFailures: jsii.Bool(true),
-		// Remove filters completely to fix deployment issue
-		// Filter for DOMAIN_BLOCK, FEDERATION_ISSUE, and FEDERATION_METRICS records handled in Lambda code
 	})
-	props.Functions.SeveranceProcessor.AddEventSource(severanceEventSource)
+	severanceProcessor.AddEventSource(severanceEventSource)
 
 	// Stream router - fan out streaming events to WebSocket subscribers
 	streamRouterEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
@@ -131,5 +132,5 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 		BisectBatchOnError:      jsii.Bool(true),
 		ReportBatchItemFailures: jsii.Bool(true),
 	})
-	props.Functions.StreamRouterFunction.AddEventSource(streamRouterEventSource)
+	streamRouter.AddEventSource(streamRouterEventSource)
 }

@@ -64,6 +64,7 @@ var LambdaInventory = Inventory{
 				{Method: "ANY", Path: "/api/v2/{proxy+}"},
 				{Method: "GET", Path: "/.well-known/nodeinfo"},
 			},
+			RequiredEnvVars: []string{"S3_MEDIA_BUCKET", "DOMAIN_NAME"},
 		},
 		{
 			Name: "collections",
@@ -77,7 +78,7 @@ var LambdaInventory = Inventory{
 		},
 		{
 			Name: "cost-aggregator",
-			Type: LambdaTypeProcessorStream,
+			Type: LambdaTypeProcessorStream, // TODO(spec04): confirm if hybrid stream + schedule
 			Role: RoleClassBasic,
 			StreamTriggers: []StreamTrigger{
 				{
@@ -89,17 +90,14 @@ var LambdaInventory = Inventory{
 					ReportBatchItemFailures:  true,
 				},
 			},
+			ScheduleTriggers: []ScheduleTrigger{
+				{Expression: "TODO-spec04-cost-aggregator-cadence"},
+			},
 		},
 		{
 			Name: "dlq-processor",
 			Type: LambdaTypeHybrid, // SQS + scheduled sweeps
 			Role: RoleClassBasic,
-			HTTPRoutes: []HTTPRoute{
-				{Method: "GET", Path: "/health"},
-				{Method: "GET", Path: "/analytics/{service}"},
-				{Method: "GET", Path: "/trends/{service}"},
-				{Method: "POST", Path: "/search"},
-			},
 			SQSTriggers: []SQSTrigger{
 				{
 					Queue:                    "dlq-queue",
@@ -120,7 +118,6 @@ var LambdaInventory = Inventory{
 			SQSTriggers: []SQSTrigger{
 				{Queue: "enhanced-federation-queue", EnablePartialFailure: true},
 			},
-			RequiredEnvVars: []string{"ENHANCED_RETRY_QUEUE_URL"},
 		},
 		{
 			Name: "export-generator",
@@ -129,14 +126,12 @@ var LambdaInventory = Inventory{
 			SQSTriggers: []SQSTrigger{
 				{Queue: "export-processor-queue", EnablePartialFailure: true},
 			},
+			RequiredEnvVars: []string{"EXPORT_PROCESSOR_QUEUE_URL"}, // TODO(spec04): confirm queue model
 		},
 		{
 			Name: "federation-aggregator",
-			Type: LambdaTypeHybrid,
+			Type: LambdaTypeProcessorScheduled,
 			Role: RoleClassBasic,
-			SQSTriggers: []SQSTrigger{
-				{Queue: "federation-aggregator-queue", EnablePartialFailure: true},
-			},
 			ScheduleTriggers: []ScheduleTrigger{
 				{Expression: "TODO-spec04-federation-aggregator-cadence"},
 			},
@@ -148,7 +143,6 @@ var LambdaInventory = Inventory{
 			SQSTriggers: []SQSTrigger{
 				{Queue: "federation-delivery-queue", EnablePartialFailure: true},
 			},
-			RequiredEnvVars: []string{"FEDERATION_DELIVERY_QUEUE_URL"},
 		},
 		{
 			Name: "federation-timeseries",
@@ -186,18 +180,13 @@ var LambdaInventory = Inventory{
 				{Method: "GET", Path: "/api/graphql"},
 				{Method: "POST", Path: "/api/graphql"},
 			},
-			RequiredEnvVars: []string{"JWT_SECRET_ARN"},
+			RequiredEnvVars: []string{"JWT_SECRET"}, // required when ARN is not injected
 		},
 		{
-			Name: "graphql-ws",
-			Type: LambdaTypeAPIWS,
-			Role: RoleClassEncryption,
-			WebSocketRoutes: []WebSocketRoute{
-				{API: "graphql-ws", RouteKey: "$connect"},
-				{API: "graphql-ws", RouteKey: "$disconnect"},
-				{API: "graphql-ws", RouteKey: "$default"},
-			},
-			RequiredEnvVars: []string{"JWT_SECRET_ARN"},
+			Name:            "graphql-ws",
+			Type:            LambdaTypeAPIWS,
+			Role:            RoleClassEncryption,
+			RequiredEnvVars: []string{"JWT_SECRET"},
 		},
 		{
 			Name: "import-processor",
@@ -206,14 +195,14 @@ var LambdaInventory = Inventory{
 			SQSTriggers: []SQSTrigger{
 				{Queue: "import-processor-queue", EnablePartialFailure: true},
 			},
+			RequiredEnvVars: []string{"IMPORT_PROCESSOR_QUEUE_URL"}, // TODO(spec04): confirm queue model
 		},
 		{
 			Name: "inbox",
 			Type: LambdaTypeAPIHTTP,
 			Role: RoleClassEncryption,
 			HTTPRoutes: []HTTPRoute{
-				{Method: "GET", Path: "/inbox/{username}"},
-				{Method: "POST", Path: "/inbox/{username}"},
+				{Method: "ANY", Path: "/inbox/{username}"},
 			},
 		},
 		{
@@ -223,6 +212,7 @@ var LambdaInventory = Inventory{
 			SQSTriggers: []SQSTrigger{
 				{Queue: "media-processor-queue", EnablePartialFailure: true},
 			},
+			RequiredEnvVars: []string{"MEDIA_PROCESSOR_QUEUE_URL"},
 		},
 		{
 			Name: "metrics-aggregator",
@@ -322,13 +312,22 @@ var LambdaInventory = Inventory{
 		},
 		{
 			Name: "outbox",
-			Type: LambdaTypeHybrid, // HTTP + SQS
+			Type: LambdaTypeHybrid, // HTTP + stream
 			Role: RoleClassEncryption,
 			HTTPRoutes: []HTTPRoute{
-				{Method: "POST", Path: "/users/{username}/outbox"},
+				{Method: "ANY", Path: "/users/{username}/outbox"},
 			},
-			SQSTriggers: []SQSTrigger{
-				{Queue: "outbox-delivery-queue", EnablePartialFailure: true},
+			StreamTriggers: []StreamTrigger{
+				{
+					SourceTable:              "main-table",
+					StartingPosition:         StreamStartLatest,
+					BatchSize:                10,
+					MaxBatchingWindowSeconds: 2,
+					ParallelizationFactor:    3,
+					MaxRetryAttempts:         5,
+					EnableBisectOnError:      true,
+					ReportBatchItemFailures:  true,
+				},
 			},
 		},
 		{
@@ -428,11 +427,6 @@ var LambdaInventory = Inventory{
 			Name: "streaming",
 			Type: LambdaTypeAPIWS,
 			Role: RoleClassEncryption,
-			WebSocketRoutes: []WebSocketRoute{
-				{API: "streaming", RouteKey: "$connect"},
-				{API: "streaming", RouteKey: "$disconnect"},
-				{API: "streaming", RouteKey: "$default"},
-			},
 		},
 		{
 			Name: "trend-aggregator",

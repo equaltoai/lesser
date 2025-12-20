@@ -31,26 +31,24 @@ Inventory specifies a role class for each Lambda (e.g., `basic`, `encryption`). 
 Inventory provides defaults (memory, timeout, log retention) with per-lambda overrides.
 
 ## Current Issues (What This Spec Fixes)
-The current CDK implementation in `infra/cdk/constructs/lambda_functions.go`:
-- defines **22** Lambda functions, while the product set is **36** (`Makefile LAMBDAS`)
-- contains mis-mapped fields where the semantic variable name does not match the deployed function asset/name, e.g.:
-  - `NotificationProcessor` is created as `"push-delivery"` using `../../bin/push-delivery.zip`
-  - `SearchIndexerFunction` is created as `"status-indexer"` using `../../bin/status-indexer.zip`
-  - `HealthFunction` is created as `"federation-tracker"` using `../../bin/federation-tracker.zip`
-- omits several product Lambdas entirely (examples: `actor`, `collections`, `objects`, `export-generator`, `metrics-processor`, `trend-aggregator`-adjacent scheduled processors, etc.)
+This spec originally addressed two recurring drift classes:
+- **Partial coverage:** CDK defined fewer Lambdas than the `Makefile LAMBDAS`/inventory set.
+- **Mis-wiring:** some constructs referenced the wrong `bin/<name>.zip` or used non-canonical names.
 
-This class of drift is prevented by inventory-driven generation.
+Both are prevented by inventory-driven generation and validated by the drift gate below.
 
-## Proposed Implementation
-1. Replace the bespoke `LambdaFunctions` struct “one field per function” pattern with:
-   - `map[string]awslambda.Function` keyed by inventory name
-2. Provide small typed helpers (optional):
-   - `func (f *Functions) Must(name string) awslambda.Function`
-3. Centralize function creation:
-   - `createFunction(name, roleClass, propsOverrides, envOverrides)`
-4. Generate all functions from inventory and return the `Functions` map.
+## Implementation (Current)
+- `infra/cdk/constructs/lambda_functions.go` generates **all** inventory Lambdas into `LambdaFunctions{Functions map[string]awslambda.Function}` keyed by inventory name.
+- Downstream constructs reference functions via `functions.Must("<name>")` to avoid stale field mappings.
+- Naming, log groups, roles, and operational defaults are applied uniformly during inventory iteration.
 
 ## Acceptance Criteria
 - `cdk synth` produces one Lambda per inventory entry with correct asset and naming.
 - No Lambda can accidentally point at another Lambda’s `bin/*.zip` artifact.
 - Log group naming and retention are consistent across all Lambdas.
+
+## Validation and Drift Prevention (Addendum)
+- **Registry test:** `cd infra/cdk && go test ./constructs -run TestLambdaFunctionsGeneratedFromInventory -count=1` verifies every inventory lambda exists, follows `lesser-<env>-<lambda>` naming, uses `/aws/lambda/lesser-<env>-<lambda>` log groups, and stages the expected `bin/<name>.zip` asset (validated by comparing staged-asset file hash to `bin/<name>.zip` file hash).
+- **Script hook:** `./scripts/verify_inventory.sh` now runs the registry test after checking Makefile vs inventory and doc freshness, failing on any mismatch.
+- **Lift-aligned safeguards:** Validation enforces environment-qualified naming and explicit role assignment per inventory (mirrors Lift best practices for environment separation and least-privilege roles) and keeps infrastructure validation separate from application code.
+- **How to run in CI/CD:** Invoke `./scripts/verify_inventory.sh` (or `make verify-inventory`) to gate changes; rerun `go test` locally to debug registry drift before deployment.

@@ -34,7 +34,7 @@ The inventory set is exactly the 36 Lambdas in `Makefile` `LAMBDAS`:
 | activity-processor | processor-stream | Stream: table=main-table; start=TRIM_HORIZON; batch=25; window=5s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=300s; logs=7d |
 | actor | api-http | HTTP: GET /users/{username} | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | ai-processor | processor-stream | Stream: table=main-table; start=TRIM_HORIZON; batch=25; window=5s; parallel=2; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=300s; logs=7d |
-| api | api-http | HTTP: ANY /api/v1/{proxy+}<br>HTTP: ANY /api/v2/{proxy+}<br>HTTP: GET /.well-known/nodeinfo | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| api | api-http | HTTP: ANY /api/v1/{proxy+}<br>HTTP: ANY /api/v2/{proxy+} | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | collections | api-http | HTTP: GET /users/{username}/followers<br>HTTP: GET /users/{username}/following<br>HTTP: GET /users/{username}/liked | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | cost-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=10; window=2s; parallel=1; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | dlq-processor | hybrid | HTTP: GET /health<br>HTTP: GET /analytics/{service}<br>HTTP: GET /trends/{service}<br>HTTP: POST /search<br>SQS: queue=dlq-queue; dlq=dlq-dlq; batch=10; window=1s; partialFailure=true<br>Schedule: expression=TODO-spec04-dlq-sweep-cadence | — | basic | memory=512MB; timeout=30s; logs=7d |
@@ -47,7 +47,7 @@ The inventory set is exactly the 36 Lambdas in `Makefile` `LAMBDAS`:
 | graphql | api-http | HTTP: GET /api/graphql<br>HTTP: POST /api/graphql | JWT_SECRET_ARN | encryption | memory=512MB; timeout=30s; logs=7d |
 | graphql-ws | api-ws | WS: api=graphql-ws; route=$connect<br>WS: api=graphql-ws; route=$disconnect<br>WS: api=graphql-ws; route=$default | JWT_SECRET_ARN | encryption | memory=512MB; timeout=30s; logs=7d |
 | import-processor | processor-sqs | SQS: queue=import-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
-| inbox | api-http | HTTP: GET /inbox/{username}<br>HTTP: POST /inbox/{username} | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| inbox | api-http | HTTP: GET /users/{username}/inbox<br>HTTP: POST /users/{username}/inbox | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | media-processor | processor-sqs | SQS: queue=media-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | metrics-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | metrics-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
@@ -56,7 +56,7 @@ The inventory set is exactly the 36 Lambdas in `Makefile` `LAMBDAS`:
 | note-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | notification-processor | processor-sqs | SQS: queue=notification-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | objects | api-http | HTTP: GET /objects/{id} | — | encryption | memory=512MB; timeout=30s; logs=7d |
-| outbox | hybrid | HTTP: POST /users/{username}/outbox<br>SQS: queue=outbox-delivery-queue; partialFailure=true | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| outbox | hybrid | HTTP: GET /users/{username}/outbox<br>HTTP: POST /users/{username}/outbox<br>SQS: queue=outbox-delivery-queue; partialFailure=true | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | push-delivery | processor-sqs | SQS: queue=push-delivery-queue; partialFailure=true | VAPID_PUBLIC_KEY<br>VAPID_SUBJECT<br>VAPID_SECRET_ARN | basic | memory=512MB; timeout=30s; logs=7d |
 | report-trust-updater | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | search-indexer | processor-stream | Stream: table=main-table; start=LATEST; batch=100; window=30s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
@@ -65,7 +65,7 @@ The inventory set is exactly the 36 Lambdas in `Makefile` `LAMBDAS`:
 | stream-router | processor-stream | Stream: table=main-table; start=LATEST; batch=50; window=2s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | WEBSOCKET_API_URL<br>WEBSOCKET_ENDPOINT<br>STREAMING_SUBSCRIPTIONS_TABLE<br>WEBSOCKET_API_ID<br>WEBSOCKET_STAGE<br>DOMAIN_NAME | encryption | memory=512MB; timeout=30s; logs=7d |
 | streaming | api-ws | WS: api=streaming; route=$connect<br>WS: api=streaming; route=$disconnect<br>WS: api=streaming; route=$default | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | trend-aggregator | processor-scheduled | Schedule: expression=TODO-spec04-trend-aggregator-cadence | — | basic | memory=512MB; timeout=30s; logs=7d |
-| webfinger | api-http | HTTP: GET /.well-known/webfinger | — | basic | memory=512MB; timeout=30s; logs=7d |
+| webfinger | api-http | HTTP: GET /.well-known/webfinger<br>HTTP: GET /.well-known/nodeinfo<br>HTTP: GET /.well-known/host-meta<br>HTTP: GET /.well-known/reputation-keys<br>HTTP: GET /nodeinfo/2.0<br>HTTP: GET /nodeinfo/2.1 | — | basic | memory=512MB; timeout=30s; logs=7d |
 | websocket-cost-aggregator | processor-scheduled | Schedule: expression=TODO-spec04-websocket-cost-cadence | — | basic | memory=512MB; timeout=30s; logs=7d |
 
 <!-- INVENTORY_TABLE_END -->

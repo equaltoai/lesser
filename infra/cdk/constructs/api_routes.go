@@ -1,6 +1,7 @@
 package constructs
 
 import (
+	"cdk/inventory"
 	"fmt"
 	"strings"
 
@@ -117,69 +118,75 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 }
 
 func addHttpRoutes(api awsapigatewayv2.HttpApi, functions *LambdaFunctions) {
-	// Mastodon API routes
-	addRoute(api, "GET /api/v1/{proxy+}", functions.APIFunction)
-	addRoute(api, "POST /api/v1/{proxy+}", functions.APIFunction)
-	addRoute(api, "PUT /api/v1/{proxy+}", functions.APIFunction)
-	addRoute(api, "DELETE /api/v1/{proxy+}", functions.APIFunction)
-	addRoute(api, "PATCH /api/v1/{proxy+}", functions.APIFunction)
+	apiFn := functions.Must("api")
+	graphqlFn := functions.Must("graphql")
+	healthFn := apiFn
 
-	addRoute(api, "GET /api/v2/{proxy+}", functions.APIFunction)
-	addRoute(api, "POST /api/v2/{proxy+}", functions.APIFunction)
+	// Mastodon API routes
+	addRoute(api, "GET /api/v1/{proxy+}", apiFn)
+	addRoute(api, "POST /api/v1/{proxy+}", apiFn)
+	addRoute(api, "PUT /api/v1/{proxy+}", apiFn)
+	addRoute(api, "DELETE /api/v1/{proxy+}", apiFn)
+	addRoute(api, "PATCH /api/v1/{proxy+}", apiFn)
+
+	addRoute(api, "GET /api/v2/{proxy+}", apiFn)
+	addRoute(api, "POST /api/v2/{proxy+}", apiFn)
 
 	// GraphQL routes
-	addRoute(api, "GET /api/graphql", functions.GraphQLFunction)
-	addRoute(api, "POST /api/graphql", functions.GraphQLFunction)
-	addRoute(api, "OPTIONS /api/graphql", functions.GraphQLFunction)
+	addRoute(api, "GET /api/graphql", graphqlFn)
+	addRoute(api, "POST /api/graphql", graphqlFn)
+	addRoute(api, "OPTIONS /api/graphql", graphqlFn)
 
-    // Account registration endpoint (Mastodon-compatible)
-    addRoute(api, "POST /api/v1/accounts", functions.APIFunction)
+	// Account registration endpoint (Mastodon-compatible)
+	addRoute(api, "POST /api/v1/accounts", apiFn)
 
 	// Admin routes
-	addRoute(api, "GET /api/v1/admin/{proxy+}", functions.APIFunction)
-	addRoute(api, "POST /api/v1/admin/{proxy+}", functions.APIFunction)
-	addRoute(api, "PUT /api/v1/admin/{proxy+}", functions.APIFunction)
-	addRoute(api, "DELETE /api/v1/admin/{proxy+}", functions.APIFunction)
-	addRoute(api, "PATCH /api/v1/admin/{proxy+}", functions.APIFunction)
+	addRoute(api, "GET /api/v1/admin/{proxy+}", apiFn)
+	addRoute(api, "POST /api/v1/admin/{proxy+}", apiFn)
+	addRoute(api, "PUT /api/v1/admin/{proxy+}", apiFn)
+	addRoute(api, "DELETE /api/v1/admin/{proxy+}", apiFn)
+	addRoute(api, "PATCH /api/v1/admin/{proxy+}", apiFn)
 
 	// OAuth routes (handled by native Lift implementation in API)
-	addRoute(api, "GET /oauth/{proxy+}", functions.APIFunction)
-	addRoute(api, "POST /oauth/{proxy+}", functions.APIFunction)
+	addRoute(api, "GET /oauth/{proxy+}", apiFn)
+	addRoute(api, "POST /oauth/{proxy+}", apiFn)
 
 	// Auth routes (handled by native Lift implementation in API)
-	addRoute(api, "GET /auth/{proxy+}", functions.APIFunction)
-	addRoute(api, "POST /auth/{proxy+}", functions.APIFunction)
+	addRoute(api, "GET /auth/{proxy+}", apiFn)
+	addRoute(api, "POST /auth/{proxy+}", apiFn)
 
-	// ActivityPub routes
-	addRoute(api, "GET /.well-known/webfinger", functions.WebfingerFunction)
-	addRoute(api, "GET /.well-known/nodeinfo", functions.APIFunction)
-	addRoute(api, "GET /nodeinfo/{proxy+}", functions.APIFunction)
-
-	// Instance-level ActivityPub endpoints
-	addRoute(api, "GET /inbox", functions.InboxFunction)
-	addRoute(api, "POST /inbox", functions.InboxFunction)
-
-	addRoute(api, "GET /users/{username}", functions.APIFunction)
-	addRoute(api, "GET /users/{username}/inbox", functions.InboxFunction)
-	addRoute(api, "POST /users/{username}/inbox", functions.InboxFunction)
-	addRoute(api, "GET /users/{username}/outbox", functions.OutboxFunction)
-	addRoute(api, "POST /users/{username}/outbox", functions.OutboxFunction)
-	addRoute(api, "GET /users/{username}/followers", functions.APIFunction)
-	addRoute(api, "GET /users/{username}/following", functions.APIFunction)
-
-	// Object routes
-	addRoute(api, "GET /objects/{id}", functions.APIFunction)
-	addRoute(api, "GET /activities/{id}", functions.APIFunction)
+	// Federation routes (inventory-driven; Spec 03)
+	addInventoryHttpRoutes(api, functions, map[string]struct{}{
+		"actor":       {},
+		"collections": {},
+		"inbox":       {},
+		"objects":     {},
+		"outbox":      {},
+		"webfinger":   {},
+	})
 
 	// Instance routes
-	addRoute(api, "GET /api/v1/instance", functions.APIFunction)
-	addRoute(api, "GET /api/v2/instance", functions.APIFunction)
+	addRoute(api, "GET /api/v1/instance", apiFn)
+	addRoute(api, "GET /api/v2/instance", apiFn)
 
 	// Catch-all fallback to ensure unexpected routes reach the API Lambda
-	addRoute(api, "ANY /{proxy+}", functions.APIFunction)
+	addRoute(api, "ANY /{proxy+}", apiFn)
 
 	// Health check
-	addRoute(api, "GET /health", functions.HealthFunction)
+	addRoute(api, "GET /health", healthFn)
+}
+
+func addInventoryHttpRoutes(api awsapigatewayv2.HttpApi, functions *LambdaFunctions, include map[string]struct{}) {
+	for _, spec := range inventory.LambdaInventory.Lambdas {
+		if _, ok := include[spec.Name]; !ok {
+			continue
+		}
+
+		handler := functions.Must(spec.Name)
+		for _, route := range spec.HTTPRoutes {
+			addRoute(api, fmt.Sprintf("%s %s", route.Method, route.Path), handler)
+		}
+	}
 }
 
 func addRoute(api awsapigatewayv2.HttpApi, path string, handler awslambda.Function) {
@@ -233,6 +240,8 @@ func addRoute(api awsapigatewayv2.HttpApi, path string, handler awslambda.Functi
 }
 
 func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsapigatewayv2.WebSocketApi {
+	streamingFn := props.Functions.Must("streaming")
+
 	// Create WebSocket API for streaming
 	wsApi := awsapigatewayv2.NewWebSocketApi(scope, jsii.String("WebSocketApi"), &awsapigatewayv2.WebSocketApiProps{
 		ApiName:     jsii.String(fmt.Sprintf("lesser-%s-streaming-ws-v2", props.Environment)),
@@ -240,21 +249,21 @@ func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsa
 		ConnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
 				jsii.String("ConnectIntegration"),
-				props.Functions.StreamingFunction,
+				streamingFn,
 				&awsapigatewayv2integrations.WebSocketLambdaIntegrationProps{},
 			),
 		},
 		DisconnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
 				jsii.String("DisconnectIntegration"),
-				props.Functions.StreamingFunction,
+				streamingFn,
 				&awsapigatewayv2integrations.WebSocketLambdaIntegrationProps{},
 			),
 		},
 		DefaultRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
 				jsii.String("DefaultIntegration"),
-				props.Functions.StreamingFunction,
+				streamingFn,
 				&awsapigatewayv2integrations.WebSocketLambdaIntegrationProps{},
 			),
 		},
@@ -304,27 +313,29 @@ func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsa
 }
 
 func createGraphQLWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsapigatewayv2.WebSocketApi {
+	graphqlWSFn := props.Functions.Must("graphql-ws")
+
 	wsApi := awsapigatewayv2.NewWebSocketApi(scope, jsii.String("GraphQLWebSocketApi"), &awsapigatewayv2.WebSocketApiProps{
 		ApiName:     jsii.String(fmt.Sprintf("lesser-%s-graphql-ws", props.Environment)),
 		Description: jsii.String("GraphQL WebSocket API for subscriptions"),
 		ConnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
 				jsii.String("GraphQLWSConnectIntegration"),
-				props.Functions.GraphQLWSFunction,
+				graphqlWSFn,
 				&awsapigatewayv2integrations.WebSocketLambdaIntegrationProps{},
 			),
 		},
 		DisconnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
 				jsii.String("GraphQLWSDisconnectIntegration"),
-				props.Functions.GraphQLWSFunction,
+				graphqlWSFn,
 				&awsapigatewayv2integrations.WebSocketLambdaIntegrationProps{},
 			),
 		},
 		DefaultRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
 				jsii.String("GraphQLWSDefaultIntegration"),
-				props.Functions.GraphQLWSFunction,
+				graphqlWSFn,
 				&awsapigatewayv2integrations.WebSocketLambdaIntegrationProps{},
 			),
 		},

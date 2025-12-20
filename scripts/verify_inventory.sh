@@ -9,6 +9,11 @@ if [[ -z "${GOCACHE:-}" ]]; then
 fi
 mkdir -p "$GOCACHE"
 
+if [[ -z "${GOMODCACHE:-}" ]]; then
+  export GOMODCACHE="$ROOT_DIR/tmp/go-mod-cache"
+fi
+mkdir -p "$GOMODCACHE"
+
 contains() {
   local needle="$1"; shift
   for item in "$@"; do
@@ -65,10 +70,32 @@ else
 fi
 echo
 
+echo "3) CDK lambda registry validation (Spec 02 naming/assets):"
+registry_status=0
+if cd "$ROOT_DIR/infra/cdk" && GOCACHE="$GOCACHE" GOMODCACHE="$GOMODCACHE" go test ./constructs -run TestLambdaFunctionsGeneratedFromInventory -count=1; then
+  echo "  ✓ Registry validation passed"
+else
+  echo "  ✗ Registry validation failed"
+  registry_status=1
+fi
+echo
+
+echo "4) CDK federation HTTP routing validation (Spec 03):"
+routing_status=0
+if cd "$ROOT_DIR/infra/cdk" && GOCACHE="$GOCACHE" GOMODCACHE="$GOMODCACHE" go test ./constructs -run TestFederationHttpRoutesGeneratedFromInventory -count=1; then
+  echo "  ✓ Federation routing validation passed"
+else
+  echo "  ✗ Federation routing validation failed"
+  routing_status=1
+fi
+echo
+
 drift=0
 [ ${#missing_in_inventory[@]} -gt 0 ] && drift=1
 [ ${#extra_in_inventory[@]} -gt 0 ] && drift=1
 [ $doc_status -ne 0 ] && drift=1
+[ $registry_status -ne 0 ] && drift=1
+[ $routing_status -ne 0 ] && drift=1
 
 if [ $drift -eq 0 ]; then
   echo "✅ Inventory drift check passed"

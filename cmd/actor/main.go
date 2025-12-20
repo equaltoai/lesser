@@ -374,6 +374,12 @@ func main() {
 	// Apply federation security middleware
 	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, lambdaCtx.Logger)
 
+	// Initialize handler dependencies
+	handler := NewHandler()
+
+	// Register actor profile route
+	app.GET("/users/:username", handler.HandleActorProfile)
+
 	// Use standardized Lambda handler wrapper with observability
 	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
 		return app.HandleRequest(ctx, event)

@@ -375,8 +375,8 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 // RegisterRoutes registers all inbox routes
 func (ih *InboxHandler) RegisterRoutes(app *lift.App) {
 	// ActivityPub inbox endpoints
-	_ = app.GET("/inbox/{username}", ih.handleGetInbox)
-	_ = app.POST("/inbox/{username}", ih.handlePostInbox)
+	_ = app.GET("/users/:username/inbox", ih.handleGetInbox)
+	_ = app.POST("/users/:username/inbox", ih.handlePostInbox)
 }
 
 // handleGetInbox handles GET requests to retrieve inbox activities

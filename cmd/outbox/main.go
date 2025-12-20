@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -544,6 +545,135 @@ func extractDomainFromURL(urlStr string) string {
 	return urlStr
 }
 
+// HandleOutboxGet handles GET requests to the ActivityPub outbox endpoint.
+func (op *OutboxProcessor) HandleOutboxGet(ctx *lift.Context) error {
+	requestID, _ := ctx.Get("requestID").(string)
+	if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
+		requestID = fmt.Sprintf("outbox-get-%d", time.Now().UnixNano())
+		ctx.Set("requestID", requestID)
+	}
+
+	username := ctx.Param("username")
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		op.logger.Warn("missing username parameter", zap.String("request_id", requestID))
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+			"error": "missing username parameter",
+		})
+	}
+
+	actor, err := op.actorRepository.GetActorByUsername(ctx.Context, username)
+	if err != nil {
+		if common.IsNotFound(err) {
+			return ctx.Status(http.StatusNotFound).JSON(map[string]string{
+				"error": "actor not found",
+			})
+		}
+		op.logger.Error("failed to get actor for outbox GET",
+			zap.String("request_id", requestID),
+			zap.String("username", username),
+			zap.Error(err),
+		)
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
+			"error": "internal server error",
+		})
+	}
+
+	outboxID := actor.Outbox
+	if outboxID == "" {
+		outboxID = fmt.Sprintf("%s/users/%s/outbox", op.lambdaCtx.Config.BaseURL(), username)
+	}
+
+	page := ctx.Query("page")
+	limit, err := common.ParseAndValidateActivityPubLimit(ctx.Query("limit"))
+	if err != nil {
+		limit = 20
+	}
+	cursor := ctx.Query("cursor")
+
+	// Collection response (metadata) when `page=true` is not set.
+	if page != "true" && page != "1" {
+		totalItems, countErr := op.countOutboxActivities(ctx.Context, username)
+		if countErr != nil {
+			op.logger.Warn("failed to count outbox activities",
+				zap.String("request_id", requestID),
+				zap.String("username", username),
+				zap.Error(countErr),
+			)
+			totalItems = 0
+		}
+
+		collection := &activitypub.OrderedCollection{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      outboxID,
+					Type:    activitypub.OrderedCollectionType,
+				},
+				TotalItems: totalItems,
+				First:      fmt.Sprintf("%s?page=true", outboxID),
+			},
+		}
+
+		ctx.Response.Headers["Content-Type"] = "application/activity+json"
+		return ctx.JSON(collection)
+	}
+
+	activities, nextCursor, err := op.activityRepository.GetOutboxActivities(ctx.Context, username, limit, cursor)
+	if err != nil {
+		op.logger.Error("failed to get outbox activities",
+			zap.String("request_id", requestID),
+			zap.String("username", username),
+			zap.Error(err),
+		)
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
+			"error": "failed to get outbox activities",
+		})
+	}
+
+	orderedItems := make([]any, len(activities))
+	for i, activity := range activities {
+		orderedItems[i] = activity
+	}
+
+	collectionPage := &activitypub.OrderedCollectionPage{
+		CollectionPage: activitypub.CollectionPage{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      fmt.Sprintf("%s?page=true", outboxID),
+					Type:    activitypub.OrderedCollectionPageType,
+				},
+				OrderedItems: orderedItems,
+			},
+			PartOf: outboxID,
+		},
+	}
+
+	if nextCursor != "" {
+		collectionPage.Next = fmt.Sprintf("%s?page=true&cursor=%s&limit=%d", outboxID, url.QueryEscape(nextCursor), limit)
+	}
+	if cursor != "" {
+		collectionPage.Prev = fmt.Sprintf("%s?page=true&limit=%d", outboxID, limit)
+	}
+
+	ctx.Response.Headers["Content-Type"] = "application/activity+json"
+	return ctx.JSON(collectionPage)
+}
+
+func (op *OutboxProcessor) countOutboxActivities(ctx context.Context, username string) (int, error) {
+	pk := "ACTOR#" + username
+	const skPrefix = "ACTIVITY#"
+
+	count, err := op.repos.GetDB().WithContext(ctx).Model(&models.Activity{}).
+		Where("PK", "=", pk).
+		Where("SK", "BEGINS_WITH", skPrefix).
+		Count()
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
 // HandleOutboxPost handles POST requests to the ActivityPub outbox endpoint
 func (op *OutboxProcessor) HandleOutboxPost(ctx *lift.Context) error {
 	requestID, _ := ctx.Get("requestID").(string)
@@ -962,6 +1092,9 @@ func main() {
 	})
 
 	// Add REST API handlers for ActivityPub outbox endpoint
+	_ = app.GET("/users/:username/outbox", func(ctx *lift.Context) error {
+		return processor.HandleOutboxGet(ctx)
+	})
 	_ = app.POST("/users/:username/outbox", func(ctx *lift.Context) error {
 		return processor.HandleOutboxPost(ctx)
 	})
