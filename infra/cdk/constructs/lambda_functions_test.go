@@ -17,7 +17,6 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslogs"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
 	"github.com/aws/jsii-runtime-go"
 )
 
@@ -83,9 +82,6 @@ func TestLambdaFunctionsGeneratedFromInventory(t *testing.T) {
 	mediaBucket := awss3.NewBucket(stack, jsii.String("MediaBucket"), nil)
 	streamingBucket := awss3.NewBucket(stack, jsii.String("StreamingBucket"), nil)
 	trainingBucket := awss3.NewBucket(stack, jsii.String("TrainingBucket"), nil)
-	federationQueue := awssqs.NewQueue(stack, jsii.String("FederationQueue"), nil)
-	federationDLQ := awssqs.NewQueue(stack, jsii.String("FederationDLQ"), nil)
-	pushQueue := awssqs.NewQueue(stack, jsii.String("PushQueue"), nil)
 	privateKey := awssecretsmanager.NewSecret(stack, jsii.String("PrivateKey"), nil)
 	jwtSecret := awssecretsmanager.NewSecret(stack, jsii.String("JwtSecret"), nil)
 	encRole := awsiam.NewRole(stack, jsii.String("EncRole"), &awsiam.RoleProps{
@@ -102,9 +98,7 @@ func TestLambdaFunctionsGeneratedFromInventory(t *testing.T) {
 		MediaBucket:         mediaBucket,
 		StreamingBucket:     streamingBucket,
 		TrainingBucket:      trainingBucket,
-		FederationQueue:     federationQueue,
-		FederationDLQ:       federationDLQ,
-		PushQueue:           pushQueue,
+		Queues:              map[string]QueuePair{},
 		PrivateKey:          privateKey,
 		JwtSecret:           jwtSecret,
 		MediaConvertRoleArn: jsii.String("arn:aws:iam::123456789012:role/media-convert"),

@@ -236,24 +236,21 @@ func (p *Processor) extractServiceName(record events.SQSMessage) string {
 	// Try to extract from queue ARN
 	queueName := p.extractQueueName(record.EventSourceARN)
 
-	// Remove common suffixes to get service name
-	serviceName := strings.ReplaceAll(queueName, "-dlq", "")
-	serviceName = strings.ReplaceAll(serviceName, "-queue", "")
-
-	// Common service mappings
-	serviceMapping := map[string]string{
-		"notification-processor-dlq": "notification-processor",
-		"activity-processor-dlq":     "activity-processor",
-		"media-processor-dlq":        "media-processor",
-		"federation-delivery-dlq":    "federation-delivery",
-		"search-indexer-dlq":         "search-indexer",
+	logical := queueName
+	if strings.HasPrefix(logical, "lesser-") {
+		logical = strings.TrimPrefix(logical, "lesser-")
+		if idx := strings.LastIndex(logical, "-"); idx > 0 {
+			logical = logical[:idx]
+		}
 	}
 
-	if mappedService, exists := serviceMapping[queueName]; exists {
-		return mappedService
+	if strings.HasSuffix(logical, "-queue-dlq") {
+		return strings.TrimSuffix(logical, "-queue-dlq")
 	}
 
-	return serviceName
+	logical = strings.TrimSuffix(logical, "-dlq")
+	logical = strings.TrimSuffix(logical, "-queue")
+	return logical
 }
 
 // extractQueueName extracts the queue name from the ARN
@@ -343,25 +340,32 @@ func (p *Processor) ScheduledReprocessing(ctx context.Context) error {
 
 	// Get services to process
 	services := []string{
-		"notification-processor",
-		"activity-processor",
-		"media-processor",
+		"enhanced-federation",
+		"export-processor",
+		"federation-aggregator",
 		"federation-delivery",
-		"search-indexer",
+		"import-processor",
+		"media-processor",
+		"notification-processor",
+		"push-delivery",
 	}
 
 	var totalProcessed int
 	var totalErrors int
 
 	for _, service := range services {
-		processed, errors, err := p.reprocessServiceMessages(ctx, service)
-		if err != nil {
-			p.logger.Error("failed to reprocess messages for service",
-				zap.String("service", service),
-				zap.Error(err),
-			)
-			totalErrors++
-		} else {
+		for _, status := range []string{"new", "failed", "reprocessing"} {
+			processed, errors, err := p.reprocessServiceMessages(ctx, service, status)
+			if err != nil {
+				p.logger.Error("failed to reprocess messages for service",
+					zap.String("service", service),
+					zap.String("status", status),
+					zap.Error(err),
+				)
+				totalErrors++
+				continue
+			}
+
 			totalProcessed += processed
 			totalErrors += errors
 		}
@@ -376,9 +380,9 @@ func (p *Processor) ScheduledReprocessing(ctx context.Context) error {
 }
 
 // reprocessServiceMessages reprocesses messages for a specific service
-func (p *Processor) reprocessServiceMessages(ctx context.Context, service string) (int, int, error) {
+func (p *Processor) reprocessServiceMessages(ctx context.Context, service string, status string) (int, int, error) {
 	// Get messages ready for reprocessing
-	messages, _, err := p.dlqRepo.GetDLQMessagesForReprocessing(ctx, service, "new", 50, "")
+	messages, _, err := p.dlqRepo.GetDLQMessagesForReprocessing(ctx, service, status, 50, "")
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to get messages for reprocessing: %w", err)
 	}
@@ -389,6 +393,7 @@ func (p *Processor) reprocessServiceMessages(ctx context.Context, service string
 
 	p.logger.Info("reprocessing messages for service",
 		zap.String("service", service),
+		zap.String("status", status),
 		zap.Int("message_count", len(messages)),
 	)
 

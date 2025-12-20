@@ -2,6 +2,7 @@ package constructs
 
 import (
 	"fmt"
+	"strings"
 
 	"cdk/inventory"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslogs"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
 	"github.com/aws/jsii-runtime-go"
 )
 
@@ -23,9 +23,7 @@ type LambdaFunctionsProps struct {
 	MediaBucket         awss3.Bucket
 	StreamingBucket     awss3.Bucket
 	TrainingBucket      awss3.Bucket
-	FederationQueue     awssqs.Queue
-	FederationDLQ       awssqs.Queue
-	PushQueue           awssqs.Queue
+	Queues              map[string]QueuePair
 	PrivateKey          awssecretsmanager.ISecret
 	JwtSecret           awssecretsmanager.ISecret
 	MediaConvertRoleArn *string
@@ -66,7 +64,7 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	}
 
 	// Common environment variables shared across functions
-	commonEnv := &map[string]*string{
+	commonEnv := map[string]*string{
 		"ENVIRONMENT":                 jsii.String(props.Environment),
 		"DYNAMO_TABLE_NAME":           props.Table.TableName(),
 		"RATE_LIMIT_TABLE_NAME":       props.RateLimitTable.TableName(),
@@ -74,10 +72,10 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		"CONNECTIONS_TABLE":           props.Table.TableName(),
 		"SUBSCRIPTIONS_TABLE":         props.Table.TableName(),
 		"S3_BUCKET_NAME":              props.MediaBucket.BucketName(),
-		"FEDERATION_QUEUE_URL":        props.FederationQueue.QueueUrl(),
-		"FEDERATION_DLQ_URL":          props.FederationDLQ.QueueUrl(),
-		"PUSH_QUEUE_URL":              props.PushQueue.QueueUrl(),
-		"PUSH_NOTIFICATION_QUEUE_URL": props.PushQueue.QueueUrl(),
+		"FEDERATION_QUEUE_URL":        queueURL(props.Queues, "federation-delivery-queue"),
+		"FEDERATION_DLQ_URL":          dlqURL(props.Queues, "federation-delivery-queue"),
+		"PUSH_QUEUE_URL":              queueURL(props.Queues, "push-delivery-queue"),
+		"PUSH_NOTIFICATION_QUEUE_URL": queueURL(props.Queues, "push-delivery-queue"),
 		"DOMAIN":                      jsii.String(domainValue),
 		"ACTOR_PRIVATE_KEY_ARN":       props.PrivateKey.SecretArn(),             // Reference to actor key in SharedStack
 		"KMS_KEY_ID":                  jsii.String("alias/lesser-encryption"),   // KMS key for encrypting actor private keys
@@ -119,15 +117,15 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	// WebSocket endpoints (GraphQL subscriptions + streaming)
 	graphqlWsHost := fmt.Sprintf("graphql-ws.%s", domainValue)
 	streamWsHost := fmt.Sprintf("stream.%s", domainValue)
-	(*commonEnv)["WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("https://%s", graphqlWsHost))
-	(*commonEnv)["WEBSOCKET_API_URL"] = jsii.String(fmt.Sprintf("https://%s", graphqlWsHost))
-	(*commonEnv)["GRAPHQL_WS_URL"] = jsii.String(fmt.Sprintf("wss://%s", graphqlWsHost))
-	(*commonEnv)["STREAM_WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("wss://%s", streamWsHost))
-	(*commonEnv)["STREAM_WEBSOCKET_API_URL"] = jsii.String(fmt.Sprintf("https://%s", streamWsHost))
+	commonEnv["WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("https://%s", graphqlWsHost))
+	commonEnv["WEBSOCKET_API_URL"] = jsii.String(fmt.Sprintf("https://%s", graphqlWsHost))
+	commonEnv["GRAPHQL_WS_URL"] = jsii.String(fmt.Sprintf("wss://%s", graphqlWsHost))
+	commonEnv["STREAM_WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("wss://%s", streamWsHost))
+	commonEnv["STREAM_WEBSOCKET_API_URL"] = jsii.String(fmt.Sprintf("https://%s", streamWsHost))
 
 	// Set JWT secret ARN from SharedStack (securely passed, never synthesized)
 	if props.JwtSecret != nil {
-		(*commonEnv)["JWT_SECRET_ARN"] = props.JwtSecret.SecretArn()
+		commonEnv["JWT_SECRET_ARN"] = props.JwtSecret.SecretArn()
 	}
 
 	// Select baseline defaults by environment (Lift-aligned)
@@ -166,12 +164,42 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 			RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
 		})
 
+		// Clone and extend env per-Lambda with queue URLs derived from inventory
+		env := copyEnv(commonEnv)
+		for _, trig := range spec.SQSTriggers {
+			envKey := fmt.Sprintf("%s_QUEUE_URL", strings.ToUpper(strings.ReplaceAll(trig.Queue, "-", "_")))
+			if trig.ConsumeDeadLetterQueue {
+				env[envKey] = dlqURL(props.Queues, trig.Queue)
+			} else {
+				env[envKey] = queueURL(props.Queues, trig.Queue)
+			}
+			if trig.DeadLetterQueue != "" {
+				dlqKey := fmt.Sprintf("%s_DLQ_URL", strings.ToUpper(strings.ReplaceAll(trig.DeadLetterQueue, "-", "_")))
+				env[dlqKey] = dlqURL(props.Queues, trig.Queue)
+			}
+		}
+		for _, key := range spec.RequiredEnvVars {
+			if _, exists := env[key]; exists {
+				continue
+			}
+			switch key {
+			case "EXPORT_PROCESSOR_QUEUE_URL":
+				env[key] = queueURL(props.Queues, "export-processor-queue")
+			case "IMPORT_PROCESSOR_QUEUE_URL":
+				env[key] = queueURL(props.Queues, "import-processor-queue")
+			case "MEDIA_PROCESSOR_QUEUE_URL":
+				env[key] = queueURL(props.Queues, "media-processor-queue")
+			default:
+				// leave untouched for non-queue vars
+			}
+		}
+
 		fnProps := awslambda.FunctionProps{
 			Runtime:      awslambda.Runtime_PROVIDED_AL2023(),
 			Architecture: awslambda.Architecture_ARM_64(),
 			MemorySize:   jsii.Number(memory),
 			Timeout:      awscdk.Duration_Seconds(jsii.Number(timeout)),
-			Environment:  commonEnv,
+			Environment:  &env,
 			Tracing:      awslambda.Tracing_ACTIVE,
 			FunctionName: jsii.String(fmt.Sprintf("lesser-%s-%s", props.Environment, spec.Name)),
 			Code:         awslambda.Code_FromAsset(jsii.String(fmt.Sprintf("../../bin/%s.zip", spec.Name)), nil),
@@ -184,4 +212,26 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	}
 
 	return functions
+}
+
+func copyEnv(src map[string]*string) map[string]*string {
+	dst := make(map[string]*string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func queueURL(queueMap map[string]QueuePair, logical string) *string {
+	if qp, ok := queueMap[logical]; ok && qp.Primary != nil {
+		return qp.Primary.QueueUrl()
+	}
+	return jsii.String("")
+}
+
+func dlqURL(queueMap map[string]QueuePair, logical string) *string {
+	if qp, ok := queueMap[logical]; ok && qp.DLQ != nil {
+		return qp.DLQ.QueueUrl()
+	}
+	return jsii.String("")
 }

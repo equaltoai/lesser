@@ -7,9 +7,6 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudwatch"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudwatchactions"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awsevents"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awseventstargets"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslogs"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssns"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssnssubscriptions"
@@ -259,37 +256,6 @@ func (s *MonitoringStack) AddAPIGatewayMetrics(apiName string, apiId string) {
 		EvaluationPeriods: jsii.Number(2),
 		TreatMissingData:  awscloudwatch.TreatMissingData_NOT_BREACHING,
 	}).AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
-}
-
-// CreateEventBridgeRules creates the EventBridge rules for cost and trend aggregation
-func (s *MonitoringStack) CreateEventBridgeRules(costAggregatorFunction awslambda.Function, trendAggregatorFunction awslambda.Function, environment string) {
-	// Cost aggregation rule - triggers every hour
-	costAggregationRule := awsevents.NewRule(s.Stack, jsii.String("CostAggregationRule"), &awsevents.RuleProps{
-		RuleName:    jsii.String(fmt.Sprintf("lesser-%s-cost-aggregation", environment)),
-		Description: jsii.String("Trigger cost aggregation every hour"),
-		Schedule:    awsevents.Schedule_Rate(awscdk.Duration_Hours(jsii.Number(1))),
-		Enabled:     jsii.Bool(true),
-	})
-
-	// Add target for cost aggregation
-	costAggregationRule.AddTarget(awseventstargets.NewLambdaFunction(costAggregatorFunction, &awseventstargets.LambdaFunctionProps{
-		RetryAttempts: jsii.Number(2),
-		MaxEventAge:   awscdk.Duration_Hours(jsii.Number(1)),
-	}))
-
-	// Trend aggregation rule - triggers every 15 minutes
-	trendAggregationRule := awsevents.NewRule(s.Stack, jsii.String("TrendAggregationRule"), &awsevents.RuleProps{
-		RuleName:    jsii.String(fmt.Sprintf("lesser-%s-trend-aggregation", environment)),
-		Description: jsii.String("Trigger trend aggregation every 15 minutes"),
-		Schedule:    awsevents.Schedule_Rate(awscdk.Duration_Minutes(jsii.Number(15))),
-		Enabled:     jsii.Bool(true),
-	})
-
-	// Add target for trend aggregation
-	trendAggregationRule.AddTarget(awseventstargets.NewLambdaFunction(trendAggregatorFunction, &awseventstargets.LambdaFunctionProps{
-		RetryAttempts: jsii.Number(2),
-		MaxEventAge:   awscdk.Duration_Minutes(jsii.Number(30)),
-	}))
 }
 
 // CreateLogGroups creates CloudWatch log groups for API Gateway and Lambda functions

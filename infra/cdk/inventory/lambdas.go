@@ -78,7 +78,7 @@ var LambdaInventory = Inventory{
 		},
 		{
 			Name: "cost-aggregator",
-			Type: LambdaTypeProcessorStream, // TODO(spec04): confirm if hybrid stream + schedule
+			Type: LambdaTypeProcessorStream, // stream-only per Spec04 (Q2) decision
 			Role: RoleClassBasic,
 			StreamTriggers: []StreamTrigger{
 				{
@@ -90,25 +90,23 @@ var LambdaInventory = Inventory{
 					ReportBatchItemFailures:  true,
 				},
 			},
-			ScheduleTriggers: []ScheduleTrigger{
-				{Expression: "TODO-spec04-cost-aggregator-cadence"},
-			},
 		},
 		{
 			Name: "dlq-processor",
-			Type: LambdaTypeHybrid, // SQS + scheduled sweeps
+			Type: LambdaTypeHybrid, // consumes per-job DLQs + scheduled sweeps
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{
-					Queue:                    "dlq-queue",
-					DeadLetterQueue:          "dlq-dlq",
-					BatchSize:                10,
-					MaxBatchingWindowSeconds: 1,
-					EnablePartialFailure:     true,
-				},
+				{Queue: "enhanced-federation-queue", ConsumeDeadLetterQueue: true, BatchSize: 10, MaxBatchingWindowSeconds: 1},
+				{Queue: "export-processor-queue", ConsumeDeadLetterQueue: true, BatchSize: 10, MaxBatchingWindowSeconds: 1},
+				{Queue: "federation-aggregator-queue", ConsumeDeadLetterQueue: true, BatchSize: 10, MaxBatchingWindowSeconds: 1},
+				{Queue: "federation-delivery-queue", ConsumeDeadLetterQueue: true, BatchSize: 10, MaxBatchingWindowSeconds: 1},
+				{Queue: "import-processor-queue", ConsumeDeadLetterQueue: true, BatchSize: 10, MaxBatchingWindowSeconds: 1},
+				{Queue: "media-processor-queue", ConsumeDeadLetterQueue: true, BatchSize: 10, MaxBatchingWindowSeconds: 1},
+				{Queue: "notification-processor-queue", ConsumeDeadLetterQueue: true, BatchSize: 10, MaxBatchingWindowSeconds: 1},
+				{Queue: "push-delivery-queue", ConsumeDeadLetterQueue: true, BatchSize: 10, MaxBatchingWindowSeconds: 1},
 			},
 			ScheduleTriggers: []ScheduleTrigger{
-				{Expression: "TODO-spec04-dlq-sweep-cadence"},
+				{Expression: "rate(15 minutes)"},
 			},
 		},
 		{
@@ -116,7 +114,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "enhanced-federation-queue", EnablePartialFailure: true},
+				{Queue: "enhanced-federation-queue", EnablePartialFailure: false},
 			},
 		},
 		{
@@ -124,16 +122,19 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "export-processor-queue", EnablePartialFailure: true},
+				{Queue: "export-processor-queue", EnablePartialFailure: false},
 			},
 			RequiredEnvVars: []string{"EXPORT_PROCESSOR_QUEUE_URL"}, // TODO(spec04): confirm queue model
 		},
 		{
 			Name: "federation-aggregator",
-			Type: LambdaTypeProcessorScheduled,
+			Type: LambdaTypeHybrid,
 			Role: RoleClassBasic,
+			SQSTriggers: []SQSTrigger{
+				{Queue: "federation-aggregator-queue", EnablePartialFailure: false},
+			},
 			ScheduleTriggers: []ScheduleTrigger{
-				{Expression: "TODO-spec04-federation-aggregator-cadence"},
+				{Expression: "rate(1 hour)"},
 			},
 		},
 		{
@@ -141,7 +142,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "federation-delivery-queue", EnablePartialFailure: true},
+				{Queue: "federation-delivery-queue", EnablePartialFailure: false},
 			},
 		},
 		{
@@ -193,7 +194,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "import-processor-queue", EnablePartialFailure: true},
+				{Queue: "import-processor-queue", EnablePartialFailure: false},
 			},
 			RequiredEnvVars: []string{"IMPORT_PROCESSOR_QUEUE_URL"}, // TODO(spec04): confirm queue model
 		},
@@ -210,7 +211,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "media-processor-queue", EnablePartialFailure: true},
+				{Queue: "media-processor-queue", EnablePartialFailure: false},
 			},
 			RequiredEnvVars: []string{"MEDIA_PROCESSOR_QUEUE_URL"},
 		},
@@ -299,7 +300,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "notification-processor-queue", EnablePartialFailure: true},
+				{Queue: "notification-processor-queue", EnablePartialFailure: false},
 			},
 		},
 		{
@@ -312,22 +313,10 @@ var LambdaInventory = Inventory{
 		},
 		{
 			Name: "outbox",
-			Type: LambdaTypeHybrid, // HTTP + stream
+			Type: LambdaTypeAPIHTTP, // HTTP-only
 			Role: RoleClassEncryption,
 			HTTPRoutes: []HTTPRoute{
 				{Method: "ANY", Path: "/users/{username}/outbox"},
-			},
-			StreamTriggers: []StreamTrigger{
-				{
-					SourceTable:              "main-table",
-					StartingPosition:         StreamStartLatest,
-					BatchSize:                10,
-					MaxBatchingWindowSeconds: 2,
-					ParallelizationFactor:    3,
-					MaxRetryAttempts:         5,
-					EnableBisectOnError:      true,
-					ReportBatchItemFailures:  true,
-				},
 			},
 		},
 		{
@@ -335,7 +324,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "push-delivery-queue", EnablePartialFailure: true},
+				{Queue: "push-delivery-queue", EnablePartialFailure: false},
 			},
 			RequiredEnvVars: []string{"VAPID_PUBLIC_KEY", "VAPID_SUBJECT", "VAPID_SECRET_ARN"},
 		},
@@ -433,7 +422,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorScheduled,
 			Role: RoleClassBasic,
 			ScheduleTriggers: []ScheduleTrigger{
-				{Expression: "TODO-spec04-trend-aggregator-cadence"},
+				{Expression: "cron(0 2 * * ? *)"},
 			},
 		},
 		{
@@ -449,7 +438,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorScheduled,
 			Role: RoleClassBasic,
 			ScheduleTriggers: []ScheduleTrigger{
-				{Expression: "TODO-spec04-websocket-cost-cadence"},
+				{Expression: "rate(1 hour)"},
 			},
 		},
 	},

@@ -171,6 +171,9 @@ func formatWebSocketRoute(r inventory.WebSocketRoute) string {
 
 func formatSQSTrigger(t inventory.SQSTrigger) string {
 	entries := []string{fmt.Sprintf("queue=%s", t.Queue)}
+	if t.ConsumeDeadLetterQueue {
+		entries = append(entries, "consume=dlq")
+	}
 	if t.DeadLetterQueue != "" {
 		entries = append(entries, fmt.Sprintf("dlq=%s", t.DeadLetterQueue))
 	}

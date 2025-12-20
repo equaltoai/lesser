@@ -2,6 +2,7 @@ package stacks
 
 import (
 	localconstructs "cdk/constructs"
+	"cdk/inventory"
 	"fmt"
 	"strings"
 
@@ -40,11 +41,7 @@ type LesserApiStack struct {
 	StreamingBucket        awss3.Bucket
 	TrainingBucket         awss3.Bucket
 	MediaDistribution      awscloudfront.Distribution
-	FederationQueue        awssqs.Queue
-	FederationDLQ          awssqs.Queue
-	PushQueue              awssqs.Queue
-	ImportExportQueue      awssqs.Queue
-	ImportExportDLQ        awssqs.Queue
+	Queues                 map[string]localconstructs.QueuePair
 	PrivateKey             awssecretsmanager.ISecret
 	JwtSecret              awssecretsmanager.ISecret
 	Functions              *localconstructs.LambdaFunctions
@@ -102,8 +99,8 @@ func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiSt
 	// Create media streaming and ML infrastructure (Phase 2.2/2.3)
 	apiStack.createStreamingAndMLInfrastructure()
 
-	// Create SQS queues (Phase 6.6)
-	apiStack.createSQSQueues()
+	// Create SQS queues (inventory-driven)
+	apiStack.Queues = apiStack.createSQSQueues()
 
 	// Create Lambda functions
 	apiStack.createLambdaFunctions()
@@ -113,6 +110,9 @@ func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiSt
 
 	// Create stream processors
 	apiStack.createStreamProcessors()
+
+	// Create schedules (inventory-driven)
+	apiStack.createSchedules()
 
 	// Setup monitoring
 	if features, ok := apiStack.Configuration["features"].(map[string]interface{}); ok {
@@ -359,8 +359,8 @@ func (s *LesserApiStack) createMediaInfrastructure(domain string) {
 	// Grant read access to the OAI directly on the bucket
 	s.MediaBucket.GrantRead(oai, jsii.String("*"))
 
-		// Enhanced CORS configuration for media uploads and reads
-		s.MediaBucket.AddCorsRule(&awss3.CorsRule{
+	// Enhanced CORS configuration for media uploads and reads
+	s.MediaBucket.AddCorsRule(&awss3.CorsRule{
 		AllowedMethods: &[]awss3.HttpMethods{
 			awss3.HttpMethods_GET,
 			awss3.HttpMethods_PUT,
@@ -600,52 +600,72 @@ func (s *LesserApiStack) createStreamingAndMLInfrastructure() {
 	})
 }
 
-func (s *LesserApiStack) createSQSQueues() {
-	// Create federation dead letter queue
-	s.FederationDLQ = awssqs.NewQueue(s.Stack, jsii.String("FederationDLQ"), &awssqs.QueueProps{
-		QueueName:         jsii.String(fmt.Sprintf("lesser-federation-dlq-%s", s.Environment)),
-		RetentionPeriod:   awscdk.Duration_Days(jsii.Number(14)), // 14 days
-		VisibilityTimeout: awscdk.Duration_Seconds(jsii.Number(30)),
-	})
+func (s *LesserApiStack) createSQSQueues() map[string]localconstructs.QueuePair {
+	queuePairs := map[string]localconstructs.QueuePair{}
+	defaultVisibility := awscdk.Duration_Minutes(jsii.Number(2))
+	defaultRetention := awscdk.Duration_Days(jsii.Number(4))
+	defaultMaxReceive := jsii.Number(5)
 
-	// Create federation queue with DLQ redrive policy
-	s.FederationQueue = awssqs.NewQueue(s.Stack, jsii.String("FederationQueue"), &awssqs.QueueProps{
-		QueueName:              jsii.String(fmt.Sprintf("lesser-federation-queue-%s", s.Environment)),
-		VisibilityTimeout:      awscdk.Duration_Minutes(jsii.Number(5)),  // 5 minutes
-		RetentionPeriod:        awscdk.Duration_Days(jsii.Number(4)),     // 4 days
-		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)), // Long polling
-		DeadLetterQueue: &awssqs.DeadLetterQueue{
-			MaxReceiveCount: jsii.Number(5), // After 5 failed attempts, send to DLQ
-			Queue:           s.FederationDLQ,
-		},
-	})
+	for _, lambda := range inventory.LambdaInventory.Lambdas {
+		for _, trigger := range lambda.SQSTriggers {
+			if _, exists := queuePairs[trigger.Queue]; exists {
+				continue
+			}
 
-	// Create push notification queue
-	s.PushQueue = awssqs.NewQueue(s.Stack, jsii.String("PushNotificationQueue"), &awssqs.QueueProps{
-		QueueName:              jsii.String(fmt.Sprintf("lesser-push-notification-queue-%s", s.Environment)),
-		VisibilityTimeout:      awscdk.Duration_Minutes(jsii.Number(1)),  // 1 minute
-		RetentionPeriod:        awscdk.Duration_Days(jsii.Number(1)),     // 1 day
-		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)), // Long polling
-	})
+			logical := trigger.Queue
+			primaryName := fmt.Sprintf("lesser-%s-%s", logical, s.Environment)
 
-	// Create import/export dead letter queue
-	s.ImportExportDLQ = awssqs.NewQueue(s.Stack, jsii.String("ImportExportDLQ"), &awssqs.QueueProps{
-		QueueName:         jsii.String(fmt.Sprintf("lesser-import-export-dlq-%s", s.Environment)),
-		RetentionPeriod:   awscdk.Duration_Days(jsii.Number(14)), // 14 days
-		VisibilityTimeout: awscdk.Duration_Seconds(jsii.Number(30)),
-	})
+			dlqLogical := trigger.DeadLetterQueue
+			if dlqLogical == "" {
+				dlqLogical = fmt.Sprintf("%s-dlq", logical)
+			}
+			dlqName := fmt.Sprintf("lesser-%s-%s", dlqLogical, s.Environment)
 
-	// Create import/export queue with DLQ redrive policy
-	s.ImportExportQueue = awssqs.NewQueue(s.Stack, jsii.String("ImportExportQueue"), &awssqs.QueueProps{
-		QueueName:              jsii.String(fmt.Sprintf("lesser-import-export-queue-%s", s.Environment)),
-		VisibilityTimeout:      awscdk.Duration_Minutes(jsii.Number(15)), // 15 minutes for processing time
-		RetentionPeriod:        awscdk.Duration_Days(jsii.Number(7)),     // 7 days
-		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)), // Long polling
-		DeadLetterQueue: &awssqs.DeadLetterQueue{
-			MaxReceiveCount: jsii.Number(3), // After 3 failed attempts, send to DLQ
-			Queue:           s.ImportExportDLQ,
-		},
-	})
+			dlq := awssqs.NewQueue(s.Stack, jsii.String(fmt.Sprintf("%sDlq", sanitizeQueueId(logical))), &awssqs.QueueProps{
+				QueueName:       jsii.String(dlqName),
+				RetentionPeriod: awscdk.Duration_Days(jsii.Number(14)),
+			})
+
+			queue := awssqs.NewQueue(s.Stack, jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueId(logical))), &awssqs.QueueProps{
+				QueueName:              jsii.String(primaryName),
+				ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)),
+				VisibilityTimeout:      defaultVisibility,
+				RetentionPeriod:        defaultRetention,
+				DeadLetterQueue: &awssqs.DeadLetterQueue{
+					MaxReceiveCount: defaultMaxReceive,
+					Queue:           dlq,
+				},
+			})
+
+			awscdk.Tags_Of(queue).Add(jsii.String("app"), jsii.String("lesser"), nil)
+			awscdk.Tags_Of(queue).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
+			awscdk.Tags_Of(dlq).Add(jsii.String("app"), jsii.String("lesser"), nil)
+			awscdk.Tags_Of(dlq).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
+
+			queuePairs[logical] = localconstructs.QueuePair{Primary: queue, DLQ: dlq}
+		}
+	}
+
+	if qp, ok := queuePairs["federation-delivery-queue"]; ok {
+		queuePairs["federation-queue"] = qp
+	}
+	if qp, ok := queuePairs["push-delivery-queue"]; ok {
+		queuePairs["push-notification-queue"] = qp
+	}
+	if qp, ok := queuePairs["import-processor-queue"]; ok {
+		queuePairs["import-export-queue"] = qp
+	}
+
+	return queuePairs
+}
+
+func sanitizeQueueId(logical string) string {
+	clean := strings.ReplaceAll(logical, "-", "")
+	clean = strings.ReplaceAll(clean, "_", "")
+	if clean == "" {
+		return "Queue"
+	}
+	return clean
 }
 
 func (s *LesserApiStack) createLambdaFunctions() {
@@ -665,9 +685,7 @@ func (s *LesserApiStack) createLambdaFunctions() {
 		MediaBucket:         s.MediaBucket,
 		StreamingBucket:     s.StreamingBucket,
 		TrainingBucket:      s.TrainingBucket,
-		FederationQueue:     s.FederationQueue,
-		FederationDLQ:       s.FederationDLQ,
-		PushQueue:           s.PushQueue,
+		Queues:              s.Queues,
 		PrivateKey:          s.PrivateKey,
 		JwtSecret:           s.JwtSecret,
 		MediaConvertRoleArn: s.MediaConvertRole.RoleArn(),
@@ -717,10 +735,19 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 }
 
 func (s *LesserApiStack) createStreamProcessors() {
+	// Inventory-driven wiring for streams and SQS (requires queues/table/functions)
 	localconstructs.CreateStreamProcessors(s.Stack, &localconstructs.StreamProcessorsProps{
 		Table:     s.MainTable,
-		PushQueue: s.PushQueue,
+		Queues:    s.Queues,
 		Functions: s.Functions,
+	})
+}
+
+func (s *LesserApiStack) createSchedules() {
+	// Inventory-driven wiring for EventBridge schedules (all environments)
+	localconstructs.CreateScheduleWiring(s.Stack, &localconstructs.ScheduleWiringProps{
+		Functions:   s.Functions,
+		Environment: s.Environment,
 	})
 }
 
@@ -728,17 +755,17 @@ func (s *LesserApiStack) setupMonitoring() {
 	// Implementation will use monitoring_stack.go
 }
 
-	func (s *LesserApiStack) setupSecurity() {
-		// Enhanced security setup (Phase 6.7) - comprehensive IAM policies are
-		// now integrated into Lambda functions via security constructs
-		// Policies should remain aligned with required service access:
-		// - DynamoDB: Full table + GSI + streams access
-		// - S3: GetObject, PutObject, DeleteObject, PutObjectAcl
-		// - SQS: Full queue operations for federation and push notifications
-		// - Bedrock: InvokeModel for amazon.titan-embed-text-v1
-		// - KMS: Encrypt/Decrypt with SharedStack key (alias/lesser-encryption)
-		// - Comprehend: AI text analysis capabilities
-	}
+func (s *LesserApiStack) setupSecurity() {
+	// Enhanced security setup (Phase 6.7) - comprehensive IAM policies are
+	// now integrated into Lambda functions via security constructs
+	// Policies should remain aligned with required service access:
+	// - DynamoDB: Full table + GSI + streams access
+	// - S3: GetObject, PutObject, DeleteObject, PutObjectAcl
+	// - SQS: Full queue operations for federation and push notifications
+	// - Bedrock: InvokeModel for amazon.titan-embed-text-v1
+	// - KMS: Encrypt/Decrypt with SharedStack key (alias/lesser-encryption)
+	// - Comprehend: AI text analysis capabilities
+}
 
 func (s *LesserApiStack) createOutputs() {
 	awscdk.NewCfnOutput(s.Stack, jsii.String("TableName"), &awscdk.CfnOutputProps{
@@ -756,25 +783,28 @@ func (s *LesserApiStack) createOutputs() {
 		Description: jsii.String("CloudFront distribution domain name for media"),
 	})
 
-	awscdk.NewCfnOutput(s.Stack, jsii.String("FederationQueueUrl"), &awscdk.CfnOutputProps{
-		Value:       s.FederationQueue.QueueUrl(),
-		Description: jsii.String("Federation queue URL"),
-	})
-
-	awscdk.NewCfnOutput(s.Stack, jsii.String("ImportExportQueueUrl"), &awscdk.CfnOutputProps{
-		Value:       s.ImportExportQueue.QueueUrl(),
-		Description: jsii.String("Import/Export queue URL"),
-	})
-
-	awscdk.NewCfnOutput(s.Stack, jsii.String("FederationDLQUrl"), &awscdk.CfnOutputProps{
-		Value:       s.FederationDLQ.QueueUrl(),
-		Description: jsii.String("Federation dead letter queue URL"),
-	})
-
-	awscdk.NewCfnOutput(s.Stack, jsii.String("PushNotificationQueueUrl"), &awscdk.CfnOutputProps{
-		Value:       s.PushQueue.QueueUrl(),
-		Description: jsii.String("Push notification queue URL"),
-	})
+	if qp, ok := s.Queues["federation-delivery-queue"]; ok {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("FederationQueueUrl"), &awscdk.CfnOutputProps{
+			Value:       qp.Primary.QueueUrl(),
+			Description: jsii.String("Federation queue URL"),
+		})
+		awscdk.NewCfnOutput(s.Stack, jsii.String("FederationDLQUrl"), &awscdk.CfnOutputProps{
+			Value:       qp.DLQ.QueueUrl(),
+			Description: jsii.String("Federation dead letter queue URL"),
+		})
+	}
+	if qp, ok := s.Queues["import-processor-queue"]; ok {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("ImportExportQueueUrl"), &awscdk.CfnOutputProps{
+			Value:       qp.Primary.QueueUrl(),
+			Description: jsii.String("Import/Export queue URL"),
+		})
+	}
+	if qp, ok := s.Queues["push-delivery-queue"]; ok {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("PushNotificationQueueUrl"), &awscdk.CfnOutputProps{
+			Value:       qp.Primary.QueueUrl(),
+			Description: jsii.String("Push notification queue URL"),
+		})
+	}
 
 	awscdk.NewCfnOutput(s.Stack, jsii.String("Environment"), &awscdk.CfnOutputProps{
 		Value:       jsii.String(s.Environment),
@@ -782,23 +812,23 @@ func (s *LesserApiStack) createOutputs() {
 	})
 }
 
-	func loadEnvironmentConfig(environment string) map[string]interface{} {
-		// Default configuration used when environment YAML config isn't loaded.
-		// Prefer `infra/cdk/config/*.yaml` for canonical environment settings.
-		config := map[string]interface{}{
-			"logLevel":   "INFO",
-			"memorySize": 3008.0, // ARM64 Lambda optimized default
-			"timeout":    30.0,
-			"features": map[string]interface{}{
-				"enableMonitoring": true,
-			},
-		}
+func loadEnvironmentConfig(environment string) map[string]interface{} {
+	// Default configuration used when environment YAML config isn't loaded.
+	// Prefer `infra/cdk/config/*.yaml` for canonical environment settings.
+	config := map[string]interface{}{
+		"logLevel":   "INFO",
+		"memorySize": 3008.0, // ARM64 Lambda optimized default
+		"timeout":    30.0,
+		"features": map[string]interface{}{
+			"enableMonitoring": true,
+		},
+	}
 
-		// Environment-specific overrides
-		switch environment {
-		case "development":
-			config["logLevel"] = "DEBUG"
-			config["memorySize"] = 1024.0
+	// Environment-specific overrides
+	switch environment {
+	case "development":
+		config["logLevel"] = "DEBUG"
+		config["memorySize"] = 1024.0
 	case "staging":
 		config["memorySize"] = 1024.0
 	case "production":

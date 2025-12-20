@@ -1,152 +1,101 @@
 # Spec 04: Event Sources Wiring (Streams, SQS, Schedules)
 
 ## Summary
-Lesser relies on multiple non-HTTP triggers (DynamoDB streams, SQS, EventBridge schedules). CDK must wire each Lambda to the correct event source(s) based on what its handler supports, without drift between:
-- handler implementations in `cmd/*/main.go`
-- the canonical inventory in `infra/cdk/inventory/lambdas.go`
-- CDK wiring (event source mappings, schedules, and queues)
+The Phase 1–4 implementation is **fully inventory-driven** for DynamoDB streams, SQS, and EventBridge schedules. This document records the live wiring model, queue naming/DLQ conventions, trigger validation rules (R1–R6), schedule expressions, and operational notes. All resources below are derived from `infra/cdk/inventory/lambdas.go` and materialized by CDK constructs.
 
-This spec is written to be directly actionable by PAI: it defines canonical inputs, concrete outputs, the required file touch points, and acceptance gates.
+## Canonical Sources (Do Not Fork)
+1. Inventory: `infra/cdk/inventory/lambdas.go` (authoritative for `StreamTriggers`, `SQSTriggers`, `ScheduleTriggers`).
+2. Generated doc: `docs/specs/01-lambda-inventory-matrix.md` (run `make generate-inventory`).
+3. Wiring implementation: `infra/cdk/constructs/stream_processors.go`, `infra/cdk/constructs/schedule_wiring.go`.
+4. Queue provisioning: `infra/cdk/stacks/lesser_api_stack.go:createSQSQueues` (inventory-driven).
+5. Guardrail test: `infra/cdk/constructs/trigger_wiring_test.go` (asserts every inventory trigger produces the corresponding mapping/queue/rule).
 
-## Canonical Inputs (Source of Truth)
-PAI must treat these as canonical, in this priority order:
-1. **Inventory:** `infra/cdk/inventory/lambdas.go` (fields: `StreamTriggers`, `SQSTriggers`, `ScheduleTriggers`).
-2. **Handler truth (to correct inventory):** `cmd/*/main.go` (actual handler signatures and Lift registrations).
+## Wiring Implementation Snapshot (Phase 1–4)
+- **Streams & SQS wiring:** Iterates inventory; validates Lambda type (R1/R2) before attaching (`validateStreamCapable`, `validateSQSCapable`); panics if a declared queue is missing.
+- **DLQ consumption (SQS):** If `SQSTrigger.ConsumeDeadLetterQueue=true`, the event source mapping targets the queue’s DLQ (`<queue>-dlq`) instead of the primary queue.
+- **Schedules:** Iterates inventory; validates Lambda type (R3); creates **enabled** EventBridge rules in all environments with rule name `lesser-<env>-<lambda>-schedule-<idx>`.
+- **Queues:** One queue per unique `SQSTrigger.Queue`; DLQ per queue (default `<queue>-dlq`); aliases created for compatibility (`federation-queue`, `push-notification-queue`, `import-export-queue` point to the same underlying queue pairs).
+- **Naming:** Physical queue name `lesser-<logical>-<environment>`; DLQ `lesser-<logical-dlq>-<environment>`.
+- **Defaults:** Long polling 20s, visibility 2m, retention 4d, DLQ retention 14d, maxReceiveCount 5, partial batch failure **off** unless inventory enables it.
 
-Do **not** introduce a second “events inventory” file (e.g., `events.yaml`) for this spec. Inventory lives in `infra/cdk/inventory/lambdas.go` so downstream specs (01/02/03/05/07) stay consistent.
+## Queue/DLQ Model (Inventory-Driven)
+- **Per-job queues** only; no unified ImportExport queue path.
+- Each queue gets its own DLQ; redrive policy maxReceiveCount=5.
+- Tags: `app=lesser`, `environment=<env>`.
+- Aliases: `federation-delivery-queue` → also exposed as `federation-queue`; `push-delivery-queue` → `push-notification-queue`; `import-processor-queue` → `import-export-queue`.
 
-## Goals
-- Make event wiring correct and inventory-driven.
-- Ensure processors are invoked by the right event types (stream vs SQS vs schedule).
-- Standardize queue/schedule naming and DLQ patterns.
+### SQS Event Sources (per Lambda)
+| Lambda | Inventory Queue Key | Consumes | Physical Queue Name (pattern) | Redrive DLQ Name (pattern) | Partial Failure | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| dlq-processor | enhanced-federation-queue | DLQ | lesser-enhanced-federation-queue-dlq-<env> | — | false | Consumes DLQ for `enhanced-federation-queue` |
+| dlq-processor | export-processor-queue | DLQ | lesser-export-processor-queue-dlq-<env> | — | false | Consumes DLQ for `export-processor-queue` |
+| dlq-processor | federation-aggregator-queue | DLQ | lesser-federation-aggregator-queue-dlq-<env> | — | false | Consumes DLQ for `federation-aggregator-queue` |
+| dlq-processor | federation-delivery-queue | DLQ | lesser-federation-delivery-queue-dlq-<env> | — | false | Consumes DLQ for `federation-delivery-queue` |
+| dlq-processor | import-processor-queue | DLQ | lesser-import-processor-queue-dlq-<env> | — | false | Consumes DLQ for `import-processor-queue` |
+| dlq-processor | media-processor-queue | DLQ | lesser-media-processor-queue-dlq-<env> | — | false | Consumes DLQ for `media-processor-queue` |
+| dlq-processor | notification-processor-queue | DLQ | lesser-notification-processor-queue-dlq-<env> | — | false | Consumes DLQ for `notification-processor-queue` |
+| dlq-processor | push-delivery-queue | DLQ | lesser-push-delivery-queue-dlq-<env> | — | false | Consumes DLQ for `push-delivery-queue` |
+| enhanced-federation-processor | enhanced-federation-queue | Primary | lesser-enhanced-federation-queue-<env> | lesser-enhanced-federation-queue-dlq-<env> | false |  |
+| export-generator | export-processor-queue | Primary | lesser-export-processor-queue-<env> | lesser-export-processor-queue-dlq-<env> | false | Env var `EXPORT_PROCESSOR_QUEUE_URL` populated |
+| federation-aggregator | federation-aggregator-queue | Primary | lesser-federation-aggregator-queue-<env> | lesser-federation-aggregator-queue-dlq-<env> | false | Also scheduled (hourly) |
+| federation-delivery | federation-delivery-queue | Primary | lesser-federation-delivery-queue-<env> | lesser-federation-delivery-queue-dlq-<env> | false | Alias `federation-queue` shares the same pair |
+| import-processor | import-processor-queue | Primary | lesser-import-processor-queue-<env> | lesser-import-processor-queue-dlq-<env> | false | Alias `import-export-queue`; env var `IMPORT_PROCESSOR_QUEUE_URL` populated |
+| media-processor | media-processor-queue | Primary | lesser-media-processor-queue-<env> | lesser-media-processor-queue-dlq-<env> | false | Env var `MEDIA_PROCESSOR_QUEUE_URL` populated |
+| notification-processor | notification-processor-queue | Primary | lesser-notification-processor-queue-<env> | lesser-notification-processor-queue-dlq-<env> | false |  |
+| push-delivery | push-delivery-queue | Primary | lesser-push-delivery-queue-<env> | lesser-push-delivery-queue-dlq-<env> | false | Alias `push-notification-queue`; populates push queue URLs |
 
-## Non-Goals
-- Rewriting business behavior beyond what’s needed to align trigger contracts.
-- Adding new async systems beyond DynamoDB + SQS + EventBridge.
+*(All partial failure flags are currently false; `ReportBatchItemFailures` is only set when `EnablePartialFailure=true`.)*
 
-## Decisions (Lock These For Implementation)
-### Q1 — Import/export canonical queue model (RESOLVED)
-Canonical model is **per-job queues**. CDK must provision and wire distinct queues for:
-- import processing
-- export processing
-- media processing
-- scheduled publishing
-- federation delivery
-- push delivery
-- any other SQS-triggered processor declared in inventory
+### Stream Event Sources (DynamoDB `main-table` stream)
+| Lambda | Starting Position | Batch Size | Report Batch Item Failures | Notes |
+| --- | --- | --- | --- | --- |
+| activity-processor | TRIM_HORIZON | 25 | true | Parallelization 5, bisect on error |
+| ai-processor | TRIM_HORIZON | 25 | true | Parallelization 2, bisect on error |
+| cost-aggregator | LATEST | 10 | true | Stream-only (Q2) |
+| federation-timeseries | LATEST | 25 | true |  |
+| federation-tracker | LATEST | 25 | true |  |
+| metrics-aggregator | LATEST | 25 | true |  |
+| metrics-processor | LATEST | 25 | true |  |
+| ml-training-processor | LATEST | 5 | true | Bisect on error |
+| moderation-processor | LATEST | 10 | true | Bisect on error |
+| note-processor | LATEST | 25 | true |  |
+| report-trust-updater | LATEST | 25 | true |  |
+| search-indexer | LATEST | 100 | true | Parallelization 5, bisect on error |
+| severance-processor | LATEST | 10 | true | Parallelization 2, bisect on error |
+| status-indexer | LATEST | 25 | true |  |
+| stream-router | LATEST | 50 | true | Parallelization 5, bisect on error |
 
-CDK must **not** provision or wire a unified `ImportExportQueue` path going forward (legacy `IMPORT_EXPORT_QUEUE_URL` style contracts are considered deprecated).
+*(All stream triggers target the deployed `main-table` stream; non-`main-table` sources are rejected.)*
 
-### Q2 — `cost-aggregator` trigger model (RESOLVED)
-**Stream-only.**
-- Inventory must declare only `StreamTriggers` for `cost-aggregator` (no `ScheduleTriggers`).
-- CDK must not create an EventBridge schedule for it.
+### Schedule Triggers
+| Lambda | Expression | Rule Name Pattern | Enabled | Notes |
+| --- | --- | --- | --- | --- |
+| dlq-processor | rate(15 minutes) | lesser-<env>-dlq-processor-schedule-0 | true | DLQ sweeps all envs |
+| federation-aggregator | rate(1 hour) | lesser-<env>-federation-aggregator-schedule-0 | true | All envs |
+| trend-aggregator | cron(0 2 * * ? *) | lesser-<env>-trend-aggregator-schedule-0 | true | Daily 02:00 UTC |
+| websocket-cost-aggregator | rate(1 hour) | lesser-<env>-websocket-cost-aggregator-schedule-0 | true | All envs |
 
-### Schedule cadences (RESOLVED)
-Use these schedule expressions (EventBridge expressions are UTC):
-- `dlq-processor`: `rate(15 minutes)`
-- `federation-aggregator`: `rate(1 hour)`
-- `trend-aggregator`: `cron(0 2 * * ? *)` (daily 02:00 UTC)
-- `websocket-cost-aggregator`: `rate(1 hour)`
+## Trigger Validation Rules (Aligned to R1–R6)
+- **R1 (streams):** Only `LambdaTypeProcessorStream` or `LambdaTypeHybrid` may declare streams; enforced by `validateStreamCapable`.
+- **R2 (SQS):** Only `LambdaTypeProcessorSQS` or `LambdaTypeHybrid` may declare SQS; enforced by `validateSQSCapable`. Missing queues panic at synth time. If `ConsumeDeadLetterQueue=true`, the mapping targets the queue’s DLQ (`<queue>-dlq`) and the DLQ must exist.
+- **R3 (schedules):** Only `LambdaTypeProcessorScheduled` or `LambdaTypeHybrid` may declare schedules; enforced by `validateScheduleCapable`.
+- **R4 (DLQ):** Every SQS queue has a DLQ with maxReceiveCount=5 and DLQ retention=14d; main queue retention=4d; long polling=20s.
+- **R5 (filtering):** No event source filters are defined in inventory; filtering remains in-handler (consistent with current code).
+- **R6 (partial failures):** `ReportBatchItemFailures` is set only when `EnablePartialFailure=true` in inventory. Current inventory sets all SQS partial failures to `false`; stream partial failures are `true` where handlers support it.
 
-### Schedule enablement by environment (RESOLVED)
-Create EventBridge rules in **all** environments/stages, including `development`, `staging`, and `production`.
+## Operational Notes
+- **Redrive:** Messages exceeding maxReceiveCount are sent to the queue’s DLQ; monitor DLQ age/count (see Spec 06 monitoring).
+- **Batch failure behavior:** With partial failures off (all SQS triggers), failures are whole-batch; DLQ redrive applies after retries.
+- **Schedule scope:** Rules are created and enabled in **all environments** (dev/staging/prod) using the name pattern above. `dlq-processor` treats EventBridge’s default scheduled `detail-type` (`"Scheduled Event"`) as a scheduled reprocessing sweep; no custom rule input is required.
+- **Env vars:** Queue URLs are injected per trigger; aliases ensure legacy names (`federation-queue`, `push-notification-queue`, `import-export-queue`) resolve to the same physical queues.
 
-## Requirements
-### R0 — Inventory is the single wiring contract
-CDK event wiring must be generated from `infra/cdk/inventory/lambdas.go`. Any drift discovered against `cmd/*/main.go` must be fixed by updating the inventory first.
+## Cross-Links and Regeneration
+- Regenerate inventory docs: `make generate-inventory` → `docs/specs/01-lambda-inventory-matrix.md`.
+- Guardrail: `cd infra/cdk && go test ./constructs -run TestInventoryTriggersMaterializeResources` validates every mapping/queue/rule.
+- Inventory source of truth: `infra/cdk/inventory/lambdas.go` must be updated first for any wiring change.
 
-### R1 — DynamoDB stream mappings match stream handlers
-Only Lambdas that consume `events.DynamoDBEvent` (or Lift stream equivalents) may be attached to DynamoDB streams.
-
-### R2 — SQS event source mappings match SQS handlers
-Only Lambdas that consume `events.SQSEvent` may be attached to SQS queues.
-
-### R3 — Scheduled rules only target schedule handlers
-Only Lambdas that implement the scheduled handler pattern (EventBridge/CloudWatch events) may be invoked by schedules.
-
-Infra must not “schedule-invoke” a stream-only handler.
-
-### R4 — Each queue has a DLQ and sane redrive
-For SQS-triggered processors:
-- Create per-queue DLQs (or a justified shared DLQ) with explicit `maxReceiveCount`.
-- Do not enable partial batch failure reporting unless the handler returns the correct response type (see R6).
-
-### R5 — Event filtering strategy is consistent
-Where possible:
-- Prefer in-code filtering when event source filters are unstable or brittle.
-- If using event source filters, define them in the inventory and test `cdk synth` stability.
-
-### R6 — Partial batch failure reporting is capability-gated
-Inventory flags must reflect handler capability:
-- For SQS, only set `SQSTrigger.EnablePartialFailure=true` if the Lambda handler returns `events.SQSEventResponse` (or an equivalent wrapper that produces the batch-item-failures payload).
-- For streams, only set `StreamTrigger.ReportBatchItemFailures=true` if the Lambda handler returns the DynamoDB partial failure response type (if/when implemented).
-
-If capability is unknown or absent, default the flags to **false** so runtime behavior stays whole-batch and predictable.
-
-### R7 — Deprecated/hard-coded wiring is removed
-`infra/cdk/constructs/stream_processors.go` (or its successor) must not contain hard-coded Lambda→event-source mappings. All attachments must be derived by iterating the inventory.
-
-### R8 — Inventory-declared triggers are fully realized
-For every trigger declared in inventory, CDK must create the corresponding AWS resources:
-- `StreamTriggers` → `AWS::Lambda::EventSourceMapping` (DynamoDB stream)
-- `SQSTriggers` → `AWS::SQS::Queue` + `AWS::SQS::Queue` (DLQ) + `AWS::Lambda::EventSourceMapping`
-- `ScheduleTriggers` → `AWS::Events::Rule` + Lambda target
-
-## Implementation (PAI Execution Checklist)
-PAI should implement these steps in order.
-
-### Step 1 — Reconcile inventory against handlers
-Update `infra/cdk/inventory/lambdas.go` so it matches handler reality in `cmd/*/main.go`:
-- Remove any triggers that don’t match the handler’s supported event types.
-- Add missing triggers where the handler clearly supports them (e.g., Lift `app.SQS(...)`, `patterns.RegisterEventBridge(...)`, etc.).
-- Apply R6 (partial failure flags match handler signature).
-- Replace any placeholder schedule expressions with the defaults above (or your chosen values).
-
-Then re-run the inventory doc generator to keep Spec 01 current:
-- `make generate-inventory`
-
-### Step 2 — Build queues from inventory (per-job queues)
-Update CDK to provision queues from inventory (and delete the unified import/export queue path):
-- Replace `LesserApiStack.createSQSQueues`’s current hard-coded queues (`ImportExportQueue`, etc.) with an inventory-driven queue builder.
-- Create one queue per unique `SQSTrigger.Queue` in the inventory.
-- Create one DLQ per queue (use `SQSTrigger.DeadLetterQueue` if provided; otherwise default to `<queue>-dlq`).
-- Apply a single, consistent naming scheme for deployed queue names, e.g. `lesser-<logical-queue-name>-<environment>`.
-
-Minimum queue defaults (unless explicitly overridden later):
-- `ReceiveMessageWaitTime`: 20 seconds (long polling)
-- `DLQ retention`: 14 days
-- `maxReceiveCount`: 5
-
-### Step 3 — Attach stream and SQS event sources from inventory
-Replace hard-coded wiring in `infra/cdk/constructs/stream_processors.go` with inventory iteration:
-- For each Lambda with `StreamTriggers`, attach a DynamoDB stream event source mapping with the configured batching/position/retry settings.
-- For each Lambda with `SQSTriggers`, attach an SQS event source mapping with configured batching/window settings and `ReportBatchItemFailures` derived from `EnablePartialFailure`.
-- Enforce R1/R2 via validation: fail synth/test if an HTTP-only/WS-only Lambda declares a non-HTTP trigger.
-
-### Step 4 — Attach schedules from inventory
-Create EventBridge rules for each `ScheduleTrigger`:
-- Do not gate schedules by environment; schedules must exist in all stages.
-- Use `ScheduleTrigger.Expression` verbatim as the EventBridge schedule expression.
-- If `ScheduleTrigger.Input` is set, attach it as the rule target input (text or JSON).
-
-### Step 5 — Add guardrails (tests or synth-time validation)
-Add a CDK-level guardrail so PAI can prove Spec 04 is satisfied:
-- A `go test` in `infra/cdk/constructs` that synthesizes a stack and asserts:
-  - every inventory `StreamTrigger` yields an `AWS::Lambda::EventSourceMapping` for the right function
-  - every inventory `SQSTrigger` yields the queue+DLQ and an event source mapping
-  - every inventory `ScheduleTrigger` yields an `AWS::Events::Rule` with the expected expression and target
-
-## Current Drift Findings (Examples)
-- `infra/cdk/constructs/stream_processors.go` attaches DynamoDB stream event sources to Lambdas that are not stream handlers.
-- Some SQS sources exist in infra but are not represented in the inventory, and vice versa.
-- A unified `ImportExportQueue` exists in CDK but the product model is per-job queues (Q1).
-
-## Acceptance Gates (What PAI Must Make Green)
-- `make verify-inventory` (set equality + Spec 01 freshness + Spec 02/03 tests)
-- `cd infra/cdk && go test ./...` (or at minimum, the Spec 04 guardrail test added above)
-
-## Acceptance Criteria
-- Every processor Lambda has exactly the event sources it expects (no missing, no incorrect extras).
-- SQS queues have DLQs and redrive policies.
-- Schedule rules exist for every inventory `ScheduleTrigger`.
+## Acceptance Criteria (Documentation Alignment)
+- Tables above enumerate every inventory-declared stream/SQS/schedule trigger with the live naming scheme.
+- R1–R6 and queue/DLQ defaults match `stream_processors.go`, `schedule_wiring.go`, and `createSQSQueues`.
+- Alias queues and per-job queue model are explicitly documented (no unified ImportExport path).
+- Schedule expressions match deployed values for dlq-processor, federation-aggregator, trend-aggregator, websocket-cost-aggregator.

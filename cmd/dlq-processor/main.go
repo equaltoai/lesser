@@ -67,6 +67,9 @@ func (h *DLQProcessorHandler) HandleEventBridge(ctx *lift.Context, event events.
 	switch event.DetailType {
 	case "DLQ Scheduled Reprocessing":
 		return h.handleScheduledReprocessing(ctx)
+	case "Scheduled Event":
+		// Default detail-type for EventBridge schedule rules.
+		return h.handleScheduledReprocessing(ctx)
 	case "DLQ Cleanup":
 		return h.handleCleanup(ctx)
 	case "DLQ Analytics":

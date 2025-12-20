@@ -37,6 +37,7 @@ type WebSocketRoute struct {
 type SQSTrigger struct {
 	Queue                    string `json:"queue" yaml:"queue"`
 	DeadLetterQueue          string `json:"deadLetterQueue,omitempty" yaml:"deadLetterQueue,omitempty"`
+	ConsumeDeadLetterQueue   bool   `json:"consumeDeadLetterQueue,omitempty" yaml:"consumeDeadLetterQueue,omitempty"`
 	BatchSize                int    `json:"batchSize,omitempty" yaml:"batchSize,omitempty"`
 	MaxBatchingWindowSeconds int    `json:"maxBatchingWindowSeconds,omitempty" yaml:"maxBatchingWindowSeconds,omitempty"`
 	EnablePartialFailure     bool   `json:"enablePartialFailure,omitempty" yaml:"enablePartialFailure,omitempty"`

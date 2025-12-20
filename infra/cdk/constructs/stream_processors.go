@@ -1,6 +1,9 @@
 package constructs
 
 import (
+	"cdk/inventory"
+	"fmt"
+
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
@@ -12,125 +15,123 @@ import (
 
 type StreamProcessorsProps struct {
 	Table     awsdynamodb.Table
-	PushQueue awssqs.Queue
+	Queues    map[string]QueuePair
 	Functions *LambdaFunctions
 }
 
 func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsProps) {
-	activityProcessor := props.Functions.Must("activity-processor")
-	notificationProcessor := props.Functions.Must("push-delivery")
-	outboxProcessor := props.Functions.Must("outbox")
-	timelineProcessor := props.Functions.Must("trend-aggregator")
-	moderationProcessor := props.Functions.Must("moderation-processor")
-	searchIndexer := props.Functions.Must("status-indexer")
-	mlTrainingProcessor := props.Functions.Must("ml-training-processor")
-	severanceProcessor := props.Functions.Must("severance-processor")
-	streamRouter := props.Functions.Must("stream-router")
+	for _, spec := range inventory.LambdaInventory.Lambdas {
+		hasStreamTriggers := len(spec.StreamTriggers) > 0
+		hasSQSTriggers := len(spec.SQSTriggers) > 0
+		if !hasStreamTriggers && !hasSQSTriggers {
+			continue
+		}
 
-	// Activity processor - handles new activities and status updates
-	activityEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
-		StartingPosition:        awslambda.StartingPosition_TRIM_HORIZON,
-		BatchSize:               jsii.Number(25),
-		MaxBatchingWindow:       awscdk.Duration_Seconds(jsii.Number(5)),
-		ParallelizationFactor:   jsii.Number(5),
-		RetryAttempts:           jsii.Number(3),
-		BisectBatchOnError:      jsii.Bool(true),
-		ReportBatchItemFailures: jsii.Bool(true),
-	})
-	activityProcessor.AddEventSource(activityEventSource)
+		handler := props.Functions.Must(spec.Name)
 
-	// Notification processor - handles real-time notifications via SQS
-	if props.PushQueue != nil {
-		notificationEventSource := awslambdaeventsources.NewSqsEventSource(props.PushQueue, &awslambdaeventsources.SqsEventSourceProps{
-			BatchSize:               jsii.Number(10),
-			MaxBatchingWindow:       awscdk.Duration_Seconds(jsii.Number(1)),
-			ReportBatchItemFailures: jsii.Bool(true),
-		})
-		notificationProcessor.AddEventSource(notificationEventSource)
+		if hasStreamTriggers {
+			validateStreamCapable(spec)
+			for _, trig := range spec.StreamTriggers {
+				table := resolveStreamTable(spec, trig, props.Table)
+				eventSourceProps := buildStreamEventSourceProps(trig)
+				handler.AddEventSource(awslambdaeventsources.NewDynamoEventSource(table, eventSourceProps))
+			}
+		}
+
+		if hasSQSTriggers {
+			validateSQSCapable(spec)
+			for _, trig := range spec.SQSTriggers {
+				queue := resolveQueue(spec, trig, props.Queues)
+				eventSourceProps := buildSQSEventSourceProps(trig)
+				handler.AddEventSource(awslambdaeventsources.NewSqsEventSource(queue, eventSourceProps))
+			}
+		}
+	}
+}
+
+func validateStreamCapable(spec inventory.LambdaSpec) {
+	if spec.Type != inventory.LambdaTypeProcessorStream && spec.Type != inventory.LambdaTypeHybrid {
+		panic(fmt.Sprintf("lambda %s has stream triggers but type %s does not support streams", spec.Name, spec.Type))
+	}
+}
+
+func validateSQSCapable(spec inventory.LambdaSpec) {
+	if spec.Type != inventory.LambdaTypeProcessorSQS && spec.Type != inventory.LambdaTypeHybrid {
+		panic(fmt.Sprintf("lambda %s has SQS triggers but type %s does not support SQS", spec.Name, spec.Type))
+	}
+}
+
+func resolveStreamTable(spec inventory.LambdaSpec, trig inventory.StreamTrigger, defaultTable awsdynamodb.Table) awsdynamodb.Table {
+	if trig.SourceTable == "" || trig.SourceTable == "main-table" {
+		return defaultTable
+	}
+	panic(fmt.Sprintf("lambda %s stream trigger references unsupported table %s", spec.Name, trig.SourceTable))
+}
+
+func buildStreamEventSourceProps(trig inventory.StreamTrigger) *awslambdaeventsources.DynamoEventSourceProps {
+	startPos := awslambda.StartingPosition_LATEST
+	if trig.StartingPosition == inventory.StreamStartTrimHorizon {
+		startPos = awslambda.StartingPosition_TRIM_HORIZON
 	}
 
-	// Federation outbox processor - handles outgoing federation
-	outboxEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
-		StartingPosition:        awslambda.StartingPosition_LATEST,
-		BatchSize:               jsii.Number(10),
-		MaxBatchingWindow:       awscdk.Duration_Seconds(jsii.Number(2)),
-		ParallelizationFactor:   jsii.Number(3),
-		RetryAttempts:           jsii.Number(5),
-		BisectBatchOnError:      jsii.Bool(true),
-		ReportBatchItemFailures: jsii.Bool(true),
-		MaxRecordAge:            awscdk.Duration_Hours(jsii.Number(2)),
-	})
-	outboxProcessor.AddEventSource(outboxEventSource)
+	props := &awslambdaeventsources.DynamoEventSourceProps{
+		StartingPosition: startPos,
+	}
 
-	// Timeline processor - handles timeline fanout
-	timelineEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
-		StartingPosition:        awslambda.StartingPosition_LATEST,
-		BatchSize:               jsii.Number(50),
-		MaxBatchingWindow:       awscdk.Duration_Seconds(jsii.Number(10)),
-		ParallelizationFactor:   jsii.Number(10),
-		RetryAttempts:           jsii.Number(3),
-		BisectBatchOnError:      jsii.Bool(true),
-		ReportBatchItemFailures: jsii.Bool(true),
-	})
-	timelineProcessor.AddEventSource(timelineEventSource)
+	if trig.BatchSize > 0 {
+		props.BatchSize = jsii.Number(float64(trig.BatchSize))
+	}
+	if trig.MaxBatchingWindowSeconds > 0 {
+		props.MaxBatchingWindow = awscdk.Duration_Seconds(jsii.Number(float64(trig.MaxBatchingWindowSeconds)))
+	}
+	if trig.ParallelizationFactor > 0 {
+		props.ParallelizationFactor = jsii.Number(float64(trig.ParallelizationFactor))
+	}
+	if trig.MaxRetryAttempts > 0 {
+		props.RetryAttempts = jsii.Number(float64(trig.MaxRetryAttempts))
+	}
+	if trig.MaxRecordAgeSeconds > 0 {
+		props.MaxRecordAge = awscdk.Duration_Seconds(jsii.Number(float64(trig.MaxRecordAgeSeconds)))
+	}
+	if trig.EnableBisectOnError {
+		props.BisectBatchOnError = jsii.Bool(true)
+	}
+	if trig.ReportBatchItemFailures {
+		props.ReportBatchItemFailures = jsii.Bool(true)
+	}
 
-	// Moderation processor - handles content moderation
-	moderationEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
-		StartingPosition:        awslambda.StartingPosition_LATEST,
-		BatchSize:               jsii.Number(10),
-		MaxBatchingWindow:       awscdk.Duration_Seconds(jsii.Number(5)),
-		ParallelizationFactor:   jsii.Number(2),
-		RetryAttempts:           jsii.Number(3),
-		BisectBatchOnError:      jsii.Bool(true),
-		ReportBatchItemFailures: jsii.Bool(true),
-	})
-	moderationProcessor.AddEventSource(moderationEventSource)
+	return props
+}
 
-	// Search indexer - handles search index updates
-	searchEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
-		StartingPosition:        awslambda.StartingPosition_LATEST,
-		BatchSize:               jsii.Number(100),
-		MaxBatchingWindow:       awscdk.Duration_Seconds(jsii.Number(30)),
-		ParallelizationFactor:   jsii.Number(5),
-		RetryAttempts:           jsii.Number(3),
-		BisectBatchOnError:      jsii.Bool(true),
-		ReportBatchItemFailures: jsii.Bool(true),
-	})
-	searchIndexer.AddEventSource(searchEventSource)
+func resolveQueue(spec inventory.LambdaSpec, trig inventory.SQSTrigger, queues map[string]QueuePair) awssqs.IQueue {
+	qp, ok := queues[trig.Queue]
+	if !ok {
+		panic(fmt.Sprintf("lambda %s requires queue %s but it was not created (check inventory vs Phase 2 queues)", spec.Name, trig.Queue))
+	}
 
-	// ML Training processor - handles ML model training job lifecycle (Phase 2.3)
-	mlTrainingEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
-		StartingPosition:        awslambda.StartingPosition_LATEST,
-		BatchSize:               jsii.Number(5), // Small batch size for training jobs
-		MaxBatchingWindow:       awscdk.Duration_Seconds(jsii.Number(1)),
-		ParallelizationFactor:   jsii.Number(1), // Sequential processing for job lifecycle
-		RetryAttempts:           jsii.Number(3),
-		BisectBatchOnError:      jsii.Bool(true),
-		ReportBatchItemFailures: jsii.Bool(true),
-	})
-	mlTrainingProcessor.AddEventSource(mlTrainingEventSource)
+	if trig.ConsumeDeadLetterQueue {
+		if qp.DLQ == nil {
+			panic(fmt.Sprintf("lambda %s requires DLQ for queue %s but it was not created", spec.Name, trig.Queue))
+		}
+		return qp.DLQ
+	}
 
-	// Severance processor - handles federation severance detection (Phase 2.4)
-	severanceEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
-		StartingPosition:        awslambda.StartingPosition_LATEST,
-		BatchSize:               jsii.Number(10),
-		MaxBatchingWindow:       awscdk.Duration_Seconds(jsii.Number(5)),
-		ParallelizationFactor:   jsii.Number(2),
-		RetryAttempts:           jsii.Number(3),
-		BisectBatchOnError:      jsii.Bool(true),
-		ReportBatchItemFailures: jsii.Bool(true),
-	})
-	severanceProcessor.AddEventSource(severanceEventSource)
+	if qp.Primary != nil {
+		return qp.Primary
+	}
+	panic(fmt.Sprintf("lambda %s requires primary queue %s but it was not created", spec.Name, trig.Queue))
+}
 
-	// Stream router - fan out streaming events to WebSocket subscribers
-	streamRouterEventSource := awslambdaeventsources.NewDynamoEventSource(props.Table, &awslambdaeventsources.DynamoEventSourceProps{
-		StartingPosition:        awslambda.StartingPosition_LATEST,
-		BatchSize:               jsii.Number(50),
-		MaxBatchingWindow:       awscdk.Duration_Seconds(jsii.Number(2)),
-		ParallelizationFactor:   jsii.Number(5),
-		RetryAttempts:           jsii.Number(3),
-		BisectBatchOnError:      jsii.Bool(true),
-		ReportBatchItemFailures: jsii.Bool(true),
-	})
-	streamRouter.AddEventSource(streamRouterEventSource)
+func buildSQSEventSourceProps(trig inventory.SQSTrigger) *awslambdaeventsources.SqsEventSourceProps {
+	props := &awslambdaeventsources.SqsEventSourceProps{}
+	if trig.BatchSize > 0 {
+		props.BatchSize = jsii.Number(float64(trig.BatchSize))
+	}
+	if trig.MaxBatchingWindowSeconds > 0 {
+		props.MaxBatchingWindow = awscdk.Duration_Seconds(jsii.Number(float64(trig.MaxBatchingWindowSeconds)))
+	}
+	if trig.EnablePartialFailure {
+		props.ReportBatchItemFailures = jsii.Bool(true)
+	}
+	return props
 }
