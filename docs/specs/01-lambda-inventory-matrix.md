@@ -34,21 +34,21 @@ The inventory set is exactly the 36 Lambdas in `Makefile` `LAMBDAS`:
 | activity-processor | processor-stream | Stream: table=main-table; start=TRIM_HORIZON; batch=25; window=5s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=300s; logs=7d |
 | actor | api-http | HTTP: GET /users/{username} | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | ai-processor | processor-stream | Stream: table=main-table; start=TRIM_HORIZON; batch=25; window=5s; parallel=2; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=300s; logs=7d |
-| api | api-http | HTTP: ANY /api/v1/{proxy+}<br>HTTP: ANY /api/v2/{proxy+}<br>HTTP: GET /.well-known/nodeinfo | S3_MEDIA_BUCKET<br>DOMAIN_NAME | encryption | memory=512MB; timeout=30s; logs=7d |
+| api | api-http | HTTP: ANY /api/v1/{proxy+}<br>HTTP: ANY /api/v2/{proxy+}<br>HTTP: GET /.well-known/nodeinfo | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | collections | api-http | HTTP: GET /users/{username}/followers<br>HTTP: GET /users/{username}/following<br>HTTP: GET /users/{username}/liked | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | cost-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=10; window=2s; parallel=1; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | dlq-processor | hybrid | SQS: queue=enhanced-federation-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=export-processor-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=federation-aggregator-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=federation-delivery-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=import-processor-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=media-processor-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=notification-processor-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=push-delivery-queue; consume=dlq; batch=10; window=1s<br>Schedule: expression=rate(15 minutes) | — | basic | memory=512MB; timeout=30s; logs=7d |
 | enhanced-federation-processor | processor-sqs | SQS: queue=enhanced-federation-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
-| export-generator | processor-sqs | SQS: queue=export-processor-queue | EXPORT_PROCESSOR_QUEUE_URL | basic | memory=512MB; timeout=30s; logs=7d |
+| export-generator | processor-sqs | SQS: queue=export-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
 | federation-aggregator | hybrid | SQS: queue=federation-aggregator-queue<br>Schedule: expression=rate(1 hour) | — | basic | memory=512MB; timeout=30s; logs=7d |
 | federation-delivery | processor-sqs | SQS: queue=federation-delivery-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
 | federation-timeseries | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | federation-tracker | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
-| graphql | api-http | HTTP: GET /api/graphql<br>HTTP: POST /api/graphql | JWT_SECRET | encryption | memory=512MB; timeout=30s; logs=7d |
-| graphql-ws | api-ws | — | JWT_SECRET | encryption | memory=512MB; timeout=30s; logs=7d |
-| import-processor | processor-sqs | SQS: queue=import-processor-queue | IMPORT_PROCESSOR_QUEUE_URL | basic | memory=512MB; timeout=30s; logs=7d |
+| graphql | api-http | HTTP: GET /api/graphql<br>HTTP: POST /api/graphql | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| graphql-ws | api-ws | — | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| import-processor | processor-sqs | SQS: queue=import-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
 | inbox | api-http | HTTP: ANY /inbox/{username} | — | encryption | memory=512MB; timeout=30s; logs=7d |
-| media-processor | processor-sqs | SQS: queue=media-processor-queue | MEDIA_PROCESSOR_QUEUE_URL | basic | memory=512MB; timeout=30s; logs=7d |
+| media-processor | processor-sqs | SQS: queue=media-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
 | metrics-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | metrics-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | ml-training-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=5; window=1s; parallel=1; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=900s; logs=7d |
@@ -62,7 +62,7 @@ The inventory set is exactly the 36 Lambdas in `Makefile` `LAMBDAS`:
 | search-indexer | processor-stream | Stream: table=main-table; start=LATEST; batch=100; window=30s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | severance-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=10; window=5s; parallel=2; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=30s; logs=7d |
 | status-indexer | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
-| stream-router | processor-stream | Stream: table=main-table; start=LATEST; batch=50; window=2s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | WEBSOCKET_API_URL<br>WEBSOCKET_ENDPOINT<br>STREAMING_SUBSCRIPTIONS_TABLE<br>WEBSOCKET_API_ID<br>WEBSOCKET_STAGE<br>DOMAIN_NAME | encryption | memory=512MB; timeout=30s; logs=7d |
+| stream-router | processor-stream | Stream: table=main-table; start=LATEST; batch=50; window=2s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | streaming | api-ws | — | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | trend-aggregator | processor-scheduled | Schedule: expression=cron(0 2 * * ? *) | — | basic | memory=512MB; timeout=30s; logs=7d |
 | webfinger | api-http | HTTP: GET /.well-known/webfinger | — | basic | memory=512MB; timeout=30s; logs=7d |

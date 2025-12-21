@@ -114,13 +114,6 @@ func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiSt
 	// Create schedules (inventory-driven)
 	apiStack.createSchedules()
 
-	// Setup monitoring
-	if features, ok := apiStack.Configuration["features"].(map[string]interface{}); ok {
-		if enableMonitoring, ok := features["enableMonitoring"].(bool); ok && enableMonitoring {
-			apiStack.setupMonitoring()
-		}
-	}
-
 	// Setup security
 	apiStack.setupSecurity()
 
@@ -781,10 +774,6 @@ func (s *LesserApiStack) createSchedules() {
 		Functions:   s.Functions,
 		Environment: s.Environment,
 	})
-}
-
-func (s *LesserApiStack) setupMonitoring() {
-	// Implementation will use monitoring_stack.go
 }
 
 func (s *LesserApiStack) setupSecurity() {

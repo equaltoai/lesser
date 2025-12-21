@@ -1,119 +1,107 @@
-# Spec 06: Monitoring Stack Consistency (Dashboards, Alarms, Logs)
+# Spec 06: Monitoring Stack Consistency
 
 ## Summary
-Monitoring must be consistent with the deployed product set. Today, monitoring code can drift (stale function lists, environment naming mismatch, unused helper methods, and phantom resources). This spec makes monitoring inventory-driven so dashboards/alarms stay aligned with:
-- what exists in code (`cmd/*`)
-- what is deployed (`infra/cdk/constructs` + `infra/cdk/stacks`)
-- what is declared as product (`infra/cdk/inventory/lambdas.go`)
-
-This spec is written to be directly actionable by PAI: it defines canonical inputs, explicit decisions, the required file touch points, and operator-run verification.
-
-## Canonical Inputs (Source of Truth)
-PAI must treat these as canonical, in this priority order:
-1. **Inventory:** `infra/cdk/inventory/lambdas.go` (product Lambda set + types + triggers).
-2. **Naming conventions:** Spec 02 (Lambda names and log group names).
-3. **Event-source contracts:** Spec 04 (streams/SQS/schedules exist and are wired from inventory).
+This spec makes the monitoring layer **complete and consistent** across environments by ensuring the CloudWatch monitoring stack is:
+- **Inventory-driven** (no hard-coded Lambda or queue lists).
+- **Observability-only** (must not create application wiring like queues, schedules, or event source mappings).
+- **Environment-consistent** (names include the canonical environment and do not invent aliases like `prod`).
 
 ## Execution Constraints
-PAI must not execute commands, run tests, or synthesize CDK. PAI may add/modify code and scripts, but all verification steps are run by the operator (Codex CLI) outside PAI.
+PAI does not execute commands, tests, or CDK synth. Operators run verification outside PAI.
+
+## Definitions (Environment vs Stage)
+- **Environment**: `development | staging | production` (stack naming, resource naming, alarms).
+- **DNS stage label**: `dev | staging | live` (domain convention). This is separate from `Environment` and must not leak into alarm names.
+
+## Canonical Inputs (Source of Truth)
+- **Lambda inventory**: `infra/cdk/inventory/lambdas.go` (`inventory.LambdaInventory`)
+  - Source of truth for: Lambda names, types, stream/SQS/schedule triggers.
+- **Resource naming conventions**
+  - Lambda physical name: `lesser-<environment>-<lambdaName>` (`infra/cdk/constructs/lambda_functions.go`)
+  - SQS queue physical name: `lesser-<queueLogical>-<environment>` (`infra/cdk/stacks/lesser_api_stack.go#createSQSQueues`)
+  - DynamoDB tables: `lesser-<environment>` and `lesser-rate-limits-<environment>` (`infra/cdk/stacks/lesser_api_stack.go#createSharedResources`)
+  - HTTP API name: `lesser-<environment>-api` (`infra/cdk/constructs/api_routes.go`)
 
 ## Goals
-- Ensure dashboards/alarms cover the full product set (all inventory Lambdas).
-- Eliminate stale/phantom monitored functions.
-- Standardize log group naming and retention, aligned with Spec 02 (no “prod” special cases that drift from `production`).
+1. Monitoring stack creates a dashboard and alarms for **all** inventory Lambdas.
+2. Monitoring stack creates alarms for **all** SQS queues implied by inventory SQS triggers (plus the canonical `scheduled-queue`) and their DLQs.
+3. Monitoring stack provides baseline DynamoDB alarms for main + rate-limit tables.
+4. Monitoring stack does **not** create SQS queues, EventBridge schedules/rules, or Lambda event source mappings.
+5. Guardrail tests prevent drift (phantom Lambdas/queues, hard-coded lists, or accidental wiring resources).
 
 ## Non-Goals
-- Perfect production SLO design; this is a baseline for “all 9’s”.
-- Designing a multi-tier monitoring coverage model (monitor all product Lambdas; tiering can be added later if needed).
+- Adding or changing application wiring (routes, stream processors, schedules, queue creation).
+- Building a full SLO/SLA layer or business-metric dashboards (future spec).
+- Managing log group retention here (already owned by:
+  - `infra/cdk/constructs/lambda_functions.go` for Lambda log groups
+  - `infra/cdk/constructs/api_routes.go` for API Gateway access logs)
 
-## Decisions (Lock These For Implementation)
-### D1 — Monitoring targets are inventory-driven
-Monitoring must derive its Lambda target set from `infra/cdk/inventory/lambdas.go` and must not maintain a separate hand-written list of Lambda names.
+## Required Implementation
 
-### D2 — Use canonical environment strings
-Use the stack `Environment` value verbatim for naming and tagging (e.g., `development`, `staging`, `production`). Treat `prod` as an alias only for backwards compatibility if it still exists in inputs, but do not emit `prod` in names/labels when the environment is `production`.
+### A. Environment Canonicalization (CDK defaults)
+Ensure defaults use canonical environment names:
+- Default CDK context environment must be `development` (not `dev`).
+  - Update `infra/cdk/cdk.json` default `context.environment`.
+  - Update `infra/cdk/main.go` default when context is missing.
 
-### D3 — Monitoring must not create application wiring
-Monitoring must not create or own application event wiring resources:
-- No EventBridge schedule rules for application jobs (Spec 04 owns schedules).
-- No SQS queues / DLQs for processors (Spec 04 owns queues).
-- No Lambda event source mappings (Spec 04 owns stream/SQS wiring).
+### B. Inventory-Driven CloudWatch (MonitoringStack)
+Implement monitoring population directly in `infra/cdk/stacks/monitoring_stack.go` constructor (`NewMonitoringStack`):
 
-Monitoring may create dashboards, alarms, and log/metric resources needed for observability.
+#### B1. Lambda monitoring (inventory-driven)
+For every `inventory.LambdaInventory.Lambdas` entry:
+- Compute physical function name: `lesser-<environment>-<lambdaName>`.
+- Add dashboard widgets for:
+  - `Invocations` (Sum) vs `Errors` (Sum)
+  - `Duration` (Average) vs `Throttles` (Sum)
+  - For stream/hybrid Lambdas with stream triggers: `IteratorAge` (Maximum)
+- Create alarms (per Lambda):
+  - Error rate (%): Math expression `(errors / invocations) * 100`
+  - Duration (ms) threshold (environment-tuned defaults are fine)
+  - Throttles >= 1
+  - Iterator age for stream processors
 
-### D4 — Log group naming and retention match Spec 02
-Monitoring must assume Lambda log groups are named:
-- `/aws/lambda/lesser-<environment>-<lambda>`
+Constraints:
+- Do not hard-code function-name lists.
+- Alarm names must include `lesser-<environment>-<lambdaName>` (or the full physical function name).
 
-Retention must align with Spec 02 defaults:
-- non-production: 7 days
-- production: 30 days
+#### B2. SQS monitoring (derived from inventory triggers)
+Derive a unique set of queues from all `LambdaSpec.SQSTriggers`:
+- Canonical primary queue name: `lesser-<queueLogical>-<environment>`
+- Canonical DLQ logical name:
+  - If `SQSTrigger.DeadLetterQueue` is set, use that.
+  - Else default to `<queueLogical>-dlq`.
+  - DLQ physical name: `lesser-<dlqLogical>-<environment>`
+- Always include the canonical `scheduled-queue` (+ its DLQ) even if no consumer exists yet (Spec 05).
 
-If monitoring creates any log groups (e.g., API Gateway), it must apply the same retention policy logic.
+Create dashboard widgets + alarms:
+- Primary queue: `ApproximateAgeOfOldestMessage` (alarm if above threshold).
+- DLQ: `ApproximateNumberOfMessagesVisible` (alarm if > 0 for sustained period).
 
-## Requirements
-### R1 — Monitoring targets derive from inventory
-Monitoring should not maintain a separate hand-written list of Lambda names. It must be generated from the inventory (Spec 01) and naming (Spec 02).
+Constraints:
+- Monitoring must not create `AWS::SQS::Queue` resources (queues are owned by the application stack).
 
-### R2 — Environment naming is consistent
-If the product uses `production`, monitoring must not special-case `prod` (or vice versa). One canonical environment string must be used everywhere.
+#### B3. DynamoDB monitoring (baseline)
+Create at least:
+- Dashboard widgets for consumed read/write capacity.
+- Alarms for read/write throttles for:
+  - `lesser-<environment>`
+  - `lesser-rate-limits-<environment>`
 
-### R3 — Core signals exist per trigger type
-At minimum:
-- Lambda: invocations, errors, duration, throttles
-- Streams: iterator age (for stream processors)
-- SQS: queue depth/age, DLQ depth (where queue names/metrics are available)
-- API Gateway: 4xx/5xx and latency (for HTTP APIs)
+### C. Guardrails (Tests)
+Add/extend tests under `infra/cdk/stacks/` to enforce:
+- Monitoring stack creates Lambda alarms for every inventory Lambda (no missing/phantom).
+- Monitoring stack does not create application wiring resources:
+  - no `AWS::SQS::Queue`
+  - no `AWS::Lambda::EventSourceMapping`
+  - no `AWS::Events::Rule`
 
-### R4 — Alarms exist for high-severity conditions
-At minimum:
-- sustained Lambda errors
-- throttles
-- stream iterator age above threshold
-- DLQ messages present
-
-## Current Drift Findings (Examples)
-- `infra/cdk/stacks/monitoring_stack.go` hard-codes a Lambda log group list that includes `push-notification` (not a product Lambda; the product Lambda is `push-delivery`).
-- The same file uses `if environment == "prod"` to select retention, while the repo uses `production` as the canonical live environment string elsewhere.
-- Monitoring helper methods exist but are not invoked anywhere (monitoring appears “present” but is not fully wired).
-- The monitoring stack currently defines an application schedule rule creator (cost/trend); schedule wiring belongs to Spec 04, not monitoring.
-
-## Implementation (PAI Execution Checklist)
-PAI should implement these steps in order.
-
-### Step 1 — Remove hard-coded function lists and phantom names
-Update `infra/cdk/stacks/monitoring_stack.go`:
-- Import `cdk/inventory` and derive the Lambda list from `inventory.LambdaInventory.Lambdas`.
-- Remove any hand-written `[]string{...}` Lambda name lists.
-- Ensure no phantom names remain (e.g., `push-notification`).
-
-### Step 2 — Wire Lambda metrics/alarms for every inventory Lambda
-Update `infra/cdk/stacks/monitoring_stack.go` so `NewMonitoringStack(...)` actually creates widgets/alarms:
-- For each inventory Lambda, emit Lambda metrics (invocations/errors/duration/throttles).
-- Use the *deployed* function name in CloudWatch dimensions: `lesser-<environment>-<lambda>`.
-- For stream processors (inventory `StreamTriggers` non-empty), also emit IteratorAge widget + alarm.
-
-### Step 3 — Add SQS + DLQ monitoring (inventory-driven)
-For every inventory `SQSTrigger`:
-- Emit SQS queue metrics and DLQ metrics (depth + oldest message age).
-- Create an alarm on DLQ depth > 0.
-
-Queue identification must follow the same physical naming convention used by Spec 04’s queue builder. Do not hard-code queue physical names in monitoring.
-
-### Step 4 — Remove application wiring from monitoring
-Delete or stop using any monitoring helpers that create application wiring (e.g., scheduled rules). Schedules are created in the application stack as part of Spec 04.
-
-### Step 5 — Add a guardrail test (optional but recommended)
-Add a CDK unit test (in `infra/cdk/stacks`) that fails if monitoring:
-- contains a hand-written Lambda list, or
-- references a Lambda name not present in the inventory.
-
-## Operator Verification (Run Outside PAI)
+## Operator Verification (Manual Only; PAI Must Not Run)
 - `make verify-inventory`
 - `cd infra/cdk && go test ./...`
-- `cd infra/cdk && cdk synth` (if toolchain is available)
+- `cd infra/cdk && cdk synth --context environment=development`
 
 ## Acceptance Criteria
-- Monitoring stack references only inventory Lambdas.
-- No phantom functions appear in dashboards/alarms.
-- Environment naming is consistent across stacks and alarms.
+- Monitoring stack is populated and inventory-driven (no stub dashboards).
+- Alarm/dashboard naming is consistent and environment-correct (`development|staging|production`).
+- Inventory changes deterministically update monitoring coverage.
+- Guardrail tests prevent monitoring drift and prevent accidental wiring resources from entering the monitoring stack.

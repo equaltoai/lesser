@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"cdk/stacks"
 	"io/ioutil"
@@ -135,11 +136,10 @@ func main() {
 	defaultZones := []string{"dev", "staging", "live"}
 
 	// Get environment from context
-	environment := app.Node().TryGetContext(jsii.String("environment"))
-	if environment == nil {
-		environment = "dev"
+	env := canonicalEnvironment(fmt.Sprintf("%v", app.Node().TryGetContext(jsii.String("environment"))))
+	if env == "" {
+		env = "development"
 	}
-	env := environment.(string)
 
 	// Load environment-specific configuration
 	config, err := loadEnvironmentConfig(env)
@@ -204,21 +204,23 @@ func main() {
 		alertEmail = "alerts@example.com" // Default fallback
 	}
 
-	monitoringStack := stacks.NewMonitoringStack(app, fmt.Sprintf("LesserMonitoringStack-%s", env), &stacks.MonitoringStackProps{
-		StackProps: awscdk.StackProps{
-			Env:         getEnv(config),
-			Description: jsii.String(fmt.Sprintf("Lesser monitoring resources for %s", env)),
-		},
-		AppName:     config.AppName,
-		Environment: env,
-		AlertEmail:  alertEmail,
-	})
+	if config.Features.EnableMonitoring {
+		_ = stacks.NewMonitoringStack(app, fmt.Sprintf("LesserMonitoringStack-%s", env), &stacks.MonitoringStackProps{
+			StackProps: awscdk.StackProps{
+				Env:         getEnv(config),
+				Description: jsii.String(fmt.Sprintf("Lesser monitoring resources for %s", env)),
+			},
+			AppName:     config.AppName,
+			Environment: env,
+			AlertEmail:  alertEmail,
+		})
+	}
 
 	configMap := configToMap(config)
 
 	// Create main application stack
 	// Note: Shared resources are imported from SSM Parameter Store, not passed directly
-	lesserApiStack := stacks.NewLesserApiStack(app, fmt.Sprintf("LesserApiStack-%s", env), &stacks.LesserApiStackProps{
+	_ = stacks.NewLesserApiStack(app, fmt.Sprintf("LesserApiStack-%s", env), &stacks.LesserApiStackProps{
 		StackProps: awscdk.StackProps{
 			Env:         getEnv(config),
 			Description: jsii.String(fmt.Sprintf("Lesser serverless application - %s", env)),
@@ -231,10 +233,6 @@ func main() {
 		CloudFrontDomain: config.Media.CloudfrontDomain,
 		AppName:          "lesser", // Hard-coded to match SharedStack SSM parameter prefix
 	})
-
-	// Add dependencies
-	// Note: No explicit dependency on SharedStack needed - SSM parameters will be resolved at deploy time
-	lesserApiStack.AddDependency(monitoringStack.Stack, jsii.String("Monitoring must be set up before application"))
 
 	app.Synth(nil)
 }
@@ -262,5 +260,21 @@ func getEnv(config *Config) *awscdk.Environment {
 	// Otherwise, environment-agnostic (will use current CLI configuration)
 	return &awscdk.Environment{
 		Region: jsii.String(region),
+	}
+}
+
+func canonicalEnvironment(env string) string {
+	clean := strings.ToLower(strings.TrimSpace(env))
+	switch clean {
+	case "", "<nil>":
+		return ""
+	case "dev", "development":
+		return "development"
+	case "test", "stage", "staging":
+		return "staging"
+	case "prod", "production", "live":
+		return "production"
+	default:
+		return clean
 	}
 }
