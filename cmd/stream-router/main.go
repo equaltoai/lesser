@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -91,6 +92,7 @@ type StreamRouterHandler struct {
 	publisher          streaming.Publisher
 	streamingRepo      *repositories.StreamingConnectionRepository
 	domain             string
+	streamEventLog     *streaming.StreamEventLog
 }
 
 // connectionRepositoryAdapter adapts StreamingConnectionRepository to streaming.ConnectionRepository
@@ -393,6 +395,12 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	// Initialize publisher for WebSocket delivery via API Gateway
 	publisher := streaming.NewAPIGatewayPublisher(apiClient, connRepoAdapter, wsEndpoint, lambdaCtx.Logger)
 
+	// Initialize stream event log for SSE fanout (optional).
+	var streamEventLog *streaming.StreamEventLog
+	if table := lambdaCtx.Config.StreamEventsTable; table != "" {
+		streamEventLog = streaming.NewStreamEventLog(db, 30*time.Minute)
+	}
+
 	lambdaCtx.Logger.Info("stream router initialized with DynamoDB-backed routing")
 
 	return &StreamRouterHandler{
@@ -409,6 +417,7 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 		publisher:          publisher,
 		streamingRepo:      streamingRepo,
 		domain:             domain,
+		streamEventLog:     streamEventLog,
 	}, nil
 }
 
@@ -602,16 +611,16 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 	}
 
 	// Route to appropriate streams based on visibility
-	streams := []string{}
+	wsStreams := []string{}
 
 	// Public timelines
 	if status.Visibility == "public" {
-		streams = append(streams, "public", "public:local")
+		wsStreams = append(wsStreams, streaming.PublicStream, streaming.PublicLocalStream)
 	}
 
 	// User stream for the author
 	if status.AuthorUsername != "" {
-		streams = append(streams, fmt.Sprintf("user:%s", status.AuthorUsername))
+		wsStreams = append(wsStreams, streaming.UserStreamName(status.AuthorUsername))
 	}
 
 	// Send to all relevant streams
@@ -620,7 +629,13 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 		eventType = streamEventStatusUpdate
 	}
 
-	for _, streamName := range streams {
+	// Record for SSE fanout (independent of WebSocket subscriptions).
+	sseStreams := h.buildSSEStatusStreams(ctx, &status)
+	for _, streamName := range sseStreams {
+		h.appendStreamEvent(ctx, streamName, eventType, string(payload))
+	}
+
+	for _, streamName := range wsStreams {
 		if err := h.broadcastToStream(ctx, streamName, eventType, payload); err != nil {
 			h.logger.Error("failed to broadcast to stream",
 				zap.String("request_id", ctx.GetRequestID()),
@@ -631,7 +646,7 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 	}
 
 	// Publish to internal event bus for GraphQL subscriptions
-	if err := h.publishStatusEventToInternalBus(ctx, record, &status, streams); err != nil {
+	if err := h.publishStatusEventToInternalBus(ctx, record, &status, wsStreams); err != nil {
 		h.logger.Warn("failed to publish status event to internal bus",
 			zap.String("request_id", ctx.GetRequestID()),
 			zap.String("status_id", status.StatusID),
@@ -725,7 +740,12 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record
 	}
 
 	// Send to user's notification stream
-	streamName := fmt.Sprintf("user:notification:%s", username)
+	streamName := streaming.UserNotificationStreamName(username)
+
+	// Record for SSE fanout (Mastodon user stream includes notifications too).
+	h.appendStreamEvent(ctx, streaming.UserStreamName(username), streamEventNotification, string(payload))
+	h.appendStreamEvent(ctx, streamName, streamEventNotification, string(payload))
+
 	if err := h.broadcastToStream(ctx, streamName, streamEventNotification, payload); err != nil {
 		h.logger.Error("failed to broadcast notification to stream",
 			zap.String("request_id", ctx.GetRequestID()),
@@ -1193,6 +1213,169 @@ func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, e
 	return nil
 }
 
+func (h *StreamRouterHandler) appendStreamEvent(ctx *lift.Context, streamName, eventType, data string) {
+	if h.streamEventLog == nil || !h.streamEventLog.Enabled() {
+		return
+	}
+	if streamName == "" || eventType == "" {
+		return
+	}
+
+	if _, err := h.streamEventLog.Append(ctx, streamName, eventType, data); err != nil {
+		h.logger.Warn("failed to append stream event",
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("stream", streamName),
+			zap.String("event", eventType),
+			zap.Error(err))
+	}
+}
+
+func (h *StreamRouterHandler) buildSSEStatusStreams(ctx *lift.Context, status *models.Status) []string {
+	if status == nil {
+		return []string{}
+	}
+
+	streams := make(map[string]struct{})
+	add := func(name string) {
+		if name == "" {
+			return
+		}
+		streams[name] = struct{}{}
+	}
+
+	// Author always receives their own events.
+	if status.AuthorUsername != "" {
+		add(streaming.UserStreamName(status.AuthorUsername))
+	}
+
+	// Public + hashtag streams only apply to public visibility.
+	isLocalAuthor := h.isLocalActorID(status.AuthorID)
+	if status.Visibility == models.VisibilityPublic {
+		add(streaming.PublicStream)
+		if isLocalAuthor {
+			add(streaming.PublicLocalStream)
+		} else {
+			add(streaming.PublicRemoteStream)
+		}
+
+		for _, tag := range status.Hashtags {
+			add(streaming.HashtagStreamName(tag))
+			if isLocalAuthor {
+				add(localHashtagStreamName(tag))
+			}
+		}
+	}
+
+	// Home timeline fanout: deliver to local followers (and to direct recipients when applicable).
+	if status.AuthorUsername != "" {
+		if status.Visibility == models.VisibilityDirect {
+			for _, username := range h.localRecipients(status) {
+				add(streaming.DirectStreamName(username))
+				add(streaming.UserStreamName(username))
+			}
+		} else {
+			followers, _, err := h.getFollowersForUser(ctx, status.AuthorUsername, 100)
+			if err != nil {
+				h.logger.Warn("failed to get followers for status fanout",
+					zap.String("request_id", ctx.GetRequestID()),
+					zap.String("username", status.AuthorUsername),
+					zap.Error(err))
+			} else {
+				for _, follower := range followers {
+					add(streaming.UserStreamName(follower))
+				}
+			}
+		}
+	}
+
+	result := make([]string, 0, len(streams))
+	for name := range streams {
+		result = append(result, name)
+	}
+
+	return result
+}
+
+func (h *StreamRouterHandler) isLocalActorID(actorID string) bool {
+	if actorID == "" || h.domain == "" {
+		return false
+	}
+	u, err := url.Parse(actorID)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" {
+		host = u.Host
+	}
+	return strings.EqualFold(host, h.domain)
+}
+
+func (h *StreamRouterHandler) localRecipients(status *models.Status) []string {
+	if status == nil {
+		return []string{}
+	}
+
+	usernames := make(map[string]struct{})
+	for _, list := range [][]string{
+		status.ToRecipients,
+		status.CcRecipients,
+		status.BtoRecipients,
+		status.BccRecipients,
+	} {
+		for _, raw := range list {
+			if username := h.extractLocalUsername(raw); username != "" {
+				usernames[username] = struct{}{}
+			}
+		}
+	}
+
+	result := make([]string, 0, len(usernames))
+	for username := range usernames {
+		result = append(result, username)
+	}
+
+	return result
+}
+
+func (h *StreamRouterHandler) extractLocalUsername(raw string) string {
+	if raw == "" || h.domain == "" {
+		return ""
+	}
+
+	acct := strings.TrimPrefix(raw, "acct:")
+	if parts := strings.SplitN(acct, "@", 2); len(parts) == 2 {
+		if strings.EqualFold(parts[1], h.domain) {
+			return parts[0]
+		}
+		return ""
+	}
+
+	if strings.HasPrefix(raw, "https://") || strings.HasPrefix(raw, "http://") {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return ""
+		}
+		if !strings.EqualFold(u.Hostname(), h.domain) {
+			return ""
+		}
+		pathParts := strings.Split(strings.Trim(u.Path, "/"), "/")
+		if len(pathParts) == 0 {
+			return ""
+		}
+		return pathParts[len(pathParts)-1]
+	}
+
+	return ""
+}
+
+func localHashtagStreamName(hashtag string) string {
+	if hashtag == "" {
+		return ""
+	}
+	return fmt.Sprintf("hashtag:local:%s", hashtag)
+}
+
 // generateAttachmentID generates a stable ID from attachment URL
 func generateAttachmentID(url string) string {
 	// Use last part of URL as ID, or hash if needed
@@ -1409,12 +1592,14 @@ func (h *StreamRouterHandler) broadcastDeletionToStreams(ctx *lift.Context, tomb
 		if err := h.broadcastMessage(ctx, message); err != nil {
 			h.logger.Warn("failed to broadcast deletion to public stream", zap.Error(err))
 		}
+		h.appendStreamEvent(ctx, streaming.PublicStream, "delete", objectID)
 
 		// Local timeline (if it was a local object)
 		message.Stream = "public:local"
 		if err := h.broadcastMessage(ctx, message); err != nil {
 			h.logger.Warn("failed to broadcast deletion to local stream", zap.Error(err))
 		}
+		h.appendStreamEvent(ctx, streaming.PublicLocalStream, "delete", objectID)
 
 		// Hashtag streams - extract hashtags from the deleted object if available
 		if err := h.removeFromHashtagStreams(ctx, objectID); err != nil {
@@ -1450,8 +1635,10 @@ func (h *StreamRouterHandler) removeFromFollowerTimelines(ctx *lift.Context, act
 
 	// Send to each follower's home timeline
 	for _, follower := range followers {
-		streamName := fmt.Sprintf("user:%s", follower)
+		streamName := streaming.UserStreamName(follower)
 		deletionMessage.Stream = streamName
+
+		h.appendStreamEvent(ctx, streamName, "delete", objectID)
 
 		if err := h.broadcastMessage(ctx, deletionMessage); err != nil {
 			h.logger.Warn("failed to send deletion to follower timeline",
@@ -1486,6 +1673,7 @@ func (h *StreamRouterHandler) removeFromHashtagStreams(ctx *lift.Context, object
 	if status.Content != "" {
 		hashtags = mastodon.ExtractHashtags(status.Content)
 	}
+	isLocalAuthor := h.isLocalActorID(status.AuthorID)
 
 	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err != nil {
 		logger.Debug("no hashtags found in deleted object")
@@ -1506,6 +1694,11 @@ func (h *StreamRouterHandler) removeFromHashtagStreams(ctx *lift.Context, object
 	var errs []error
 	for _, hashtag := range hashtags {
 		streamName := streaming.HashtagStreamName(hashtag)
+
+		h.appendStreamEvent(ctx, streamName, "delete", objectID)
+		if isLocalAuthor {
+			h.appendStreamEvent(ctx, localHashtagStreamName(hashtag), "delete", objectID)
+		}
 
 		if err := h.publisher.PublishToStream(ctx, streamName, deletionEvent); err != nil {
 			logger.Warn("failed to remove object from hashtag stream",
@@ -1568,6 +1761,11 @@ func (h *StreamRouterHandler) getFollowersForUser(ctx *lift.Context, username st
 	for _, actor := range actors {
 		if actor == nil {
 			logger.Warn("encountered nil actor in followers list")
+			continue
+		}
+
+		// Stream fanout is only relevant for local users (remote followers use federation, not SSE).
+		if actor.ID != "" && !h.isLocalActorID(actor.ID) {
 			continue
 		}
 

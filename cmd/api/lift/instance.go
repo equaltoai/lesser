@@ -119,7 +119,7 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 		"email":             instanceConfig.Email,
 		"version":           instanceConfig.Version,
 		"urls": map[string]any{
-			"streaming_api": fmt.Sprintf("wss://ws.%s/v1", h.cfg.Domain),
+			"streaming_api": h.cfg.BaseURL(),
 		},
 		"stats": map[string]any{
 			"user_count":   userCount,

@@ -37,6 +37,7 @@ type LesserApiStack struct {
 	awscdk.Stack
 	MainTable              awsdynamodb.Table
 	RateLimitTable         awsdynamodb.Table
+	StreamEventsTable      awsdynamodb.Table
 	MediaBucket            awss3.Bucket
 	StreamingBucket        awss3.Bucket
 	TrainingBucket         awss3.Bucket
@@ -267,6 +268,27 @@ func (s *LesserApiStack) createSharedResources() {
 		},
 		BillingMode:         awsdynamodb.BillingMode_PAY_PER_REQUEST,
 		Stream:              awsdynamodb.StreamViewType_NEW_AND_OLD_IMAGES,
+		TimeToLiveAttribute: jsii.String("ttl"),
+		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
+			PointInTimeRecoveryEnabled: jsii.Bool(isProd),
+		},
+		DeletionProtection: jsii.Bool(isProd),
+		RemovalPolicy:      getRemovalPolicy(isProd),
+	})
+
+	// Stream event log table for Mastodon-compatible SSE endpoints.
+	// This table is polled by the SSE Lambda during response streaming invocations.
+	s.StreamEventsTable = awsdynamodb.NewTable(s.Stack, jsii.String("StreamEventsTable"), &awsdynamodb.TableProps{
+		TableName: jsii.String(fmt.Sprintf("lesser-stream-events-%s", s.Environment)),
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String("PK"),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String("SK"),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		BillingMode:         awsdynamodb.BillingMode_PAY_PER_REQUEST,
 		TimeToLiveAttribute: jsii.String("ttl"),
 		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
 			PointInTimeRecoveryEnabled: jsii.Bool(isProd),
@@ -707,6 +729,7 @@ func (s *LesserApiStack) createLambdaFunctions() {
 		Environment:         s.Environment,
 		Table:               s.MainTable,
 		RateLimitTable:      s.RateLimitTable,
+		StreamEventsTable:   s.StreamEventsTable,
 		MediaBucket:         s.MediaBucket,
 		StreamingBucket:     s.StreamingBucket,
 		TrainingBucket:      s.TrainingBucket,
@@ -733,9 +756,9 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 	})
 
 	// Output API URLs
-	awscdk.NewCfnOutput(s.Stack, jsii.String("HttpApiUrl"), &awscdk.CfnOutputProps{
-		Value:       s.API.HttpApi.Url(),
-		Description: jsii.String("HTTP API Gateway URL"),
+	awscdk.NewCfnOutput(s.Stack, jsii.String("RestApiUrl"), &awscdk.CfnOutputProps{
+		Value:       s.API.RestApi.GetUrl(),
+		Description: jsii.String("REST API Gateway URL"),
 	})
 
 	awscdk.NewCfnOutput(s.Stack, jsii.String("WebSocketApiUrl"), &awscdk.CfnOutputProps{

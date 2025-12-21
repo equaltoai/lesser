@@ -34,6 +34,11 @@ func TestLambdaEnvironmentsIncludeBaselineAndInventoryVars(t *testing.T) {
 		SortKey:      &awsdynamodb.Attribute{Name: _jsii.String("sk"), Type: awsdynamodb.AttributeType_STRING},
 		BillingMode:  awsdynamodb.BillingMode_PAY_PER_REQUEST,
 	})
+	streamEventsTable := awsdynamodb.NewTable(stack, _jsii.String("StreamEventsTable"), &awsdynamodb.TableProps{
+		PartitionKey: &awsdynamodb.Attribute{Name: _jsii.String("pk"), Type: awsdynamodb.AttributeType_STRING},
+		SortKey:      &awsdynamodb.Attribute{Name: _jsii.String("sk"), Type: awsdynamodb.AttributeType_STRING},
+		BillingMode:  awsdynamodb.BillingMode_PAY_PER_REQUEST,
+	})
 	mediaBucket := awss3.NewBucket(stack, _jsii.String("MediaBucket"), nil)
 	streamingBucket := awss3.NewBucket(stack, _jsii.String("StreamingBucket"), nil)
 	trainingBucket := awss3.NewBucket(stack, _jsii.String("TrainingBucket"), nil)
@@ -52,6 +57,7 @@ func TestLambdaEnvironmentsIncludeBaselineAndInventoryVars(t *testing.T) {
 		Environment:         "dev",
 		Table:               mainTable,
 		RateLimitTable:      rateTable,
+		StreamEventsTable:   streamEventsTable,
 		MediaBucket:         mediaBucket,
 		StreamingBucket:     streamingBucket,
 		TrainingBucket:      trainingBucket,
@@ -78,6 +84,7 @@ func TestLambdaEnvironmentsIncludeBaselineAndInventoryVars(t *testing.T) {
 		"ENVIRONMENT", "STAGE",
 		"DOMAIN_NAME", "DOMAIN",
 		"DYNAMODB_TABLE", "DYNAMO_TABLE_NAME",
+		"STREAM_EVENTS_TABLE_NAME",
 		"S3_BUCKET_NAME", "S3_BUCKET", "S3_MEDIA_BUCKET", "MEDIA_BUCKET_NAME",
 		"PRIVATE_KEY_SECRET", "JWT_SECRET_ARN",
 		"WEBSOCKET_ENDPOINT", "WEBSOCKET_API_URL", "GRAPHQL_WS_URL",

@@ -131,6 +131,7 @@ type Config struct {
 	// WebSocket & Streaming
 	ConnectionsTable   string // DynamoDB table for WebSocket connections
 	SubscriptionsTable string // DynamoDB table for subscriptions
+	StreamEventsTable  string // DynamoDB table for SSE stream event log
 	IdleTimeoutMinutes int    // WebSocket idle timeout in minutes
 	StaleTimeoutHours  int    // Stale connection timeout in hours
 
@@ -310,6 +311,7 @@ func loadConfig() *Config {
 		// WebSocket & Streaming
 		ConnectionsTable:   getEnvOrDefault("CONNECTIONS_TABLE", ""),
 		SubscriptionsTable: getEnvOrDefault("SUBSCRIPTIONS_TABLE", ""),
+		StreamEventsTable:  getEnvOrDefault("STREAM_EVENTS_TABLE_NAME", ""),
 		IdleTimeoutMinutes: getEnvAsIntOrDefault("IDLE_TIMEOUT_MINUTES", 30),
 		StaleTimeoutHours:  getEnvAsIntOrDefault("STALE_TIMEOUT_HOURS", 24),
 
@@ -679,4 +681,9 @@ func GetDynamoTableName() string {
 // GetMainTableName returns the canonical DynamoDB table name for the current stage/environment.
 func GetMainTableName() string {
 	return resolveDynamoTableName()
+}
+
+// GetStreamEventsTableName returns the DynamoDB table used for SSE stream event log storage.
+func GetStreamEventsTableName() string {
+	return resolveEnvFirst("STREAM_EVENTS_TABLE_NAME")
 }

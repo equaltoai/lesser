@@ -20,6 +20,7 @@ type LambdaFunctionsProps struct {
 	Environment         string
 	Table               awsdynamodb.Table
 	RateLimitTable      awsdynamodb.Table
+	StreamEventsTable   awsdynamodb.Table
 	MediaBucket         awss3.Bucket
 	StreamingBucket     awss3.Bucket
 	TrainingBucket      awss3.Bucket
@@ -80,6 +81,12 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		"LIMITED_TABLE_NAME":    props.RateLimitTable.TableName(), // For limited library
 		"CONNECTIONS_TABLE":     props.Table.TableName(),
 		"SUBSCRIPTIONS_TABLE":   props.Table.TableName(),
+		"STREAM_EVENTS_TABLE_NAME": func() *string {
+			if props.StreamEventsTable != nil {
+				return props.StreamEventsTable.TableName()
+			}
+			return jsii.String("")
+		}(),
 
 		// Media bucket aliases (D4)
 		"S3_BUCKET_NAME":    props.MediaBucket.BucketName(),

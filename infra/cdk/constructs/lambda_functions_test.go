@@ -79,6 +79,11 @@ func TestLambdaFunctionsGeneratedFromInventory(t *testing.T) {
 		SortKey:      &awsdynamodb.Attribute{Name: jsii.String("sk"), Type: awsdynamodb.AttributeType_STRING},
 		BillingMode:  awsdynamodb.BillingMode_PAY_PER_REQUEST,
 	})
+	streamEventsTable := awsdynamodb.NewTable(stack, jsii.String("StreamEventsTable"), &awsdynamodb.TableProps{
+		PartitionKey: &awsdynamodb.Attribute{Name: jsii.String("pk"), Type: awsdynamodb.AttributeType_STRING},
+		SortKey:      &awsdynamodb.Attribute{Name: jsii.String("sk"), Type: awsdynamodb.AttributeType_STRING},
+		BillingMode:  awsdynamodb.BillingMode_PAY_PER_REQUEST,
+	})
 	mediaBucket := awss3.NewBucket(stack, jsii.String("MediaBucket"), nil)
 	streamingBucket := awss3.NewBucket(stack, jsii.String("StreamingBucket"), nil)
 	trainingBucket := awss3.NewBucket(stack, jsii.String("TrainingBucket"), nil)
@@ -95,6 +100,7 @@ func TestLambdaFunctionsGeneratedFromInventory(t *testing.T) {
 		Environment:         "dev",
 		Table:               mainTable,
 		RateLimitTable:      rateTable,
+		StreamEventsTable:   streamEventsTable,
 		MediaBucket:         mediaBucket,
 		StreamingBucket:     streamingBucket,
 		TrainingBucket:      trainingBucket,

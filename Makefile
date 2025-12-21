@@ -32,6 +32,7 @@ LAMBDAS := \
 	actor \
 	ai-processor \
 	api \
+	sse \
 	collections \
 	cost-aggregator \
 	dlq-processor \
@@ -89,8 +90,10 @@ build-lambdas:
 	for lambda in $(LAMBDAS); do \
 		if [ ! -f "bin/$$lambda.zip" ]; then \
 			echo "Building $$lambda..."; \
+			BUILD_TAGS=""; \
+			if [ "$$lambda" = "sse" ]; then BUILD_TAGS="-tags lambda.norpc"; fi; \
 			GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
-				GOCACHE=$(CURDIR)/tmp/go-cache go build -ldflags="-s -w" -o bin/bootstrap ./cmd/$$lambda && \
+				GOCACHE=$(CURDIR)/tmp/go-cache go build $$BUILD_TAGS -ldflags="-s -w" -o bin/bootstrap ./cmd/$$lambda && \
 			cd bin && zip -q $$lambda.zip bootstrap && rm -f bootstrap && cd .. || exit 1; \
 			BUILT=$$((BUILT + 1)); \
 		else \
@@ -114,8 +117,10 @@ build-%:
 	@echo "Building $*..."
 	@mkdir -p bin
 	@mkdir -p tmp/go-cache
-	@GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
-		GOCACHE=$(CURDIR)/tmp/go-cache go build -ldflags="-s -w" -o bin/bootstrap ./cmd/$*
+	@BUILD_TAGS=""; \
+		if [ "$*" = "sse" ]; then BUILD_TAGS="-tags lambda.norpc"; fi; \
+		GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
+		GOCACHE=$(CURDIR)/tmp/go-cache go build $$BUILD_TAGS -ldflags="-s -w" -o bin/bootstrap ./cmd/$*
 	@cd bin && zip -q $*.zip bootstrap && rm bootstrap
 	@echo "✓ Built $*.zip"
 
@@ -137,8 +142,10 @@ build-local:
 	@mkdir -p tmp/go-cache
 	@for lambda in $(LAMBDAS); do \
 		echo "Building cmd/$$lambda..."; \
+		BUILD_TAGS=""; \
+		if [ "$$lambda" = "sse" ]; then BUILD_TAGS="-tags lambda.norpc"; fi; \
 		GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
-			GOCACHE=$(CURDIR)/tmp/go-cache go build -ldflags="-s -w" -o bin/$$lambda ./cmd/$$lambda || exit 1; \
+			GOCACHE=$(CURDIR)/tmp/go-cache go build $$BUILD_TAGS -ldflags="-s -w" -o bin/$$lambda ./cmd/$$lambda || exit 1; \
 	done
 	@echo "✓ Local binaries built in bin/"
 

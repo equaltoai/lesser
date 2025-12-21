@@ -66,6 +66,14 @@ var LambdaInventory = Inventory{
 			},
 		},
 		{
+			Name: "sse",
+			Type: LambdaTypeAPIHTTP,
+			Role: RoleClassEncryption,
+			Overrides: LambdaOverrides{
+				TimeoutSeconds: intPtr(900),
+			},
+		},
+		{
 			Name: "collections",
 			Type: LambdaTypeAPIHTTP,
 			Role: RoleClassEncryption,

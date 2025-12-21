@@ -676,7 +676,7 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 		"languages": instanceConfig.Languages,
 		"configuration": map[string]any{
 			"urls": map[string]any{
-				"streaming":        fmt.Sprintf("wss://ws.%s/v1", h.cfg.Domain),
+				"streaming":        h.cfg.BaseURL(),
 				"about":            h.cfg.BaseURL() + "/about",
 				"privacy_policy":   h.cfg.BaseURL() + "/privacy-policy",
 				"terms_of_service": h.cfg.BaseURL() + "/terms",
@@ -1004,7 +1004,7 @@ func (h *Handler) HandleGetInstanceConfigurationLift(ctx *lift.Context) error {
 	config := map[string]any{
 		"urls": map[string]any{
 			// Use Mastodon-compatible streaming endpoint
-			"streaming": fmt.Sprintf("wss://ws.%s/v1", h.cfg.Domain),
+			"streaming": h.cfg.BaseURL(),
 		},
 		"accounts": map[string]any{
 			"max_featured_tags":   20,

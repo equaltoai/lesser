@@ -331,7 +331,10 @@ func NewSearchRateLimitMiddleware(repos interface {
 			// Get user ID or IP for rate limiting
 			userID, _ := ctx.Get("user_id").(string)
 			if err := common.ValidateRequiredParam("userID", userID); err != nil {
-				userID = ctx.Request.RemoteAddr()
+				userID = extractClientIDFromHeaders(ctx)
+				if userID == "" {
+					userID = "unknown"
+				}
 			}
 
 			// Check rate limit
@@ -352,4 +355,28 @@ func NewSearchRateLimitMiddleware(repos interface {
 			return next(ctx)
 		}
 	}
+}
+
+func extractClientIDFromHeaders(ctx *lift.Context) string {
+	if ctx == nil {
+		return ""
+	}
+
+	if forwarded := ctx.Header("X-Forwarded-For"); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		if len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+		return strings.TrimSpace(forwarded)
+	}
+
+	if realIP := ctx.Header("X-Real-IP"); realIP != "" {
+		return strings.TrimSpace(realIP)
+	}
+
+	if cfIP := ctx.Header("CF-Connecting-IP"); cfIP != "" {
+		return strings.TrimSpace(cfIP)
+	}
+
+	return ""
 }

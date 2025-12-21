@@ -2,6 +2,18 @@
 
 Enable long-lived HTTP response streaming (SSE) in Lesser using the new **API Gateway response streaming** capability (REST API v1 only today), plus Lift’s streaming helpers.
 
+## Implementation Status (current)
+
+- REST API (v1) response streaming is enabled **per-method** for `/api/v1/streaming/*` (mixed buffered + streaming methods are supported).
+- `cmd/sse/main.go` implements Mastodon-compatible SSE endpoints using Lift (`lift.SSEResponse`) and is built with `-tags lambda.norpc`.
+- Stream-router fans out events to:
+  - existing WebSocket connections (unchanged), and
+  - an SSE event log (DynamoDB) using **DynamORM only** (no direct DynamoDB client calls).
+- Broader Lift adoption tracking lives in `docs/planning/lift-adoption-inventory.md`.
+- Instance discovery now returns a canonical streaming host as the **API base URL** (host only, no path), matching Mastodon’s expectations:
+  - `cmd/api/lift/misc.go` (`/api/v2/instance` → `configuration.urls.streaming`)
+  - `cmd/api/lift/instance.go` (`/api/v1/instance` → `urls.streaming_api`)
+
 Lift already contains useful primitives:
 - CDK: `LiftRestAPI` can configure REST API methods to invoke Lambda via `.../response-streaming-invocations` with `ResponseTransferMode=STREAM`.
 - Runtime: `lift.SSEResponse` builds a streaming response (an `io.Reader` with content type `application/vnd.awslambda.http-integration-response`).
@@ -13,18 +25,21 @@ Note: The canonical Go type for API Gateway REST API response streaming is `even
 ## Current State (repo)
 
 - Infra:
-  - `infra/cdk/constructs/api_routes.go` builds an `awsapigatewayv2.HttpApi` for all HTTP routes and attaches the custom domain (API Gateway HTTP API v2).
+  - `infra/cdk/constructs/api_routes.go` builds a Lift `LiftRestAPI` (API Gateway REST API v1) for HTTP routes and attaches the custom domain.
+  - Response streaming is configured per-method for SSE endpoints only (rewrites integration URI to `/response-streaming-invocations` and sets `ResponseTransferMode=STREAM`).
   - WebSockets are separate API Gateway v2 WebSocket APIs with separate subdomains:
     - Streaming WS: `stream.<api-domain>` (see `infra/cdk/constructs/api_routes.go:createWebSocketApi`).
     - GraphQL WS: `graphql-ws.<api-domain>` (see `infra/cdk/constructs/api_routes.go:createGraphQLWebSocketApi`).
-- Lift: `github.com/pay-theory/lift v1.0.80` is pinned in `go.mod` today; plan assumes upgrading to `v1.0.81+` for per-method streaming toggles and APIGW v1 streaming responses.
+- Lift: `github.com/pay-theory/lift v1.0.81` is pinned in `go.mod`.
 - Timeouts:
   - Inventory defaults HTTP Lambdas to `TimeoutSeconds: 30` (`infra/cdk/inventory/types.go`).
   - API Lambda applies a global 30s Lift timeout middleware (`cmd/api/main.go`).
 - Existing realtime:
   - Separate WebSocket streaming Lambda exists (`cmd/streaming`) and should remain unchanged unless explicitly replaced.
 - Mastodon instance streaming discovery:
-  - `/api/v2/instance` currently returns `configuration.urls.streaming` as `wss://ws.<domain>/v1` (`cmd/api/lift/misc.go`), but infra currently provisions `stream.<domain>` (not `ws.<domain>`) and Mastodon expects this value to be a *host base* (no path) used for `/api/v1/streaming/*` endpoints.
+  - Mastodon expects `configuration.urls.streaming` / `urls.streaming_api` to be a *host base* (no path) used for `/api/v1/streaming/*` endpoints; Lesser returns the API base URL.
+  - WebSockets remain on separate subdomains due to API Gateway restrictions (WebSocket custom domains cannot share a domain with REST/HTTP APIs).
+  - SSE uses the API base domain; WebSockets use `stream.<api-domain>` / `graphql-ws.<api-domain>`.
 
 ---
 

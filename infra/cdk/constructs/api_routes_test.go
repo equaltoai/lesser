@@ -72,6 +72,11 @@ func TestFederationHttpRoutesGeneratedFromInventory(t *testing.T) {
 		SortKey:      &awsdynamodb.Attribute{Name: _jsii.String("sk"), Type: awsdynamodb.AttributeType_STRING},
 		BillingMode:  awsdynamodb.BillingMode_PAY_PER_REQUEST,
 	})
+	streamEventsTable := awsdynamodb.NewTable(stack, _jsii.String("StreamEventsTable"), &awsdynamodb.TableProps{
+		PartitionKey: &awsdynamodb.Attribute{Name: _jsii.String("pk"), Type: awsdynamodb.AttributeType_STRING},
+		SortKey:      &awsdynamodb.Attribute{Name: _jsii.String("sk"), Type: awsdynamodb.AttributeType_STRING},
+		BillingMode:  awsdynamodb.BillingMode_PAY_PER_REQUEST,
+	})
 	mediaBucket := awss3.NewBucket(stack, _jsii.String("MediaBucket"), nil)
 	streamingBucket := awss3.NewBucket(stack, _jsii.String("StreamingBucket"), nil)
 	trainingBucket := awss3.NewBucket(stack, _jsii.String("TrainingBucket"), nil)
@@ -88,6 +93,7 @@ func TestFederationHttpRoutesGeneratedFromInventory(t *testing.T) {
 		Environment:         "dev",
 		Table:               mainTable,
 		RateLimitTable:      rateTable,
+		StreamEventsTable:   streamEventsTable,
 		MediaBucket:         mediaBucket,
 		StreamingBucket:     streamingBucket,
 		TrainingBucket:      trainingBucket,
@@ -188,24 +194,67 @@ func extractHttpRouteToFunctionName(t *testing.T, tpl map[string]any) map[string
 		}
 	}
 
-	integrationLogicalIDToLambdaLogicalID := make(map[string]string)
+	restApiLogicalID := ""
 	for logicalID, raw := range resources {
 		res, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
-		if res["Type"] != "AWS::ApiGatewayV2::Integration" {
+		if res["Type"] == "AWS::ApiGateway::RestApi" {
+			restApiLogicalID = logicalID
+			break
+		}
+	}
+
+	resourceToPathPart := make(map[string]string)
+	resourceToParent := make(map[string]string)
+	for logicalID, raw := range resources {
+		res, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if res["Type"] != "AWS::ApiGateway::Resource" {
 			continue
 		}
 		props, ok := res["Properties"].(map[string]any)
 		if !ok {
 			continue
 		}
-		lambdaLogicalID, ok := findFirstGetAttLogicalID(props["IntegrationUri"])
-		if !ok {
+		part, ok := props["PathPart"].(string)
+		if !ok || part == "" {
 			continue
 		}
-		integrationLogicalIDToLambdaLogicalID[logicalID] = lambdaLogicalID
+		resourceToPathPart[logicalID] = part
+
+		parentID := props["ParentId"]
+		if restApiLogicalID != "" && isRestApiRootResourceRef(parentID, restApiLogicalID) {
+			resourceToParent[logicalID] = ""
+			continue
+		}
+		if parentLogicalID, ok := findFirstRefLogicalID(parentID); ok {
+			resourceToParent[logicalID] = parentLogicalID
+		}
+	}
+
+	resourceLogicalIDToFullPath := make(map[string]string)
+	var buildPath func(logicalID string) string
+	buildPath = func(logicalID string) string {
+		if logicalID == "" {
+			return ""
+		}
+		if existing, ok := resourceLogicalIDToFullPath[logicalID]; ok {
+			return existing
+		}
+		part := resourceToPathPart[logicalID]
+		parent := resourceToParent[logicalID]
+		full := ""
+		if parent == "" {
+			full = "/" + part
+		} else {
+			full = buildPath(parent) + "/" + part
+		}
+		resourceLogicalIDToFullPath[logicalID] = full
+		return full
 	}
 
 	routeKeyToFunctionName := make(map[string]string)
@@ -214,27 +263,32 @@ func extractHttpRouteToFunctionName(t *testing.T, tpl map[string]any) map[string
 		if !ok {
 			continue
 		}
-		if res["Type"] != "AWS::ApiGatewayV2::Route" {
+		if res["Type"] != "AWS::ApiGateway::Method" {
 			continue
 		}
 		props, ok := res["Properties"].(map[string]any)
 		if !ok {
 			continue
 		}
-		routeKey, ok := props["RouteKey"].(string)
-		if !ok || routeKey == "" {
+		httpMethod, ok := props["HttpMethod"].(string)
+		if !ok || httpMethod == "" {
 			continue
 		}
-		if !strings.Contains(routeKey, " ") {
-			continue // WebSocket route keys like "$connect"
-		}
 
-		integrationLogicalID, ok := findFirstRefLogicalID(props["Target"])
+		resourceLogicalID, ok := findFirstRefLogicalID(props["ResourceId"])
 		if !ok {
 			continue
 		}
+		fullPath := buildPath(resourceLogicalID)
+		if fullPath == "" {
+			continue
+		}
 
-		lambdaLogicalID, ok := integrationLogicalIDToLambdaLogicalID[integrationLogicalID]
+		integration, ok := props["Integration"].(map[string]any)
+		if !ok {
+			continue
+		}
+		lambdaLogicalID, ok := findFirstGetAttLogicalID(integration["Uri"])
 		if !ok {
 			continue
 		}
@@ -243,10 +297,40 @@ func extractHttpRouteToFunctionName(t *testing.T, tpl map[string]any) map[string
 			continue
 		}
 
-		routeKeyToFunctionName[routeKey] = fnName
+		routeKeyToFunctionName[fmt.Sprintf("%s %s", httpMethod, fullPath)] = fnName
 	}
 
 	return routeKeyToFunctionName
+}
+
+func isRestApiRootResourceRef(v any, restApiLogicalID string) bool {
+	switch typed := v.(type) {
+	case map[string]any:
+		if getAtt, ok := typed["Fn::GetAtt"]; ok {
+			switch att := getAtt.(type) {
+			case []any:
+				if len(att) == 2 {
+					apiID, _ := att[0].(string)
+					attr, _ := att[1].(string)
+					return apiID == restApiLogicalID && attr == "RootResourceId"
+				}
+			case string:
+				return att == restApiLogicalID+".RootResourceId"
+			}
+		}
+		for _, child := range typed {
+			if isRestApiRootResourceRef(child, restApiLogicalID) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if isRestApiRootResourceRef(child, restApiLogicalID) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func findFirstRefLogicalID(v any) (string, bool) {
