@@ -14,7 +14,7 @@ type InstanceConfig struct {
 	SK string `dynamorm:"sk,attr:SK" json:"-"` // RULES or EXTENDED_DESC
 
 	// Configuration data - use storage.InstanceRule to avoid dependency cycle
-	RulesJSON           string    `dynamorm:"attr:rulesJSON" json:"rules_json,omitempty"`           // JSON serialized rules
+	RulesJSON           string    `dynamorm:"attr:rulesJSON" json:"rules_json,omitempty"` // JSON serialized rules
 	ExtendedDescription string    `dynamorm:"attr:extendedDescription" json:"extended_description,omitempty"`
 	UpdatedAt           time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 }

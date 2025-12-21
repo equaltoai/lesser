@@ -2,10 +2,11 @@ package httpclient
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,49 +61,37 @@ func TestSecureClient_BlocksPrivateIPs(t *testing.T) {
 }
 
 func TestSecureClient_AllowsPublicURLs(t *testing.T) {
-	// Note: httptest.NewServer creates a server on localhost/127.0.0.1
-	// which our secure client correctly blocks. This test would need
-	// a real external server or a modified client to pass.
-
-	// For now, let's verify that the client correctly blocks localhost
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
-	}))
-	defer server.Close()
-
 	client := NewSecureClient()
+	transport, ok := client.client.Transport.(*secureTransport)
+	require.True(t, ok)
 
-	// Test that localhost URLs are blocked (as they should be)
-	resp, err := client.Get(server.URL)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
+	transport.lookupIP = func(string) ([]net.IP, error) {
+		return []net.IP{net.IPv4(93, 184, 216, 34)}, nil
 	}
-	assert.Error(t, err, "Should block localhost URLs")
-	assert.Contains(t, err.Error(), "private IP address not allowed")
-	assert.Nil(t, resp, "Should not return response for blocked URLs")
+	transport.base = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("OK")),
+			Request:    req,
+		}, nil
+	})
+
+	resp, err := client.Get("http://example.com/")
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 func TestSecureClient_BlocksRedirectsToPrivateIPs(t *testing.T) {
-	// Create a server that redirects to a private IP
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			http.Redirect(w, r, "http://169.254.169.254/latest/meta-data/", http.StatusFound)
-		}
-	}))
-	defer server.Close()
-
 	client := NewSecureClient()
 
-	// The initial request to the test server will be blocked because
-	// httptest servers use localhost
-	resp, err := client.Get(server.URL)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
-	assert.Error(t, err, "Should block localhost URLs")
-	assert.Contains(t, err.Error(), "blocked")
-	assert.Nil(t, resp, "Should not return response for blocked URL")
+	req, err := http.NewRequest(http.MethodGet, "http://169.254.169.254/latest/meta-data/", nil)
+	require.NoError(t, err)
+
+	err = client.checkRedirect(req, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "redirect blocked")
 }
 
 func TestSecureClient_RespectsMaxRedirects(t *testing.T) {
@@ -131,27 +120,25 @@ func TestSecureClient_WithContext(t *testing.T) {
 func TestSecureClient_BlocksDNSRebinding(t *testing.T) {
 	client := NewSecureClient()
 
-	// Test domains that might resolve to private IPs
-	// Note: In a real scenario, these would actually resolve to private IPs
-	// For testing, we're checking that the client properly validates resolved IPs
-	testCases := []string{
-		"http://localhost.localtest.me/", // Often resolves to 127.0.0.1
-		"http://127-0-0-1.nip.io/",       // nip.io resolves to embedded IP
+	transport, ok := client.client.Transport.(*secureTransport)
+	require.True(t, ok)
+
+	transport.lookupIP = func(string) ([]net.IP, error) {
+		return []net.IP{net.IPv4(127, 0, 0, 1)}, nil
 	}
 
-	for _, url := range testCases {
-		t.Run(url, func(t *testing.T) {
-			// This test might pass or fail depending on actual DNS resolution
-			// The important thing is that if it resolves to a private IP, it should be blocked
-			resp, err := client.Get(url)
-			if resp != nil {
-				defer func() { _ = resp.Body.Close() }()
-			}
-			if err != nil {
-				assert.Contains(t, err.Error(), "blocked", "If blocked, should indicate security reason")
-			}
-		})
+	resp, err := client.Get("http://example.com/")
+	if resp != nil {
+		t.Cleanup(func() { _ = resp.Body.Close() })
 	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "private IP address not allowed")
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func TestSecureClient_Options(t *testing.T) {

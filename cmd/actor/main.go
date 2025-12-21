@@ -378,7 +378,9 @@ func main() {
 	handler := NewHandler()
 
 	// Register actor profile route
-	app.GET("/users/:username", handler.HandleActorProfile)
+	if err := app.GET("/users/:username", handler.HandleActorProfile); err != nil {
+		lambdaCtx.Logger.Fatal("failed to register actor route", zap.Error(err))
+	}
 
 	// Use standardized Lambda handler wrapper with observability
 	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {

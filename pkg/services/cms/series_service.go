@@ -29,7 +29,7 @@ func NewSeriesService(seriesRepo *repositories.SeriesRepository, articleRepo *re
 // CreateSeries creates a new series
 func (s *SeriesService) CreateSeries(ctx context.Context, series *models.Series) error {
 	s.logger.Info("creating series", zap.String("title", series.Title))
-	
+
 	if series.CreatedAt.IsZero() {
 		series.CreatedAt = time.Now()
 	}
@@ -70,7 +70,7 @@ func (s *SeriesService) ListSeriesByAuthor(ctx context.Context, authorID string,
 // AddArticleToSeries adds an article to a series
 func (s *SeriesService) AddArticleToSeries(ctx context.Context, articleID string, seriesID string, order int) error {
 	s.logger.Info("adding article to series", zap.String("articleID", articleID), zap.String("seriesID", seriesID))
-	
+
 	article, err := s.articleRepo.GetArticle(ctx, articleID)
 	if err != nil {
 		return err

@@ -18,7 +18,7 @@ type SeriesRepository struct {
 // NewSeriesRepository creates a new series repository
 func NewSeriesRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *SeriesRepository {
 	enhancedRepo := NewEnhancedBaseRepository[*models.Series](db, tableName, logger, costService, "SeriesRepository", "series")
-	
+
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService())
@@ -51,17 +51,17 @@ func (r *SeriesRepository) GetSeries(ctx context.Context, authorID, seriesID str
 func (r *SeriesRepository) ListSeriesByAuthor(ctx context.Context, authorID string, limit int) ([]*models.Series, error) {
 	var seriesList []models.Series
 	pk := fmt.Sprintf("AUTHOR#%s#SERIES", authorID)
-	
+
 	err := r.db.WithContext(ctx).Model(&models.Series{}).
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", "ID#").
 		Limit(limit).
 		All(&seriesList)
-		
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	result := make([]*models.Series, len(seriesList))
 	for i := range seriesList {
 		result[i] = &seriesList[i]

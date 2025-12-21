@@ -17,15 +17,15 @@ type FederationInstance struct {
 	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
 
 	Domain        string    `dynamorm:"attr:domain" json:"domain"`
-	Software      string    `dynamorm:"attr:software" json:"software"`             // mastodon, pleroma, etc.
-	Version       string    `dynamorm:"attr:version" json:"version"`               // Software version
-	FirstSeen     time.Time `dynamorm:"attr:firstSeen" json:"first_seen"`          // When we first saw this instance
-	LastSeen      time.Time `dynamorm:"attr:lastSeen" json:"last_seen"`            // Last activity from this instance
-	PublicKey     string    `dynamorm:"attr:publicKey" json:"public_key"`          // Instance actor public key
-	SharedInbox   string    `dynamorm:"attr:sharedInbox" json:"shared_inbox"`      // Shared inbox endpoint
-	TrustScore    float64   `dynamorm:"attr:trustScore" json:"trust_score"`        // Calculated trust score
-	ActiveUsers   int       `dynamorm:"attr:activeUsers" json:"active_users"`      // Number of active users
-	TotalMessages int64     `dynamorm:"attr:totalMessages" json:"total_messages"`  // Total messages received
+	Software      string    `dynamorm:"attr:software" json:"software"`            // mastodon, pleroma, etc.
+	Version       string    `dynamorm:"attr:version" json:"version"`              // Software version
+	FirstSeen     time.Time `dynamorm:"attr:firstSeen" json:"first_seen"`         // When we first saw this instance
+	LastSeen      time.Time `dynamorm:"attr:lastSeen" json:"last_seen"`           // Last activity from this instance
+	PublicKey     string    `dynamorm:"attr:publicKey" json:"public_key"`         // Instance actor public key
+	SharedInbox   string    `dynamorm:"attr:sharedInbox" json:"shared_inbox"`     // Shared inbox endpoint
+	TrustScore    float64   `dynamorm:"attr:trustScore" json:"trust_score"`       // Calculated trust score
+	ActiveUsers   int       `dynamorm:"attr:activeUsers" json:"active_users"`     // Number of active users
+	TotalMessages int64     `dynamorm:"attr:totalMessages" json:"total_messages"` // Total messages received
 }
 
 // TableName returns the DynamoDB table backing FederationInstance.
@@ -55,8 +55,8 @@ type FederationCostActivity struct {
 
 	ID           string    `dynamorm:"attr:id" json:"id"`
 	Domain       string    `dynamorm:"attr:domain" json:"domain"`
-	Type         string    `dynamorm:"attr:type" json:"type"`                   // ingress/egress
-	ActivityType string    `dynamorm:"attr:activityType" json:"activity_type"`  // Create/Update/Delete/Follow/etc
+	Type         string    `dynamorm:"attr:type" json:"type"`                  // ingress/egress
+	ActivityType string    `dynamorm:"attr:activityType" json:"activity_type"` // Create/Update/Delete/Follow/etc
 	ByteSize     int64     `dynamorm:"attr:byteSize" json:"byte_size"`
 	Success      bool      `dynamorm:"attr:success" json:"success"`
 	ResponseTime int64     `dynamorm:"attr:responseTime" json:"response_time"` // milliseconds
@@ -250,8 +250,8 @@ type InstanceMetadata struct {
 	Version         string    `dynamorm:"attr:version" json:"version,omitempty"`
 	UserCount       int64     `dynamorm:"attr:userCount" json:"user_count,omitempty"`
 	StatusCount     int64     `dynamorm:"attr:statusCount" json:"status_count,omitempty"`
-	NodeInfo        string    `dynamorm:"attr:nodeInfo" json:"nodeinfo"`             // JSON string of nodeinfo response
-	InstanceInfo    string    `dynamorm:"attr:instanceInfo" json:"instance_info"`    // JSON string of instance API response
+	NodeInfo        string    `dynamorm:"attr:nodeInfo" json:"nodeinfo"`          // JSON string of nodeinfo response
+	InstanceInfo    string    `dynamorm:"attr:instanceInfo" json:"instance_info"` // JSON string of instance API response
 	AdminContact    string    `dynamorm:"attr:adminContact" json:"admin_contact,omitempty"`
 	Rules           []string  `dynamorm:"attr:rules" json:"rules,omitempty"`
 	Languages       []string  `dynamorm:"attr:languages" json:"languages,omitempty"`

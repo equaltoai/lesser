@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"cdk/inventory"
@@ -25,6 +26,42 @@ func TestMonitoringStackSynthCreatesInventoryLambdaAlarms(t *testing.T) {
 		if isStreamLambda(spec) {
 			requireAlarm(t, alarms, fmt.Sprintf("%s-iterator-age", physical))
 		}
+	}
+}
+
+func TestMonitoringStackLambdaAlarmSetMatchesInventory(t *testing.T) {
+	tpl := synthMonitoringTemplate(t, "development")
+	alarms := collectAlarmNames(t, tpl)
+
+	expected := map[string]struct{}{}
+	for _, spec := range inventory.LambdaInventory.Lambdas {
+		expected[lambdaPhysicalName("development", spec.Name)] = struct{}{}
+	}
+
+	got := map[string]struct{}{}
+	for name := range alarms {
+		if !strings.HasSuffix(name, "-error-rate") {
+			continue
+		}
+		fn := strings.TrimSuffix(name, "-error-rate")
+		got[fn] = struct{}{}
+	}
+
+	var missing []string
+	for fn := range expected {
+		if _, ok := got[fn]; !ok {
+			missing = append(missing, fn)
+		}
+	}
+	var extra []string
+	for fn := range got {
+		if _, ok := expected[fn]; !ok {
+			extra = append(extra, fn)
+		}
+	}
+
+	if len(missing) > 0 || len(extra) > 0 {
+		t.Fatalf("monitoring lambda alarm set mismatch (missing=%v extra=%v)", missing, extra)
 	}
 }
 

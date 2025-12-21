@@ -1,42 +1,48 @@
 package testing
 
 import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/pay-theory/lift/pkg/lift"
+	"github.com/pay-theory/lift/pkg/lift/adapters"
 	lifttesting "github.com/pay-theory/lift/pkg/testing"
 )
 
-// TestApp wraps the actual Lift testing utilities
+// TestApp is a lightweight, in-process Lift test harness.
 type TestApp struct {
-	liftTestApp *lifttesting.TestApp
-	headers     map[string]string
+	app     *lift.App
+	headers map[string]string
 }
 
-// TestResponse wraps the Lift test response
+// TestResponse wraps the Lift test response.
 type TestResponse struct {
 	*lifttesting.TestResponse
 }
 
-// NewTestApp creates a new test app instance using Lift's testing utilities
+// NewTestApp creates a new test app instance without starting an HTTP listener.
 func NewTestApp() *TestApp {
 	return &TestApp{
-		liftTestApp: lifttesting.NewTestApp(),
-		headers:     make(map[string]string),
+		app:     lift.New(),
+		headers: make(map[string]string),
 	}
 }
 
 // App returns the underlying Lift app for middleware and route setup
 func (ta *TestApp) App() *lift.App {
-	return ta.liftTestApp.App()
+	return ta.app
 }
 
 // WithHeader adds a header to subsequent requests
 func (ta *TestApp) WithHeader(key, value string) *TestApp {
 	// Create a new instance to avoid modifying the original
 	newTA := &TestApp{
-		liftTestApp: ta.liftTestApp,
-		headers:     make(map[string]string),
+		app:     ta.app,
+		headers: make(map[string]string),
 	}
 
 	// Copy existing headers
@@ -52,37 +58,27 @@ func (ta *TestApp) WithHeader(key, value string) *TestApp {
 
 // GET performs a GET request
 func (ta *TestApp) GET(path string) *TestResponse {
-	liftTestApp := ta.applyHeaders(ta.liftTestApp)
-	liftResponse := liftTestApp.GET(path)
-	return &TestResponse{TestResponse: liftResponse}
+	return ta.doRequest(methodGET, path, nil)
 }
 
 // POST performs a POST request
 func (ta *TestApp) POST(path string, body interface{}) *TestResponse {
-	liftTestApp := ta.applyHeaders(ta.liftTestApp)
-	liftResponse := liftTestApp.POST(path, body)
-	return &TestResponse{TestResponse: liftResponse}
+	return ta.doRequest(methodPOST, path, body)
 }
 
 // PUT performs a PUT request
 func (ta *TestApp) PUT(path string, body interface{}) *TestResponse {
-	liftTestApp := ta.applyHeaders(ta.liftTestApp)
-	liftResponse := liftTestApp.PUT(path, body)
-	return &TestResponse{TestResponse: liftResponse}
+	return ta.doRequest(methodPUT, path, body)
 }
 
 // DELETE performs a DELETE request
 func (ta *TestApp) DELETE(path string) *TestResponse {
-	liftTestApp := ta.applyHeaders(ta.liftTestApp)
-	liftResponse := liftTestApp.DELETE(path)
-	return &TestResponse{TestResponse: liftResponse}
+	return ta.doRequest(methodDELETE, path, nil)
 }
 
 // PATCH performs a PATCH request
 func (ta *TestApp) PATCH(path string, body interface{}) *TestResponse {
-	liftTestApp := ta.applyHeaders(ta.liftTestApp)
-	liftResponse := liftTestApp.PATCH(path, body)
-	return &TestResponse{TestResponse: liftResponse}
+	return ta.doRequest("PATCH", path, body)
 }
 
 // OPTIONS performs an OPTIONS request
@@ -116,12 +112,37 @@ func (ta *TestApp) HEAD(path string) *TestResponse {
 	return &TestResponse{TestResponse: response}
 }
 
-// applyHeaders applies all headers to the Lift test app
-func (ta *TestApp) applyHeaders(liftTestApp *lifttesting.TestApp) *lifttesting.TestApp {
-	for key, value := range ta.headers {
-		liftTestApp = liftTestApp.WithHeader(key, value)
+func (ta *TestApp) doRequest(method, rawPath string, body interface{}) *TestResponse {
+	path, queryParams := parseRawPath(rawPath)
+
+	encodedBody, err := encodeBody(body)
+	if err != nil {
+		return newErrorTestResponse(500, fmt.Sprintf("failed to encode request body: %v", err))
 	}
-	return liftTestApp
+
+	headers := make(map[string]string, len(ta.headers))
+	for k, v := range ta.headers {
+		headers[k] = v
+	}
+	if _, ok := headers["Content-Type"]; !ok && len(encodedBody) > 0 {
+		headers["Content-Type"] = "application/json"
+	}
+
+	req := lift.NewRequest(&adapters.Request{
+		Method:      strings.ToUpper(method),
+		Path:        path,
+		Headers:     headers,
+		QueryParams: queryParams,
+		TriggerType: adapters.TriggerAPIGatewayV2,
+		Body:        encodedBody,
+	})
+	ctx := lift.NewContext(context.Background(), req)
+
+	if err := ta.app.HandleTestRequest(ctx); err != nil {
+		return newErrorTestResponse(500, fmt.Sprintf("failed to handle request: %v", err))
+	}
+
+	return &TestResponse{TestResponse: liftResponseToTestResponse(ctx.Response)}
 }
 
 // HandleRequest handles Lambda events directly
@@ -253,5 +274,85 @@ func (ta *TestApp) createDefaultResponse() *TestResponse {
 	response := &lifttesting.TestResponse{}
 	response.StatusCode = 200
 	response.Body = `{"status": "event_handled"}`
+	return &TestResponse{TestResponse: response}
+}
+
+func parseRawPath(rawPath string) (string, map[string]string) {
+	parsed, err := url.Parse(rawPath)
+	if err != nil {
+		return rawPath, nil
+	}
+
+	queryParams := make(map[string]string)
+	for key, values := range parsed.Query() {
+		if len(values) == 0 {
+			continue
+		}
+		queryParams[key] = values[0]
+	}
+
+	return parsed.Path, queryParams
+}
+
+func encodeBody(body interface{}) ([]byte, error) {
+	switch v := body.(type) {
+	case nil:
+		return nil, nil
+	case []byte:
+		return v, nil
+	case string:
+		return []byte(v), nil
+	default:
+		return json.Marshal(v)
+	}
+}
+
+func liftResponseToTestResponse(resp *lift.Response) *lifttesting.TestResponse {
+	if resp == nil {
+		return &lifttesting.TestResponse{
+			StatusCode: 500,
+			Headers:    map[string]string{"Content-Type": "application/json"},
+			Body:       `{"error":"missing response"}`,
+		}
+	}
+
+	body := ""
+	if resp.Body != nil {
+		switch v := resp.Body.(type) {
+		case string:
+			body = v
+		case []byte:
+			if resp.IsBase64Encoded {
+				body = base64.StdEncoding.EncodeToString(v)
+			} else {
+				body = string(v)
+			}
+		default:
+			if encoded, err := json.Marshal(v); err == nil {
+				body = string(encoded)
+			} else {
+				body = fmt.Sprintf(`{"error":"failed to encode response body","details":%q}`, err.Error())
+			}
+		}
+	}
+
+	headers := resp.Headers
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+
+	return &lifttesting.TestResponse{
+		StatusCode: resp.StatusCode,
+		Headers:    headers,
+		Body:       body,
+	}
+}
+
+func newErrorTestResponse(status int, message string) *TestResponse {
+	response := &lifttesting.TestResponse{
+		StatusCode: status,
+		Headers:    map[string]string{"Content-Type": "application/json"},
+		Body:       fmt.Sprintf(`{"error":%q}`, message),
+	}
 	return &TestResponse{TestResponse: response}
 }

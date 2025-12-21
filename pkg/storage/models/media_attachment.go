@@ -23,9 +23,9 @@ type MediaAttachment struct {
 	MediaID    string `dynamorm:"attr:mediaID" json:"media_id"`       // The attached media ID
 
 	// Media metadata (denormalized for quick access)
-	MediaType   string `dynamorm:"attr:mediaType" json:"media_type"`   // "image", "video", "audio"
+	MediaType   string `dynamorm:"attr:mediaType" json:"media_type"`     // "image", "video", "audio"
 	ContentType string `dynamorm:"attr:contentType" json:"content_type"` // Full MIME type
-	FileSize    int64  `dynamorm:"attr:fileSize" json:"file_size"`      // Size in bytes
+	FileSize    int64  `dynamorm:"attr:fileSize" json:"file_size"`       // Size in bytes
 
 	// Display metadata
 	Description string `dynamorm:"attr:description" json:"description,omitempty"` // Alt text or description

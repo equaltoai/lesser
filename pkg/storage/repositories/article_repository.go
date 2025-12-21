@@ -18,7 +18,7 @@ type ArticleRepository struct {
 // NewArticleRepository creates a new article repository
 func NewArticleRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ArticleRepository {
 	enhancedRepo := NewEnhancedBaseRepository[*models.Article](db, tableName, logger, costService, "ArticleRepository", "article")
-	
+
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService())
@@ -53,7 +53,7 @@ func (r *ArticleRepository) UpdateArticle(ctx context.Context, article *models.A
 	if err := article.UpdateKeys(); err != nil {
 		return err
 	}
-	
+
 	// Use UpdateBuilder for partial updates or full update via Save if appropriate
 	// Here we use Save for simplicity as it handles optimistic locking if version is present
 	return r.db.WithContext(ctx).Model(article).Update()

@@ -196,7 +196,7 @@ func (s *Service) CreateExport(ctx context.Context, cmd *CreateExportCommand) (*
 		Username:     cmd.Username,
 		Type:         cmd.Type,
 		Format:       cmd.Format,
-		Status:       "pending",
+		Status:       models.StatusPending,
 		IncludeMedia: cmd.IncludeMedia,
 		Options:      convertStringMapToAny(cmd.Options),
 		CreatedAt:    time.Now(),
@@ -224,9 +224,9 @@ func (s *Service) CreateExport(ctx context.Context, cmd *CreateExportCommand) (*
 		s.logger.Error("export queue service not configured",
 			zap.String("export_id", export.ID),
 			zap.String("username", cmd.Username))
-		export.Status = "failed"
+		export.Status = models.StatusFailed
 		export.Error = "Queue service not configured"
-		_ = s.exportRepo.UpdateExportStatus(ctx, export.ID, "failed", nil, export.Error)
+		_ = s.exportRepo.UpdateExportStatus(ctx, export.ID, models.StatusFailed, nil, export.Error)
 		return nil, errors.Join(serviceerrors.ErrQueueExport, errors.New("queue service not configured"))
 	}
 	if err := s.queueService.QueueExportJob(ctx, export.ID); err != nil {
@@ -234,9 +234,9 @@ func (s *Service) CreateExport(ctx context.Context, cmd *CreateExportCommand) (*
 			zap.String("export_id", export.ID),
 			zap.Error(err))
 		// Update status to failed
-		export.Status = "failed"
+		export.Status = models.StatusFailed
 		export.Error = "Failed to queue: " + err.Error()
-		_ = s.exportRepo.UpdateExportStatus(ctx, export.ID, "failed", nil, export.Error)
+		_ = s.exportRepo.UpdateExportStatus(ctx, export.ID, models.StatusFailed, nil, export.Error)
 		return nil, errors.Join(serviceerrors.ErrQueueExport, err)
 	}
 
@@ -456,18 +456,18 @@ func (s *Service) CancelExport(ctx context.Context, cmd *CancelExportCommand) (*
 	}
 
 	// Check if export can be cancelled
-	if export.Status == "completed" {
+	if export.Status == models.StatusCompleted {
 		return nil, serviceerrors.ErrCannotCancelCompletedExport
 	}
-	if export.Status == "cancelled" {
+	if export.Status == models.StatusCancelled {
 		return nil, serviceerrors.ErrExportAlreadyCancelled
 	}
-	if export.Status == "failed" {
+	if export.Status == models.StatusFailed {
 		return nil, serviceerrors.ErrCannotCancelFailedExport
 	}
 
 	// Update export status to cancelled
-	err = s.exportRepo.UpdateExportStatus(ctx, cmd.ExportID, "cancelled", nil, "Cancelled by user request")
+	err = s.exportRepo.UpdateExportStatus(ctx, cmd.ExportID, models.StatusCancelled, nil, "Cancelled by user request")
 	if err != nil {
 		s.logger.Error("failed to update export status to cancelled",
 			zap.String("export_id", cmd.ExportID),
@@ -493,7 +493,7 @@ func (s *Service) CancelExport(ctx context.Context, cmd *CancelExportCommand) (*
 				"export_id": cmd.ExportID,
 				"type":      export.Type,
 				"format":    export.Format,
-				"status":    "cancelled",
+				"status":    models.StatusCancelled,
 			},
 			Timestamp: time.Now(),
 		}
@@ -529,7 +529,7 @@ func (s *Service) CreateImport(ctx context.Context, cmd *CreateImportCommand) (*
 		Username:  cmd.Username,
 		Type:      cmd.Type,
 		Mode:      cmd.MergeStrategy, // Map MergeStrategy to Mode
-		Status:    "pending",
+		Status:    models.StatusPending,
 		S3Key:     cmd.FileURL, // Store file URL/S3 key
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),

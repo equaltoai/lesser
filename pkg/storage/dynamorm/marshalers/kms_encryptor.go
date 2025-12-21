@@ -77,4 +77,3 @@ func (e *KMSEncryptor) DecryptFromBase64(encoded string) ([]byte, error) {
 	}
 	return e.Decrypt(ciphertext)
 }
-

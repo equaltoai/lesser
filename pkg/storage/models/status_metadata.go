@@ -29,7 +29,7 @@ type StatusMetadata struct {
 	ReplyCount       int    `dynamorm:"attr:replyCount" json:"reply_count"`             // Cache of reply count
 
 	// Moderation metadata
-	ContentWarning  string   `dynamorm:"attr:contentWarning" json:"content_warning"`  // Content warning text
+	ContentWarning  string   `dynamorm:"attr:contentWarning" json:"content_warning"`   // Content warning text
 	ModerationFlags []string `dynamorm:"attr:moderationFlags" json:"moderation_flags"` // Applied moderation flags
 	ModerationNotes string   `dynamorm:"attr:moderationNotes" json:"moderation_notes"` // Internal moderation notes
 

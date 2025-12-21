@@ -19,7 +19,7 @@ type DraftRepository struct {
 // NewDraftRepository creates a new draft repository
 func NewDraftRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *DraftRepository {
 	enhancedRepo := NewEnhancedBaseRepository[*models.Draft](db, tableName, logger, costService, "DraftRepository", "draft")
-	
+
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService())
@@ -53,7 +53,7 @@ func (r *DraftRepository) UpdateDraft(ctx context.Context, draft *models.Draft) 
 	if err := draft.UpdateKeys(); err != nil {
 		return err
 	}
-	
+
 	// Use UpdateBuilder for specific fields to avoid overwriting everything if needed
 	// For drafts, we usually update content and metadata
 	return r.db.WithContext(ctx).Model(&models.Draft{}).
@@ -84,20 +84,20 @@ func (r *DraftRepository) ListDraftsByAuthor(ctx context.Context, authorID strin
 	// But PK must be exact.
 	// Actually, the PK is USER#{author_id}#DRAFT. So all drafts for a user share the same PK.
 	// So we can Query by PK.
-	
+
 	var drafts []models.Draft
 	pk := fmt.Sprintf("USER#%s#DRAFT", authorID)
-	
+
 	err := r.db.WithContext(ctx).Model(&models.Draft{}).
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", "ID#").
 		Limit(limit).
 		All(&drafts)
-		
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	result := make([]*models.Draft, len(drafts))
 	for i := range drafts {
 		result[i] = &drafts[i]

@@ -27,7 +27,7 @@ func NewCategoryService(categoryRepo *repositories.CategoryRepository, logger *z
 // CreateCategory creates a new category
 func (s *CategoryService) CreateCategory(ctx context.Context, category *models.Category) error {
 	s.logger.Info("creating category", zap.String("name", category.Name))
-	
+
 	if category.CreatedAt.IsZero() {
 		category.CreatedAt = time.Now()
 	}
@@ -57,7 +57,7 @@ func (s *CategoryService) UpdateCategory(ctx context.Context, category *models.C
 		if *category.ParentID == category.ID {
 			return errors.New("category cannot be its own parent")
 		}
-		
+
 		// Traverse up to ensure no cycle
 		currentParentID := *category.ParentID
 		for currentParentID != "" {

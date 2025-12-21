@@ -26,7 +26,7 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.POST("/auth/wallet/link", lift.HandlerFunc(liftHandler.HandleLinkWalletLift))
 	_ = app.DELETE("/auth/wallet/unlink/{address}", lift.HandlerFunc(liftHandler.HandleUnlinkWalletLift))
 	_ = app.GET("/auth/wallet/list", lift.HandlerFunc(liftHandler.HandleGetWalletsLift))
-	
+
 	// OPTIONS handlers for CORS preflight (CORS headers set by middleware)
 	optionsHandler := func(ctx *lift.Context) error {
 		// CORS headers are set by middleware, just return 200
@@ -49,7 +49,7 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.POST("/oauth/token", ratelimit.ApplyRateLimit(
 		lift.HandlerFunc(liftHandler.HandleOAuthTokenLift),
 		10, time.Minute, logger))
-	
+
 	// OPTIONS handlers for OAuth endpoints (CORS preflight)
 	_ = app.Handle("OPTIONS", "/oauth/authorize", optionsHandler)
 	_ = app.Handle("OPTIONS", "/oauth/consent", optionsHandler)
@@ -70,7 +70,7 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.POST("/api/v1/accounts", ratelimit.ApplyRateLimit(
 		lift.HandlerFunc(liftHandler.HandleRegistrationLift),
 		10, time.Hour, logger))
-	
+
 	// OPTIONS handlers for account endpoints (CORS preflight)
 	_ = app.Handle("OPTIONS", "/api/v1/accounts", optionsHandler)
 	_ = app.Handle("OPTIONS", "/api/v1/accounts/verify_credentials", optionsHandler)

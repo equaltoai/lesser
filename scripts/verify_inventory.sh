@@ -90,12 +90,34 @@ else
 fi
 echo
 
+echo "5) CDK trigger wiring validation (Spec 04):"
+triggers_status=0
+if cd "$ROOT_DIR/infra/cdk" && GOCACHE="$GOCACHE" GOMODCACHE="$GOMODCACHE" go test ./constructs -run TestInventoryTriggersMaterializeResources -count=1; then
+  echo "  ✓ Trigger wiring validation passed"
+else
+  echo "  ✗ Trigger wiring validation failed"
+  triggers_status=1
+fi
+echo
+
+echo "6) Monitoring coverage validation (Spec 06):"
+monitoring_status=0
+if cd "$ROOT_DIR/infra/cdk" && GOCACHE="$GOCACHE" GOMODCACHE="$GOMODCACHE" go test ./stacks -run TestMonitoringStackSynthCreatesInventoryLambdaAlarms -count=1; then
+  echo "  ✓ Monitoring coverage validation passed"
+else
+  echo "  ✗ Monitoring coverage validation failed"
+  monitoring_status=1
+fi
+echo
+
 drift=0
 [ ${#missing_in_inventory[@]} -gt 0 ] && drift=1
 [ ${#extra_in_inventory[@]} -gt 0 ] && drift=1
 [ $doc_status -ne 0 ] && drift=1
 [ $registry_status -ne 0 ] && drift=1
 [ $routing_status -ne 0 ] && drift=1
+[ $triggers_status -ne 0 ] && drift=1
+[ $monitoring_status -ne 0 ] && drift=1
 
 if [ $drift -eq 0 ]; then
   echo "✅ Inventory drift check passed"

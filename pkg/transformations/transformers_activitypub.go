@@ -251,7 +251,7 @@ func StorageArticleToActivityPub(article *storagemodels.Article) (*activitypub.A
 		Note: *note,
 		Name: article.Name, // Title
 	}
-	
+
 	// Ensure type is correct
 	apArticle.Type = activitypub.ArticleType
 

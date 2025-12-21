@@ -25,7 +25,7 @@ type HashtagStats struct {
 	TrendingScore float64               `dynamorm:"attr:trendingScore" json:"trending_score"`
 	TotalUses     int64                 `dynamorm:"attr:totalUses" json:"total_uses"`         // Total usage count
 	TotalAccounts int64                 `dynamorm:"attr:totalAccounts" json:"total_accounts"` // Total unique accounts
-	History       []HashtagHistoryEntry `dynamorm:"attr:history" json:"history"`             // Historical data
+	History       []HashtagHistoryEntry `dynamorm:"attr:history" json:"history"`              // Historical data
 }
 
 // UpdateKeys updates the DynamoDB keys based on the hashtag name

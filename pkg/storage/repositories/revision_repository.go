@@ -18,7 +18,7 @@ type RevisionRepository struct {
 // NewRevisionRepository creates a new revision repository
 func NewRevisionRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RevisionRepository {
 	enhancedRepo := NewEnhancedBaseRepository[*models.Revision](db, tableName, logger, costService, "RevisionRepository", "revision")
-	
+
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService())
@@ -51,18 +51,18 @@ func (r *RevisionRepository) GetRevision(ctx context.Context, objectID string, v
 func (r *RevisionRepository) ListRevisions(ctx context.Context, objectID string, limit int) ([]*models.Revision, error) {
 	var revisions []models.Revision
 	pk := fmt.Sprintf("OBJECT#%s#REVISION", objectID)
-	
+
 	err := r.db.WithContext(ctx).Model(&models.Revision{}).
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", "VERSION#").
 		OrderBy("SK", "DESC"). // Newest first
 		Limit(limit).
 		All(&revisions)
-		
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	result := make([]*models.Revision, len(revisions))
 	for i := range revisions {
 		result[i] = &revisions[i]

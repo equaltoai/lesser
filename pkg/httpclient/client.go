@@ -137,6 +137,7 @@ func NewSecureClient(opts ...Option) *SecureClient {
 		base:     http.DefaultTransport,
 		logger:   c.logger,
 		dnsCache: c.dnsCache,
+		lookupIP: net.LookupIP,
 	}
 
 	// Configure redirect policy
@@ -225,6 +226,7 @@ type secureTransport struct {
 	base     http.RoundTripper
 	logger   *zap.Logger
 	dnsCache *dnsCacheManager
+	lookupIP func(string) ([]net.IP, error)
 }
 
 // RoundTrip implements http.RoundTripper with security checks
@@ -253,7 +255,11 @@ func (t *secureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// If not in cache, resolve hostname
 	if !fromCache {
 		var err error
-		ips, err = net.LookupIP(hostname)
+		lookup := t.lookupIP
+		if lookup == nil {
+			lookup = net.LookupIP
+		}
+		ips, err = lookup(hostname)
 		if err != nil {
 			return nil, fmt.Errorf("DNS lookup failed: %w", err)
 		}

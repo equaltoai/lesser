@@ -25,8 +25,8 @@ type InstanceHealthReport struct {
 	LastChecked     time.Time `dynamorm:"attr:lastChecked" json:"last_checked"`
 
 	// Additional metadata
-	Timestamp string `dynamorm:"attr:timestamp" json:"timestamp"`                 // ISO timestamp for sorting
-	TTL       int64  `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`               // 30 days retention
+	Timestamp string `dynamorm:"attr:timestamp" json:"timestamp"`   // ISO timestamp for sorting
+	TTL       int64  `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // 30 days retention
 }
 
 // TableName returns the DynamoDB table backing InstanceHealthReport.

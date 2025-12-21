@@ -14,8 +14,8 @@ type StatusPin struct {
 	SK string `dynamorm:"sk,attr:SK" json:"SK"` // STATUS#{status_id}
 
 	// Core fields from legacy
-	Username  string    `dynamorm:"attr:username" json:"username"`     // Who pinned the status
-	StatusID  string    `dynamorm:"attr:statusID" json:"status_id"`    // The status that was pinned
+	Username  string    `dynamorm:"attr:username" json:"username"`    // Who pinned the status
+	StatusID  string    `dynamorm:"attr:statusID" json:"status_id"`   // The status that was pinned
 	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"` // When it was pinned
 }
 

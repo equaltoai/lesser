@@ -28,7 +28,7 @@ func NewPublicationService(pubRepo *repositories.PublicationRepository, pubMembe
 // CreatePublication creates a new publication
 func (s *PublicationService) CreatePublication(ctx context.Context, publication *models.Publication) error {
 	s.logger.Info("creating publication", zap.String("name", publication.Name))
-	
+
 	if publication.CreatedAt.IsZero() {
 		publication.CreatedAt = time.Now()
 	}
@@ -60,7 +60,7 @@ func (s *PublicationService) DeletePublication(ctx context.Context, id string) e
 // AddMember adds a member to a publication
 func (s *PublicationService) AddMember(ctx context.Context, member *models.PublicationMember) error {
 	s.logger.Info("adding member to publication", zap.String("userID", member.UserID), zap.String("pubID", member.PublicationID))
-	
+
 	if member.JoinedAt.IsZero() {
 		member.JoinedAt = time.Now()
 	}
@@ -79,7 +79,7 @@ func (s *PublicationService) RemoveMember(ctx context.Context, publicationID, us
 // UpdateMemberRole updates a member's role
 func (s *PublicationService) UpdateMemberRole(ctx context.Context, publicationID, userID, role string) error {
 	s.logger.Info("updating member role", zap.String("userID", userID), zap.String("role", role))
-	
+
 	member, err := s.pubMemberRepo.GetMember(ctx, publicationID, userID)
 	if err != nil {
 		return err

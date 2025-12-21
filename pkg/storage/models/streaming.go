@@ -26,7 +26,7 @@ type StreamingPreferences struct {
 	AutoQuality       bool   `dynamorm:"attr:autoQuality" json:"auto_quality"`
 	PreloadNext       bool   `dynamorm:"attr:preloadNext" json:"preload_next"`
 	DataSaverMode     bool   `dynamorm:"attr:dataSaverMode" json:"data_saver_mode"`
-	PreferredCodec    string `dynamorm:"attr:preferredCodec" json:"preferred_codec"`    // h264/h265/av1/vp9
+	PreferredCodec    string `dynamorm:"attr:preferredCodec" json:"preferred_codec"`      // h264/h265/av1/vp9
 	MaxBandwidthMbps  int64  `dynamorm:"attr:maxBandwidthMbps" json:"max_bandwidth_mbps"` // 0 means unlimited
 	BufferSizeSeconds int    `dynamorm:"attr:bufferSizeSeconds" json:"buffer_size_seconds"`
 

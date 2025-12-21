@@ -20,9 +20,9 @@ type FederationStats struct {
 	TotalUsers      int   `dynamorm:"attr:totalUsers" json:"total_users"`
 
 	// Additional metadata
-	Date      string    `dynamorm:"attr:date" json:"date"`                             // The date these stats are for
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`                  // Last update time
-	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`                 // 90 days retention
+	Date      string    `dynamorm:"attr:date" json:"date"`             // The date these stats are for
+	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`  // Last update time
+	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // 90 days retention
 }
 
 // TableName returns the DynamoDB table backing FederationStats.

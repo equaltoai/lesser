@@ -15,9 +15,9 @@ type QueryCacheEntry struct {
 
 	// Cache data
 	CacheKey  string    `dynamorm:"attr:cacheKey" json:"cache_key"`
-	Value     string    `dynamorm:"attr:value" json:"value"`           // JSON-encoded cached value
-	Size      int       `dynamorm:"attr:size" json:"size"`             // Size for LRU calculations
-	ExpiresAt time.Time `dynamorm:"attr:expiresAt" json:"expires_at"`  // Manual expiry tracking
+	Value     string    `dynamorm:"attr:value" json:"value"`          // JSON-encoded cached value
+	Size      int       `dynamorm:"attr:size" json:"size"`            // Size for LRU calculations
+	ExpiresAt time.Time `dynamorm:"attr:expiresAt" json:"expires_at"` // Manual expiry tracking
 	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
 	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
 

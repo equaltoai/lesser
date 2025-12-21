@@ -32,6 +32,8 @@ type ImportExportQueueService struct {
 
 var _ importexport.QueueService = (*ImportExportQueueService)(nil)
 
+// NewImportExportQueueService constructs an ImportExportQueueService backed by AWS SQS using
+// the canonical per-job queue URLs provided via config (Spec 05).
 func NewImportExportQueueService(
 	ctx context.Context,
 	cfg *pkgconfig.Config,
@@ -69,6 +71,7 @@ func NewImportExportQueueService(
 	}, nil
 }
 
+// QueueExportJob loads the export record and enqueues an export job message to the configured export queue.
 func (s *ImportExportQueueService) QueueExportJob(ctx context.Context, exportID string) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -126,6 +129,7 @@ func (s *ImportExportQueueService) QueueExportJob(ctx context.Context, exportID 
 	return nil
 }
 
+// QueueImportJob loads the import record and enqueues an import job message to the configured import queue.
 func (s *ImportExportQueueService) QueueImportJob(ctx context.Context, importID string) error {
 	if ctx == nil {
 		ctx = context.Background()

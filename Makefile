@@ -1,4 +1,4 @@
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate clear-data build-bootstrap-owner bootstrap-owner generate-inventory verify-inventory verify-lambda-set
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate clear-data build-bootstrap-owner bootstrap-owner generate-inventory verify-inventory verify-lambda-set verify-docs verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify
 
 # =============================================================================
 # CONFIGURATION
@@ -83,13 +83,14 @@ VAPID_ENV_FILE = tmp/vapid-$(ENV).env
 ## Build all Lambda functions for deployment (incremental - only if missing)
 build-lambdas:
 	@mkdir -p bin
+	@mkdir -p tmp/go-cache
 	@BUILT=0; \
 	SKIPPED=0; \
 	for lambda in $(LAMBDAS); do \
 		if [ ! -f "bin/$$lambda.zip" ]; then \
 			echo "Building $$lambda..."; \
 			GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
-				go build -ldflags="-s -w" -o bin/bootstrap ./cmd/$$lambda && \
+				GOCACHE=$(CURDIR)/tmp/go-cache go build -ldflags="-s -w" -o bin/bootstrap ./cmd/$$lambda && \
 			cd bin && zip -q $$lambda.zip bootstrap && rm -f bootstrap && cd .. || exit 1; \
 			BUILT=$$((BUILT + 1)); \
 		else \
@@ -112,8 +113,9 @@ rebuild-lambdas:
 build-%:
 	@echo "Building $*..."
 	@mkdir -p bin
+	@mkdir -p tmp/go-cache
 	@GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
-		go build -ldflags="-s -w" -o bin/bootstrap ./cmd/$*
+		GOCACHE=$(CURDIR)/tmp/go-cache go build -ldflags="-s -w" -o bin/bootstrap ./cmd/$*
 	@cd bin && zip -q $*.zip bootstrap && rm bootstrap
 	@echo "✓ Built $*.zip"
 
@@ -124,17 +126,19 @@ build:
 	@$(MAKE) rebuild-lambdas
 	@$(MAKE) build-cloudfront-keygen
 	@$(MAKE) build-auth-ui
-	@go build ./...
+	@mkdir -p tmp/go-cache
+	@GOCACHE=$(CURDIR)/tmp/go-cache go build ./...
 	@echo "✓ Deployment build complete (Lambda zips, cloudfront-keygen.zip, auth-ui, and Go binaries refreshed)"
 
 ## Build all Lambda binaries for local use (non-zipped)
 build-local:
 	@echo "Building Lambda binaries for local use..."
 	@mkdir -p bin
+	@mkdir -p tmp/go-cache
 	@for lambda in $(LAMBDAS); do \
 		echo "Building cmd/$$lambda..."; \
 		GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
-			go build -ldflags="-s -w" -o bin/$$lambda ./cmd/$$lambda || exit 1; \
+			GOCACHE=$(CURDIR)/tmp/go-cache go build -ldflags="-s -w" -o bin/$$lambda ./cmd/$$lambda || exit 1; \
 	done
 	@echo "✓ Local binaries built in bin/"
 
@@ -142,9 +146,10 @@ build-local:
 build-cloudfront-keygen:
 	@echo "Building CloudFront key generation Lambda..."
 	@mkdir -p bin
+	@mkdir -p tmp/go-cache
 	@TMPDIR=$$(mktemp -d bin/cloudfront-keygen.XXXXXX); \
 		GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
-		go build -tags lambda.norpc -ldflags="-s -w" -o $$TMPDIR/bootstrap ./cmd/cloudfront-keygen && \
+		GOCACHE=$(CURDIR)/tmp/go-cache go build -tags lambda.norpc -ldflags="-s -w" -o $$TMPDIR/bootstrap ./cmd/cloudfront-keygen && \
 		(cd $$TMPDIR && zip -q ../cloudfront-keygen.zip bootstrap) && \
 		rm -rf $$TMPDIR
 	@echo "✓ Built bin/cloudfront-keygen.zip ($(shell ls -lh bin/cloudfront-keygen.zip 2>/dev/null | awk '{print $$5}'))"
@@ -153,7 +158,8 @@ build-cloudfront-keygen:
 build-bootstrap-owner:
 	@echo "Building owner bootstrap utility..."
 	@mkdir -p bin
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/bootstrap-owner ./cmd/bootstrap-owner
+	@mkdir -p tmp/go-cache
+	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOCACHE=$(CURDIR)/tmp/go-cache go build -ldflags="-s -w" -o bin/bootstrap-owner ./cmd/bootstrap-owner
 	@echo "✓ Built bin/bootstrap-owner"
 
 bootstrap-owner:
@@ -200,6 +206,41 @@ verify-inventory:
 verify-lambda-set:
 	@bash scripts/verify_lambda_set.sh
 
+## Verify docs (Spec 07 R7: Pulumi ban + Lambda count claims)
+verify-docs:
+	@bash scripts/verify_docs.sh
+
+## Verify unit tests (Spec 07 R6)
+verify-unit:
+	@mkdir -p tmp/go-cache
+	@echo "Running short unit tests..."
+	@ENVIRONMENT=$(TEST_ENVIRONMENT) STAGE=$(TEST_STAGE) \
+		JWT_SECRET=$${JWT_SECRET:-dummy_value} \
+		GOCACHE=$(CURDIR)/tmp/go-cache \
+		go test -short -v ./...
+
+## Smoke suite entrypoint (Spec 07 R3/R4; requires network)
+verify-smoke: smoke-core smoke-federation
+	@echo "✓ verify-smoke complete"
+
+## Optional CDK synth check (Spec 07 R6; requires CDK toolchain)
+verify-cdk: cdk-synth
+	@echo "✓ verify-cdk complete"
+
+## Smoke: core API endpoints (Spec 07 R4)
+smoke-core:
+	@bash scripts/smoke_core.sh
+
+## Smoke: federation endpoints (Spec 07 R3)
+smoke-federation:
+	@bash scripts/smoke_federation.sh
+
+## Combined verification wrapper
+verify: verify-lambda-set verify-inventory verify-docs verify-unit
+	@if [ "$${VERIFY_SMOKE:-0}" = "1" ]; then $(MAKE) verify-smoke; fi
+	@if [ "$${VERIFY_CDK:-0}" = "1" ]; then $(MAKE) verify-cdk; fi
+	@echo "✓ verify complete (lambda set, inventory, docs, unit tests)"
+
 # =============================================================================
 # CDK DEPLOYMENT TARGETS
 # =============================================================================
@@ -241,7 +282,11 @@ cdk-diff:
 ## Generate CloudFormation template
 cdk-synth:
 	@echo "Synthesizing CloudFormation template for $(CDK_ENV)..."
-	@cd infra/cdk && cdk synth --context environment=$(CDK_ENV)
+	@mkdir -p tmp/go-cache tmp/xdg-cache
+	@cd infra/cdk && \
+		XDG_CACHE_HOME=$(CURDIR)/tmp/xdg-cache \
+		GOCACHE=$(CURDIR)/tmp/go-cache \
+		cdk synth --context environment=$(CDK_ENV)
 
 ## List all CDK stacks
 cdk-list:
@@ -590,10 +635,11 @@ errors:
 ## Run all tests
 test:
 	@echo "Running tests..."
+	@mkdir -p tmp/go-cache
 	@ENVIRONMENT=$(TEST_ENVIRONMENT) STAGE=$(TEST_STAGE) \
 		JWT_SECRET=$${JWT_SECRET:-dummy_value} \
 		DYNAMODB_ENCRYPTION_KEY=$${DYNAMODB_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef} \
-		go test -v ./...
+		GOCACHE=$(CURDIR)/tmp/go-cache go test -v ./...
 
 .PHONY: schema
 schema:
@@ -602,34 +648,38 @@ schema:
 ## Run tests with coverage
 test-coverage:
 	@echo "Running tests with coverage..."
+	@mkdir -p tmp/go-cache
 	@ENVIRONMENT=$(TEST_ENVIRONMENT) STAGE=$(TEST_STAGE) \
 		JWT_SECRET=$${JWT_SECRET:-dummy_value} \
 		DYNAMODB_ENCRYPTION_KEY=$${DYNAMODB_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef} \
-		go test -v -coverprofile=coverage.out ./...
+		GOCACHE=$(CURDIR)/tmp/go-cache go test -v -coverprofile=coverage.out ./...
 	@go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
 ## Run tests with race detection
 test-race:
 	@echo "Running tests with race detection..."
+	@mkdir -p tmp/go-cache
 	@ENVIRONMENT=$(TEST_ENVIRONMENT) STAGE=$(TEST_STAGE) \
 		JWT_SECRET=$${JWT_SECRET:-dummy_value} \
-		go test -race -v ./...
+		GOCACHE=$(CURDIR)/tmp/go-cache go test -race -v ./...
 
 ## Run integration tests
 test-integration:
 	@echo "Running integration tests..."
+	@mkdir -p tmp/go-cache
 	@ENVIRONMENT=$(INTEGRATION_ENVIRONMENT) STAGE=$(INTEGRATION_STAGE) \
 		JWT_SECRET=$${JWT_SECRET:-dummy_value} \
 		TEST_ENV=integration \
-		go test -tags=integration -v -timeout=30m ./pkg/testing/harness/...
+		GOCACHE=$(CURDIR)/tmp/go-cache go test -tags=integration -v -timeout=30m ./pkg/testing/harness/...
 
 ## Run unit tests only
 test-unit:
 	@echo "Running unit tests only..."
+	@mkdir -p tmp/go-cache
 	@ENVIRONMENT=$(TEST_ENVIRONMENT) STAGE=$(TEST_STAGE) \
 		JWT_SECRET=$${JWT_SECRET:-dummy_value} \
-		go test -short -v ./...
+		GOCACHE=$(CURDIR)/tmp/go-cache go test -short -v ./...
 
 ## Clear all data from DynamoDB table
 clear-data:
@@ -692,17 +742,20 @@ seed-and-validate:
 ## Format Go code
 fmt:
 	@echo "Formatting code..."
-	@go fmt ./...
+	@mkdir -p tmp/go-cache
+	@GOCACHE=$(CURDIR)/tmp/go-cache go fmt ./...
 
 ## Run linter
 lint:
 	@echo "Running linter..."
-	@golangci-lint run --config .golangci.yml
+	@mkdir -p tmp/go-cache tmp/xdg-cache
+	@XDG_CACHE_HOME=$(CURDIR)/tmp/xdg-cache GOCACHE=$(CURDIR)/tmp/go-cache golangci-lint run --config .golangci.yml
 
 ## Run linter with auto-fix
 lint-fix:
 	@echo "Running linter with auto-fix..."
-	@golangci-lint run --config .golangci.yml --fix
+	@mkdir -p tmp/go-cache tmp/xdg-cache
+	@XDG_CACHE_HOME=$(CURDIR)/tmp/xdg-cache GOCACHE=$(CURDIR)/tmp/go-cache golangci-lint run --config .golangci.yml --fix
 
 ## Run security scan
 sec-scan:

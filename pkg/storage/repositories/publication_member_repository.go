@@ -18,7 +18,7 @@ type PublicationMemberRepository struct {
 // NewPublicationMemberRepository creates a new publication member repository
 func NewPublicationMemberRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PublicationMemberRepository {
 	enhancedRepo := NewEnhancedBaseRepository[*models.PublicationMember](db, tableName, logger, costService, "PublicationMemberRepository", "publication_member")
-	
+
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService())
@@ -58,16 +58,16 @@ func (r *PublicationMemberRepository) DeleteMember(ctx context.Context, publicat
 func (r *PublicationMemberRepository) ListMembers(ctx context.Context, publicationID string) ([]*models.PublicationMember, error) {
 	var members []models.PublicationMember
 	pk := fmt.Sprintf("PUBLICATION#%s#MEMBER", publicationID)
-	
+
 	err := r.db.WithContext(ctx).Model(&models.PublicationMember{}).
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", "USER#").
 		All(&members)
-		
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	result := make([]*models.PublicationMember, len(members))
 	for i := range members {
 		result[i] = &members[i]

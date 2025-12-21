@@ -9,8 +9,8 @@ import (
 type HashtagMute struct {
 	_ struct{} `dynamorm:"naming:camelCase"`
 
-	PK        string    `dynamorm:"pk,attr:PK" json:"pk"`                  // user#{userID}
-	SK        string    `dynamorm:"sk,attr:SK" json:"sk"`                  // mute#{name}
+	PK        string    `dynamorm:"pk,attr:PK" json:"pk"` // user#{userID}
+	SK        string    `dynamorm:"sk,attr:SK" json:"sk"` // mute#{name}
 	Username  string    `dynamorm:"attr:username" json:"username"`
 	Hashtag   string    `dynamorm:"attr:hashtag" json:"hashtag"`
 	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`

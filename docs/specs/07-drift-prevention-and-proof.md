@@ -91,7 +91,7 @@ Add a `make verify` target that runs:
 ### R7 — Doc drift checks (no stale tooling)
 Add a lightweight doc drift check that fails on:
 - stale Lambda count claims
-- references to Pulumi (CDK is the only IaC path)
+- references to deprecated IaC tooling (CDK is the only deploy path)
 
 ## Acceptance Criteria
 - A single command (`make verify`) provides high-signal confidence that:
@@ -106,9 +106,15 @@ Recommended local/CI sequence (adjust for environment/tooling availability):
 - `make verify-lambda-set`
 - `make verify-inventory`
 - `make test` (or `go test -short ./...`)
-- `make verify` (once implemented)
+- `make verify`
 - `cd infra/cdk && cdk synth` (if toolchain is available)
 
 ## Open Questions
 1. Should `cdk synth` be a required check in CI? (Toolchain availability may vary.)
 2. What is the minimal “known object” fixture for `/objects/<id>` smoke tests in non-prod?
+
+## Unified Verification Entrypoint (Spec 07 R6)
+- `make verify` runs: `make verify-lambda-set`, `make verify-inventory`, `make verify-docs`, and `make verify-unit` (short `go test -short ./...` with workspace-local `GOCACHE`).
+- Optional `VERIFY_SMOKE=1` runs `make smoke-core` and `make smoke-federation` (non-destructive GETs) using `SMOKE_BASE_URL`, `SMOKE_USERNAME`, `SMOKE_OBJECT_ID`, and optional `SMOKE_TOKEN`/`SMOKE_ACCEPT_HEADER`.
+- Optional `VERIFY_CDK=1` runs `make cdk-synth` (no AWS mutations).
+- Defaults remain non-destructive and avoid AWS calls unless the operator opts in via env flags.

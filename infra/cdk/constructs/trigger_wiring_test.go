@@ -103,9 +103,13 @@ func TestInventoryTriggersMaterializeResources(t *testing.T) {
 	mappings := collectEventSourceMappings(t, tpl)
 	queuesMeta := collectQueuesByName(t, tpl)
 	rules := collectScheduleRules(t, tpl)
+	expectedSqsSources := map[string][]string{}
+	expectedStreamCounts := map[string]int{}
+	expectedScheduleExprs := map[string][]string{}
 
 	for _, spec := range inventory.LambdaInventory.Lambdas {
 		fnName := fmt.Sprintf("lesser-%s-%s", "dev", spec.Name)
+		expectedStreamCounts[fnName] = len(spec.StreamTriggers)
 
 		if len(spec.StreamTriggers) > 0 {
 			if countMappingsBySourceAttr(mappings, fnName, "StreamArn") != len(spec.StreamTriggers) {
@@ -135,6 +139,7 @@ func TestInventoryTriggersMaterializeResources(t *testing.T) {
 			if trig.ConsumeDeadLetterQueue {
 				expectedMappingQueue = dlq
 			}
+			expectedSqsSources[fnName] = append(expectedSqsSources[fnName], expectedMappingQueue.LogicalID)
 			if countMappings(mappings, fnName, expectedMappingQueue.LogicalID, "Arn") == 0 {
 				t.Fatalf("missing SQS mapping for %s -> %s", spec.Name, trig.Queue)
 			}
@@ -148,9 +153,64 @@ func TestInventoryTriggersMaterializeResources(t *testing.T) {
 		}
 
 		for _, trig := range spec.ScheduleTriggers {
+			expectedScheduleExprs[fnName] = append(expectedScheduleExprs[fnName], trig.Expression)
 			if !ruleExists(rules, trig.Expression, fnName) {
 				t.Fatalf("missing schedule rule for %s with expression %s", spec.Name, trig.Expression)
 			}
+		}
+	}
+
+	actualSqsSources := map[string][]string{}
+	actualStreamSources := map[string][]string{}
+	for _, m := range mappings {
+		switch m.SourceAttr {
+		case "Arn":
+			actualSqsSources[m.FunctionName] = append(actualSqsSources[m.FunctionName], m.SourceLogical)
+		case "StreamArn":
+			actualStreamSources[m.FunctionName] = append(actualStreamSources[m.FunctionName], m.SourceLogical)
+		}
+	}
+
+	actualScheduleExprs := map[string][]string{}
+	for _, rule := range rules {
+		actualScheduleExprs[rule.TargetName] = append(actualScheduleExprs[rule.TargetName], rule.Expression)
+	}
+
+	for fn, expected := range expectedSqsSources {
+		actual := actualSqsSources[fn]
+		missing, extra := diffStringSets(expected, actual)
+		if len(missing) > 0 || len(extra) > 0 {
+			t.Fatalf("sqs mapping mismatch for %s: missing=%v extra=%v actual=%v expected=%v", fn, missing, extra, actual, expected)
+		}
+	}
+	for fn, actual := range actualSqsSources {
+		if len(expectedSqsSources[fn]) == 0 && len(actual) > 0 {
+			t.Fatalf("unexpected sqs mappings for %s: %v", fn, actual)
+		}
+	}
+
+	for fn, expCount := range expectedStreamCounts {
+		actualCount := len(actualStreamSources[fn])
+		if actualCount != expCount {
+			t.Fatalf("stream mapping mismatch for %s: expected %d got %d (sources=%v)", fn, expCount, actualCount, actualStreamSources[fn])
+		}
+	}
+	for fn, streamSources := range actualStreamSources {
+		if expectedStreamCounts[fn] == 0 && len(streamSources) > 0 {
+			t.Fatalf("unexpected stream mappings for %s: %v", fn, streamSources)
+		}
+	}
+
+	for fn, expected := range expectedScheduleExprs {
+		actual := actualScheduleExprs[fn]
+		missing, extra := diffStringSets(expected, actual)
+		if len(missing) > 0 || len(extra) > 0 {
+			t.Fatalf("schedule rule mismatch for %s: missing=%v extra=%v actual=%v expected=%v", fn, missing, extra, actual, expected)
+		}
+	}
+	for fn, actual := range actualScheduleExprs {
+		if len(expectedScheduleExprs[fn]) == 0 && len(actual) > 0 {
+			t.Fatalf("unexpected schedule rules for %s: %v", fn, actual)
 		}
 	}
 }
@@ -452,6 +512,28 @@ func ruleExists(rules []scheduleRule, expression, fnName string) bool {
 		}
 	}
 	return false
+}
+
+func diffStringSets(expected, actual []string) (missing []string, extra []string) {
+	exp := map[string]struct{}{}
+	act := map[string]struct{}{}
+	for _, e := range expected {
+		exp[e] = struct{}{}
+	}
+	for _, a := range actual {
+		act[a] = struct{}{}
+	}
+	for e := range exp {
+		if _, ok := act[e]; !ok {
+			missing = append(missing, e)
+		}
+	}
+	for a := range act {
+		if _, ok := exp[a]; !ok {
+			extra = append(extra, a)
+		}
+	}
+	return
 }
 
 func findFirstRefLogicalIDDeep(v any) (string, bool) {

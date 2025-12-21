@@ -28,10 +28,10 @@ func (r *queryResolver) ExplainObject(ctx context.Context, id string) (*model.Ob
 		// If object not found, check if it's a status ID instead
 		// Notes create statuses, not objects in the object repository
 		errStr := strings.ToLower(err.Error())
-		isNotFound := strings.Contains(errStr, "not found") || 
-		              strings.Contains(errStr, "notfound") ||
-		              strings.Contains(errStr, "failed to get") && strings.Contains(errStr, "object")
-		
+		isNotFound := strings.Contains(errStr, "not found") ||
+			strings.Contains(errStr, "notfound") ||
+			strings.Contains(errStr, "failed to get") && strings.Contains(errStr, "object")
+
 		// Always try status lookup as fallback (notes are stored as statuses)
 		statusRepo := r.Registry.GetStorage().Status()
 		if statusRepo != nil {
@@ -47,7 +47,7 @@ func (r *queryResolver) ExplainObject(ctx context.Context, id string) (*model.Ob
 				}
 			}
 		}
-		
+
 		// If we reach here, neither object nor status was found
 		if isNotFound {
 			r.Logger.Debug("object not found for explanation",

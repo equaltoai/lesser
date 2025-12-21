@@ -190,11 +190,21 @@ go run main.go
 # Unit tests
 make test
 
-# Integration tests
-make test-integration
+# Short unit sweep used by verify
+make test-unit
 
-# Load tests
-make test-load
+# Unified verification (Spec 07 R6: lambda set, inventory, docs, unit tests)
+make verify
+
+# Enable optional smoke suites inside verify (non-destructive HTTP only)
+VERIFY_SMOKE=1 SMOKE_BASE_URL=https://lesser.host SMOKE_USERNAME=alice SMOKE_OBJECT_ID=123 SMOKE_TOKEN="Bearer xyz" make verify
+
+# Run smoke suites directly
+SMOKE_BASE_URL=https://lesser.host SMOKE_TOKEN="Bearer xyz" make smoke-core
+SMOKE_BASE_URL=https://lesser.host SMOKE_USERNAME=alice SMOKE_OBJECT_ID=123 make smoke-federation
+
+# Enable optional CDK synth inside verify
+VERIFY_CDK=1 make verify
 ```
 
 ## Federation

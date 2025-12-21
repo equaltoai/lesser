@@ -28,7 +28,7 @@ This rubric defines what “9/10” means for Lesser across **quality**, **consi
    - `Makefile LAMBDAS`
    - `docs/specs/01-lambda-inventory-matrix.md`
    - CDK function definitions
-2. **No legacy IaC**: Pulumi is not referenced anywhere in code/docs/scripts; CDK is the only deploy path.
+2. **No legacy IaC**: non-CDK IaC tooling is not referenced anywhere in code/docs/scripts; CDK is the only deploy path.
 3. **Naming conventions**: CDK logical IDs, function names, log group names, alarms, and dashboards follow a consistent scheme and do not include stale/phantom functions.
 4. **Documentation is not misleading**: docs do not claim outdated Lambda counts, endpoints, or tooling.
 
@@ -65,4 +65,3 @@ This rubric defines what “9/10” means for Lesser across **quality**, **consi
 - **P1**: major missing product component, repeated drift, or broken core pathway.
 - **P2**: non-critical missing monitoring/alerts, minor wiring cleanup, or documentation gaps.
 - **P3**: polish and nice-to-haves.
-

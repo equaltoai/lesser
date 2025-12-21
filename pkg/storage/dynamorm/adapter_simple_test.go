@@ -125,12 +125,12 @@ func (s *SimpleRepositoryStorage) StreamingConnection() *repositories.StreamingC
 	return nil
 }
 
-func (s *SimpleRepositoryStorage) Article() *repositories.ArticleRepository           { return nil }
-func (s *SimpleRepositoryStorage) Draft() *repositories.DraftRepository               { return nil }
-func (s *SimpleRepositoryStorage) Revision() *repositories.RevisionRepository         { return nil }
-func (s *SimpleRepositoryStorage) Series() *repositories.SeriesRepository             { return nil }
-func (s *SimpleRepositoryStorage) Category() *repositories.CategoryRepository         { return nil }
-func (s *SimpleRepositoryStorage) Publication() *repositories.PublicationRepository   { return nil }
+func (s *SimpleRepositoryStorage) Article() *repositories.ArticleRepository         { return nil }
+func (s *SimpleRepositoryStorage) Draft() *repositories.DraftRepository             { return nil }
+func (s *SimpleRepositoryStorage) Revision() *repositories.RevisionRepository       { return nil }
+func (s *SimpleRepositoryStorage) Series() *repositories.SeriesRepository           { return nil }
+func (s *SimpleRepositoryStorage) Category() *repositories.CategoryRepository       { return nil }
+func (s *SimpleRepositoryStorage) Publication() *repositories.PublicationRepository { return nil }
 func (s *SimpleRepositoryStorage) PublicationMember() *repositories.PublicationMemberRepository {
 	return nil
 }

@@ -354,12 +354,12 @@ func (m *MockRepositoryStorage) StreamingConnection() *repositories.StreamingCon
 	return nil
 }
 
-func (m *MockRepositoryStorage) Article() *repositories.ArticleRepository           { return nil }
-func (m *MockRepositoryStorage) Draft() *repositories.DraftRepository               { return nil }
-func (m *MockRepositoryStorage) Revision() *repositories.RevisionRepository         { return nil }
-func (m *MockRepositoryStorage) Series() *repositories.SeriesRepository             { return nil }
-func (m *MockRepositoryStorage) Category() *repositories.CategoryRepository         { return nil }
-func (m *MockRepositoryStorage) Publication() *repositories.PublicationRepository   { return nil }
+func (m *MockRepositoryStorage) Article() *repositories.ArticleRepository         { return nil }
+func (m *MockRepositoryStorage) Draft() *repositories.DraftRepository             { return nil }
+func (m *MockRepositoryStorage) Revision() *repositories.RevisionRepository       { return nil }
+func (m *MockRepositoryStorage) Series() *repositories.SeriesRepository           { return nil }
+func (m *MockRepositoryStorage) Category() *repositories.CategoryRepository       { return nil }
+func (m *MockRepositoryStorage) Publication() *repositories.PublicationRepository { return nil }
 func (m *MockRepositoryStorage) PublicationMember() *repositories.PublicationMemberRepository {
 	return nil
 }

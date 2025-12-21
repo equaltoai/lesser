@@ -17,7 +17,7 @@ import (
 // This is used for the second verification in the wallet link flow
 func (as *AuthService) VerifySignatureOnly(ctx context.Context, challenge *storage.WalletChallenge, signature string) error {
 	logger := common.WithContext(ctx)
-	
+
 	// Verify Ethereum signature
 	sig, err := hexutil.Decode(signature)
 	if err != nil {
@@ -68,4 +68,3 @@ func (as *AuthService) VerifySignatureOnly(ctx context.Context, challenge *stora
 func (as *AuthService) GetWalletByAddress(ctx context.Context, address string) (*storage.WalletCredential, error) {
 	return as.repos.Account().GetWalletCredential(ctx, address)
 }
-

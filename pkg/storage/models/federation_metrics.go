@@ -31,19 +31,19 @@ type FederationAnalyticsTimeSeries struct {
 	// Critical federation health metrics (following federation-analytics-guidance.md)
 
 	// 1. Availability Metrics (40% weight in health scoring)
-	InstanceReachability  float64    `dynamorm:"attr:instanceReachability" json:"instance_reachability"`   // % instances responding (0-1)
-	EndpointAvailability  float64    `dynamorm:"attr:endpointAvailability" json:"endpoint_availability"`   // % endpoints up (0-1)
+	InstanceReachability  float64    `dynamorm:"attr:instanceReachability" json:"instance_reachability"` // % instances responding (0-1)
+	EndpointAvailability  float64    `dynamorm:"attr:endpointAvailability" json:"endpoint_availability"` // % endpoints up (0-1)
 	LastSuccessfulContact *time.Time `dynamorm:"attr:lastSuccessfulContact" json:"last_successful_contact,omitempty"`
 	ConsecutiveFailures   int64      `dynamorm:"attr:consecutiveFailures" json:"consecutive_failures"`
 	CircuitBreakerActive  bool       `dynamorm:"attr:circuitBreakerActive" json:"circuit_breaker_active"`
 
 	// 2. Performance Metrics (30% weight)
-	InboxDeliveryP50          int64 `dynamorm:"attr:inboxDeliveryP50" json:"inbox_delivery_p50_ms"`         // ms
-	InboxDeliveryP95          int64 `dynamorm:"attr:inboxDeliveryP95" json:"inbox_delivery_p95_ms"`         // ms
-	InboxDeliveryP99          int64 `dynamorm:"attr:inboxDeliveryP99" json:"inbox_delivery_p99_ms"`         // ms
-	OutboxProcessingTime      int64 `dynamorm:"attr:outboxProcessingTime" json:"outbox_processing_time_ms"` // ms
+	InboxDeliveryP50          int64 `dynamorm:"attr:inboxDeliveryP50" json:"inbox_delivery_p50_ms"`              // ms
+	InboxDeliveryP95          int64 `dynamorm:"attr:inboxDeliveryP95" json:"inbox_delivery_p95_ms"`              // ms
+	InboxDeliveryP99          int64 `dynamorm:"attr:inboxDeliveryP99" json:"inbox_delivery_p99_ms"`              // ms
+	OutboxProcessingTime      int64 `dynamorm:"attr:outboxProcessingTime" json:"outbox_processing_time_ms"`      // ms
 	SignatureVerificationTime int64 `dynamorm:"attr:signatureVerificationTime" json:"signature_verification_ms"` // ms
-	MediaDeliveryTime         int64 `dynamorm:"attr:mediaDeliveryTime" json:"media_delivery_time_ms"`       // ms
+	MediaDeliveryTime         int64 `dynamorm:"attr:mediaDeliveryTime" json:"media_delivery_time_ms"`            // ms
 
 	// 3. Throughput Metrics (20% weight)
 	IncomingActivitiesPerSec float64 `dynamorm:"attr:incomingActivitiesPerSec" json:"incoming_activities_per_sec"`
@@ -80,9 +80,9 @@ type FederationAnalyticsTimeSeries struct {
 	// Aggregation metadata
 	WindowStart      time.Time `dynamorm:"attr:windowStart" json:"window_start"`
 	WindowEnd        time.Time `dynamorm:"attr:windowEnd" json:"window_end"`
-	SampleCount      int64     `dynamorm:"attr:sampleCount" json:"sample_count"`                        // Number of raw samples aggregated
-	AggregationLevel string    `dynamorm:"attr:aggregationLevel" json:"aggregation_level"`              // raw, 5min, hourly, daily, monthly
-	CompressedData   []byte    `dynamorm:"attr:compressedData" json:"compressed_data,omitempty"`        // Compressed historical data
+	SampleCount      int64     `dynamorm:"attr:sampleCount" json:"sample_count"`                 // Number of raw samples aggregated
+	AggregationLevel string    `dynamorm:"attr:aggregationLevel" json:"aggregation_level"`       // raw, 5min, hourly, daily, monthly
+	CompressedData   []byte    `dynamorm:"attr:compressedData" json:"compressed_data,omitempty"` // Compressed historical data
 
 	// Timestamps
 	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`

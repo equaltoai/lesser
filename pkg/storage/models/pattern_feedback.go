@@ -25,12 +25,12 @@ type PatternFeedback struct {
 	FeedbackID  string    `dynamorm:"attr:feedbackID" json:"feedback_id"`
 	SubmittedBy string    `dynamorm:"attr:submittedBy" json:"submitted_by"` // User or system that submitted feedback
 	SubmittedAt time.Time `dynamorm:"attr:submittedAt" json:"submitted_at"`
-	ContentID   string    `dynamorm:"attr:contentID" json:"content_id"`                   // ID of content that was evaluated
-	ContentType string    `dynamorm:"attr:contentType" json:"content_type"`               // Type of content (status, user, etc)
-	PatternType string    `dynamorm:"attr:patternType" json:"pattern_type"`               // spam, abuse, etc
-	Confidence  float64   `dynamorm:"attr:confidence" json:"confidence"`                  // Original confidence score
-	Notes       string    `dynamorm:"attr:notes" json:"notes,omitempty"`                  // Additional feedback notes
-	TTL         int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`                  // 90 days retention
+	ContentID   string    `dynamorm:"attr:contentID" json:"content_id"`     // ID of content that was evaluated
+	ContentType string    `dynamorm:"attr:contentType" json:"content_type"` // Type of content (status, user, etc)
+	PatternType string    `dynamorm:"attr:patternType" json:"pattern_type"` // spam, abuse, etc
+	Confidence  float64   `dynamorm:"attr:confidence" json:"confidence"`    // Original confidence score
+	Notes       string    `dynamorm:"attr:notes" json:"notes,omitempty"`    // Additional feedback notes
+	TTL         int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`    // 90 days retention
 }
 
 // UpdateKeys updates the partition and sort keys

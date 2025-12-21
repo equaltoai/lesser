@@ -725,7 +725,7 @@ func (s *Service) removeRelationshipGeneric(ctx context.Context, params removeRe
 		s.logger.Debug("relationship does not exist, treating removal as idempotent success",
 			zap.String(params.actorName, params.actorID),
 			zap.String(params.targetName, params.targetID))
-		
+
 		relationship, err := s.GetRelationship(ctx, params.actorID, params.targetID)
 		if err != nil {
 			// Don't mask the error - we need to know why GetRelationship failed
@@ -744,7 +744,7 @@ func (s *Service) removeRelationshipGeneric(ctx context.Context, params removeRe
 
 	// Get accounts for events
 	var actor, target *storage.Account
-	
+
 	if s.accountRepo != nil {
 		var err error
 		actor, err = s.accountRepo.GetAccount(ctx, params.actorID)
@@ -779,7 +779,7 @@ func (s *Service) removeRelationshipGeneric(ctx context.Context, params removeRe
 				zap.Error(err))
 			return nil, err
 		}
-		
+
 		actor = &storage.Account{
 			User:  &storage.User{Username: actorActor.PreferredUsername},
 			Actor: actorActor,
