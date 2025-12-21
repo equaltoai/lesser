@@ -1,26 +1,31 @@
 module cdk
 
-go 1.24
+go 1.25
 
 require (
-	github.com/aws/aws-cdk-go/awscdk/v2 v2.208.0
+	github.com/aws/aws-cdk-go/awscdk/v2 v2.220.0
 	github.com/aws/constructs-go/constructs/v10 v10.4.2
-	github.com/aws/jsii-runtime-go v1.112.0
+	github.com/aws/jsii-runtime-go v1.117.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
-	github.com/Masterminds/semver/v3 v3.3.1 // indirect
-	github.com/cdklabs/awscdk-asset-awscli-go/awscliv1/v2 v2.2.242 // indirect
+	github.com/Masterminds/semver/v3 v3.4.0 // indirect
+	github.com/cdklabs/awscdk-asset-awscli-go/awscliv1/v2 v2.2.257 // indirect
 	github.com/cdklabs/awscdk-asset-node-proxy-agent-go/nodeproxyagentv6/v2 v2.1.0 // indirect
-	github.com/cdklabs/cloud-assembly-schema-go/awscdkcloudassemblyschema/v45 v45.2.0 // indirect
+	github.com/cdklabs/cloud-assembly-schema-go/awscdkcloudassemblyschema/v48 v48.16.0 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fatih/color v1.18.0 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/yuin/goldmark v1.4.13 // indirect
-	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
-	golang.org/x/mod v0.24.0 // indirect
-	golang.org/x/sync v0.16.0 // indirect
-	golang.org/x/sys v0.35.0 // indirect
-	golang.org/x/tools v0.33.0 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/yuin/goldmark v1.7.13 // indirect
+	golang.org/x/lint v0.0.0-20241112194109-818c5a804067 // indirect
+	golang.org/x/mod v0.29.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/telemetry v0.0.0-20251022145735-5be28d707443 // indirect
+	golang.org/x/tools v0.38.0 // indirect
+	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
+	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 )
