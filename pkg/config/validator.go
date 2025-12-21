@@ -149,15 +149,15 @@ func (v *ProductionConfigValidator) validateEnvironmentVariables(result *Validat
 		"AWS_REGION":         "AWS region for deploying resources",
 		"DYNAMODB_TABLE":     "DynamoDB table name for data storage",
 		"PRIVATE_KEY_SECRET": "Secret name for ActivityPub signing key",
-		"JWT_SECRET":         "Secret key for JWT token signing",
 	}
 
 	optionalVars := map[string]string{
 		"OAUTH_CLIENT_ID":     "OAuth client ID for authentication",
 		"OAUTH_CLIENT_SECRET": "OAuth client secret for authentication",
-		"S3_BUCKET":           "S3 bucket for media storage",
+		"S3_BUCKET_NAME":      "S3 bucket for media storage",
 		"LOG_LEVEL":           "Logging level (debug, info, warn, error)",
 		"ENVIRONMENT":         "Environment name (production, staging, development)",
+		"STAGE":               "Deployment stage (alias for ENVIRONMENT)",
 	}
 
 	// Check required variables
@@ -174,6 +174,20 @@ func (v *ProductionConfigValidator) validateEnvironmentVariables(result *Validat
 			// Validate specific formats
 			v.validateEnvironmentVariableFormat(varName, value, result)
 		}
+	}
+
+	// JWT secret can come from plaintext or ARN
+	jwtSecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	jwtSecretARN := strings.TrimSpace(os.Getenv("JWT_SECRET_ARN"))
+	if jwtSecret == "" && jwtSecretARN == "" {
+		result.Errors = append(result.Errors, ValidationError{
+			Field:       "JWT_SECRET",
+			Message:     "JWT secret not configured (provide JWT_SECRET or JWT_SECRET_ARN)",
+			Severity:    "critical",
+			Remediation: "Set JWT_SECRET for plaintext or JWT_SECRET_ARN for Secrets Manager",
+		})
+	} else if jwtSecret != "" {
+		v.validateEnvironmentVariableFormat("JWT_SECRET", jwtSecret, result)
 	}
 
 	// Check optional but recommended variables
@@ -232,6 +246,16 @@ func (v *ProductionConfigValidator) validateEnvironmentVariableFormat(name, valu
 				Recommendation: fmt.Sprintf("Consider using: %s", strings.Join(validEnvs, ", ")),
 			})
 		}
+	case "STAGE":
+		validStages := []string{"production", "staging", "development", "test", "prod", "stage", "dev"}
+		if !v.isValueInList(strings.ToLower(value), validStages) {
+			result.Warnings = append(result.Warnings, ValidationWarning{
+				Field:          name,
+				Value:          value,
+				Message:        "Non-standard stage name",
+				Recommendation: fmt.Sprintf("Consider using: %s", strings.Join(validStages, ", ")),
+			})
+		}
 	}
 }
 
@@ -282,12 +306,22 @@ func (v *ProductionConfigValidator) validateHTTPSEnforcement() SecurityStatus {
 
 // validateJWTConfiguration validates JWT configuration
 func (v *ProductionConfigValidator) validateJWTConfiguration() SecurityStatus {
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
+	jwtSecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	jwtSecretARN := strings.TrimSpace(os.Getenv("JWT_SECRET_ARN"))
+
+	if jwtSecret == "" && jwtSecretARN == "" {
 		return SecurityStatus{
 			Configured: false,
 			Valid:      false,
 			Message:    "JWT secret not configured",
+		}
+	}
+
+	if jwtSecret == "" && jwtSecretARN != "" {
+		return SecurityStatus{
+			Configured: true,
+			Valid:      true,
+			Message:    "JWT secret configured via ARN",
 		}
 	}
 
@@ -426,7 +460,10 @@ func (v *ProductionConfigValidator) validateDynamoDB(ctx context.Context) Resour
 
 // validateS3 validates S3 bucket availability
 func (v *ProductionConfigValidator) validateS3(ctx context.Context) ResourceStatus {
-	bucketName := os.Getenv("S3_BUCKET")
+	bucketName := os.Getenv("S3_BUCKET_NAME")
+	if bucketName == "" {
+		bucketName = os.Getenv("S3_BUCKET")
+	}
 	if bucketName == "" {
 		return ResourceStatus{
 			Available: false,
@@ -594,7 +631,6 @@ func QuickValidateProductionConfig() error {
 		"AWS_REGION",
 		"DYNAMODB_TABLE",
 		"PRIVATE_KEY_SECRET",
-		"JWT_SECRET",
 	}
 
 	var missingVars []string
@@ -602,6 +638,12 @@ func QuickValidateProductionConfig() error {
 		if os.Getenv(varName) == "" {
 			missingVars = append(missingVars, varName)
 		}
+	}
+
+	jwtSecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	jwtSecretARN := strings.TrimSpace(os.Getenv("JWT_SECRET_ARN"))
+	if jwtSecret == "" && jwtSecretARN == "" {
+		missingVars = append(missingVars, "JWT_SECRET or JWT_SECRET_ARN")
 	}
 
 	if len(missingVars) > 0 {

@@ -130,7 +130,7 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 	}
 
 	// WebSocket endpoint for broadcasting updates
-	wsEndpoint := cfg.SQSQueueURL // Reuse config field for WebSocket endpoint
+	wsEndpoint := cfg.WebSocketEndpoint
 	var apiGatewayClient *apigatewaymanagementapi.Client
 	if wsEndpoint != "" {
 		apiGatewayClient = apigatewaymanagementapi.NewFromConfig(lambdaCtx.AWSServices.Config, func(o *apigatewaymanagementapi.Options) {

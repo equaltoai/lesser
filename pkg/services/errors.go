@@ -386,9 +386,6 @@ var (
 	ErrQueueAttributeQuery = func() error { return errors.FailedToQuery("queue attributes", nil) }()
 
 	// AWS Queue service specific errors
-	// ErrImportExportQueueURLNotConfigured is returned when ImportExportQueueURL is not configured
-	ErrImportExportQueueURLNotConfigured = func() error { return errors.QueueURLNotConfigured("ImportExportQueueURL") }()
-
 	// ErrSQSConnectFailed is returned when SQS queue connection fails
 	ErrSQSConnectFailed = func() error { return errors.SQSConnectionFailed(nil) }()
 

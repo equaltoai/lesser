@@ -64,7 +64,6 @@ var LambdaInventory = Inventory{
 				{Method: "ANY", Path: "/api/v2/{proxy+}"},
 				{Method: "GET", Path: "/.well-known/nodeinfo"},
 			},
-			RequiredEnvVars: []string{"S3_MEDIA_BUCKET", "DOMAIN_NAME"},
 		},
 		{
 			Name: "collections",
@@ -124,7 +123,6 @@ var LambdaInventory = Inventory{
 			SQSTriggers: []SQSTrigger{
 				{Queue: "export-processor-queue", EnablePartialFailure: false},
 			},
-			RequiredEnvVars: []string{"EXPORT_PROCESSOR_QUEUE_URL"}, // TODO(spec04): confirm queue model
 		},
 		{
 			Name: "federation-aggregator",
@@ -181,13 +179,11 @@ var LambdaInventory = Inventory{
 				{Method: "GET", Path: "/api/graphql"},
 				{Method: "POST", Path: "/api/graphql"},
 			},
-			RequiredEnvVars: []string{"JWT_SECRET"}, // required when ARN is not injected
 		},
 		{
-			Name:            "graphql-ws",
-			Type:            LambdaTypeAPIWS,
-			Role:            RoleClassEncryption,
-			RequiredEnvVars: []string{"JWT_SECRET"},
+			Name: "graphql-ws",
+			Type: LambdaTypeAPIWS,
+			Role: RoleClassEncryption,
 		},
 		{
 			Name: "import-processor",
@@ -196,7 +192,6 @@ var LambdaInventory = Inventory{
 			SQSTriggers: []SQSTrigger{
 				{Queue: "import-processor-queue", EnablePartialFailure: false},
 			},
-			RequiredEnvVars: []string{"IMPORT_PROCESSOR_QUEUE_URL"}, // TODO(spec04): confirm queue model
 		},
 		{
 			Name: "inbox",
@@ -213,7 +208,6 @@ var LambdaInventory = Inventory{
 			SQSTriggers: []SQSTrigger{
 				{Queue: "media-processor-queue", EnablePartialFailure: false},
 			},
-			RequiredEnvVars: []string{"MEDIA_PROCESSOR_QUEUE_URL"},
 		},
 		{
 			Name: "metrics-aggregator",
@@ -410,7 +404,6 @@ var LambdaInventory = Inventory{
 					ReportBatchItemFailures:  true,
 				},
 			},
-			RequiredEnvVars: []string{"WEBSOCKET_API_URL", "WEBSOCKET_ENDPOINT", "STREAMING_SUBSCRIPTIONS_TABLE", "WEBSOCKET_API_ID", "WEBSOCKET_STAGE", "DOMAIN_NAME"},
 		},
 		{
 			Name: "streaming",

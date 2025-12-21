@@ -261,29 +261,35 @@ func (r *Registry) validate() error {
 	}
 
 	if r.config == nil {
-		jwtSecret := os.Getenv("JWT_SECRET")
+		cfg := pkgconfig.Get()
+		jwtSecret := strings.TrimSpace(cfg.JWTSecret)
 		if jwtSecret == "" && common.RunningUnitTests() {
 			jwtSecret = strings.Repeat("x", 32)
 		}
 
 		if jwtSecret == "" {
-			r.logger.Fatal("JWT_SECRET environment variable is required")
-			panic("JWT_SECRET environment variable is required")
+			r.logger.Fatal("JWT secret configuration is required")
+			panic("JWT secret configuration is required")
 		}
 
 		if err := validateJWTSecret(jwtSecret); err != nil {
 			if common.RunningUnitTests() {
 				jwtSecret = strings.Repeat("x", 32)
 			} else {
-				r.logger.Fatal("invalid JWT_SECRET", zap.Error(err))
-				panic(fmt.Sprintf("invalid JWT_SECRET: %v", err))
+				r.logger.Fatal("invalid JWT secret", zap.Error(err))
+				panic(fmt.Sprintf("invalid JWT secret: %v", err))
 			}
 		}
 
+		baseURL := cfg.BaseURL()
+		if strings.TrimSpace(baseURL) == "" {
+			baseURL = "https://" + DefaultLocalhost
+		}
+
 		r.config = &ServiceConfig{
-			BaseURL:   "https://" + DefaultLocalhost,
+			BaseURL:   baseURL,
 			JWTSecret: jwtSecret,
-			Config:    nil, // Will remain nil for default config
+			Config:    cfg,
 		}
 	}
 
@@ -770,17 +776,17 @@ func (r *Registry) Articles() *cms.ArticleService {
 
 	if r.articleService == nil && r.storage != nil {
 		articleRepo := r.storage.Article()
-		
+
 		// Ensure RevisionService is initialized (we can't call r.Revisions() here because we hold the lock)
-		// So we manually initialize it if needed, or better, we create it here if it doesn't exist, 
+		// So we manually initialize it if needed, or better, we create it here if it doesn't exist,
 		// duplicating logic or extracting a helper.
-		// To avoid deadlock or complexity, we'll just instantiate it if missing, 
+		// To avoid deadlock or complexity, we'll just instantiate it if missing,
 		// but we need to be careful about the 'initialized' map and consistency.
 		// A better pattern used in this file is to use helper methods or just instantiate dependencies.
-		
+
 		// Let's use the pattern seen in other methods: check dependencies.
 		// But ArticleService needs RevisionService instance.
-		
+
 		// We can call r.ensureRevisionsLocked() if we extract it.
 		// Or just instantiate it here if nil.
 		if r.revisionService == nil {
@@ -808,7 +814,7 @@ func (r *Registry) Articles() *cms.ArticleService {
 				articleRepo,
 				r.storage.Actor(), // Inject ActorRepository
 				r.revisionService,
-				r.federation,      // Inject FederationService
+				r.federation, // Inject FederationService
 				r.logger,
 			)
 			r.initialized["Articles"] = true
@@ -829,13 +835,13 @@ func (r *Registry) Drafts() *cms.DraftService {
 
 	if r.draftService == nil && r.storage != nil {
 		draftRepo := r.storage.Draft()
-		
+
 		// Ensure ArticleService is initialized
 		if r.articleService == nil {
 			// We need to initialize ArticleService first.
 			// This duplicates logic from Articles(), but since we are locked, we can't call Articles().
 			// We need to initialize RevisionService first too.
-			
+
 			if r.revisionService == nil {
 				revisionRepo := r.storage.Revision()
 				articleRepo := r.storage.Article()
@@ -844,7 +850,7 @@ func (r *Registry) Drafts() *cms.DraftService {
 					r.initialized["Revisions"] = true
 				}
 			}
-			
+
 			articleRepo := r.storage.Article()
 			if articleRepo != nil && r.revisionService != nil {
 				// Ensure FederationService is initialized
@@ -1843,7 +1849,7 @@ func (r *Registry) initializeImportExportService() bool {
 
 	// Initialize AWS services for import/export
 	ctx := context.Background()
-	queueService, queueErr := NewAWSQueueService(ctx, r.logger)
+	queueService, queueErr := NewImportExportQueueService(ctx, r.config.Config, repos.exportRepo, repos.importRepo, r.logger)
 	storageClient, storageErr := NewAWSS3StorageClient(ctx, r.logger)
 
 	// Log errors but don't fail initialization - services can work without AWS integration

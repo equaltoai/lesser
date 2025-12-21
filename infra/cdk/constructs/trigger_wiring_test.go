@@ -564,6 +564,33 @@ func buildInventoryQueues(stack awscdk.Stack, environment string) map[string]Que
 			queuePairs[logical] = QueuePair{Primary: queue, DLQ: dlq}
 		}
 	}
+
+	// Scheduled publishing queue is part of the canonical env-var contract (Spec 05) even when not used as an
+	// inventory-declared event source mapping.
+	if _, exists := queuePairs["scheduled-queue"]; !exists {
+		logical := "scheduled-queue"
+		primaryName := fmt.Sprintf("lesser-%s-%s", logical, environment)
+		dlqLogical := fmt.Sprintf("%s-dlq", logical)
+		dlqName := fmt.Sprintf("lesser-%s-%s", dlqLogical, environment)
+
+		dlq := awssqs.NewQueue(stack, _jsii.String(fmt.Sprintf("%sDlq", sanitizeQueueLogical(logical))), &awssqs.QueueProps{
+			QueueName:       _jsii.String(dlqName),
+			RetentionPeriod: awscdk.Duration_Days(_jsii.Number(14)),
+		})
+
+		queue := awssqs.NewQueue(stack, _jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueLogical(logical))), &awssqs.QueueProps{
+			QueueName:              _jsii.String(primaryName),
+			ReceiveMessageWaitTime: awscdk.Duration_Seconds(_jsii.Number(20)),
+			VisibilityTimeout:      defaultVisibility,
+			RetentionPeriod:        defaultRetention,
+			DeadLetterQueue: &awssqs.DeadLetterQueue{
+				MaxReceiveCount: defaultMaxReceive,
+				Queue:           dlq,
+			},
+		})
+
+		queuePairs[logical] = QueuePair{Primary: queue, DLQ: dlq}
+	}
 	return queuePairs
 }
 

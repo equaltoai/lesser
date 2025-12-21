@@ -646,6 +646,38 @@ func (s *LesserApiStack) createSQSQueues() map[string]localconstructs.QueuePair 
 		}
 	}
 
+	// Scheduled publishing queue is part of the canonical env-var contract (Spec 05) even though it is not
+	// currently wired as an event source mapping (inventory has no scheduled queue consumer).
+	if _, exists := queuePairs["scheduled-queue"]; !exists {
+		logical := "scheduled-queue"
+		primaryName := fmt.Sprintf("lesser-%s-%s", logical, s.Environment)
+		dlqLogical := fmt.Sprintf("%s-dlq", logical)
+		dlqName := fmt.Sprintf("lesser-%s-%s", dlqLogical, s.Environment)
+
+		dlq := awssqs.NewQueue(s.Stack, jsii.String(fmt.Sprintf("%sDlq", sanitizeQueueId(logical))), &awssqs.QueueProps{
+			QueueName:       jsii.String(dlqName),
+			RetentionPeriod: awscdk.Duration_Days(jsii.Number(14)),
+		})
+
+		queue := awssqs.NewQueue(s.Stack, jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueId(logical))), &awssqs.QueueProps{
+			QueueName:              jsii.String(primaryName),
+			ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)),
+			VisibilityTimeout:      defaultVisibility,
+			RetentionPeriod:        defaultRetention,
+			DeadLetterQueue: &awssqs.DeadLetterQueue{
+				MaxReceiveCount: defaultMaxReceive,
+				Queue:           dlq,
+			},
+		})
+
+		awscdk.Tags_Of(queue).Add(jsii.String("app"), jsii.String("lesser"), nil)
+		awscdk.Tags_Of(queue).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
+		awscdk.Tags_Of(dlq).Add(jsii.String("app"), jsii.String("lesser"), nil)
+		awscdk.Tags_Of(dlq).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
+
+		queuePairs[logical] = localconstructs.QueuePair{Primary: queue, DLQ: dlq}
+	}
+
 	if qp, ok := queuePairs["federation-delivery-queue"]; ok {
 		queuePairs["federation-queue"] = qp
 	}

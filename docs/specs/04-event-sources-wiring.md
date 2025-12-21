@@ -14,7 +14,7 @@ The Phase 1–4 implementation is **fully inventory-driven** for DynamoDB stream
 - **Streams & SQS wiring:** Iterates inventory; validates Lambda type (R1/R2) before attaching (`validateStreamCapable`, `validateSQSCapable`); panics if a declared queue is missing.
 - **DLQ consumption (SQS):** If `SQSTrigger.ConsumeDeadLetterQueue=true`, the event source mapping targets the queue’s DLQ (`<queue>-dlq`) instead of the primary queue.
 - **Schedules:** Iterates inventory; validates Lambda type (R3); creates **enabled** EventBridge rules in all environments with rule name `lesser-<env>-<lambda>-schedule-<idx>`.
-- **Queues:** One queue per unique `SQSTrigger.Queue`; DLQ per queue (default `<queue>-dlq`); aliases created for compatibility (`federation-queue`, `push-notification-queue`, `import-export-queue` point to the same underlying queue pairs).
+- **Queues:** One queue per unique `SQSTrigger.Queue`; DLQ per queue (default `<queue>-dlq`); aliases created for compatibility (`federation-queue`, `push-notification-queue`, `import-export-queue` point to the same underlying queue pairs). Additionally, `scheduled-queue` is provisioned as a standalone queue to satisfy the canonical env-var contract (Spec 05), even though it is not currently wired as an event source mapping.
 - **Naming:** Physical queue name `lesser-<logical>-<environment>`; DLQ `lesser-<logical-dlq>-<environment>`.
 - **Defaults:** Long polling 20s, visibility 2m, retention 4d, DLQ retention 14d, maxReceiveCount 5, partial batch failure **off** unless inventory enables it.
 

@@ -220,6 +220,15 @@ func (s *Service) CreateExport(ctx context.Context, cmd *CreateExportCommand) (*
 	}
 
 	// Queue for processing
+	if s.queueService == nil {
+		s.logger.Error("export queue service not configured",
+			zap.String("export_id", export.ID),
+			zap.String("username", cmd.Username))
+		export.Status = "failed"
+		export.Error = "Queue service not configured"
+		_ = s.exportRepo.UpdateExportStatus(ctx, export.ID, "failed", nil, export.Error)
+		return nil, errors.Join(serviceerrors.ErrQueueExport, errors.New("queue service not configured"))
+	}
 	if err := s.queueService.QueueExportJob(ctx, export.ID); err != nil {
 		s.logger.Error("failed to queue export",
 			zap.String("export_id", export.ID),

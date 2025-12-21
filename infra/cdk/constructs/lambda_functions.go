@@ -65,29 +65,57 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 
 	// Common environment variables shared across functions
 	commonEnv := map[string]*string{
-		"ENVIRONMENT":                 jsii.String(props.Environment),
-		"DYNAMO_TABLE_NAME":           props.Table.TableName(),
-		"RATE_LIMIT_TABLE_NAME":       props.RateLimitTable.TableName(),
-		"LIMITED_TABLE_NAME":          props.RateLimitTable.TableName(), // For limited library
-		"CONNECTIONS_TABLE":           props.Table.TableName(),
-		"SUBSCRIPTIONS_TABLE":         props.Table.TableName(),
-		"S3_BUCKET_NAME":              props.MediaBucket.BucketName(),
-		"FEDERATION_QUEUE_URL":        queueURL(props.Queues, "federation-delivery-queue"),
-		"FEDERATION_DLQ_URL":          dlqURL(props.Queues, "federation-delivery-queue"),
-		"PUSH_QUEUE_URL":              queueURL(props.Queues, "push-delivery-queue"),
-		"PUSH_NOTIFICATION_QUEUE_URL": queueURL(props.Queues, "push-delivery-queue"),
-		"DOMAIN":                      jsii.String(domainValue),
-		"ACTOR_PRIVATE_KEY_ARN":       props.PrivateKey.SecretArn(),             // Reference to actor key in SharedStack
-		"KMS_KEY_ID":                  jsii.String("alias/lesser-encryption"),   // KMS key for encrypting actor private keys
-		"CDN_DOMAIN":                  jsii.String("REPLACE_WITH_MEDIA_DOMAIN"), // Set by CDK context
-		"INSTANCE_TITLE":              jsii.String("Lesser Instance"),
-		"INSTANCE_SHORT_DESC":         jsii.String("A personal ActivityPub server"),
-		"INSTANCE_DESCRIPTION":        jsii.String("A lightweight, serverless ActivityPub implementation"),
-		"INSTANCE_ADMIN_EMAIL":        jsii.String("REPLACE_WITH_ADMIN_EMAIL"), // Set by CDK context
-		"REGISTRATIONS_OPEN":          jsii.String("false"),
-		"APPROVAL_REQUIRED":           jsii.String("true"),
-		"INVITES_ENABLED":             jsii.String("false"),
-		"FEDERATION_ENABLED":          jsii.String("true"),
+		// Environment selectors (D1)
+		"ENVIRONMENT": jsii.String(props.Environment),
+		"STAGE":       jsii.String(props.Environment),
+
+		// Domain (D2)
+		"DOMAIN_NAME": jsii.String(domainValue),
+		"DOMAIN":      jsii.String(domainValue),
+
+		// DynamoDB tables (D3)
+		"DYNAMODB_TABLE":        props.Table.TableName(),
+		"DYNAMO_TABLE_NAME":     props.Table.TableName(),
+		"RATE_LIMIT_TABLE_NAME": props.RateLimitTable.TableName(),
+		"LIMITED_TABLE_NAME":    props.RateLimitTable.TableName(), // For limited library
+		"CONNECTIONS_TABLE":     props.Table.TableName(),
+		"SUBSCRIPTIONS_TABLE":   props.Table.TableName(),
+
+		// Media bucket aliases (D4)
+		"S3_BUCKET_NAME":    props.MediaBucket.BucketName(),
+		"S3_BUCKET":         props.MediaBucket.BucketName(),
+		"S3_MEDIA_BUCKET":   props.MediaBucket.BucketName(),
+		"MEDIA_BUCKET_NAME": props.MediaBucket.BucketName(),
+
+		// Canonical queues + aliases (D7)
+		"IMPORT_QUEUE_URL":              queueURL(props.Queues, "import-processor-queue"),
+		"IMPORT_PROCESSOR_QUEUE_URL":    queueURL(props.Queues, "import-processor-queue"),
+		"EXPORT_QUEUE_URL":              queueURL(props.Queues, "export-processor-queue"),
+		"EXPORT_PROCESSOR_QUEUE_URL":    queueURL(props.Queues, "export-processor-queue"),
+		"MEDIA_QUEUE_URL":               queueURL(props.Queues, "media-processor-queue"),
+		"MEDIA_PROCESSOR_QUEUE_URL":     queueURL(props.Queues, "media-processor-queue"),
+		"SCHEDULED_QUEUE_URL":           queueURL(props.Queues, "scheduled-queue"),
+		"FEDERATION_DELIVERY_QUEUE_URL": queueURL(props.Queues, "federation-delivery-queue"),
+		"FEDERATION_QUEUE_URL":          queueURL(props.Queues, "federation-delivery-queue"),
+		"FEDERATION_DLQ_URL":            dlqURL(props.Queues, "federation-delivery-queue"),
+		"PUSH_NOTIFICATION_QUEUE_URL":   queueURL(props.Queues, "push-delivery-queue"),
+		"PUSH_QUEUE_URL":                queueURL(props.Queues, "push-delivery-queue"),
+
+		// Secrets (D5, D6)
+		"PRIVATE_KEY_SECRET":     props.PrivateKey.SecretArn(),
+		"PRIVATE_KEY_SECRET_ARN": props.PrivateKey.SecretArn(),           // optional alias (Spec 05)
+		"KMS_KEY_ID":             jsii.String("alias/lesser-encryption"), // KMS key for encrypting actor private keys
+
+		// Media CDN and instance metadata (unchanged)
+		"CDN_DOMAIN":           jsii.String("REPLACE_WITH_MEDIA_DOMAIN"), // Set by CDK context
+		"INSTANCE_TITLE":       jsii.String("Lesser Instance"),
+		"INSTANCE_SHORT_DESC":  jsii.String("A personal ActivityPub server"),
+		"INSTANCE_DESCRIPTION": jsii.String("A lightweight, serverless ActivityPub implementation"),
+		"INSTANCE_ADMIN_EMAIL": jsii.String("REPLACE_WITH_ADMIN_EMAIL"), // Set by CDK context
+		"REGISTRATIONS_OPEN":   jsii.String("false"),
+		"APPROVAL_REQUIRED":    jsii.String("true"),
+		"INVITES_ENABLED":      jsii.String("false"),
+		"FEDERATION_ENABLED":   jsii.String("true"),
 
 		// Media Streaming Configuration (Phase 2.2)
 		"MEDIA_SOURCE_BUCKET_NAME":    props.MediaBucket.BucketName(),
@@ -167,12 +195,36 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		// Clone and extend env per-Lambda with queue URLs derived from inventory
 		env := copyEnv(commonEnv)
 		for _, trig := range spec.SQSTriggers {
-			envKey := fmt.Sprintf("%s_QUEUE_URL", strings.ToUpper(strings.ReplaceAll(trig.Queue, "-", "_")))
+			var queueVal *string
 			if trig.ConsumeDeadLetterQueue {
-				env[envKey] = dlqURL(props.Queues, trig.Queue)
+				queueVal = dlqURL(props.Queues, trig.Queue)
 			} else {
-				env[envKey] = queueURL(props.Queues, trig.Queue)
+				queueVal = queueURL(props.Queues, trig.Queue)
 			}
+
+			canonicalKey := ""
+			switch trig.Queue {
+			case "import-processor-queue":
+				canonicalKey = "IMPORT_QUEUE_URL"
+			case "export-processor-queue":
+				canonicalKey = "EXPORT_QUEUE_URL"
+			case "media-processor-queue":
+				canonicalKey = "MEDIA_QUEUE_URL"
+			case "scheduled-queue":
+				canonicalKey = "SCHEDULED_QUEUE_URL"
+			case "federation-delivery-queue":
+				canonicalKey = "FEDERATION_DELIVERY_QUEUE_URL"
+			case "push-delivery-queue":
+				canonicalKey = "PUSH_NOTIFICATION_QUEUE_URL"
+			default:
+				canonicalKey = fmt.Sprintf("%s_QUEUE_URL", strings.ToUpper(strings.ReplaceAll(trig.Queue, "-", "_")))
+			}
+
+			env[canonicalKey] = queueVal
+
+			aliasKey := fmt.Sprintf("%s_QUEUE_URL", strings.ToUpper(strings.ReplaceAll(trig.Queue, "-", "_")))
+			env[aliasKey] = queueVal
+
 			if trig.DeadLetterQueue != "" {
 				dlqKey := fmt.Sprintf("%s_DLQ_URL", strings.ToUpper(strings.ReplaceAll(trig.DeadLetterQueue, "-", "_")))
 				env[dlqKey] = dlqURL(props.Queues, trig.Queue)
@@ -183,11 +235,11 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 				continue
 			}
 			switch key {
-			case "EXPORT_PROCESSOR_QUEUE_URL":
+			case "EXPORT_QUEUE_URL", "EXPORT_PROCESSOR_QUEUE_URL":
 				env[key] = queueURL(props.Queues, "export-processor-queue")
-			case "IMPORT_PROCESSOR_QUEUE_URL":
+			case "IMPORT_QUEUE_URL", "IMPORT_PROCESSOR_QUEUE_URL":
 				env[key] = queueURL(props.Queues, "import-processor-queue")
-			case "MEDIA_PROCESSOR_QUEUE_URL":
+			case "MEDIA_QUEUE_URL", "MEDIA_PROCESSOR_QUEUE_URL":
 				env[key] = queueURL(props.Queues, "media-processor-queue")
 			default:
 				// leave untouched for non-queue vars

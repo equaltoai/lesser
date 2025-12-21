@@ -153,12 +153,11 @@ type Config struct {
 	DLQTransientErrors []string // Error patterns that should be retried
 
 	// Queue URLs for job processing
-	ImportQueueURL       string // Import processing queue URL
-	ExportQueueURL       string // Export generation queue URL
-	MediaQueueURL        string // Media processing queue URL
-	ScheduledQueueURL    string // Scheduled publishing queue URL
-	FederationQueueURL   string // Federation queue URL
-	ImportExportQueueURL string // Import/export processing queue URL
+	ImportQueueURL     string // Import processing queue URL
+	ExportQueueURL     string // Export generation queue URL
+	MediaQueueURL      string // Media processing queue URL
+	ScheduledQueueURL  string // Scheduled publishing queue URL
+	FederationQueueURL string // Federation queue URL
 
 	// Media & Storage
 	MediaBucketName           string // S3 bucket for media storage
@@ -212,18 +211,33 @@ func Get() *Config {
 
 // loadConfig loads configuration from environment variables
 func loadConfig() *Config {
+	envCanonical, _, stageRaw := resolveEnvironmentAndStage()
+	envForFields := firstNonEmpty(envCanonical, "development")
+	stageForFields := firstNonEmpty(stageRaw, envCanonical, "dev")
+
+	dynamoTable := resolveDynamoTableName()
+	mediaBucket := resolveMediaBucketName("lesser-media")
+	domainName := resolveDomain("localhost")
+
+	importQueue := resolveQueueURL("IMPORT_QUEUE_URL", "IMPORT_PROCESSOR_QUEUE_URL")
+	exportQueue := resolveQueueURL("EXPORT_QUEUE_URL", "EXPORT_PROCESSOR_QUEUE_URL")
+	mediaQueue := resolveQueueURL("MEDIA_QUEUE_URL", "MEDIA_PROCESSOR_QUEUE_URL")
+	scheduledQueue := resolveQueueURL("SCHEDULED_QUEUE_URL")
+	federationQueue := resolveQueueURL("FEDERATION_DELIVERY_QUEUE_URL", "FEDERATION_QUEUE_URL")
+	pushQueue := resolveQueueURL("PUSH_NOTIFICATION_QUEUE_URL", "PUSH_QUEUE_URL")
+
 	cfg := &Config{
-		Domain:       getEnvOrDefault("DOMAIN", "localhost"),
+		Domain:       domainName,
 		InstanceName: getEnvOrDefault("INSTANCE_NAME", "Lesser ActivityPub Server"),
 
 		Region:                  getEnvOrDefault("AWS_REGION", "us-east-1"),
-		DynamoTableName:         GetMainTableName(),
+		DynamoTableName:         dynamoTable,
 		DynamoDBEndpoint:        getEnvOrDefault("DYNAMODB_ENDPOINT", ""),
-		S3BucketName:            getEnvOrDefault("S3_BUCKET_NAME", "lesser-media"),
+		S3BucketName:            mediaBucket,
 		SQSQueueURL:             getEnvOrDefault("SQS_QUEUE_URL", ""),
-		ExportProcessorQueueURL: getEnvOrDefault("EXPORT_PROCESSOR_QUEUE_URL", ""),
-		ImportProcessorQueueURL: getEnvOrDefault("IMPORT_PROCESSOR_QUEUE_URL", ""),
-		MediaProcessorQueueURL:  getEnvOrDefault("MEDIA_PROCESSOR_QUEUE_URL", ""),
+		ExportProcessorQueueURL: exportQueue,
+		ImportProcessorQueueURL: importQueue,
+		MediaProcessorQueueURL:  mediaQueue,
 		EnhancedRetryQueueURL:   getEnvOrDefault("ENHANCED_RETRY_QUEUE_URL", ""),
 		ReputationTableName:     getEnvOrDefault("REPUTATION_TABLE_NAME", "lesser-reputation"),
 		AWSAccountID:            getEnvOrDefault("AWS_ACCOUNT_ID", ""),
@@ -290,7 +304,7 @@ func loadConfig() *Config {
 		AlertSNSTopicArn:          getEnvOrDefault("ALERT_SNS_TOPIC_ARN", ""),
 		AlertWebhookURL:           getEnvOrDefault("ALERT_WEBHOOK_URL", ""),
 		AlertEmail:                getEnvOrDefault("ALERT_EMAIL", ""),
-		WebSocketEndpoint:         getEnvOrDefault("WEBSOCKET_ENDPOINT", ""),
+		WebSocketEndpoint:         resolveWebsocketEndpoint(),
 		NotificationRetryQueueURL: getEnvOrDefault("NOTIFICATION_RETRY_QUEUE_URL", ""),
 
 		// WebSocket & Streaming
@@ -307,7 +321,7 @@ func loadConfig() *Config {
 		// Notification System
 		NotificationDLQURL:       getEnvOrDefault("NOTIFICATION_DLQ_URL", ""),
 		PushNotificationTopicArn: getEnvOrDefault("PUSH_NOTIFICATION_TOPIC_ARN", ""),
-		PushNotificationQueueURL: getEnvOrDefault("PUSH_NOTIFICATION_QUEUE_URL", ""),
+		PushNotificationQueueURL: pushQueue,
 
 		// Dead Letter Queue Configuration
 		DLQEnabled:         getEnvAsBoolOrDefault("DLQ_ENABLED", false),
@@ -318,15 +332,14 @@ func loadConfig() *Config {
 		DLQTransientErrors: getEnvAsStringSliceOrDefault("DLQ_TRANSIENT_ERRORS", []string{}),
 
 		// Queue URLs for job processing
-		ImportQueueURL:       getEnvOrDefault("IMPORT_QUEUE_URL", ""),
-		ExportQueueURL:       getEnvOrDefault("EXPORT_QUEUE_URL", ""),
-		MediaQueueURL:        getEnvOrDefault("MEDIA_QUEUE_URL", ""),
-		ScheduledQueueURL:    getEnvOrDefault("SCHEDULED_QUEUE_URL", ""),
-		FederationQueueURL:   getEnvOrDefault("FEDERATION_DELIVERY_QUEUE_URL", ""),
-		ImportExportQueueURL: getEnvOrDefault("IMPORT_EXPORT_QUEUE_URL", ""),
+		ImportQueueURL:     importQueue,
+		ExportQueueURL:     exportQueue,
+		MediaQueueURL:      mediaQueue,
+		ScheduledQueueURL:  scheduledQueue,
+		FederationQueueURL: federationQueue,
 
 		// Media & Storage
-		MediaBucketName:           getEnvOrDefault("MEDIA_BUCKET_NAME", ""),
+		MediaBucketName:           mediaBucket,
 		S3MediaBucket:             getEnvOrDefault("S3_MEDIA_BUCKET", ""),
 		DynamoDBEncryptionKey:     getEnvOrDefault("DYNAMODB_ENCRYPTION_KEY", ""),
 		ActorPrivateKeyEncryption: getEnvOrDefault("ACTOR_PRIVATE_KEY_ENCRYPTION", ""),
@@ -357,11 +370,11 @@ func loadConfig() *Config {
 		AuthorizedFetchEnabled: getEnvAsBoolOrDefault("AUTHORIZED_FETCH_ENABLED", false),
 		ModerationMode:         getEnvOrDefault("MODERATION_MODE", ""),
 
-		Stage:   getEnvOrDefault("STAGE", "dev"),
+		Stage:   stageForFields,
 		Version: getEnvOrDefault("VERSION", "v1.0.0"),
 
 		// Service identification
-		Environment:         getEnvOrDefault("ENVIRONMENT", "development"),
+		Environment:         envForFields,
 		ServiceName:         getEnvOrDefault("SERVICE_NAME", "lesser"),
 		MonitoringEnabled:   getEnvAsBoolOrDefault("MONITORING_ENABLED", true),
 		XrayTracingEnabled:  getEnvAsBoolOrDefault("XRAY_TRACING_ENABLED", false),
@@ -567,39 +580,95 @@ func getEnvAsUint8OrDefault(key string, defaultValue uint8) uint8 {
 
 // Helper functions for health checks
 
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+func resolveEnvFirst(keys ...string) string {
+	for _, k := range keys {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func resolveEnvironmentAndStage() (env string, envRaw string, stage string) {
+	envRaw = strings.TrimSpace(os.Getenv("ENVIRONMENT"))
+	stage = strings.TrimSpace(os.Getenv("STAGE"))
+	env = firstNonEmpty(envRaw, stage)
+	return env, envRaw, stage
+}
+
+func resolveDynamoTableName() string {
+	table := resolveEnvFirst("DYNAMODB_TABLE", "DYNAMO_TABLE_NAME")
+	if table != "" {
+		return table
+	}
+
+	env, envRaw, stage := resolveEnvironmentAndStage()
+	derived := firstNonEmpty(env, envRaw, stage)
+	if derived == "" {
+		panic("DYNAMODB_TABLE or DYNAMO_TABLE_NAME or ENVIRONMENT/STAGE must be set to determine the DynamoDB table name")
+	}
+	return fmt.Sprintf("lesser-%s", strings.ToLower(derived))
+}
+
+func resolveDomain(defaultValue string) string {
+	if v := resolveEnvFirst("DOMAIN_NAME", "DOMAIN"); v != "" {
+		return v
+	}
+	return defaultValue
+}
+
+func resolveMediaBucketName(defaultValue string) string {
+	if v := resolveEnvFirst("S3_BUCKET_NAME", "S3_BUCKET", "S3_MEDIA_BUCKET", "MEDIA_BUCKET_NAME"); v != "" {
+		return v
+	}
+	return defaultValue
+}
+
+func resolveQueueURL(canonical string, aliases ...string) string {
+	if v := resolveEnvFirst(canonical); v != "" {
+		return v
+	}
+	return resolveEnvFirst(aliases...)
+}
+
+func resolveWebsocketEndpoint() string {
+	return resolveEnvFirst("WEBSOCKET_ENDPOINT", "WEBSOCKET_API_URL")
+}
+
 // GetEnvironment returns the current environment
 func GetEnvironment() string {
-	return getEnvOrDefault("ENVIRONMENT", "development")
+	env, _, _ := resolveEnvironmentAndStage()
+	if env == "" {
+		return "development"
+	}
+	return env
 }
 
 // GetS3Bucket returns the S3 bucket name
 func GetS3Bucket() string {
-	// Check multiple possible environment variables
-	bucket := os.Getenv("S3_BUCKET")
-	if bucket == "" {
-		bucket = os.Getenv("S3_BUCKET_NAME")
-	}
-	if bucket == "" {
-		bucket = os.Getenv("MEDIA_BUCKET_NAME")
-	}
-	if bucket == "" {
-		bucket = os.Getenv("S3_MEDIA_BUCKET")
-	}
-	return bucket
+	return resolveEnvFirst("S3_BUCKET_NAME", "S3_BUCKET", "S3_MEDIA_BUCKET", "MEDIA_BUCKET_NAME")
 }
 
 // GetPrivateKeySecret returns the private key secret name
 func GetPrivateKeySecret() string {
-	return os.Getenv("PRIVATE_KEY_SECRET")
+	if secret := strings.TrimSpace(os.Getenv("PRIVATE_KEY_SECRET")); secret != "" {
+		return secret
+	}
+	return strings.TrimSpace(os.Getenv("PRIVATE_KEY_SECRET_ARN"))
 }
 
 // GetDomainName returns the domain name
 func GetDomainName() string {
-	domain := os.Getenv("DOMAIN_NAME")
-	if domain == "" {
-		domain = os.Getenv("DOMAIN")
-	}
-	return domain
+	return resolveEnvFirst("DOMAIN_NAME", "DOMAIN")
 }
 
 // GetDynamoTableName returns the DynamoDB table name
@@ -609,12 +678,5 @@ func GetDynamoTableName() string {
 
 // GetMainTableName returns the canonical DynamoDB table name for the current stage/environment.
 func GetMainTableName() string {
-	env := strings.TrimSpace(os.Getenv("ENVIRONMENT"))
-	if env == "" {
-		env = strings.TrimSpace(os.Getenv("STAGE"))
-	}
-	if env == "" {
-		panic("ENVIRONMENT or STAGE must be set to determine the DynamoDB table name")
-	}
-	return fmt.Sprintf("lesser-%s", strings.ToLower(env))
+	return resolveDynamoTableName()
 }
