@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"cdk/inventory"
+	"cdk/naming"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/jsii-runtime-go"
@@ -76,10 +77,12 @@ func TestMonitoringStackSynthCreatesQueueAndTableAlarms(t *testing.T) {
 		requireAlarm(t, alarms, fmt.Sprintf("%s-depth", dlq))
 	}
 
-	requireAlarm(t, alarms, "lesser-development-read-throttles")
-	requireAlarm(t, alarms, "lesser-development-write-throttles")
-	requireAlarm(t, alarms, "lesser-rate-limits-development-read-throttles")
-	requireAlarm(t, alarms, "lesser-rate-limits-development-write-throttles")
+	mainTable := naming.ResourceName("main-table", "development")
+	rateLimitTable := naming.ResourceName("rate-limits-table", "development")
+	requireAlarm(t, alarms, fmt.Sprintf("%s-read-throttles", mainTable))
+	requireAlarm(t, alarms, fmt.Sprintf("%s-write-throttles", mainTable))
+	requireAlarm(t, alarms, fmt.Sprintf("%s-read-throttles", rateLimitTable))
+	requireAlarm(t, alarms, fmt.Sprintf("%s-write-throttles", rateLimitTable))
 }
 
 func TestMonitoringStackSynthDoesNotProvisionApplicationWiring(t *testing.T) {

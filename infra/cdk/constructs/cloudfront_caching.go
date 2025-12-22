@@ -1,6 +1,7 @@
 package constructs
 
 import (
+	"cdk/naming"
 	"fmt"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
@@ -167,7 +168,7 @@ func CreateCloudFrontDistribution(scope constructs.Construct, config *CloudFront
 		LogBucket: func() awss3.IBucket {
 			if config.Environment == "production" {
 				logBucket := awss3.NewBucket(scope, jsii.String("CloudFrontLogBucket"), &awss3.BucketProps{
-					BucketName:    jsii.String(fmt.Sprintf("lesser-%s-cloudfront-logs", config.Environment)),
+					BucketName:    jsii.String(naming.ResourceName("cloudfront-logs", config.Environment)),
 					Encryption:    awss3.BucketEncryption_S3_MANAGED,
 					RemovalPolicy: awscdk.RemovalPolicy_RETAIN,
 				})
@@ -217,7 +218,7 @@ func createDefaultCachePolicy(scope constructs.Construct, environment string) aw
 	config := GetCachingConfig(environment)
 
 	return awscloudfront.NewCachePolicy(scope, jsii.String("DefaultCachePolicy"), &awscloudfront.CachePolicyProps{
-		CachePolicyName:            jsii.String(fmt.Sprintf("lesser-%s-default-cache", environment)),
+		CachePolicyName:            jsii.String(naming.ResourceName("cloudfront-default-cache", environment)),
 		Comment:                    jsii.String("Default cache policy with short TTL"),
 		DefaultTtl:                 awscdk.Duration_Seconds(jsii.Number(config.CacheTTLSeconds)),
 		MaxTtl:                     awscdk.Duration_Seconds(jsii.Number(config.CacheTTLSeconds * 2)),
@@ -245,7 +246,7 @@ func createDefaultCachePolicy(scope constructs.Construct, environment string) aw
 // createNoCachePolicy creates a no-cache policy for dynamic content
 func createNoCachePolicy(scope constructs.Construct, environment string) awscloudfront.CachePolicy {
 	return awscloudfront.NewCachePolicy(scope, jsii.String("NoCachePolicy"), &awscloudfront.CachePolicyProps{
-		CachePolicyName:            jsii.String(fmt.Sprintf("lesser-%s-no-cache", environment)),
+		CachePolicyName:            jsii.String(naming.ResourceName("cloudfront-no-cache", environment)),
 		Comment:                    jsii.String("No cache policy for dynamic content"),
 		DefaultTtl:                 awscdk.Duration_Seconds(jsii.Number(0)),
 		MaxTtl:                     awscdk.Duration_Seconds(jsii.Number(0)),
@@ -261,7 +262,7 @@ func createNoCachePolicy(scope constructs.Construct, environment string) awsclou
 // createStaticCachePolicy creates a cache policy for static content
 func createStaticCachePolicy(scope constructs.Construct, environment string) awscloudfront.CachePolicy {
 	return awscloudfront.NewCachePolicy(scope, jsii.String("StaticCachePolicy"), &awscloudfront.CachePolicyProps{
-		CachePolicyName:            jsii.String(fmt.Sprintf("lesser-%s-static-cache", environment)),
+		CachePolicyName:            jsii.String(naming.ResourceName("cloudfront-static-cache", environment)),
 		Comment:                    jsii.String("Cache policy for static content"),
 		DefaultTtl:                 awscdk.Duration_Hours(jsii.Number(1)),
 		MaxTtl:                     awscdk.Duration_Days(jsii.Number(1)),
@@ -277,7 +278,7 @@ func createStaticCachePolicy(scope constructs.Construct, environment string) aws
 // createOriginRequestPolicy creates an origin request policy
 func createOriginRequestPolicy(scope constructs.Construct, environment string) awscloudfront.OriginRequestPolicy {
 	return awscloudfront.NewOriginRequestPolicy(scope, jsii.String("OriginRequestPolicy"), &awscloudfront.OriginRequestPolicyProps{
-		OriginRequestPolicyName: jsii.String(fmt.Sprintf("lesser-%s-origin-request", environment)),
+		OriginRequestPolicyName: jsii.String(naming.ResourceName("cloudfront-origin-request", environment)),
 		Comment:                 jsii.String("Origin request policy for API Gateway"),
 		QueryStringBehavior:     awscloudfront.OriginRequestQueryStringBehavior_All(),
 		HeaderBehavior: awscloudfront.OriginRequestHeaderBehavior_AllowList(
@@ -300,7 +301,7 @@ func createOriginRequestPolicy(scope constructs.Construct, environment string) a
 // createResponseHeadersPolicy creates a response headers policy
 func createResponseHeadersPolicy(scope constructs.Construct, environment string) awscloudfront.ResponseHeadersPolicy {
 	return awscloudfront.NewResponseHeadersPolicy(scope, jsii.String("ResponseHeadersPolicy"), &awscloudfront.ResponseHeadersPolicyProps{
-		ResponseHeadersPolicyName: jsii.String(fmt.Sprintf("lesser-%s-response-headers", environment)),
+		ResponseHeadersPolicyName: jsii.String(naming.ResourceName("cloudfront-response-headers", environment)),
 		Comment:                   jsii.String("Response headers policy for security and caching"),
 
 		SecurityHeadersBehavior: &awscloudfront.ResponseSecurityHeadersBehavior{

@@ -3,6 +3,7 @@ package constructs
 import (
 	"cdk/inventory"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
@@ -11,6 +12,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
 )
 
 type StreamProcessorsProps struct {
@@ -31,16 +33,22 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 
 		if hasStreamTriggers {
 			validateStreamCapable(spec)
-			for _, trig := range spec.StreamTriggers {
+			for idx, trig := range spec.StreamTriggers {
 				table := resolveStreamTable(spec, trig, props.Table)
-				eventSourceProps := buildStreamEventSourceProps(trig)
-				handler.AddEventSource(awslambdaeventsources.NewDynamoEventSource(table, eventSourceProps))
+				eventSourceID := fmt.Sprintf("%sStreamMapping%d", sanitizeStreamMappingID(spec.Name), idx)
+				eventSourceProps := buildStreamEventSourceMappingProps(handler, table, trig)
+				table.GrantStreamRead(handler)
+				_ = liftcdk.NewLiftEventSourceMapping(scope, jsii.String(eventSourceID), eventSourceProps)
 			}
 		}
 
 		if hasSQSTriggers {
 			validateSQSCapable(spec)
 			for _, trig := range spec.SQSTriggers {
+				if !trig.ConsumeDeadLetterQueue {
+					// Primary SQS consumers are wired when queues are created (LiftSQSQueue).
+					continue
+				}
 				queue := resolveQueue(spec, trig, props.Queues)
 				eventSourceProps := buildSQSEventSourceProps(trig)
 				handler.AddEventSource(awslambdaeventsources.NewSqsEventSource(queue, eventSourceProps))
@@ -103,6 +111,46 @@ func buildStreamEventSourceProps(trig inventory.StreamTrigger) *awslambdaeventso
 	return props
 }
 
+func buildStreamEventSourceMappingProps(handler awslambda.IFunction, table awsdynamodb.Table, trig inventory.StreamTrigger) *liftcdk.LiftEventSourceMappingProps {
+	startPos := awslambda.StartingPosition_LATEST
+	if trig.StartingPosition == inventory.StreamStartTrimHorizon {
+		startPos = awslambda.StartingPosition_TRIM_HORIZON
+	}
+
+	props := &liftcdk.LiftEventSourceMappingProps{
+		TargetFunction:   handler,
+		EventSourceArn:   table.TableStreamArn(),
+		StartingPosition: startPos,
+		ReportBatchItemFailures: func() *bool {
+			if trig.ReportBatchItemFailures {
+				return jsii.Bool(true)
+			}
+			return nil
+		}(),
+	}
+
+	if trig.BatchSize > 0 {
+		props.BatchSize = jsii.Number(float64(trig.BatchSize))
+	}
+	if trig.MaxRetryAttempts > 0 {
+		props.RetryAttempts = jsii.Number(float64(trig.MaxRetryAttempts))
+	}
+	if trig.ParallelizationFactor > 0 {
+		props.ParallelizationFactor = jsii.Number(float64(trig.ParallelizationFactor))
+	}
+	if trig.MaxBatchingWindowSeconds > 0 {
+		props.MaxBatchingWindow = awscdk.Duration_Seconds(jsii.Number(float64(trig.MaxBatchingWindowSeconds)))
+	}
+	if trig.MaxRecordAgeSeconds > 0 {
+		props.MaxRecordAge = awscdk.Duration_Seconds(jsii.Number(float64(trig.MaxRecordAgeSeconds)))
+	}
+	if trig.EnableBisectOnError {
+		props.BisectBatchOnError = jsii.Bool(true)
+	}
+
+	return props
+}
+
 func resolveQueue(spec inventory.LambdaSpec, trig inventory.SQSTrigger, queues map[string]QueuePair) awssqs.IQueue {
 	qp, ok := queues[trig.Queue]
 	if !ok {
@@ -134,4 +182,13 @@ func buildSQSEventSourceProps(trig inventory.SQSTrigger) *awslambdaeventsources.
 		props.ReportBatchItemFailures = jsii.Bool(true)
 	}
 	return props
+}
+
+func sanitizeStreamMappingID(name string) string {
+	clean := strings.ReplaceAll(name, "-", "")
+	clean = strings.ReplaceAll(clean, "_", "")
+	if clean == "" {
+		return "Stream"
+	}
+	return clean
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsssm"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
 )
 
 type SharedStackProps struct {
@@ -25,7 +26,7 @@ type SharedStackProps struct {
 
 type SharedStack struct {
 	awscdk.Stack
-	EncryptionKey          awskms.Key
+	EncryptionKey          awskms.IKey
 	LambdaEncryptionRole   awsiam.Role
 	LambdaBasicRole        awsiam.Role
 	ActorPrivateKey        awssecretsmanager.Secret
@@ -52,35 +53,28 @@ func NewSharedStack(scope constructs.Construct, id string, props *SharedStackPro
 	sharedStack.initHostedZone(props.HostedZoneName, props.HostedZoneId)
 
 	// Create KMS key for encryption
-	sharedStack.EncryptionKey = awskms.NewKey(stack, jsii.String("LesserEncryptionKey"), &awskms.KeyProps{
+	encryptionKey := liftcdk.NewLiftKMSKey(stack, jsii.String("LesserEncryptionKey"), &liftcdk.LiftKMSKeyProps{
 		Description:       jsii.String(fmt.Sprintf("%s encryption key for actor private keys", props.AppName)),
 		EnableKeyRotation: jsii.Bool(true),
-		Alias:             jsii.String(fmt.Sprintf("alias/%s-encryption", props.AppName)),
+		AliasName:         jsii.String(fmt.Sprintf("alias/%s-encryption", props.AppName)),
 		RemovalPolicy:     awscdk.RemovalPolicy_RETAIN,
 	})
+	sharedStack.EncryptionKey = encryptionKey.Key
 
 	// Create Lambda execution role for functions needing KMS encryption
-	sharedStack.LambdaEncryptionRole = awsiam.NewRole(stack, jsii.String("LambdaEncryptionRole"), &awsiam.RoleProps{
+	lambdaEncryptionRole := liftcdk.NewLiftLambdaRole(stack, jsii.String("LambdaEncryptionRole"), &liftcdk.LiftLambdaRoleProps{
 		RoleName:    jsii.String(fmt.Sprintf("%s-lambda-encryption-role", props.AppName)),
-		AssumedBy:   awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
 		Description: jsii.String("Role for Lambdas requiring KMS encryption for actor private keys"),
+		KMSKeys:     []awskms.IKey{sharedStack.EncryptionKey},
 	})
-
-	// Grant KMS encryption/decryption permissions
-	sharedStack.EncryptionKey.GrantEncryptDecrypt(sharedStack.LambdaEncryptionRole)
+	sharedStack.LambdaEncryptionRole = lambdaEncryptionRole.Role
 
 	// Create Lambda execution role for functions without encryption needs
-	sharedStack.LambdaBasicRole = awsiam.NewRole(stack, jsii.String("LambdaBasicRole"), &awsiam.RoleProps{
+	lambdaBasicRole := liftcdk.NewLiftLambdaRole(stack, jsii.String("LambdaBasicRole"), &liftcdk.LiftLambdaRoleProps{
 		RoleName:    jsii.String(fmt.Sprintf("%s-lambda-basic-role", props.AppName)),
-		AssumedBy:   awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
 		Description: jsii.String("Role for Lambdas without encryption requirements"),
 	})
-
-	// Attach basic execution policy to both roles
-	sharedStack.LambdaEncryptionRole.AddManagedPolicy(
-		awsiam.ManagedPolicy_FromAwsManagedPolicyName(jsii.String("service-role/AWSLambdaBasicExecutionRole")))
-	sharedStack.LambdaBasicRole.AddManagedPolicy(
-		awsiam.ManagedPolicy_FromAwsManagedPolicyName(jsii.String("service-role/AWSLambdaBasicExecutionRole")))
+	sharedStack.LambdaBasicRole = lambdaBasicRole.Role
 
 	// Attach all application policies to roles using wildcard patterns
 	sharedStack.attachApplicationPolicies(props.AppName)

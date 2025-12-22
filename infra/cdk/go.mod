@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-cdk-go/awscdk/v2 v2.220.0
 	github.com/aws/constructs-go/constructs/v10 v10.4.2
 	github.com/aws/jsii-runtime-go v1.117.0
+	github.com/pay-theory/lift v1.0.81
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -18,7 +19,6 @@ require (
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/pay-theory/lift v1.0.81 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/yuin/goldmark v1.7.13 // indirect
 	golang.org/x/lint v0.0.0-20241112194109-818c5a804067 // indirect
@@ -30,3 +30,5 @@ require (
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 )
+
+replace github.com/pay-theory/lift => ../../../../lift

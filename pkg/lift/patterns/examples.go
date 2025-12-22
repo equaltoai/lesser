@@ -1,3 +1,4 @@
+// Package patterns provides Lift runtime wiring patterns and examples.
 package patterns
 
 import (
@@ -79,5 +80,7 @@ func (h *ExampleScheduledHandler) HandleScheduledEvent(_ *lift.Context) error {
 // func main() {
 //     logger := common.Logger()
 //     handler := &ExampleScheduledHandler{logger: logger}
-//     StartScheduledLambda("daily-aggregation", handler, logger)
+//     app := lift.New()
+//     _ = app.EventBridge("*", func(ctx *lift.Context) error { return handler.HandleScheduledEvent(ctx) })
+//     lambda.Start(app.HandleRequest)
 // }

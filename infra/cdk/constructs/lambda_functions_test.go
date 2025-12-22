@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"cdk/inventory"
+	"cdk/naming"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
@@ -96,8 +97,9 @@ func TestLambdaFunctionsGeneratedFromInventory(t *testing.T) {
 		AssumedBy: awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
 	})
 
+	environment := "development"
 	functions := CreateLambdaFunctions(stack, &LambdaFunctionsProps{
-		Environment:         "dev",
+		Environment:         environment,
 		Table:               mainTable,
 		RateLimitTable:      rateTable,
 		StreamEventsTable:   streamEventsTable,
@@ -124,7 +126,7 @@ func TestLambdaFunctionsGeneratedFromInventory(t *testing.T) {
 
 	for _, spec := range inventory.LambdaInventory.Lambdas {
 		fn := functions.Must(spec.Name)
-		wantName := fmt.Sprintf("lesser-%s-%s", "dev", spec.Name)
+		wantName := naming.ResourceName(spec.Name, environment)
 		if got := resolveConfiguredFunctionName(t, fn); got != wantName {
 			t.Fatalf("unexpected function name for %s: %s", spec.Name, got)
 		}

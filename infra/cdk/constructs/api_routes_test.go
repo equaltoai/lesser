@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"cdk/inventory"
+	"cdk/naming"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
@@ -90,7 +91,7 @@ func TestFederationHttpRoutesGeneratedFromInventory(t *testing.T) {
 	})
 
 	functions := CreateLambdaFunctions(stack, &LambdaFunctionsProps{
-		Environment:         "dev",
+		Environment:         "development",
 		Table:               mainTable,
 		RateLimitTable:      rateTable,
 		StreamEventsTable:   streamEventsTable,
@@ -108,7 +109,7 @@ func TestFederationHttpRoutesGeneratedFromInventory(t *testing.T) {
 	})
 
 	_ = CreateAPIGateway(stack, &APIGatewayProps{
-		Environment: "dev",
+		Environment: "development",
 		Functions:   functions,
 	})
 
@@ -126,7 +127,7 @@ func TestFederationHttpRoutesGeneratedFromInventory(t *testing.T) {
 	}
 
 	gotRoutes := extractHttpRouteToFunctionName(t, tpl)
-	wantRoutes := expectedFederationHttpRoutes(t, "dev")
+	wantRoutes := expectedFederationHttpRoutes(t, "development")
 
 	for routeKey, wantFnName := range wantRoutes {
 		gotFnName, ok := gotRoutes[routeKey]
@@ -162,7 +163,7 @@ func expectedFederationHttpRoutes(t *testing.T, environment string) map[string]s
 		}
 		for _, route := range spec.HTTPRoutes {
 			routeKey := fmt.Sprintf("%s %s", route.Method, route.Path)
-			want[routeKey] = fmt.Sprintf("lesser-%s-%s", environment, spec.Name)
+			want[routeKey] = naming.ResourceName(spec.Name, environment)
 		}
 	}
 	return want

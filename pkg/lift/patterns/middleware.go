@@ -16,6 +16,8 @@ func RequestIDMiddleware(serviceName string) lift.Middleware {
 			requestID := ctx.GetRequestID()
 			if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
 				requestID = fmt.Sprintf("%s-%d", serviceName, time.Now().UnixNano())
+				ctx.SetRequestID(requestID)
+				// Backward-compatible alias used by older Lesser code.
 				ctx.Set("requestID", requestID)
 			}
 			return next.Handle(ctx)

@@ -9,14 +9,15 @@ import (
 	"testing"
 
 	"cdk/inventory"
+	"cdk/naming"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
 	_jsii "github.com/aws/jsii-runtime-go"
+	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
 )
 
 type eventSourceMapping struct {
@@ -73,17 +74,16 @@ func TestInventoryTriggersMaterializeResources(t *testing.T) {
 		AssumedBy: awsiam.NewServicePrincipal(_jsii.String("lambda.amazonaws.com"), nil),
 	})
 
-	queues := buildInventoryQueues(stack, "dev")
-
+	environment := "development"
 	functions := CreateLambdaFunctions(stack, &LambdaFunctionsProps{
-		Environment:         "dev",
+		Environment:         environment,
 		Table:               mainTable,
 		RateLimitTable:      rateTable,
 		StreamEventsTable:   streamEventsTable,
 		MediaBucket:         mediaBucket,
 		StreamingBucket:     streamingBucket,
 		TrainingBucket:      trainingBucket,
-		Queues:              queues,
+		Queues:              map[string]QueuePair{},
 		PrivateKey:          privateKey,
 		JwtSecret:           jwtSecret,
 		MediaConvertRoleArn: _jsii.String("arn:aws:iam::123456789012:role/media-convert"),
@@ -92,15 +92,13 @@ func TestInventoryTriggersMaterializeResources(t *testing.T) {
 		EncryptionRole:      encRole,
 		BasicRole:           basicRole,
 	})
+	queues := buildInventoryQueues(stack, functions, environment)
+	ApplyQueueEnvironmentVariables(functions, queues)
 
 	CreateStreamProcessors(stack, &StreamProcessorsProps{
 		Table:     mainTable,
 		Queues:    queues,
 		Functions: functions,
-	})
-	CreateScheduleWiring(stack, &ScheduleWiringProps{
-		Functions:   functions,
-		Environment: "dev",
 	})
 
 	app.Synth(nil)
@@ -114,7 +112,7 @@ func TestInventoryTriggersMaterializeResources(t *testing.T) {
 	expectedScheduleExprs := map[string][]string{}
 
 	for _, spec := range inventory.LambdaInventory.Lambdas {
-		fnName := fmt.Sprintf("lesser-%s-%s", "dev", spec.Name)
+		fnName := naming.ResourceName(spec.Name, environment)
 		expectedStreamCounts[fnName] = len(spec.StreamTriggers)
 
 		if len(spec.StreamTriggers) > 0 {
@@ -124,14 +122,14 @@ func TestInventoryTriggersMaterializeResources(t *testing.T) {
 		}
 
 		for _, trig := range spec.SQSTriggers {
-			primaryName := fmt.Sprintf("lesser-%s-%s", trig.Queue, "dev")
+			primaryName := naming.ResourceName(trig.Queue, environment)
 
 			dlqLogical := trig.DeadLetterQueue
 			if dlqLogical == "" {
 				dlqLogical = fmt.Sprintf("%s-dlq", trig.Queue)
 			}
 
-			dlqName := fmt.Sprintf("lesser-%s-%s", dlqLogical, "dev")
+			dlqName := naming.ResourceName(dlqLogical, environment)
 			dlq, ok := queuesMeta[dlqName]
 			if !ok {
 				t.Fatalf("dlq %s not created", dlqName)
@@ -257,8 +255,9 @@ func TestMissingQueuePanics(t *testing.T) {
 		AssumedBy: awsiam.NewServicePrincipal(_jsii.String("lambda.amazonaws.com"), nil),
 	})
 
+	environment := "development"
 	functions := CreateLambdaFunctions(stack, &LambdaFunctionsProps{
-		Environment:         "dev",
+		Environment:         environment,
 		Table:               mainTable,
 		RateLimitTable:      rateTable,
 		StreamEventsTable:   streamEventsTable,
@@ -334,16 +333,21 @@ func TestScheduleTypeValidationPanics(t *testing.T) {
 		AssumedBy: awsiam.NewServicePrincipal(_jsii.String("lambda.amazonaws.com"), nil),
 	})
 
-	queues := buildInventoryQueues(stack, "dev")
-	functions := CreateLambdaFunctions(stack, &LambdaFunctionsProps{
-		Environment:         "dev",
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic for schedule trigger on unsupported lambda type")
+		}
+	}()
+
+	_ = CreateLambdaFunctions(stack, &LambdaFunctionsProps{
+		Environment:         "development",
 		Table:               mainTable,
 		RateLimitTable:      rateTable,
 		StreamEventsTable:   streamEventsTable,
 		MediaBucket:         mediaBucket,
 		StreamingBucket:     streamingBucket,
 		TrainingBucket:      trainingBucket,
-		Queues:              queues,
+		Queues:              map[string]QueuePair{},
 		PrivateKey:          privateKey,
 		JwtSecret:           jwtSecret,
 		MediaConvertRoleArn: _jsii.String("arn:aws:iam::123456789012:role/media-convert"),
@@ -351,16 +355,6 @@ func TestScheduleTypeValidationPanics(t *testing.T) {
 		Config:              map[string]interface{}{},
 		EncryptionRole:      encRole,
 		BasicRole:           basicRole,
-	})
-
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatalf("expected panic for schedule trigger on unsupported lambda type")
-		}
-	}()
-	CreateScheduleWiring(stack, &ScheduleWiringProps{
-		Functions:   functions,
-		Environment: "dev",
 	})
 }
 
@@ -624,11 +618,26 @@ func sanitizeQueueLogical(queue string) string {
 	return clean
 }
 
-func buildInventoryQueues(stack awscdk.Stack, environment string) map[string]QueuePair {
+func buildInventoryQueues(stack awscdk.Stack, functions *LambdaFunctions, environment string) map[string]QueuePair {
 	queuePairs := map[string]QueuePair{}
 	defaultVisibility := awscdk.Duration_Minutes(_jsii.Number(2))
 	defaultRetention := awscdk.Duration_Days(_jsii.Number(4))
 	defaultMaxReceive := _jsii.Number(5)
+
+	primaryConsumerByQueue := map[string]string{}
+	primaryTriggerByQueue := map[string]inventory.SQSTrigger{}
+	for _, spec := range inventory.LambdaInventory.Lambdas {
+		for _, trig := range spec.SQSTriggers {
+			if trig.ConsumeDeadLetterQueue {
+				continue
+			}
+			if existing, ok := primaryConsumerByQueue[trig.Queue]; ok && existing != spec.Name {
+				panic(fmt.Sprintf("queue %s has multiple primary consumers: %s and %s", trig.Queue, existing, spec.Name))
+			}
+			primaryConsumerByQueue[trig.Queue] = spec.Name
+			primaryTriggerByQueue[trig.Queue] = trig
+		}
+	}
 
 	for _, lambda := range inventory.LambdaInventory.Lambdas {
 		for _, trigger := range lambda.SQSTriggers {
@@ -637,31 +646,47 @@ func buildInventoryQueues(stack awscdk.Stack, environment string) map[string]Que
 			}
 
 			logical := trigger.Queue
-			primaryName := fmt.Sprintf("lesser-%s-%s", logical, environment)
+			primaryName := naming.ResourceName(logical, environment)
 
 			dlqLogical := trigger.DeadLetterQueue
 			if dlqLogical == "" {
 				dlqLogical = fmt.Sprintf("%s-dlq", logical)
 			}
-			dlqName := fmt.Sprintf("lesser-%s-%s", dlqLogical, environment)
+			dlqName := naming.ResourceName(dlqLogical, environment)
 
-			dlq := awssqs.NewQueue(stack, _jsii.String(fmt.Sprintf("%sDlq", sanitizeQueueLogical(logical))), &awssqs.QueueProps{
-				QueueName:       _jsii.String(dlqName),
-				RetentionPeriod: awscdk.Duration_Days(_jsii.Number(14)),
-			})
+			anchorName := primaryConsumerByQueue[logical]
+			if anchorName == "" {
+				anchorName = "api"
+			}
+			anchor := functions.Must(anchorName)
 
-			queue := awssqs.NewQueue(stack, _jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueLogical(logical))), &awssqs.QueueProps{
-				QueueName:              _jsii.String(primaryName),
-				ReceiveMessageWaitTime: awscdk.Duration_Seconds(_jsii.Number(20)),
-				VisibilityTimeout:      defaultVisibility,
-				RetentionPeriod:        defaultRetention,
-				DeadLetterQueue: &awssqs.DeadLetterQueue{
-					MaxReceiveCount: defaultMaxReceive,
-					Queue:           dlq,
-				},
-			})
+			queueProps := &liftcdk.LiftSQSQueueProps{
+				Function:                anchor,
+				QueueName:               _jsii.String(primaryName),
+				VisibilityTimeout:       defaultVisibility,
+				MessageRetentionPeriod:  defaultRetention,
+				ReceiveMessageWaitTime:  awscdk.Duration_Seconds(_jsii.Number(20)),
+				EnableDeadLetterQueue:   _jsii.Bool(true),
+				DeadLetterQueueName:     _jsii.String(dlqName),
+				MaxReceiveCount:         defaultMaxReceive,
+				DLQRetentionPeriod:      awscdk.Duration_Days(_jsii.Number(14)),
+				EnableEventSource:       _jsii.Bool(false),
+				ReportBatchItemFailures: _jsii.Bool(false),
+			}
+			if primaryTrig, ok := primaryTriggerByQueue[logical]; ok {
+				queueProps.EnableEventSource = _jsii.Bool(true)
+				queueProps.ReportBatchItemFailures = _jsii.Bool(primaryTrig.EnablePartialFailure)
+				if primaryTrig.BatchSize > 0 {
+					queueProps.BatchSize = _jsii.Number(float64(primaryTrig.BatchSize))
+				}
+				if primaryTrig.MaxBatchingWindowSeconds > 0 {
+					queueProps.MaxBatchingWindow = awscdk.Duration_Seconds(_jsii.Number(float64(primaryTrig.MaxBatchingWindowSeconds)))
+				}
+			}
 
-			queuePairs[logical] = QueuePair{Primary: queue, DLQ: dlq}
+			liftQueue := liftcdk.NewLiftSQSQueue(stack, _jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueLogical(logical))), queueProps)
+
+			queuePairs[logical] = QueuePair{Primary: liftQueue.Queue, DLQ: liftQueue.DeadLetterQueue}
 		}
 	}
 
@@ -669,27 +694,28 @@ func buildInventoryQueues(stack awscdk.Stack, environment string) map[string]Que
 	// inventory-declared event source mapping.
 	if _, exists := queuePairs["scheduled-queue"]; !exists {
 		logical := "scheduled-queue"
-		primaryName := fmt.Sprintf("lesser-%s-%s", logical, environment)
+		primaryName := naming.ResourceName(logical, environment)
 		dlqLogical := fmt.Sprintf("%s-dlq", logical)
-		dlqName := fmt.Sprintf("lesser-%s-%s", dlqLogical, environment)
+		dlqName := naming.ResourceName(dlqLogical, environment)
 
-		dlq := awssqs.NewQueue(stack, _jsii.String(fmt.Sprintf("%sDlq", sanitizeQueueLogical(logical))), &awssqs.QueueProps{
-			QueueName:       _jsii.String(dlqName),
-			RetentionPeriod: awscdk.Duration_Days(_jsii.Number(14)),
+		anchor := functions.Must("api")
+		liftQueue := liftcdk.NewLiftSQSQueue(stack, _jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueLogical(logical))), &liftcdk.LiftSQSQueueProps{
+			Function:                anchor,
+			QueueName:               _jsii.String(primaryName),
+			VisibilityTimeout:       defaultVisibility,
+			MessageRetentionPeriod:  defaultRetention,
+			ReceiveMessageWaitTime:  awscdk.Duration_Seconds(_jsii.Number(20)),
+			EnableDeadLetterQueue:   _jsii.Bool(true),
+			DeadLetterQueueName:     _jsii.String(dlqName),
+			MaxReceiveCount:         defaultMaxReceive,
+			DLQRetentionPeriod:      awscdk.Duration_Days(_jsii.Number(14)),
+			EnableEventSource:       _jsii.Bool(false),
+			GrantConsumeMessages:    _jsii.Bool(false),
+			GrantSendMessages:       _jsii.Bool(false),
+			ReportBatchItemFailures: _jsii.Bool(false),
 		})
 
-		queue := awssqs.NewQueue(stack, _jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueLogical(logical))), &awssqs.QueueProps{
-			QueueName:              _jsii.String(primaryName),
-			ReceiveMessageWaitTime: awscdk.Duration_Seconds(_jsii.Number(20)),
-			VisibilityTimeout:      defaultVisibility,
-			RetentionPeriod:        defaultRetention,
-			DeadLetterQueue: &awssqs.DeadLetterQueue{
-				MaxReceiveCount: defaultMaxReceive,
-				Queue:           dlq,
-			},
-		})
-
-		queuePairs[logical] = QueuePair{Primary: queue, DLQ: dlq}
+		queuePairs[logical] = QueuePair{Primary: liftQueue.Queue, DLQ: liftQueue.DeadLetterQueue}
 	}
 	return queuePairs
 }

@@ -15,8 +15,8 @@ Note: DynamoDB stream triggers are handled directly by Lift runtime (`app.Dynamo
 ### SQS Pattern
 Used by services that process messages from SQS queues.
 
-### EventBridge Pattern
-Used by services that run on schedules or respond to custom events.
+### EventBridge / Schedules
+Use Lift runtime directly via `app.EventBridge(...)` (no Lesser wrapper required).
 
 ## Usage
 

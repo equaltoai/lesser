@@ -3,20 +3,22 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
+	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
-// TrendAggregatorHandler implements ScheduledEventHandler for trend aggregation
+// TrendAggregatorHandler runs scheduled trend aggregation.
 type TrendAggregatorHandler struct {
 	db           core.DB
 	trendingRepo *repositories.TrendingRepository
@@ -32,7 +34,7 @@ func NewTrendAggregatorHandler(db core.DB, logger *zap.Logger) *TrendAggregatorH
 	}
 }
 
-// HandleScheduledEvent implements ScheduledEventHandler interface
+// HandleScheduledEvent runs the daily aggregation task (invoked by EventBridge schedules).
 func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *lift.Context) error {
 	start := time.Now()
 	requestID := ctx.GetRequestID()
@@ -461,6 +463,20 @@ func init() {
 }
 
 func main() {
-	// Use Lift EventBridge pattern for scheduled trend aggregation
-	patterns.StartScheduledLambda("trend-aggregator", handler, lambdaCtx.Logger)
+	app := lift.New()
+	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			if ctx.GetRequestID() == "" {
+				ctx.SetRequestID(fmt.Sprintf("trend-aggregator-%d", time.Now().UnixNano()))
+			}
+			return next.Handle(ctx)
+		})
+	})
+
+	_ = app.EventBridge("lesser-trend-aggregator-schedule-*", func(ctx *lift.Context) error {
+		return handler.HandleScheduledEvent(ctx)
+	})
+
+	lambda.Start(app.HandleRequest)
 }

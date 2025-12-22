@@ -3,23 +3,22 @@ package stacks
 import (
 	localconstructs "cdk/constructs"
 	"cdk/inventory"
+	"cdk/naming"
 	"fmt"
 	"strings"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53targets"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsssm"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
 )
 
 type LesserApiStackProps struct {
@@ -100,20 +99,18 @@ func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiSt
 	// Create media streaming and ML infrastructure (Phase 2.2/2.3)
 	apiStack.createStreamingAndMLInfrastructure()
 
-	// Create SQS queues (inventory-driven)
-	apiStack.Queues = apiStack.createSQSQueues()
-
 	// Create Lambda functions
 	apiStack.createLambdaFunctions()
+
+	// Create SQS queues (inventory-driven)
+	apiStack.Queues = apiStack.createSQSQueues()
+	localconstructs.ApplyQueueEnvironmentVariables(apiStack.Functions, apiStack.Queues)
 
 	// Create API Gateway
 	apiStack.createAPIGateway(props.Domain)
 
 	// Create stream processors
 	apiStack.createStreamProcessors()
-
-	// Create schedules (inventory-driven)
-	apiStack.createSchedules()
 
 	// Setup security
 	apiStack.setupSecurity()
@@ -253,70 +250,48 @@ func (s *LesserApiStack) initHostedZone(domain string, zoneId string) {
 }
 
 func (s *LesserApiStack) createSharedResources() {
-	isProd := s.Environment == "production"
+	isProd := naming.IsLiveEnvironment(s.Environment)
 
 	// Create main DynamoDB table with streams
-	s.MainTable = awsdynamodb.NewTable(s.Stack, jsii.String("LesserTable"), &awsdynamodb.TableProps{
-		TableName: jsii.String(fmt.Sprintf("lesser-%s", s.Environment)),
-		PartitionKey: &awsdynamodb.Attribute{
-			Name: jsii.String("PK"),
-			Type: awsdynamodb.AttributeType_STRING,
-		},
-		SortKey: &awsdynamodb.Attribute{
-			Name: jsii.String("SK"),
-			Type: awsdynamodb.AttributeType_STRING,
-		},
-		BillingMode:         awsdynamodb.BillingMode_PAY_PER_REQUEST,
-		Stream:              awsdynamodb.StreamViewType_NEW_AND_OLD_IMAGES,
-		TimeToLiveAttribute: jsii.String("ttl"),
-		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
-			PointInTimeRecoveryEnabled: jsii.Bool(isProd),
-		},
-		DeletionProtection: jsii.Bool(isProd),
-		RemovalPolicy:      getRemovalPolicy(isProd),
+	mainTableName := naming.ResourceName("main-table", s.Environment)
+	mainTable := liftcdk.NewLiftTable(s.Stack, jsii.String("LesserTable"), &liftcdk.LiftTableProps{
+		TableName:                 jsii.String(mainTableName),
+		PartitionKeyName:          jsii.String("PK"),
+		SortKeyName:               jsii.String("SK"),
+		EnableStreams:             jsii.Bool(true),
+		StreamViewType:            awsdynamodb.StreamViewType_NEW_AND_OLD_IMAGES,
+		TimeToLiveAttribute:       jsii.String("ttl"),
+		EnablePointInTimeRecovery: jsii.Bool(isProd),
+		DeletionProtection:        jsii.Bool(isProd),
+		RemovalPolicy:             getRemovalPolicy(isProd),
 	})
+	s.MainTable = mainTable.Table
 
 	// Stream event log table for Mastodon-compatible SSE endpoints.
 	// This table is polled by the SSE Lambda during response streaming invocations.
-	s.StreamEventsTable = awsdynamodb.NewTable(s.Stack, jsii.String("StreamEventsTable"), &awsdynamodb.TableProps{
-		TableName: jsii.String(fmt.Sprintf("lesser-stream-events-%s", s.Environment)),
-		PartitionKey: &awsdynamodb.Attribute{
-			Name: jsii.String("PK"),
-			Type: awsdynamodb.AttributeType_STRING,
-		},
-		SortKey: &awsdynamodb.Attribute{
-			Name: jsii.String("SK"),
-			Type: awsdynamodb.AttributeType_STRING,
-		},
-		BillingMode:         awsdynamodb.BillingMode_PAY_PER_REQUEST,
-		TimeToLiveAttribute: jsii.String("ttl"),
-		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
-			PointInTimeRecoveryEnabled: jsii.Bool(isProd),
-		},
-		DeletionProtection: jsii.Bool(isProd),
-		RemovalPolicy:      getRemovalPolicy(isProd),
+	streamEventsTable := liftcdk.NewLiftTable(s.Stack, jsii.String("StreamEventsTable"), &liftcdk.LiftTableProps{
+		TableName:                 jsii.String(naming.ResourceName("stream-events-table", s.Environment)),
+		PartitionKeyName:          jsii.String("PK"),
+		SortKeyName:               jsii.String("SK"),
+		TimeToLiveAttribute:       jsii.String("ttl"),
+		EnablePointInTimeRecovery: jsii.Bool(isProd),
+		DeletionProtection:        jsii.Bool(isProd),
+		RemovalPolicy:             getRemovalPolicy(isProd),
 	})
+	s.StreamEventsTable = streamEventsTable.Table
 
 	// Create rate limit table for Lift's limited library
 	// The limited library uses its own table structure for rate limiting
-	s.RateLimitTable = awsdynamodb.NewTable(s.Stack, jsii.String("RateLimitTable"), &awsdynamodb.TableProps{
-		TableName: jsii.String(fmt.Sprintf("lesser-rate-limits-%s", s.Environment)),
-		PartitionKey: &awsdynamodb.Attribute{
-			Name: jsii.String("PK"),
-			Type: awsdynamodb.AttributeType_STRING,
-		},
-		SortKey: &awsdynamodb.Attribute{
-			Name: jsii.String("SK"),
-			Type: awsdynamodb.AttributeType_STRING,
-		},
-		BillingMode:         awsdynamodb.BillingMode_PAY_PER_REQUEST,
-		TimeToLiveAttribute: jsii.String("ExpiresAt"),
-		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
-			PointInTimeRecoveryEnabled: jsii.Bool(isProd),
-		},
-		DeletionProtection: jsii.Bool(false),             // Rate limit data is transient
-		RemovalPolicy:      awscdk.RemovalPolicy_DESTROY, // Can be recreated
+	rateLimitTable := liftcdk.NewLiftTable(s.Stack, jsii.String("RateLimitTable"), &liftcdk.LiftTableProps{
+		TableName:                 jsii.String(naming.ResourceName("rate-limits-table", s.Environment)),
+		PartitionKeyName:          jsii.String("PK"),
+		SortKeyName:               jsii.String("SK"),
+		TimeToLiveAttribute:       jsii.String("ExpiresAt"),
+		EnablePointInTimeRecovery: jsii.Bool(isProd),
+		DeletionProtection:        jsii.Bool(false),             // Rate limit data is transient
+		RemovalPolicy:             awscdk.RemovalPolicy_DESTROY, // Can be recreated
 	})
+	s.RateLimitTable = rateLimitTable.Table
 
 	// Add GSI1-GSI8 (generic pattern-based GSIs)
 	// Using camelCase attribute names to match DynamORM conventions (gsi1PK, gsi2PK, etc.)
@@ -353,26 +328,34 @@ func (s *LesserApiStack) createSharedResources() {
 		},
 		ProjectionType: awsdynamodb.ProjectionType_ALL,
 	})
-
-	// Basic S3 bucket setup - CloudFront integration moved to createMediaInfrastructure
-	s.MediaBucket = awss3.NewBucket(s.Stack, jsii.String("MediaBucket"), &awss3.BucketProps{
-		BucketName:        jsii.String(fmt.Sprintf("lesser-media-%s", s.Environment)),
-		Encryption:        awss3.BucketEncryption_S3_MANAGED,
-		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
-		RemovalPolicy:     getRemovalPolicy(isProd),
-		AutoDeleteObjects: jsii.Bool(!isProd),
-		// CORS and policies configured in createMediaInfrastructure
-	})
 }
 
 func (s *LesserApiStack) createMediaInfrastructure(domain string) {
-	// Create Origin Access Identity for CloudFront
-	oai := awscloudfront.NewOriginAccessIdentity(s.Stack, jsii.String("MediaOAI"), &awscloudfront.OriginAccessIdentityProps{
-		Comment: jsii.String("Lesser Media OAI"),
+	isProd := naming.IsLiveEnvironment(s.Environment)
+
+	mediaDomain := s.CloudFrontDomain
+	if mediaDomain == "" {
+		mediaDomain = fmt.Sprintf("media.%s", domain)
+	}
+
+	if s.HostedZone == nil {
+		panic("Media infrastructure requires HostedZone")
+	}
+
+	mediaCDN := liftcdk.NewMediaCDN(s.Stack, jsii.String("MediaCDN"), &liftcdk.MediaCDNProps{
+		HostedZone:        s.HostedZone,
+		Certificate:       s.CDNCertificate,
+		DomainName:        jsii.String(mediaDomain),
+		BucketName:        jsii.String(fmt.Sprintf("lesser-media-%s", s.Environment)),
+		RemovalPolicy:     getRemovalPolicy(isProd),
+		AutoDeleteObjects: jsii.Bool(!isProd),
+		PriceClass:        awscloudfront.PriceClass_PRICE_CLASS_100, // US and Europe only for cost optimization
+		HttpVersion:       awscloudfront.HttpVersion_HTTP2,
+		EnableIpv6:        jsii.Bool(true),
 	})
 
-	// Grant read access to the OAI directly on the bucket
-	s.MediaBucket.GrantRead(oai, jsii.String("*"))
+	s.MediaBucket = mediaCDN.Bucket
+	s.MediaDistribution = mediaCDN.Distribution
 
 	// Enhanced CORS configuration for media uploads and reads
 	s.MediaBucket.AddCorsRule(&awss3.CorsRule{
@@ -394,113 +377,24 @@ func (s *LesserApiStack) createMediaInfrastructure(domain string) {
 		Bucket:      s.MediaBucket,
 		BucketType:  "media",
 	})
-
-	// Create CloudFront distribution for media.{domain}
-	mediaDomain := s.CloudFrontDomain
-	if mediaDomain == "" {
-		mediaDomain = fmt.Sprintf("media.%s", domain)
-	}
-
-	domainNames := func() *[]*string {
-		if mediaDomain == "" || s.CDNCertificate == nil {
-			return nil
-		}
-		return &[]*string{jsii.String(mediaDomain)}
-	}()
-
-	s.MediaDistribution = awscloudfront.NewDistribution(s.Stack, jsii.String("MediaDistribution"), &awscloudfront.DistributionProps{
-		Enabled:                jsii.Bool(true),
-		HttpVersion:            awscloudfront.HttpVersion_HTTP2,
-		Comment:                jsii.String("Lesser Media CDN"),
-		DefaultRootObject:      jsii.String("index.html"),
-		DomainNames:            domainNames,
-		Certificate:            s.CDNCertificate,
-		MinimumProtocolVersion: awscloudfront.SecurityPolicyProtocol_TLS_V1_2_2021,
-		DefaultBehavior: &awscloudfront.BehaviorOptions{
-			Origin: awscloudfrontorigins.S3BucketOrigin_WithOriginAccessIdentity(s.MediaBucket, &awscloudfrontorigins.S3BucketOriginWithOAIProps{
-				OriginAccessIdentity: oai,
-			}),
-			ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
-			AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_GET_HEAD_OPTIONS(),
-			CachedMethods:        awscloudfront.CachedMethods_CACHE_GET_HEAD(),
-			CachePolicy:          awscloudfront.CachePolicy_CACHING_OPTIMIZED(),
-			OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_CORS_S3_ORIGIN(),
-			Compress:             jsii.Bool(true),
-		},
-		PriceClass: awscloudfront.PriceClass_PRICE_CLASS_100, // US and Europe only for cost optimization
-	})
-
-	if s.HostedZone != nil && mediaDomain != "" && s.CDNCertificate != nil {
-		recordName := relativeRecordName(mediaDomain, s.HostedZone)
-		target := awsroute53targets.NewCloudFrontTarget(s.MediaDistribution)
-
-		awsroute53.NewARecord(s.Stack, jsii.String("MediaCdnAliasARecord"), &awsroute53.ARecordProps{
-			Zone:       s.HostedZone,
-			RecordName: recordName,
-			Target:     awsroute53.RecordTarget_FromAlias(target),
-		})
-
-		awsroute53.NewAaaaRecord(s.Stack, jsii.String("MediaCdnAliasAAAARecord"), &awsroute53.AaaaRecordProps{
-			Zone:       s.HostedZone,
-			RecordName: recordName,
-			Target:     awsroute53.RecordTarget_FromAlias(target),
-		})
-	}
-}
-
-func relativeRecordName(domain string, zone awsroute53.IHostedZone) *string {
-	if zone == nil {
-		return jsii.String(domain)
-	}
-
-	zoneNamePtr := zone.ZoneName()
-	if zoneNamePtr == nil {
-		return jsii.String(domain)
-	}
-
-	zoneName := strings.TrimSuffix(*zoneNamePtr, ".")
-	if domain == "" || domain == zoneName {
-		return jsii.String("")
-	}
-
-	if strings.HasSuffix(domain, "."+zoneName) {
-		trimmed := strings.TrimSuffix(domain, "."+zoneName)
-		return jsii.String(trimmed)
-	}
-
-	return jsii.String(domain)
 }
 
 // createAuthUIInfrastructure creates S3 + CloudFront for the passwordless OAuth UI
 func (s *LesserApiStack) createAuthUIInfrastructure(domain string, certificate awscertificatemanager.ICertificate) {
-	authUI := localconstructs.NewAuthUI(s.Stack, jsii.String("AuthUI"), &localconstructs.AuthUIProps{
+	if s.HostedZone == nil || certificate == nil || domain == "" {
+		return
+	}
+
+	_ = localconstructs.NewAuthUI(s.Stack, jsii.String("AuthUI"), &localconstructs.AuthUIProps{
 		Environment: s.Environment,
 		Domain:      domain,
+		HostedZone:  s.HostedZone,
 		Certificate: certificate,
 	})
-
-	// Create DNS record for auth.{domain}
-	if s.HostedZone != nil && certificate != nil {
-		authDomain := fmt.Sprintf("auth.%s", domain)
-		recordName := relativeRecordName(authDomain, s.HostedZone)
-		target := awsroute53targets.NewCloudFrontTarget(authUI.Distribution)
-
-		awsroute53.NewARecord(s.Stack, jsii.String("AuthUIARecord"), &awsroute53.ARecordProps{
-			Zone:       s.HostedZone,
-			RecordName: recordName,
-			Target:     awsroute53.RecordTarget_FromAlias(target),
-		})
-
-		awsroute53.NewAaaaRecord(s.Stack, jsii.String("AuthUIAAAARecord"), &awsroute53.AaaaRecordProps{
-			Zone:       s.HostedZone,
-			RecordName: recordName,
-			Target:     awsroute53.RecordTarget_FromAlias(target),
-		})
-	}
 }
 
 func (s *LesserApiStack) createStreamingAndMLInfrastructure() {
-	isProd := s.Environment == "production"
+	isProd := naming.IsLiveEnvironment(s.Environment)
 
 	// Create S3 bucket for transcoded streaming outputs (HLS/DASH segments + manifests)
 	s.StreamingBucket = awss3.NewBucket(s.Stack, jsii.String("StreamingBucket"), &awss3.BucketProps{
@@ -579,39 +473,39 @@ func (s *LesserApiStack) createStreamingAndMLInfrastructure() {
 		},
 	})
 
-	s.ModelMetadataTableName = fmt.Sprintf("lesser-%s", s.Environment)
+	s.ModelMetadataTableName = naming.ResourceName("main-table", s.Environment)
 
 	// Create outputs for integration
 	awscdk.NewCfnOutput(s.Stack, jsii.String("StreamingBucketName"), &awscdk.CfnOutputProps{
 		Value:       s.StreamingBucket.BucketName(),
 		Description: jsii.String("S3 bucket for streaming outputs"),
-		ExportName:  jsii.String(fmt.Sprintf("lesser-%s-streaming-bucket", s.Environment)),
+		ExportName:  jsii.String(naming.ResourceName("streaming-bucket", s.Environment)),
 	})
 
 	awscdk.NewCfnOutput(s.Stack, jsii.String("TrainingBucketName"), &awscdk.CfnOutputProps{
 		Value:       s.TrainingBucket.BucketName(),
 		Description: jsii.String("S3 bucket for ML training datasets"),
-		ExportName:  jsii.String(fmt.Sprintf("lesser-%s-training-bucket", s.Environment)),
+		ExportName:  jsii.String(naming.ResourceName("training-bucket", s.Environment)),
 	})
 
 	awscdk.NewCfnOutput(s.Stack, jsii.String("MediaConvertRoleArn"), &awscdk.CfnOutputProps{
 		Value:       s.MediaConvertRole.RoleArn(),
 		Description: jsii.String("IAM role ARN for MediaConvert"),
-		ExportName:  jsii.String(fmt.Sprintf("lesser-%s-mediaconvert-role", s.Environment)),
+		ExportName:  jsii.String(naming.ResourceName("mediaconvert-role", s.Environment)),
 	})
 
 	if s.CloudFrontKeyGroupID != "" {
 		awscdk.NewCfnOutput(s.Stack, jsii.String("CloudFrontKeyGroupId"), &awscdk.CfnOutputProps{
 			Value:       jsii.String(s.CloudFrontKeyGroupID),
 			Description: jsii.String("CloudFront key group ID managed by CDK"),
-			ExportName:  jsii.String(fmt.Sprintf("lesser-%s-cloudfront-keygroup-id", s.Environment)),
+			ExportName:  jsii.String(naming.ResourceName("cloudfront-keygroup-id", s.Environment)),
 		})
 	}
 
 	awscdk.NewCfnOutput(s.Stack, jsii.String("ModelMetadataTable"), &awscdk.CfnOutputProps{
 		Value:       jsii.String(s.ModelMetadataTableName),
 		Description: jsii.String("DynamoDB table for model metadata (using gsi9)"),
-		ExportName:  jsii.String(fmt.Sprintf("lesser-%s-model-metadata-table", s.Environment)),
+		ExportName:  jsii.String(naming.ResourceName("model-metadata-table", s.Environment)),
 	})
 }
 
@@ -621,6 +515,21 @@ func (s *LesserApiStack) createSQSQueues() map[string]localconstructs.QueuePair 
 	defaultRetention := awscdk.Duration_Days(jsii.Number(4))
 	defaultMaxReceive := jsii.Number(5)
 
+	primaryConsumerByQueue := map[string]string{}
+	primaryTriggerByQueue := map[string]inventory.SQSTrigger{}
+	for _, spec := range inventory.LambdaInventory.Lambdas {
+		for _, trig := range spec.SQSTriggers {
+			if trig.ConsumeDeadLetterQueue {
+				continue
+			}
+			if existing, ok := primaryConsumerByQueue[trig.Queue]; ok && existing != spec.Name {
+				panic(fmt.Sprintf("queue %s has multiple primary consumers: %s and %s", trig.Queue, existing, spec.Name))
+			}
+			primaryConsumerByQueue[trig.Queue] = spec.Name
+			primaryTriggerByQueue[trig.Queue] = trig
+		}
+	}
+
 	for _, lambda := range inventory.LambdaInventory.Lambdas {
 		for _, trigger := range lambda.SQSTriggers {
 			if _, exists := queuePairs[trigger.Queue]; exists {
@@ -628,36 +537,57 @@ func (s *LesserApiStack) createSQSQueues() map[string]localconstructs.QueuePair 
 			}
 
 			logical := trigger.Queue
-			primaryName := fmt.Sprintf("lesser-%s-%s", logical, s.Environment)
+			primaryName := naming.ResourceName(logical, s.Environment)
 
 			dlqLogical := trigger.DeadLetterQueue
 			if dlqLogical == "" {
 				dlqLogical = fmt.Sprintf("%s-dlq", logical)
 			}
-			dlqName := fmt.Sprintf("lesser-%s-%s", dlqLogical, s.Environment)
+			dlqName := naming.ResourceName(dlqLogical, s.Environment)
 
-			dlq := awssqs.NewQueue(s.Stack, jsii.String(fmt.Sprintf("%sDlq", sanitizeQueueId(logical))), &awssqs.QueueProps{
-				QueueName:       jsii.String(dlqName),
-				RetentionPeriod: awscdk.Duration_Days(jsii.Number(14)),
-			})
+			anchorName := primaryConsumerByQueue[logical]
+			if anchorName == "" {
+				anchorName = "api"
+			}
+			consumer := s.Functions.Must(anchorName)
 
-			queue := awssqs.NewQueue(s.Stack, jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueId(logical))), &awssqs.QueueProps{
-				QueueName:              jsii.String(primaryName),
-				ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)),
-				VisibilityTimeout:      defaultVisibility,
-				RetentionPeriod:        defaultRetention,
-				DeadLetterQueue: &awssqs.DeadLetterQueue{
-					MaxReceiveCount: defaultMaxReceive,
-					Queue:           dlq,
-				},
-			})
+			queueProps := &liftcdk.LiftSQSQueueProps{
+				Function:                consumer,
+				QueueName:               jsii.String(primaryName),
+				VisibilityTimeout:       defaultVisibility,
+				MessageRetentionPeriod:  defaultRetention,
+				ReceiveMessageWaitTime:  awscdk.Duration_Seconds(jsii.Number(20)),
+				EnableDeadLetterQueue:   jsii.Bool(true),
+				DeadLetterQueueName:     jsii.String(dlqName),
+				MaxReceiveCount:         defaultMaxReceive,
+				DLQRetentionPeriod:      awscdk.Duration_Days(jsii.Number(14)),
+				EnableEventSource:       jsii.Bool(false),
+				ReportBatchItemFailures: jsii.Bool(false),
+			}
 
-			awscdk.Tags_Of(queue).Add(jsii.String("app"), jsii.String("lesser"), nil)
-			awscdk.Tags_Of(queue).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
-			awscdk.Tags_Of(dlq).Add(jsii.String("app"), jsii.String("lesser"), nil)
-			awscdk.Tags_Of(dlq).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
+			if primaryTrig, ok := primaryTriggerByQueue[logical]; ok {
+				queueProps.EnableEventSource = jsii.Bool(true)
+				queueProps.ReportBatchItemFailures = jsii.Bool(primaryTrig.EnablePartialFailure)
+				if primaryTrig.BatchSize > 0 {
+					queueProps.BatchSize = jsii.Number(float64(primaryTrig.BatchSize))
+				}
+				if primaryTrig.MaxBatchingWindowSeconds > 0 {
+					queueProps.MaxBatchingWindow = awscdk.Duration_Seconds(jsii.Number(float64(primaryTrig.MaxBatchingWindowSeconds)))
+				}
+			}
 
-			queuePairs[logical] = localconstructs.QueuePair{Primary: queue, DLQ: dlq}
+			liftQueue := liftcdk.NewLiftSQSQueue(s.Stack, jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueId(logical))), queueProps)
+
+			if liftQueue.Queue != nil {
+				awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("app"), jsii.String("lesser"), nil)
+				awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("stage"), jsii.String(string(naming.StageForEnvironment(s.Environment))), nil)
+			}
+			if liftQueue.DeadLetterQueue != nil {
+				awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("app"), jsii.String("lesser"), nil)
+				awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("stage"), jsii.String(string(naming.StageForEnvironment(s.Environment))), nil)
+			}
+
+			queuePairs[logical] = localconstructs.QueuePair{Primary: liftQueue.Queue, DLQ: liftQueue.DeadLetterQueue}
 		}
 	}
 
@@ -665,32 +595,37 @@ func (s *LesserApiStack) createSQSQueues() map[string]localconstructs.QueuePair 
 	// currently wired as an event source mapping (inventory has no scheduled queue consumer).
 	if _, exists := queuePairs["scheduled-queue"]; !exists {
 		logical := "scheduled-queue"
-		primaryName := fmt.Sprintf("lesser-%s-%s", logical, s.Environment)
+		primaryName := naming.ResourceName(logical, s.Environment)
 		dlqLogical := fmt.Sprintf("%s-dlq", logical)
-		dlqName := fmt.Sprintf("lesser-%s-%s", dlqLogical, s.Environment)
+		dlqName := naming.ResourceName(dlqLogical, s.Environment)
 
-		dlq := awssqs.NewQueue(s.Stack, jsii.String(fmt.Sprintf("%sDlq", sanitizeQueueId(logical))), &awssqs.QueueProps{
-			QueueName:       jsii.String(dlqName),
-			RetentionPeriod: awscdk.Duration_Days(jsii.Number(14)),
+		anchor := s.Functions.Must("api")
+		liftQueue := liftcdk.NewLiftSQSQueue(s.Stack, jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueId(logical))), &liftcdk.LiftSQSQueueProps{
+			Function:                anchor,
+			QueueName:               jsii.String(primaryName),
+			VisibilityTimeout:       defaultVisibility,
+			MessageRetentionPeriod:  defaultRetention,
+			ReceiveMessageWaitTime:  awscdk.Duration_Seconds(jsii.Number(20)),
+			EnableDeadLetterQueue:   jsii.Bool(true),
+			DeadLetterQueueName:     jsii.String(dlqName),
+			MaxReceiveCount:         defaultMaxReceive,
+			DLQRetentionPeriod:      awscdk.Duration_Days(jsii.Number(14)),
+			EnableEventSource:       jsii.Bool(false),
+			GrantConsumeMessages:    jsii.Bool(false),
+			GrantSendMessages:       jsii.Bool(false),
+			ReportBatchItemFailures: jsii.Bool(false),
 		})
 
-		queue := awssqs.NewQueue(s.Stack, jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueId(logical))), &awssqs.QueueProps{
-			QueueName:              jsii.String(primaryName),
-			ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)),
-			VisibilityTimeout:      defaultVisibility,
-			RetentionPeriod:        defaultRetention,
-			DeadLetterQueue: &awssqs.DeadLetterQueue{
-				MaxReceiveCount: defaultMaxReceive,
-				Queue:           dlq,
-			},
-		})
+		if liftQueue.Queue != nil {
+			awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("app"), jsii.String("lesser"), nil)
+			awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
+		}
+		if liftQueue.DeadLetterQueue != nil {
+			awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("app"), jsii.String("lesser"), nil)
+			awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
+		}
 
-		awscdk.Tags_Of(queue).Add(jsii.String("app"), jsii.String("lesser"), nil)
-		awscdk.Tags_Of(queue).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
-		awscdk.Tags_Of(dlq).Add(jsii.String("app"), jsii.String("lesser"), nil)
-		awscdk.Tags_Of(dlq).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
-
-		queuePairs[logical] = localconstructs.QueuePair{Primary: queue, DLQ: dlq}
+		queuePairs[logical] = localconstructs.QueuePair{Primary: liftQueue.Queue, DLQ: liftQueue.DeadLetterQueue}
 	}
 
 	if qp, ok := queuePairs["federation-delivery-queue"]; ok {
@@ -777,7 +712,7 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 		awscdk.NewCfnOutput(s.Stack, jsii.String("CloudFrontKeyPairId"), &awscdk.CfnOutputProps{
 			Value:       jsii.String(s.CloudFrontKeyPairID),
 			Description: jsii.String("CloudFront public key ID used for signed URLs"),
-			ExportName:  jsii.String(fmt.Sprintf("lesser-%s-cloudfront-keypair-id", s.Environment)),
+			ExportName:  jsii.String(naming.ResourceName("cloudfront-keypair-id", s.Environment)),
 		})
 	}
 }
@@ -788,14 +723,6 @@ func (s *LesserApiStack) createStreamProcessors() {
 		Table:     s.MainTable,
 		Queues:    s.Queues,
 		Functions: s.Functions,
-	})
-}
-
-func (s *LesserApiStack) createSchedules() {
-	// Inventory-driven wiring for EventBridge schedules (all environments)
-	localconstructs.CreateScheduleWiring(s.Stack, &localconstructs.ScheduleWiringProps{
-		Functions:   s.Functions,
-		Environment: s.Environment,
 	})
 }
 

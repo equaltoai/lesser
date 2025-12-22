@@ -2,6 +2,7 @@ package constructs
 
 import (
 	"cdk/inventory"
+	"cdk/naming"
 	"fmt"
 	"strings"
 
@@ -35,17 +36,18 @@ type APIGateway struct {
 
 func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGateway {
 	gateway := &APIGateway{}
+	apiStage := naming.StageForEnvironment(props.Environment)
 
 	// Create access log group
 	logGroup := awslogs.NewLogGroup(scope, jsii.String("ApiLogGroup"), &awslogs.LogGroupProps{
-		LogGroupName:  jsii.String(fmt.Sprintf("/aws/apigateway/lesser-%s", props.Environment)),
+		LogGroupName:  jsii.String(fmt.Sprintf("/aws/apigateway/%s", naming.ResourceName("api", props.Environment))),
 		Retention:     awslogs.RetentionDays_ONE_WEEK,
 		RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
 	})
 
 	streamTimeoutSeconds := 15 * 60
 
-	apiName := fmt.Sprintf("lesser-%s-api", props.Environment)
+	apiName := naming.ResourceName("api", props.Environment)
 	restProps := &liftcdk.LiftRestAPIProps{
 		APICommonProps: liftcdk.APICommonProps{
 			Name:                jsii.String(apiName),
@@ -53,10 +55,10 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 			EnableCORS:          jsii.Bool(true),
 			EnableAccessLogging: jsii.Bool(true),
 			AccessLogGroup:      logGroup,
-			StageName:           jsii.String(props.Environment),
+			StageName:           jsii.String(string(apiStage)),
 		},
-		EnableStreaming:      jsii.Bool(false), // enable per-method for SSE endpoints
-		StreamingTimeout:     &streamTimeoutSeconds,
+		EnableStreaming:       jsii.Bool(false), // enable per-method for SSE endpoints
+		StreamingTimeout:      &streamTimeoutSeconds,
 		EnableDetailedMetrics: jsii.Bool(true),
 	}
 
@@ -105,7 +107,7 @@ func addRestRoutes(api *liftcdk.LiftRestAPI, functions *LambdaFunctions, streamT
 
 	timeout := streamTimeoutSeconds
 	streamOpts := &liftcdk.IntegrationOptions{
-		EnableStreaming:        jsii.Bool(true),
+		EnableStreaming:         jsii.Bool(true),
 		StreamingTimeoutSeconds: &timeout,
 	}
 
@@ -165,10 +167,11 @@ func addInventoryRestRoutes(api *liftcdk.LiftRestAPI, functions *LambdaFunctions
 
 func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsapigatewayv2.WebSocketApi {
 	streamingFn := props.Functions.Must("streaming")
+	apiStage := naming.StageForEnvironment(props.Environment)
 
 	// Create WebSocket API for streaming
 	wsApi := awsapigatewayv2.NewWebSocketApi(scope, jsii.String("WebSocketApi"), &awsapigatewayv2.WebSocketApiProps{
-		ApiName:     jsii.String(fmt.Sprintf("lesser-%s-streaming-ws-v2", props.Environment)),
+		ApiName:     jsii.String(naming.ResourceName("streaming-ws-v2", props.Environment)),
 		Description: jsii.String("Lesser WebSocket API for streaming"),
 		ConnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
@@ -196,7 +199,7 @@ func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsa
 	// Create stage
 	stage := awsapigatewayv2.NewWebSocketStage(scope, jsii.String("WebSocketStage"), &awsapigatewayv2.WebSocketStageProps{
 		WebSocketApi: wsApi,
-		StageName:    jsii.String(props.Environment),
+		StageName:    jsii.String(string(apiStage)),
 		AutoDeploy:   jsii.Bool(true),
 	})
 
@@ -238,9 +241,10 @@ func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsa
 
 func createGraphQLWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsapigatewayv2.WebSocketApi {
 	graphqlWSFn := props.Functions.Must("graphql-ws")
+	apiStage := naming.StageForEnvironment(props.Environment)
 
 	wsApi := awsapigatewayv2.NewWebSocketApi(scope, jsii.String("GraphQLWebSocketApi"), &awsapigatewayv2.WebSocketApiProps{
-		ApiName:     jsii.String(fmt.Sprintf("lesser-%s-graphql-ws", props.Environment)),
+		ApiName:     jsii.String(naming.ResourceName("graphql-ws", props.Environment)),
 		Description: jsii.String("GraphQL WebSocket API for subscriptions"),
 		ConnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
@@ -267,7 +271,7 @@ func createGraphQLWebSocketApi(scope constructs.Construct, props *APIGatewayProp
 
 	stage := awsapigatewayv2.NewWebSocketStage(scope, jsii.String("GraphQLWebSocketStage"), &awsapigatewayv2.WebSocketStageProps{
 		WebSocketApi: wsApi,
-		StageName:    jsii.String(props.Environment),
+		StageName:    jsii.String(string(apiStage)),
 		AutoDeploy:   jsii.Bool(true),
 	})
 

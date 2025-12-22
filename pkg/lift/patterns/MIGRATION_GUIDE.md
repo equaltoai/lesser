@@ -117,11 +117,13 @@ func (t *MyScheduledTask) HandleScheduledEvent(ctx *lift.Context) error {
 
 func main() {
     logger := common.Logger()
-    task := &MyScheduledTask{
-        aggregator: aggregator,
-        logger:     logger,
-    }
-    patterns.StartScheduledLambda("daily-task", task, logger)
+    task := &MyScheduledTask{aggregator: aggregator, logger: logger}
+
+    app := lift.New()
+    _ = app.EventBridge("*", func(ctx *lift.Context) error {
+        return task.HandleScheduledEvent(ctx)
+    })
+    lambda.Start(app.HandleRequest)
 }
 ```
 

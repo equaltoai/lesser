@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"cdk/inventory"
+	"cdk/naming"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
@@ -51,17 +52,16 @@ func TestLambdaEnvironmentsIncludeBaselineAndInventoryVars(t *testing.T) {
 		AssumedBy: awsiam.NewServicePrincipal(_jsii.String("lambda.amazonaws.com"), nil),
 	})
 
-	queues := buildInventoryQueues(stack, "dev")
-
-	_ = CreateLambdaFunctions(stack, &LambdaFunctionsProps{
-		Environment:         "dev",
+	environment := "development"
+	functions := CreateLambdaFunctions(stack, &LambdaFunctionsProps{
+		Environment:         environment,
 		Table:               mainTable,
 		RateLimitTable:      rateTable,
 		StreamEventsTable:   streamEventsTable,
 		MediaBucket:         mediaBucket,
 		StreamingBucket:     streamingBucket,
 		TrainingBucket:      trainingBucket,
-		Queues:              queues,
+		Queues:              map[string]QueuePair{},
 		PrivateKey:          privateKey,
 		JwtSecret:           jwtSecret,
 		MediaConvertRoleArn: _jsii.String("arn:aws:iam::123456789012:role/media-convert"),
@@ -74,6 +74,8 @@ func TestLambdaEnvironmentsIncludeBaselineAndInventoryVars(t *testing.T) {
 		EncryptionRole: encRole,
 		BasicRole:      basicRole,
 	})
+	queues := buildInventoryQueues(stack, functions, environment)
+	ApplyQueueEnvironmentVariables(functions, queues)
 
 	app.Synth(nil)
 
@@ -94,7 +96,7 @@ func TestLambdaEnvironmentsIncludeBaselineAndInventoryVars(t *testing.T) {
 	}
 
 	for _, spec := range inventory.LambdaInventory.Lambdas {
-		fnName := fmt.Sprintf("lesser-%s-%s", "dev", spec.Name)
+		fnName := naming.ResourceName(spec.Name, environment)
 		env, ok := envByName[fnName]
 		if !ok {
 			t.Fatalf("environment not found for %s", fnName)

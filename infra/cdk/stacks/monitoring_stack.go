@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"cdk/inventory"
+	"cdk/naming"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudwatch"
@@ -38,9 +39,10 @@ func NewMonitoringStack(scope constructs.Construct, id string, props *Monitoring
 		Stack: stack,
 	}
 
+	stage := naming.StageForEnvironment(props.Environment)
 	monitoringStack.AlertTopic = awssns.NewTopic(stack, jsii.String("AlertTopic"), &awssns.TopicProps{
-		TopicName:   jsii.String(fmt.Sprintf("%s-%s-alerts", props.AppName, props.Environment)),
-		DisplayName: jsii.String(fmt.Sprintf("%s %s Alerts", props.AppName, props.Environment)),
+		TopicName:   jsii.String(naming.ResourceNameWithApp(props.AppName, "alerts", props.Environment)),
+		DisplayName: jsii.String(fmt.Sprintf("%s %s Alerts", props.AppName, stage)),
 	})
 
 	if props.AlertEmail != "" {
@@ -50,13 +52,13 @@ func NewMonitoringStack(scope constructs.Construct, id string, props *Monitoring
 	}
 
 	monitoringStack.Dashboard = awscloudwatch.NewDashboard(stack, jsii.String("Dashboard"), &awscloudwatch.DashboardProps{
-		DashboardName: jsii.String(fmt.Sprintf("%s-%s", props.AppName, props.Environment)),
+		DashboardName: jsii.String(naming.ResourceNameWithApp(props.AppName, "dashboard", props.Environment)),
 		Start:         jsii.String("-P1D"),
 	})
 
 	monitoringStack.Dashboard.AddWidgets(
 		awscloudwatch.NewTextWidget(&awscloudwatch.TextWidgetProps{
-			Markdown: jsii.String(fmt.Sprintf("# %s %s Dashboard\n\nInventory-driven monitoring for the Lesser serverless application.", props.AppName, props.Environment)),
+			Markdown: jsii.String(fmt.Sprintf("# %s %s Dashboard\n\nInventory-driven monitoring for the Lesser serverless application.", props.AppName, stage)),
 			Width:    jsii.Number(24),
 			Height:   jsii.Number(2),
 		}),
@@ -67,11 +69,11 @@ func NewMonitoringStack(scope constructs.Construct, id string, props *Monitoring
 	awscdk.NewCfnOutput(stack, jsii.String("AlertTopicArn"), &awscdk.CfnOutputProps{
 		Value:       monitoringStack.AlertTopic.TopicArn(),
 		Description: jsii.String("SNS topic ARN for alerts"),
-		ExportName:  jsii.String(fmt.Sprintf("%s-%s-alert-topic-arn", props.AppName, props.Environment)),
+		ExportName:  jsii.String(naming.ResourceNameWithApp(props.AppName, "alert-topic-arn", props.Environment)),
 	})
 
 	awscdk.NewCfnOutput(stack, jsii.String("DashboardURL"), &awscdk.CfnOutputProps{
-		Value:       jsii.String(fmt.Sprintf("https://console.aws.amazon.com/cloudwatch/home?region=%s#dashboards:name=%s-%s", *stack.Region(), props.AppName, props.Environment)),
+		Value:       jsii.String(fmt.Sprintf("https://console.aws.amazon.com/cloudwatch/home?region=%s#dashboards:name=%s", *stack.Region(), naming.ResourceNameWithApp(props.AppName, "dashboard", props.Environment))),
 		Description: jsii.String("CloudWatch dashboard URL"),
 	})
 
@@ -90,8 +92,8 @@ func (s *MonitoringStack) populateInventoryDrivenMonitoring(environment string) 
 	}
 
 	s.addSection("DynamoDB")
-	s.addDynamoDBMetrics(fmt.Sprintf("lesser-%s", environment))
-	s.addDynamoDBMetrics(fmt.Sprintf("lesser-rate-limits-%s", environment))
+	s.addDynamoDBMetrics(naming.ResourceName("main-table", environment))
+	s.addDynamoDBMetrics(naming.ResourceName("rate-limits-table", environment))
 }
 
 func (s *MonitoringStack) addSection(title string) {
@@ -450,9 +452,9 @@ func sanitizeConstructID(name string) string {
 }
 
 func lambdaPhysicalName(environment string, lambdaName string) string {
-	return fmt.Sprintf("lesser-%s-%s", environment, lambdaName)
+	return naming.ResourceName(lambdaName, environment)
 }
 
 func queuePhysicalName(environment string, logical string) string {
-	return fmt.Sprintf("lesser-%s-%s", logical, environment)
+	return naming.ResourceName(logical, environment)
 }

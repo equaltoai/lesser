@@ -1,14 +1,17 @@
 # Lift Adoption Inventory (Lesser)
 
 Status: tracked (living doc)  
+Release phase: pre-release (prototype deployment; planned tear-down/rebuild)  
 Last updated: 2025-12-22  
 Lift version: `github.com/pay-theory/lift v1.0.81` (pinned in `go.mod`)  
-Local dev override: `go.mod` uses `replace github.com/pay-theory/lift => ../../lift` (adds DynamoDB stream runtime support; pending upstream release)
+Local dev override: root `go.mod` uses `replace github.com/pay-theory/lift => ../../lift` (adds DynamoDB stream runtime support; pending upstream release)  
+CDK dev override: `infra/cdk/go.mod` uses `replace github.com/pay-theory/lift => ../../../../lift` (required for newer CDK constructs like `StaticSite`/`MediaCDN`)
 
 ## Policy / Principles
 
 - **Use Lift for every AWS resource/trigger it supports** (CDK + runtime).
 - **Use DynamORM for DynamoDB access** (no direct DynamoDB API calls in app code).
+- **Pre-release**: prefer clean Lift-first replacements over in-place migrations; prototype stacks can be destroyed/recreated.
 - If we intentionally keep a native AWS implementation, document the **reason and gap** here.
 
 ## Lift Capability Surface (v1.0.81)
@@ -20,6 +23,7 @@ Local dev override: `go.mod` uses `replace github.com/pay-theory/lift => ../../l
 - **Trigger helpers**: `app.SQS`, `app.S3`, `app.EventBridge`.
 - **DynamoDB streams**: `app.DynamoDB` + `(*lift.Context).DynamoDBRecords()` (local patch; pending upstream release).
 - **WebSockets**: `lift.WebSocketContext` and Lift’s `pkg/streamer` wrapper around API Gateway Management API.
+- **Durable EventBus**: `services.DynamoDBEventBus` (DynamoDB-backed; TTL; optional metrics; not AWS EventBridge).
 
 ### CDK Constructs (high-signal list)
 
@@ -29,20 +33,22 @@ Lift CDK provides constructs that cover most of Lesser’s “core serverless”
 - **Lambda**: `LiftFunction` (+ wrappers like monitored/secure/ratelimited) and Lambda role helpers.
 - **DynamoDB**: `LiftTable`, `StreamingTable`, `RateLimitTable`, `ConnectionTable`, `IdempotencyTable`, `EventBusTable`, etc.
 - **Event wiring**: `SQSProcessor`, `DynamoStreamProcessor`, `EventBridgeHandler`, `LiftEventSourceMapping`.
+- **CloudFront**: `StaticSite`, `FrontendDistribution`, `MediaCDN`, `HostRedirect`.
 - **Security/monitoring**: `EnhancedSecurity`, `EnhancedMonitoring`, alarms helpers.
 - **DNS/certs/domains**: `LiftHostedZone`, `LiftCertificate`, `LiftApiDomain`.
 
 ### Known Gaps / Caveats (important)
 
 - **WebSocket custom domain mapping**: Lift’s `WebSocketAPI` construct does not manage `DomainName`/`ApiMapping`/Route53 alias records, so domain mapping stays native (`awsapigatewayv2.DomainName` + `awsapigatewayv2.ApiMapping` + Route53 records).
-- Lift is not a replacement for everything (CloudFront, MediaConvert, Bedrock, Rekognition, etc. remain native AWS SDK/CDK).
+- **CloudFront publish/invalidation**: Lift provides infra constructs but does not ship an asset publish pipeline or invalidation worker (still native tooling).
+- Lift is not a replacement for everything (MediaConvert, Bedrock, Rekognition, etc. remain native AWS SDK/CDK).
 
 ## Current Lesser Adoption Snapshot
 
 ### Infra (CDK)
 
-- **Lift in use**: `LiftRestAPI` (`infra/cdk/constructs/api_routes.go`) and `LiftFunction` (`infra/cdk/constructs/lambda_functions.go`).
-- **Native CDK** still used for: WebSocket APIs, DynamoDB tables, SQS queues, EventBridge schedules, monitoring, IAM/KMS, Route53/ACM, CloudFront.
+- **Lift in use**: `LiftRestAPI` (`infra/cdk/constructs/api_routes.go`), `LiftFunction` (`infra/cdk/constructs/lambda_functions.go`), `LiftTable` (`infra/cdk/stacks/lesser_api_stack.go`), `LiftKMSKey`/`LiftLambdaRole` (`infra/cdk/stacks/shared_stack.go`), `LiftSQSQueue` + `LiftEventSourceMapping` (`infra/cdk/stacks/lesser_api_stack.go`, `infra/cdk/constructs/stream_processors.go`), and CloudFront constructs (`StaticSite`, `MediaCDN`).
+- **Native CDK** still used for: WebSocket APIs + custom domain mapping, monitoring, and remaining Route53/ACM glue where Lift does not yet cover the full behavior (see caveats).
 
 ### Runtime (cmd/*)
 
@@ -66,13 +72,15 @@ This is the actionable inventory of “we’re doing it native today, but Lift s
 | REST API v1 + per-method SSE streaming | ✅ already Lift | `LiftRestAPI` | `infra/cdk/constructs/api_routes.go` | Keep as-is; this is the preferred pattern. |
 | WebSocket APIs (streaming + graphql-ws) | `awsapigatewayv2.NewWebSocketApi` | `constructs.NewWebSocketAPI` | `infra/cdk/constructs/api_routes.go` | Lift can build the WS API + connection table, but domain mapping must remain native (see caveat). |
 | Lambda creation | ✅ already Lift | `constructs.NewLiftFunction` (+ monitored/secure wrappers) | `infra/cdk/constructs/lambda_functions.go` | Creates Lambdas via Lift for consistent defaults and wiring. |
-| DynamoDB tables (main, stream events, rate limit) | `awsdynamodb.NewTable` | `NewLiftTable`, `NewStreamingTable`, `NewRateLimitTable` | `infra/cdk/stacks/lesser_api_stack.go` | Main table has custom GSIs; validate `LiftTable` can represent the same schema before migrating. |
-| SQS queue creation | `awssqs.NewQueue` | `constructs.NewLiftSQSQueue` | `infra/cdk/stacks/lesser_api_stack.go` | Lift has queue helpers; adopt where it reduces boilerplate and standardizes defaults. |
-| SQS event source mappings | `awslambdaeventsources.NewSqsEventSource` | `constructs.NewSQSProcessor` / `NewLiftEventSourceMapping` | `infra/cdk/constructs/stream_processors.go` | Likely requires using `LiftFunction` (or adapting types) for a consistent API. |
-| DynamoDB stream event source mappings | `awslambdaeventsources.NewDynamoEventSource` | `constructs.NewDynamoStreamProcessor` / `NewLiftEventSourceMapping` | `infra/cdk/constructs/stream_processors.go` | Runtime now routes stream events via Lift `app.DynamoDB` + `ctx.DynamoDBRecords()` (local patch; pending upstream release). |
-| Scheduled EventBridge rules | `awsevents.NewRule` | `constructs.NewEventBridgeHandler` | `infra/cdk/constructs/schedule_wiring.go` | Adopt if it matches Lesser’s inventory-driven schedule model. |
-| IAM roles + KMS key | `awsiam.NewRole`, `awskms.NewKey` | Lift role + KMS helpers | `infra/cdk/stacks/shared_stack.go` | Useful if we want Lift’s “enhanced security” defaults to be centralized. |
+| DynamoDB tables (main, stream events, rate limit) | ✅ now Lift | `NewLiftTable` | `infra/cdk/stacks/lesser_api_stack.go` | Migrated to `NewLiftTable` to retain PITR/deletion-protection/removal-policy controls; GSIs still added via `Table.AddGlobalSecondaryIndex`. |
+| SQS queue creation | ✅ now Lift | `constructs.NewLiftSQSQueue` | `infra/cdk/stacks/lesser_api_stack.go` | Primary consumers are wired by the Lift queue construct; DLQs still exist per queue. |
+| SQS event source mappings | partially Lift | `constructs.NewLiftSQSQueue` (primary), `constructs.NewSQSProcessor` / `NewLiftEventSourceMapping` (optional) | `infra/cdk/stacks/lesser_api_stack.go`, `infra/cdk/constructs/stream_processors.go` | Primary mappings are created by `LiftSQSQueue`; DLQ consumption remains native `NewSqsEventSource` for now. |
+| DynamoDB stream event source mappings | ✅ now Lift | `NewLiftEventSourceMapping` | `infra/cdk/constructs/stream_processors.go` | Runtime now routes stream events via Lift `app.DynamoDB` + `ctx.DynamoDBRecords()` (local patch; pending upstream release). |
+| Scheduled EventBridge rules | ✅ now Lift | `constructs.NewEventBridgeHandler` | `infra/cdk/constructs/lambda_functions.go` | Inventory schedules are now created via Lift when functions are synthesized (rule names use `<repo>-<lambda>-schedule-<n>-<stage>`). |
+| IAM roles + KMS key | ✅ now Lift | `NewLiftLambdaRole`, `NewLiftKMSKey` | `infra/cdk/stacks/shared_stack.go` | Shared stack now uses Lift helpers; app-specific wildcard policies are still attached in-repo. |
 | Monitoring + alarms | `awscloudwatch` + `awssns` | `EnhancedMonitoring` | `infra/cdk/stacks/monitoring_stack.go`, `infra/cdk/constructs/alarm_config.go` | Adopt if we want a single monitoring posture across envs. |
+| CloudFront: Auth UI static site | ✅ now Lift | `constructs.NewStaticSite` | `infra/cdk/constructs/auth_ui.go` | Pre-release: OK to replace resources; validate SPA routing behavior. |
+| CloudFront: Media CDN | ✅ now Lift | `constructs.NewMediaCDN` | `infra/cdk/stacks/lesser_api_stack.go` | Lift uses OAC and can optionally enforce signed URLs via Key Groups. |
 
 ### Runtime / Lambda handlers
 
@@ -92,15 +100,16 @@ P0 (high leverage / policy-sensitive):
 
 P1 (reduces boilerplate / improves consistency):
 
-- [ ] CDK: migrate SQS queues to `constructs.NewLiftSQSQueue` (`infra/cdk/stacks/lesser_api_stack.go`).
-- [ ] CDK: migrate event source mappings to Lift processors (`infra/cdk/constructs/stream_processors.go`).
-- [ ] CDK: migrate schedules to `constructs.NewEventBridgeHandler` if it fits the inventory model (`infra/cdk/constructs/schedule_wiring.go`).
+- [x] CDK: migrate SQS queues to `constructs.NewLiftSQSQueue` (`infra/cdk/stacks/lesser_api_stack.go`).
+- [x] CDK: migrate event source mappings to Lift processors (`infra/cdk/constructs/stream_processors.go`).
+- [x] CDK: migrate schedules to `constructs.NewEventBridgeHandler` (now created during Lambda synthesis in `infra/cdk/constructs/lambda_functions.go`).
+- [x] CDK: migrate CloudFront distributions to Lift constructs (`infra/cdk/constructs/auth_ui.go`, `infra/cdk/stacks/lesser_api_stack.go`).
 
 P2 (bigger schema/stack refactors; do after confidence is high):
 
-- [ ] CDK: evaluate migrating DynamoDB tables to `NewLiftTable` / `NewStreamingTable` / `NewRateLimitTable` (`infra/cdk/stacks/lesser_api_stack.go`).
-- [ ] CDK: evaluate migrating IAM/KMS to Lift helpers (`infra/cdk/stacks/shared_stack.go`).
-- [ ] CDK: evaluate migrating monitoring to `NewEnhancedMonitoring` (`infra/cdk/stacks/monitoring_stack.go`).
+- [x] CDK: migrate DynamoDB tables to `NewLiftTable` (`infra/cdk/stacks/lesser_api_stack.go`).
+- [x] CDK: migrate IAM/KMS to `NewLiftKMSKey` + `NewLiftLambdaRole` (`infra/cdk/stacks/shared_stack.go`).
+- [x] CDK: evaluate migrating monitoring to `NewEnhancedMonitoring` (kept inventory-driven monitoring; `EnhancedMonitoring` currently assumes Lift-owned resources + fixed alarm names) (`infra/cdk/stacks/monitoring_stack.go`).
 
 ## DynamoDB SDK Usage (DynamORM Policy Check)
 

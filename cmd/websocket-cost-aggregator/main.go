@@ -799,6 +799,7 @@ func main() {
 	app.Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			requestID := fmt.Sprintf("ws-cost-agg-%d", time.Now().UnixNano())
+			ctx.SetRequestID(requestID)
 			ctx.Set("requestID", requestID)
 			return next.Handle(ctx)
 		})
@@ -845,30 +846,22 @@ func main() {
 		})
 	})
 
-	// Set up the scheduled event handler
-	app.Use(func(_ lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// Parse the event as CloudWatch Event
-			if ctx.Request.RawEvent == nil {
-				return lift.NewLiftError("MISSING_EVENT", "no event in request", 400)
-			}
+	_ = app.EventBridge("lesser-websocket-cost-aggregator-schedule-*", func(ctx *lift.Context) error {
+		if ctx.Request.RawEvent == nil {
+			return lift.NewLiftError("MISSING_EVENT", "no EventBridge event in request", 400)
+		}
 
-			var event events.CloudWatchEvent
-			if cwEvent, ok := ctx.Request.RawEvent.(events.CloudWatchEvent); ok {
-				event = cwEvent
-			} else {
-				// Try to parse from request body
-				if err := common.ValidateSliceNotEmpty("request_body", ctx.Request.Body); err == nil {
-					if err := json.Unmarshal(ctx.Request.Body, &event); err != nil {
-						return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse CloudWatch event", 500)
-					}
-				} else {
-					return lift.NewLiftError("EVENT_MISSING", "CloudWatch event not found", 400)
-				}
-			}
+		eventBytes, err := json.Marshal(ctx.Request.RawEvent)
+		if err != nil {
+			return lift.NewLiftError("EVENT_MARSHAL_ERROR", "failed to marshal raw event", 500).WithCause(err)
+		}
 
-			return handler.HandleScheduledEvent(ctx, event)
-		})
+		var event events.CloudWatchEvent
+		if err := json.Unmarshal(eventBytes, &event); err != nil {
+			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse EventBridge event", 500).WithCause(err)
+		}
+
+		return handler.HandleScheduledEvent(ctx, event)
 	})
 
 	// Start the Lambda handler with Lift

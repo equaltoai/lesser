@@ -219,6 +219,7 @@ func requestIDMiddleware() func(lift.Handler) lift.Handler {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			requestID := fmt.Sprintf("dlq-%d", time.Now().UnixNano())
+			ctx.SetRequestID(requestID)
 			ctx.Set("requestID", requestID)
 			return next.Handle(ctx)
 		})
@@ -332,10 +333,10 @@ func calculateProcessingCost(duration time.Duration) int64 {
 func setupRouteHandlers(app *lift.App) {
 
 	// SQS handler for DLQ message processing
-	_ = app.SQS("dlq-processing", handleSQSEvent)
+	_ = app.SQS("*", handleSQSEvent)
 
 	// EventBridge handler for scheduled operations
-	_ = app.EventBridge("dlq-scheduled-operations", handleEventBridgeEvent)
+	_ = app.EventBridge("lesser-dlq-processor-schedule-*", handleEventBridgeEvent)
 
 	// HTTP handlers for admin/monitoring
 	_ = app.GET("/health", handleHealthCheck)
@@ -359,21 +360,17 @@ func extractSQSEvent(ctx *lift.Context) (events.SQSEvent, error) {
 		return events.SQSEvent{}, lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
 	}
 
-	// Try direct type assertion
-	if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
-		return sqsEvent, nil
+	eventBytes, err := json.Marshal(ctx.Request.RawEvent)
+	if err != nil {
+		return events.SQSEvent{}, lift.NewLiftError("EVENT_MARSHAL_ERROR", "failed to marshal raw event", 500).WithCause(err)
 	}
 
-	// Try parsing from request body
-	if err := common.ValidateSliceNotEmpty("ctx.Request.Body", ctx.Request.Body); err == nil {
-		var event events.SQSEvent
-		if err := json.Unmarshal(ctx.Request.Body, &event); err != nil {
-			return events.SQSEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500)
-		}
-		return event, nil
+	var event events.SQSEvent
+	if err := json.Unmarshal(eventBytes, &event); err != nil {
+		return events.SQSEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
 	}
 
-	return events.SQSEvent{}, lift.NewLiftError("EVENT_MISSING", "SQS event not found", 400)
+	return event, nil
 }
 
 // handleEventBridgeEvent processes EventBridge events
@@ -391,21 +388,17 @@ func extractEventBridgeEvent(ctx *lift.Context) (events.EventBridgeEvent, error)
 		return events.EventBridgeEvent{}, lift.NewLiftError("MISSING_EVENT", "no EventBridge event in request", 400)
 	}
 
-	// Try direct type assertion
-	if ebEvent, ok := ctx.Request.RawEvent.(events.EventBridgeEvent); ok {
-		return ebEvent, nil
+	eventBytes, err := json.Marshal(ctx.Request.RawEvent)
+	if err != nil {
+		return events.EventBridgeEvent{}, lift.NewLiftError("EVENT_MARSHAL_ERROR", "failed to marshal raw event", 500).WithCause(err)
 	}
 
-	// Try parsing from request body
-	if err := common.ValidateSliceNotEmpty("ctx.Request.Body", ctx.Request.Body); err == nil {
-		var event events.EventBridgeEvent
-		if err := json.Unmarshal(ctx.Request.Body, &event); err != nil {
-			return events.EventBridgeEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse EventBridge event", 500)
-		}
-		return event, nil
+	var event events.EventBridgeEvent
+	if err := json.Unmarshal(eventBytes, &event); err != nil {
+		return events.EventBridgeEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse EventBridge event", 500).WithCause(err)
 	}
 
-	return events.EventBridgeEvent{}, lift.NewLiftError("EVENT_MISSING", "EventBridge event not found", 400)
+	return event, nil
 }
 
 // handleHealthCheck returns the health status of the service

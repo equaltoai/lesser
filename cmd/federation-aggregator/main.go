@@ -236,10 +236,23 @@ func main() {
 		return processor.HandleSQS(ctx, event)
 	})
 
-	// Use the EventBridge pattern for CloudWatch scheduled events
-	// Register as an EventBridge processor for scheduled aggregation
-	eventBridgeProcessor := patterns.NewEventBridgeProcessor("federation-aggregator-schedule", processor, logger)
-	patterns.RegisterEventBridge(app, eventBridgeProcessor)
+	_ = app.EventBridge("lesser-federation-aggregator-schedule-*", func(ctx *lift.Context) error {
+		if ctx.Request.RawEvent == nil {
+			return lift.NewLiftError("MISSING_EVENT", "no EventBridge event in request", 400)
+		}
+
+		eventBytes, err := json.Marshal(ctx.Request.RawEvent)
+		if err != nil {
+			return lift.NewLiftError("EVENT_MARSHAL_ERROR", "failed to marshal raw event", 500).WithCause(err)
+		}
+
+		var event events.CloudWatchEvent
+		if err := json.Unmarshal(eventBytes, &event); err != nil {
+			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse EventBridge event", 500).WithCause(err)
+		}
+
+		return processor.HandleEvent(ctx, event)
+	})
 
 	lambda.Start(app.HandleRequest)
 }

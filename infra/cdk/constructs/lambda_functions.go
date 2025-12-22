@@ -5,9 +5,12 @@ import (
 	"strings"
 
 	"cdk/inventory"
+	"cdk/naming"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsevents"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awseventstargets"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslogs"
@@ -50,6 +53,8 @@ func (l *LambdaFunctions) Must(name string) awslambda.Function {
 func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *LambdaFunctions {
 	functions := &LambdaFunctions{Functions: make(map[string]awslambda.Function)}
 
+	stage := naming.StageForEnvironment(props.Environment)
+
 	// Helper to get config values
 	getConfigString := func(key string, defaultVal string) *string {
 		if props.Config != nil {
@@ -69,7 +74,8 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	commonEnv := map[string]*string{
 		// Environment selectors (D1)
 		"ENVIRONMENT": jsii.String(props.Environment),
-		"STAGE":       jsii.String(props.Environment),
+		"STAGE":       jsii.String(string(stage)),
+		"APP_NAME":    jsii.String(naming.RepoName),
 
 		// Domain (D2)
 		"DOMAIN_NAME": jsii.String(domainValue),
@@ -166,7 +172,7 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 
 	// Select baseline defaults by environment (Lift-aligned)
 	defaults := inventory.LambdaInventory.Defaults
-	if props.Environment == "production" || props.Environment == "prod" {
+	if naming.IsLiveEnvironment(props.Environment) {
 		defaults = inventory.ProductionDefaults
 	}
 
@@ -194,8 +200,9 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 			role = props.EncryptionRole
 		}
 
+		functionName := naming.ResourceName(spec.Name, props.Environment)
 		logGroup := awslogs.NewLogGroup(stack, jsii.String(spec.Name+"LogGroup"), &awslogs.LogGroupProps{
-			LogGroupName:  jsii.String(fmt.Sprintf("/aws/lambda/lesser-%s-%s", props.Environment, spec.Name)),
+			LogGroupName:  jsii.String(fmt.Sprintf("/aws/lambda/%s", functionName)),
 			Retention:     retention,
 			RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
 		})
@@ -261,11 +268,68 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 			Timeout:      awscdk.Duration_Seconds(jsii.Number(timeout)),
 			Environment:  &env,
 			Tracing:      awslambda.Tracing_ACTIVE,
-			FunctionName: jsii.String(fmt.Sprintf("lesser-%s-%s", props.Environment, spec.Name)),
+			FunctionName: jsii.String(functionName),
 			Code:         awslambda.Code_FromAsset(jsii.String(fmt.Sprintf("../../bin/%s.zip", spec.Name)), nil),
 			Handler:      jsii.String("bootstrap"),
 			LogGroup:     logGroup,
 			Role:         role,
+		}
+
+		if len(spec.ScheduleTriggers) > 0 {
+			validateScheduleCapable(spec)
+
+			var scheduledFn awslambda.Function
+			for idx, trig := range spec.ScheduleTriggers {
+				ruleID := fmt.Sprintf("%sScheduleRule%d", sanitizeScheduleId(spec.Name), idx)
+				ruleName := naming.ResourceName(fmt.Sprintf("%s-schedule-%d", spec.Name, idx), props.Environment)
+
+				if idx == 0 {
+					var inputTransformation *awsevents.RuleTargetInput
+					if trig.Input != "" {
+						input := awsevents.RuleTargetInput_FromText(jsii.String(trig.Input))
+						inputTransformation = &input
+					}
+
+					handler, err := liftcdk.NewEventBridgeHandler(stack, jsii.String(ruleID), &liftcdk.EventBridgeHandlerProps{
+						FunctionProps:         fnProps,
+						ScheduleExpression:    jsii.String(trig.Expression),
+						InputTransformation:   inputTransformation,
+						EnableDeadLetterQueue: jsii.Bool(true),
+						RuleProps: &awsevents.RuleProps{
+							RuleName:    jsii.String(ruleName),
+							Enabled:     jsii.Bool(true),
+							Description: jsii.String(fmt.Sprintf("Inventory-driven schedule for %s (%s)", spec.Name, trig.Expression)),
+						},
+					})
+					if err != nil {
+						panic(err)
+					}
+
+					scheduledFn = handler.Function.Function
+					functions.Functions[spec.Name] = scheduledFn
+					continue
+				}
+
+				if scheduledFn == nil {
+					panic(fmt.Sprintf("schedule wiring invariant violated: %s missing primary schedule function", spec.Name))
+				}
+
+				// Lift's EventBridgeHandler currently creates the Lambda function as part of the construct.
+				// For additional schedules, create native rules that target the already-created function.
+				rule := awsevents.NewRule(stack, jsii.String(ruleID), &awsevents.RuleProps{
+					RuleName:    jsii.String(ruleName),
+					Enabled:     jsii.Bool(true),
+					Schedule:    awsevents.Schedule_Expression(jsii.String(trig.Expression)),
+					Description: jsii.String(fmt.Sprintf("Inventory-driven schedule for %s (%s)", spec.Name, trig.Expression)),
+				})
+
+				targetProps := &awseventstargets.LambdaFunctionProps{}
+				if trig.Input != "" {
+					targetProps.Event = awsevents.RuleTargetInput_FromText(jsii.String(trig.Input))
+				}
+				rule.AddTarget(awseventstargets.NewLambdaFunction(scheduledFn, targetProps))
+			}
+			continue
 		}
 
 		liftFn := liftcdk.NewLiftFunction(stack, jsii.String(spec.Name+"Function"), &liftcdk.LiftFunctionProps{
@@ -298,4 +362,87 @@ func dlqURL(queueMap map[string]QueuePair, logical string) *string {
 		return qp.DLQ.QueueUrl()
 	}
 	return jsii.String("")
+}
+
+// ApplyQueueEnvironmentVariables updates all Lambda environment variables that depend on
+// queue URLs (canonical + inventory-driven aliases). This is useful when queues are
+// created after Lambda functions (e.g., when using Lift queue constructs).
+func ApplyQueueEnvironmentVariables(functions *LambdaFunctions, queues map[string]QueuePair) {
+	if functions == nil {
+		return
+	}
+
+	for _, fn := range functions.Functions {
+		if fn == nil {
+			continue
+		}
+
+		fn.AddEnvironment(jsii.String("IMPORT_QUEUE_URL"), queueURL(queues, "import-processor-queue"), nil)
+		fn.AddEnvironment(jsii.String("IMPORT_PROCESSOR_QUEUE_URL"), queueURL(queues, "import-processor-queue"), nil)
+		fn.AddEnvironment(jsii.String("EXPORT_QUEUE_URL"), queueURL(queues, "export-processor-queue"), nil)
+		fn.AddEnvironment(jsii.String("EXPORT_PROCESSOR_QUEUE_URL"), queueURL(queues, "export-processor-queue"), nil)
+		fn.AddEnvironment(jsii.String("MEDIA_QUEUE_URL"), queueURL(queues, "media-processor-queue"), nil)
+		fn.AddEnvironment(jsii.String("MEDIA_PROCESSOR_QUEUE_URL"), queueURL(queues, "media-processor-queue"), nil)
+		fn.AddEnvironment(jsii.String("SCHEDULED_QUEUE_URL"), queueURL(queues, "scheduled-queue"), nil)
+
+		fn.AddEnvironment(jsii.String("FEDERATION_DELIVERY_QUEUE_URL"), queueURL(queues, "federation-delivery-queue"), nil)
+		fn.AddEnvironment(jsii.String("FEDERATION_QUEUE_URL"), queueURL(queues, "federation-delivery-queue"), nil)
+		fn.AddEnvironment(jsii.String("FEDERATION_DLQ_URL"), dlqURL(queues, "federation-delivery-queue"), nil)
+
+		fn.AddEnvironment(jsii.String("PUSH_NOTIFICATION_QUEUE_URL"), queueURL(queues, "push-delivery-queue"), nil)
+		fn.AddEnvironment(jsii.String("PUSH_QUEUE_URL"), queueURL(queues, "push-delivery-queue"), nil)
+	}
+
+	for _, spec := range inventory.LambdaInventory.Lambdas {
+		fn := functions.Must(spec.Name)
+		for _, trig := range spec.SQSTriggers {
+			var queueVal *string
+			if trig.ConsumeDeadLetterQueue {
+				queueVal = dlqURL(queues, trig.Queue)
+			} else {
+				queueVal = queueURL(queues, trig.Queue)
+			}
+
+			canonicalKey := ""
+			switch trig.Queue {
+			case "import-processor-queue":
+				canonicalKey = "IMPORT_QUEUE_URL"
+			case "export-processor-queue":
+				canonicalKey = "EXPORT_QUEUE_URL"
+			case "media-processor-queue":
+				canonicalKey = "MEDIA_QUEUE_URL"
+			case "scheduled-queue":
+				canonicalKey = "SCHEDULED_QUEUE_URL"
+			case "federation-delivery-queue":
+				canonicalKey = "FEDERATION_DELIVERY_QUEUE_URL"
+			case "push-delivery-queue":
+				canonicalKey = "PUSH_NOTIFICATION_QUEUE_URL"
+			default:
+				canonicalKey = fmt.Sprintf("%s_QUEUE_URL", strings.ToUpper(strings.ReplaceAll(trig.Queue, "-", "_")))
+			}
+
+			fn.AddEnvironment(jsii.String(canonicalKey), queueVal, nil)
+
+			aliasKey := fmt.Sprintf("%s_QUEUE_URL", strings.ToUpper(strings.ReplaceAll(trig.Queue, "-", "_")))
+			fn.AddEnvironment(jsii.String(aliasKey), queueVal, nil)
+
+			if trig.DeadLetterQueue != "" {
+				dlqKey := fmt.Sprintf("%s_DLQ_URL", strings.ToUpper(strings.ReplaceAll(trig.DeadLetterQueue, "-", "_")))
+				fn.AddEnvironment(jsii.String(dlqKey), dlqURL(queues, trig.Queue), nil)
+			}
+		}
+
+		for _, key := range spec.RequiredEnvVars {
+			switch key {
+			case "EXPORT_QUEUE_URL", "EXPORT_PROCESSOR_QUEUE_URL":
+				fn.AddEnvironment(jsii.String(key), queueURL(queues, "export-processor-queue"), nil)
+			case "IMPORT_QUEUE_URL", "IMPORT_PROCESSOR_QUEUE_URL":
+				fn.AddEnvironment(jsii.String(key), queueURL(queues, "import-processor-queue"), nil)
+			case "MEDIA_QUEUE_URL", "MEDIA_PROCESSOR_QUEUE_URL":
+				fn.AddEnvironment(jsii.String(key), queueURL(queues, "media-processor-queue"), nil)
+			default:
+				// ignore non-queue vars
+			}
+		}
+	}
 }

@@ -25,13 +25,13 @@ import (
 )
 
 const (
-	streamPollLimit       = int32(50)
-	streamIdlePollDelay   = 500 * time.Millisecond
-	streamHeartbeatEvery  = 15 * time.Second
-	streamMaxDuration     = 14*time.Minute + 30*time.Second
-	streamEventTypeUpdate = "update"
+	streamPollLimit             = int32(50)
+	streamIdlePollDelay         = 500 * time.Millisecond
+	streamHeartbeatEvery        = 15 * time.Second
+	streamMaxDuration           = 14*time.Minute + 30*time.Second
+	streamEventTypeUpdate       = "update"
 	streamEventTypeStatusUpdate = "status.update"
-	streamEventTypeDelete = "delete"
+	streamEventTypeDelete       = "delete"
 )
 
 var (
@@ -207,50 +207,77 @@ func streamSSE(ctx *lift.Context, streamName string, onlyMedia bool) error {
 	lastEventID := strings.TrimSpace(ctx.Header("Last-Event-ID"))
 
 	eventCh := make(chan lift.SSEEvent, 8)
-	go func() {
-		defer close(eventCh)
-
-		start := time.Now()
-		heartbeat := time.NewTicker(streamHeartbeatEvery)
-		defer heartbeat.Stop()
-
-		var afterID = lastEventID
-
-		for {
-			if time.Since(start) > streamMaxDuration {
-				return
-			}
-
-			items, err := eventLog.Query(ctx, streamName, afterID, streamPollLimit)
-			if err != nil {
-				eventCh <- lift.SSEEvent{Event: "error", Data: `{"error":"internal_error"}`}
-				return
-			}
-
-			if len(items) > 0 {
-				for _, item := range items {
-					afterID = item.ID
-					if onlyMedia && (item.Event == streamEventTypeUpdate || item.Event == streamEventTypeStatusUpdate) {
-						if !payloadHasMedia(item.Data) {
-							continue
-						}
-					}
-					eventCh <- lift.SSEEvent{ID: item.ID, Event: item.Event, Data: normalizeDeletePayload(item.Event, item.Data)}
-				}
-				continue
-			}
-
-			select {
-			case <-ctx.Context.Done():
-				return
-			case <-heartbeat.C:
-				eventCh <- lift.SSEEvent{Event: "keepalive", Data: "thump"}
-			case <-time.After(streamIdlePollDelay):
-			}
-		}
-	}()
+	go produceSSEEvents(ctx, eventCh, streamName, onlyMedia, lastEventID)
 
 	return lift.SSEResponse(ctx, eventCh)
+}
+
+type sseStreamState struct {
+	start   time.Time
+	afterID string
+}
+
+func (s sseStreamState) expired() bool {
+	return time.Since(s.start) > streamMaxDuration
+}
+
+func produceSSEEvents(ctx context.Context, eventCh chan<- lift.SSEEvent, streamName string, onlyMedia bool, lastEventID string) {
+	defer close(eventCh)
+
+	state := sseStreamState{start: time.Now(), afterID: lastEventID}
+	heartbeat := time.NewTicker(streamHeartbeatEvery)
+	defer heartbeat.Stop()
+
+	for !state.expired() {
+		items, err := eventLog.Query(ctx, streamName, state.afterID, streamPollLimit)
+		if err != nil {
+			eventCh <- lift.SSEEvent{Event: "error", Data: `{"error":"internal_error"}`}
+			return
+		}
+
+		if len(items) > 0 {
+			state.afterID = emitSSEItems(eventCh, items, onlyMedia, state.afterID)
+			continue
+		}
+
+		if waitForSSEPoll(ctx, eventCh, heartbeat) {
+			return
+		}
+	}
+}
+
+func emitSSEItems(eventCh chan<- lift.SSEEvent, items []streaming.StreamEventLogItem, onlyMedia bool, afterID string) string {
+	for _, item := range items {
+		afterID = item.ID
+		if shouldSkipSSEItem(onlyMedia, item) {
+			continue
+		}
+
+		eventCh <- lift.SSEEvent{ID: item.ID, Event: item.Event, Data: normalizeDeletePayload(item.Event, item.Data)}
+	}
+	return afterID
+}
+
+func shouldSkipSSEItem(onlyMedia bool, item streaming.StreamEventLogItem) bool {
+	if !onlyMedia {
+		return false
+	}
+	if item.Event != streamEventTypeUpdate && item.Event != streamEventTypeStatusUpdate {
+		return false
+	}
+	return !payloadHasMedia(item.Data)
+}
+
+func waitForSSEPoll(ctx context.Context, eventCh chan<- lift.SSEEvent, heartbeat *time.Ticker) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	case <-heartbeat.C:
+		eventCh <- lift.SSEEvent{Event: "keepalive", Data: "thump"}
+		return false
+	case <-time.After(streamIdlePollDelay):
+		return false
+	}
 }
 
 func requireClaims(ctx *lift.Context) (*auth.EnhancedClaims, error) {
@@ -272,22 +299,6 @@ func requireClaims(ctx *lift.Context) (*auth.EnhancedClaims, error) {
 	}
 
 	return claims, nil
-}
-
-func clientIP(ctx *lift.Context) string {
-	if ctx == nil {
-		return "unknown"
-	}
-	if forwarded := ctx.Header("X-Forwarded-For"); forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		if len(parts) > 0 {
-			return strings.TrimSpace(parts[0])
-		}
-	}
-	if realIP := ctx.Header("X-Real-IP"); realIP != "" {
-		return strings.TrimSpace(realIP)
-	}
-	return "unknown"
 }
 
 func payloadHasMedia(data string) bool {

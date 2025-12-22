@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	streamEventLogPKPrefix      = "STREAM#"
+	streamEventLogPKPrefix = "STREAM#"
 )
 
+// StreamEventLogItem represents a single persisted SSE event for a given stream.
 type StreamEventLogItem struct {
 	ID        string
 	Event     string
@@ -38,24 +39,28 @@ func (streamEventLogRecord) TableName() string {
 	return config.GetStreamEventsTableName()
 }
 
+// StreamEventLog provides append/query operations for SSE stream event persistence.
 type StreamEventLog struct {
-	db        core.DB
-	ttl       time.Duration
-	now       func() time.Time
+	db  core.DB
+	ttl time.Duration
+	now func() time.Time
 }
 
+// NewStreamEventLog creates a new StreamEventLog with the provided DynamORM DB and TTL.
 func NewStreamEventLog(db core.DB, ttl time.Duration) *StreamEventLog {
 	return &StreamEventLog{
-		db:        db,
-		ttl:       ttl,
-		now:       time.Now,
+		db:  db,
+		ttl: ttl,
+		now: time.Now,
 	}
 }
 
+// Enabled reports whether the StreamEventLog is configured and usable.
 func (l *StreamEventLog) Enabled() bool {
 	return l != nil && l.db != nil && config.GetStreamEventsTableName() != ""
 }
 
+// Append writes a new event into the stream log for the given stream.
 func (l *StreamEventLog) Append(ctx context.Context, streamName, eventType, data string) (string, error) {
 	if !l.Enabled() {
 		return "", fmt.Errorf("stream event log not configured")
@@ -89,6 +94,7 @@ func (l *StreamEventLog) Append(ctx context.Context, streamName, eventType, data
 	return id.String(), nil
 }
 
+// Query returns up to limit events for the stream after afterID, ordered ascending by ID.
 func (l *StreamEventLog) Query(ctx context.Context, streamName, afterID string, limit int32) ([]StreamEventLogItem, error) {
 	if !l.Enabled() {
 		return nil, fmt.Errorf("stream event log not configured")
