@@ -19,6 +19,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/google/uuid"
+	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 )
 
@@ -808,17 +810,17 @@ func main() {
 		zap.String("service", "metrics-processor"),
 		zap.String("lambda_type", "processor"))
 
-	// Start Lambda handler for DynamoDB streams
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				lambdaCtx.Logger.Error("panic in metrics processor handler",
-					zap.Any("panic", r),
-					zap.Stack("stack"))
-				err = fmt.Errorf("panic recovered in metrics-processor: %v", r)
-			}
-		}()
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
 
-		return handler.HandleDynamoDBStreamEvent(ctx, event)
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
+		records, err := ctx.DynamoDBRecords()
+		if err != nil {
+			return err
+		}
+		return handler.HandleDynamoDBStreamEvent(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
 	})
+
+	lambda.Start(app.HandleRequest)
 }

@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
@@ -338,6 +339,17 @@ func init() {
 }
 
 func main() {
-	// Use Lift's DynamoDB stream pattern with full middleware stack
-	patterns.StartDynamoDBStreamLambda("federation-timeseries", processor, logger)
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
+		records, err := ctx.DynamoDBRecords()
+		if err != nil {
+			return err
+		}
+		return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+	})
+
+	lambda.Start(app.HandleRequest)
 }

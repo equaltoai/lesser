@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
@@ -18,10 +19,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -109,7 +110,7 @@ func NewMLTrainingProcessor() (*MLTrainingProcessor, error) {
 	}, nil
 }
 
-// HandleStream implements the patterns.DynamoDBStreamHandler interface
+// HandleStream processes DynamoDB stream events for training jobs.
 func (p *MLTrainingProcessor) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
 	p.logger.Info("processing ML training job batch",
 		zap.String("request_id", ctx.GetRequestID()),
@@ -906,6 +907,17 @@ func (p *MLTrainingProcessor) emitTrainingEvent(ctx context.Context, jobID, even
 }
 
 func main() {
-	// Use the Lift pattern for DynamoDB streams with proper middleware
-	patterns.StartDynamoDBStreamLambda("ml-training-processor", processor, lambdaCtx.Logger)
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
+		records, err := ctx.DynamoDBRecords()
+		if err != nil {
+			return err
+		}
+		return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+	})
+
+	lambda.Start(app.HandleRequest)
 }

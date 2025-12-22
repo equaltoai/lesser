@@ -27,7 +27,15 @@ func (h *ExampleStreamHandler) HandleStream(_ *lift.Context, event events.Dynamo
 // func main() {
 //     logger := common.Logger()
 //     handler := &ExampleStreamHandler{logger: logger}
-//     StartDynamoDBStreamLambda("my-processor", handler, logger)
+//     app := lift.New()
+//     _ = app.DynamoDB("*", func(ctx *lift.Context) error {
+//         records, err := ctx.DynamoDBRecords()
+//         if err != nil {
+//             return err
+//         }
+//         return handler.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+//     })
+//     lambda.Start(app.HandleRequest)
 // }
 
 // ExampleSQSHandler demonstrates SQS handler pattern

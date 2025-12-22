@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/jsii-runtime-go"
+	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
 )
 
 type LambdaFunctionsProps struct {
@@ -267,7 +268,11 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 			Role:         role,
 		}
 
-		functions.Functions[spec.Name] = awslambda.NewFunction(stack, jsii.String(spec.Name+"Function"), &fnProps)
+		liftFn := liftcdk.NewLiftFunction(stack, jsii.String(spec.Name+"Function"), &liftcdk.LiftFunctionProps{
+			FunctionProps: fnProps,
+			EnableTracing: jsii.Bool(true),
+		})
+		functions.Functions[spec.Name] = liftFn.Function
 	}
 
 	return functions

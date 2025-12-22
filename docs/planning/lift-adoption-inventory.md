@@ -1,8 +1,9 @@
 # Lift Adoption Inventory (Lesser)
 
 Status: tracked (living doc)  
-Last updated: 2025-12-21  
-Lift version: `github.com/pay-theory/lift v1.0.81` (pinned in `go.mod`)
+Last updated: 2025-12-22  
+Lift version: `github.com/pay-theory/lift v1.0.81` (pinned in `go.mod`)  
+Local dev override: `go.mod` uses `replace github.com/pay-theory/lift => ../../lift` (adds DynamoDB stream runtime support; pending upstream release)
 
 ## Policy / Principles
 
@@ -17,6 +18,7 @@ Lift version: `github.com/pay-theory/lift v1.0.81` (pinned in `go.mod`)
 - **HTTP routing** behind API Gateway (REST API v1 / HTTP API v2) via `lift.New()` + `app.Handle` / `app.GET` etc.
 - **API Gateway REST API v1 response streaming (SSE)** via `lift.SSEResponse` (requires `-tags lambda.norpc`).
 - **Trigger helpers**: `app.SQS`, `app.S3`, `app.EventBridge`.
+- **DynamoDB streams**: `app.DynamoDB` + `(*lift.Context).DynamoDBRecords()` (local patch; pending upstream release).
 - **WebSockets**: `lift.WebSocketContext` and Lift’s `pkg/streamer` wrapper around API Gateway Management API.
 
 ### CDK Constructs (high-signal list)
@@ -33,25 +35,25 @@ Lift CDK provides constructs that cover most of Lesser’s “core serverless”
 ### Known Gaps / Caveats (important)
 
 - **WebSocket custom domain mapping**: Lift’s `WebSocketAPI` construct does not manage `DomainName`/`ApiMapping`/Route53 alias records, so domain mapping stays native (`awsapigatewayv2.DomainName` + `awsapigatewayv2.ApiMapping` + Route53 records).
-- **DynamoDB stream runtime routing**: Lift runtime does not provide a first-class DynamoDB stream handler; Lesser currently has `pkg/lift/patterns/dynamodb.go` to wrap stream events into Lift middleware.
 - Lift is not a replacement for everything (CloudFront, MediaConvert, Bedrock, Rekognition, etc. remain native AWS SDK/CDK).
 
 ## Current Lesser Adoption Snapshot
 
 ### Infra (CDK)
 
-- **Lift in use**: `LiftRestAPI` only (`infra/cdk/constructs/api_routes.go`).
-- **Native CDK** still used for: WebSocket APIs, Lambda functions, DynamoDB tables, SQS queues, EventBridge schedules, monitoring, IAM/KMS, Route53/ACM, CloudFront.
+- **Lift in use**: `LiftRestAPI` (`infra/cdk/constructs/api_routes.go`) and `LiftFunction` (`infra/cdk/constructs/lambda_functions.go`).
+- **Native CDK** still used for: WebSocket APIs, DynamoDB tables, SQS queues, EventBridge schedules, monitoring, IAM/KMS, Route53/ACM, CloudFront.
 
 ### Runtime (cmd/*)
 
-- **Lift imported** in `30/40` Lambda `main.go` files (one `cmd/*` directory has no `main.go`).
+- **Lift imported** in `36/40` Lambda `main.go` files (`cmd/cms-scheduler` has no `main.go`; not using Lift: `cmd/cloudfront-keygen`, `cmd/configure-instance`, `cmd/enhanced-federation-processor`, `cmd/init-deploy`).
 - **Lift trigger helpers** are used by only a small subset:
   - `app.SQS`: `cmd/dlq-processor/main.go`, `cmd/federation-aggregator/main.go`, `cmd/media-processor/main.go`, `cmd/notification-processor/main.go`, `cmd/outbox/main.go`
   - `app.EventBridge`: `cmd/dlq-processor/main.go`
-- **WebSocket message delivery** is mixed:
+  - `app.DynamoDB`: `cmd/activity-processor/main.go`, `cmd/ai-processor/main.go`, `cmd/cost-aggregator/main.go`, `cmd/federation-timeseries/main.go`, `cmd/federation-tracker/main.go`, `cmd/metrics-aggregator/main.go`, `cmd/metrics-processor/main.go`, `cmd/ml-training-processor/main.go`, `cmd/moderation-processor/main.go`, `cmd/note-processor/main.go`, `cmd/report-trust-updater/main.go`, `cmd/search-indexer/main.go`, `cmd/severance-processor/main.go`, `cmd/status-indexer/main.go`, `cmd/stream-router/main.go`
+- **WebSocket message delivery**:
   - GraphQL WS uses `lift.WebSocketContext` (`cmd/graphql-ws/main.go`).
-  - Streaming/WebSocket paths still use `apigatewaymanagementapi` directly (see inventory below).
+  - Streaming/WebSocket broadcasting uses Lift `pkg/streamer` (no direct `apigatewaymanagementapi` usage).
 
 ## Inventory: Native AWS → Lift (Where Supported)
 
@@ -63,11 +65,11 @@ This is the actionable inventory of “we’re doing it native today, but Lift s
 |---|---|---|---|---|
 | REST API v1 + per-method SSE streaming | ✅ already Lift | `LiftRestAPI` | `infra/cdk/constructs/api_routes.go` | Keep as-is; this is the preferred pattern. |
 | WebSocket APIs (streaming + graphql-ws) | `awsapigatewayv2.NewWebSocketApi` | `constructs.NewWebSocketAPI` | `infra/cdk/constructs/api_routes.go` | Lift can build the WS API + connection table, but domain mapping must remain native (see caveat). |
-| Lambda creation | `awslambda.NewFunction` | `constructs.NewLiftFunction` (+ monitored/secure wrappers) | `infra/cdk/constructs/lambda_functions.go` | Biggest “Lift leverage” point: standardizes env, roles, monitoring, and wiring helpers. |
+| Lambda creation | ✅ already Lift | `constructs.NewLiftFunction` (+ monitored/secure wrappers) | `infra/cdk/constructs/lambda_functions.go` | Creates Lambdas via Lift for consistent defaults and wiring. |
 | DynamoDB tables (main, stream events, rate limit) | `awsdynamodb.NewTable` | `NewLiftTable`, `NewStreamingTable`, `NewRateLimitTable` | `infra/cdk/stacks/lesser_api_stack.go` | Main table has custom GSIs; validate `LiftTable` can represent the same schema before migrating. |
 | SQS queue creation | `awssqs.NewQueue` | `constructs.NewLiftSQSQueue` | `infra/cdk/stacks/lesser_api_stack.go` | Lift has queue helpers; adopt where it reduces boilerplate and standardizes defaults. |
 | SQS event source mappings | `awslambdaeventsources.NewSqsEventSource` | `constructs.NewSQSProcessor` / `NewLiftEventSourceMapping` | `infra/cdk/constructs/stream_processors.go` | Likely requires using `LiftFunction` (or adapting types) for a consistent API. |
-| DynamoDB stream event source mappings | `awslambdaeventsources.NewDynamoEventSource` | `constructs.NewDynamoStreamProcessor` / `NewLiftEventSourceMapping` | `infra/cdk/constructs/stream_processors.go` | Runtime still needs our DynamoDB stream wrapper (`pkg/lift/patterns/dynamodb.go`) unless Lift runtime gains native stream support. |
+| DynamoDB stream event source mappings | `awslambdaeventsources.NewDynamoEventSource` | `constructs.NewDynamoStreamProcessor` / `NewLiftEventSourceMapping` | `infra/cdk/constructs/stream_processors.go` | Runtime now routes stream events via Lift `app.DynamoDB` + `ctx.DynamoDBRecords()` (local patch; pending upstream release). |
 | Scheduled EventBridge rules | `awsevents.NewRule` | `constructs.NewEventBridgeHandler` | `infra/cdk/constructs/schedule_wiring.go` | Adopt if it matches Lesser’s inventory-driven schedule model. |
 | IAM roles + KMS key | `awsiam.NewRole`, `awskms.NewKey` | Lift role + KMS helpers | `infra/cdk/stacks/shared_stack.go` | Useful if we want Lift’s “enhanced security” defaults to be centralized. |
 | Monitoring + alarms | `awscloudwatch` + `awssns` | `EnhancedMonitoring` | `infra/cdk/stacks/monitoring_stack.go`, `infra/cdk/constructs/alarm_config.go` | Adopt if we want a single monitoring posture across envs. |
@@ -76,17 +78,17 @@ This is the actionable inventory of “we’re doing it native today, but Lift s
 
 | Area | Current (native) | Lift alternative | Where | Notes |
 |---|---|---|---|---|
-| DynamoDB stream Lambda entrypoints | `lambda.Start(func(ctx, events.DynamoDBEvent)...)` | Use Lift via `pkg/lift/patterns/dynamodb.go` | `cmd/activity-processor/main.go`, `cmd/metrics-processor/main.go`, `cmd/moderation-processor/main.go`, `cmd/note-processor/main.go`, `cmd/severance-processor/main.go`, `cmd/status-indexer/main.go` | Standardizes middleware/logging/errors and aligns with “Lift always”. |
+| DynamoDB stream Lambda entrypoints | ✅ now Lift | `app.DynamoDB` + `ctx.DynamoDBRecords()` | `cmd/*-processor/main.go` (15 functions) | Removes the wrapper approach and standardizes trigger routing in Lift. |
 | SQS-triggered Lambda entrypoints | direct `lambda.Start` + `events.SQSEvent` | `app.SQS(...)` (Lift runtime) | e.g. `cmd/enhanced-federation-processor/main.go`, `cmd/export-generator/main.go`, `cmd/import-processor/main.go`, `cmd/push-delivery/main.go` | Many SQS Lambdas already use Lift, but not necessarily the native `app.SQS` helper. |
-| WebSocket message delivery | direct `apigatewaymanagementapi` | Lift `pkg/streamer` or `lift.WebSocketContext` | `cmd/streaming/main.go`, `cmd/stream-router/main.go`, `pkg/streaming/*`, `pkg/websocket/subscriptions.go` | Prefer Lift’s streamer/WebSocketContext to standardize retries/errors and simplify testing. |
+| WebSocket message delivery | ✅ now Lift | Lift `pkg/streamer` or `lift.WebSocketContext` | `cmd/streaming/main.go`, `cmd/stream-router/main.go`, `pkg/streaming/*`, `pkg/websocket/subscriptions.go` | Migrated to Lift `pkg/streamer` (no direct `apigatewaymanagementapi` usage). |
 
 ## Migration Backlog (track status here)
 
 P0 (high leverage / policy-sensitive):
 
-- [ ] CDK: migrate Lambda creation to `constructs.NewLiftFunction` (`infra/cdk/constructs/lambda_functions.go`).
-- [ ] Runtime: migrate WebSocket send/broadcast to Lift `pkg/streamer` / `lift.WebSocketContext` (`pkg/streaming/*`, `cmd/streaming/main.go`).
-- [ ] Runtime: migrate remaining DynamoDB stream Lambdas to Lift wrapper (`pkg/lift/patterns/dynamodb.go`) (`cmd/*-processor/main.go` listed above).
+- [x] CDK: migrate Lambda creation to `constructs.NewLiftFunction` (`infra/cdk/constructs/lambda_functions.go`).
+- [x] Runtime: migrate WebSocket send/broadcast to Lift `pkg/streamer` / `lift.WebSocketContext` (`pkg/streaming/*`, `cmd/streaming/main.go`).
+- [x] Runtime: migrate DynamoDB stream Lambdas to Lift runtime `app.DynamoDB` + `ctx.DynamoDBRecords()` (wrapper removed).
 
 P1 (reduces boilerplate / improves consistency):
 

@@ -9,11 +9,9 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 )
 
@@ -124,7 +122,7 @@ type WebSocketMessage struct {
 // subscriptionManager implements SubscriptionManager
 type subscriptionManager struct {
 	repo          *repositories.WebSocketSubscriptionManagerRepository
-	apiGW         *apigatewaymanagementapi.Client
+	apiGW         streamer.Client
 	endpoint      string
 	connections   map[string]*Connection
 	subscriptions map[string]map[string]*Subscription // connectionID -> subscriptionType -> subscription
@@ -134,19 +132,16 @@ type subscriptionManager struct {
 
 // NewSubscriptionManager creates a new subscription manager
 func NewSubscriptionManager(repo *repositories.WebSocketSubscriptionManagerRepository, apiGWEndpoint string, logger *zap.Logger) (SubscriptionManager, error) {
-	// Use background context for AWS config initialization
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	apiClient, err := streamer.NewClient(context.Background(), streamer.ClientConfig{
+		Endpoint: apiGWEndpoint,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, fmt.Errorf("failed to create WebSocket client: %w", err)
 	}
-
-	// Configure API Gateway Management API endpoint
-	apiGWCfg := cfg.Copy()
-	apiGWCfg.BaseEndpoint = aws.String(apiGWEndpoint)
 
 	return &subscriptionManager{
 		repo:          repo,
-		apiGW:         apigatewaymanagementapi.NewFromConfig(apiGWCfg),
+		apiGW:         apiClient,
 		endpoint:      apiGWEndpoint,
 		connections:   make(map[string]*Connection),
 		subscriptions: make(map[string]map[string]*Subscription),
@@ -413,14 +408,8 @@ func (sm *subscriptionManager) publishToSubscribers(subscriptionType string, mes
 
 // sendMessage sends a message to a WebSocket connection
 func (sm *subscriptionManager) sendMessage(connectionID string, data []byte) error {
-	input := &apigatewaymanagementapi.PostToConnectionInput{
-		ConnectionId: aws.String(connectionID),
-		Data:         data,
-	}
-
 	// Use background context for async API Gateway operation
-	_, err := sm.apiGW.PostToConnection(context.Background(), input)
-	return err
+	return sm.apiGW.PostToConnection(context.Background(), connectionID, data)
 }
 
 // handleDeadConnection removes a dead connection

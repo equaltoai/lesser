@@ -8,16 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 )
-
-// APIGatewayManagementClient defines the interface for API Gateway Management API client
-type APIGatewayManagementClient interface {
-	PostToConnection(ctx context.Context, params *apigatewaymanagementapi.PostToConnectionInput, optFns ...func(*apigatewaymanagementapi.Options)) (*apigatewaymanagementapi.PostToConnectionOutput, error)
-}
 
 // Event represents a streaming event to be published
 type Event struct {
@@ -65,7 +59,7 @@ type ConnectionRepository interface {
 
 // apiGatewayPublisher implements Publisher using AWS API Gateway Management API
 type apiGatewayPublisher struct {
-	client       APIGatewayManagementClient
+	client       streamer.Client
 	connRepo     ConnectionRepository
 	logger       *zap.Logger
 	endpoint     string
@@ -76,7 +70,7 @@ type apiGatewayPublisher struct {
 
 // NewAPIGatewayPublisher creates a new publisher using API Gateway Management API
 func NewAPIGatewayPublisher(
-	client APIGatewayManagementClient,
+	client streamer.Client,
 	connRepo ConnectionRepository,
 	endpoint string,
 	logger *zap.Logger,
@@ -221,11 +215,8 @@ func (p *apiGatewayPublisher) publishToConnection(ctx context.Context, connectio
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}
 
-	// Send to connection via API Gateway Management API
-	_, err = p.client.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
-		ConnectionId: aws.String(connectionID),
-		Data:         eventData,
-	})
+	// Send to connection via Lift streamer client
+	err = p.client.PostToConnection(ctx, connectionID, eventData)
 
 	if err != nil {
 		return fmt.Errorf("failed to post to connection: %w", err)

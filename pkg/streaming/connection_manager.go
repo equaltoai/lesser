@@ -7,17 +7,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 )
 
 // ConnectionManager manages WebSocket connection lifecycle, health checks, and resource management
 type ConnectionManager struct {
 	connRepo          *repositories.StreamingConnectionRepository
-	apiClient         *apigatewaymanagementapi.Client
+	apiClient         streamer.Client
 	logger            *zap.Logger
 	healthCheckTicker *time.Ticker
 	cleanupTicker     *time.Ticker
@@ -57,7 +57,7 @@ func DefaultConnectionManagerConfig() *ConnectionManagerConfig {
 // NewConnectionManager creates a new connection manager
 func NewConnectionManager(
 	connRepo *repositories.StreamingConnectionRepository,
-	apiClient *apigatewaymanagementapi.Client,
+	apiClient streamer.Client,
 	logger *zap.Logger,
 	config *ConnectionManagerConfig,
 ) *ConnectionManager {
@@ -329,11 +329,8 @@ func (cm *ConnectionManager) sendPing(ctx context.Context, conn *models.WebSocke
 		return fmt.Errorf("failed to marshal ping message: %w", err)
 	}
 
-	// Send ping via API Gateway
-	_, err = cm.apiClient.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
-		ConnectionId: &conn.ConnectionID,
-		Data:         messageBytes,
-	})
+	// Send ping via Lift streamer client
+	err = cm.apiClient.PostToConnection(ctx, conn.ConnectionID, messageBytes)
 
 	if err != nil {
 		return fmt.Errorf("failed to send ping: %w", err)

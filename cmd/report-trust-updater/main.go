@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -420,7 +421,17 @@ func main() {
 		zap.String("region", lambdaCtx.Config.Region),
 		zap.String("table", lambdaCtx.Config.DynamoTableName))
 
-	// Start DynamoDB stream Lambda using Lift patterns
-	// This provides structured logging, request IDs, recovery, and error handling
-	patterns.StartDynamoDBStreamLambda("report-trust-updater", updater, lambdaCtx.Logger)
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
+		records, err := ctx.DynamoDBRecords()
+		if err != nil {
+			return err
+		}
+		return updater.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+	})
+
+	lambda.Start(app.HandleRequest)
 }

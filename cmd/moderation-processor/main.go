@@ -13,6 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -2072,34 +2074,34 @@ func main() {
 	// Create moderation processor
 	processor := NewModerationProcessor()
 
-	// Start Lambda with traditional approach but Lift-style patterns
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
 		start := time.Now()
-		requestID := fmt.Sprintf("moderation-processor-%d", time.Now().UnixNano())
+		requestID := ctx.GetRequestID()
+		if requestID == "" {
+			requestID = fmt.Sprintf("moderation-processor-%d", time.Now().UnixNano())
+			ctx.SetRequestID(requestID)
+		}
 
-		// Recovery handling (Lift pattern)
-		defer func() {
-			if r := recover(); r != nil {
-				lambdaCtx.Logger.Error("panic in DynamoDB stream handler",
-					zap.String("request_id", requestID),
-					zap.Any("panic", r),
-					zap.Stack("stack"),
-				)
-			}
-		}()
+		records, err := ctx.DynamoDBRecords()
+		if err != nil {
+			return err
+		}
 
-		// Add request ID to context
-		ctx = context.WithValue(ctx, requestIDKey, requestID)
+		event := events.DynamoDBEvent{Records: records}
+		processorCtx := context.WithValue(ctx.Request.Context(), requestIDKey, requestID)
 
 		lambdaCtx.Logger.Info("processing moderation stream batch",
 			zap.String("request_id", requestID),
 			zap.Int("record_count", len(event.Records)),
 		)
 
-		// Process the stream event
 		var errs []error
 		for _, record := range event.Records {
-			if err := processor.processRecord(ctx, record); err != nil {
+			if err := processor.processRecord(processorCtx, record); err != nil {
 				lambdaCtx.Logger.Error("Failed to process record",
 					zap.String("request_id", requestID),
 					zap.String("event_id", record.EventID),
@@ -2109,21 +2111,22 @@ func main() {
 			}
 		}
 
-		// Log completion (Lift pattern)
 		duration := time.Since(start)
 		if err := common.ValidateSliceNotEmpty("errors", errs); err == nil {
 			lambdaCtx.Logger.Error("failed to process records",
 				zap.Int("failed_records", len(errs)),
 				zap.Int("total_records", len(event.Records)))
-			err := ErrFailedToProcessRecords(fmt.Errorf("batch processing failed: %d records processed with errors", len(event.Records)))
+
+			processingErr := ErrFailedToProcessRecords(fmt.Errorf("batch processing failed: %d records processed with errors", len(event.Records)))
 			lambdaCtx.Logger.Error("DynamoDB stream processing failed",
 				zap.String("request_id", requestID),
-				zap.Error(err),
+				zap.Error(processingErr),
 				zap.Duration("duration", duration),
 				zap.Int("record_count", len(event.Records)),
 			)
-			return err
+			return processingErr
 		}
+
 		lambdaCtx.Logger.Info("DynamoDB stream processing completed",
 			zap.String("request_id", requestID),
 			zap.Duration("duration", duration),
@@ -2132,6 +2135,8 @@ func main() {
 
 		return nil
 	})
+
+	lambda.Start(app.HandleRequest)
 }
 
 // patternRepositoryAdapter adapts repositories.PatternRepository to advanced.PatternRepository interface

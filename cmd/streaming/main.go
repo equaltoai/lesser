@@ -23,9 +23,9 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
+	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -65,7 +65,7 @@ type StreamingHandler struct {
 	logger          *zap.Logger
 	cfg             *config.Config
 	awsConfig       aws.Config
-	apiClient       *apigatewaymanagementapi.Client
+	wsClient        streamer.Client
 	commandRouter   *streaming.CommandRouter
 	serviceRegistry *services.Registry
 	storageFactory  core.RepositoryStorage
@@ -214,20 +214,30 @@ func (sh *StreamingHandler) HandleWebSocketEvent(ctx *lift.Context) error {
 		zap.String("routeKey", event.RequestContext.RouteKey),
 	)
 
-	// Construct the API Gateway Management Endpoint
-	managementAPIEndpoint := fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/%s",
-		event.RequestContext.APIID,
-		sh.awsConfig.Region,
-		event.RequestContext.Stage,
-	)
+	wsCtx, err := ctx.AsWebSocket()
+	if err != nil {
+		logger.Warn("invalid WebSocket event", zap.Error(err))
+		return lift.NewLiftError("BAD_REQUEST", "Invalid WebSocket event", 400)
+	}
 
-	// Initialize API Gateway Management API client for this connection
-	currentAPIClient := apigatewaymanagementapi.NewFromConfig(sh.awsConfig, func(o *apigatewaymanagementapi.Options) {
-		o.BaseEndpoint = aws.String(managementAPIEndpoint)
+	managementAPIEndpoint := wsCtx.ManagementEndpoint()
+	if managementAPIEndpoint == "" {
+		managementAPIEndpoint = fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/%s",
+			event.RequestContext.APIID,
+			sh.awsConfig.Region,
+			event.RequestContext.Stage,
+		)
+	}
+
+	wsClient, err := streamer.NewClient(ctx, streamer.ClientConfig{
+		AWSConfig: &sh.awsConfig,
+		Endpoint:  managementAPIEndpoint,
 	})
-
-	// Store the API client for this request
-	sh.apiClient = currentAPIClient
+	if err != nil {
+		logger.Error("failed to initialize WebSocket management client", zap.Error(err))
+		return lift.NewLiftError("INTERNAL_ERROR", "Failed to initialize WebSocket client", 500)
+	}
+	sh.wsClient = wsClient
 
 	switch event.RequestContext.RouteKey {
 	case "$connect":
@@ -689,7 +699,7 @@ func (sh *StreamingHandler) sendCommandResponse(connectionID string, response *s
 // Messaging functions
 
 func (sh *StreamingHandler) sendMessageToConnection(connectionID string, message StreamMessage) error {
-	if sh.apiClient == nil {
+	if sh.wsClient == nil {
 		return streaming.ErrAPIGatewayClientNotInit
 	}
 
@@ -698,12 +708,7 @@ func (sh *StreamingHandler) sendMessageToConnection(connectionID string, message
 		return err
 	}
 
-	_, err = sh.apiClient.PostToConnection(context.Background(), &apigatewaymanagementapi.PostToConnectionInput{
-		ConnectionId: &connectionID,
-		Data:         messageBytes,
-	})
-
-	return err
+	return sh.wsClient.PostToConnection(context.Background(), connectionID, messageBytes)
 }
 
 func (sh *StreamingHandler) sendError(connectionID string, errorMessage string) error {
@@ -766,84 +771,17 @@ func getAuthMethodFromEvent(event events.APIGatewayWebsocketProxyRequest, token 
 	return "oauth" // Default if token exists but method is unclear
 }
 
-// handleWebSocketRequest is the main Lambda handler for WebSocket events
-// This follows the same pattern as graphql-ws for reliable WebSocket handling
-func handleWebSocketRequest(ctx context.Context, event events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
-	start := time.Now()
-	routeKey := event.RequestContext.RouteKey
-	connectionID := event.RequestContext.ConnectionID
-
-	// Panic recovery
-	defer func() {
-		if r := recover(); r != nil {
-			handler.logger.Error("panic recovered in WebSocket handler",
-				zap.String("connection_id", connectionID),
-				zap.String("route_key", routeKey),
-				zap.Any("panic", r),
-			)
-		}
-	}()
-
-	// Log the incoming request
-	handler.logger.Info("processing WebSocket event",
-		zap.String("route_key", routeKey),
-		zap.String("connection_id", connectionID),
-		zap.String("stage", event.RequestContext.Stage),
-		zap.String("api_id", event.RequestContext.APIID),
-	)
-
-	// Construct the API Gateway Management Endpoint
-	managementAPIEndpoint := fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/%s",
-		event.RequestContext.APIID,
-		handler.awsConfig.Region,
-		event.RequestContext.Stage,
-	)
-
-	// Initialize API Gateway Management API client for this connection
-	handler.apiClient = apigatewaymanagementapi.NewFromConfig(handler.awsConfig, func(o *apigatewaymanagementapi.Options) {
-		o.BaseEndpoint = aws.String(managementAPIEndpoint)
-	})
-
-	// Route based on event type
-	var err error
-	switch routeKey {
-	case "$connect":
-		err = handler.handleConnect(ctx, event)
-	case "$disconnect":
-		err = handler.handleDisconnect(ctx, event)
-	case "$default":
-		err = handler.handleMessage(ctx, event)
-	default:
-		handler.logger.Warn("unknown route key", zap.String("route_key", routeKey))
-		err = fmt.Errorf("unknown route key: %s", routeKey)
-	}
-
-	duration := time.Since(start)
-
-	if err != nil {
-		handler.logger.Error("failed to process WebSocket event",
-			zap.String("route_key", routeKey),
-			zap.String("connection_id", connectionID),
-			zap.Error(err),
-			zap.Duration("duration", duration),
-		)
-		// For WebSocket, we still return 200 but log the error
-		return events.APIGatewayProxyResponse{StatusCode: 200}, nil
-	}
-
-	handler.logger.Info("successfully processed WebSocket event",
-		zap.String("route_key", routeKey),
-		zap.String("connection_id", connectionID),
-		zap.Duration("duration", duration),
-	)
-
-	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
-}
-
 func main() {
-	// Start the Lambda handler directly for WebSocket events
-	// WebSocket protocol events don't use Lift's HTTP routing - use direct handler like graphql-ws
-	lambda.Start(handleWebSocketRequest)
+	app := lift.New(lift.WithWebSocketSupport())
+	if cfg != nil && cfg.DebugMode {
+		app = lift.New(lift.WithWebSocketSupport(), lift.WithDebug())
+	}
+
+	app.WebSocket("$connect", handler.HandleWebSocketEvent)
+	app.WebSocket("$disconnect", handler.HandleWebSocketEvent)
+	app.WebSocket("$default", handler.HandleWebSocketEvent)
+
+	lambda.Start(app.HandleRequest)
 }
 
 func ensureRepositoryFactory() {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cwTypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
@@ -21,12 +22,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 )
 
@@ -133,8 +134,19 @@ func init() {
 }
 
 func main() {
-	// Use Lift DynamoDB stream pattern for primary stream processing
-	patterns.StartDynamoDBStreamLambda("cost-aggregator", processor, logger)
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
+		records, err := ctx.DynamoDBRecords()
+		if err != nil {
+			return err
+		}
+		return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+	})
+
+	lambda.Start(app.HandleRequest)
 }
 
 // HandleStream implements the DynamoDBStreamHandler interface for Lift

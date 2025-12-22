@@ -9,11 +9,10 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 )
 
@@ -25,7 +24,7 @@ type JobQueue interface {
 // ErrorRecoveryManager handles connection error recovery and reconnection strategies
 type ErrorRecoveryManager struct {
 	connRepo  *repositories.StreamingConnectionRepository
-	apiClient *apigatewaymanagementapi.Client
+	apiClient streamer.Client
 	jobQueue  JobQueue
 	logger    *zap.Logger
 
@@ -155,7 +154,7 @@ func (cb *CircuitBreaker) GetState() CircuitBreakerState {
 // NewErrorRecoveryManager creates a new error recovery manager
 func NewErrorRecoveryManager(
 	connRepo *repositories.StreamingConnectionRepository,
-	apiClient *apigatewaymanagementapi.Client,
+	apiClient streamer.Client,
 	jobQueue JobQueue,
 	logger *zap.Logger,
 	config *ErrorRecoveryConfig,
@@ -403,10 +402,7 @@ func (erm *ErrorRecoveryManager) validateConnectionHealth(ctx context.Context, c
 	}
 
 	// Try to send ping message to validate connection
-	_, err = erm.apiClient.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
-		ConnectionId: aws.String(conn.ConnectionID),
-		Data:         messageBytes,
-	})
+	err = erm.apiClient.PostToConnection(ctx, conn.ConnectionID, messageBytes)
 
 	if err != nil {
 		erm.logger.Debug("connection health check failed",
@@ -643,10 +639,7 @@ func (erm *ErrorRecoveryManager) ResynchronizeConnection(ctx context.Context, co
 			return errors.MarshalingFailed("streaming sync message", err).WithMetadata("connection_id", conn.ConnectionID)
 		}
 
-		_, err = erm.apiClient.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
-			ConnectionId: aws.String(conn.ConnectionID),
-			Data:         messageBytes,
-		})
+		err = erm.apiClient.PostToConnection(ctx, conn.ConnectionID, messageBytes)
 
 		if err != nil {
 			erm.logger.Warn("failed to send sync message, connection may be stale",
@@ -734,10 +727,7 @@ func (erm *ErrorRecoveryManager) measureConnectionLatency(ctx context.Context, c
 		return 0
 	}
 
-	_, err = erm.apiClient.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
-		ConnectionId: aws.String(conn.ConnectionID),
-		Data:         messageBytes,
-	})
+	err = erm.apiClient.PostToConnection(ctx, conn.ConnectionID, messageBytes)
 
 	if err != nil {
 		return 0

@@ -15,6 +15,8 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/google/uuid"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -1500,53 +1502,19 @@ func init() {
 }
 
 func main() {
-	// DynamoDB Stream handler with Lift-style patterns but traditional Lambda execution
-	// This provides structured logging, error handling, and request tracking
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
-		start := time.Now()
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
 
-		// Recovery handling (Lift pattern)
-		defer func() {
-			if r := recover(); r != nil {
-				requestID := ctx.Value("request_id")
-				if requestID == nil {
-					requestID = UnknownValue
-				}
-				lambdaCtx.Logger.Error("panic in DynamoDB stream handler",
-					zap.Any("request_id", requestID),
-					zap.Any("panic", r),
-					zap.Stack("stack"),
-				)
-			}
-		}()
-
-		// Process the stream event
-		err := processor.HandleStream(ctx, event)
-
-		// Log completion (Lift pattern)
-		duration := time.Since(start)
-		requestID := ctx.Value("request_id")
-		if requestID == nil {
-			requestID = UnknownValue
-		}
-
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
+		records, err := ctx.DynamoDBRecords()
 		if err != nil {
-			lambdaCtx.Logger.Error("DynamoDB stream processing failed",
-				zap.Any("request_id", requestID),
-				zap.Error(err),
-				zap.Duration("duration", duration),
-				zap.Int("record_count", len(event.Records)),
-			)
-		} else {
-			lambdaCtx.Logger.Info("DynamoDB stream processing completed",
-				zap.Any("request_id", requestID),
-				zap.Duration("duration", duration),
-				zap.Int("record_count", len(event.Records)),
-			)
+			return err
 		}
-
-		return err
+		return processor.HandleStream(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
 	})
+
+	lambda.Start(app.HandleRequest)
 }
 
 // storeRemoteObject stores a fetched remote object locally

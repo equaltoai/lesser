@@ -39,7 +39,20 @@ func main() {
         db:     db,
         logger: logger,
     }
-    patterns.StartDynamoDBStreamLambda("my-processor", processor, logger)
+
+    app := lift.New()
+    app.Use(lift.MarkGlobalMiddleware(liftMiddleware.RequestID()))
+    app.Use(lift.MarkGlobalMiddleware(liftMiddleware.Recover()))
+
+    _ = app.DynamoDB("*", func(ctx *lift.Context) error {
+        records, err := ctx.DynamoDBRecords()
+        if err != nil {
+            return err
+        }
+        return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+    })
+
+    lambda.Start(app.HandleRequest)
 }
 ```
 
@@ -122,10 +135,10 @@ func main() {
 
 ## Migration Steps
 
-1. **Update imports**: Add `"github.com/equaltoai/lesser/pkg/lift/patterns"`
-2. **Create handler struct**: Implement the appropriate interface (DynamoDBStreamHandler, SQSHandler, etc.)
-3. **Move logic**: Transfer your handler logic to the new method
-4. **Update main**: Use the pattern's Start function instead of lambda.Start()
+1. **Update imports**: Use `github.com/pay-theory/lift/pkg/lift` (and `github.com/pay-theory/lift/pkg/middleware` if you want request IDs/recovery).
+2. **Create handler struct**: Keep your existing handler methods and call them from a Lift route.
+3. **Move logic**: Transfer your handler logic to the new method.
+4. **Update main**: Use `app.DynamoDB(...)` / `app.SQS(...)` / `app.EventBridge(...)` and `lambda.Start(app.HandleRequest)`.
 5. **Test**: Ensure the migrated handler works correctly
 
 ## Error Handling

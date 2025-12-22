@@ -15,13 +15,13 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
+	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 
 	awsInit "github.com/equaltoai/lesser/pkg/aws"
@@ -44,7 +44,7 @@ type NotificationProcessor struct {
 	notificationCostRepo      *repositories.NotificationCostRepository
 	webSocketSubscriptionRepo *repositories.WebSocketSubscriptionManagerRepository
 	snsClient                 *sns.Client
-	apiGatewayClient          *apigatewaymanagementapi.Client
+	wsClient                  streamer.Client
 	sqsClient                 *sqs.Client
 	domain                    string
 	webSocketEndpoint         string
@@ -143,6 +143,19 @@ func NewNotificationProcessor(lambdaCtx *common.LambdaContext) *NotificationProc
 	retryQueueURL := appCfg.NotificationRetryQueueURL
 	deadLetterQueueURL := appCfg.NotificationDLQURL
 
+	var wsClient streamer.Client
+	if webSocketEndpoint != "" && lambdaCtx.AWSServices != nil {
+		client, err := streamer.NewClient(context.Background(), streamer.ClientConfig{
+			AWSConfig: &lambdaCtx.AWSServices.Config,
+			Endpoint:  webSocketEndpoint,
+		})
+		if err != nil {
+			logger.Warn("failed to initialize WebSocket client, websocket notifications disabled", zap.Error(err))
+		} else {
+			wsClient = client
+		}
+	}
+
 	return &NotificationProcessor{
 		db:                        db,
 		tableName:                 cfg.DynamoTableName,
@@ -152,6 +165,9 @@ func NewNotificationProcessor(lambdaCtx *common.LambdaContext) *NotificationProc
 		costTrackingRepo:          costTrackingRepo,
 		notificationCostRepo:      notificationCostRepo,
 		webSocketSubscriptionRepo: webSocketSubscriptionRepo,
+		snsClient:                 func() *sns.Client { if lambdaCtx.AWSServices != nil { return lambdaCtx.AWSServices.SNS }; return nil }(),
+		sqsClient:                 func() *sqs.Client { if lambdaCtx.AWSServices != nil { return lambdaCtx.AWSServices.SQS }; return nil }(),
+		wsClient:                  wsClient,
 		domain:                    cfg.Domain,
 		webSocketEndpoint:         webSocketEndpoint,
 		retryQueueURL:             retryQueueURL,
@@ -605,7 +621,7 @@ func (np *NotificationProcessor) deliverWebSocket(ctx context.Context, notificat
 }
 
 func (np *NotificationProcessor) sendWebSocketMessage(ctx context.Context, connectionID string, message WebSocketMessage) error {
-	if np.apiGatewayClient == nil {
+	if np.wsClient == nil {
 		return ErrAPIGatewayClientNotInitialized()
 	}
 
@@ -617,12 +633,7 @@ func (np *NotificationProcessor) sendWebSocketMessage(ctx context.Context, conne
 		return ErrMarshalWebSocketMessage(err)
 	}
 
-	_, err = np.apiGatewayClient.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
-		ConnectionId: aws.String(connectionID),
-		Data:         messageBytes,
-	})
-
-	return err
+	return np.wsClient.PostToConnection(ctx, connectionID, messageBytes)
 }
 
 // Removed unused getActorName function

@@ -1,20 +1,16 @@
 # Lift Event Patterns for Lesser
 
-This package provides standardized patterns for handling various AWS Lambda event types with the Lift framework.
+This package provides standardized patterns and helpers for handling AWS Lambda event types with the Lift framework.
 
 ## Overview
 
-The Lift framework primarily handles HTTP requests, but Lesser needs to process various AWS event types:
-- DynamoDB Streams
-- SQS Messages
-- EventBridge/CloudWatch Events
+Lesser relies on Lift for HTTP routing and supported event triggers, and this package adds reusable helpers for common event-driven patterns used across the codebase.
 
 This package provides reusable patterns and helpers to integrate these event types with Lift's middleware and error handling.
 
 ## Patterns
 
-### DynamoDB Streams Pattern
-Used by services that process DynamoDB change events (inserts, updates, deletes).
+Note: DynamoDB stream triggers are handled directly by Lift runtime (`app.DynamoDB` + `ctx.DynamoDBRecords()`); no extra wrapper is required here.
 
 ### SQS Pattern
 Used by services that process messages from SQS queues.

@@ -11,17 +11,17 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
-	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
@@ -82,7 +82,7 @@ type StreamRouterHandler struct {
 	db                 core.DB
 	tableName          string
 	logger             *zap.Logger
-	apiClient          *apigatewaymanagementapi.Client
+	apiClient          streamer.Client
 	subscriptionsTable string
 	wsEndpoint         string
 	userRepo           *repositories.UserRepository
@@ -378,10 +378,13 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	accountRepo := repositories.NewAccountRepository(db, tableName, domain, lambdaCtx.Logger)
 	statusRepo := repositories.NewStatusRepository(db, tableName, lambdaCtx.Logger, nil)
 
-	// Initialize API Gateway Management API client
-	apiClient := apigatewaymanagementapi.NewFromConfig(globalCfg, func(o *apigatewaymanagementapi.Options) {
-		o.BaseEndpoint = aws.String(wsEndpoint)
+	apiClient, err := streamer.NewClient(context.Background(), streamer.ClientConfig{
+		AWSConfig: &globalCfg,
+		Endpoint:  wsEndpoint,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create WebSocket client: %w", err)
+	}
 
 	// Initialize streaming repository
 	streamingRepo := repositories.NewStreamingConnectionRepository(db, tableName, db, subscriptionsTable, lambdaCtx.Logger, nil)
@@ -421,7 +424,7 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	}, nil
 }
 
-// HandleStream implements the patterns.DynamoDBStreamHandler interface
+// HandleStream processes DynamoDB stream events for routing to subscribers.
 func (h *StreamRouterHandler) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
 	h.logger.Info("processing stream router batch",
 		zap.String("request_id", ctx.GetRequestID()),
@@ -1175,12 +1178,7 @@ func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, e
 	successCount := 0
 
 	for _, connectionID := range subscriptions {
-		input := &apigatewaymanagementapi.PostToConnectionInput{
-			ConnectionId: aws.String(connectionID),
-			Data:         messageData,
-		}
-
-		_, err := h.apiClient.PostToConnection(ctx, input)
+		err := h.apiClient.PostToConnection(ctx, connectionID, messageData)
 		if err != nil {
 			h.logger.Warn("failed to send to connection",
 				zap.String("request_id", ctx.GetRequestID()),
@@ -1815,6 +1813,17 @@ func (h *StreamRouterHandler) broadcastMessage(ctx *lift.Context, message Stream
 }
 
 func main() {
-	// Use the Lift pattern for DynamoDB streams with proper middleware
-	patterns.StartDynamoDBStreamLambda("stream-router", handler, lambdaCtx.Logger)
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
+		records, err := ctx.DynamoDBRecords()
+		if err != nil {
+			return err
+		}
+		return handler.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+	})
+
+	lambda.Start(app.HandleRequest)
 }

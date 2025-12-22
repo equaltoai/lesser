@@ -17,6 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 )
 
@@ -117,24 +118,19 @@ func main() {
 	// Initialize processor
 	processor = NewMetricsAggregator(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				requestID := fmt.Sprintf("metrics-%d", time.Now().UnixNano())
-				lambdaCtx.Logger.Error("panic in metrics aggregator handler",
-					zap.String("request_id", requestID),
-					zap.Any("panic", r),
-					zap.Stack("stack"))
-				err = fmt.Errorf("panic recovered in metrics-aggregator: %v", r)
-			}
-		}()
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
 
-		liftCtx := &lift.Context{
-			Request:   &lift.Request{},
-			RequestID: fmt.Sprintf("metrics-%d", time.Now().UnixNano()),
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
+		records, err := ctx.DynamoDBRecords()
+		if err != nil {
+			return err
 		}
-		return processor.HandleStreamWithContext(ctx, liftCtx, event)
+		return processor.HandleStreamWithContext(ctx.Request.Context(), ctx, events.DynamoDBEvent{Records: records})
 	})
+
+	lambda.Start(app.HandleRequest)
 }
 
 // Additional methods for handling scheduled aggregation events

@@ -8,14 +8,15 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -47,7 +48,7 @@ func NewSearchIndexer(db core.DB, tableName string) *SearchIndexer {
 	}
 }
 
-// HandleStream implements patterns.DynamoDBStreamHandler interface
+// HandleStream processes DynamoDB stream events for search indexing.
 func (si *SearchIndexer) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
 	requestID := ctx.GetRequestID()
 
@@ -478,6 +479,17 @@ func init() {
 }
 
 func main() {
-	// Use Lift DynamoDB stream pattern with proper middleware and error handling
-	patterns.StartDynamoDBStreamLambda("search-indexer", processor, lambdaCtx.Logger)
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
+		records, err := ctx.DynamoDBRecords()
+		if err != nil {
+			return err
+		}
+		return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+	})
+
+	lambda.Start(app.HandleRequest)
 }

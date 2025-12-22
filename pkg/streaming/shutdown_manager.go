@@ -10,16 +10,16 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 
-	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 )
 
 // ShutdownManager manages graceful shutdown of WebSocket connections and backpressure control
 type ShutdownManager struct {
 	connRepo  *repositories.StreamingConnectionRepository
-	apiClient *apigatewaymanagementapi.Client
+	apiClient streamer.Client
 	logger    *zap.Logger
 
 	// Shutdown management
@@ -93,7 +93,7 @@ func DefaultShutdownManagerConfig() *ShutdownManagerConfig {
 // NewShutdownManager creates a new shutdown manager
 func NewShutdownManager(
 	connRepo *repositories.StreamingConnectionRepository,
-	apiClient *apigatewaymanagementapi.Client,
+	apiClient streamer.Client,
 	logger *zap.Logger,
 	config *ShutdownManagerConfig,
 ) *ShutdownManager {
@@ -276,11 +276,8 @@ func (sm *ShutdownManager) sendDrainNotification(ctx context.Context, conn *mode
 		int(sm.drainTimeout.Seconds()),
 		time.Now().UTC().Format(time.RFC3339))
 
-	// Send notification via API Gateway
-	_, err := sm.apiClient.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
-		ConnectionId: &conn.ConnectionID,
-		Data:         []byte(messageData),
-	})
+	// Send notification via Lift streamer client
+	err := sm.apiClient.PostToConnection(ctx, conn.ConnectionID, []byte(messageData))
 
 	if err != nil {
 		return fmt.Errorf("failed to send drain notification: %w", err)

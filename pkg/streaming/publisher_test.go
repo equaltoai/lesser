@@ -7,21 +7,31 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
+	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap/zaptest"
 )
 
-// Mock API Gateway Management API client
-type mockAPIGatewayClient struct {
+// Mock Lift streamer client
+type mockStreamerClient struct {
 	mock.Mock
 }
 
-func (m *mockAPIGatewayClient) PostToConnection(ctx context.Context, input *apigatewaymanagementapi.PostToConnectionInput, optFns ...func(*apigatewaymanagementapi.Options)) (*apigatewaymanagementapi.PostToConnectionOutput, error) {
-	args := m.Called(ctx, input)
-	if output := args.Get(0); output != nil {
-		return output.(*apigatewaymanagementapi.PostToConnectionOutput), args.Error(1)
+func (m *mockStreamerClient) PostToConnection(ctx context.Context, connectionID string, data []byte) error {
+	args := m.Called(ctx, connectionID, data)
+	return args.Error(0)
+}
+
+func (m *mockStreamerClient) DeleteConnection(ctx context.Context, connectionID string) error {
+	args := m.Called(ctx, connectionID)
+	return args.Error(0)
+}
+
+func (m *mockStreamerClient) GetConnection(ctx context.Context, connectionID string) (*streamer.ConnectionInfo, error) {
+	args := m.Called(ctx, connectionID)
+	if info := args.Get(0); info != nil {
+		return info.(*streamer.ConnectionInfo), args.Error(1)
 	}
 	return nil, args.Error(1)
 }
@@ -71,7 +81,7 @@ func TestEvent_Marshal(t *testing.T) {
 }
 
 func TestNewAPIGatewayPublisher(t *testing.T) {
-	client := &mockAPIGatewayClient{}
+	client := &mockStreamerClient{}
 	repo := &mockConnectionRepository{}
 	logger := zaptest.NewLogger(t)
 
@@ -84,7 +94,7 @@ func TestNewAPIGatewayPublisher(t *testing.T) {
 }
 
 func TestAPIGatewayPublisher_PublishToUser_Success(t *testing.T) {
-	client := &mockAPIGatewayClient{}
+	client := &mockStreamerClient{}
 	repo := &mockConnectionRepository{}
 	logger := zaptest.NewLogger(t)
 
@@ -97,10 +107,10 @@ func TestAPIGatewayPublisher_PublishToUser_Success(t *testing.T) {
 	}
 	repo.On("GetUserConnections", mock.Anything, "user1").Return(connections, nil)
 
-	// Setup mock API Gateway calls
-	client.On("PostToConnection", mock.Anything, mock.MatchedBy(func(input *apigatewaymanagementapi.PostToConnectionInput) bool {
-		return *input.ConnectionId == "conn1" || *input.ConnectionId == "conn2"
-	})).Return(&apigatewaymanagementapi.PostToConnectionOutput{}, nil)
+	// Setup mock WebSocket calls
+	client.On("PostToConnection", mock.Anything, mock.MatchedBy(func(connectionID string) bool {
+		return connectionID == "conn1" || connectionID == "conn2"
+	}), mock.Anything).Return(nil)
 
 	event := &Event{
 		Type:    StatusCreated,
@@ -117,7 +127,7 @@ func TestAPIGatewayPublisher_PublishToUser_Success(t *testing.T) {
 }
 
 func TestAPIGatewayPublisher_PublishToUser_NoConnections(t *testing.T) {
-	client := &mockAPIGatewayClient{}
+	client := &mockStreamerClient{}
 	repo := &mockConnectionRepository{}
 	logger := zaptest.NewLogger(t)
 
@@ -139,7 +149,7 @@ func TestAPIGatewayPublisher_PublishToUser_NoConnections(t *testing.T) {
 }
 
 func TestAPIGatewayPublisher_PublishToUser_ValidationErrors(t *testing.T) {
-	client := &mockAPIGatewayClient{}
+	client := &mockStreamerClient{}
 	repo := &mockConnectionRepository{}
 	logger := zaptest.NewLogger(t)
 
@@ -162,7 +172,7 @@ func TestAPIGatewayPublisher_PublishToUser_ValidationErrors(t *testing.T) {
 }
 
 func TestAPIGatewayPublisher_PublishToUser_RepositoryError(t *testing.T) {
-	client := &mockAPIGatewayClient{}
+	client := &mockStreamerClient{}
 	repo := &mockConnectionRepository{}
 	logger := zaptest.NewLogger(t)
 
@@ -184,7 +194,7 @@ func TestAPIGatewayPublisher_PublishToUser_RepositoryError(t *testing.T) {
 }
 
 func TestAPIGatewayPublisher_PublishToUser_PartialFailure(t *testing.T) {
-	client := &mockAPIGatewayClient{}
+	client := &mockStreamerClient{}
 	repo := &mockConnectionRepository{}
 	logger := zaptest.NewLogger(t)
 
@@ -197,13 +207,9 @@ func TestAPIGatewayPublisher_PublishToUser_PartialFailure(t *testing.T) {
 	repo.On("GetUserConnections", mock.Anything, "user1").Return(connections, nil)
 
 	// First connection succeeds, second fails
-	client.On("PostToConnection", mock.Anything, mock.MatchedBy(func(input *apigatewaymanagementapi.PostToConnectionInput) bool {
-		return *input.ConnectionId == "conn1"
-	})).Return(&apigatewaymanagementapi.PostToConnectionOutput{}, nil)
+	client.On("PostToConnection", mock.Anything, "conn1", mock.Anything).Return(nil)
 
-	client.On("PostToConnection", mock.Anything, mock.MatchedBy(func(input *apigatewaymanagementapi.PostToConnectionInput) bool {
-		return *input.ConnectionId == "conn2"
-	})).Return(nil, errors.New("connection failed"))
+	client.On("PostToConnection", mock.Anything, "conn2", mock.Anything).Return(errors.New("connection failed"))
 
 	event := &Event{
 		Type:    StatusCreated,
@@ -218,7 +224,7 @@ func TestAPIGatewayPublisher_PublishToUser_PartialFailure(t *testing.T) {
 }
 
 func TestAPIGatewayPublisher_PublishToUser_AllFailures(t *testing.T) {
-	client := &mockAPIGatewayClient{}
+	client := &mockStreamerClient{}
 	repo := &mockConnectionRepository{}
 	logger := zaptest.NewLogger(t)
 
@@ -230,7 +236,7 @@ func TestAPIGatewayPublisher_PublishToUser_AllFailures(t *testing.T) {
 	repo.On("GetUserConnections", mock.Anything, "user1").Return(connections, nil)
 
 	// Connection fails
-	client.On("PostToConnection", mock.Anything, mock.Anything).Return(nil, errors.New("all connections failed"))
+	client.On("PostToConnection", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("all connections failed"))
 
 	event := &Event{
 		Type:    StatusCreated,
@@ -246,7 +252,7 @@ func TestAPIGatewayPublisher_PublishToUser_AllFailures(t *testing.T) {
 }
 
 func TestAPIGatewayPublisher_PublishToStream_Success(t *testing.T) {
-	client := &mockAPIGatewayClient{}
+	client := &mockStreamerClient{}
 	repo := &mockConnectionRepository{}
 	logger := zaptest.NewLogger(t)
 
@@ -258,7 +264,7 @@ func TestAPIGatewayPublisher_PublishToStream_Success(t *testing.T) {
 	}
 	repo.On("GetStreamConnections", mock.Anything, "public").Return(connections, nil)
 
-	client.On("PostToConnection", mock.Anything, mock.Anything).Return(&apigatewaymanagementapi.PostToConnectionOutput{}, nil)
+	client.On("PostToConnection", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	event := &Event{
 		Type:    StatusCreated,
@@ -274,7 +280,7 @@ func TestAPIGatewayPublisher_PublishToStream_Success(t *testing.T) {
 }
 
 func TestAPIGatewayPublisher_PublishToConversation_Success(t *testing.T) {
-	client := &mockAPIGatewayClient{}
+	client := &mockStreamerClient{}
 	repo := &mockConnectionRepository{}
 	logger := zaptest.NewLogger(t)
 
@@ -286,7 +292,7 @@ func TestAPIGatewayPublisher_PublishToConversation_Success(t *testing.T) {
 	}
 	repo.On("GetConversationConnections", mock.Anything, "conv123").Return(connections, nil)
 
-	client.On("PostToConnection", mock.Anything, mock.Anything).Return(&apigatewaymanagementapi.PostToConnectionOutput{}, nil)
+	client.On("PostToConnection", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	event := &Event{
 		Type:    ConversationUpdated,
@@ -301,7 +307,7 @@ func TestAPIGatewayPublisher_PublishToConversation_Success(t *testing.T) {
 }
 
 func TestAPIGatewayPublisher_Close(t *testing.T) {
-	client := &mockAPIGatewayClient{}
+	client := &mockStreamerClient{}
 	repo := &mockConnectionRepository{}
 	logger := zaptest.NewLogger(t)
 
@@ -318,7 +324,7 @@ func TestAPIGatewayPublisher_Close(t *testing.T) {
 }
 
 func TestAPIGatewayPublisher_GetMetrics(t *testing.T) {
-	client := &mockAPIGatewayClient{}
+	client := &mockStreamerClient{}
 	repo := &mockConnectionRepository{}
 	logger := zaptest.NewLogger(t)
 
@@ -539,7 +545,7 @@ func TestMockPublisher_GetPublishedEventsFor(t *testing.T) {
 // Benchmarks
 
 func BenchmarkAPIGatewayPublisher_PublishToUser(b *testing.B) {
-	client := &mockAPIGatewayClient{}
+	client := &mockStreamerClient{}
 	repo := &mockConnectionRepository{}
 	logger := zaptest.NewLogger(b)
 
@@ -549,7 +555,7 @@ func BenchmarkAPIGatewayPublisher_PublishToUser(b *testing.B) {
 		{ConnectionID: "conn1", UserID: "user1"},
 	}
 	repo.On("GetUserConnections", mock.Anything, "user1").Return(connections, nil)
-	client.On("PostToConnection", mock.Anything, mock.Anything).Return(&apigatewaymanagementapi.PostToConnectionOutput{}, nil)
+	client.On("PostToConnection", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	event := &Event{
 		Type:    StatusCreated,

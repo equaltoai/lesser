@@ -13,11 +13,13 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend/types"
 	"github.com/google/uuid"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -95,7 +97,7 @@ type NoteProcessor struct {
 	aiCostRepo        *repositories.AICostRepository
 	comprehendClient  *comprehend.Client
 	bedrockClient     *ai.BedrockClient
-	apiGatewayClient  *apigatewaymanagementapi.Client
+	wsClient          streamer.Client
 	wsRepo            *repositories.WebSocketSubscriptionManagerRepository
 	wsEndpoint        string
 	baseURL           string
@@ -131,11 +133,17 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 
 	// WebSocket endpoint for broadcasting updates
 	wsEndpoint := cfg.WebSocketEndpoint
-	var apiGatewayClient *apigatewaymanagementapi.Client
+	var wsClient streamer.Client
 	if wsEndpoint != "" {
-		apiGatewayClient = apigatewaymanagementapi.NewFromConfig(lambdaCtx.AWSServices.Config, func(o *apigatewaymanagementapi.Options) {
-			o.BaseEndpoint = &wsEndpoint
+		client, err := streamer.NewClient(context.Background(), streamer.ClientConfig{
+			AWSConfig: &lambdaCtx.AWSServices.Config,
+			Endpoint:  wsEndpoint,
 		})
+		if err != nil {
+			logger.Warn("failed to initialize WebSocket client, broadcasts disabled", zap.Error(err))
+		} else {
+			wsClient = client
+		}
 	}
 
 	baseURL := cfg.BaseURL()
@@ -149,7 +157,7 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 		aiCostRepo:        aiCostRepo,
 		comprehendClient:  comprehendClient,
 		bedrockClient:     bedrockClient,
-		apiGatewayClient:  apiGatewayClient,
+		wsClient:          wsClient,
 		wsRepo:            wsRepo,
 		wsEndpoint:        wsEndpoint,
 		baseURL:           baseURL,
@@ -832,7 +840,7 @@ func (np *NoteProcessor) recalculateNoteScore(ctx context.Context, noteID string
 }
 
 func (np *NoteProcessor) broadcastNoteUpdate(ctx context.Context, note *storage.CommunityNote) {
-	if np.apiGatewayClient == nil {
+	if np.wsClient == nil {
 		np.logger.Warn("websocket endpoint not configured, skipping broadcast")
 		return
 	}
@@ -926,13 +934,7 @@ func (np *NoteProcessor) broadcastNoteUpdate(ctx context.Context, note *storage.
 
 // sendWebSocketMessage sends a message to a specific WebSocket connection
 func (np *NoteProcessor) sendWebSocketMessage(ctx context.Context, connectionID string, messageData []byte) error {
-	input := &apigatewaymanagementapi.PostToConnectionInput{
-		ConnectionId: &connectionID,
-		Data:         messageData,
-	}
-
-	_, err := np.apiGatewayClient.PostToConnection(ctx, input)
-	return err
+	return np.wsClient.PostToConnection(ctx, connectionID, messageData)
 }
 
 func (np *NoteProcessor) determineAction(note *storage.CommunityNote) string {
@@ -1358,51 +1360,56 @@ func init() {
 }
 
 func main() {
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
 
-	// Start Lambda with traditional approach but Lift-style patterns
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
 		start := time.Now()
-		requestID := fmt.Sprintf("note-processor-%d", time.Now().UnixNano())
+		requestID := ctx.GetRequestID()
+		if requestID == "" {
+			requestID = fmt.Sprintf("note-processor-%d", time.Now().UnixNano())
+			ctx.SetRequestID(requestID)
+		}
 
-		// Recovery handling (Lift pattern)
-		defer func() {
-			if r := recover(); r != nil {
-				lambdaCtx.Logger.Error("panic in DynamoDB stream handler",
-					zap.String("request_id", requestID),
-					zap.Any("panic", r),
-					zap.Stack("stack"),
-				)
-			}
-		}()
+		records, err := ctx.DynamoDBRecords()
+		if err != nil {
+			lambdaCtx.Logger.Error("failed to decode DynamoDB stream records",
+				zap.String("request_id", requestID),
+				zap.Error(err),
+			)
+			return err
+		}
 
-		// Add request ID to context
-		ctx = context.WithValue(ctx, requestIDKey, requestID)
+		event := events.DynamoDBEvent{Records: records}
+		processorCtx := context.WithValue(ctx.Request.Context(), requestIDKey, requestID)
 
 		lambdaCtx.Logger.Info("processing note stream batch",
 			zap.String("request_id", requestID),
 			zap.Int("record_count", len(event.Records)),
 		)
 
-		// Process the stream event
-		err := processor.HandleStream(ctx, event)
+		procErr := processor.HandleStream(processorCtx, event)
 
-		// Log completion (Lift pattern)
 		duration := time.Since(start)
-		if err != nil {
+		if procErr != nil {
 			lambdaCtx.Logger.Error("DynamoDB stream processing failed",
 				zap.String("request_id", requestID),
-				zap.Error(err),
+				zap.Error(procErr),
 				zap.Duration("duration", duration),
 				zap.Int("record_count", len(event.Records)),
 			)
-		} else {
-			lambdaCtx.Logger.Info("DynamoDB stream processing completed",
-				zap.String("request_id", requestID),
-				zap.Duration("duration", duration),
-				zap.Int("record_count", len(event.Records)),
-			)
+			return procErr
 		}
 
-		return err
+		lambdaCtx.Logger.Info("DynamoDB stream processing completed",
+			zap.String("request_id", requestID),
+			zap.Duration("duration", duration),
+			zap.Int("record_count", len(event.Records)),
+		)
+
+		return nil
 	})
+
+	lambda.Start(app.HandleRequest)
 }

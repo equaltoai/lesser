@@ -21,6 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 )
 
@@ -306,25 +307,17 @@ func NewSimplifiedAIProcessor(lambdaCtx *common.LambdaContext) *AIProcessor {
 }
 
 func main() {
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				requestID := fmt.Sprintf("ai-processor-%d", time.Now().UnixNano())
-				logger.Error("panic in ai processor handler",
-					zap.String("request_id", requestID),
-					zap.Any("panic", r),
-					zap.Stack("stack"))
-				err = fmt.Errorf("panic recovered in ai-processor: %v", r)
-			}
-		}()
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
 
-		// Create a simple lift context with minimal setup
-		liftCtx := &lift.Context{
-			RequestID: fmt.Sprintf("ai-processor-%d", time.Now().UnixNano()),
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
+		records, err := ctx.DynamoDBRecords()
+		if err != nil {
+			return err
 		}
-		// Add a method to get context
-		liftCtx.Request = &lift.Request{}
-		// Use direct context access in the handler methods
-		return processor.HandleStreamWithContext(ctx, liftCtx, event)
+		return processor.HandleStreamWithContext(ctx.Request.Context(), ctx, events.DynamoDBEvent{Records: records})
 	})
+
+	lambda.Start(app.HandleRequest)
 }

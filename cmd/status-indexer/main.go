@@ -17,6 +17,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/google/uuid"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 )
 
@@ -712,17 +714,17 @@ func main() {
 	// Initialize processor
 	processor = NewStatusIndexer(db, cfg.DynamoTableName, cfg.Domain, aiService, logger)
 
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Error("panic recovered in status-indexer",
-					zap.Any("panic", r),
-					zap.Stack("stack"),
-				)
-				err = fmt.Errorf("panic recovered: %v", r)
-			}
-		}()
+	app := lift.New()
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
+	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
 
-		return processor.HandleStream(ctx, event)
+	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
+		records, err := ctx.DynamoDBRecords()
+		if err != nil {
+			return err
+		}
+		return processor.HandleStream(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
 	})
+
+	lambda.Start(app.HandleRequest)
 }
