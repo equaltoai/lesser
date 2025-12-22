@@ -12,7 +12,7 @@ type OAuthClient struct {
 
 	// DynamoDB keys
 	PK             string  `dynamorm:"pk,attr:PK" json:"-"`                                       // OAUTH_CLIENT#clientID
-	SK             string  `dynamorm:"sk,attr:SK" json:"-"`                                       // METADATA
+	SK             string  `dynamorm:"sk,attr:SK" json:"-"`                                       // CLIENT
 	GSI1PK         *string `dynamorm:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"`              // OWNER#ownerID (for owner index)
 	GSI1SK         *string `dynamorm:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"`              // CLIENT#clientID
 	OAuthClientsPK string  `dynamorm:"index:oauth-clients-index,pk,attr:oauthClientsPK" json:"-"` // OAUTH_CLIENTS
@@ -75,7 +75,7 @@ func (o *OAuthClient) GetSK() string {
 // UpdateKeys implements BaseModel interface and updates DynamoDB keys
 func (o *OAuthClient) UpdateKeys() error {
 	o.PK = "OAUTH_CLIENT#" + o.ClientID
-	o.SK = SKMetadata
+	o.SK = "CLIENT"
 
 	// GSI1 is for owner-based queries - only set if OwnerID exists
 	// DynamoDB requires GSI keys to be non-empty if they're part of the index

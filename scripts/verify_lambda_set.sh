@@ -20,6 +20,7 @@ ALLOW_EXTRA_CMD=(
   cloudfront-keygen
   configure-instance
   init-deploy
+  owner-bootstrap
 )
 
 ALLOW_EXTRA_ZIPS=(

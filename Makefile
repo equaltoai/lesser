@@ -1,4 +1,6 @@
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials seed-and-validate clear-data build-bootstrap-owner bootstrap-owner generate-inventory verify-inventory verify-lambda-set verify-docs verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify
+SHELL := bash
+
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials owner-bootstrap seed-and-validate clear-data generate-inventory verify-inventory verify-lambda-set verify-docs verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify schema export-schema gqlgen
 
 # =============================================================================
 # CONFIGURATION
@@ -161,33 +163,6 @@ build-cloudfront-keygen:
 		rm -rf $$TMPDIR
 	@echo "✓ Built bin/cloudfront-keygen.zip ($(shell ls -lh bin/cloudfront-keygen.zip 2>/dev/null | awk '{print $$5}'))"
 
-## Build owner bootstrap utility
-build-bootstrap-owner:
-	@echo "Building owner bootstrap utility..."
-	@mkdir -p bin
-	@mkdir -p tmp/go-cache
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOCACHE=$(CURDIR)/tmp/go-cache go build -ldflags="-s -w" -o bin/bootstrap-owner ./cmd/bootstrap-owner
-	@echo "✓ Built bin/bootstrap-owner"
-
-bootstrap-owner:
-	@$(MAKE) build-bootstrap-owner
-	@OWNER_ENV=$${OWNER_ENV:-$(CDK_ENV)}; \
-	  OWNER_DOMAIN=$${OWNER_DOMAIN:-$(DOMAIN)}; \
-	  if [ -z "$$OWNER_DOMAIN" ]; then \
-	    echo "ERROR: OWNER_DOMAIN is required (e.g., OWNER_DOMAIN=dev.lesser.host)"; \
-	    exit 1; \
-	  fi; \
-	  OWNER_TABLE="lesser-$$OWNER_ENV"; \
-	  OWNER_WALLET_SECRET_NAME="lesser/$$OWNER_ENV/admin-wallet"; \
-	  OWNER_OAUTH_SECRET_NAME="lesser/$$OWNER_ENV/admin-oauth"; \
-	  echo "Bootstrapping owner (env=$$OWNER_ENV, domain=$$OWNER_DOMAIN, table=$$OWNER_TABLE)"; \
-	  AWS_PROFILE=$(AWS_PROFILE) bin/bootstrap-owner \
-	    --env=$$OWNER_ENV \
-	    --table=$$OWNER_TABLE \
-	    --domain=$$OWNER_DOMAIN \
-	    --wallet-secret=$$OWNER_WALLET_SECRET_NAME \
-	    --oauth-secret=$$OWNER_OAUTH_SECRET_NAME
-
 ## Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
@@ -201,6 +176,7 @@ clean:
 
 ## Generate docs/specs/01-lambda-inventory-matrix.md from infra/cdk/inventory/LambdaInventory
 generate-inventory:
+	@mkdir -p docs/specs
 	@mkdir -p tmp/go-cache
 	@cd infra/cdk && GOCACHE=$(CURDIR)/tmp/go-cache go run ./cmd/generate-inventory
 
@@ -320,7 +296,9 @@ deploy-shared:
 ## Check if shared resources exist
 check-shared:
 	@echo "Checking if shared resources are deployed..."
-	@if aws cloudformation describe-stacks --stack-name LesserSharedStack --profile $(AWS_PROFILE) >/dev/null 2>&1; then \
+	@PROFILE_ARG=""; \
+		if [ -n "$(AWS_PROFILE)" ]; then PROFILE_ARG="--profile $(AWS_PROFILE)"; fi; \
+		if aws cloudformation describe-stacks --stack-name LesserSharedStack $$PROFILE_ARG >/dev/null 2>&1; then \
 		echo "✓ LesserSharedStack exists"; \
 	else \
 		echo "✗ LesserSharedStack does not exist"; \
@@ -365,7 +343,7 @@ deploy-dev: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ens
 	@echo "Step 3/4: Deploying auth UI..."
 	@$(MAKE) deploy-auth-ui DOMAIN=dev.lesser.host AWS_PROFILE=$(AWS_PROFILE)
 	@echo "Step 4/4: Bootstrapping owner account..."
-	@$(MAKE) bootstrap-owner OWNER_ENV=development OWNER_DOMAIN=dev.lesser.host AWS_PROFILE=$(AWS_PROFILE)
+	@$(MAKE) owner-bootstrap OWNER_ENV=development OWNER_DOMAIN=dev.lesser.host AWS_PROFILE=$(AWS_PROFILE)
 	@echo "✓ Development deployment complete"
 
 ## Deploy to test/staging environment
@@ -397,7 +375,7 @@ deploy-test: build-lambdas build-cloudfront-keygen build-auth-ui check-shared en
 	@echo "Step 3/4: Deploying auth UI..."
 	@$(MAKE) deploy-auth-ui DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
 	@echo "Step 4/4: Bootstrapping owner account..."
-	@$(MAKE) bootstrap-owner OWNER_ENV=staging OWNER_DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
+	@$(MAKE) owner-bootstrap OWNER_ENV=staging OWNER_DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
 	@echo "✓ Staging deployment complete"
 
 ## Deploy to live/production environment
@@ -429,7 +407,7 @@ deploy-live: build-lambdas build-cloudfront-keygen build-auth-ui check-shared en
 	@echo "Step 3/4: Deploying auth UI..."
 	@$(MAKE) deploy-auth-ui DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
 	@echo "Step 4/4: Bootstrapping owner account..."
-	@$(MAKE) bootstrap-owner OWNER_ENV=production OWNER_DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
+	@$(MAKE) owner-bootstrap OWNER_ENV=production OWNER_DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
 	@echo "✓ Production deployment complete"
 
 ## Generic deploy command (use ENV variable to specify environment)
@@ -783,7 +761,7 @@ dev-init:
 	@echo "Initializing development environment..."
 	@if [ ! -f .env ]; then \
 		echo "DOMAIN=localhost" > .env; \
-		echo "INSTANCE_NAME=Lesser Dev" >> .env; \
+		echo "INSTANCE_NAME=\"Lesser Dev\"" >> .env; \
 		echo "AWS_REGION=us-east-1" >> .env; \
 		echo "DYNAMO_TABLE_NAME=lesser-dev" >> .env; \
 		echo "S3_BUCKET_NAME=lesser-dev-media" >> .env; \
@@ -800,7 +778,7 @@ dev:
 		echo "No .env file found. Run 'make dev-init' first."; \
 		exit 1; \
 	fi
-	@export $$(cat .env | grep -v '^#' | xargs) && go run ./cmd/api
+	@set -a; source ./.env; set +a; go run ./cmd/api
 
 ## Run local DynamoDB for development
 local-dynamodb:
@@ -809,16 +787,16 @@ local-dynamodb:
 
 ## Generate GraphQL code
 gqlgen:
-	@echo "Bootstrapping gqlgen..."
-	@go get github.com/99designs/gqlgen@v0.17.78
 	@echo "Generating GraphQL code..."
-	@go run github.com/99designs/gqlgen generate
+	@mkdir -p tmp/go-cache
+	@GOCACHE=$(CURDIR)/tmp/go-cache go run github.com/99designs/gqlgen generate
 
 ## Export combined GraphQL schema for web clients
 export-schema:
 	@echo "Exporting combined GraphQL schema..."
-	@cat graph/schema.graphql graph/phase2.graphql graph/phase3.graphql > schema.graphql
-	@echo "✓ Schema exported to schema.graphql"
+	@$(MAKE) schema
+	@cp graph/schema.graphql schema.graphql
+	@echo "✓ Schema exported to schema.graphql (source: graph/schema.graphql)"
 	@wc -l schema.graphql | awk '{print "  Total lines: " $$1}'
 
 ## Build auth UI (passwordless OAuth pages)
@@ -871,18 +849,26 @@ install-tools:
 # UTILITIES
 # =============================================================================
 
-## Initial deployment setup (generates VAPID keys and admin account)
+## Bootstrap the canonical admin owner account (wallet + actor + OAuth client + secrets)
+owner-bootstrap:
+	@OWNER_ENV=$${OWNER_ENV:-$(CDK_ENV)}; \
+	  OWNER_DOMAIN=$${OWNER_DOMAIN:-$(DOMAIN)}; \
+	  if [ -z "$$OWNER_ENV" ]; then \
+	    echo "Error: OWNER_ENV is required (development|staging|production)"; \
+	    exit 1; \
+	  fi; \
+	  if [ -z "$$OWNER_DOMAIN" ]; then \
+	    echo "Error: OWNER_DOMAIN is required (e.g., dev.lesser.host)"; \
+	    exit 1; \
+	  fi; \
+	  AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) \
+	    go run ./cmd/owner-bootstrap --environment=$$OWNER_ENV --domain=$$OWNER_DOMAIN
+
+## Legacy initial deployment setup (DEPRECATED: wallet-only auth + new secrets layout)
 init-deploy:
-	@echo "Building init-deploy tool..."
-	@GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
-		go build -ldflags="-s -w" -o bin/init-deploy ./cmd/init-deploy
-	@if [ -z "$(DOMAIN)" ]; then \
-		echo "Error: DOMAIN is required"; \
-		echo "Usage: make init-deploy DOMAIN=your-domain.com"; \
-		exit 1; \
-	fi
-	@echo "Running initial deployment setup..."
-	@bin/init-deploy $(DOMAIN)
+	@echo "init-deploy is deprecated and no longer supported."
+	@echo "Use 'make deploy-dev|deploy-test|deploy-live' (includes owner bootstrap) instead."
+	@exit 1
 
 ## Show deployment outputs (API endpoints, etc.)
 outputs:
@@ -958,6 +944,7 @@ help:
 	@echo "  deploy-test         Deploy to test/staging (requires DOMAIN=...)"
 	@echo "  deploy-live         Deploy to production (requires DOMAIN=...)"
 	@echo "  deploy              Deploy to environment specified by ENV variable"
+	@echo "  owner-bootstrap     Bootstrap admin owner (wallet + secrets)"
 	@echo "  check-shared        Check if shared resources are deployed"
 	@echo ""
 	@echo "STATUS & MONITORING:"
@@ -1006,7 +993,6 @@ help:
 	@echo "  install-tools       Install development tools"
 	@echo ""
 	@echo "UTILITIES:"
-	@echo "  init-deploy         Initialize deployment (requires DOMAIN=...)"
 	@echo "  validate-build      Verify all Lambda functions are built"
 	@echo "  cost-estimate       Show estimated AWS costs"
 	@echo "  help                Show this help message"
