@@ -213,10 +213,18 @@ This section defines the backend state model and endpoints that must exist so th
 
 ### State model
 
-The instance has an activation state stored in the stage data plane (preferred) or in a stage-scoped SSM parameter:
+The instance has an activation state stored in the stage data plane (DynamoDB):
 
 - `instance_state`: one of `locked`, `active`
 - `bootstrap_actor_id`: stable identifier for the bootstrap actor (exists only while locked)
+
+Storage:
+
+- DynamoDB item in the stage’s main table: `PK="CONFIG"`, `SK="INSTANCE"`
+- Fields:
+  - `instance_state`
+  - `bootstrap_actor_id`
+  - `created_at`, `updated_at`
 
 Invariants:
 
@@ -227,8 +235,13 @@ Invariants:
 
 Bootstrap authentication is via wallet signature only:
 
-- Challenge-response flow using EIP-191 personal-sign or EIP-712 typed data (implementation choice), returning a short-lived setup token.
+- Challenge-response flow using **EIP-191 `personal_sign`** returning a short-lived setup token.
 - The setup token is only valid while `instance_state=locked`.
+- Challenge requirements:
+  - server-generated nonce
+  - short TTL (e.g. 5 minutes)
+  - single-use
+  - message must bind at least: `domain`, `address`, `nonce`, `issued_at`, `expires_at`
 
 Real-admin authentication methods supported (wizard creates at least one):
 
@@ -324,14 +337,9 @@ Current infra references additional stage subdomains:
 
 - `auth.<domain>`
 - `cdn.<domain>`
-- `graphql-ws.<domain>`
-- `stream.<domain>`
+- `ws.<domain>`
 
-New requirement standardizes WebSocket to `ws.<domain>`, while keeping subdomains “open” via wildcard certificates.
-
-Migration note (implementation detail, not required to ship the CLI spec):
-
-- `graphql-ws` and `stream` can be consolidated behind `ws` (single host) using path-based routing (`/graphql`, `/stream`) or upgraded protocol handling, depending on current WS implementation.
+New requirement standardizes WebSocket to `ws.<domain>`, while keeping subdomains “open” via wildcard certificates. Current implementation supports streaming behind `ws.<domain>/stream`.
 
 ## Acceptance Criteria
 
@@ -348,3 +356,98 @@ Migration note (implementation detail, not required to ship the CLI spec):
   - create real admin (passkey/wallet),
   - finalize activation and delete bootstrap,
   - resulting in an instance that can accept signups and publish content.
+
+## Implementation Plan (This Effort)
+
+This plan delivers:
+
+- A `lesser` CLI with `lesser up` that deploys shared + dev/live (+ optional staging) to a locked-but-reachable state.
+- Backend support for locked gating, bootstrap auth challenge, and finalize activation (wizard UI out of scope).
+
+### Milestone 0 — Inventory and naming alignment
+
+- Prefer Lift CDK constructs wherever available (KMS keys, IAM roles, tables, static sites, CDNs, etc.) to reduce bespoke infra code.
+- Confirm the complete set of required domains/subdomains in current infra and consolidate WebSocket hostname to `ws` (keeping wildcard certs).
+- Define a single naming module used by CDK and the CLI:
+  - stack names: `<app>-shared`, `<app>-dev`, `<app>-staging`, `<app>-live`
+  - SSM parameters: `/<app>/shared/...`
+  - stage resources: `<app>-<stage>-<resource>` (and global uniqueness suffix where needed)
+
+### Milestone 1 — Shared stack refactor
+
+- Update CDK to accept `--context app`, `--context baseDomain`, `--context stage` (or equivalent) and derive names deterministically.
+- Ensure shared stack contains only:
+  - KMS key(s) for in-AWS encryption needs
+  - IAM roles/policies for stage stacks
+  - SSM registry parameters (well-known names) required by stage stacks
+- Remove CloudFormation exports/imports; stage stacks read shared values from SSM.
+- Ensure CloudFormation execution roles have permission to read the shared SSM parameters.
+
+### Milestone 2 — Stage stacks: domains, Route53, certs
+
+- For each stage stack:
+  - Discover the hosted zone for `base-domain` and error if missing.
+  - Create Route53 records for:
+    - client app: `dev.<base>`, `staging.<base>`, `<base>` (live)
+    - service hosts: `auth.*`, `api.*`, `ws.*`, `media.*`
+  - Create ACM cert with SANs:
+    - dev: `dev.<base>`, `*.dev.<base>`
+    - staging: `staging.<base>`, `*.staging.<base>`
+    - live: `<base>`, `*.<base>`
+- Ensure stage stacks can be deployed independently once shared is present.
+
+### Milestone 3 — Locked gating in the backend
+
+- Add `instance_state` config item to the stage table:
+  - `PK="CONFIG"`, `SK="INSTANCE"`
+  - Initialize to `locked` at deploy/bootstrap time.
+- Implement request gating:
+  - list endpoints: return empty collections while locked
+  - missing objects: `404`
+  - signup/publish endpoints: `403 activation_required`
+  - nodeinfo: normal
+  - webfinger: only bootstrap actor; else `404`
+  - federation bootstrap actor: `403`
+- Add a small in-memory cache for `instance_state` with short TTL (e.g. 5–30s), with explicit refresh on finalize.
+
+### Milestone 4 — Setup endpoints (wizard backend contract)
+
+- Implement endpoints defined in “Setup Wizard Backend Contract”:
+  - `GET /setup/status`
+  - `POST /setup/bootstrap/challenge`
+  - `POST /setup/bootstrap/verify`
+  - `POST /setup/admin` (creates first real admin + binds credentials; passkey/wallet)
+  - `POST /setup/finalize` (real admin only; deletes bootstrap; sets active)
+- Bootstrap auth:
+  - EIP-191 `personal_sign` message format and nonce storage with TTL + single-use.
+- Finalize:
+  - hard-delete bootstrap actor/account
+  - set `instance_state=active`
+
+### Milestone 5 — CLI: `lesser up`
+
+- Implement a Go CLI (new `cmd/lesser` or similar) that:
+  - Validates `app` slug and `base-domain` format.
+  - Uses AWS SDK with `AWS_PROFILE` to obtain account ID + region.
+  - Resolves Route53 hosted zone for `base-domain` (exact match) and errors if missing.
+  - Deploys shared stack first, then stage stacks (dev/live; staging optional).
+    - Deployment mechanism: shell out to the AWS CDK CLI (`cdk deploy`), not direct CloudFormation API calls.
+    - Prerequisites: `cdk` (v2) must be installed and available on `PATH`.
+    - The CLI must pass `AWS_PROFILE=<aws-profile>` to all CDK invocations and use `--require-approval never`.
+    - The CLI should ensure CDK bootstrap is present (fail with actionable instructions or run `cdk bootstrap` if missing).
+  - Generates a bootstrap Ethereum wallet locally (BIP-39 24 words, derivation `m/44'/60'/0'/0/0`).
+    - Prints mnemonic once.
+    - Writes mnemonic only if `--out <path>` is provided (chmod `0600`).
+  - Calls the stage API bootstrap endpoint(s) (or writes directly to DynamoDB if preferred) to create:
+    - bootstrap actor
+    - `instance_state=locked`
+  - Writes `~/.lesser/<app>/<base-domain>/state.json` (non-secret receipt).
+  - Prints URLs and next steps for dev/live (+ staging if enabled).
+
+### Milestone 6 — Documentation and operator UX
+
+- Update deployment docs to point to `lesser up` instead of Make targets.
+- Add a concise “What you should see” section:
+  - empty timelines while locked
+  - setup URLs
+  - finalize activation deletes bootstrap and enables liveness

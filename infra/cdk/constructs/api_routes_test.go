@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"cdk/inventory"
-	"cdk/naming"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
@@ -17,6 +16,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	_jsii "github.com/aws/jsii-runtime-go"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 )
 
 func TestFederationHttpRoutesGeneratedFromInventory(t *testing.T) {

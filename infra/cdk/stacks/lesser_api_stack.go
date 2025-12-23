@@ -3,7 +3,6 @@ package stacks
 import (
 	localconstructs "cdk/constructs"
 	"cdk/inventory"
-	"cdk/naming"
 	"fmt"
 	"strings"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsssm"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
 )
 
@@ -54,8 +54,7 @@ type LesserApiStack struct {
 	CloudFrontDomain       string
 	APICertificate         awscertificatemanager.ICertificate
 	CDNCertificate         awscertificatemanager.ICertificate
-	GraphQLWSCertificate   awscertificatemanager.ICertificate
-	StreamingWSCertificate awscertificatemanager.ICertificate
+	WebSocketCertificate   awscertificatemanager.ICertificate
 	AuthCertificate        awscertificatemanager.ICertificate
 	CloudFrontKeyPairID    string
 	CloudFrontKeyGroupID   string
@@ -197,26 +196,15 @@ func (s *LesserApiStack) loadSharedResourcesFromSSM(appName string) {
 		cdnCertArnParam.StringValue(),
 	)
 
-	graphqlWSCertArnParam := awsssm.StringParameter_FromStringParameterName(
+	wsCertArnParam := awsssm.StringParameter_FromStringParameterName(
 		s.Stack,
-		jsii.String("GraphQLWSCertArnParamLookup"),
-		jsii.String(fmt.Sprintf("%s/certificates/graphql-ws-cert-arn", paramPrefix)),
+		jsii.String("WSCertArnParamLookup"),
+		jsii.String(fmt.Sprintf("%s/certificates/ws-cert-arn", paramPrefix)),
 	)
-	s.GraphQLWSCertificate = awscertificatemanager.Certificate_FromCertificateArn(
+	s.WebSocketCertificate = awscertificatemanager.Certificate_FromCertificateArn(
 		s.Stack,
-		jsii.String("ImportedGraphQLWSCert"),
-		graphqlWSCertArnParam.StringValue(),
-	)
-
-	streamingWSCertArnParam := awsssm.StringParameter_FromStringParameterName(
-		s.Stack,
-		jsii.String("StreamingWSCertArnParamLookup"),
-		jsii.String(fmt.Sprintf("%s/certificates/streaming-ws-cert-arn", paramPrefix)),
-	)
-	s.StreamingWSCertificate = awscertificatemanager.Certificate_FromCertificateArn(
-		s.Stack,
-		jsii.String("ImportedStreamingWSCert"),
-		streamingWSCertArnParam.StringValue(),
+		jsii.String("ImportedWSCert"),
+		wsCertArnParam.StringValue(),
 	)
 
 	authCertArnParam := awsssm.StringParameter_FromStringParameterName(
@@ -681,13 +669,12 @@ func (s *LesserApiStack) createLambdaFunctions() {
 
 func (s *LesserApiStack) createAPIGateway(domain string) {
 	s.API = localconstructs.CreateAPIGateway(s.Stack, &localconstructs.APIGatewayProps{
-		Environment:            s.Environment,
-		Domain:                 domain,
-		Certificate:            s.APICertificate,
-		GraphQLWSCertificate:   s.GraphQLWSCertificate,
-		StreamingWSCertificate: s.StreamingWSCertificate,
-		Functions:              s.Functions,
-		HostedZone:             s.HostedZone,
+		Environment:          s.Environment,
+		Domain:               domain,
+		Certificate:          s.APICertificate,
+		WebSocketCertificate: s.WebSocketCertificate,
+		Functions:            s.Functions,
+		HostedZone:           s.HostedZone,
 	})
 
 	// Output API URLs

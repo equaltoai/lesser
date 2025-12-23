@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"cdk/inventory"
-	"cdk/naming"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
@@ -17,6 +16,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/jsii-runtime-go"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
 )
 
@@ -70,12 +70,17 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		domainValue = *domainPtr
 	}
 
+	appName := naming.DefaultAppName
+	if appPtr := getConfigString("appName", naming.DefaultAppName); appPtr != nil && *appPtr != "" {
+		appName = *appPtr
+	}
+
 	// Common environment variables shared across functions
 	commonEnv := map[string]*string{
 		// Environment selectors (D1)
 		"ENVIRONMENT": jsii.String(props.Environment),
 		"STAGE":       jsii.String(string(stage)),
-		"APP_NAME":    jsii.String(naming.RepoName),
+		"APP_NAME":    jsii.String(appName),
 
 		// Domain (D2)
 		"DOMAIN_NAME": jsii.String(domainValue),
@@ -156,14 +161,15 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		"MODERATION_ML_TENANTS":           getConfigString("moderationMLTenants", ""),
 	}
 
-	// WebSocket endpoints (GraphQL subscriptions + streaming)
-	graphqlWsHost := fmt.Sprintf("graphql-ws.%s", domainValue)
-	streamWsHost := fmt.Sprintf("stream.%s", domainValue)
-	commonEnv["WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("https://%s", graphqlWsHost))
-	commonEnv["WEBSOCKET_API_URL"] = jsii.String(fmt.Sprintf("https://%s", graphqlWsHost))
-	commonEnv["GRAPHQL_WS_URL"] = jsii.String(fmt.Sprintf("wss://%s", graphqlWsHost))
-	commonEnv["STREAM_WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("wss://%s", streamWsHost))
-	commonEnv["STREAM_WEBSOCKET_API_URL"] = jsii.String(fmt.Sprintf("https://%s", streamWsHost))
+	// WebSocket endpoints
+	// - GraphQL subscriptions: ws.<domain>
+	// - Streaming: ws.<domain>/stream
+	wsHost := fmt.Sprintf("ws.%s", domainValue)
+	commonEnv["WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("https://%s", wsHost))
+	commonEnv["WEBSOCKET_API_URL"] = jsii.String(fmt.Sprintf("https://%s", wsHost))
+	commonEnv["GRAPHQL_WS_URL"] = jsii.String(fmt.Sprintf("wss://%s", wsHost))
+	commonEnv["STREAM_WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("wss://%s/stream", wsHost))
+	commonEnv["STREAM_WEBSOCKET_API_URL"] = jsii.String(fmt.Sprintf("https://%s/stream", wsHost))
 
 	// Set JWT secret ARN from SharedStack (securely passed, never synthesized)
 	if props.JwtSecret != nil {

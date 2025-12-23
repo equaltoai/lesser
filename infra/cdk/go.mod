@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-cdk-go/awscdk/v2 v2.220.0
 	github.com/aws/constructs-go/constructs/v10 v10.4.2
 	github.com/aws/jsii-runtime-go v1.117.0
+	github.com/equaltoai/lesser v0.0.0
 	github.com/pay-theory/lift v1.0.81
 	gopkg.in/yaml.v2 v2.4.0
 )
@@ -30,3 +31,5 @@ require (
 )
 
 replace github.com/pay-theory/lift => ../../../../lift
+
+replace github.com/equaltoai/lesser => ../..

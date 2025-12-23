@@ -27,9 +27,9 @@ Note: The canonical Go type for API Gateway REST API response streaming is `even
 - Infra:
   - `infra/cdk/constructs/api_routes.go` builds a Lift `LiftRestAPI` (API Gateway REST API v1) for HTTP routes and attaches the custom domain.
   - Response streaming is configured per-method for SSE endpoints only (rewrites integration URI to `/response-streaming-invocations` and sets `ResponseTransferMode=STREAM`).
-  - WebSockets are separate API Gateway v2 WebSocket APIs with separate subdomains:
-    - Streaming WS: `stream.<api-domain>` (see `infra/cdk/constructs/api_routes.go:createWebSocketApi`).
-    - GraphQL WS: `graphql-ws.<api-domain>` (see `infra/cdk/constructs/api_routes.go:createGraphQLWebSocketApi`).
+  - WebSockets are API Gateway v2 WebSocket APIs behind a shared custom domain:
+    - GraphQL WS: `ws.<api-domain>` (see `infra/cdk/constructs/api_routes.go:createGraphQLWebSocketApi`).
+    - Streaming WS: `ws.<api-domain>/stream` (see `infra/cdk/constructs/api_routes.go:createWebSocketApi`).
 - Lift: `github.com/pay-theory/lift v1.0.81` is pinned in `go.mod`.
 - Timeouts:
   - Inventory defaults HTTP Lambdas to `TimeoutSeconds: 30` (`infra/cdk/inventory/types.go`).
@@ -39,7 +39,7 @@ Note: The canonical Go type for API Gateway REST API response streaming is `even
 - Mastodon instance streaming discovery:
   - Mastodon expects `configuration.urls.streaming` / `urls.streaming_api` to be a *host base* (no path) used for `/api/v1/streaming/*` endpoints; Lesser returns the API base URL.
   - WebSockets remain on separate subdomains due to API Gateway restrictions (WebSocket custom domains cannot share a domain with REST/HTTP APIs).
-  - SSE uses the API base domain; WebSockets use `stream.<api-domain>` / `graphql-ws.<api-domain>`.
+  - SSE uses the API base domain; WebSockets use `ws.<api-domain>` (and `ws.<api-domain>/stream` for streaming).
 
 ---
 
@@ -84,9 +84,9 @@ Note: The canonical Go type for API Gateway REST API response streaming is `even
    - Lesser expects a base domain hosted in Route53 (hosted zone).
    - CDK defines subdomains for:
      - API access (REST + GraphQL): today this is the stage domain (e.g. `{stage}.{rootDomain}`).
-     - WebSockets: today this is `stream.{api-domain}` and `graphql-ws.{api-domain}`.
+     - WebSockets: today this is `ws.{api-domain}` (with streaming under `/stream`).
    - Decide where **Mastodon SSE streaming** lives:
-     - **Recommended (prototype-friendly)**: serve SSE from the API domain (same host as REST), and keep WebSockets on the existing `stream.*` domain.
+     - **Recommended (prototype-friendly)**: serve SSE from the API domain (same host as REST), and keep WebSockets on the existing `ws.*` domain.
      - **Alternative**: create a dedicated SSE streaming subdomain backed by REST API v1 and return that in `configuration.urls.streaming` (avoids full gateway migration but adds new domain + certificate).
 
 4. **Blast radius**

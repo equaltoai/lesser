@@ -26,19 +26,18 @@ type SharedStackProps struct {
 
 type SharedStack struct {
 	awscdk.Stack
-	EncryptionKey          awskms.IKey
-	LambdaEncryptionRole   awsiam.Role
-	LambdaBasicRole        awsiam.Role
-	ActorPrivateKey        awssecretsmanager.Secret
-	JWTSecret              awssecretsmanager.Secret
-	HostedZone             awsroute53.IHostedZone
-	APICertificate         awscertificatemanager.Certificate
-	CDNCertificate         awscertificatemanager.Certificate
-	GraphQLWSCertificate   awscertificatemanager.Certificate
-	StreamingWSCertificate awscertificatemanager.Certificate
-	AuthCertificate        awscertificatemanager.Certificate
-	RootDomain             string
-	Stages                 []string
+	EncryptionKey        awskms.IKey
+	LambdaEncryptionRole awsiam.Role
+	LambdaBasicRole      awsiam.Role
+	ActorPrivateKey      awssecretsmanager.Secret
+	JWTSecret            awssecretsmanager.Secret
+	HostedZone           awsroute53.IHostedZone
+	APICertificate       awscertificatemanager.Certificate
+	CDNCertificate       awscertificatemanager.Certificate
+	WebSocketCertificate awscertificatemanager.Certificate
+	AuthCertificate      awscertificatemanager.Certificate
+	RootDomain           string
+	Stages               []string
 }
 
 func NewSharedStack(scope constructs.Construct, id string, props *SharedStackProps) *SharedStack {
@@ -161,19 +160,11 @@ func NewSharedStack(scope constructs.Construct, id string, props *SharedStackPro
 		})
 	}
 
-	if sharedStack.GraphQLWSCertificate != nil {
-		awscdk.NewCfnOutput(stack, jsii.String("GraphQLWSCertificateArn"), &awscdk.CfnOutputProps{
-			Value:       sharedStack.GraphQLWSCertificate.CertificateArn(),
-			Description: jsii.String("ACM certificate ARN for GraphQL WebSocket domains"),
-			ExportName:  jsii.String(fmt.Sprintf("%s-graphql-ws-certificate-arn", props.AppName)),
-		})
-	}
-
-	if sharedStack.StreamingWSCertificate != nil {
-		awscdk.NewCfnOutput(stack, jsii.String("StreamingWSCertificateArn"), &awscdk.CfnOutputProps{
-			Value:       sharedStack.StreamingWSCertificate.CertificateArn(),
-			Description: jsii.String("ACM certificate ARN for streaming WebSocket domains"),
-			ExportName:  jsii.String(fmt.Sprintf("%s-streaming-ws-certificate-arn", props.AppName)),
+	if sharedStack.WebSocketCertificate != nil {
+		awscdk.NewCfnOutput(stack, jsii.String("WebSocketCertificateArn"), &awscdk.CfnOutputProps{
+			Value:       sharedStack.WebSocketCertificate.CertificateArn(),
+			Description: jsii.String("ACM certificate ARN for WebSocket domains"),
+			ExportName:  jsii.String(fmt.Sprintf("%s-ws-certificate-arn", props.AppName)),
 		})
 	}
 
@@ -249,40 +240,21 @@ func (s *SharedStack) createCertificates() {
 		Validation:              validation,
 	})
 
-	graphqlWsFqdns := make([]*string, 0, len(s.Stages))
+	wsFqdns := make([]*string, 0, len(s.Stages))
 	for _, stage := range s.Stages {
-		graphqlWsFqdns = append(graphqlWsFqdns, jsii.String(fmt.Sprintf("graphql-ws.%s.%s", stage, s.RootDomain)))
+		wsFqdns = append(wsFqdns, jsii.String(fmt.Sprintf("ws.%s.%s", stage, s.RootDomain)))
 	}
 
-	if len(graphqlWsFqdns) > 0 {
-		graphqlWsPrimary := graphqlWsFqdns[0]
-		var graphqlWsSans []*string
-		if len(graphqlWsFqdns) > 1 {
-			graphqlWsSans = graphqlWsFqdns[1:]
+	if len(wsFqdns) > 0 {
+		wsPrimary := wsFqdns[0]
+		var wsSans []*string
+		if len(wsFqdns) > 1 {
+			wsSans = wsFqdns[1:]
 		}
 
-		s.GraphQLWSCertificate = awscertificatemanager.NewCertificate(s.Stack, jsii.String("SharedGraphQLWsCertificate"), &awscertificatemanager.CertificateProps{
-			DomainName:              graphqlWsPrimary,
-			SubjectAlternativeNames: &graphqlWsSans,
-			Validation:              validation,
-		})
-	}
-
-	streamWsFqdns := make([]*string, 0, len(s.Stages))
-	for _, stage := range s.Stages {
-		streamWsFqdns = append(streamWsFqdns, jsii.String(fmt.Sprintf("stream.%s.%s", stage, s.RootDomain)))
-	}
-
-	if len(streamWsFqdns) > 0 {
-		streamWsPrimary := streamWsFqdns[0]
-		var streamWsSans []*string
-		if len(streamWsFqdns) > 1 {
-			streamWsSans = streamWsFqdns[1:]
-		}
-
-		s.StreamingWSCertificate = awscertificatemanager.NewCertificate(s.Stack, jsii.String("SharedStreamingWsCertificate"), &awscertificatemanager.CertificateProps{
-			DomainName:              streamWsPrimary,
-			SubjectAlternativeNames: &streamWsSans,
+		s.WebSocketCertificate = awscertificatemanager.NewCertificate(s.Stack, jsii.String("SharedWebSocketCertificate"), &awscertificatemanager.CertificateProps{
+			DomainName:              wsPrimary,
+			SubjectAlternativeNames: &wsSans,
 			Validation:              validation,
 		})
 	}
@@ -503,20 +475,11 @@ func (s *SharedStack) publishToSSM(appName string, stages []string) {
 		})
 	}
 
-	if s.GraphQLWSCertificate != nil {
-		awsssm.NewStringParameter(s.Stack, jsii.String("GraphQLWSCertArnParam"), &awsssm.StringParameterProps{
-			ParameterName: jsii.String(fmt.Sprintf("%s/certificates/graphql-ws-cert-arn", paramPrefix)),
-			StringValue:   s.GraphQLWSCertificate.CertificateArn(),
-			Description:   jsii.String("GraphQL WebSocket certificate ARN"),
-			Tier:          awsssm.ParameterTier_STANDARD,
-		})
-	}
-
-	if s.StreamingWSCertificate != nil {
-		awsssm.NewStringParameter(s.Stack, jsii.String("StreamingWSCertArnParam"), &awsssm.StringParameterProps{
-			ParameterName: jsii.String(fmt.Sprintf("%s/certificates/streaming-ws-cert-arn", paramPrefix)),
-			StringValue:   s.StreamingWSCertificate.CertificateArn(),
-			Description:   jsii.String("Streaming WebSocket certificate ARN"),
+	if s.WebSocketCertificate != nil {
+		awsssm.NewStringParameter(s.Stack, jsii.String("WSCertArnParam"), &awsssm.StringParameterProps{
+			ParameterName: jsii.String(fmt.Sprintf("%s/certificates/ws-cert-arn", paramPrefix)),
+			StringValue:   s.WebSocketCertificate.CertificateArn(),
+			Description:   jsii.String("WebSocket certificate ARN"),
 			Tier:          awsssm.ParameterTier_STANDARD,
 		})
 	}

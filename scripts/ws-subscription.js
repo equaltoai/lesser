@@ -6,7 +6,7 @@
  * Example:
  *   node scripts/ws-subscription.js \
  *     --token "$TOKEN" \
- *     --url wss://graphql-ws.dev.lesser.host \
+ *     --url wss://ws.dev.lesser.host \
  *     --subscription timeline \
  *     --once
  */
@@ -63,7 +63,7 @@ const subscriptions = {
 
 const argSpec = {
   options: {
-    url: { type: 'string', default: process.env.GRAPHQL_WS_URL || 'wss://graphql-ws.dev.lesser.host' },
+    url: { type: 'string', default: process.env.GRAPHQL_WS_URL || 'wss://ws.dev.lesser.host' },
     token: { type: 'string', default: process.env.GRAPHQL_WS_TOKEN },
     id: { type: 'string', default: 'sub-1' },
     query: { type: 'string' },

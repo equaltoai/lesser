@@ -312,7 +312,7 @@ func initializeManualServices() error {
 	if cfg.WebSocketEndpoint == "" && cfg.Domain != "" {
 		host := strings.TrimPrefix(strings.TrimPrefix(cfg.Domain, "https://"), "http://")
 		if host != "" {
-			cfg.WebSocketEndpoint = fmt.Sprintf("https://graphql-ws.%s", host)
+			cfg.WebSocketEndpoint = fmt.Sprintf("https://ws.%s", host)
 		}
 	}
 
