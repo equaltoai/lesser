@@ -78,6 +78,7 @@ ENV_MAP_production = production
 CDK_ENV = $(ENV_MAP_$(ENV))
 CDN_ENV_FILE = tmp/cdn-$(ENV).env
 VAPID_ENV_FILE = tmp/vapid-$(ENV).env
+HOSTED_ZONE_ENV_FILE = tmp/hosted-zone.env
 
 # =============================================================================
 # BUILD TARGETS
@@ -281,10 +282,14 @@ cdk-list:
 # =============================================================================
 
 ## Deploy shared resources (KMS, Secrets) - ONCE for all environments
-deploy-shared:
+deploy-shared: ensure-hosted-zone
 	@echo "Deploying shared resources (used by ALL environments)..."
-	@cd infra/cdk && cdk deploy LesserSharedStack \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	cd infra/cdk && cdk deploy LesserSharedStack \
 		--context environment=development \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--require-approval never
 	@echo "✓ Shared resources deployed"
 	@echo ""
@@ -311,6 +316,17 @@ check-shared:
 # ENVIRONMENT-SPECIFIC DEPLOYMENT
 # =============================================================================
 
+ensure-hosted-zone:
+	@mkdir -p tmp
+	@INPUT="$(ROOT_DOMAIN)"; \
+		if [ -z "$$INPUT" ]; then INPUT="$(DOMAIN)"; fi; \
+		if [ -z "$$INPUT" ]; then \
+			echo "Error: ROOT_DOMAIN or DOMAIN is required to resolve Route53 hosted zone"; \
+			echo "Example: AWS_PROFILE=... make deploy-shared ROOT_DOMAIN=example.com"; \
+			exit 1; \
+		fi; \
+		AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) scripts/resolve_hosted_zone.sh "$$INPUT" > $(HOSTED_ZONE_ENV_FILE)
+
 ensure-cdn-credentials:
 	@mkdir -p tmp
 	@echo "Ensuring CDN credentials for $(ENV)..."
@@ -323,17 +339,28 @@ ensure-vapid-credentials:
 
 ## Deploy to development environment
 deploy-dev: ENV=dev
-deploy-dev: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-cdn-credentials ensure-vapid-credentials
+deploy-dev: DOMAIN=dev.lesser.host
+deploy-dev: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-hosted-zone ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to DEVELOPMENT environment..."
 	@echo "Step 1/4: Deploying monitoring stack..."
-	@cd infra/cdk && cdk deploy LesserMonitoringStack-development \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	cd infra/cdk && cdk deploy LesserMonitoringStack-development \
 		--context environment=development \
+		--context domain=$(DOMAIN) \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--require-approval never
 	@echo "Step 2/4: Deploying application stack..."
-	@. $(CDN_ENV_FILE); \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	. $(CDN_ENV_FILE); \
 	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-development \
 		--context environment=development \
+		--context domain=$(DOMAIN) \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--context cdnPrivateKeySecret=$$CLOUDFRONT_PRIVATE_KEY_PATH \
 		--context cdnKeyPairId=$$CLOUDFRONT_KEY_PAIR_ID \
 		--context vapidSecretArn=$$VAPID_SECRET_ARN \
@@ -341,14 +368,14 @@ deploy-dev: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ens
 		--context vapidSubject=$$VAPID_SUBJECT \
 		--require-approval never
 	@echo "Step 3/4: Deploying auth UI..."
-	@$(MAKE) deploy-auth-ui DOMAIN=dev.lesser.host AWS_PROFILE=$(AWS_PROFILE)
+	@$(MAKE) deploy-auth-ui DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
 	@echo "Step 4/4: Bootstrapping owner account..."
-	@$(MAKE) owner-bootstrap OWNER_ENV=development OWNER_DOMAIN=dev.lesser.host AWS_PROFILE=$(AWS_PROFILE)
+	@$(MAKE) owner-bootstrap OWNER_ENV=development OWNER_DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
 	@echo "✓ Development deployment complete"
 
 ## Deploy to test/staging environment
 deploy-test: ENV=test
-deploy-test: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-cdn-credentials ensure-vapid-credentials
+deploy-test: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-hosted-zone ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to TEST/STAGING environment..."
 	@if [ -z "$(DOMAIN)" ]; then \
 		echo "Error: DOMAIN is required for staging"; \
@@ -356,16 +383,24 @@ deploy-test: build-lambdas build-cloudfront-keygen build-auth-ui check-shared en
 		exit 1; \
 	fi
 	@echo "Step 1/4: Deploying monitoring stack..."
-	@cd infra/cdk && cdk deploy LesserMonitoringStack-staging \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	cd infra/cdk && cdk deploy LesserMonitoringStack-staging \
 		--context environment=staging \
 		--context domain=$(DOMAIN) \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--require-approval broadening
 	@echo "Step 2/4: Deploying application stack..."
-	@. $(CDN_ENV_FILE); \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	. $(CDN_ENV_FILE); \
 	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-staging \
 		--context environment=staging \
 		--context domain=$(DOMAIN) \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--context cdnPrivateKeySecret=$$CLOUDFRONT_PRIVATE_KEY_PATH \
 		--context cdnKeyPairId=$$CLOUDFRONT_KEY_PAIR_ID \
 		--context vapidSecretArn=$$VAPID_SECRET_ARN \
@@ -380,7 +415,7 @@ deploy-test: build-lambdas build-cloudfront-keygen build-auth-ui check-shared en
 
 ## Deploy to live/production environment
 deploy-live: ENV=live
-deploy-live: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-cdn-credentials ensure-vapid-credentials
+deploy-live: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-hosted-zone ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to LIVE/PRODUCTION environment..."
 	@if [ -z "$(DOMAIN)" ]; then \
 		echo "Error: DOMAIN is required for production"; \
@@ -388,16 +423,24 @@ deploy-live: build-lambdas build-cloudfront-keygen build-auth-ui check-shared en
 		exit 1; \
 	fi
 	@echo "Step 1/4: Deploying monitoring stack..."
-	@cd infra/cdk && cdk deploy LesserMonitoringStack-production \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	cd infra/cdk && cdk deploy LesserMonitoringStack-production \
 		--context environment=production \
 		--context domain=$(DOMAIN) \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--require-approval broadening
 	@echo "Step 2/4: Deploying application stack..."
-	@. $(CDN_ENV_FILE); \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	. $(CDN_ENV_FILE); \
 	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-production \
 		--context environment=production \
 		--context domain=$(DOMAIN) \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--context cdnPrivateKeySecret=$$CLOUDFRONT_PRIVATE_KEY_PATH \
 		--context cdnKeyPairId=$$CLOUDFRONT_KEY_PAIR_ID \
 		--context vapidSecretArn=$$VAPID_SECRET_ARN \

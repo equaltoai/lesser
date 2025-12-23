@@ -50,7 +50,11 @@ func NewSharedStack(scope constructs.Construct, id string, props *SharedStackPro
 		Stages:     props.Stages,
 	}
 
-	sharedStack.initHostedZone(props.HostedZoneName, props.HostedZoneId)
+	zoneLookupName := props.HostedZoneName
+	if zoneLookupName == "" {
+		zoneLookupName = props.RootDomain
+	}
+	sharedStack.initHostedZone(zoneLookupName, props.HostedZoneId)
 
 	// Create KMS key for encryption
 	encryptionKey := liftcdk.NewLiftKMSKey(stack, jsii.String("LesserEncryptionKey"), &liftcdk.LiftKMSKeyProps{

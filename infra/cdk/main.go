@@ -153,6 +153,18 @@ func main() {
 		config.Domain = fmt.Sprintf("%v", domainCtx)
 	}
 
+	if hostedZoneIdCtx := app.Node().TryGetContext(jsii.String("hostedZoneId")); hostedZoneIdCtx != nil {
+		config.DNS.HostedZoneID = fmt.Sprintf("%v", hostedZoneIdCtx)
+	}
+
+	if hostedZoneNameCtx := app.Node().TryGetContext(jsii.String("hostedZoneName")); hostedZoneNameCtx != nil {
+		config.DNS.RootDomain = fmt.Sprintf("%v", hostedZoneNameCtx)
+	}
+
+	if rootDomainCtx := app.Node().TryGetContext(jsii.String("rootDomain")); rootDomainCtx != nil {
+		config.DNS.RootDomain = fmt.Sprintf("%v", rootDomainCtx)
+	}
+
 	if secretCtx := app.Node().TryGetContext(jsii.String("cdnPrivateKeySecret")); secretCtx != nil {
 		config.Media.CloudfrontPrivateKeySecret = fmt.Sprintf("%v", secretCtx)
 	}
@@ -176,7 +188,10 @@ func main() {
 	// JWT secret is now auto-generated in SharedStack and retrieved by Lambda functions
 	// No need to pass it via context anymore
 
-	rootDomain := config.DNS.RootDomain
+	rootDomain := strings.TrimSuffix(strings.TrimSpace(config.DNS.RootDomain), ".")
+	if rootDomain == "" {
+		rootDomain = deriveRootDomain(config.Domain, defaultZones)
+	}
 	if rootDomain == "" {
 		rootDomain = defaultRootDomain
 	}
@@ -277,4 +292,21 @@ func canonicalEnvironment(env string) string {
 	default:
 		return clean
 	}
+}
+
+func deriveRootDomain(domain string, stages []string) string {
+	clean := strings.ToLower(strings.TrimSpace(domain))
+	clean = strings.TrimSuffix(clean, ".")
+	if clean == "" {
+		return ""
+	}
+
+	for _, stage := range stages {
+		prefix := strings.ToLower(strings.TrimSpace(stage)) + "."
+		if strings.HasPrefix(clean, prefix) {
+			return strings.TrimPrefix(clean, prefix)
+		}
+	}
+
+	return ""
 }

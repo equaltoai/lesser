@@ -237,8 +237,6 @@ github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaR
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
 github.com/pay-theory/dynamorm v1.0.39 h1:DObTnbRUFja78VUjNmUGV6SeVYWtFsVF9L0iriXJTfs=
 github.com/pay-theory/dynamorm v1.0.39/go.mod h1:BWu3rYen91LFXLGtCUMaiWUhAQIIZUVmyqK2pXnIFCk=
-github.com/pay-theory/lift v1.0.81 h1:VQb+QlKrRE/fuxfTKJPObe0tQolE3fDO9lOBqgNs3h0=
-github.com/pay-theory/lift v1.0.81/go.mod h1:oqWr6YentNu6jhHYwRbJBvy3NC2jtp4oaxqXanimJWQ=
 github.com/pay-theory/limited v1.0.0 h1:70H8MrGXA8xb0UYwJnDgim33ldmJwTk7wjyP1txVYjw=
 github.com/pay-theory/limited v1.0.0/go.mod h1:GycwqvlbQ0Dy6fsQG2vh1sAqtlCLIdE6pQYlYFtg1sk=
 github.com/pborman/getopt v0.0.0-20170112200414-7148bc3a4c30/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=

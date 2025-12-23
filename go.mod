@@ -10,7 +10,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/cloudfront/sign v1.9.11
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.19
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.20.1
-	github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.29.1
 	github.com/aws/aws-sdk-go-v2/service/bedrock v1.48.2
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.41.2
 	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.55.2
@@ -68,6 +67,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.16 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.16 // indirect
+	github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.29.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/appconfig v1.42.9 // indirect
 	github.com/aws/aws-sdk-go-v2/service/appmesh v1.34.8 // indirect
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.58.5 // indirect

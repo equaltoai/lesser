@@ -24,6 +24,7 @@ const (
 const (
 	oauthClientsIndexName       = models.IndexOAuthClients
 	oauthClientsIndexPK         = "OAUTH_CLIENTS"
+	oauthClientSortKey          = "CLIENT"
 	oauthClientsPartitionAttr   = "OAuthClientsPK"
 	oauthClientsSortAttr        = "OAuthClientsSK"
 	oauthClientsDefaultLimit    = 20
@@ -270,7 +271,7 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error) {
 	// Construct the key using the correct pattern from existing OAuth repository
 	pk := "OAUTH_CLIENT#" + clientID
-	sk := "CLIENT"
+	sk := oauthClientSortKey
 
 	// Query for the item
 	var model models.OAuthClient
@@ -316,7 +317,7 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 
 	// Construct the key
 	pk := "OAUTH_CLIENT#" + clientID
-	sk := "CLIENT"
+	sk := oauthClientSortKey
 
 	// First, get the existing client
 	var existingClient models.OAuthClient
@@ -391,7 +392,7 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 func (r *AccountRepository) DeleteOAuthClient(ctx context.Context, clientID string) error {
 	// Construct the key
 	pk := "OAUTH_CLIENT#" + clientID
-	sk := "CLIENT"
+	sk := oauthClientSortKey
 
 	// Delete the item
 	err := r.db.WithContext(ctx).Model(&models.OAuthClient{}).

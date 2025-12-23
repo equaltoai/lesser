@@ -11,6 +11,7 @@ import (
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
+	liftnaming "github.com/pay-theory/lift/pkg/naming"
 )
 
 type AuthUIProps struct {
@@ -48,7 +49,7 @@ func NewAuthUI(scope constructs.Construct, id *string, props *AuthUIProps) *Auth
 		DomainName:        jsii.String(authDomain),
 		HostedZone:        props.HostedZone,
 		Certificate:       props.Certificate,
-		BucketName:        jsii.String(fmt.Sprintf("lesser-auth-ui-%s", props.Domain)),
+		BucketName:        jsii.String(liftnaming.SanitizeS3BucketName(fmt.Sprintf("lesser-auth-ui-%s", props.Domain))),
 		RemovalPolicy:     removalPolicy,
 		AutoDeleteObjects: jsii.Bool(!isProd),
 		EnableWWWRedirect: jsii.Bool(false),
