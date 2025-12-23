@@ -10,13 +10,16 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
-	liftnaming "github.com/pay-theory/lift/pkg/naming"
 )
 
 type AuthUIProps struct {
+	AppName     string
 	Environment string
 	Domain      string
+	AccountID   string
+	Region      string
 	HostedZone  awsroute53.IHostedZone
 	Certificate awscertificatemanager.ICertificate
 }
@@ -39,7 +42,7 @@ func NewAuthUI(scope constructs.Construct, id *string, props *AuthUIProps) *Auth
 		panic("AuthUI requires HostedZone")
 	}
 
-	isProd := props.Environment == "production"
+	isProd := naming.IsLiveEnvironment(props.Environment)
 	removalPolicy := awscdk.RemovalPolicy_DESTROY
 	if isProd {
 		removalPolicy = awscdk.RemovalPolicy_RETAIN
@@ -49,7 +52,7 @@ func NewAuthUI(scope constructs.Construct, id *string, props *AuthUIProps) *Auth
 		DomainName:        jsii.String(authDomain),
 		HostedZone:        props.HostedZone,
 		Certificate:       props.Certificate,
-		BucketName:        jsii.String(liftnaming.SanitizeS3BucketName(fmt.Sprintf("lesser-auth-ui-%s", props.Domain))),
+		BucketName:        jsii.String(naming.S3BucketName(props.AppName, naming.StageForEnvironment(props.Environment), "auth-ui", props.AccountID, props.Region)),
 		RemovalPolicy:     removalPolicy,
 		AutoDeleteObjects: jsii.Bool(!isProd),
 		EnableWWWRedirect: jsii.Bool(false),
@@ -61,13 +64,11 @@ func NewAuthUI(scope constructs.Construct, id *string, props *AuthUIProps) *Auth
 	awscdk.NewCfnOutput(construct, jsii.String("AuthUIDistributionDomain"), &awscdk.CfnOutputProps{
 		Value:       site.Distribution.DistributionDomainName(),
 		Description: jsii.String("CloudFront distribution domain for Auth UI"),
-		ExportName:  jsii.String(fmt.Sprintf("%s-auth-ui-distribution", props.Environment)),
 	})
 
 	awscdk.NewCfnOutput(construct, jsii.String("AuthUIURL"), &awscdk.CfnOutputProps{
 		Value:       jsii.String(fmt.Sprintf("https://%s", authDomain)),
 		Description: jsii.String("Auth UI URL"),
-		ExportName:  jsii.String(fmt.Sprintf("%s-auth-ui-url", props.Environment)),
 	})
 
 	return &AuthUI{

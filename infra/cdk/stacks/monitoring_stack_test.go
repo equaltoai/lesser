@@ -16,11 +16,13 @@ import (
 )
 
 func TestMonitoringStackSynthCreatesInventoryLambdaAlarms(t *testing.T) {
-	tpl := synthMonitoringTemplate(t, "development")
+	appName := "lesser"
+	environment := "development"
+	tpl := synthMonitoringTemplate(t, appName, environment)
 	alarms := collectAlarmNames(t, tpl)
 
 	for _, spec := range inventory.LambdaInventory.Lambdas {
-		physical := lambdaPhysicalName("development", spec.Name)
+		physical := lambdaPhysicalName(appName, environment, spec.Name)
 		requireAlarm(t, alarms, fmt.Sprintf("%s-error-rate", physical))
 		requireAlarm(t, alarms, fmt.Sprintf("%s-duration", physical))
 		requireAlarm(t, alarms, fmt.Sprintf("%s-throttles", physical))
@@ -31,12 +33,14 @@ func TestMonitoringStackSynthCreatesInventoryLambdaAlarms(t *testing.T) {
 }
 
 func TestMonitoringStackLambdaAlarmSetMatchesInventory(t *testing.T) {
-	tpl := synthMonitoringTemplate(t, "development")
+	appName := "lesser"
+	environment := "development"
+	tpl := synthMonitoringTemplate(t, appName, environment)
 	alarms := collectAlarmNames(t, tpl)
 
 	expected := map[string]struct{}{}
 	for _, spec := range inventory.LambdaInventory.Lambdas {
-		expected[lambdaPhysicalName("development", spec.Name)] = struct{}{}
+		expected[lambdaPhysicalName(appName, environment, spec.Name)] = struct{}{}
 	}
 
 	got := map[string]struct{}{}
@@ -67,18 +71,20 @@ func TestMonitoringStackLambdaAlarmSetMatchesInventory(t *testing.T) {
 }
 
 func TestMonitoringStackSynthCreatesQueueAndTableAlarms(t *testing.T) {
-	tpl := synthMonitoringTemplate(t, "development")
+	appName := "lesser"
+	environment := "development"
+	tpl := synthMonitoringTemplate(t, appName, environment)
 	alarms := collectAlarmNames(t, tpl)
 
 	for _, q := range deriveInventoryQueues() {
-		primary := queuePhysicalName("development", q.Logical)
-		dlq := queuePhysicalName("development", q.DLQLogical)
+		primary := queuePhysicalName(appName, environment, q.Logical)
+		dlq := queuePhysicalName(appName, environment, q.DLQLogical)
 		requireAlarm(t, alarms, fmt.Sprintf("%s-age", primary))
 		requireAlarm(t, alarms, fmt.Sprintf("%s-depth", dlq))
 	}
 
-	mainTable := naming.ResourceName("main-table", "development")
-	rateLimitTable := naming.ResourceName("rate-limits-table", "development")
+	mainTable := naming.ResourceNameWithApp(appName, "main-table", environment)
+	rateLimitTable := naming.ResourceNameWithApp(appName, "rate-limits-table", environment)
 	requireAlarm(t, alarms, fmt.Sprintf("%s-read-throttles", mainTable))
 	requireAlarm(t, alarms, fmt.Sprintf("%s-write-throttles", mainTable))
 	requireAlarm(t, alarms, fmt.Sprintf("%s-read-throttles", rateLimitTable))
@@ -86,7 +92,7 @@ func TestMonitoringStackSynthCreatesQueueAndTableAlarms(t *testing.T) {
 }
 
 func TestMonitoringStackSynthDoesNotProvisionApplicationWiring(t *testing.T) {
-	tpl := synthMonitoringTemplate(t, "development")
+	tpl := synthMonitoringTemplate(t, "lesser", "development")
 	resourceTypes := collectResourceTypes(t, tpl)
 
 	disallowed := []string{
@@ -102,7 +108,7 @@ func TestMonitoringStackSynthDoesNotProvisionApplicationWiring(t *testing.T) {
 	}
 }
 
-func synthMonitoringTemplate(t *testing.T, environment string) map[string]any {
+func synthMonitoringTemplate(t *testing.T, appName string, environment string) map[string]any {
 	t.Helper()
 
 	outdir := t.TempDir()
@@ -115,7 +121,7 @@ func synthMonitoringTemplate(t *testing.T, environment string) map[string]any {
 				Region:  jsii.String("us-east-1"),
 			},
 		},
-		AppName:     "lesser",
+		AppName:     appName,
 		Environment: environment,
 		AlertEmail:  "",
 	})

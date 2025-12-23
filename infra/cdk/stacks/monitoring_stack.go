@@ -30,13 +30,15 @@ type MonitoringStack struct {
 	awscdk.Stack
 	AlertTopic awssns.Topic
 	Dashboard  awscloudwatch.Dashboard
+	AppName    string
 }
 
 func NewMonitoringStack(scope constructs.Construct, id string, props *MonitoringStackProps) *MonitoringStack {
 	stack := awscdk.NewStack(scope, &id, &props.StackProps)
 
 	monitoringStack := &MonitoringStack{
-		Stack: stack,
+		Stack:   stack,
+		AppName: props.AppName,
 	}
 
 	stage := naming.StageForEnvironment(props.Environment)
@@ -69,7 +71,6 @@ func NewMonitoringStack(scope constructs.Construct, id string, props *Monitoring
 	awscdk.NewCfnOutput(stack, jsii.String("AlertTopicArn"), &awscdk.CfnOutputProps{
 		Value:       monitoringStack.AlertTopic.TopicArn(),
 		Description: jsii.String("SNS topic ARN for alerts"),
-		ExportName:  jsii.String(naming.ResourceNameWithApp(props.AppName, "alert-topic-arn", props.Environment)),
 	})
 
 	awscdk.NewCfnOutput(stack, jsii.String("DashboardURL"), &awscdk.CfnOutputProps{
@@ -92,8 +93,8 @@ func (s *MonitoringStack) populateInventoryDrivenMonitoring(environment string) 
 	}
 
 	s.addSection("DynamoDB")
-	s.addDynamoDBMetrics(naming.ResourceName("main-table", environment))
-	s.addDynamoDBMetrics(naming.ResourceName("rate-limits-table", environment))
+	s.addDynamoDBMetrics(naming.ResourceNameWithApp(s.AppName, "main-table", environment))
+	s.addDynamoDBMetrics(naming.ResourceNameWithApp(s.AppName, "rate-limits-table", environment))
 }
 
 func (s *MonitoringStack) addSection(title string) {
@@ -107,7 +108,7 @@ func (s *MonitoringStack) addSection(title string) {
 }
 
 func (s *MonitoringStack) addLambdaMetrics(environment string, spec inventory.LambdaSpec) {
-	functionName := lambdaPhysicalName(environment, spec.Name)
+	functionName := lambdaPhysicalName(s.AppName, environment, spec.Name)
 
 	invocationsMetric := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
 		Namespace:     jsii.String("AWS/Lambda"),
@@ -270,8 +271,8 @@ func deriveInventoryQueues() []queueSpec {
 }
 
 func (s *MonitoringStack) addQueueMetrics(environment string, spec queueSpec) {
-	primaryName := queuePhysicalName(environment, spec.Logical)
-	dlqName := queuePhysicalName(environment, spec.DLQLogical)
+	primaryName := queuePhysicalName(s.AppName, environment, spec.Logical)
+	dlqName := queuePhysicalName(s.AppName, environment, spec.DLQLogical)
 
 	visibleMessages := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
 		Namespace:     jsii.String("AWS/SQS"),
@@ -451,10 +452,10 @@ func sanitizeConstructID(name string) string {
 	return clean
 }
 
-func lambdaPhysicalName(environment string, lambdaName string) string {
-	return naming.ResourceName(lambdaName, environment)
+func lambdaPhysicalName(appName string, environment string, lambdaName string) string {
+	return naming.ResourceNameWithApp(appName, lambdaName, environment)
 }
 
-func queuePhysicalName(environment string, logical string) string {
-	return naming.ResourceName(logical, environment)
+func queuePhysicalName(appName string, environment string, logical string) string {
+	return naming.ResourceNameWithApp(appName, logical, environment)
 }

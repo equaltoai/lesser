@@ -21,7 +21,9 @@ import (
 )
 
 type LambdaFunctionsProps struct {
+	AppName             string
 	Environment         string
+	Domain              string
 	Table               awsdynamodb.Table
 	RateLimitTable      awsdynamodb.Table
 	StreamEventsTable   awsdynamodb.Table
@@ -55,6 +57,8 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 
 	stage := naming.StageForEnvironment(props.Environment)
 
+	appName := strings.TrimSpace(props.AppName)
+
 	// Helper to get config values
 	getConfigString := func(key string, defaultVal string) *string {
 		if props.Config != nil {
@@ -65,14 +69,20 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		return jsii.String(defaultVal)
 	}
 
-	domainValue := "lesser.host"
-	if domainPtr := getConfigString("domain", "lesser.host"); domainPtr != nil && *domainPtr != "" {
-		domainValue = *domainPtr
+	if appName == "" {
+		if appPtr := getConfigString("appName", naming.DefaultAppName); appPtr != nil && *appPtr != "" {
+			appName = *appPtr
+		} else {
+			appName = naming.DefaultAppName
+		}
 	}
 
-	appName := naming.DefaultAppName
-	if appPtr := getConfigString("appName", naming.DefaultAppName); appPtr != nil && *appPtr != "" {
-		appName = *appPtr
+	domainValue := strings.TrimSpace(props.Domain)
+	if domainValue == "" {
+		domainValue = "lesser.host"
+		if domainPtr := getConfigString("domain", "lesser.host"); domainPtr != nil && *domainPtr != "" {
+			domainValue = *domainPtr
+		}
 	}
 
 	// Common environment variables shared across functions
@@ -122,8 +132,8 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 
 		// Secrets (D5, D6)
 		"PRIVATE_KEY_SECRET":     props.PrivateKey.SecretArn(),
-		"PRIVATE_KEY_SECRET_ARN": props.PrivateKey.SecretArn(),           // optional alias (Spec 05)
-		"KMS_KEY_ID":             jsii.String("alias/lesser-encryption"), // KMS key for encrypting actor private keys
+		"PRIVATE_KEY_SECRET_ARN": props.PrivateKey.SecretArn(),                                                           // optional alias (Spec 05)
+		"KMS_KEY_ID":             jsii.String(fmt.Sprintf("alias/%s", naming.SharedResourceName(appName, "encryption"))), // KMS key for encrypting actor private keys
 
 		// Media CDN and instance metadata (unchanged)
 		"CDN_DOMAIN":           jsii.String("REPLACE_WITH_MEDIA_DOMAIN"), // Set by CDK context
@@ -206,7 +216,7 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 			role = props.EncryptionRole
 		}
 
-		functionName := naming.ResourceName(spec.Name, props.Environment)
+		functionName := naming.ResourceNameWithApp(appName, spec.Name, props.Environment)
 		logGroup := awslogs.NewLogGroup(stack, jsii.String(spec.Name+"LogGroup"), &awslogs.LogGroupProps{
 			LogGroupName:  jsii.String(fmt.Sprintf("/aws/lambda/%s", functionName)),
 			Retention:     retention,
@@ -287,7 +297,7 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 			var scheduledFn awslambda.Function
 			for idx, trig := range spec.ScheduleTriggers {
 				ruleID := fmt.Sprintf("%sScheduleRule%d", sanitizeScheduleId(spec.Name), idx)
-				ruleName := naming.ResourceName(fmt.Sprintf("%s-schedule-%d", spec.Name, idx), props.Environment)
+				ruleName := naming.ResourceNameWithApp(appName, fmt.Sprintf("%s-schedule-%d", spec.Name, idx), props.Environment)
 
 				if idx == 0 {
 					var inputTransformation *awsevents.RuleTargetInput

@@ -19,6 +19,7 @@ import (
 )
 
 type APIGatewayProps struct {
+	AppName              string
 	Environment          string
 	Domain               string
 	Certificate          awscertificatemanager.ICertificate
@@ -36,17 +37,21 @@ type APIGateway struct {
 func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGateway {
 	gateway := &APIGateway{}
 	apiStage := naming.StageForEnvironment(props.Environment)
+	appName := strings.TrimSpace(props.AppName)
+	if appName == "" {
+		appName = naming.DefaultAppName
+	}
 
 	// Create access log group
 	logGroup := awslogs.NewLogGroup(scope, jsii.String("ApiLogGroup"), &awslogs.LogGroupProps{
-		LogGroupName:  jsii.String(fmt.Sprintf("/aws/apigateway/%s", naming.ResourceName("api", props.Environment))),
+		LogGroupName:  jsii.String(fmt.Sprintf("/aws/apigateway/%s", naming.ResourceNameWithApp(appName, "api", props.Environment))),
 		Retention:     awslogs.RetentionDays_ONE_WEEK,
 		RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
 	})
 
 	streamTimeoutSeconds := 15 * 60
 
-	apiName := naming.ResourceName("api", props.Environment)
+	apiName := naming.ResourceNameWithApp(appName, "api", props.Environment)
 	restProps := &liftcdk.LiftRestAPIProps{
 		APICommonProps: liftcdk.APICommonProps{
 			Name:                jsii.String(apiName),
@@ -192,10 +197,14 @@ func addInventoryRestRoutes(api *liftcdk.LiftRestAPI, functions *LambdaFunctions
 func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps, domainName awsapigatewayv2.DomainName) awsapigatewayv2.WebSocketApi {
 	streamingFn := props.Functions.Must("streaming")
 	apiStage := naming.StageForEnvironment(props.Environment)
+	appName := strings.TrimSpace(props.AppName)
+	if appName == "" {
+		appName = naming.DefaultAppName
+	}
 
 	// Create WebSocket API for streaming
 	wsApi := awsapigatewayv2.NewWebSocketApi(scope, jsii.String("WebSocketApi"), &awsapigatewayv2.WebSocketApiProps{
-		ApiName:     jsii.String(naming.ResourceName("streaming-ws-v2", props.Environment)),
+		ApiName:     jsii.String(naming.ResourceNameWithApp(appName, "streaming-ws-v2", props.Environment)),
 		Description: jsii.String("Lesser WebSocket API for streaming"),
 		ConnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
@@ -243,9 +252,13 @@ func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps, doma
 func createGraphQLWebSocketApi(scope constructs.Construct, props *APIGatewayProps, domainName awsapigatewayv2.DomainName) awsapigatewayv2.WebSocketApi {
 	graphqlWSFn := props.Functions.Must("graphql-ws")
 	apiStage := naming.StageForEnvironment(props.Environment)
+	appName := strings.TrimSpace(props.AppName)
+	if appName == "" {
+		appName = naming.DefaultAppName
+	}
 
 	wsApi := awsapigatewayv2.NewWebSocketApi(scope, jsii.String("GraphQLWebSocketApi"), &awsapigatewayv2.WebSocketApiProps{
-		ApiName:     jsii.String(naming.ResourceName("graphql-ws", props.Environment)),
+		ApiName:     jsii.String(naming.ResourceNameWithApp(appName, "graphql-ws", props.Environment)),
 		Description: jsii.String("GraphQL WebSocket API for subscriptions"),
 		ConnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
