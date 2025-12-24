@@ -9,7 +9,7 @@ const message = Astro.url.searchParams.get('message') || 'An error occurred';
     <div class="error-icon">⚠️</div>
     <h2 class="error-title">Error</h2>
     <p class="error-message">{message}</p>
-    <a href="/" class="error-link">Return to Home</a>
+    <a href={`${import.meta.env.BASE_URL}login`} class="error-link">Return to Login</a>
   </div>
 </AuthLayout>
 
@@ -53,4 +53,3 @@ const message = Astro.url.searchParams.get('message') || 'An error occurred';
     background: var(--lesser-primary-600, #6d28d9);
   }
 </style>
-

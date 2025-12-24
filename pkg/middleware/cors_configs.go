@@ -40,7 +40,6 @@ func GetWebClientCORSConfig() CORSConfig {
 		if domain := os.Getenv("DOMAIN_NAME"); domain != "" {
 			allowedOrigins = []string{
 				"https://" + domain,
-				"https://auth." + domain,
 			}
 		}
 	}

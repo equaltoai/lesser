@@ -110,8 +110,8 @@ func (h *Handler) extractAuthorizeRequest(ctx *lift.Context) (*authorizeRequest,
 }
 
 func (h *Handler) redirectMissingAuthorizeParams(ctx *lift.Context, req *authorizeRequest) error {
-	authDomain := fmt.Sprintf("auth.%s", h.cfg.Domain)
-	errorMessage := url.QueryEscape("Invalid authorization request - missing required parameters. Please restart the authorization flow from your application.")
+	authUIBaseURL := fmt.Sprintf("https://%s/auth", h.cfg.Domain)
+	errorMessage := "Invalid authorization request - missing required parameters. Please restart the authorization flow from your application."
 
 	errorParams := url.Values{}
 	errorParams.Set("error", errorMessage)
@@ -131,7 +131,7 @@ func (h *Handler) redirectMissingAuthorizeParams(ctx *lift.Context, req *authori
 		errorParams.Set("response_type", req.responseType)
 	}
 
-	errorURL := fmt.Sprintf("https://%s/oauth/authorize?%s", authDomain, errorParams.Encode())
+	errorURL := fmt.Sprintf("%s/oauth/authorize?%s", authUIBaseURL, errorParams.Encode())
 
 	ctx.Response.Header("Location", errorURL)
 	ctx.Status(http.StatusFound)
@@ -171,7 +171,7 @@ func (h *Handler) decodeAccessTokenParam(raw string) string {
 }
 
 func (h *Handler) redirectUserToLogin(ctx *lift.Context, req *authorizeRequest, accessToken string) error {
-	authDomain := fmt.Sprintf("auth.%s", h.cfg.Domain)
+	authUIBaseURL := fmt.Sprintf("https://%s/auth", h.cfg.Domain)
 	authRequest := map[string]string{
 		"client_id":             req.clientID,
 		"redirect_uri":          req.redirectURI,
@@ -187,9 +187,9 @@ func (h *Handler) redirectUserToLogin(ctx *lift.Context, req *authorizeRequest, 
 	}
 
 	payload, _ := json.Marshal(authRequest)
-	loginURL := fmt.Sprintf("https://%s/login?return_to=%s&auth_request=%s",
-		authDomain,
-		url.QueryEscape(fmt.Sprintf("https://%s/oauth/authorize", h.cfg.Domain)),
+	loginURL := fmt.Sprintf("%s/login?return_to=%s&auth_request=%s",
+		authUIBaseURL,
+		url.QueryEscape("/oauth/authorize"),
 		url.QueryEscape(string(payload)))
 
 	ctx.Response.Header("Location", loginURL)
@@ -388,12 +388,11 @@ func (h *Handler) redirectToConsentUI(ctx *lift.Context, authState *storage.OAut
 	}
 	app := result.App
 
-	// Build auth subdomain
-	authDomain := fmt.Sprintf("auth.%s", h.cfg.Domain)
+	authUIBaseURL := fmt.Sprintf("https://%s/auth", h.cfg.Domain)
 
 	// Build consent URL with all necessary parameters including access_token for stateless auth
-	consentURL := fmt.Sprintf("https://%s/consent?state=%s&client_id=%s&client_name=%s&client_url=%s&scopes=%s&redirect_uri=%s&access_token=%s",
-		authDomain,
+	consentURL := fmt.Sprintf("%s/consent?state=%s&client_id=%s&client_name=%s&client_url=%s&scopes=%s&redirect_uri=%s&access_token=%s",
+		authUIBaseURL,
 		url.QueryEscape(authState.State),
 		url.QueryEscape(authState.ClientID),
 		url.QueryEscape(app.Name),

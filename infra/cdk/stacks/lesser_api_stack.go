@@ -105,9 +105,6 @@ func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiSt
 	// Create S3 and CloudFront (Phase 6.6)
 	apiStack.createMediaInfrastructure(props.Domain)
 
-	// Create Auth UI infrastructure (passwordless OAuth)
-	apiStack.createAuthUIInfrastructure(props.Domain, apiStack.AuthCertificate)
-
 	// Create media streaming and ML infrastructure (Phase 2.2/2.3)
 	apiStack.createStreamingAndMLInfrastructure()
 
@@ -244,32 +241,22 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 
 	apiOrigin := fmt.Sprintf("api.%s", domain)
 	clientBucket := naming.S3BucketName(s.AppName, stage, "client", s.AccountID, s.Region)
+	authBucket := naming.S3BucketName(s.AppName, stage, "auth-ui", s.AccountID, s.Region)
 
-	_ = liftcdk.NewFrontendDistribution(s.Stack, jsii.String("ClientFrontend"), &liftcdk.FrontendDistributionProps{
+	_ = liftcdk.NewPathRoutedFrontendDistribution(s.Stack, jsii.String("ClientFrontend"), &liftcdk.PathRoutedFrontendDistributionProps{
 		HostedZone:          s.HostedZone,
 		Certificate:         s.CDNCertificate,
 		DomainName:          jsii.String(domain),
 		ApiOriginDomainName: jsii.String(apiOrigin),
 		AppName:             jsii.String(s.AppName),
 		Stage:               jsii.String(string(stage)),
-		BucketName:          jsii.String(clientBucket),
+		ClientBucketName:    jsii.String(clientBucket),
+		AuthBucketName:      jsii.String(authBucket),
+		AuthSinglePageApp:   jsii.Bool(false),
 		RemovalPolicy:       getRemovalPolicy(isProd),
 		AutoDeleteObjects:   jsii.Bool(!isProd),
-		EnableWWWRedirect:   jsii.Bool(false),
-		SinglePageApp:       jsii.Bool(true),
 		PriceClass:          awscloudfront.PriceClass_PRICE_CLASS_100,
 		HttpVersion:         awscloudfront.HttpVersion_HTTP2,
-		ApiPathPatterns: &[]*string{
-			jsii.String("api/*"),
-			jsii.String("oauth/*"),
-			jsii.String("auth/*"),
-			jsii.String(".well-known/*"),
-			jsii.String("nodeinfo/*"),
-			jsii.String("users/*"),
-			jsii.String("inbox/*"),
-			jsii.String("objects/*"),
-			jsii.String("health"),
-		},
 	})
 }
 

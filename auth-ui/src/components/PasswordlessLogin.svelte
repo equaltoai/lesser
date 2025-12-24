@@ -67,6 +67,10 @@
   // API base URL - auth UI is on auth.domain but API is on domain
   const API_BASE = window.location.hostname.replace('auth.', '');
   const API_URL = `https://${API_BASE}`;
+
+  const UI_BASE_PATH = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+  const loginHref = `${UI_BASE_PATH}/login`;
+  const registerHref = `${UI_BASE_PATH}/register`;
   
   // State
   let username = $state('');
@@ -453,7 +457,7 @@
         console.error('Link response missing access_token:', linkData);
         
         setTimeout(() => {
-          const loginUrl = new URL('/login', window.location.origin);
+          const loginUrl = new URL(loginHref, window.location.origin);
           window.location.href = loginUrl.toString();
         }, 2000);
       }
@@ -609,7 +613,7 @@
         <h3>Error</h3>
         <p>{error}</p>
         <div class="error-actions">
-          <a href="/login" class="btn btn-primary">Try Again</a>
+          <a href={loginHref} class="btn btn-primary">Try Again</a>
         </div>
       </div>
     {/if}
@@ -679,7 +683,7 @@
       
       {#if !hideRegisterLink}
         <div class="text-center mt-4" style="font-size: 0.875rem; color: var(--text-muted);">
-          Don't have an account? <a href="/register" style="color: var(--lesser-primary-500); text-decoration: none;">Register</a>
+          Don't have an account? <a href={registerHref} style="color: var(--lesser-primary-500); text-decoration: none;">Register</a>
         </div>
       {/if}
   </div>

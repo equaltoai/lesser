@@ -70,9 +70,9 @@ Derived:
 `lesser up` prints:
 
 - Stage URLs (dev and live; staging if enabled):
-  - Setup URL: `https://auth.<stage>.<base-domain>/setup` (dev/staging), `https://auth.<base-domain>/setup` (live)
-  - Client URL: `https://<stage>.<base-domain>` (dev/staging), `https://<base-domain>` (live)
-  - API URL: `https://api.<stage>.<base-domain>` (dev/staging), `https://api.<base-domain>` (live)
+  - Setup URL: `https://<stage>.<base-domain>/auth/setup` (dev/staging), `https://<base-domain>/auth/setup` (live)
+  - Client URL: `https://<stage>.<base-domain>/l` (dev/staging), `https://<base-domain>/l` (live)
+  - System URL: `https://<stage>.<base-domain>` (dev/staging), `https://<base-domain>` (live)
   - WS URL: `wss://ws.<stage>.<base-domain>` (dev/staging), `wss://ws.<base-domain>` (live)
 - A “next steps” section that instructs the user to:
   - Import the bootstrap mnemonic into a wallet (e.g. Metamask)
@@ -100,8 +100,6 @@ Stages:
 
 Service hostnames (wildcard-friendly; subdomain set may grow):
 
-- `auth`
-- `api`
 - `ws`
 - `media`
 - (future additions permitted without cert redesign)
@@ -157,11 +155,13 @@ Each stage stack contains:
 
 - ACM certificate for the stage (per “Certificates”).
 - Route53 records for:
-  - Client app domain (dev/staging stage apex; live apex)
-  - `api.*`, `ws.*`, `auth.*` for the stage
-- Client app hosting (same pattern as server; e.g. S3 + CloudFront).
-- Auth UI hosting at `auth...` with `/setup` wizard.
-- API infrastructure at `api...`.
+  - Stage apex domain (dev/staging stage apex; live apex)
+  - `ws.*` and `media.*` for the stage
+- One CloudFront distribution on the stage apex that routes by path:
+  - `/l/*` → client app (S3)
+  - `/auth/*` → auth UI (S3)
+  - all other paths → API (API Gateway)
+- API infrastructure on the stage apex (system endpoints).
 - WebSocket endpoint at `ws...`.
 - Data plane resources (tables, queues, buckets), named using `<app>-<stage>-<resource>`.
 
@@ -245,12 +245,12 @@ Bootstrap authentication is via wallet signature only:
 
 Real-admin authentication methods supported (wizard creates at least one):
 
-- Passkey (WebAuthn) bound to the stage auth domain (RP ID is stage-specific).
+- Passkey (WebAuthn) bound to the stage domain (RP ID is stage-specific).
 - Wallet signature credential (similar challenge-response binding) for admin login.
 
 ### Endpoints (proposed)
 
-All endpoints are stage-local and served by the API domain; the Auth UI consumes them.
+All endpoints are stage-local and served by the stage domain (system paths). The Auth UI consumes them from `/<stage-domain>/auth/*`.
 
 Public/read-only:
 
@@ -333,13 +333,14 @@ While locked:
 
 ## Review of Existing Domains (current codebase)
 
-Current infra references additional stage subdomains:
+Current infra references additional stage subdomains (notably `auth.<domain>`, `api.<domain>`, `ws.<domain>`, and `cdn.<domain>`).
 
-- `auth.<domain>`
-- `cdn.<domain>`
-- `ws.<domain>`
+New requirement moves human UIs to stage-apex paths:
 
-New requirement standardizes WebSocket to `ws.<domain>`, while keeping subdomains “open” via wildcard certificates. Current implementation supports streaming behind `ws.<domain>/stream`.
+- Client UI: `https://<domain>/l/*`
+- Auth UI: `https://<domain>/auth/*`
+
+System endpoints remain on the stage apex at top-level paths (for Mastodon/ActivityPub compatibility), while WebSockets stay standardized on `ws.<domain>` (current implementation supports streaming behind `ws.<domain>/stream`).
 
 ## Acceptance Criteria
 
