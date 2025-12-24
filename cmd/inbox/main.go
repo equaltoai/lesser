@@ -51,6 +51,7 @@ type InboxHandler struct {
 	federationCostRepository     *repositories.FederationCostRepository
 	domainBlockRepository        *repositories.DomainBlockRepository
 	userRepository               *repositories.UserRepository
+	instanceRepository           *repositories.InstanceRepository
 	publicKeyCacheRepository     *repositories.PublicKeyCacheRepository
 	notificationRepository       *repositories.NotificationRepository
 	signatureService             *federation.SignatureService
@@ -109,6 +110,7 @@ type repositoryCollection struct {
 	federationCostRepo     *repositories.FederationCostRepository
 	domainBlockRepo        *repositories.DomainBlockRepository
 	userRepo               *repositories.UserRepository
+	instanceRepo           *repositories.InstanceRepository
 	publicKeyCacheRepo     *repositories.PublicKeyCacheRepository
 	notificationRepo       *repositories.NotificationRepository
 }
@@ -267,6 +269,7 @@ func initializeRepositories(repoFactory storageCore.RepositoryStorage, coreDB dy
 		likeRepo:         repoFactory.Like(),
 		domainBlockRepo:  repoFactory.DomainBlock(),
 		userRepo:         repoFactory.User(),
+		instanceRepo:     repoFactory.Instance(),
 		notificationRepo: repoFactory.Notification(),
 	}
 
@@ -354,6 +357,7 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 		federationCostRepository:     repositories.federationCostRepo,
 		domainBlockRepository:        repositories.domainBlockRepo,
 		userRepository:               repositories.userRepo,
+		instanceRepository:           repositories.instanceRepo,
 		publicKeyCacheRepository:     repositories.publicKeyCacheRepo,
 		notificationRepository:       repositories.notificationRepo,
 		signatureService:             federationServices.signatureService,
@@ -621,6 +625,20 @@ func (ih *InboxHandler) initializeInboxRequest(ctx *lift.Context) (*InboxRequest
 	username := ctx.Param("username")
 	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil, lift.NewLiftError("VALIDATION_ERROR", "missing username parameter", 400)
+	}
+
+	// Prevent federation to the bootstrap actor until activation completes.
+	if ih.instanceRepository != nil {
+		state, err := ih.instanceRepository.GetInstanceState(ctx.Context)
+		bootstrapUsername := models.DefaultBootstrapUsername
+		if err == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
+			bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
+		}
+
+		if (err != nil && strings.EqualFold(username, bootstrapUsername)) ||
+			(err == nil && state.Locked && strings.EqualFold(username, bootstrapUsername)) {
+			return nil, lift.NewLiftError("FORBIDDEN", "bootstrap actor does not accept federation while instance is locked", 403)
+		}
 	}
 
 	ih.logger.Info("received inbox POST request",

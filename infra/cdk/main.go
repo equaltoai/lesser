@@ -80,6 +80,8 @@ func main() {
 		return
 	}
 
+	hostedZoneID := strings.TrimSpace(getContextString(app, "hostedZoneId"))
+
 	// Stage stacks.
 	// Always include dev + live; include staging if requested.
 	stages := []string{"dev", "live"}
@@ -118,6 +120,7 @@ func main() {
 			Domain:           stageDomain,
 			Config:           config,
 			HostedZoneDomain: baseDomain,
+			HostedZoneId:     hostedZoneID,
 			CloudFrontDomain: "",
 			AppName:          appName,
 			AccountID:        awsAccount,

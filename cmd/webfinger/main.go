@@ -3,6 +3,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"strings"
 	"time"
@@ -14,6 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/reputation"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	liftPkg "github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -105,17 +110,39 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *liftPkg.Context) error {
 		return liftPkg.NotFound("actor not found")
 	}
 
-	// Check if the actor exists using DynamORM repository
-	_, err = wh.actorRepo.GetActor(ctx.Context, username)
-	if err != nil {
-		if common.IsNotFound(err) {
-			wh.logger.Debug("actor not found",
-				zap.String("username", username),
-			)
-			return liftPkg.NotFound("actor not found")
+	state, stateErr := wh.repos.Instance().GetInstanceState(ctx.Context)
+	bootstrapUsername := storageModels.DefaultBootstrapUsername
+	if stateErr == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
+		bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
+	}
+
+	locked := stateErr != nil || state.Locked
+	if locked && !strings.EqualFold(username, bootstrapUsername) {
+		return liftPkg.NotFound("actor not found")
+	}
+
+	// When locked, allow WebFinger discovery only for the bootstrap actor.
+	// Ensure the bootstrap actor exists so federation endpoints can return empty collections.
+	if locked && strings.EqualFold(username, bootstrapUsername) {
+		if err := wh.ensureBootstrapActor(ctx.Context, bootstrapUsername); err != nil {
+			wh.logger.Error("failed to ensure bootstrap actor", zap.Error(err))
+			return liftPkg.NewLiftError("INTERNAL_ERROR", "failed to initialize bootstrap actor", 500)
 		}
-		wh.logger.Error("failed to get actor", zap.Error(err))
-		return liftPkg.NewLiftError("DATABASE_ERROR", "database error", 500)
+	}
+
+	// For non-bootstrap actors (or unlocked instances), require the actor record to exist.
+	if !locked || !strings.EqualFold(username, bootstrapUsername) {
+		_, err = wh.actorRepo.GetActor(ctx.Context, username)
+		if err != nil {
+			if common.IsNotFound(err) {
+				wh.logger.Debug("actor not found",
+					zap.String("username", username),
+				)
+				return liftPkg.NotFound("actor not found")
+			}
+			wh.logger.Error("failed to get actor", zap.Error(err))
+			return liftPkg.NewLiftError("DATABASE_ERROR", "database error", 500)
+		}
 	}
 
 	// Build WebFinger response
@@ -152,6 +179,61 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *liftPkg.Context) error {
 	return ctx.JSON(response)
 }
 
+func (wh *WebFingerHandler) ensureBootstrapActor(ctx context.Context, username string) error {
+	_, err := wh.actorRepo.GetActor(ctx, username)
+	if err == nil {
+		return nil
+	}
+	if !common.IsNotFound(err) {
+		return err
+	}
+
+	priv, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return err
+	}
+
+	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		return err
+	}
+	privateKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privBytes})
+
+	pubBytes, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	if err != nil {
+		return err
+	}
+	publicKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubBytes})
+
+	actorID := fmt.Sprintf("https://%s/users/%s", cfg.Domain, username)
+	now := time.Now().UTC()
+	actor := activitypub.NewActor(activitypub.PersonType, actorID, username)
+	actor.Name = username
+	actor.URL = fmt.Sprintf("https://%s/@%s", cfg.Domain, username)
+	actor.CreatedAt = &now
+	actor.PublicKey = &activitypub.PublicKey{
+		ID:           fmt.Sprintf("%s#main-key", actorID),
+		Owner:        actorID,
+		PublicKeyPem: string(publicKeyPEM),
+	}
+	actor.Endpoints = &activitypub.Endpoints{
+		SharedInbox: fmt.Sprintf("https://%s/inbox", cfg.Domain),
+	}
+	actor.Inbox = fmt.Sprintf("%s/inbox", actorID)
+	actor.Outbox = fmt.Sprintf("%s/outbox", actorID)
+	actor.Followers = fmt.Sprintf("%s/followers", actorID)
+	actor.Following = fmt.Sprintf("%s/following", actorID)
+
+	if err := wh.actorRepo.CreateActor(ctx, actor, string(privateKeyPEM)); err != nil {
+		if _, ok := err.(common.ConflictError); ok {
+			return nil
+		}
+		return err
+	}
+
+	return nil
+}
+
 // handleNodeInfoDiscovery returns the well-known nodeinfo discovery document
 func (wh *WebFingerHandler) handleNodeInfoDiscovery(ctx *liftPkg.Context) error {
 	wh.logger.Info("handling nodeinfo discovery request",
@@ -181,11 +263,18 @@ func (wh *WebFingerHandler) handleNodeInfo20(ctx *liftPkg.Context) error {
 		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 	)
 
+	state, stateErr := wh.repos.Instance().GetInstanceState(ctx.Context)
+	locked := stateErr != nil || state.Locked
+
 	// Get actual user count from user repository
 	userCount, err := wh.getUserCount(ctx)
 	if err != nil {
 		wh.logger.Warn("failed to get user count, using default", zap.Error(err))
-		userCount = 1
+		if locked {
+			userCount = 0
+		} else {
+			userCount = 1
+		}
 	}
 
 	// Get post count
@@ -193,6 +282,11 @@ func (wh *WebFingerHandler) handleNodeInfo20(ctx *liftPkg.Context) error {
 	if err != nil {
 		wh.logger.Warn("failed to get post count, using default", zap.Error(err))
 		postCount = 0
+	}
+
+	openRegistrations := cfg.RegistrationsOpen
+	if locked {
+		openRegistrations = false
 	}
 
 	nodeinfo := map[string]any{
@@ -212,7 +306,7 @@ func (wh *WebFingerHandler) handleNodeInfo20(ctx *liftPkg.Context) error {
 			},
 			"localPosts": postCount,
 		},
-		"openRegistrations": true,
+		"openRegistrations": openRegistrations,
 		"metadata": map[string]any{
 			"nodeName":        cfg.InstanceName,
 			"nodeDescription": "A serverless ActivityPub implementation",
@@ -230,11 +324,18 @@ func (wh *WebFingerHandler) handleNodeInfo21(ctx *liftPkg.Context) error {
 		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 	)
 
+	state, stateErr := wh.repos.Instance().GetInstanceState(ctx.Context)
+	locked := stateErr != nil || state.Locked
+
 	// Get actual user count from user repository
 	userCount, err := wh.getUserCount(ctx)
 	if err != nil {
 		wh.logger.Warn("failed to get user count, using default", zap.Error(err))
-		userCount = 1
+		if locked {
+			userCount = 0
+		} else {
+			userCount = 1
+		}
 	}
 
 	// Get active user counts
@@ -253,6 +354,11 @@ func (wh *WebFingerHandler) handleNodeInfo21(ctx *liftPkg.Context) error {
 	if err != nil {
 		wh.logger.Warn("failed to get post count, using default", zap.Error(err))
 		postCount = 0
+	}
+
+	openRegistrations := cfg.RegistrationsOpen
+	if locked {
+		openRegistrations = false
 	}
 
 	nodeinfo := map[string]any{
@@ -275,7 +381,7 @@ func (wh *WebFingerHandler) handleNodeInfo21(ctx *liftPkg.Context) error {
 			},
 			"localPosts": postCount,
 		},
-		"openRegistrations": true,
+		"openRegistrations": openRegistrations,
 		"metadata": map[string]any{
 			"nodeName":        cfg.InstanceName,
 			"nodeDescription": "A serverless ActivityPub implementation",

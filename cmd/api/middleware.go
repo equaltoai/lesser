@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -76,6 +78,45 @@ func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 			)
 
 			return err
+		})
+	}
+}
+
+// createInstanceLockMiddleware blocks publishing and signups until the instance is activated.
+func createInstanceLockMiddleware(repos core.RepositoryStorage, logger *zap.Logger) lift.Middleware {
+	return func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			method := ctx.Request.Method
+			path := ctx.Request.Path
+
+			// Always allow safe methods.
+			switch method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+				return next.Handle(ctx)
+			}
+
+			state, err := repos.Instance().GetInstanceState(ctx.Context)
+			if err != nil {
+				logger.Warn("failed to get instance lock state; defaulting to locked",
+					zap.Error(err),
+					zap.String("method", method),
+					zap.String("path", path))
+				return common.RespondForbidden(ctx, "instance is locked")
+			}
+			if !state.Locked {
+				return next.Handle(ctx)
+			}
+
+			// Allow auth + setup flows while locked.
+			if strings.HasPrefix(path, "/setup/") ||
+				strings.HasPrefix(path, "/auth/") ||
+				strings.HasPrefix(path, "/oauth/") ||
+				strings.HasPrefix(path, "/api/v1/auth/") ||
+				path == "/api/v1/apps" {
+				return next.Handle(ctx)
+			}
+
+			return common.RespondForbidden(ctx, "instance is locked")
 		})
 	}
 }

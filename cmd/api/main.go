@@ -313,6 +313,9 @@ func main() {
 	// Apply strict security middleware for web clients
 	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeAPI, logger)
 
+	// Block publishing/signups until instance activation completes.
+	app.Use(createInstanceLockMiddleware(repos, logger))
+
 	// Add unified error handling middleware
 	app.Use(common.CreateAPIErrorMiddleware(logger))
 

@@ -45,7 +45,7 @@ func (c *InstanceConfig) GetSK() string {
 // NewInstanceRulesConfig creates a new config for storing rules
 func NewInstanceRulesConfig(rulesJSON string) *InstanceConfig {
 	return &InstanceConfig{
-		PK:        "INSTANCE#CONFIG",
+		PK:        instanceConfigPK,
 		SK:        "RULES",
 		RulesJSON: rulesJSON,
 		UpdatedAt: time.Now(),
@@ -55,7 +55,7 @@ func NewInstanceRulesConfig(rulesJSON string) *InstanceConfig {
 // NewExtendedDescriptionConfig creates a new config for storing extended description
 func NewExtendedDescriptionConfig(description string) *InstanceConfig {
 	return &InstanceConfig{
-		PK:                  "INSTANCE#CONFIG",
+		PK:                  instanceConfigPK,
 		SK:                  "EXTENDED_DESC",
 		ExtendedDescription: description,
 		UpdatedAt:           time.Now(),
@@ -87,7 +87,7 @@ func (AIInstanceConfig) TableName() string {
 
 // UpdateKeys updates the DynamoDB keys
 func (c *AIInstanceConfig) UpdateKeys() error {
-	c.PK = "INSTANCE#CONFIG"
+	c.PK = instanceConfigPK
 	c.SK = "AI_CONFIG"
 	return nil
 }
@@ -105,7 +105,7 @@ func (c *AIInstanceConfig) GetSK() string {
 // NewAIInstanceConfig creates a new AI config with defaults
 func NewAIInstanceConfig() *AIInstanceConfig {
 	return &AIInstanceConfig{
-		PK:                   "INSTANCE#CONFIG",
+		PK:                   instanceConfigPK,
 		SK:                   "AI_CONFIG",
 		AIEnabled:            true,  // Default to enabled
 		ModerationEnabled:    true,  // Default to enabled

@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -613,6 +614,24 @@ func main() {
 
 	// Apply strict security middleware for web clients
 	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeAPI, logger)
+
+	// Block GraphQL POST requests until instance activation completes to prevent mutations.
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			if strings.EqualFold(ctx.Request.Method, http.MethodPost) {
+				state, err := repos.Instance().GetInstanceState(ctx.Context)
+				if err != nil || state.Locked {
+					ctx.Response.StatusCode = http.StatusForbidden
+					return ctx.JSON(map[string]any{
+						"errors": []map[string]any{
+							{"message": "instance is locked"},
+						},
+					})
+				}
+			}
+			return next.Handle(ctx)
+		})
+	})
 
 	// Timeout middleware
 	app.Use(liftMiddleware.TimeoutMiddleware(liftMiddleware.TimeoutConfig{

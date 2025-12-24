@@ -607,6 +607,8 @@ func (h *Handler) setNotificationPaginationHeader(ctx *lift.Context, cursor stri
 func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 	// Get static config
 	instanceConfig := config.GetInstanceConfig()
+	state, stateErr := h.repos.Instance().GetInstanceState(ctx.Context)
+	locked := stateErr != nil || state.Locked
 
 	// Log configuration values
 	h.logger.Info("HandleGetInstanceV2Lift called",
@@ -721,7 +723,7 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 			"limited_federation": false,
 		},
 		"registrations": map[string]any{
-			"enabled":           instanceConfig.RegistrationsOpen,
+			"enabled":           instanceConfig.RegistrationsOpen && !locked,
 			"approval_required": instanceConfig.ApprovalRequired,
 			"message":           nil,
 			"min_age":           nil,

@@ -97,6 +97,7 @@ func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiSt
 	apiStack.initHostedZone(props.HostedZoneDomain, props.HostedZoneId)
 
 	apiStack.createStageCertificates(props.Domain)
+	apiStack.createClientInfrastructure(props.Domain)
 
 	// Create shared resources
 	apiStack.createSharedResources()
@@ -212,16 +213,64 @@ func (s *LesserApiStack) createStageCertificates(stageDomain string) {
 	wildcard := fmt.Sprintf("*.%s", stageDomain)
 	validation := awscertificatemanager.CertificateValidation_FromDns(s.HostedZone)
 
-	cert := awscertificatemanager.NewCertificate(s.Stack, jsii.String("StageCertificate"), &awscertificatemanager.CertificateProps{
+	regionalCert := awscertificatemanager.NewCertificate(s.Stack, jsii.String("RegionalStageCertificate"), &awscertificatemanager.CertificateProps{
 		DomainName:              jsii.String(stageDomain),
 		SubjectAlternativeNames: &[]*string{jsii.String(wildcard)},
 		Validation:              validation,
 	})
 
-	s.APICertificate = cert
-	s.CDNCertificate = cert
-	s.WebSocketCertificate = cert
-	s.AuthCertificate = cert
+	// CloudFront certificates must be provisioned in us-east-1.
+	//nolint:staticcheck // Required for CloudFront cross-region support.
+	cloudFrontCert := awscertificatemanager.NewDnsValidatedCertificate(s.Stack, jsii.String("CloudFrontStageCertificate"), &awscertificatemanager.DnsValidatedCertificateProps{
+		DomainName:              jsii.String(stageDomain),
+		HostedZone:              s.HostedZone,
+		Region:                  jsii.String("us-east-1"),
+		SubjectAlternativeNames: &[]*string{jsii.String(wildcard)},
+	})
+
+	s.APICertificate = regionalCert
+	s.WebSocketCertificate = regionalCert
+	s.CDNCertificate = cloudFrontCert
+	s.AuthCertificate = cloudFrontCert
+}
+
+func (s *LesserApiStack) createClientInfrastructure(domain string) {
+	if domain == "" || s.HostedZone == nil || s.CDNCertificate == nil {
+		return
+	}
+
+	isProd := naming.IsLiveEnvironment(s.Environment)
+	stage := naming.StageForEnvironment(s.Environment)
+
+	apiOrigin := fmt.Sprintf("api.%s", domain)
+	clientBucket := naming.S3BucketName(s.AppName, stage, "client", s.AccountID, s.Region)
+
+	_ = liftcdk.NewFrontendDistribution(s.Stack, jsii.String("ClientFrontend"), &liftcdk.FrontendDistributionProps{
+		HostedZone:          s.HostedZone,
+		Certificate:         s.CDNCertificate,
+		DomainName:          jsii.String(domain),
+		ApiOriginDomainName: jsii.String(apiOrigin),
+		AppName:             jsii.String(s.AppName),
+		Stage:               jsii.String(string(stage)),
+		BucketName:          jsii.String(clientBucket),
+		RemovalPolicy:       getRemovalPolicy(isProd),
+		AutoDeleteObjects:   jsii.Bool(!isProd),
+		EnableWWWRedirect:   jsii.Bool(false),
+		SinglePageApp:       jsii.Bool(true),
+		PriceClass:          awscloudfront.PriceClass_PRICE_CLASS_100,
+		HttpVersion:         awscloudfront.HttpVersion_HTTP2,
+		ApiPathPatterns: &[]*string{
+			jsii.String("api/*"),
+			jsii.String("oauth/*"),
+			jsii.String("auth/*"),
+			jsii.String(".well-known/*"),
+			jsii.String("nodeinfo/*"),
+			jsii.String("users/*"),
+			jsii.String("inbox/*"),
+			jsii.String("objects/*"),
+			jsii.String("health"),
+		},
+	})
 }
 
 func (s *LesserApiStack) createSharedResources() {
@@ -322,6 +371,8 @@ func (s *LesserApiStack) createMediaInfrastructure(domain string) {
 		HostedZone:        s.HostedZone,
 		Certificate:       s.CDNCertificate,
 		DomainName:        jsii.String(mediaDomain),
+		AppName:           jsii.String(s.AppName),
+		Stage:             jsii.String(string(stage)),
 		BucketName:        jsii.String(naming.S3BucketName(s.AppName, stage, "media", s.AccountID, s.Region)),
 		RemovalPolicy:     getRemovalPolicy(isProd),
 		AutoDeleteObjects: jsii.Bool(!isProd),

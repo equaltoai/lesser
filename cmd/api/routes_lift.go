@@ -59,6 +59,23 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.GET("/.well-known/nodeinfo", lift.HandlerFunc(liftHandler.HandleNodeInfoWellKnownLift))
 	_ = app.GET("/nodeinfo/2.0", lift.HandlerFunc(liftHandler.HandleNodeInfoLift))
 
+	// Instance setup endpoints (locked-by-default bootstrapping)
+	_ = app.GET("/setup/status", lift.HandlerFunc(liftHandler.HandleSetupStatusLift))
+	_ = app.POST("/setup/bootstrap/challenge", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleSetupBootstrapChallengeLift),
+		20, 5*time.Minute, logger))
+	_ = app.POST("/setup/bootstrap/verify", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleSetupBootstrapVerifyLift),
+		20, 5*time.Minute, logger))
+	_ = app.POST("/setup/admin", lift.HandlerFunc(liftHandler.HandleSetupCreateAdminLift))
+	_ = app.POST("/setup/finalize", lift.HandlerFunc(liftHandler.HandleSetupFinalizeLift))
+
+	_ = app.Handle("OPTIONS", "/setup/status", optionsHandler)
+	_ = app.Handle("OPTIONS", "/setup/bootstrap/challenge", optionsHandler)
+	_ = app.Handle("OPTIONS", "/setup/bootstrap/verify", optionsHandler)
+	_ = app.Handle("OPTIONS", "/setup/admin", optionsHandler)
+	_ = app.Handle("OPTIONS", "/setup/finalize", optionsHandler)
+
 	// Account verification/update endpoints with native Lift implementation
 	// verify_credentials is NOT rate limited (read-only)
 	_ = app.GET("/api/v1/accounts/verify_credentials", lift.HandlerFunc(liftHandler.HandleVerifyCredentialsLift))

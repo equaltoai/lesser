@@ -28,6 +28,9 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 	// Get static config
 	instanceConfig := config.GetInstanceConfig()
 
+	state, stateErr := h.repos.Instance().GetInstanceState(ctx.Context)
+	locked := stateErr != nil || state.Locked
+
 	// Get rules from storage
 	rules, err := h.repos.Instance().GetInstanceRules(ctx.Context)
 	if err != nil {
@@ -128,7 +131,7 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 		},
 		"thumbnail":         h.cfg.BaseURL() + "/assets/thumbnail.png",
 		"languages":         instanceConfig.Languages,
-		"registrations":     instanceConfig.RegistrationsOpen,
+		"registrations":     instanceConfig.RegistrationsOpen && !locked,
 		"approval_required": instanceConfig.ApprovalRequired,
 		"invites_enabled":   instanceConfig.InvitesEnabled,
 		"contact_account":   contactAccount,

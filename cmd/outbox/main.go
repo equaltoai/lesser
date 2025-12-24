@@ -690,6 +690,22 @@ func (op *OutboxProcessor) HandleOutboxPost(ctx *lift.Context) error {
 		})
 	}
 
+	// Block publishing until instance activation completes.
+	state, err := op.repos.Instance().GetInstanceState(ctx.Context)
+	if err != nil {
+		op.logger.Warn("failed to get instance lock state; defaulting to locked",
+			zap.String("request_id", requestID),
+			zap.Error(err))
+		return ctx.Status(http.StatusForbidden).JSON(map[string]string{
+			"error": "instance is locked",
+		})
+	}
+	if state.Locked {
+		return ctx.Status(http.StatusForbidden).JSON(map[string]string{
+			"error": "instance is locked",
+		})
+	}
+
 	op.logger.Info("processing outbox POST request",
 		zap.String("request_id", requestID),
 		zap.String("username", username),

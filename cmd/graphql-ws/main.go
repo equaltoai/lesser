@@ -561,6 +561,13 @@ func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, w
 		return
 	}
 
+	instanceState, instanceErr := repos.Instance().GetInstanceState(ctx)
+	if instanceErr != nil || instanceState.Locked {
+		s.sendErrorViaLift(wsCtx, msg.ID, "instance_locked", "instance is locked")
+		_ = wsCtx.SendJSONMessage(responseEnvelope{ID: msg.ID, Type: "complete"})
+		return
+	}
+
 	connectionID := wsCtx.ConnectionID()
 	state, err := s.getConnection(ctx, connectionID)
 	if err != nil {

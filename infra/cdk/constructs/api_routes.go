@@ -67,15 +67,19 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	}
 
 	// Add custom domain if certificate is provided
-	if props.Certificate != nil && props.Domain != "" {
-		restProps.DomainName = jsii.String(props.Domain)
+	apiDomain := ""
+	if props.Domain != "" {
+		apiDomain = fmt.Sprintf("api.%s", props.Domain)
+	}
+	if props.Certificate != nil && apiDomain != "" {
+		restProps.DomainName = jsii.String(apiDomain)
 		restProps.Certificate = props.Certificate
 	}
 
 	gateway.RestApi = liftcdk.NewLiftRestAPI(scope, jsii.String("RestApi"), restProps)
 
-	if props.HostedZone != nil && props.Domain != "" && gateway.RestApi.RestAPI.DomainName() != nil {
-		recordName := relativeRecordName(props.Domain, props.HostedZone)
+	if props.HostedZone != nil && apiDomain != "" && gateway.RestApi.RestAPI.DomainName() != nil {
+		recordName := relativeRecordName(apiDomain, props.HostedZone)
 		target := awsroute53targets.NewApiGatewayDomain(gateway.RestApi.RestAPI.DomainName())
 
 		awsroute53.NewARecord(scope, jsii.String("ApiAliasARecord"), &awsroute53.ARecordProps{

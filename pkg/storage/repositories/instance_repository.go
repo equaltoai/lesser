@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	appErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -23,8 +25,19 @@ type InstanceRepository struct {
 	historyRepo  *BaseRepository[*models.InstanceHistory]
 	metricsRepo  *BaseRepository[*models.InstanceMetrics]
 	activityRepo *BaseRepository[*models.WeeklyActivity]
+	stateRepo    *BaseRepository[*models.InstanceState]
 	logger       *zap.Logger
+
+	stateCache instanceStateCache
 }
+
+type instanceStateCache struct {
+	mu        sync.RWMutex
+	state     *models.InstanceState
+	expiresAt time.Time
+}
+
+const instanceStateCacheTTL = 5 * time.Second
 
 // NewInstanceRepository creates a new instance repository with enhanced functionality
 func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *InstanceRepository {
@@ -42,6 +55,7 @@ func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *In
 		historyRepo:            NewBaseRepository[*models.InstanceHistory](db, tableName, logger),
 		metricsRepo:            NewBaseRepository[*models.InstanceMetrics](db, tableName, logger),
 		activityRepo:           NewBaseRepository[*models.WeeklyActivity](db, tableName, logger),
+		stateRepo:              NewBaseRepository[*models.InstanceState](db, tableName, logger),
 		logger:                 logger,
 	}
 }
@@ -62,8 +76,139 @@ func NewInstanceRepositoryWithCostTracking(db core.DB, tableName string, logger 
 		historyRepo:            NewBaseRepositoryWithCostTracking[*models.InstanceHistory](db, tableName, logger, costService, "instance_history"),
 		metricsRepo:            NewBaseRepositoryWithCostTracking[*models.InstanceMetrics](db, tableName, logger, costService, "instance_metrics"),
 		activityRepo:           NewBaseRepositoryWithCostTracking[*models.WeeklyActivity](db, tableName, logger, costService, "instance_activity"),
+		stateRepo:              NewBaseRepositoryWithCostTracking[*models.InstanceState](db, tableName, logger, costService, "instance_state"),
 		logger:                 logger,
 	}
+}
+
+func (r *InstanceRepository) getCachedState() (*models.InstanceState, bool) {
+	r.stateCache.mu.RLock()
+	state := r.stateCache.state
+	expiresAt := r.stateCache.expiresAt
+	r.stateCache.mu.RUnlock()
+
+	if state == nil || time.Now().After(expiresAt) {
+		return nil, false
+	}
+	return state, true
+}
+
+func (r *InstanceRepository) setCachedState(state *models.InstanceState) {
+	r.stateCache.mu.Lock()
+	r.stateCache.state = state
+	r.stateCache.expiresAt = time.Now().Add(instanceStateCacheTTL)
+	r.stateCache.mu.Unlock()
+}
+
+func (r *InstanceRepository) invalidateStateCache() {
+	r.stateCache.mu.Lock()
+	r.stateCache.state = nil
+	r.stateCache.expiresAt = time.Time{}
+	r.stateCache.mu.Unlock()
+}
+
+// GetInstanceState returns the current instance activation state.
+// If no state exists yet, it defaults to a locked state without persisting.
+func (r *InstanceRepository) GetInstanceState(ctx context.Context) (*models.InstanceState, error) {
+	if cached, ok := r.getCachedState(); ok {
+		return cached, nil
+	}
+
+	state := &models.InstanceState{}
+	err := r.stateRepo.Get(ctx, storage.InstanceConfigKey, "STATE", state)
+	if err != nil {
+		if appErrors.HasCode(err, appErrors.CodeNotFound) {
+			defaultState := models.NewDefaultInstanceState()
+			r.setCachedState(defaultState)
+			return defaultState, nil
+		}
+		return nil, err
+	}
+
+	r.setCachedState(state)
+	return state, nil
+}
+
+// EnsureInstanceState ensures the instance state record exists and returns it.
+func (r *InstanceRepository) EnsureInstanceState(ctx context.Context) (*models.InstanceState, error) {
+	state := &models.InstanceState{}
+	err := r.stateRepo.Get(ctx, storage.InstanceConfigKey, "STATE", state)
+	if err == nil {
+		r.setCachedState(state)
+		return state, nil
+	}
+
+	if !appErrors.HasCode(err, appErrors.CodeNotFound) {
+		return nil, err
+	}
+
+	state = models.NewDefaultInstanceState()
+	if createErr := r.stateRepo.Create(ctx, state); createErr != nil {
+		// If another writer created it concurrently, read it back.
+		if appErrors.HasCode(createErr, appErrors.CodeAlreadyExists) {
+			r.invalidateStateCache()
+			return r.EnsureInstanceState(ctx)
+		}
+		return nil, createErr
+	}
+
+	r.setCachedState(state)
+	return state, nil
+}
+
+// SetInstanceLocked updates the instance lock state.
+func (r *InstanceRepository) SetInstanceLocked(ctx context.Context, locked bool) error {
+	state, err := r.EnsureInstanceState(ctx)
+	if err != nil {
+		return err
+	}
+
+	state.Locked = locked
+	if !locked && state.ActivatedAt == nil {
+		now := time.Now()
+		state.ActivatedAt = &now
+	}
+	state.UpdatedAt = time.Now()
+
+	if err := r.stateRepo.Update(ctx, state); err != nil {
+		return err
+	}
+	r.setCachedState(state)
+	return nil
+}
+
+// SetBootstrapWalletAddress sets the bootstrap wallet address used for setup authentication.
+func (r *InstanceRepository) SetBootstrapWalletAddress(ctx context.Context, address string) error {
+	state, err := r.EnsureInstanceState(ctx)
+	if err != nil {
+		return err
+	}
+
+	state.BootstrapWalletAddress = strings.ToLower(strings.TrimSpace(address))
+	state.UpdatedAt = time.Now()
+
+	if err := r.stateRepo.Update(ctx, state); err != nil {
+		return err
+	}
+	r.setCachedState(state)
+	return nil
+}
+
+// SetPrimaryAdminUsername records the primary admin username created during setup.
+func (r *InstanceRepository) SetPrimaryAdminUsername(ctx context.Context, username string) error {
+	state, err := r.EnsureInstanceState(ctx)
+	if err != nil {
+		return err
+	}
+
+	state.PrimaryAdminUsername = strings.TrimSpace(username)
+	state.UpdatedAt = time.Now()
+
+	if err := r.stateRepo.Update(ctx, state); err != nil {
+		return err
+	}
+	r.setCachedState(state)
+	return nil
 }
 
 // GetInstanceRules retrieves the instance rules
@@ -73,7 +218,7 @@ func (r *InstanceRepository) GetInstanceRules(ctx context.Context) ([]storage.In
 	err := r.Get(ctx, storage.InstanceConfigKey, "RULES", config)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if appErrors.HasCode(err, appErrors.CodeNotFound) {
 			// Return default instance rules if none configured
 			return r.getDefaultInstanceRules(), nil
 		}
@@ -136,7 +281,7 @@ func (r *InstanceRepository) GetExtendedDescription(ctx context.Context) (string
 	err := r.Get(ctx, storage.InstanceConfigKey, "EXTENDED_DESC", config)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if appErrors.HasCode(err, appErrors.CodeNotFound) {
 			// Return enhanced default description with instance info
 			defaultDesc := r.generateDefaultDescription()
 			return defaultDesc, time.Now(), nil
@@ -200,7 +345,7 @@ func (r *InstanceRepository) GetTotalUserCount(ctx context.Context) (int64, erro
 	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", "TOTAL_USERS", metric)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if appErrors.HasCode(err, appErrors.CodeNotFound) {
 			return 0, nil
 		}
 		r.logger.Error("Failed to get total user count", zap.Error(err))
@@ -216,7 +361,7 @@ func (r *InstanceRepository) GetTotalStatusCount(ctx context.Context) (int64, er
 	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", "TOTAL_STATUSES", metric)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if appErrors.HasCode(err, appErrors.CodeNotFound) {
 			return 0, nil
 		}
 		r.logger.Error("Failed to get total status count", zap.Error(err))
@@ -232,7 +377,7 @@ func (r *InstanceRepository) GetTotalDomainCount(ctx context.Context) (int64, er
 	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", "TOTAL_DOMAINS", metric)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if appErrors.HasCode(err, appErrors.CodeNotFound) {
 			return 0, nil
 		}
 		r.logger.Error("Failed to get total domain count", zap.Error(err))
@@ -249,7 +394,7 @@ func (r *InstanceRepository) GetActiveUserCount(ctx context.Context, days int) (
 	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", metricType, metric)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if appErrors.HasCode(err, appErrors.CodeNotFound) {
 			return 0, nil
 		}
 		r.logger.Error("Failed to get active user count", zap.Error(err), zap.Int("days", days))
