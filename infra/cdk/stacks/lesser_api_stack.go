@@ -43,6 +43,9 @@ type LesserApiStack struct {
 	StreamingBucket        awss3.Bucket
 	TrainingBucket         awss3.Bucket
 	MediaDistribution      awscloudfront.Distribution
+	FrontendDistribution   awscloudfront.Distribution
+	ClientBucket           awss3.Bucket
+	AuthUIBucket           awss3.Bucket
 	Queues                 map[string]localconstructs.QueuePair
 	PrivateKey             awssecretsmanager.ISecret
 	JwtSecret              awssecretsmanager.ISecret
@@ -243,7 +246,7 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 	clientBucket := naming.S3BucketName(s.AppName, stage, "client", s.AccountID, s.Region)
 	authBucket := naming.S3BucketName(s.AppName, stage, "auth-ui", s.AccountID, s.Region)
 
-	_ = liftcdk.NewPathRoutedFrontendDistribution(s.Stack, jsii.String("ClientFrontend"), &liftcdk.PathRoutedFrontendDistributionProps{
+	frontend := liftcdk.NewPathRoutedFrontendDistribution(s.Stack, jsii.String("ClientFrontend"), &liftcdk.PathRoutedFrontendDistributionProps{
 		HostedZone:          s.HostedZone,
 		Certificate:         s.CDNCertificate,
 		DomainName:          jsii.String(domain),
@@ -258,6 +261,10 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 		PriceClass:          awscloudfront.PriceClass_PRICE_CLASS_100,
 		HttpVersion:         awscloudfront.HttpVersion_HTTP2,
 	})
+
+	s.FrontendDistribution = frontend.Distribution
+	s.ClientBucket = frontend.ClientBucket
+	s.AuthUIBucket = frontend.AuthBucket
 }
 
 func (s *LesserApiStack) createSharedResources() {
@@ -795,6 +802,31 @@ func (s *LesserApiStack) createOutputs() {
 		Value:       jsii.String(s.Environment),
 		Description: jsii.String("Deployment environment"),
 	})
+
+	if s.FrontendDistribution != nil {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("FrontendDistributionId"), &awscdk.CfnOutputProps{
+			Value:       s.FrontendDistribution.DistributionId(),
+			Description: jsii.String("Stage CloudFront distribution ID for single-domain routing"),
+		})
+		awscdk.NewCfnOutput(s.Stack, jsii.String("FrontendDistributionDomain"), &awscdk.CfnOutputProps{
+			Value:       s.FrontendDistribution.DistributionDomainName(),
+			Description: jsii.String("Stage CloudFront distribution domain name"),
+		})
+	}
+
+	if s.ClientBucket != nil {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("ClientBucketName"), &awscdk.CfnOutputProps{
+			Value:       s.ClientBucket.BucketName(),
+			Description: jsii.String("S3 bucket for the client UI (served under /l/*)"),
+		})
+	}
+
+	if s.AuthUIBucket != nil {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("AuthUIBucketName"), &awscdk.CfnOutputProps{
+			Value:       s.AuthUIBucket.BucketName(),
+			Description: jsii.String("S3 bucket for the auth UI (served under /auth/*)"),
+		})
+	}
 }
 
 func loadEnvironmentConfig(environment string) map[string]interface{} {

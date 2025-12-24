@@ -169,6 +169,10 @@ func (e *upEnv) run(ctx context.Context) error {
 		return err
 	}
 
+	if err := e.deployUIAssets(ctx, receipt); err != nil {
+		return err
+	}
+
 	if err := e.bootstrapStages(ctx, receipt); err != nil {
 		return err
 	}

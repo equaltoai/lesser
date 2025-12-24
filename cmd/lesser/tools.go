@@ -6,7 +6,7 @@ import (
 )
 
 func ensureToolsAvailable() error {
-	for _, name := range []string{"cdk", "go"} {
+	for _, name := range []string{"cdk", "go", "pnpm"} {
 		if _, err := exec.LookPath(name); err != nil {
 			return fmt.Errorf("required tool %q not found on PATH", name)
 		}
