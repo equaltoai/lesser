@@ -48,11 +48,11 @@ make dev
 cd auth-ui
 pnpm install
 pnpm dev
-# Available at http://localhost:4322
+# Available at http://localhost:4322/auth
 
-# Note: For testing OAuth flow, you'll need to update
-# the OAuth handler to use localhost:4322 instead of
-# auth.dev.lesser.host during local dev
+# Note:
+# - Auth UI builds under /auth (e.g., http://localhost:4322/auth/login)
+# - If the API is on a different origin, set PUBLIC_LESSER_API_ORIGIN (e.g., PUBLIC_LESSER_API_ORIGIN=http://localhost:8080 pnpm dev)
 ```
 
 ## Test Scenarios
@@ -77,7 +77,7 @@ curl -X POST http://localhost:8080/api/v1/apps \
 http://localhost:8080/oauth/authorize?client_id=CLIENT_ID&redirect_uri=http://localhost:4321/callback&response_type=code&scope=read+write&state=random123
 ```
 
-3. You should be redirected to auth UI (http://localhost:4322/login or https://auth.dev.lesser.host/login)
+3. You should be redirected to auth UI (http://localhost:4322/auth/login or https://dev.lesser.host/auth/login)
 
 4. Enter your username
 
@@ -482,7 +482,7 @@ AWS_PROFILE=Lesser aws logs tail /aws/lambda/lesser-development-api \
 
 **"route not found: GET /auth/login"**
 - **Cause**: Auth UI not deployed or DNS not configured
-- **Fix**: Ensure the Auth UI assets are deployed for `auth.<stage-domain>` (see `docs/PASSWORDLESS_OAUTH.md`).
+- **Fix**: Ensure the Auth UI assets are deployed under `https://<stage-domain>/auth/*` (see `docs/PASSWORDLESS_OAUTH.md`).
 
 **"redirect to external host not allowed: localhost"**
 - **Cause**: Over-strict redirect validation

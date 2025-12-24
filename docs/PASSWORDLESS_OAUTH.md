@@ -20,7 +20,7 @@ Lesser implements a comprehensive, passwordless OAuth 2.0 authorization system u
 │     ├─ Authenticated → Go to step 4                             │
 │     └─ Not authenticated → Redirect to auth UI                   │
 │                                                                   │
-│  3. Passwordless authentication at https://auth.dev.lesser.host  │
+│  3. Passwordless authentication at https://dev.lesser.host/auth  │
 │     ┌───────────────────────────────────────┐                   │
 │     │  ✨ Sign in with Passkey               │ ← WebAuthn        │
 │     │     • Face ID / Touch ID                │                  │
@@ -35,7 +35,7 @@ Lesser implements a comprehensive, passwordless OAuth 2.0 authorization system u
 │     └───────────────────────────────────────┘                   │
 │                                                                   │
 │  4. After authentication → Show consent screen                   │
-│     https://auth.dev.lesser.host/consent                         │
+│     https://dev.lesser.host/auth/consent                         │
 │     ┌───────────────────────────────────────┐                   │
 │     │  App: "My Fediverse Client"            │                  │
 │     │  Requesting:                            │                  │
@@ -173,8 +173,8 @@ lesser/
 │   │   ├── layouts/
 │   │   │   └── AuthLayout.astro  # Base layout
 │   │   ├── pages/
-│   │   │   ├── login.astro       # /login - Passwordless auth
-│   │   │   └── consent.astro     # /consent - OAuth approval
+│   │   │   ├── login.astro       # /auth/login - Passwordless auth
+│   │   │   └── consent.astro     # /auth/consent - OAuth approval
 │   │   ├── components/
 │   │   │   ├── PasswordlessLogin.svelte
 │   │   │   └── OAuthConsentScreen.svelte
@@ -188,44 +188,14 @@ lesser/
 
 ### Deployment
 
-**Infrastructure (CDK):**
-- S3 bucket: `lesser-auth-ui-{domain}`
-- CloudFront distribution with SSL
-- Custom domain: `auth.{domain}` (e.g., `auth.dev.lesser.host`)
-- Origin Access Identity for S3 security
+Auth UI is deployed as static files to the stage’s `auth-ui` S3 bucket and served from the stage apex CloudFront distribution under `/auth/*`.
 
-**Commands:**
+**Recommended command:**
 ```bash
-# Build auth UI locally
-make build-auth-ui
-
-# Deploy static assets to AWS (infrastructure is provisioned by the stage stack)
-make deploy-auth-ui DOMAIN=dev.lesser.host AWS_PROFILE=Lesser
-
-# Output:
-# ✓ Auth UI built to auth-ui/dist/
-# ✓ Uploaded to S3
-# ✓ CloudFront cache invalidated
-# ✓ Available at https://auth.dev.lesser.host
+lesser up --app my-lesser --base-domain example.com --aws-profile Lesser
 ```
 
-**CDK Resources Created:**
-1. **S3 Bucket**: `lesser-auth-ui-dev.lesser.host`
-   - Private access only
-   - Versioning disabled (static assets)
-   - S3-managed encryption
-   - Auto-delete in dev (retain in prod)
-
-2. **CloudFront Distribution**:
-   - Origin: S3 bucket with OAI
-   - SSL/TLS: Certificate from shared stack
-   - Compression: Gzip + Brotli
-   - Caching: Optimized for static assets
-   - Error handling: 404/403 → /login
-
-3. **Route53 DNS**:
-   - A record: `auth.dev.lesser.host` → CloudFront
-   - AAAA record: IPv6 support
+This builds `auth-ui`, uploads `auth-ui/dist` to the stage output bucket, and invalidates CloudFront for `/auth/*`.
 
 ## OAuth Flow Implementation
 
@@ -253,14 +223,14 @@ GET https://dev.lesser.host/oauth/authorize
 
 **If not authenticated:**
 - Store OAuth params in `OAuthState` (DynamoDB)
-- Redirect to: `https://auth.dev.lesser.host/login?return_to=...&auth_request=...`
+- Redirect to: `https://dev.lesser.host/auth/login?return_to=...&auth_request=...`
 
 **If authenticated:**
 - Skip to Step 4 (consent check)
 
 ### Step 3: Passwordless Login
 
-User chooses authentication method at `https://auth.dev.lesser.host/login`:
+User chooses authentication method at `https://dev.lesser.host/auth/login`:
 
 **Option A: WebAuthn**
 1. Enter username
@@ -286,11 +256,11 @@ User chooses authentication method at `https://auth.dev.lesser.host/login`:
 
 **If first time or new scopes:**
 - Store `OAuthState` in DynamoDB
-- Redirect to: `https://auth.dev.lesser.host/consent?state=...&client_id=...`
+- Redirect to: `https://dev.lesser.host/auth/consent?state=...&client_id=...`
 
 ### Step 5: User Consent
 
-At `https://auth.dev.lesser.host/consent`, user sees:
+At `https://dev.lesser.host/auth/consent`, user sees:
 - App name and website
 - Requested scopes with descriptions
 - Security notice
@@ -512,16 +482,12 @@ open "https://dev.lesser.host/oauth/authorize?client_id=XXX&redirect_uri=http://
 ### 4. Deployment
 
 ```bash
-# Build and deploy auth UI
-make build-auth-ui
-make deploy-auth-ui DOMAIN=dev.lesser.host AWS_PROFILE=Lesser
-
-# Deploy infrastructure (always deploys dev + live; add --with-staging if desired)
+# Deploy infrastructure + UI (always deploys dev + live; add --with-staging if desired)
 go build -o lesser ./cmd/lesser
 ./lesser up --app lesser --base-domain lesser.host --aws-profile Lesser
 
-# Verify deployment
-curl -I https://auth.dev.lesser.host/login
+# Verify auth UI
+curl -I https://dev.lesser.host/auth/login
 # Should return 200 with HTML
 ```
 

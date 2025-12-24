@@ -60,7 +60,6 @@ type LesserApiStack struct {
 	APICertificate         awscertificatemanager.ICertificate
 	CDNCertificate         awscertificatemanager.ICertificate
 	WebSocketCertificate   awscertificatemanager.ICertificate
-	AuthCertificate        awscertificatemanager.ICertificate
 	CloudFrontKeyPairID    string
 	CloudFrontKeyGroupID   string
 	LambdaEncryptionRole   awsiam.IRole
@@ -231,7 +230,6 @@ func (s *LesserApiStack) createStageCertificates(stageDomain string) {
 	s.APICertificate = regionalCert
 	s.WebSocketCertificate = regionalCert
 	s.CDNCertificate = cloudFrontCert
-	s.AuthCertificate = cloudFrontCert
 }
 
 func (s *LesserApiStack) createClientInfrastructure(domain string) {
@@ -397,23 +395,6 @@ func (s *LesserApiStack) createMediaInfrastructure(domain string) {
 		Environment: s.Environment,
 		Bucket:      s.MediaBucket,
 		BucketType:  "media",
-	})
-}
-
-// createAuthUIInfrastructure creates S3 + CloudFront for the passwordless OAuth UI
-func (s *LesserApiStack) createAuthUIInfrastructure(domain string, certificate awscertificatemanager.ICertificate) {
-	if s.HostedZone == nil || certificate == nil || domain == "" {
-		return
-	}
-
-	_ = localconstructs.NewAuthUI(s.Stack, jsii.String("AuthUI"), &localconstructs.AuthUIProps{
-		AppName:     s.AppName,
-		Environment: s.Environment,
-		Domain:      domain,
-		AccountID:   s.AccountID,
-		Region:      s.Region,
-		HostedZone:  s.HostedZone,
-		Certificate: certificate,
 	})
 }
 

@@ -32,9 +32,9 @@ Behavior while locked:
 
 ## Setup API Contract
 
-The setup wizard UI will live under `https://auth.<stage-domain>/setup` in a separate project, but the backend contract is served by the API domain:
+The setup wizard UI will live under `https://<stage-domain>/auth/setup` in a separate project, but the backend contract is served by the stage apex domain:
 
-- Base: `https://api.<stage-domain>/setup/*`
+- Base: `https://<stage-domain>/setup/*`
 - `GET /setup/status`
 - `POST /setup/bootstrap/challenge`
 - `POST /setup/bootstrap/verify` → returns a short-lived setup session token

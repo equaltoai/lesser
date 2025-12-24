@@ -80,15 +80,15 @@ Quick checks:
 
 ```bash
 # Lock state + bootstrap actor descriptor
-curl -s https://api.dev.example.com/setup/status | jq .
+curl -s https://dev.example.com/setup/status | jq .
 
 # Empty timeline while locked
-curl -s https://api.dev.example.com/api/v1/timelines/public | jq .
+curl -s https://dev.example.com/api/v1/timelines/public | jq .
 ```
 
 ## Activation
 
-The setup wizard UI is out of scope for this repo work; the backend contract lives under `https://api.<stage-domain>/setup/*` and will be consumed by a separate Auth UI project.
+The setup wizard UI is out of scope for this repo work; the backend contract lives under `https://<stage-domain>/setup/*` and will be consumed by a separate Auth UI project.
 
 Activation, when implemented in the wizard:
 

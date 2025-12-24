@@ -33,7 +33,29 @@ type authorizeFlow struct {
 	oauthSvc    *auth.OAuthService
 	username    string
 	scopes      []string
-	accessToken string
+}
+
+func (h *Handler) isOAuthAuthorizeUIMode(ctx *lift.Context) bool {
+	if strings.EqualFold(ctx.Query("mode"), "ui") {
+		return true
+	}
+
+	accept := ctx.Header("Accept")
+	if accept == "" {
+		accept = ctx.Header("accept")
+	}
+
+	return strings.Contains(accept, "application/json")
+}
+
+func (h *Handler) writeOAuthAuthorizeRedirect(ctx *lift.Context, nextURL string) error {
+	if h.isOAuthAuthorizeUIMode(ctx) {
+		return ctx.Status(http.StatusOK).JSON(map[string]string{"next_url": nextURL})
+	}
+
+	ctx.Response.Header("Location", nextURL)
+	ctx.Status(http.StatusFound)
+	return nil
 }
 
 // HandleOAuthAuthorizeLift handles the OAuth authorization endpoint using native Lift patterns
@@ -71,12 +93,11 @@ func (h *Handler) initializeAuthorizeFlow(ctx *lift.Context) (*authorizeFlow, bo
 		return nil, false, errors.New("invalid redirect_uri")
 	}
 
-	username, accessToken, handled, err := h.resolveAuthorizeUser(ctx, flow.oauthSvc, req)
+	username, handled, err := h.resolveAuthorizeUser(ctx, req)
 	if err != nil || handled {
 		return nil, handled, err
 	}
 	flow.username = username
-	flow.accessToken = accessToken
 
 	scopes, err := h.normalizeAuthorizeScopes(req.scope)
 	if err != nil {
@@ -132,45 +153,23 @@ func (h *Handler) redirectMissingAuthorizeParams(ctx *lift.Context, req *authori
 	}
 
 	errorURL := fmt.Sprintf("%s/oauth/authorize?%s", authUIBaseURL, errorParams.Encode())
-
-	ctx.Response.Header("Location", errorURL)
-	ctx.Status(http.StatusFound)
-	return nil
+	return h.writeOAuthAuthorizeRedirect(ctx, errorURL)
 }
 
-func (h *Handler) resolveAuthorizeUser(ctx *lift.Context, oauthSvc *auth.OAuthService, req *authorizeRequest) (string, string, bool, error) {
-	accessToken := h.decodeAccessTokenParam(ctx.Query("access_token"))
+func (h *Handler) resolveAuthorizeUser(ctx *lift.Context, req *authorizeRequest) (string, bool, error) {
 	username := h.getUserFromSessionLift(ctx)
 
-	if username == "" && accessToken != "" {
-		if claims, err := oauthSvc.ValidateAccessToken(accessToken); err == nil {
-			username = claims.Username
-		}
-	}
-
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		if err := h.redirectUserToLogin(ctx, req, accessToken); err != nil {
-			return "", "", true, err
+		if err := h.redirectUserToLogin(ctx, req); err != nil {
+			return "", true, err
 		}
-		return "", "", true, nil
+		return "", true, nil
 	}
 
-	return username, accessToken, false, nil
+	return username, false, nil
 }
 
-func (h *Handler) decodeAccessTokenParam(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	value, err := url.QueryUnescape(raw)
-	if err != nil {
-		h.logger.Warn("failed to decode access_token query parameter", zap.Error(err))
-		value = raw
-	}
-	return strings.ReplaceAll(value, " ", "+")
-}
-
-func (h *Handler) redirectUserToLogin(ctx *lift.Context, req *authorizeRequest, accessToken string) error {
+func (h *Handler) redirectUserToLogin(ctx *lift.Context, req *authorizeRequest) error {
 	authUIBaseURL := fmt.Sprintf("https://%s/auth", h.cfg.Domain)
 	authRequest := map[string]string{
 		"client_id":             req.clientID,
@@ -182,19 +181,12 @@ func (h *Handler) redirectUserToLogin(ctx *lift.Context, req *authorizeRequest, 
 		"code_challenge_method": req.codeChallengeMethod,
 	}
 
-	if accessToken != "" {
-		authRequest["access_token"] = accessToken
-	}
-
 	payload, _ := json.Marshal(authRequest)
 	loginURL := fmt.Sprintf("%s/login?return_to=%s&auth_request=%s",
 		authUIBaseURL,
 		url.QueryEscape("/oauth/authorize"),
 		url.QueryEscape(string(payload)))
-
-	ctx.Response.Header("Location", loginURL)
-	ctx.Status(http.StatusFound)
-	return nil
+	return h.writeOAuthAuthorizeRedirect(ctx, loginURL)
 }
 
 func (h *Handler) normalizeAuthorizeScopes(scope string) ([]string, error) {
@@ -244,31 +236,11 @@ func (h *Handler) ensureConsentForFlow(ctx *lift.Context, flow *authorizeFlow) (
 		return false, h.oauthErrorLift(ctx, "server_error", "Failed to save authorization state", flow.request.redirectURI, flow.request.state)
 	}
 
-	accessToken := h.resolveConsentToken(ctx, flow.accessToken)
 	h.logger.Info("redirecting to consent UI",
 		zap.String("username", flow.username),
-		zap.String("client_id", flow.request.clientID),
-		zap.Bool("has_access_token", accessToken != ""))
+		zap.String("client_id", flow.request.clientID))
 
-	return true, h.redirectToConsentUI(ctx, authState, accessToken)
-}
-
-func (h *Handler) resolveConsentToken(ctx *lift.Context, existing string) string {
-	if existing != "" {
-		return existing
-	}
-	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
-		authHeader = ctx.Header("authorization")
-	}
-	if authHeader == "" {
-		return ""
-	}
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return ""
-	}
-	return token
+	return true, h.redirectToConsentUI(ctx, authState)
 }
 
 func (h *Handler) completeAuthorizationFlow(ctx *lift.Context, flow *authorizeFlow) error {
@@ -301,10 +273,7 @@ func (h *Handler) completeAuthorizationFlow(ctx *lift.Context, flow *authorizeFl
 		query.Set("state", flow.request.state)
 	}
 	redirectURL.RawQuery = query.Encode()
-
-	ctx.Response.Header("Location", redirectURL.String())
-	ctx.Status(http.StatusFound)
-	return nil
+	return h.writeOAuthAuthorizeRedirect(ctx, redirectURL.String())
 }
 
 // Helper methods for Lift implementation
@@ -335,10 +304,7 @@ func (h *Handler) oauthErrorLift(ctx *lift.Context, errorCode, errorDescription,
 		q.Set("state", state)
 	}
 	u.RawQuery = q.Encode()
-
-	ctx.Response.Header("Location", u.String())
-	ctx.Status(http.StatusFound)
-	return nil
+	return h.writeOAuthAuthorizeRedirect(ctx, u.String())
 }
 
 // getUserFromSessionLift extracts the username from the session using Lift patterns
@@ -368,7 +334,7 @@ func (h *Handler) getUserFromSessionLift(ctx *lift.Context) string {
 }
 
 // redirectToConsentUI redirects to the hosted OAuth consent UI
-func (h *Handler) redirectToConsentUI(ctx *lift.Context, authState *storage.OAuthState, accessToken string) error {
+func (h *Handler) redirectToConsentUI(ctx *lift.Context, authState *storage.OAuthState) error {
 	// Check if registry is initialized
 	if h.registry == nil {
 		h.logger.Error("service registry not initialized for OAuth consent")
@@ -390,20 +356,16 @@ func (h *Handler) redirectToConsentUI(ctx *lift.Context, authState *storage.OAut
 
 	authUIBaseURL := fmt.Sprintf("https://%s/auth", h.cfg.Domain)
 
-	// Build consent URL with all necessary parameters including access_token for stateless auth
-	consentURL := fmt.Sprintf("%s/consent?state=%s&client_id=%s&client_name=%s&client_url=%s&scopes=%s&redirect_uri=%s&access_token=%s",
+	// Build consent URL with all necessary parameters.
+	consentURL := fmt.Sprintf("%s/consent?state=%s&client_id=%s&client_name=%s&client_url=%s&scopes=%s&redirect_uri=%s",
 		authUIBaseURL,
 		url.QueryEscape(authState.State),
 		url.QueryEscape(authState.ClientID),
 		url.QueryEscape(app.Name),
 		url.QueryEscape(app.Website),
 		url.QueryEscape(strings.Join(authState.Scopes, " ")),
-		url.QueryEscape(authState.RedirectURI),
-		url.QueryEscape(accessToken))
-
-	ctx.Response.Header("Location", consentURL)
-	ctx.Status(http.StatusFound)
-	return nil
+		url.QueryEscape(authState.RedirectURI))
+	return h.writeOAuthAuthorizeRedirect(ctx, consentURL)
 }
 
 // hasUserConsentedToApp checks if user has consented to the app with required scopes

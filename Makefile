@@ -850,28 +850,10 @@ build-auth-ui:
 
 ## Deploy auth UI to S3 + CloudFront
 deploy-auth-ui:
-	@echo "Deploying auth UI..."
-	@if [ -z "$(DOMAIN)" ]; then \
-		echo "ERROR: DOMAIN is required (e.g., DOMAIN=dev.lesser.host)"; \
-		exit 1; \
-	fi
-	@echo "Building auth UI..."
-	@$(MAKE) build-auth-ui
-	@echo "Uploading to S3..."
-	@AWS_PROFILE=$(AWS_PROFILE) aws s3 sync auth-ui/dist/ s3://lesser-auth-ui-$(DOMAIN)/ --delete
-	@echo "Invalidating CloudFront cache..."
-	@DISTRIBUTION_ID=$$(AWS_PROFILE=$(AWS_PROFILE) aws cloudfront list-distributions \
-		--query "DistributionList.Items[?contains(Origins.Items[0].DomainName, 'lesser-auth-ui-$(DOMAIN)')].Id" \
-		--output text); \
-	if [ -n "$$DISTRIBUTION_ID" ]; then \
-		AWS_PROFILE=$(AWS_PROFILE) aws cloudfront create-invalidation \
-			--distribution-id $$DISTRIBUTION_ID \
-			--paths "/*"; \
-		echo "✓ CloudFront cache invalidated (Distribution: $$DISTRIBUTION_ID)"; \
-	else \
-		echo "⚠ No CloudFront distribution found for auth UI"; \
-	fi
-	@echo "✓ Auth UI deployed to https://auth.$(DOMAIN)"
+	@echo "deploy-auth-ui is deprecated."
+	@echo "Auth UI is deployed via 'lesser up' to https://<stage-domain>/auth/*."
+	@echo "Run: go run ./cmd/lesser up --app <app> --base-domain <base-domain> --aws-profile <profile> [--with-staging]"
+	@exit 1
 
 ## Tidy Go modules
 tidy:
@@ -1031,7 +1013,7 @@ help:
 	@echo "  gqlgen              Generate GraphQL code"
 	@echo "  export-schema       Export combined GraphQL schema for web clients"
 	@echo "  build-auth-ui       Build passwordless OAuth UI (WebAuthn + Wallet)"
-	@echo "  deploy-auth-ui      Deploy auth UI to S3 + CloudFront (requires DOMAIN=...)"
+	@echo "  deploy-auth-ui      (deprecated) use lesser up to deploy /auth"
 	@echo "  tidy                Tidy Go modules"
 	@echo "  install-tools       Install development tools"
 	@echo ""
@@ -1041,24 +1023,17 @@ help:
 	@echo "  help                Show this help message"
 	@echo ""
 	@echo "EXAMPLES:"
-	@echo "  # AWS SSO Users (First Time Setup):"
+	@echo "  # Deploy (recommended):"
+	@echo "  go build -o lesser ./cmd/lesser"
+	@echo "  ./lesser up --app my-lesser --base-domain example.com --aws-profile my-profile [--with-staging]"
+	@echo ""
+	@echo "  # AWS SSO login:"
 	@echo "  aws sso login --profile my-profile"
-	@echo "  make cdk-bootstrap AWS_PROFILE=my-profile"
-	@echo "  AWS_PROFILE=my-profile make deploy-shared      # Deploy once for all envs"
-	@echo "  AWS_PROFILE=my-profile make deploy-dev         # Deploy dev environment"
 	@echo ""
-	@echo "  # Standard AWS Credentials:"
-	@echo "  make cdk-bootstrap AWS_ACCOUNT=123456789012"
-	@echo "  make deploy-dev"
-	@echo ""
-	@echo "  # Other examples:"
-	@echo "  make build-lambdas                    # Build functions (incremental)"
-	@echo "  make rebuild-lambdas                  # Force rebuild all functions"
-	@echo "  make deploy-test DOMAIN=test.app.com  # Deploy to staging"
-	@echo "  make deploy-live DOMAIN=app.com       # Deploy to prod (JWT auto-generated)"
-	@echo "  make status-live                      # Check production status"
-	@echo "  make logs FUNCTION=api ENV=dev        # Tail API logs in dev"
-	@echo "  make destroy-dev                      # Tear down dev environment"
+	@echo "  # Other:"
+	@echo "  make build-lambdas       # Build functions (incremental)"
+	@echo "  make test                # Run tests"
+	@echo "  make lint                # Run linter"
 	@echo ""
 	@echo "Available Lambda Functions ($(words $(LAMBDAS)) total):"
 	@for lambda in $(LAMBDAS); do echo "  - $$lambda"; done

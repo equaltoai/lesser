@@ -126,11 +126,10 @@ Alternative (cookies allowed):
 
 ## Compatibility / Migration
 
-Optional migration period:
+No legacy subdomains are provisioned by default.
 
-- Keep `auth.<stage-domain>` and `api.<stage-domain>` Route53 records temporarily.
-- Redirect `auth.<stage-domain>/*` → `https://<stage-domain>/auth/*` (301/308).
-- Prefer keeping `api.<stage-domain>` only if there are existing clients depending on it.
+- Canonical UI + system origin is always `https://<stage-domain>` with `/auth/*` and `/l/*`.
+- `api.<stage-domain>` and `ws.<stage-domain>` may still exist as implementation details (origins), but are not part of the public contract.
 
 ## Acceptance Criteria
 
@@ -139,4 +138,3 @@ Optional migration period:
 - `/setup/*` endpoints always reach the API (no CDN allowlist gaps).
 - OAuth authorization flow completes without bearer tokens in URLs.
 - WebSockets remain reachable at `wss://ws.<stage-domain>`.
-

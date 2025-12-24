@@ -233,7 +233,7 @@ Related wizard work is specified separately in `docs/specs/AUTH_SETUP_WIZARD_UI.
 
 ## Next: Setup Wizard
 
-After this migration, implement `https://auth.<stage-domain>/setup` per `docs/specs/AUTH_SETUP_WIZARD_UI.md`. That work will add new routes/components but should reuse the same vendored Greater primitives and CSS layers established by this migration.
+After this migration, implement `https://<stage-domain>/auth/setup` per `docs/specs/AUTH_SETUP_WIZARD_UI.md`. That work will add new routes/components but should reuse the same vendored Greater primitives and CSS layers established by this migration.
 
 ---
 

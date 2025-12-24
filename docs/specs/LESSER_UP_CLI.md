@@ -333,7 +333,7 @@ While locked:
 
 ## Review of Existing Domains (current codebase)
 
-Current infra references additional stage subdomains (notably `auth.<domain>`, `api.<domain>`, `ws.<domain>`, and `cdn.<domain>`).
+Current infra references additional stage subdomains for service origins (notably `api.<domain>`, `ws.<domain>`, and `media.<domain>`).
 
 New requirement moves human UIs to stage-apex paths:
 
@@ -390,7 +390,7 @@ This plan delivers:
   - Discover the hosted zone for `base-domain` and error if missing.
   - Create Route53 records for:
     - client app: `dev.<base>`, `staging.<base>`, `<base>` (live)
-    - service hosts: `auth.*`, `api.*`, `ws.*`, `media.*`
+    - service hosts: `api.*`, `ws.*`, `media.*`
   - Create ACM cert with SANs:
     - dev: `dev.<base>`, `*.dev.<base>`
     - staging: `staging.<base>`, `*.staging.<base>`
