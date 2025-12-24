@@ -30,6 +30,7 @@ import (
 	liftErrors "github.com/equaltoai/lesser/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -96,6 +97,16 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 	username := ctx.Param("username")
 	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return liftErrors.ValidationErrorWithField("username", "missing username")
+	}
+
+	state, stateErr := repos.Instance().GetInstanceState(ctx.Context)
+	bootstrapUsername := storageModels.DefaultBootstrapUsername
+	if stateErr == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
+		bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
+	}
+	locked := stateErr != nil || state.Locked
+	if locked && strings.EqualFold(username, bootstrapUsername) {
+		return lift.NewLiftError("FORBIDDEN", "bootstrap actor is not available while instance is locked", 403)
 	}
 
 	// Get request ID from context

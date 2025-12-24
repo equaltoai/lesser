@@ -482,7 +482,7 @@ AWS_PROFILE=Lesser aws logs tail /aws/lambda/lesser-development-api \
 
 **"route not found: GET /auth/login"**
 - **Cause**: Auth UI not deployed or DNS not configured
-- **Fix**: Run `make deploy-auth-ui DOMAIN=dev.lesser.host`
+- **Fix**: Ensure the Auth UI assets are deployed for `auth.<stage-domain>` (see `docs/PASSWORDLESS_OAUTH.md`).
 
 **"redirect to external host not allowed: localhost"**
 - **Cause**: Over-strict redirect validation
@@ -508,10 +508,7 @@ AWS_PROFILE=Lesser aws logs tail /aws/lambda/lesser-development-api \
 
 Enable verbose logging:
 ```bash
-# In CDK config
-DEBUG_MODE=true make deploy-dev DOMAIN=dev.lesser.host
-
-# Or set environment variable on Lambda
+# Set environment variable on Lambda
 AWS_PROFILE=Lesser aws lambda update-function-configuration \
   --function-name lesser-development-api \
   --environment Variables={DEBUG_MODE=true,...}
@@ -529,4 +526,3 @@ AWS_PROFILE=Lesser aws lambda update-function-configuration \
 ---
 
 **Note**: This system eliminates password-related vulnerabilities (breaches, credential stuffing, phishing). All authentication is cryptographic (WebAuthn or wallet signatures).
-

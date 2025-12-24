@@ -5,10 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 
@@ -86,7 +88,12 @@ func (s *WalletService) CreateChallenge(ctx context.Context, address string, cha
 	now := time.Now()
 	expiresAt := now.Add(5 * time.Minute)
 
-	message := buildAuthMessage(chainID, nonce, username, now.Format(time.RFC3339), expiresAt.Format(time.RFC3339))
+	instanceDomain := strings.TrimSpace(config.Get().Domain)
+	if instanceDomain == "" {
+		instanceDomain = "lesser.app"
+	}
+
+	message := buildAuthMessage(instanceDomain, address, chainID, nonce, username, now.Format(time.RFC3339), expiresAt.Format(time.RFC3339))
 
 	challenge := &storage.WalletChallenge{
 		ID:        uuid.New().String(),
@@ -346,31 +353,22 @@ func generateNonce() (string, error) {
 }
 
 // buildAuthMessage creates the authentication message without fmt.Sprintf
-func buildAuthMessage(chainID int, nonce, username, issuedAt, expiresAt string) string {
+func buildAuthMessage(domain, address string, chainID int, nonce, username, issuedAt, expiresAt string) string {
 	var sb strings.Builder
+
+	address = strings.ToLower(strings.TrimSpace(address))
+
+	sb.WriteString(domain)
+	sb.WriteString(" wants you to sign in with your Ethereum account:\n")
+	sb.WriteString(address)
+	sb.WriteString("\n\n")
 	sb.WriteString("Sign this message to authenticate with Lesser as '")
 	sb.WriteString(username)
 	sb.WriteString("'\n\n")
-	sb.WriteString("URI: https://lesser.app\n")
-	sb.WriteString("Version: 1\n")
-	sb.WriteString("Chain ID: ")
-
-	// Convert chainID to string manually
-	if chainID == 0 {
-		sb.WriteString("0")
-	} else {
-		// Simple integer to string conversion for positive numbers
-		digits := make([]byte, 0, 10)
-		n := chainID
-		for n > 0 {
-			digits = append([]byte{byte('0' + n%10)}, digits...)
-			n /= 10
-		}
-		sb.Write(digits)
-	}
-
-	sb.WriteString("\nUsername: ")
-	sb.WriteString(username)
+	sb.WriteString("URI: https://")
+	sb.WriteString(domain)
+	sb.WriteString("\nVersion: 1\nChain ID: ")
+	sb.WriteString(strconv.Itoa(chainID))
 	sb.WriteString("\nNonce: ")
 	sb.WriteString(nonce)
 	sb.WriteString("\nIssued At: ")

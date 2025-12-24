@@ -424,7 +424,7 @@ Lesser is architecturally designed for **complete data portability**:
 
 | Aspect | Lesser | Bluesky (PDS) | Mastodon |
 |--------|--------|---------------|----------|
-| **Installation** | `make deploy` (AWS CDK) | Docker or manual setup | Complex Docker Compose or manual |
+| **Installation** | `lesser up` (AWS CDK) | Docker or manual setup | Complex Docker Compose or manual |
 | **Infrastructure** | Serverless (Lambda + DynamoDB) | Self-hosted server | Self-hosted server (PostgreSQL + Redis + Sidekiq) |
 | **Server customization** | ✅ Easy (Go Lambda functions) | ✅ Easy (TypeScript) | ⚠️ Complex (Ruby monolith) |
 | **Client customization** | ✅ Easy (Greater - React/TypeScript) | ✅ Easy (any ATProto client) | ⚠️ Complex (Rails + React hybrid) |
@@ -433,7 +433,7 @@ Lesser is architecturally designed for **complete data portability**:
 | **Updates** | Deploy new Lambda versions | Update Docker image or code | Complex Rails deployment |
 
 **Why this matters**:
-- **Lesser**: Anyone can deploy a customized instance in <1 hour with `make deploy-dev`
+- **Lesser**: Anyone can deploy a customized instance in <1 hour with `lesser up`
 - Server customization: Modify Lambda handlers, add new endpoints, change business logic
 - Client customization: Fork Greater, customize UI/UX, add features
 - **Total control**: Run your own instance with your own branding, rules, and features
@@ -479,7 +479,7 @@ Just as an operating system provides:
 - Well-documented (comprehensive guides, runbooks, architecture docs)
 
 **3. Deployment Simplicity**
-- `make deploy` to launch an instance
+- `lesser up` to launch an instance
 - No complex server management
 - Scales automatically
 - Low operational overhead
@@ -559,4 +559,3 @@ Lesser isn't just "another Mastodon alternative" - it's **foundational infrastru
 Lesser can become what **Linux is to servers**: the default, trusted, extensible foundation that powers a thriving ecosystem of customized instances and applications.
 
 **Every pattern we design** - like this dual-write bookmark optimization - **contributes to that vision**: making Lesser the most efficient, scalable, and developer-friendly platform for building the social internet.
-

@@ -561,6 +561,18 @@ func (op *OutboxProcessor) HandleOutboxGet(ctx *lift.Context) error {
 		})
 	}
 
+	state, stateErr := op.repos.Instance().GetInstanceState(ctx.Context)
+	bootstrapUsername := models.DefaultBootstrapUsername
+	if stateErr == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
+		bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
+	}
+	locked := stateErr != nil || state.Locked
+	if locked && strings.EqualFold(username, bootstrapUsername) {
+		return ctx.Status(http.StatusForbidden).JSON(map[string]string{
+			"error": "bootstrap actor is not available while instance is locked",
+		})
+	}
+
 	actor, err := op.actorRepository.GetActorByUsername(ctx.Context, username)
 	if err != nil {
 		if common.IsNotFound(err) {

@@ -20,10 +20,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.80.0
 	github.com/aws/aws-sdk-go-v2/service/mediaconvert v1.83.1
 	github.com/aws/aws-sdk-go-v2/service/rekognition v1.51.7
+	github.com/aws/aws-sdk-go-v2/service/route53 v1.30.2
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.93.1
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.39.9
 	github.com/aws/aws-sdk-go-v2/service/sns v1.39.1
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.42.11
+	github.com/aws/aws-sdk-go-v2/service/sts v1.41.4
 	github.com/aws/aws-sdk-go-v2/service/transcribe v1.53.2
 	github.com/aws/aws-sdk-go-v2/service/translate v1.33.8
 	github.com/aws/aws-xray-sdk-go v1.8.5
@@ -44,6 +46,8 @@ require (
 	github.com/shopspring/decimal v1.4.0
 	github.com/spruceid/siwe-go v0.2.1
 	github.com/stretchr/testify v1.11.1
+	github.com/tyler-smith/go-bip32 v1.0.0
+	github.com/tyler-smith/go-bip39 v1.1.0
 	github.com/vektah/gqlparser/v2 v2.5.30
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.43.0
@@ -55,6 +59,8 @@ require (
 replace github.com/pay-theory/lift => ../../lift
 
 require (
+	github.com/FactomProject/basen v0.0.0-20150613233007-fe3947df716e // indirect
+	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec // indirect
 	github.com/PaesslerAG/gval v1.2.4 // indirect
 	github.com/PaesslerAG/jsonpath v0.1.1 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
@@ -82,7 +88,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.66.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.12 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.41.4 // indirect
 	github.com/aws/aws-xray-sdk-go/v2 v2.0.0 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bits-and-blooms/bitset v1.24.3 // indirect

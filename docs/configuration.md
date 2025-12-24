@@ -1,6 +1,8 @@
 # Configuration Reference
 
-Lesser configuration is managed through environment variables, CDK context, and YAML configuration files.
+Runtime configuration is primarily managed through environment variables (set by infrastructure for deployed stacks, or manually for local development).
+
+Deployments are managed via `lesser up` (see `docs/DEPLOYMENT_GUIDE.md`) and do not require manual CDK context values for secrets/certificates.
 
 ## Environment Variables
 
@@ -135,36 +137,36 @@ For the full set of keys (DNS, monitoring thresholds, media/CloudFront, ML/Bedro
 - `infra/cdk/config/staging.yaml`
 - `infra/cdk/config/production.yaml`
 
-## CDK Context Variables
+## Deployment Inputs (Operators)
 
-### Deployment Context
+Use `lesser up` and provide:
+
+- `--app <slug>`
+- `--base-domain <example.com>` (must have an existing public Route53 hosted zone)
+- `--aws-profile <profile>` (used as `AWS_PROFILE`)
+
+Region is derived from the selected AWS profile. Account ID is derived from STS.
+
+## CDK Context Variables (Infra Contributors)
+
+If you run CDK directly (not recommended for operators), the app reads:
+
+- `app` (default: `lesser`)
+- `baseDomain` (required for stage stacks)
+- `hostedZoneId` (recommended; otherwise CDK will do a hosted zone lookup)
+- `stage` (optional): `shared|dev|staging|live|all`
+- `withStaging` (optional): `true` to include staging when deploying all stages
+
+Example:
 
 ```bash
-# Required for production
-cdk deploy --context environment=production \
-           --context domain=yourdomain.com \
-           --context certificateArn=arn:aws:acm:... \
-           --context jwtSecret=your-secret
-
-# Optional context
---context region=us-west-2
---context alertEmail=ops@yourdomain.com
---context enableWAF=true
---context enableBackups=true
+cd infra/cdk
+AWS_PROFILE=Penny cdk deploy --all \
+  --require-approval never \
+  --context app=my-lesser \
+  --context baseDomain=example.com \
+  --context hostedZoneId=Z1234567890
 ```
-
-### Available Context Keys
-
-| Key | Description | Required | Default |
-|-----|-------------|----------|---------|
-| environment | Deployment environment | Yes | development |
-| domain | Instance domain | Prod: Yes | - |
-| certificateArn | ACM certificate ARN | Prod: Yes | - |
-| jwtSecret | JWT signing secret | Prod: Yes | - |
-| region | AWS region | No | us-east-1 |
-| alertEmail | CloudWatch alert email | No | - |
-| enableWAF | Enable AWS WAF | No | false |
-| enableBackups | Enable automated backups | No | false |
 
 ## Multi-Tenant Configuration
 

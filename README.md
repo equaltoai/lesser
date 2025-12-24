@@ -32,39 +32,29 @@ Lesser uses AWS CDK with the Lift framework for infrastructure:
 
 ### Prerequisites
 
-- AWS Account with credentials configured (`aws configure`)
+- AWS credentials configured (for example: `aws sso login --profile ...` or `aws configure`)
 - AWS CDK v2 installed (`npm install -g aws-cdk`)
 - Go 1.25 or later
-- Make installed for build automation
+- A public Route53 hosted zone that exactly matches your base domain (for example: `example.com`)
+- Make (optional; used for local dev/test automation)
 
 ### Basic Deployment
 
 ```bash
-# Clone the repository
-git clone https://github.com/equaltoai/lesser.git
-cd lesser
+# Build the operator CLI
+go build -o lesser ./cmd/lesser
 
-# Build Lambda functions
-make build-lambdas
-
-# Deploy infrastructure
-cd infra/cdk
-cdk bootstrap  # First time only
-cdk deploy --all
+# Deploy dev + live (and optionally staging)
+./lesser up \
+  --app my-lesser \
+  --base-domain example.com \
+  --aws-profile Penny
 ```
 
-### Production Deployment
-
-For production, you'll need a domain and SSL certificate:
-
-```bash
-# Deploy with custom domain and required production settings
-cdk deploy --all \
-  --context environment=production \
-  --context domain=yourdomain.com \
-  --context certificateArn=arn:aws:acm:us-east-1:xxx:certificate/xxx \
-  --context jwtSecret=your-secure-secret
-```
+Notes:
+- The **live** stage uses the apex domain (`example.com`), while **dev** uses `dev.example.com` (and **staging** uses `staging.example.com` if enabled).
+- `lesser up` prints a 24-word Ethereum mnemonic once when it is generated (use `--out <path>` to write it to disk with `0600` permissions).
+- A local deployment receipt is written to `~/.lesser/<app>/<base-domain>/state.json`.
 
 ## Project Structure
 
@@ -102,6 +92,8 @@ Environment-specific settings are in `infra/cdk/config/`:
 - **production.yaml**: Production environment (3GB RAM, full monitoring)
 
 ### Environment Variables
+
+Runtime configuration is managed in AWS for deployed stacks; the env vars below are primarily for local development/testing.
 
 Key configuration options:
 

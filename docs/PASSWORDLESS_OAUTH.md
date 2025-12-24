@@ -199,7 +199,7 @@ lesser/
 # Build auth UI locally
 make build-auth-ui
 
-# Deploy to AWS
+# Deploy static assets to AWS (infrastructure is provisioned by the stage stack)
 make deploy-auth-ui DOMAIN=dev.lesser.host AWS_PROFILE=Lesser
 
 # Output:
@@ -516,8 +516,9 @@ open "https://dev.lesser.host/oauth/authorize?client_id=XXX&redirect_uri=http://
 make build-auth-ui
 make deploy-auth-ui DOMAIN=dev.lesser.host AWS_PROFILE=Lesser
 
-# Deploy CDK stack (creates S3 + CloudFront + DNS)
-make deploy-dev DOMAIN=dev.lesser.host AWS_PROFILE=Lesser
+# Deploy infrastructure (always deploys dev + live; add --with-staging if desired)
+go build -o lesser ./cmd/lesser
+./lesser up --app lesser --base-domain lesser.host --aws-profile Lesser
 
 # Verify deployment
 curl -I https://auth.dev.lesser.host/login
@@ -665,4 +666,3 @@ const response = await fetch('https://dev.lesser.host/api/graphql', {
 ---
 
 **Security Note:** Lesser never stores passwords. All authentication is cryptographic (WebAuthn credentials or wallet signatures). This eliminates password breaches, credential stuffing, and phishing attacks.
-

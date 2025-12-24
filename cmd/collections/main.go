@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -108,6 +109,16 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 	username := ctx.Param("username")
 	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return lift.ValidationError("missing username")
+	}
+
+	state, stateErr := repos.Instance().GetInstanceState(ctx.Context)
+	bootstrapUsername := storageModels.DefaultBootstrapUsername
+	if stateErr == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
+		bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
+	}
+	locked := stateErr != nil || state.Locked
+	if locked && strings.EqualFold(username, bootstrapUsername) {
+		return lift.NewLiftError("FORBIDDEN", "bootstrap actor is not available while instance is locked", 403)
 	}
 
 	// Get request ID from context

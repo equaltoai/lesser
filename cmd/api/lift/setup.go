@@ -3,6 +3,7 @@ package lift
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"strings"
 	"time"
 
@@ -20,6 +21,31 @@ const (
 	setupSessionPurposeBootstrap = "bootstrap"
 )
 
+func instanceStateString(locked bool) string {
+	if locked {
+		return "locked"
+	}
+	return "active"
+}
+
+func (h *Handler) stageURLs() map[string]any {
+	domain := strings.TrimSpace(h.cfg.Domain)
+
+	httpScheme := "https"
+	wsScheme := "wss"
+	if domain == "localhost" || domain == "127.0.0.1" {
+		httpScheme = "http"
+		wsScheme = "ws"
+	}
+
+	return map[string]any{
+		"client":     h.cfg.BaseURL(),
+		"api":        fmt.Sprintf("%s://api.%s", httpScheme, domain),
+		"ws":         fmt.Sprintf("%s://ws.%s", wsScheme, domain),
+		"auth_setup": fmt.Sprintf("%s://auth.%s/setup", httpScheme, domain),
+	}
+}
+
 // HandleSetupStatusLift handles GET /setup/status.
 func (h *Handler) HandleSetupStatusLift(ctx *lift.Context) error {
 	state, err := h.repos.Instance().GetInstanceState(ctx.Context)
@@ -34,13 +60,21 @@ func (h *Handler) HandleSetupStatusLift(ctx *lift.Context) error {
 	}
 
 	return h.respondOK(ctx, map[string]any{
-		"locked": state.Locked,
+		"instance_state":   instanceStateString(state.Locked),
+		"locked":           state.Locked,
+		"finalize_allowed": state.Locked && strings.TrimSpace(state.PrimaryAdminUsername) != "",
+		"bootstrap_actor": map[string]any{
+			"username": bootstrapUsername,
+			"acct":     fmt.Sprintf("%s@%s", bootstrapUsername, strings.TrimSpace(h.cfg.Domain)),
+			"actor":    h.cfg.ActorURL(bootstrapUsername),
+		},
+		"urls": h.stageURLs(),
 		"bootstrap": map[string]any{
-			"username":            bootstrapUsername,
-			"wallet_address_set":  strings.TrimSpace(state.BootstrapWalletAddress) != "",
-			"wallet_address":      state.BootstrapWalletAddress,
-			"primary_admin_set":   strings.TrimSpace(state.PrimaryAdminUsername) != "",
-			"primary_admin":       state.PrimaryAdminUsername,
+			"username":             bootstrapUsername,
+			"wallet_address_set":   strings.TrimSpace(state.BootstrapWalletAddress) != "",
+			"wallet_address":       state.BootstrapWalletAddress,
+			"primary_admin_set":    strings.TrimSpace(state.PrimaryAdminUsername) != "",
+			"primary_admin":        state.PrimaryAdminUsername,
 			"setup_session_scheme": "bearer",
 		},
 		"activated_at": state.ActivatedAt,
@@ -96,7 +130,22 @@ func (h *Handler) HandleSetupBootstrapChallengeLift(ctx *lift.Context) error {
 		return h.handleAuthServiceError(ctx, err, "create bootstrap challenge")
 	}
 
-	return h.respondOK(ctx, challenge)
+	return h.respondOK(ctx, map[string]any{
+		"challenge_id": challenge.ID,
+		"challenge":    challenge.Message,
+		"issued_at":    challenge.IssuedAt,
+		"expires_at":   challenge.ExpiresAt,
+
+		// Backwards-compatible fields.
+		"id":        challenge.ID,
+		"username":  challenge.Username,
+		"address":   challenge.Address,
+		"chainId":   challenge.ChainID,
+		"nonce":     challenge.Nonce,
+		"message":   challenge.Message,
+		"issuedAt":  challenge.IssuedAt,
+		"expiresAt": challenge.ExpiresAt,
+	})
 }
 
 // HandleSetupBootstrapVerifyLift handles POST /setup/bootstrap/verify.
@@ -110,9 +159,33 @@ func (h *Handler) HandleSetupBootstrapVerifyLift(ctx *lift.Context) error {
 		return h.respondConflict(ctx, "instance is already activated")
 	}
 
-	var req auth.WalletVerifyRequest
-	if err := h.parseRequestBody(ctx, &req); err != nil {
+	var raw struct {
+		ChallengeID      string `json:"challengeId"`
+		ChallengeIDSnake string `json:"challenge_id"`
+		Address          string `json:"address"`
+		Signature        string `json:"signature"`
+		Message          string `json:"message"`
+		Challenge        string `json:"challenge"`
+	}
+	if err := h.parseRequestBody(ctx, &raw); err != nil {
 		return err
+	}
+
+	challengeID := strings.TrimSpace(raw.ChallengeID)
+	if challengeID == "" {
+		challengeID = strings.TrimSpace(raw.ChallengeIDSnake)
+	}
+
+	message := strings.TrimSpace(raw.Message)
+	if message == "" {
+		message = strings.TrimSpace(raw.Challenge)
+	}
+
+	req := auth.WalletVerifyRequest{
+		ChallengeID: challengeID,
+		Address:     raw.Address,
+		Signature:   raw.Signature,
+		Message:     message,
 	}
 
 	if err := common.ValidateRequiredParam("challengeId", req.ChallengeID); err != nil {
@@ -185,9 +258,10 @@ func (h *Handler) HandleSetupBootstrapVerifyLift(ctx *lift.Context) error {
 	}
 
 	return h.respondOK(ctx, map[string]any{
-		"token_type": "Bearer",
-		"token":      token,
-		"expires_at": expiresAt,
+		"token_type":  "Bearer",
+		"token":       token,
+		"setup_token": token,
+		"expires_at":  expiresAt,
 	})
 }
 
@@ -214,8 +288,8 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *lift.Context) error {
 	}
 
 	var req struct {
-		Username    string               `json:"username"`
-		DisplayName string               `json:"displayName,omitempty"`
+		Username    string                   `json:"username"`
+		DisplayName string                   `json:"displayName,omitempty"`
 		Wallet      auth.WalletVerifyRequest `json:"wallet"`
 	}
 	if err := h.parseRequestBody(ctx, &req); err != nil {
@@ -365,8 +439,17 @@ func (h *Handler) HandleSetupFinalizeLift(ctx *lift.Context) error {
 
 	_ = h.repos.Instance().SetBootstrapWalletAddress(ctx.Context, "")
 
+	updatedState, updatedErr := h.repos.Instance().GetInstanceState(ctx.Context)
+	var activatedAt *time.Time
+	if updatedErr == nil {
+		activatedAt = updatedState.ActivatedAt
+	}
+
 	return h.respondOK(ctx, map[string]any{
-		"locked": false,
+		"instance_state": instanceStateString(false),
+		"locked":         false,
+		"activated_at":   activatedAt,
+		"urls":           h.stageURLs(),
 	})
 }
 

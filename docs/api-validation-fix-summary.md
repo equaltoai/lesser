@@ -122,8 +122,9 @@ GSI5: gsi5PK (hash), gsi5SK (range)
 
 ### Infrastructure
 ```bash
-cd /home/aron/ai-workspace/codebases/lesser
-AWS_PROFILE=Lesser make deploy-dev
+cd /path/to/lesser
+go build -o lesser ./cmd/lesser
+./lesser up --app my-lesser --base-domain example.com --aws-profile Lesser
 # Recreates table with correct camelCase GSI attributes
 ```
 

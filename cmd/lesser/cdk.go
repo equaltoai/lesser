@@ -1,0 +1,116 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+
+type cdkDeployRequest struct {
+	StackName    string
+	App          string
+	BaseDomain   string
+	HostedZoneID string
+	Region       string
+	StageFilter  string
+	WithStaging  bool
+}
+
+type cdkDeployResult struct {
+	StackName string
+	Outputs   map[string]string
+}
+
+func cdkBootstrap(ctx context.Context, repoRoot string, awsProfile string, accountID string, region string) error {
+	cdkDir := filepath.Join(repoRoot, "infra", "cdk")
+
+	args := []string{"bootstrap", fmt.Sprintf("aws://%s/%s", accountID, region)}
+	cmd := exec.CommandContext(ctx, "cdk", args...) //nolint:gosec // tool invocation
+	cmd.Dir = cdkDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(),
+		"AWS_PROFILE="+awsProfile,
+		"AWS_REGION="+region,
+		"AWS_DEFAULT_REGION="+region,
+	)
+
+	fmt.Println("\nEnsuring CDK bootstrap:", args[len(args)-1])
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("cdk bootstrap: %w", err)
+	}
+	return nil
+}
+
+func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile string, req cdkDeployRequest) (cdkDeployResult, error) {
+	cdkDir := filepath.Join(repoRoot, "infra", "cdk")
+
+	outputsPath := filepath.Join(repoRoot, "tmp", "cdk-outputs.json")
+	if err := os.MkdirAll(filepath.Dir(outputsPath), 0o750); err != nil {
+		return cdkDeployResult{}, err
+	}
+
+	args := []string{
+		"deploy",
+		req.StackName,
+		"--require-approval",
+		"never",
+		"--outputs-file",
+		outputsPath,
+		"--context",
+		fmt.Sprintf("app=%s", req.App),
+		"--context",
+		fmt.Sprintf("baseDomain=%s", req.BaseDomain),
+		"--context",
+		fmt.Sprintf("hostedZoneId=%s", req.HostedZoneID),
+	}
+
+	stage := strings.TrimSpace(strings.ToLower(req.StageFilter))
+	if stage != "" {
+		args = append(args, "--context", fmt.Sprintf("stage=%s", stage))
+	}
+	if req.WithStaging {
+		args = append(args, "--context", "withStaging=true")
+	}
+
+	cmd := exec.CommandContext(ctx, "cdk", args...) //nolint:gosec // tool invocation
+	cmd.Dir = cdkDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(),
+		"AWS_PROFILE="+awsProfile,
+		"AWS_REGION="+req.Region,
+		"AWS_DEFAULT_REGION="+req.Region,
+	)
+
+	if err := cmd.Run(); err != nil {
+		return cdkDeployResult{}, fmt.Errorf("cdk deploy %s: %w", req.StackName, err)
+	}
+
+	out, err := parseCdkOutputs(outputsPath)
+	if err != nil {
+		return cdkDeployResult{}, err
+	}
+
+	return cdkDeployResult{
+		StackName: req.StackName,
+		Outputs:   out[req.StackName],
+	}, nil
+}
+
+func parseCdkOutputs(path string) (map[string]map[string]string, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // file path is derived from repo root
+	if err != nil {
+		return nil, fmt.Errorf("read cdk outputs: %w", err)
+	}
+
+	var out map[string]map[string]string
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, fmt.Errorf("parse cdk outputs: %w", err)
+	}
+	return out, nil
+}
