@@ -1,14 +1,16 @@
 # Auth UI: Greater CLI Vendored Migration
 
-> **Status**: Draft  
+> **Status**: Implemented (MVP)  
 > **Created**: 2025-12-23  
-> **Estimated Effort**: 1-2 hours
+> **Completed**: 2025-12-24
 
 ## Overview
 
 Migrate the `auth-ui` application from using the `@equaltoai/greater-components` NPM package to the vendored CLI model using the `greater` CLI tool. This aligns with the Greater Components project's architectural shift away from NPM-based distribution.
 
 Related wizard work is specified separately in `docs/specs/AUTH_SETUP_WIZARD_UI.md`.
+
+This migration has been completed; Greater packages are now vendored under `auth-ui/src/lib/greater/*`, with styling applied via local CSS layers.
 
 ## Background
 
@@ -19,10 +21,10 @@ Related wizard work is specified separately in `docs/specs/AUTH_SETUP_WIZARD_UI.
 
 ### Target State
 - **Distribution**: Components vendored locally via `greater` CLI
-- **Import paths**: `$lib/greater/*` for core packages (primitives, icons, tokens, etc)
+- **Import paths**: `src/lib/greater/*` (Vite alias `src`) for core packages (primitives, icons, tokens, etc)
 - **Styles**: two required CSS layers:
-  - `$lib/styles/greater/tokens.css`
-  - `$lib/styles/greater/primitives.css`
+  - `src/lib/styles/greater/tokens.css`
+  - `src/lib/styles/greater/primitives.css`
 - **Dependency**: No runtime dependency on `@equaltoai/greater-components`
 - **Hosting (planned)**: Auth UI served from `https://<stage-domain>/auth/*` (same origin as system endpoints)
 
@@ -97,16 +99,16 @@ Related wizard work is specified separately in `docs/specs/AUTH_SETUP_WIZARD_UI.
    {
      "$schema": "https://greater.components.dev/schema.json",
      "version": "1.0.0",
-     "ref": "latest",
+     "ref": "<pin a commit SHA or tag>",
      "installMode": "vendored",
      "style": "default",
      "aliases": {
-       "components": "$lib/components",
-       "utils": "$lib/utils",
-       "ui": "$lib/components/ui",
-       "lib": "$lib",
-       "hooks": "$lib/primitives",
-       "greater": "$lib/greater"
+       "components": "src/lib/components",
+       "utils": "src/lib/utils",
+       "ui": "src/lib/components/ui",
+       "lib": "src/lib",
+       "hooks": "src/lib/primitives",
+       "greater": "src/lib/greater"
      },
      "css": {
        "tokens": true,
@@ -124,27 +126,14 @@ Related wizard work is specified separately in `docs/specs/AUTH_SETUP_WIZARD_UI.
 
 3. **Add required packages**
    ```bash
-   greater add primitives icons tokens
+   greater add primitives icons tokens utils
    ```
 
 ### Phase 2: Configuration (15 min)
 
-4. **Update `tsconfig.json`**
-   - Add `$lib` path alias:
-     ```json
-     {
-       "paths": {
-          "@/*": ["src/*"],
-         "$lib/*": ["src/lib/*"]
-       }
-     }
-     ```
-   - Ensure `src/lib/` exists (even if empty), so `$lib` resolves consistently.
-
-5. **Update `astro.config.mjs`**
-   - Add Vite path alias for `$lib`
-   - Remove `@equaltoai/greater-components` from `optimizeDeps.exclude`
-   - Remove `@equaltoai/greater-components` from `ssr.noExternal`
+4. **Update TypeScript + Vite aliases**
+   - Ensure `auth-ui/astro.config.mjs` has a Vite alias for `src`.
+   - Ensure `auth-ui/tsconfig.json` includes `paths` support for `src/*` so editor tooling resolves vendored imports.
 
 ### Phase 3: Migration (20 min)
 
@@ -152,22 +141,25 @@ Related wizard work is specified separately in `docs/specs/AUTH_SETUP_WIZARD_UI.
    Replace the old single CSS import with the required two-layer Greater CSS imports:
    ```diff
    - import '@equaltoai/greater-components/tokens/theme.css';
-   + import '$lib/styles/greater/tokens.css';
-   + import '$lib/styles/greater/primitives.css';
+   + import 'src/lib/styles/greater/tokens.css';
+   + import 'src/lib/styles/greater/primitives.css';
    ```
 
 7. **Update imports in `PasswordlessLogin.svelte`**
    ```diff
    - import { Button, TextField } from '@equaltoai/greater-components/primitives';
-   - import { KeyIcon, CreditCardIcon } from '@equaltoai/greater-components/icons';
-   + import { Button, TextField } from '$lib/greater/primitives';
-   + import { KeyIcon, CreditCardIcon } from '$lib/greater/icons';
+   - import { KeyIcon, WalletIcon } from '@equaltoai/greater-components/icons';
+   + import Button from 'src/lib/greater/primitives/components/Button.svelte';
+   + import TextField from 'src/lib/greater/primitives/components/TextField.svelte';
+   + import KeyIcon from 'src/lib/greater/icons/icons/key.svelte';
+   + import WalletIcon from 'src/lib/greater/icons/icons/wallet.svelte';
    ```
+   Note: prefer direct component imports over barrel exports to avoid pulling unused assets into the bundle.
 
 8. **Update imports in `OAuthConsentScreen.svelte`**
    ```diff
    - import { Button } from '@equaltoai/greater-components/primitives';
-   + import { Button } from '$lib/greater/primitives';
+   + import Button from 'src/lib/greater/primitives/components/Button.svelte';
    ```
 
 ### Phase 4: Cleanup (10 min)
@@ -220,20 +212,20 @@ Related wizard work is specified separately in `docs/specs/AUTH_SETUP_WIZARD_UI.
 
 ## Success Criteria
 
-- [ ] `greater init` creates valid `components.json`
-- [ ] `greater add primitives icons tokens` succeeds
-- [ ] All import paths updated to vendored equivalents
-- [ ] `@equaltoai/greater-components` removed from `package.json`
-- [ ] `pnpm build` succeeds without errors
-- [ ] Login page renders identically to pre-migration
-- [ ] OAuth consent screen renders identically to pre-migration
-- [ ] No runtime console errors
+- [x] `greater init` creates valid `components.json`
+- [x] `greater add primitives icons tokens utils` succeeds
+- [x] All import paths updated to vendored equivalents
+- [x] `@equaltoai/greater-components` removed from `package.json`
+- [x] `pnpm build` succeeds without errors
+- [ ] Login page renders identically to pre-migration (manual verification)
+- [ ] OAuth consent screen renders identically to pre-migration (manual verification)
+- [ ] No runtime console errors (manual verification)
 
 ---
 
-## Next: Setup Wizard
+## Setup Wizard
 
-After this migration, implement `https://<stage-domain>/auth/setup` per `docs/specs/AUTH_SETUP_WIZARD_UI.md`. That work will add new routes/components but should reuse the same vendored Greater primitives and CSS layers established by this migration.
+The setup wizard is implemented (MVP) per `docs/specs/AUTH_SETUP_WIZARD_UI.md` and served from `https://<stage-domain>/auth/setup`.
 
 ---
 

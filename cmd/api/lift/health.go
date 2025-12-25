@@ -248,15 +248,15 @@ func (h *HealthChecker) checkDatabase(ctx context.Context, checks map[string]Che
 func (h *HealthChecker) checkS3Storage(ctx context.Context, checks map[string]CheckResult) {
 	start := time.Now()
 
-	// Get S3 bucket name from environment
-	bucketName := os.Getenv("S3_MEDIA_BUCKET")
+	// Get S3 bucket name from Lesser config/env (supports all bucket env aliases)
+	bucketName := strings.TrimSpace(lconfig.GetS3Bucket())
 	if bucketName == "" {
 		checks["s3_storage"] = CheckResult{
 			Status:   HealthStatusDegraded,
 			Message:  "S3 storage not configured (optional)",
 			Duration: time.Since(start),
 			Details: map[string]interface{}{
-				"note": "S3_MEDIA_BUCKET not configured",
+				"note": "S3 bucket env not configured",
 			},
 		}
 		return

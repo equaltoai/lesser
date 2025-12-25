@@ -1,0 +1,40 @@
+<script lang="ts">
+	import type { SVGAttributes } from 'svelte/elements';
+
+	interface Props extends SVGAttributes<SVGSVGElement> {
+		size?: number | string;
+		color?: string;
+		strokeWidth?: number | string;
+		class?: string;
+	}
+
+	let {
+		size = 24,
+		color = 'currentColor',
+		strokeWidth = 2,
+		class: className = '',
+		...restProps
+	}: Props = $props();
+</script>
+
+<svg
+	xmlns="http://www.w3.org/2000/svg"
+	width={size}
+	height={size}
+	viewBox="0 0 24 24"
+	fill="none"
+	stroke={color}
+	stroke-width={strokeWidth}
+	stroke-linecap="round"
+	stroke-linejoin="round"
+	class="gr-icon gr-icon-zoom-in {className}"
+	aria-hidden="true"
+	{...restProps}
+>
+	<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line
+		x1="11"
+		y1="8"
+		x2="11"
+		y2="14"
+	></line><line x1="8" y1="11" x2="14" y2="11"></line>
+</svg>

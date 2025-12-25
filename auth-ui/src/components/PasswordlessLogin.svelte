@@ -19,8 +19,14 @@
    */
   
   import { onMount } from 'svelte';
-  import { Button, TextField } from '@equaltoai/greater-components/primitives';
-  import { KeyIcon, CreditCardIcon } from '@equaltoai/greater-components/icons';
+  import Button from 'src/lib/greater/primitives/components/Button.svelte';
+  import CopyButton from 'src/lib/greater/primitives/components/CopyButton.svelte';
+  import DefinitionItem from 'src/lib/greater/primitives/components/DefinitionItem.svelte';
+  import DefinitionList from 'src/lib/greater/primitives/components/DefinitionList.svelte';
+  import TextField from 'src/lib/greater/primitives/components/TextField.svelte';
+  import KeyIcon from 'src/lib/greater/icons/icons/key.svelte';
+  import WalletIcon from 'src/lib/greater/icons/icons/wallet.svelte';
+  import { truncateMiddle } from 'src/lib/greater/utils';
   
   interface Props {
     /** OAuth session ID for flow continuation */
@@ -678,16 +684,23 @@
             <span class="spinner"></span>
             Connecting Wallet...
           {:else}
-            <CreditCardIcon class="btn-icon" />
+            <WalletIcon class="btn-icon" />
             {isRegistration ? 'Register Wallet' : 'Wallet Login'}
           {/if}
         </Button>
       </div>
       
       {#if connectedAddress}
-        <p class="text-center mt-2" style="font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-family-mono);">
-          {connectedAddress.slice(0, 6)}...{connectedAddress.slice(-4)}
-        </p>
+        <div class="wallet-details">
+          <DefinitionList density="sm" dividers>
+            <DefinitionItem label="Connected Wallet" monospace wrap={false}>
+              {truncateMiddle(connectedAddress, { head: 10, tail: 8 })}
+              {#snippet actions()}
+                <CopyButton text={connectedAddress} />
+              {/snippet}
+            </DefinitionItem>
+          </DefinitionList>
+        </div>
       {/if}
       
       <!-- Info -->
@@ -751,6 +764,10 @@
     display: block;
     width: 100%;
     height: 100%;
+  }
+
+  .wallet-details {
+    margin-top: var(--spacing-sm);
   }
   
   @media (max-width: 640px) {

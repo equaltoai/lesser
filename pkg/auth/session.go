@@ -65,18 +65,6 @@ func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceNam
 		return nil, err
 	}
 
-	// Generate session ID
-	sessionID, err := generateSecureToken()
-	if err != nil {
-		return nil, errors.Join(ErrSessionIDGeneration, err)
-	}
-
-	// Generate refresh token
-	refreshToken, err := generateSecureToken()
-	if err != nil {
-		return nil, errors.Join(ErrRefreshTokenGeneration, err)
-	}
-
 	// Generate device ID if new device
 	deviceID, err := sm.getOrCreateDeviceID(ctx, username, userAgent, ipAddress)
 	if err != nil {
@@ -86,26 +74,18 @@ func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceNam
 	// Token version tracking (for future use)
 	_ = sm.incrementTokenVersion(username)
 
-	now := time.Now()
-	session := &Session{
-		SessionID:    sessionID,
-		Username:     username,
-		RefreshToken: refreshToken,
-		DeviceID:     deviceID,
-		DeviceName:   deviceName,
-		UserAgent:    userAgent,
-		IPAddress:    ipAddress,
-		AuthMethod:   authMethod,
-		CreatedAt:    now,
-		LastActivity: now,
-		ExpiresAt:    now.Add(SessionDuration),
-	}
-
-	// Store session
-	_, err = sm.repos.Account().CreateSession(ctx, session.Username, session.IPAddress, session.UserAgent)
+	// Store session (source of truth for session ID)
+	session, err := sm.repos.Account().CreateSession(ctx, username, ipAddress, userAgent)
 	if err != nil {
 		return nil, errors.Join(ErrSessionStorage, err)
 	}
+
+	// Attach metadata not persisted by the repository (used for JWT claims / UX).
+	session.DeviceID = deviceID
+	session.DeviceName = deviceName
+	session.UserAgent = userAgent
+	session.IPAddress = ipAddress
+	session.AuthMethod = authMethod
 
 	// Update device record
 	if err := sm.updateDeviceRecord(ctx, deviceID, username, deviceName, userAgent, ipAddress); err != nil {

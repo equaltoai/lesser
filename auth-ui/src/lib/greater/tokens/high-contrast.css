@@ -1,0 +1,254 @@
+/* High Contrast Mode Enhancements for Greater Components */
+
+/* Windows High Contrast Mode Support */
+@media (prefers-contrast: high) {
+	/* Enhanced borders for all interactive elements */
+	:root {
+		--gr-hc-border-width: 2px;
+		--gr-hc-focus-width: 3px;
+		--gr-hc-focus-offset: 2px;
+	}
+
+	/* Button enhancements */
+	.gr-button {
+		border-width: var(--gr-hc-border-width) !important;
+		font-weight: var(--gr-typography-fontWeight-semibold) !important;
+	}
+
+	.gr-button:focus-visible {
+		outline: var(--gr-hc-focus-width) solid var(--gr-semantic-focus-ring) !important;
+		outline-offset: var(--gr-hc-focus-offset) !important;
+	}
+
+	/* Text field enhancements */
+	.gr-textfield__input {
+		border-width: var(--gr-hc-border-width) !important;
+	}
+
+	.gr-textfield__input:focus {
+		outline: var(--gr-hc-focus-width) solid var(--gr-semantic-focus-ring) !important;
+		outline-offset: -1px !important;
+	}
+
+	/* Modal enhancements */
+	.gr-modal__content {
+		border: var(--gr-hc-border-width) solid var(--gr-semantic-border-strong) !important;
+	}
+
+	.gr-modal__close:focus-visible {
+		outline: var(--gr-hc-focus-width) solid var(--gr-semantic-focus-ring) !important;
+		outline-offset: var(--gr-hc-focus-offset) !important;
+	}
+
+	/* Menu enhancements */
+	.gr-menu__content {
+		border-width: var(--gr-hc-border-width) !important;
+	}
+
+	.gr-menu__item:focus-visible {
+		outline: var(--gr-hc-focus-width) solid var(--gr-semantic-focus-ring) !important;
+		outline-offset: -2px !important;
+	}
+
+	/* Tabs enhancements */
+	.gr-tabs__trigger {
+		border-width: var(--gr-hc-border-width) !important;
+	}
+
+	.gr-tabs__trigger:focus-visible {
+		outline: var(--gr-hc-focus-width) solid var(--gr-semantic-focus-ring) !important;
+		outline-offset: -2px !important;
+	}
+
+	.gr-tabs__trigger[aria-selected='true'] {
+		border-bottom-width: 3px !important;
+	}
+
+	/* Avatar enhancements */
+	.gr-avatar {
+		border: var(--gr-hc-border-width) solid var(--gr-semantic-border-strong) !important;
+	}
+
+	/* Status card enhancements */
+	.gr-status-card {
+		border-width: var(--gr-hc-border-width) !important;
+	}
+
+	.gr-status-card__action:focus-visible {
+		outline: var(--gr-hc-focus-width) solid var(--gr-semantic-focus-ring) !important;
+		outline-offset: var(--gr-hc-focus-offset) !important;
+	}
+
+	/* Notification item enhancements */
+	.gr-notification-item {
+		border-width: var(--gr-hc-border-width) !important;
+	}
+
+	/* Link enhancements */
+	a:focus-visible {
+		outline: var(--gr-hc-focus-width) solid var(--gr-semantic-focus-ring) !important;
+		outline-offset: var(--gr-hc-focus-offset) !important;
+	}
+
+	/* Icon button enhancements */
+	[role='button']:focus-visible {
+		outline: var(--gr-hc-focus-width) solid var(--gr-semantic-focus-ring) !important;
+		outline-offset: var(--gr-hc-focus-offset) !important;
+	}
+
+	/* Checkbox and radio enhancements */
+	input[type='checkbox'],
+	input[type='radio'] {
+		border-width: var(--gr-hc-border-width) !important;
+	}
+
+	input[type='checkbox']:focus-visible,
+	input[type='radio']:focus-visible {
+		outline: var(--gr-hc-focus-width) solid var(--gr-semantic-focus-ring) !important;
+		outline-offset: var(--gr-hc-focus-offset) !important;
+	}
+
+	/* Select enhancements */
+	select {
+		border-width: var(--gr-hc-border-width) !important;
+	}
+
+	select:focus-visible {
+		outline: var(--gr-hc-focus-width) solid var(--gr-semantic-focus-ring) !important;
+		outline-offset: -1px !important;
+	}
+
+	/* Tooltip enhancements */
+	.gr-tooltip__content {
+		border: var(--gr-hc-border-width) solid var(--gr-semantic-border-strong) !important;
+		font-weight: var(--gr-typography-fontWeight-medium) !important;
+	}
+
+	/* Skeleton loader visibility */
+	.gr-skeleton {
+		border: var(--gr-hc-border-width) dashed var(--gr-semantic-border-default) !important;
+	}
+
+	/* Theme switcher enhancements */
+	.gr-theme-switcher__option {
+		border-width: var(--gr-hc-border-width) !important;
+	}
+
+	.gr-theme-switcher__option:has(.gr-theme-switcher__radio:checked) {
+		outline: var(--gr-hc-focus-width) solid var(--gr-semantic-action-primary-default) !important;
+		outline-offset: var(--gr-hc-focus-offset) !important;
+	}
+
+	/* Settings panel enhancements */
+	.gr-settings-panel__nav-item--active {
+		outline: var(--gr-hc-border-width) solid var(--gr-color-base-white) !important;
+		outline-offset: -2px !important;
+	}
+
+	.gr-settings-panel__toggle {
+		border-width: var(--gr-hc-border-width) !important;
+	}
+
+	.gr-settings-panel__toggle:has(.gr-settings-panel__toggle-input:checked) {
+		outline: var(--gr-hc-focus-width) solid var(--gr-semantic-action-primary-default) !important;
+		outline-offset: var(--gr-hc-focus-offset) !important;
+	}
+}
+
+/* Forced Colors Mode (Windows High Contrast) */
+@media (forced-colors: active) {
+	/* Ensure proper color mapping */
+	.gr-button--solid {
+		forced-color-adjust: none;
+		background-color: ButtonFace;
+		color: ButtonText;
+		border-color: ButtonBorder;
+	}
+
+	.gr-button--solid:hover {
+		background-color: Highlight;
+		color: HighlightText;
+		border-color: Highlight;
+	}
+
+	.gr-button--outline,
+	.gr-button--ghost {
+		background-color: Canvas;
+		color: CanvasText;
+		border-color: ButtonBorder;
+	}
+
+	.gr-button--outline:hover,
+	.gr-button--ghost:hover {
+		background-color: ButtonFace;
+		border-color: Highlight;
+	}
+
+	.gr-button:disabled {
+		color: GrayText;
+		border-color: GrayText;
+	}
+
+	.gr-textfield__input {
+		background-color: Field;
+		color: FieldText;
+		border-color: FieldText;
+	}
+
+	.gr-textfield__input:focus {
+		border-color: Highlight;
+	}
+
+	.gr-modal__backdrop {
+		background-color: Canvas;
+		opacity: 0.9;
+	}
+
+	.gr-modal__content {
+		background-color: Canvas;
+		color: CanvasText;
+		border-color: CanvasText;
+	}
+
+	.gr-menu__content {
+		background-color: Canvas;
+		color: CanvasText;
+		border-color: CanvasText;
+	}
+
+	.gr-menu__item:hover {
+		background-color: Highlight;
+		color: HighlightText;
+	}
+
+	.gr-tabs__trigger[aria-selected='true'] {
+		border-bottom-color: Highlight;
+		color: Highlight;
+	}
+
+	a {
+		color: LinkText;
+	}
+
+	a:visited {
+		color: VisitedText;
+	}
+
+	a:hover {
+		color: Highlight;
+	}
+
+	::placeholder {
+		color: GrayText;
+	}
+
+	:focus-visible {
+		outline-color: Highlight;
+	}
+
+	/* Ensure icons are visible */
+	svg {
+		forced-color-adjust: none;
+		fill: currentColor;
+	}
+}

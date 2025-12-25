@@ -28,7 +28,14 @@ type cdkDeployResult struct {
 func cdkBootstrap(ctx context.Context, repoRoot string, awsProfile string, accountID string, region string) error {
 	cdkDir := filepath.Join(repoRoot, "infra", "cdk")
 
-	args := []string{"bootstrap", fmt.Sprintf("aws://%s/%s", accountID, region)}
+	args := []string{
+		"bootstrap",
+		fmt.Sprintf("aws://%s/%s", accountID, region),
+		// The CDK CLI executes the app for bootstrap in this repo; ensure it can synth
+		// without stage-domain context by scoping to the shared stack.
+		"--context",
+		"stage=shared",
+	}
 	cmd := exec.CommandContext(ctx, "cdk", args...) //nolint:gosec // tool invocation
 	cmd.Dir = cdkDir
 	cmd.Stdout = os.Stdout

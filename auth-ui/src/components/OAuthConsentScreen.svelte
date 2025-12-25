@@ -17,7 +17,7 @@
    * 5. JWT is cleared from sessionStorage after use
    */
   
-  import { Button } from '@equaltoai/greater-components/primitives';
+  import Button from 'src/lib/greater/primitives/components/Button.svelte';
   import { onMount } from 'svelte';
   
   // API base URL - single-domain CloudFront routes API + UI by path.

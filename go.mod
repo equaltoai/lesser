@@ -10,17 +10,19 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/cloudfront/sign v1.9.11
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.19
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.20.1
+	github.com/aws/aws-sdk-go-v2/service/apigateway v1.38.3
 	github.com/aws/aws-sdk-go-v2/service/bedrock v1.48.2
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.41.2
 	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.55.2
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.51.4
 	github.com/aws/aws-sdk-go-v2/service/comprehend v1.40.8
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.53.4
+	github.com/aws/aws-sdk-go-v2/service/iam v1.53.1
 	github.com/aws/aws-sdk-go-v2/service/kms v1.47.0
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.80.0
 	github.com/aws/aws-sdk-go-v2/service/mediaconvert v1.83.1
 	github.com/aws/aws-sdk-go-v2/service/rekognition v1.51.7
-	github.com/aws/aws-sdk-go-v2/service/route53 v1.30.2
+	github.com/aws/aws-sdk-go-v2/service/route53 v1.62.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.93.1
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.39.9
 	github.com/aws/aws-sdk-go-v2/service/sns v1.39.1

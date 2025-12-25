@@ -59,127 +59,63 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 
 	appName := strings.TrimSpace(props.AppName)
 
-	// Helper to get config values
-	getConfigString := func(key string, defaultVal string) *string {
-		if props.Config != nil {
-			if val, ok := props.Config[key].(string); ok {
-				return jsii.String(val)
-			}
+	getConfigString := func(key string) string {
+		if props.Config == nil {
+			return ""
 		}
-		return jsii.String(defaultVal)
+		if val, ok := props.Config[key].(string); ok {
+			return strings.TrimSpace(val)
+		}
+		return ""
 	}
 
 	if appName == "" {
-		if appPtr := getConfigString("appName", naming.DefaultAppName); appPtr != nil && *appPtr != "" {
-			appName = *appPtr
-		} else {
-			appName = naming.DefaultAppName
-		}
+		appName = naming.DefaultAppName
 	}
 
 	domainValue := strings.TrimSpace(props.Domain)
 	if domainValue == "" {
 		domainValue = "lesser.host"
-		if domainPtr := getConfigString("domain", "lesser.host"); domainPtr != nil && *domainPtr != "" {
-			domainValue = *domainPtr
-		}
 	}
 
-	// Common environment variables shared across functions
+	// Common environment variables shared across functions.
+	//
+	// IMPORTANT: Lambda env vars have a strict 4KB limit. Keep this baseline as small as possible.
+	// Add feature-specific values only when the runtime actually requires them.
 	commonEnv := map[string]*string{
-		// Environment selectors (D1)
+		// Environment selectors
 		"ENVIRONMENT": jsii.String(props.Environment),
 		"STAGE":       jsii.String(string(stage)),
 		"APP_NAME":    jsii.String(appName),
 
-		// Domain (D2)
+		// Domain
 		"DOMAIN_NAME": jsii.String(domainValue),
-		"DOMAIN":      jsii.String(domainValue),
 
-		// DynamoDB tables (D3)
+		// DynamoDB tables
 		"DYNAMODB_TABLE":        props.Table.TableName(),
-		"DYNAMO_TABLE_NAME":     props.Table.TableName(),
 		"RATE_LIMIT_TABLE_NAME": props.RateLimitTable.TableName(),
-		"LIMITED_TABLE_NAME":    props.RateLimitTable.TableName(), // For limited library
-		"CONNECTIONS_TABLE":     props.Table.TableName(),
-		"SUBSCRIPTIONS_TABLE":   props.Table.TableName(),
-		"STREAM_EVENTS_TABLE_NAME": func() *string {
-			if props.StreamEventsTable != nil {
-				return props.StreamEventsTable.TableName()
-			}
-			return jsii.String("")
-		}(),
+		"LIMITED_TABLE_NAME":    props.RateLimitTable.TableName(), // limited library reads either key
 
-		// Media bucket aliases (D4)
-		"S3_BUCKET_NAME":    props.MediaBucket.BucketName(),
-		"S3_BUCKET":         props.MediaBucket.BucketName(),
-		"S3_MEDIA_BUCKET":   props.MediaBucket.BucketName(),
-		"MEDIA_BUCKET_NAME": props.MediaBucket.BucketName(),
+		// Streaming table overrides (used by streaming/graphql-ws helpers)
+		"CONNECTIONS_TABLE":   props.Table.TableName(),
+		"SUBSCRIPTIONS_TABLE": props.Table.TableName(),
 
-		// Canonical queues + aliases (D7)
-		"IMPORT_QUEUE_URL":              queueURL(props.Queues, "import-processor-queue"),
-		"IMPORT_PROCESSOR_QUEUE_URL":    queueURL(props.Queues, "import-processor-queue"),
-		"EXPORT_QUEUE_URL":              queueURL(props.Queues, "export-processor-queue"),
-		"EXPORT_PROCESSOR_QUEUE_URL":    queueURL(props.Queues, "export-processor-queue"),
-		"MEDIA_QUEUE_URL":               queueURL(props.Queues, "media-processor-queue"),
-		"MEDIA_PROCESSOR_QUEUE_URL":     queueURL(props.Queues, "media-processor-queue"),
-		"SCHEDULED_QUEUE_URL":           queueURL(props.Queues, "scheduled-queue"),
-		"FEDERATION_DELIVERY_QUEUE_URL": queueURL(props.Queues, "federation-delivery-queue"),
-		"FEDERATION_QUEUE_URL":          queueURL(props.Queues, "federation-delivery-queue"),
-		"FEDERATION_DLQ_URL":            dlqURL(props.Queues, "federation-delivery-queue"),
-		"PUSH_NOTIFICATION_QUEUE_URL":   queueURL(props.Queues, "push-delivery-queue"),
-		"PUSH_QUEUE_URL":                queueURL(props.Queues, "push-delivery-queue"),
+		// Media bucket
+		"S3_BUCKET_NAME": props.MediaBucket.BucketName(),
 
-		// Secrets (D5, D6)
-		"PRIVATE_KEY_SECRET":     props.PrivateKey.SecretArn(),
-		"PRIVATE_KEY_SECRET_ARN": props.PrivateKey.SecretArn(),                                                           // optional alias (Spec 05)
-		"KMS_KEY_ID":             jsii.String(fmt.Sprintf("alias/%s", naming.SharedResourceName(appName, "encryption"))), // KMS key for encrypting actor private keys
-
-		// Media CDN and instance metadata (unchanged)
-		"CDN_DOMAIN":           jsii.String("REPLACE_WITH_MEDIA_DOMAIN"), // Set by CDK context
-		"INSTANCE_TITLE":       jsii.String("Lesser Instance"),
-		"INSTANCE_SHORT_DESC":  jsii.String("A personal ActivityPub server"),
-		"INSTANCE_DESCRIPTION": jsii.String("A lightweight, serverless ActivityPub implementation"),
-		"INSTANCE_ADMIN_EMAIL": jsii.String("REPLACE_WITH_ADMIN_EMAIL"), // Set by CDK context
-		"REGISTRATIONS_OPEN":   jsii.String("false"),
-		"APPROVAL_REQUIRED":    jsii.String("true"),
-		"INVITES_ENABLED":      jsii.String("false"),
-		"FEDERATION_ENABLED":   jsii.String("true"),
-
-		// Media Streaming Configuration (Phase 2.2)
-		"MEDIA_SOURCE_BUCKET_NAME":    props.MediaBucket.BucketName(),
-		"MEDIA_STREAMING_BUCKET_NAME": props.StreamingBucket.BucketName(),
-		"MEDIA_CONVERT_ENDPOINT":      getConfigString("mediaConvertEndpoint", ""),
-		"MEDIA_CONVERT_ROLE_ARN":      props.MediaConvertRoleArn,
-		"CLOUDFRONT_DOMAIN":           getConfigString("cloudfrontDomain", ""),
-		"CLOUDFRONT_PRIVATE_KEY_PATH": getConfigString("cloudfrontPrivateKeySecret", ""),
-		"CLOUDFRONT_KEY_PAIR_ID":      getConfigString("cloudfrontKeyPairId", ""), // Set after manual upload
-		"MANIFEST_TTL_HOURS":          getConfigString("manifestTTLHours", "24"),
-		"VAPID_PUBLIC_KEY":            getConfigString("vapidPublicKey", ""),
-		"VAPID_SUBJECT":               getConfigString("vapidSubject", ""),
-		"VAPID_SECRET_ARN":            getConfigString("vapidSecretArn", ""),
-
-		// ML Moderation Configuration (Phase 2.3)
-		"MODERATION_TRAINING_BUCKET_NAME": props.TrainingBucket.BucketName(),
-		"MODERATION_MODEL_METADATA_TABLE": props.ModelMetadataTable,
-		"BEDROCK_TRAINING_REGION":         getConfigString("bedrockRegion", "us-east-1"),
-		"BEDROCK_INFERENCE_MODEL_ID":      getConfigString("bedrockInferenceModelId", ""),
-		"BEDROCK_CUSTOMIZATION_ROLE_ARN":  getConfigString("bedrockCustomizationRoleArn", ""),
-		"BEDROCK_GUARDRAIL_ID":            getConfigString("bedrockGuardrailId", ""),
-		"BEDROCK_GUARDRAIL_VERSION":       getConfigString("bedrockGuardrailVersion", "DRAFT"),
-		"MODERATION_ML_ENABLED":           getConfigString("moderationMLEnabled", "false"),
-		"MODERATION_ML_TENANTS":           getConfigString("moderationMLTenants", ""),
+		// Secrets
+		"PRIVATE_KEY_SECRET": props.PrivateKey.SecretArn(),
+		"KMS_KEY_ID":         jsii.String(fmt.Sprintf("alias/%s", naming.SharedResourceName(appName, "encryption"))), // KMS key for encrypting actor private keys
 	}
 
-	// WebSocket endpoints
-	// - GraphQL subscriptions: ws.<domain>
-	// - Streaming: ws.<domain>/stream
+	// Optional tables
+	if props.StreamEventsTable != nil {
+		commonEnv["STREAM_EVENTS_TABLE_NAME"] = props.StreamEventsTable.TableName()
+	}
+
+	// WebSocket endpoint (used by streaming + notifications).
 	wsHost := fmt.Sprintf("ws.%s", domainValue)
 	commonEnv["WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("https://%s", wsHost))
-	commonEnv["WEBSOCKET_API_URL"] = jsii.String(fmt.Sprintf("https://%s", wsHost))
-	commonEnv["GRAPHQL_WS_URL"] = jsii.String(fmt.Sprintf("wss://%s", wsHost))
-	commonEnv["STREAM_WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("wss://%s/stream", wsHost))
-	commonEnv["STREAM_WEBSOCKET_API_URL"] = jsii.String(fmt.Sprintf("https://%s/stream", wsHost))
 
 	// Set JWT secret ARN from SharedStack (securely passed, never synthesized)
 	if props.JwtSecret != nil {
@@ -223,57 +159,24 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 			RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
 		})
 
-		// Clone and extend env per-Lambda with queue URLs derived from inventory
+		// Clone env per-Lambda. Queue URLs are injected after queues are created to keep this
+		// baseline small and avoid the Lambda 4KB environment variable limit.
 		env := copyEnv(commonEnv)
-		for _, trig := range spec.SQSTriggers {
-			var queueVal *string
-			if trig.ConsumeDeadLetterQueue {
-				queueVal = dlqURL(props.Queues, trig.Queue)
-			} else {
-				queueVal = queueURL(props.Queues, trig.Queue)
-			}
 
-			canonicalKey := ""
-			switch trig.Queue {
-			case "import-processor-queue":
-				canonicalKey = "IMPORT_QUEUE_URL"
-			case "export-processor-queue":
-				canonicalKey = "EXPORT_QUEUE_URL"
-			case "media-processor-queue":
-				canonicalKey = "MEDIA_QUEUE_URL"
-			case "scheduled-queue":
-				canonicalKey = "SCHEDULED_QUEUE_URL"
-			case "federation-delivery-queue":
-				canonicalKey = "FEDERATION_DELIVERY_QUEUE_URL"
-			case "push-delivery-queue":
-				canonicalKey = "PUSH_NOTIFICATION_QUEUE_URL"
-			default:
-				canonicalKey = fmt.Sprintf("%s_QUEUE_URL", strings.ToUpper(strings.ReplaceAll(trig.Queue, "-", "_")))
-			}
-
-			env[canonicalKey] = queueVal
-
-			aliasKey := fmt.Sprintf("%s_QUEUE_URL", strings.ToUpper(strings.ReplaceAll(trig.Queue, "-", "_")))
-			env[aliasKey] = queueVal
-
-			if trig.DeadLetterQueue != "" {
-				dlqKey := fmt.Sprintf("%s_DLQ_URL", strings.ToUpper(strings.ReplaceAll(trig.DeadLetterQueue, "-", "_")))
-				env[dlqKey] = dlqURL(props.Queues, trig.Queue)
-			}
-		}
 		for _, key := range spec.RequiredEnvVars {
-			if _, exists := env[key]; exists {
-				continue
-			}
 			switch key {
-			case "EXPORT_QUEUE_URL", "EXPORT_PROCESSOR_QUEUE_URL":
-				env[key] = queueURL(props.Queues, "export-processor-queue")
-			case "IMPORT_QUEUE_URL", "IMPORT_PROCESSOR_QUEUE_URL":
-				env[key] = queueURL(props.Queues, "import-processor-queue")
-			case "MEDIA_QUEUE_URL", "MEDIA_PROCESSOR_QUEUE_URL":
-				env[key] = queueURL(props.Queues, "media-processor-queue")
-			default:
-				// leave untouched for non-queue vars
+			case "VAPID_PUBLIC_KEY":
+				if v := getConfigString("vapidPublicKey"); v != "" {
+					env[key] = jsii.String(v)
+				}
+			case "VAPID_SUBJECT":
+				if v := getConfigString("vapidSubject"); v != "" {
+					env[key] = jsii.String(v)
+				}
+			case "VAPID_SECRET_ARN":
+				if v := getConfigString("vapidSecretArn"); v != "" {
+					env[key] = jsii.String(v)
+				}
 			}
 		}
 
@@ -393,72 +296,13 @@ func ApplyQueueEnvironmentVariables(functions *LambdaFunctions, queues map[strin
 			continue
 		}
 
+		// Canonical queue URLs used by runtime config (pkg/config). Keep the list small to stay under
+		// Lambda's 4KB env-var limit.
 		fn.AddEnvironment(jsii.String("IMPORT_QUEUE_URL"), queueURL(queues, "import-processor-queue"), nil)
-		fn.AddEnvironment(jsii.String("IMPORT_PROCESSOR_QUEUE_URL"), queueURL(queues, "import-processor-queue"), nil)
 		fn.AddEnvironment(jsii.String("EXPORT_QUEUE_URL"), queueURL(queues, "export-processor-queue"), nil)
-		fn.AddEnvironment(jsii.String("EXPORT_PROCESSOR_QUEUE_URL"), queueURL(queues, "export-processor-queue"), nil)
 		fn.AddEnvironment(jsii.String("MEDIA_QUEUE_URL"), queueURL(queues, "media-processor-queue"), nil)
-		fn.AddEnvironment(jsii.String("MEDIA_PROCESSOR_QUEUE_URL"), queueURL(queues, "media-processor-queue"), nil)
 		fn.AddEnvironment(jsii.String("SCHEDULED_QUEUE_URL"), queueURL(queues, "scheduled-queue"), nil)
-
 		fn.AddEnvironment(jsii.String("FEDERATION_DELIVERY_QUEUE_URL"), queueURL(queues, "federation-delivery-queue"), nil)
-		fn.AddEnvironment(jsii.String("FEDERATION_QUEUE_URL"), queueURL(queues, "federation-delivery-queue"), nil)
-		fn.AddEnvironment(jsii.String("FEDERATION_DLQ_URL"), dlqURL(queues, "federation-delivery-queue"), nil)
-
 		fn.AddEnvironment(jsii.String("PUSH_NOTIFICATION_QUEUE_URL"), queueURL(queues, "push-delivery-queue"), nil)
-		fn.AddEnvironment(jsii.String("PUSH_QUEUE_URL"), queueURL(queues, "push-delivery-queue"), nil)
-	}
-
-	for _, spec := range inventory.LambdaInventory.Lambdas {
-		fn := functions.Must(spec.Name)
-		for _, trig := range spec.SQSTriggers {
-			var queueVal *string
-			if trig.ConsumeDeadLetterQueue {
-				queueVal = dlqURL(queues, trig.Queue)
-			} else {
-				queueVal = queueURL(queues, trig.Queue)
-			}
-
-			canonicalKey := ""
-			switch trig.Queue {
-			case "import-processor-queue":
-				canonicalKey = "IMPORT_QUEUE_URL"
-			case "export-processor-queue":
-				canonicalKey = "EXPORT_QUEUE_URL"
-			case "media-processor-queue":
-				canonicalKey = "MEDIA_QUEUE_URL"
-			case "scheduled-queue":
-				canonicalKey = "SCHEDULED_QUEUE_URL"
-			case "federation-delivery-queue":
-				canonicalKey = "FEDERATION_DELIVERY_QUEUE_URL"
-			case "push-delivery-queue":
-				canonicalKey = "PUSH_NOTIFICATION_QUEUE_URL"
-			default:
-				canonicalKey = fmt.Sprintf("%s_QUEUE_URL", strings.ToUpper(strings.ReplaceAll(trig.Queue, "-", "_")))
-			}
-
-			fn.AddEnvironment(jsii.String(canonicalKey), queueVal, nil)
-
-			aliasKey := fmt.Sprintf("%s_QUEUE_URL", strings.ToUpper(strings.ReplaceAll(trig.Queue, "-", "_")))
-			fn.AddEnvironment(jsii.String(aliasKey), queueVal, nil)
-
-			if trig.DeadLetterQueue != "" {
-				dlqKey := fmt.Sprintf("%s_DLQ_URL", strings.ToUpper(strings.ReplaceAll(trig.DeadLetterQueue, "-", "_")))
-				fn.AddEnvironment(jsii.String(dlqKey), dlqURL(queues, trig.Queue), nil)
-			}
-		}
-
-		for _, key := range spec.RequiredEnvVars {
-			switch key {
-			case "EXPORT_QUEUE_URL", "EXPORT_PROCESSOR_QUEUE_URL":
-				fn.AddEnvironment(jsii.String(key), queueURL(queues, "export-processor-queue"), nil)
-			case "IMPORT_QUEUE_URL", "IMPORT_PROCESSOR_QUEUE_URL":
-				fn.AddEnvironment(jsii.String(key), queueURL(queues, "import-processor-queue"), nil)
-			case "MEDIA_QUEUE_URL", "MEDIA_PROCESSOR_QUEUE_URL":
-				fn.AddEnvironment(jsii.String(key), queueURL(queues, "media-processor-queue"), nil)
-			default:
-				// ignore non-queue vars
-			}
-		}
 	}
 }

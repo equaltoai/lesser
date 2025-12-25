@@ -4,9 +4,10 @@ package common
 
 import (
 	"context"
+	"os"
+	"strings"
 
 	"github.com/aws/aws-lambda-go/lambdacontext"
-	"github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -17,9 +18,11 @@ func init() {
 	// Initialize logger with Lambda-optimized configuration
 	zapCfg := zap.NewProductionConfig()
 
-	// Set log level from centralized config
-	appCfg := config.Get()
-	logLevel := appCfg.LogLevel
+	// Configure log level without pulling in full app config (keeps CLI/tools usable without Dynamo env vars).
+	logLevel := strings.ToLower(strings.TrimSpace(os.Getenv("LOG_LEVEL")))
+	if logLevel == "" {
+		logLevel = "info"
+	}
 	switch logLevel {
 	case "debug":
 		zapCfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)

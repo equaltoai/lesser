@@ -1,0 +1,75 @@
+{
+  "$schema": "https://greater.components.dev/schema.json",
+  "version": "1.0.0",
+  "ref": "e1d159717a8f14f727f5e6df780754e0da5bf370",
+  "installMode": "vendored",
+  "style": "default",
+  "rsc": false,
+  "tsx": true,
+  "aliases": {
+    "components": "src/lib/components",
+    "utils": "src/lib/utils",
+    "ui": "src/lib/components/ui",
+    "lib": "src/lib",
+    "hooks": "src/lib/primitives",
+    "greater": "src/lib/greater"
+  },
+  "css": {
+    "tokens": true,
+    "primitives": true,
+    "face": null,
+    "source": "local",
+    "localDir": "styles/greater"
+  },
+  "installed": [
+    {
+      "name": "icons",
+      "version": "e1d159717a8f14f727f5e6df780754e0da5bf370",
+      "installedAt": "2025-12-24T06:05:06.914Z",
+      "modified": false,
+      "checksums": []
+    },
+    {
+      "name": "tokens",
+      "version": "e1d159717a8f14f727f5e6df780754e0da5bf370",
+      "installedAt": "2025-12-24T06:05:06.914Z",
+      "modified": false,
+      "checksums": []
+    },
+    {
+      "name": "utils",
+      "version": "e1d159717a8f14f727f5e6df780754e0da5bf370",
+      "installedAt": "2025-12-24T06:05:06.914Z",
+      "modified": false,
+      "checksums": []
+    },
+    {
+      "name": "primitives",
+      "version": "e1d159717a8f14f727f5e6df780754e0da5bf370",
+      "installedAt": "2025-12-24T06:05:06.914Z",
+      "modified": false,
+      "checksums": []
+    },
+    {
+      "name": "content",
+      "version": "e1d159717a8f14f727f5e6df780754e0da5bf370",
+      "installedAt": "2025-12-24T06:05:06.914Z",
+      "modified": false,
+      "checksums": []
+    },
+    {
+      "name": "adapters",
+      "version": "e1d159717a8f14f727f5e6df780754e0da5bf370",
+      "installedAt": "2025-12-24T06:05:06.914Z",
+      "modified": false,
+      "checksums": []
+    },
+    {
+      "name": "headless",
+      "version": "e1d159717a8f14f727f5e6df780754e0da5bf370",
+      "installedAt": "2025-12-24T06:05:06.914Z",
+      "modified": false,
+      "checksums": []
+    }
+  ]
+}

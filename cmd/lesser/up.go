@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 )
@@ -76,12 +75,9 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		return nil, errors.New("aws profile is required")
 	}
 
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithSharedConfigProfile(awsProfile))
+	awsCfg, err := loadAWSConfigFromProfile(ctx, awsProfile)
 	if err != nil {
-		return nil, fmt.Errorf("load AWS config for profile %q: %w", awsProfile, err)
-	}
-	if strings.TrimSpace(awsCfg.Region) == "" {
-		return nil, fmt.Errorf("AWS profile %q has no default region configured", awsProfile)
+		return nil, err
 	}
 
 	accountID, err := resolveAWSAccountID(ctx, awsCfg)
@@ -102,6 +98,11 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		return nil, err
 	}
 
+	stateDir, err := ensureLocalStateDir(app, baseDomain)
+	if err != nil {
+		return nil, err
+	}
+
 	bootstrap := bootstrapWallet{
 		Address:        strings.ToLower(strings.TrimSpace(existingBootstrapAddr)),
 		DerivationPath: defaultBootstrapDerivationPath,
@@ -114,13 +115,24 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		}
 	}
 
-	if args.OutPath != "" && bootstrap.Mnemonic == "" {
-		return nil, errors.New("--out cannot be used when a bootstrap wallet is already configured (mnemonic is not recoverable)")
+	if bootstrap.Mnemonic != "" && strings.TrimSpace(args.OutPath) == "" {
+		defaultPath := filepath.Join(stateDir, "bootstrap.json")
+		return nil, fmt.Errorf("bootstrap wallet generated; --out is required to persist the mnemonic (recommended: %s)", defaultPath)
 	}
 
-	stateDir, err := ensureLocalStateDir(app, baseDomain)
-	if err != nil {
-		return nil, err
+	if args.OutPath != "" && bootstrap.Mnemonic == "" {
+		defaultPath := filepath.Join(stateDir, "bootstrap.json")
+		if !fileExists(defaultPath) {
+			return nil, errors.New("--out requires local bootstrap key material; no mnemonic found in ~/.lesser (cannot recover from AWS)")
+		}
+		loaded, err := readBootstrapKeyMaterial(defaultPath)
+		if err != nil {
+			return nil, err
+		}
+		if !strings.EqualFold(loaded.Address, bootstrap.Address) {
+			return nil, fmt.Errorf("local bootstrap key material address %s does not match deployed bootstrap address %s", loaded.Address, bootstrap.Address)
+		}
+		bootstrap = loaded
 	}
 
 	return &upEnv{
@@ -191,11 +203,9 @@ func (e *upEnv) handleBootstrapOutput() error {
 		return nil
 	}
 
-	fmt.Println("\nBootstrap admin wallet (print-once):")
+	fmt.Println("\nBootstrap admin wallet:")
 	fmt.Println("  address:", e.bootstrap.Address)
 	fmt.Println("  derivation_path:", e.bootstrap.DerivationPath)
-	fmt.Println("  mnemonic:", e.bootstrap.Mnemonic)
-	fmt.Println("\nWARNING: secure this mnemonic. Losing it before activation requires teardown + redeploy.")
 
 	if e.args.OutPath == "" {
 		return nil
@@ -205,6 +215,7 @@ func (e *upEnv) handleBootstrapOutput() error {
 		return err
 	}
 	fmt.Println("Wrote bootstrap key material to:", e.args.OutPath)
+	fmt.Println("WARNING: secure this mnemonic. Losing it before activation requires teardown + redeploy.")
 	return nil
 }
 
@@ -212,6 +223,11 @@ func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 	receipt := newUpReceipt(e.app, e.baseDomain, e.awsProfile, e.accountID, e.awsCfg.Region, e.stages, e.hostedZone)
 
 	if err := cdkBootstrap(ctx, e.repoRoot, e.awsProfile, e.accountID, e.awsCfg.Region); err != nil {
+		return nil, err
+	}
+
+	fmt.Println("\nEnsuring API Gateway account logging role...")
+	if err := ensureAPIGatewayCloudWatchLogsRole(ctx, e.awsCfg); err != nil {
 		return nil, err
 	}
 
@@ -283,7 +299,7 @@ func (e *upEnv) printSummary(statePath string) {
 		fmt.Println("  1) Use the existing bootstrap wallet configured for this deployment.")
 	}
 	fmt.Println("  2) Confirm each stage is locked via the setup status endpoint (GET /setup/status).")
-	fmt.Println("  3) Use the setup wizard UI (separate project) to create a real admin and finalize activation (deletes bootstrap).")
+	fmt.Println("  3) Open the setup wizard UI (/auth/setup) to create a real admin and finalize activation (deletes bootstrap).")
 }
 
 func parseUpArgs(argv []string) (upArgs, error) {
@@ -295,7 +311,7 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	fs.StringVar(&args.BaseDomain, "base-domain", "", "base domain with an existing public hosted zone (e.g. example.com)")
 	fs.StringVar(&args.AWSProfile, "aws-profile", "", "AWS profile name to use (sets AWS_PROFILE)")
 	fs.BoolVar(&args.WithStaging, "with-staging", false, "also deploy staging")
-	fs.StringVar(&args.OutPath, "out", "", "write bootstrap mnemonic to this path (0600). Omit to print only.")
+	fs.StringVar(&args.OutPath, "out", "", "write bootstrap key material to this path (0600). Required on first deploy.")
 	fs.BoolVar(&args.RebuildLambdas, "rebuild-lambdas", false, "force rebuild Lambda zip artifacts")
 
 	if err := fs.Parse(argv); err != nil {

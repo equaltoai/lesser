@@ -39,6 +39,33 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.Handle("OPTIONS", "/auth/wallet/unlink/{address}", optionsHandler)
 	_ = app.Handle("OPTIONS", "/auth/wallet/list", optionsHandler)
 
+	// WebAuthn (passkey) endpoints
+	// Registration begin/finish requires auth (binds a passkey to the logged-in user).
+	_ = app.POST("/api/v1/auth/webauthn/register/begin", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleBeginWebAuthnRegistrationLift),
+		20, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/auth/webauthn/register/finish", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleFinishWebAuthnRegistrationLift),
+		20, 5*time.Minute, logger))
+	// Login begin/finish is public (username provided), but rate limited.
+	_ = app.POST("/api/v1/auth/webauthn/login/begin", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleBeginWebAuthnLoginLift),
+		20, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/auth/webauthn/login/finish", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleFinishWebAuthnLoginLift),
+		20, 5*time.Minute, logger))
+
+	_ = app.GET("/api/v1/auth/webauthn/credentials", lift.HandlerFunc(liftHandler.HandleListWebAuthnCredentialsLift))
+	_ = app.DELETE("/api/v1/auth/webauthn/credentials/{credentialId}", lift.HandlerFunc(liftHandler.HandleDeleteWebAuthnCredentialLift))
+	_ = app.PUT("/api/v1/auth/webauthn/credentials/{credentialId}", lift.HandlerFunc(liftHandler.HandleUpdateWebAuthnCredentialNameLift))
+
+	_ = app.Handle("OPTIONS", "/api/v1/auth/webauthn/register/begin", optionsHandler)
+	_ = app.Handle("OPTIONS", "/api/v1/auth/webauthn/register/finish", optionsHandler)
+	_ = app.Handle("OPTIONS", "/api/v1/auth/webauthn/login/begin", optionsHandler)
+	_ = app.Handle("OPTIONS", "/api/v1/auth/webauthn/login/finish", optionsHandler)
+	_ = app.Handle("OPTIONS", "/api/v1/auth/webauthn/credentials", optionsHandler)
+	_ = app.Handle("OPTIONS", "/api/v1/auth/webauthn/credentials/{credentialId}", optionsHandler)
+
 	// OAuth endpoints with native Lift implementation + rate limiting
 	_ = app.GET("/oauth/authorize", ratelimit.ApplyRateLimit(
 		lift.HandlerFunc(liftHandler.HandleOAuthAuthorizeLift),

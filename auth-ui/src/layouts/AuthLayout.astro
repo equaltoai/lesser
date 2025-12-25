@@ -1,20 +1,22 @@
 ---
-import '@equaltoai/greater-components/tokens/theme.css';
+import 'src/lib/styles/greater/tokens.css';
+import 'src/lib/styles/greater/primitives.css';
 import '../styles/global.css';
 import LessThanLogo from '../components/LessThanLogo.svelte';
 
 interface Props {
   title: string;
   subtitle?: string;
+  variant?: 'default' | 'wide';
 }
 
-const { title, subtitle = 'Passwordless authentication' } = Astro.props;
+const { title, subtitle = 'Passwordless authentication', variant = 'default' } = Astro.props;
 const rawBaseUrl = import.meta.env.BASE_URL || '/';
 const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 ---
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -24,7 +26,7 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 </head>
 <body>
   <div class="auth-container">
-    <div class="auth-card">
+    <div class={`auth-card ${variant === 'wide' ? 'auth-card--wide' : ''}`}>
       <div class="auth-header">
         <div class="auth-logo">
           <LessThanLogo client:load />

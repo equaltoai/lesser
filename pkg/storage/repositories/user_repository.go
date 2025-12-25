@@ -197,7 +197,7 @@ func (r *UserRepository) UpdateUser(ctx context.Context, username string, update
 	}
 
 	// Validate updates map
-	if err := common.ValidateSliceNotEmpty("updates", updates); err != nil {
+	if len(updates) == 0 {
 		return ErrorHandler.HandleUpdateError(common.ValidationError{Field: "Updates", Message: "no updates provided"}, EntityUser, "updates validation")
 	}
 

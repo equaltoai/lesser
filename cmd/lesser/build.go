@@ -5,16 +5,23 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 func buildLambdaZips(repoRoot string, force bool) error {
 	lambdaNames, err := loadLambdaNamesFromInventory(repoRoot)
+	if err != nil {
+		return err
+	}
+
+	sourceUpdatedAt, err := latestGoSourceUpdate(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -35,8 +42,14 @@ func buildLambdaZips(repoRoot string, force bool) error {
 	for _, lambdaName := range lambdaNames {
 		zipPath := filepath.Join(binDir, fmt.Sprintf("%s.zip", lambdaName))
 		if !force && fileExists(zipPath) {
-			skipped++
-			continue
+			zipInfo, err := os.Stat(zipPath)
+			if err != nil {
+				return fmt.Errorf("stat %s: %w", zipPath, err)
+			}
+			if !sourceUpdatedAt.After(zipInfo.ModTime()) {
+				skipped++
+				continue
+			}
 		}
 
 		fmt.Println("Building Lambda:", lambdaName)
@@ -70,7 +83,7 @@ func buildLambdaBinary(repoRoot string, cacheDir string, lambdaName string, outP
 	if len(buildTags) > 0 {
 		args = append(args, "-tags", strings.Join(buildTags, ","))
 	}
-	args = append(args, filepath.Join("./cmd", lambdaName))
+	args = append(args, "./"+filepath.Join("cmd", lambdaName))
 
 	cmd := exec.Command("go", args...) //nolint:gosec // tool invocation
 	cmd.Dir = repoRoot
@@ -159,4 +172,59 @@ func loadLambdaNamesFromInventory(repoRoot string) ([]string, error) {
 
 	sort.Strings(names)
 	return names, nil
+}
+
+func latestGoSourceUpdate(repoRoot string) (time.Time, error) {
+	latest := time.Time{}
+
+	for _, path := range []string{
+		filepath.Join(repoRoot, "go.mod"),
+		filepath.Join(repoRoot, "go.sum"),
+	} {
+		info, err := os.Stat(path)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("stat %s: %w", path, err)
+		}
+		if info.ModTime().After(latest) {
+			latest = info.ModTime()
+		}
+	}
+
+	for _, dir := range []string{
+		filepath.Join(repoRoot, "cmd"),
+		filepath.Join(repoRoot, "pkg"),
+		filepath.Join(repoRoot, "graph"),
+		filepath.Join(repoRoot, "graphql"),
+	} {
+		if _, err := os.Stat(dir); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return time.Time{}, fmt.Errorf("stat %s: %w", dir, err)
+		}
+
+		if err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			if filepath.Ext(path) != ".go" {
+				return nil
+			}
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			if info.ModTime().After(latest) {
+				latest = info.ModTime()
+			}
+			return nil
+		}); err != nil {
+			return time.Time{}, fmt.Errorf("scan %s: %w", dir, err)
+		}
+	}
+
+	return latest, nil
 }

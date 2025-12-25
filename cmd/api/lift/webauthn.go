@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -31,9 +32,17 @@ func (h *Handler) HandleBeginWebAuthnRegistrationLift(ctx *lift.Context) error {
 		return h.handleAuthServiceError(ctx, err, "begin registration")
 	}
 
+	publicKey := options
+	switch typed := options.(type) {
+	case *protocol.CredentialCreation:
+		publicKey = typed.Response
+	case protocol.CredentialCreation:
+		publicKey = typed.Response
+	}
+
 	// Return options and challenge
 	response := map[string]any{
-		"publicKey": options,
+		"publicKey": publicKey,
 		"challenge": challenge,
 	}
 
@@ -105,9 +114,17 @@ func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *lift.Context) error {
 		return h.handleAuthServiceError(ctx, err, "begin login")
 	}
 
+	publicKey := options
+	switch typed := options.(type) {
+	case *protocol.CredentialAssertion:
+		publicKey = typed.Response
+	case protocol.CredentialAssertion:
+		publicKey = typed.Response
+	}
+
 	// Return options and challenge
 	response := map[string]any{
-		"publicKey": options,
+		"publicKey": publicKey,
 		"challenge": challenge,
 	}
 

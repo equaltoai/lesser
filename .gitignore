@@ -12,6 +12,8 @@ build/
 /streaming
 /api
 /graphql
+/lesser
+/lesser.exe
 **/main
 **/*.test
 **/*.bin

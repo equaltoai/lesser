@@ -1,12 +1,13 @@
 import { defineConfig } from 'astro/config';
 import svelte from '@astrojs/svelte';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   base: '/auth/',
   integrations: [
     svelte({
       compilerOptions: {
-        runes: true  // Required for Svelte 5 runes (@equaltoai/greater-components)
+        runes: true, // Required for Svelte 5 runes (Greater Components)
       }
     })
   ],
@@ -16,11 +17,10 @@ export default defineConfig({
     assets: '_assets',
   },
   vite: {
-    optimizeDeps: {
-      exclude: ['@equaltoai/greater-components'],
-    },
-    ssr: {
-      noExternal: ['@equaltoai/greater-components'],
+    resolve: {
+      alias: {
+        src: fileURLToPath(new URL('./src', import.meta.url)),
+      },
     },
   },
 });

@@ -3,6 +3,7 @@ package lift
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -38,11 +39,21 @@ func (h *Handler) stageURLs() map[string]any {
 		wsScheme = "ws"
 	}
 
+	baseURL := h.cfg.BaseURL()
+	setupURL := fmt.Sprintf("%s/auth/setup", baseURL)
+
 	return map[string]any{
-		"client":     h.cfg.BaseURL(),
-		"api":        fmt.Sprintf("%s://api.%s", httpScheme, domain),
-		"ws":         fmt.Sprintf("%s://ws.%s", wsScheme, domain),
-		"auth_setup": fmt.Sprintf("%s://auth.%s/setup", httpScheme, domain),
+		// Single-domain path routing (preferred).
+		"client":       fmt.Sprintf("%s/l", baseURL),
+		"api":          baseURL,
+		"auth":         fmt.Sprintf("%s/auth", baseURL),
+		"setup":        setupURL,
+		"setup_status": fmt.Sprintf("%s/setup/status", baseURL),
+		"ws":           fmt.Sprintf("%s://ws.%s", wsScheme, domain),
+		"media":        fmt.Sprintf("%s://media.%s", httpScheme, domain),
+
+		// Backwards-compatible field name.
+		"auth_setup": setupURL,
 	}
 }
 
@@ -287,33 +298,9 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *lift.Context) error {
 		return err
 	}
 
-	var req struct {
-		Username    string                   `json:"username"`
-		DisplayName string                   `json:"displayName,omitempty"`
-		Wallet      auth.WalletVerifyRequest `json:"wallet"`
-	}
-	if err := h.parseRequestBody(ctx, &req); err != nil {
+	req, err := h.parseSetupCreateAdminRequest(ctx, bootstrapUsername)
+	if err != nil {
 		return err
-	}
-	if err := common.ValidateRequiredParam("username", req.Username); err != nil {
-		return h.respondBadRequest(ctx, "username is required")
-	}
-	if strings.EqualFold(req.Username, bootstrapUsername) {
-		return h.respondBadRequest(ctx, "username is reserved")
-	}
-
-	// Verify the new admin wallet signature (binds wallet to chosen username).
-	if err := common.ValidateRequiredParam("challengeId", req.Wallet.ChallengeID); err != nil {
-		return h.respondBadRequest(ctx, "wallet.challengeId is required")
-	}
-	if err := common.ValidateRequiredParam("address", req.Wallet.Address); err != nil {
-		return h.respondBadRequest(ctx, "wallet.address is required")
-	}
-	if err := common.ValidateRequiredParam("signature", req.Wallet.Signature); err != nil {
-		return h.respondBadRequest(ctx, "wallet.signature is required")
-	}
-	if err := common.ValidateRequiredParam("message", req.Wallet.Message); err != nil {
-		return h.respondBadRequest(ctx, "wallet.message is required")
 	}
 
 	authService, err := h.requireAuthService(ctx)
@@ -321,47 +308,14 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *lift.Context) error {
 		return err
 	}
 
-	challenge, err := authService.GetWalletChallenge(ctx.Context, req.Wallet.ChallengeID)
+	walletChainID, adminWalletAddr, err := h.verifySetupCreateAdminWallet(ctx, authService, req.Username, req.Wallet)
 	if err != nil {
-		return h.respondUnauthorized(ctx)
-	}
-	if challenge.Username != req.Username {
-		return h.respondForbidden(ctx, "wallet challenge username mismatch")
+		return err
 	}
 
-	adminWalletAddr := strings.ToLower(strings.TrimSpace(req.Wallet.Address))
-	existingUsers, err := h.repos.Account().GetAllUsersForWallet(ctx.Context, "ethereum", adminWalletAddr)
+	actorID, err := h.ensureSetupAdminAccount(ctx, req.Username)
 	if err != nil {
-		h.logger.Error("failed to check wallet index", zap.Error(err))
-		return h.respondInternalError(ctx, "failed to validate wallet")
-	}
-	if len(existingUsers) > 0 {
-		return h.respondConflict(ctx, "wallet is already linked to a user")
-	}
-
-	if err := authService.VerifyWalletSignature(ctx.Context, &req.Wallet); err != nil {
-		return h.handleAuthServiceError(ctx, err, "verify admin wallet signature")
-	}
-	_ = authService.MarkWalletChallengeSpent(ctx.Context, req.Wallet.ChallengeID)
-
-	if h.registry == nil {
-		h.logger.Error("service registry not initialized")
-		return h.respondInternalError(ctx, "internal server error")
-	}
-
-	result, err := h.registry.Accounts().RegisterAccount(ctx.Context, &accounts.RegisterAccountCommand{
-		Username:                 req.Username,
-		Email:                    "",
-		Password:                 "",
-		Locale:                   "",
-		Agreement:                true,
-		Reason:                   "",
-		InviteCode:               "",
-		DefaultPostingVisibility: "",
-	})
-	if err != nil {
-		h.logger.Error("failed to create admin account", zap.String("username", req.Username), zap.Error(err))
-		return h.respondUnprocessableEntity(ctx, "failed to create admin account")
+		return err
 	}
 
 	updates := map[string]any{
@@ -375,7 +329,7 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *lift.Context) error {
 		return h.respondInternalError(ctx, "failed to configure admin account")
 	}
 
-	if err := authService.LinkWallet(ctx.Context, req.Username, adminWalletAddr, challenge.ChainID, "ethereum"); err != nil {
+	if err := authService.LinkWallet(ctx.Context, req.Username, adminWalletAddr, walletChainID, "ethereum"); err != nil {
 		h.logger.Error("failed to link admin wallet", zap.String("username", req.Username), zap.Error(err))
 		return h.respondInternalError(ctx, "failed to link wallet")
 	}
@@ -387,8 +341,112 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *lift.Context) error {
 
 	return h.respondCreated(ctx, map[string]any{
 		"username": req.Username,
-		"actor":    result.Actor.ID,
+		"actor":    actorID,
 	})
+}
+
+type setupCreateAdminRequest struct {
+	Username    string                   `json:"username"`
+	DisplayName string                   `json:"displayName,omitempty"`
+	Wallet      auth.WalletVerifyRequest `json:"wallet"`
+}
+
+func (h *Handler) parseSetupCreateAdminRequest(ctx *lift.Context, bootstrapUsername string) (setupCreateAdminRequest, error) {
+	var req setupCreateAdminRequest
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return setupCreateAdminRequest{}, err
+	}
+
+	req.Username = strings.TrimSpace(req.Username)
+	if err := common.ValidateRequiredParam("username", req.Username); err != nil {
+		return setupCreateAdminRequest{}, h.respondBadRequest(ctx, "username is required")
+	}
+	if strings.EqualFold(req.Username, bootstrapUsername) {
+		return setupCreateAdminRequest{}, h.respondBadRequest(ctx, "username is reserved")
+	}
+	return req, nil
+}
+
+func (h *Handler) verifySetupCreateAdminWallet(
+	ctx *lift.Context,
+	authService *auth.AuthService,
+	username string,
+	wallet auth.WalletVerifyRequest,
+) (int, string, error) {
+	// Verify the new admin wallet signature (binds wallet to chosen username).
+	if err := common.ValidateRequiredParam("challengeId", wallet.ChallengeID); err != nil {
+		return 0, "", h.respondBadRequest(ctx, "wallet.challengeId is required")
+	}
+	if err := common.ValidateRequiredParam("address", wallet.Address); err != nil {
+		return 0, "", h.respondBadRequest(ctx, "wallet.address is required")
+	}
+	if err := common.ValidateRequiredParam("signature", wallet.Signature); err != nil {
+		return 0, "", h.respondBadRequest(ctx, "wallet.signature is required")
+	}
+	if err := common.ValidateRequiredParam("message", wallet.Message); err != nil {
+		return 0, "", h.respondBadRequest(ctx, "wallet.message is required")
+	}
+
+	challenge, err := authService.GetWalletChallenge(ctx.Context, wallet.ChallengeID)
+	if err != nil {
+		return 0, "", h.respondUnauthorized(ctx)
+	}
+	if challenge.Username != username {
+		return 0, "", h.respondForbidden(ctx, "wallet challenge username mismatch")
+	}
+
+	adminWalletAddr := strings.ToLower(strings.TrimSpace(wallet.Address))
+	existingUsers, err := h.repos.Account().GetAllUsersForWallet(ctx.Context, "ethereum", adminWalletAddr)
+	if err != nil {
+		h.logger.Error("failed to check wallet index", zap.Error(err))
+		return 0, "", h.respondInternalError(ctx, "failed to validate wallet")
+	}
+	if len(existingUsers) > 0 {
+		return 0, "", h.respondConflict(ctx, "wallet is already linked to a user")
+	}
+
+	if err := authService.VerifyWalletSignature(ctx.Context, &wallet); err != nil {
+		return 0, "", h.handleAuthServiceError(ctx, err, "verify admin wallet signature")
+	}
+	_ = authService.MarkWalletChallengeSpent(ctx.Context, wallet.ChallengeID)
+
+	return challenge.ChainID, adminWalletAddr, nil
+}
+
+func (h *Handler) ensureSetupAdminAccount(ctx *lift.Context, username string) (string, error) {
+	if h.registry == nil {
+		h.logger.Error("service registry not initialized")
+		return "", h.respondInternalError(ctx, "internal server error")
+	}
+
+	result, err := h.registry.Accounts().RegisterAccount(ctx.Context, &accounts.RegisterAccountCommand{
+		Username:                 username,
+		Email:                    "",
+		Password:                 "",
+		Locale:                   "",
+		Agreement:                true,
+		Reason:                   "",
+		InviteCode:               "",
+		DefaultPostingVisibility: "",
+	})
+	if err != nil {
+		if !errors.Is(err, accounts.ErrUsernameAlreadyTaken) {
+			h.logger.Error("failed to create admin account", zap.String("username", username), zap.Error(err))
+			return "", h.respondUnprocessableEntity(ctx, "failed to create admin account")
+		}
+
+		existingActor, actorErr := h.repos.Actor().GetActor(ctx.Context, username)
+		if actorErr != nil {
+			h.logger.Error("admin username exists but actor lookup failed", zap.String("username", username), zap.Error(actorErr))
+			return "", h.respondUnprocessableEntity(ctx, "failed to create admin account")
+		}
+		return existingActor.ID, nil
+	}
+
+	if result != nil && result.Actor != nil && strings.TrimSpace(result.Actor.ID) != "" {
+		return result.Actor.ID, nil
+	}
+	return h.cfg.ActorURL(username), nil
 }
 
 // HandleSetupFinalizeLift handles POST /setup/finalize.

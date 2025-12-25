@@ -1,6 +1,6 @@
 # Auth UI: Setup Wizard (Locked Deployments)
 
-> **Status**: Draft  
+> **Status**: Implemented (MVP)  
 > **Created**: 2025-12-24  
 > **Depends On**: `docs/specs/LESSER_UP_CLI.md`, `docs/specs/AUTH_UI_GREATER_CLI_MIGRATION.md`
 
@@ -9,6 +9,11 @@
 Lesser deployments come up **locked but reachable**. A temporary bootstrap actor exists only to let the operator establish a “real” admin and finalize activation.
 
 This document specifies the Auth UI wizard that runs on `https://<stage-domain>/auth/setup` and drives the backend activation contract served by the system API paths under `https://<stage-domain>/setup/*`.
+
+## Implementation
+
+- Route: `auth-ui/src/pages/setup.astro`
+- Wizard: `auth-ui/src/components/SetupWizard.svelte`
 
 ## Goals
 

@@ -138,27 +138,21 @@ func addRestRoutes(api *liftcdk.LiftRestAPI, functions *LambdaFunctions, streamT
 	sseFn := functions.Must("sse")
 	healthFn := apiFn
 
-	timeout := streamTimeoutSeconds
-	streamOpts := &liftcdk.IntegrationOptions{
-		EnableStreaming:         jsii.Bool(true),
-		StreamingTimeoutSeconds: &timeout,
-	}
-
 	// Mastodon streaming (SSE) routes.
-	// Buffered endpoints (non-streaming integration):
+	// NOTE: Response-streaming integrations are currently disabled for REST APIs to avoid
+	// CloudFormation/API Gateway provisioning issues. These endpoints still exist but use
+	// standard Lambda proxy integrations.
 	api.AddLambdaIntegration(jsii.String("/api/v1/streaming"), jsii.String("GET"), sseFn)
 	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/health"), jsii.String("GET"), sseFn)
-
-	// Streaming endpoints (response streaming integration enabled per-method):
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/user"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/user/notification"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/public"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/public/local"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/public/remote"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/hashtag"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/hashtag/local"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/list"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/direct"), jsii.String("GET"), sseFn, streamOpts)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/user"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/user/notification"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public/local"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public/remote"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/hashtag"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/hashtag/local"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/list"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/direct"), jsii.String("GET"), sseFn)
 
 	// Mastodon API routes (Lift handles internal routing).
 	api.AddLambdaIntegration(jsii.String("/api/v1/{proxy+}"), jsii.String("ANY"), apiFn)
