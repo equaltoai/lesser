@@ -1,6 +1,6 @@
 SHELL := bash
 
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials owner-bootstrap seed-and-validate clear-data generate-inventory generate-graphql-coverage verify-inventory verify-lambda-set verify-docs verify-graphql-coverage verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify schema export-schema gqlgen
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials owner-bootstrap seed-and-validate clear-data generate-inventory generate-graphql-coverage generate-openapi verify-inventory verify-lambda-set verify-docs verify-graphql-coverage verify-openapi verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify schema export-schema gqlgen
 
 # =============================================================================
 # CONFIGURATION
@@ -186,6 +186,11 @@ generate-graphql-coverage:
 	@mkdir -p tmp/go-cache
 	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/graphql_coverage --write
 
+## Generate docs/specs/openapi.yaml from cmd/api route configuration
+generate-openapi:
+	@mkdir -p tmp/go-cache
+	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/openapi --write
+
 ## Verify Makefile LAMBDAS == inventory.LambdaInventory and Spec 01 is fresh
 verify-inventory:
 	@mkdir -p tmp/go-cache
@@ -203,6 +208,11 @@ verify-docs:
 verify-graphql-coverage:
 	@mkdir -p tmp/go-cache
 	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/graphql_coverage --check
+
+## Verify OpenAPI spec is in sync with configured routes
+verify-openapi:
+	@mkdir -p tmp/go-cache
+	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/openapi --check
 
 ## Verify unit tests (Spec 07 R6)
 verify-unit:
@@ -230,7 +240,7 @@ smoke-federation:
 	@bash scripts/smoke_federation.sh
 
 ## Combined verification wrapper
-verify: verify-lambda-set verify-inventory verify-docs verify-graphql-coverage verify-unit
+verify: verify-lambda-set verify-inventory verify-docs verify-graphql-coverage verify-openapi verify-unit
 	@if [ "$${VERIFY_SMOKE:-0}" = "1" ]; then $(MAKE) verify-smoke; fi
 	@if [ "$${VERIFY_CDK:-0}" = "1" ]; then $(MAKE) verify-cdk; fi
 	@echo "✓ verify complete (lambda set, inventory, docs, graphql coverage, unit tests)"

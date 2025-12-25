@@ -206,7 +206,8 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeAPIHTTP,
 			Role: RoleClassEncryption,
 			HTTPRoutes: []HTTPRoute{
-				{Method: "ANY", Path: "/inbox/{username}"},
+				{Method: "GET", Path: "/users/{username}/inbox"},
+				{Method: "POST", Path: "/users/{username}/inbox"},
 			},
 		},
 		{
@@ -318,7 +319,8 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeAPIHTTP, // HTTP-only
 			Role: RoleClassEncryption,
 			HTTPRoutes: []HTTPRoute{
-				{Method: "ANY", Path: "/users/{username}/outbox"},
+				{Method: "GET", Path: "/users/{username}/outbox"},
+				{Method: "POST", Path: "/users/{username}/outbox"},
 			},
 		},
 		{

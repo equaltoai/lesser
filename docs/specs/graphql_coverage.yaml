@@ -27,6 +27,13 @@ exemptions:
       match:
         exact:
             - /
+    - id: embeds
+      reason: oEmbed and embed HTML pages are REST-only.
+      match:
+        exact:
+            - /api/oembed
+        prefixes:
+            - /embed
 routes:
     - method: GET
       path: /
@@ -36,6 +43,14 @@ routes:
       path: /.well-known/nodeinfo
       policy: rest_only
       exemptedBy: protocol_infra
+    - method: GET
+      path: /.well-known/reputation-keys
+      policy: rest_only
+      exemptedBy: protocol_infra
+    - method: GET
+      path: /api/oembed
+      policy: rest_only
+      exemptedBy: embeds
     - method: POST
       path: /api/v1/accounts
       policy: graphql_required
@@ -47,19 +62,27 @@ routes:
     - method: GET
       path: /api/v1/accounts/relationships
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.relationships
     - method: GET
       path: /api/v1/accounts/search
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.search
     - method: GET
       path: /api/v1/accounts/search/suggestions
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.suggestions
     - method: PATCH
       path: /api/v1/accounts/update_credentials
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.updateProfile
     - method: GET
       path: /api/v1/accounts/verify_credentials
       policy: graphql_required
@@ -67,9 +90,17 @@ routes:
     - method: POST
       path: /api/v1/accounts/{id}/block
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.blockActor
     - method: POST
       path: /api/v1/accounts/{id}/follow
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.followActor
+    - method: POST
+      path: /api/v1/accounts/{id}/mute
       policy: graphql_required
       status: missing
     - method: GET
@@ -83,13 +114,23 @@ routes:
     - method: GET
       path: /api/v1/accounts/{id}/statuses
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.timeline
     - method: POST
       path: /api/v1/accounts/{id}/unblock
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.unblockActor
     - method: POST
       path: /api/v1/accounts/{id}/unfollow
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.unfollowActor
+    - method: POST
+      path: /api/v1/accounts/{id}/unmute
       policy: graphql_required
       status: missing
     - method: GET
@@ -132,6 +173,22 @@ routes:
       path: /api/v1/admin/accounts/{id}/unsuspend
       policy: graphql_required
       status: missing
+    - method: POST
+      path: /api/v1/admin/announcements
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/custom_emojis
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/admin/custom_emojis/{shortcode}
+      policy: graphql_required
+      status: missing
+    - method: PUT
+      path: /api/v1/admin/custom_emojis/{shortcode}
+      policy: graphql_required
+      status: missing
     - method: GET
       path: /api/v1/admin/domain_allows
       policy: graphql_required
@@ -165,6 +222,30 @@ routes:
       policy: graphql_required
       status: missing
     - method: GET
+      path: /api/v1/admin/email_domain_blocks
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/email_domain_blocks
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/admin/email_domain_blocks/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/federation/instance/{domain}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/federation/instances
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/federation/statistics
+      policy: graphql_required
+      status: missing
+    - method: GET
       path: /api/v1/admin/moderation/events
       policy: graphql_required
       status: missing
@@ -175,7 +256,9 @@ routes:
     - method: GET
       path: /api/v1/admin/moderation/overview
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.moderationDashboard
     - method: GET
       path: /api/v1/admin/moderation/reviewers
       policy: graphql_required
@@ -240,6 +323,22 @@ routes:
       path: /api/v1/admin/statuses/{id}/unsensitive
       policy: graphql_required
       status: missing
+    - method: GET
+      path: /api/v1/announcements
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/announcements/{id}/dismiss
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/announcements/{id}/reactions/{name}
+      policy: graphql_required
+      status: missing
+    - method: PUT
+      path: /api/v1/announcements/{id}/reactions/{name}
+      policy: graphql_required
+      status: missing
     - method: POST
       path: /api/v1/apps
       policy: rest_only
@@ -277,15 +376,49 @@ routes:
       policy: graphql_required
       status: missing
     - method: GET
-      path: /api/v1/conversations
+      path: /api/v1/bookmarks
       policy: graphql_required
       status: missing
+    - method: GET
+      path: /api/v1/conversations
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.conversations
     - method: DELETE
       path: /api/v1/conversations/{id}
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.deleteConversation
     - method: POST
       path: /api/v1/conversations/{id}/read
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.markConversationAsRead
+    - method: GET
+      path: /api/v1/custom_emojis
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/directory
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/domain_blocks
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/domain_blocks
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/domain_blocks
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/endorsements
       policy: graphql_required
       status: missing
     - method: GET
@@ -312,6 +445,22 @@ routes:
       status: covered
       graphql:
         - Query.export
+    - method: GET
+      path: /api/v1/favourites
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/follow_requests
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/follow_requests/{account_id}/authorize
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/follow_requests/{account_id}/reject
+      policy: graphql_required
+      status: missing
     - method: GET
       path: /api/v1/imports
       policy: graphql_required
@@ -352,56 +501,242 @@ routes:
       path: /api/v1/instance/peers
       policy: graphql_required
       status: missing
-    - method: POST
-      path: /api/v1/media
+    - method: GET
+      path: /api/v1/instance/translation_languages
       policy: graphql_required
       status: missing
     - method: GET
-      path: /api/v1/media/{id}
+      path: /api/v1/lists
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/lists
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/lists/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/lists/{id}
       policy: graphql_required
       status: missing
     - method: PUT
+      path: /api/v1/lists/{id}
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/lists/{id}/accounts
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/lists/{id}/accounts
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/lists/{id}/accounts
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/markers
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/markers
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/media
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.uploadMedia
+    - method: GET
       path: /api/v1/media/{id}
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.media
+    - method: PUT
+      path: /api/v1/media/{id}
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.updateMedia
+    - method: GET
+      path: /api/v1/moderation/consensus/{event_id}
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/moderation/flag
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/moderation/history/{object_id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/moderation/queue
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/moderation/review
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/moderation/trust
+      policy: graphql_required
+      status: missing
+    - method: PUT
+      path: /api/v1/moderation/trust
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/moderation/trust/{actor_id}/score
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/mutes
       policy: graphql_required
       status: missing
     - method: POST
       path: /api/v1/notes
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.addCommunityNote
     - method: POST
       path: /api/v1/notes/{id}/vote
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.voteCommunityNote
     - method: GET
       path: /api/v1/notes/{object_id}
       policy: graphql_required
+      status: covered
+      graphql:
+        - Query.object
+    - method: GET
+      path: /api/v1/notifications
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/notifications/clear
+      policy: graphql_required
       status: missing
     - method: GET
-      path: /api/v1/search/statuses
+      path: /api/v1/notifications/{id}
       policy: graphql_required
       status: missing
     - method: POST
-      path: /api/v1/search/statuses
+      path: /api/v1/notifications/{id}/dismiss
       policy: graphql_required
       status: missing
-    - method: POST
-      path: /api/v1/statuses
+    - method: GET
+      path: /api/v1/preferences
+      policy: graphql_required
+      status: missing
+    - method: PATCH
+      path: /api/v1/preferences
       policy: graphql_required
       status: missing
     - method: DELETE
-      path: /api/v1/statuses/{id}
+      path: /api/v1/push/subscription
       policy: graphql_required
       status: missing
     - method: GET
-      path: /api/v1/statuses/{id}
+      path: /api/v1/push/subscription
       policy: graphql_required
       status: missing
+    - method: POST
+      path: /api/v1/push/subscription
+      policy: graphql_required
+      status: missing
+    - method: PUT
+      path: /api/v1/push/subscription
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/reports
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/reputation/export
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/reputation/import
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/reputation/verify
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/reputation/{actor_id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/scheduled_statuses
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/scheduled_statuses/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/scheduled_statuses/{id}
+      policy: graphql_required
+      status: missing
+    - method: PUT
+      path: /api/v1/scheduled_statuses/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/search/statuses
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.search
+    - method: POST
+      path: /api/v1/search/statuses
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.search
+    - method: POST
+      path: /api/v1/statuses
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.createNote
+    - method: DELETE
+      path: /api/v1/statuses/{id}
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.deleteObject
+    - method: GET
+      path: /api/v1/statuses/{id}
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.object
     - method: PUT
       path: /api/v1/statuses/{id}
       policy: graphql_required
       status: missing
+    - method: POST
+      path: /api/v1/statuses/{id}/bookmark
+      policy: graphql_required
+      status: missing
     - method: GET
       path: /api/v1/statuses/{id}/context
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/statuses/{id}/favourite
       policy: graphql_required
       status: missing
     - method: GET
@@ -413,15 +748,33 @@ routes:
       policy: graphql_required
       status: missing
     - method: POST
-      path: /api/v1/statuses/{id}/quote
+      path: /api/v1/statuses/{id}/mute
       policy: graphql_required
       status: missing
+    - method: POST
+      path: /api/v1/statuses/{id}/pin
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/statuses/{id}/quote
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.createNote
     - method: DELETE
       path: /api/v1/statuses/{id}/quote/{quote_id}
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.deleteObject
     - method: GET
       path: /api/v1/statuses/{id}/quotes
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.object
+    - method: POST
+      path: /api/v1/statuses/{id}/reblog
       policy: graphql_required
       status: missing
     - method: GET
@@ -430,6 +783,92 @@ routes:
       status: missing
     - method: GET
       path: /api/v1/statuses/{id}/source
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.object
+    - method: POST
+      path: /api/v1/statuses/{id}/translate
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/statuses/{id}/unbookmark
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/statuses/{id}/unfavourite
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/statuses/{id}/unmute
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/statuses/{id}/unpin
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/statuses/{id}/unreblog
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/suggestions
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/suggestions/{account_id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/timelines/direct
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/timelines/home
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/timelines/link
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/timelines/list/{list_id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/timelines/public
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/timelines/tag/{hashtag}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/trends
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/trends/links
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/trends/statuses
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/trends/tags
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/vouches
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/vouches/{actor_id}
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/vouches/{vouch_id}
       policy: graphql_required
       status: missing
     - method: GET
@@ -523,11 +962,15 @@ routes:
     - method: GET
       path: /api/v2/search
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.search
     - method: GET
       path: /api/v2/suggestions
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.suggestions
     - method: GET
       path: /api/v2/trends
       policy: graphql_required
@@ -576,6 +1019,14 @@ routes:
       path: /auth/wallet/verify
       policy: rest_only
       exemptedBy: auth_setup
+    - method: GET
+      path: /embed/{id}
+      policy: rest_only
+      exemptedBy: embeds
+    - method: GET
+      path: /health
+      policy: rest_only
+      exemptedBy: protocol_infra
     - method: GET
       path: /health/detailed
       policy: rest_only
@@ -632,3 +1083,4 @@ routes:
       path: /users/{username}/following
       policy: rest_only
       exemptedBy: protocol_infra
+

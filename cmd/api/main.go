@@ -659,6 +659,17 @@ func configureHealthRoutes(app *lift.App) {
 		return ctx.Status(200).JSON(response)
 	})
 
+	// Legacy health endpoint (infra + backwards compatibility)
+	_ = app.GET("/health", func(ctx *lift.Context) error {
+		response := map[string]interface{}{
+			"status":    observability.HealthStatusHealthy,
+			"timestamp": time.Now(),
+			"service":   "api",
+			"version":   cfg.Version,
+		}
+		return ctx.Status(200).JSON(response)
+	})
+
 	// Readiness endpoint
 	_ = app.GET("/health/ready", func(ctx *lift.Context) error {
 		// Basic readiness check - can we access our dependencies?

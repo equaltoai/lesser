@@ -94,6 +94,13 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.GET("/.well-known/nodeinfo", lift.HandlerFunc(liftHandler.HandleNodeInfoWellKnownLift))
 	_ = app.GET("/nodeinfo/2.0", lift.HandlerFunc(liftHandler.HandleNodeInfoLift))
 
+	// Reputation keys (used by the portable reputation system)
+	_ = app.GET("/.well-known/reputation-keys", lift.HandlerFunc(liftHandler.HandleGetReputationKeysLift))
+
+	// oEmbed + embed endpoints
+	_ = app.GET("/api/oembed", lift.HandlerFunc(liftHandler.HandleOEmbedLift))
+	_ = app.GET("/embed/{id}", lift.HandlerFunc(liftHandler.HandleEmbedPageLift))
+
 	// Instance setup endpoints (locked-by-default bootstrapping)
 	_ = app.GET("/setup/status", lift.HandlerFunc(liftHandler.HandleSetupStatusLift))
 	_ = app.POST("/setup/bootstrap/challenge", ratelimit.ApplyRateLimit(
@@ -182,6 +189,154 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.GET("/api/v1/statuses/{id}/reblogged_by", lift.HandlerFunc(liftHandler.HandleGetStatusRebloggedByLift))
 	_ = app.GET("/api/v1/accounts/{id}/statuses", lift.HandlerFunc(liftHandler.HandleGetAccountStatusesLift))
 
+	// Additional Mastodon parity endpoints
+
+	// Timelines
+	_ = app.GET("/api/v1/timelines/home", lift.HandlerFunc(liftHandler.HandleGetHomeTimelineLift))
+	_ = app.GET("/api/v1/timelines/public", lift.HandlerFunc(liftHandler.HandleGetPublicTimelineLift))
+	_ = app.GET("/api/v1/timelines/tag/{hashtag}", lift.HandlerFunc(liftHandler.HandleGetTagTimelineLift))
+	_ = app.GET("/api/v1/timelines/list/{list_id}", lift.HandlerFunc(liftHandler.HandleGetListTimelineLift))
+	_ = app.GET("/api/v1/timelines/direct", lift.HandlerFunc(liftHandler.HandleGetDirectTimelineLift))
+	_ = app.GET("/api/v1/timelines/link", lift.HandlerFunc(liftHandler.HandleGetLinkTimelineLift))
+
+	// Trends (Mastodon v1)
+	_ = app.GET("/api/v1/trends", lift.HandlerFunc(liftHandler.HandleGetTrendsLift))
+	_ = app.GET("/api/v1/trends/tags", lift.HandlerFunc(liftHandler.HandleGetTrendingTagsLift))
+	_ = app.GET("/api/v1/trends/statuses", lift.HandlerFunc(liftHandler.HandleGetTrendingStatusesLift))
+	_ = app.GET("/api/v1/trends/links", lift.HandlerFunc(liftHandler.HandleGetTrendingLinksLift))
+
+	// Status interactions
+	_ = app.POST("/api/v1/statuses/{id}/favourite", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleFavoriteLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/statuses/{id}/unfavourite", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleUnfavoriteLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/statuses/{id}/reblog", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleReblogLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/statuses/{id}/unreblog", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleUnreblogLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/statuses/{id}/bookmark", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleBookmarkLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/statuses/{id}/unbookmark", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleUnbookmarkLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/statuses/{id}/pin", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandlePinStatusLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/statuses/{id}/unpin", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleUnpinStatusLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/statuses/{id}/mute", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleMuteConversationLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/statuses/{id}/unmute", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleUnmuteConversationLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/statuses/{id}/translate", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleTranslateStatusLift),
+		20, time.Hour, logger))
+
+	// Bookmarks + favourites
+	_ = app.GET("/api/v1/bookmarks", lift.HandlerFunc(liftHandler.HandleGetBookmarksLift))
+	_ = app.GET("/api/v1/favourites", lift.HandlerFunc(liftHandler.HandleGetFavouritesLift))
+
+	// Lists
+	_ = app.GET("/api/v1/lists", lift.HandlerFunc(liftHandler.HandleGetListsLift))
+	_ = app.POST("/api/v1/lists", lift.HandlerFunc(liftHandler.HandleCreateListLift))
+	_ = app.GET("/api/v1/lists/{id}", lift.HandlerFunc(liftHandler.HandleGetListLift))
+	_ = app.PUT("/api/v1/lists/{id}", lift.HandlerFunc(liftHandler.HandleUpdateListLift))
+	_ = app.DELETE("/api/v1/lists/{id}", lift.HandlerFunc(liftHandler.HandleDeleteListLift))
+	_ = app.GET("/api/v1/lists/{id}/accounts", lift.HandlerFunc(liftHandler.HandleGetListAccountsLift))
+	_ = app.POST("/api/v1/lists/{id}/accounts", lift.HandlerFunc(liftHandler.HandleAddAccountsToListLift))
+	_ = app.DELETE("/api/v1/lists/{id}/accounts", lift.HandlerFunc(liftHandler.HandleRemoveAccountsFromListLift))
+
+	// Notifications
+	_ = app.GET("/api/v1/notifications", lift.HandlerFunc(liftHandler.HandleGetNotificationsLift))
+	_ = app.GET("/api/v1/notifications/{id}", lift.HandlerFunc(liftHandler.HandleGetNotificationLift))
+	_ = app.POST("/api/v1/notifications/clear", lift.HandlerFunc(liftHandler.HandleClearNotificationsLift))
+	_ = app.POST("/api/v1/notifications/{id}/dismiss", lift.HandlerFunc(liftHandler.HandleDismissNotificationLift))
+
+	// Preferences + markers
+	_ = app.GET("/api/v1/preferences", lift.HandlerFunc(liftHandler.HandleGetPreferencesLift))
+	_ = app.PATCH("/api/v1/preferences", lift.HandlerFunc(liftHandler.HandleUpdatePreferencesLift))
+	_ = app.GET("/api/v1/markers", lift.HandlerFunc(liftHandler.HandleGetMarkersLift))
+	_ = app.POST("/api/v1/markers", lift.HandlerFunc(liftHandler.HandleSaveMarkersLift))
+
+	// Push subscriptions
+	_ = app.GET("/api/v1/push/subscription", lift.HandlerFunc(liftHandler.HandleGetPushSubscriptionLift))
+	_ = app.POST("/api/v1/push/subscription", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleCreatePushSubscriptionLift),
+		20, time.Hour, logger))
+	_ = app.PUT("/api/v1/push/subscription", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleUpdatePushSubscriptionLift),
+		20, time.Hour, logger))
+	_ = app.DELETE("/api/v1/push/subscription", lift.HandlerFunc(liftHandler.HandleDeletePushSubscriptionLift))
+
+	// Scheduled statuses
+	_ = app.GET("/api/v1/scheduled_statuses", lift.HandlerFunc(liftHandler.HandleGetScheduledStatusesLift))
+	_ = app.GET("/api/v1/scheduled_statuses/{id}", lift.HandlerFunc(liftHandler.HandleGetScheduledStatusLift))
+	_ = app.PUT("/api/v1/scheduled_statuses/{id}", lift.HandlerFunc(liftHandler.HandleUpdateScheduledStatusLift))
+	_ = app.DELETE("/api/v1/scheduled_statuses/{id}", lift.HandlerFunc(liftHandler.HandleDeleteScheduledStatusLift))
+
+	// Follow requests
+	_ = app.GET("/api/v1/follow_requests", lift.HandlerFunc(liftHandler.HandleGetFollowRequestsLift))
+	_ = app.POST("/api/v1/follow_requests/{account_id}/authorize", lift.HandlerFunc(liftHandler.HandleAuthorizeFollowRequestLift))
+	_ = app.POST("/api/v1/follow_requests/{account_id}/reject", lift.HandlerFunc(liftHandler.HandleRejectFollowRequestLift))
+
+	// Domain blocks (user-level)
+	_ = app.GET("/api/v1/domain_blocks", lift.HandlerFunc(liftHandler.HandleGetDomainBlocksLift))
+	_ = app.POST("/api/v1/domain_blocks", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleCreateDomainBlockLift),
+		20, time.Hour, logger))
+	_ = app.DELETE("/api/v1/domain_blocks", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleDeleteDomainBlockLift),
+		20, time.Hour, logger))
+
+	// Moderation + reports
+	_ = app.POST("/api/v1/moderation/flag", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleModerationFlagLift),
+		30, time.Hour, logger))
+	_ = app.GET("/api/v1/moderation/queue", lift.HandlerFunc(liftHandler.HandleModerationQueueLift))
+	_ = app.POST("/api/v1/moderation/review", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleModerationReviewLift),
+		60, time.Hour, logger))
+	_ = app.GET("/api/v1/moderation/history/{object_id}", lift.HandlerFunc(liftHandler.HandleModerationHistoryLift))
+	_ = app.GET("/api/v1/moderation/consensus/{event_id}", lift.HandlerFunc(liftHandler.HandleGetConsensusLift))
+	_ = app.GET("/api/v1/moderation/trust", lift.HandlerFunc(liftHandler.HandleGetTrustRelationshipsLift))
+	_ = app.PUT("/api/v1/moderation/trust", lift.HandlerFunc(liftHandler.HandleUpdateTrustLift))
+	_ = app.GET("/api/v1/moderation/trust/{actor_id}/score", lift.HandlerFunc(liftHandler.HandleGetTrustScoreLift))
+	_ = app.POST("/api/v1/reports", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleCreateReportLift),
+		30, time.Hour, logger))
+
+	// Discovery
+	_ = app.GET("/api/v1/directory", lift.HandlerFunc(liftHandler.HandleGetDirectoryLift))
+	_ = app.GET("/api/v1/suggestions", lift.HandlerFunc(liftHandler.HandleGetSuggestionsV1Lift))
+	_ = app.DELETE("/api/v1/suggestions/{account_id}", lift.HandlerFunc(liftHandler.HandleRemoveSuggestionLift))
+	_ = app.GET("/api/v1/endorsements", lift.HandlerFunc(liftHandler.HandleGetEndorsementsLift))
+
+	// Announcements
+	_ = app.GET("/api/v1/announcements", lift.HandlerFunc(liftHandler.HandleGetAnnouncementsLift))
+	_ = app.POST("/api/v1/announcements/{id}/dismiss", lift.HandlerFunc(liftHandler.HandleDismissAnnouncementLift))
+	_ = app.PUT("/api/v1/announcements/{id}/reactions/{name}", lift.HandlerFunc(liftHandler.HandleAddAnnouncementReactionLift))
+	_ = app.DELETE("/api/v1/announcements/{id}/reactions/{name}", lift.HandlerFunc(liftHandler.HandleRemoveAnnouncementReactionLift))
+
+	// Custom emojis
+	_ = app.GET("/api/v1/custom_emojis", lift.HandlerFunc(liftHandler.HandleGetCustomEmojisLift))
+
+	// Reputation + vouches
+	_ = app.GET("/api/v1/reputation/{actor_id}", lift.HandlerFunc(liftHandler.HandleGetReputationLift))
+	_ = app.POST("/api/v1/reputation/export", lift.HandlerFunc(liftHandler.HandleExportReputationLift))
+	_ = app.POST("/api/v1/reputation/import", lift.HandlerFunc(liftHandler.HandleImportReputationLift))
+	_ = app.POST("/api/v1/reputation/verify", lift.HandlerFunc(liftHandler.HandleVerifyReputationLift))
+	_ = app.POST("/api/v1/vouches", lift.HandlerFunc(liftHandler.HandleCreateVouchLift))
+	_ = app.GET("/api/v1/vouches/{actor_id}", lift.HandlerFunc(liftHandler.HandleGetVouchesLift))
+	_ = app.DELETE("/api/v1/vouches/{vouch_id}", lift.HandlerFunc(liftHandler.HandleRevokeVouchLift))
+
 	// Admin endpoints (always enabled for administration)
 	// Note: RBAC is handled within each handler's requireAdminLift() method
 	// Account management (Admin only)
@@ -223,6 +378,24 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.POST("/api/v1/admin/domain_allows", lift.HandlerFunc(liftHandler.HandleCreateAdminDomainAllowLift))
 	_ = app.DELETE("/api/v1/admin/domain_allows/{id}", lift.HandlerFunc(liftHandler.HandleDeleteAdminDomainAllowLift))
 
+	// Email domain blocks (Admin only)
+	_ = app.GET("/api/v1/admin/email_domain_blocks", lift.HandlerFunc(liftHandler.HandleGetEmailDomainBlocksLift))
+	_ = app.POST("/api/v1/admin/email_domain_blocks", lift.HandlerFunc(liftHandler.HandleCreateEmailDomainBlockLift))
+	_ = app.DELETE("/api/v1/admin/email_domain_blocks/{id}", lift.HandlerFunc(liftHandler.HandleDeleteEmailDomainBlockLift))
+
+	// Federation (Admin only)
+	_ = app.GET("/api/v1/admin/federation/instances", lift.HandlerFunc(liftHandler.HandleGetFederationInstancesLift))
+	_ = app.GET("/api/v1/admin/federation/instance/{domain}", lift.HandlerFunc(liftHandler.HandleGetFederationInstanceLift))
+	_ = app.GET("/api/v1/admin/federation/statistics", lift.HandlerFunc(liftHandler.HandleGetFederationStatisticsLift))
+
+	// Announcements (Admin only)
+	_ = app.POST("/api/v1/admin/announcements", lift.HandlerFunc(liftHandler.HandleCreateAnnouncementLift))
+
+	// Custom emojis (Admin only)
+	_ = app.POST("/api/v1/admin/custom_emojis", lift.HandlerFunc(liftHandler.HandleCreateCustomEmojiLift))
+	_ = app.PUT("/api/v1/admin/custom_emojis/{shortcode}", lift.HandlerFunc(liftHandler.HandleUpdateCustomEmojiLift))
+	_ = app.DELETE("/api/v1/admin/custom_emojis/{shortcode}", lift.HandlerFunc(liftHandler.HandleDeleteCustomEmojiLift))
+
 	// Moderation overview and events (Admin/Moderator)
 	_ = app.GET("/api/v1/admin/moderation/overview", lift.HandlerFunc(liftHandler.HandleAdminModerationOverviewLift))
 	_ = app.GET("/api/v1/admin/moderation/events", lift.HandlerFunc(liftHandler.HandleAdminGetModerationEventsLift))
@@ -260,8 +433,17 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.POST("/api/v1/accounts/{id}/unblock", ratelimit.ApplyRateLimit(
 		lift.HandlerFunc(liftHandler.HandleUnblockLift),
 		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/accounts/{id}/mute", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleMuteAccountLift),
+		30, 5*time.Minute, logger))
+	_ = app.POST("/api/v1/accounts/{id}/unmute", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleUnmuteAccountLift),
+		30, 5*time.Minute, logger))
 	_ = app.GET("/api/v1/blocks", ratelimit.ApplyRateLimit(
 		lift.HandlerFunc(liftHandler.HandleGetBlocksLift),
+		60, time.Hour, logger))
+	_ = app.GET("/api/v1/mutes", ratelimit.ApplyRateLimit(
+		lift.HandlerFunc(liftHandler.HandleGetMutedAccountsLift),
 		60, time.Hour, logger))
 
 	// Reviewer management (Admin only)
@@ -291,6 +473,7 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.GET("/api/v1/instance/peers", lift.HandlerFunc(liftHandler.HandleGetInstancePeersLift))
 	_ = app.GET("/api/v1/instance/activity", lift.HandlerFunc(liftHandler.HandleGetInstanceActivityLift))
 	_ = app.GET("/api/v1/instance/domain_blocks", lift.HandlerFunc(liftHandler.HandleGetInstanceDomainBlocksLift))
+	_ = app.GET("/api/v1/instance/translation_languages", lift.HandlerFunc(liftHandler.HandleGetTranslationLanguagesLift))
 
 	// API v2 endpoints - Enhanced Mastodon compatibility
 	_ = app.GET("/api/v2/instance", lift.HandlerFunc(liftHandler.HandleGetInstanceV2Lift))

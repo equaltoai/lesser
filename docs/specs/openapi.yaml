@@ -1,0 +1,4269 @@
+openapi: 3.1.0
+info:
+    title: Lesser REST API
+    version: 0.1.0
+    description: Auto-generated route skeleton; fill request/response schemas over time. Do not serve this file at runtime; use it for build-time client generation.
+components:
+    securitySchemes:
+        bearerAuth:
+            type: http
+            scheme: bearer
+            bearerFormat: JWT
+            description: 'OAuth access token (JWT): `Authorization: Bearer <access_token>`.'
+        oauth2:
+            type: oauth2
+            flows:
+                authorizationCode:
+                    authorizationUrl: /oauth/authorize
+                    tokenUrl: /oauth/token
+                    scopes:
+                        admin: Administrative access
+                        follow: Follow-related access
+                        push: Push notification access
+                        read: Read access
+                        write: Write access
+        setupBearer:
+            type: http
+            scheme: bearer
+            bearerFormat: opaque
+            description: 'Temporary setup session token: `Authorization: Bearer <setup_token>` (issued by `/setup/bootstrap/verify`).'
+paths:
+    /:
+        get:
+            operationId: get_root
+            tags:
+                - root
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /.well-known/nodeinfo:
+        get:
+            operationId: get_well_known_nodeinfo
+            tags:
+                - well-known
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+                - infra/cdk/inventory/lambdas.go:api
+    /.well-known/reputation-keys:
+        get:
+            operationId: get_well_known_reputation_keys
+            tags:
+                - well-known
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /.well-known/webfinger:
+        get:
+            operationId: get_well_known_webfinger
+            tags:
+                - well-known
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: webfinger
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:webfinger
+    /api/graphql:
+        get:
+            operationId: get_api_graphql
+            tags:
+                - graphql
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: graphql
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:graphql
+        post:
+            operationId: post_api_graphql
+            tags:
+                - graphql
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: graphql
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:graphql
+    /api/oembed:
+        get:
+            operationId: get_api_oembed
+            tags:
+                - api
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts:
+        post:
+            operationId: post_api_v1_accounts
+            tags:
+                - accounts
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/{id}/block:
+        post:
+            operationId: post_api_v1_accounts_by_id_block
+            tags:
+                - accounts
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/{id}/follow:
+        post:
+            operationId: post_api_v1_accounts_by_id_follow
+            tags:
+                - accounts
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/{id}/mute:
+        post:
+            operationId: post_api_v1_accounts_by_id_mute
+            tags:
+                - accounts
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/{id}/notes:
+        get:
+            operationId: get_api_v1_accounts_by_id_notes
+            tags:
+                - accounts
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/{id}/quote_permissions:
+        get:
+            operationId: get_api_v1_accounts_by_id_quote_permissions
+            tags:
+                - accounts
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/{id}/statuses:
+        get:
+            operationId: get_api_v1_accounts_by_id_statuses
+            tags:
+                - accounts
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/{id}/unblock:
+        post:
+            operationId: post_api_v1_accounts_by_id_unblock
+            tags:
+                - accounts
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/{id}/unfollow:
+        post:
+            operationId: post_api_v1_accounts_by_id_unfollow
+            tags:
+                - accounts
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/{id}/unmute:
+        post:
+            operationId: post_api_v1_accounts_by_id_unmute
+            tags:
+                - accounts
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/quote_permissions:
+        put:
+            operationId: put_api_v1_accounts_quote_permissions
+            tags:
+                - accounts
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/relationships:
+        get:
+            operationId: get_api_v1_accounts_relationships
+            tags:
+                - accounts
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/search:
+        get:
+            operationId: get_api_v1_accounts_search
+            tags:
+                - accounts
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/search/suggestions:
+        get:
+            operationId: get_api_v1_accounts_search_suggestions
+            tags:
+                - accounts
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/update_credentials:
+        patch:
+            operationId: patch_api_v1_accounts_update_credentials
+            tags:
+                - accounts
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/accounts/verify_credentials:
+        get:
+            operationId: get_api_v1_accounts_verify_credentials
+            tags:
+                - accounts
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/accounts:
+        get:
+            operationId: get_api_v1_admin_accounts
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v1_admin_accounts
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/accounts/{id}:
+        get:
+            operationId: get_api_v1_admin_accounts_by_id
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/accounts/{id}/action:
+        post:
+            operationId: post_api_v1_admin_accounts_by_id_action
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/accounts/{id}/approve:
+        post:
+            operationId: post_api_v1_admin_accounts_by_id_approve
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/accounts/{id}/enable:
+        post:
+            operationId: post_api_v1_admin_accounts_by_id_enable
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/accounts/{id}/reject:
+        post:
+            operationId: post_api_v1_admin_accounts_by_id_reject
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/accounts/{id}/unsensitive:
+        post:
+            operationId: post_api_v1_admin_accounts_by_id_unsensitive
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/accounts/{id}/unsilence:
+        post:
+            operationId: post_api_v1_admin_accounts_by_id_unsilence
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/accounts/{id}/unsuspend:
+        post:
+            operationId: post_api_v1_admin_accounts_by_id_unsuspend
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/announcements:
+        post:
+            operationId: post_api_v1_admin_announcements
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/custom_emojis:
+        post:
+            operationId: post_api_v1_admin_custom_emojis
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/custom_emojis/{shortcode}:
+        put:
+            operationId: put_api_v1_admin_custom_emojis_by_shortcode
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: shortcode
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v1_admin_custom_emojis_by_shortcode
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: shortcode
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/domain_allows:
+        get:
+            operationId: get_api_v1_admin_domain_allows
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v1_admin_domain_allows
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/domain_allows/{id}:
+        delete:
+            operationId: delete_api_v1_admin_domain_allows_by_id
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/domain_blocks:
+        get:
+            operationId: get_api_v1_admin_domain_blocks
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v1_admin_domain_blocks
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/domain_blocks/{id}:
+        get:
+            operationId: get_api_v1_admin_domain_blocks_by_id
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        put:
+            operationId: put_api_v1_admin_domain_blocks_by_id
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v1_admin_domain_blocks_by_id
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/email_domain_blocks:
+        get:
+            operationId: get_api_v1_admin_email_domain_blocks
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v1_admin_email_domain_blocks
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/email_domain_blocks/{id}:
+        delete:
+            operationId: delete_api_v1_admin_email_domain_blocks_by_id
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/federation/instance/{domain}:
+        get:
+            operationId: get_api_v1_admin_federation_instance_by_domain
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: domain
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/federation/instances:
+        get:
+            operationId: get_api_v1_admin_federation_instances
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/federation/statistics:
+        get:
+            operationId: get_api_v1_admin_federation_statistics
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/moderation/events:
+        get:
+            operationId: get_api_v1_admin_moderation_events
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/moderation/events/{id}/override:
+        post:
+            operationId: post_api_v1_admin_moderation_events_by_id_override
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/moderation/overview:
+        get:
+            operationId: get_api_v1_admin_moderation_overview
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/moderation/reviewers:
+        get:
+            operationId: get_api_v1_admin_moderation_reviewers
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/moderation/reviewers/{id}/demote:
+        post:
+            operationId: post_api_v1_admin_moderation_reviewers_by_id_demote
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/moderation/reviewers/{id}/promote:
+        post:
+            operationId: post_api_v1_admin_moderation_reviewers_by_id_promote
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/moderation/trust/{from}/{to}:
+        put:
+            operationId: put_api_v1_admin_moderation_trust_by_from_by_to
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: from
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: to
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/moderation/trust/graph:
+        get:
+            operationId: get_api_v1_admin_moderation_trust_graph
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/reports:
+        get:
+            operationId: get_api_v1_admin_reports
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/reports/{id}:
+        get:
+            operationId: get_api_v1_admin_reports_by_id
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/reports/{id}/assign_to_self:
+        post:
+            operationId: post_api_v1_admin_reports_by_id_assign_to_self
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/reports/{id}/reopen:
+        post:
+            operationId: post_api_v1_admin_reports_by_id_reopen
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/reports/{id}/resolve:
+        post:
+            operationId: post_api_v1_admin_reports_by_id_resolve
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/reports/{id}/unassign:
+        post:
+            operationId: post_api_v1_admin_reports_by_id_unassign
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/statuses:
+        get:
+            operationId: get_api_v1_admin_statuses
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/statuses/{id}:
+        get:
+            operationId: get_api_v1_admin_statuses_by_id
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v1_admin_statuses_by_id
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/statuses/{id}/sensitive:
+        post:
+            operationId: post_api_v1_admin_statuses_by_id_sensitive
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/admin/statuses/{id}/unsensitive:
+        post:
+            operationId: post_api_v1_admin_statuses_by_id_unsensitive
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/announcements:
+        get:
+            operationId: get_api_v1_announcements
+            tags:
+                - announcements
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/announcements/{id}/dismiss:
+        post:
+            operationId: post_api_v1_announcements_by_id_dismiss
+            tags:
+                - announcements
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/announcements/{id}/reactions/{name}:
+        put:
+            operationId: put_api_v1_announcements_by_id_reactions_by_name
+            tags:
+                - announcements
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v1_announcements_by_id_reactions_by_name
+            tags:
+                - announcements
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/apps:
+        post:
+            operationId: post_api_v1_apps
+            tags:
+                - apps
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/auth/webauthn/credentials:
+        get:
+            operationId: get_api_v1_auth_webauthn_credentials
+            tags:
+                - auth
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/auth/webauthn/credentials/{credentialId}:
+        put:
+            operationId: put_api_v1_auth_webauthn_credentials_by_credentialId
+            tags:
+                - auth
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: credentialId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v1_auth_webauthn_credentials_by_credentialId
+            tags:
+                - auth
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: credentialId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/auth/webauthn/login/begin:
+        post:
+            operationId: post_api_v1_auth_webauthn_login_begin
+            tags:
+                - auth
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/auth/webauthn/login/finish:
+        post:
+            operationId: post_api_v1_auth_webauthn_login_finish
+            tags:
+                - auth
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/auth/webauthn/register/begin:
+        post:
+            operationId: post_api_v1_auth_webauthn_register_begin
+            tags:
+                - auth
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/auth/webauthn/register/finish:
+        post:
+            operationId: post_api_v1_auth_webauthn_register_finish
+            tags:
+                - auth
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/blocks:
+        get:
+            operationId: get_api_v1_blocks
+            tags:
+                - blocks
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/bookmarks:
+        get:
+            operationId: get_api_v1_bookmarks
+            tags:
+                - bookmarks
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/conversations:
+        get:
+            operationId: get_api_v1_conversations
+            tags:
+                - conversations
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/conversations/{id}:
+        delete:
+            operationId: delete_api_v1_conversations_by_id
+            tags:
+                - conversations
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/conversations/{id}/read:
+        post:
+            operationId: post_api_v1_conversations_by_id_read
+            tags:
+                - conversations
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/custom_emojis:
+        get:
+            operationId: get_api_v1_custom_emojis
+            tags:
+                - custom_emojis
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/directory:
+        get:
+            operationId: get_api_v1_directory
+            tags:
+                - directory
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/domain_blocks:
+        get:
+            operationId: get_api_v1_domain_blocks
+            tags:
+                - domain_blocks
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v1_domain_blocks
+            tags:
+                - domain_blocks
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v1_domain_blocks
+            tags:
+                - domain_blocks
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/endorsements:
+        get:
+            operationId: get_api_v1_endorsements
+            tags:
+                - endorsements
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/exports:
+        get:
+            operationId: get_api_v1_exports
+            tags:
+                - exports
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v1_exports
+            tags:
+                - exports
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/exports/{id}:
+        get:
+            operationId: get_api_v1_exports_by_id
+            tags:
+                - exports
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/exports/{id}/download:
+        get:
+            operationId: get_api_v1_exports_by_id_download
+            tags:
+                - exports
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/favourites:
+        get:
+            operationId: get_api_v1_favourites
+            tags:
+                - favourites
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/follow_requests:
+        get:
+            operationId: get_api_v1_follow_requests
+            tags:
+                - follow_requests
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/follow_requests/{account_id}/authorize:
+        post:
+            operationId: post_api_v1_follow_requests_by_account_id_authorize
+            tags:
+                - follow_requests
+            parameters:
+                - name: account_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/follow_requests/{account_id}/reject:
+        post:
+            operationId: post_api_v1_follow_requests_by_account_id_reject
+            tags:
+                - follow_requests
+            parameters:
+                - name: account_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/imports:
+        get:
+            operationId: get_api_v1_imports
+            tags:
+                - imports
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v1_imports
+            tags:
+                - imports
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/imports/{id}:
+        get:
+            operationId: get_api_v1_imports_by_id
+            tags:
+                - imports
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v1_imports_by_id
+            tags:
+                - imports
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/instance:
+        get:
+            operationId: get_api_v1_instance
+            tags:
+                - instance
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/instance/activity:
+        get:
+            operationId: get_api_v1_instance_activity
+            tags:
+                - instance
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/instance/domain_blocks:
+        get:
+            operationId: get_api_v1_instance_domain_blocks
+            tags:
+                - instance
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/instance/peers:
+        get:
+            operationId: get_api_v1_instance_peers
+            tags:
+                - instance
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/instance/translation_languages:
+        get:
+            operationId: get_api_v1_instance_translation_languages
+            tags:
+                - instance
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/lists:
+        get:
+            operationId: get_api_v1_lists
+            tags:
+                - lists
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v1_lists
+            tags:
+                - lists
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/lists/{id}:
+        get:
+            operationId: get_api_v1_lists_by_id
+            tags:
+                - lists
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        put:
+            operationId: put_api_v1_lists_by_id
+            tags:
+                - lists
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v1_lists_by_id
+            tags:
+                - lists
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/lists/{id}/accounts:
+        get:
+            operationId: get_api_v1_lists_by_id_accounts
+            tags:
+                - lists
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v1_lists_by_id_accounts
+            tags:
+                - lists
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v1_lists_by_id_accounts
+            tags:
+                - lists
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/markers:
+        get:
+            operationId: get_api_v1_markers
+            tags:
+                - markers
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v1_markers
+            tags:
+                - markers
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/media:
+        post:
+            operationId: post_api_v1_media
+            tags:
+                - media
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/media/{id}:
+        get:
+            operationId: get_api_v1_media_by_id
+            tags:
+                - media
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        put:
+            operationId: put_api_v1_media_by_id
+            tags:
+                - media
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/moderation/consensus/{event_id}:
+        get:
+            operationId: get_api_v1_moderation_consensus_by_event_id
+            tags:
+                - moderation
+            parameters:
+                - name: event_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/moderation/flag:
+        post:
+            operationId: post_api_v1_moderation_flag
+            tags:
+                - moderation
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/moderation/history/{object_id}:
+        get:
+            operationId: get_api_v1_moderation_history_by_object_id
+            tags:
+                - moderation
+            parameters:
+                - name: object_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/moderation/queue:
+        get:
+            operationId: get_api_v1_moderation_queue
+            tags:
+                - moderation
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/moderation/review:
+        post:
+            operationId: post_api_v1_moderation_review
+            tags:
+                - moderation
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/moderation/trust:
+        get:
+            operationId: get_api_v1_moderation_trust
+            tags:
+                - moderation
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        put:
+            operationId: put_api_v1_moderation_trust
+            tags:
+                - moderation
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/moderation/trust/{actor_id}/score:
+        get:
+            operationId: get_api_v1_moderation_trust_by_actor_id_score
+            tags:
+                - moderation
+            parameters:
+                - name: actor_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/mutes:
+        get:
+            operationId: get_api_v1_mutes
+            tags:
+                - mutes
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/notes:
+        post:
+            operationId: post_api_v1_notes
+            tags:
+                - notes
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/notes/{id}/vote:
+        post:
+            operationId: post_api_v1_notes_by_id_vote
+            tags:
+                - notes
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/notes/{object_id}:
+        get:
+            operationId: get_api_v1_notes_by_object_id
+            tags:
+                - notes
+            parameters:
+                - name: object_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/notifications:
+        get:
+            operationId: get_api_v1_notifications
+            tags:
+                - notifications
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/notifications/{id}:
+        get:
+            operationId: get_api_v1_notifications_by_id
+            tags:
+                - notifications
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/notifications/{id}/dismiss:
+        post:
+            operationId: post_api_v1_notifications_by_id_dismiss
+            tags:
+                - notifications
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/notifications/clear:
+        post:
+            operationId: post_api_v1_notifications_clear
+            tags:
+                - notifications
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/preferences:
+        get:
+            operationId: get_api_v1_preferences
+            tags:
+                - preferences
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        patch:
+            operationId: patch_api_v1_preferences
+            tags:
+                - preferences
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/push/subscription:
+        get:
+            operationId: get_api_v1_push_subscription
+            tags:
+                - push
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v1_push_subscription
+            tags:
+                - push
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        put:
+            operationId: put_api_v1_push_subscription
+            tags:
+                - push
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v1_push_subscription
+            tags:
+                - push
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/reports:
+        post:
+            operationId: post_api_v1_reports
+            tags:
+                - reports
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/reputation/{actor_id}:
+        get:
+            operationId: get_api_v1_reputation_by_actor_id
+            tags:
+                - reputation
+            parameters:
+                - name: actor_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/reputation/export:
+        post:
+            operationId: post_api_v1_reputation_export
+            tags:
+                - reputation
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/reputation/import:
+        post:
+            operationId: post_api_v1_reputation_import
+            tags:
+                - reputation
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/reputation/verify:
+        post:
+            operationId: post_api_v1_reputation_verify
+            tags:
+                - reputation
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/scheduled_statuses:
+        get:
+            operationId: get_api_v1_scheduled_statuses
+            tags:
+                - scheduled_statuses
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/scheduled_statuses/{id}:
+        get:
+            operationId: get_api_v1_scheduled_statuses_by_id
+            tags:
+                - scheduled_statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        put:
+            operationId: put_api_v1_scheduled_statuses_by_id
+            tags:
+                - scheduled_statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v1_scheduled_statuses_by_id
+            tags:
+                - scheduled_statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/search/statuses:
+        get:
+            operationId: get_api_v1_search_statuses
+            tags:
+                - search
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v1_search_statuses
+            tags:
+                - search
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses:
+        post:
+            operationId: post_api_v1_statuses
+            tags:
+                - statuses
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}:
+        get:
+            operationId: get_api_v1_statuses_by_id
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        put:
+            operationId: put_api_v1_statuses_by_id
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v1_statuses_by_id
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/bookmark:
+        post:
+            operationId: post_api_v1_statuses_by_id_bookmark
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/context:
+        get:
+            operationId: get_api_v1_statuses_by_id_context
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/favourite:
+        post:
+            operationId: post_api_v1_statuses_by_id_favourite
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/favourited_by:
+        get:
+            operationId: get_api_v1_statuses_by_id_favourited_by
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/history:
+        get:
+            operationId: get_api_v1_statuses_by_id_history
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/mute:
+        post:
+            operationId: post_api_v1_statuses_by_id_mute
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/pin:
+        post:
+            operationId: post_api_v1_statuses_by_id_pin
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/quote:
+        post:
+            operationId: post_api_v1_statuses_by_id_quote
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/quote/{quote_id}:
+        delete:
+            operationId: delete_api_v1_statuses_by_id_quote_by_quote_id
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: quote_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/quotes:
+        get:
+            operationId: get_api_v1_statuses_by_id_quotes
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/reblog:
+        post:
+            operationId: post_api_v1_statuses_by_id_reblog
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/reblogged_by:
+        get:
+            operationId: get_api_v1_statuses_by_id_reblogged_by
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/source:
+        get:
+            operationId: get_api_v1_statuses_by_id_source
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/translate:
+        post:
+            operationId: post_api_v1_statuses_by_id_translate
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/unbookmark:
+        post:
+            operationId: post_api_v1_statuses_by_id_unbookmark
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/unfavourite:
+        post:
+            operationId: post_api_v1_statuses_by_id_unfavourite
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/unmute:
+        post:
+            operationId: post_api_v1_statuses_by_id_unmute
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/unpin:
+        post:
+            operationId: post_api_v1_statuses_by_id_unpin
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/statuses/{id}/unreblog:
+        post:
+            operationId: post_api_v1_statuses_by_id_unreblog
+            tags:
+                - statuses
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/streaming:
+        get:
+            operationId: get_api_v1_streaming
+            tags:
+                - streaming
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+    /api/v1/streaming/direct:
+        get:
+            operationId: get_api_v1_streaming_direct
+            tags:
+                - streaming
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+    /api/v1/streaming/hashtag:
+        get:
+            operationId: get_api_v1_streaming_hashtag
+            tags:
+                - streaming
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+    /api/v1/streaming/hashtag/local:
+        get:
+            operationId: get_api_v1_streaming_hashtag_local
+            tags:
+                - streaming
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+    /api/v1/streaming/health:
+        get:
+            operationId: get_api_v1_streaming_health
+            tags:
+                - streaming
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+    /api/v1/streaming/list:
+        get:
+            operationId: get_api_v1_streaming_list
+            tags:
+                - streaming
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+    /api/v1/streaming/public:
+        get:
+            operationId: get_api_v1_streaming_public
+            tags:
+                - streaming
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+    /api/v1/streaming/public/local:
+        get:
+            operationId: get_api_v1_streaming_public_local
+            tags:
+                - streaming
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+    /api/v1/streaming/public/remote:
+        get:
+            operationId: get_api_v1_streaming_public_remote
+            tags:
+                - streaming
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+    /api/v1/streaming/user:
+        get:
+            operationId: get_api_v1_streaming_user
+            tags:
+                - streaming
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+    /api/v1/streaming/user/notification:
+        get:
+            operationId: get_api_v1_streaming_user_notification
+            tags:
+                - streaming
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+    /api/v1/suggestions:
+        get:
+            operationId: get_api_v1_suggestions
+            tags:
+                - suggestions
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/suggestions/{account_id}:
+        delete:
+            operationId: delete_api_v1_suggestions_by_account_id
+            tags:
+                - suggestions
+            parameters:
+                - name: account_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/timelines/direct:
+        get:
+            operationId: get_api_v1_timelines_direct
+            tags:
+                - timelines
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/timelines/home:
+        get:
+            operationId: get_api_v1_timelines_home
+            tags:
+                - timelines
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/timelines/link:
+        get:
+            operationId: get_api_v1_timelines_link
+            tags:
+                - timelines
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/timelines/list/{list_id}:
+        get:
+            operationId: get_api_v1_timelines_list_by_list_id
+            tags:
+                - timelines
+            parameters:
+                - name: list_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/timelines/public:
+        get:
+            operationId: get_api_v1_timelines_public
+            tags:
+                - timelines
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/timelines/tag/{hashtag}:
+        get:
+            operationId: get_api_v1_timelines_tag_by_hashtag
+            tags:
+                - timelines
+            parameters:
+                - name: hashtag
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/trends:
+        get:
+            operationId: get_api_v1_trends
+            tags:
+                - trends
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/trends/links:
+        get:
+            operationId: get_api_v1_trends_links
+            tags:
+                - trends
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/trends/statuses:
+        get:
+            operationId: get_api_v1_trends_statuses
+            tags:
+                - trends
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/trends/tags:
+        get:
+            operationId: get_api_v1_trends_tags
+            tags:
+                - trends
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/vouches:
+        post:
+            operationId: post_api_v1_vouches
+            tags:
+                - vouches
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/vouches/{actor_id}:
+        get:
+            operationId: get_api_v1_vouches_by_actor_id
+            tags:
+                - vouches
+            parameters:
+                - name: actor_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v1/vouches/{vouch_id}:
+        delete:
+            operationId: delete_api_v1_vouches_by_vouch_id
+            tags:
+                - vouches
+            parameters:
+                - name: vouch_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/filters:
+        get:
+            operationId: get_api_v2_filters
+            tags:
+                - filters
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v2_filters
+            tags:
+                - filters
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/filters/{filter_id}/keywords:
+        get:
+            operationId: get_api_v2_filters_by_filter_id_keywords
+            tags:
+                - filters
+            parameters:
+                - name: filter_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v2_filters_by_filter_id_keywords
+            tags:
+                - filters
+            parameters:
+                - name: filter_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/filters/{filter_id}/keywords/{keyword_id}:
+        delete:
+            operationId: delete_api_v2_filters_by_filter_id_keywords_by_keyword_id
+            tags:
+                - filters
+            parameters:
+                - name: filter_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: keyword_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/filters/{filter_id}/statuses:
+        get:
+            operationId: get_api_v2_filters_by_filter_id_statuses
+            tags:
+                - filters
+            parameters:
+                - name: filter_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        post:
+            operationId: post_api_v2_filters_by_filter_id_statuses
+            tags:
+                - filters
+            parameters:
+                - name: filter_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/filters/{filter_id}/statuses/{status_id}:
+        delete:
+            operationId: delete_api_v2_filters_by_filter_id_statuses_by_status_id
+            tags:
+                - filters
+            parameters:
+                - name: filter_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: status_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/filters/{id}:
+        get:
+            operationId: get_api_v2_filters_by_id
+            tags:
+                - filters
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        put:
+            operationId: put_api_v2_filters_by_id
+            tags:
+                - filters
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+        delete:
+            operationId: delete_api_v2_filters_by_id
+            tags:
+                - filters
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/filters/test:
+        post:
+            operationId: post_api_v2_filters_test
+            tags:
+                - filters
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/instance:
+        get:
+            operationId: get_api_v2_instance
+            tags:
+                - instance
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/notifications/grouped:
+        get:
+            operationId: get_api_v2_notifications_grouped
+            tags:
+                - notifications
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/notifications/groups/{group_id}/read:
+        post:
+            operationId: post_api_v2_notifications_groups_by_group_id_read
+            tags:
+                - notifications
+            parameters:
+                - name: group_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/search:
+        get:
+            operationId: get_api_v2_search
+            tags:
+                - search
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/suggestions:
+        get:
+            operationId: get_api_v2_suggestions
+            tags:
+                - suggestions
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/trends:
+        get:
+            operationId: get_api_v2_trends
+            tags:
+                - trends
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/trends/links:
+        get:
+            operationId: get_api_v2_trends_links
+            tags:
+                - trends
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/trends/statuses:
+        get:
+            operationId: get_api_v2_trends_statuses
+            tags:
+                - trends
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /api/v2/trends/tags:
+        get:
+            operationId: get_api_v2_trends_tags
+            tags:
+                - trends
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /auth/wallet/challenge:
+        post:
+            operationId: post_auth_wallet_challenge
+            tags:
+                - auth
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /auth/wallet/link:
+        post:
+            operationId: post_auth_wallet_link
+            tags:
+                - auth
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /auth/wallet/list:
+        get:
+            operationId: get_auth_wallet_list
+            tags:
+                - auth
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /auth/wallet/login:
+        post:
+            operationId: post_auth_wallet_login
+            tags:
+                - auth
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /auth/wallet/unlink/{address}:
+        delete:
+            operationId: delete_auth_wallet_unlink_by_address
+            tags:
+                - auth
+            parameters:
+                - name: address
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /auth/wallet/verify:
+        post:
+            operationId: post_auth_wallet_verify
+            tags:
+                - auth
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /embed/{id}:
+        get:
+            operationId: get_embed_by_id
+            tags:
+                - embed
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /health:
+        get:
+            operationId: get_health
+            tags:
+                - health
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/main.go
+    /health/detailed:
+        get:
+            operationId: get_health_detailed
+            tags:
+                - health
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/main.go
+    /health/live:
+        get:
+            operationId: get_health_live
+            tags:
+                - health
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/main.go
+    /health/ready:
+        get:
+            operationId: get_health_ready
+            tags:
+                - health
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/main.go
+    /nodeinfo/2.0:
+        get:
+            operationId: get_nodeinfo_2_0
+            tags:
+                - nodeinfo
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /oauth/authorize:
+        get:
+            operationId: get_oauth_authorize
+            tags:
+                - oauth
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /oauth/consent:
+        post:
+            operationId: post_oauth_consent
+            tags:
+                - oauth
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /oauth/token:
+        post:
+            operationId: post_oauth_token
+            tags:
+                - oauth
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /objects/{id}:
+        get:
+            operationId: get_objects_by_id
+            tags:
+                - objects
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: objects
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:objects
+    /setup/admin:
+        post:
+            operationId: post_setup_admin
+            tags:
+                - setup
+            security:
+                - setupBearer: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /setup/bootstrap/challenge:
+        post:
+            operationId: post_setup_bootstrap_challenge
+            tags:
+                - setup
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /setup/bootstrap/verify:
+        post:
+            operationId: post_setup_bootstrap_verify
+            tags:
+                - setup
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /setup/finalize:
+        post:
+            operationId: post_setup_finalize
+            tags:
+                - setup
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /setup/status:
+        get:
+            operationId: get_setup_status
+            tags:
+                - setup
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+    /users/{username}:
+        get:
+            operationId: get_users_by_username
+            tags:
+                - activitypub
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: actor
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:actor
+    /users/{username}/followers:
+        get:
+            operationId: get_users_by_username_followers
+            tags:
+                - activitypub
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: collections
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+                - infra/cdk/inventory/lambdas.go:collections
+    /users/{username}/following:
+        get:
+            operationId: get_users_by_username_following
+            tags:
+                - activitypub
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: collections
+            x-lesser-routeSources:
+                - cmd/api/routes_lift.go
+                - infra/cdk/inventory/lambdas.go:collections
+    /users/{username}/inbox:
+        get:
+            operationId: get_users_by_username_inbox
+            tags:
+                - activitypub
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: inbox
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:inbox
+        post:
+            operationId: post_users_by_username_inbox
+            tags:
+                - activitypub
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: inbox
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:inbox
+    /users/{username}/liked:
+        get:
+            operationId: get_users_by_username_liked
+            tags:
+                - activitypub
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: collections
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:collections
+    /users/{username}/outbox:
+        get:
+            operationId: get_users_by_username_outbox
+            tags:
+                - activitypub
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: outbox
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:outbox
+        post:
+            operationId: post_users_by_username_outbox
+            tags:
+                - activitypub
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: OK
+            x-lesser-lambda: outbox
+            x-lesser-routeSources:
+                - infra/cdk/inventory/lambdas.go:outbox
+

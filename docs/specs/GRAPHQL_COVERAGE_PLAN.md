@@ -3,9 +3,22 @@
 > **Status**: Active  
 > **Owner**: Lesser  
 > **Last updated**: 2025-12-25  
-> **Related**: `docs/specs/GRAPHQL_COVERAGE.md`, `docs/specs/graphql_coverage.yaml`
+> **Related**: `docs/specs/GRAPHQL_COVERAGE.md`, `docs/specs/graphql_coverage.yaml`, `docs/specs/GRAPHQL_COVERAGE_BACKLOG.md`
 
 This document is the concrete, phase-based plan for achieving **GraphQL parity** for all in-scope Lesser product functionality while keeping REST as the source of truth for standards/protocol endpoints and other explicitly REST-only flows.
+
+## Reality check (current backlog size)
+
+The route inventory is tracked in `docs/specs/graphql_coverage.yaml` and is enforced by `make verify-graphql-coverage`.
+
+Current counts (from that file):
+- Total Lift routes tracked: **233**
+- `graphql_required`: **200**
+- `rest_only` (explicit exemptions): **33**
+- Marked `covered`: **56**
+- Marked `missing`: **144**
+
+Important: **`missing` is “not yet verified/mapped”**, not necessarily “no GraphQL support exists”. Phase **0.5** is the audit + mapping pass that converts “unknown/unmapped” into a real backlog.
 
 ## Definitions
 
@@ -37,6 +50,27 @@ This document is the concrete, phase-based plan for achieving **GraphQL parity**
 - `make verify-graphql-coverage` passes in CI.
 - Coverage YAML contains *all* Lift routes (excluding `OPTIONS`/`HEAD`) with correct policy classification.
 
+## Phase 0.5 — Coverage Audit + Mapping (In progress)
+
+**Goal**: Convert “unknown/unmapped” into a real backlog by marking routes as `covered` **only when** a working GraphQL operation exists (and is appropriate for the exemption policy).
+
+**Why this is required**
+- The current `missing` count includes many routes that may already be GraphQL-covered but not yet recorded in the inventory.
+- Without this audit, “% complete” is meaningless and planning is guessy.
+
+**Deliverables**
+- Update `docs/specs/graphql_coverage.yaml` for each `graphql_required` route:
+  - If GraphQL parity exists: set `status: covered` and add `graphql: [Query.<field>|Mutation.<field>]` mappings.
+  - If GraphQL parity does not exist: keep `status: missing` and add a note in the backlog doc.
+- Add/refresh `docs/specs/GRAPHQL_COVERAGE_BACKLOG.md` with:
+  - Remaining missing routes grouped by domain area (accounts/statuses/admin/etc)
+  - Proposed GraphQL operation names for each missing area (or “new schema required”)
+
+**Exit criteria**
+- All `graphql_required` routes are either:
+  - `covered` with valid `graphql:` mappings, or
+  - `missing` with a clear implementation owner (schema vs resolver vs service) and a target phase.
+
 ## Phase 1 — CMS GraphQL Parity (Planned)
 
 **Goal**: Expose CMS functionality via GraphQL to support Greater-based content/admin experiences.
@@ -56,7 +90,7 @@ This document is the concrete, phase-based plan for achieving **GraphQL parity**
 **Exit criteria**
 - CMS user-facing flows are implementable via GraphQL without REST fallbacks.
 
-## Phase 2 — Client Parity Features (In Progress)
+## Phase 2 — Client Parity Features (Planned)
 
 **Goal**: Cover the “client parity” feature set required for a first-party Greater client without REST fallbacks.
 
@@ -98,3 +132,20 @@ This document is the concrete, phase-based plan for achieving **GraphQL parity**
 - `graphql_required` routes have `status: covered` with valid `graphql:` mappings.
 - Strict enforcement enabled and green in CI.
 
+## Workstreams (how Phase 3 is executed)
+
+These are the largest remaining clusters in the Lift route inventory (order matters because later work often depends on earlier primitives):
+
+1. **Accounts + relationships** (`/api/v1/accounts/*`)
+2. **Statuses + timelines + interactions** (`/api/v1/statuses/*`, `/api/v1/notes/*`)
+3. **Media** (`/api/v1/media/*`)
+4. **Conversations + notifications** (`/api/v1/conversations/*`, remaining notification gaps)
+5. **Search + suggestions + instance endpoints** (`/api/v1/search/*`, `/api/v2/search`, `/api/v2/suggestions`, `/api/v1/instance/*`, `/api/v2/instance`)
+6. **Admin parity** (`/api/v1/admin/*`) — biggest surface area; expect multiple sub-milestones.
+
+Each workstream ends with:
+- schema changes (if needed)
+- resolvers + service wiring
+- `make gqlgen`, `make schema`
+- `docs/specs/graphql_coverage.yaml` updated to `covered` for the routes in that workstream
+- `make verify-graphql-coverage`, `make test`, `make lint`

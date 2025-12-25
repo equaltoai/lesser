@@ -20,6 +20,7 @@ ALLOW_EXTRA_CMD=(
   cloudfront-keygen
   configure-instance
   init-deploy
+  lesser
   owner-bootstrap
 )
 

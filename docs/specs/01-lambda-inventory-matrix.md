@@ -47,7 +47,7 @@ The inventory set is exactly the Lambdas in `Makefile` `LAMBDAS`:
 | graphql | api-http | HTTP: GET /api/graphql<br>HTTP: POST /api/graphql | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | graphql-ws | api-ws | — | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | import-processor | processor-sqs | SQS: queue=import-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
-| inbox | api-http | HTTP: ANY /inbox/{username} | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| inbox | api-http | HTTP: GET /users/{username}/inbox<br>HTTP: POST /users/{username}/inbox | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | media-processor | processor-sqs | SQS: queue=media-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
 | metrics-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | metrics-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
@@ -56,7 +56,7 @@ The inventory set is exactly the Lambdas in `Makefile` `LAMBDAS`:
 | note-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | notification-processor | processor-sqs | SQS: queue=notification-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
 | objects | api-http | HTTP: GET /objects/{id} | — | encryption | memory=512MB; timeout=30s; logs=7d |
-| outbox | api-http | HTTP: ANY /users/{username}/outbox | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| outbox | api-http | HTTP: GET /users/{username}/outbox<br>HTTP: POST /users/{username}/outbox | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | push-delivery | processor-sqs | SQS: queue=push-delivery-queue | VAPID_PUBLIC_KEY<br>VAPID_SUBJECT<br>VAPID_SECRET_ARN | basic | memory=512MB; timeout=30s; logs=7d |
 | report-trust-updater | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | search-indexer | processor-stream | Stream: table=main-table; start=LATEST; batch=100; window=30s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
