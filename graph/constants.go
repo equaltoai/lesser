@@ -3,9 +3,12 @@ package graph
 
 // Content type constants
 const (
-	ContentTypeSpam = "spam"
-	ContentTypeNote = "note"
-	ContentType     = "content"
+	ContentTypeSpam    = "spam"
+	ContentTypeNote    = "note"
+	ContentType        = "content"
+	ContentTypeArticle = "article"
+	ContentTypeImage   = "image"
+	ContentTypeVideo   = "video"
 )
 
 // Health status constants
@@ -92,6 +95,7 @@ const (
 const (
 	PatternTypeRegex   = "regex"
 	PatternTypeKeyword = "keyword"
+	PatternTypePhrase  = "phrase"
 )
 
 // Severity constants

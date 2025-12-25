@@ -127,7 +127,7 @@ type CancelExportCommand struct {
 // CreateImportCommand contains data needed to create an import request
 type CreateImportCommand struct {
 	Username      string            `json:"username" validate:"required"`
-	Type          string            `json:"type" validate:"required,oneof=archive followers following lists bookmarks"`
+	Type          string            `json:"type" validate:"required,oneof=archive followers following lists bookmarks mutes blocks"`
 	Format        string            `json:"format" validate:"required,oneof=activitypub mastodon csv"`
 	FileURL       string            `json:"file_url" validate:"required,url"`
 	Options       map[string]string `json:"options"`

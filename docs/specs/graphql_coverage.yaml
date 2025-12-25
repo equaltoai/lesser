@@ -291,35 +291,51 @@ routes:
     - method: GET
       path: /api/v1/exports
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.exports
     - method: POST
       path: /api/v1/exports
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.createExport
     - method: GET
       path: /api/v1/exports/{id}
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.export
     - method: GET
       path: /api/v1/exports/{id}/download
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.export
     - method: GET
       path: /api/v1/imports
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.imports
     - method: POST
       path: /api/v1/imports
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.createImport
     - method: DELETE
       path: /api/v1/imports/{id}
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.cancelImport
     - method: GET
       path: /api/v1/imports/{id}
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.import
     - method: GET
       path: /api/v1/instance
       policy: graphql_required
@@ -419,51 +435,75 @@ routes:
     - method: GET
       path: /api/v2/filters
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.filters
     - method: POST
       path: /api/v2/filters
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.createFilter
     - method: POST
       path: /api/v2/filters/test
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.testFilters
     - method: GET
       path: /api/v2/filters/{filter_id}/keywords
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.filter
     - method: POST
       path: /api/v2/filters/{filter_id}/keywords
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.addFilterKeyword
     - method: DELETE
       path: /api/v2/filters/{filter_id}/keywords/{keyword_id}
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.deleteFilterKeyword
     - method: GET
       path: /api/v2/filters/{filter_id}/statuses
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.filter
     - method: POST
       path: /api/v2/filters/{filter_id}/statuses
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.addFilterStatus
     - method: DELETE
       path: /api/v2/filters/{filter_id}/statuses/{status_id}
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.deleteFilterStatus
     - method: DELETE
       path: /api/v2/filters/{id}
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.deleteFilter
     - method: GET
       path: /api/v2/filters/{id}
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.filter
     - method: PUT
       path: /api/v2/filters/{id}
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.updateFilter
     - method: GET
       path: /api/v2/instance
       policy: graphql_required
@@ -471,11 +511,15 @@ routes:
     - method: GET
       path: /api/v2/notifications/grouped
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.groupedNotifications
     - method: POST
       path: /api/v2/notifications/groups/{group_id}/read
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Mutation.markNotificationGroupAsRead
     - method: GET
       path: /api/v2/search
       policy: graphql_required
@@ -487,19 +531,27 @@ routes:
     - method: GET
       path: /api/v2/trends
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.trends
     - method: GET
       path: /api/v2/trends/links
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.trendingLinks
     - method: GET
       path: /api/v2/trends/statuses
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.trendingStatuses
     - method: GET
       path: /api/v2/trends/tags
       policy: graphql_required
-      status: missing
+      status: covered
+      graphql:
+        - Query.trendingTags
     - method: POST
       path: /auth/wallet/challenge
       policy: rest_only
@@ -580,4 +632,3 @@ routes:
       path: /users/{username}/following
       policy: rest_only
       exemptedBy: protocol_infra
-

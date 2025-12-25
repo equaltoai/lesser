@@ -7,6 +7,7 @@ require (
 	github.com/aws/aws-lambda-go v1.51.0
 	github.com/aws/aws-sdk-go-v2 v1.41.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.4
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.4
 	github.com/aws/aws-sdk-go-v2/feature/cloudfront/sign v1.9.11
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.19
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.20.1
@@ -56,6 +57,7 @@ require (
 	golang.org/x/image v0.32.0
 	golang.org/x/sync v0.17.0
 	golang.org/x/text v0.30.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 replace github.com/pay-theory/lift => ../../lift
@@ -69,7 +71,6 @@ require (
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/aws/aws-sdk-go v1.55.8 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.4 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.4 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.16 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.16 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.16 // indirect
@@ -131,5 +132,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251022142026-3a174f9686a8 // indirect
 	google.golang.org/grpc v1.76.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

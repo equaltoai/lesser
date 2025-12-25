@@ -1,5 +1,5 @@
 # DO NOT EDIT: aggregated schema for client consumption
-# Generated 2025-11-08T22:01:41Z via scripts/generate_schema.sh
+# Generated 2025-12-25T04:25:29Z via scripts/generate_schema.sh
 
 # Lesser GraphQL Schema
 
@@ -121,7 +121,10 @@ type Object {
   repliesCount: Int!
   likesCount: Int!
   sharesCount: Int!
-  
+  boosted: Boolean!
+  relationshipType: ObjectRelationshipType!
+  boostedObject: Object
+
   # Lesser enhancements
   estimatedCost: Int!
   moderationScore: Float
@@ -163,6 +166,11 @@ type Mention {
   username: String!
   domain: String
   url: String!
+}
+
+enum ObjectRelationshipType {
+  ORIGINAL
+  BOOST
 }
 
 type Activity {
@@ -798,6 +806,25 @@ type Query {
   profileDirectory(filters: DirectoryFiltersInput, first: Int = 40, after: Cursor): ProfileDirectory!
   suggestions(limit: Int = 40): [AccountSuggestion!]!
   removeSuggestion(accountId: ID!): Boolean!
+
+  # Data portability
+  exports(first: Int = 20, after: Cursor): ExportJobConnection!
+  export(id: ID!): ExportJob
+  imports(first: Int = 20, after: Cursor): ImportJobConnection!
+  import(id: ID!): ImportJob
+
+  # Filters (Mastodon v2)
+  filters: [Filter!]!
+  filter(id: ID!): Filter
+
+  # Trends (Mastodon v2)
+  trends(limit: Int = 10): [TrendingItem!]!
+  trendingTags(limit: Int = 10): [TrendingTag!]!
+  trendingStatuses(limit: Int = 20): [TrendingStatus!]!
+  trendingLinks(limit: Int = 10): [TrendingLink!]!
+
+  # Grouped notifications (Mastodon v2)
+  groupedNotifications(input: GroupedNotificationsInput): [GroupedNotificationGroup!]!
   
   # Lesser enhancements
   instanceMetrics: InstanceMetrics!
@@ -848,8 +875,8 @@ type Mutation {
   deleteObject(id: ID!): Boolean!
   likeObject(id: ID!): Activity!
   unlikeObject(id: ID!): Boolean!
-  shareObject(id: ID!): Activity!
-  unshareObject(id: ID!): Boolean!
+  shareObject(id: ID!): Object!
+  unshareObject(id: ID!): Object!
   bookmarkObject(id: ID!): Object!
   unbookmarkObject(id: ID!): Boolean!
   pinObject(id: ID!): Object!
@@ -883,11 +910,27 @@ type Mutation {
   # Notification operations
   dismissNotification(id: ID!): Boolean!
   clearNotifications: Boolean!
+  markNotificationGroupAsRead(groupId: ID!): Boolean!
   updateUserPreferences(input: UpdateUserPreferencesInput!): UserPreferences!
   updateStreamingPreferences(input: StreamingPreferencesInput!): UserPreferences!
   registerPushSubscription(input: RegisterPushSubscriptionInput!): PushSubscription!
   updatePushSubscription(input: UpdatePushSubscriptionInput!): PushSubscription!
   deletePushSubscription: Boolean!
+
+  # Data portability
+  createExport(input: CreateExportInput!): ExportJob!
+  createImport(input: CreateImportInput!): ImportJob!
+  cancelImport(id: ID!): ImportJob!
+
+  # Filters (Mastodon v2)
+  createFilter(input: CreateFilterInput!): Filter!
+  updateFilter(id: ID!, input: UpdateFilterInput!): Filter!
+  deleteFilter(id: ID!): Boolean!
+  addFilterKeyword(filterId: ID!, input: AddFilterKeywordInput!): FilterKeyword!
+  deleteFilterKeyword(filterId: ID!, keywordId: ID!): Boolean!
+  addFilterStatus(filterId: ID!, statusId: ID!): FilterStatus!
+  deleteFilterStatus(filterId: ID!, filterStatusId: ID!): Boolean!
+  testFilters(input: FilterTestInput!): FilterTestPayload!
   
   # Scheduled status operations
   scheduleStatus(input: ScheduleStatusInput!): ScheduledStatus!
@@ -1514,6 +1557,270 @@ type ReconnectionPayload {
   reconnected: Int!
   failed: Int!
   errors: [String!]
+}
+
+# =============================================================================
+# DATA PORTABILITY (IMPORTS / EXPORTS)
+# =============================================================================
+
+enum ExportType {
+  ARCHIVE
+  FOLLOWERS
+  FOLLOWING
+  BLOCKS
+  MUTES
+  LISTS
+  BOOKMARKS
+}
+
+enum ExportFormat {
+  ACTIVITYPUB
+  MASTODON
+  CSV
+}
+
+input DateRangeInput {
+  start: Time!
+  end: Time!
+}
+
+input CreateExportInput {
+  type: ExportType!
+  format: ExportFormat!
+  includeMedia: Boolean = false
+  dateRange: DateRangeInput
+}
+
+type ExportJob {
+  id: ID!
+  status: String!
+  type: ExportType!
+  format: ExportFormat!
+  createdAt: Time!
+  downloadUrl: String
+  expiresAt: Time
+  fileSize: Int
+  recordCount: Int
+  error: String
+}
+
+type ExportJobEdge {
+  node: ExportJob!
+  cursor: Cursor!
+}
+
+type ExportJobConnection {
+  edges: [ExportJobEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+enum ImportType {
+  FOLLOWERS
+  FOLLOWING
+  BLOCKS
+  MUTES
+  LISTS
+  BOOKMARKS
+}
+
+enum ImportMode {
+  MERGE
+  OVERWRITE
+}
+
+input CreateImportInput {
+  type: ImportType!
+  mode: ImportMode = MERGE
+  file: Upload!
+  filename: String
+}
+
+type ImportResults {
+  success: Int!
+  skipped: Int!
+  failed: Int!
+}
+
+type ImportJob {
+  id: ID!
+  status: String!
+  type: ImportType!
+  createdAt: Time!
+  processed: Int!
+  total: Int
+  errors: [String!]!
+  results: ImportResults
+}
+
+type ImportJobEdge {
+  node: ImportJob!
+  cursor: Cursor!
+}
+
+type ImportJobConnection {
+  edges: [ImportJobEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+# =============================================================================
+# FILTERS (MASTODON V2)
+# =============================================================================
+
+enum FilterAction {
+  WARN
+  HIDE
+  BLUR
+}
+
+type Filter {
+  id: ID!
+  title: String!
+  context: [String!]!
+  expiresAt: String
+  filterAction: String!
+  keywords: [FilterKeyword!]
+  statuses: [FilterStatus!]
+}
+
+type FilterKeyword {
+  id: ID!
+  keyword: String!
+  wholeWord: Boolean!
+}
+
+type FilterStatus {
+  id: ID!
+  statusId: String!
+}
+
+input CreateFilterKeywordInput {
+  keyword: String!
+  wholeWord: Boolean = false
+}
+
+input CreateFilterInput {
+  title: String!
+  context: [String!]!
+  filterAction: FilterAction = WARN
+  expiresInSeconds: Int
+  keywords: [CreateFilterKeywordInput!]
+}
+
+input UpdateFilterInput {
+  title: String
+  context: [String!]
+  filterAction: FilterAction
+  expiresInSeconds: Int
+}
+
+input AddFilterKeywordInput {
+  keyword: String!
+  wholeWord: Boolean = false
+}
+
+input FilterTestInput {
+  content: String!
+  context: [String!]!
+}
+
+type FilterTestResult {
+  action: String!
+  severity: String!
+  matchScore: Float!
+  matchedRules: [String!]!
+  filterId: ID!
+  filterTitle: String!
+}
+
+type FilterTestPayload {
+  content: String!
+  totalFilters: Int!
+  matchedCount: Int!
+  results: [FilterTestResult!]!
+}
+
+# =============================================================================
+# TRENDS (MASTODON V2)
+# =============================================================================
+
+type TrendingTag {
+  name: String!
+  url: String!
+  history: [Int!]!
+  uses: Int!
+  accounts: Int!
+}
+
+type TrendingStatus {
+  id: ID!
+  url: String!
+  authorId: ID!
+  content: String!
+  engagements: Int!
+  publishedAt: Time!
+}
+
+type TrendingLink {
+  url: String!
+  title: String!
+  description: String!
+  type: String!
+  authorName: String!
+  image: String!
+  shares: Int!
+}
+
+enum TrendingItemType {
+  HASHTAG
+  STATUS
+  LINK
+}
+
+type TrendingItem {
+  type: TrendingItemType!
+  hashtag: TrendingTag
+  status: TrendingStatus
+  link: TrendingLink
+}
+
+# =============================================================================
+# GROUPED NOTIFICATIONS (MASTODON V2)
+# =============================================================================
+
+input GroupingStrategyInput {
+  timeWindowHours: Int
+  maxGroupSize: Int
+  minGroupSize: Int
+  sampleSize: Int
+  groupByType: Boolean
+  groupByTarget: Boolean
+}
+
+input GroupedNotificationsInput {
+  types: [String!]
+  excludeTypes: [String!]
+  first: Int = 20
+  after: Cursor
+  includeAll: Boolean = false
+  options: GroupingStrategyInput
+}
+
+type GroupedNotificationGroup {
+  id: ID!
+  type: String!
+  groupKey: String!
+  count: Int!
+  latestCreatedAt: Time!
+  earliestCreatedAt: Time!
+  read: Boolean!
+  summary: String!
+  sampleActors: [Actor!]!
+  sampleActorIds: [ID!]!
+  targetStatusId: ID
+  mostRecentNotificationId: ID
+  allNotificationIds: [ID!]!
 }
 
 # Lesser GraphQL Schema - Phase 2 Federation Enhancements

@@ -98,6 +98,11 @@ type ActorListPage struct {
 	TotalCount int                  `json:"totalCount"`
 }
 
+type AddFilterKeywordInput struct {
+	Keyword   string `json:"keyword"`
+	WholeWord *bool  `json:"wholeWord,omitempty"`
+}
+
 type AffectedRelationship struct {
 	Actor            *activitypub.Actor `json:"actor"`
 	RelationshipType string             `json:"relationshipType"`
@@ -262,6 +267,33 @@ type CreateEmojiInput struct {
 	VisibleInPicker *bool   `json:"visibleInPicker,omitempty"`
 }
 
+type CreateExportInput struct {
+	Type         ExportType      `json:"type"`
+	Format       ExportFormat    `json:"format"`
+	IncludeMedia *bool           `json:"includeMedia,omitempty"`
+	DateRange    *DateRangeInput `json:"dateRange,omitempty"`
+}
+
+type CreateFilterInput struct {
+	Title            string                      `json:"title"`
+	Context          []string                    `json:"context"`
+	FilterAction     *FilterAction               `json:"filterAction,omitempty"`
+	ExpiresInSeconds *int                        `json:"expiresInSeconds,omitempty"`
+	Keywords         []*CreateFilterKeywordInput `json:"keywords,omitempty"`
+}
+
+type CreateFilterKeywordInput struct {
+	Keyword   string `json:"keyword"`
+	WholeWord *bool  `json:"wholeWord,omitempty"`
+}
+
+type CreateImportInput struct {
+	Type     ImportType     `json:"type"`
+	Mode     *ImportMode    `json:"mode,omitempty"`
+	File     graphql.Upload `json:"file"`
+	Filename *string        `json:"filename,omitempty"`
+}
+
 type CreateListInput struct {
 	Title         string         `json:"title"`
 	RepliesPolicy *RepliesPolicy `json:"repliesPolicy,omitempty"`
@@ -320,6 +352,11 @@ type DatabaseStatus struct {
 	Throughput  float64      `json:"throughput"`
 }
 
+type DateRangeInput struct {
+	Start Time `json:"start"`
+	End   Time `json:"end"`
+}
+
 type DirectoryFiltersInput struct {
 	Local  *bool           `json:"local,omitempty"`
 	Remote *bool           `json:"remote,omitempty"`
@@ -337,6 +374,30 @@ type Entity struct {
 	Type  string  `json:"type"`
 	Text  string  `json:"text"`
 	Score float64 `json:"score"`
+}
+
+type ExportJob struct {
+	ID          string       `json:"id"`
+	Status      string       `json:"status"`
+	Type        ExportType   `json:"type"`
+	Format      ExportFormat `json:"format"`
+	CreatedAt   Time         `json:"createdAt"`
+	DownloadURL *string      `json:"downloadUrl,omitempty"`
+	ExpiresAt   *Time        `json:"expiresAt,omitempty"`
+	FileSize    *int         `json:"fileSize,omitempty"`
+	RecordCount *int         `json:"recordCount,omitempty"`
+	Error       *string      `json:"error,omitempty"`
+}
+
+type ExportJobConnection struct {
+	Edges      []*ExportJobEdge `json:"edges"`
+	PageInfo   *PageInfo        `json:"pageInfo"`
+	TotalCount int              `json:"totalCount"`
+}
+
+type ExportJobEdge struct {
+	Node   *ExportJob `json:"node"`
+	Cursor Cursor     `json:"cursor"`
 }
 
 type FederationCost struct {
@@ -456,6 +517,27 @@ type Field struct {
 	VerifiedAt *Time  `json:"verifiedAt,omitempty"`
 }
 
+type FilterTestInput struct {
+	Content string   `json:"content"`
+	Context []string `json:"context"`
+}
+
+type FilterTestPayload struct {
+	Content      string              `json:"content"`
+	TotalFilters int                 `json:"totalFilters"`
+	MatchedCount int                 `json:"matchedCount"`
+	Results      []*FilterTestResult `json:"results"`
+}
+
+type FilterTestResult struct {
+	Action       string   `json:"action"`
+	Severity     string   `json:"severity"`
+	MatchScore   float64  `json:"matchScore"`
+	MatchedRules []string `json:"matchedRules"`
+	FilterID     string   `json:"filterId"`
+	FilterTitle  string   `json:"filterTitle"`
+}
+
 type FlagInput struct {
 	ObjectID string   `json:"objectId"`
 	Reason   string   `json:"reason"`
@@ -478,6 +560,40 @@ type FlowNode struct {
 type FocusInput struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
+}
+
+type GroupedNotificationGroup struct {
+	ID                       string               `json:"id"`
+	Type                     string               `json:"type"`
+	GroupKey                 string               `json:"groupKey"`
+	Count                    int                  `json:"count"`
+	LatestCreatedAt          Time                 `json:"latestCreatedAt"`
+	EarliestCreatedAt        Time                 `json:"earliestCreatedAt"`
+	Read                     bool                 `json:"read"`
+	Summary                  string               `json:"summary"`
+	SampleActors             []*activitypub.Actor `json:"sampleActors"`
+	SampleActorIds           []string             `json:"sampleActorIds"`
+	TargetStatusID           *string              `json:"targetStatusId,omitempty"`
+	MostRecentNotificationID *string              `json:"mostRecentNotificationId,omitempty"`
+	AllNotificationIds       []string             `json:"allNotificationIds"`
+}
+
+type GroupedNotificationsInput struct {
+	Types        []string               `json:"types,omitempty"`
+	ExcludeTypes []string               `json:"excludeTypes,omitempty"`
+	First        *int                   `json:"first,omitempty"`
+	After        *Cursor                `json:"after,omitempty"`
+	IncludeAll   *bool                  `json:"includeAll,omitempty"`
+	Options      *GroupingStrategyInput `json:"options,omitempty"`
+}
+
+type GroupingStrategyInput struct {
+	TimeWindowHours *int  `json:"timeWindowHours,omitempty"`
+	MaxGroupSize    *int  `json:"maxGroupSize,omitempty"`
+	MinGroupSize    *int  `json:"minGroupSize,omitempty"`
+	SampleSize      *int  `json:"sampleSize,omitempty"`
+	GroupByType     *bool `json:"groupByType,omitempty"`
+	GroupByTarget   *bool `json:"groupByTarget,omitempty"`
 }
 
 type Hashtag struct {
@@ -574,6 +690,34 @@ type ImageAnalysisCapabilities struct {
 	TextExtraction       bool `json:"textExtraction"`
 	CelebrityRecognition bool `json:"celebrityRecognition"`
 	DeepfakeDetection    bool `json:"deepfakeDetection"`
+}
+
+type ImportJob struct {
+	ID        string         `json:"id"`
+	Status    string         `json:"status"`
+	Type      ImportType     `json:"type"`
+	CreatedAt Time           `json:"createdAt"`
+	Processed int            `json:"processed"`
+	Total     *int           `json:"total,omitempty"`
+	Errors    []string       `json:"errors"`
+	Results   *ImportResults `json:"results,omitempty"`
+}
+
+type ImportJobConnection struct {
+	Edges      []*ImportJobEdge `json:"edges"`
+	PageInfo   *PageInfo        `json:"pageInfo"`
+	TotalCount int              `json:"totalCount"`
+}
+
+type ImportJobEdge struct {
+	Node   *ImportJob `json:"node"`
+	Cursor Cursor     `json:"cursor"`
+}
+
+type ImportResults struct {
+	Success int `json:"success"`
+	Skipped int `json:"skipped"`
+	Failed  int `json:"failed"`
 }
 
 type InfrastructureAlert struct {
@@ -1522,6 +1666,40 @@ type TrainingResult struct {
 	Improvements []string `json:"improvements"`
 }
 
+type TrendingItem struct {
+	Type    TrendingItemType `json:"type"`
+	Hashtag *TrendingTag     `json:"hashtag,omitempty"`
+	Status  *TrendingStatus  `json:"status,omitempty"`
+	Link    *TrendingLink    `json:"link,omitempty"`
+}
+
+type TrendingLink struct {
+	URL         string `json:"url"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	AuthorName  string `json:"authorName"`
+	Image       string `json:"image"`
+	Shares      int    `json:"shares"`
+}
+
+type TrendingStatus struct {
+	ID          string `json:"id"`
+	URL         string `json:"url"`
+	AuthorID    string `json:"authorId"`
+	Content     string `json:"content"`
+	Engagements int    `json:"engagements"`
+	PublishedAt Time   `json:"publishedAt"`
+}
+
+type TrendingTag struct {
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	History  []int  `json:"history"`
+	Uses     int    `json:"uses"`
+	Accounts int    `json:"accounts"`
+}
+
 type TrustInput struct {
 	TargetActorID string               `json:"targetActorId"`
 	Category      models.TrustCategory `json:"category"`
@@ -1536,6 +1714,13 @@ type UnfollowHashtagPayload struct {
 type UpdateEmojiInput struct {
 	Category        *string `json:"category,omitempty"`
 	VisibleInPicker *bool   `json:"visibleInPicker,omitempty"`
+}
+
+type UpdateFilterInput struct {
+	Title            *string       `json:"title,omitempty"`
+	Context          []string      `json:"context,omitempty"`
+	FilterAction     *FilterAction `json:"filterAction,omitempty"`
+	ExpiresInSeconds *int          `json:"expiresInSeconds,omitempty"`
 }
 
 type UpdateHashtagNotificationsPayload struct {
@@ -2195,6 +2380,128 @@ func (e ExpandMediaPreference) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type ExportFormat string
+
+const (
+	ExportFormatActivitypub ExportFormat = "ACTIVITYPUB"
+	ExportFormatMastodon    ExportFormat = "MASTODON"
+	ExportFormatCSV         ExportFormat = "CSV"
+)
+
+var AllExportFormat = []ExportFormat{
+	ExportFormatActivitypub,
+	ExportFormatMastodon,
+	ExportFormatCSV,
+}
+
+func (e ExportFormat) IsValid() bool {
+	switch e {
+	case ExportFormatActivitypub, ExportFormatMastodon, ExportFormatCSV:
+		return true
+	}
+	return false
+}
+
+func (e ExportFormat) String() string {
+	return string(e)
+}
+
+func (e *ExportFormat) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ExportFormat(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ExportFormat", str)
+	}
+	return nil
+}
+
+func (e ExportFormat) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ExportFormat) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ExportFormat) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ExportType string
+
+const (
+	ExportTypeArchive   ExportType = "ARCHIVE"
+	ExportTypeFollowers ExportType = "FOLLOWERS"
+	ExportTypeFollowing ExportType = "FOLLOWING"
+	ExportTypeBlocks    ExportType = "BLOCKS"
+	ExportTypeMutes     ExportType = "MUTES"
+	ExportTypeLists     ExportType = "LISTS"
+	ExportTypeBookmarks ExportType = "BOOKMARKS"
+)
+
+var AllExportType = []ExportType{
+	ExportTypeArchive,
+	ExportTypeFollowers,
+	ExportTypeFollowing,
+	ExportTypeBlocks,
+	ExportTypeMutes,
+	ExportTypeLists,
+	ExportTypeBookmarks,
+}
+
+func (e ExportType) IsValid() bool {
+	switch e {
+	case ExportTypeArchive, ExportTypeFollowers, ExportTypeFollowing, ExportTypeBlocks, ExportTypeMutes, ExportTypeLists, ExportTypeBookmarks:
+		return true
+	}
+	return false
+}
+
+func (e ExportType) String() string {
+	return string(e)
+}
+
+func (e *ExportType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ExportType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ExportType", str)
+	}
+	return nil
+}
+
+func (e ExportType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ExportType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ExportType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type FederationState string
 
 const (
@@ -2251,6 +2558,63 @@ func (e *FederationState) UnmarshalJSON(b []byte) error {
 }
 
 func (e FederationState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type FilterAction string
+
+const (
+	FilterActionWarn FilterAction = "WARN"
+	FilterActionHide FilterAction = "HIDE"
+	FilterActionBlur FilterAction = "BLUR"
+)
+
+var AllFilterAction = []FilterAction{
+	FilterActionWarn,
+	FilterActionHide,
+	FilterActionBlur,
+}
+
+func (e FilterAction) IsValid() bool {
+	switch e {
+	case FilterActionWarn, FilterActionHide, FilterActionBlur:
+		return true
+	}
+	return false
+}
+
+func (e FilterAction) String() string {
+	return string(e)
+}
+
+func (e *FilterAction) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = FilterAction(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid FilterAction", str)
+	}
+	return nil
+}
+
+func (e FilterAction) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *FilterAction) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e FilterAction) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
@@ -2365,6 +2729,124 @@ func (e *HealthStatus) UnmarshalJSON(b []byte) error {
 }
 
 func (e HealthStatus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ImportMode string
+
+const (
+	ImportModeMerge     ImportMode = "MERGE"
+	ImportModeOverwrite ImportMode = "OVERWRITE"
+)
+
+var AllImportMode = []ImportMode{
+	ImportModeMerge,
+	ImportModeOverwrite,
+}
+
+func (e ImportMode) IsValid() bool {
+	switch e {
+	case ImportModeMerge, ImportModeOverwrite:
+		return true
+	}
+	return false
+}
+
+func (e ImportMode) String() string {
+	return string(e)
+}
+
+func (e *ImportMode) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ImportMode(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ImportMode", str)
+	}
+	return nil
+}
+
+func (e ImportMode) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ImportMode) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ImportMode) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ImportType string
+
+const (
+	ImportTypeFollowers ImportType = "FOLLOWERS"
+	ImportTypeFollowing ImportType = "FOLLOWING"
+	ImportTypeBlocks    ImportType = "BLOCKS"
+	ImportTypeMutes     ImportType = "MUTES"
+	ImportTypeLists     ImportType = "LISTS"
+	ImportTypeBookmarks ImportType = "BOOKMARKS"
+)
+
+var AllImportType = []ImportType{
+	ImportTypeFollowers,
+	ImportTypeFollowing,
+	ImportTypeBlocks,
+	ImportTypeMutes,
+	ImportTypeLists,
+	ImportTypeBookmarks,
+}
+
+func (e ImportType) IsValid() bool {
+	switch e {
+	case ImportTypeFollowers, ImportTypeFollowing, ImportTypeBlocks, ImportTypeMutes, ImportTypeLists, ImportTypeBookmarks:
+		return true
+	}
+	return false
+}
+
+func (e ImportType) String() string {
+	return string(e)
+}
+
+func (e *ImportType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ImportType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ImportType", str)
+	}
+	return nil
+}
+
+func (e ImportType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ImportType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ImportType) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
@@ -4041,6 +4523,63 @@ func (e *Trend) UnmarshalJSON(b []byte) error {
 }
 
 func (e Trend) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type TrendingItemType string
+
+const (
+	TrendingItemTypeHashtag TrendingItemType = "HASHTAG"
+	TrendingItemTypeStatus  TrendingItemType = "STATUS"
+	TrendingItemTypeLink    TrendingItemType = "LINK"
+)
+
+var AllTrendingItemType = []TrendingItemType{
+	TrendingItemTypeHashtag,
+	TrendingItemTypeStatus,
+	TrendingItemTypeLink,
+}
+
+func (e TrendingItemType) IsValid() bool {
+	switch e {
+	case TrendingItemTypeHashtag, TrendingItemTypeStatus, TrendingItemTypeLink:
+		return true
+	}
+	return false
+}
+
+func (e TrendingItemType) String() string {
+	return string(e)
+}
+
+func (e *TrendingItemType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = TrendingItemType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid TrendingItemType", str)
+	}
+	return nil
+}
+
+func (e TrendingItemType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *TrendingItemType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e TrendingItemType) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

@@ -1524,11 +1524,11 @@ func (r *queryResolver) convertObjectToModel(obj any) *model.Object {
 			switch strings.ToLower(objType) {
 			case ContentTypeNote:
 				modelObj.Type = model.ObjectTypeNote
-			case "article":
+			case ContentTypeArticle:
 				modelObj.Type = model.ObjectTypeArticle
-			case "image":
+			case ContentTypeImage:
 				modelObj.Type = model.ObjectTypeImage
-			case "video":
+			case ContentTypeVideo:
 				modelObj.Type = model.ObjectTypeVideo
 			default:
 				modelObj.Type = model.ObjectTypeNote // Default fallback
@@ -2307,16 +2307,16 @@ func (r *queryResolver) matchPatternContent(pattern *storage.ModerationPattern, 
 
 	// Simple pattern matching based on pattern type
 	switch pattern.Type {
-	case "regex":
+	case PatternTypeRegex:
 		// For regex patterns, try to compile and match
 		if regex, err := regexp.Compile(pattern.Pattern); err == nil {
 			return regex.MatchString(content)
 		}
 		return false
-	case "keyword":
+	case PatternTypeKeyword:
 		// For keyword patterns, check for exact word matches
 		return strings.Contains(lowerContent, lowerPattern)
-	case "phrase":
+	case PatternTypePhrase:
 		// For phrase patterns, check for exact phrase matches
 		return strings.Contains(lowerContent, lowerPattern)
 	default:
@@ -3475,11 +3475,11 @@ func (r *moderationPatternResolver) Pattern(_ context.Context, obj *moderation.M
 func (r *moderationPatternResolver) Type(_ context.Context, obj *moderation.ModerationPattern) (model.PatternType, error) {
 	// Convert string type to model.PatternType
 	switch obj.Type {
-	case "regex":
+	case PatternTypeRegex:
 		return model.PatternTypeRegex, nil
-	case "keyword":
+	case PatternTypeKeyword:
 		return model.PatternTypeKeyword, nil
-	case "phrase":
+	case PatternTypePhrase:
 		return model.PatternTypePhrase, nil
 	default:
 		return model.PatternTypeKeyword, nil
