@@ -3,6 +3,7 @@ package main
 import (
 	"time"
 
+	lesserLift "github.com/equaltoai/lesser/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/pay-theory/lift/pkg/lift"
 )
@@ -10,6 +11,13 @@ import (
 // configureLiftRoutes sets up routes that use native Lift handlers
 // This allows gradual migration from Lambda handlers to Lift handlers
 func configureLiftRoutes(app *lift.App) {
+	_ = app.GET("/", func(ctx *lift.Context) error {
+		return lesserLift.Redirect(ctx, "/l/", false)
+	})
+	_ = app.Handle("HEAD", "/", func(ctx *lift.Context) error {
+		return lesserLift.Redirect(ctx, "/l/", false)
+	})
+
 	// OAuth app registration (public, no auth required)
 	_ = app.POST("/api/v1/apps", lift.HandlerFunc(liftHandler.HandleAppRegistrationLift))
 

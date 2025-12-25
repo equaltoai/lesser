@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
@@ -83,4 +84,22 @@ func writeReceipt(path string, receipt *upReceipt) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+func readReceipt(path string) (*upReceipt, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // CLI reads an operator-provided local receipt path
+	if err != nil {
+		return nil, fmt.Errorf("read receipt %s: %w", path, err)
+	}
+
+	var receipt upReceipt
+	if err := json.Unmarshal(data, &receipt); err != nil {
+		return nil, fmt.Errorf("parse receipt %s: %w", path, err)
+	}
+
+	if strings.TrimSpace(receipt.App) == "" || strings.TrimSpace(receipt.BaseDomain) == "" {
+		return nil, fmt.Errorf("receipt %s is missing required fields", path)
+	}
+
+	return &receipt, nil
 }

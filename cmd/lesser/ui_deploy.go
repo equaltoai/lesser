@@ -54,11 +54,11 @@ func (e *upEnv) deployUIAssets(ctx context.Context, receipt *upReceipt) error {
 			return fmt.Errorf("upload auth UI (%s): %w", stageKey, err)
 		}
 
-		hasObjects, err := bucketHasObjects(ctx, s3Client, clientBucket)
+		hasIndex, err := s3ObjectExists(ctx, s3Client, clientBucket, "index.html")
 		if err != nil {
 			return fmt.Errorf("inspect client bucket (%s): %w", stageKey, err)
 		}
-		if !hasObjects {
+		if !hasIndex {
 			if err := uploadClientPlaceholder(ctx, s3Client, clientBucket, stageReceipt.Domain); err != nil {
 				return fmt.Errorf("upload client placeholder (%s): %w", stageKey, err)
 			}

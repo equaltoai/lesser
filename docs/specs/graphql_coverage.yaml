@@ -1,0 +1,583 @@
+version: 2
+exemptions:
+    - id: oauth_oidc
+      reason: OAuth/OIDC flows are REST-only (authorize/token/discovery/redirects/client registration).
+      match:
+        exact:
+            - /api/v1/apps
+        prefixes:
+            - /oauth
+    - id: auth_setup
+      reason: Wallet auth, WebAuthn, and setup bootstrap flows are REST-only.
+      match:
+        prefixes:
+            - /auth/wallet
+            - /api/v1/auth/webauthn
+            - /setup
+    - id: protocol_infra
+      reason: Protocol and infrastructure endpoints are REST-only by design.
+      match:
+        prefixes:
+            - /.well-known
+            - /nodeinfo
+            - /users/
+            - /health
+    - id: ui_routing
+      reason: UI routing/redirect endpoints are not GraphQL capabilities.
+      match:
+        exact:
+            - /
+routes:
+    - method: GET
+      path: /
+      policy: rest_only
+      exemptedBy: ui_routing
+    - method: GET
+      path: /.well-known/nodeinfo
+      policy: rest_only
+      exemptedBy: protocol_infra
+    - method: POST
+      path: /api/v1/accounts
+      policy: graphql_required
+      status: missing
+    - method: PUT
+      path: /api/v1/accounts/quote_permissions
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/accounts/relationships
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/accounts/search
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/accounts/search/suggestions
+      policy: graphql_required
+      status: missing
+    - method: PATCH
+      path: /api/v1/accounts/update_credentials
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/accounts/verify_credentials
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/accounts/{id}/block
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/accounts/{id}/follow
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/accounts/{id}/notes
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/accounts/{id}/quote_permissions
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/accounts/{id}/statuses
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/accounts/{id}/unblock
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/accounts/{id}/unfollow
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/accounts
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/accounts
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/accounts/{id}
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/accounts/{id}/action
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/accounts/{id}/approve
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/accounts/{id}/enable
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/accounts/{id}/reject
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/accounts/{id}/unsensitive
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/accounts/{id}/unsilence
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/accounts/{id}/unsuspend
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/domain_allows
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/domain_allows
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/admin/domain_allows/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/domain_blocks
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/domain_blocks
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/admin/domain_blocks/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/domain_blocks/{id}
+      policy: graphql_required
+      status: missing
+    - method: PUT
+      path: /api/v1/admin/domain_blocks/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/moderation/events
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/moderation/events/{id}/override
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/moderation/overview
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/moderation/reviewers
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/moderation/reviewers/{id}/demote
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/moderation/reviewers/{id}/promote
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/moderation/trust/graph
+      policy: graphql_required
+      status: missing
+    - method: PUT
+      path: /api/v1/admin/moderation/trust/{from}/{to}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/reports
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/reports/{id}
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/reports/{id}/assign_to_self
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/reports/{id}/reopen
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/reports/{id}/resolve
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/reports/{id}/unassign
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/statuses
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/admin/statuses/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/admin/statuses/{id}
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/statuses/{id}/sensitive
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/admin/statuses/{id}/unsensitive
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/apps
+      policy: rest_only
+      exemptedBy: oauth_oidc
+    - method: GET
+      path: /api/v1/auth/webauthn/credentials
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: DELETE
+      path: /api/v1/auth/webauthn/credentials/{credentialId}
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: PUT
+      path: /api/v1/auth/webauthn/credentials/{credentialId}
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: POST
+      path: /api/v1/auth/webauthn/login/begin
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: POST
+      path: /api/v1/auth/webauthn/login/finish
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: POST
+      path: /api/v1/auth/webauthn/register/begin
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: POST
+      path: /api/v1/auth/webauthn/register/finish
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: GET
+      path: /api/v1/blocks
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/conversations
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/conversations/{id}
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/conversations/{id}/read
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/exports
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/exports
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/exports/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/exports/{id}/download
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/imports
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/imports
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/imports/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/imports/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/instance
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/instance/activity
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/instance/domain_blocks
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/instance/peers
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/media
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/media/{id}
+      policy: graphql_required
+      status: missing
+    - method: PUT
+      path: /api/v1/media/{id}
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/notes
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/notes/{id}/vote
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/notes/{object_id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/search/statuses
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/search/statuses
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/statuses
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/statuses/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/statuses/{id}
+      policy: graphql_required
+      status: missing
+    - method: PUT
+      path: /api/v1/statuses/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/statuses/{id}/context
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/statuses/{id}/favourited_by
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/statuses/{id}/history
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v1/statuses/{id}/quote
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v1/statuses/{id}/quote/{quote_id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/statuses/{id}/quotes
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/statuses/{id}/reblogged_by
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v1/statuses/{id}/source
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v2/filters
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v2/filters
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v2/filters/test
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v2/filters/{filter_id}/keywords
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v2/filters/{filter_id}/keywords
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v2/filters/{filter_id}/keywords/{keyword_id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v2/filters/{filter_id}/statuses
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v2/filters/{filter_id}/statuses
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v2/filters/{filter_id}/statuses/{status_id}
+      policy: graphql_required
+      status: missing
+    - method: DELETE
+      path: /api/v2/filters/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v2/filters/{id}
+      policy: graphql_required
+      status: missing
+    - method: PUT
+      path: /api/v2/filters/{id}
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v2/instance
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v2/notifications/grouped
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /api/v2/notifications/groups/{group_id}/read
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v2/search
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v2/suggestions
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v2/trends
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v2/trends/links
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v2/trends/statuses
+      policy: graphql_required
+      status: missing
+    - method: GET
+      path: /api/v2/trends/tags
+      policy: graphql_required
+      status: missing
+    - method: POST
+      path: /auth/wallet/challenge
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: POST
+      path: /auth/wallet/link
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: GET
+      path: /auth/wallet/list
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: POST
+      path: /auth/wallet/login
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: DELETE
+      path: /auth/wallet/unlink/{address}
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: POST
+      path: /auth/wallet/verify
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: GET
+      path: /health/detailed
+      policy: rest_only
+      exemptedBy: protocol_infra
+    - method: GET
+      path: /health/live
+      policy: rest_only
+      exemptedBy: protocol_infra
+    - method: GET
+      path: /health/ready
+      policy: rest_only
+      exemptedBy: protocol_infra
+    - method: GET
+      path: /nodeinfo/2.0
+      policy: rest_only
+      exemptedBy: protocol_infra
+    - method: GET
+      path: /oauth/authorize
+      policy: rest_only
+      exemptedBy: oauth_oidc
+    - method: POST
+      path: /oauth/consent
+      policy: rest_only
+      exemptedBy: oauth_oidc
+    - method: POST
+      path: /oauth/token
+      policy: rest_only
+      exemptedBy: oauth_oidc
+    - method: POST
+      path: /setup/admin
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: POST
+      path: /setup/bootstrap/challenge
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: POST
+      path: /setup/bootstrap/verify
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: POST
+      path: /setup/finalize
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: GET
+      path: /setup/status
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: GET
+      path: /users/{username}/followers
+      policy: rest_only
+      exemptedBy: protocol_infra
+    - method: GET
+      path: /users/{username}/following
+      policy: rest_only
+      exemptedBy: protocol_infra
+
