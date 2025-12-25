@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -98,9 +99,7 @@ func (h *Handler) handleConsentDenial(ctx *lift.Context, authState *storage.OAut
 	redirectURL.RawQuery = q.Encode()
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]string{
-		"redirect_uri": redirectURL.String(),
-	})
+	return ctx.JSON(apimodels.OAuthConsentResponse{RedirectURI: redirectURL.String()})
 }
 
 // handleConsentApproval handles when the user approves consent
@@ -169,9 +168,7 @@ func (h *Handler) handleConsentApproval(ctx *lift.Context, authState *storage.OA
 	redirectURL.RawQuery = q.Encode()
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]string{
-		"redirect_uri": redirectURL.String(),
-	})
+	return ctx.JSON(apimodels.OAuthConsentResponse{RedirectURI: redirectURL.String()})
 }
 
 // HandleOAuthLoginLift handles redirecting users to login during OAuth flow

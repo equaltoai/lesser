@@ -90,7 +90,7 @@ func (h *Handler) HandleUploadMediaLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to upload media")
 	}
 
-	return ctx.JSON(result.Media)
+	return ctx.JSON(h.convertMediaToAPI(result.Media))
 }
 
 // HandleGetMediaLift handles GET /api/v1/media/:id (Lift version)
@@ -117,7 +117,7 @@ func (h *Handler) HandleGetMediaLift(ctx *lift.Context) error {
 		return common.RespondNotFound(ctx, "media")
 	}
 
-	return ctx.JSON(mediaResult)
+	return ctx.JSON(h.convertMediaToAPI(mediaResult))
 }
 
 // HandleUpdateMediaLift handles PUT /api/v1/media/:id (Lift version)
@@ -169,7 +169,7 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to update media")
 	}
 
-	return ctx.JSON(result.Media)
+	return ctx.JSON(h.convertMediaToAPI(result.Media))
 }
 
 // parseMediaUpload parses multipart form data for media uploads

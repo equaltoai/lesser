@@ -3,6 +3,7 @@ package lift
 import (
 	"net/http"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -11,11 +12,7 @@ import (
 
 // HandleCreateChallengeLift handles POST /auth/wallet/challenge
 func (h *Handler) HandleCreateChallengeLift(ctx *lift.Context) error {
-	var req struct {
-		Address  string `json:"address"`
-		ChainID  int    `json:"chainId"`
-		Username string `json:"username"` // REQUIRED - binds signature to username
-	}
+	var req apimodels.WalletChallengeRequest
 
 	if err := h.parseRequestBody(ctx, &req); err != nil {
 		return err // Error response already set by parseRequestBody
@@ -82,9 +79,9 @@ func (h *Handler) HandleVerifySignatureLift(ctx *lift.Context) error {
 	}
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{
-		"verified": true,
-		"message":  "signature verified successfully",
+	return ctx.JSON(apimodels.WalletVerifyResponse{
+		Verified: true,
+		Message:  "signature verified successfully",
 	})
 }
 
@@ -138,15 +135,7 @@ func (h *Handler) HandleLinkWalletLift(ctx *lift.Context) error {
 	// But allow linking during registration if signature is valid
 	username := h.getAuthenticatedUserLift(ctx)
 
-	var req struct {
-		Address     string `json:"address"`
-		ChainID     int    `json:"chainId"`
-		WalletType  string `json:"walletType"`
-		ChallengeID string `json:"challengeId,omitempty"` // Optional - for verification
-		Signature   string `json:"signature,omitempty"`   // Optional - for verification
-		Message     string `json:"message,omitempty"`     // Optional - for verification
-		Username    string `json:"username,omitempty"`    // For registration flow - username to link to
-	}
+	var req apimodels.WalletLinkRequest
 
 	if err := h.parseRequestBody(ctx, &req); err != nil {
 		return err // Error response already set by parseRequestBody
@@ -281,21 +270,21 @@ func (h *Handler) HandleLinkWalletLift(ctx *lift.Context) error {
 		// Return success with JWT for stateless OAuth flow
 		// Client will use this JWT to authenticate with /oauth/authorize
 		ctx.Status(http.StatusOK)
-		return ctx.JSON(map[string]any{
-			"success":      true,
-			"message":      "wallet linked successfully",
-			"address":      req.Address,
-			"access_token": authResponse.AccessToken,
-			"token_type":   authResponse.TokenType,
-			"expires_in":   authResponse.ExpiresIn,
+		return ctx.JSON(apimodels.WalletLinkResponse{
+			Success:     true,
+			Message:     "wallet linked successfully",
+			Address:     req.Address,
+			AccessToken: authResponse.AccessToken,
+			TokenType:   authResponse.TokenType,
+			ExpiresIn:   authResponse.ExpiresIn,
 		})
 	}
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{
-		"success": true,
-		"message": "wallet linked successfully",
-		"address": req.Address,
+	return ctx.JSON(apimodels.WalletLinkResponse{
+		Success: true,
+		Message: "wallet linked successfully",
+		Address: req.Address,
 	})
 }
 
@@ -342,10 +331,10 @@ func (h *Handler) HandleUnlinkWalletLift(ctx *lift.Context) error {
 	}
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{
-		"success": true,
-		"message": "wallet unlinked successfully",
-		"address": address,
+	return ctx.JSON(apimodels.WalletUnlinkResponse{
+		Success: true,
+		Message: "wallet unlinked successfully",
+		Address: address,
 	})
 }
 
@@ -383,9 +372,9 @@ func (h *Handler) HandleGetWalletsLift(ctx *lift.Context) error {
 	}
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{
-		"wallets": wallets,
-		"count":   len(wallets),
+	return ctx.JSON(apimodels.WalletListResponse{
+		Wallets: wallets,
+		Count:   len(wallets),
 	})
 }
 

@@ -8,7 +8,6 @@ require (
 	github.com/aws/jsii-runtime-go v1.117.0
 	github.com/equaltoai/lesser v0.0.0
 	github.com/pay-theory/lift v1.0.81
-	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
@@ -21,11 +20,11 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/yuin/goldmark v1.7.13 // indirect
 	golang.org/x/lint v0.0.0-20241112194109-818c5a804067 // indirect
-	golang.org/x/mod v0.29.0 // indirect
-	golang.org/x/sync v0.17.0 // indirect
-	golang.org/x/sys v0.37.0 // indirect
-	golang.org/x/telemetry v0.0.0-20251022145735-5be28d707443 // indirect
-	golang.org/x/tools v0.38.0 // indirect
+	golang.org/x/mod v0.31.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/telemetry v0.0.0-20251203150158-8fff8a5912fc // indirect
+	golang.org/x/tools v0.40.0 // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 )

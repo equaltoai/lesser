@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	appErrors "github.com/equaltoai/lesser/pkg/errors"
@@ -29,7 +30,7 @@ func instanceStateString(locked bool) string {
 	return "active"
 }
 
-func (h *Handler) stageURLs() map[string]any {
+func (h *Handler) stageURLs() apimodels.SetupStageURLs {
 	domain := strings.TrimSpace(h.cfg.Domain)
 
 	httpScheme := "https"
@@ -42,18 +43,15 @@ func (h *Handler) stageURLs() map[string]any {
 	baseURL := h.cfg.BaseURL()
 	setupURL := fmt.Sprintf("%s/auth/setup", baseURL)
 
-	return map[string]any{
-		// Single-domain path routing (preferred).
-		"client":       fmt.Sprintf("%s/l", baseURL),
-		"api":          baseURL,
-		"auth":         fmt.Sprintf("%s/auth", baseURL),
-		"setup":        setupURL,
-		"setup_status": fmt.Sprintf("%s/setup/status", baseURL),
-		"ws":           fmt.Sprintf("%s://ws.%s", wsScheme, domain),
-		"media":        fmt.Sprintf("%s://media.%s", httpScheme, domain),
-
-		// Backwards-compatible field name.
-		"auth_setup": setupURL,
+	return apimodels.SetupStageURLs{
+		Client:      fmt.Sprintf("%s/l", baseURL),
+		API:         baseURL,
+		Auth:        fmt.Sprintf("%s/auth", baseURL),
+		Setup:       setupURL,
+		SetupStatus: fmt.Sprintf("%s/setup/status", baseURL),
+		WS:          fmt.Sprintf("%s://ws.%s", wsScheme, domain),
+		Media:       fmt.Sprintf("%s://media.%s", httpScheme, domain),
+		AuthSetup:   setupURL,
 	}
 }
 
@@ -70,25 +68,25 @@ func (h *Handler) HandleSetupStatusLift(ctx *lift.Context) error {
 		bootstrapUsername = storageModels.DefaultBootstrapUsername
 	}
 
-	return h.respondOK(ctx, map[string]any{
-		"instance_state":   instanceStateString(state.Locked),
-		"locked":           state.Locked,
-		"finalize_allowed": state.Locked && strings.TrimSpace(state.PrimaryAdminUsername) != "",
-		"bootstrap_actor": map[string]any{
-			"username": bootstrapUsername,
-			"acct":     fmt.Sprintf("%s@%s", bootstrapUsername, strings.TrimSpace(h.cfg.Domain)),
-			"actor":    h.cfg.ActorURL(bootstrapUsername),
+	return h.respondOK(ctx, apimodels.SetupStatusResponse{
+		InstanceState:   instanceStateString(state.Locked),
+		Locked:          state.Locked,
+		FinalizeAllowed: state.Locked && strings.TrimSpace(state.PrimaryAdminUsername) != "",
+		BootstrapActor: apimodels.SetupBootstrapActor{
+			Username: bootstrapUsername,
+			Acct:     fmt.Sprintf("%s@%s", bootstrapUsername, strings.TrimSpace(h.cfg.Domain)),
+			Actor:    h.cfg.ActorURL(bootstrapUsername),
 		},
-		"urls": h.stageURLs(),
-		"bootstrap": map[string]any{
-			"username":             bootstrapUsername,
-			"wallet_address_set":   strings.TrimSpace(state.BootstrapWalletAddress) != "",
-			"wallet_address":       state.BootstrapWalletAddress,
-			"primary_admin_set":    strings.TrimSpace(state.PrimaryAdminUsername) != "",
-			"primary_admin":        state.PrimaryAdminUsername,
-			"setup_session_scheme": "bearer",
+		URLs: h.stageURLs(),
+		Bootstrap: apimodels.SetupBootstrapState{
+			Username:           bootstrapUsername,
+			WalletAddressSet:   strings.TrimSpace(state.BootstrapWalletAddress) != "",
+			WalletAddress:      state.BootstrapWalletAddress,
+			PrimaryAdminSet:    strings.TrimSpace(state.PrimaryAdminUsername) != "",
+			PrimaryAdmin:       state.PrimaryAdminUsername,
+			SetupSessionScheme: "bearer",
 		},
-		"activated_at": state.ActivatedAt,
+		ActivatedAt: state.ActivatedAt,
 	})
 }
 
@@ -103,10 +101,7 @@ func (h *Handler) HandleSetupBootstrapChallengeLift(ctx *lift.Context) error {
 		return h.respondConflict(ctx, "instance is already activated")
 	}
 
-	var req struct {
-		Address string `json:"address"`
-		ChainID int    `json:"chainId"`
-	}
+	var req apimodels.SetupBootstrapChallengeRequest
 	if err := h.parseRequestBody(ctx, &req); err != nil {
 		return err
 	}
@@ -141,21 +136,20 @@ func (h *Handler) HandleSetupBootstrapChallengeLift(ctx *lift.Context) error {
 		return h.handleAuthServiceError(ctx, err, "create bootstrap challenge")
 	}
 
-	return h.respondOK(ctx, map[string]any{
-		"challenge_id": challenge.ID,
-		"challenge":    challenge.Message,
-		"issued_at":    challenge.IssuedAt,
-		"expires_at":   challenge.ExpiresAt,
+	return h.respondOK(ctx, apimodels.SetupBootstrapChallengeResponse{
+		ChallengeID: challenge.ID,
+		Challenge:   challenge.Message,
+		IssuedAt:    challenge.IssuedAt,
+		ExpiresAt:   challenge.ExpiresAt,
 
-		// Backwards-compatible fields.
-		"id":        challenge.ID,
-		"username":  challenge.Username,
-		"address":   challenge.Address,
-		"chainId":   challenge.ChainID,
-		"nonce":     challenge.Nonce,
-		"message":   challenge.Message,
-		"issuedAt":  challenge.IssuedAt,
-		"expiresAt": challenge.ExpiresAt,
+		ID:              challenge.ID,
+		Username:        challenge.Username,
+		Address:         challenge.Address,
+		ChainID:         challenge.ChainID,
+		Nonce:           challenge.Nonce,
+		Message:         challenge.Message,
+		IssuedAtLegacy:  challenge.IssuedAt,
+		ExpiresAtLegacy: challenge.ExpiresAt,
 	})
 }
 
@@ -170,14 +164,7 @@ func (h *Handler) HandleSetupBootstrapVerifyLift(ctx *lift.Context) error {
 		return h.respondConflict(ctx, "instance is already activated")
 	}
 
-	var raw struct {
-		ChallengeID      string `json:"challengeId"`
-		ChallengeIDSnake string `json:"challenge_id"`
-		Address          string `json:"address"`
-		Signature        string `json:"signature"`
-		Message          string `json:"message"`
-		Challenge        string `json:"challenge"`
-	}
+	var raw apimodels.SetupBootstrapVerifyRequest
 	if err := h.parseRequestBody(ctx, &raw); err != nil {
 		return err
 	}
@@ -268,11 +255,11 @@ func (h *Handler) HandleSetupBootstrapVerifyLift(ctx *lift.Context) error {
 		return h.respondInternalError(ctx, "failed to create setup session")
 	}
 
-	return h.respondOK(ctx, map[string]any{
-		"token_type":  "Bearer",
-		"token":       token,
-		"setup_token": token,
-		"expires_at":  expiresAt,
+	return h.respondOK(ctx, apimodels.SetupBootstrapVerifyResponse{
+		TokenType:  "Bearer",
+		Token:      token,
+		SetupToken: token,
+		ExpiresAt:  expiresAt,
 	})
 }
 
@@ -339,30 +326,24 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *lift.Context) error {
 		return h.respondInternalError(ctx, "failed to update setup state")
 	}
 
-	return h.respondCreated(ctx, map[string]any{
-		"username": req.Username,
-		"actor":    actorID,
+	return h.respondCreated(ctx, apimodels.SetupCreateAdminResponse{
+		Username: req.Username,
+		Actor:    actorID,
 	})
 }
 
-type setupCreateAdminRequest struct {
-	Username    string                   `json:"username"`
-	DisplayName string                   `json:"displayName,omitempty"`
-	Wallet      auth.WalletVerifyRequest `json:"wallet"`
-}
-
-func (h *Handler) parseSetupCreateAdminRequest(ctx *lift.Context, bootstrapUsername string) (setupCreateAdminRequest, error) {
-	var req setupCreateAdminRequest
+func (h *Handler) parseSetupCreateAdminRequest(ctx *lift.Context, bootstrapUsername string) (apimodels.SetupCreateAdminRequest, error) {
+	var req apimodels.SetupCreateAdminRequest
 	if err := h.parseRequestBody(ctx, &req); err != nil {
-		return setupCreateAdminRequest{}, err
+		return apimodels.SetupCreateAdminRequest{}, err
 	}
 
 	req.Username = strings.TrimSpace(req.Username)
 	if err := common.ValidateRequiredParam("username", req.Username); err != nil {
-		return setupCreateAdminRequest{}, h.respondBadRequest(ctx, "username is required")
+		return apimodels.SetupCreateAdminRequest{}, h.respondBadRequest(ctx, "username is required")
 	}
 	if strings.EqualFold(req.Username, bootstrapUsername) {
-		return setupCreateAdminRequest{}, h.respondBadRequest(ctx, "username is reserved")
+		return apimodels.SetupCreateAdminRequest{}, h.respondBadRequest(ctx, "username is reserved")
 	}
 	return req, nil
 }
@@ -503,11 +484,11 @@ func (h *Handler) HandleSetupFinalizeLift(ctx *lift.Context) error {
 		activatedAt = updatedState.ActivatedAt
 	}
 
-	return h.respondOK(ctx, map[string]any{
-		"instance_state": instanceStateString(false),
-		"locked":         false,
-		"activated_at":   activatedAt,
-		"urls":           h.stageURLs(),
+	return h.respondOK(ctx, apimodels.SetupFinalizeResponse{
+		InstanceState: instanceStateString(false),
+		Locked:        false,
+		ActivatedAt:   activatedAt,
+		URLs:          h.stageURLs(),
 	})
 }
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
@@ -29,10 +30,10 @@ type authorizeRequest struct {
 }
 
 type authorizeFlow struct {
-	request     *authorizeRequest
-	oauthSvc    *auth.OAuthService
-	username    string
-	scopes      []string
+	request  *authorizeRequest
+	oauthSvc *auth.OAuthService
+	username string
+	scopes   []string
 }
 
 func (h *Handler) isOAuthAuthorizeUIMode(ctx *lift.Context) bool {
@@ -50,7 +51,7 @@ func (h *Handler) isOAuthAuthorizeUIMode(ctx *lift.Context) bool {
 
 func (h *Handler) writeOAuthAuthorizeRedirect(ctx *lift.Context, nextURL string) error {
 	if h.isOAuthAuthorizeUIMode(ctx) {
-		return ctx.Status(http.StatusOK).JSON(map[string]string{"next_url": nextURL})
+		return ctx.Status(http.StatusOK).JSON(apimodels.OAuthAuthorizeResponse{NextURL: nextURL})
 	}
 
 	ctx.Response.Header("Location", nextURL)
@@ -470,13 +471,13 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 			})
 		}
 
-		return ctx.JSON(map[string]interface{}{
-			"access_token":  accessToken,
-			"token_type":    "Bearer",
-			"scope":         "read write follow push",
-			"created_at":    fmt.Sprintf("%d", time.Now().Unix()),
-			"expires_in":    3600,
-			"refresh_token": refreshTokenOut,
+		return ctx.JSON(apimodels.OAuthTokenResponse{
+			AccessToken:  accessToken,
+			TokenType:    "Bearer",
+			Scope:        "read write follow push",
+			CreatedAt:    time.Now().Unix(),
+			ExpiresIn:    3600,
+			RefreshToken: refreshTokenOut,
 		})
 
 	case "refresh_token":
@@ -516,13 +517,13 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 			})
 		}
 
-		return ctx.JSON(map[string]interface{}{
-			"access_token":  accessToken,
-			"token_type":    "Bearer",
-			"scope":         "read write follow push",
-			"created_at":    fmt.Sprintf("%d", time.Now().Unix()),
-			"expires_in":    3600,
-			"refresh_token": newRefreshToken,
+		return ctx.JSON(apimodels.OAuthTokenResponse{
+			AccessToken:  accessToken,
+			TokenType:    "Bearer",
+			Scope:        "read write follow push",
+			CreatedAt:    time.Now().Unix(),
+			ExpiresIn:    3600,
+			RefreshToken: newRefreshToken,
 		})
 
 	default:

@@ -26,7 +26,8 @@ For coverage enforcement we will treat these as **levels**:
 
 - `tools/openapi` generates/validates `docs/specs/openapi.yaml` by merging API Lift routes, SSE routes, and inventory HTTP routes (file-only).
 - `make generate-openapi` and `make verify-openapi` exist and are wired into `make verify`.
-- The spec is currently **L0** (route skeleton). Most operations still use placeholder schemas and generic `200` responses.
+- The spec is currently **mixed L1/L2**: most operations now have `$ref`’d request/response schemas generated from Go types, but some endpoints still use placeholder request/response bodies (and content types are not yet fully modeled).
+- Snapshot (generated): **183/255** operations have a `$ref`’d JSON 2xx response schema; **44/255** have a `$ref`’d JSON request body schema.
 
 ## Known gaps (must fix early)
 
