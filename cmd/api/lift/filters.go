@@ -3,11 +3,12 @@ package lift
 import (
 	"time"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/models"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -109,7 +110,7 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 	}
 
 	// Parse request
-	var params createFilterParams
+	var params apimodels.CreateFilterRequest
 	if err := ctx.ParseRequest(&params); err != nil {
 		return common.RespondInvalidRequest(ctx)
 	}
@@ -149,20 +150,8 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 	return ctx.Status(200).JSON(mastodonFilter)
 }
 
-// createFilterParams holds parameters for filter creation
-type createFilterParams struct {
-	Title              string           `json:"title"`
-	Context            []string         `json:"context"`
-	FilterAction       string           `json:"filter_action"`
-	Severity           string           `json:"severity"`       // New: Filter severity
-	MatchMode          string           `json:"match_mode"`     // New: Matching mode
-	CaseSensitive      bool             `json:"case_sensitive"` // New: Case-sensitive matching
-	ExpiresIn          *int             `json:"expires_in"`
-	KeywordsAttributes []map[string]any `json:"keywords_attributes"`
-}
-
 // buildFilterFromParams builds a Filter object from request parameters
-func (h *Handler) buildFilterFromParams(username string, params *createFilterParams) *storage.Filter {
+func (h *Handler) buildFilterFromParams(username string, params *apimodels.CreateFilterRequest) *storage.Filter {
 	filter := &storage.Filter{
 		Username:      username,
 		Title:         params.Title,
@@ -212,7 +201,7 @@ func (h *Handler) saveFilter(ctx *lift.Context, filter *storage.Filter) error {
 }
 
 // addFilterKeywords adds keywords to a filter
-func (h *Handler) addFilterKeywords(ctx *lift.Context, filterID string, keywordsAttributes []map[string]any) []*storage.FilterKeyword {
+func (h *Handler) addFilterKeywords(ctx *lift.Context, filterID string, keywordsAttributes []apimodels.FilterKeywordAttribute) []*storage.FilterKeyword {
 	keywords := make([]*storage.FilterKeyword, 0)
 
 	if err := common.ValidateSliceNotEmpty("keywordsAttributes", keywordsAttributes); err != nil {
@@ -237,35 +226,25 @@ func (h *Handler) addFilterKeywords(ctx *lift.Context, filterID string, keywords
 }
 
 // extractFilterKeyword extracts a keyword from attributes map
-func (h *Handler) extractFilterKeyword(kwAttr map[string]any) *storage.FilterKeyword {
-	keyword, ok := kwAttr["keyword"].(string)
-	if !ok || common.ValidateFilterKeyword(keyword) != nil {
+func (h *Handler) extractFilterKeyword(kwAttr apimodels.FilterKeywordAttribute) *storage.FilterKeyword {
+	keyword := kwAttr.Keyword
+	if common.ValidateFilterKeyword(keyword) != nil {
 		return nil
 	}
 
-	wholeWord := false
-	if ww, ok := kwAttr["whole_word"].(bool); ok {
-		wholeWord = ww
-	}
+	wholeWord := kwAttr.WholeWord
 
 	isRegex := false
-	if ir, ok := kwAttr["is_regex"].(bool); ok {
-		isRegex = ir
+	if kwAttr.IsRegex != nil {
+		isRegex = *kwAttr.IsRegex
 	}
 
 	matchWeight := 1.0 // Default weight
-	if mw, ok := kwAttr["match_weight"].(float64); ok && mw >= 0.0 && mw <= 1.0 {
-		matchWeight = mw
+	if kwAttr.MatchWeight != nil && *kwAttr.MatchWeight >= 0.0 && *kwAttr.MatchWeight <= 1.0 {
+		matchWeight = *kwAttr.MatchWeight
 	}
 
-	var contextTypes []string
-	if ct, ok := kwAttr["context_types"].([]interface{}); ok {
-		for _, c := range ct {
-			if contextStr, ok := c.(string); ok {
-				contextTypes = append(contextTypes, contextStr)
-			}
-		}
-	}
+	contextTypes := append([]string(nil), kwAttr.ContextTypes...)
 
 	return &storage.FilterKeyword{
 		Keyword:      keyword,
@@ -493,7 +472,7 @@ func (h *Handler) HandleDeleteFilterLift(ctx *lift.Context) error {
 		return h.respondInternalError(ctx, "internal server error")
 	}
 
-	return ctx.Status(200).JSON(map[string]any{})
+	return ctx.Status(200).JSON(apimodels.EmptyObject{})
 }
 
 // HandleGetFilterKeywordsLift handles GET /api/v2/filters/:filter_id/keywords
@@ -617,10 +596,7 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 	}
 
 	// Parse request body
-	var params struct {
-		Keyword   string `json:"keyword"`
-		WholeWord bool   `json:"whole_word"`
-	}
+	var params apimodels.AddFilterKeywordRequest
 
 	if err := ctx.ParseRequest(&params); err != nil {
 		// Fallback to common.ParseRequestBody for test environments
@@ -695,7 +671,7 @@ func (h *Handler) HandleDeleteFilterKeywordLift(ctx *lift.Context) error {
 		return h.respondInternalError(ctx, "internal server error")
 	}
 
-	return ctx.Status(200).JSON(map[string]string{})
+	return ctx.Status(200).JSON(apimodels.EmptyObject{})
 }
 
 // HandleAddFilterStatusLift handles POST /api/v2/filters/:filter_id/statuses
@@ -726,9 +702,7 @@ func (h *Handler) HandleAddFilterStatusLift(ctx *lift.Context) error {
 	}
 
 	// Parse request body
-	var params struct {
-		StatusID string `json:"status_id"`
-	}
+	var params apimodels.AddFilterStatusRequest
 
 	if err := ctx.ParseRequest(&params); err != nil {
 		// Fallback to common.ParseRequestBody for test environments
@@ -801,7 +775,7 @@ func (h *Handler) HandleDeleteFilterStatusLift(ctx *lift.Context) error {
 		return h.respondInternalError(ctx, "internal server error")
 	}
 
-	return ctx.Status(200).JSON(map[string]string{})
+	return ctx.Status(200).JSON(apimodels.EmptyObject{})
 }
 
 // HandleTestFilterLift handles POST /api/v2/filters/test
@@ -817,10 +791,7 @@ func (h *Handler) HandleTestFilterLift(ctx *lift.Context) error {
 	}
 
 	// Parse request body
-	var params struct {
-		Content string   `json:"content"`
-		Context []string `json:"context"`
-	}
+	var params apimodels.TestFilterRequest
 
 	if err := ctx.ParseRequest(&params); err != nil {
 		// Fallback to common.ParseRequestBody for test environments
@@ -845,9 +816,9 @@ func (h *Handler) HandleTestFilterLift(ctx *lift.Context) error {
 	}
 
 	// Convert storage.Filter to models.Filter for the filter engine
-	modelFilters := make([]*models.Filter, len(storageFilters))
+	modelFilters := make([]*storageModels.Filter, len(storageFilters))
 	for i, sf := range storageFilters {
-		modelFilters[i] = &models.Filter{
+		modelFilters[i] = &storageModels.Filter{
 			ID:            sf.ID,
 			Username:      sf.Username,
 			Title:         sf.Title,
@@ -881,12 +852,10 @@ func (h *Handler) HandleTestFilterLift(ctx *lift.Context) error {
 	}
 
 	// Return filter test results
-	response := map[string]any{
-		"content":       params.Content,
-		"total_filters": len(storageFilters),
-		"matched_count": len(results),
-		"results":       results,
-	}
-
-	return ctx.Status(200).JSON(response)
+	return ctx.Status(200).JSON(apimodels.FilterTestResponse{
+		Content:      params.Content,
+		TotalFilters: len(storageFilters),
+		MatchedCount: len(results),
+		Results:      results,
+	})
 }

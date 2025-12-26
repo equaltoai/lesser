@@ -283,7 +283,7 @@ func (h *Handler) HandleGetSearchSuggestionsLift(ctx *lift.Context) error {
 	}
 	if err := common.ValidateStringLength("prefix", prefix, 2, 500); err != nil {
 		// Return empty array for short prefixes
-		return ctx.JSON([]any{})
+		return ctx.JSON([]models.SearchSuggestion{})
 	}
 
 	// Get suggestions from Notes service
@@ -300,12 +300,12 @@ func (h *Handler) HandleGetSearchSuggestionsLift(ctx *lift.Context) error {
 	suggestions := result.Suggestions
 
 	// Convert to API response format
-	response := make([]map[string]any, 0, len(suggestions))
+	response := make([]models.SearchSuggestion, 0, len(suggestions))
 	for _, sugg := range suggestions {
-		response = append(response, map[string]any{
-			"type":  sugg.Type,
-			"value": sugg.Value,
-			"score": sugg.Score,
+		response = append(response, models.SearchSuggestion{
+			Type:  sugg.Type,
+			Value: sugg.Value,
+			Score: sugg.Score,
 		})
 	}
 
@@ -475,23 +475,23 @@ func (h *Handler) performStatusSearch(ctx context.Context, params *statusSearchP
 }
 
 // convertStatusSearchResults converts status search results to API format
-func (h *Handler) convertStatusSearchResults(statuses []storage.StatusSearchResult) []map[string]interface{} {
-	results := make([]map[string]interface{}, 0, len(statuses))
+func (h *Handler) convertStatusSearchResults(statuses []storage.StatusSearchResult) []models.StatusSearchResult {
+	results := make([]models.StatusSearchResult, 0, len(statuses))
 
 	for _, status := range statuses {
-		result := map[string]interface{}{
-			"id":               status.StatusID,
-			"content":          status.Content,
-			"url":              status.URL,
-			"account_id":       status.AuthorID,
-			"account_username": status.AuthorUsername,
-			"created_at":       status.Published.Format(time.RFC3339),
-			"score":            status.Score,
+		result := models.StatusSearchResult{
+			ID:              status.StatusID,
+			Content:         status.Content,
+			URL:             status.URL,
+			AccountID:       status.AuthorID,
+			AccountUsername: status.AuthorUsername,
+			CreatedAt:       status.Published.Format(time.RFC3339),
+			Score:           status.Score,
 		}
 
 		// Add highlights if available
 		if len(status.Highlights) > 0 {
-			result["highlights"] = status.Highlights
+			result.Highlights = status.Highlights
 		}
 
 		results = append(results, result)
@@ -501,7 +501,7 @@ func (h *Handler) convertStatusSearchResults(statuses []storage.StatusSearchResu
 }
 
 // finalizeStatusSearchResponse sets headers and logs privacy-safe analytics
-func (h *Handler) finalizeStatusSearchResponse(ctx *lift.Context, params *statusSearchParams, results []map[string]interface{}, authenticatedUser string) {
+func (h *Handler) finalizeStatusSearchResponse(ctx *lift.Context, params *statusSearchParams, results []models.StatusSearchResult, authenticatedUser string) {
 	// Add search metadata to response headers
 	ctx.Response.Header("X-Total-Count", fmt.Sprintf("%d", len(results)))
 

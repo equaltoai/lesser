@@ -12,9 +12,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// convertRelationshipResponse converts service relationship to API format
-func (h *Handler) convertRelationshipResponse(ctx *lift.Context, relationship *relationshipsvc.RelationshipData) error {
-	response := models.Relationship{
+// relationshipFromService converts service relationship to API format.
+func (h *Handler) relationshipFromService(relationship *relationshipsvc.RelationshipData) models.Relationship {
+	return models.Relationship{
 		ID:                  relationship.ID,
 		Following:           relationship.Following,
 		ShowingReblogs:      relationship.ShowingReblogs,
@@ -29,7 +29,6 @@ func (h *Handler) convertRelationshipResponse(ctx *lift.Context, relationship *r
 		Endorsed:            relationship.Endorsed,
 		Note:                relationship.Note,
 	}
-	return ctx.JSON(response)
 }
 
 // HandleMuteAccountLift handles POST /api/v1/accounts/:id/mute
@@ -49,13 +48,13 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 
 	// Parse parameters with fallback
 	hideNotifications := false
-	var params struct {
-		Notifications bool `json:"notifications"`
-	}
+	var params models.MuteRequest
 
 	// Try parsing as JSON first
 	if err := ctx.ParseRequest(&params); err == nil {
-		hideNotifications = params.Notifications
+		if params.Notifications != nil {
+			hideNotifications = *params.Notifications
+		}
 	} else {
 		// Fallback to raw body parsing if ParseRequest fails
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
@@ -80,7 +79,7 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 			return common.RespondInternalServerError(ctx)
 		}
 
-		return h.convertRelationshipResponse(ctx, result.Relationship)
+		return ctx.JSON(h.relationshipFromService(result.Relationship))
 	}
 
 	// If we reach here, service is not available - return error
@@ -111,7 +110,7 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 			return common.RespondInternalServerError(ctx)
 		}
 
-		return h.convertRelationshipResponse(ctx, result.Relationship)
+		return ctx.JSON(h.relationshipFromService(result.Relationship))
 	}
 
 	// If we reach here, service is not available - return error

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/search"
@@ -135,8 +136,8 @@ func (h *Handler) extractFromPathQuery(path, param string) string {
 }
 
 // convertDirectoryResultsToAPI converts search service results to API format
-func (h *Handler) convertDirectoryResultsToAPI(ctx context.Context, results []search.AccountResult) []map[string]any {
-	accounts := make([]map[string]any, 0, len(results))
+func (h *Handler) convertDirectoryResultsToAPI(ctx context.Context, results []search.AccountResult) []apimodels.Account {
+	accounts := make([]apimodels.Account, 0, len(results))
 
 	for _, result := range results {
 		account := h.buildDirectoryAccountFromResult(ctx, result)
@@ -147,27 +148,30 @@ func (h *Handler) convertDirectoryResultsToAPI(ctx context.Context, results []se
 }
 
 // buildDirectoryAccountFromResult builds a single directory account entry from service result
-func (h *Handler) buildDirectoryAccountFromResult(_ context.Context, result search.AccountResult) map[string]any {
+func (h *Handler) buildDirectoryAccountFromResult(_ context.Context, result search.AccountResult) apimodels.Account {
 	actor := result.Actor
-	return map[string]any{
-		"id":              actor.ID,
-		"username":        actor.PreferredUsername,
-		"acct":            h.getAccountAcctLift(actor),
-		"display_name":    actor.Name,
-		"locked":          actor.ManuallyApprovesFollowers,
-		"bot":             actor.Type == actorTypeService,
-		"discoverable":    true, // Only showing discoverable accounts
-		"created_at":      h.formatActorCreatedAt(actor),
-		"note":            actor.Summary,
-		"url":             actor.URL,
-		"avatar":          h.getActorAvatarURL(actor),
-		"avatar_static":   h.getActorAvatarURL(actor),
-		"header":          h.getHeaderURLLift(actor),
-		"header_static":   "",
-		"followers_count": result.FollowersCount,
-		"following_count": result.FollowingCount,
-		"statuses_count":  result.StatusesCount,
-		"last_status_at":  result.LastStatusAt,
+	return apimodels.Account{
+		ID:             actor.ID,
+		Username:       actor.PreferredUsername,
+		Acct:           h.getAccountAcctLift(actor),
+		DisplayName:    actor.Name,
+		Locked:         actor.ManuallyApprovesFollowers,
+		Bot:            actor.Type == actorTypeService,
+		Discoverable:   true, // Only showing discoverable accounts
+		Group:          actor.Type == actorTypeGroup,
+		CreatedAt:      h.formatActorCreatedAt(actor),
+		Note:           actor.Summary,
+		URL:            actor.URL,
+		Avatar:         h.getActorAvatarURL(actor),
+		AvatarStatic:   h.getActorAvatarURL(actor),
+		Header:         h.getHeaderURLLift(actor),
+		HeaderStatic:   h.getHeaderURLLift(actor),
+		FollowersCount: result.FollowersCount,
+		FollowingCount: result.FollowingCount,
+		StatusesCount:  result.StatusesCount,
+		LastStatusAt:   result.LastStatusAt,
+		Emojis:         []any{},
+		Fields:         []any{},
 	}
 }
 
@@ -245,32 +249,32 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 	}
 
 	// Convert service suggestions to API format (V1)
-	suggestionsList := make([]map[string]any, 0, len(result.Suggestions))
+	suggestionsList := make([]apimodels.SuggestionV1, 0, len(result.Suggestions))
 	for _, item := range result.Suggestions {
 		actor := item.Account.Actor
-		// V1 format wraps account in suggestion object
-		suggestionItem := map[string]any{
-			"account": map[string]any{
-				"id":              actor.ID,
-				"username":        actor.PreferredUsername,
-				"acct":            h.getAccountAcctLift(actor),
-				"display_name":    actor.Name,
-				"locked":          actor.ManuallyApprovesFollowers,
-				"bot":             actor.Type == actorTypeService,
-				"discoverable":    actor.Discoverable,
-				"created_at":      h.formatActorCreatedAt(actor),
-				"note":            actor.Summary,
-				"url":             actor.URL,
-				"avatar":          h.getActorAvatarURL(actor),
-				"avatar_static":   h.getActorAvatarURL(actor),
-				"header":          h.getHeaderURLLift(actor),
-				"header_static":   h.getHeaderURLLift(actor),
-				"followers_count": item.Account.FollowersCount,
-				"following_count": item.Account.FollowingCount,
-				"statuses_count":  item.Account.StatusesCount,
-			},
+		account := apimodels.Account{
+			ID:             actor.ID,
+			Username:       actor.PreferredUsername,
+			Acct:           h.getAccountAcctLift(actor),
+			DisplayName:    actor.Name,
+			Locked:         actor.ManuallyApprovesFollowers,
+			Bot:            actor.Type == actorTypeService,
+			Discoverable:   actor.Discoverable,
+			Group:          actor.Type == actorTypeGroup,
+			CreatedAt:      h.formatActorCreatedAt(actor),
+			Note:           actor.Summary,
+			URL:            actor.URL,
+			Avatar:         h.getActorAvatarURL(actor),
+			AvatarStatic:   h.getActorAvatarURL(actor),
+			Header:         h.getHeaderURLLift(actor),
+			HeaderStatic:   h.getHeaderURLLift(actor),
+			FollowersCount: item.Account.FollowersCount,
+			FollowingCount: item.Account.FollowingCount,
+			StatusesCount:  item.Account.StatusesCount,
+			Emojis:         []any{},
+			Fields:         []any{},
 		}
-		suggestionsList = append(suggestionsList, suggestionItem)
+		suggestionsList = append(suggestionsList, apimodels.SuggestionV1{Account: account})
 	}
 
 	ctx.Status(http.StatusOK)
@@ -329,33 +333,35 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 	}
 
 	// Convert service suggestions to API format (V2)
-	suggestions := make([]map[string]any, 0, len(result.Suggestions))
+	suggestions := make([]apimodels.SuggestionV2, 0, len(result.Suggestions))
 	for _, item := range result.Suggestions {
 		actor := item.Account.Actor
-		// V2 format includes sources explaining why this was suggested
-		suggestion := map[string]any{
-			"source": item.Source, // Can be: staff, past_interactions, global
-			"account": map[string]any{
-				"id":              actor.ID,
-				"username":        actor.PreferredUsername,
-				"acct":            h.getAccountAcctLift(actor),
-				"display_name":    actor.Name,
-				"locked":          actor.ManuallyApprovesFollowers,
-				"bot":             actor.Type == actorTypeService,
-				"discoverable":    actor.Discoverable,
-				"created_at":      h.formatActorCreatedAt(actor),
-				"note":            actor.Summary,
-				"url":             actor.URL,
-				"avatar":          h.getActorAvatarURL(actor),
-				"avatar_static":   h.getActorAvatarURL(actor),
-				"header":          h.getHeaderURLLift(actor),
-				"header_static":   h.getHeaderURLLift(actor),
-				"followers_count": item.Account.FollowersCount,
-				"following_count": item.Account.FollowingCount,
-				"statuses_count":  item.Account.StatusesCount,
-			},
+		account := apimodels.Account{
+			ID:             actor.ID,
+			Username:       actor.PreferredUsername,
+			Acct:           h.getAccountAcctLift(actor),
+			DisplayName:    actor.Name,
+			Locked:         actor.ManuallyApprovesFollowers,
+			Bot:            actor.Type == actorTypeService,
+			Discoverable:   actor.Discoverable,
+			Group:          actor.Type == actorTypeGroup,
+			CreatedAt:      h.formatActorCreatedAt(actor),
+			Note:           actor.Summary,
+			URL:            actor.URL,
+			Avatar:         h.getActorAvatarURL(actor),
+			AvatarStatic:   h.getActorAvatarURL(actor),
+			Header:         h.getHeaderURLLift(actor),
+			HeaderStatic:   h.getHeaderURLLift(actor),
+			FollowersCount: item.Account.FollowersCount,
+			FollowingCount: item.Account.FollowingCount,
+			StatusesCount:  item.Account.StatusesCount,
+			Emojis:         []any{},
+			Fields:         []any{},
 		}
-		suggestions = append(suggestions, suggestion)
+		suggestions = append(suggestions, apimodels.SuggestionV2{
+			Source:  item.Source,
+			Account: account,
+		})
 	}
 
 	ctx.Status(http.StatusOK)
@@ -425,7 +431,7 @@ func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
 
 	// For now, just return success
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{})
+	return ctx.JSON(apimodels.EmptyObject{})
 }
 
 // Helper function to check if an actor ID is local

@@ -12,10 +12,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services"
-	"github.com/equaltoai/lesser/pkg/storage/models"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -26,32 +27,6 @@ const (
 	ImportStatusFailed    = "failed"
 	ImportStatusCancelled = "cancelled"
 )
-
-// ImportRequest represents a data import request
-type ImportRequest struct {
-	Type string `json:"type"` // followers, following, blocks, mutes, lists, bookmarks
-	Data string `json:"data"` // Base64 encoded file content
-	Mode string `json:"mode"` // merge, overwrite
-}
-
-// ImportJob represents an import job status
-type ImportJob struct {
-	ID        string   `json:"id"`
-	Status    string   `json:"status"` // pending, processing, completed, failed
-	Type      string   `json:"type"`
-	CreatedAt string   `json:"created_at"`
-	Processed int      `json:"processed"`
-	Total     *int     `json:"total"`
-	Errors    []string `json:"errors,omitempty"`
-	Results   *Results `json:"results,omitempty"`
-}
-
-// Results for import completion
-type Results struct {
-	Success int `json:"success"`
-	Skipped int `json:"skipped"`
-	Failed  int `json:"failed"`
-}
 
 // HandleCreateImportLift handles POST /api/v1/imports
 func (h *Handler) HandleCreateImportLift(ctx *lift.Context) error {
@@ -106,7 +81,7 @@ func (h *Handler) HandleCreateImportLift(ctx *lift.Context) error {
 	}
 
 	// Return job status
-	job := ImportJob{
+	job := apimodels.ImportJob{
 		ID:        importID,
 		Status:    "pending",
 		Type:      req.Type,
@@ -168,8 +143,8 @@ func (h *Handler) validateImportToken(ctx *lift.Context, token string) (string, 
 }
 
 // parseImportRequest parses the import request body
-func (h *Handler) parseImportRequest(ctx *lift.Context) (*ImportRequest, error) {
-	var req ImportRequest
+func (h *Handler) parseImportRequest(ctx *lift.Context) (*apimodels.ImportRequest, error) {
+	var req apimodels.ImportRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
@@ -190,7 +165,7 @@ func (h *Handler) parseImportRequest(ctx *lift.Context) (*ImportRequest, error) 
 }
 
 // validateImportParams validates import type and mode using centralized validation
-func (h *Handler) validateImportParams(req *ImportRequest) error {
+func (h *Handler) validateImportParams(req *apimodels.ImportRequest) error {
 	// Validate required parameters first
 	if err := common.ValidateRequiredParam("type", req.Type); err != nil {
 		return err
@@ -304,11 +279,11 @@ func (h *Handler) storeImportFile(ctx *lift.Context, username, importID, importT
 }
 
 // createImportRecord creates the import record and queues processing
-func (h *Handler) createImportRecord(ctx *lift.Context, importID, username string, req *ImportRequest, s3Key string) error {
+func (h *Handler) createImportRecord(ctx *lift.Context, importID, username string, req *apimodels.ImportRequest, s3Key string) error {
 	now := time.Now()
 
 	// Create import record
-	importRecord := &models.Import{
+	importRecord := &storageModels.Import{
 		ID:        importID,
 		Username:  username,
 		Type:      req.Type,
@@ -334,7 +309,7 @@ func (h *Handler) createImportRecord(ctx *lift.Context, importID, username strin
 }
 
 // queueImportJobSQS queues the import job using SQS
-func (h *Handler) queueImportJobSQS(ctx *lift.Context, importID, username string, req *ImportRequest, s3Key string) error {
+func (h *Handler) queueImportJobSQS(ctx *lift.Context, importID, username string, req *apimodels.ImportRequest, s3Key string) error {
 	// Create job queue service with config
 	jobQueue, err := services.NewJobQueueService(h.cfg, h.logger)
 	if err != nil {
@@ -386,7 +361,7 @@ func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 	}
 
 	// Build response
-	job := ImportJob{
+	job := apimodels.ImportJob{
 		ID:        importRec.ID,
 		Status:    importRec.Status,
 		Type:      importRec.Type,
@@ -406,7 +381,7 @@ func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 
 	// Add results if completed
 	if importRec.Status == statusCompleted {
-		job.Results = &Results{
+		job.Results = &apimodels.ImportResults{
 			Success: importRec.SuccessCount,
 			Skipped: importRec.SkipCount,
 			Failed:  importRec.ErrorCount,
@@ -432,9 +407,9 @@ func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
 	}
 
 	// Convert to response format
-	imports := make([]ImportJob, 0, len(importRecords))
+	imports := make([]apimodels.ImportJob, 0, len(importRecords))
 	for _, importRec := range importRecords {
-		job := ImportJob{
+		job := apimodels.ImportJob{
 			ID:        importRec.ID,
 			Status:    importRec.Status,
 			Type:      importRec.Type,
@@ -454,7 +429,7 @@ func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
 
 		// Add results if completed
 		if importRec.Status == statusCompleted {
-			job.Results = &Results{
+			job.Results = &apimodels.ImportResults{
 				Success: importRec.SuccessCount,
 				Skipped: importRec.SkipCount,
 				Failed:  importRec.ErrorCount,
@@ -517,7 +492,7 @@ func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
 		zap.String("username", username))
 
 	// Return updated job status
-	job := ImportJob{
+	job := apimodels.ImportJob{
 		ID:        importRec.ID,
 		Status:    "cancelled",
 		Type:      importRec.Type,
@@ -601,7 +576,7 @@ func (h *Handler) checkImportRateLimit(ctx *lift.Context, username string, impor
 }
 
 // checkImportBudgetLimits validates that the user has not exceeded their import budget limits
-func (h *Handler) checkImportBudgetLimits(ctx *lift.Context, username string, req *ImportRequest, fileSize int) error {
+func (h *Handler) checkImportBudgetLimits(ctx *lift.Context, username string, req *apimodels.ImportRequest, fileSize int) error {
 	// Get import repository to access budget methods
 	importRepo := h.repos.Import()
 
@@ -640,7 +615,7 @@ func (h *Handler) checkImportBudgetLimits(ctx *lift.Context, username string, re
 }
 
 // estimateImportCost provides a rough cost estimate for an import operation
-func (h *Handler) estimateImportCost(req *ImportRequest, fileSize int) int64 {
+func (h *Handler) estimateImportCost(req *apimodels.ImportRequest, fileSize int) int64 {
 	baseCost := int64(30000) // $0.03 base cost in microcents
 
 	// Scale cost based on file size (per KB)

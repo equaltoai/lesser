@@ -229,7 +229,7 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
-	return ctx.JSON(map[string]interface{}{})
+	return ctx.JSON(models.EmptyObject{})
 }
 
 // HandleAddAnnouncementReactionLift handles PUT /api/v1/announcements/:id/reactions/:name

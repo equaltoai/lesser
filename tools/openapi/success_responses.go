@@ -32,6 +32,7 @@ func ensurePrimarySuccessResponse(op *operation, route routeDef) {
 		if primary != 200 {
 			delete(op.Responses, "200")
 		}
+		ensureNoContentResponse(op, primaryKey, primary)
 		return
 	}
 
@@ -39,6 +40,7 @@ func ensurePrimarySuccessResponse(op *operation, route routeDef) {
 		if existing, ok := op.Responses["200"]; ok {
 			op.Responses[primaryKey] = existing
 			delete(op.Responses, "200")
+			ensureNoContentResponse(op, primaryKey, primary)
 			return
 		}
 	}
@@ -47,4 +49,24 @@ func ensurePrimarySuccessResponse(op *operation, route routeDef) {
 	if primary != 200 {
 		delete(op.Responses, "200")
 	}
+	ensureNoContentResponse(op, primaryKey, primary)
+}
+
+func ensureNoContentResponse(op *operation, statusKey string, status int) {
+	if op == nil || op.Responses == nil {
+		return
+	}
+	if status != 204 {
+		return
+	}
+	resp, ok := op.Responses[statusKey]
+	if !ok {
+		return
+	}
+	if resp.Ref != "" {
+		return
+	}
+	resp.Description = "No Content"
+	resp.Content = nil
+	op.Responses[statusKey] = resp
 }

@@ -1,6 +1,7 @@
 package lift
 
 import (
+	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -8,22 +9,13 @@ import (
 	"go.uber.org/zap"
 )
 
-// AdminCreateUserRequest defines the request body for creating a new user.
-type AdminCreateUserRequest struct {
-	Username    string `json:"username"`
-	Email       string `json:"email"`
-	Password    string `json:"password"`
-	DisplayName string `json:"display_name"`
-	Role        string `json:"role"`
-}
-
 // HandleAdminCreateUserLift handles the creation of a new user by an admin.
 func (h *Handler) HandleAdminCreateUserLift(ctx *lift.Context) error {
 	if _, err := h.requireAdminLift(ctx); err != nil {
 		return h.respondUnauthorized(ctx)
 	}
 
-	var req AdminCreateUserRequest
+	var req models.AdminCreateUserRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		h.logger.Error("failed to parse user from request", zap.Error(err))
 		return h.respondUnprocessableEntity(ctx, "invalid user data")

@@ -1,16 +1,59 @@
 package lift
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
+
+func (h *Handler) convertConversationToAPI(ctx context.Context, conv *storageModels.Conversation, viewerUsername string) (apimodels.Conversation, error) {
+	if conv == nil {
+		return apimodels.Conversation{}, nil
+	}
+
+	apiConversation := apimodels.Conversation{
+		ID:     conv.ID,
+		Unread: conv.Unread,
+	}
+
+	accounts := make([]apimodels.Account, 0, len(conv.Participants))
+	for _, participant := range conv.Participants {
+		if participant == "" || participant == viewerUsername {
+			continue
+		}
+
+		actor, err := h.repos.Actor().GetActor(ctx, participant)
+		if err != nil || actor == nil {
+			continue
+		}
+
+		account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
+		accounts = append(accounts, account)
+	}
+	apiConversation.Accounts = accounts
+
+	if conv.LastStatusID != "" {
+		status, err := h.repos.Status().GetStatus(ctx, conv.LastStatusID)
+		if err == nil && status != nil {
+			apiStatus, err := h.convertStorageStatusToAPI(status, viewerUsername)
+			if err == nil {
+				apiConversation.LastStatus = apiStatus
+			}
+		}
+	}
+
+	return apiConversation, nil
+}
 
 // HandleGetConversationsLift retrieves all conversations for the authenticated user
 func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
@@ -45,7 +88,16 @@ func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
 		h.setConversationPaginationHeader(ctx, result.Conversations.NextCursor, limit)
 	}
 
-	return ctx.JSON(result.Conversations.Items)
+	response := make([]apimodels.Conversation, 0, len(result.Conversations.Items))
+	for _, conv := range result.Conversations.Items {
+		apiConv, err := h.convertConversationToAPI(ctx.Context, conv, claims.Username)
+		if err != nil {
+			continue
+		}
+		response = append(response, apiConv)
+	}
+
+	return ctx.JSON(response)
 }
 
 // parseConversationLimit parses the limit query parameter
@@ -100,7 +152,7 @@ func (h *Handler) HandleDeleteConversationLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return ctx.Status(200).JSON(map[string]interface{}{})
+	return ctx.Status(200).JSON(apimodels.EmptyObject{})
 }
 
 // HandleMarkConversationReadLift marks a conversation as read
@@ -126,5 +178,9 @@ func (h *Handler) HandleMarkConversationReadLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return ctx.JSON(result.Conversation)
+	apiConv, err := h.convertConversationToAPI(ctx.Context, result.Conversation, claims.Username)
+	if err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
+	return ctx.JSON(apiConv)
 }

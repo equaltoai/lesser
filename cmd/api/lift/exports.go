@@ -6,10 +6,11 @@ import (
 	"net/http"
 	"time"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services"
-	"github.com/equaltoai/lesser/pkg/storage/models"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -23,35 +24,6 @@ const (
 	ExportTypeFollowers   = "followers"
 	ExportTypeFollowing   = "following"
 )
-
-// ExportRequest represents a data export request
-type ExportRequest struct {
-	Type         string         `json:"type"`          // archive, followers, following, blocks, mutes, lists, bookmarks
-	Format       string         `json:"format"`        // activitypub, mastodon, csv
-	IncludeMedia bool           `json:"include_media"` // Include media attachments
-	DateRange    *DateRange     `json:"date_range"`    // Optional date filtering
-	Options      map[string]any `json:"options"`       // Additional format-specific options
-}
-
-// DateRange for filtering exports
-type DateRange struct {
-	Start string `json:"start"` // ISO date
-	End   string `json:"end"`   // ISO date
-}
-
-// ExportJob represents an export job status
-type ExportJob struct {
-	ID          string  `json:"id"`
-	Status      string  `json:"status"` // pending, processing, completed, failed
-	Type        string  `json:"type"`
-	Format      string  `json:"format"`
-	CreatedAt   string  `json:"created_at"`
-	DownloadURL *string `json:"download_url"`
-	ExpiresAt   *string `json:"expires_at"`
-	FileSize    *int64  `json:"file_size"`
-	RecordCount *int    `json:"record_count"`
-	Error       *string `json:"error"`
-}
 
 // HandleCreateExportLift handles POST /api/v1/exports
 func (h *Handler) HandleCreateExportLift(ctx *lift.Context) error {
@@ -101,7 +73,7 @@ func (h *Handler) HandleCreateExportLift(ctx *lift.Context) error {
 	}
 
 	// Return job status
-	job := ExportJob{
+	job := apimodels.ExportJob{
 		ID:        exportID,
 		Status:    "pending",
 		Type:      req.Type,
@@ -165,8 +137,8 @@ func (h *Handler) validateExportToken(ctx *lift.Context, token string) (string, 
 }
 
 // parseExportRequest parses the export request body
-func (h *Handler) parseExportRequest(ctx *lift.Context) (*ExportRequest, error) {
-	var req ExportRequest
+func (h *Handler) parseExportRequest(ctx *lift.Context) (*apimodels.ExportRequest, error) {
+	var req apimodels.ExportRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
@@ -190,7 +162,7 @@ func (h *Handler) parseExportRequest(ctx *lift.Context) (*ExportRequest, error) 
 }
 
 // validateExportParams validates export type and format using centralized validation
-func (h *Handler) validateExportParams(ctx *lift.Context, req *ExportRequest) error {
+func (h *Handler) validateExportParams(ctx *lift.Context, req *apimodels.ExportRequest) error {
 	// Validate required parameters first
 	if err := common.ValidateRequiredParam("type", req.Type); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
@@ -259,7 +231,7 @@ func (h *Handler) checkExistingExports(ctx *lift.Context, username, exportType s
 }
 
 // createExportJob creates the export record
-func (h *Handler) createExportJob(ctx *lift.Context, exportID, username string, req *ExportRequest) (*models.Export, error) {
+func (h *Handler) createExportJob(ctx *lift.Context, exportID, username string, req *apimodels.ExportRequest) (*storageModels.Export, error) {
 	now := time.Now()
 
 	// Convert date range if provided
@@ -268,7 +240,7 @@ func (h *Handler) createExportJob(ctx *lift.Context, exportID, username string, 
 		return nil, err
 	}
 
-	export := &models.Export{
+	export := &storageModels.Export{
 		ID:           exportID,
 		Username:     username,
 		Type:         req.Type,
@@ -290,12 +262,12 @@ func (h *Handler) createExportJob(ctx *lift.Context, exportID, username string, 
 }
 
 // processExportDateRange processes the date range for exports
-func (h *Handler) processExportDateRange(ctx *lift.Context, dateRange *DateRange) (*models.ExportDateRange, error) {
+func (h *Handler) processExportDateRange(ctx *lift.Context, dateRange *apimodels.ExportDateRange) (*storageModels.ExportDateRange, error) {
 	if dateRange == nil {
 		return nil, nil
 	}
 
-	exportDateRange, err := models.NewExportDateRangeFromStrings(dateRange.Start, dateRange.End)
+	exportDateRange, err := storageModels.NewExportDateRangeFromStrings(dateRange.Start, dateRange.End)
 	if err != nil {
 		return nil, common.RespondBadRequest(ctx, fmt.Sprintf("invalid date range: %v", err))
 	}
@@ -304,7 +276,7 @@ func (h *Handler) processExportDateRange(ctx *lift.Context, dateRange *DateRange
 }
 
 // queueExportJobSQS queues the export job using SQS
-func (h *Handler) queueExportJobSQS(ctx *lift.Context, exportID, username string, req *ExportRequest) error {
+func (h *Handler) queueExportJobSQS(ctx *lift.Context, exportID, username string, req *apimodels.ExportRequest) error {
 	// Create job queue service with config
 	jobQueue, err := services.NewJobQueueService(h.cfg, h.logger)
 	if err != nil {
@@ -370,7 +342,7 @@ func (h *Handler) HandleGetExportStatusLift(ctx *lift.Context) error {
 	}
 
 	// Build response
-	job := ExportJob{
+	job := apimodels.ExportJob{
 		ID:        export.ID,
 		Status:    export.Status,
 		Type:      export.Type,
@@ -484,7 +456,7 @@ func (h *Handler) extractListExportsAuthHeader(ctx *lift.Context) string {
 }
 
 // getUserExports retrieves the user's export jobs
-func (h *Handler) getUserExports(ctx *lift.Context, username string) ([]*models.Export, error) {
+func (h *Handler) getUserExports(ctx *lift.Context, username string) ([]*storageModels.Export, error) {
 	exportModels, err := h.repos.Export().GetUserExportsByStatus(ctx.Context, username, nil)
 	if err != nil {
 		h.logger.Error("failed to get export jobs", zap.Error(err))
@@ -494,8 +466,8 @@ func (h *Handler) getUserExports(ctx *lift.Context, username string) ([]*models.
 }
 
 // convertExportsToResponse converts export models to API response format
-func (h *Handler) convertExportsToResponse(exportModels []*models.Export) []ExportJob {
-	exports := make([]ExportJob, 0, len(exportModels))
+func (h *Handler) convertExportsToResponse(exportModels []*storageModels.Export) []apimodels.ExportJob {
+	exports := make([]apimodels.ExportJob, 0, len(exportModels))
 	for _, export := range exportModels {
 		job := h.convertSingleExportToResponse(export)
 		exports = append(exports, job)
@@ -504,8 +476,8 @@ func (h *Handler) convertExportsToResponse(exportModels []*models.Export) []Expo
 }
 
 // convertSingleExportToResponse converts a single export to response format
-func (h *Handler) convertSingleExportToResponse(export *models.Export) ExportJob {
-	job := ExportJob{
+func (h *Handler) convertSingleExportToResponse(export *storageModels.Export) apimodels.ExportJob {
+	job := apimodels.ExportJob{
 		ID:        export.ID,
 		Status:    export.Status,
 		Type:      export.Type,
@@ -520,7 +492,7 @@ func (h *Handler) convertSingleExportToResponse(export *models.Export) ExportJob
 }
 
 // addExportStatusFields adds status-specific fields to the export job
-func (h *Handler) addExportStatusFields(job *ExportJob, export *models.Export) {
+func (h *Handler) addExportStatusFields(job *apimodels.ExportJob, export *storageModels.Export) {
 	switch export.Status {
 	case ExportStatusCompleted:
 		h.addCompletedExportFields(job, export)
@@ -530,7 +502,7 @@ func (h *Handler) addExportStatusFields(job *ExportJob, export *models.Export) {
 }
 
 // addCompletedExportFields adds fields for completed exports
-func (h *Handler) addCompletedExportFields(job *ExportJob, export *models.Export) {
+func (h *Handler) addCompletedExportFields(job *apimodels.ExportJob, export *storageModels.Export) {
 	if export.DownloadURL != "" {
 		job.DownloadURL = &export.DownloadURL
 	}
@@ -548,7 +520,7 @@ func (h *Handler) addCompletedExportFields(job *ExportJob, export *models.Export
 }
 
 // addFailedExportFields adds fields for failed exports
-func (h *Handler) addFailedExportFields(job *ExportJob, export *models.Export) {
+func (h *Handler) addFailedExportFields(job *apimodels.ExportJob, export *storageModels.Export) {
 	if export.Error != "" {
 		job.Error = &export.Error
 	}
@@ -595,14 +567,21 @@ func (h *Handler) HandleDownloadExportLift(ctx *lift.Context) error {
 
 	// Redirect to the pre-signed S3 URL
 	ctx.Set("Location", export.DownloadURL)
-	return ctx.Status(http.StatusFound).JSON(map[string]any{
-		"download_url": export.DownloadURL,
-		"expires_at":   export.ExpiresAt.Format(time.RFC3339),
+
+	var expiresAt *string
+	if export.ExpiresAt != nil {
+		v := export.ExpiresAt.Format(time.RFC3339)
+		expiresAt = &v
+	}
+
+	return ctx.Status(http.StatusFound).JSON(apimodels.ExportDownloadResponse{
+		DownloadURL: export.DownloadURL,
+		ExpiresAt:   expiresAt,
 	})
 }
 
 // checkExportBudgetLimits validates that the user has not exceeded their export budget limits
-func (h *Handler) checkExportBudgetLimits(ctx *lift.Context, username string, req *ExportRequest) error {
+func (h *Handler) checkExportBudgetLimits(ctx *lift.Context, username string, req *apimodels.ExportRequest) error {
 	// Get import repository to access budget methods
 	importRepo := h.repos.Import()
 
@@ -641,7 +620,7 @@ func (h *Handler) checkExportBudgetLimits(ctx *lift.Context, username string, re
 }
 
 // estimateExportCost provides a rough cost estimate for an export operation
-func (h *Handler) estimateExportCost(req *ExportRequest) int64 {
+func (h *Handler) estimateExportCost(req *apimodels.ExportRequest) int64 {
 	baseCost := int64(50000) // $0.05 base cost in microcents
 
 	// Adjust cost based on export type

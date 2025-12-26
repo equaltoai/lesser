@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -127,7 +127,7 @@ func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
 func (h *Handler) handleGetFollowRequestsLogic(ctx *lift.Context, actor *activitypub.Actor, username string) error {
 	// If account is not locked, return empty array
 	if !actor.ManuallyApprovesFollowers {
-		return ctx.JSON([]any{})
+		return ctx.JSON([]apimodels.Account{})
 	}
 
 	// Use the Relationships service to get pending follow requests
@@ -140,8 +140,7 @@ func (h *Handler) handleGetFollowRequestsLogic(ctx *lift.Context, actor *activit
 		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
-	// Convert to account format
-	accounts := make([]map[string]any, 0, len(result.FollowerIDs))
+	accounts := make([]apimodels.Account, 0, len(result.FollowerIDs))
 	for _, followerID := range result.FollowerIDs {
 		// Get follower actor
 		followerResult, err := h.registry.Accounts().GetAccount(ctx.Context, followerID)
@@ -153,9 +152,7 @@ func (h *Handler) handleGetFollowRequestsLogic(ctx *lift.Context, actor *activit
 		}
 		followerActor := followerResult.Actor
 
-		// Convert to account
-		account := h.convertActorToAccountLift(ctx.Context, followerActor)
-		accounts = append(accounts, account)
+		accounts = append(accounts, h.convertActorToAccountWithCounts(ctx.Context, followerActor))
 	}
 
 	h.logger.Info("follow requests retrieved",
@@ -249,69 +246,6 @@ func (h *Handler) handleRejectFollowRequestLogic(ctx *lift.Context, actor *activ
 		errorLogMessage:  "failed to reject follow request",
 		activityLogError: "failed to send reject activity",
 	})
-}
-
-// convertActorToAccountLift converts an ActivityPub actor to a Mastodon account format
-func (h *Handler) convertActorToAccountLift(ctx context.Context, actor *activitypub.Actor) map[string]any {
-	// Default avatar and header
-	avatar := fmt.Sprintf("https://%s/avatars/default.png", h.cfg.Domain)
-	header := fmt.Sprintf("https://%s/headers/default.png", h.cfg.Domain)
-
-	if actor.Icon != nil && common.ValidateRequiredParam("iconURL", actor.Icon.URL) == nil {
-		avatar = actor.Icon.URL
-	}
-	if actor.Image != nil && common.ValidateRequiredParam("imageURL", actor.Image.URL) == nil {
-		header = actor.Image.URL
-	}
-
-	// Get metadata
-	createdAt := time.Now() // Default fallback
-	lastStatusAt := ""
-
-	// Get actor with metadata
-	metadataResult, err := h.registry.Accounts().GetAccountMetadata(ctx, &accounts.GetAccountMetadataQuery{
-		Username: actor.PreferredUsername,
-	})
-	if err == nil && metadataResult != nil && metadataResult.Metadata != nil {
-		createdAt = metadataResult.Metadata.CreatedAt
-		if metadataResult.Metadata.LastStatusAt != nil {
-			lastStatusAt = metadataResult.Metadata.LastStatusAt.Format(time.RFC3339)
-		}
-	}
-
-	// Get counts
-	statusesCountResult, _ := h.registry.Notes().CountNotesByAuthor(ctx, actor.ID)
-	statusesCount := statusesCountResult
-
-	followersCountResult, _ := h.registry.Relationships().CountFollowers(ctx, actor.ID)
-	followersCount := followersCountResult
-
-	// Get following count
-	followingResult, _, _ := h.registry.Relationships().GetFollowing(ctx, actor.PreferredUsername, 1, "")
-	followingCount := len(followingResult)
-
-	return map[string]any{
-		"id":              actor.PreferredUsername,
-		"username":        actor.PreferredUsername,
-		"acct":            actor.PreferredUsername,
-		"url":             actor.URL,
-		"display_name":    actor.Name,
-		"note":            actor.Summary,
-		"avatar":          avatar,
-		"avatar_static":   avatar,
-		"header":          header,
-		"header_static":   header,
-		"locked":          actor.ManuallyApprovesFollowers,
-		"bot":             actor.Type == actorTypeService,
-		"discoverable":    actor.Discoverable,
-		"created_at":      createdAt.Format(time.RFC3339),
-		"last_status_at":  lastStatusAt,
-		"statuses_count":  statusesCount,
-		"followers_count": followersCount,
-		"following_count": followingCount,
-		"fields":          []any{},
-		"emojis":          []any{},
-	}
 }
 
 // sendAcceptActivityLift sends an Accept activity to the follower

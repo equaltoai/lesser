@@ -347,11 +347,11 @@ func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
 	}
 
 	// Return response
-	resp := map[string]any{
-		"review_id":   review.ID,
-		"event_id":    review.EventID,
-		"action":      string(review.Action),
-		"reviewed_at": review.Created.Format(time.RFC3339),
+	resp := models.ModerationReviewResponse{
+		ReviewID:   review.ID,
+		EventID:    review.EventID,
+		Action:     string(review.Action),
+		ReviewedAt: review.Created.Format(time.RFC3339),
 	}
 
 	ctx.Status(http.StatusCreated)
@@ -408,28 +408,29 @@ func (h *Handler) HandleModerationHistoryLift(ctx *lift.Context) error {
 	}
 
 	// Convert to response format
-	timeline := make([]map[string]any, 0)
-	for _, event := range history.Events {
-		timeline = append(timeline, map[string]any{
-			"timestamp": event.Created.Format(time.RFC3339),
-			"type":      "event",
-			"event":     event,
+	timeline := make([]models.ModerationHistoryTimelineEntry, 0, len(history.Events)+len(history.Decisions))
+	for i := range history.Events {
+		timeline = append(timeline, models.ModerationHistoryTimelineEntry{
+			Timestamp: history.Events[i].Created.Format(time.RFC3339),
+			Type:      "event",
+			Event:     &history.Events[i],
 		})
 	}
-	for _, decision := range history.Decisions {
-		timeline = append(timeline, map[string]any{
-			"timestamp": decision.Decided.Format(time.RFC3339),
-			"type":      "decision",
-			"decision":  decision,
+	for i := range history.Decisions {
+		timeline = append(timeline, models.ModerationHistoryTimelineEntry{
+			Timestamp: history.Decisions[i].Decided.Format(time.RFC3339),
+			Type:      "decision",
+			Decision:  &history.Decisions[i],
 		})
 	}
 
-	resp := map[string]any{
-		"object_id":      objectID,
-		"events":         history.Events,
-		"timeline":       timeline,
-		"current_status": history.CurrentStatus,
-		"last_updated":   time.Now().Format(time.RFC3339), // Use current time as last updated
+	resp := models.ModerationHistoryResponse{
+		ObjectID:      objectID,
+		Events:        history.Events,
+		Decisions:     history.Decisions,
+		Timeline:      timeline,
+		CurrentStatus: history.CurrentStatus,
+		LastUpdated:   time.Now().Format(time.RFC3339),
 	}
 
 	ctx.Status(http.StatusOK)
@@ -729,9 +730,9 @@ func (h *Handler) HandleUpdateTrustLift(ctx *lift.Context) error {
 	}
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{
-		"success": true,
-		"message": "Trust relationship updated successfully",
+	return ctx.JSON(models.SuccessResponse{
+		Success: true,
+		Message: "Trust relationship updated successfully",
 	})
 }
 

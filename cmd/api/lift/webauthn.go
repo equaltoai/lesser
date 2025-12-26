@@ -4,12 +4,42 @@ import (
 	"encoding/json"
 	"net/http"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
+
+func webAuthnPublicKeyMap(options any) (map[string]any, error) {
+	if options == nil {
+		return nil, nil
+	}
+
+	publicKey := options
+	switch typed := options.(type) {
+	case *protocol.CredentialCreation:
+		publicKey = typed.Response
+	case protocol.CredentialCreation:
+		publicKey = typed.Response
+	case *protocol.CredentialAssertion:
+		publicKey = typed.Response
+	case protocol.CredentialAssertion:
+		publicKey = typed.Response
+	}
+
+	raw, err := json.Marshal(publicKey)
+	if err != nil {
+		return nil, err
+	}
+
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 // HandleBeginWebAuthnRegistrationLift starts the WebAuthn registration process
 // POST /api/v1/auth/webauthn/register/begin
@@ -32,18 +62,16 @@ func (h *Handler) HandleBeginWebAuthnRegistrationLift(ctx *lift.Context) error {
 		return h.handleAuthServiceError(ctx, err, "begin registration")
 	}
 
-	publicKey := options
-	switch typed := options.(type) {
-	case *protocol.CredentialCreation:
-		publicKey = typed.Response
-	case protocol.CredentialCreation:
-		publicKey = typed.Response
+	publicKey, err := webAuthnPublicKeyMap(options)
+	if err != nil {
+		h.logger.Error("failed to serialize webauthn options", zap.Error(err))
+		return h.respondInternalError(ctx, "failed to begin registration")
 	}
 
 	// Return options and challenge
-	response := map[string]any{
-		"publicKey": publicKey,
-		"challenge": challenge,
+	response := apimodels.WebAuthnBeginResponse{
+		PublicKey: publicKey,
+		Challenge: challenge,
 	}
 
 	ctx.Status(http.StatusOK)
@@ -60,11 +88,7 @@ func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *lift.Context) error 
 	}
 
 	// Parse request body
-	var req struct {
-		Challenge      string          `json:"challenge"`
-		Response       json.RawMessage `json:"response"`
-		CredentialName string          `json:"credential_name"`
-	}
+	var req apimodels.WebAuthnFinishRegistrationRequest
 	if err := h.parseRequestBody(ctx, &req); err != nil {
 		return err // Error response already set by parseRequestBody
 	}
@@ -76,14 +100,19 @@ func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *lift.Context) error 
 	}
 
 	// Finish registration
-	err = authService.FinishWebAuthnRegistration(ctx.Context, username, req.Challenge, req.Response, req.CredentialName)
+	rawResponse, err := json.Marshal(req.Response)
+	if err != nil {
+		return h.respondBadRequest(ctx, "invalid response payload")
+	}
+
+	err = authService.FinishWebAuthnRegistration(ctx.Context, username, req.Challenge, rawResponse, req.CredentialName)
 	if err != nil {
 		return h.handleAuthServiceError(ctx, err, "complete registration")
 	}
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]string{
-		"message": "passkey registered successfully",
+	return ctx.JSON(apimodels.MessageResponse{
+		Message: "passkey registered successfully",
 	})
 }
 
@@ -91,9 +120,7 @@ func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *lift.Context) error 
 // POST /api/v1/auth/webauthn/login/begin
 func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *lift.Context) error {
 	// Parse request body
-	var req struct {
-		Username string `json:"username"`
-	}
+	var req apimodels.WebAuthnBeginLoginRequest
 	if err := h.parseRequestBody(ctx, &req); err != nil {
 		return err // Error response already set by parseRequestBody
 	}
@@ -114,18 +141,16 @@ func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *lift.Context) error {
 		return h.handleAuthServiceError(ctx, err, "begin login")
 	}
 
-	publicKey := options
-	switch typed := options.(type) {
-	case *protocol.CredentialAssertion:
-		publicKey = typed.Response
-	case protocol.CredentialAssertion:
-		publicKey = typed.Response
+	publicKey, err := webAuthnPublicKeyMap(options)
+	if err != nil {
+		h.logger.Error("failed to serialize webauthn options", zap.Error(err))
+		return h.respondInternalError(ctx, "failed to begin login")
 	}
 
 	// Return options and challenge
-	response := map[string]any{
-		"publicKey": publicKey,
-		"challenge": challenge,
+	response := apimodels.WebAuthnBeginResponse{
+		PublicKey: publicKey,
+		Challenge: challenge,
 	}
 
 	ctx.Status(http.StatusOK)
@@ -136,12 +161,7 @@ func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *lift.Context) error {
 // POST /api/v1/auth/webauthn/login/finish
 func (h *Handler) HandleFinishWebAuthnLoginLift(ctx *lift.Context) error {
 	// Parse request body
-	var req struct {
-		Username   string          `json:"username"`
-		Challenge  string          `json:"challenge"`
-		Response   json.RawMessage `json:"response"`
-		DeviceName string          `json:"device_name"`
-	}
+	var req apimodels.WebAuthnFinishLoginRequest
 	if err := h.parseRequestBody(ctx, &req); err != nil {
 		return err // Error response already set by parseRequestBody
 	}
@@ -166,7 +186,12 @@ func (h *Handler) HandleFinishWebAuthnLoginLift(ctx *lift.Context) error {
 	}
 
 	// Finish login and create session
-	authResponse, err := authService.FinishWebAuthnLogin(ctx.Context, req.Username, req.Challenge, req.Response, req.DeviceName, userAgent, ipAddress)
+	rawResponse, err := json.Marshal(req.Response)
+	if err != nil {
+		return h.respondBadRequest(ctx, "invalid response payload")
+	}
+
+	authResponse, err := authService.FinishWebAuthnLogin(ctx.Context, req.Username, req.Challenge, rawResponse, req.DeviceName, userAgent, ipAddress)
 	if err != nil {
 		return h.handleAuthServiceError(ctx, err, "complete login")
 	}
@@ -208,19 +233,19 @@ func (h *Handler) HandleListWebAuthnCredentialsLift(ctx *lift.Context) error {
 	}
 
 	// Format response
-	response := make([]map[string]any, 0, len(credentials))
+	response := make([]apimodels.WebAuthnCredentialSummary, 0, len(credentials))
 	for _, cred := range credentials {
-		response = append(response, map[string]any{
-			"id":           cred.ID,
-			"name":         cred.Name,
-			"created_at":   cred.CreatedAt,
-			"last_used_at": cred.LastUsedAt,
+		response = append(response, apimodels.WebAuthnCredentialSummary{
+			ID:         cred.ID,
+			Name:       cred.Name,
+			CreatedAt:  cred.CreatedAt,
+			LastUsedAt: cred.LastUsedAt,
 		})
 	}
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{
-		"credentials": response,
+	return ctx.JSON(apimodels.WebAuthnCredentialsResponse{
+		Credentials: response,
 	})
 }
 
@@ -278,8 +303,8 @@ func (h *Handler) HandleDeleteWebAuthnCredentialLift(ctx *lift.Context) error {
 	}
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]string{
-		"message": "credential deleted successfully",
+	return ctx.JSON(apimodels.MessageResponse{
+		Message: "credential deleted successfully",
 	})
 }
 
@@ -305,14 +330,9 @@ func (h *Handler) HandleUpdateWebAuthnCredentialNameLift(ctx *lift.Context) erro
 	}
 
 	// Parse request body
-	var req struct {
-		Name string `json:"name"`
-	}
-	if err := ctx.ParseRequest(&req); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "invalid request body",
-		})
+	var req apimodels.WebAuthnUpdateCredentialRequest
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return err
 	}
 
 	if err := common.ValidateRequiredParam("name", req.Name); err != nil {
@@ -349,7 +369,7 @@ func (h *Handler) HandleUpdateWebAuthnCredentialNameLift(ctx *lift.Context) erro
 	}
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]string{
-		"message": "credential updated successfully",
+	return ctx.JSON(apimodels.MessageResponse{
+		Message: "credential updated successfully",
 	})
 }

@@ -230,7 +230,7 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Return empty object
-	return ctx.JSON(map[string]any{})
+	return ctx.JSON(models.EmptyObject{})
 }
 
 // Helper methods

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha1" //nolint:gosec // used only for deterministic schema component names
 	"fmt"
 	"go/types"
 	"reflect"
@@ -23,9 +24,12 @@ type schemaPackageConfig struct {
 }
 
 const (
-	packagePathModels  = "github.com/equaltoai/lesser/cmd/api/models"
-	packagePathAuth    = "github.com/equaltoai/lesser/pkg/auth"
-	packagePathStorage = "github.com/equaltoai/lesser/pkg/storage"
+	packagePathModels        = "github.com/equaltoai/lesser/cmd/api/models"
+	packagePathAuth          = "github.com/equaltoai/lesser/pkg/auth"
+	packagePathMastodon      = "github.com/equaltoai/lesser/pkg/mastodon"
+	packagePathReputation    = "github.com/equaltoai/lesser/pkg/reputation"
+	packagePathStorage       = "github.com/equaltoai/lesser/pkg/storage"
+	packagePathStorageModels = "github.com/equaltoai/lesser/pkg/storage/models"
 
 	schemaAnyObject = "AnyObject"
 	schemaAnyArray  = "AnyArray"
@@ -45,15 +49,18 @@ func ensureGeneratedSchemas(spec *openAPISpec, repoRoot string) (*schemaBuilder,
 		return nil, nil
 	}
 
-	pkgs, err := loadPackages(repoRoot, "./cmd/api/models", "./pkg/auth", "./pkg/storage", "./cmd/api/lift")
+	pkgs, err := loadPackages(repoRoot, "./cmd/api/models", "./pkg/auth", "./pkg/mastodon", "./pkg/reputation", "./pkg/storage", "./pkg/storage/models", "./cmd/api/lift")
 	if err != nil {
 		return nil, err
 	}
 
 	config := map[string]schemaPackageConfig{
-		packagePathModels:  {Prefix: ""},
-		packagePathAuth:    {Prefix: "Auth"},
-		packagePathStorage: {Prefix: "Storage"},
+		packagePathModels:        {Prefix: ""},
+		packagePathAuth:          {Prefix: "Auth"},
+		packagePathMastodon:      {Prefix: "Mastodon"},
+		packagePathReputation:    {Prefix: "Reputation"},
+		packagePathStorage:       {Prefix: "Storage"},
+		packagePathStorageModels: {Prefix: "StorageModels"},
 	}
 
 	builder := newSchemaBuilder(spec, pkgs, config)
@@ -152,7 +159,7 @@ func (b *schemaBuilder) schemaKeyForPayloadType(t types.Type) (string, error) {
 	case *types.Array:
 		return b.ensureListSchemaFor(tt.Elem())
 	case *types.Map:
-		return schemaAnyObject, nil
+		return b.ensureMapSchemaFor(tt)
 	case *types.Struct:
 		return schemaAnyObject, nil
 	case *types.Basic:
@@ -214,6 +221,72 @@ func (b *schemaBuilder) ensureListSchemaFor(elem types.Type) (string, error) {
 		"items": itemsSchema,
 	}
 	return listName, nil
+}
+
+func (b *schemaBuilder) ensureMapSchemaFor(mt *types.Map) (string, error) {
+	if b == nil {
+		return "", nil
+	}
+	if mt == nil {
+		return schemaAnyObject, nil
+	}
+
+	key := types.Unalias(mt.Key())
+	if basic, ok := key.(*types.Basic); !ok || basic.Kind() != types.String {
+		return schemaAnyObject, nil
+	}
+
+	elem := types.Unalias(mt.Elem())
+	for {
+		ptr, ok := elem.(*types.Pointer)
+		if !ok {
+			break
+		}
+		elem = types.Unalias(ptr.Elem())
+	}
+
+	mapName := ""
+	switch et := elem.(type) {
+	case *types.Named:
+		baseName, err := b.ensureNamedSchema(et)
+		if err != nil {
+			return "", err
+		}
+		if baseName != "" {
+			mapName = baseName + "Map"
+		}
+	case *types.Basic:
+		mapName = basicTypeListName(et) + "Map"
+	}
+
+	if mapName == "" {
+		hash := sha1.Sum([]byte(types.TypeString(mt, func(p *types.Package) string { //nolint:gosec // deterministic schema component names
+			if p == nil {
+				return ""
+			}
+			return p.Path()
+		})))
+		mapName = fmt.Sprintf("Map%x", hash)[:11]
+	}
+
+	if b.spec.Components.Schemas == nil {
+		b.spec.Components.Schemas = map[string]any{}
+	}
+	if _, ok := b.spec.Components.Schemas[mapName]; ok {
+		return mapName, nil
+	}
+
+	valueSchema, err := b.schemaForType(elem)
+	if err != nil {
+		return "", err
+	}
+
+	b.spec.Components.Schemas[mapName] = map[string]any{
+		"type":                 "object",
+		"additionalProperties": valueSchema,
+	}
+
+	return mapName, nil
 }
 
 func basicTypeListName(basic *types.Basic) string {

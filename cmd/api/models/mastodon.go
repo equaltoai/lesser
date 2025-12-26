@@ -341,13 +341,10 @@ type SearchResult struct {
 
 // Tag represents a hashtag
 type Tag struct {
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	History []struct {
-		Day      string `json:"day"`
-		Uses     string `json:"uses"`
-		Accounts string `json:"accounts"`
-	} `json:"history,omitempty"`
+	Name      string       `json:"name"`
+	URL       string       `json:"url"`
+	History   []TagHistory `json:"history,omitempty"`
+	Following *bool        `json:"following,omitempty"`
 }
 
 // TagHistory represents hashtag usage statistics for a day

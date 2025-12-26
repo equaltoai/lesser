@@ -44,7 +44,7 @@ func (h *Handler) relationshipOperation(ctx *lift.Context, operation string) err
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
-		return ctx.JSON(r.Relationship)
+		return ctx.JSON(h.relationshipFromService(r.Relationship))
 	case "unfollow":
 		r, err := h.registry.Relationships().Unfollow(ctx.Context, &relationships.UnfollowCommand{
 			FollowerID:  claims.Username,
@@ -53,7 +53,7 @@ func (h *Handler) relationshipOperation(ctx *lift.Context, operation string) err
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
-		return ctx.JSON(r.Relationship)
+		return ctx.JSON(h.relationshipFromService(r.Relationship))
 	case "block":
 		r, err := h.registry.Relationships().Block(ctx.Context, &relationships.BlockCommand{
 			BlockerID: claims.Username,
@@ -62,7 +62,7 @@ func (h *Handler) relationshipOperation(ctx *lift.Context, operation string) err
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
-		return ctx.JSON(r.Relationship)
+		return ctx.JSON(h.relationshipFromService(r.Relationship))
 	case "unblock":
 		r, err := h.registry.Relationships().Unblock(ctx.Context, &relationships.UnblockCommand{
 			BlockerID: claims.Username,
@@ -71,7 +71,7 @@ func (h *Handler) relationshipOperation(ctx *lift.Context, operation string) err
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
-		return ctx.JSON(r.Relationship)
+		return ctx.JSON(h.relationshipFromService(r.Relationship))
 	default:
 		return common.RespondBadRequest(ctx, "invalid operation")
 	}

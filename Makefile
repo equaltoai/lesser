@@ -1,6 +1,6 @@
 SHELL := bash
 
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials owner-bootstrap seed-and-validate clear-data generate-inventory generate-graphql-coverage generate-openapi verify-inventory verify-lambda-set verify-docs verify-graphql-coverage verify-openapi verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify schema export-schema gqlgen
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials owner-bootstrap seed-and-validate clear-data generate-inventory generate-graphql-coverage generate-openapi verify-inventory verify-lambda-set verify-docs verify-graphql-coverage verify-openapi verify-openapi-strict verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify schema export-schema gqlgen
 
 # =============================================================================
 # CONFIGURATION
@@ -213,6 +213,11 @@ verify-graphql-coverage:
 verify-openapi:
 	@mkdir -p tmp/go-cache
 	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/openapi --check
+
+## Verify OpenAPI spec is in sync and strictly typed (no placeholders)
+verify-openapi-strict:
+	@mkdir -p tmp/go-cache
+	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/openapi --check --strict
 
 ## Verify unit tests (Spec 07 R6)
 verify-unit:

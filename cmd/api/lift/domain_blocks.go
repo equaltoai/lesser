@@ -5,17 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	relationshipsvc "github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
-
-// CreateDomainBlockRequest represents the request to block a domain
-type CreateDomainBlockRequest struct {
-	Domain string `json:"domain"`
-}
 
 // HandleGetDomainBlocksLift handles GET /api/v1/domain_blocks
 func (h *Handler) HandleGetDomainBlocksLift(ctx *lift.Context) error {
@@ -64,7 +60,7 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Parse request body
-	var req CreateDomainBlockRequest
+	var req apimodels.CreateDomainBlockRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		// Fallback for test environment - try parsing directly from request body
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
@@ -111,7 +107,7 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Return empty response (Mastodon returns empty object)
-	return ctx.JSON(map[string]any{})
+	return ctx.JSON(apimodels.EmptyObject{})
 }
 
 // HandleDeleteDomainBlockLift handles DELETE /api/v1/domain_blocks
@@ -175,5 +171,5 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Return empty response (Mastodon returns empty object)
-	return ctx.JSON(map[string]any{})
+	return ctx.JSON(apimodels.EmptyObject{})
 }

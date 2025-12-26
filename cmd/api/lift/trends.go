@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/trends"
@@ -39,7 +40,15 @@ func (h *Handler) HandleGetTrendsLift(ctx *lift.Context) error {
 		return err
 	}
 
-	return ctx.JSON(trends)
+	response := make([]apimodels.Trend, 0, len(trends))
+	for _, t := range trends {
+		response = append(response, apimodels.Trend{
+			Type:  t.Type,
+			Value: t.Value,
+		})
+	}
+
+	return ctx.JSON(response)
 }
 
 // HandleGetTrendingStatusesLift handles GET /api/v1/trends/statuses
@@ -55,15 +64,15 @@ func (h *Handler) HandleGetTrendingStatusesLift(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon API format
-	response := make([]map[string]any, len(statuses))
-	for i, s := range statuses {
-		response[i] = map[string]any{
-			"id":         s.StatusID,
-			"url":        s.URL,
-			"account":    map[string]any{"id": s.AuthorID},
-			"content":    s.Content,
-			"created_at": s.PublishedAt.Format("2006-01-02T15:04:05.000Z"),
-		}
+	response := make([]apimodels.TrendingStatusSummary, 0, len(statuses))
+	for _, s := range statuses {
+		response = append(response, apimodels.TrendingStatusSummary{
+			ID:        s.StatusID,
+			URL:       s.URL,
+			Account:   apimodels.TrendingStatusAccount{ID: s.AuthorID},
+			Content:   s.Content,
+			CreatedAt: s.PublishedAt.Format("2006-01-02T15:04:05.000Z"),
+		})
 	}
 
 	return ctx.JSON(response)
@@ -72,69 +81,78 @@ func (h *Handler) HandleGetTrendingStatusesLift(ctx *lift.Context) error {
 // HandleGetTrendingTagsLift handles GET /api/v1/trends/tags
 // Returns trending hashtags
 func (h *Handler) HandleGetTrendingTagsLift(ctx *lift.Context) error {
-	trendService := h.getTrendService()
-	limit := h.parseLimitParam(ctx, 10, 20)
-
-	// Get trending hashtags
-	hashtags, err := trendService.GetTrendingHashtags(ctx.Context, limit)
-	if err := h.handleTrendError(ctx, err, "get trending hashtags"); err != nil {
-		return err
-	}
-
-	// Convert to Mastodon API format
-	response := make([]map[string]any, len(hashtags))
-	for i, hashtagItem := range hashtags {
-		// Convert history to strings for Mastodon API
-		history := make([]map[string]string, len(hashtagItem.History))
-		for j, count := range hashtagItem.History {
-			history[j] = map[string]string{
-				"day":      strconv.Itoa(j), // Day offset from today
-				"uses":     strconv.FormatInt(count, 10),
-				"accounts": strconv.FormatInt(hashtagItem.Accounts/int64(len(hashtagItem.History)), 10), // Rough estimate
-			}
-		}
-
-		response[i] = map[string]any{
-			"name":    hashtagItem.Name,
-			"url":     hashtagItem.URL,
-			"history": history,
-		}
-	}
-
-	return ctx.JSON(response)
+	return h.handleTrendingTags(ctx, 10, 20)
 }
 
 // HandleGetTrendingLinksLift handles GET /api/v1/trends/links
 // Returns trending links
 func (h *Handler) HandleGetTrendingLinksLift(ctx *lift.Context) error {
-	trendService := h.getTrendService()
-	limit := h.parseLimitParam(ctx, 10, 20)
+	return h.handleTrendingLinks(ctx, 10, 20)
+}
 
-	// Get trending links
+func (h *Handler) handleTrendingTags(ctx *lift.Context, defaultLimit, maxLimit int) error {
+	trendService := h.getTrendService()
+	limit := h.parseLimitParam(ctx, defaultLimit, maxLimit)
+
+	hashtags, err := trendService.GetTrendingHashtags(ctx.Context, limit)
+	if err := h.handleTrendError(ctx, err, "get trending hashtags"); err != nil {
+		return err
+	}
+
+	response := make([]apimodels.Tag, 0, len(hashtags))
+	for _, hashtagItem := range hashtags {
+		history := make([]apimodels.TagHistory, 0, len(hashtagItem.History))
+
+		accountsPerDay := int64(0)
+		if len(hashtagItem.History) > 0 {
+			accountsPerDay = hashtagItem.Accounts / int64(len(hashtagItem.History))
+		}
+
+		for j, count := range hashtagItem.History {
+			history = append(history, apimodels.TagHistory{
+				Day:      strconv.Itoa(j), // Day offset from today
+				Uses:     strconv.FormatInt(count, 10),
+				Accounts: strconv.FormatInt(accountsPerDay, 10), // Rough estimate
+			})
+		}
+
+		response = append(response, apimodels.Tag{
+			Name:    hashtagItem.Name,
+			URL:     hashtagItem.URL,
+			History: history,
+		})
+	}
+
+	return ctx.JSON(response)
+}
+
+func (h *Handler) handleTrendingLinks(ctx *lift.Context, defaultLimit, maxLimit int) error {
+	trendService := h.getTrendService()
+	limit := h.parseLimitParam(ctx, defaultLimit, maxLimit)
+
 	links, err := trendService.GetTrendingLinks(ctx.Context, limit)
 	if err := h.handleTrendError(ctx, err, "get trending links"); err != nil {
 		return err
 	}
 
-	// Convert to Mastodon API format
-	response := make([]map[string]any, len(links))
-	for i, l := range links {
-		response[i] = map[string]any{
-			"url":           l.URL,
-			"title":         l.Title,
-			"description":   l.Description,
-			"type":          l.Type,
-			"author_name":   l.AuthorName,
-			"author_url":    "",
-			"provider_name": h.extractProviderNameLift(l.URL),
-			"provider_url":  h.extractProviderURLLift(l.URL),
-			"html":          "",
-			"width":         0,
-			"height":        0,
-			"image":         l.Image,
-			"embed_url":     "",
-			"blurhash":      "",
-		}
+	response := make([]apimodels.PreviewCard, 0, len(links))
+	for _, l := range links {
+		response = append(response, apimodels.PreviewCard{
+			URL:          l.URL,
+			Title:        l.Title,
+			Description:  l.Description,
+			Type:         l.Type,
+			AuthorName:   l.AuthorName,
+			AuthorURL:    "",
+			ProviderName: h.extractProviderNameLift(l.URL),
+			ProviderURL:  h.extractProviderURLLift(l.URL),
+			HTML:         "",
+			Width:        0,
+			Height:       0,
+			Image:        l.Image,
+			EmbedURL:     "",
+			Blurhash:     "",
+		})
 	}
 
 	return ctx.JSON(response)
@@ -170,7 +188,14 @@ func (h *Handler) HandleGetLinkTimelineLift(ctx *lift.Context) error {
 			trendingStatuses = append(trendingStatuses, ts)
 		}
 	}
-	timeline := h.convertStatusesToTimelineLift(trendingStatuses)
+	timeline := make([]apimodels.LinkTimelineEntry, 0, len(trendingStatuses))
+	for _, status := range trendingStatuses {
+		timeline = append(timeline, apimodels.LinkTimelineEntry{
+			ID:      status.ID,
+			Content: status.Content,
+			URL:     fmt.Sprintf("%s/statuses/%s", h.cfg.BaseURL(), status.ID),
+		})
+	}
 	return ctx.JSON(timeline)
 }
 
@@ -206,50 +231,24 @@ func (h *Handler) extractProviderURLLift(url string) string {
 	return fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
 }
 
-// convertStatusesToTimelineLift converts trending statuses to timeline format
-func (h *Handler) convertStatusesToTimelineLift(statuses []*storage.TrendingStatus) []any {
-	result := make([]any, len(statuses))
-	for i, status := range statuses {
-		result[i] = map[string]any{
-			"id":      status.ID,
-			"content": status.Content,
-			"url":     fmt.Sprintf("%s/statuses/%s", h.cfg.BaseURL(), status.ID),
-			// Add other status fields as needed
-		}
-	}
-	return result
-}
-
 // HandleGetTrendsV2Lift handles GET /api/v2/trends
 // Returns general trends with enhanced metadata
 func (h *Handler) HandleGetTrendsV2Lift(ctx *lift.Context) error {
-	// Initialize trend service if not already initialized
-	trendService := trends.NewService(h.repos)
+	trendService := h.getTrendService()
+	limit := h.parseLimitParam(ctx, 10, 40)
 
-	// Get limit from query params, default to 10
-	limitStr := ctx.Query("limit")
-
-	// Fallback to direct query param access if ctx.Query doesn't work
-	if err := common.ValidateRequiredParam("limit", limitStr); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		limitStr = ctx.Request.Request.QueryParams["limit"]
-	}
-
-	limit, err := common.ParseTimelineLimit(limitStr)
-	if err != nil {
-		limit = 10
-	}
-
-	// Note: offset parameter available but not used by underlying service
-
-	// Get mixed trends
 	trends, err := trendService.GetTrends(ctx.Context, limit)
-	if err != nil {
-		h.logger.Error("failed to get trends", zap.Error(err))
-		return common.RespondInternalServerError(ctx, "Internal server error")
+	if err := h.handleTrendError(ctx, err, "get trends"); err != nil {
+		return err
 	}
 
-	// Convert to v2 format with enhanced metadata
-	response := h.convertTrendsToV2Format(trends)
+	response := make([]apimodels.Trend, 0, len(trends))
+	for _, t := range trends {
+		response = append(response, apimodels.Trend{
+			Type:  t.Type,
+			Value: t.Value,
+		})
+	}
 
 	return ctx.JSON(response)
 }
@@ -257,40 +256,30 @@ func (h *Handler) HandleGetTrendsV2Lift(ctx *lift.Context) error {
 // HandleGetTrendingTagsV2Lift handles GET /api/v2/trends/tags
 // Returns trending hashtags with enhanced metrics
 func (h *Handler) HandleGetTrendingTagsV2Lift(ctx *lift.Context) error {
-	return h.handleTrendingV2Request(ctx, "hashtags", 10, func(service *trends.Service, limit int) (any, error) {
-		return service.GetTrendingHashtags(ctx.Context, limit)
-	}, h.convertHashtagsToV2Format)
+	return h.handleTrendingTags(ctx, 10, 20)
 }
 
 // HandleGetTrendingStatusesV2Lift handles GET /api/v2/trends/statuses
 // Returns trending statuses with enhanced metrics
 func (h *Handler) HandleGetTrendingStatusesV2Lift(ctx *lift.Context) error {
-	// Initialize trend service if not already initialized
-	trendService := trends.NewService(h.repos)
+	trendService := h.getTrendService()
+	limit := h.parseLimitParam(ctx, 20, 40)
 
-	// Get limit from query params, default to 20
-	limitStr := ctx.Query("limit")
-
-	if err := common.ValidateRequiredParam("limit", limitStr); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		limitStr = ctx.Request.Request.QueryParams["limit"]
-	}
-
-	limit, err := common.ParseTimelineLimit(limitStr)
-	if err != nil {
-		limit = 20
-	}
-
-	// Note: offset parameter available but not used by underlying service
-
-	// Get trending statuses with enhanced metrics
 	statuses, err := trendService.GetTrendingStatuses(ctx.Context, limit)
-	if err != nil {
-		h.logger.Error("failed to get trending statuses", zap.Error(err))
-		return common.RespondInternalServerError(ctx, "Internal server error")
+	if err := h.handleTrendError(ctx, err, "get trending statuses"); err != nil {
+		return err
 	}
 
-	// Convert to v2 format with enhanced metrics
-	response := h.convertStatusesToV2Format(statuses)
+	response := make([]apimodels.TrendingStatusSummary, 0, len(statuses))
+	for _, s := range statuses {
+		response = append(response, apimodels.TrendingStatusSummary{
+			ID:        s.StatusID,
+			URL:       s.URL,
+			Account:   apimodels.TrendingStatusAccount{ID: s.AuthorID},
+			Content:   s.Content,
+			CreatedAt: s.PublishedAt.Format("2006-01-02T15:04:05.000Z"),
+		})
+	}
 
 	return ctx.JSON(response)
 }
@@ -298,65 +287,5 @@ func (h *Handler) HandleGetTrendingStatusesV2Lift(ctx *lift.Context) error {
 // HandleGetTrendingLinksV2Lift handles GET /api/v2/trends/links
 // Returns trending links with enhanced metadata
 func (h *Handler) HandleGetTrendingLinksV2Lift(ctx *lift.Context) error {
-	return h.handleTrendingV2Request(ctx, "links", 10, func(service *trends.Service, limit int) (any, error) {
-		return service.GetTrendingLinks(ctx.Context, limit)
-	}, h.convertLinksToV2Format)
-}
-
-// Helper functions for v2 format conversion
-
-// handleTrendingV2Request handles common v2 trending request pattern
-func (h *Handler) handleTrendingV2Request(
-	ctx *lift.Context,
-	itemType string,
-	defaultLimit int,
-	fetcher func(*trends.Service, int) (any, error),
-	converter func(any) []map[string]any,
-) error {
-	// Initialize trend service
-	trendService := trends.NewService(h.repos)
-
-	// Get limit from query params
-	limitStr := ctx.Query("limit")
-	if err := common.ValidateRequiredParam("limit", limitStr); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		limitStr = ctx.Request.Request.QueryParams["limit"]
-	}
-
-	limit, err := common.ParseAndValidateIntWithBounds("limit", limitStr, 0, 20, defaultLimit)
-	if err != nil {
-		limit = defaultLimit
-	}
-
-	// Get trending items using provided fetcher
-	items, err := fetcher(trendService, limit)
-	if err != nil {
-		h.logger.Error(fmt.Sprintf("failed to get trending %s", itemType), zap.Error(err))
-		return common.RespondInternalServerError(ctx, "Internal server error")
-	}
-
-	// Convert to v2 format using provided converter
-	response := converter(items)
-
-	return ctx.JSON(response)
-}
-
-func (h *Handler) convertTrendsToV2Format(_ any) []map[string]any {
-	// This is a placeholder - would convert to v2 format with enhanced metadata
-	// Including usage metrics, trend duration, velocity, etc.
-	return []map[string]any{}
-}
-
-func (h *Handler) convertHashtagsToV2Format(_ any) []map[string]any {
-	// Enhanced hashtag format with metrics like velocity, peak usage, demographics
-	return []map[string]any{}
-}
-
-func (h *Handler) convertStatusesToV2Format(_ any) []map[string]any {
-	// Enhanced status format with engagement metrics, viral coefficients, etc.
-	return []map[string]any{}
-}
-
-func (h *Handler) convertLinksToV2Format(_ any) []map[string]any {
-	// Enhanced link format with click-through rates, source diversity, etc.
-	return []map[string]any{}
+	return h.handleTrendingLinks(ctx, 10, 20)
 }

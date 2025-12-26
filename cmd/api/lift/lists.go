@@ -8,10 +8,22 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
+
+func apiListFromStorage(list *storageModels.List) models.List {
+	if list == nil {
+		return models.List{}
+	}
+	return models.List{
+		ID:            list.ID,
+		Title:         list.Title,
+		RepliesPolicy: list.RepliesPolicy,
+	}
+}
 
 // HandleGetListsLift handles GET /api/v1/lists
 func (h *Handler) HandleGetListsLift(ctx *lift.Context) error {
@@ -29,7 +41,11 @@ func (h *Handler) HandleGetListsLift(ctx *lift.Context) error {
 		return common.RespondFailedToGet(ctx, "lists")
 	}
 
-	return ctx.JSON(result.Lists)
+	response := make([]models.List, 0, len(result.Lists))
+	for _, list := range result.Lists {
+		response = append(response, apiListFromStorage(list))
+	}
+	return ctx.JSON(response)
 }
 
 // HandleCreateListLift handles POST /api/v1/lists
@@ -71,7 +87,7 @@ func (h *Handler) HandleCreateListLift(ctx *lift.Context) error {
 		return common.RespondFailedToCreate(ctx, "list")
 	}
 
-	return ctx.Status(http.StatusCreated).JSON(result.List)
+	return ctx.Status(http.StatusCreated).JSON(apiListFromStorage(result.List))
 }
 
 // HandleGetListLift handles GET /api/v1/lists/:id
@@ -94,7 +110,7 @@ func (h *Handler) HandleGetListLift(ctx *lift.Context) error {
 		return common.RespondNotFound(ctx, "list not found")
 	}
 
-	return ctx.JSON(list)
+	return ctx.JSON(apiListFromStorage(list))
 }
 
 // HandleUpdateListLift handles PUT /api/v1/lists/:id
@@ -131,7 +147,7 @@ func (h *Handler) HandleUpdateListLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to update list")
 	}
 
-	return ctx.JSON(result.List)
+	return ctx.JSON(apiListFromStorage(result.List))
 }
 
 // HandleDeleteListLift handles DELETE /api/v1/lists/:id
@@ -154,7 +170,7 @@ func (h *Handler) HandleDeleteListLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to delete list")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(map[string]string{})
+	return ctx.Status(http.StatusOK).JSON(models.EmptyObject{})
 }
 
 // HandleGetListAccountsLift handles GET /api/v1/lists/:id/accounts
@@ -271,7 +287,7 @@ func (h *Handler) HandleAddAccountsToListLift(ctx *lift.Context) error {
 		}
 	}
 
-	return ctx.Status(http.StatusOK).JSON(map[string]string{})
+	return ctx.Status(http.StatusOK).JSON(models.EmptyObject{})
 }
 
 // HandleRemoveAccountsFromListLift handles DELETE /api/v1/lists/:id/accounts
@@ -294,5 +310,5 @@ func (h *Handler) HandleRemoveAccountsFromListLift(ctx *lift.Context) error {
 		}
 	}
 
-	return ctx.Status(http.StatusOK).JSON(map[string]string{})
+	return ctx.Status(http.StatusOK).JSON(models.EmptyObject{})
 }

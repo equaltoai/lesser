@@ -111,7 +111,17 @@ func applyPayloadSchemaRefs(op *operation, route routeDef) {
 			op.Responses = map[string]response{}
 		}
 
-		code := strconv.Itoa(primarySuccessStatus(route))
+		primary := primarySuccessStatus(route)
+		code := strconv.Itoa(primary)
+		if primary == 204 {
+			resp := op.Responses[code]
+			if resp.Ref == "" {
+				resp.Description = "No Content"
+				resp.Content = nil
+				op.Responses[code] = resp
+			}
+			return
+		}
 		resp := op.Responses[code]
 		if resp.Content == nil {
 			resp.Content = map[string]mediaType{}

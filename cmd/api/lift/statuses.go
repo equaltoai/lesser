@@ -521,8 +521,8 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon API format
-	timeline := make([]interface{}, len(result.Notes))
-	for i, status := range result.Notes {
+	timeline := make([]*models.Status, 0, len(result.Notes))
+	for _, status := range result.Notes {
 		apiStatus, err := h.convertStorageStatusToAPI(status, claims.Username)
 		if err != nil {
 			h.logger.Warn("failed to convert home timeline status",
@@ -530,7 +530,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 				zap.Error(err))
 			continue
 		}
-		timeline[i] = apiStatus
+		timeline = append(timeline, apiStatus)
 	}
 
 	return ctx.JSON(timeline)
@@ -576,8 +576,8 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon API format
-	timeline := make([]interface{}, len(result.Notes))
-	for i, status := range result.Notes {
+	timeline := make([]*models.Status, 0, len(result.Notes))
+	for _, status := range result.Notes {
 		apiStatus, err := h.convertStorageStatusToAPI(status, viewerUsername)
 		if err != nil {
 			h.logger.Warn("failed to convert public timeline status",
@@ -585,7 +585,7 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 				zap.Error(err))
 			continue
 		}
-		timeline[i] = apiStatus
+		timeline = append(timeline, apiStatus)
 	}
 
 	return ctx.JSON(timeline)

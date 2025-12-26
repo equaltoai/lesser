@@ -22,12 +22,28 @@ type handlerPayloadInfo struct {
 	QueryParams  []string
 }
 
+type payloadAnalysis struct {
+	Base    handlerPayloadInfo
+	Callees map[string]struct{}
+}
+
 func inferLiftHandlerPayloads(pkg *packages.Package) (map[string]handlerPayloadInfo, error) {
 	if pkg == nil || pkg.TypesInfo == nil {
 		return nil, nil
 	}
 
-	payloads := map[string]handlerPayloadInfo{}
+	analyses := collectHandlerPayloadAnalyses(pkg)
+	payloads := initHandlerPayloads(analyses)
+	propagateHandlerPayloads(analyses, payloads)
+	return payloads, nil
+}
+
+func collectHandlerPayloadAnalyses(pkg *packages.Package) map[string]payloadAnalysis {
+	if pkg == nil || pkg.TypesInfo == nil {
+		return nil
+	}
+
+	analyses := map[string]payloadAnalysis{}
 	for _, file := range pkg.Syntax {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -38,11 +54,203 @@ func inferLiftHandlerPayloads(pkg *packages.Package) (map[string]handlerPayloadI
 				continue
 			}
 
-			payloads[fn.Name.Name] = analyzeHandlerPayloads(fn, pkg.TypesInfo)
+			name := strings.TrimSpace(fn.Name.Name)
+			if name == "" {
+				continue
+			}
+			analyses[name] = payloadAnalysis{
+				Base:    analyzeHandlerPayloads(fn, pkg.TypesInfo),
+				Callees: handlerReceiverCallees(fn),
+			}
 		}
 	}
 
-	return payloads, nil
+	return analyses
+}
+
+func initHandlerPayloads(analyses map[string]payloadAnalysis) map[string]handlerPayloadInfo {
+	if len(analyses) == 0 {
+		return nil
+	}
+
+	payloads := make(map[string]handlerPayloadInfo, len(analyses))
+	for name, analysis := range analyses {
+		payloads[name] = analysis.Base
+	}
+	return payloads
+}
+
+func propagateHandlerPayloads(analyses map[string]payloadAnalysis, payloads map[string]handlerPayloadInfo) {
+	if len(analyses) == 0 || len(payloads) == 0 {
+		return
+	}
+
+	for {
+		changed := false
+		for name, analysis := range analyses {
+			current := payloads[name]
+			next := mergePayloadInfo(current, analysis.Callees, payloads)
+			if !payloadInfosEqual(current, next) {
+				payloads[name] = next
+				changed = true
+			}
+		}
+		if !changed {
+			return
+		}
+	}
+}
+
+func mergePayloadInfo(current handlerPayloadInfo, callees map[string]struct{}, payloads map[string]handlerPayloadInfo) handlerPayloadInfo {
+	next := current
+
+	next.Request = bestPayloadType(current.Request, callees, payloads, func(info handlerPayloadInfo) types.Type { return info.Request })
+	next.Response = bestPayloadType(current.Response, callees, payloads, func(info handlerPayloadInfo) types.Type { return info.Response })
+
+	next.QueryParams = mergeQueryParams(current.QueryParams, callees, payloads)
+	next.SuccessCodes = mergeSuccessCodes(current.SuccessCodes, callees, payloads)
+	next.PrimaryCode = choosePrimarySuccessCode(next.SuccessCodes)
+
+	return next
+}
+
+func bestPayloadType(
+	current types.Type,
+	callees map[string]struct{},
+	payloads map[string]handlerPayloadInfo,
+	get func(handlerPayloadInfo) types.Type,
+) types.Type {
+	best := current
+	bestScore := scorePayloadType(best)
+
+	for callee := range callees {
+		info, ok := payloads[callee]
+		if !ok {
+			continue
+		}
+		t := get(info)
+		if score := scorePayloadType(t); score > bestScore {
+			best = t
+			bestScore = score
+		}
+	}
+
+	return best
+}
+
+func mergeQueryParams(current []string, callees map[string]struct{}, payloads map[string]handlerPayloadInfo) []string {
+	params := map[string]struct{}{}
+	for _, q := range current {
+		params[q] = struct{}{}
+	}
+	for callee := range callees {
+		info, ok := payloads[callee]
+		if !ok {
+			continue
+		}
+		for _, q := range info.QueryParams {
+			params[q] = struct{}{}
+		}
+	}
+	return sortedQueryParams(params)
+}
+
+func mergeSuccessCodes(current []int, callees map[string]struct{}, payloads map[string]handlerPayloadInfo) []int {
+	codes := map[int]struct{}{}
+	for _, code := range current {
+		codes[code] = struct{}{}
+	}
+	for callee := range callees {
+		info, ok := payloads[callee]
+		if !ok {
+			continue
+		}
+		for _, code := range info.SuccessCodes {
+			codes[code] = struct{}{}
+		}
+	}
+
+	out := make([]int, 0, len(codes))
+	for code := range codes {
+		out = append(out, code)
+	}
+	sort.Ints(out)
+	return out
+}
+
+func payloadInfosEqual(a, b handlerPayloadInfo) bool {
+	if a.Request == nil || b.Request == nil {
+		if a.Request != b.Request {
+			return false
+		}
+	} else if !types.Identical(a.Request, b.Request) {
+		return false
+	}
+
+	if a.Response == nil || b.Response == nil {
+		if a.Response != b.Response {
+			return false
+		}
+	} else if !types.Identical(a.Response, b.Response) {
+		return false
+	}
+	if len(a.SuccessCodes) != len(b.SuccessCodes) {
+		return false
+	}
+	for i := range a.SuccessCodes {
+		if a.SuccessCodes[i] != b.SuccessCodes[i] {
+			return false
+		}
+	}
+	if a.PrimaryCode != b.PrimaryCode {
+		return false
+	}
+	if len(a.QueryParams) != len(b.QueryParams) {
+		return false
+	}
+	for i := range a.QueryParams {
+		if a.QueryParams[i] != b.QueryParams[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func handlerReceiverCallees(fn *ast.FuncDecl) map[string]struct{} {
+	if fn == nil || fn.Body == nil || fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return nil
+	}
+
+	recvName := ""
+	if len(fn.Recv.List[0].Names) > 0 {
+		recvName = strings.TrimSpace(fn.Recv.List[0].Names[0].Name)
+	}
+	if recvName == "" {
+		recvName = "h"
+	}
+
+	callees := map[string]struct{}{}
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || call == nil {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel == nil || sel.Sel == nil {
+			return true
+		}
+		recv, ok := sel.X.(*ast.Ident)
+		if !ok || strings.TrimSpace(recv.Name) != recvName {
+			return true
+		}
+		callee := strings.TrimSpace(sel.Sel.Name)
+		if callee != "" {
+			callees[callee] = struct{}{}
+		}
+		return true
+	})
+
+	return callees
 }
 
 func analyzeHandlerPayloads(fn *ast.FuncDecl, info *types.Info) handlerPayloadInfo {
@@ -244,6 +452,16 @@ func requestPayloadFromCall(call *ast.CallExpr, info *types.Info) (types.Type, i
 		return t, scorePayloadType(t)
 	}
 
+	if isHandlerParseEmojiRequestCall(call) && len(call.Args) >= 2 {
+		t := payloadTypeFromExpr(call.Args[1], info)
+		return t, scorePayloadType(t)
+	}
+
+	if isHandlerParseScheduledStatusRequestCall(call) && len(call.Args) >= 2 {
+		t := payloadTypeFromExpr(call.Args[1], info)
+		return t, scorePayloadType(t)
+	}
+
 	if idx, ok := commonParseTargetArgIndex(call, info); ok && len(call.Args) > idx {
 		t := payloadTypeFromExpr(call.Args[idx], info)
 		return t, scorePayloadType(t)
@@ -312,7 +530,7 @@ func isHandlerParseRequestBodyCall(call *ast.CallExpr) bool {
 		return false
 	}
 	recv, ok := sel.X.(*ast.Ident)
-	return ok && recv.Name == "h" && sel.Sel.Name == "parseRequestBody"
+	return ok && sel.Sel.Name == "parseRequestBody" && recv.Name != ""
 }
 
 func isHandlerRespondOKCall(call *ast.CallExpr) bool {
@@ -331,6 +549,24 @@ func isHandlerRespondCreatedCall(call *ast.CallExpr) bool {
 	}
 	recv, ok := sel.X.(*ast.Ident)
 	return ok && recv.Name == "h" && sel.Sel.Name == "respondCreated"
+}
+
+func isHandlerParseEmojiRequestCall(call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel == nil || sel.Sel == nil {
+		return false
+	}
+	recv, ok := sel.X.(*ast.Ident)
+	return ok && recv.Name == "h" && sel.Sel.Name == "parseEmojiRequest"
+}
+
+func isHandlerParseScheduledStatusRequestCall(call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel == nil || sel.Sel == nil {
+		return false
+	}
+	recv, ok := sel.X.(*ast.Ident)
+	return ok && recv.Name == "h" && sel.Sel.Name == "parseScheduledStatusRequest"
 }
 
 func isLiftParseRequestCall(call *ast.CallExpr, info *types.Info) bool {

@@ -22,6 +22,7 @@ type runOptions struct {
 	SpecPath string
 	Write    bool
 	Check    bool
+	Strict   bool
 }
 
 type routeDef struct {
@@ -175,9 +176,13 @@ func parseOptions() runOptions {
 	flag.StringVar(&opts.SpecPath, "spec", "docs/specs/openapi.yaml", "path to OpenAPI spec yaml")
 	flag.BoolVar(&opts.Write, "write", false, "update the spec file in place")
 	flag.BoolVar(&opts.Check, "check", false, "verify spec matches current routes")
+	flag.BoolVar(&opts.Strict, "strict", false, "strict verification: ensure schemas, security, and inferred query params are complete and spec is up-to-date")
 	flag.Parse()
 
 	if !opts.Write && !opts.Check {
+		opts.Check = true
+	}
+	if opts.Strict {
 		opts.Check = true
 	}
 
@@ -186,6 +191,15 @@ func parseOptions() runOptions {
 
 func run(repoRoot string, opts runOptions) error {
 	absSpec := filepath.Join(repoRoot, filepath.FromSlash(opts.SpecPath))
+
+	var originalSpecBytes []byte
+	if opts.Strict {
+		data, err := os.ReadFile(absSpec) //nolint:gosec // local spec path
+		if err != nil {
+			return fmt.Errorf("read %s: %w", absSpec, err)
+		}
+		originalSpecBytes = data
+	}
 
 	spec, err := readOrInitSpec(absSpec, opts.Write)
 	if err != nil {
@@ -215,6 +229,11 @@ func run(repoRoot string, opts runOptions) error {
 	if opts.Check {
 		if err := reportRouteDrift(opts.SpecPath, missing, stale); err != nil {
 			return err
+		}
+		if opts.Strict {
+			if err := verifyStrictOpenAPI(opts.SpecPath, spec, currentRoutes, originalSpecBytes); err != nil {
+				return err
+			}
 		}
 		fmt.Printf("ok: %s (%d paths)\n", opts.SpecPath, len(spec.Paths))
 	}
@@ -658,6 +677,12 @@ func ensureOperationDefaults(op *operation, route routeDef) {
 	// Ensure a placeholder request body for write methods (optional by default).
 	if route.Method == methodPOST || route.Method == methodPUT || route.Method == methodPATCH {
 		if op.RequestBody == nil {
+			if strings.TrimSpace(route.RequestSchema) == "" && strings.TrimSpace(route.Path) != "/api/graphql" {
+				applyOperationOverrides(op, route)
+				ensureInferredQueryParams(op, route)
+				applyPayloadSchemaRefs(op, route)
+				return
+			}
 			op.RequestBody = &requestBody{
 				Required: false,
 				Content: map[string]mediaType{
@@ -670,6 +695,7 @@ func ensureOperationDefaults(op *operation, route routeDef) {
 	applyOperationOverrides(op, route)
 	ensureInferredQueryParams(op, route)
 	applyPayloadSchemaRefs(op, route)
+	cleanupPlaceholderRequestBody(op, route)
 }
 
 func newOperation(route routeDef) *operation {

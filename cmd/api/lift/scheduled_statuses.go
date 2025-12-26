@@ -221,7 +221,7 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Return empty object
-	return ctx.JSON(map[string]interface{}{})
+	return ctx.JSON(apimodels.EmptyObject{})
 }
 
 // HandleCreateScheduledStatusLift handles POST /api/v1/statuses (with scheduled_at)

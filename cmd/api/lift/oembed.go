@@ -6,29 +6,12 @@ import (
 	"net/url"
 	"strings"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
-
-// OEmbedResponse represents the oEmbed response format
-type OEmbedResponse struct {
-	Type            string `json:"type"`                       // always "rich" for statuses
-	Version         string `json:"version"`                    // always "1.0"
-	Title           string `json:"title,omitempty"`            // optional title
-	AuthorName      string `json:"author_name"`                // account display name
-	AuthorURL       string `json:"author_url"`                 // account URL
-	ProviderName    string `json:"provider_name"`              // instance name
-	ProviderURL     string `json:"provider_url"`               // instance URL
-	CacheAge        int    `json:"cache_age"`                  // cache duration in seconds
-	HTML            string `json:"html"`                       // embeddable HTML
-	Width           int    `json:"width"`                      // width of embed
-	Height          *int   `json:"height,omitempty"`           // height if known
-	ThumbnailURL    string `json:"thumbnail_url,omitempty"`    // thumbnail if available
-	ThumbnailWidth  *int   `json:"thumbnail_width,omitempty"`  // thumbnail width
-	ThumbnailHeight *int   `json:"thumbnail_height,omitempty"` // thumbnail height
-}
 
 // HandleOEmbedLift handles GET /api/oembed using Lift framework
 func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
@@ -214,7 +197,7 @@ func (h *Handler) getOEmbedAuthorActor(ctx *lift.Context, note *activitypub.Note
 }
 
 // sendOEmbedResponse sends the oEmbed response in the requested format
-func (h *Handler) sendOEmbedResponse(ctx *lift.Context, oembed *OEmbedResponse, format string) error {
+func (h *Handler) sendOEmbedResponse(ctx *lift.Context, oembed *apimodels.OEmbedResponse, format string) error {
 	switch format {
 	case "json":
 		return ctx.JSON(oembed)
@@ -266,7 +249,7 @@ func (h *Handler) extractStatusID(urlPath string) string {
 }
 
 // generateOEmbed creates the oEmbed response
-func (h *Handler) generateOEmbed(note *activitypub.Note, author *activitypub.Actor, maxWidth int) *OEmbedResponse {
+func (h *Handler) generateOEmbed(note *activitypub.Note, author *activitypub.Actor, maxWidth int) *apimodels.OEmbedResponse {
 	// Generate HTML embed
 	embedHTML := h.generateOEmbedHTML(note, maxWidth)
 
@@ -280,7 +263,7 @@ func (h *Handler) generateOEmbed(note *activitypub.Note, author *activitypub.Act
 	}
 	estimatedHeight := baseHeight + contentHeight + mediaHeight
 
-	oembed := &OEmbedResponse{
+	oembed := &apimodels.OEmbedResponse{
 		Type:         "rich",
 		Version:      "1.0",
 		AuthorName:   author.Name,
@@ -337,7 +320,7 @@ func (h *Handler) generateOEmbedHTML(note *activitypub.Note, maxWidth int) strin
 }
 
 // sendXMLResponseLift sends the oEmbed response in XML format using Lift context
-func (h *Handler) sendXMLResponseLift(ctx *lift.Context, oembed *OEmbedResponse) error {
+func (h *Handler) sendXMLResponseLift(ctx *lift.Context, oembed *apimodels.OEmbedResponse) error {
 	// Simple XML generation
 	var xml strings.Builder
 	xml.WriteString(`<?xml version="1.0" encoding="utf-8"?>`)

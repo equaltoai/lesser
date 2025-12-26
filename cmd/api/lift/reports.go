@@ -19,16 +19,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// CreateReportRequest represents the request body for creating a report
-type CreateReportRequest struct {
-	AccountID string   `json:"account_id"`
-	StatusIDs []string `json:"status_ids"`
-	Comment   string   `json:"comment"`
-	Forward   bool     `json:"forward"`
-	Category  string   `json:"category"`
-	RuleIDs   []int    `json:"rule_ids"`
-}
-
 // HandleCreateReportLift handles POST /api/v1/reports
 func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	var username string
@@ -60,7 +50,7 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	username = claims.Username
 
 	// Parse request body
-	var req CreateReportRequest
+	var req models.CreateReportRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		// Fallback for test environment - try parsing directly from request body
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {

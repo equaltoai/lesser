@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/notes"
@@ -67,7 +68,7 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 	}
 
 	// Parse request with fallback pattern
-	var req notes.CreateNoteRequest
+	var req apimodels.CreateCommunityNoteRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
@@ -127,12 +128,12 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 	}
 
 	// Add rate limit info to response
-	response := map[string]any{
-		"note": note,
-		"rate_limit": map[string]any{
-			"limit":     limit,
-			"remaining": remaining - 1,
-			"reset":     "24h",
+	response := apimodels.CreateCommunityNoteResponse{
+		Note: note,
+		RateLimit: apimodels.CommunityNoteRateLimit{
+			Limit:     limit,
+			Remaining: remaining - 1,
+			Reset:     "24h",
 		},
 	}
 
@@ -256,28 +257,28 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 	}
 
 	// Format response
-	formattedNotes := make([]map[string]any, len(rankedNotes))
+	formattedNotes := make([]apimodels.CommunityNoteSummary, len(rankedNotes))
 	for i, note := range rankedNotes {
-		noteData := map[string]any{
-			"id":                note.ID,
-			"object_id":         note.ObjectID,
-			"author_id":         note.AuthorID,
-			"content":           note.Content,
-			"language":          note.Language,
-			"sources":           note.Sources,
-			"helpful_votes":     note.HelpfulVotes,
-			"not_helpful_votes": note.NotHelpfulVotes,
-			"score":             note.Score,
-			"visibility_status": note.VisibilityStatus,
-			"created_at":        note.CreatedAt,
+		noteData := apimodels.CommunityNoteSummary{
+			ID:               note.ID,
+			ObjectID:         note.ObjectID,
+			AuthorID:         note.AuthorID,
+			Content:          note.Content,
+			Language:         note.Language,
+			Sources:          note.Sources,
+			HelpfulVotes:     note.HelpfulVotes,
+			NotHelpfulVotes:  note.NotHelpfulVotes,
+			Score:            note.Score,
+			VisibilityStatus: note.VisibilityStatus,
+			CreatedAt:        note.CreatedAt,
 		}
 
 		formattedNotes[i] = noteData
 	}
 
-	response := map[string]any{
-		"notes": formattedNotes,
-		"stats": calculateNotesStats(rankedNotes),
+	response := apimodels.CommunityNotesResponse{
+		Notes: formattedNotes,
+		Stats: calculateNotesStats(rankedNotes),
 	}
 
 	// Add cost tracking and return
@@ -301,7 +302,7 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 	}
 
 	// Parse vote with fallback pattern
-	var req notes.VoteRequest
+	var req apimodels.VoteCommunityNoteRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
@@ -341,12 +342,12 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 	}
 
 	// Calculate vote weight
-	weight := notes.CalculateVoteWeight(float64(rep.TotalScore), req.VoteType)
+	weight := notes.CalculateVoteWeight(float64(rep.TotalScore), notes.VoteType(req.VoteType))
 
 	vote := &storage.CommunityNoteVote{
 		NoteID:    noteID,
 		VoterID:   userID,
-		VoteType:  string(req.VoteType),
+		VoteType:  req.VoteType,
 		Weight:    weight,
 		CreatedAt: time.Now(),
 	}
@@ -359,9 +360,9 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	response := map[string]any{
-		"vote":    vote,
-		"note_id": noteID,
+	response := apimodels.VoteCommunityNoteResponse{
+		Vote:   vote,
+		NoteID: noteID,
 	}
 
 	// Add cost tracking and return
@@ -409,38 +410,35 @@ func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 	userNotes := result.Notes
 
 	// Convert notes to Mastodon status format
-	statuses := make([]any, len(userNotes))
+	statuses := make([]apimodels.UserNoteStatus, len(userNotes))
 	for i, note := range userNotes {
-		// Convert note to status-like format
-		status := map[string]any{
-			"id":         note.ID,
-			"content":    fmt.Sprintf("<p>Community Note: %s</p>", note.Content),
-			"created_at": note.CreatedAt.Format(time.RFC3339),
-			"account": map[string]any{
-				"id":       note.AuthorID,
-				"username": username,
-				"acct":     username,
+		statuses[i] = apimodels.UserNoteStatus{
+			ID:        note.ID,
+			Content:   fmt.Sprintf("<p>Community Note: %s</p>", note.Content),
+			CreatedAt: note.CreatedAt.Format(time.RFC3339),
+			Account: apimodels.UserNoteAccount{
+				ID:       note.AuthorID,
+				Username: username,
+				Acct:     username,
 			},
-			"visibility":        "public",
-			"sensitive":         false,
-			"spoiler_text":      "",
-			"media_attachments": []any{},
-			"mentions":          []any{},
-			"tags":              []any{},
-			"emojis":            []any{},
-			"reblogs_count":     0,
-			"favourites_count":  note.HelpfulVotes,
-			"replies_count":     note.NotHelpfulVotes,
-			"url":               fmt.Sprintf("https://%s/notes/%s", h.cfg.Domain, note.ID),
-			"card": map[string]any{
-				"type":        "note",
-				"object_id":   note.ObjectID,
-				"object_type": note.ObjectType,
-				"score":       note.Score,
-				"sources":     nil, // Sources are not in the response format for user notes
+			Visibility:       "public",
+			Sensitive:        false,
+			SpoilerText:      "",
+			MediaAttachments: []any{},
+			Mentions:         []any{},
+			Tags:             []any{},
+			Emojis:           []any{},
+			ReblogsCount:     0,
+			FavouritesCount:  note.HelpfulVotes,
+			RepliesCount:     note.NotHelpfulVotes,
+			URL:              fmt.Sprintf("https://%s/notes/%s", h.cfg.Domain, note.ID),
+			Card: apimodels.UserNoteCard{
+				Type:       "note",
+				ObjectID:   note.ObjectID,
+				ObjectType: note.ObjectType,
+				Score:      note.Score,
 			},
 		}
-		statuses[i] = status
 	}
 
 	// Return as an array of statuses (Mastodon format)
@@ -467,14 +465,9 @@ func (h *Handler) getNoteReputationService() (*reputation.Service, error) {
 	return reputation.NewService(cfg)
 }
 
-func calculateNotesStats(notes []*storage.CommunityNote) map[string]any {
+func calculateNotesStats(notes []*storage.CommunityNote) apimodels.CommunityNoteStats {
 	if err := common.ValidateSliceNotEmpty("notes", notes); err != nil {
-		return map[string]any{
-			"total":           0,
-			"visible":         0,
-			"average_score":   0,
-			"average_helpful": 0,
-		}
+		return apimodels.CommunityNoteStats{}
 	}
 
 	totalScore := 0.0
@@ -491,10 +484,10 @@ func calculateNotesStats(notes []*storage.CommunityNote) map[string]any {
 		}
 	}
 
-	return map[string]any{
-		"total":           len(notes),
-		"visible":         visibleCount,
-		"average_score":   totalScore / float64(len(notes)),
-		"average_helpful": float64(totalHelpful) / float64(len(notes)),
+	return apimodels.CommunityNoteStats{
+		Total:          len(notes),
+		Visible:        visibleCount,
+		AverageScore:   totalScore / float64(len(notes)),
+		AverageHelpful: float64(totalHelpful) / float64(len(notes)),
 	}
 }

@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"time"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage/models"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -31,13 +32,7 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *lift.Context) error {
 	}
 
 	// Parse request body
-	var params struct {
-		Status      string `json:"status"`
-		Visibility  string `json:"visibility"`
-		SpoilerText string `json:"spoiler_text"`
-		Sensitive   bool   `json:"sensitive"`
-		Language    string `json:"language"`
-	}
+	var params apimodels.CreateQuotePostRequest
 
 	if err := ctx.ParseRequest(&params); err != nil {
 		bodyBytes := ctx.Request.Body
@@ -118,7 +113,7 @@ func (h *Handler) HandleGetQuotesOfStatusLift(ctx *lift.Context) error {
 	}
 
 	// Convert to API format
-	apiQuotes := make([]map[string]interface{}, 0, len(quotes))
+	apiQuotes := make([]apimodels.QuoteStatusSummary, 0, len(quotes))
 	for _, quote := range quotes {
 		apiQuote := h.convertQuoteToAPI(ctx, quote)
 		apiQuotes = append(apiQuotes, apiQuote)
@@ -172,7 +167,7 @@ func (h *Handler) HandleDeleteQuotePostLift(ctx *lift.Context) error {
 		return common.RespondFailedToDelete(ctx, "quote")
 	}
 
-	return ctx.Status(200).JSON(map[string]string{"message": "quote deleted"})
+	return ctx.Status(200).JSON(apimodels.MessageResponse{Message: "quote deleted"})
 }
 
 // HandleGetQuotePermissionsLift handles GET /api/v1/accounts/:id/quote_permissions
@@ -190,15 +185,12 @@ func (h *Handler) HandleGetQuotePermissionsLift(ctx *lift.Context) error {
 		return common.RespondFailedToGet(ctx, "permissions")
 	}
 
-	// Convert to API format
-	apiPermissions := map[string]interface{}{
-		"allow_public":    permissions.AllowPublic,
-		"allow_followers": permissions.AllowFollowers,
-		"allow_mentioned": permissions.AllowMentioned,
-		"block_list":      permissions.BlockList,
-	}
-
-	return ctx.Status(200).JSON(apiPermissions)
+	return ctx.Status(200).JSON(apimodels.QuotePermissionsResponse{
+		AllowPublic:    permissions.AllowPublic,
+		AllowFollowers: permissions.AllowFollowers,
+		AllowMentioned: permissions.AllowMentioned,
+		BlockList:      permissions.BlockList,
+	})
 }
 
 // HandleUpdateQuotePermissionsLift handles PUT /api/v1/accounts/quote_permissions
@@ -216,12 +208,7 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *lift.Context) error {
 	}
 
 	// Parse request body
-	var params struct {
-		AllowPublic    *bool    `json:"allow_public"`
-		AllowFollowers *bool    `json:"allow_followers"`
-		AllowMentioned *bool    `json:"allow_mentioned"`
-		BlockList      []string `json:"block_list"`
-	}
+	var params apimodels.UpdateQuotePermissionsRequest
 
 	if err := ctx.ParseRequest(&params); err != nil {
 		bodyBytes := ctx.Request.Body
@@ -237,7 +224,7 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *lift.Context) error {
 	permissions, err := h.getQuotePermissions(ctx, claims.Username)
 	if err != nil {
 		// Create default permissions if none exist
-		permissions = &models.QuotePermissions{
+		permissions = &storageModels.QuotePermissions{
 			Username: claims.Username,
 		}
 		permissions.SetDefaults()
@@ -264,15 +251,12 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *lift.Context) error {
 		return common.RespondFailedToUpdate(ctx, "permissions")
 	}
 
-	// Return updated permissions
-	apiPermissions := map[string]interface{}{
-		"allow_public":    permissions.AllowPublic,
-		"allow_followers": permissions.AllowFollowers,
-		"allow_mentioned": permissions.AllowMentioned,
-		"block_list":      permissions.BlockList,
-	}
-
-	return ctx.Status(200).JSON(apiPermissions)
+	return ctx.Status(200).JSON(apimodels.QuotePermissionsResponse{
+		AllowPublic:    permissions.AllowPublic,
+		AllowFollowers: permissions.AllowFollowers,
+		AllowMentioned: permissions.AllowMentioned,
+		BlockList:      permissions.BlockList,
+	})
 }
 
 // Helper methods
@@ -343,46 +327,46 @@ func (h *Handler) getQuotesForStatus(_ *lift.Context, _ string, _ int, _ int) ([
 	return []interface{}{}, nil
 }
 
-func (h *Handler) convertQuoteToAPI(_ *lift.Context, _ interface{}) map[string]interface{} {
+func (h *Handler) convertQuoteToAPI(_ *lift.Context, _ interface{}) apimodels.QuoteStatusSummary {
 	// Placeholder implementation
-	return map[string]interface{}{
-		"id":         "quote_id",
-		"created_at": time.Now().Format(time.RFC3339),
-		"account":    map[string]interface{}{"id": "user_id"},
-		"content":    "Quote content",
+	return apimodels.QuoteStatusSummary{
+		ID:        "quote_id",
+		CreatedAt: time.Now().Format(time.RFC3339),
+		Account:   apimodels.QuoteStatusAccount{ID: "user_id"},
+		Content:   "Quote content",
 	}
 }
 
-func (h *Handler) convertStatusToAPI(_ *lift.Context, _ interface{}) map[string]interface{} {
+func (h *Handler) convertStatusToAPI(_ *lift.Context, _ interface{}) apimodels.QuoteStatusSummary {
 	// Placeholder implementation
-	return map[string]interface{}{
-		"id":         "status_id",
-		"created_at": time.Now().Format(time.RFC3339),
-		"account":    map[string]interface{}{"id": "user_id"},
-		"content":    "Status content",
+	return apimodels.QuoteStatusSummary{
+		ID:        "status_id",
+		CreatedAt: time.Now().Format(time.RFC3339),
+		Account:   apimodels.QuoteStatusAccount{ID: "user_id"},
+		Content:   "Status content",
 	}
 }
 
-func (h *Handler) getQuoteRelationship(_ *lift.Context, _ string, _ string) (*models.QuoteRelationship, error) {
+func (h *Handler) getQuoteRelationship(_ *lift.Context, _ string, _ string) (*storageModels.QuoteRelationship, error) {
 	// Placeholder implementation
 	return nil, nil
 }
 
-func (h *Handler) deleteQuoteRelationship(_ *lift.Context, _ *models.QuoteRelationship) error {
+func (h *Handler) deleteQuoteRelationship(_ *lift.Context, _ *storageModels.QuoteRelationship) error {
 	// Placeholder implementation
 	return nil
 }
 
-func (h *Handler) getQuotePermissions(_ *lift.Context, username string) (*models.QuotePermissions, error) {
+func (h *Handler) getQuotePermissions(_ *lift.Context, username string) (*storageModels.QuotePermissions, error) {
 	// Placeholder implementation - would query from storage
-	permissions := &models.QuotePermissions{
+	permissions := &storageModels.QuotePermissions{
 		Username: username,
 	}
 	permissions.SetDefaults()
 	return permissions, nil
 }
 
-func (h *Handler) saveQuotePermissions(_ *lift.Context, _ *models.QuotePermissions) error {
+func (h *Handler) saveQuotePermissions(_ *lift.Context, _ *storageModels.QuotePermissions) error {
 	// Placeholder implementation - would save to storage
 	return nil
 }

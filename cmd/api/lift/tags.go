@@ -82,18 +82,10 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 	}
 
 	// Convert history to API format
-	history := make([]struct {
-		Day      string `json:"day"`
-		Uses     string `json:"uses"`
-		Accounts string `json:"accounts"`
-	}, len(tagStats.History))
+	history := make([]models.TagHistory, len(tagStats.History))
 
 	for i, entry := range tagStats.History {
-		history[i] = struct {
-			Day      string `json:"day"`
-			Uses     string `json:"uses"`
-			Accounts string `json:"accounts"`
-		}{
+		history[i] = models.TagHistory{
 			Day:      entry.Date,       // Already a string timestamp
 			Uses:     entry.UsageCount, // Already a string
 			Accounts: entry.UserCount,  // Already a string
@@ -117,14 +109,8 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 			if err == nil {
 				// Check if following
 				following, _ := h.repos.Hashtag().IsFollowingHashtag(ctx.Context, claims.Username, tagName)
-				// Return tag with following info in a wrapper
-				response := map[string]any{
-					"name":      tag.Name,
-					"url":       tag.URL,
-					"history":   history,
-					"following": following,
-				}
-				return ctx.JSON(response)
+				tag.Following = &following
+				return ctx.JSON(tag)
 			}
 		}
 	}
@@ -603,25 +589,13 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 		tags[i] = models.Tag{
 			Name: tagName,
 			URL:  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
-			History: func() []struct {
-				Day      string `json:"day"`
-				Uses     string `json:"uses"`
-				Accounts string `json:"accounts"`
-			} {
+			History: func() []models.TagHistory {
 				// Get real hashtag statistics
 				if tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx.Context, tagName); err == nil && tagStatsRaw != nil {
 					if tagStats, ok := tagStatsRaw.(*storage.HashtagStats); ok {
-						history := make([]struct {
-							Day      string `json:"day"`
-							Uses     string `json:"uses"`
-							Accounts string `json:"accounts"`
-						}, len(tagStats.History))
+						history := make([]models.TagHistory, len(tagStats.History))
 						for i, entry := range tagStats.History {
-							history[i] = struct {
-								Day      string `json:"day"`
-								Uses     string `json:"uses"`
-								Accounts string `json:"accounts"`
-							}{
+							history[i] = models.TagHistory{
 								Day:      entry.Date,
 								Uses:     entry.UsageCount,
 								Accounts: entry.UserCount,
@@ -631,11 +605,7 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 					}
 				}
 				// Fallback to empty history
-				return []struct {
-					Day      string `json:"day"`
-					Uses     string `json:"uses"`
-					Accounts string `json:"accounts"`
-				}{}
+				return []models.TagHistory{}
 			}(),
 		}
 	}
