@@ -84,6 +84,17 @@ var LambdaInventory = Inventory{
 			},
 		},
 		{
+			Name: "cms-scheduler",
+			Type: LambdaTypeProcessorScheduled,
+			Role: RoleClassBasic,
+			ScheduleTriggers: []ScheduleTrigger{
+				{Expression: "rate(1 minute)"},
+			},
+			Overrides: LambdaOverrides{
+				TimeoutSeconds: intPtr(300),
+			},
+		},
+		{
 			Name: "cost-aggregator",
 			Type: LambdaTypeProcessorStream, // stream-only per Spec04 (Q2) decision
 			Role: RoleClassBasic,

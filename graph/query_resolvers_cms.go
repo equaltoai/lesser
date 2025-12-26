@@ -74,6 +74,10 @@ func cmsArticleCursor(article *models.Article, fallback string) model.Cursor {
 }
 
 func (r *queryResolver) Draft(ctx context.Context, id string) (*model.Draft, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -93,6 +97,10 @@ func (r *queryResolver) Draft(ctx context.Context, id string) (*model.Draft, err
 }
 
 func (r *queryResolver) MyDrafts(ctx context.Context, contentType *model.ObjectType, status *model.DraftStatus, first *int, after *model.Cursor) (*model.DraftConnection, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -159,6 +167,10 @@ func (r *queryResolver) MyDrafts(ctx context.Context, contentType *model.ObjectT
 }
 
 func (r *queryResolver) Revisions(ctx context.Context, objectID string, first *int, after *model.Cursor) (*model.RevisionConnection, error) {
+	if err := r.requireCMSRevisionsEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -220,6 +232,10 @@ func (r *queryResolver) Revisions(ctx context.Context, objectID string, first *i
 }
 
 func (r *queryResolver) Revision(ctx context.Context, objectID string, version int) (*model.Revision, error) {
+	if err := r.requireCMSRevisionsEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -247,6 +263,10 @@ func (r *queryResolver) Revision(ctx context.Context, objectID string, version i
 }
 
 func (r *queryResolver) Article(ctx context.Context, id string) (*model.Article, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return nil, err
+	}
+
 	store := r.cmsStorage()
 	if store == nil || store.Article() == nil {
 		return nil, ErrStorageUnavailable
@@ -261,6 +281,10 @@ func (r *queryResolver) Article(ctx context.Context, id string) (*model.Article,
 }
 
 func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.Article, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return nil, err
+	}
+
 	store := r.cmsStorage()
 	if store == nil || store.Article() == nil {
 		return nil, ErrStorageUnavailable
@@ -282,6 +306,10 @@ func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.
 }
 
 func (r *queryResolver) Articles(ctx context.Context, authorID *string, seriesID *string, categoryID *string, first *int, after *model.Cursor) (*model.ArticleConnection, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return nil, err
+	}
+
 	store := r.cmsStorage()
 	if store == nil || store.Article() == nil {
 		return nil, ErrStorageUnavailable
@@ -293,32 +321,25 @@ func (r *queryResolver) Articles(ctx context.Context, authorID *string, seriesID
 		cursor = string(*after)
 	}
 
-	items, nextCursor, err := store.Article().ListArticlesPaginated(ctx, limit, cursor)
-	if err != nil {
-		return nil, err
-	}
-
 	authorFilter := trimStringPtr(authorID)
 	seriesFilter := trimStringPtr(seriesID)
 	categoryFilter := trimStringPtr(categoryID)
 
-	edges := make([]*model.ArticleEdge, 0, len(items))
-	for _, article := range items {
-		if !cmsArticleMatchesFilters(article, authorFilter, seriesFilter, categoryFilter) {
-			continue
-		}
-		node := r.convertCMSArticle(ctx, article, false)
-		if node == nil {
-			continue
-		}
-		edges = append(edges, &model.ArticleEdge{
-			Node:   node,
-			Cursor: cmsArticleCursor(article, node.ID),
-		})
+	if seriesFilter != "" && !r.cmsSeriesEnabled() {
+		return nil, errCMSSeriesDisabled
+	}
+	if categoryFilter != "" && !r.cmsCategoriesEnabled() {
+		return nil, errCMSCategoriesDisabled
+	}
+
+	list, cursorFn := r.cmsArticlesListStrategy(ctx, store, authorFilter, seriesFilter, categoryFilter)
+	edges, hasMore, nextCursor, err := r.cmsCollectArticleEdges(ctx, list, cursorFn, authorFilter, seriesFilter, categoryFilter, limit, cursor)
+	if err != nil {
+		return nil, err
 	}
 
 	pageInfo := &model.PageInfo{
-		HasNextPage:     nextCursor != "",
+		HasNextPage:     hasMore,
 		HasPreviousPage: after != nil,
 	}
 	if len(edges) > 0 {
@@ -326,6 +347,10 @@ func (r *queryResolver) Articles(ctx context.Context, authorID *string, seriesID
 		end := edges[len(edges)-1].Cursor
 		pageInfo.StartCursor = &start
 		pageInfo.EndCursor = &end
+	} else if nextCursor != "" {
+		// Avoid trapping clients on an empty page when additional pages exist.
+		c := model.Cursor(nextCursor)
+		pageInfo.EndCursor = &c
 	}
 
 	return &model.ArticleConnection{
@@ -336,6 +361,10 @@ func (r *queryResolver) Articles(ctx context.Context, authorID *string, seriesID
 }
 
 func (r *queryResolver) Series(ctx context.Context, id string) (*model.Series, error) {
+	if err := r.requireCMSSeriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	store := r.cmsStorage()
 	if store == nil || store.Series() == nil {
 		return nil, ErrStorageUnavailable
@@ -355,6 +384,10 @@ func (r *queryResolver) Series(ctx context.Context, id string) (*model.Series, e
 }
 
 func (r *queryResolver) SeriesBySlug(ctx context.Context, slug string) (*model.Series, error) {
+	if err := r.requireCMSSeriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	store := r.cmsStorage()
 	if store == nil || store.Series() == nil {
 		return nil, ErrStorageUnavailable
@@ -397,6 +430,10 @@ func (r *queryResolver) SeriesBySlug(ctx context.Context, slug string) (*model.S
 }
 
 func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *int, after *model.Cursor) (*model.SeriesConnection, error) {
+	if err := r.requireCMSSeriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	store := r.cmsStorage()
 	if store == nil || store.Series() == nil {
 		return nil, ErrStorageUnavailable
@@ -477,6 +514,10 @@ func (r *queryResolver) AllSeries(ctx context.Context, authorID *string, first *
 }
 
 func (r *queryResolver) Category(ctx context.Context, id string) (*model.Category, error) {
+	if err := r.requireCMSCategoriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	store := r.cmsStorage()
 	if store == nil || store.Category() == nil {
 		return nil, ErrStorageUnavailable
@@ -491,6 +532,10 @@ func (r *queryResolver) Category(ctx context.Context, id string) (*model.Categor
 }
 
 func (r *queryResolver) CategoryBySlug(ctx context.Context, slug string) (*model.Category, error) {
+	if err := r.requireCMSCategoriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	store := r.cmsStorage()
 	if store == nil || store.Category() == nil {
 		return nil, ErrStorageUnavailable
@@ -511,6 +556,10 @@ func (r *queryResolver) CategoryBySlug(ctx context.Context, slug string) (*model
 }
 
 func (r *queryResolver) Categories(ctx context.Context, parentID *string) ([]*model.Category, error) {
+	if err := r.requireCMSCategoriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	store := r.cmsStorage()
 	if store == nil || store.Category() == nil {
 		return nil, ErrStorageUnavailable
@@ -531,6 +580,10 @@ func (r *queryResolver) Categories(ctx context.Context, parentID *string) ([]*mo
 }
 
 func (r *queryResolver) RootCategories(ctx context.Context) ([]*model.Category, error) {
+	if err := r.requireCMSCategoriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	store := r.cmsStorage()
 	if store == nil || store.Category() == nil {
 		return nil, ErrStorageUnavailable
@@ -551,6 +604,10 @@ func (r *queryResolver) RootCategories(ctx context.Context) ([]*model.Category, 
 }
 
 func (r *queryResolver) Publication(ctx context.Context, id string) (*model.Publication, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return nil, err
+	}
+
 	store := r.cmsStorage()
 	if store == nil || store.Publication() == nil {
 		return nil, ErrStorageUnavailable
@@ -565,6 +622,10 @@ func (r *queryResolver) Publication(ctx context.Context, id string) (*model.Publ
 }
 
 func (r *queryResolver) PublicationBySlug(ctx context.Context, slug string) (*model.Publication, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return nil, err
+	}
+
 	store := r.cmsStorage()
 	if store == nil || store.Publication() == nil {
 		return nil, ErrStorageUnavailable
@@ -585,6 +646,10 @@ func (r *queryResolver) PublicationBySlug(ctx context.Context, slug string) (*mo
 }
 
 func (r *queryResolver) MyPublications(ctx context.Context) ([]*model.Publication, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err

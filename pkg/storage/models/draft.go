@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,11 @@ type Draft struct {
 	// Allows finding all drafts for a specific published object
 	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
 	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+
+	// GSI4: Scheduled publishing + status index - DRAFT#STATUS#{status} / TIME#{timestamp}#AUTHOR#{author_id}#ID#{draft_id}
+	// Allows finding drafts by status, and enables scheduled publishing workers to query due drafts efficiently.
+	GSI4PK string `dynamorm:"index:gsi4,pk,attr:gsi4PK"`
+	GSI4SK string `dynamorm:"index:gsi4,sk,attr:gsi4SK"`
 
 	// Core fields
 	ID       string  `dynamorm:"attr:id" json:"id"`
@@ -76,6 +82,23 @@ func (d *Draft) UpdateKeys() error {
 	}
 
 	d.GSI1SK = fmt.Sprintf("TIME#%s", d.UpdatedAt.Format(time.RFC3339Nano))
+
+	status := strings.ToLower(strings.TrimSpace(d.Status))
+	if status == "" {
+		status = "draft"
+	}
+
+	timestamp := d.UpdatedAt.UTC()
+	if status == "scheduled" {
+		if d.ScheduledAt != nil && !d.ScheduledAt.IsZero() {
+			timestamp = d.ScheduledAt.UTC()
+		} else {
+			timestamp = time.Now().UTC()
+		}
+	}
+
+	d.GSI4PK = fmt.Sprintf("DRAFT#STATUS#%s", status)
+	d.GSI4SK = fmt.Sprintf("TIME#%s#AUTHOR#%s#ID#%s", timestamp.Format(time.RFC3339Nano), d.AuthorID, d.ID)
 
 	return nil
 }

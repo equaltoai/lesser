@@ -12,6 +12,10 @@ import (
 )
 
 func (r *mutationResolver) CreateDraft(ctx context.Context, input model.CreateDraftInput) (*model.Draft, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -56,6 +60,10 @@ func (r *mutationResolver) CreateDraft(ctx context.Context, input model.CreateDr
 }
 
 func (r *mutationResolver) UpdateDraft(ctx context.Context, id string, input model.UpdateDraftInput) (*model.Draft, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -92,6 +100,10 @@ func (r *mutationResolver) UpdateDraft(ctx context.Context, id string, input mod
 }
 
 func (r *mutationResolver) AutosaveDraft(ctx context.Context, id string, content string) (*model.Draft, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -116,6 +128,10 @@ func (r *mutationResolver) AutosaveDraft(ctx context.Context, id string, content
 }
 
 func (r *mutationResolver) DeleteDraft(ctx context.Context, id string) (bool, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return false, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return false, err
@@ -134,6 +150,10 @@ func (r *mutationResolver) DeleteDraft(ctx context.Context, id string) (bool, er
 }
 
 func (r *mutationResolver) PublishDraft(ctx context.Context, id string) (*model.Article, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -153,6 +173,10 @@ func (r *mutationResolver) PublishDraft(ctx context.Context, id string) (*model.
 }
 
 func (r *mutationResolver) ScheduleDraft(ctx context.Context, id string, scheduledAt model.Time) (*model.Draft, error) {
+	if err := r.requireCMSSchedulingEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -177,6 +201,10 @@ func (r *mutationResolver) ScheduleDraft(ctx context.Context, id string, schedul
 }
 
 func (r *mutationResolver) CancelScheduledDraft(ctx context.Context, id string) (*model.Draft, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -200,6 +228,16 @@ func (r *mutationResolver) CancelScheduledDraft(ctx context.Context, id string) 
 }
 
 func (r *mutationResolver) CreateArticle(ctx context.Context, input model.CreateArticleInput) (*model.Article, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return nil, err
+	}
+	if input.SeriesID != nil && strings.TrimSpace(*input.SeriesID) != "" && !r.cmsSeriesEnabled() {
+		return nil, errCMSSeriesDisabled
+	}
+	if len(input.CategoryIDs) > 0 && !r.cmsCategoriesEnabled() {
+		return nil, errCMSCategoriesDisabled
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -268,6 +306,16 @@ func (r *mutationResolver) CreateArticle(ctx context.Context, input model.Create
 }
 
 func (r *mutationResolver) UpdateArticle(ctx context.Context, id string, input model.UpdateArticleInput) (*model.Article, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return nil, err
+	}
+	if input.SeriesID != nil && strings.TrimSpace(*input.SeriesID) != "" && !r.cmsSeriesEnabled() {
+		return nil, errCMSSeriesDisabled
+	}
+	if len(input.CategoryIDs) > 0 && !r.cmsCategoriesEnabled() {
+		return nil, errCMSCategoriesDisabled
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -292,63 +340,27 @@ func (r *mutationResolver) UpdateArticle(ctx context.Context, id string, input m
 		return nil, err
 	}
 
-	if input.Title != nil {
-		article.Name = *input.Title
-	}
-	if input.Subtitle != nil {
-		article.Subtitle = *input.Subtitle
-	}
-	if input.Excerpt != nil {
-		article.Excerpt = *input.Excerpt
-	}
-	if input.Content != nil {
-		article.Content = *input.Content
-	}
+	cmsSetStringField(&article.Name, input.Title)
+	cmsSetStringField(&article.Subtitle, input.Subtitle)
+	cmsSetStringField(&article.Excerpt, input.Excerpt)
+	cmsSetStringField(&article.Content, input.Content)
 	if input.ContentFormat != nil {
 		article.ContentFormat = cmsContentFormatToStorage(*input.ContentFormat)
 	}
-	if input.SeriesID != nil {
-		article.SeriesID = input.SeriesID
-	}
-	if input.SeriesOrder != nil {
-		article.SeriesOrder = input.SeriesOrder
-	}
+	cmsSetStringPtrField(&article.SeriesID, input.SeriesID)
+	cmsSetIntPtrField(&article.SeriesOrder, input.SeriesOrder)
 	if input.CategoryIDs != nil {
 		article.CategoryIDs = input.CategoryIDs
 	}
-	if input.SEOTitle != nil {
-		article.SEOTitle = *input.SEOTitle
-	}
-	if input.SEODescription != nil {
-		article.SEODescription = *input.SEODescription
-	}
-	if input.CanonicalURL != nil {
-		article.CanonicalURL = *input.CanonicalURL
-	}
-	if input.OGImage != nil {
-		article.OGImage = *input.OGImage
-	}
-	if input.EditorNotes != nil {
-		article.EditorNotes = *input.EditorNotes
-	}
-	if input.ReviewStatus != nil {
-		article.ReviewStatus = *input.ReviewStatus
-	}
+	cmsSetStringField(&article.SEOTitle, input.SEOTitle)
+	cmsSetStringField(&article.SEODescription, input.SEODescription)
+	cmsSetStringField(&article.CanonicalURL, input.CanonicalURL)
+	cmsSetStringField(&article.OGImage, input.OGImage)
+	cmsSetStringField(&article.EditorNotes, input.EditorNotes)
+	cmsSetStringField(&article.ReviewStatus, input.ReviewStatus)
 
-	if input.FeaturedImageID != nil {
-		if store.Media() == nil {
-			return nil, ErrStorageUnavailable
-		}
-		mediaID := strings.TrimSpace(*input.FeaturedImageID)
-		if mediaID == "" {
-			article.FeaturedImage = nil
-		} else {
-			media, err := store.Media().GetMedia(ctx, mediaID)
-			if err != nil {
-				return nil, err
-			}
-			article.FeaturedImage = media
-		}
+	if err := cmsApplyArticleFeaturedImage(ctx, store.Media(), article, input.FeaturedImageID); err != nil {
+		return nil, err
 	}
 
 	now := time.Now()
@@ -363,6 +375,10 @@ func (r *mutationResolver) UpdateArticle(ctx context.Context, id string, input m
 }
 
 func (r *mutationResolver) DeleteArticle(ctx context.Context, id string) (bool, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return false, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return false, err
@@ -395,6 +411,10 @@ func (r *mutationResolver) DeleteArticle(ctx context.Context, id string) (bool, 
 }
 
 func (r *mutationResolver) RestoreRevision(ctx context.Context, objectID string, version int) (*model.Article, error) {
+	if err := r.requireCMSRevisionsEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -427,6 +447,10 @@ func (r *mutationResolver) RestoreRevision(ctx context.Context, objectID string,
 }
 
 func (r *mutationResolver) CreateSeries(ctx context.Context, input model.CreateSeriesInput) (*model.Series, error) {
+	if err := r.requireCMSSeriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -466,6 +490,10 @@ func (r *mutationResolver) CreateSeries(ctx context.Context, input model.CreateS
 }
 
 func (r *mutationResolver) UpdateSeries(ctx context.Context, id string, input model.UpdateSeriesInput) (*model.Series, error) {
+	if err := r.requireCMSSeriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -511,6 +539,10 @@ func (r *mutationResolver) UpdateSeries(ctx context.Context, id string, input mo
 }
 
 func (r *mutationResolver) DeleteSeries(ctx context.Context, id string) (bool, error) {
+	if err := r.requireCMSSeriesEnabled(); err != nil {
+		return false, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return false, err
@@ -537,6 +569,10 @@ func (r *mutationResolver) DeleteSeries(ctx context.Context, id string) (bool, e
 }
 
 func (r *mutationResolver) AddArticleToSeries(ctx context.Context, seriesID string, articleID string, order *int) (*model.Series, error) {
+	if err := r.requireCMSSeriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -601,6 +637,10 @@ func (r *mutationResolver) AddArticleToSeries(ctx context.Context, seriesID stri
 }
 
 func (r *mutationResolver) RemoveArticleFromSeries(ctx context.Context, seriesID string, articleID string) (*model.Series, error) {
+	if err := r.requireCMSSeriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -667,6 +707,10 @@ func (r *mutationResolver) RemoveArticleFromSeries(ctx context.Context, seriesID
 }
 
 func (r *mutationResolver) ReorderSeriesArticles(ctx context.Context, seriesID string, articleIDs []string) (*model.Series, error) {
+	if err := r.requireCMSSeriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -734,6 +778,10 @@ func (r *mutationResolver) ReorderSeriesArticles(ctx context.Context, seriesID s
 }
 
 func (r *mutationResolver) CreateCategory(ctx context.Context, input model.CreateCategoryInput) (*model.Category, error) {
+	if err := r.requireCMSCategoriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	_, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -779,6 +827,10 @@ func (r *mutationResolver) CreateCategory(ctx context.Context, input model.Creat
 }
 
 func (r *mutationResolver) UpdateCategory(ctx context.Context, id string, input model.UpdateCategoryInput) (*model.Category, error) {
+	if err := r.requireCMSCategoriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	_, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -822,6 +874,10 @@ func (r *mutationResolver) UpdateCategory(ctx context.Context, id string, input 
 }
 
 func (r *mutationResolver) DeleteCategory(ctx context.Context, id string) (bool, error) {
+	if err := r.requireCMSCategoriesEnabled(); err != nil {
+		return false, err
+	}
+
 	_, err := r.requireAuth(ctx)
 	if err != nil {
 		return false, err
@@ -840,6 +896,10 @@ func (r *mutationResolver) DeleteCategory(ctx context.Context, id string) (bool,
 }
 
 func (r *mutationResolver) AddArticleToCategory(ctx context.Context, categoryID string, articleID string) (*model.Article, error) {
+	if err := r.requireCMSCategoriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -892,6 +952,10 @@ func (r *mutationResolver) AddArticleToCategory(ctx context.Context, categoryID 
 }
 
 func (r *mutationResolver) RemoveArticleFromCategory(ctx context.Context, categoryID string, articleID string) (*model.Article, error) {
+	if err := r.requireCMSCategoriesEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -941,6 +1005,10 @@ func (r *mutationResolver) RemoveArticleFromCategory(ctx context.Context, catego
 }
 
 func (r *mutationResolver) CreatePublication(ctx context.Context, input model.CreatePublicationInput) (*model.Publication, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -1019,6 +1087,10 @@ func (r *mutationResolver) CreatePublication(ctx context.Context, input model.Cr
 }
 
 func (r *mutationResolver) UpdatePublication(ctx context.Context, id string, input model.UpdatePublicationInput) (*model.Publication, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -1131,7 +1203,57 @@ func cmsMediaURLFromID(ctx context.Context, mediaRepo cmsMediaGetter, mediaID st
 	return media.CDNUrl, nil
 }
 
+func cmsApplyArticleFeaturedImage(ctx context.Context, mediaRepo cmsMediaGetter, article *models.Article, featuredImageID *string) error {
+	if featuredImageID == nil {
+		return nil
+	}
+	if article == nil {
+		return errors.New("article is required")
+	}
+	if mediaRepo == nil {
+		return ErrStorageUnavailable
+	}
+
+	mediaID := strings.TrimSpace(*featuredImageID)
+	if mediaID == "" {
+		article.FeaturedImage = nil
+		return nil
+	}
+
+	media, err := mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		return err
+	}
+	article.FeaturedImage = media
+	return nil
+}
+
+func cmsSetStringField(dest *string, value *string) {
+	if value == nil {
+		return
+	}
+	*dest = *value
+}
+
+func cmsSetStringPtrField(dest **string, value *string) {
+	if value == nil {
+		return
+	}
+	*dest = value
+}
+
+func cmsSetIntPtrField(dest **int, value *int) {
+	if value == nil {
+		return
+	}
+	*dest = value
+}
+
 func (r *mutationResolver) InvitePublicationMember(ctx context.Context, publicationID string, userID string, role model.PublicationRole) (*model.PublicationMember, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -1183,6 +1305,10 @@ func (r *mutationResolver) InvitePublicationMember(ctx context.Context, publicat
 }
 
 func (r *mutationResolver) RemovePublicationMember(ctx context.Context, publicationID string, userID string) (bool, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return false, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return false, err
@@ -1221,6 +1347,10 @@ func (r *mutationResolver) RemovePublicationMember(ctx context.Context, publicat
 }
 
 func (r *mutationResolver) UpdatePublicationMemberRole(ctx context.Context, publicationID string, userID string, role model.PublicationRole) (*model.PublicationMember, error) {
+	if err := r.requireCMSLongFormEnabled(); err != nil {
+		return nil, err
+	}
+
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err

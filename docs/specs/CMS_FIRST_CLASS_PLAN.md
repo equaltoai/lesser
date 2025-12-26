@@ -1,6 +1,6 @@
 # CMS: First-Class Citizen Implementation Plan
 
-> **Status**: Active (Milestone 0 complete; Milestone 1 not started)  
+> **Status**: Active (Milestone 4 complete; Milestone 5 next)  
 > **Owner**: Lesser  
 > **Last updated**: 2025-12-26  
 > **Related**: `docs/HEADLESS_CMS_DESIGN.md`, `docs/specs/GRAPHQL_COVERAGE_PLAN.md`, `graph/phase1.graphql`
@@ -85,6 +85,14 @@ Deliverables:
   - Mark failures as `FAILED` with a recoverable path (re-schedule or manual publish)
 - Infra wiring (CDK) to run the worker on a schedule in the deployment region.
 
+Progress (2025-12-26):
+- Drafts now maintain a status/time index (`gsi4`) for efficient scheduled publishing queries (`pkg/storage/models/draft.go`).
+- Scheduler queries due drafts via `DraftRepository.ListScheduledDraftsDuePaginated` (`pkg/storage/repositories/draft_repository.go`).
+- Added the scheduled publisher Lambda `cmd/cms-scheduler/main.go` (runs every minute; capped batch; retries transient failures; marks non-retryable failures as `FAILED`).
+- Wired Lambda packaging + CDK schedule:
+  - `Makefile` includes `cms-scheduler` in `LAMBDAS`.
+  - `infra/cdk/inventory/lambdas.go` declares `cms-scheduler` as `processor-scheduled` with `rate(1 minute)`.
+
 Exit criteria:
 - A scheduled draft publishes without manual intervention.
 - Failure states are visible and recoverable.
@@ -101,7 +109,12 @@ Deliverables:
 
 Progress (2025-12-26):
 - Revisions now snapshot and restore CMS metadata (incl. featured image summary) and store `contentHash` (`pkg/services/cms/revision_service.go`).
+- Revision snapshots now include `tableOfContents`, `readingTimeMinutes`, and `wordCount` (`pkg/services/cms/revision_service.go`).
 - Revision queries now require auth and enforce author/admin access (`graph/query_resolvers_cms.go`).
+- Restore now records:
+  - An `UPDATE` backup revision of the pre-restore state
+  - A `RESTORE` revision representing the restored state (`pkg/services/cms/revision_service.go`)
+- Optional retention cap is supported via `CMS_MAX_REVISIONS_PER_OBJECT` and enforced best-effort on writes (`pkg/config/config.go`, `pkg/services/cms/revision_service.go`).
 
 Exit criteria:
 - Restore fully rehydrates article state.
@@ -118,6 +131,13 @@ Deliverables:
   - `tableOfContents`
 - Enrichment occurs on create/update/publish in the canonical service.
 
+Progress (2025-12-26):
+- Added content enrichment utilities (`pkg/services/cms/enrichment.go`) to compute `wordCount`, `readingTimeMinutes`, and `tableOfContents` for markdown and HTML.
+- Wired enrichment into canonical write paths:
+  - `CreateArticle` / `UpdateArticle` (`pkg/services/cms/article_service.go`)
+  - `RestoreRevision` (`pkg/services/cms/revision_service.go`)
+- Added unit tests for enrichment behavior (`pkg/services/cms/enrichment_test.go`).
+
 Exit criteria:
 - Clients can rely on these fields without doing client-side parsing.
 
@@ -132,6 +152,24 @@ Deliverables (minimum viable):
   - Articles by publication (if/when publication ownership is introduced for articles)
 - Clear policy for `articleCount` (maintained counters vs compute-on-read) and implement the chosen approach.
 
+Progress (2025-12-26):
+- Added a single-table CMS article index item (`pkg/storage/models/cms_article_index.go`) for listing articles by:
+  - author (`CMS#ARTICLE#AUTHOR#<actorID>`)
+  - series (`CMS#ARTICLE#SERIES#<seriesID>`)
+  - category (`CMS#ARTICLE#CATEGORY#<categoryID>`)
+- Implemented indexed list methods on `pkg/storage/repositories/article_repository.go`:
+  - `ListArticlesByAuthorPaginated`
+  - `ListArticlesBySeriesPaginated`
+  - `ListArticlesByCategoryPaginated`
+- Updated canonical write paths to maintain indexes + counts:
+  - Article create/update/delete (`pkg/services/cms/article_service.go`)
+  - Revision restore (`pkg/services/cms/revision_service.go`)
+- Policy: `articleCount` is maintained as atomic counters (best-effort) via `UpdateBuilder().Add`:
+  - `pkg/storage/repositories/series_repository.go`
+  - `pkg/storage/repositories/category_repository.go`
+- GraphQL `articles(...)` query now selects the most specific index and avoids scan-like behavior (`graph/query_resolvers_cms.go`, `graph/cms_article_query_helpers.go`).
+- Publication-based article listing is deferred until articles gain publication ownership.
+
 Exit criteria:
 - No DynamoDB scans for routine CMS list queries at expected scale.
 
@@ -145,6 +183,21 @@ Deliverables:
   - Empty lists for content collections where appropriate
   - 404 for missing objects
   - Locked instance rules applied consistently for CMS + federation boundaries
+
+Locked semantics (explicit):
+- While `InstanceState.locked=true`, the instance must be **reachable but empty**:
+  - REST content collections (timelines, trends, status search, account status listings) return `200` with an empty list/object.
+  - REST single-status reads return `404` (treat content as absent).
+  - Federation object reads (`/objects/:id`) return `404` (no public objects while locked).
+  - Background publishers (CMS scheduled publishing) must **no-op** while locked (never create content).
+
+Progress (2025-12-26):
+- Added instance `mode` + CMS feature flags (`INSTANCE_MODE`, `CMS_*_ENABLED`) (`pkg/config/config.go`).
+- CMS GraphQL resolvers now enforce feature gates and return clear errors when disabled (`graph/cms_feature_gates.go`, `graph/query_resolvers_cms.go`, `graph/mutation_resolvers_cms.go`).
+- CMS scheduler now no-ops when the instance is locked or scheduled publishing is disabled (`cmd/cms-scheduler/main.go`).
+- Locked instance now suppresses public content reads:
+  - Mastodon REST content surfaces return empty lists / 404 (`cmd/api/middleware.go`).
+  - ActivityPub object reads 404, outbox/liked collections return empty (`cmd/objects/main.go`, `cmd/outbox/main.go`, `cmd/collections/main.go`).
 
 Exit criteria:
 - Locked/unlocked behavior matches the deployment/setup requirements.

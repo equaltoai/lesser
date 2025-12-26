@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -89,4 +90,49 @@ func (r *DraftRepository) ListDraftsByAuthorPaginated(ctx context.Context, autho
 	}
 
 	return listByPKSKPrefixPaginated[*models.Draft](ctx, r.db, &models.Draft{}, pk, "ID#", limit, cursor)
+}
+
+// ListScheduledDraftsDuePaginated lists drafts that are scheduled to publish at or before the provided time.
+// Cursor values are gsi4SK values.
+func (r *DraftRepository) ListScheduledDraftsDuePaginated(ctx context.Context, dueBefore time.Time, limit int, cursor string) ([]*models.Draft, string, error) {
+	if dueBefore.IsZero() {
+		dueBefore = time.Now()
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+
+	pk := "DRAFT#STATUS#scheduled"
+	cutoff := fmt.Sprintf("TIME#%s~", dueBefore.UTC().Format(time.RFC3339Nano))
+
+	query := r.db.WithContext(ctx).Model(&models.Draft{}).
+		Index("gsi4").
+		Where("gsi4PK", "=", pk).
+		Where("gsi4SK", "<=", cutoff).
+		OrderBy("gsi4SK", "ASC")
+
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" {
+		query = query.Where("gsi4SK", ">", cursor)
+	}
+
+	query = query.Limit(limit + 1)
+
+	var draftModels []models.Draft
+	if err := query.All(&draftModels); err != nil {
+		return nil, "", err
+	}
+
+	nextCursor := ""
+	if len(draftModels) > limit {
+		nextCursor = draftModels[limit-1].GSI4SK
+		draftModels = draftModels[:limit]
+	}
+
+	result := make([]*models.Draft, len(draftModels))
+	for i := range draftModels {
+		result[i] = &draftModels[i]
+	}
+
+	return result, nextCursor, nil
 }

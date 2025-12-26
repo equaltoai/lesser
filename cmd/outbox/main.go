@@ -26,6 +26,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const contentTypeActivityJSON = "application/activity+json"
+
 // OutboxProcessor handles ActivityPub federation delivery via SQS
 type OutboxProcessor struct {
 	federationService            *federation.DeliveryService
@@ -602,6 +604,44 @@ func (op *OutboxProcessor) HandleOutboxGet(ctx *lift.Context) error {
 	}
 	cursor := ctx.Query("cursor")
 
+	// While locked, outbox should be reachable but empty for all non-bootstrap actors.
+	if locked {
+		// Collection response (metadata) when `page=true` is not set.
+		if page != "true" && page != "1" {
+			collection := &activitypub.OrderedCollection{
+				Collection: activitypub.Collection{
+					BaseObject: activitypub.BaseObject{
+						Context: activitypub.Context,
+						ID:      outboxID,
+						Type:    activitypub.OrderedCollectionType,
+					},
+					TotalItems: 0,
+					First:      fmt.Sprintf("%s?page=true", outboxID),
+				},
+			}
+
+			ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+			return ctx.JSON(collection)
+		}
+
+		collectionPage := &activitypub.OrderedCollectionPage{
+			CollectionPage: activitypub.CollectionPage{
+				Collection: activitypub.Collection{
+					BaseObject: activitypub.BaseObject{
+						Context: activitypub.Context,
+						ID:      fmt.Sprintf("%s?page=true", outboxID),
+						Type:    activitypub.OrderedCollectionPageType,
+					},
+					OrderedItems: []any{},
+				},
+				PartOf: outboxID,
+			},
+		}
+
+		ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+		return ctx.JSON(collectionPage)
+	}
+
 	// Collection response (metadata) when `page=true` is not set.
 	if page != "true" && page != "1" {
 		totalItems, countErr := op.countOutboxActivities(ctx.Context, username)
@@ -626,7 +666,7 @@ func (op *OutboxProcessor) HandleOutboxGet(ctx *lift.Context) error {
 			},
 		}
 
-		ctx.Response.Headers["Content-Type"] = "application/activity+json"
+		ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
 		return ctx.JSON(collection)
 	}
 
@@ -668,7 +708,7 @@ func (op *OutboxProcessor) HandleOutboxGet(ctx *lift.Context) error {
 		collectionPage.Prev = fmt.Sprintf("%s?page=true&limit=%d", outboxID, limit)
 	}
 
-	ctx.Response.Headers["Content-Type"] = "application/activity+json"
+	ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
 	return ctx.JSON(collectionPage)
 }
 

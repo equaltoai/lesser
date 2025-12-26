@@ -752,22 +752,76 @@ func (r *Registry) getCMSDomainName() string {
 	return strings.TrimSpace(r.getDomainName())
 }
 
+func (r *Registry) getCMSMaxRevisionsPerObject() int {
+	if r.config != nil && r.config.Config != nil {
+		if maxRevisions := r.config.Config.CMSMaxRevisionsPerObject; maxRevisions > 0 {
+			return maxRevisions
+		}
+	}
+	return 0
+}
+
+func (r *Registry) cmsLongFormEnabled() bool {
+	if r.config == nil || r.config.Config == nil {
+		return true
+	}
+	return r.config.Config.CMSLongFormEnabled()
+}
+
+func (r *Registry) cmsDraftsEnabled() bool {
+	if r.config == nil || r.config.Config == nil {
+		return true
+	}
+	return r.config.Config.CMSDraftsEnabled()
+}
+
+func (r *Registry) cmsRevisionsEnabled() bool {
+	if r.config == nil || r.config.Config == nil {
+		return true
+	}
+	return r.config.Config.CMSRevisionsEnabled()
+}
+
+func (r *Registry) cmsSchedulingEnabled() bool {
+	if r.config == nil || r.config.Config == nil {
+		return true
+	}
+	return r.config.Config.CMSSchedulingEnabled()
+}
+
+func (r *Registry) cmsSeriesEnabled() bool {
+	if r.config == nil || r.config.Config == nil {
+		return true
+	}
+	return r.config.Config.CMSSeriesAllowed()
+}
+
+func (r *Registry) cmsCategoriesEnabled() bool {
+	if r.config == nil || r.config.Config == nil {
+		return true
+	}
+	return r.config.Config.CMSCategoriesAllowed()
+}
+
 func (r *Registry) ensureCMSArticleServiceLocked() {
+	if !r.cmsLongFormEnabled() {
+		return
+	}
 	if r.articleService != nil || r.storage == nil {
 		return
 	}
 
-	if r.revisionService == nil {
+	if r.revisionService == nil && r.cmsRevisionsEnabled() {
 		revisionRepo := r.storage.Revision()
 		articleRepo := r.storage.Article()
 		if revisionRepo != nil && articleRepo != nil {
-			r.revisionService = cms.NewRevisionService(revisionRepo, articleRepo, r.logger)
+			r.revisionService = cms.NewRevisionService(revisionRepo, articleRepo, r.storage.Series(), r.storage.Category(), r.getCMSMaxRevisionsPerObject(), r.logger)
 			r.initialized["Revisions"] = true
 		}
 	}
 
 	articleRepo := r.storage.Article()
-	if articleRepo == nil || r.revisionService == nil {
+	if articleRepo == nil {
 		return
 	}
 
@@ -784,6 +838,8 @@ func (r *Registry) ensureCMSArticleServiceLocked() {
 	r.articleService = cms.NewArticleService(
 		articleRepo,
 		r.storage.Actor(),
+		r.storage.Series(),
+		r.storage.Category(),
 		r.revisionService,
 		r.federation,
 		r.logger,
@@ -796,6 +852,10 @@ func (r *Registry) Revisions() *cms.RevisionService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if !r.cmsLongFormEnabled() || !r.cmsRevisionsEnabled() {
+		return nil
+	}
+
 	if r.revisionService == nil && r.storage != nil {
 		revisionRepo := r.storage.Revision()
 		articleRepo := r.storage.Article()
@@ -804,6 +864,9 @@ func (r *Registry) Revisions() *cms.RevisionService {
 			r.revisionService = cms.NewRevisionService(
 				revisionRepo,
 				articleRepo,
+				r.storage.Series(),
+				r.storage.Category(),
+				r.getCMSMaxRevisionsPerObject(),
 				r.logger,
 			)
 			r.initialized["Revisions"] = true
@@ -822,6 +885,10 @@ func (r *Registry) Articles() *cms.ArticleService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if !r.cmsLongFormEnabled() {
+		return nil
+	}
+
 	if r.articleService == nil && r.storage != nil {
 		articleRepo := r.storage.Article()
 
@@ -837,16 +904,16 @@ func (r *Registry) Articles() *cms.ArticleService {
 
 		// We can call r.ensureRevisionsLocked() if we extract it.
 		// Or just instantiate it here if nil.
-		if r.revisionService == nil {
+		if r.revisionService == nil && r.cmsRevisionsEnabled() {
 			revisionRepo := r.storage.Revision()
 			articleRepo := r.storage.Article()
 			if revisionRepo != nil && articleRepo != nil {
-				r.revisionService = cms.NewRevisionService(revisionRepo, articleRepo, r.logger)
+				r.revisionService = cms.NewRevisionService(revisionRepo, articleRepo, r.storage.Series(), r.storage.Category(), r.getCMSMaxRevisionsPerObject(), r.logger)
 				r.initialized["Revisions"] = true
 			}
 		}
 
-		if articleRepo != nil && r.revisionService != nil {
+		if articleRepo != nil {
 			// Ensure FederationService is initialized
 			if r.federation == nil {
 				deps := &ServiceDependencies{
@@ -861,6 +928,8 @@ func (r *Registry) Articles() *cms.ArticleService {
 			r.articleService = cms.NewArticleService(
 				articleRepo,
 				r.storage.Actor(), // Inject ActorRepository
+				r.storage.Series(),
+				r.storage.Category(),
 				r.revisionService,
 				r.federation, // Inject FederationService
 				r.logger,
@@ -880,6 +949,10 @@ func (r *Registry) Articles() *cms.ArticleService {
 func (r *Registry) Drafts() *cms.DraftService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if !r.cmsLongFormEnabled() || !r.cmsDraftsEnabled() {
+		return nil
+	}
 
 	if r.draftService != nil || r.storage == nil {
 		return r.draftService
@@ -905,6 +978,7 @@ func (r *Registry) Drafts() *cms.DraftService {
 		draftRepo,
 		r.articleService,
 		r.getCMSDomainName(),
+		r.cmsSchedulingEnabled(),
 		r.logger,
 	)
 	r.initialized["Drafts"] = true
@@ -916,6 +990,10 @@ func (r *Registry) Drafts() *cms.DraftService {
 func (r *Registry) Series() *cms.SeriesService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if !r.cmsLongFormEnabled() || !r.cmsSeriesEnabled() {
+		return nil
+	}
 
 	if r.seriesService == nil && r.storage != nil {
 		// Assuming SeriesRepository is available in storage interface
@@ -945,6 +1023,10 @@ func (r *Registry) Categories() *cms.CategoryService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if !r.cmsLongFormEnabled() || !r.cmsCategoriesEnabled() {
+		return nil
+	}
+
 	if r.categoryService == nil && r.storage != nil {
 		categoryRepo := r.storage.Category()
 
@@ -968,6 +1050,10 @@ func (r *Registry) Categories() *cms.CategoryService {
 func (r *Registry) Publications() *cms.PublicationService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if !r.cmsLongFormEnabled() {
+		return nil
+	}
 
 	if r.publicationService == nil && r.storage != nil {
 		pubRepo := r.storage.Publication()

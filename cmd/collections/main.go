@@ -162,6 +162,41 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 		}
 	}
 
+	// While locked, collections should be reachable but empty for content-bearing collections.
+	if locked && collectionType == collectionTypeLiked {
+		collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
+		if !isPage {
+			ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+			ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
+			return ctx.JSON(&activitypub.OrderedCollection{
+				Collection: activitypub.Collection{
+					BaseObject: activitypub.BaseObject{
+						Context: activitypub.Context,
+						ID:      collectionID,
+						Type:    activitypub.OrderedCollectionType,
+					},
+					TotalItems: 0,
+				},
+			})
+		}
+
+		ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+		ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
+		return ctx.JSON(&activitypub.OrderedCollectionPage{
+			CollectionPage: activitypub.CollectionPage{
+				Collection: activitypub.Collection{
+					BaseObject: activitypub.BaseObject{
+						Context: activitypub.Context,
+						ID:      fmt.Sprintf("%s?page=1", collectionID),
+						Type:    activitypub.OrderedCollectionPageType,
+					},
+					OrderedItems: []any{},
+				},
+				PartOf: collectionID,
+			},
+		})
+	}
+
 	// If not requesting a page, return the collection metadata
 	if !isPage {
 		return ch.returnCollection(ctx, actor, collectionType)

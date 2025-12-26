@@ -3,10 +3,12 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -85,4 +87,33 @@ func (r *CategoryRepository) ListCategories(ctx context.Context, parentID *strin
 		result[i] = &categories[i]
 	}
 	return result, nil
+}
+
+// UpdateArticleCount atomically increments/decrements a category's ArticleCount.
+// Missing categories are treated as a no-op to avoid breaking writes when legacy/stale IDs exist.
+func (r *CategoryRepository) UpdateArticleCount(ctx context.Context, categoryID string, delta int) error {
+	categoryID = strings.TrimSpace(categoryID)
+	if categoryID == "" || delta == 0 {
+		return nil
+	}
+
+	pk := "INSTANCE#CATEGORY"
+	sk := fmt.Sprintf("ID#%s", categoryID)
+
+	err := r.GetDB().WithContext(ctx).Model(&models.Category{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Add("ArticleCount", delta).
+		Condition("ArticleCount", ">=", -delta).
+		Execute()
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.logger.Warn("category not found for article count update", zap.String("category_id", categoryID))
+			return nil
+		}
+		return err
+	}
+
+	return nil
 }

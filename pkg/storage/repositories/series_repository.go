@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -73,4 +74,36 @@ func (r *SeriesRepository) ListSeriesByAuthorPaginated(ctx context.Context, auth
 	}
 
 	return listByPKSKPrefixPaginated[*models.Series](ctx, r.db, &models.Series{}, pk, "ID#", limit, cursor)
+}
+
+// UpdateArticleCount atomically increments/decrements a series's ArticleCount.
+// Missing series are treated as a no-op to avoid breaking writes when legacy/stale IDs exist.
+func (r *SeriesRepository) UpdateArticleCount(ctx context.Context, authorID string, seriesID string, delta int) error {
+	authorID = strings.TrimSpace(authorID)
+	seriesID = strings.TrimSpace(seriesID)
+	if authorID == "" || seriesID == "" || delta == 0 {
+		return nil
+	}
+
+	pk := fmt.Sprintf("AUTHOR#%s#SERIES", authorID)
+	sk := fmt.Sprintf("ID#%s", seriesID)
+
+	err := r.GetDB().WithContext(ctx).Model(&models.Series{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Add("ArticleCount", delta).
+		Condition("ArticleCount", ">=", -delta).
+		Execute()
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.logger.Warn("series not found for article count update",
+				zap.String("author_id", authorID),
+				zap.String("series_id", seriesID))
+			return nil
+		}
+		return err
+	}
+
+	return nil
 }

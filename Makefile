@@ -36,6 +36,7 @@ LAMBDAS := \
 	api \
 	sse \
 	collections \
+	cms-scheduler \
 	cost-aggregator \
 	dlq-processor \
 	enhanced-federation-processor \

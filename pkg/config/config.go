@@ -15,11 +15,22 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 )
 
+// InstanceMode controls which product surface is enabled for an instance.
+type InstanceMode string
+
+// Supported instance modes.
+const (
+	InstanceModeSocial InstanceMode = "social"
+	InstanceModeCMS    InstanceMode = "cms"
+	InstanceModeHybrid InstanceMode = "hybrid"
+)
+
 // Config holds the application configuration
 type Config struct {
 	// Instance configuration
 	Domain       string // e.g., "example.com"
 	InstanceName string // e.g., "My ActivityPub Server"
+	InstanceMode InstanceMode
 
 	// AWS configuration
 	Region                  string
@@ -74,6 +85,15 @@ type Config struct {
 	MaxUploadSize     int64 // Maximum file upload size in bytes
 	PageSize          int   // Default pagination size
 	AllowRegistration bool  // Whether new users can register
+
+	// CMS Configuration
+	CMSLongFormPublishingEnabled  bool // Enable Article creation and CMS reads
+	CMSDraftSystemEnabled         bool // Enable draft storage and editing workflows
+	CMSRevisionHistoryEnabled     bool // Enable revision history and restores
+	CMSScheduledPublishingEnabled bool // Enable scheduled publishing worker behavior
+	CMSSeriesEnabled              bool // Enable series organization
+	CMSCategoriesEnabled          bool // Enable categories organization
+	CMSMaxRevisionsPerObject      int  // Maximum revisions retained per CMS object (0 = unlimited)
 
 	// Moderation Features
 	DisableAWSModeration bool // Master switch to disable all AWS moderation services
@@ -227,9 +247,13 @@ func loadConfig() *Config {
 	federationQueue := resolveQueueURL("FEDERATION_DELIVERY_QUEUE_URL", "FEDERATION_QUEUE_URL")
 	pushQueue := resolveQueueURL("PUSH_NOTIFICATION_QUEUE_URL", "PUSH_QUEUE_URL")
 
+	instanceMode := parseInstanceMode(getEnvOrDefault("INSTANCE_MODE", string(InstanceModeHybrid)))
+	cmsEnabledByMode := instanceMode == InstanceModeCMS || instanceMode == InstanceModeHybrid
+
 	cfg := &Config{
 		Domain:       domainName,
 		InstanceName: getEnvOrDefault("INSTANCE_NAME", "Lesser ActivityPub Server"),
+		InstanceMode: instanceMode,
 
 		Region:                  getEnvOrDefault("AWS_REGION", "us-east-1"),
 		DynamoTableName:         dynamoTable,
@@ -275,6 +299,15 @@ func loadConfig() *Config {
 		MaxUploadSize:     getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
 		PageSize:          getEnvAsIntOrDefault("PAGE_SIZE", 20),
 		AllowRegistration: getEnvAsBoolOrDefault("ALLOW_REGISTRATION", false),
+
+		// CMS Configuration
+		CMSLongFormPublishingEnabled:  getEnvAsBoolOrDefault("CMS_LONG_FORM_PUBLISHING_ENABLED", cmsEnabledByMode),
+		CMSDraftSystemEnabled:         getEnvAsBoolOrDefault("CMS_DRAFT_SYSTEM_ENABLED", cmsEnabledByMode),
+		CMSRevisionHistoryEnabled:     getEnvAsBoolOrDefault("CMS_REVISION_HISTORY_ENABLED", cmsEnabledByMode),
+		CMSScheduledPublishingEnabled: getEnvAsBoolOrDefault("CMS_SCHEDULED_PUBLISHING_ENABLED", cmsEnabledByMode),
+		CMSSeriesEnabled:              getEnvAsBoolOrDefault("CMS_SERIES_ENABLED", cmsEnabledByMode),
+		CMSCategoriesEnabled:          getEnvAsBoolOrDefault("CMS_CATEGORIES_ENABLED", cmsEnabledByMode),
+		CMSMaxRevisionsPerObject:      getEnvAsIntOrDefault("CMS_MAX_REVISIONS_PER_OBJECT", 0),
 
 		// Moderation flags - default to false (AWS enabled by default)
 		DisableAWSModeration: getEnvAsBoolOrDefault("DISABLE_AWS_MODERATION", false),
@@ -420,6 +453,50 @@ func (c *Config) ActorURL(username string) string {
 // ObjectURL returns the URL for an object
 func (c *Config) ObjectURL(objectType, id string) string {
 	return fmt.Sprintf("%s/%s/%s", c.BaseURL(), objectType, id)
+}
+
+// EffectiveInstanceMode returns the normalized instance mode (defaults to `hybrid`).
+func (c *Config) EffectiveInstanceMode() InstanceMode {
+	if c == nil {
+		return InstanceModeHybrid
+	}
+	return parseInstanceMode(string(c.InstanceMode))
+}
+
+// CMSEnabled reports whether the CMS surface is enabled for this instance mode.
+func (c *Config) CMSEnabled() bool {
+	mode := c.EffectiveInstanceMode()
+	return mode == InstanceModeCMS || mode == InstanceModeHybrid
+}
+
+// CMSLongFormEnabled reports whether long-form publishing (Articles) is enabled.
+func (c *Config) CMSLongFormEnabled() bool {
+	return c != nil && c.CMSEnabled() && c.CMSLongFormPublishingEnabled
+}
+
+// CMSDraftsEnabled reports whether the draft system is enabled.
+func (c *Config) CMSDraftsEnabled() bool {
+	return c != nil && c.CMSEnabled() && c.CMSDraftSystemEnabled
+}
+
+// CMSRevisionsEnabled reports whether revision history is enabled.
+func (c *Config) CMSRevisionsEnabled() bool {
+	return c != nil && c.CMSEnabled() && c.CMSRevisionHistoryEnabled
+}
+
+// CMSSchedulingEnabled reports whether scheduled publishing is enabled.
+func (c *Config) CMSSchedulingEnabled() bool {
+	return c != nil && c.CMSEnabled() && c.CMSScheduledPublishingEnabled
+}
+
+// CMSSeriesAllowed reports whether series organization is enabled.
+func (c *Config) CMSSeriesAllowed() bool {
+	return c != nil && c.CMSEnabled() && c.CMSSeriesEnabled
+}
+
+// CMSCategoriesAllowed reports whether category organization is enabled.
+func (c *Config) CMSCategoriesAllowed() bool {
+	return c != nil && c.CMSEnabled() && c.CMSCategoriesEnabled
 }
 
 // Helper functions
@@ -605,6 +682,19 @@ func resolveEnvironmentAndStage() (env string, envRaw string, stage string) {
 	stage = strings.TrimSpace(os.Getenv("STAGE"))
 	env = firstNonEmpty(envRaw, stage)
 	return env, envRaw, stage
+}
+
+func parseInstanceMode(value string) InstanceMode {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case string(InstanceModeSocial):
+		return InstanceModeSocial
+	case string(InstanceModeCMS):
+		return InstanceModeCMS
+	case string(InstanceModeHybrid), "":
+		return InstanceModeHybrid
+	default:
+		return InstanceModeHybrid
+	}
 }
 
 func resolveDynamoTableName() string {

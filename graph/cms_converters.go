@@ -15,6 +15,9 @@ func (r *Resolver) cmsStorage() core.RepositoryStorage {
 	if r == nil {
 		return nil
 	}
+	if !r.cmsLongFormEnabled() {
+		return nil
+	}
 	if r.Storage != nil {
 		return r.Storage
 	}

@@ -27,15 +27,17 @@ type DraftService struct {
 	draftRepo      *repositories.DraftRepository
 	articleService *ArticleService
 	domain         string
+	scheduling     bool
 	logger         *zap.Logger
 }
 
 // NewDraftService creates a new DraftService
-func NewDraftService(draftRepo *repositories.DraftRepository, articleService *ArticleService, domain string, logger *zap.Logger) *DraftService {
+func NewDraftService(draftRepo *repositories.DraftRepository, articleService *ArticleService, domain string, schedulingEnabled bool, logger *zap.Logger) *DraftService {
 	return &DraftService{
 		draftRepo:      draftRepo,
 		articleService: articleService,
 		domain:         strings.TrimSpace(domain),
+		scheduling:     schedulingEnabled,
 		logger:         logger,
 	}
 }
@@ -83,6 +85,10 @@ func (s *DraftService) DeleteDraft(ctx context.Context, authorID, draftID string
 
 // ScheduleDraft schedules a draft for publishing
 func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID string, scheduledAt time.Time) error {
+	if !s.scheduling {
+		return stdErrors.New("scheduled publishing is disabled")
+	}
+
 	draft, err := s.draftRepo.GetDraft(ctx, authorID, draftID)
 	if err != nil {
 		return err

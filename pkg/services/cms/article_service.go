@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/transformations"
+	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -24,6 +25,8 @@ type FederationService interface {
 type ArticleService struct {
 	articleRepo     *repositories.ArticleRepository
 	actorRepo       *repositories.ActorRepository
+	seriesRepo      *repositories.SeriesRepository
+	categoryRepo    *repositories.CategoryRepository
 	revisionService *RevisionService
 	federation      FederationService
 	logger          *zap.Logger
@@ -33,6 +36,8 @@ type ArticleService struct {
 func NewArticleService(
 	articleRepo *repositories.ArticleRepository,
 	actorRepo *repositories.ActorRepository,
+	seriesRepo *repositories.SeriesRepository,
+	categoryRepo *repositories.CategoryRepository,
 	revisionService *RevisionService,
 	federation FederationService,
 	logger *zap.Logger,
@@ -40,6 +45,8 @@ func NewArticleService(
 	return &ArticleService{
 		articleRepo:     articleRepo,
 		actorRepo:       actorRepo,
+		seriesRepo:      seriesRepo,
+		categoryRepo:    categoryRepo,
 		revisionService: revisionService,
 		federation:      federation,
 		logger:          logger,
@@ -48,6 +55,10 @@ func NewArticleService(
 
 // CreateArticle creates a new article
 func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Article) error {
+	if article == nil {
+		return errors.New("article is required")
+	}
+
 	s.logger.Info("creating article", zap.String("title", article.Name))
 
 	if article.CreatedAt.IsZero() {
@@ -55,9 +66,21 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 	}
 	article.UpdatedAt = time.Now()
 
+	enrichArticleContent(article)
+
 	if err := s.articleRepo.CreateArticle(ctx, article); err != nil {
 		return err
 	}
+
+	if err := s.upsertCMSArticleIndexes(ctx, article); err != nil {
+		s.logger.Error("failed to upsert CMS article indexes on create", zap.Error(err), zap.String("article_id", article.ID))
+		// Best-effort rollback to avoid creating unreachable content.
+		s.deleteCMSArticleIndexes(ctx, article)
+		_ = s.articleRepo.DeleteArticle(ctx, article.ID)
+		return err
+	}
+
+	s.updateCMSArticleCountsBestEffort(ctx, nil, article)
 
 	// Federate the article creation asynchronously
 	go s.federateArticleCreation(context.Background(), article)
@@ -83,12 +106,11 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 		return errors.New("article id is required")
 	}
 
+	existing, _ := s.articleRepo.GetArticle(ctx, strings.TrimSpace(article.ID))
+
 	// Snapshot existing state before applying the update.
-	if s.revisionService != nil {
-		existing, err := s.articleRepo.GetArticle(ctx, strings.TrimSpace(article.ID))
-		if err == nil && existing != nil {
-			_, _ = s.revisionService.CreateRevision(ctx, existing)
-		}
+	if s.revisionService != nil && existing != nil {
+		_, _ = s.revisionService.CreateRevision(ctx, existing)
 	}
 
 	if article.UpdatedAt.IsZero() {
@@ -98,9 +120,20 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 		article.Updated = article.UpdatedAt
 	}
 
+	enrichArticleContent(article)
+
 	if err := s.articleRepo.UpdateArticle(ctx, article); err != nil {
 		return err
 	}
+
+	if err := s.upsertCMSArticleIndexes(ctx, article); err != nil {
+		s.logger.Error("failed to upsert CMS article indexes on update", zap.Error(err), zap.String("article_id", article.ID))
+		return err
+	}
+	if existing != nil {
+		s.deleteCMSArticleIndexesForRemovedGroups(ctx, existing, article)
+	}
+	s.updateCMSArticleCountsBestEffort(ctx, existing, article)
 
 	go s.federateArticleUpdate(context.Background(), article)
 
@@ -120,9 +153,68 @@ func (s *ArticleService) DeleteArticle(ctx context.Context, article *models.Arti
 		return err
 	}
 
+	s.deleteCMSArticleIndexes(ctx, article)
+	s.updateCMSArticleCountsBestEffort(ctx, article, nil)
+
 	go s.federateArticleDeletion(context.Background(), article)
 
 	return nil
+}
+
+func (s *ArticleService) upsertCMSArticleIndexes(ctx context.Context, article *models.Article) error {
+	if article == nil {
+		return nil
+	}
+	db := s.articleRepo.GetDB()
+
+	entries := cmsArticleIndexEntries(article)
+	for _, entry := range entries {
+		if entry == nil {
+			continue
+		}
+		if err := db.WithContext(ctx).Model(entry).Create(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *ArticleService) deleteCMSArticleIndexes(ctx context.Context, article *models.Article) {
+	if article == nil {
+		return
+	}
+	db := s.articleRepo.GetDB()
+
+	entries := cmsArticleIndexEntries(article)
+	for _, entry := range entries {
+		if entry == nil {
+			continue
+		}
+		if err := db.WithContext(ctx).Model(entry).Delete(); err != nil && !dynamormerrors.IsNotFound(err) {
+			s.logger.Warn("failed to delete CMS article index entry", zap.Error(err), zap.String("pk", entry.PK), zap.String("sk", entry.SK))
+		}
+	}
+}
+
+func (s *ArticleService) deleteCMSArticleIndexesForRemovedGroups(ctx context.Context, before *models.Article, after *models.Article) {
+	if before == nil {
+		return
+	}
+	db := s.articleRepo.GetDB()
+
+	removed := cmsArticleIndexEntriesForRemovedGroups(before, after)
+	for _, entry := range removed {
+		if entry == nil {
+			continue
+		}
+		if err := db.WithContext(ctx).Model(entry).Delete(); err != nil && !dynamormerrors.IsNotFound(err) {
+			s.logger.Warn("failed to delete removed CMS article index entry", zap.Error(err), zap.String("pk", entry.PK), zap.String("sk", entry.SK))
+		}
+	}
+}
+
+func (s *ArticleService) updateCMSArticleCountsBestEffort(ctx context.Context, before *models.Article, after *models.Article) {
+	cmsUpdateArticleCountsBestEffort(ctx, s.seriesRepo, s.categoryRepo, before, after, s.logger)
 }
 
 func (s *ArticleService) federateArticleCreation(ctx context.Context, article *models.Article) {

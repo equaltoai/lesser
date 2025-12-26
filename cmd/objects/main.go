@@ -87,6 +87,20 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 		return lift.ValidationError("object ID is required")
 	}
 
+	// When the instance is locked, treat all objects as absent.
+	state, stateErr := repos.Instance().GetInstanceState(ctx.Context)
+	if stateErr != nil {
+		logger.Warn("failed to get instance lock state; defaulting to locked",
+			zap.Error(stateErr),
+			zap.String("object_id", objectID),
+			zap.String("request_id", ctx.GetRequestID()),
+		)
+		return lift.NotFound(fmt.Sprintf("object %s not found", objectID))
+	}
+	if state.Locked {
+		return lift.NotFound(fmt.Sprintf("object %s not found", objectID))
+	}
+
 	// Check Accept header for content negotiation
 	acceptHeader := ctx.Header("Accept")
 	if err := common.ValidateRequiredParam("acceptHeader", acceptHeader); err != nil {
