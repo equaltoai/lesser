@@ -22,10 +22,23 @@ const (
 	draftStatusFailed     = "failed"
 )
 
+type draftRepository interface {
+	CreateDraft(ctx context.Context, draft *models.Draft) error
+	UpdateDraft(ctx context.Context, draft *models.Draft) error
+	GetDraft(ctx context.Context, authorID, draftID string) (*models.Draft, error)
+	DeleteDraft(ctx context.Context, authorID, draftID string) error
+}
+
+type articleDraftPublisher interface {
+	GetArticle(ctx context.Context, articleID string) (*models.Article, error)
+	CreateArticle(ctx context.Context, article *models.Article) error
+	UpdateArticle(ctx context.Context, article *models.Article) error
+}
+
 // DraftService handles business logic for drafts
 type DraftService struct {
-	draftRepo      *repositories.DraftRepository
-	articleService *ArticleService
+	draftRepo      draftRepository
+	articleService articleDraftPublisher
 	domain         string
 	scheduling     bool
 	logger         *zap.Logger

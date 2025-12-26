@@ -1,6 +1,6 @@
 # API Surface Overview (REST + GraphQL)
 
-> **Last updated**: 2025-12-25  
+> **Last updated**: 2025-12-26  
 > **Source of truth**: `docs/specs/graphql_coverage.yaml` (enforced by `make verify-graphql-coverage`)
 
 This document summarizes Lesser’s current API surface in two dimensions:
@@ -37,41 +37,16 @@ Most-recent parity additions (previously had handlers but weren’t routed):
 ## GraphQL Coverage Snapshot
 
 Counts are derived from `docs/specs/graphql_coverage.yaml`:
-- Total Lift routes tracked: **233**
-- `rest_only`: **33**
+- Total Lift routes tracked: **234**
+- `rest_only`: **34**
 - `graphql_required`: **200**
-  - `covered`: **56**
-  - `missing`: **144**
+  - `covered`: **200**
+  - `missing`: **0**
 
-Important: `missing` means **“not yet implemented or not yet mapped/verified”**. It is a backlog signal, not a definitive statement that no GraphQL capability exists.
-
-### Missing clusters (by route family)
-
-Top missing clusters (`policy: graphql_required`, `status: missing`):
-- `/api/v1/admin/*`: 46
-- `/api/v1/statuses/*`: 16
-- `/api/v1/lists/*`: 8
-- `/api/v1/moderation/*`: 8
-- `/api/v1/accounts/*`: 7
-- `/api/v1/timelines/*`: 6
-- `/api/v1/instance/*`: 5
-- `/api/v1/notifications/*`: 4
-- `/api/v1/push/*`: 4
-- `/api/v1/reputation/*`: 4
-- `/api/v1/scheduled_statuses/*`: 4
-- `/api/v1/trends/*`: 4
-
-Admin missing sub-clusters:
-- `/api/v1/admin/accounts/*`: 10
-- `/api/v1/admin/moderation/*`: 7
-- `/api/v1/admin/reports/*`: 6
-- `/api/v1/admin/domain_blocks/*`: 5
-- `/api/v1/admin/statuses/*`: 5
-- `/api/v1/admin/{custom_emojis|domain_allows|email_domain_blocks|federation}/*`: 3 each
+Status note: `make verify-graphql-coverage` runs with `--strict`, so any `graphql_required` route that is not mapped to a schema field fails CI/verification.
 
 ## How to keep this accurate
 
 - When Lift routes change: run `make generate-graphql-coverage`.
 - CI/verification: `make verify-graphql-coverage` fails on route drift or invalid GraphQL mappings.
-- Use `docs/specs/GRAPHQL_COVERAGE_PLAN.md` and `docs/specs/GRAPHQL_COVERAGE_BACKLOG.md` to drive the remaining `missing` routes to `covered`.
-
+- Use `docs/specs/GRAPHQL_COVERAGE_PLAN.md` and `docs/specs/GRAPHQL_COVERAGE_BACKLOG.md` when introducing new route families or expanding parity requirements.

@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -58,12 +59,48 @@ type articleRevisionMetadata struct {
 	ReviewStatus string `json:"reviewStatus,omitempty"`
 }
 
+type revisionRepository interface {
+	ListRevisions(ctx context.Context, objectID string, limit int) ([]*models.Revision, error)
+	GetRevision(ctx context.Context, objectID string, version int) (*models.Revision, error)
+	CreateRevision(ctx context.Context, revision *models.Revision) error
+	Delete(ctx context.Context, pk, sk string) error
+}
+
+type articleRepository interface {
+	GetArticle(ctx context.Context, id string) (*models.Article, error)
+	UpdateArticle(ctx context.Context, article *models.Article) error
+}
+
+type cmsArticleIndexWriter interface {
+	Create(ctx context.Context, entry *models.CMSArticleIndex) error
+	Delete(ctx context.Context, entry *models.CMSArticleIndex) error
+}
+
+type dynamormCMSArticleIndexWriter struct {
+	db dynamormcore.DB
+}
+
+func (w dynamormCMSArticleIndexWriter) Create(ctx context.Context, entry *models.CMSArticleIndex) error {
+	if w.db == nil {
+		return fmt.Errorf("cms article index db is nil")
+	}
+	return w.db.WithContext(ctx).Model(entry).Create()
+}
+
+func (w dynamormCMSArticleIndexWriter) Delete(ctx context.Context, entry *models.CMSArticleIndex) error {
+	if w.db == nil {
+		return fmt.Errorf("cms article index db is nil")
+	}
+	return w.db.WithContext(ctx).Model(entry).Delete()
+}
+
 // RevisionService handles business logic for content revisions
 type RevisionService struct {
-	revisionRepo          *repositories.RevisionRepository
-	articleRepo           *repositories.ArticleRepository
+	revisionRepo          revisionRepository
+	articleRepo           articleRepository
 	seriesRepo            *repositories.SeriesRepository
 	categoryRepo          *repositories.CategoryRepository
+	articleIndexWriter    cmsArticleIndexWriter
 	maxRevisionsPerObject int
 	logger                *zap.Logger
 }
@@ -77,11 +114,16 @@ func NewRevisionService(
 	maxRevisionsPerObject int,
 	logger *zap.Logger,
 ) *RevisionService {
+	var indexWriter cmsArticleIndexWriter
+	if articleRepo != nil {
+		indexWriter = dynamormCMSArticleIndexWriter{db: articleRepo.GetDB()}
+	}
 	return &RevisionService{
 		revisionRepo:          revisionRepo,
 		articleRepo:           articleRepo,
 		seriesRepo:            seriesRepo,
 		categoryRepo:          categoryRepo,
+		articleIndexWriter:    indexWriter,
 		maxRevisionsPerObject: maxRevisionsPerObject,
 		logger:                logger,
 	}
@@ -255,57 +297,8 @@ func (s *RevisionService) RestoreRevision(ctx context.Context, objectID string, 
 	before := *article
 	before.CategoryIDs = append([]string{}, article.CategoryIDs...)
 
-	// Record a revision of the CURRENT state before overwriting (safety net).
-	if _, err := s.createRevision(ctx, article, revisionChangeTypeUpdate, fmt.Sprintf("backup before restore from version %d", version)); err != nil {
-		s.logger.Warn("failed to record pre-restore backup revision", zap.Error(err))
-	}
-
-	// Update article with revision content
-	article.Content = revision.Content
-
-	// Restore metadata from JSON if available
-	if revision.MetadataJSON != "" {
-		var metadata articleRevisionMetadata
-		if err := json.Unmarshal([]byte(revision.MetadataJSON), &metadata); err == nil {
-			if strings.TrimSpace(metadata.Name) != "" {
-				article.Name = metadata.Name
-			}
-			article.Summary = metadata.Summary
-			if strings.TrimSpace(metadata.AttributedTo) != "" {
-				article.AttributedTo = metadata.AttributedTo
-			}
-			article.Subtitle = metadata.Subtitle
-			article.Excerpt = metadata.Excerpt
-			article.ContentFormat = metadata.ContentFormat
-			article.TableOfContents = append([]models.TOCEntry{}, metadata.TableOfContents...)
-			article.ReadingTimeMinutes = metadata.ReadingTimeMinutes
-			article.WordCount = metadata.WordCount
-			article.SeriesID = metadata.SeriesID
-			article.SeriesOrder = metadata.SeriesOrder
-			article.CategoryIDs = append([]string{}, metadata.CategoryIDs...)
-			article.SEOTitle = metadata.SEOTitle
-			article.SEODescription = metadata.SEODescription
-			article.CanonicalURL = metadata.CanonicalURL
-			article.OGImage = metadata.OGImage
-			article.EditorNotes = metadata.EditorNotes
-			article.ReviewStatus = metadata.ReviewStatus
-
-			if metadata.FeaturedImage == nil || strings.TrimSpace(metadata.FeaturedImage.ID) == "" {
-				article.FeaturedImage = nil
-			} else {
-				article.FeaturedImage = &models.Media{
-					MediaID:     metadata.FeaturedImage.ID,
-					ContentType: metadata.FeaturedImage.ContentType,
-					CDNUrl:      metadata.FeaturedImage.CDNURL,
-					Description: metadata.FeaturedImage.Description,
-					Blurhash:    metadata.FeaturedImage.Blurhash,
-					Width:       metadata.FeaturedImage.Width,
-					Height:      metadata.FeaturedImage.Height,
-					FileSize:    metadata.FeaturedImage.FileSize,
-				}
-			}
-		}
-	}
+	s.recordPreRestoreBackupRevisionBestEffort(ctx, article, version)
+	s.applyRevisionToArticle(article, revision)
 
 	// Recompute derived enrichment fields for consistency (TOC, word count, reading time).
 	enrichArticleContent(article)
@@ -318,30 +311,121 @@ func (s *RevisionService) RestoreRevision(ctx context.Context, objectID string, 
 		return nil, err
 	}
 
-	db := s.articleRepo.GetDB()
+	if err := s.upsertCMSArticleIndexes(ctx, article); err != nil {
+		s.logger.Error("failed to upsert CMS article indexes on restore", zap.Error(err), zap.String("article_id", article.ID))
+		return nil, err
+	}
+	s.deleteRemovedCMSArticleIndexesBestEffort(ctx, &before, article)
+	cmsUpdateArticleCountsBestEffort(ctx, s.seriesRepo, s.categoryRepo, &before, article, s.logger)
+
+	// Record a revision for the restored state (audit trail). This should not block the restore.
+	s.recordRestoredRevisionBestEffort(ctx, article, version)
+
+	return article, nil
+}
+
+func (s *RevisionService) recordPreRestoreBackupRevisionBestEffort(ctx context.Context, article *models.Article, version int) {
+	// Record a revision of the CURRENT state before overwriting (safety net).
+	if _, err := s.createRevision(ctx, article, revisionChangeTypeUpdate, fmt.Sprintf("backup before restore from version %d", version)); err != nil {
+		s.logger.Warn("failed to record pre-restore backup revision", zap.Error(err))
+	}
+}
+
+func (s *RevisionService) recordRestoredRevisionBestEffort(ctx context.Context, article *models.Article, version int) {
+	if _, err := s.createRevision(ctx, article, revisionChangeTypeRestore, fmt.Sprintf("restored from version %d", version)); err != nil {
+		s.logger.Warn("failed to record restored revision", zap.Error(err))
+	}
+}
+
+func (s *RevisionService) applyRevisionToArticle(article *models.Article, revision *models.Revision) {
+	if article == nil || revision == nil {
+		return
+	}
+
+	article.Content = revision.Content
+	s.applyRevisionMetadataJSON(article, revision.MetadataJSON)
+}
+
+func (s *RevisionService) applyRevisionMetadataJSON(article *models.Article, metadataJSON string) {
+	if article == nil {
+		return
+	}
+	if strings.TrimSpace(metadataJSON) == "" {
+		return
+	}
+
+	var metadata articleRevisionMetadata
+	if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
+		return
+	}
+
+	if strings.TrimSpace(metadata.Name) != "" {
+		article.Name = metadata.Name
+	}
+	article.Summary = metadata.Summary
+	if strings.TrimSpace(metadata.AttributedTo) != "" {
+		article.AttributedTo = metadata.AttributedTo
+	}
+	article.Subtitle = metadata.Subtitle
+	article.Excerpt = metadata.Excerpt
+	article.ContentFormat = metadata.ContentFormat
+	article.TableOfContents = append([]models.TOCEntry{}, metadata.TableOfContents...)
+	article.ReadingTimeMinutes = metadata.ReadingTimeMinutes
+	article.WordCount = metadata.WordCount
+	article.SeriesID = metadata.SeriesID
+	article.SeriesOrder = metadata.SeriesOrder
+	article.CategoryIDs = append([]string{}, metadata.CategoryIDs...)
+	article.SEOTitle = metadata.SEOTitle
+	article.SEODescription = metadata.SEODescription
+	article.CanonicalURL = metadata.CanonicalURL
+	article.OGImage = metadata.OGImage
+	article.EditorNotes = metadata.EditorNotes
+	article.ReviewStatus = metadata.ReviewStatus
+
+	if metadata.FeaturedImage == nil || strings.TrimSpace(metadata.FeaturedImage.ID) == "" {
+		article.FeaturedImage = nil
+		return
+	}
+
+	article.FeaturedImage = &models.Media{
+		MediaID:     metadata.FeaturedImage.ID,
+		ContentType: metadata.FeaturedImage.ContentType,
+		CDNUrl:      metadata.FeaturedImage.CDNURL,
+		Description: metadata.FeaturedImage.Description,
+		Blurhash:    metadata.FeaturedImage.Blurhash,
+		Width:       metadata.FeaturedImage.Width,
+		Height:      metadata.FeaturedImage.Height,
+		FileSize:    metadata.FeaturedImage.FileSize,
+	}
+}
+
+func (s *RevisionService) upsertCMSArticleIndexes(ctx context.Context, article *models.Article) error {
+	if s.articleIndexWriter == nil {
+		return fmt.Errorf("cms article index writer is not configured")
+	}
+
 	for _, entry := range cmsArticleIndexEntries(article) {
 		if entry == nil {
 			continue
 		}
-		if err := db.WithContext(ctx).Model(entry).Create(); err != nil {
-			s.logger.Error("failed to upsert CMS article indexes on restore", zap.Error(err), zap.String("article_id", article.ID))
-			return nil, err
+		if err := s.articleIndexWriter.Create(ctx, entry); err != nil {
+			return err
 		}
 	}
-	for _, entry := range cmsArticleIndexEntriesForRemovedGroups(&before, article) {
+	return nil
+}
+
+func (s *RevisionService) deleteRemovedCMSArticleIndexesBestEffort(ctx context.Context, before *models.Article, after *models.Article) {
+	if s.articleIndexWriter == nil {
+		return
+	}
+
+	for _, entry := range cmsArticleIndexEntriesForRemovedGroups(before, after) {
 		if entry == nil {
 			continue
 		}
-		if err := db.WithContext(ctx).Model(entry).Delete(); err != nil && !dynamormerrors.IsNotFound(err) {
+		if err := s.articleIndexWriter.Delete(ctx, entry); err != nil && !dynamormerrors.IsNotFound(err) {
 			s.logger.Warn("failed to delete removed CMS article index entry on restore", zap.Error(err), zap.String("pk", entry.PK), zap.String("sk", entry.SK))
 		}
 	}
-	cmsUpdateArticleCountsBestEffort(ctx, s.seriesRepo, s.categoryRepo, &before, article, s.logger)
-
-	// Record a revision for the restored state (audit trail). This should not block the restore.
-	if _, err := s.createRevision(ctx, article, revisionChangeTypeRestore, fmt.Sprintf("restored from version %d", version)); err != nil {
-		s.logger.Warn("failed to record restored revision", zap.Error(err))
-	}
-
-	return article, nil
 }

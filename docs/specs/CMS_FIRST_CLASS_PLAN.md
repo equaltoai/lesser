@@ -1,9 +1,9 @@
 # CMS: First-Class Citizen Implementation Plan
 
-> **Status**: Active (Milestone 4 complete; Milestone 5 next)  
+> **Status**: Complete (Milestone 6 complete)  
 > **Owner**: Lesser  
 > **Last updated**: 2025-12-26  
-> **Related**: `docs/HEADLESS_CMS_DESIGN.md`, `docs/specs/GRAPHQL_COVERAGE_PLAN.md`, `graph/phase1.graphql`
+> **Related**: `docs/HEADLESS_CMS_DESIGN.md`, `docs/CMS_DEVELOPER_GUIDE.md`, `docs/specs/GRAPHQL_COVERAGE_PLAN.md`, `graph/phase1.graphql`
 
 This plan turns the current CMS GraphQL surface into a **first-class, production-grade CMS subsystem** in Lesser: consistent lifecycle rules, service-layer ownership, scheduled publishing, robust revisions, and deterministic public behavior.
 
@@ -213,6 +213,11 @@ Deliverables:
   - revision snapshot/restore correctness
   - permissions for reads/writes
 - Add a small “CMS smoke” test path suitable for CI (no AWS dependencies).
+
+Progress (2025-12-26):
+- Added CMS developer docs (`docs/CMS_DEVELOPER_GUIDE.md`).
+- Added CMS service unit tests (`pkg/services/cms/draft_service_test.go`, `pkg/services/cms/revision_service_test.go`) including a smoke test.
+- Added GraphQL CMS gating/permission unit tests (`graph/cms_feature_gates_test.go`, `graph/cms_permissions_test.go`).
 
 Exit criteria:
 - Future CMS changes are protected by tests and docs.

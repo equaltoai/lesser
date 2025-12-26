@@ -329,6 +329,10 @@ func (r *Resolver) requireAdmin(ctx context.Context) (string, error) {
 }
 
 func (r *Resolver) isAdmin(ctx context.Context, username string) bool {
+	if r == nil || r.Registry == nil {
+		return false
+	}
+
 	accountsService := r.Registry.Accounts()
 	if accountsService == nil {
 		return false
