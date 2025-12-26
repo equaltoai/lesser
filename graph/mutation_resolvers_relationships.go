@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"go.uber.org/zap"
 )
@@ -201,4 +203,121 @@ func (r *mutationResolver) UpdateRelationship(ctx context.Context, id string, in
 		zap.String("following", id))
 
 	return gqlRelationship, nil
+}
+
+// AcceptFollowRequest accepts a pending follow request for the current viewer.
+func (r *mutationResolver) AcceptFollowRequest(ctx context.Context, accountID string) (*model.Relationship, error) {
+	return r.resolveFollowRequest(ctx, accountID, true)
+}
+
+// RejectFollowRequest rejects a pending follow request for the current viewer.
+func (r *mutationResolver) RejectFollowRequest(ctx context.Context, accountID string) (*model.Relationship, error) {
+	return r.resolveFollowRequest(ctx, accountID, false)
+}
+
+func (r *mutationResolver) resolveFollowRequest(ctx context.Context, accountID string, accept bool) (*model.Relationship, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
+		return nil, err
+	}
+
+	relationshipsService := r.Registry.Relationships()
+	if relationshipsService == nil {
+		return nil, errors.New("relationships service is not available")
+	}
+
+	accountID = strings.TrimSpace(accountID)
+
+	var (
+		result *relationships.RelationshipResult
+		action = "reject"
+	)
+
+	if accept {
+		action = "accept"
+		result, err = relationshipsService.AcceptFollowRequest(ctx, &relationships.AcceptFollowRequestCommand{
+			RequesterID: username,
+			FollowerID:  accountID,
+		})
+	} else {
+		result, err = relationshipsService.RejectFollowRequest(ctx, &relationships.RejectFollowRequestCommand{
+			RequesterID: username,
+			FollowerID:  accountID,
+		})
+	}
+	if err != nil {
+		r.Logger.Error("Failed to handle follow request",
+			zap.String("action", action),
+			zap.String("user", username),
+			zap.String("account_id", accountID),
+			zap.Error(err))
+		return nil, errors.Join(fmt.Errorf("failed to %s follow request", action), err)
+	}
+
+	r.trackDynamoOperation(ctx, "write", 1)
+
+	return r.convertRelationshipToGraphQL(result.Relationship), nil
+}
+
+// AddDomainBlock blocks a domain for the current viewer.
+func (r *mutationResolver) AddDomainBlock(ctx context.Context, domain string) (bool, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return false, err
+	}
+
+	relationshipsService := r.Registry.Relationships()
+	if relationshipsService == nil {
+		return false, errors.New("relationships service is not available")
+	}
+
+	if err := relationshipsService.AddDomainBlock(ctx, &relationships.AddDomainBlockCommand{
+		UserID: username,
+		Domain: strings.TrimSpace(domain),
+	}); err != nil {
+		r.Logger.Error("Failed to add domain block",
+			zap.String("user", username),
+			zap.String("domain", domain),
+			zap.Error(err))
+		return false, errors.Join(errors.New("failed to add domain block"), err)
+	}
+
+	r.trackDynamoOperation(ctx, "write", 1)
+	return true, nil
+}
+
+// RemoveDomainBlock unblocks a domain for the current viewer.
+func (r *mutationResolver) RemoveDomainBlock(ctx context.Context, domain string) (bool, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return false, err
+	}
+
+	relationshipsService := r.Registry.Relationships()
+	if relationshipsService == nil {
+		return false, errors.New("relationships service is not available")
+	}
+
+	if err := relationshipsService.RemoveDomainBlock(ctx, &relationships.RemoveDomainBlockCommand{
+		UserID: strings.TrimSpace(username),
+		Domain: strings.TrimSpace(domain),
+	}); err != nil {
+		r.Logger.Error("Failed to remove domain block",
+			zap.String("user", username),
+			zap.String("domain", domain),
+			zap.Error(err))
+		return false, errors.Join(errors.New("failed to remove domain block"), err)
+	}
+
+	r.trackDynamoOperation(ctx, "write", 1)
+	return true, nil
 }

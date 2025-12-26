@@ -80,6 +80,14 @@ type AccessLog struct {
 	Cost      int    `json:"cost"`
 }
 
+type AccountQuotePermissions struct {
+	Username       string   `json:"username"`
+	AllowPublic    bool     `json:"allowPublic"`
+	AllowFollowers bool     `json:"allowFollowers"`
+	AllowMentioned bool     `json:"allowMentioned"`
+	BlockList      []string `json:"blockList"`
+}
+
 type AccountSuggestion struct {
 	Account *activitypub.Actor `json:"account"`
 	Source  SuggestionSource   `json:"source"`
@@ -177,6 +185,17 @@ type CommunityNote struct {
 	Helpful    int                `json:"helpful"`
 	NotHelpful int                `json:"notHelpful"`
 	CreatedAt  Time               `json:"createdAt"`
+}
+
+type CommunityNoteConnection struct {
+	Edges      []*CommunityNoteEdge `json:"edges"`
+	PageInfo   *PageInfo            `json:"pageInfo"`
+	TotalCount int                  `json:"totalCount"`
+}
+
+type CommunityNoteEdge struct {
+	Node   *CommunityNote `json:"node"`
+	Cursor Cursor         `json:"cursor"`
 }
 
 type CommunityNoteInput struct {
@@ -368,6 +387,12 @@ type DiscoveryPreferences struct {
 	ShowFollowCounts          bool `json:"showFollowCounts"`
 	SearchSuggestionsEnabled  bool `json:"searchSuggestionsEnabled"`
 	PersonalizedSearchEnabled bool `json:"personalizedSearchEnabled"`
+}
+
+type DomainBlockPage struct {
+	Domains    []string `json:"domains"`
+	NextCursor *Cursor  `json:"nextCursor,omitempty"`
+	TotalCount int      `json:"totalCount"`
 }
 
 type Entity struct {
@@ -859,6 +884,17 @@ type ListUpdate struct {
 	List      *List              `json:"list"`
 	Account   *activitypub.Actor `json:"account,omitempty"`
 	Timestamp Time               `json:"timestamp"`
+}
+
+type Marker struct {
+	LastReadID string `json:"lastReadId"`
+	UpdatedAt  Time   `json:"updatedAt"`
+	Version    int    `json:"version"`
+}
+
+type MarkerSet struct {
+	Home          *Marker `json:"home,omitempty"`
+	Notifications *Marker `json:"notifications,omitempty"`
 }
 
 type Media struct {
@@ -1364,6 +1400,19 @@ type ReconnectionPayload struct {
 	Errors              []string             `json:"errors,omitempty"`
 }
 
+type RegisterAccountInput struct {
+	Username                 string      `json:"username"`
+	Locale                   *string     `json:"locale,omitempty"`
+	Agreement                bool        `json:"agreement"`
+	Reason                   *string     `json:"reason,omitempty"`
+	DefaultPostingVisibility *Visibility `json:"defaultPostingVisibility,omitempty"`
+}
+
+type RegisterAccountPayload struct {
+	Actor   *activitypub.Actor `json:"actor"`
+	Created bool               `json:"created"`
+}
+
 type RegisterPushSubscriptionInput struct {
 	Endpoint string                       `json:"endpoint"`
 	Keys     *PushSubscriptionKeysInput   `json:"keys"`
@@ -1436,6 +1485,11 @@ type ReputationVerificationResult struct {
 	NotExpired     bool    `json:"notExpired"`
 	IssuerTrusted  bool    `json:"issuerTrusted"`
 	Error          *string `json:"error,omitempty"`
+}
+
+type SaveMarkerInput struct {
+	Timeline   MarkerTimeline `json:"timeline"`
+	LastReadID string         `json:"lastReadId"`
 }
 
 type ScheduleStatusInput struct {
@@ -1709,6 +1763,13 @@ type TrustInput struct {
 type UnfollowHashtagPayload struct {
 	Success bool     `json:"success"`
 	Hashtag *Hashtag `json:"hashtag"`
+}
+
+type UpdateAccountQuotePermissionsInput struct {
+	AllowPublic    *bool    `json:"allowPublic,omitempty"`
+	AllowFollowers *bool    `json:"allowFollowers,omitempty"`
+	AllowMentioned *bool    `json:"allowMentioned,omitempty"`
+	BlockList      []string `json:"blockList,omitempty"`
 }
 
 type UpdateEmojiInput struct {
@@ -3028,6 +3089,61 @@ func (e *IssueSeverity) UnmarshalJSON(b []byte) error {
 }
 
 func (e IssueSeverity) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type MarkerTimeline string
+
+const (
+	MarkerTimelineHome          MarkerTimeline = "HOME"
+	MarkerTimelineNotifications MarkerTimeline = "NOTIFICATIONS"
+)
+
+var AllMarkerTimeline = []MarkerTimeline{
+	MarkerTimelineHome,
+	MarkerTimelineNotifications,
+}
+
+func (e MarkerTimeline) IsValid() bool {
+	switch e {
+	case MarkerTimelineHome, MarkerTimelineNotifications:
+		return true
+	}
+	return false
+}
+
+func (e MarkerTimeline) String() string {
+	return string(e)
+}
+
+func (e *MarkerTimeline) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = MarkerTimeline(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid MarkerTimeline", str)
+	}
+	return nil
+}
+
+func (e MarkerTimeline) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *MarkerTimeline) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e MarkerTimeline) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

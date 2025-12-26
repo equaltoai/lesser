@@ -241,13 +241,13 @@ func boolFromAny(value interface{}, fallback bool) bool {
 
 func toVisibilityEnum(value string) model.Visibility {
 	switch strings.ToLower(value) {
-	case "public":
+	case VisibilityPublic:
 		return model.VisibilityPublic
-	case "unlisted":
+	case VisibilityUnlisted:
 		return model.VisibilityUnlisted
-	case strings.ToLower(EventTypeFollowers):
+	case EventTypeFollowers:
 		return model.VisibilityFollowers
-	case "direct":
+	case TimelineTypeDirect:
 		return model.VisibilityDirect
 	default:
 		return model.VisibilityPublic

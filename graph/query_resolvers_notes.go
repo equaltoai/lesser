@@ -68,7 +68,7 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 		if err := common.ValidateRequiredParam("username", username); err != nil {
 			return nil, ErrAuthRequiredForHome
 		}
-		query.TimelineType = "home"
+		query.TimelineType = TimelineTypeHome
 	case model.TimelineTypePublic:
 		query.TimelineType = StreamNamePublic
 	case model.TimelineTypeLocal:

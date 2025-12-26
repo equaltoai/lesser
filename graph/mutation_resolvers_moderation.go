@@ -129,10 +129,11 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 	}
 
 	// Create community note
+	authorID := config.Get().ActorURL(username)
 	note := &storage.CommunityNote{
 		ObjectID:         input.ObjectID,
 		ObjectType:       "status", // For ActivityPub objects
-		AuthorID:         username,
+		AuthorID:         authorID,
 		Content:          input.Content,
 		Language:         "en",      // Default language, could be detected
 		VisibilityStatus: "pending", // Start as pending, becomes visible based on votes
@@ -176,7 +177,7 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 	r.Logger.Info("Created community note",
 		zap.String("noteID", note.ID),
 		zap.String("objectID", input.ObjectID),
-		zap.String("authorID", username))
+		zap.String("authorID", authorID))
 
 	return &model.CommunityNotePayload{
 		Note:   graphqlNote,
@@ -191,6 +192,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 	if err != nil {
 		return nil, err
 	}
+	voterID := config.Get().ActorURL(username)
 
 	// Get the existing note to verify it exists
 	note, err := r.Storage.CommunityNote().GetCommunityNote(ctx, id)
@@ -206,7 +208,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 	}
 
 	// Prevent authors from voting on their own notes
-	if note.AuthorID == username {
+	if note.AuthorID == voterID {
 		return nil, ErrAuthorsCannotVote
 	}
 
@@ -218,18 +220,18 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 
 	vote := &storage.CommunityNoteVote{
 		NoteID:   id,
-		VoterID:  username,
+		VoterID:  voterID,
 		VoteType: voteType,
 		Helpful:  helpful,
 		Weight:   1.0, // Basic weight, could be enhanced with user reputation
 	}
 
 	// Check if user has already voted (get existing votes)
-	existingVotes, err := r.Storage.CommunityNote().GetUserCommunityNoteVotes(ctx, username, []string{id})
+	existingVotes, err := r.Storage.CommunityNote().GetUserCommunityNoteVotes(ctx, voterID, []string{id})
 	if err != nil {
 		r.Logger.Error("Failed to check existing votes",
 			zap.String("noteID", id),
-			zap.String("voterID", username),
+			zap.String("voterID", voterID),
 			zap.Error(err))
 		return nil, errors.Join(errors.New("failed to check existing votes"), err)
 	}
@@ -239,7 +241,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 	if err != nil {
 		r.Logger.Error("Failed to create community note vote",
 			zap.String("noteID", id),
-			zap.String("voterID", username),
+			zap.String("voterID", voterID),
 			zap.String("voteType", voteType),
 			zap.Error(err))
 		return nil, errors.Join(errors.New("failed to create vote"), err)
@@ -297,24 +299,19 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 	}
 
 	// Get the author actor for response
-	author, err := r.Registry.Accounts().GetAccount(ctx, note.AuthorID)
-	if err != nil {
-		r.Logger.Error("Failed to get author for community note response",
-			zap.String("authorID", note.AuthorID),
-			zap.Error(err))
-		return nil, errors.Join(errors.New("failed to get author"), err)
-	}
+	authorUsername := deriveUsernameFromIRI(note.AuthorID)
+	authorActor := r.resolveActorByUsernameOrID(ctx, authorUsername, note.AuthorID)
 
 	r.Logger.Info("Voted on community note",
 		zap.String("noteID", id),
-		zap.String("voterID", username),
+		zap.String("voterID", voterID),
 		zap.String("voteType", voteType),
 		zap.Bool("wasExistingVote", len(existingVotes) > 0))
 
 	// Convert to GraphQL model and return
 	return &model.CommunityNote{
 		ID:         note.ID,
-		Author:     r.convertAccountToActor(author),
+		Author:     authorActor,
 		Content:    note.Content,
 		Helpful:    note.HelpfulVotes,
 		NotHelpful: note.NotHelpfulVotes,

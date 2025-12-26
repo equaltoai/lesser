@@ -2,7 +2,7 @@
 
 > **Status**: Active  
 > **Owner**: Lesser  
-> **Last updated**: 2025-12-25  
+> **Last updated**: 2025-12-26  
 > **Related**: `docs/specs/GRAPHQL_COVERAGE.md`, `docs/specs/graphql_coverage.yaml`, `docs/specs/GRAPHQL_COVERAGE_BACKLOG.md`
 
 This document is the concrete, phase-based plan for achieving **GraphQL parity** for all in-scope Lesser product functionality while keeping REST as the source of truth for standards/protocol endpoints and other explicitly REST-only flows.
@@ -12,13 +12,13 @@ This document is the concrete, phase-based plan for achieving **GraphQL parity**
 The route inventory is tracked in `docs/specs/graphql_coverage.yaml` and is enforced by `make verify-graphql-coverage`.
 
 Current counts (from that file):
-- Total Lift routes tracked: **233**
+- Total Lift routes tracked: **234**
 - `graphql_required`: **200**
-- `rest_only` (explicit exemptions): **33**
-- Marked `covered`: **56**
-- Marked `missing`: **144**
+- `rest_only` (explicit exemptions): **34**
+- Marked `covered`: **126**
+- Marked `missing`: **74**
 
-Important: **`missing` is “not yet verified/mapped”**, not necessarily “no GraphQL support exists”. Phase **0.5** is the audit + mapping pass that converts “unknown/unmapped” into a real backlog.
+Important: With Phase **0.5** complete, **`missing` represents real parity work** (schema/resolvers/service), not “unmapped”.
 
 ## Definitions
 
@@ -50,7 +50,7 @@ Important: **`missing` is “not yet verified/mapped”**, not necessarily “no
 - `make verify-graphql-coverage` passes in CI.
 - Coverage YAML contains *all* Lift routes (excluding `OPTIONS`/`HEAD`) with correct policy classification.
 
-## Phase 0.5 — Coverage Audit + Mapping (In progress)
+## Phase 0.5 — Coverage Audit + Mapping (Completed)
 
 **Goal**: Convert “unknown/unmapped” into a real backlog by marking routes as `covered` **only when** a working GraphQL operation exists (and is appropriate for the exemption policy).
 
@@ -90,7 +90,7 @@ Important: **`missing` is “not yet verified/mapped”**, not necessarily “no
 **Exit criteria**
 - CMS user-facing flows are implementable via GraphQL without REST fallbacks.
 
-## Phase 2 — Client Parity Features (Planned)
+## Phase 2 — Client Parity Features (Completed)
 
 **Goal**: Cover the “client parity” feature set required for a first-party Greater client without REST fallbacks.
 
@@ -114,7 +114,7 @@ Important: **`missing` is “not yet verified/mapped”**, not necessarily “no
 **Exit criteria**
 - A Greater client can implement the above features via GraphQL only (excluding explicit exemptions).
 
-## Phase 3 — Admin Parity + Strict Enforcement (Planned)
+## Phase 3 — Admin Parity + Strict Enforcement (In progress)
 
 **Goal**: Finish the remaining “product functionality” parity, then turn on strict enforcement.
 

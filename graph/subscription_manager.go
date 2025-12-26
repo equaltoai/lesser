@@ -306,7 +306,7 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 	// Create channel based on type - we'll use interface{} and let caller cast
 	var ch interface{}
 	switch subscriptionType {
-	case "timeline":
+	case ServiceTypeTimeline:
 		ch = make(chan *model.Object, channelBuffer)
 	case "notification":
 		ch = make(chan *model.Notification, channelBuffer)
@@ -408,7 +408,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, u
 	}
 
 	streams := []string{streamName}
-	ch, _, err := sm.createGenericSubscription(ctx, "timeline", username, streams, 100, nil)
+	ch, _, err := sm.createGenericSubscription(ctx, ServiceTypeTimeline, username, streams, 100, nil)
 	if err != nil {
 		return nil, err
 	}

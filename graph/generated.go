@@ -132,6 +132,14 @@ type ComplexityRoot struct {
 		Timestamp func(childComplexity int) int
 	}
 
+	AccountQuotePermissions struct {
+		AllowFollowers func(childComplexity int) int
+		AllowMentioned func(childComplexity int) int
+		AllowPublic    func(childComplexity int) int
+		BlockList      func(childComplexity int) int
+		Username       func(childComplexity int) int
+	}
+
 	AccountSuggestion struct {
 		Account func(childComplexity int) int
 		Reason  func(childComplexity int) int
@@ -261,6 +269,17 @@ type ComplexityRoot struct {
 		NotHelpful func(childComplexity int) int
 	}
 
+	CommunityNoteConnection struct {
+		Edges      func(childComplexity int) int
+		PageInfo   func(childComplexity int) int
+		TotalCount func(childComplexity int) int
+	}
+
+	CommunityNoteEdge struct {
+		Cursor func(childComplexity int) int
+		Node   func(childComplexity int) int
+	}
+
 	CommunityNotePayload struct {
 		Note   func(childComplexity int) int
 		Object func(childComplexity int) int
@@ -363,6 +382,12 @@ type ComplexityRoot struct {
 		PersonalizedSearchEnabled func(childComplexity int) int
 		SearchSuggestionsEnabled  func(childComplexity int) int
 		ShowFollowCounts          func(childComplexity int) int
+	}
+
+	DomainBlockPage struct {
+		Domains    func(childComplexity int) int
+		NextCursor func(childComplexity int) int
+		TotalCount func(childComplexity int) int
 	}
 
 	Driver struct {
@@ -849,6 +874,17 @@ type ComplexityRoot struct {
 		Type      func(childComplexity int) int
 	}
 
+	Marker struct {
+		LastReadID func(childComplexity int) int
+		UpdatedAt  func(childComplexity int) int
+		Version    func(childComplexity int) int
+	}
+
+	MarkerSet struct {
+		Home          func(childComplexity int) int
+		Notifications func(childComplexity int) int
+	}
+
 	Media struct {
 		Blurhash      func(childComplexity int) int
 		CreatedAt     func(childComplexity int) int
@@ -1017,86 +1053,93 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
-		AcknowledgeSeverance        func(childComplexity int, id string) int
-		AddAccountsToList           func(childComplexity int, id string, accountIds []string) int
-		AddCommunityNote            func(childComplexity int, input model.CommunityNoteInput) int
-		AddFilterKeyword            func(childComplexity int, filterID string, input model.AddFilterKeywordInput) int
-		AddFilterStatus             func(childComplexity int, filterID string, statusID string) int
-		AttemptReconnection         func(childComplexity int, id string) int
-		BlockActor                  func(childComplexity int, id string) int
-		BookmarkObject              func(childComplexity int, id string) int
-		CancelImport                func(childComplexity int, id string) int
-		CancelScheduledStatus       func(childComplexity int, id string) int
-		ClearNotifications          func(childComplexity int) int
-		CreateEmoji                 func(childComplexity int, input model.CreateEmojiInput) int
-		CreateExport                func(childComplexity int, input model.CreateExportInput) int
-		CreateFilter                func(childComplexity int, input model.CreateFilterInput) int
-		CreateImport                func(childComplexity int, input model.CreateImportInput) int
-		CreateList                  func(childComplexity int, input model.CreateListInput) int
-		CreateModerationPattern     func(childComplexity int, input model.ModerationPatternInput) int
-		CreateNote                  func(childComplexity int, input model.CreateNoteInput) int
-		CreateQuoteNote             func(childComplexity int, input model.CreateQuoteNoteInput) int
-		DeleteConversation          func(childComplexity int, id string) int
-		DeleteEmoji                 func(childComplexity int, shortcode string) int
-		DeleteFilter                func(childComplexity int, id string) int
-		DeleteFilterKeyword         func(childComplexity int, filterID string, keywordID string) int
-		DeleteFilterStatus          func(childComplexity int, filterID string, filterStatusID string) int
-		DeleteList                  func(childComplexity int, id string) int
-		DeleteModerationPattern     func(childComplexity int, id string) int
-		DeleteObject                func(childComplexity int, id string) int
-		DeletePushSubscription      func(childComplexity int) int
-		DismissNotification         func(childComplexity int, id string) int
-		FlagObject                  func(childComplexity int, input model.FlagInput) int
-		FollowActor                 func(childComplexity int, id string) int
-		FollowHashtag               func(childComplexity int, hashtag string, notifyLevel *model.NotificationLevel) int
-		LikeObject                  func(childComplexity int, id string) int
-		MarkConversationAsRead      func(childComplexity int, id string) int
-		MarkNotificationGroupAsRead func(childComplexity int, groupID string) int
-		MuteActor                   func(childComplexity int, id string, notifications *bool) int
-		MuteHashtag                 func(childComplexity int, hashtag string, until *model.Time) int
-		OptimizeFederationCosts     func(childComplexity int, threshold float64) int
-		PauseFederation             func(childComplexity int, domain string, reason string, until *model.Time) int
-		PinObject                   func(childComplexity int, id string) int
-		PreloadMedia                func(childComplexity int, mediaIds []string) int
-		RegisterPushSubscription    func(childComplexity int, input model.RegisterPushSubscriptionInput) int
-		RemoveAccountsFromList      func(childComplexity int, id string, accountIds []string) int
-		ReportStreamingQuality      func(childComplexity int, input model.StreamingQualityInput) int
-		RequestAIAnalysis           func(childComplexity int, objectID string, objectType *string, force *bool) int
-		RequestStreamingURL         func(childComplexity int, mediaID string, quality *model.StreamQuality) int
-		ResumeFederation            func(childComplexity int, domain string) int
-		ScheduleStatus              func(childComplexity int, input model.ScheduleStatusInput) int
-		SetFederationLimit          func(childComplexity int, domain string, limit model.FederationLimitInput) int
-		SetInstanceBudget           func(childComplexity int, domain string, monthlyUsd float64, autoLimit *bool) int
-		ShareObject                 func(childComplexity int, id string) int
-		SyncMissingReplies          func(childComplexity int, noteID string) int
-		SyncThread                  func(childComplexity int, noteURL string, depth *int) int
-		TestFilters                 func(childComplexity int, input model.FilterTestInput) int
-		TrainModerationModel        func(childComplexity int, samples []*model.ModerationSampleInput, options *model.BedrockTrainingOptions) int
-		UnblockActor                func(childComplexity int, id string) int
-		UnbookmarkObject            func(childComplexity int, id string) int
-		UnfollowActor               func(childComplexity int, id string) int
-		UnfollowHashtag             func(childComplexity int, hashtag string) int
-		UnlikeObject                func(childComplexity int, id string) int
-		UnmuteActor                 func(childComplexity int, id string) int
-		UnpinObject                 func(childComplexity int, id string) int
-		UnshareObject               func(childComplexity int, id string) int
-		UpdateEmoji                 func(childComplexity int, shortcode string, input model.UpdateEmojiInput) int
-		UpdateFilter                func(childComplexity int, id string, input model.UpdateFilterInput) int
-		UpdateHashtagNotifications  func(childComplexity int, hashtag string, settings model.HashtagNotificationSettingsInput) int
-		UpdateList                  func(childComplexity int, id string, input model.UpdateListInput) int
-		UpdateMedia                 func(childComplexity int, id string, input model.UpdateMediaInput) int
-		UpdateModerationPattern     func(childComplexity int, id string, input model.ModerationPatternInput) int
-		UpdateProfile               func(childComplexity int, input model.UpdateProfileInput) int
-		UpdatePushSubscription      func(childComplexity int, input model.UpdatePushSubscriptionInput) int
-		UpdateQuotePermissions      func(childComplexity int, noteID string, quoteable bool, permission model.QuotePermission) int
-		UpdateRelationship          func(childComplexity int, id string, input model.UpdateRelationshipInput) int
-		UpdateScheduledStatus       func(childComplexity int, id string, input model.UpdateScheduledStatusInput) int
-		UpdateStreamingPreferences  func(childComplexity int, input model.StreamingPreferencesInput) int
-		UpdateTrust                 func(childComplexity int, input model.TrustInput) int
-		UpdateUserPreferences       func(childComplexity int, input model.UpdateUserPreferencesInput) int
-		UploadMedia                 func(childComplexity int, input model.UploadMediaInput) int
-		VoteCommunityNote           func(childComplexity int, id string, helpful bool) int
-		WithdrawFromQuotes          func(childComplexity int, noteID string) int
+		AcceptFollowRequest           func(childComplexity int, accountID string) int
+		AcknowledgeSeverance          func(childComplexity int, id string) int
+		AddAccountsToList             func(childComplexity int, id string, accountIds []string) int
+		AddCommunityNote              func(childComplexity int, input model.CommunityNoteInput) int
+		AddDomainBlock                func(childComplexity int, domain string) int
+		AddFilterKeyword              func(childComplexity int, filterID string, input model.AddFilterKeywordInput) int
+		AddFilterStatus               func(childComplexity int, filterID string, statusID string) int
+		AttemptReconnection           func(childComplexity int, id string) int
+		BlockActor                    func(childComplexity int, id string) int
+		BookmarkObject                func(childComplexity int, id string) int
+		CancelImport                  func(childComplexity int, id string) int
+		CancelScheduledStatus         func(childComplexity int, id string) int
+		ClearNotifications            func(childComplexity int) int
+		CreateEmoji                   func(childComplexity int, input model.CreateEmojiInput) int
+		CreateExport                  func(childComplexity int, input model.CreateExportInput) int
+		CreateFilter                  func(childComplexity int, input model.CreateFilterInput) int
+		CreateImport                  func(childComplexity int, input model.CreateImportInput) int
+		CreateList                    func(childComplexity int, input model.CreateListInput) int
+		CreateModerationPattern       func(childComplexity int, input model.ModerationPatternInput) int
+		CreateNote                    func(childComplexity int, input model.CreateNoteInput) int
+		CreateQuoteNote               func(childComplexity int, input model.CreateQuoteNoteInput) int
+		DeleteConversation            func(childComplexity int, id string) int
+		DeleteEmoji                   func(childComplexity int, shortcode string) int
+		DeleteFilter                  func(childComplexity int, id string) int
+		DeleteFilterKeyword           func(childComplexity int, filterID string, keywordID string) int
+		DeleteFilterStatus            func(childComplexity int, filterID string, filterStatusID string) int
+		DeleteList                    func(childComplexity int, id string) int
+		DeleteModerationPattern       func(childComplexity int, id string) int
+		DeleteObject                  func(childComplexity int, id string) int
+		DeletePushSubscription        func(childComplexity int) int
+		DismissNotification           func(childComplexity int, id string) int
+		FlagObject                    func(childComplexity int, input model.FlagInput) int
+		FollowActor                   func(childComplexity int, id string) int
+		FollowHashtag                 func(childComplexity int, hashtag string, notifyLevel *model.NotificationLevel) int
+		LikeObject                    func(childComplexity int, id string) int
+		MarkConversationAsRead        func(childComplexity int, id string) int
+		MarkNotificationGroupAsRead   func(childComplexity int, groupID string) int
+		MuteActor                     func(childComplexity int, id string, notifications *bool) int
+		MuteHashtag                   func(childComplexity int, hashtag string, until *model.Time) int
+		OptimizeFederationCosts       func(childComplexity int, threshold float64) int
+		PauseFederation               func(childComplexity int, domain string, reason string, until *model.Time) int
+		PinObject                     func(childComplexity int, id string) int
+		PreloadMedia                  func(childComplexity int, mediaIds []string) int
+		RegisterAccount               func(childComplexity int, input model.RegisterAccountInput) int
+		RegisterPushSubscription      func(childComplexity int, input model.RegisterPushSubscriptionInput) int
+		RejectFollowRequest           func(childComplexity int, accountID string) int
+		RemoveAccountsFromList        func(childComplexity int, id string, accountIds []string) int
+		RemoveDomainBlock             func(childComplexity int, domain string) int
+		ReportStreamingQuality        func(childComplexity int, input model.StreamingQualityInput) int
+		RequestAIAnalysis             func(childComplexity int, objectID string, objectType *string, force *bool) int
+		RequestStreamingURL           func(childComplexity int, mediaID string, quality *model.StreamQuality) int
+		ResumeFederation              func(childComplexity int, domain string) int
+		SaveMarkers                   func(childComplexity int, input []*model.SaveMarkerInput) int
+		ScheduleStatus                func(childComplexity int, input model.ScheduleStatusInput) int
+		SetFederationLimit            func(childComplexity int, domain string, limit model.FederationLimitInput) int
+		SetInstanceBudget             func(childComplexity int, domain string, monthlyUsd float64, autoLimit *bool) int
+		ShareObject                   func(childComplexity int, id string) int
+		SyncMissingReplies            func(childComplexity int, noteID string) int
+		SyncThread                    func(childComplexity int, noteURL string, depth *int) int
+		TestFilters                   func(childComplexity int, input model.FilterTestInput) int
+		TrainModerationModel          func(childComplexity int, samples []*model.ModerationSampleInput, options *model.BedrockTrainingOptions) int
+		UnblockActor                  func(childComplexity int, id string) int
+		UnbookmarkObject              func(childComplexity int, id string) int
+		UnfollowActor                 func(childComplexity int, id string) int
+		UnfollowHashtag               func(childComplexity int, hashtag string) int
+		UnlikeObject                  func(childComplexity int, id string) int
+		UnmuteActor                   func(childComplexity int, id string) int
+		UnpinObject                   func(childComplexity int, id string) int
+		UnshareObject                 func(childComplexity int, id string) int
+		UpdateAccountQuotePermissions func(childComplexity int, input model.UpdateAccountQuotePermissionsInput) int
+		UpdateEmoji                   func(childComplexity int, shortcode string, input model.UpdateEmojiInput) int
+		UpdateFilter                  func(childComplexity int, id string, input model.UpdateFilterInput) int
+		UpdateHashtagNotifications    func(childComplexity int, hashtag string, settings model.HashtagNotificationSettingsInput) int
+		UpdateList                    func(childComplexity int, id string, input model.UpdateListInput) int
+		UpdateMedia                   func(childComplexity int, id string, input model.UpdateMediaInput) int
+		UpdateModerationPattern       func(childComplexity int, id string, input model.ModerationPatternInput) int
+		UpdateProfile                 func(childComplexity int, input model.UpdateProfileInput) int
+		UpdatePushSubscription        func(childComplexity int, input model.UpdatePushSubscriptionInput) int
+		UpdateQuotePermissions        func(childComplexity int, noteID string, quoteable bool, permission model.QuotePermission) int
+		UpdateRelationship            func(childComplexity int, id string, input model.UpdateRelationshipInput) int
+		UpdateScheduledStatus         func(childComplexity int, id string, input model.UpdateScheduledStatusInput) int
+		UpdateStreamingPreferences    func(childComplexity int, input model.StreamingPreferencesInput) int
+		UpdateTrust                   func(childComplexity int, input model.TrustInput) int
+		UpdateUserPreferences         func(childComplexity int, input model.UpdateUserPreferencesInput) int
+		UploadMedia                   func(childComplexity int, input model.UploadMediaInput) int
+		VoteCommunityNote             func(childComplexity int, id string, helpful bool) int
+		WithdrawFromQuotes            func(childComplexity int, noteID string) int
 	}
 
 	MuteHashtagPayload struct {
@@ -1340,20 +1383,27 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
+		AccountQuotePermissions func(childComplexity int, username string) int
 		Actor                   func(childComplexity int, id *string, username *string) int
 		AffectedRelationships   func(childComplexity int, severedRelationshipID string) int
 		AiAnalysis              func(childComplexity int, objectID string) int
 		AiCapabilities          func(childComplexity int) int
 		AiStats                 func(childComplexity int, period model.Period) int
 		BandwidthUsage          func(childComplexity int, period model.TimePeriod) int
+		Blocks                  func(childComplexity int, first *int, after *model.Cursor) int
+		Bookmarks               func(childComplexity int, first *int, after *model.Cursor) int
+		CommunityNotesByAuthor  func(childComplexity int, username string, first *int, after *model.Cursor) int
 		Conversation            func(childComplexity int, id string) int
 		Conversations           func(childComplexity int, first *int, after *model.Cursor) int
 		CostBreakdown           func(childComplexity int, period *model.Period) int
 		CostProjections         func(childComplexity int, period model.Period) int
 		CustomEmojis            func(childComplexity int) int
+		DomainBlocks            func(childComplexity int, first *int, after *model.Cursor) int
+		Endorsements            func(childComplexity int) int
 		ExplainObject           func(childComplexity int, id string) int
 		Export                  func(childComplexity int, id string) int
 		Exports                 func(childComplexity int, first *int, after *model.Cursor) int
+		Favourites              func(childComplexity int, first *int, after *model.Cursor) int
 		FederationCosts         func(childComplexity int, first *int, after *string, orderBy *model.CostOrderBy) int
 		FederationFlow          func(childComplexity int, period model.TimePeriod) int
 		FederationHealth        func(childComplexity int, threshold *float64) int
@@ -1362,6 +1412,7 @@ type ComplexityRoot struct {
 		FederationStatus        func(childComplexity int, domain string) int
 		Filter                  func(childComplexity int, id string) int
 		Filters                 func(childComplexity int) int
+		FollowRequests          func(childComplexity int, first *int, after *model.Cursor) int
 		FollowedHashtags        func(childComplexity int, first *int, after *string) int
 		Followers               func(childComplexity int, username string, limit *int, cursor *model.Cursor) int
 		Following               func(childComplexity int, username string, limit *int, cursor *model.Cursor) int
@@ -1378,6 +1429,7 @@ type ComplexityRoot struct {
 		List                    func(childComplexity int, id string) int
 		ListAccounts            func(childComplexity int, id string) int
 		Lists                   func(childComplexity int) int
+		Markers                 func(childComplexity int, timelines []model.MarkerTimeline) int
 		Media                   func(childComplexity int, id string) int
 		MediaLibrary            func(childComplexity int, filter *model.MediaFilterInput, first *int, after *model.Cursor) int
 		MediaStreamURL          func(childComplexity int, mediaID string) int
@@ -1387,6 +1439,7 @@ type ComplexityRoot struct {
 		ModerationQueue         func(childComplexity int, first *int, after *model.Cursor) int
 		ModeratorActivity       func(childComplexity int, moderatorID string, period model.TimePeriod) int
 		MultiHashtagTimeline    func(childComplexity int, hashtags []string, mode model.HashtagMode, first *int, after *string) int
+		Mutes                   func(childComplexity int, first *int, after *model.Cursor) int
 		Notifications           func(childComplexity int, types []string, excludeTypes []string, first *int, after *model.Cursor) int
 		Object                  func(childComplexity int, id string) int
 		PatternEffectiveness    func(childComplexity int, patternID string) int
@@ -1414,6 +1467,7 @@ type ComplexityRoot struct {
 		Trends                  func(childComplexity int, limit *int) int
 		TrustGraph              func(childComplexity int, actorID string, category *models.TrustCategory) int
 		UserPreferences         func(childComplexity int) int
+		Viewer                  func(childComplexity int) int
 	}
 
 	QueryPerformance struct {
@@ -1477,6 +1531,11 @@ type ComplexityRoot struct {
 		Reconnected         func(childComplexity int) int
 		SeveredRelationship func(childComplexity int) int
 		Success             func(childComplexity int) int
+	}
+
+	RegisterAccountPayload struct {
+		Actor   func(childComplexity int) int
+		Created func(childComplexity int) int
 	}
 
 	Relationship struct {
@@ -1958,6 +2017,13 @@ type ModerationPatternResolver interface {
 	CreatedBy(ctx context.Context, obj *moderation.ModerationPattern) (*activitypub.Actor, error)
 }
 type MutationResolver interface {
+	RegisterAccount(ctx context.Context, input model.RegisterAccountInput) (*model.RegisterAccountPayload, error)
+	UpdateAccountQuotePermissions(ctx context.Context, input model.UpdateAccountQuotePermissionsInput) (*model.AccountQuotePermissions, error)
+	AcceptFollowRequest(ctx context.Context, accountID string) (*model.Relationship, error)
+	RejectFollowRequest(ctx context.Context, accountID string) (*model.Relationship, error)
+	AddDomainBlock(ctx context.Context, domain string) (bool, error)
+	RemoveDomainBlock(ctx context.Context, domain string) (bool, error)
+	SaveMarkers(ctx context.Context, input []*model.SaveMarkerInput) (*model.MarkerSet, error)
 	CreateNote(ctx context.Context, input model.CreateNoteInput) (*model.CreateNotePayload, error)
 	DeleteObject(ctx context.Context, id string) (bool, error)
 	LikeObject(ctx context.Context, id string) (*activitypub.Activity, error)
@@ -2040,11 +2106,22 @@ type MutationResolver interface {
 	ReportStreamingQuality(ctx context.Context, input model.StreamingQualityInput) (*model.StreamingQualityReport, error)
 }
 type QueryResolver interface {
+	Viewer(ctx context.Context) (*activitypub.Actor, error)
 	Actor(ctx context.Context, id *string, username *string) (*activitypub.Actor, error)
 	Object(ctx context.Context, id string) (*model.Object, error)
 	Timeline(ctx context.Context, typeArg model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool) (*model.ObjectConnection, error)
 	Search(ctx context.Context, query string, typeArg *string, first *int, after *model.Cursor) (*model.SearchResult, error)
 	Notifications(ctx context.Context, types []string, excludeTypes []string, first *int, after *model.Cursor) (*model.NotificationConnection, error)
+	AccountQuotePermissions(ctx context.Context, username string) (*model.AccountQuotePermissions, error)
+	Blocks(ctx context.Context, first *int, after *model.Cursor) (*model.ActorListPage, error)
+	Mutes(ctx context.Context, first *int, after *model.Cursor) (*model.ActorListPage, error)
+	Endorsements(ctx context.Context) ([]*activitypub.Actor, error)
+	FollowRequests(ctx context.Context, first *int, after *model.Cursor) (*model.ActorListPage, error)
+	DomainBlocks(ctx context.Context, first *int, after *model.Cursor) (*model.DomainBlockPage, error)
+	Markers(ctx context.Context, timelines []model.MarkerTimeline) (*model.MarkerSet, error)
+	Favourites(ctx context.Context, first *int, after *model.Cursor) (*model.ObjectConnection, error)
+	Bookmarks(ctx context.Context, first *int, after *model.Cursor) (*model.ObjectConnection, error)
+	CommunityNotesByAuthor(ctx context.Context, username string, first *int, after *model.Cursor) (*model.CommunityNoteConnection, error)
 	Conversations(ctx context.Context, first *int, after *model.Cursor) ([]*model.Conversation, error)
 	Conversation(ctx context.Context, id string) (*model.Conversation, error)
 	Lists(ctx context.Context) ([]*model.List, error)
@@ -2490,6 +2567,41 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.AccessLog.Timestamp(childComplexity), true
+
+	case "AccountQuotePermissions.allowFollowers":
+		if e.complexity.AccountQuotePermissions.AllowFollowers == nil {
+			break
+		}
+
+		return e.complexity.AccountQuotePermissions.AllowFollowers(childComplexity), true
+
+	case "AccountQuotePermissions.allowMentioned":
+		if e.complexity.AccountQuotePermissions.AllowMentioned == nil {
+			break
+		}
+
+		return e.complexity.AccountQuotePermissions.AllowMentioned(childComplexity), true
+
+	case "AccountQuotePermissions.allowPublic":
+		if e.complexity.AccountQuotePermissions.AllowPublic == nil {
+			break
+		}
+
+		return e.complexity.AccountQuotePermissions.AllowPublic(childComplexity), true
+
+	case "AccountQuotePermissions.blockList":
+		if e.complexity.AccountQuotePermissions.BlockList == nil {
+			break
+		}
+
+		return e.complexity.AccountQuotePermissions.BlockList(childComplexity), true
+
+	case "AccountQuotePermissions.username":
+		if e.complexity.AccountQuotePermissions.Username == nil {
+			break
+		}
+
+		return e.complexity.AccountQuotePermissions.Username(childComplexity), true
 
 	case "AccountSuggestion.account":
 		if e.complexity.AccountSuggestion.Account == nil {
@@ -3079,6 +3191,41 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.CommunityNote.NotHelpful(childComplexity), true
 
+	case "CommunityNoteConnection.edges":
+		if e.complexity.CommunityNoteConnection.Edges == nil {
+			break
+		}
+
+		return e.complexity.CommunityNoteConnection.Edges(childComplexity), true
+
+	case "CommunityNoteConnection.pageInfo":
+		if e.complexity.CommunityNoteConnection.PageInfo == nil {
+			break
+		}
+
+		return e.complexity.CommunityNoteConnection.PageInfo(childComplexity), true
+
+	case "CommunityNoteConnection.totalCount":
+		if e.complexity.CommunityNoteConnection.TotalCount == nil {
+			break
+		}
+
+		return e.complexity.CommunityNoteConnection.TotalCount(childComplexity), true
+
+	case "CommunityNoteEdge.cursor":
+		if e.complexity.CommunityNoteEdge.Cursor == nil {
+			break
+		}
+
+		return e.complexity.CommunityNoteEdge.Cursor(childComplexity), true
+
+	case "CommunityNoteEdge.node":
+		if e.complexity.CommunityNoteEdge.Node == nil {
+			break
+		}
+
+		return e.complexity.CommunityNoteEdge.Node(childComplexity), true
+
 	case "CommunityNotePayload.note":
 		if e.complexity.CommunityNotePayload.Note == nil {
 			break
@@ -3512,6 +3659,27 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.DiscoveryPreferences.ShowFollowCounts(childComplexity), true
+
+	case "DomainBlockPage.domains":
+		if e.complexity.DomainBlockPage.Domains == nil {
+			break
+		}
+
+		return e.complexity.DomainBlockPage.Domains(childComplexity), true
+
+	case "DomainBlockPage.nextCursor":
+		if e.complexity.DomainBlockPage.NextCursor == nil {
+			break
+		}
+
+		return e.complexity.DomainBlockPage.NextCursor(childComplexity), true
+
+	case "DomainBlockPage.totalCount":
+		if e.complexity.DomainBlockPage.TotalCount == nil {
+			break
+		}
+
+		return e.complexity.DomainBlockPage.TotalCount(childComplexity), true
 
 	case "Driver.cost":
 		if e.complexity.Driver.Cost == nil {
@@ -5688,6 +5856,41 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.ListUpdate.Type(childComplexity), true
 
+	case "Marker.lastReadId":
+		if e.complexity.Marker.LastReadID == nil {
+			break
+		}
+
+		return e.complexity.Marker.LastReadID(childComplexity), true
+
+	case "Marker.updatedAt":
+		if e.complexity.Marker.UpdatedAt == nil {
+			break
+		}
+
+		return e.complexity.Marker.UpdatedAt(childComplexity), true
+
+	case "Marker.version":
+		if e.complexity.Marker.Version == nil {
+			break
+		}
+
+		return e.complexity.Marker.Version(childComplexity), true
+
+	case "MarkerSet.home":
+		if e.complexity.MarkerSet.Home == nil {
+			break
+		}
+
+		return e.complexity.MarkerSet.Home(childComplexity), true
+
+	case "MarkerSet.notifications":
+		if e.complexity.MarkerSet.Notifications == nil {
+			break
+		}
+
+		return e.complexity.MarkerSet.Notifications(childComplexity), true
+
 	case "Media.blurhash":
 		if e.complexity.Media.Blurhash == nil {
 			break
@@ -6521,6 +6724,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.ModeratorStats.Period(childComplexity), true
 
+	case "Mutation.acceptFollowRequest":
+		if e.complexity.Mutation.AcceptFollowRequest == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_acceptFollowRequest_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.AcceptFollowRequest(childComplexity, args["accountId"].(string)), true
+
 	case "Mutation.acknowledgeSeverance":
 		if e.complexity.Mutation.AcknowledgeSeverance == nil {
 			break
@@ -6556,6 +6771,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.AddCommunityNote(childComplexity, args["input"].(model.CommunityNoteInput)), true
+
+	case "Mutation.addDomainBlock":
+		if e.complexity.Mutation.AddDomainBlock == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_addDomainBlock_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.AddDomainBlock(childComplexity, args["domain"].(string)), true
 
 	case "Mutation.addFilterKeyword":
 		if e.complexity.Mutation.AddFilterKeyword == nil {
@@ -7003,6 +7230,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.PreloadMedia(childComplexity, args["mediaIds"].([]string)), true
 
+	case "Mutation.registerAccount":
+		if e.complexity.Mutation.RegisterAccount == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_registerAccount_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.RegisterAccount(childComplexity, args["input"].(model.RegisterAccountInput)), true
+
 	case "Mutation.registerPushSubscription":
 		if e.complexity.Mutation.RegisterPushSubscription == nil {
 			break
@@ -7015,6 +7254,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.RegisterPushSubscription(childComplexity, args["input"].(model.RegisterPushSubscriptionInput)), true
 
+	case "Mutation.rejectFollowRequest":
+		if e.complexity.Mutation.RejectFollowRequest == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_rejectFollowRequest_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.RejectFollowRequest(childComplexity, args["accountId"].(string)), true
+
 	case "Mutation.removeAccountsFromList":
 		if e.complexity.Mutation.RemoveAccountsFromList == nil {
 			break
@@ -7026,6 +7277,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.RemoveAccountsFromList(childComplexity, args["id"].(string), args["accountIds"].([]string)), true
+
+	case "Mutation.removeDomainBlock":
+		if e.complexity.Mutation.RemoveDomainBlock == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_removeDomainBlock_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.RemoveDomainBlock(childComplexity, args["domain"].(string)), true
 
 	case "Mutation.reportStreamingQuality":
 		if e.complexity.Mutation.ReportStreamingQuality == nil {
@@ -7074,6 +7337,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.ResumeFederation(childComplexity, args["domain"].(string)), true
+
+	case "Mutation.saveMarkers":
+		if e.complexity.Mutation.SaveMarkers == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_saveMarkers_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.SaveMarkers(childComplexity, args["input"].([]*model.SaveMarkerInput)), true
 
 	case "Mutation.scheduleStatus":
 		if e.complexity.Mutation.ScheduleStatus == nil {
@@ -7266,6 +7541,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UnshareObject(childComplexity, args["id"].(string)), true
+
+	case "Mutation.updateAccountQuotePermissions":
+		if e.complexity.Mutation.UpdateAccountQuotePermissions == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_updateAccountQuotePermissions_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UpdateAccountQuotePermissions(childComplexity, args["input"].(model.UpdateAccountQuotePermissionsInput)), true
 
 	case "Mutation.updateEmoji":
 		if e.complexity.Mutation.UpdateEmoji == nil {
@@ -8547,6 +8834,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.QualityStats.ViewCount(childComplexity), true
 
+	case "Query.accountQuotePermissions":
+		if e.complexity.Query.AccountQuotePermissions == nil {
+			break
+		}
+
+		args, err := ec.field_Query_accountQuotePermissions_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.AccountQuotePermissions(childComplexity, args["username"].(string)), true
+
 	case "Query.actor":
 		if e.complexity.Query.Actor == nil {
 			break
@@ -8614,6 +8913,42 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.BandwidthUsage(childComplexity, args["period"].(model.TimePeriod)), true
 
+	case "Query.blocks":
+		if e.complexity.Query.Blocks == nil {
+			break
+		}
+
+		args, err := ec.field_Query_blocks_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.Blocks(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
+
+	case "Query.bookmarks":
+		if e.complexity.Query.Bookmarks == nil {
+			break
+		}
+
+		args, err := ec.field_Query_bookmarks_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.Bookmarks(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
+
+	case "Query.communityNotesByAuthor":
+		if e.complexity.Query.CommunityNotesByAuthor == nil {
+			break
+		}
+
+		args, err := ec.field_Query_communityNotesByAuthor_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.CommunityNotesByAuthor(childComplexity, args["username"].(string), args["first"].(*int), args["after"].(*model.Cursor)), true
+
 	case "Query.conversation":
 		if e.complexity.Query.Conversation == nil {
 			break
@@ -8669,6 +9004,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.CustomEmojis(childComplexity), true
 
+	case "Query.domainBlocks":
+		if e.complexity.Query.DomainBlocks == nil {
+			break
+		}
+
+		args, err := ec.field_Query_domainBlocks_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.DomainBlocks(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
+
+	case "Query.endorsements":
+		if e.complexity.Query.Endorsements == nil {
+			break
+		}
+
+		return e.complexity.Query.Endorsements(childComplexity), true
+
 	case "Query.explainObject":
 		if e.complexity.Query.ExplainObject == nil {
 			break
@@ -8704,6 +9058,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.Exports(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
+
+	case "Query.favourites":
+		if e.complexity.Query.Favourites == nil {
+			break
+		}
+
+		args, err := ec.field_Query_favourites_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.Favourites(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
 
 	case "Query.federationCosts":
 		if e.complexity.Query.FederationCosts == nil {
@@ -8795,6 +9161,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.Filters(childComplexity), true
+
+	case "Query.followRequests":
+		if e.complexity.Query.FollowRequests == nil {
+			break
+		}
+
+		args, err := ec.field_Query_followRequests_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.FollowRequests(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
 
 	case "Query.followedHashtags":
 		if e.complexity.Query.FollowedHashtags == nil {
@@ -8973,6 +9351,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.Lists(childComplexity), true
 
+	case "Query.markers":
+		if e.complexity.Query.Markers == nil {
+			break
+		}
+
+		args, err := ec.field_Query_markers_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.Markers(childComplexity, args["timelines"].([]model.MarkerTimeline)), true
+
 	case "Query.media":
 		if e.complexity.Query.Media == nil {
 			break
@@ -9080,6 +9470,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.MultiHashtagTimeline(childComplexity, args["hashtags"].([]string), args["mode"].(model.HashtagMode), args["first"].(*int), args["after"].(*string)), true
+
+	case "Query.mutes":
+		if e.complexity.Query.Mutes == nil {
+			break
+		}
+
+		args, err := ec.field_Query_mutes_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.Mutes(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
 
 	case "Query.notifications":
 		if e.complexity.Query.Notifications == nil {
@@ -9395,6 +9797,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.UserPreferences(childComplexity), true
 
+	case "Query.viewer":
+		if e.complexity.Query.Viewer == nil {
+			break
+		}
+
+		return e.complexity.Query.Viewer(childComplexity), true
+
 	case "QueryPerformance.avgDuration":
 		if e.complexity.QueryPerformance.AvgDuration == nil {
 			break
@@ -9646,6 +10055,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ReconnectionPayload.Success(childComplexity), true
+
+	case "RegisterAccountPayload.actor":
+		if e.complexity.RegisterAccountPayload.Actor == nil {
+			break
+		}
+
+		return e.complexity.RegisterAccountPayload.Actor(childComplexity), true
+
+	case "RegisterAccountPayload.created":
+		if e.complexity.RegisterAccountPayload.Created == nil {
+			break
+		}
+
+		return e.complexity.RegisterAccountPayload.Created(childComplexity), true
 
 	case "Relationship.blockedBy":
 		if e.complexity.Relationship.BlockedBy == nil {
@@ -11652,11 +12075,14 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputPushSubscriptionAlertsInput,
 		ec.unmarshalInputPushSubscriptionKeysInput,
 		ec.unmarshalInputReblogFilterInput,
+		ec.unmarshalInputRegisterAccountInput,
 		ec.unmarshalInputRegisterPushSubscriptionInput,
+		ec.unmarshalInputSaveMarkerInput,
 		ec.unmarshalInputScheduleStatusInput,
 		ec.unmarshalInputStreamingPreferencesInput,
 		ec.unmarshalInputStreamingQualityInput,
 		ec.unmarshalInputTrustInput,
+		ec.unmarshalInputUpdateAccountQuotePermissionsInput,
 		ec.unmarshalInputUpdateEmojiInput,
 		ec.unmarshalInputUpdateFilterInput,
 		ec.unmarshalInputUpdateListInput,
@@ -11818,6 +12244,17 @@ func (ec *executionContext) field_Hashtag_posts_args(ctx context.Context, rawArg
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_acceptFollowRequest_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "accountId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["accountId"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_acknowledgeSeverance_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -11853,6 +12290,17 @@ func (ec *executionContext) field_Mutation_addCommunityNote_args(ctx context.Con
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_addDomainBlock_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "domain", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["domain"] = arg0
 	return args, nil
 }
 
@@ -12297,6 +12745,17 @@ func (ec *executionContext) field_Mutation_preloadMedia_args(ctx context.Context
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_registerAccount_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNRegisterAccountInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRegisterAccountInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_registerPushSubscription_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -12305,6 +12764,17 @@ func (ec *executionContext) field_Mutation_registerPushSubscription_args(ctx con
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_rejectFollowRequest_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "accountId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["accountId"] = arg0
 	return args, nil
 }
 
@@ -12321,6 +12791,17 @@ func (ec *executionContext) field_Mutation_removeAccountsFromList_args(ctx conte
 		return nil, err
 	}
 	args["accountIds"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_removeDomainBlock_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "domain", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["domain"] = arg0
 	return args, nil
 }
 
@@ -12380,6 +12861,17 @@ func (ec *executionContext) field_Mutation_resumeFederation_args(ctx context.Con
 		return nil, err
 	}
 	args["domain"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_saveMarkers_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNSaveMarkerInput2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSaveMarkerInputᚄ)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
 	return args, nil
 }
 
@@ -12581,6 +13073,17 @@ func (ec *executionContext) field_Mutation_unshareObject_args(ctx context.Contex
 		return nil, err
 	}
 	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_updateAccountQuotePermissions_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNUpdateAccountQuotePermissionsInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUpdateAccountQuotePermissionsInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
 	return args, nil
 }
 
@@ -12853,6 +13356,17 @@ func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_accountQuotePermissions_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_actor_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -12913,6 +13427,59 @@ func (ec *executionContext) field_Query_bandwidthUsage_args(ctx context.Context,
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_blocks_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_bookmarks_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_communityNotesByAuthor_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_conversation_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -12962,6 +13529,22 @@ func (ec *executionContext) field_Query_costProjections_args(ctx context.Context
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_domainBlocks_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_explainObject_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -12985,6 +13568,22 @@ func (ec *executionContext) field_Query_export_args(ctx context.Context, rawArgs
 }
 
 func (ec *executionContext) field_Query_exports_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_favourites_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
@@ -13094,6 +13693,22 @@ func (ec *executionContext) field_Query_filter_args(ctx context.Context, rawArgs
 		return nil, err
 	}
 	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_followRequests_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg1
 	return args, nil
 }
 
@@ -13285,6 +13900,17 @@ func (ec *executionContext) field_Query_list_args(ctx context.Context, rawArgs m
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_markers_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "timelines", ec.unmarshalOMarkerTimeline2ᚕgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarkerTimelineᚄ)
+	if err != nil {
+		return nil, err
+	}
+	args["timelines"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_mediaLibrary_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -13436,6 +14062,22 @@ func (ec *executionContext) field_Query_multiHashtagTimeline_args(ctx context.Co
 		return nil, err
 	}
 	args["after"] = arg3
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_mutes_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg1
 	return args, nil
 }
 
@@ -16080,6 +16722,226 @@ func (ec *executionContext) fieldContext_AccessLog_cost(_ context.Context, field
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AccountQuotePermissions_username(ctx context.Context, field graphql.CollectedField, obj *model.AccountQuotePermissions) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AccountQuotePermissions_username(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Username, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AccountQuotePermissions_username(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AccountQuotePermissions",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AccountQuotePermissions_allowPublic(ctx context.Context, field graphql.CollectedField, obj *model.AccountQuotePermissions) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AccountQuotePermissions_allowPublic(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AllowPublic, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AccountQuotePermissions_allowPublic(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AccountQuotePermissions",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AccountQuotePermissions_allowFollowers(ctx context.Context, field graphql.CollectedField, obj *model.AccountQuotePermissions) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AccountQuotePermissions_allowFollowers(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AllowFollowers, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AccountQuotePermissions_allowFollowers(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AccountQuotePermissions",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AccountQuotePermissions_allowMentioned(ctx context.Context, field graphql.CollectedField, obj *model.AccountQuotePermissions) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AccountQuotePermissions_allowMentioned(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AllowMentioned, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AccountQuotePermissions_allowMentioned(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AccountQuotePermissions",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AccountQuotePermissions_blockList(ctx context.Context, field graphql.CollectedField, obj *model.AccountQuotePermissions) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AccountQuotePermissions_blockList(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.BlockList, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AccountQuotePermissions_blockList(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AccountQuotePermissions",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -20159,6 +21021,256 @@ func (ec *executionContext) fieldContext_CommunityNote_createdAt(_ context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _CommunityNoteConnection_edges(ctx context.Context, field graphql.CollectedField, obj *model.CommunityNoteConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunityNoteConnection_edges(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Edges, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.CommunityNoteEdge)
+	fc.Result = res
+	return ec.marshalNCommunityNoteEdge2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunityNoteEdgeᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunityNoteConnection_edges(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunityNoteConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "node":
+				return ec.fieldContext_CommunityNoteEdge_node(ctx, field)
+			case "cursor":
+				return ec.fieldContext_CommunityNoteEdge_cursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type CommunityNoteEdge", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunityNoteConnection_pageInfo(ctx context.Context, field graphql.CollectedField, obj *model.CommunityNoteConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunityNoteConnection_pageInfo(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PageInfo, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PageInfo)
+	fc.Result = res
+	return ec.marshalNPageInfo2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPageInfo(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunityNoteConnection_pageInfo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunityNoteConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "hasNextPage":
+				return ec.fieldContext_PageInfo_hasNextPage(ctx, field)
+			case "hasPreviousPage":
+				return ec.fieldContext_PageInfo_hasPreviousPage(ctx, field)
+			case "startCursor":
+				return ec.fieldContext_PageInfo_startCursor(ctx, field)
+			case "endCursor":
+				return ec.fieldContext_PageInfo_endCursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunityNoteConnection_totalCount(ctx context.Context, field graphql.CollectedField, obj *model.CommunityNoteConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunityNoteConnection_totalCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TotalCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunityNoteConnection_totalCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunityNoteConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunityNoteEdge_node(ctx context.Context, field graphql.CollectedField, obj *model.CommunityNoteEdge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunityNoteEdge_node(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Node, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.CommunityNote)
+	fc.Result = res
+	return ec.marshalNCommunityNote2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunityNote(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunityNoteEdge_node(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunityNoteEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_CommunityNote_id(ctx, field)
+			case "author":
+				return ec.fieldContext_CommunityNote_author(ctx, field)
+			case "content":
+				return ec.fieldContext_CommunityNote_content(ctx, field)
+			case "helpful":
+				return ec.fieldContext_CommunityNote_helpful(ctx, field)
+			case "notHelpful":
+				return ec.fieldContext_CommunityNote_notHelpful(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_CommunityNote_createdAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type CommunityNote", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunityNoteEdge_cursor(ctx context.Context, field graphql.CollectedField, obj *model.CommunityNoteEdge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunityNoteEdge_cursor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Cursor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Cursor)
+	fc.Result = res
+	return ec.marshalNCursor2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunityNoteEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunityNoteEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Cursor does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _CommunityNotePayload_note(ctx context.Context, field graphql.CollectedField, obj *model.CommunityNotePayload) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_CommunityNotePayload_note(ctx, field)
 	if err != nil {
@@ -23162,6 +24274,135 @@ func (ec *executionContext) fieldContext_DiscoveryPreferences_personalizedSearch
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DomainBlockPage_domains(ctx context.Context, field graphql.CollectedField, obj *model.DomainBlockPage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DomainBlockPage_domains(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Domains, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DomainBlockPage_domains(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DomainBlockPage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DomainBlockPage_nextCursor(ctx context.Context, field graphql.CollectedField, obj *model.DomainBlockPage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DomainBlockPage_nextCursor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.NextCursor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Cursor)
+	fc.Result = res
+	return ec.marshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DomainBlockPage_nextCursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DomainBlockPage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Cursor does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DomainBlockPage_totalCount(ctx context.Context, field graphql.CollectedField, obj *model.DomainBlockPage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DomainBlockPage_totalCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TotalCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DomainBlockPage_totalCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DomainBlockPage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
 		},
 	}
 	return fc, nil
@@ -37635,6 +38876,236 @@ func (ec *executionContext) fieldContext_ListUpdate_timestamp(_ context.Context,
 	return fc, nil
 }
 
+func (ec *executionContext) _Marker_lastReadId(ctx context.Context, field graphql.CollectedField, obj *model.Marker) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Marker_lastReadId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LastReadID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Marker_lastReadId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Marker",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Marker_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.Marker) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Marker_updatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UpdatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Marker_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Marker",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Marker_version(ctx context.Context, field graphql.CollectedField, obj *model.Marker) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Marker_version(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Version, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Marker_version(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Marker",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MarkerSet_home(ctx context.Context, field graphql.CollectedField, obj *model.MarkerSet) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_MarkerSet_home(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Home, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Marker)
+	fc.Result = res
+	return ec.marshalOMarker2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarker(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_MarkerSet_home(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MarkerSet",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "lastReadId":
+				return ec.fieldContext_Marker_lastReadId(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Marker_updatedAt(ctx, field)
+			case "version":
+				return ec.fieldContext_Marker_version(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Marker", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MarkerSet_notifications(ctx context.Context, field graphql.CollectedField, obj *model.MarkerSet) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_MarkerSet_notifications(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Notifications, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Marker)
+	fc.Result = res
+	return ec.marshalOMarker2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarker(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_MarkerSet_notifications(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MarkerSet",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "lastReadId":
+				return ec.fieldContext_Marker_lastReadId(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Marker_updatedAt(ctx, field)
+			case "version":
+				return ec.fieldContext_Marker_version(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Marker", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Media_id(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Media_id(ctx, field)
 	if err != nil {
@@ -43277,6 +44748,471 @@ func (ec *executionContext) fieldContext_ModeratorStats_categories(_ context.Con
 			}
 			return nil, fmt.Errorf("no field named %q was found under type CategoryStats", field.Name)
 		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_registerAccount(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_registerAccount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().RegisterAccount(rctx, fc.Args["input"].(model.RegisterAccountInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.RegisterAccountPayload)
+	fc.Result = res
+	return ec.marshalNRegisterAccountPayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRegisterAccountPayload(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_registerAccount(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "actor":
+				return ec.fieldContext_RegisterAccountPayload_actor(ctx, field)
+			case "created":
+				return ec.fieldContext_RegisterAccountPayload_created(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type RegisterAccountPayload", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_registerAccount_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_updateAccountQuotePermissions(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_updateAccountQuotePermissions(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().UpdateAccountQuotePermissions(rctx, fc.Args["input"].(model.UpdateAccountQuotePermissionsInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AccountQuotePermissions)
+	fc.Result = res
+	return ec.marshalNAccountQuotePermissions2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAccountQuotePermissions(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_updateAccountQuotePermissions(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "username":
+				return ec.fieldContext_AccountQuotePermissions_username(ctx, field)
+			case "allowPublic":
+				return ec.fieldContext_AccountQuotePermissions_allowPublic(ctx, field)
+			case "allowFollowers":
+				return ec.fieldContext_AccountQuotePermissions_allowFollowers(ctx, field)
+			case "allowMentioned":
+				return ec.fieldContext_AccountQuotePermissions_allowMentioned(ctx, field)
+			case "blockList":
+				return ec.fieldContext_AccountQuotePermissions_blockList(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AccountQuotePermissions", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updateAccountQuotePermissions_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_acceptFollowRequest(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_acceptFollowRequest(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().AcceptFollowRequest(rctx, fc.Args["accountId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Relationship)
+	fc.Result = res
+	return ec.marshalNRelationship2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRelationship(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_acceptFollowRequest(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Relationship_id(ctx, field)
+			case "following":
+				return ec.fieldContext_Relationship_following(ctx, field)
+			case "followedBy":
+				return ec.fieldContext_Relationship_followedBy(ctx, field)
+			case "blocking":
+				return ec.fieldContext_Relationship_blocking(ctx, field)
+			case "blockedBy":
+				return ec.fieldContext_Relationship_blockedBy(ctx, field)
+			case "muting":
+				return ec.fieldContext_Relationship_muting(ctx, field)
+			case "mutingNotifications":
+				return ec.fieldContext_Relationship_mutingNotifications(ctx, field)
+			case "requested":
+				return ec.fieldContext_Relationship_requested(ctx, field)
+			case "domainBlocking":
+				return ec.fieldContext_Relationship_domainBlocking(ctx, field)
+			case "showingReblogs":
+				return ec.fieldContext_Relationship_showingReblogs(ctx, field)
+			case "notifying":
+				return ec.fieldContext_Relationship_notifying(ctx, field)
+			case "languages":
+				return ec.fieldContext_Relationship_languages(ctx, field)
+			case "note":
+				return ec.fieldContext_Relationship_note(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Relationship", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_acceptFollowRequest_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_rejectFollowRequest(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_rejectFollowRequest(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().RejectFollowRequest(rctx, fc.Args["accountId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Relationship)
+	fc.Result = res
+	return ec.marshalNRelationship2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRelationship(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_rejectFollowRequest(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Relationship_id(ctx, field)
+			case "following":
+				return ec.fieldContext_Relationship_following(ctx, field)
+			case "followedBy":
+				return ec.fieldContext_Relationship_followedBy(ctx, field)
+			case "blocking":
+				return ec.fieldContext_Relationship_blocking(ctx, field)
+			case "blockedBy":
+				return ec.fieldContext_Relationship_blockedBy(ctx, field)
+			case "muting":
+				return ec.fieldContext_Relationship_muting(ctx, field)
+			case "mutingNotifications":
+				return ec.fieldContext_Relationship_mutingNotifications(ctx, field)
+			case "requested":
+				return ec.fieldContext_Relationship_requested(ctx, field)
+			case "domainBlocking":
+				return ec.fieldContext_Relationship_domainBlocking(ctx, field)
+			case "showingReblogs":
+				return ec.fieldContext_Relationship_showingReblogs(ctx, field)
+			case "notifying":
+				return ec.fieldContext_Relationship_notifying(ctx, field)
+			case "languages":
+				return ec.fieldContext_Relationship_languages(ctx, field)
+			case "note":
+				return ec.fieldContext_Relationship_note(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Relationship", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_rejectFollowRequest_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_addDomainBlock(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_addDomainBlock(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().AddDomainBlock(rctx, fc.Args["domain"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_addDomainBlock(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_addDomainBlock_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_removeDomainBlock(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_removeDomainBlock(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().RemoveDomainBlock(rctx, fc.Args["domain"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_removeDomainBlock(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_removeDomainBlock_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_saveMarkers(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_saveMarkers(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().SaveMarkers(rctx, fc.Args["input"].([]*model.SaveMarkerInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.MarkerSet)
+	fc.Result = res
+	return ec.marshalNMarkerSet2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarkerSet(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_saveMarkers(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "home":
+				return ec.fieldContext_MarkerSet_home(ctx, field)
+			case "notifications":
+				return ec.fieldContext_MarkerSet_notifications(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type MarkerSet", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_saveMarkers_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
 	}
 	return fc, nil
 }
@@ -56246,6 +58182,88 @@ func (ec *executionContext) fieldContext_QualityStats_avgBandwidth(_ context.Con
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_viewer(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_viewer(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Viewer(rctx)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*activitypub.Actor)
+	fc.Result = res
+	return ec.marshalNActor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋactivitypubᚐActor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_viewer(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Actor_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Actor_username(ctx, field)
+			case "domain":
+				return ec.fieldContext_Actor_domain(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Actor_displayName(ctx, field)
+			case "summary":
+				return ec.fieldContext_Actor_summary(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Actor_avatar(ctx, field)
+			case "header":
+				return ec.fieldContext_Actor_header(ctx, field)
+			case "followers":
+				return ec.fieldContext_Actor_followers(ctx, field)
+			case "following":
+				return ec.fieldContext_Actor_following(ctx, field)
+			case "statusesCount":
+				return ec.fieldContext_Actor_statusesCount(ctx, field)
+			case "bot":
+				return ec.fieldContext_Actor_bot(ctx, field)
+			case "locked":
+				return ec.fieldContext_Actor_locked(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Actor_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Actor_updatedAt(ctx, field)
+			case "fields":
+				return ec.fieldContext_Actor_fields(ctx, field)
+			case "trustScore":
+				return ec.fieldContext_Actor_trustScore(ctx, field)
+			case "reputation":
+				return ec.fieldContext_Actor_reputation(ctx, field)
+			case "vouches":
+				return ec.fieldContext_Actor_vouches(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_actor(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Query_actor(ctx, field)
 	if err != nil {
@@ -56633,6 +58651,657 @@ func (ec *executionContext) fieldContext_Query_notifications(ctx context.Context
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_notifications_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_accountQuotePermissions(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_accountQuotePermissions(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().AccountQuotePermissions(rctx, fc.Args["username"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AccountQuotePermissions)
+	fc.Result = res
+	return ec.marshalNAccountQuotePermissions2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAccountQuotePermissions(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_accountQuotePermissions(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "username":
+				return ec.fieldContext_AccountQuotePermissions_username(ctx, field)
+			case "allowPublic":
+				return ec.fieldContext_AccountQuotePermissions_allowPublic(ctx, field)
+			case "allowFollowers":
+				return ec.fieldContext_AccountQuotePermissions_allowFollowers(ctx, field)
+			case "allowMentioned":
+				return ec.fieldContext_AccountQuotePermissions_allowMentioned(ctx, field)
+			case "blockList":
+				return ec.fieldContext_AccountQuotePermissions_blockList(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AccountQuotePermissions", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_accountQuotePermissions_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_blocks(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_blocks(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Blocks(rctx, fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.ActorListPage)
+	fc.Result = res
+	return ec.marshalNActorListPage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐActorListPage(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_blocks(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "actors":
+				return ec.fieldContext_ActorListPage_actors(ctx, field)
+			case "nextCursor":
+				return ec.fieldContext_ActorListPage_nextCursor(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_ActorListPage_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ActorListPage", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_blocks_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_mutes(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_mutes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Mutes(rctx, fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.ActorListPage)
+	fc.Result = res
+	return ec.marshalNActorListPage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐActorListPage(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_mutes(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "actors":
+				return ec.fieldContext_ActorListPage_actors(ctx, field)
+			case "nextCursor":
+				return ec.fieldContext_ActorListPage_nextCursor(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_ActorListPage_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ActorListPage", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_mutes_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_endorsements(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_endorsements(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Endorsements(rctx)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*activitypub.Actor)
+	fc.Result = res
+	return ec.marshalNActor2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋactivitypubᚐActorᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_endorsements(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Actor_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Actor_username(ctx, field)
+			case "domain":
+				return ec.fieldContext_Actor_domain(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Actor_displayName(ctx, field)
+			case "summary":
+				return ec.fieldContext_Actor_summary(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Actor_avatar(ctx, field)
+			case "header":
+				return ec.fieldContext_Actor_header(ctx, field)
+			case "followers":
+				return ec.fieldContext_Actor_followers(ctx, field)
+			case "following":
+				return ec.fieldContext_Actor_following(ctx, field)
+			case "statusesCount":
+				return ec.fieldContext_Actor_statusesCount(ctx, field)
+			case "bot":
+				return ec.fieldContext_Actor_bot(ctx, field)
+			case "locked":
+				return ec.fieldContext_Actor_locked(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Actor_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Actor_updatedAt(ctx, field)
+			case "fields":
+				return ec.fieldContext_Actor_fields(ctx, field)
+			case "trustScore":
+				return ec.fieldContext_Actor_trustScore(ctx, field)
+			case "reputation":
+				return ec.fieldContext_Actor_reputation(ctx, field)
+			case "vouches":
+				return ec.fieldContext_Actor_vouches(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_followRequests(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_followRequests(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().FollowRequests(rctx, fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.ActorListPage)
+	fc.Result = res
+	return ec.marshalNActorListPage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐActorListPage(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_followRequests(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "actors":
+				return ec.fieldContext_ActorListPage_actors(ctx, field)
+			case "nextCursor":
+				return ec.fieldContext_ActorListPage_nextCursor(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_ActorListPage_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ActorListPage", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_followRequests_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_domainBlocks(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_domainBlocks(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().DomainBlocks(rctx, fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.DomainBlockPage)
+	fc.Result = res
+	return ec.marshalNDomainBlockPage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDomainBlockPage(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_domainBlocks(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "domains":
+				return ec.fieldContext_DomainBlockPage_domains(ctx, field)
+			case "nextCursor":
+				return ec.fieldContext_DomainBlockPage_nextCursor(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_DomainBlockPage_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type DomainBlockPage", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_domainBlocks_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_markers(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_markers(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Markers(rctx, fc.Args["timelines"].([]model.MarkerTimeline))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.MarkerSet)
+	fc.Result = res
+	return ec.marshalNMarkerSet2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarkerSet(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_markers(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "home":
+				return ec.fieldContext_MarkerSet_home(ctx, field)
+			case "notifications":
+				return ec.fieldContext_MarkerSet_notifications(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type MarkerSet", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_markers_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_favourites(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_favourites(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Favourites(rctx, fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.ObjectConnection)
+	fc.Result = res
+	return ec.marshalNObjectConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐObjectConnection(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_favourites(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "edges":
+				return ec.fieldContext_ObjectConnection_edges(ctx, field)
+			case "pageInfo":
+				return ec.fieldContext_ObjectConnection_pageInfo(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_ObjectConnection_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ObjectConnection", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_favourites_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_bookmarks(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_bookmarks(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Bookmarks(rctx, fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.ObjectConnection)
+	fc.Result = res
+	return ec.marshalNObjectConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐObjectConnection(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_bookmarks(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "edges":
+				return ec.fieldContext_ObjectConnection_edges(ctx, field)
+			case "pageInfo":
+				return ec.fieldContext_ObjectConnection_pageInfo(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_ObjectConnection_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ObjectConnection", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_bookmarks_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_communityNotesByAuthor(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_communityNotesByAuthor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().CommunityNotesByAuthor(rctx, fc.Args["username"].(string), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.CommunityNoteConnection)
+	fc.Result = res
+	return ec.marshalNCommunityNoteConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunityNoteConnection(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_communityNotesByAuthor(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "edges":
+				return ec.fieldContext_CommunityNoteConnection_edges(ctx, field)
+			case "pageInfo":
+				return ec.fieldContext_CommunityNoteConnection_pageInfo(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_CommunityNoteConnection_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type CommunityNoteConnection", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_communityNotesByAuthor_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -63333,6 +66002,132 @@ func (ec *executionContext) fieldContext_ReconnectionPayload_errors(_ context.Co
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RegisterAccountPayload_actor(ctx context.Context, field graphql.CollectedField, obj *model.RegisterAccountPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RegisterAccountPayload_actor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Actor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*activitypub.Actor)
+	fc.Result = res
+	return ec.marshalNActor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋactivitypubᚐActor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RegisterAccountPayload_actor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RegisterAccountPayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Actor_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Actor_username(ctx, field)
+			case "domain":
+				return ec.fieldContext_Actor_domain(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Actor_displayName(ctx, field)
+			case "summary":
+				return ec.fieldContext_Actor_summary(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Actor_avatar(ctx, field)
+			case "header":
+				return ec.fieldContext_Actor_header(ctx, field)
+			case "followers":
+				return ec.fieldContext_Actor_followers(ctx, field)
+			case "following":
+				return ec.fieldContext_Actor_following(ctx, field)
+			case "statusesCount":
+				return ec.fieldContext_Actor_statusesCount(ctx, field)
+			case "bot":
+				return ec.fieldContext_Actor_bot(ctx, field)
+			case "locked":
+				return ec.fieldContext_Actor_locked(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Actor_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Actor_updatedAt(ctx, field)
+			case "fields":
+				return ec.fieldContext_Actor_fields(ctx, field)
+			case "trustScore":
+				return ec.fieldContext_Actor_trustScore(ctx, field)
+			case "reputation":
+				return ec.fieldContext_Actor_reputation(ctx, field)
+			case "vouches":
+				return ec.fieldContext_Actor_vouches(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RegisterAccountPayload_created(ctx context.Context, field graphql.CollectedField, obj *model.RegisterAccountPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RegisterAccountPayload_created(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Created, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RegisterAccountPayload_created(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RegisterAccountPayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
 		},
 	}
 	return fc, nil
@@ -80361,6 +83156,61 @@ func (ec *executionContext) unmarshalInputReblogFilterInput(ctx context.Context,
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputRegisterAccountInput(ctx context.Context, obj any) (model.RegisterAccountInput, error) {
+	var it model.RegisterAccountInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"username", "locale", "agreement", "reason", "defaultPostingVisibility"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "username":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("username"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Username = data
+		case "locale":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("locale"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Locale = data
+		case "agreement":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("agreement"))
+			data, err := ec.unmarshalNBoolean2bool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Agreement = data
+		case "reason":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("reason"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Reason = data
+		case "defaultPostingVisibility":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("defaultPostingVisibility"))
+			data, err := ec.unmarshalOVisibility2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐVisibility(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.DefaultPostingVisibility = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputRegisterPushSubscriptionInput(ctx context.Context, obj any) (model.RegisterPushSubscriptionInput, error) {
 	var it model.RegisterPushSubscriptionInput
 	asMap := map[string]any{}
@@ -80396,6 +83246,40 @@ func (ec *executionContext) unmarshalInputRegisterPushSubscriptionInput(ctx cont
 				return it, err
 			}
 			it.Alerts = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputSaveMarkerInput(ctx context.Context, obj any) (model.SaveMarkerInput, error) {
+	var it model.SaveMarkerInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"timeline", "lastReadId"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "timeline":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("timeline"))
+			data, err := ec.unmarshalNMarkerTimeline2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarkerTimeline(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Timeline = data
+		case "lastReadId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("lastReadId"))
+			data, err := ec.unmarshalNID2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.LastReadID = data
 		}
 	}
 
@@ -80616,6 +83500,54 @@ func (ec *executionContext) unmarshalInputTrustInput(ctx context.Context, obj an
 				return it, err
 			}
 			it.Score = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputUpdateAccountQuotePermissionsInput(ctx context.Context, obj any) (model.UpdateAccountQuotePermissionsInput, error) {
+	var it model.UpdateAccountQuotePermissionsInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"allowPublic", "allowFollowers", "allowMentioned", "blockList"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "allowPublic":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("allowPublic"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AllowPublic = data
+		case "allowFollowers":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("allowFollowers"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AllowFollowers = data
+		case "allowMentioned":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("allowMentioned"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AllowMentioned = data
+		case "blockList":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("blockList"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.BlockList = data
 		}
 	}
 
@@ -81571,6 +84503,65 @@ func (ec *executionContext) _AccessLog(ctx context.Context, sel ast.SelectionSet
 			}
 		case "cost":
 			out.Values[i] = ec._AccessLog_cost(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var accountQuotePermissionsImplementors = []string{"AccountQuotePermissions"}
+
+func (ec *executionContext) _AccountQuotePermissions(ctx context.Context, sel ast.SelectionSet, obj *model.AccountQuotePermissions) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, accountQuotePermissionsImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AccountQuotePermissions")
+		case "username":
+			out.Values[i] = ec._AccountQuotePermissions_username(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "allowPublic":
+			out.Values[i] = ec._AccountQuotePermissions_allowPublic(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "allowFollowers":
+			out.Values[i] = ec._AccountQuotePermissions_allowFollowers(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "allowMentioned":
+			out.Values[i] = ec._AccountQuotePermissions_allowMentioned(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "blockList":
+			out.Values[i] = ec._AccountQuotePermissions_blockList(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -83310,6 +86301,99 @@ func (ec *executionContext) _CommunityNote(ctx context.Context, sel ast.Selectio
 	return out
 }
 
+var communityNoteConnectionImplementors = []string{"CommunityNoteConnection"}
+
+func (ec *executionContext) _CommunityNoteConnection(ctx context.Context, sel ast.SelectionSet, obj *model.CommunityNoteConnection) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, communityNoteConnectionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CommunityNoteConnection")
+		case "edges":
+			out.Values[i] = ec._CommunityNoteConnection_edges(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pageInfo":
+			out.Values[i] = ec._CommunityNoteConnection_pageInfo(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalCount":
+			out.Values[i] = ec._CommunityNoteConnection_totalCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var communityNoteEdgeImplementors = []string{"CommunityNoteEdge"}
+
+func (ec *executionContext) _CommunityNoteEdge(ctx context.Context, sel ast.SelectionSet, obj *model.CommunityNoteEdge) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, communityNoteEdgeImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CommunityNoteEdge")
+		case "node":
+			out.Values[i] = ec._CommunityNoteEdge_node(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cursor":
+			out.Values[i] = ec._CommunityNoteEdge_cursor(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var communityNotePayloadImplementors = []string{"CommunityNotePayload"}
 
 func (ec *executionContext) _CommunityNotePayload(ctx context.Context, sel ast.SelectionSet, obj *model.CommunityNotePayload) graphql.Marshaler {
@@ -84058,6 +87142,52 @@ func (ec *executionContext) _DiscoveryPreferences(ctx context.Context, sel ast.S
 			}
 		case "personalizedSearchEnabled":
 			out.Values[i] = ec._DiscoveryPreferences_personalizedSearchEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var domainBlockPageImplementors = []string{"DomainBlockPage"}
+
+func (ec *executionContext) _DomainBlockPage(ctx context.Context, sel ast.SelectionSet, obj *model.DomainBlockPage) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, domainBlockPageImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("DomainBlockPage")
+		case "domains":
+			out.Values[i] = ec._DomainBlockPage_domains(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "nextCursor":
+			out.Values[i] = ec._DomainBlockPage_nextCursor(ctx, field, obj)
+		case "totalCount":
+			out.Values[i] = ec._DomainBlockPage_totalCount(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -87885,6 +91015,93 @@ func (ec *executionContext) _ListUpdate(ctx context.Context, sel ast.SelectionSe
 	return out
 }
 
+var markerImplementors = []string{"Marker"}
+
+func (ec *executionContext) _Marker(ctx context.Context, sel ast.SelectionSet, obj *model.Marker) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, markerImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Marker")
+		case "lastReadId":
+			out.Values[i] = ec._Marker_lastReadId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updatedAt":
+			out.Values[i] = ec._Marker_updatedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "version":
+			out.Values[i] = ec._Marker_version(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var markerSetImplementors = []string{"MarkerSet"}
+
+func (ec *executionContext) _MarkerSet(ctx context.Context, sel ast.SelectionSet, obj *model.MarkerSet) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, markerSetImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MarkerSet")
+		case "home":
+			out.Values[i] = ec._MarkerSet_home(ctx, field, obj)
+		case "notifications":
+			out.Values[i] = ec._MarkerSet_notifications(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var mediaImplementors = []string{"Media"}
 
 func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, obj *model.Media) graphql.Marshaler {
@@ -89411,6 +92628,55 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Mutation")
+		case "registerAccount":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_registerAccount(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updateAccountQuotePermissions":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updateAccountQuotePermissions(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "acceptFollowRequest":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_acceptFollowRequest(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "rejectFollowRequest":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_rejectFollowRequest(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "addDomainBlock":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_addDomainBlock(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "removeDomainBlock":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_removeDomainBlock(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "saveMarkers":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_saveMarkers(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "createNote":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_createNote(ctx, field)
@@ -91710,6 +94976,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Query")
+		case "viewer":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_viewer(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "actor":
 			field := field
 
@@ -91802,6 +95090,226 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_notifications(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "accountQuotePermissions":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_accountQuotePermissions(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "blocks":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_blocks(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "mutes":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_mutes(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "endorsements":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_endorsements(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "followRequests":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_followRequests(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "domainBlocks":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_domainBlocks(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "markers":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_markers(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "favourites":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_favourites(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "bookmarks":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_bookmarks(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "communityNotesByAuthor":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_communityNotesByAuthor(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -93868,6 +97376,50 @@ func (ec *executionContext) _ReconnectionPayload(ctx context.Context, sel ast.Se
 			}
 		case "errors":
 			out.Values[i] = ec._ReconnectionPayload_errors(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var registerAccountPayloadImplementors = []string{"RegisterAccountPayload"}
+
+func (ec *executionContext) _RegisterAccountPayload(ctx context.Context, sel ast.SelectionSet, obj *model.RegisterAccountPayload) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, registerAccountPayloadImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RegisterAccountPayload")
+		case "actor":
+			out.Values[i] = ec._RegisterAccountPayload_actor(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "created":
+			out.Values[i] = ec._RegisterAccountPayload_created(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -97452,6 +101004,20 @@ func (ec *executionContext) marshalNAccessLog2ᚖgithubᚗcomᚋequaltoaiᚋless
 	return ec._AccessLog(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNAccountQuotePermissions2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAccountQuotePermissions(ctx context.Context, sel ast.SelectionSet, v model.AccountQuotePermissions) graphql.Marshaler {
+	return ec._AccountQuotePermissions(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAccountQuotePermissions2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAccountQuotePermissions(ctx context.Context, sel ast.SelectionSet, v *model.AccountQuotePermissions) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AccountQuotePermissions(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNAccountSuggestion2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAccountSuggestionᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.AccountSuggestion) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
@@ -98037,6 +101603,74 @@ func (ec *executionContext) marshalNCommunityNote2ᚖgithubᚗcomᚋequaltoaiᚋ
 	return ec._CommunityNote(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNCommunityNoteConnection2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunityNoteConnection(ctx context.Context, sel ast.SelectionSet, v model.CommunityNoteConnection) graphql.Marshaler {
+	return ec._CommunityNoteConnection(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNCommunityNoteConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunityNoteConnection(ctx context.Context, sel ast.SelectionSet, v *model.CommunityNoteConnection) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._CommunityNoteConnection(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNCommunityNoteEdge2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunityNoteEdgeᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.CommunityNoteEdge) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNCommunityNoteEdge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunityNoteEdge(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNCommunityNoteEdge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunityNoteEdge(ctx context.Context, sel ast.SelectionSet, v *model.CommunityNoteEdge) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._CommunityNoteEdge(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNCommunityNoteInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunityNoteInput(ctx context.Context, v any) (model.CommunityNoteInput, error) {
 	res, err := ec.unmarshalInputCommunityNoteInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -98511,6 +102145,20 @@ func (ec *executionContext) marshalNDiscoveryPreferences2ᚖgithubᚗcomᚋequal
 		return graphql.Null
 	}
 	return ec._DiscoveryPreferences(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNDomainBlockPage2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDomainBlockPage(ctx context.Context, sel ast.SelectionSet, v model.DomainBlockPage) graphql.Marshaler {
+	return ec._DomainBlockPage(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNDomainBlockPage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDomainBlockPage(ctx context.Context, sel ast.SelectionSet, v *model.DomainBlockPage) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._DomainBlockPage(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNDriver2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋcostᚐDriverᚄ(ctx context.Context, sel ast.SelectionSet, v []*cost.Driver) graphql.Marshaler {
@@ -100623,6 +104271,30 @@ func (ec *executionContext) marshalNListUpdate2ᚖgithubᚗcomᚋequaltoaiᚋles
 	return ec._ListUpdate(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNMarkerSet2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarkerSet(ctx context.Context, sel ast.SelectionSet, v model.MarkerSet) graphql.Marshaler {
+	return ec._MarkerSet(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNMarkerSet2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarkerSet(ctx context.Context, sel ast.SelectionSet, v *model.MarkerSet) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MarkerSet(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNMarkerTimeline2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarkerTimeline(ctx context.Context, v any) (model.MarkerTimeline, error) {
+	var res model.MarkerTimeline
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNMarkerTimeline2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarkerTimeline(ctx context.Context, sel ast.SelectionSet, v model.MarkerTimeline) graphql.Marshaler {
+	return v
+}
+
 func (ec *executionContext) marshalNMedia2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMedia(ctx context.Context, sel ast.SelectionSet, v model.Media) graphql.Marshaler {
 	return ec._Media(ctx, sel, &v)
 }
@@ -102381,6 +106053,25 @@ func (ec *executionContext) marshalNReconnectionPayload2ᚖgithubᚗcomᚋequalt
 	return ec._ReconnectionPayload(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalNRegisterAccountInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRegisterAccountInput(ctx context.Context, v any) (model.RegisterAccountInput, error) {
+	res, err := ec.unmarshalInputRegisterAccountInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNRegisterAccountPayload2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRegisterAccountPayload(ctx context.Context, sel ast.SelectionSet, v model.RegisterAccountPayload) graphql.Marshaler {
+	return ec._RegisterAccountPayload(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNRegisterAccountPayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRegisterAccountPayload(ctx context.Context, sel ast.SelectionSet, v *model.RegisterAccountPayload) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._RegisterAccountPayload(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNRegisterPushSubscriptionInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRegisterPushSubscriptionInput(ctx context.Context, v any) (model.RegisterPushSubscriptionInput, error) {
 	res, err := ec.unmarshalInputRegisterPushSubscriptionInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -102486,6 +106177,26 @@ func (ec *executionContext) marshalNReputationEvidence2ᚖgithubᚗcomᚋequalto
 		return graphql.Null
 	}
 	return ec._ReputationEvidence(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNSaveMarkerInput2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSaveMarkerInputᚄ(ctx context.Context, v any) ([]*model.SaveMarkerInput, error) {
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]*model.SaveMarkerInput, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNSaveMarkerInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSaveMarkerInput(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) unmarshalNSaveMarkerInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSaveMarkerInput(ctx context.Context, v any) (*model.SaveMarkerInput, error) {
+	res, err := ec.unmarshalInputSaveMarkerInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalNScheduleStatusInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐScheduleStatusInput(ctx context.Context, v any) (model.ScheduleStatusInput, error) {
@@ -103577,6 +107288,11 @@ func (ec *executionContext) marshalNUnfollowHashtagPayload2ᚖgithubᚗcomᚋequ
 	return ec._UnfollowHashtagPayload(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalNUpdateAccountQuotePermissionsInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUpdateAccountQuotePermissionsInput(ctx context.Context, v any) (model.UpdateAccountQuotePermissionsInput, error) {
+	res, err := ec.unmarshalInputUpdateAccountQuotePermissionsInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalNUpdateEmojiInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUpdateEmojiInput(ctx context.Context, v any) (model.UpdateEmojiInput, error) {
 	res, err := ec.unmarshalInputUpdateEmojiInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -104625,6 +108341,78 @@ func (ec *executionContext) marshalOList2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋ
 		return graphql.Null
 	}
 	return ec._List(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOMarker2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarker(ctx context.Context, sel ast.SelectionSet, v *model.Marker) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._Marker(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOMarkerTimeline2ᚕgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarkerTimelineᚄ(ctx context.Context, v any) ([]model.MarkerTimeline, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]model.MarkerTimeline, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNMarkerTimeline2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarkerTimeline(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalOMarkerTimeline2ᚕgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarkerTimelineᚄ(ctx context.Context, sel ast.SelectionSet, v []model.MarkerTimeline) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNMarkerTimeline2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMarkerTimeline(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) marshalOMedia2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMedia(ctx context.Context, sel ast.SelectionSet, v *model.Media) graphql.Marshaler {

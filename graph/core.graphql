@@ -207,6 +207,65 @@ type ActorListPage {
   totalCount: Int!
 }
 
+# Domain block pagination
+type DomainBlockPage {
+  domains: [String!]!
+  nextCursor: Cursor
+  totalCount: Int!
+}
+
+# Markers (timeline positions)
+enum MarkerTimeline {
+  HOME
+  NOTIFICATIONS
+}
+
+type Marker {
+  lastReadId: ID!
+  updatedAt: Time!
+  version: Int!
+}
+
+type MarkerSet {
+  home: Marker
+  notifications: Marker
+}
+
+input SaveMarkerInput {
+  timeline: MarkerTimeline!
+  lastReadId: ID!
+}
+
+# Account quote permissions (Mastodon compatibility)
+type AccountQuotePermissions {
+  username: String!
+  allowPublic: Boolean!
+  allowFollowers: Boolean!
+  allowMentioned: Boolean!
+  blockList: [String!]!
+}
+
+input UpdateAccountQuotePermissionsInput {
+  allowPublic: Boolean
+  allowFollowers: Boolean
+  allowMentioned: Boolean
+  blockList: [String!]
+}
+
+# Account registration (passwordless)
+input RegisterAccountInput {
+  username: String!
+  locale: String
+  agreement: Boolean!
+  reason: String
+  defaultPostingVisibility: Visibility
+}
+
+type RegisterAccountPayload {
+  actor: Actor!
+  created: Boolean!
+}
+
 # Instance Metrics
 type InstanceMetrics {
   activeUsers: Int!
@@ -259,6 +318,18 @@ type CommunityNote {
   helpful: Int!
   notHelpful: Int!
   createdAt: Time!
+}
+
+# Community note connection for pagination
+type CommunityNoteConnection {
+  edges: [CommunityNoteEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type CommunityNoteEdge {
+  node: CommunityNote!
+  cursor: Cursor!
 }
 
 # Notification type
@@ -757,6 +828,7 @@ type CostUpdate {
 # Queries
 type Query {
   # Mastodon compatibility
+  viewer: Actor!
   actor(id: ID, username: String): Actor
   object(id: ID!): Object
   timeline(
@@ -770,6 +842,20 @@ type Query {
   ): ObjectConnection!
   search(query: String!, type: String, first: Int = 20, after: Cursor): SearchResult!
   notifications(types: [String!], excludeTypes: [String!], first: Int = 20, after: Cursor): NotificationConnection!
+
+  # Accounts + relationships
+  accountQuotePermissions(username: String!): AccountQuotePermissions!
+  blocks(first: Int = 40, after: Cursor): ActorListPage!
+  mutes(first: Int = 40, after: Cursor): ActorListPage!
+  endorsements: [Actor!]!
+  followRequests(first: Int = 100, after: Cursor): ActorListPage!
+  domainBlocks(first: Int = 100, after: Cursor): DomainBlockPage!
+  markers(timelines: [MarkerTimeline!]): MarkerSet!
+
+  # Account activity
+  favourites(first: Int = 20, after: Cursor): ObjectConnection!
+  bookmarks(first: Int = 20, after: Cursor): ObjectConnection!
+  communityNotesByAuthor(username: String!, first: Int = 20, after: Cursor): CommunityNoteConnection!
   
   # Conversations
   conversations(first: Int = 20, after: Cursor): [Conversation!]!
@@ -867,6 +953,15 @@ type Query {
 
 # Mutations
 type Mutation {
+  # Accounts
+  registerAccount(input: RegisterAccountInput!): RegisterAccountPayload!
+  updateAccountQuotePermissions(input: UpdateAccountQuotePermissionsInput!): AccountQuotePermissions!
+  acceptFollowRequest(accountId: ID!): Relationship!
+  rejectFollowRequest(accountId: ID!): Relationship!
+  addDomainBlock(domain: String!): Boolean!
+  removeDomainBlock(domain: String!): Boolean!
+  saveMarkers(input: [SaveMarkerInput!]!): MarkerSet!
+
   # Mastodon compatibility - Status operations
   createNote(input: CreateNoteInput!): CreateNotePayload!
   deleteObject(id: ID!): Boolean!

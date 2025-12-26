@@ -921,7 +921,7 @@ func (r *Resolver) getCommunityNotesForObject(ctx context.Context, objectID stri
 					ID:   note.AuthorID,
 					Type: "Person",
 				},
-				PreferredUsername: note.AuthorID, // Simplified - would extract username properly
+				PreferredUsername: deriveUsernameFromIRI(note.AuthorID), // Simplified - would extract username properly
 			}
 		}
 

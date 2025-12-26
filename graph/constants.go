@@ -119,6 +119,7 @@ const (
 const (
 	TimelineTypeHashtag = "hashtag"
 	TimelineTypeList    = "list"
+	TimelineTypeHome    = "home"
 	TimelineTypeDirect  = "direct"
 	TimelineTypeStatus  = "status"
 )

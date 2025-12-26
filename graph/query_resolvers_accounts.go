@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/emoji"
 	"github.com/equaltoai/lesser/pkg/services/search"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
@@ -21,6 +22,22 @@ import (
 // ====================================================================
 // QUERY RESOLVERS
 // ====================================================================
+
+// Viewer returns the current authenticated user's actor.
+func (r *queryResolver) Viewer(ctx context.Context) (*activitypub.Actor, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	account, err := r.Registry.Accounts().GetAccount(ctx, username)
+	if err != nil {
+		r.Logger.Error("Failed to get viewer account", zap.Error(err))
+		return nil, errors.Join(errors.New("failed to get viewer account"), err)
+	}
+
+	return r.convertAccountToActor(account), nil
+}
 
 // Actor is the resolver for the actor field.
 func (r *queryResolver) Actor(ctx context.Context, id *string, username *string) (*activitypub.Actor, error) {
@@ -60,6 +77,48 @@ func (r *queryResolver) Actor(ctx context.Context, id *string, username *string)
 	}
 
 	return r.convertAccountToActor(account), nil
+}
+
+// AccountQuotePermissions resolves quote permissions for the requested username.
+func (r *queryResolver) AccountQuotePermissions(ctx context.Context, username string) (*model.AccountQuotePermissions, error) {
+	resolved := deriveUsernameFromIRI(username)
+	if err := common.ValidateRequiredParam("username", resolved); err != nil {
+		return nil, err
+	}
+
+	storage := r.Registry.GetStorage()
+	if storage == nil || storage.Quote() == nil {
+		return nil, errors.New("quote repository is not available")
+	}
+
+	perms, err := storage.Quote().GetQuotePermissions(ctx, resolved)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			perms = &storageModels.QuotePermissions{
+				Username: resolved,
+			}
+			perms.SetDefaults()
+			_ = perms.UpdateKeys()
+		} else {
+			r.Logger.Error("Failed to get quote permissions",
+				zap.String("username", resolved),
+				zap.Error(err))
+			return nil, errors.Join(errors.New("failed to get quote permissions"), err)
+		}
+	}
+
+	blockList := perms.BlockList
+	if blockList == nil {
+		blockList = []string{}
+	}
+
+	return &model.AccountQuotePermissions{
+		Username:       resolved,
+		AllowPublic:    perms.AllowPublic,
+		AllowFollowers: perms.AllowFollowers,
+		AllowMentioned: perms.AllowMentioned,
+		BlockList:      blockList,
+	}, nil
 }
 
 // CustomEmojis is the resolver for the customEmojis field.
@@ -178,4 +237,32 @@ func (r *queryResolver) RemoveSuggestion(ctx context.Context, accountID string) 
 	}
 
 	return true, nil
+}
+
+// Endorsements returns the accounts pinned by the current viewer.
+func (r *queryResolver) Endorsements(ctx context.Context) ([]*activitypub.Actor, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := r.Registry.Accounts().GetAccountPins(ctx, &accounts.GetAccountPinsQuery{
+		Username: username,
+	})
+	if err != nil {
+		r.Logger.Error("Failed to load endorsements",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, errors.Join(errors.New("failed to load endorsements"), err)
+	}
+
+	actors := make([]*activitypub.Actor, 0, len(result.PinnedAccounts))
+	for _, account := range result.PinnedAccounts {
+		actor := r.convertAccountToActor(account)
+		if actor != nil {
+			actors = append(actors, actor)
+		}
+	}
+
+	return actors, nil
 }
