@@ -9,7 +9,7 @@ func cleanupPlaceholderRequestBody(op *operation, route routeDef) {
 	if route.Method != methodPOST && route.Method != methodPUT && route.Method != methodPATCH {
 		return
 	}
-	if strings.TrimSpace(route.Path) == "/api/graphql" {
+	if strings.TrimSpace(route.Path) == pathGraphQL {
 		return
 	}
 

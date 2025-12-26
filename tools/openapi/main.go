@@ -37,6 +37,7 @@ type routeDef struct {
 	SuccessStatus  int
 	SuccessCodes   []int
 	QueryParams    []string
+	Scopes         []string
 	Sources        []string
 }
 
@@ -125,10 +126,17 @@ type mediaType struct {
 	Schema schemaRef `yaml:"schema"`
 }
 
+type responseHeader struct {
+	Description string    `yaml:"description,omitempty"`
+	Required    bool      `yaml:"required,omitempty"`
+	Schema      schemaRef `yaml:"schema,omitempty"`
+}
+
 type response struct {
-	Ref         string               `yaml:"$ref,omitempty"`
-	Description string               `yaml:"description,omitempty"`
-	Content     map[string]mediaType `yaml:"content,omitempty"`
+	Ref         string                    `yaml:"$ref,omitempty"`
+	Description string                    `yaml:"description,omitempty"`
+	Content     map[string]mediaType      `yaml:"content,omitempty"`
+	Headers     map[string]responseHeader `yaml:"headers,omitempty"`
 }
 
 type authMode string
@@ -462,6 +470,85 @@ func ensureFoundationSchemas(spec *openAPISpec) {
 			"description": "Mastodon-compatible snowflake identifier (stringified uint).",
 		}
 	}
+
+	if _, ok := spec.Components.Schemas["GraphQLRequest"]; !ok {
+		spec.Components.Schemas["GraphQLRequest"] = map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "GraphQL query document.",
+				},
+				"variables": map[string]any{
+					"type":                 "object",
+					"description":          "GraphQL variables map (JSON object).",
+					"additionalProperties": true,
+				},
+				"operationName": map[string]any{
+					"type":        "string",
+					"description": "GraphQL operation name (optional).",
+				},
+			},
+			"required":             []string{"query"},
+			"additionalProperties": false,
+		}
+	}
+
+	if _, ok := spec.Components.Schemas["GraphQLError"]; !ok {
+		spec.Components.Schemas["GraphQLError"] = map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"message": map[string]any{
+					"type":        "string",
+					"description": "Error message.",
+				},
+				"locations": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"line":   map[string]any{"type": "integer", "format": "int32"},
+							"column": map[string]any{"type": "integer", "format": "int32"},
+						},
+						"required":             []string{"line", "column"},
+						"additionalProperties": false,
+					},
+				},
+				"path": map[string]any{
+					"type":        "array",
+					"description": "Path of the field that experienced the error (optional).",
+					"items":       map[string]any{},
+				},
+				"extensions": map[string]any{
+					"type":                 "object",
+					"description":          "Additional error metadata (optional).",
+					"additionalProperties": true,
+				},
+			},
+			"required":             []string{"message"},
+			"additionalProperties": false,
+		}
+	}
+
+	if _, ok := spec.Components.Schemas["GraphQLResponse"]; !ok {
+		spec.Components.Schemas["GraphQLResponse"] = map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"data": map[string]any{
+					"type":                 "object",
+					"description":          "GraphQL response data (JSON object).",
+					"additionalProperties": true,
+				},
+				"errors": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"$ref": "#/components/schemas/GraphQLError",
+					},
+				},
+			},
+			"additionalProperties": false,
+		}
+	}
 }
 
 func ensureFoundationParameters(spec *openAPISpec) {
@@ -568,7 +655,48 @@ func ensureFoundationResponses(spec *openAPISpec) {
 	addResponse("NotFound", "Not Found", errorContent)
 	addResponse("Conflict", "Conflict", errorContent)
 	addResponse("UnprocessableEntity", "Unprocessable Entity", errorContent)
-	addResponse("TooManyRequests", "Too Many Requests", errorContent)
+	desiredTooMany := response{
+		Description: "Too Many Requests",
+		Content:     errorContent,
+		Headers: map[string]responseHeader{
+			"Retry-After": {
+				Description: "Number of seconds to wait before retrying.",
+				Schema:      schemaRef{Type: "integer", Format: "int32"},
+			},
+			"X-RateLimit-Limit": {
+				Description: "Request limit per window.",
+				Schema:      schemaRef{Type: "integer", Format: "int32"},
+			},
+			"X-RateLimit-Remaining": {
+				Description: "Requests remaining in the current window.",
+				Schema:      schemaRef{Type: "integer", Format: "int32"},
+			},
+			"X-RateLimit-Reset": {
+				Description: "Unix timestamp (seconds) when the current window resets.",
+				Schema:      schemaRef{Type: "integer", Format: "int64"},
+			},
+		},
+	}
+	if existing, ok := spec.Components.Responses["TooManyRequests"]; !ok {
+		spec.Components.Responses["TooManyRequests"] = desiredTooMany
+	} else {
+		if existing.Description == "" {
+			existing.Description = desiredTooMany.Description
+		}
+		if existing.Content == nil {
+			existing.Content = desiredTooMany.Content
+		}
+		if existing.Headers == nil {
+			existing.Headers = map[string]responseHeader{}
+		}
+		for name, hdr := range desiredTooMany.Headers {
+			if _, ok := existing.Headers[name]; ok {
+				continue
+			}
+			existing.Headers[name] = hdr
+		}
+		spec.Components.Responses["TooManyRequests"] = existing
+	}
 	addResponse("InternalServerError", "Internal Server Error", errorContent)
 	addResponse("ServiceUnavailable", "Service Unavailable", errorContent)
 }
@@ -677,17 +805,14 @@ func ensureOperationDefaults(op *operation, route routeDef) {
 	// Ensure a placeholder request body for write methods (optional by default).
 	if route.Method == methodPOST || route.Method == methodPUT || route.Method == methodPATCH {
 		if op.RequestBody == nil {
-			if strings.TrimSpace(route.RequestSchema) == "" && strings.TrimSpace(route.Path) != "/api/graphql" {
-				applyOperationOverrides(op, route)
-				ensureInferredQueryParams(op, route)
-				applyPayloadSchemaRefs(op, route)
-				return
-			}
-			op.RequestBody = &requestBody{
-				Required: false,
-				Content: map[string]mediaType{
-					"application/json": {Schema: schemaRef{Type: "object", AdditionalProperties: true}},
-				},
+			shouldCreatePlaceholder := strings.TrimSpace(route.RequestSchema) != "" || strings.TrimSpace(route.Path) == pathGraphQL
+			if shouldCreatePlaceholder {
+				op.RequestBody = &requestBody{
+					Required: false,
+					Content: map[string]mediaType{
+						"application/json": {Schema: schemaRef{Type: "object", AdditionalProperties: true}},
+					},
+				}
 			}
 		}
 	}
@@ -696,6 +821,7 @@ func ensureOperationDefaults(op *operation, route routeDef) {
 	ensureInferredQueryParams(op, route)
 	applyPayloadSchemaRefs(op, route)
 	cleanupPlaceholderRequestBody(op, route)
+	ensureStandardResponseHeaders(op, route)
 }
 
 func newOperation(route routeDef) *operation {
@@ -1184,6 +1310,18 @@ func ensureGeneratedExtensions(op *operation, route routeDef) {
 		delete(op.Extensions, "x-lesser-handler")
 	} else {
 		op.Extensions["x-lesser-handler"] = handler
+	}
+
+	if route.Auth == authModeBearerRequired || route.Auth == authModeBearerOptional {
+		if len(route.Scopes) == 0 {
+			delete(op.Extensions, "x-oauth-scopes")
+		} else {
+			scopes := append([]string(nil), route.Scopes...)
+			sort.Strings(scopes)
+			op.Extensions["x-oauth-scopes"] = scopes
+		}
+	} else {
+		delete(op.Extensions, "x-oauth-scopes")
 	}
 }
 
@@ -1947,13 +2085,13 @@ func applyAuthOverrides(method, path, handler, lambda string, current authMode) 
 	}
 
 	if lambda == lambdaSSE {
-		if normPath == "/api/v1/streaming" || normPath == "/api/v1/streaming/health" {
+		if normPath == pathStreamingRoot || normPath == pathStreamingHealth {
 			return authModePublic
 		}
 		return authModeBearerRequired
 	}
 
-	if lambda == lambdaGraphQL && strings.HasPrefix(normPath, "/api/graphql") {
+	if lambda == lambdaGraphQL && strings.HasPrefix(normPath, pathGraphQL) {
 		return authModeBearerOptional
 	}
 

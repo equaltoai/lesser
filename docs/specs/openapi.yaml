@@ -1831,6 +1831,66 @@ components:
                         - type: boolean
                         - type: "null"
             type: object
+        GraphQLError:
+            additionalProperties: false
+            properties:
+                extensions:
+                    additionalProperties: true
+                    description: Additional error metadata (optional).
+                    type: object
+                locations:
+                    items:
+                        additionalProperties: false
+                        properties:
+                            column:
+                                format: int32
+                                type: integer
+                            line:
+                                format: int32
+                                type: integer
+                        required:
+                            - line
+                            - column
+                        type: object
+                    type: array
+                message:
+                    description: Error message.
+                    type: string
+                path:
+                    description: Path of the field that experienced the error (optional).
+                    items: {}
+                    type: array
+            required:
+                - message
+            type: object
+        GraphQLRequest:
+            additionalProperties: false
+            properties:
+                operationName:
+                    description: GraphQL operation name (optional).
+                    type: string
+                query:
+                    description: GraphQL query document.
+                    type: string
+                variables:
+                    additionalProperties: true
+                    description: GraphQL variables map (JSON object).
+                    type: object
+            required:
+                - query
+            type: object
+        GraphQLResponse:
+            additionalProperties: false
+            properties:
+                data:
+                    additionalProperties: true
+                    description: GraphQL response data (JSON object).
+                    type: object
+                errors:
+                    items:
+                        $ref: '#/components/schemas/GraphQLError'
+                    type: array
+            type: object
         GroupedNotificationAccount:
             additionalProperties: false
             properties:
@@ -6274,6 +6334,27 @@ components:
                 application/json:
                     schema:
                         $ref: '#/components/schemas/Error'
+            headers:
+                Retry-After:
+                    description: Number of seconds to wait before retrying.
+                    schema:
+                        type: integer
+                        format: int32
+                X-RateLimit-Limit:
+                    description: Request limit per window.
+                    schema:
+                        type: integer
+                        format: int32
+                X-RateLimit-Remaining:
+                    description: Requests remaining in the current window.
+                    schema:
+                        type: integer
+                        format: int32
+                X-RateLimit-Reset:
+                    description: Unix timestamp (seconds) when the current window resets.
+                    schema:
+                        type: integer
+                        format: int64
         Unauthorized:
             description: Unauthorized
             content:
@@ -6367,9 +6448,30 @@ paths:
             security:
                 - {}
                 - bearerAuth: []
+            parameters:
+                - name: query
+                  in: query
+                  required: true
+                  description: GraphQL query document.
+                  schema:
+                    type: string
+                - name: variables
+                  in: query
+                  description: GraphQL variables encoded as a JSON string.
+                  schema:
+                    type: string
+                - name: operationName
+                  in: query
+                  description: GraphQL operation name (optional).
+                  schema:
+                    type: string
             responses:
                 "200":
                     description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GraphQLResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -6389,14 +6491,18 @@ paths:
                 - {}
                 - bearerAuth: []
             requestBody:
+                required: true
                 content:
                     application/json:
                         schema:
-                            type: object
-                            additionalProperties: true
+                            $ref: '#/components/schemas/GraphQLRequest'
             responses:
                 "200":
                     description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GraphQLResponse'
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -6460,6 +6566,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/AccountRegistrationResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "422":
@@ -6497,6 +6619,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Relationship'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -6515,6 +6653,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/accounts/{id}/follow:
         post:
             operationId: post_api_v1_accounts_by_id_follow
@@ -6540,6 +6680,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Relationship'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -6558,6 +6714,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/accounts/{id}/mute:
         post:
             operationId: post_api_v1_accounts_by_id_mute
@@ -6583,6 +6741,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Relationship'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -6601,6 +6775,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/accounts/{id}/notes:
         get:
             operationId: get_api_v1_accounts_by_id_notes
@@ -6694,6 +6870,11 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/StatusList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "404":
@@ -6729,6 +6910,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Relationship'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -6747,6 +6944,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/accounts/{id}/unfollow:
         post:
             operationId: post_api_v1_accounts_by_id_unfollow
@@ -6772,6 +6971,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Relationship'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -6790,6 +7005,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/accounts/{id}/unmute:
         post:
             operationId: post_api_v1_accounts_by_id_unmute
@@ -6810,6 +7027,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Relationship'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -6828,6 +7061,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/accounts/quote_permissions:
         put:
             operationId: put_api_v1_accounts_quote_permissions
@@ -6861,6 +7096,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:accounts
     /api/v1/accounts/relationships:
         get:
             operationId: get_api_v1_accounts_relationships
@@ -6887,6 +7124,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read:accounts
     /api/v1/accounts/search:
         get:
             operationId: get_api_v1_accounts_search
@@ -6908,6 +7147,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/AccountList'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -6922,6 +7177,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read:accounts
     /api/v1/accounts/search/suggestions:
         get:
             operationId: get_api_v1_accounts_search_suggestions
@@ -6966,6 +7223,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/StorageAccount'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -6982,6 +7255,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/accounts/verify_credentials:
         get:
             operationId: get_api_v1_accounts_verify_credentials
@@ -7008,6 +7283,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/admin/accounts:
         get:
             operationId: get_api_v1_admin_accounts
@@ -7037,6 +7314,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
         post:
             operationId: post_api_v1_admin_accounts
             tags:
@@ -7069,6 +7348,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/accounts/{id}:
         get:
             operationId: get_api_v1_admin_accounts_by_id
@@ -7103,6 +7384,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
     /api/v1/admin/accounts/{id}/action:
         post:
             operationId: post_api_v1_admin_accounts_by_id_action
@@ -7140,6 +7423,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/accounts/{id}/approve:
         post:
             operationId: post_api_v1_admin_accounts_by_id_approve
@@ -7172,6 +7457,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/accounts/{id}/enable:
         post:
             operationId: post_api_v1_admin_accounts_by_id_enable
@@ -7204,6 +7491,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/accounts/{id}/reject:
         post:
             operationId: post_api_v1_admin_accounts_by_id_reject
@@ -7236,6 +7525,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/accounts/{id}/unsensitive:
         post:
             operationId: post_api_v1_admin_accounts_by_id_unsensitive
@@ -7268,6 +7559,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/accounts/{id}/unsilence:
         post:
             operationId: post_api_v1_admin_accounts_by_id_unsilence
@@ -7300,6 +7593,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/accounts/{id}/unsuspend:
         post:
             operationId: post_api_v1_admin_accounts_by_id_unsuspend
@@ -7332,6 +7627,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/announcements:
         post:
             operationId: post_api_v1_admin_announcements
@@ -7365,6 +7662,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/custom_emojis:
         post:
             operationId: post_api_v1_admin_custom_emojis
@@ -7398,6 +7697,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/custom_emojis/{shortcode}:
         put:
             operationId: put_api_v1_admin_custom_emojis_by_shortcode
@@ -7439,6 +7740,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
         delete:
             operationId: delete_api_v1_admin_custom_emojis_by_shortcode
             tags:
@@ -7472,6 +7775,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/domain_allows:
         get:
             operationId: get_api_v1_admin_domain_allows
@@ -7489,6 +7794,11 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/AdminDomainAllowResponseList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -7501,6 +7811,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
         post:
             operationId: post_api_v1_admin_domain_allows
             tags:
@@ -7533,6 +7845,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/domain_allows/{id}:
         delete:
             operationId: delete_api_v1_admin_domain_allows_by_id
@@ -7567,6 +7881,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/domain_blocks:
         get:
             operationId: get_api_v1_admin_domain_blocks
@@ -7584,6 +7900,11 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/AdminDomainBlockResponseList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -7596,6 +7917,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
         post:
             operationId: post_api_v1_admin_domain_blocks
             tags:
@@ -7628,6 +7951,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/domain_blocks/{id}:
         get:
             operationId: get_api_v1_admin_domain_blocks_by_id
@@ -7662,6 +7987,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
         put:
             operationId: put_api_v1_admin_domain_blocks_by_id
             tags:
@@ -7702,6 +8029,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
         delete:
             operationId: delete_api_v1_admin_domain_blocks_by_id
             tags:
@@ -7735,6 +8064,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/email_domain_blocks:
         get:
             operationId: get_api_v1_admin_email_domain_blocks
@@ -7764,6 +8095,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
         post:
             operationId: post_api_v1_admin_email_domain_blocks
             tags:
@@ -7796,6 +8129,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/email_domain_blocks/{id}:
         delete:
             operationId: delete_api_v1_admin_email_domain_blocks_by_id
@@ -7830,6 +8165,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/federation/instance/{domain}:
         get:
             operationId: get_api_v1_admin_federation_instance_by_domain
@@ -7864,6 +8201,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
     /api/v1/admin/federation/instances:
         get:
             operationId: get_api_v1_admin_federation_instances
@@ -7893,6 +8232,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
     /api/v1/admin/federation/statistics:
         get:
             operationId: get_api_v1_admin_federation_statistics
@@ -7928,6 +8269,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
     /api/v1/admin/moderation/events:
         get:
             operationId: get_api_v1_admin_moderation_events
@@ -7977,6 +8320,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
     /api/v1/admin/moderation/events/{id}/override:
         post:
             operationId: post_api_v1_admin_moderation_events_by_id_override
@@ -8018,6 +8363,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/moderation/overview:
         get:
             operationId: get_api_v1_admin_moderation_overview
@@ -8044,6 +8391,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
     /api/v1/admin/moderation/reviewers:
         get:
             operationId: get_api_v1_admin_moderation_reviewers
@@ -8070,6 +8419,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
     /api/v1/admin/moderation/reviewers/{id}/demote:
         post:
             operationId: post_api_v1_admin_moderation_reviewers_by_id_demote
@@ -8106,6 +8457,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/moderation/reviewers/{id}/promote:
         post:
             operationId: post_api_v1_admin_moderation_reviewers_by_id_promote
@@ -8142,6 +8495,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/moderation/trust/{from}/{to}:
         put:
             operationId: put_api_v1_admin_moderation_trust_by_from_by_to
@@ -8188,6 +8543,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/moderation/trust/graph:
         get:
             operationId: get_api_v1_admin_moderation_trust_graph
@@ -8216,6 +8573,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
     /api/v1/admin/reports:
         get:
             operationId: get_api_v1_admin_reports
@@ -8249,6 +8608,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
     /api/v1/admin/reports/{id}:
         get:
             operationId: get_api_v1_admin_reports_by_id
@@ -8283,6 +8644,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
     /api/v1/admin/reports/{id}/assign_to_self:
         post:
             operationId: post_api_v1_admin_reports_by_id_assign_to_self
@@ -8319,6 +8682,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/reports/{id}/reopen:
         post:
             operationId: post_api_v1_admin_reports_by_id_reopen
@@ -8355,6 +8720,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/reports/{id}/resolve:
         post:
             operationId: post_api_v1_admin_reports_by_id_resolve
@@ -8391,6 +8758,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/reports/{id}/unassign:
         post:
             operationId: post_api_v1_admin_reports_by_id_unassign
@@ -8427,6 +8796,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/statuses:
         get:
             operationId: get_api_v1_admin_statuses
@@ -8500,6 +8871,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
     /api/v1/admin/statuses/{id}:
         get:
             operationId: get_api_v1_admin_statuses_by_id
@@ -8534,6 +8907,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:read
         delete:
             operationId: delete_api_v1_admin_statuses_by_id
             tags:
@@ -8563,6 +8938,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/statuses/{id}/sensitive:
         post:
             operationId: post_api_v1_admin_statuses_by_id_sensitive
@@ -8599,6 +8976,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/admin/statuses/{id}/unsensitive:
         post:
             operationId: post_api_v1_admin_statuses_by_id_unsensitive
@@ -8635,6 +9014,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - admin:write
     /api/v1/announcements:
         get:
             operationId: get_api_v1_announcements
@@ -8695,6 +9076,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/announcements/{id}/reactions/{name}:
         put:
             operationId: put_api_v1_announcements_by_id_reactions_by_name
@@ -8736,6 +9119,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
         delete:
             operationId: delete_api_v1_announcements_by_id_reactions_by_name
             tags:
@@ -8774,6 +9159,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/apps:
         post:
             operationId: post_api_v1_apps
@@ -8815,6 +9202,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/auth/webauthn/credentials:
         get:
             operationId: get_api_v1_auth_webauthn_credentials
@@ -8841,6 +9230,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/auth/webauthn/credentials/{credentialId}:
         put:
             operationId: put_api_v1_auth_webauthn_credentials_by_credentialId
@@ -8882,6 +9273,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
         delete:
             operationId: delete_api_v1_auth_webauthn_credentials_by_credentialId
             tags:
@@ -8915,6 +9308,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/auth/webauthn/login/begin:
         post:
             operationId: post_api_v1_auth_webauthn_login_begin
@@ -8932,6 +9327,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/WebAuthnBeginResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "422":
@@ -8961,6 +9372,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/AuthAuthResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "422":
@@ -8987,6 +9414,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/WebAuthnBeginResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -9003,6 +9446,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/auth/webauthn/register/finish:
         post:
             operationId: post_api_v1_auth_webauthn_register_finish
@@ -9022,6 +9467,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/MessageResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -9038,6 +9499,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/blocks:
         get:
             operationId: get_api_v1_blocks
@@ -9054,6 +9517,26 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/AccountList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -9068,6 +9551,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/bookmarks:
         get:
             operationId: get_api_v1_bookmarks
@@ -9085,6 +9570,11 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/StatusList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -9097,6 +9587,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/conversations:
         get:
             operationId: get_api_v1_conversations
@@ -9114,6 +9606,11 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ConversationList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -9126,6 +9623,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/conversations/{id}:
         delete:
             operationId: delete_api_v1_conversations_by_id
@@ -9160,6 +9659,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/conversations/{id}/read:
         post:
             operationId: post_api_v1_conversations_by_id_read
@@ -9196,6 +9697,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/custom_emojis:
         get:
             operationId: get_api_v1_custom_emojis
@@ -9267,6 +9770,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read:blocks
         post:
             operationId: post_api_v1_domain_blocks
             tags:
@@ -9285,6 +9790,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/EmptyObject'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -9301,6 +9822,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:blocks
         delete:
             operationId: delete_api_v1_domain_blocks
             tags:
@@ -9319,6 +9842,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/EmptyObject'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -9333,6 +9872,9 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
+                - write:blocks
     /api/v1/endorsements:
         get:
             operationId: get_api_v1_endorsements
@@ -9359,6 +9901,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/exports:
         get:
             operationId: get_api_v1_exports
@@ -9385,6 +9929,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
         post:
             operationId: post_api_v1_exports
             tags:
@@ -9403,6 +9949,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ExportJob'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -9419,6 +9981,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/exports/{id}:
         get:
             operationId: get_api_v1_exports_by_id
@@ -9453,6 +10017,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/exports/{id}/download:
         get:
             operationId: get_api_v1_exports_by_id_download
@@ -9487,6 +10053,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/favourites:
         get:
             operationId: get_api_v1_favourites
@@ -9513,6 +10081,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/follow_requests:
         get:
             operationId: get_api_v1_follow_requests
@@ -9539,6 +10109,9 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
+                - read:follows
     /api/v1/follow_requests/{account_id}/authorize:
         post:
             operationId: post_api_v1_follow_requests_by_account_id_authorize
@@ -9571,6 +10144,9 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
+                - write:follows
     /api/v1/follow_requests/{account_id}/reject:
         post:
             operationId: post_api_v1_follow_requests_by_account_id_reject
@@ -9603,6 +10179,9 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
+                - write:follows
     /api/v1/imports:
         get:
             operationId: get_api_v1_imports
@@ -9629,6 +10208,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
         post:
             operationId: post_api_v1_imports
             tags:
@@ -9647,6 +10228,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ImportJob'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -9663,6 +10260,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/imports/{id}:
         get:
             operationId: get_api_v1_imports_by_id
@@ -9697,6 +10296,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
         delete:
             operationId: delete_api_v1_imports_by_id
             tags:
@@ -9730,6 +10331,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/instance:
         get:
             operationId: get_api_v1_instance
@@ -9852,6 +10455,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
         post:
             operationId: post_api_v1_lists
             tags:
@@ -9884,6 +10489,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/lists/{id}:
         get:
             operationId: get_api_v1_lists_by_id
@@ -9918,6 +10525,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
         put:
             operationId: put_api_v1_lists_by_id
             tags:
@@ -9958,6 +10567,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
         delete:
             operationId: delete_api_v1_lists_by_id
             tags:
@@ -9991,6 +10602,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/lists/{id}/accounts:
         get:
             operationId: get_api_v1_lists_by_id_accounts
@@ -10025,6 +10638,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
         post:
             operationId: post_api_v1_lists_by_id_accounts
             tags:
@@ -10065,6 +10680,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
         delete:
             operationId: delete_api_v1_lists_by_id_accounts
             tags:
@@ -10098,6 +10715,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/markers:
         get:
             operationId: get_api_v1_markers
@@ -10129,6 +10748,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
         post:
             operationId: post_api_v1_markers
             tags:
@@ -10161,6 +10782,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/media:
         post:
             operationId: post_api_v1_media
@@ -10198,6 +10821,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/MediaAttachment'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -10214,6 +10853,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/media/{id}:
         get:
             operationId: get_api_v1_media_by_id
@@ -10248,6 +10889,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
         put:
             operationId: put_api_v1_media_by_id
             tags:
@@ -10288,6 +10931,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/moderation/consensus/{event_id}:
         get:
             operationId: get_api_v1_moderation_consensus_by_event_id
@@ -10337,6 +10982,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ModerationEventResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -10429,6 +11090,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ModerationReviewResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -10553,6 +11230,26 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/AccountList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -10567,6 +11264,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/notes:
         post:
             operationId: post_api_v1_notes
@@ -10586,6 +11285,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/CreateCommunityNoteResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -10602,6 +11317,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/notes/{id}/vote:
         post:
             operationId: post_api_v1_notes_by_id_vote
@@ -10627,6 +11344,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/VoteCommunityNoteResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -10645,6 +11378,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/notes/{object_id}:
         get:
             operationId: get_api_v1_notes_by_object_id
@@ -10716,6 +11451,11 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/NotificationList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -10728,6 +11468,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read:notifications
     /api/v1/notifications/{id}:
         get:
             operationId: get_api_v1_notifications_by_id
@@ -10762,6 +11504,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read:notifications
     /api/v1/notifications/{id}/dismiss:
         post:
             operationId: post_api_v1_notifications_by_id_dismiss
@@ -10794,6 +11538,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:notifications
     /api/v1/notifications/clear:
         post:
             operationId: post_api_v1_notifications_clear
@@ -10818,6 +11564,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:notifications
     /api/v1/preferences:
         get:
             operationId: get_api_v1_preferences
@@ -10844,6 +11592,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
         patch:
             operationId: patch_api_v1_preferences
             tags:
@@ -10876,6 +11626,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/push/subscription:
         get:
             operationId: get_api_v1_push_subscription
@@ -10916,6 +11668,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/PushSubscription'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -10948,6 +11716,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/PushSubscription'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11000,6 +11784,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Report'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11050,6 +11850,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/reputation/export:
         post:
             operationId: post_api_v1_reputation_export
@@ -11078,6 +11880,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/reputation/import:
         post:
             operationId: post_api_v1_reputation_import
@@ -11111,6 +11915,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/reputation/verify:
         post:
             operationId: post_api_v1_reputation_verify
@@ -11154,6 +11960,11 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ScheduledStatusList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "500":
@@ -11281,6 +12092,26 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/StatusSearchResultList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11295,6 +12126,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
         post:
             operationId: post_api_v1_search_statuses
             tags:
@@ -11324,6 +12157,26 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/StatusSearchResultList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11340,6 +12193,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/statuses:
         post:
             operationId: post_api_v1_statuses
@@ -11359,6 +12214,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11375,6 +12246,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/statuses/{id}:
         get:
             operationId: get_api_v1_statuses_by_id
@@ -11429,6 +12302,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11466,6 +12355,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11482,6 +12387,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/statuses/{id}/bookmark:
         post:
             operationId: post_api_v1_statuses_by_id_bookmark
@@ -11502,6 +12409,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11520,6 +12443,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:statuses
     /api/v1/statuses/{id}/context:
         get:
             operationId: get_api_v1_statuses_by_id_context
@@ -11568,6 +12493,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11586,6 +12527,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/statuses/{id}/favourited_by:
         get:
             operationId: get_api_v1_statuses_by_id_favourited_by
@@ -11606,6 +12549,11 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/AccountList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "404":
@@ -11666,6 +12614,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11702,6 +12666,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11745,6 +12725,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/QuoteStatusSummary'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11763,6 +12759,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:statuses
     /api/v1/statuses/{id}/quote/{quote_id}:
         delete:
             operationId: delete_api_v1_statuses_by_id_quote_by_quote_id
@@ -11802,6 +12800,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:statuses
     /api/v1/statuses/{id}/quotes:
         get:
             operationId: get_api_v1_statuses_by_id_quotes
@@ -11852,6 +12852,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11870,6 +12886,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/statuses/{id}/reblogged_by:
         get:
             operationId: get_api_v1_statuses_by_id_reblogged_by
@@ -11890,6 +12908,11 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/AccountList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "404":
@@ -11944,6 +12967,22 @@ paths:
             responses:
                 "200":
                     description: OK
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -11962,6 +13001,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:statuses
     /api/v1/statuses/{id}/unbookmark:
         post:
             operationId: post_api_v1_statuses_by_id_unbookmark
@@ -11982,6 +13023,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -12000,6 +13057,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:statuses
     /api/v1/statuses/{id}/unfavourite:
         post:
             operationId: post_api_v1_statuses_by_id_unfavourite
@@ -12020,6 +13079,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -12038,6 +13113,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/statuses/{id}/unmute:
         post:
             operationId: post_api_v1_statuses_by_id_unmute
@@ -12056,6 +13133,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -12092,6 +13185,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -12130,6 +13239,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -12148,6 +13273,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/streaming:
         get:
             operationId: get_api_v1_streaming
@@ -12196,6 +13323,8 @@ paths:
             x-lesser-lambda: sse
             x-lesser-routeSources:
                 - cmd/sse/main.go
+            x-oauth-scopes:
+                - read
     /api/v1/streaming/hashtag:
         get:
             operationId: get_api_v1_streaming_hashtag
@@ -12223,6 +13352,8 @@ paths:
             x-lesser-lambda: sse
             x-lesser-routeSources:
                 - cmd/sse/main.go
+            x-oauth-scopes:
+                - read
     /api/v1/streaming/hashtag/local:
         get:
             operationId: get_api_v1_streaming_hashtag_local
@@ -12250,6 +13381,8 @@ paths:
             x-lesser-lambda: sse
             x-lesser-routeSources:
                 - cmd/sse/main.go
+            x-oauth-scopes:
+                - read
     /api/v1/streaming/health:
         get:
             operationId: get_api_v1_streaming_health
@@ -12298,6 +13431,8 @@ paths:
             x-lesser-lambda: sse
             x-lesser-routeSources:
                 - cmd/sse/main.go
+            x-oauth-scopes:
+                - read
     /api/v1/streaming/public:
         get:
             operationId: get_api_v1_streaming_public
@@ -12325,6 +13460,8 @@ paths:
             x-lesser-lambda: sse
             x-lesser-routeSources:
                 - cmd/sse/main.go
+            x-oauth-scopes:
+                - read
     /api/v1/streaming/public/local:
         get:
             operationId: get_api_v1_streaming_public_local
@@ -12352,6 +13489,8 @@ paths:
             x-lesser-lambda: sse
             x-lesser-routeSources:
                 - cmd/sse/main.go
+            x-oauth-scopes:
+                - read
     /api/v1/streaming/public/remote:
         get:
             operationId: get_api_v1_streaming_public_remote
@@ -12379,6 +13518,8 @@ paths:
             x-lesser-lambda: sse
             x-lesser-routeSources:
                 - cmd/sse/main.go
+            x-oauth-scopes:
+                - read
     /api/v1/streaming/user:
         get:
             operationId: get_api_v1_streaming_user
@@ -12406,6 +13547,8 @@ paths:
             x-lesser-lambda: sse
             x-lesser-routeSources:
                 - cmd/sse/main.go
+            x-oauth-scopes:
+                - read
     /api/v1/streaming/user/notification:
         get:
             operationId: get_api_v1_streaming_user_notification
@@ -12433,6 +13576,8 @@ paths:
             x-lesser-lambda: sse
             x-lesser-routeSources:
                 - cmd/sse/main.go
+            x-oauth-scopes:
+                - read
     /api/v1/suggestions:
         get:
             operationId: get_api_v1_suggestions
@@ -12517,6 +13662,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/timelines/home:
         get:
             operationId: get_api_v1_timelines_home
@@ -12534,6 +13681,11 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/StatusList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -12546,6 +13698,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/timelines/link:
         get:
             operationId: get_api_v1_timelines_link
@@ -12605,6 +13759,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/timelines/public:
         get:
             operationId: get_api_v1_timelines_public
@@ -12624,6 +13780,11 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/StatusList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -12789,6 +13950,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/vouches/{actor_id}:
         get:
             operationId: get_api_v1_vouches_by_actor_id
@@ -12823,6 +13986,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v1/vouches/{vouch_id}:
         delete:
             operationId: delete_api_v1_vouches_by_vouch_id
@@ -12853,6 +14018,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v2/filters:
         get:
             operationId: get_api_v2_filters
@@ -12879,6 +14046,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read:filters
         post:
             operationId: post_api_v2_filters
             tags:
@@ -12911,6 +14080,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:filters
     /api/v2/filters/{filter_id}/keywords:
         get:
             operationId: get_api_v2_filters_by_filter_id_keywords
@@ -12945,6 +14116,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read:filters
         post:
             operationId: post_api_v2_filters_by_filter_id_keywords
             tags:
@@ -12985,6 +14158,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:filters
     /api/v2/filters/{filter_id}/keywords/{keyword_id}:
         delete:
             operationId: delete_api_v2_filters_by_filter_id_keywords_by_keyword_id
@@ -13024,6 +14199,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:filters
     /api/v2/filters/{filter_id}/statuses:
         get:
             operationId: get_api_v2_filters_by_filter_id_statuses
@@ -13058,6 +14235,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read:filters
         post:
             operationId: post_api_v2_filters_by_filter_id_statuses
             tags:
@@ -13098,6 +14277,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:filters
     /api/v2/filters/{filter_id}/statuses/{status_id}:
         delete:
             operationId: delete_api_v2_filters_by_filter_id_statuses_by_status_id
@@ -13137,6 +14318,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:filters
     /api/v2/filters/{id}:
         get:
             operationId: get_api_v2_filters_by_id
@@ -13171,6 +14354,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read:filters
         put:
             operationId: put_api_v2_filters_by_id
             tags:
@@ -13211,6 +14396,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:filters
         delete:
             operationId: delete_api_v2_filters_by_id
             tags:
@@ -13244,6 +14431,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:filters
     /api/v2/filters/test:
         post:
             operationId: post_api_v2_filters_test
@@ -13277,6 +14466,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write:filters
     /api/v2/instance:
         get:
             operationId: get_api_v2_instance
@@ -13364,6 +14555,11 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/GroupedNotificationGroupList'
+                    headers:
+                        Link:
+                            description: RFC 8288 pagination links (e.g., `rel="next"`, `rel="prev"`).
+                            schema:
+                                type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -13376,6 +14572,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /api/v2/notifications/groups/{group_id}/read:
         post:
             operationId: post_api_v2_notifications_groups_by_group_id_read
@@ -13412,6 +14610,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v2/search:
         get:
             operationId: get_api_v2_search
@@ -13581,6 +14781,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/StorageWalletChallenge'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "422":
@@ -13627,6 +14843,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /auth/wallet/list:
         get:
             operationId: get_auth_wallet_list
@@ -13653,6 +14871,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - read
     /auth/wallet/login:
         post:
             operationId: post_auth_wallet_login
@@ -13670,6 +14890,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/AuthAuthResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "422":
@@ -13716,6 +14952,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /auth/wallet/verify:
         post:
             operationId: post_auth_wallet_verify
@@ -13733,6 +14971,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/WalletVerifyResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "422":
@@ -13914,6 +15168,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/OAuthAuthorizeResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "302":
                     description: Redirect to auth UI or redirect_uri
                 "400":
@@ -13951,6 +15221,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/OAuthConsentResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "422":
@@ -13981,6 +15267,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/OAuthTokenResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "422":
@@ -14066,6 +15368,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/SetupBootstrapChallengeResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "422":
@@ -14095,6 +15413,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/SetupBootstrapVerifyResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "422":
@@ -14135,6 +15469,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /setup/status:
         get:
             operationId: get_setup_status

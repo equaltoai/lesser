@@ -8,9 +8,55 @@ func applyOperationOverrides(op *operation, route routeDef) {
 	}
 
 	applySSEOverrides(op, route)
+	applyGraphQLOverrides(op, route)
 	applyOAuthOverrides(op, route)
 	applyAppRegistrationOverrides(op, route)
 	applyMediaOverrides(op, route)
+}
+
+func applyGraphQLOverrides(op *operation, route routeDef) {
+	if route.Path != pathGraphQL {
+		return
+	}
+
+	if op.Responses == nil {
+		op.Responses = map[string]response{}
+	}
+
+	switch route.Method {
+	case methodGET:
+		ensureQueryParam(op, parameter{
+			Name:        "query",
+			In:          "query",
+			Required:    true,
+			Description: "GraphQL query document.",
+			Schema:      schemaRef{Type: "string"},
+		})
+		ensureQueryParam(op, parameter{
+			Name:        "variables",
+			In:          "query",
+			Required:    false,
+			Description: "GraphQL variables encoded as a JSON string.",
+			Schema:      schemaRef{Type: "string"},
+		})
+		ensureQueryParam(op, parameter{
+			Name:        "operationName",
+			In:          "query",
+			Required:    false,
+			Description: "GraphQL operation name (optional).",
+			Schema:      schemaRef{Type: "string"},
+		})
+
+		ensureJSONResponseSchema(op, "200", "GraphQLResponse")
+	case methodPOST:
+		op.RequestBody = &requestBody{
+			Required: true,
+			Content: map[string]mediaType{
+				"application/json": {Schema: schemaRef{Ref: "#/components/schemas/GraphQLRequest"}},
+			},
+		}
+		ensureJSONResponseSchema(op, "200", "GraphQLResponse")
+	}
 }
 
 func applyOAuthOverrides(op *operation, route routeDef) {
@@ -226,7 +272,7 @@ func applySSEOverrides(op *operation, route routeDef) {
 		return
 	}
 
-	if strings.HasPrefix(route.Path, "/api/v1/streaming/") {
+	if strings.HasPrefix(route.Path, pathStreamingPrefix) {
 		if op.Responses == nil {
 			op.Responses = map[string]response{}
 		}
@@ -239,7 +285,7 @@ func applySSEOverrides(op *operation, route routeDef) {
 		return
 	}
 
-	if route.Path == "/api/v1/streaming" {
+	if route.Path == pathStreamingRoot {
 		if op.Responses == nil {
 			op.Responses = map[string]response{}
 		}
@@ -253,7 +299,7 @@ func applySSEOverrides(op *operation, route routeDef) {
 		return
 	}
 
-	if route.Path == "/api/v1/streaming/health" {
+	if route.Path == pathStreamingHealth {
 		if op.Responses == nil {
 			op.Responses = map[string]response{}
 		}

@@ -6,6 +6,8 @@ Lesser ships a **file-only** OpenAPI contract at `docs/specs/openapi.yaml`. It i
 
 Use `openapi-typescript` for type generation and `openapi-fetch` for a minimal, typed client.
 
+The spec also includes a vendor extension `x-oauth-scopes` on authenticated operations to indicate the expected OAuth scope(s).
+
 ### 1) Generate types
 
 ```bash
@@ -54,4 +56,3 @@ Keep `docs/specs/openapi.yaml` fresh and strictly typed:
 make generate-openapi
 make verify-openapi-strict
 ```
-

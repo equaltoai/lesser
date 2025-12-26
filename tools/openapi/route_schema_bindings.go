@@ -32,6 +32,8 @@ func bindPayloadSchemas(repoRoot string, spec *openAPISpec, routes []routeDef) e
 		}
 	}
 
+	applyScopeDefaults(routes)
+
 	return nil
 }
 
@@ -79,6 +81,9 @@ func bindRoutePayloadSchemas(builder *schemaBuilder, payloads map[string]handler
 	}
 	if len(meta.QueryParams) > 0 {
 		route.QueryParams = append([]string(nil), meta.QueryParams...)
+	}
+	if len(meta.Scopes) > 0 {
+		route.Scopes = append([]string(nil), meta.Scopes...)
 	}
 
 	return nil

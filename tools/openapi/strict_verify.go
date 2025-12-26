@@ -21,14 +21,14 @@ type strictCheck struct {
 }
 
 var strictExemptions = map[string]strictCheck{
-	routeKey(methodGET, "/api/graphql"): {
+	routeKey(methodGET, pathGraphQL): {
 		Method:           methodGET,
-		Path:             "/api/graphql",
+		Path:             pathGraphQL,
 		SkipSchemaChecks: true,
 	},
-	routeKey(methodPOST, "/api/graphql"): {
+	routeKey(methodPOST, pathGraphQL): {
 		Method:                   methodPOST,
-		Path:                     "/api/graphql",
+		Path:                     pathGraphQL,
 		AllowPlaceholderRequest:  true,
 		AllowPlaceholderResponse: true,
 	},
@@ -72,6 +72,10 @@ func validateStrictGeneratedSpec(spec *openAPISpec, routes []routeDef) error {
 		return errors.New("strict openapi: spec is nil")
 	}
 
+	if err := validateStrictFoundationResponses(spec); err != nil {
+		return err
+	}
+
 	routeByKey := map[string]routeDef{}
 	for _, r := range routes {
 		routeByKey[routeKey(r.Method, r.Path)] = r
@@ -96,8 +100,18 @@ func validateStrictGeneratedSpec(spec *openAPISpec, routes []routeDef) error {
 		if err := validateStrictOperationSecurity(op, route); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %s", key, err.Error()))
 		}
+		if err := validateStrictOperationScopes(op, route); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %s", key, err.Error()))
+		}
 
 		if err := validateStrictOperationQueryParams(op, route); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %s", key, err.Error()))
+		}
+
+		if err := validateStrictOperationContentTypes(op, route); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %s", key, err.Error()))
+		}
+		if err := validateStrictOperationResponseHeaders(op, route); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %s", key, err.Error()))
 		}
 
@@ -120,6 +134,39 @@ func validateStrictGeneratedSpec(spec *openAPISpec, routes []routeDef) error {
 	sort.Strings(problems)
 	if len(problems) > 0 {
 		return errors.New("strict openapi validation failed:\n" + strings.Join(problems, "\n"))
+	}
+
+	return nil
+}
+
+func validateStrictFoundationResponses(spec *openAPISpec) error {
+	if spec == nil {
+		return nil
+	}
+
+	if spec.Components.Responses == nil {
+		return errors.New("components.responses is nil")
+	}
+
+	tooMany, ok := spec.Components.Responses["TooManyRequests"]
+	if !ok {
+		return errors.New("missing components.responses.TooManyRequests")
+	}
+
+	required := []string{"Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"}
+	var missing []string
+	for _, name := range required {
+		if tooMany.Headers == nil {
+			missing = append(missing, name)
+			continue
+		}
+		if _, ok := tooMany.Headers[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("components.responses.TooManyRequests missing headers: %s", strings.Join(missing, ", "))
 	}
 
 	return nil
@@ -165,6 +212,143 @@ func validateStrictOperationSecurity(op *operation, route routeDef) error {
 
 	if strings.HasPrefix(route.Path, "/api/v1/admin/") && !isBearerRequiredSecurity(op.Security) {
 		return errors.New("/api/v1/admin/* must require bearerAuth")
+	}
+
+	return nil
+}
+
+func validateStrictOperationScopes(op *operation, route routeDef) error {
+	if op == nil {
+		return errors.New("operation is nil")
+	}
+
+	if route.Path == pathGraphQL {
+		return nil
+	}
+
+	if route.Auth != authModeBearerRequired && route.Auth != authModeBearerOptional {
+		return nil
+	}
+
+	if op.Extensions == nil {
+		return errors.New("missing x-oauth-scopes")
+	}
+
+	raw, ok := op.Extensions["x-oauth-scopes"]
+	if !ok {
+		return errors.New("missing x-oauth-scopes")
+	}
+
+	switch v := raw.(type) {
+	case []string:
+		if len(v) == 0 {
+			return errors.New("missing x-oauth-scopes")
+		}
+		for _, s := range v {
+			if strings.TrimSpace(s) == "" {
+				return errors.New("x-oauth-scopes contains empty scope")
+			}
+		}
+	case []any:
+		if len(v) == 0 {
+			return errors.New("missing x-oauth-scopes")
+		}
+		for _, s := range v {
+			scope, ok := s.(string)
+			if !ok || strings.TrimSpace(scope) == "" {
+				return errors.New("x-oauth-scopes contains non-string scope")
+			}
+		}
+	default:
+		return errors.New("x-oauth-scopes has unexpected type")
+	}
+
+	return nil
+}
+
+func validateStrictOperationContentTypes(op *operation, route routeDef) error {
+	if op == nil {
+		return errors.New("operation is nil")
+	}
+
+	switch routeKey(route.Method, route.Path) {
+	case routeKey(methodPOST, "/api/v1/media"):
+		if !operationHasRequestContentType(op, "multipart/form-data") {
+			return errors.New("missing multipart/form-data request body")
+		}
+	case routeKey(methodPOST, "/oauth/token"), routeKey(methodPOST, "/oauth/consent"):
+		if !operationHasRequestContentType(op, "application/x-www-form-urlencoded") {
+			return errors.New("missing application/x-www-form-urlencoded request body")
+		}
+	}
+
+	if route.Lambda == lambdaSSE &&
+		route.Method == methodGET &&
+		strings.HasPrefix(route.Path, pathStreamingPrefix) &&
+		route.Path != pathStreamingRoot &&
+		route.Path != pathStreamingHealth {
+		if !operationHasResponseContentType(op, "200", "text/event-stream") {
+			return errors.New("missing text/event-stream response")
+		}
+	}
+
+	return nil
+}
+
+func operationHasRequestContentType(op *operation, contentType string) bool {
+	if op == nil || op.RequestBody == nil || op.RequestBody.Content == nil {
+		return false
+	}
+	_, ok := op.RequestBody.Content[strings.TrimSpace(contentType)]
+	return ok
+}
+
+func operationHasResponseContentType(op *operation, statusCode, contentType string) bool {
+	if op == nil || op.Responses == nil {
+		return false
+	}
+	resp, ok := op.Responses[strings.TrimSpace(statusCode)]
+	if !ok || resp.Content == nil {
+		return false
+	}
+	_, ok = resp.Content[strings.TrimSpace(contentType)]
+	return ok
+}
+
+func validateStrictOperationResponseHeaders(op *operation, route routeDef) error {
+	if op == nil || op.Responses == nil {
+		return nil
+	}
+
+	status := primarySuccessStatus(route)
+	if status == 0 {
+		return nil
+	}
+
+	resp, ok := op.Responses[strconv.Itoa(status)]
+	if !ok || resp.Ref != "" {
+		return nil
+	}
+
+	if isCursorPaginated(route) {
+		if resp.Headers == nil {
+			return errors.New("missing Link response header")
+		}
+		if _, ok := resp.Headers["Link"]; !ok {
+			return errors.New("missing Link response header")
+		}
+	}
+
+	if route.RateLimited {
+		required := []string{"X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"}
+		for _, name := range required {
+			if resp.Headers == nil {
+				return fmt.Errorf("missing %s response header", name)
+			}
+			if _, ok := resp.Headers[name]; !ok {
+				return fmt.Errorf("missing %s response header", name)
+			}
+		}
 	}
 
 	return nil

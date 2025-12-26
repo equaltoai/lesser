@@ -20,6 +20,7 @@ type handlerPayloadInfo struct {
 	SuccessCodes []int
 	PrimaryCode  int
 	QueryParams  []string
+	Scopes       []string
 }
 
 type payloadAnalysis struct {
@@ -110,6 +111,7 @@ func mergePayloadInfo(current handlerPayloadInfo, callees map[string]struct{}, p
 	next.QueryParams = mergeQueryParams(current.QueryParams, callees, payloads)
 	next.SuccessCodes = mergeSuccessCodes(current.SuccessCodes, callees, payloads)
 	next.PrimaryCode = choosePrimarySuccessCode(next.SuccessCodes)
+	next.Scopes = mergeScopes(current.Scopes, callees, payloads)
 
 	return next
 }
@@ -178,6 +180,32 @@ func mergeSuccessCodes(current []int, callees map[string]struct{}, payloads map[
 	return out
 }
 
+func mergeScopes(current []string, callees map[string]struct{}, payloads map[string]handlerPayloadInfo) []string {
+	scopes := map[string]struct{}{}
+	for _, scope := range current {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		scopes[scope] = struct{}{}
+	}
+	for callee := range callees {
+		info, ok := payloads[callee]
+		if !ok {
+			continue
+		}
+		for _, scope := range info.Scopes {
+			scope = strings.TrimSpace(scope)
+			if scope == "" {
+				continue
+			}
+			scopes[scope] = struct{}{}
+		}
+	}
+
+	return sortedScopes(scopes)
+}
+
 func payloadInfosEqual(a, b handlerPayloadInfo) bool {
 	if a.Request == nil || b.Request == nil {
 		if a.Request != b.Request {
@@ -210,6 +238,14 @@ func payloadInfosEqual(a, b handlerPayloadInfo) bool {
 	}
 	for i := range a.QueryParams {
 		if a.QueryParams[i] != b.QueryParams[i] {
+			return false
+		}
+	}
+	if len(a.Scopes) != len(b.Scopes) {
+		return false
+	}
+	for i := range a.Scopes {
+		if a.Scopes[i] != b.Scopes[i] {
 			return false
 		}
 	}
@@ -260,11 +296,20 @@ func analyzeHandlerPayloads(fn *ast.FuncDecl, info *types.Info) handlerPayloadIn
 	responseScore := 0
 	successCodes := map[int]int{}
 	queryParams := map[string]struct{}{}
+	scopes := map[string]struct{}{}
 
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok || call == nil {
 			return true
+		}
+
+		for _, scope := range scopeNamesFromCall(call, info) {
+			scope = strings.TrimSpace(scope)
+			if scope == "" {
+				continue
+			}
+			scopes[scope] = struct{}{}
 		}
 
 		if t, score := requestPayloadFromCall(call, info); score > requestScore {
@@ -295,6 +340,7 @@ func analyzeHandlerPayloads(fn *ast.FuncDecl, info *types.Info) handlerPayloadIn
 		SuccessCodes: codes,
 		PrimaryCode:  choosePrimarySuccessCode(codes),
 		QueryParams:  sortedQueryParams(queryParams),
+		Scopes:       sortedScopes(scopes),
 	}
 }
 
@@ -326,6 +372,48 @@ func queryParamNameFromCall(call *ast.CallExpr) (string, bool) {
 	return name, true
 }
 
+func scopeNamesFromCall(call *ast.CallExpr, info *types.Info) []string {
+	if call == nil || info == nil {
+		return nil
+	}
+
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel == nil || sel.Sel == nil {
+		return nil
+	}
+
+	switch sel.Sel.Name {
+	case "authenticateWithScope":
+		if len(call.Args) < 2 {
+			return nil
+		}
+		scope, ok := stringValue(call.Args[1], info)
+		if !ok {
+			return nil
+		}
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			return nil
+		}
+		return []string{scope}
+	case "HasScope":
+		if len(call.Args) < 1 {
+			return nil
+		}
+		scope, ok := stringValue(call.Args[0], info)
+		if !ok {
+			return nil
+		}
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			return nil
+		}
+		return []string{scope}
+	default:
+		return nil
+	}
+}
+
 func sortedQueryParams(params map[string]struct{}) []string {
 	if len(params) == 0 {
 		return nil
@@ -333,6 +421,18 @@ func sortedQueryParams(params map[string]struct{}) []string {
 	out := make([]string, 0, len(params))
 	for name := range params {
 		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedScopes(scopes map[string]struct{}) []string {
+	if len(scopes) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(scopes))
+	for scope := range scopes {
+		out = append(out, scope)
 	}
 	sort.Strings(out)
 	return out
@@ -395,6 +495,26 @@ func intValue(expr ast.Expr, info *types.Info) (int, bool) {
 		return 0, false
 	}
 	return value, true
+}
+
+func stringValue(expr ast.Expr, info *types.Info) (string, bool) {
+	if expr == nil {
+		return "", false
+	}
+
+	if v, ok := evalStringLiteral(expr); ok {
+		return v, true
+	}
+
+	if info != nil {
+		if tv, ok := info.Types[expr]; ok && tv.Value != nil {
+			if tv.Value.Kind() == constant.String {
+				return constant.StringVal(tv.Value), true
+			}
+		}
+	}
+
+	return "", false
 }
 
 func sortedSuccessCodes(counts map[int]int) []int {
