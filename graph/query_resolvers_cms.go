@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 )
 
 const (
@@ -398,30 +399,64 @@ func (r *queryResolver) SeriesBySlug(ctx context.Context, slug string) (*model.S
 		return nil, errors.New("slug is required")
 	}
 
-	viewer := r.optionalAuth(ctx)
-	if viewer != "" {
+	// Preferred path: use a slug index to avoid scans at scale.
+	var idx models.CMSSeriesSlugIndex
+	err := store.GetDB().WithContext(ctx).Model(&models.CMSSeriesSlugIndex{}).
+		Where("PK", "=", models.CMSSeriesSlugIndexPK(slug)).
+		Where("SK", "=", models.CMSSeriesSlugIndexSK()).
+		First(&idx)
+	if err == nil && strings.TrimSpace(idx.AuthorID) != "" && strings.TrimSpace(idx.SeriesID) != "" {
+		series, err := store.Series().GetSeries(ctx, idx.AuthorID, idx.SeriesID)
+		if err == nil && series != nil {
+			return r.convertCMSSeries(ctx, series), nil
+		}
+	}
+	if err != nil && !dynamormerrors.IsNotFound(err) {
+		return nil, err
+	}
+
+	// Backfill helper for instances that have legacy series rows without slug index entries.
+	backfillIndex := func(item *models.Series) {
+		if item == nil {
+			return
+		}
+		idx := &models.CMSSeriesSlugIndex{
+			Slug:     item.Slug,
+			AuthorID: item.AuthorID,
+			SeriesID: item.ID,
+		}
+		if err := idx.UpdateKeys(); err != nil {
+			return
+		}
+		_ = store.GetDB().WithContext(ctx).Model(idx).IfNotExists().Create()
+	}
+
+	// Fast fallback: if authenticated, search within the viewer's series (no scan).
+	if viewer := r.optionalAuth(ctx); viewer != "" {
 		items, err := store.Series().ListSeriesByAuthor(ctx, viewer, 500)
 		if err == nil {
 			for _, item := range items {
 				if item != nil && strings.EqualFold(item.Slug, slug) {
+					backfillIndex(item)
 					return r.convertCMSSeries(ctx, item), nil
 				}
 			}
 		}
 	}
 
-	// Fallback: scan for the first matching slug across all authors.
+	// Legacy fallback: scan for the first matching slug across all authors and backfill the index.
 	var seriesModels []models.Series
-	err := store.GetDB().WithContext(ctx).Model(&models.Series{}).
+	scanErr := store.GetDB().WithContext(ctx).Model(&models.Series{}).
 		Where("SK", "BEGINS_WITH", "ID#").
 		Limit(1000).
 		All(&seriesModels)
-	if err != nil {
-		return nil, err
+	if scanErr != nil {
+		return nil, scanErr
 	}
 
 	for i := range seriesModels {
 		if strings.EqualFold(seriesModels[i].Slug, slug) {
+			backfillIndex(&seriesModels[i])
 			return r.convertCMSSeries(ctx, &seriesModels[i]), nil
 		}
 	}
@@ -680,7 +715,15 @@ func (r *queryResolver) MyPublications(ctx context.Context) ([]*model.Publicatio
 		}
 
 		for i := range members {
-			membershipItems = append(membershipItems, &members[i])
+			member := &members[i]
+			membershipItems = append(membershipItems, member)
+
+			// Best-effort self-heal: ensure GSI keys exist so future lookups use the index.
+			if member.GSI1PK == "" || member.GSI1SK == "" {
+				if err := member.UpdateKeys(); err == nil {
+					_ = store.PublicationMember().ValidateAndUpdate(ctx, member)
+				}
+			}
 		}
 	}
 

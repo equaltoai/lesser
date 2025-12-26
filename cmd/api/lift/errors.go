@@ -41,11 +41,6 @@ func invalidAccountURL() *errors.AppError {
 	return errors.URLInvalid("account URL")
 }
 
-// remoteAccountsNotSupported creates an error when remote accounts are not supported.
-func remoteAccountsNotSupported() *errors.AppError {
-	return errors.NewAppError(errors.CodeOperationNotAllowed, errors.CategoryAPI, "Remote accounts not yet supported")
-}
-
 // helperUnauthorized creates an error when helper operation is unauthorized.
 func helperUnauthorized() *errors.AppError {
 	return errors.NewAuthError(errors.CodeUnauthorized, "Unauthorized")

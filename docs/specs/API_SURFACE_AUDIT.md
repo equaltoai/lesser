@@ -8,8 +8,8 @@ This audit focuses on **gaps**: missing routing, missing documentation, and expl
 
 ## Executive summary
 
-- **OpenAPI**: `make verify-openapi-strict` passes (`docs/specs/openapi.yaml` has 215 paths, 255 operations).
-- **GraphQL parity mapping**: `make verify-graphql-coverage` passes (`docs/specs/graphql_coverage.yaml` tracks 234 routes; 34 are `rest_only`, 200 are `graphql_required` and all are `covered`).
+- **OpenAPI**: `make verify-openapi-strict` passes (`docs/specs/openapi.yaml` has 215 paths).
+- **GraphQL parity mapping**: `make verify-graphql-coverage` passes (`docs/specs/graphql_coverage.yaml` tracks 232 routes).
 - **Lift handler routing**: all Lift handler “handles METHOD /path” declarations are registered; 0 unrouted handler endpoints detected.
 - **Non-OpenAPI HTTP entrypoints exist** (GraphQL, SSE streaming, ActivityPub/protocol Lambdas); they are reachable but intentionally outside the single OpenAPI file.
 
@@ -41,7 +41,7 @@ These routes exist in code and are deployed/routed by infra, but they are not cu
   - Outbox: `cmd/outbox/main.go` (`/users/:username/outbox`)
   - Object fetch: `cmd/objects/main.go` (`/objects/:id`)
   - Collections: `cmd/collections/main.go` (`/users/:username/{followers|following|liked}`)
-  - WebFinger/NodeInfo: `cmd/webfinger/main.go` (`/.well-known/*`, `/nodeinfo/*`)
+  - WebFinger: `cmd/webfinger/main.go` (`/.well-known/webfinger`)
 
 ### GraphQL
 
@@ -62,46 +62,22 @@ These routes exist in code and are deployed/routed by infra, but they are not cu
 
 ## Gaps and “missing implementation” findings
 
-### P0 — Functional gaps
+### Resolved (2025-12-26)
 
-- **Remote account IDs (actor URLs) are not supported in REST account resolution**
-  - `cmd/api/lift/helpers.go:42` rejects remote actor URLs (`remoteAccountsNotSupported`), which blocks REST endpoints that accept account IDs in URL form for non-local users.
-  - This is a hard functional gap for “remote user” workflows in REST.
-
-- **Moderation image analysis requires S3 URLs**
-  - `pkg/moderation/advanced/image_analyzer.go:86` returns an error for non-S3 URLs (“non-S3 URLs not yet supported”).
-  - If clients submit remote/media URLs that are not already in S3, analysis cannot run without a prefetch/upload step.
-
-### P1 — Scale / correctness gaps (works, but with fallback behaviors)
-
-- **CMS series lookup by slug can fall back to a scan**
-  - `graph/query_resolvers_cms.go:386` falls back to scanning series across all authors (`Limit(1000)`) when viewer context doesn’t find a match.
-  - If we want “no scans” at scale, this needs a slug index (or require `(authorID, slug)` in the API).
-
-- **CMS publication membership can fall back to a scan**
-  - `graph/query_resolvers_cms.go:648` scans `PublicationMember` items as a back-compat fallback when the membership index query returns none.
-  - This should be removable after any legacy membership state is migrated or once we guarantee the paginated membership query is canonical.
-
-### P2 — Explicitly unsupported mutations (API works but cannot do the action)
-
-- **Category slug updates are not supported**
-  - `graph/mutation_resolvers_cms.go:829` returns an error if `slug` changes.
-- **Publication slug updates are not supported**
-  - `graph/mutation_resolvers_cms.go:1089` returns an error if `slug` changes.
-
-If slug changes are required, we need an ID/redirect strategy and updates to deterministic ID invariants.
-
-### P2 — Deployment/infra footguns (duplicate implementations)
-
-The same method+path is implemented in multiple Lambdas. The deployed router must pick one (or you’ll get ambiguous behavior):
-- NodeInfo + reputation keys exist in both API and WebFinger lambdas:
-  - `cmd/api/routes_lift.go:94`
-  - `cmd/webfinger/main.go:62`
-- Followers/following collections exist in both API and Collections lambdas:
-  - `cmd/api/routes_lift.go:523`
-  - `cmd/collections/main.go:83`
-
-This isn’t inherently wrong, but it increases the chance of drift unless the infra contract is explicit.
+- **REST account resolution supports remote actor URLs/handles**
+  - `cmd/api/lift/helpers.go` now resolves remote actor URLs via `pkg/federation/RemoteSearchService` and supports `@user@domain` handles.
+- **Moderation image analysis supports non-S3 URLs**
+  - `pkg/moderation/advanced/image_analyzer.go` now downloads bytes via `pkg/httpclient` and uses Rekognition `Bytes` input.
+- **CMS series slug lookup no longer relies on global scans**
+  - `pkg/storage/models/cms_series_slug_index.go` introduces a slug index.
+  - `graph/query_resolvers_cms.go` uses the index and backfills it for legacy rows.
+- **CMS publication membership scan fallback is self-healing**
+  - `graph/query_resolvers_cms.go` backfills missing GSI keys on legacy `PublicationMember` rows so future lookups use the index.
+- **Slug updates no longer appear as supported mutations**
+  - `graph/phase1.graphql` removes `slug` from `UpdateCategoryInput` and `UpdatePublicationInput`.
+- **Duplicate HTTP route implementations removed**
+  - `cmd/api/routes_lift.go` no longer registers `/users/{username}/{followers|following}` (owned by `cmd/collections`).
+  - `cmd/webfinger/main.go` only registers `/.well-known/webfinger` (NodeInfo + reputation keys handled by API Lambda routing).
 
 ### P3 — Documentation gaps
 
@@ -116,8 +92,4 @@ If we want “one place to discover everything”, we should either:
 
 ## Recommended next steps
 
-1. Decide whether REST should support remote account actor URLs (and where): fix `resolveAccountID` to handle remote actors or explicitly scope REST operations to local-only.
-2. Remove CMS scan fallbacks by introducing the required indexes or tightening query requirements (e.g., require author for slug lookups).
-3. Decide slug-change policy for CMS categories/publications (if needed) and implement a safe migration/redirect strategy.
-4. Document (or consolidate) duplicated HTTP routes across Lambdas to reduce infra drift risk.
-
+1. Decide whether slug changes are required (categories/publications) and, if so, define an ID/redirect strategy.

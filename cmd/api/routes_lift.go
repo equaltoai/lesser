@@ -518,8 +518,4 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.DELETE("/api/v1/statuses/{id}/quote/{quote_id}", lift.HandlerFunc(liftHandler.HandleDeleteQuotePostLift))
 	_ = app.GET("/api/v1/accounts/{id}/quote_permissions", lift.HandlerFunc(liftHandler.HandleGetQuotePermissionsLift))
 	_ = app.PUT("/api/v1/accounts/quote_permissions", lift.HandlerFunc(liftHandler.HandleUpdateQuotePermissionsLift))
-
-	// ActivityPub collection endpoints (always enabled for federation compatibility)
-	_ = app.GET("/users/{username}/followers", lift.HandlerFunc(liftHandler.HandleActivityPubFollowersLift))
-	_ = app.GET("/users/{username}/following", lift.HandlerFunc(liftHandler.HandleActivityPubFollowingLift))
 }

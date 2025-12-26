@@ -37,8 +37,8 @@ Most-recent parity additions (previously had handlers but weren’t routed):
 ## GraphQL Coverage Snapshot
 
 Counts are derived from `docs/specs/graphql_coverage.yaml`:
-- Total Lift routes tracked: **234**
-- `rest_only`: **34**
+- Total Lift routes tracked: **232**
+- `rest_only`: **32**
 - `graphql_required`: **200**
   - `covered`: **200**
   - `missing`: **0**

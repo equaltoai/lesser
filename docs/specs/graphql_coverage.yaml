@@ -1363,11 +1363,4 @@ routes:
       path: /setup/status
       policy: rest_only
       exemptedBy: auth_setup
-    - method: GET
-      path: /users/{username}/followers
-      policy: rest_only
-      exemptedBy: protocol_infra
-    - method: GET
-      path: /users/{username}/following
-      policy: rest_only
-      exemptedBy: protocol_infra
+

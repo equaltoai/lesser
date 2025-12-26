@@ -15534,10 +15534,8 @@ paths:
                     $ref: '#/components/responses/NotFound'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
-            x-lesser-handler: HandleActivityPubFollowersLift
             x-lesser-lambda: collections
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
                 - infra/cdk/inventory/lambdas.go:collections
     /users/{username}/following:
         get:
@@ -15559,10 +15557,8 @@ paths:
                     $ref: '#/components/responses/NotFound'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
-            x-lesser-handler: HandleActivityPubFollowingLift
             x-lesser-lambda: collections
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
                 - infra/cdk/inventory/lambdas.go:collections
     /users/{username}/inbox:
         get:

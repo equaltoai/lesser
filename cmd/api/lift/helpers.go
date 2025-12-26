@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -13,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -48,24 +50,57 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 
 	// Handle different account ID formats
 	if strings.HasPrefix(accountID, "http://") || strings.HasPrefix(accountID, "https://") {
-		// Full ActivityPub actor URL
-		// Extract username from URL like https://lesser.host/users/aron
-		if strings.Contains(accountID, h.cfg.Domain) && strings.Contains(accountID, "/users/") {
-			parts := strings.Split(accountID, "/users/")
-			if len(parts) == 2 {
-				username := parts[1]
-				return h.repos.Actor().GetActor(ctx, username)
+		parsed, err := url.Parse(accountID)
+		if err != nil {
+			return nil, invalidAccountURL()
+		}
+
+		host := strings.TrimSpace(strings.ToLower(parsed.Hostname()))
+		if host == "" {
+			return nil, invalidAccountURL()
+		}
+
+		// Local actor URL (canonical: https://<domain>/users/<username>)
+		if strings.EqualFold(host, h.cfg.Domain) {
+			path := strings.Trim(parsed.Path, "/")
+			parts := strings.Split(path, "/")
+			if len(parts) >= 2 && parts[0] == "users" && strings.TrimSpace(parts[1]) != "" {
+				return h.repos.Actor().GetActor(ctx, parts[1])
 			}
 			return nil, invalidAccountURL()
 		}
-		// Remote actor - not supported yet
-		return nil, remoteAccountsNotSupported()
+
+		remoteSearch := federation.NewRemoteSearchService(h.repos)
+		result, err := remoteSearch.ResolveActorURL(ctx, accountID)
+		if err != nil {
+			return nil, err
+		}
+		return result.Actor, nil
 	}
 
 	// Check if it's a numeric ID (Mastodon compatibility)
 	if common.ValidateNumericID("account_id", accountID) == nil && len(accountID) >= 10 {
 		// It's a numeric ID - use the dedicated lookup method
 		return h.repos.Actor().GetActorByNumericID(ctx, accountID)
+	}
+
+	// Support federated handles in addition to local usernames.
+	if strings.Contains(accountID, "@") {
+		handle := strings.TrimPrefix(strings.TrimSpace(accountID), "@")
+		parts := strings.Split(handle, "@")
+		if len(parts) == 2 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != "" {
+			// Treat local-domain handles as local usernames.
+			if strings.EqualFold(strings.ToLower(strings.TrimSpace(parts[1])), h.cfg.Domain) {
+				return h.repos.Actor().GetActor(ctx, parts[0])
+			}
+
+			remoteSearch := federation.NewRemoteSearchService(h.repos)
+			result, err := remoteSearch.ResolveActor(ctx, handle)
+			if err != nil {
+				return nil, err
+			}
+			return result.Actor, nil
+		}
 	}
 
 	// Assume it's a username for local accounts

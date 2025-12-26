@@ -40,6 +40,64 @@ type SearchResult struct {
 	RemoteDomain string
 }
 
+// ResolveActorURL resolves an ActivityPub actor URL to an Actor object.
+// It checks cache using an inferred handle when possible, then fetches the actor document and caches it.
+func (s *RemoteSearchService) ResolveActorURL(ctx context.Context, actorURL string) (*SearchResult, error) {
+	actorURL = strings.TrimSpace(actorURL)
+	if err := activitypub.ValidateURL(actorURL, "actor_url"); err != nil {
+		return nil, err
+	}
+
+	parsed, err := url.Parse(actorURL)
+	if err != nil {
+		return nil, err
+	}
+
+	domain := strings.TrimSpace(strings.ToLower(parsed.Hostname()))
+	if domain == "" {
+		return nil, ErrInvalidDomainFormat
+	}
+
+	// Attempt cache hit using a username inferred from the actor URL path.
+	if username := usernameFromActorPath(parsed.Path); username != "" {
+		cacheKey := fmt.Sprintf("%s@%s", username, domain)
+		cachedActor, err := s.store.Actor().GetCachedRemoteActor(ctx, cacheKey)
+		if err == nil && cachedActor != nil {
+			return &SearchResult{
+				Actor:        cachedActor,
+				IsRemote:     true,
+				RemoteDomain: domain,
+			}, nil
+		}
+	}
+
+	actor, err := s.fetchRemoteActor(ctx, actorURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache using actor-preferred username when possible.
+	cacheUser := strings.TrimSpace(actor.PreferredUsername)
+	if cacheUser == "" {
+		cacheUser = usernameFromActorPath(actor.ID)
+	}
+	if cacheUser != "" {
+		cacheKey := fmt.Sprintf("%s@%s", cacheUser, domain)
+		if err := s.store.User().CacheRemoteActor(ctx, cacheKey, actor, 24*time.Hour); err != nil {
+			s.logger.Warn("failed to cache remote actor resolved by URL",
+				zap.String("handle", cacheKey),
+				zap.String("actor_url", actorURL),
+				zap.Error(err))
+		}
+	}
+
+	return &SearchResult{
+		Actor:        actor,
+		IsRemote:     true,
+		RemoteDomain: domain,
+	}, nil
+}
+
 // ResolveActor resolves an actor handle (user@domain) to an Actor object
 // It first checks local cache, then performs WebFinger lookup if needed
 func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (*SearchResult, error) {
@@ -250,6 +308,30 @@ func (s *RemoteSearchService) SearchRemoteActors(ctx context.Context, query stri
 	}
 
 	return results, nil
+}
+
+func usernameFromActorPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(value)
+	if err == nil && parsed.Path != "" {
+		value = parsed.Path
+	}
+
+	path := strings.Trim(value, "/")
+	if path == "" {
+		return ""
+	}
+
+	parts := strings.Split(path, "/")
+	candidate := strings.TrimPrefix(parts[len(parts)-1], "@")
+	if err := activitypub.ValidateUsername(candidate); err != nil {
+		return ""
+	}
+	return candidate
 }
 
 // parseHandle parses a handle in the format @user@domain or user@domain

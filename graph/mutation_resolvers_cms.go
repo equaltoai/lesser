@@ -9,6 +9,8 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
+	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
+	"go.uber.org/zap"
 )
 
 func (r *mutationResolver) CreateDraft(ctx context.Context, input model.CreateDraftInput) (*model.Draft, error) {
@@ -461,6 +463,11 @@ func (r *mutationResolver) CreateSeries(ctx context.Context, input model.CreateS
 		return nil, errors.New("series service is not available")
 	}
 
+	store := r.cmsStorage()
+	if store == nil || store.GetDB() == nil {
+		return nil, ErrStorageUnavailable
+	}
+
 	slug := ""
 	if input.Slug != nil {
 		slug = cmsSlugify(*input.Slug)
@@ -482,7 +489,24 @@ func (r *mutationResolver) CreateSeries(ctx context.Context, input model.CreateS
 		UpdatedAt:   now,
 	}
 
+	slugIndex := &models.CMSSeriesSlugIndex{
+		Slug:     slug,
+		AuthorID: username,
+		SeriesID: series.ID,
+	}
+	if err := slugIndex.UpdateKeys(); err != nil {
+		return nil, err
+	}
+	if err := store.GetDB().WithContext(ctx).Model(slugIndex).IfNotExists().Create(); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return nil, errors.New("series slug is already in use")
+		}
+		return nil, err
+	}
+
 	if err := seriesSvc.CreateSeries(ctx, series); err != nil {
+		// Best-effort cleanup: allow slug reuse if the series record fails to persist.
+		_ = store.GetDB().WithContext(ctx).Model(slugIndex).Delete()
 		return nil, err
 	}
 
@@ -553,6 +577,11 @@ func (r *mutationResolver) DeleteSeries(ctx context.Context, id string) (bool, e
 		return false, errors.New("series service is not available")
 	}
 
+	store := r.cmsStorage()
+	if store == nil || store.GetDB() == nil {
+		return false, ErrStorageUnavailable
+	}
+
 	authorID, seriesID, ok := parseSeriesGraphQLID(id)
 	if !ok {
 		return false, errors.New("invalid series id")
@@ -561,8 +590,27 @@ func (r *mutationResolver) DeleteSeries(ctx context.Context, id string) (bool, e
 		return false, errors.New("insufficient privileges for series delete")
 	}
 
+	series, err := seriesSvc.GetSeries(ctx, authorID, seriesID)
+	if err != nil {
+		return false, err
+	}
+
 	if err := seriesSvc.DeleteSeries(ctx, authorID, seriesID); err != nil {
 		return false, err
+	}
+
+	slugIndex := &models.CMSSeriesSlugIndex{
+		Slug:     series.Slug,
+		AuthorID: series.AuthorID,
+		SeriesID: series.ID,
+	}
+	if err := slugIndex.UpdateKeys(); err == nil {
+		if err := store.GetDB().WithContext(ctx).Model(slugIndex).Delete(); err != nil && !dynamormerrors.IsNotFound(err) {
+			r.Logger.Warn("failed to delete series slug index",
+				zap.String("slug", series.Slug),
+				zap.String("series_id", series.ID),
+				zap.Error(err))
+		}
 	}
 
 	return true, nil
@@ -846,9 +894,6 @@ func (r *mutationResolver) UpdateCategory(ctx context.Context, id string, input 
 		return nil, err
 	}
 
-	if input.Slug != nil && strings.TrimSpace(*input.Slug) != "" && !strings.EqualFold(category.Slug, strings.TrimSpace(*input.Slug)) {
-		return nil, errors.New("category slug updates are not supported")
-	}
 	if input.Name != nil {
 		category.Name = *input.Name
 	}
@@ -1109,10 +1154,6 @@ func (r *mutationResolver) UpdatePublication(ctx context.Context, id string, inp
 	publication, err := pubSvc.GetPublication(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return nil, err
-	}
-
-	if input.Slug != nil && strings.TrimSpace(*input.Slug) != "" && !strings.EqualFold(publication.Slug, strings.TrimSpace(*input.Slug)) {
-		return nil, errors.New("publication slug updates are not supported")
 	}
 
 	if err := r.ensureCanUpdatePublication(ctx, username, publication, pubSvc); err != nil {

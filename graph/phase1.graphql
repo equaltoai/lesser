@@ -362,7 +362,6 @@ input CreateCategoryInput {
 }
 
 input UpdateCategoryInput {
-  slug: String
   name: String
   description: String
   parentId: ID
@@ -381,7 +380,6 @@ input CreatePublicationInput {
 }
 
 input UpdatePublicationInput {
-  slug: String
   name: String
   tagline: String
   description: String
@@ -389,4 +387,3 @@ input UpdatePublicationInput {
   bannerId: ID
   customDomain: String
 }
-
