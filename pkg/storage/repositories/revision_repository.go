@@ -3,7 +3,9 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -49,23 +51,52 @@ func (r *RevisionRepository) GetRevision(ctx context.Context, objectID string, v
 
 // ListRevisions lists revisions for an object
 func (r *RevisionRepository) ListRevisions(ctx context.Context, objectID string, limit int) ([]*models.Revision, error) {
-	var revisions []models.Revision
-	pk := fmt.Sprintf("OBJECT#%s#REVISION", objectID)
+	revisions, _, err := r.ListRevisionsPaginated(ctx, objectID, limit, "")
+	return revisions, err
+}
 
-	err := r.db.WithContext(ctx).Model(&models.Revision{}).
+// ListRevisionsPaginated lists revisions for an object with cursor pagination.
+// Cursor values are full SK values (VERSION#...).
+func (r *RevisionRepository) ListRevisionsPaginated(ctx context.Context, objectID string, limit int, cursor string) ([]*models.Revision, string, error) {
+	objectID = strings.TrimSpace(objectID)
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
+		return nil, "", err
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+
+	pk := fmt.Sprintf("OBJECT#%s#REVISION", objectID)
+	query := r.db.WithContext(ctx).Model(&models.Revision{}).
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", "VERSION#").
-		OrderBy("SK", "DESC"). // Newest first
-		Limit(limit).
-		All(&revisions)
+		OrderBy("SK", "DESC")
 
-	if err != nil {
-		return nil, err
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" {
+		if !strings.HasPrefix(cursor, "VERSION#") {
+			cursor = fmt.Sprintf("VERSION#%s", cursor)
+		}
+		query = query.Where("SK", "<", cursor)
 	}
 
-	result := make([]*models.Revision, len(revisions))
-	for i := range revisions {
-		result[i] = &revisions[i]
+	query = query.Limit(limit + 1)
+
+	var revisionModels []models.Revision
+	if err := query.All(&revisionModels); err != nil {
+		return nil, "", err
 	}
-	return result, nil
+
+	nextCursor := ""
+	if len(revisionModels) > limit {
+		nextCursor = revisionModels[limit-1].SK
+		revisionModels = revisionModels[:limit]
+	}
+
+	result := make([]*models.Revision, len(revisionModels))
+	for i := range revisionModels {
+		result[i] = &revisionModels[i]
+	}
+
+	return result, nextCursor, nil
 }

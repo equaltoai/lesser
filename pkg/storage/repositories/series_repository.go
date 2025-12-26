@@ -3,7 +3,9 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -49,22 +51,26 @@ func (r *SeriesRepository) GetSeries(ctx context.Context, authorID, seriesID str
 
 // ListSeriesByAuthor lists series for an author
 func (r *SeriesRepository) ListSeriesByAuthor(ctx context.Context, authorID string, limit int) ([]*models.Series, error) {
-	var seriesList []models.Series
+	items, _, err := r.ListSeriesByAuthorPaginated(ctx, authorID, limit, "")
+	return items, err
+}
+
+// ListSeriesByAuthorPaginated lists series for an author with cursor pagination.
+// Cursor values are either full SK values (ID#...) or raw series IDs.
+func (r *SeriesRepository) ListSeriesByAuthorPaginated(ctx context.Context, authorID string, limit int, cursor string) ([]*models.Series, string, error) {
+	authorID = strings.TrimSpace(authorID)
+	if err := common.ValidateRequiredParam("authorID", authorID); err != nil {
+		return nil, "", err
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+
 	pk := fmt.Sprintf("AUTHOR#%s#SERIES", authorID)
-
-	err := r.db.WithContext(ctx).Model(&models.Series{}).
-		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", "ID#").
-		Limit(limit).
-		All(&seriesList)
-
-	if err != nil {
-		return nil, err
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" && !strings.HasPrefix(cursor, "ID#") {
+		cursor = "ID#" + cursor
 	}
 
-	result := make([]*models.Series, len(seriesList))
-	for i := range seriesList {
-		result[i] = &seriesList[i]
-	}
-	return result, nil
+	return listByPKSKPrefixPaginated[*models.Series](ctx, r.db, &models.Series{}, pk, "ID#", limit, cursor)
 }

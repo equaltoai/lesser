@@ -3,7 +3,9 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -73,4 +75,47 @@ func (r *PublicationMemberRepository) ListMembers(ctx context.Context, publicati
 		result[i] = &members[i]
 	}
 	return result, nil
+}
+
+// ListMembershipsForUserPaginated lists publications a user is a member of.
+// Cursor values are gsi1SK values (PUBLICATION#...).
+func (r *PublicationMemberRepository) ListMembershipsForUserPaginated(ctx context.Context, userID string, limit int, cursor string) ([]*models.PublicationMember, string, error) {
+	userID = strings.TrimSpace(userID)
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
+		return nil, "", err
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+
+	pk := fmt.Sprintf("USER#%s#PUBLICATION", userID)
+	query := r.db.WithContext(ctx).Model(&models.PublicationMember{}).
+		Index("gsi1").
+		Where("gsi1PK", "=", pk).
+		OrderBy("gsi1SK", "ASC")
+
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" {
+		query = query.Where("gsi1SK", ">", cursor)
+	}
+
+	query = query.Limit(limit + 1)
+
+	var membershipModels []models.PublicationMember
+	if err := query.All(&membershipModels); err != nil {
+		return nil, "", err
+	}
+
+	nextCursor := ""
+	if err := common.ValidateSliceLength("memberships", membershipModels, limit); err != nil {
+		nextCursor = membershipModels[limit-1].GSI1SK
+		membershipModels = membershipModels[:limit]
+	}
+
+	result := make([]*models.PublicationMember, len(membershipModels))
+	for i := range membershipModels {
+		result[i] = &membershipModels[i]
+	}
+
+	return result, nextCursor, nil
 }

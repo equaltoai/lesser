@@ -15,10 +15,10 @@ Current counts (from that file):
 - Total Lift routes tracked: **234**
 - `graphql_required`: **200**
 - `rest_only` (explicit exemptions): **34**
-- Marked `covered`: **126**
-- Marked `missing`: **74**
+- Marked `covered`: **200**
+- Marked `missing`: **0**
 
-Important: With Phase **0.5** complete, **`missing` represents real parity work** (schema/resolvers/service), not “unmapped”.
+Important: With Phase **0.5** complete, **`missing` represents real parity work** (schema/resolvers/service), not “unmapped”. The current inventory is at **0 missing**.
 
 ## Definitions
 
@@ -71,7 +71,7 @@ Important: With Phase **0.5** complete, **`missing` represents real parity work*
   - `covered` with valid `graphql:` mappings, or
   - `missing` with a clear implementation owner (schema vs resolver vs service) and a target phase.
 
-## Phase 1 — CMS GraphQL Parity (Planned)
+## Phase 1 — CMS GraphQL Parity (Completed)
 
 **Goal**: Expose CMS functionality via GraphQL to support Greater-based content/admin experiences.
 
@@ -81,14 +81,25 @@ Important: With Phase **0.5** complete, **`missing` represents real parity work*
 - Author/editor workflows needed by the intended Greater client
 
 **Deliverables**
-- Schema additions (types + queries + mutations) under `graph/*`.
-- Resolvers wired through `pkg/services/cms/*` (or equivalent service layer).
-- Update `docs/specs/graphql_coverage.yaml` routes related to CMS/admin content management to:
-  - `status: covered`
-  - `graphql: [Query.<field>, Mutation.<field>]` mappings
+- CMS schema additions in `graph/phase1.graphql`, wired into `gqlgen.yml`.
+- CMS resolvers and conversion/helpers in:
+  - `graph/cms_helpers.go`
+  - `graph/cms_converters.go`
+  - `graph/query_resolvers_cms.go`
+  - `graph/mutation_resolvers_cms.go`
+- Storage support to enable pagination and “my publications” lookups:
+  - `pkg/storage/repositories/pagination_helpers.go`
+  - `pkg/storage/repositories/article_repository.go`
+  - `pkg/storage/repositories/draft_repository.go`
+  - `pkg/storage/repositories/revision_repository.go`
+  - `pkg/storage/repositories/series_repository.go`
+  - `pkg/storage/models/publication.go`
+  - `pkg/storage/repositories/publication_member_repository.go`
+- Note: CMS parity is GraphQL-first and is not represented by the Lift route inventory, so `docs/specs/graphql_coverage.yaml` does not track these operations.
 
 **Exit criteria**
 - CMS user-facing flows are implementable via GraphQL without REST fallbacks.
+  - `make gqlgen`, `make lint`, and `make test` are green.
 
 ## Phase 2 — Client Parity Features (Completed)
 
@@ -114,7 +125,7 @@ Important: With Phase **0.5** complete, **`missing` represents real parity work*
 **Exit criteria**
 - A Greater client can implement the above features via GraphQL only (excluding explicit exemptions).
 
-## Phase 3 — Admin Parity + Strict Enforcement (In progress)
+## Phase 3 — Admin Parity + Strict Enforcement (Completed)
 
 **Goal**: Finish the remaining “product functionality” parity, then turn on strict enforcement.
 
@@ -131,6 +142,11 @@ Important: With Phase **0.5** complete, **`missing` represents real parity work*
 **Exit criteria**
 - `graphql_required` routes have `status: covered` with valid `graphql:` mappings.
 - Strict enforcement enabled and green in CI.
+
+**Completion notes**
+- `docs/specs/graphql_coverage.yaml`: `graphql_required covered=200, missing=0`
+- `make verify-graphql-coverage` runs in strict mode and passes (`--check --strict`)
+- `make lint` and `make test` are green after admin parity work landed
 
 ## Workstreams (how Phase 3 is executed)
 

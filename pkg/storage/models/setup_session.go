@@ -47,4 +47,3 @@ func (s *SetupSession) GetPK() string {
 func (s *SetupSession) GetSK() string {
 	return s.SK
 }
-

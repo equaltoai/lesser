@@ -33,9 +33,8 @@ type QuoteStatusAccount struct {
 
 // QuoteStatusSummary represents the minimal status payload used by quote endpoints.
 type QuoteStatusSummary struct {
-	ID        string           `json:"id"`
-	CreatedAt string           `json:"created_at"`
+	ID        string             `json:"id"`
+	CreatedAt string             `json:"created_at"`
 	Account   QuoteStatusAccount `json:"account"`
-	Content   string           `json:"content"`
+	Content   string             `json:"content"`
 }
-

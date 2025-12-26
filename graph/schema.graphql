@@ -1,5 +1,5 @@
 # DO NOT EDIT: aggregated schema for client consumption
-# Generated 2025-12-26T04:14:16Z via scripts/generate_schema.sh
+# Generated 2025-12-26T08:41:36Z via scripts/generate_schema.sh
 
 # Lesser GraphQL Schema
 
@@ -314,6 +314,130 @@ type ModerationDecision {
   timestamp: Time!
 }
 
+#
+# Moderation + reputation parity (REST endpoints)
+#
+
+input ModerationReviewInput {
+  eventId: ID!
+  action: String!
+  severity: Int!
+  confidence: Float!
+  notes: String
+}
+
+type ModerationReviewResult {
+  reviewId: ID!
+  eventId: ID!
+  action: String!
+  reviewedAt: Time!
+}
+
+type ModerationHistoryEvent {
+  id: ID!
+  eventType: String!
+  objectId: ID!
+  objectType: String!
+  actorId: ID!
+  category: String!
+  severity: Int!
+  confidenceScore: Float!
+  reason: String
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type ModerationHistoryDecision {
+  id: ID!
+  eventId: ID!
+  objectId: ID!
+  action: String!
+  consensusScore: Float!
+  reviewerCount: Int!
+  trustWeightTotal: Float!
+  decidedAt: Time!
+}
+
+type ModerationHistoryTimelineEntry {
+  timestamp: Time!
+  type: String!
+  event: ModerationHistoryEvent
+  decision: ModerationHistoryDecision
+}
+
+type ModerationHistoryResult {
+  objectId: ID!
+  events: [ModerationHistoryEvent!]!
+  decisions: [ModerationHistoryDecision!]!
+  timeline: [ModerationHistoryTimelineEntry!]!
+  currentStatus: String!
+  lastUpdated: Time!
+}
+
+type ModerationConsensusReview {
+  reviewerId: ID!
+  reviewerDomain: String
+  action: String!
+  confidence: Float!
+  trustWeight: Float!
+  reviewedAt: Time!
+}
+
+type ModerationConsensusResult {
+  eventId: ID!
+  objectId: ID!
+  category: String!
+  severity: Int!
+  confidenceScore: Float!
+  reviews: [ModerationConsensusReview!]!
+  reviewerCount: Int!
+  consensusScore: Float
+  decision: String
+  decidedAt: Time
+}
+
+type TrustCategoryScore {
+  category: String!
+  score: Float!
+}
+
+type ModerationTrustScore {
+  actorId: ID!
+  actorDomain: String
+  overallScore: Float!
+  scores: [TrustCategoryScore!]!
+  trusterCount: Int!
+  calculatedAt: Time!
+}
+
+input CreateReportInput {
+  accountId: ID!
+  statusIds: [ID!]
+  comment: String
+  category: String
+  forward: Boolean
+  ruleIds: [Int!]
+}
+
+type Report {
+  id: ID!
+  actionTaken: Boolean!
+  actionTakenAt: Time
+  category: String!
+  comment: String
+  forwarded: Boolean!
+  createdAt: Time!
+  statusIds: [ID!]!
+  ruleIds: [Int!]!
+  targetAccount: Actor
+}
+
+input CreateVouchInput {
+  to: ID!
+  confidence: Float!
+  context: String
+}
+
 type CommunityNote {
   id: ID!
   author: Actor!
@@ -343,6 +467,91 @@ type Notification {
   status: Object # Related status (if any)
   read: Boolean!
   createdAt: Time!
+}
+
+# Status edit history entry (Mastodon compatibility)
+type StatusEdit {
+  content: String!
+  spoilerText: String
+  sensitive: Boolean!
+  createdAt: Time!
+  account: Actor!
+}
+
+# Translation result (Mastodon compatibility)
+type TranslationResult {
+  content: String!
+  spoilerText: String
+  detectedLanguage: String!
+  provider: String!
+}
+
+# Instance info (Mastodon compatibility)
+type InstanceRule {
+  id: ID!
+  text: String!
+}
+
+type InstanceInfo {
+  domain: String!
+  title: String!
+  shortDescription: String
+  description: String!
+  email: String
+  version: String!
+  sourceUrl: String
+  streamingUrl: String
+  thumbnailUrl: String
+  languages: [String!]!
+  registrationsOpen: Boolean!
+  approvalRequired: Boolean!
+  invitesEnabled: Boolean!
+  userCount: Int!
+  statusCount: Int!
+  domainCount: Int!
+  contactAccount: Actor
+  rules: [InstanceRule!]!
+}
+
+type InstanceActivityEntry {
+  week: String!
+  statuses: Int!
+  logins: Int!
+  registrations: Int!
+}
+
+type InstanceDomainBlock {
+  domain: String!
+  digest: String!
+  severity: String!
+  comment: String!
+}
+
+type TranslationLanguage {
+  code: String!
+  name: String!
+}
+
+# Announcements (Mastodon compatibility)
+type Announcement {
+  id: ID!
+  content: String!
+  text: String!
+  publishedAt: Time!
+  updatedAt: Time!
+  allDay: Boolean!
+  startsAt: Time
+  endsAt: Time
+  read: Boolean!
+  reactions: [AnnouncementReaction!]!
+}
+
+type AnnouncementReaction {
+  name: String!
+  count: Int!
+  me: Boolean!
+  url: String
+  staticUrl: String
 }
 
 # Notification connection for pagination
@@ -631,6 +840,14 @@ input CreateNoteInput {
   poll: PollParamsInput
 }
 
+input UpdateStatusInput {
+  content: String!
+  sensitive: Boolean
+  spoilerText: String
+  language: String
+  attachmentIds: [ID!]
+}
+
 input ContentMapInput {
   language: String!
   content: String!
@@ -845,6 +1062,18 @@ type Query {
   ): ObjectConnection!
   search(query: String!, type: String, first: Int = 20, after: Cursor): SearchResult!
   notifications(types: [String!], excludeTypes: [String!], first: Int = 20, after: Cursor): NotificationConnection!
+  notification(id: ID!): Notification
+  statusHistory(id: ID!, limit: Int = 100): [StatusEdit!]!
+  statusFavouritedBy(id: ID!, first: Int = 40, after: Cursor): ActorListPage!
+  statusRebloggedBy(id: ID!, first: Int = 40, after: Cursor): ActorListPage!
+  linkTimeline(url: String!, first: Int = 20, after: Cursor): ObjectConnection!
+  translateStatus(id: ID!, targetLanguage: String): TranslationResult!
+  instance: InstanceInfo!
+  instanceActivity(limit: Int = 12): [InstanceActivityEntry!]!
+  instancePeers(limit: Int = 100): [String!]!
+  instanceDomainBlocks(limit: Int = 100): [InstanceDomainBlock!]!
+  translationLanguages: [TranslationLanguage!]!
+  announcements: [Announcement!]!
 
   # Accounts + relationships
   accountQuotePermissions(username: String!): AccountQuotePermissions!
@@ -917,6 +1146,11 @@ type Query {
   costBreakdown(period: Period = DAY): CostBreakdown!
   trustGraph(actorId: ID!, category: TrustCategory): [TrustEdge!]!
   moderationQueue(first: Int = 20, after: Cursor): [ModerationDecision!]!
+  moderationConsensus(eventId: ID!): ModerationConsensusResult!
+  moderationHistory(objectId: ID!): ModerationHistoryResult!
+  moderationTrustScore(actorId: ID!): ModerationTrustScore!
+  reputation(actorId: ID!): Reputation!
+  vouches(actorId: ID!): [Vouch!]!
   
   # Debug endpoints
   explainObject(id: ID!): ObjectExplanation!
@@ -967,6 +1201,7 @@ type Mutation {
 
   # Mastodon compatibility - Status operations
   createNote(input: CreateNoteInput!): CreateNotePayload!
+  updateStatus(id: ID!, input: UpdateStatusInput!): Object!
   deleteObject(id: ID!): Boolean!
   likeObject(id: ID!): Activity!
   unlikeObject(id: ID!): Boolean!
@@ -976,6 +1211,11 @@ type Mutation {
   unbookmarkObject(id: ID!): Boolean!
   pinObject(id: ID!): Object!
   unpinObject(id: ID!): Boolean!
+  muteStatus(id: ID!, durationSeconds: Int): Boolean!
+  unmuteStatus(id: ID!): Boolean!
+  dismissAnnouncement(id: ID!): Boolean!
+  addAnnouncementReaction(id: ID!, name: String!): Boolean!
+  removeAnnouncementReaction(id: ID!, name: String!): Boolean!
   
   # Relationship operations
   followActor(id: ID!): Activity!
@@ -1040,6 +1280,13 @@ type Mutation {
   # Lesser enhancements
   updateTrust(input: TrustInput!): TrustEdge!
   flagObject(input: FlagInput!): FlagPayload!
+  submitModerationReview(input: ModerationReviewInput!): ModerationReviewResult!
+  createReport(input: CreateReportInput!): Report!
+  exportReputation: PortableReputation!
+  importReputation(document: String!): ReputationImportResult!
+  verifyReputation(document: String!): ReputationVerificationResult!
+  createVouch(input: CreateVouchInput!): Vouch!
+  revokeVouch(id: ID!): Boolean!
   addCommunityNote(input: CommunityNoteInput!): CommunityNotePayload!
   voteCommunityNote(id: ID!, helpful: Boolean!): CommunityNote!
   
@@ -2754,12 +3001,49 @@ extend type Query {
   performanceMetrics(service: ServiceCategory!): PerformanceReport!
   slowQueries(threshold: Duration!): [QueryPerformance!]!
   infrastructureHealth: InfrastructureStatus!
+
+  # Admin parity
+  adminAccounts(first: Int = 50, after: Cursor): AdminAccountConnection!
+  adminAccount(id: ID!): AdminAccount
+  adminDomainAllows(first: Int = 100, after: Cursor): AdminDomainAllowConnection!
+  adminDomainBlocks(first: Int = 100, after: Cursor): AdminDomainBlockConnection!
+  adminDomainBlock(id: ID!): AdminDomainBlock
+  adminEmailDomainBlocks(first: Int = 100, after: Cursor): AdminEmailDomainBlockConnection!
+  adminFederationInstances(first: Int = 100, after: Cursor): AdminFederationInstanceConnection!
+  adminFederationInstance(domain: String!): AdminFederationInstance!
+  adminFederationStatistics(start: Time, end: Time): AdminFederationStatistics!
+  adminModerationEvents(filter: AdminModerationEventFilter, first: Int = 50, after: Cursor): AdminModerationEventConnection!
+  adminModerationReviewers: [AdminReviewer!]!
+  adminTrustGraph(limit: Int = 100): AdminTrustGraph!
+  adminReports(status: AdminReportStatus = OPEN, first: Int = 50, after: Cursor): AdminReportConnection!
+  adminReport(id: ID!): AdminReport
+  adminStatuses(filter: AdminStatusFilter, first: Int = 20, after: Cursor): AdminStatusConnection!
+  adminStatus(id: ID!): Object
 }
 
 # Phase 3 Mutation Extensions
 extend type Mutation {
   # Streaming Quality
   reportStreamingQuality(input: StreamingQualityInput!): StreamingQualityReport!
+
+  # Admin parity
+  adminCreateUser(input: AdminCreateUserInput!): AdminAccount!
+  adminAccountAction(input: AdminAccountActionInput!): Boolean!
+  adminCreateAnnouncement(input: AdminCreateAnnouncementInput!): Announcement!
+  adminCreateDomainAllow(domain: String!): AdminDomainAllow!
+  adminDeleteDomainAllow(id: ID!): Boolean!
+  adminCreateDomainBlock(input: AdminDomainBlockCreateInput!): AdminDomainBlock!
+  adminUpdateDomainBlock(id: ID!, input: AdminDomainBlockUpdateInput!): AdminDomainBlock!
+  adminDeleteDomainBlock(id: ID!): Boolean!
+  adminCreateEmailDomainBlock(domain: String!): AdminEmailDomainBlock!
+  adminDeleteEmailDomainBlock(id: ID!): Boolean!
+  adminOverrideModerationEvent(input: AdminModerationEventOverrideInput!): AdminModerationEventOverrideResult!
+  adminUpdateTrust(input: AdminUpdateTrustInput!): AdminUpdateTrustResult!
+  adminPromoteReviewer(id: ID!): AdminReviewerRoleResult!
+  adminDemoteReviewer(id: ID!): AdminReviewerRoleResult!
+  adminReportAction(id: ID!, action: AdminReportAction!): AdminReport!
+  adminDeleteStatus(id: ID!): Boolean!
+  adminSetStatusSensitive(id: ID!, sensitive: Boolean!): Object!
 }
 
 # Phase 3 Subscription Extensions
@@ -2852,4 +3136,310 @@ enum ExpandMediaPreference {
 enum TimelineOrder {
   NEWEST
   OLDEST
+}
+
+#
+# Phase 3 Admin Parity Types
+#
+
+type AdminIP {
+  ip: String!
+  usedAt: Time!
+}
+
+type AdminRole {
+  id: ID!
+  name: String!
+  permissions: Int!
+}
+
+type AdminAccount {
+  id: ID!
+  username: String!
+  createdAt: Time!
+  locale: String!
+  ip: String
+  ips: [AdminIP!]!
+  role: AdminRole!
+  confirmed: Boolean!
+  approved: Boolean!
+  disabled: Boolean!
+  silenced: Boolean!
+  suspended: Boolean!
+  actor: Actor
+  reportsCount: Int!
+  resolvedReportsCount: Int!
+}
+
+type AdminAccountConnection {
+  accounts: [AdminAccount!]!
+  nextCursor: Cursor
+}
+
+input AdminCreateUserInput {
+  username: String!
+  email: String
+  password: String!
+  displayName: String
+  role: String
+}
+
+input AdminAccountActionInput {
+  id: ID!
+  type: String!
+  text: String
+}
+
+input AdminCreateAnnouncementInput {
+  text: String!
+  allDay: Boolean
+  startsAt: Time
+  endsAt: Time
+}
+
+type AdminDomainAllow {
+  id: ID!
+  domain: String!
+  createdAt: Time!
+}
+
+type AdminDomainAllowConnection {
+  allows: [AdminDomainAllow!]!
+  nextCursor: Cursor
+}
+
+type AdminDomainBlock {
+  id: ID!
+  domain: String!
+  severity: String!
+  rejectMedia: Boolean!
+  rejectReports: Boolean!
+  privateComment: String
+  publicComment: String
+  obfuscate: Boolean!
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type AdminDomainBlockConnection {
+  blocks: [AdminDomainBlock!]!
+  nextCursor: Cursor
+}
+
+input AdminDomainBlockCreateInput {
+  domain: String!
+  severity: String
+  rejectMedia: Boolean
+  rejectReports: Boolean
+  privateComment: String
+  publicComment: String
+  obfuscate: Boolean
+}
+
+input AdminDomainBlockUpdateInput {
+  severity: String
+  rejectMedia: Boolean
+  rejectReports: Boolean
+  privateComment: String
+  publicComment: String
+  obfuscate: Boolean
+}
+
+type AdminEmailDomainBlock {
+  id: ID!
+  domain: String!
+  createdAt: Time!
+}
+
+type AdminEmailDomainBlockConnection {
+  blocks: [AdminEmailDomainBlock!]!
+  nextCursor: Cursor
+}
+
+type AdminFederationInstanceInfo {
+  domain: String!
+  software: String
+  version: String
+  activeUsers: Int!
+  totalMessages: Int!
+  trustScore: Float!
+  firstSeen: Time!
+  lastSeen: Time!
+  isSilenced: Boolean!
+  isSuspended: Boolean!
+}
+
+type AdminFederationInstanceConnection {
+  instances: [AdminFederationInstanceInfo!]!
+  nextCursor: Cursor
+}
+
+type AdminFederationInstance {
+  instance: AdminFederationInstanceInfo!
+  detailsJSON: String
+}
+
+type AdminFederationStatisticsTimeRange {
+  start: Time!
+  end: Time!
+}
+
+type AdminFederationStatistics {
+  activeInstances: Int!
+  totalMessages: Int!
+  totalUsers: Int!
+  timeRange: AdminFederationStatisticsTimeRange!
+}
+
+input AdminModerationEventFilter {
+  eventType: String
+  category: String
+  minSeverity: Int
+  actorId: ID
+  objectId: ID
+}
+
+type AdminModerationEvent {
+  id: ID!
+  eventType: String!
+  actorId: ID!
+  objectId: ID!
+  objectType: String!
+  category: String!
+  severity: String!
+  reason: String
+  evidenceJSON: String
+  confidenceScore: Float!
+  createdAt: Time!
+}
+
+type AdminModerationEventConnection {
+  events: [AdminModerationEvent!]!
+  nextCursor: Cursor
+}
+
+input AdminModerationEventOverrideInput {
+  eventId: ID!
+  decision: String!
+  reason: String
+}
+
+type AdminModerationEventOverrideResult {
+  eventId: ID!
+  decision: String!
+  action: String!
+  override: Boolean!
+  admin: String!
+  reason: String
+}
+
+type AdminTrustGraphNode {
+  id: ID!
+  type: String!
+}
+
+type AdminTrustGraphEdge {
+  from: ID!
+  to: ID!
+  trust: Float!
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type AdminTrustGraphStats {
+  totalNodes: Int!
+  totalEdges: Int!
+}
+
+type AdminTrustGraph {
+  nodes: [AdminTrustGraphNode!]!
+  edges: [AdminTrustGraphEdge!]!
+  stats: AdminTrustGraphStats!
+}
+
+input AdminUpdateTrustInput {
+  fromActorId: ID!
+  toActorId: ID!
+  trust: Float!
+  category: String
+  reason: String
+}
+
+type AdminUpdateTrustResult {
+  fromActorId: ID!
+  toActorId: ID!
+  trust: Float!
+  category: String!
+  updatedBy: String!
+  reason: String
+  updatedAt: Time!
+}
+
+type AdminReviewer {
+  id: ID!
+  username: String!
+  role: String!
+  totalReviews: Int!
+  accurateReviews: Int!
+  accuracyRate: Float!
+  lastReviewAt: Time
+}
+
+type AdminReviewerRoleResult {
+  userId: ID!
+  username: String!
+  newRole: String!
+  updatedBy: String!
+}
+
+enum AdminReportStatus {
+  OPEN
+  RESOLVED
+  REJECTED
+}
+
+enum AdminReportAction {
+  ASSIGN_TO_SELF
+  UNASSIGN
+  RESOLVE
+  REOPEN
+}
+
+type AdminReport {
+  id: ID!
+  actionTaken: Boolean!
+  actionTakenAt: Time
+  category: String!
+  comment: String
+  forwarded: Boolean!
+  createdAt: Time!
+  updatedAt: Time!
+  reporter: Actor!
+  target: Actor!
+  assignedAccount: Actor
+  actionTakenBy: Actor
+  statuses: [Object!]!
+}
+
+type AdminReportConnection {
+  reports: [AdminReport!]!
+  nextCursor: Cursor
+}
+
+input AdminStatusFilter {
+  local: Boolean
+  remote: Boolean
+  byDomain: String
+  visibility: String
+  flagged: Boolean
+  reported: Boolean
+  media: Boolean
+  sensitive: Boolean
+  minDate: Time
+  maxDate: Time
+}
+
+type AdminStatusConnection {
+  statuses: [Object!]!
+  nextCursor: Cursor
 }

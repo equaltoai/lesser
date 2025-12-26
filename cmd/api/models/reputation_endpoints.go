@@ -17,15 +17,15 @@ type ReputationEvidence struct {
 
 // ReputationResponse represents GET /api/v1/reputation/{actor_id}.
 type ReputationResponse struct {
-	ID              string            `json:"id"`
-	Instance        string            `json:"instance"`
-	TotalScore      int               `json:"total_score"`
-	TrustScore      int               `json:"trust_score"`
-	ActivityScore   int               `json:"activity_score"`
-	ModerationScore int               `json:"moderation_score"`
-	CommunityScore  int               `json:"community_score"`
-	CalculatedAt    time.Time         `json:"calculated_at"`
-	Version         string            `json:"version"`
+	ID              string             `json:"id"`
+	Instance        string             `json:"instance"`
+	TotalScore      int                `json:"total_score"`
+	TrustScore      int                `json:"trust_score"`
+	ActivityScore   int                `json:"activity_score"`
+	ModerationScore int                `json:"moderation_score"`
+	CommunityScore  int                `json:"community_score"`
+	CalculatedAt    time.Time          `json:"calculated_at"`
+	Version         string             `json:"version"`
 	Evidence        ReputationEvidence `json:"evidence"`
 }
 
@@ -43,16 +43,15 @@ type CreateVouchRequest struct {
 
 // VouchResponse represents a vouch in API responses.
 type VouchResponse struct {
-	ID               string     `json:"id"`
-	From             string     `json:"from"`
-	To               string     `json:"to"`
+	ID                string     `json:"id"`
+	From              string     `json:"from"`
+	To                string     `json:"to"`
 	Confidence        float64    `json:"confidence"`
-	Context          string     `json:"context"`
-	CreatedAt        time.Time  `json:"created_at"`
-	ExpiresAt        time.Time  `json:"expires_at"`
-	VoucherReputation int       `json:"voucher_reputation"`
-	Active           bool       `json:"active"`
-	Revoked          bool       `json:"revoked"`
-	RevokedAt        *time.Time `json:"revoked_at,omitempty"`
+	Context           string     `json:"context"`
+	CreatedAt         time.Time  `json:"created_at"`
+	ExpiresAt         time.Time  `json:"expires_at"`
+	VoucherReputation int        `json:"voucher_reputation"`
+	Active            bool       `json:"active"`
+	Revoked           bool       `json:"revoked"`
+	RevokedAt         *time.Time `json:"revoked_at,omitempty"`
 }
-

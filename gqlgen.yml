@@ -1,6 +1,7 @@
 # Where are all the schema files located? globs are supported eg  src/**/*.graphqls
 schema:
   - graph/core.graphql
+  - graph/phase1.graphql
   - graph/phase2.graphql
   - graph/phase3.graphql
 
@@ -48,3 +49,94 @@ models:
   Upload:
     model:
       - github.com/99designs/gqlgen/graphql.Upload
+  # CMS (phase 1)
+  ContentFormat:
+    model:
+      - github.com/equaltoai/lesser/graph/model.ContentFormat
+  DraftStatus:
+    model:
+      - github.com/equaltoai/lesser/graph/model.DraftStatus
+  ChangeType:
+    model:
+      - github.com/equaltoai/lesser/graph/model.ChangeType
+  PublicationRole:
+    model:
+      - github.com/equaltoai/lesser/graph/model.PublicationRole
+  TOCEntry:
+    model:
+      - github.com/equaltoai/lesser/graph/model.TOCEntry
+  Article:
+    model:
+      - github.com/equaltoai/lesser/graph/model.Article
+  ArticleEdge:
+    model:
+      - github.com/equaltoai/lesser/graph/model.ArticleEdge
+  ArticleConnection:
+    model:
+      - github.com/equaltoai/lesser/graph/model.ArticleConnection
+  Draft:
+    model:
+      - github.com/equaltoai/lesser/graph/model.Draft
+  DraftEdge:
+    model:
+      - github.com/equaltoai/lesser/graph/model.DraftEdge
+  DraftConnection:
+    model:
+      - github.com/equaltoai/lesser/graph/model.DraftConnection
+  Revision:
+    model:
+      - github.com/equaltoai/lesser/graph/model.Revision
+  RevisionEdge:
+    model:
+      - github.com/equaltoai/lesser/graph/model.RevisionEdge
+  RevisionConnection:
+    model:
+      - github.com/equaltoai/lesser/graph/model.RevisionConnection
+  Series:
+    model:
+      - github.com/equaltoai/lesser/graph/model.Series
+  SeriesEdge:
+    model:
+      - github.com/equaltoai/lesser/graph/model.SeriesEdge
+  SeriesConnection:
+    model:
+      - github.com/equaltoai/lesser/graph/model.SeriesConnection
+  Category:
+    model:
+      - github.com/equaltoai/lesser/graph/model.Category
+  Publication:
+    model:
+      - github.com/equaltoai/lesser/graph/model.Publication
+  PublicationMember:
+    model:
+      - github.com/equaltoai/lesser/graph/model.PublicationMember
+  CreateDraftInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.CreateDraftInput
+  UpdateDraftInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.UpdateDraftInput
+  CreateArticleInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.CreateArticleInput
+  UpdateArticleInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.UpdateArticleInput
+  CreateSeriesInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.CreateSeriesInput
+  UpdateSeriesInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.UpdateSeriesInput
+  CreateCategoryInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.CreateCategoryInput
+  UpdateCategoryInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.UpdateCategoryInput
+  CreatePublicationInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.CreatePublicationInput
+  UpdatePublicationInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.UpdatePublicationInput

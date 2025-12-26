@@ -13,10 +13,10 @@ type CommunityNoteSource struct {
 
 // CreateCommunityNoteRequest represents POST /api/v1/notes.
 type CreateCommunityNoteRequest struct {
-	ObjectID   string              `json:"object_id"`
-	ObjectType string              `json:"object_type"`
-	Content    string              `json:"content"`
-	Language   string              `json:"language"`
+	ObjectID   string                `json:"object_id"`
+	ObjectType string                `json:"object_type"`
+	Content    string                `json:"content"`
+	Language   string                `json:"language"`
 	Sources    []CommunityNoteSource `json:"sources,omitempty"`
 }
 
@@ -35,7 +35,7 @@ type CommunityNoteRateLimit struct {
 
 // CreateCommunityNoteResponse represents the response from POST /api/v1/notes.
 type CreateCommunityNoteResponse struct {
-	Note      *storage.CommunityNote   `json:"note"`
+	Note      *storage.CommunityNote `json:"note"`
 	RateLimit CommunityNoteRateLimit `json:"rate_limit"`
 }
 
@@ -92,21 +92,20 @@ type UserNoteCard struct {
 
 // UserNoteStatus represents a status-like response entry for GET /api/v1/accounts/{id}/notes.
 type UserNoteStatus struct {
-	ID               string         `json:"id"`
-	Content          string         `json:"content"`
-	CreatedAt        string         `json:"created_at"`
+	ID               string          `json:"id"`
+	Content          string          `json:"content"`
+	CreatedAt        string          `json:"created_at"`
 	Account          UserNoteAccount `json:"account"`
-	Visibility       string         `json:"visibility"`
-	Sensitive        bool           `json:"sensitive"`
-	SpoilerText      string         `json:"spoiler_text"`
-	MediaAttachments []any          `json:"media_attachments"`
-	Mentions         []any          `json:"mentions"`
-	Tags             []any          `json:"tags"`
-	Emojis           []any          `json:"emojis"`
-	ReblogsCount     int            `json:"reblogs_count"`
-	FavouritesCount  int            `json:"favourites_count"`
-	RepliesCount     int            `json:"replies_count"`
-	URL              string         `json:"url"`
-	Card             UserNoteCard   `json:"card"`
+	Visibility       string          `json:"visibility"`
+	Sensitive        bool            `json:"sensitive"`
+	SpoilerText      string          `json:"spoiler_text"`
+	MediaAttachments []any           `json:"media_attachments"`
+	Mentions         []any           `json:"mentions"`
+	Tags             []any           `json:"tags"`
+	Emojis           []any           `json:"emojis"`
+	ReblogsCount     int             `json:"reblogs_count"`
+	FavouritesCount  int             `json:"favourites_count"`
+	RepliesCount     int             `json:"replies_count"`
+	URL              string          `json:"url"`
+	Card             UserNoteCard    `json:"card"`
 }
-

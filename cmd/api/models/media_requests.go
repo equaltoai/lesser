@@ -5,4 +5,3 @@ type UpdateMediaRequest struct {
 	Description string `json:"description,omitempty"`
 	Focus       string `json:"focus,omitempty"`
 }
-

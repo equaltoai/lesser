@@ -311,6 +311,130 @@ type ModerationDecision {
   timestamp: Time!
 }
 
+#
+# Moderation + reputation parity (REST endpoints)
+#
+
+input ModerationReviewInput {
+  eventId: ID!
+  action: String!
+  severity: Int!
+  confidence: Float!
+  notes: String
+}
+
+type ModerationReviewResult {
+  reviewId: ID!
+  eventId: ID!
+  action: String!
+  reviewedAt: Time!
+}
+
+type ModerationHistoryEvent {
+  id: ID!
+  eventType: String!
+  objectId: ID!
+  objectType: String!
+  actorId: ID!
+  category: String!
+  severity: Int!
+  confidenceScore: Float!
+  reason: String
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type ModerationHistoryDecision {
+  id: ID!
+  eventId: ID!
+  objectId: ID!
+  action: String!
+  consensusScore: Float!
+  reviewerCount: Int!
+  trustWeightTotal: Float!
+  decidedAt: Time!
+}
+
+type ModerationHistoryTimelineEntry {
+  timestamp: Time!
+  type: String!
+  event: ModerationHistoryEvent
+  decision: ModerationHistoryDecision
+}
+
+type ModerationHistoryResult {
+  objectId: ID!
+  events: [ModerationHistoryEvent!]!
+  decisions: [ModerationHistoryDecision!]!
+  timeline: [ModerationHistoryTimelineEntry!]!
+  currentStatus: String!
+  lastUpdated: Time!
+}
+
+type ModerationConsensusReview {
+  reviewerId: ID!
+  reviewerDomain: String
+  action: String!
+  confidence: Float!
+  trustWeight: Float!
+  reviewedAt: Time!
+}
+
+type ModerationConsensusResult {
+  eventId: ID!
+  objectId: ID!
+  category: String!
+  severity: Int!
+  confidenceScore: Float!
+  reviews: [ModerationConsensusReview!]!
+  reviewerCount: Int!
+  consensusScore: Float
+  decision: String
+  decidedAt: Time
+}
+
+type TrustCategoryScore {
+  category: String!
+  score: Float!
+}
+
+type ModerationTrustScore {
+  actorId: ID!
+  actorDomain: String
+  overallScore: Float!
+  scores: [TrustCategoryScore!]!
+  trusterCount: Int!
+  calculatedAt: Time!
+}
+
+input CreateReportInput {
+  accountId: ID!
+  statusIds: [ID!]
+  comment: String
+  category: String
+  forward: Boolean
+  ruleIds: [Int!]
+}
+
+type Report {
+  id: ID!
+  actionTaken: Boolean!
+  actionTakenAt: Time
+  category: String!
+  comment: String
+  forwarded: Boolean!
+  createdAt: Time!
+  statusIds: [ID!]!
+  ruleIds: [Int!]!
+  targetAccount: Actor
+}
+
+input CreateVouchInput {
+  to: ID!
+  confidence: Float!
+  context: String
+}
+
 type CommunityNote {
   id: ID!
   author: Actor!
@@ -340,6 +464,91 @@ type Notification {
   status: Object # Related status (if any)
   read: Boolean!
   createdAt: Time!
+}
+
+# Status edit history entry (Mastodon compatibility)
+type StatusEdit {
+  content: String!
+  spoilerText: String
+  sensitive: Boolean!
+  createdAt: Time!
+  account: Actor!
+}
+
+# Translation result (Mastodon compatibility)
+type TranslationResult {
+  content: String!
+  spoilerText: String
+  detectedLanguage: String!
+  provider: String!
+}
+
+# Instance info (Mastodon compatibility)
+type InstanceRule {
+  id: ID!
+  text: String!
+}
+
+type InstanceInfo {
+  domain: String!
+  title: String!
+  shortDescription: String
+  description: String!
+  email: String
+  version: String!
+  sourceUrl: String
+  streamingUrl: String
+  thumbnailUrl: String
+  languages: [String!]!
+  registrationsOpen: Boolean!
+  approvalRequired: Boolean!
+  invitesEnabled: Boolean!
+  userCount: Int!
+  statusCount: Int!
+  domainCount: Int!
+  contactAccount: Actor
+  rules: [InstanceRule!]!
+}
+
+type InstanceActivityEntry {
+  week: String!
+  statuses: Int!
+  logins: Int!
+  registrations: Int!
+}
+
+type InstanceDomainBlock {
+  domain: String!
+  digest: String!
+  severity: String!
+  comment: String!
+}
+
+type TranslationLanguage {
+  code: String!
+  name: String!
+}
+
+# Announcements (Mastodon compatibility)
+type Announcement {
+  id: ID!
+  content: String!
+  text: String!
+  publishedAt: Time!
+  updatedAt: Time!
+  allDay: Boolean!
+  startsAt: Time
+  endsAt: Time
+  read: Boolean!
+  reactions: [AnnouncementReaction!]!
+}
+
+type AnnouncementReaction {
+  name: String!
+  count: Int!
+  me: Boolean!
+  url: String
+  staticUrl: String
 }
 
 # Notification connection for pagination
@@ -628,6 +837,14 @@ input CreateNoteInput {
   poll: PollParamsInput
 }
 
+input UpdateStatusInput {
+  content: String!
+  sensitive: Boolean
+  spoilerText: String
+  language: String
+  attachmentIds: [ID!]
+}
+
 input ContentMapInput {
   language: String!
   content: String!
@@ -842,6 +1059,18 @@ type Query {
   ): ObjectConnection!
   search(query: String!, type: String, first: Int = 20, after: Cursor): SearchResult!
   notifications(types: [String!], excludeTypes: [String!], first: Int = 20, after: Cursor): NotificationConnection!
+  notification(id: ID!): Notification
+  statusHistory(id: ID!, limit: Int = 100): [StatusEdit!]!
+  statusFavouritedBy(id: ID!, first: Int = 40, after: Cursor): ActorListPage!
+  statusRebloggedBy(id: ID!, first: Int = 40, after: Cursor): ActorListPage!
+  linkTimeline(url: String!, first: Int = 20, after: Cursor): ObjectConnection!
+  translateStatus(id: ID!, targetLanguage: String): TranslationResult!
+  instance: InstanceInfo!
+  instanceActivity(limit: Int = 12): [InstanceActivityEntry!]!
+  instancePeers(limit: Int = 100): [String!]!
+  instanceDomainBlocks(limit: Int = 100): [InstanceDomainBlock!]!
+  translationLanguages: [TranslationLanguage!]!
+  announcements: [Announcement!]!
 
   # Accounts + relationships
   accountQuotePermissions(username: String!): AccountQuotePermissions!
@@ -914,6 +1143,11 @@ type Query {
   costBreakdown(period: Period = DAY): CostBreakdown!
   trustGraph(actorId: ID!, category: TrustCategory): [TrustEdge!]!
   moderationQueue(first: Int = 20, after: Cursor): [ModerationDecision!]!
+  moderationConsensus(eventId: ID!): ModerationConsensusResult!
+  moderationHistory(objectId: ID!): ModerationHistoryResult!
+  moderationTrustScore(actorId: ID!): ModerationTrustScore!
+  reputation(actorId: ID!): Reputation!
+  vouches(actorId: ID!): [Vouch!]!
   
   # Debug endpoints
   explainObject(id: ID!): ObjectExplanation!
@@ -964,6 +1198,7 @@ type Mutation {
 
   # Mastodon compatibility - Status operations
   createNote(input: CreateNoteInput!): CreateNotePayload!
+  updateStatus(id: ID!, input: UpdateStatusInput!): Object!
   deleteObject(id: ID!): Boolean!
   likeObject(id: ID!): Activity!
   unlikeObject(id: ID!): Boolean!
@@ -973,6 +1208,11 @@ type Mutation {
   unbookmarkObject(id: ID!): Boolean!
   pinObject(id: ID!): Object!
   unpinObject(id: ID!): Boolean!
+  muteStatus(id: ID!, durationSeconds: Int): Boolean!
+  unmuteStatus(id: ID!): Boolean!
+  dismissAnnouncement(id: ID!): Boolean!
+  addAnnouncementReaction(id: ID!, name: String!): Boolean!
+  removeAnnouncementReaction(id: ID!, name: String!): Boolean!
   
   # Relationship operations
   followActor(id: ID!): Activity!
@@ -1037,6 +1277,13 @@ type Mutation {
   # Lesser enhancements
   updateTrust(input: TrustInput!): TrustEdge!
   flagObject(input: FlagInput!): FlagPayload!
+  submitModerationReview(input: ModerationReviewInput!): ModerationReviewResult!
+  createReport(input: CreateReportInput!): Report!
+  exportReputation: PortableReputation!
+  importReputation(document: String!): ReputationImportResult!
+  verifyReputation(document: String!): ReputationVerificationResult!
+  createVouch(input: CreateVouchInput!): Vouch!
+  revokeVouch(id: ID!): Boolean!
   addCommunityNote(input: CommunityNoteInput!): CommunityNotePayload!
   voteCommunityNote(id: ID!, helpful: Boolean!): CommunityNote!
   

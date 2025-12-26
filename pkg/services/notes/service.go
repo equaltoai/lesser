@@ -531,6 +531,7 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 	if status.Note != nil && status.Note.Get() != nil {
 		status.Note.Get().Content = cmd.Content
 		status.Note.Get().Sensitive = cmd.Sensitive
+		status.Note.Get().Summary = cmd.SpoilerText
 		now := time.Now()
 		status.Note.Get().Updated = &now
 	}
@@ -2473,8 +2474,9 @@ func (s *Service) UnpinNote(ctx context.Context, cmd *UnpinNoteCommand) (*LikeRe
 
 // MuteNoteCommand represents a request to mute a status
 type MuteNoteCommand struct {
-	StatusID string `json:"status_id" validate:"required"`
-	MuterID  string `json:"muter_id" validate:"required"`
+	StatusID        string `json:"status_id" validate:"required"`
+	MuterID         string `json:"muter_id" validate:"required"`
+	DurationSeconds int    `json:"duration_seconds"`
 }
 
 // UnmuteNoteCommand represents a request to unmute a status
@@ -2492,7 +2494,7 @@ func (s *Service) MuteNote(ctx context.Context, cmd *MuteNoteCommand) (*LikeResu
 	}
 
 	// Mute the status through repository interface
-	if err := s.muteStatus(ctx, cmd.MuterID, cmd.StatusID); err != nil {
+	if err := s.muteStatus(ctx, cmd.MuterID, cmd.StatusID, cmd.DurationSeconds); err != nil {
 		return nil, ErrMuteStatus
 	}
 
@@ -2901,7 +2903,7 @@ func (s *Service) unpinStatus(ctx context.Context, userID, statusID string) erro
 	return nil
 }
 
-func (s *Service) muteStatus(ctx context.Context, userID, statusID string) error {
+func (s *Service) muteStatus(ctx context.Context, userID, statusID string, durationSeconds int) error {
 	// Muting a status actually mutes its conversation
 	// First normalize the status ID to get the conversation ID
 	conversationID := statusID
@@ -2914,6 +2916,10 @@ func (s *Service) muteStatus(ctx context.Context, userID, statusID string) error
 		Username:       userID,
 		ConversationID: conversationID,
 		CreatedAt:      time.Now(),
+	}
+
+	if durationSeconds > 0 {
+		mute.ExpiresAt = time.Now().Add(time.Duration(durationSeconds) * time.Second)
 	}
 
 	// Store the mute

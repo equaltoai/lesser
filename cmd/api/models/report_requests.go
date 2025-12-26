@@ -9,4 +9,3 @@ type CreateReportRequest struct {
 	Category  string   `json:"category,omitempty"`
 	RuleIDs   []int    `json:"rule_ids,omitempty"`
 }
-

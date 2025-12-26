@@ -84,6 +84,7 @@ type runOptions struct {
 	SpecPath string
 	Write    bool
 	Check    bool
+	Strict   bool
 }
 
 func parseOptions() runOptions {
@@ -92,6 +93,7 @@ func parseOptions() runOptions {
 	flag.StringVar(&opts.SpecPath, "spec", "docs/specs/graphql_coverage.yaml", "path to coverage spec yaml")
 	flag.BoolVar(&opts.Write, "write", false, "update the spec file in place")
 	flag.BoolVar(&opts.Check, "check", false, "verify spec matches current routes + schema")
+	flag.BoolVar(&opts.Strict, "strict", false, "fail if any graphql_required route remains missing")
 	flag.Parse()
 
 	if !opts.Write && !opts.Check {
@@ -174,7 +176,13 @@ func verifyCoverageSpec(repoRoot string, opts runOptions, spec *coverageSpec, mi
 	if err := validateRoutePolicies(spec.Routes, spec.Exemptions); err != nil {
 		return err
 	}
-	return validateCoverageMappings(repoRoot, spec.Routes)
+	if err := validateCoverageMappings(repoRoot, spec.Routes); err != nil {
+		return err
+	}
+	if opts.Strict {
+		return validateStrictCoverage(spec.Routes)
+	}
+	return nil
 }
 
 func validateCoverageMappings(repoRoot string, routes []coverageRoute) error {
@@ -183,6 +191,29 @@ func validateCoverageMappings(repoRoot string, routes []coverageRoute) error {
 		return err
 	}
 	return validateGraphQLMappings(routes, schemaOps)
+}
+
+func validateStrictCoverage(routes []coverageRoute) error {
+	var problems []string
+	for _, entry := range routes {
+		entry = normalizeCoverageRoute(entry)
+		if entry.Policy != policyGraphQLRequired {
+			continue
+		}
+		if entry.Status != statusCovered {
+			problems = append(problems, fmt.Sprintf("%s %s: status is %q", entry.Method, entry.Path, entry.Status))
+			continue
+		}
+		if len(entry.GraphQL) == 0 {
+			problems = append(problems, fmt.Sprintf("%s %s: missing graphql mapping", entry.Method, entry.Path))
+		}
+	}
+
+	if len(problems) > 0 {
+		sort.Strings(problems)
+		return errors.New("strict coverage failed:\n" + strings.Join(problems, "\n"))
+	}
+	return nil
 }
 
 func syncSpecRoutes(spec *coverageSpec, routes []routeDef) (updated []coverageRoute, missing []routeDef, stale []coverageRoute) {

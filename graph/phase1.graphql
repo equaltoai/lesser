@@ -1,0 +1,392 @@
+# Phase 1: CMS GraphQL surface (headless publishing)
+
+enum ContentFormat {
+  HTML
+  MARKDOWN
+}
+
+enum DraftStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+enum ChangeType {
+  CREATE
+  UPDATE
+  RESTORE
+}
+
+enum PublicationRole {
+  OWNER
+  EDITOR
+  WRITER
+  CONTRIBUTOR
+}
+
+type TOCEntry {
+  id: String!
+  level: Int!
+  text: String!
+}
+
+type Article {
+  id: ID!
+  slug: String!
+  author: Actor!
+
+  title: String!
+  subtitle: String
+  excerpt: String
+
+  content: String!
+  contentFormat: ContentFormat!
+
+  featuredImage: Media
+  tableOfContents: [TOCEntry!]!
+
+  readingTimeMinutes: Int!
+  wordCount: Int!
+
+  series: Series
+  seriesOrder: Int
+  categories: [Category!]!
+
+  seoTitle: String
+  seoDescription: String
+  canonicalUrl: String
+  ogImage: String
+
+  editorNotes: String
+  reviewStatus: String
+
+  publishedAt: Time!
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type ArticleEdge {
+  node: Article!
+  cursor: Cursor!
+}
+
+type ArticleConnection {
+  edges: [ArticleEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Draft {
+  id: ID!
+  author: Actor!
+
+  contentType: ObjectType!
+  title: String
+  slug: String
+  content: String!
+  contentFormat: ContentFormat!
+
+  status: DraftStatus!
+  scheduledAt: Time
+  objectId: ID
+
+  autosaveVersion: Int!
+  lastSavedAt: Time!
+
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type DraftEdge {
+  node: Draft!
+  cursor: Cursor!
+}
+
+type DraftConnection {
+  edges: [DraftEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Revision {
+  id: ID!
+  objectId: ID!
+  version: Int!
+  content: String!
+  metadataJson: String
+  changedBy: Actor!
+  changeSummary: String
+  changeType: ChangeType!
+  createdAt: Time!
+}
+
+type RevisionEdge {
+  node: Revision!
+  cursor: Cursor!
+}
+
+type RevisionConnection {
+  edges: [RevisionEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Series {
+  id: ID!
+  author: Actor!
+
+  title: String!
+  description: String
+  slug: String!
+  coverImageUrl: String
+
+  isComplete: Boolean!
+  articleCount: Int!
+
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type SeriesEdge {
+  node: Series!
+  cursor: Cursor!
+}
+
+type SeriesConnection {
+  edges: [SeriesEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Category {
+  id: ID!
+  name: String!
+  slug: String!
+  description: String
+  parent: Category
+  children: [Category!]!
+
+  articleCount: Int!
+  order: Int!
+  color: String
+
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type Publication {
+  id: ID!
+  name: String!
+  tagline: String
+  description: String
+  slug: String!
+
+  logoUrl: String
+  bannerUrl: String
+  customDomain: String
+
+  actor: Actor!
+  members: [PublicationMember!]!
+
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type PublicationMember {
+  user: Actor!
+  role: PublicationRole!
+  displayName: String
+  bio: String
+  joinedAt: Time!
+}
+
+extend type Query {
+  # Draft operations
+  draft(id: ID!): Draft
+  myDrafts(contentType: ObjectType, status: DraftStatus, first: Int, after: Cursor): DraftConnection!
+
+  # Revision history
+  revisions(objectId: ID!, first: Int, after: Cursor): RevisionConnection!
+  revision(objectId: ID!, version: Int!): Revision
+
+  # Article queries
+  article(id: ID!): Article
+  articleBySlug(slug: String!): Article
+  articles(authorId: ID, seriesId: ID, categoryId: ID, first: Int, after: Cursor): ArticleConnection!
+
+  # Series
+  series(id: ID!): Series
+  seriesBySlug(slug: String!): Series
+  allSeries(authorId: ID, first: Int, after: Cursor): SeriesConnection!
+
+  # Categories
+  category(id: ID!): Category
+  categoryBySlug(slug: String!): Category
+  categories(parentId: ID): [Category!]!
+  rootCategories: [Category!]!
+
+  # Publication
+  publication(id: ID!): Publication
+  publicationBySlug(slug: String!): Publication
+  myPublications: [Publication!]!
+}
+
+extend type Mutation {
+  # Draft lifecycle
+  createDraft(input: CreateDraftInput!): Draft!
+  updateDraft(id: ID!, input: UpdateDraftInput!): Draft!
+  autosaveDraft(id: ID!, content: String!): Draft!
+  deleteDraft(id: ID!): Boolean!
+
+  # Publishing
+  publishDraft(id: ID!): Article!
+  scheduleDraft(id: ID!, scheduledAt: Time!): Draft!
+  cancelScheduledDraft(id: ID!): Draft!
+
+  # Article operations
+  createArticle(input: CreateArticleInput!): Article!
+  updateArticle(id: ID!, input: UpdateArticleInput!): Article!
+  deleteArticle(id: ID!): Boolean!
+
+  # Revision operations
+  restoreRevision(objectId: ID!, version: Int!): Article!
+
+  # Series management
+  createSeries(input: CreateSeriesInput!): Series!
+  updateSeries(id: ID!, input: UpdateSeriesInput!): Series!
+  deleteSeries(id: ID!): Boolean!
+  addArticleToSeries(seriesId: ID!, articleId: ID!, order: Int): Series!
+  removeArticleFromSeries(seriesId: ID!, articleId: ID!): Series!
+  reorderSeriesArticles(seriesId: ID!, articleIds: [ID!]!): Series!
+
+  # Category management
+  createCategory(input: CreateCategoryInput!): Category!
+  updateCategory(id: ID!, input: UpdateCategoryInput!): Category!
+  deleteCategory(id: ID!): Boolean!
+  addArticleToCategory(categoryId: ID!, articleId: ID!): Article!
+  removeArticleFromCategory(categoryId: ID!, articleId: ID!): Article!
+
+  # Publication management
+  createPublication(input: CreatePublicationInput!): Publication!
+  updatePublication(id: ID!, input: UpdatePublicationInput!): Publication!
+  invitePublicationMember(publicationId: ID!, userId: ID!, role: PublicationRole!): PublicationMember!
+  removePublicationMember(publicationId: ID!, userId: ID!): Boolean!
+  updatePublicationMemberRole(publicationId: ID!, userId: ID!, role: PublicationRole!): PublicationMember!
+}
+
+input CreateDraftInput {
+  contentType: ObjectType! = ARTICLE
+  title: String
+  slug: String
+  content: String!
+  contentFormat: ContentFormat! = MARKDOWN
+  objectId: ID
+}
+
+input UpdateDraftInput {
+  title: String
+  slug: String
+  content: String
+  contentFormat: ContentFormat
+}
+
+input CreateArticleInput {
+  slug: String!
+  title: String!
+  content: String!
+  contentFormat: ContentFormat! = MARKDOWN
+
+  subtitle: String
+  excerpt: String
+  featuredImageId: ID
+
+  seriesId: ID
+  seriesOrder: Int
+  categoryIds: [ID!]
+
+  seoTitle: String
+  seoDescription: String
+  canonicalUrl: String
+  ogImage: String
+
+  editorNotes: String
+  reviewStatus: String
+}
+
+input UpdateArticleInput {
+  title: String
+  content: String
+  contentFormat: ContentFormat
+
+  subtitle: String
+  excerpt: String
+  featuredImageId: ID
+
+  seriesId: ID
+  seriesOrder: Int
+  categoryIds: [ID!]
+
+  seoTitle: String
+  seoDescription: String
+  canonicalUrl: String
+  ogImage: String
+
+  editorNotes: String
+  reviewStatus: String
+}
+
+input CreateSeriesInput {
+  slug: String
+  title: String!
+  description: String
+  coverImageUrl: String
+  isComplete: Boolean
+}
+
+input UpdateSeriesInput {
+  title: String
+  description: String
+  coverImageUrl: String
+  isComplete: Boolean
+}
+
+input CreateCategoryInput {
+  slug: String
+  name: String!
+  description: String
+  parentId: ID
+  color: String
+  order: Int
+}
+
+input UpdateCategoryInput {
+  slug: String
+  name: String
+  description: String
+  parentId: ID
+  color: String
+  order: Int
+}
+
+input CreatePublicationInput {
+  slug: String
+  name: String!
+  tagline: String
+  description: String
+  logoId: ID
+  bannerId: ID
+  customDomain: String
+}
+
+input UpdatePublicationInput {
+  slug: String
+  name: String
+  tagline: String
+  description: String
+  logoId: ID
+  bannerId: ID
+  customDomain: String
+}
+

@@ -236,18 +236,20 @@ package cms
 type DraftService struct {
     draftRepo      *repositories.DraftRepository
     articleService *ArticleService
+    domain         string
     logger         *zap.Logger
 }
 
-func NewDraftService(draftRepo *repositories.DraftRepository, articleService *ArticleService, logger *zap.Logger) *DraftService {
+func NewDraftService(draftRepo *repositories.DraftRepository, articleService *ArticleService, domain string, logger *zap.Logger) *DraftService {
     return &DraftService{
         draftRepo:      draftRepo,
         articleService: articleService,
+        domain:         domain,
         logger:         logger,
     }
 }
 
-func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID string) (*models.Object, error) {
+func (s *DraftService) PublishDraft(ctx context.Context, authorID, draftID string) (*models.Article, error) {
     // 1. Get draft
     draft, err := s.draftRepo.GetDraft(ctx, authorID, draftID)
     if err != nil {

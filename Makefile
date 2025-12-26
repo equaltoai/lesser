@@ -207,7 +207,7 @@ verify-docs:
 ## Verify GraphQL coverage inventory is in sync with configured routes + schema
 verify-graphql-coverage:
 	@mkdir -p tmp/go-cache
-	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/graphql_coverage --check
+	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/graphql_coverage --check --strict
 
 ## Verify OpenAPI spec is in sync with configured routes
 verify-openapi:
@@ -857,7 +857,7 @@ local-dynamodb:
 gqlgen:
 	@echo "Generating GraphQL code..."
 	@mkdir -p tmp/go-cache
-	@GOCACHE=$(CURDIR)/tmp/go-cache go run github.com/99designs/gqlgen generate
+	@GOCACHE=$(CURDIR)/tmp/go-cache go run github.com/99designs/gqlgen@v0.17.78 generate
 
 ## Export combined GraphQL schema for web clients
 export-schema:

@@ -165,13 +165,23 @@ func NewNotificationProcessor(lambdaCtx *common.LambdaContext) *NotificationProc
 		costTrackingRepo:          costTrackingRepo,
 		notificationCostRepo:      notificationCostRepo,
 		webSocketSubscriptionRepo: webSocketSubscriptionRepo,
-		snsClient:                 func() *sns.Client { if lambdaCtx.AWSServices != nil { return lambdaCtx.AWSServices.SNS }; return nil }(),
-		sqsClient:                 func() *sqs.Client { if lambdaCtx.AWSServices != nil { return lambdaCtx.AWSServices.SQS }; return nil }(),
-		wsClient:                  wsClient,
-		domain:                    cfg.Domain,
-		webSocketEndpoint:         webSocketEndpoint,
-		retryQueueURL:             retryQueueURL,
-		deadLetterQueueURL:        deadLetterQueueURL,
+		snsClient: func() *sns.Client {
+			if lambdaCtx.AWSServices != nil {
+				return lambdaCtx.AWSServices.SNS
+			}
+			return nil
+		}(),
+		sqsClient: func() *sqs.Client {
+			if lambdaCtx.AWSServices != nil {
+				return lambdaCtx.AWSServices.SQS
+			}
+			return nil
+		}(),
+		wsClient:           wsClient,
+		domain:             cfg.Domain,
+		webSocketEndpoint:  webSocketEndpoint,
+		retryQueueURL:      retryQueueURL,
+		deadLetterQueueURL: deadLetterQueueURL,
 	}
 }
 

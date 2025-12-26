@@ -194,7 +194,7 @@ func (r *mutationResolver) UpdateTrust(ctx context.Context, input model.TrustInp
 	}
 
 	r.Logger.Info("Updating trust relationship",
-		zap.String("user", username),
+		zap.String(adminRoleUser, username),
 		zap.String("trustee", input.TargetActorID),
 		zap.Float64("score", input.Score))
 
@@ -319,7 +319,7 @@ func (r *Resolver) requireAdmin(ctx context.Context) (string, error) {
 		return "", errors.Join(errors.New("failed to verify admin status"), err)
 	}
 
-	if account.User.Role != "admin" {
+	if !strings.EqualFold(account.User.Role, adminRoleAdmin) {
 		r.Logger.Warn("Non-admin attempted admin operation",
 			zap.String("username", username))
 		return "", ErrAdminPrivilegesRequired
@@ -339,7 +339,7 @@ func (r *Resolver) isAdmin(ctx context.Context, username string) bool {
 		return false
 	}
 
-	return strings.EqualFold(account.User.Role, "admin")
+	return strings.EqualFold(account.User.Role, adminRoleAdmin)
 }
 
 // ====================================================================
@@ -1867,7 +1867,7 @@ func (r *mutationResolver) RequestAIAnalysis(ctx context.Context, objectID strin
 	})
 	if err != nil {
 		r.Logger.Error("failed to queue AI analysis",
-			zap.String("user", username),
+			zap.String(adminRoleUser, username),
 			zap.String("object_id", objectID),
 			zap.Error(err))
 		return nil, errors.Join(errors.New("failed to queue AI analysis"), err)
@@ -2270,9 +2270,9 @@ func (r *queryResolver) isEventTypeCompatible(event *storage.ModerationEvent, pa
 		return event.EventType == EventTypeFlagged ||
 			event.EventType == "rejected" ||
 			event.EventType == "content_violation"
-	case "user", AccountType:
+	case adminRoleUser, AccountType:
 		// User patterns match user-related events
-		return event.EventType == "suspended" ||
+		return event.EventType == UserStatusSuspended ||
 			event.EventType == "warned" ||
 			event.EventType == "account_flagged"
 	case "spam":
@@ -2289,7 +2289,7 @@ func (r *queryResolver) isEventTypeCompatible(event *storage.ModerationEvent, pa
 			event.Category == "hate_speech"
 	default:
 		// Unknown pattern types match flagged events by default
-		return event.EventType == "flagged"
+		return event.EventType == EventTypeFlagged
 	}
 }
 
@@ -2473,7 +2473,7 @@ func (r *queryResolver) estimateResponseTimeFromObject(ctx context.Context, even
 // getDefaultResponseTimeByEventType returns a default response time based on event type
 func (r *queryResolver) getDefaultResponseTimeByEventType(eventType string) int64 {
 	switch eventType {
-	case "suspended":
+	case UserStatusSuspended:
 		return 3600000 // 1 hour for suspensions (typically take longer)
 	case "warned":
 		return 1800000 // 30 minutes for warnings

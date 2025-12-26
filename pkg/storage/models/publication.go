@@ -70,6 +70,10 @@ type PublicationMember struct {
 	PK string `dynamorm:"pk,attr:PK"` // PUBLICATION#{pub_id}#MEMBER
 	SK string `dynamorm:"sk,attr:SK"` // USER#{user_id}
 
+	// GSI1: USER#{user_id}#PUBLICATION / PUBLICATION#{pub_id}
+	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"`
+	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"`
+
 	PublicationID string `dynamorm:"attr:publicationID" json:"publication_id"`
 	UserID        string `dynamorm:"attr:userID" json:"user_id"`
 	Role          string `dynamorm:"attr:role" json:"role"` // owner, editor, writer, contributor
@@ -100,6 +104,9 @@ func (pm *PublicationMember) UpdateKeys() error {
 
 	pm.PK = fmt.Sprintf("PUBLICATION#%s#MEMBER", pm.PublicationID)
 	pm.SK = fmt.Sprintf("USER#%s", pm.UserID)
+
+	pm.GSI1PK = fmt.Sprintf("USER#%s#PUBLICATION", pm.UserID)
+	pm.GSI1SK = fmt.Sprintf("PUBLICATION#%s", pm.PublicationID)
 
 	now := time.Now()
 	if pm.CreatedAt.IsZero() {

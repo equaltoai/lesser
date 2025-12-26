@@ -8,6 +8,7 @@ const (
 	ContentType        = "content"
 	ContentTypeArticle = "article"
 	ContentTypeImage   = "image"
+	ContentTypeEvent   = "event"
 	ContentTypeVideo   = "video"
 )
 
@@ -25,6 +26,7 @@ const (
 	ServiceTypeTimeline      = "timeline"
 	ServiceTypeSearch        = "search"
 	ServiceTypeNotifications = "notifications"
+	ServiceTypeTrust         = "trust"
 )
 
 // Metric type constants
@@ -85,6 +87,20 @@ const (
 	ModerationActionApprove = "approve"
 )
 
+// Admin account action constants (Mastodon admin compatibility)
+const (
+	AdminAccountActionSensitive   = "sensitive"
+	AdminAccountActionUnsensitive = "unsensitive"
+	AdminAccountActionSilence     = "silence"
+	AdminAccountActionSuspend     = "suspend"
+)
+
+// Instance domain block severities
+const (
+	DomainBlockSeveritySilence = "silence"
+	DomainBlockSeveritySuspend = "suspend"
+)
+
 // Query type constants
 const (
 	QueryTypeActor = "actor"
@@ -121,6 +137,7 @@ const (
 	TimelineTypeList    = "list"
 	TimelineTypeHome    = "home"
 	TimelineTypeDirect  = "direct"
+	TimelineTypeUser    = adminRoleUser
 	TimelineTypeStatus  = "status"
 )
 

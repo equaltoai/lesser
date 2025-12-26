@@ -37,17 +37,16 @@ type GroupedNotificationEntry struct {
 
 // GroupedNotificationGroup represents a grouped notification response entry.
 type GroupedNotificationGroup struct {
-	ID                string                     `json:"id"`
-	Type              string                     `json:"type"`
-	GroupKey          string                     `json:"group_key"`
-	Count             int                        `json:"count"`
-	LatestCreatedAt   string                     `json:"latest_created_at"`
-	EarliestCreatedAt string                     `json:"earliest_created_at"`
-	Read              bool                       `json:"read"`
-	SampleAccounts    []GroupedNotificationAccount `json:"sample_accounts"`
-	Summary           string                     `json:"summary"`
-	Status            *GroupedNotificationStatus  `json:"status,omitempty"`
+	ID                string                         `json:"id"`
+	Type              string                         `json:"type"`
+	GroupKey          string                         `json:"group_key"`
+	Count             int                            `json:"count"`
+	LatestCreatedAt   string                         `json:"latest_created_at"`
+	EarliestCreatedAt string                         `json:"earliest_created_at"`
+	Read              bool                           `json:"read"`
+	SampleAccounts    []GroupedNotificationAccount   `json:"sample_accounts"`
+	Summary           string                         `json:"summary"`
+	Status            *GroupedNotificationStatus     `json:"status,omitempty"`
 	MostRecent        *GroupedNotificationMostRecent `json:"most_recent,omitempty"`
-	AllNotifications  []GroupedNotificationEntry `json:"all_notifications,omitempty"`
+	AllNotifications  []GroupedNotificationEntry     `json:"all_notifications,omitempty"`
 }
-

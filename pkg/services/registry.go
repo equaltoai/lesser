@@ -743,6 +743,54 @@ func (r *Registry) getDomainName() string {
 	return domainName
 }
 
+func (r *Registry) getCMSDomainName() string {
+	if r.config != nil && r.config.Config != nil {
+		if domain := strings.TrimSpace(r.config.Config.Domain); domain != "" {
+			return domain
+		}
+	}
+	return strings.TrimSpace(r.getDomainName())
+}
+
+func (r *Registry) ensureCMSArticleServiceLocked() {
+	if r.articleService != nil || r.storage == nil {
+		return
+	}
+
+	if r.revisionService == nil {
+		revisionRepo := r.storage.Revision()
+		articleRepo := r.storage.Article()
+		if revisionRepo != nil && articleRepo != nil {
+			r.revisionService = cms.NewRevisionService(revisionRepo, articleRepo, r.logger)
+			r.initialized["Revisions"] = true
+		}
+	}
+
+	articleRepo := r.storage.Article()
+	if articleRepo == nil || r.revisionService == nil {
+		return
+	}
+
+	if r.federation == nil {
+		deps := &ServiceDependencies{
+			Repos:  r.storage,
+			Config: r.config,
+			Logger: r.logger,
+		}
+		r.federation = NewFederationService(deps)
+		r.initialized["Federation"] = true
+	}
+
+	r.articleService = cms.NewArticleService(
+		articleRepo,
+		r.storage.Actor(),
+		r.revisionService,
+		r.federation,
+		r.logger,
+	)
+	r.initialized["Articles"] = true
+}
+
 // Revisions returns the revision service, initializing it if necessary
 func (r *Registry) Revisions() *cms.RevisionService {
 	r.mu.Lock()
@@ -833,61 +881,33 @@ func (r *Registry) Drafts() *cms.DraftService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.draftService == nil && r.storage != nil {
-		draftRepo := r.storage.Draft()
-
-		// Ensure ArticleService is initialized
-		if r.articleService == nil {
-			// We need to initialize ArticleService first.
-			// This duplicates logic from Articles(), but since we are locked, we can't call Articles().
-			// We need to initialize RevisionService first too.
-
-			if r.revisionService == nil {
-				revisionRepo := r.storage.Revision()
-				articleRepo := r.storage.Article()
-				if revisionRepo != nil && articleRepo != nil {
-					r.revisionService = cms.NewRevisionService(revisionRepo, articleRepo, r.logger)
-					r.initialized["Revisions"] = true
-				}
-			}
-
-			articleRepo := r.storage.Article()
-			if articleRepo != nil && r.revisionService != nil {
-				// Ensure FederationService is initialized
-				if r.federation == nil {
-					deps := &ServiceDependencies{
-						Repos:  r.storage,
-						Config: r.config,
-						Logger: r.logger,
-					}
-					r.federation = NewFederationService(deps)
-					r.initialized["Federation"] = true
-				}
-
-				r.articleService = cms.NewArticleService(
-					articleRepo,
-					r.storage.Actor(),
-					r.revisionService,
-					r.federation,
-					r.logger,
-				)
-				r.initialized["Articles"] = true
-			}
-		}
-
-		if draftRepo != nil && r.articleService != nil {
-			r.draftService = cms.NewDraftService(
-				draftRepo,
-				r.articleService,
-				r.logger,
-			)
-			r.initialized["Drafts"] = true
-		} else {
-			if r.logger != nil {
-				r.logger.Warn("failed to initialize Draft service: required repositories or dependencies not available")
-			}
-		}
+	if r.draftService != nil || r.storage == nil {
+		return r.draftService
 	}
+
+	draftRepo := r.storage.Draft()
+	if draftRepo == nil {
+		if r.logger != nil {
+			r.logger.Warn("failed to initialize Draft service: required repositories or dependencies not available")
+		}
+		return nil
+	}
+
+	r.ensureCMSArticleServiceLocked()
+	if r.articleService == nil {
+		if r.logger != nil {
+			r.logger.Warn("failed to initialize Draft service: article service is not available")
+		}
+		return nil
+	}
+
+	r.draftService = cms.NewDraftService(
+		draftRepo,
+		r.articleService,
+		r.getCMSDomainName(),
+		r.logger,
+	)
+	r.initialized["Drafts"] = true
 
 	return r.draftService
 }

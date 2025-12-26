@@ -220,7 +220,7 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Dismiss the announcement
-	err = h.repos.Announcement().DismissAnnouncement(ctx.Context, announcementID, claims.Username)
+	err = h.repos.Announcement().DismissAnnouncement(ctx.Context, claims.Username, announcementID)
 	if err != nil {
 		h.logger.Error("failed to dismiss announcement",
 			zap.String("announcement_id", announcementID),
@@ -276,9 +276,9 @@ func (h *Handler) handleAnnouncementReaction(ctx *lift.Context, action string) e
 
 	// Perform the appropriate action
 	if action == "add" {
-		err = h.repos.Announcement().AddAnnouncementReaction(ctx.Context, announcementID, claims.Username, reactionName)
+		err = h.repos.Announcement().AddAnnouncementReaction(ctx.Context, claims.Username, announcementID, reactionName)
 	} else {
-		err = h.repos.Announcement().RemoveAnnouncementReaction(ctx.Context, announcementID, claims.Username, reactionName)
+		err = h.repos.Announcement().RemoveAnnouncementReaction(ctx.Context, claims.Username, announcementID, reactionName)
 	}
 
 	if err != nil {

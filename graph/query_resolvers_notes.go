@@ -72,7 +72,7 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 	case model.TimelineTypePublic:
 		query.TimelineType = StreamNamePublic
 	case model.TimelineTypeLocal:
-		query.TimelineType = "local"
+		query.TimelineType = common.TimelineLocal
 	case model.TimelineTypeHashtag:
 		if hashtag == nil {
 			return nil, ErrHashtagParameterRequired
@@ -104,7 +104,7 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 		if err := common.ValidateRequiredParam("actorID", *actorID); err != nil {
 			return nil, ErrActorIDParameterRequired
 		}
-		query.TimelineType = "user" // Map to internal "user" timeline
+		query.TimelineType = TimelineTypeUser // Map to internal user timeline
 		query.AuthorID = *actorID
 	default:
 		return nil, ErrUnsupportedTimelineTypeWithValue(timelineType)

@@ -314,7 +314,7 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 		ch = make(chan *model.CostUpdate, channelBuffer)
 	case "moderation":
 		ch = make(chan *moderation.ModerationDecision, channelBuffer)
-	case "trust":
+	case ServiceTypeTrust:
 		ch = make(chan *trust.TrustEdge, channelBuffer)
 	case "ai":
 		ch = make(chan *model.AIAnalysis, channelBuffer)
@@ -480,7 +480,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTrustUpdates(ctx context.Contex
 	}
 
 	streams := []string{fmt.Sprintf("trust:%s", actorID)}
-	ch, _, err := sm.createGenericSubscription(ctx, "trust", actorID, streams, 20, nil)
+	ch, _, err := sm.createGenericSubscription(ctx, ServiceTypeTrust, actorID, streams, 20, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package cms
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -64,34 +65,100 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 	return nil
 }
 
+// GetArticle retrieves an article by ID.
+func (s *ArticleService) GetArticle(ctx context.Context, articleID string) (*models.Article, error) {
+	articleID = strings.TrimSpace(articleID)
+	if articleID == "" {
+		return nil, errors.New("article id is required")
+	}
+	return s.articleRepo.GetArticle(ctx, articleID)
+}
+
+// UpdateArticle updates an existing article and records a revision if configured.
+func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Article) error {
+	if article == nil {
+		return errors.New("article is required")
+	}
+	if strings.TrimSpace(article.ID) == "" {
+		return errors.New("article id is required")
+	}
+
+	// Snapshot existing state before applying the update.
+	if s.revisionService != nil {
+		existing, err := s.articleRepo.GetArticle(ctx, strings.TrimSpace(article.ID))
+		if err == nil && existing != nil {
+			_, _ = s.revisionService.CreateRevision(ctx, existing)
+		}
+	}
+
+	if article.UpdatedAt.IsZero() {
+		article.UpdatedAt = time.Now()
+	}
+	if article.Updated.IsZero() {
+		article.Updated = article.UpdatedAt
+	}
+
+	if err := s.articleRepo.UpdateArticle(ctx, article); err != nil {
+		return err
+	}
+
+	go s.federateArticleUpdate(context.Background(), article)
+
+	return nil
+}
+
+// DeleteArticle deletes an article and federates a Delete activity best-effort.
+func (s *ArticleService) DeleteArticle(ctx context.Context, article *models.Article) error {
+	if article == nil {
+		return errors.New("article is required")
+	}
+	if strings.TrimSpace(article.ID) == "" {
+		return errors.New("article id is required")
+	}
+
+	if err := s.articleRepo.DeleteArticle(ctx, strings.TrimSpace(article.ID)); err != nil {
+		return err
+	}
+
+	go s.federateArticleDeletion(context.Background(), article)
+
+	return nil
+}
+
 func (s *ArticleService) federateArticleCreation(ctx context.Context, article *models.Article) {
-	// 1. Convert to ActivityPub Article
+	s.federateArticleWriteActivity(ctx, article, activitypub.CreateType, "create")
+}
+
+func (s *ArticleService) federateArticleUpdate(ctx context.Context, article *models.Article) {
+	s.federateArticleWriteActivity(ctx, article, activitypub.UpdateType, "update")
+}
+
+func (s *ArticleService) federateArticleWriteActivity(ctx context.Context, article *models.Article, activityType string, label string) {
 	apArticle, err := transformations.StorageArticleToActivityPub(article)
 	if err != nil {
 		s.logger.Error("failed to convert article to AP for federation",
+			zap.String("label", label),
 			zap.String("article_id", article.ID),
 			zap.Error(err))
 		return
 	}
 
-	// 2. Get the actor (author) - GetActor returns *activitypub.Actor directly
 	username := extractUsernameFromActorID(article.AttributedTo)
 	apActor, err := s.actorRepo.GetActor(ctx, username)
 	if err != nil {
 		s.logger.Error("failed to get actor for article federation",
+			zap.String("label", label),
 			zap.String("actor_id", article.AttributedTo),
 			zap.Error(err))
 		return
 	}
 
-	// 3. Create Create Activity
 	now := time.Now()
-	activityID := fmt.Sprintf("%s/activities/create-%d-%s", apActor.ID, now.Unix(), article.ID)
-
+	activityID := fmt.Sprintf("%s/activities/%s-%d-%s", apActor.ID, label, now.Unix(), article.ID)
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
 			Context:   activitypub.Context,
-			Type:      activitypub.CreateType,
+			Type:      activityType,
 			ID:        activityID,
 			To:        apArticle.To,
 			CC:        apArticle.CC,
@@ -101,13 +168,58 @@ func (s *ArticleService) federateArticleCreation(ctx context.Context, article *m
 		Object: apArticle,
 	}
 
-	// 4. Deliver
 	if err := s.federation.DeliverToFollowers(ctx, activity, apActor); err != nil {
-		s.logger.Error("failed to deliver article creation activity",
+		s.logger.Error("failed to deliver article activity",
+			zap.String("label", label),
 			zap.String("activity_id", activityID),
 			zap.Error(err))
 	} else {
-		s.logger.Info("successfully federated article creation",
+		s.logger.Info("successfully federated article activity",
+			zap.String("label", label),
+			zap.String("article_id", article.ID),
+			zap.String("activity_id", activityID))
+	}
+}
+func (s *ArticleService) federateArticleDeletion(ctx context.Context, article *models.Article) {
+	username := extractUsernameFromActorID(article.AttributedTo)
+	apActor, err := s.actorRepo.GetActor(ctx, username)
+	if err != nil {
+		s.logger.Error("failed to get actor for article delete federation",
+			zap.String("actor_id", article.AttributedTo),
+			zap.Error(err))
+		return
+	}
+
+	to := []string{activitypub.PublicAddress}
+	cc := []string{}
+	if apArticle, err := transformations.StorageArticleToActivityPub(article); err == nil {
+		if len(apArticle.To) > 0 {
+			to = apArticle.To
+		}
+		cc = apArticle.CC
+	}
+
+	now := time.Now()
+	activityID := fmt.Sprintf("%s/activities/delete-%d-%s", apActor.ID, now.Unix(), article.ID)
+	activity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context:   activitypub.Context,
+			Type:      activitypub.DeleteType,
+			ID:        activityID,
+			To:        to,
+			CC:        cc,
+			Published: &now,
+		},
+		Actor:  apActor.ID,
+		Object: article.ID,
+	}
+
+	if err := s.federation.DeliverToFollowers(ctx, activity, apActor); err != nil {
+		s.logger.Error("failed to deliver article delete activity",
+			zap.String("activity_id", activityID),
+			zap.Error(err))
+	} else {
+		s.logger.Info("successfully federated article delete",
 			zap.String("article_id", article.ID),
 			zap.String("activity_id", activityID))
 	}
