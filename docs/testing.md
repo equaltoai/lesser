@@ -167,7 +167,7 @@ Artifacts:
 Print a package-level scoreboard (largest uncovered first):
 
 ```bash
-go run ./tools/coverage_scoreboard --profile coverage_pkg.out --top 30
+./lesser coverage scoreboard --profile coverage_pkg.out --top 30
 ```
 
 When pushing coverage up:

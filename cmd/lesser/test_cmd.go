@@ -120,6 +120,10 @@ func runTestCoverage(argv []string) error {
 	if err != nil {
 		return err
 	}
+	goCache, err := ensureGoCacheDir(repoRoot)
+	if err != nil {
+		return err
+	}
 
 	var (
 		profileName string
@@ -146,6 +150,9 @@ func runTestCoverage(argv []string) error {
 	coveragePath := filepath.Join(repoRoot, profileName)
 	return runCommand(context.Background(), "go", []string{"tool", "cover", "-html=" + coveragePath, "-o", htmlName}, execOptions{
 		Dir: repoRoot,
+		Env: map[string]string{
+			"GOCACHE": goCache,
+		},
 	})
 }
 

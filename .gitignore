@@ -60,6 +60,7 @@ node_modules/
 *.out
 coverage.txt
 coverage.html
+coverage_pkg.html
 results.csv
 
 # Temporary files
