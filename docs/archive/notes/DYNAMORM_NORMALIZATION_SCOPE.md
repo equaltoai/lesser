@@ -1,5 +1,7 @@
 # DynamORM Model Normalization Scope
 
+> Archived: historical audit notes; not maintained as current documentation.
+
 ## Executive Summary
 
 **Current State**: 79.6% of model fields (4,033 out of 5,065) lack proper DynamoDB attribute mapping tags, causing unmarshaling failures.

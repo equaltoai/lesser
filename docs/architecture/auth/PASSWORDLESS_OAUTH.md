@@ -438,7 +438,7 @@ pnpm dev
 
 ```bash
 # Terminal 1: Run Lesser API
-make dev
+./lesser dev
 
 # Terminal 2: Run auth UI dev server
 cd auth-ui && pnpm dev
@@ -484,7 +484,7 @@ open "https://dev.lesser.host/oauth/authorize?client_id=XXX&redirect_uri=http://
 ```bash
 # Deploy infrastructure + UI (always deploys dev + live; add --with-staging if desired)
 go build -o lesser ./cmd/lesser
-./lesser up --app lesser --base-domain lesser.host --aws-profile Lesser
+./lesser up --app lesser --base-domain lesser.host --aws-profile Lesser --out ~/.lesser/lesser/lesser.host/bootstrap.json
 
 # Verify auth UI
 curl -I https://dev.lesser.host/auth/login

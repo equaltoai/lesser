@@ -239,7 +239,7 @@ func main() {
 
 func processFile(filename string) (int, error) {
 	// Read the file
-	content, err := os.ReadFile(filename) //nolint:gosec // Controlled input in migration tool
+	content, err := os.ReadFile(filename) // #nosec G304 -- controlled input in migration tool
 	if err != nil {
 		return 0, err
 	}

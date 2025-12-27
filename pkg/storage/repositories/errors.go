@@ -116,9 +116,9 @@ const (
 	EntityRefreshToken             = "refresh token"
 	EntityOAuthClient              = "OAuth client"
 	EntityOAuthConsent             = "OAuth consent"
-	EntityWebAuthnCredential       = "WebAuthn credential" //nolint:gosec // This is just an entity name string, not a credential
+	EntityWebAuthnCredential       = "WebAuthn credential" // #nosec G101 -- entity name string, not a credential
 	EntityWebAuthnChallenge        = "WebAuthn challenge"
-	EntityWalletCredential         = "wallet credential" //nolint:gosec // This is just an entity name string, not a credential
+	EntityWalletCredential         = "wallet credential" // #nosec G101 -- entity name string, not a credential
 	EntityWalletChallenge          = "wallet challenge"
 	EntitySession                  = "session"
 	EntityPasswordReset            = "password reset"

@@ -1,5 +1,7 @@
 # Cost Tracking Findings (Lesser)
 
+> Archived: moved from `docs/planning/` on 2025-12-27. Not actively maintained.
+
 Status: notes (for later implementation work)  
 Last updated: 2025-12-22  
 Scope: current cost-tracking implementation review (no changes proposed here)
@@ -146,4 +148,3 @@ When you’re ready to expand cost tracking during trials:
   - CloudWatch log volume and sampling levels for tracing
 - Add a calibration workflow:
   - Run a controlled load for a fixed period, compare estimates to Cost Explorer, and tune constants/allocators.
-

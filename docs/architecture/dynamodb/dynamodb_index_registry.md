@@ -186,7 +186,7 @@ To make this actionable, the rest of this document treats each `(pkAttr, skAttr)
 
 **CDK provisions it, but code does not (currently) use it**
 - No `gsi9PK/gsi9SK` fields found in `pkg/storage/models/**`.
-- `infra/cdk/config/*.yaml` references “model metadata (using GSI9)”; docs also mention planned usage (`docs/MODERATION_ML_ARCHITECTURE.md:160`).
+- Reference templates mention “model metadata (using GSI9)”; docs also mention planned usage (`docs/architecture/moderation/MODERATION_ML_ARCHITECTURE.md`).
 
 ---
 
@@ -246,15 +246,15 @@ List (string-literal scan):
 
 Pick one of these and enforce it everywhere (CDK + models + repositories):
 
-### Option A: Keep physical `GSI1..GSI9` (least AWS churn)
-- Keep CDK index names as `GSI1..GSI9`.
-- Standardize all model tags and repository `.Index(...)` calls to `GSI<N>` names.
-- Fix helper code that derives attribute names from `IndexName` (e.g., `fmt.Sprintf("%sPK", indexName)`) so `GSI1` maps to `gsi1PK/gsi1SK` (not `GSI1PK/GSI1SK`).
-
-### Option B: Rename physical GSIs to `gsi1..gsi9` (simplest code conventions, requires index recreation)
-- Update CDK to name indexes `gsi1..gsi9` so the index name matches the attribute prefix (`gsi1PK/gsi1SK`).
+### Option A: Keep physical `gsi1..gsi9` (current CDK, least AWS churn)
+- Keep CDK index names as `gsi1..gsi9`.
 - Standardize all model tags and repository `.Index(...)` calls to `gsi<N>` names.
-- This is the direction taken in `docs/dynamodb_index_remediation_plan.md`, but it will force CloudFormation to **recreate** GSIs (and may replace the table depending on settings).
+- Avoid helper code that derives attribute names from `IndexName` (e.g., `fmt.Sprintf("%sPK", indexName)`) unless you explicitly map `gsi1 → gsi1PK/gsi1SK`.
+
+### Option B: Rename physical indexes to `GSI1..GSI9` (requires index recreation)
+- Update CDK to name indexes `GSI1..GSI9`.
+- Standardize all model tags and repository `.Index(...)` calls to `GSI<N>` names.
+- This will force CloudFormation to **recreate** GSIs (and may replace the table depending on settings). See `docs/architecture/dynamodb/dynamodb_index_remediation_plan.md`.
 
 ---
 
@@ -263,12 +263,12 @@ Pick one of these and enforce it everywhere (CDK + models + repositories):
 If you can run AWS CLI locally, paste the `GlobalSecondaryIndexes` block into an issue or doc for reconciliation:
 
 ```bash
-aws dynamodb describe-table --table-name lesser-<environment> \\
+aws dynamodb describe-table --table-name <app>-<stage>-main-table \\
   --query 'Table.GlobalSecondaryIndexes[*].{IndexName:IndexName,KeySchema:KeySchema,Projection:Projection}'
 ```
 
 Also confirm TTL attribute configured on the table:
 
 ```bash
-aws dynamodb describe-time-to-live --table-name lesser-<environment>
+aws dynamodb describe-time-to-live --table-name <app>-<stage>-main-table
 ```

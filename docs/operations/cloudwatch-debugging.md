@@ -8,25 +8,25 @@ This doc captures the basic workflow we use when digging through CloudWatch Logs
    ```bash
    aws sso login --profile Lesser
    ```
-2. **Know the environment mapping** – the Lambda function names follow the pattern `lesser-<environment>-<function>`, e.g.
-   - Development: `lesser-development-api`
-   - Staging/Test: `lesser-staging-api`
-   - Production: `lesser-production-api`
+2. **Know the naming pattern** – Lambda function names follow the pattern `<app>-<stage>-<function>`, e.g.
+   - Dev: `lesser-dev-api`
+   - Staging: `lesser-staging-api`
+   - Live: `lesser-live-api`
 3. **Set the profile per command** or export it once:
    ```bash
    export AWS_PROFILE=Lesser
    export AWS_REGION=us-east-1
    ```
 
-## Quick Tail via Makefile Target
+## Quick Tail via Lesser CLI
 
-For most day-to-day debugging, the `make logs` helper is enough. It handles the correct log group naming based on `ENV`.
+For most day-to-day debugging, the `./lesser logs` helper is enough. It handles the correct log group naming based on `--env`.
 
 ```bash
-make logs FUNCTION=api ENV=dev AWS_PROFILE=Lesser
+./lesser logs --app lesser --function api --env dev --aws-profile Lesser
 ```
 
-Supported `FUNCTION` values match the entries in `LAMBDAS` inside the root `Makefile` (api, graphql, graphql-ws, inbox, etc.).
+Supported `--function` values match the Lambda handler names under `cmd/` (api, graphql, graphql-ws, inbox, etc.).
 
 ## Manual `aws logs tail`
 
@@ -34,16 +34,16 @@ When you need more control (custom time ranges, multiple functions, or piping in
 
 ```bash
 AWS_PROFILE=Lesser aws logs tail \
-  /aws/lambda/lesser-development-api \
+  /aws/lambda/lesser-dev-api \
   --since 15m \
   --format short
 ```
 
 Tips:
-* Swap the log group for GraphQL: `/aws/lambda/lesser-development-graphql`, streaming: `/aws/lambda/lesser-development-streaming`, etc.
+* Swap the log group for GraphQL: `/aws/lambda/lesser-dev-graphql`, streaming: `/aws/lambda/lesser-dev-streaming`, etc.
 * Pipe to `rg`/`jq` to zero in on specific events:
   ```bash
-  AWS_PROFILE=Lesser aws logs tail /aws/lambda/lesser-development-api --since 30m --format short |
+  AWS_PROFILE=Lesser aws logs tail /aws/lambda/lesser-dev-api --since 30m --format short |
     rg "POST /api/v1/apps" -C2
   ```
 
@@ -67,15 +67,15 @@ fields @timestamp, request_id, message
 | limit 100
 ```
 
-Set the log group to `/aws/lambda/lesser-<environment>-api` (or `graphql`, etc.) before executing the query.
+Set the log group to `/aws/lambda/<app>-<stage>-api` (or `graphql`, etc.) before executing the query.
 
 ## Common Patterns
 
 | Scenario | Command/Notes |
 |----------|---------------|
 | Inspect a single request lifecycle | `aws logs tail ... --since 5m --format short` and look for `request_start` / `request_complete` pairs emitted from `cmd/api/middleware.go`. |
-| Trace GraphQL timeline issues | Tail `/aws/lambda/lesser-<env>-graphql` and search for `convertStatusToObject` or `notes/service.go`. |
-| Debug WebSockets | Tail `/aws/lambda/lesser-<env>-graphql-ws` for authentication failures (`websocket connect failed token validation`). |
+| Trace GraphQL timeline issues | Tail `/aws/lambda/<app>-<stage>-graphql` and search for `convertStatusToObject` or `notes/service.go`. |
+| Debug WebSockets | Tail `/aws/lambda/<app>-<stage>-graphql-ws` for authentication failures (`websocket connect failed token validation`). |
 | Review cost/latency metrics | Look for log entries from `repositories/metrics_repository.go` – failures usually indicate DynamoDB throttling or bad IAM permissions. |
 
 ## Alerting & Follow-ups

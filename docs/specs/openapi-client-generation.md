@@ -1,6 +1,7 @@
 # OpenAPI client generation (Greater/TypeScript)
 
-Lesser ships a **file-only** OpenAPI contract at `docs/specs/openapi.yaml`. It is not served by deployed instances; use it for **build-time client generation**.
+Lesser ships a **file-only** OpenAPI contract at `docs/contracts/openapi.yaml`. It is not served by deployed instances;
+use it for **build-time client generation**.
 
 ## Recommended TypeScript approach
 
@@ -11,7 +12,7 @@ The spec also includes a vendor extension `x-oauth-scopes` on authenticated oper
 ### 1) Generate types
 
 ```bash
-npx openapi-typescript ./docs/specs/openapi.yaml -o src/lib/lesser/api/types.ts
+npx openapi-typescript ./docs/contracts/openapi.yaml -o src/lib/lesser/api/types.ts
 ```
 
 This generates a `paths` type you can use for a typed fetch client.
@@ -50,9 +51,9 @@ const { data, error } = await client.GET('/api/v1/instance', { headers: withBear
 
 ## Verification (repo-side)
 
-Keep `docs/specs/openapi.yaml` fresh and strictly typed:
+Keep `docs/contracts/openapi.yaml` fresh and strictly typed:
 
 ```bash
-make generate-openapi
-make verify-openapi-strict
+./lesser generate openapi
+./lesser verify openapi --strict
 ```

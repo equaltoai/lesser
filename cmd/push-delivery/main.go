@@ -661,7 +661,7 @@ func (pdp *PushDeliveryProcessor) encryptPayload(payload []byte, p256dhBase64, a
 	paddedPayload := append([]byte{0, 0}, payload...)
 
 	// Encrypt
-	ciphertext := gcm.Seal(nil, nonce, paddedPayload, nil)
+	ciphertext := gcm.Seal(nil, nonce, paddedPayload, nil) // #nosec G407 -- nonce is randomly generated above (rand.Read)
 
 	// Encode results
 	saltBase64 := base64.RawURLEncoding.EncodeToString(salt)

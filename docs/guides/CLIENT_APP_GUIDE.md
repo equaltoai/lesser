@@ -96,7 +96,8 @@ Recommended defaults (no env vars required):
 
 - API: `window.location.origin` (same domain)
 - Auth: `window.location.origin + "/auth"`
-- WebSocket: `wss://ws.${window.location.host}`
+- WebSocket (GraphQL subscriptions): `wss://ws.${window.location.host}`
+- WebSocket streaming (optional): `wss://ws.${window.location.host}/stream`
 
 ### 3) Compatible with stage isolation
 

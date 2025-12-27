@@ -3,7 +3,7 @@ package services
 import (
 	"bytes"
 	"context"
-	"crypto/md5" //nolint:gosec // MD5 used for file checksums only, not security
+	"crypto/md5" // #nosec G501 -- MD5 used for file checksums only, not security
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -99,7 +99,7 @@ func (fv *FileValidationService) ValidateFile(_ context.Context, data []byte, co
 	}
 
 	// Calculate MD5 hash for file checksum (not for security)
-	hash := md5.Sum(data) //nolint:gosec // MD5 used for file integrity check, not cryptography
+	hash := md5.Sum(data) // #nosec G401 -- MD5 used for file integrity check, not cryptography
 	result.MD5Hash = hex.EncodeToString(hash[:])
 
 	// Validate file size

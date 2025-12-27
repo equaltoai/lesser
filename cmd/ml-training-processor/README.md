@@ -187,7 +187,7 @@ zap.String("request_id", ctx.GetRequestID())
 ### Unit Tests
 
 ```bash
-make test
+./lesser test unit
 # Or directly:
 go test ./cmd/ml-training-processor/...
 ```

@@ -124,6 +124,7 @@ func TestValidatePassword(t *testing.T) {
 }
 
 func TestPasswordStrength(t *testing.T) {
+	cfg := DefaultPasswordStrengthConfig
 	tests := []struct {
 		name          string
 		password      string
@@ -182,7 +183,7 @@ func TestPasswordStrength(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			score := PasswordStrength(tt.password)
+			score := PasswordStrengthWithConfig(tt.password, cfg)
 			if score != tt.expectedScore {
 				t.Errorf("PasswordStrength() = %d, want %d", score, tt.expectedScore)
 			}
@@ -190,6 +191,11 @@ func TestPasswordStrength(t *testing.T) {
 			label := PasswordStrengthLabel(score)
 			if label != tt.expectedLabel {
 				t.Errorf("PasswordStrengthLabel() = %s, want %s", label, tt.expectedLabel)
+			}
+
+			// Ensure the default wrapper matches the configured scoring used in this test.
+			if got := PasswordStrength(tt.password); got != score {
+				t.Errorf("PasswordStrength() wrapper = %d, want %d", got, score)
 			}
 		})
 	}

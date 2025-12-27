@@ -1,0 +1,86 @@
+# Federation Patterns for Lesser
+# Version: 1.0.0
+# Purpose: Train AI on ActivityPub federation behavior, discovery, and operations
+
+context:
+  description: "ActivityPub federation patterns for Lesser (discovery, inbox/outbox, object serving, and delivery pipelines)"
+  canonical_sources:
+    routes: "infra/cdk/inventory/lambdas.go (LambdaInventory HTTPRoutes) + docs/contracts/openapi.yaml"
+    service_logic: "pkg/activitypub/, pkg/services/federation/, pkg/transformations/"
+  principles:
+    - compatibility_first: "Federation must interoperate with Mastodon-compatible implementations"
+    - signed_requests: "Federation writes are authenticated via HTTP signatures"
+    - fail_closed: "Reject invalid signatures / unsupported activities"
+    - empty_when_locked: "Locked instances should generally return empty collections while remaining reachable"
+
+discovery_patterns:
+
+  webfinger:
+    purpose: "Resolve acct: identifiers to actor IDs"
+    key_inputs:
+      - resource: "acct:username@domain"
+    expected_outputs:
+      - subject: "acct:username@domain"
+      - links: "self link to actor (application/activity+json)"
+    troubleshooting:
+      - symptom: "Remote cannot find actor"
+        diagnosis:
+          - "Confirm Route53 + CloudFront mapping for /.well-known/webfinger"
+          - "Check `webfinger` Lambda logs"
+        resolution:
+          - "Fix host/path routing to ensure /.well-known is not swallowed by client routing"
+
+  nodeinfo:
+    purpose: "Expose instance metadata for compatibility"
+    endpoints:
+      - "/.well-known/nodeinfo"
+      - "/nodeinfo/*"
+    behavior_notes:
+      - "Should behave normally even when instance is locked"
+
+core_federation_patterns:
+
+  actor_and_objects:
+    purpose: "Serve ActivityPub actor and object JSON-LD"
+    canonical_storage:
+      actors: "pkg/storage/models/actor.go"
+      objects: "pkg/storage/models/object.go"
+    id_stability:
+      recommendation: "Use immutable IDs for objects and treat slugs as mutable aliases"
+      example: "Articles served under /objects/<uuid> so the ActivityPub id remains stable across slug edits"
+
+  inbox_processing:
+    purpose: "Receive inbound activities and process side-effects asynchronously"
+    pipeline:
+      - "inbox Lambda validates request and stores/queues work"
+      - "processors consume stream/SQS events (e.g., activity-processor, enhanced-federation-processor)"
+    troubleshooting:
+      - symptom: "Remote receives 202/200 but nothing changes"
+        diagnosis:
+          - "Inspect DynamoDB stream processor logs"
+          - "Check DLQ depth"
+        resolution:
+          - "Fix processor failures; replay DLQ if supported"
+
+  outbox_and_delivery:
+    purpose: "Deliver outbound activities to remote inboxes"
+    pipeline:
+      - "outbox produces activities"
+      - "federation-delivery handles fanout + retries"
+      - "federation-tracker and federation-timeseries track health/metrics"
+    retry_policy:
+      approach: "Exponential backoff with health-aware adjustment"
+
+operational_procedures:
+
+  verify_routes_are_deployed:
+    steps:
+      - action: "Check canonical route inventory"
+        command: "sed -n '1,200p' infra/cdk/inventory/lambdas.go"
+      - action: "Check rendered matrix is current"
+        command: "./lesser verify inventory"
+
+  validate_federation_surface:
+    steps:
+      - action: "Confirm OpenAPI reflects REST surface (including federation routes where applicable)"
+        command: "./lesser verify openapi"

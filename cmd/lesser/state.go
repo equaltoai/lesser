@@ -87,7 +87,7 @@ func writeReceipt(path string, receipt *upReceipt) error {
 }
 
 func readReceipt(path string) (*upReceipt, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // CLI reads an operator-provided local receipt path
+	data, err := os.ReadFile(path) // #nosec G304 -- CLI reads an operator-provided local receipt path
 	if err != nil {
 		return nil, fmt.Errorf("read receipt %s: %w", path, err)
 	}

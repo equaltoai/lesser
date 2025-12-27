@@ -2017,7 +2017,7 @@ func (mp *MediaProcessor) handleJobFailure(ctx context.Context, job *models.Medi
 		if retryCount > 10 { // Cap at 1024 seconds (~17 minutes)
 			retryCount = 10
 		}
-		job.ScheduleRetry(time.Second * time.Duration(1<<uint(retryCount))) //nolint:gosec // Bounded to 0-10, safe conversion
+		job.ScheduleRetry(time.Second * time.Duration(1<<uint(retryCount))) // #nosec G115 -- retryCount is clamped to 0-10 above
 		job.Status = models.MediaStatusPending                              // Will be retried
 		mp.logger.Info("Scheduling job retry",
 			zap.String("job_id", job.JobID),
@@ -2066,7 +2066,7 @@ func (mp *MediaProcessor) handleProcessingError(ctx context.Context, job *models
 			if retryCount > 10 { // Cap at 1024 seconds (~17 minutes)
 				retryCount = 10
 			}
-			job.ScheduleRetry(time.Second * time.Duration(1<<uint(retryCount))) //nolint:gosec // Bounded to 0-10, safe conversion
+			job.ScheduleRetry(time.Second * time.Duration(1<<uint(retryCount))) // #nosec G115 -- retryCount is clamped to 0-10 above
 			job.Status = models.MediaStatusPending
 		} else {
 			job.Status = models.MediaStatusFailed

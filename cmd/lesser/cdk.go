@@ -36,7 +36,7 @@ func cdkBootstrap(ctx context.Context, repoRoot string, awsProfile string, accou
 		"--context",
 		"stage=shared",
 	}
-	cmd := exec.CommandContext(ctx, "cdk", args...) //nolint:gosec // tool invocation
+	cmd := exec.CommandContext(ctx, "cdk", args...) // #nosec G204 -- tool invocation, args are not interpreted by a shell
 	cmd.Dir = cdkDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -84,7 +84,7 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 		args = append(args, "--context", "withStaging=true")
 	}
 
-	cmd := exec.CommandContext(ctx, "cdk", args...) //nolint:gosec // tool invocation
+	cmd := exec.CommandContext(ctx, "cdk", args...) // #nosec G204 -- tool invocation, args are not interpreted by a shell
 	cmd.Dir = cdkDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -110,7 +110,7 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 }
 
 func parseCdkOutputs(path string) (map[string]map[string]string, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // file path is derived from repo root
+	data, err := os.ReadFile(path) // #nosec G304 -- file path is derived from repo root
 	if err != nil {
 		return nil, fmt.Errorf("read cdk outputs: %w", err)
 	}

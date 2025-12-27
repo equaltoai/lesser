@@ -422,7 +422,7 @@ type Object {
 - [ ] Backward compatible (no breaking changes)
 
 #### 3.2: Update Generated GraphQL Types
-**Command**: `make generate` or `go run github.com/99designs/gqlgen generate`
+**Command**: `./lesser gqlgen` (or `go run github.com/99designs/gqlgen@v0.17.78 generate`)
 
 **Verification**:
 - [ ] `graph/generated.go` includes new fields
@@ -954,7 +954,7 @@ var (
 - [ ] `docs/architecture.md` - Explain batch engagement pattern
 - [ ] `docs/gsi_usage_guide.md` - Document bookmark dual-write pattern
 - [ ] `README.md` - Update feature list
-- [ ] `RUNBOOK.md` - Add troubleshooting for engagement queries
+- [ ] `runbook.md` - Add troubleshooting for engagement queries
 
 **New Documentation**:
 - [ ] `docs/VIEWER_ENGAGEMENT_PATTERN.md` - Deep dive on implementation

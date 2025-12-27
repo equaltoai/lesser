@@ -103,6 +103,10 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		// Media bucket
 		"S3_BUCKET_NAME": props.MediaBucket.BucketName(),
 
+		// ML moderation configuration (optional at runtime, but the resources always exist)
+		"MODERATION_TRAINING_BUCKET_NAME": props.TrainingBucket.BucketName(),
+		"MODERATION_MODEL_METADATA_TABLE": props.ModelMetadataTable,
+
 		// Secrets
 		"PRIVATE_KEY_SECRET": props.PrivateKey.SecretArn(),
 		"KMS_KEY_ID":         jsii.String(fmt.Sprintf("alias/%s", naming.SharedResourceName(appName, "encryption"))), // KMS key for encrypting actor private keys

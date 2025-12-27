@@ -1,6 +1,6 @@
 # Codex Phase 1 Prompt: Bookmark Model Dual-Write Pattern
 
-You are implementing **Phase 1** of the Viewer Engagement Batch Pattern project. Reference the full plan at `docs/VIEWER_ENGAGEMENT_BATCH_PATTERN.md`.
+You are implementing **Phase 1** of the Viewer Engagement Batch Pattern project. Reference the full plan at `docs/architecture/dynamodb/VIEWER_ENGAGEMENT_BATCH_PATTERN.md`.
 
 ## Context
 We need to modify the Bookmark model to support efficient batch lookups for GraphQL timeline queries. Currently, bookmarks use `SK: {timestamp}#{object_id}`, which prevents BatchGetItem operations since we can't construct the exact key without knowing the timestamp.

@@ -41,8 +41,8 @@ Comprehensive testing guide for Lesser's passwordless OAuth system.
 
 ```bash
 # Terminal 1: Run Lesser API
-cd /home/aron/ai-workspace/codebases/lesser
-make dev
+cd /path/to/lesser
+./lesser dev
 
 # Terminal 2: Run Auth UI (development)
 cd auth-ui
@@ -426,10 +426,10 @@ k6 run oauth-load-test.js
 
 ```bash
 # OAuth endpoint security
-make sec-scan
+./lesser sec-scan
 
 # Check for vulnerabilities
-make vuln-check
+./lesser vuln-check
 ```
 
 ## Monitoring & Debugging
@@ -437,21 +437,22 @@ make vuln-check
 ### CloudWatch Logs
 
 ```bash
-# Auth UI CloudFront logs
-AWS_PROFILE=Lesser aws s3 ls s3://lesser-auth-ui-dev.lesser.host/cloudfront-logs/
+# CloudFront access logs (if enabled)
+# Note: bucket naming is deployment-specific; use your stack outputs / console to find the log bucket.
+AWS_PROFILE=<profile> aws s3 ls s3://<cloudfront-log-bucket>/
 
 # API Lambda logs (OAuth endpoints)
-AWS_PROFILE=Lesser aws logs tail /aws/lambda/lesser-development-api \
+AWS_PROFILE=<profile> aws logs tail /aws/lambda/<app>-dev-api \
   --since 10m \
   --filter-pattern "oauth"
 
 # WebAuthn logs
-AWS_PROFILE=Lesser aws logs tail /aws/lambda/lesser-development-api \
+AWS_PROFILE=<profile> aws logs tail /aws/lambda/<app>-dev-api \
   --since 10m \
   --filter-pattern "webauthn"
 
 # Wallet auth logs
-AWS_PROFILE=Lesser aws logs tail /aws/lambda/lesser-development-api \
+AWS_PROFILE=<profile> aws logs tail /aws/lambda/<app>-dev-api \
   --since 10m \
   --filter-pattern "wallet"
 ```
@@ -482,7 +483,7 @@ AWS_PROFILE=Lesser aws logs tail /aws/lambda/lesser-development-api \
 
 **"route not found: GET /auth/login"**
 - **Cause**: Auth UI not deployed or DNS not configured
-- **Fix**: Ensure the Auth UI assets are deployed under `https://<stage-domain>/auth/*` (see `docs/PASSWORDLESS_OAUTH.md`).
+- **Fix**: Ensure the Auth UI assets are deployed under `https://<stage-domain>/auth/*` (see `docs/architecture/auth/PASSWORDLESS_OAUTH.md`).
 
 **"redirect to external host not allowed: localhost"**
 - **Cause**: Over-strict redirect validation
@@ -510,8 +511,8 @@ Enable verbose logging:
 ```bash
 # Set environment variable on Lambda
 AWS_PROFILE=Lesser aws lambda update-function-configuration \
-  --function-name lesser-development-api \
-  --environment Variables={DEBUG_MODE=true,...}
+  --function-name <app>-dev-api \
+  --environment Variables={DEBUG=true,LOG_LEVEL=debug,...}
 ```
 
 ## Next Steps After Testing

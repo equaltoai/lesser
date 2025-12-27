@@ -1,7 +1,7 @@
 package main
 
 import (
-	"crypto/sha1" //nolint:gosec // used only for deterministic schema component names
+	"crypto/sha1" // #nosec G505 -- used only for deterministic schema component names
 	"fmt"
 	"go/types"
 	"reflect"
@@ -260,7 +260,7 @@ func (b *schemaBuilder) ensureMapSchemaFor(mt *types.Map) (string, error) {
 	}
 
 	if mapName == "" {
-		hash := sha1.Sum([]byte(types.TypeString(mt, func(p *types.Package) string { //nolint:gosec // deterministic schema component names
+		hash := sha1.Sum([]byte(types.TypeString(mt, func(p *types.Package) string { // #nosec G401 -- deterministic schema component names, not cryptographic
 			if p == nil {
 				return ""
 			}

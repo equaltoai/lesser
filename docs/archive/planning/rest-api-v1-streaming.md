@@ -1,5 +1,7 @@
 # API Gateway REST API (v1) + Lambda Response Streaming (SSE)
 
+> Archived: moved from `docs/planning/` on 2025-12-27. Not actively maintained.
+
 Enable long-lived HTTP response streaming (SSE) in Lesser using the new **API Gateway response streaming** capability (REST API v1 only today), plus Lift’s streaming helpers.
 
 ## Implementation Status (current)
@@ -9,7 +11,7 @@ Enable long-lived HTTP response streaming (SSE) in Lesser using the new **API Ga
 - Stream-router fans out events to:
   - existing WebSocket connections (unchanged), and
   - an SSE event log (DynamoDB) using **DynamORM only** (no direct DynamoDB client calls).
-- Broader Lift adoption tracking lives in `docs/planning/lift-adoption-inventory.md`.
+- Broader Lift adoption tracking lives in `docs/archive/planning/lift-adoption-inventory.md`.
 - Instance discovery now returns a canonical streaming host as the **API base URL** (host only, no path), matching Mastodon’s expectations:
   - `cmd/api/lift/misc.go` (`/api/v2/instance` → `configuration.urls.streaming`)
   - `cmd/api/lift/instance.go` (`/api/v1/instance` → `urls.streaming_api`)

@@ -11,7 +11,7 @@ Prefer `lesser up` from the repo root:
 - Deploys the shared stack, then each stage stack
 - Writes a local receipt to `~/.lesser/<app>/<base-domain>/state.json`
 
-See `docs/DEPLOYMENT_GUIDE.md` for the operator workflow.
+See `docs/deployment.md` for the operator workflow.
 
 ## Stack Layout (Deterministic)
 
@@ -40,7 +40,7 @@ The app also expects to run under the CDK CLI so `CDK_DEFAULT_ACCOUNT` and `CDK_
 Stage stacks reference zip artifacts in `bin/*.zip`.
 
 - `lesser up` builds these automatically.
-- If you run `cdk` directly, ensure `bin/*.zip` exists first (for example: `make build-lambdas`).
+- If you run `cdk` directly, ensure `bin/*.zip` exists first (for example: `./lesser build lambdas`).
 
 ## CDK Commands (Infra Contributors)
 
@@ -109,4 +109,4 @@ Each stage stack creates regional ACM certificates validated via Route53:
 ## Troubleshooting
 
 - Hosted zone errors: ensure a public hosted zone exists for `baseDomain`, or pass `--context hostedZoneId=...` (the CLI resolves this automatically).
-- Missing `bin/*.zip`: run `make build-lambdas` or re-run `lesser up --rebuild-lambdas`.
+- Missing `bin/*.zip`: run `./lesser build lambdas` or re-run `lesser up --rebuild-lambdas`.

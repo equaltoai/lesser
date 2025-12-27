@@ -1,244 +1,82 @@
 # Architecture Overview
 
-Lesser is built on AWS serverless services using event-driven architecture and the Lift framework for Lambda patterns.
+Lesser is a serverless ActivityPub implementation built around a small set of AWS primitives:
 
-## System Components
+- CloudFront + Route53 for the stage apex domain (and path routing)
+- AWS Lambda for all compute (HTTP, WebSocket, stream and queue processors)
+- DynamoDB single-table storage (plus GSIs for access patterns)
+- S3 for media and static assets
+- SQS + DynamoDB Streams for async fanout/processing
 
-### Lambda Functions (23 total)
+This page is intentionally high-level; deep dives live under `docs/architecture/`.
 
-#### Core API Functions
-- **api**: Main REST API handler (Mastodon-compatible)
-- **graphql**: GraphQL API with subscriptions
-- **auth**: Authentication and authorization
-- **webfinger**: User discovery endpoint
+## “What runs where?” (inventory)
 
-#### Federation Functions
-- **inbox**: Receives ActivityPub activities
-- **outbox**: Sends ActivityPub activities
-- **federation-delivery**: Delivers activities to remote servers
-- **federation-tracker**: Monitors federation health
-- **actor**: Serves actor profiles
+The canonical Lambda inventory (names, triggers, defaults) is generated here:
 
-#### Processing Functions
-- **note-processor**: Processes posts and interactions
-- **media-processor**: Handles image/video uploads
-- **moderation-processor**: Content moderation pipeline
-- **ai-processor**: AI-powered features (search, moderation)
-- **notification-processor**: Push notification delivery
+- `docs/specs/01-lambda-inventory-matrix.md`
 
-#### Stream Processors
-- **activity-processor**: DynamoDB stream handler
-- **stream-router**: WebSocket message routing
-- **streaming**: WebSocket connection handler
+If you need to understand a specific Lambda’s ownership or trigger wiring, start with that matrix.
 
-#### Utility Functions
-- **search-indexer**: Updates search indices
-- **status-indexer**: Maintains timeline indices
-- **trend-aggregator**: Calculates trending topics
-- **cost-aggregator**: Tracks and aggregates costs
-- **metrics-aggregator**: Collects custom metrics
-- **dlq-processor**: Handles failed messages
-- **websocket-cost-aggregator**: WebSocket usage tracking
+## Top-level request surfaces
 
-### Data Layer
+### REST API (Mastodon-compatible)
 
-#### DynamoDB Design
-Single-table design with composite keys:
+- Stage apex domain: `https://<stage-domain>`
+- Primary paths: `/api/v1/*`, `/api/v2/*`
+- Implementation: `cmd/api`
+- Contract: `docs/contracts/openapi.yaml`
 
-```
-Primary Key Pattern:
-PK: entity#identifier
-SK: type#timestamp or relationship
+### GraphQL
 
-Examples:
-PK: user#alice       SK: profile
-PK: user#alice       SK: post#2024-01-01T12:00:00Z
-PK: post#123         SK: metadata
-PK: timeline#home    SK: post#2024-01-01T12:00:00Z
-```
+- Endpoints: `/api/graphql` and `/graphql`
+- Implementation: `cmd/graphql` (+ `cmd/graphql-ws` for subscriptions)
+- Schema: `docs/contracts/graphql-schema.graphql` (generated from `graph/*.graphql`)
 
-#### Global Secondary Indexes (8)
-1. **GSI1**: Timeline queries (by user and time)
-2. **GSI2**: Federation lookups (by domain)
-3. **GSI3**: Search indices (by content type)
-4. **GSI4**: Notification queries (by recipient)
-5. **GSI5**: Media references (by URL)
-6. **GSI6**: Moderation queue (by status)
-7. **GSI7**: Cost tracking (by resource)
-8. **GSI8**: Analytics queries (by metric type)
+### Streaming
 
-### Storage & CDN
+- SSE: `/api/v1/streaming/*` (`cmd/sse`)
+- WebSocket: API Gateway WebSockets on a `ws.` custom domain (`cmd/streaming`)
 
-#### S3 Buckets
-- **Media Bucket**: User uploads (images, videos, audio)
-- **Static Assets**: Instance branding and static files
-- **Backup Bucket**: Point-in-time backups
+### Federation (ActivityPub)
 
-#### CloudFront Distribution
-- Global edge caching for media
-- Custom domain support
-- Automatic compression
-- Origin shield for cost optimization
+- WebFinger: `/.well-known/webfinger` (`cmd/webfinger`)
+- Actor/object/collections: `cmd/actor`, `cmd/objects`, `cmd/collections`
+- Inbox/outbox: `cmd/inbox`, `cmd/outbox`
 
-### Messaging & Queues
+## Data layer
 
-#### SQS Queues
-- **Federation Queue**: Outbound ActivityPub delivery
-- **Federation DLQ**: Failed federation attempts
-- **Push Queue**: Push notification delivery
-- **Push DLQ**: Failed push notifications
+### DynamoDB
 
-#### EventBridge Rules
-- Cost aggregation (hourly)
-- Trend calculation (15 minutes)
-- Cleanup tasks (daily)
-- Backup operations (configurable)
+Lesser uses a single-table design. Access-pattern guidance and GSI usage live here:
 
-### API Gateway
+- `docs/architecture/dynamodb/gsi_usage_guide.md`
+- `docs/architecture/dynamodb/dynamodb_index_registry.md`
 
-#### HTTP API Configuration
-- Custom domain mapping
-- JWT authorizer
-- Rate limiting via AWS WAF
-- Request/response transformations
+### Media
 
-#### Routes
-- `/api/v1/*` - Mastodon API compatibility
-- `/api/v2/*` - Mastodon v2 endpoints
-- `/graphql` - GraphQL endpoint
-- `/.well-known/*` - Federation discovery
-- `/oauth/*` - OAuth 2.0 flows
-- `/streaming` - WebSocket connections
+Media is stored in S3 and served via CloudFront (provisioned by CDK in `infra/cdk/stacks/`).
 
-## Request Flow
+## Async pipelines
 
-### Typical Status Creation
+Many operations write to DynamoDB and trigger downstream work via:
 
-```mermaid
-sequenceDiagram
-    Client->>API Gateway: POST /api/v1/statuses
-    API Gateway->>Lambda API: Invoke
-    Lambda API->>DynamoDB: Write status
-    DynamoDB->>DynamoDB Stream: Change event
-    DynamoDB Stream->>Activity Processor: Process
-    Activity Processor->>Federation Queue: Queue delivery
-    Activity Processor->>WebSocket: Notify followers
-    Federation Queue->>Federation Delivery: Deliver
-    Federation Delivery->>Remote Server: POST to inbox
-```
+- DynamoDB Streams (fanout/indexing/aggregation)
+- SQS queues (delivery, import/export, processors)
+- EventBridge schedules (periodic aggregation/maintenance)
 
-### Federation Incoming
+These pipelines keep interactive HTTP requests fast and make delivery/retries explicit.
 
-```mermaid
-sequenceDiagram
-    Remote Server->>API Gateway: POST /inbox
-    API Gateway->>Lambda Inbox: Invoke
-    Lambda Inbox->>DynamoDB: Verify actor
-    Lambda Inbox->>DynamoDB: Store activity
-    DynamoDB->>DynamoDB Stream: Change event
-    DynamoDB Stream->>Activity Processor: Process
-    Activity Processor->>Note Processor: Process note
-    Note Processor->>DynamoDB: Update timelines
-    Note Processor->>WebSocket: Notify users
-```
+## Deep dives
 
-## Service Layer Architecture
+- Auth: `docs/architecture/auth/`
+- DynamoDB: `docs/architecture/dynamodb/`
+- CMS: `docs/architecture/cms/`
+- Moderation/ML: `docs/architecture/moderation/`
 
-### Domain Services
-Located in `pkg/services/`:
+## Operational References
 
-- **AccountsService**: User management and profiles
-- **NotesService**: Status creation and interactions
-- **ListsService**: User list management
-- **RelationshipsService**: Follows, blocks, mutes
-- **NotificationsService**: Notification generation
-- **MediaService**: Media upload and processing
-- **FederationService**: ActivityPub operations
-- **SearchService**: Multi-strategy search
-- **ModerationService**: Content moderation
-
-### Repository Pattern
-Located in `pkg/storage/repositories/`:
-
-Each service uses repositories for data access:
-- Type-safe operations via DynamORM
-- Automatic tenant isolation in multi-tenant mode
-- Cost tracking per operation
-- Audit logging
-
-## Security Architecture
-
-### Authentication Methods
-- JWT tokens (primary)
-- OAuth 2.0 (app access)
-- WebAuthn (passwordless)
-- Crypto wallets (Web3)
-
-### Authorization
-- Scope-based permissions
-- Tenant isolation
-- Row-level security in DynamoDB
-
-### Federation Security
-- HTTP signatures for all requests
-- Actor verification
-- Instance-level blocking
-- Rate limiting per instance
-
-## Monitoring & Observability
-
-### CloudWatch Integration
-- Lambda function metrics
-- API Gateway metrics
-- DynamoDB metrics
-- Custom EMF metrics
-
-### Distributed Tracing
-- AWS X-Ray enabled
-- Request ID propagation
-- Performance bottleneck identification
-
-### Cost Tracking
-- Per-operation cost calculation
-- Real-time budget enforcement
-- Cost aggregation and reporting
-- Instance-level cost allocation
-
-## Scalability
-
-### Auto-scaling Components
-- Lambda: 1000 concurrent executions (default)
-- DynamoDB: On-demand or auto-scaling
-- SQS: Unlimited queue depth
-- S3: Unlimited storage
-
-### Performance Optimization
-- Lambda ARM64 architecture (20% better price/performance)
-- DynamoDB DAX (optional caching layer)
-- CloudFront edge caching
-- Connection pooling for external services
-
-### Multi-Tenant Architecture
-- Tenant resolution from subdomain/header
-- Data isolation via partition key prefixing
-- Per-tenant configuration and limits
-- Separate cost tracking per tenant
-
-## Deployment Architecture
-
-### Infrastructure as Code
-- AWS CDK v2 for infrastructure
-- Lift framework for Lambda patterns
-- Environment-specific configurations
-- GitOps deployment pipeline
-
-### Environment Separation
-- Development: Minimal resources, DEBUG logging
-- Staging: Production-like, testing features
-- Production: Full monitoring, high availability
-
-### Zero-Downtime Deployments
-- Lambda versioning and aliases
-- API Gateway stage deployments
-- Database migrations via DynamoDB streams
-- Gradual rollout capabilities
+- Deployment flow: `docs/deployment.md`
+- Configuration knobs: `docs/configuration.md`
+- Cost levers: `docs/cost-optimization.md`
+- Logs + runbooks: `docs/operations/README.md`

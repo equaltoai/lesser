@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -253,13 +254,13 @@ func (s *RealtimeAggregationService) determineRecordType(record events.DynamoDBE
 	if pk, exists := record.Change.Keys["PK"]; exists && pk.String() != "" {
 		pkValue := pk.String()
 
-		if len(pkValue) > 8 && pkValue[:8] == "AI_COST#" {
+		if strings.HasPrefix(pkValue, "AI_COST#") {
 			return "ai_cost"
 		}
-		if len(pkValue) > 7 && pkValue[:7] == "WS_COST#" {
+		if strings.HasPrefix(pkValue, "WS_COST#") {
 			return "websocket_cost"
 		}
-		if len(pkValue) > 9 && pkValue[:9] == "FED_COST#" {
+		if strings.HasPrefix(pkValue, "FED_COST#") {
 			return "federation_cost"
 		}
 	}

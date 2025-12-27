@@ -451,7 +451,7 @@ monitoring_automation:
       action: "Increase reserved concurrency"
       implementation: |
         aws lambda put-function-concurrency \
-          --function-name lesser-api \
+          --function-name <app>-<stage>-api \
           --reserved-concurrent-executions 200
           
     dlq_processing:
@@ -459,7 +459,7 @@ monitoring_automation:
       action: "Trigger DLQ processor"
       implementation: |
         aws lambda invoke \
-          --function-name lesser-dlq-processor \
+          --function-name <app>-<stage>-dlq-processor \
           --invocation-type Event
           
     cost_control:

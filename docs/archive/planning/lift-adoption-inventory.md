@@ -1,5 +1,7 @@
 # Lift Adoption Inventory (Lesser)
 
+> Archived: moved from `docs/planning/` on 2025-12-27. Not actively maintained.
+
 Status: tracked (living doc)  
 Release phase: pre-release (prototype deployment; planned tear-down/rebuild)  
 Last updated: 2025-12-22  

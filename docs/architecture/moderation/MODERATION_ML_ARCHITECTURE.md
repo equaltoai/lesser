@@ -335,14 +335,23 @@ If metrics cannot be fetched, default to 0.0 (indicates incomplete training).
 
 ### Environment Variables
 
-```yaml
-ML_TRAINING_BUCKET: "lesser-training-{env}"
-ML_BEDROCK_REGION: "us-east-1"
-ML_BEDROCK_MODEL_ID: "amazon.titan-text-lite-v1"
-ML_BEDROCK_CUSTOMIZATION_ROLE_ARN: "arn:aws:iam::..."
-ML_POLL_INITIAL_DELAY: "30"     # seconds
-ML_POLL_INTERVAL: "60"          # seconds
-ML_MIN_SAMPLES: "10"            # minimum training samples
+```bash
+# Set by CDK in deployed stacks (stage outputs):
+MODERATION_TRAINING_BUCKET_NAME="" # Output: TrainingBucketName
+MODERATION_MODEL_METADATA_TABLE="" # Output: ModelMetadataTable
+
+# Required for Bedrock customization:
+BEDROCK_CUSTOMIZATION_ROLE_ARN="arn:aws:iam::<account-id>:role/<role-name>"
+BEDROCK_TRAINING_REGION="us-east-1"
+
+# Optional Bedrock controls:
+BEDROCK_INFERENCE_MODEL_ID=""
+BEDROCK_GUARDRAIL_ID=""
+BEDROCK_GUARDRAIL_VERSION="DRAFT"
+
+# Feature flag + optional tenant allowlist:
+MODERATION_ML_ENABLED=false
+MODERATION_ML_TENANTS="" # comma-separated tenant IDs allowed to use ML moderation (empty = all)
 ```
 
 ### IAM Permissions
@@ -447,19 +456,16 @@ mlTrainingProcessor.AddEventSource(lambdaeventsources.NewDynamoEventSource(table
 
 1. **Build binaries**:
    ```bash
-   make build
+   ./lesser build
    ```
 
 2. **Update CDK config** (add `BEDROCK_CUSTOMIZATION_ROLE_ARN`):
-   ```yaml
-   ml:
-     bedrockCustomizationRoleArn: "arn:aws:iam::..."
-   ```
+   Ensure `BEDROCK_CUSTOMIZATION_ROLE_ARN` is available to the Lambdas that invoke Bedrock customization (typically `graphql`).
+   This currently requires updating Lambda environment variables in CDK (see `infra/cdk/constructs/lambda_functions.go`) and redeploying.
 
 3. **Deploy infrastructure**:
    ```bash
-   cd infra/cdk
-   cdk deploy lesser-{env}-stack
+   ./lesser up --app <app> --base-domain <base-domain> --aws-profile <profile> --rebuild-lambdas
    ```
 
 4. **Verify**:
@@ -545,8 +551,8 @@ Key test scenarios:
 ### CloudWatch Logs
 
 Key log groups:
-- `/aws/lambda/lesser-{env}-ml-training-processor`
-- `/aws/lambda/lesser-{env}-graphql`
+- `/aws/lambda/<app>-<stage>-ml-training-processor`
+- `/aws/lambda/<app>-<stage>-graphql`
 
 Key log patterns:
 ```
@@ -579,20 +585,9 @@ Recommended CloudWatch Alarms:
 3. Verify DynamoDB stream is enabled
 
 **Resolution**:
-1. Manually create a poll request:
-   ```python
-   dynamodb.put_item(
-       TableName='lesser-{env}',
-       Item={
-           'PK': {'S': f'MLPOLL#{job_id}'},
-           'SK': {'S': f'REQUEST#{int(time.time())}'},
-           'Type': {'S': 'ML_POLL_REQUEST'},
-           'JobID': {'S': job_id},
-           'RequestTime': {'S': datetime.utcnow().isoformat()},
-           'TTL': {'N': str(int(time.time()) + 172800)}
-       }
-   )
-   ```
+1. Tail `ml-training-processor` logs and confirm it is receiving DynamoDB stream events for poll requests.
+2. Re-run the training mutation to force a new poll request.
+3. If you must force a poll, create an `MLPollRequest` via the repository/service layer (see `pkg/storage/models/moderation_ml.go` for key/attribute conventions) rather than writing raw DynamoDB items.
 
 ### Training Fails with "Insufficient Samples"
 

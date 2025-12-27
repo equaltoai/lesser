@@ -181,7 +181,7 @@ func fatal(err error) {
 func parseOptions() runOptions {
 	var opts runOptions
 
-	flag.StringVar(&opts.SpecPath, "spec", "docs/specs/openapi.yaml", "path to OpenAPI spec yaml")
+	flag.StringVar(&opts.SpecPath, "spec", "docs/contracts/openapi.yaml", "path to OpenAPI spec yaml")
 	flag.BoolVar(&opts.Write, "write", false, "update the spec file in place")
 	flag.BoolVar(&opts.Check, "check", false, "verify spec matches current routes")
 	flag.BoolVar(&opts.Strict, "strict", false, "strict verification: ensure schemas, security, and inferred query params are complete and spec is up-to-date")
@@ -202,7 +202,7 @@ func run(repoRoot string, opts runOptions) error {
 
 	var originalSpecBytes []byte
 	if opts.Strict {
-		data, err := os.ReadFile(absSpec) //nolint:gosec // local spec path
+		data, err := os.ReadFile(absSpec) // #nosec G304 -- local spec path
 		if err != nil {
 			return fmt.Errorf("read %s: %w", absSpec, err)
 		}
@@ -250,13 +250,13 @@ func run(repoRoot string, opts runOptions) error {
 }
 
 func readOrInitSpec(path string, allowInit bool) (*openAPISpec, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path is an operator-supplied local file
+	data, err := os.ReadFile(path) // #nosec G304 -- path is an operator-supplied local file
 	if err != nil {
 		if os.IsNotExist(err) && allowInit {
 			return defaultSpec(), nil
 		}
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("read %s: missing file; run `make generate-openapi`", path)
+			return nil, fmt.Errorf("read %s: missing file; run `lesser generate openapi`", path)
 		}
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
@@ -1168,7 +1168,7 @@ func finalizeRouteAgg(routesByKey map[string]*routeAgg) []routeDef {
 
 func extractRoutesFromSourceFile(repoRoot, relPath, lambda string, auth authMode) ([]routeDef, error) {
 	absPath := filepath.Join(repoRoot, filepath.FromSlash(relPath))
-	data, err := os.ReadFile(absPath) //nolint:gosec // local source file path
+	data, err := os.ReadFile(absPath) // #nosec G304 -- local source file path
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", absPath, err)
 	}

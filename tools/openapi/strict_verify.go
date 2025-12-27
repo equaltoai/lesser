@@ -45,7 +45,7 @@ func verifyStrictOpenAPI(specPath string, spec *openAPISpec, routes []routeDef, 
 	if err != nil {
 		problems = append(problems, err.Error())
 	} else if !bytes.Equal(bytes.TrimSpace(originalSpecBytes), bytes.TrimSpace(expectedSpecBytes)) {
-		problems = append(problems, fmt.Sprintf("OpenAPI spec is out-of-date: run `make generate-openapi` (%s)", specPath))
+		problems = append(problems, fmt.Sprintf("OpenAPI spec is out-of-date: run `lesser generate openapi` (%s)", specPath))
 	}
 
 	if len(problems) > 0 {

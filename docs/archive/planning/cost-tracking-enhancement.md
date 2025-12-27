@@ -1,8 +1,10 @@
 # Cost Tracking Enhancement (Design + Requirements)
 
+> Archived: moved from `docs/planning/` on 2025-12-27. Not actively maintained.
+
 Status: draft  
 Last updated: 2025-12-22  
-Related: `docs/planning/cost-tracking-findings.md`
+Related: `docs/archive/planning/cost-tracking-findings.md`
 
 ## Intent
 

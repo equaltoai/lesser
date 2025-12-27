@@ -85,7 +85,7 @@ func buildLambdaBinary(repoRoot string, cacheDir string, lambdaName string, outP
 	}
 	args = append(args, "./"+filepath.Join("cmd", lambdaName))
 
-	cmd := exec.Command("go", args...) //nolint:gosec // tool invocation
+	cmd := exec.Command("go", args...) // #nosec G204 -- tool invocation, args are not interpreted by a shell
 	cmd.Dir = repoRoot
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -103,7 +103,7 @@ func buildLambdaBinary(repoRoot string, cacheDir string, lambdaName string, outP
 }
 
 func zipSingleFile(zipPath string, entryName string, filePath string) error {
-	content, err := os.ReadFile(filePath) //nolint:gosec // file path is derived from repo root
+	content, err := os.ReadFile(filePath) // #nosec G304 -- file path is derived from repo root
 	if err != nil {
 		return fmt.Errorf("read built binary: %w", err)
 	}
@@ -113,7 +113,7 @@ func zipSingleFile(zipPath string, entryName string, filePath string) error {
 		return err
 	}
 
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) //nolint:gosec // file path is derived from repo root
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) // #nosec G304 -- file path is derived from repo root
 	if err != nil {
 		return fmt.Errorf("create zip: %w", err)
 	}
@@ -144,7 +144,7 @@ func zipSingleFile(zipPath string, entryName string, filePath string) error {
 
 func loadLambdaNamesFromInventory(repoRoot string) ([]string, error) {
 	path := filepath.Join(repoRoot, "infra", "cdk", "inventory", "lambdas.go")
-	data, err := os.ReadFile(path) //nolint:gosec // file path is derived from repo root
+	data, err := os.ReadFile(path) // #nosec G304 -- file path is derived from repo root
 	if err != nil {
 		return nil, fmt.Errorf("read lambda inventory: %w", err)
 	}

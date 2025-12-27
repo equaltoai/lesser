@@ -45,7 +45,7 @@ const (
 	VoteBaseKey   = "VOTE#"
 
 	// WebAuthn keys
-	WebAuthnCredentialKey = "WEBAUTHN_CREDENTIAL#%s" //nolint:gosec // This is a DynamoDB key pattern, not a credential
+	WebAuthnCredentialKey = "WEBAUTHN_CREDENTIAL#%s" // #nosec G101 -- DynamoDB key pattern, not a credential
 
 	// Search keys
 	UsernameSearchKey = "USERNAME_SEARCH#%s"

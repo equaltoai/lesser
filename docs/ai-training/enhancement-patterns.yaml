@@ -72,7 +72,7 @@ feature_addition_patterns:
     pattern_name: "Add GraphQL Query/Mutation"
     
     steps:
-      - location: "graph/schema.graphql"
+      - location: "graph/*.graphql (see gqlgen.yml)"
         action: "Update schema"
         example: |
           type Query {
@@ -354,7 +354,7 @@ migration_patterns:
     example: |
       func migrateDat() error {
           paginator := dynamodb.NewScanPaginator(client, &dynamodb.ScanInput{
-              TableName: aws.String("lesser-main"),
+              TableName: aws.String("<app>-<stage>-main-table"),
               FilterExpression: aws.String("begins_with(PK, :prefix)"),
           })
           
@@ -429,7 +429,7 @@ performance_optimization_patterns:
               
               _, err := client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
                   RequestItems: map[string][]types.WriteRequest{
-                      "lesser-main": writeRequests,
+                      "<app>-<stage>-main-table": writeRequests,
                   },
               })
           }

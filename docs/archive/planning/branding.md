@@ -1,3 +1,5 @@
+> Archived: moved from `docs/planning/` on 2025-12-27. Not actively maintained.
+
 lesser — Design Specification v0.1
 1. Purpose & Tone
 lesser is server-first, protocol-oriented infrastructure.

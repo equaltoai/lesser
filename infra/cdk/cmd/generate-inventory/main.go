@@ -15,7 +15,7 @@ import (
 const (
 	startMarker   = "<!-- INVENTORY_TABLE_START -->"
 	endMarker     = "<!-- INVENTORY_TABLE_END -->"
-	preamble      = "> This table is generated from `infra/cdk/inventory/LambdaInventory` via `cd infra/cdk && go run ./cmd/generate-inventory`. Do not edit the table manually; update the inventory and re-run the generator."
+	preamble      = "> This table is generated from `infra/cdk/inventory/LambdaInventory` via `./lesser generate inventory`. Do not edit the table manually; update the inventory and re-run the generator."
 	targetRelPath = "../../docs/specs/01-lambda-inventory-matrix.md"
 )
 
@@ -41,7 +41,7 @@ func main() {
 }
 
 func writeInventoryTable(targetPath string, checkOnly bool) error {
-	content, err := os.ReadFile(targetPath)
+	content, err := os.ReadFile(targetPath) // #nosec G304 -- local doc generation tool reads a developer-supplied path
 	if err != nil {
 		return fmt.Errorf("read target file %s: %w", targetPath, err)
 	}
@@ -59,9 +59,10 @@ func writeInventoryTable(targetPath string, checkOnly bool) error {
 			fmt.Println("inventory doc is up to date")
 			return nil
 		}
-		return fmt.Errorf("inventory doc is stale; run 'cd infra/cdk && go run ./cmd/generate-inventory'")
+		return fmt.Errorf("inventory doc is stale; run './lesser generate inventory'")
 	}
 
+	// #nosec G306 -- doc output is not sensitive
 	if err := os.WriteFile(targetPath, []byte(updated), 0o644); err != nil {
 		return fmt.Errorf("write target file %s: %w", targetPath, err)
 	}

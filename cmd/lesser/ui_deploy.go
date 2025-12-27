@@ -112,7 +112,7 @@ func buildAuthUI(repoRoot string) (string, error) {
 
 func invalidateFrontend(ctx context.Context, client *cloudfront.Client, distributionID string) error {
 	paths := []string{"/auth", "/auth/*", "/l", "/l/*"}
-	quantity := int32(len(paths)) //nolint:gosec // safe: constant small slice for invalidation paths
+	quantity := int32(len(paths)) // #nosec G115 -- len(paths) is bounded by static slice
 
 	_, err := client.CreateInvalidation(ctx, &cloudfront.CreateInvalidationInput{
 		DistributionId: aws.String(distributionID),

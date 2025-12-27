@@ -1,16 +1,28 @@
-# Deployment (Quick Start)
+# Deployment (`lesser up`)
 
-For most operators, deployment is done via the `lesser` CLI (`lesser up`) instead of invoking CDK directly.
+<!-- AI Training: Operator deployment workflow for Lesser -->
 
-See `docs/DEPLOYMENT_GUIDE.md` for the full operator workflow; this file is a short reference.
+Deployments are managed with AWS CDK (CloudFormation) under `infra/cdk/`, but the operator interface is the `lesser`
+CLI.
 
 ## Prerequisites
 
 - AWS CLI configured (and logged in for your chosen profile)
 - AWS CDK v2 installed and on `PATH` (`npm install -g aws-cdk`)
 - Go 1.25+
+- `pnpm` installed (for building `auth-ui/` during deploy)
 - A public Route53 hosted zone that exactly matches your `base-domain` (for example: `example.com`)
 - An AWS profile with a default region configured (the CLI derives region from the profile)
+
+## What `lesser up` does
+
+At a high level, `./lesser up`:
+
+- Builds Lambda zip artifacts (into `bin/`)
+- Ensures CDK bootstrap exists for the target account/region
+- Deploys the shared stack (`<app>-shared`)
+- Deploys stage stacks (`<app>-dev`, `<app>-live`, optional `<app>-staging`)
+- Writes local receipts under `~/.lesser/<app>/<base-domain>/`
 
 ## Deploy
 
@@ -26,17 +38,46 @@ Deploy **dev + live** (and optionally **staging**):
 ./lesser up \
   --app my-lesser \
   --base-domain example.com \
-  --aws-profile Penny
+  --aws-profile Penny \
+  --out ~/.lesser/my-lesser/example.com/bootstrap.json
 ```
 
 Bootstrap wallet key material:
 
 - `lesser up` prints a 24-word Ethereum mnemonic **once** when it is generated.
-- Pass `--out <path>` to also write it to disk (the file is created with `0600` permissions).
+- On first deploy, `--out <path>` is required so you don’t lose the mnemonic (the file is created with `0600` permissions).
+- Recommended: `~/.lesser/<app>/<base-domain>/bootstrap.json`
 
 Local receipt (non-secret):
 
 - `~/.lesser/<app>/<base-domain>/state.json`
+
+## What gets deployed
+
+Stacks:
+
+- Shared stack (once per app/account/region): `<app>-shared`
+- Stage stacks: `<app>-dev`, `<app>-live` (and `<app>-staging` if enabled)
+
+Stage domains:
+
+- dev: `dev.<base-domain>`
+- staging (optional): `staging.<base-domain>`
+- live: `<base-domain>`
+
+Bootstrap state:
+
+- Each stage’s DynamoDB table gets an `InstanceState` record set to locked, with the bootstrap wallet address recorded.
+
+## Updating an existing deployment
+
+✅ CORRECT: rerun `./lesser up` with the same `--app` + `--base-domain` to apply changes.
+
+If you changed Lambda code and want to force refresh zip artifacts:
+
+```bash
+./lesser up --app <app> --base-domain <base-domain> --aws-profile <profile> --rebuild-lambdas
+```
 
 ## Verify “locked but reachable”
 
@@ -50,12 +91,16 @@ curl -s https://dev.example.com/api/v1/timelines/public | jq .
 
 ## Activation
 
-The setup wizard UI is out of scope for this repo work; the backend contract lives under `https://<stage-domain>/setup/*` and will be consumed by a separate Auth UI project.
+Activation is done via the setup wizard UI at `https://<stage-domain>/auth/setup`, which talks to backend endpoints
+under `https://<stage-domain>/setup/*`.
 
 ### Build Failures
 ```bash
-# Ensure correct architecture
-GOOS=linux GOARCH=arm64 go build
+# Rebuild Lambda zip artifacts
+./lesser build lambdas --rebuild
+
+# Or rebuild the full deployment payload
+./lesser build
 ```
 
 ### Certificate Issues
@@ -67,8 +112,26 @@ GOOS=linux GOARCH=arm64 go build
 - Verify CloudFront distribution status
 - Allow up to 15 minutes for propagation
 
+## Destroying a deployment (manual, use caution)
+
+There is currently no `lesser down` command.
+
+⚠️ WARNING: destroying stacks deletes infrastructure. DynamoDB deletion protection and PITR may prevent destroy (by
+design). Review `docs/backup-recovery.md` before destructive actions.
+
+From `infra/cdk/`:
+
+```bash
+AWS_PROFILE=<profile> cdk destroy <app>-dev <app>-live <app>-shared --force
+```
+
 ## Next Steps
 
 - [Configuration Reference](configuration.md) - Customize your instance
 - [Monitoring Guide](monitoring.md) - Set up comprehensive monitoring
 - [Federation Guide](federation.md) - Connect to the Fediverse
+
+## References
+
+- `infra/cdk/README.md` (CDK details)
+- `docs/architecture/auth/OWNER_BOOTSTRAP_REQUIREMENTS.md` (bootstrap/lock semantics)

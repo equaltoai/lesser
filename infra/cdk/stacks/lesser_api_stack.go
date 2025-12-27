@@ -811,8 +811,8 @@ func (s *LesserApiStack) createOutputs() {
 }
 
 func loadEnvironmentConfig(environment string) map[string]interface{} {
-	// Default configuration used when environment YAML config isn't loaded.
-	// Prefer `infra/cdk/config/*.yaml` for canonical environment settings.
+	// Default environment tuning used by the CDK app.
+	// Note: `infra/cdk/config/` contains reference templates and is not loaded at deploy time.
 	config := map[string]interface{}{
 		"logLevel":   "INFO",
 		"memorySize": 3008.0, // ARM64 Lambda optimized default

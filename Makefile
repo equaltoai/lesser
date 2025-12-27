@@ -1,6 +1,6 @@
 SHELL := bash
 
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials owner-bootstrap seed-and-validate clear-data generate-inventory generate-graphql-coverage generate-openapi verify-inventory verify-lambda-set verify-docs verify-graphql-coverage verify-openapi verify-openapi-strict verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify schema export-schema gqlgen
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials owner-bootstrap seed-and-validate clear-data generate-inventory generate-graphql-coverage generate-openapi verify-inventory verify-lambda-set verify-docs verify-ai-training verify-schema verify-graphql-coverage verify-openapi verify-openapi-strict verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify schema export-schema gqlgen
 
 # =============================================================================
 # CONFIGURATION
@@ -187,8 +187,9 @@ generate-graphql-coverage:
 	@mkdir -p tmp/go-cache
 	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/graphql_coverage --write
 
-## Generate docs/specs/openapi.yaml from cmd/api route configuration
+## Generate docs/contracts/openapi.yaml from cmd/api route configuration
 generate-openapi:
+	@mkdir -p docs/contracts
 	@mkdir -p tmp/go-cache
 	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/openapi --write
 
@@ -204,6 +205,14 @@ verify-lambda-set:
 ## Verify docs (Spec 07 R7: Pulumi ban + Lambda count claims)
 verify-docs:
 	@bash scripts/verify_docs.sh
+
+## Verify AI training docs are complete and current
+verify-ai-training:
+	@bash scripts/verify_ai_training.sh
+
+## Verify published GraphQL schema is up to date
+verify-schema:
+	@bash scripts/verify_schema.sh
 
 ## Verify GraphQL coverage inventory is in sync with configured routes + schema
 verify-graphql-coverage:
@@ -246,10 +255,10 @@ smoke-federation:
 	@bash scripts/smoke_federation.sh
 
 ## Combined verification wrapper
-verify: verify-lambda-set verify-inventory verify-docs verify-graphql-coverage verify-openapi verify-unit
+verify: verify-lambda-set verify-inventory verify-docs verify-ai-training verify-schema verify-graphql-coverage verify-openapi verify-unit
 	@if [ "$${VERIFY_SMOKE:-0}" = "1" ]; then $(MAKE) verify-smoke; fi
 	@if [ "$${VERIFY_CDK:-0}" = "1" ]; then $(MAKE) verify-cdk; fi
-	@echo "✓ verify complete (lambda set, inventory, docs, graphql coverage, unit tests)"
+	@echo "✓ verify complete (lambda set, inventory, docs, ai-training docs, graphql coverage, unit tests)"
 
 # =============================================================================
 # CDK DEPLOYMENT TARGETS
@@ -864,8 +873,8 @@ gqlgen:
 export-schema:
 	@echo "Exporting combined GraphQL schema..."
 	@$(MAKE) schema
-	@cp graph/schema.graphql schema.graphql
-	@echo "✓ Schema exported to schema.graphql (source: graph/schema.graphql)"
+	@cp docs/contracts/graphql-schema.graphql schema.graphql
+	@echo "✓ Schema exported to schema.graphql (source: docs/contracts/graphql-schema.graphql)"
 	@wc -l schema.graphql | awk '{print "  Total lines: " $$1}'
 
 ## Build auth UI (passwordless OAuth pages)

@@ -79,29 +79,21 @@ Lesser provides data, not presentation:
 
 ### Instance Configuration
 
-```yaml
-# infra/cdk/config/production.yaml
-instance:
-  mode: hybrid                    # social | cms | hybrid
-  features:
-    socialPosting: true           # Enable Note creation
-    longFormPublishing: true      # Enable Article creation
-    scheduledPublishing: true     # Enable scheduled posts
-    draftSystem: true             # Enable draft storage
-    revisionHistory: true         # Enable version tracking
-    editorialWorkflow: false      # Future: approval chains
+```bash
+# Runtime configuration (env vars)
+INSTANCE_MODE=hybrid # social|cms|hybrid
 
-  cms:
-    defaultContentType: article   # article | note
-    requireFeaturedImage: false
-    enableSeries: true
-    enableCategories: true
-    maxRevisions: 50
-    
-  social:
-    maxStatusChars: 5000
-    enablePolls: true
-    enableQuotes: true
+# CMS feature toggles (default: enabled when INSTANCE_MODE is cms/hybrid)
+CMS_LONG_FORM_PUBLISHING_ENABLED=true
+CMS_DRAFT_SYSTEM_ENABLED=true
+CMS_REVISION_HISTORY_ENABLED=true
+CMS_SCHEDULED_PUBLISHING_ENABLED=true
+CMS_SERIES_ENABLED=true
+CMS_CATEGORIES_ENABLED=true
+CMS_MAX_REVISIONS_PER_OBJECT=50
+
+# Social limits
+MAX_STATUS_CHARS=5000
 ```
 
 ### Content Type Hierarchy

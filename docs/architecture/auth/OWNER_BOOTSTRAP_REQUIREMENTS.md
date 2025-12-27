@@ -32,7 +32,8 @@ Behavior while locked:
 
 ## Setup API Contract
 
-The setup wizard UI will live under `https://<stage-domain>/auth/setup` in a separate project, but the backend contract is served by the stage apex domain:
+The setup wizard UI is served under `https://<stage-domain>/auth/setup`, and the backend contract is served by the stage
+apex domain:
 
 - Base: `https://<stage-domain>/setup/*`
 - `GET /setup/status`
@@ -54,5 +55,4 @@ The setup wizard UI will live under `https://<stage-domain>/auth/setup` in a sep
 
 ## References
 
-- `docs/specs/LESSER_UP_CLI.md`
-- `docs/DEPLOYMENT_GUIDE.md`
+- `docs/deployment.md`

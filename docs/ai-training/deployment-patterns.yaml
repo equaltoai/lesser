@@ -3,11 +3,11 @@
 # Purpose: Train AI systems on Lesser deployment procedures
 
 context:
-  description: "Lesser deployment patterns using AWS CDK and Lift framework"
+  description: "Lesser deployment patterns using the `lesser` CLI (CDK under the hood) and Lift runtime conventions"
   prerequisites:
     - aws_cli_configured: true
     - cdk_version: ">=2.0.0"
-    - go_version: ">=1.24"
+    - go_version: ">=1.25"
     - architecture: "arm64 preferred for cost optimization"
   
   key_concepts:
@@ -20,83 +20,49 @@ deployment_patterns:
   
   initial_setup:
     pattern_name: "First Time Deployment"
-    when_to_use: "Setting up Lesser for the first time"
+    when_to_use: "Deploying a new Lesser instance (dev + live, optional staging)"
     steps:
-      - action: "Clone repository"
-        command: "git clone https://github.com/equaltoai/lesser.git && cd lesser"
-        validation: "ls -la cmd/ pkg/ infra/"
+      - action: "Confirm AWS identity"
+        command: "AWS_PROFILE=<profile> aws sts get-caller-identity"
+        validation: "Account + ARN are returned"
         
-      - action: "Build Lambda functions"
-        command: "make build-lambdas"
-        validation: "ls -la bin/ | grep -E '(api|graphql|inbox|outbox)'"
-        expected_output: "23 binary files in bin/ directory"
+      - action: "Build operator CLI (required)"
+        command: "go build -o lesser ./cmd/lesser"
+        validation: "./lesser help"
         
-      - action: "Bootstrap CDK"
-        command: "cd infra/cdk && cdk bootstrap aws://ACCOUNT-ID/REGION"
-        validation: "aws cloudformation describe-stacks --stack-name CDKToolkit"
-        note: "Only needed once per account/region"
-        
-      - action: "Deploy development environment"
-        command: "cdk deploy --all"
-        validation: "aws cloudformation describe-stacks --stack-name LesserApiStack-development"
-        duration: "5-10 minutes"
+      - action: "Deploy (creates dev + live; staging optional)"
+        command: "./lesser up --app <app-slug> --base-domain <domain> --aws-profile <profile> --out <path>"
+        note: "The CLI builds Lambda zips and runs CDK bootstrap automatically. Use --with-staging to deploy staging; --rebuild-lambdas forces a rebuild"
+        duration: "10-25 minutes (cold deploys can take longer)"
 
   environment_specific_deployment:
     pattern_name: "Environment-Based Deployment"
     environments:
-      development:
-        context_flags:
-          environment: "development"
-          memory_size: 512
-          log_level: "DEBUG"
-        command: "cdk deploy --all --context environment=development"
-        cost_estimate: "$5/month"
+      dev_and_live:
+        description: "Always deployed together for a new instance"
+        domain_pattern:
+          dev: "dev.<base-domain>"
+          live: "<base-domain>"
+        command: "./lesser up --app <app-slug> --base-domain <base-domain> --aws-profile <profile> --out <path>"
+        outputs: "CLI prints instance URLs and writes print-once secrets to --out"
         
-      staging:
-        context_flags:
-          environment: "staging"
-          memory_size: 1024
-          log_level: "INFO"
-          domain: "staging.domain.com"
-        command: |
-          cdk deploy --all \
-            --context environment=staging \
-            --context domain=staging.domain.com
-        cost_estimate: "$20-50/month"
-        
-      production:
-        context_flags:
-          environment: "production"
-          memory_size: 3008
-          log_level: "INFO"
-          domain: "domain.com"
-          certificate_arn: "required"
-          jwt_secret: "required"
-        command: |
-          cdk deploy --all \
-            --context environment=production \
-            --context domain=domain.com \
-            --context certificateArn=arn:aws:acm:region:account:certificate/id \
-            --context jwtSecret=secure-random-secret \
-            --require-approval broadening
-        cost_estimate: "$50-500/month based on usage"
-        pre_requisites:
-          - "ACM certificate validated in us-east-1"
-          - "Domain DNS configured"
-          - "JWT secret generated"
+      staging_optional:
+        description: "Optional staging stage for community testing"
+        domain_pattern: "staging.<base-domain>"
+        command: "./lesser up --with-staging --app <app-slug> --base-domain <base-domain> --aws-profile <profile> --out <path>"
 
   lambda_build_patterns:
     pattern_name: "Building Lambda Functions"
     
     build_all:
-      command: "make build-lambdas"
-      description: "Build all Lambda functions"
+      command: "./lesser build lambdas"
+      description: "Build all Lambda functions (repo contributor workflow; operators normally rely on `lesser up`)"
       parallel: true
       architecture: "GOOS=linux GOARCH=arm64"
       
     build_specific:
-      command: "cd cmd/api && GOOS=linux GOARCH=arm64 go build -o ../../bin/api"
-      description: "Build single Lambda function"
+      command: "./lesser build lambda api"
+      description: "Build a single Lambda zip artifact"
       
     build_with_tags:
       command: "go build -tags lambda.norpc -o bin/function"
@@ -111,45 +77,37 @@ deployment_patterns:
     pattern_name: "CDK Stack Operations"
     
     list_stacks:
-      command: "cdk list"
+      command: "cd infra/cdk && AWS_PROFILE=<profile> cdk list --context app=<app> --context baseDomain=<base-domain> --context hostedZoneId=<hosted-zone-id>"
       expected_output: |
-        LesserApiStack-development
-        LesserMonitoringStack-development
-        LesserSecurityStack-development
+        <app>-shared
+        <app>-dev
+        <app>-live
+        # (optional) <app>-staging when withStaging=true
         
     diff_changes:
-      command: "cdk diff --context environment=production"
+      command: "cd infra/cdk && AWS_PROFILE=<profile> cdk diff --all --context app=<app> --context baseDomain=<base-domain> --context hostedZoneId=<hosted-zone-id> --context stage=live"
       description: "Preview changes before deployment"
       when_to_use: "Before any production deployment"
       
     deploy_specific_stack:
-      command: "cdk deploy LesserApiStack-production"
-      description: "Deploy only specific stack"
+      command: "cd infra/cdk && AWS_PROFILE=<profile> cdk deploy <app>-live --require-approval never --context app=<app> --context baseDomain=<base-domain> --context hostedZoneId=<hosted-zone-id> --context stage=live"
+      description: "Deploy a single stage stack (example: live)"
       
     destroy_stack:
-      command: "cdk destroy --all --context environment=development"
+      command: "cd infra/cdk && AWS_PROFILE=<profile> cdk destroy <app>-dev --force --context app=<app> --context baseDomain=<base-domain> --context hostedZoneId=<hosted-zone-id> --context stage=dev"
       warning: "Deletes all resources including data"
       confirmation_required: true
 
   certificate_management:
     pattern_name: "SSL Certificate Setup"
-    
-    request_certificate:
-      aws_cli: |
-        aws acm request-certificate \
-          --domain-name domain.com \
-          --subject-alternative-names "*.domain.com" \
-          --validation-method DNS \
-          --region us-east-1
-      validation: "DNS records must be added to domain"
-      wait_time: "5-30 minutes for validation"
-      
-    get_certificate_arn:
-      command: |
-        aws acm list-certificates --region us-east-1 \
-          --query "CertificateSummaryList[?DomainName=='domain.com'].CertificateArn" \
-          --output text
-      use_in_deployment: "--context certificateArn=ARN_VALUE"
+    approach: "Stage stacks create wildcard certificates per stage and validate via Route53 in-account"
+    wildcard_coverage:
+      - "api.<stage-domain>"
+      - "ws.<stage-domain>"
+      - "<stage-domain> (client/apex when applicable)"
+    requirements:
+      - "Route53 hosted zone for <base-domain> must exist in the same AWS account"
+      - "If hosted zone is not found, deployment must fail fast"
 
   domain_configuration:
     pattern_name: "Custom Domain Setup"
@@ -159,10 +117,8 @@ deployment_patterns:
       description: "CDK creates CloudFront distribution automatically"
       
     route53_setup:
-      manual_steps:
-        - "Get CloudFront distribution domain"
-        - "Create CNAME record pointing to CloudFront"
-        - "Wait for DNS propagation (5-15 minutes)"
+      automatic: true
+      description: "Stage stacks own required Route53 records for API/WS/Auth/Client domains"
         
     api_gateway_domain:
       automatic: true
@@ -173,10 +129,9 @@ rollback_procedures:
   lambda_rollback:
     pattern_name: "Lambda Function Rollback"
     steps:
-      - "Identify previous version in CloudFormation"
-      - "Update Lambda alias to point to previous version"
-      - "Or redeploy with previous code"
-    command: "cdk deploy --rollback"
+      - "Redeploy the previous git SHA/tag via the Lesser CLI"
+      - "If CloudFormation is mid-update, cancel the stack update before retrying"
+    command: "git checkout <tag> && ./lesser up --app <app> --base-domain <base-domain> --aws-profile <profile> --rebuild-lambdas"
     
   database_rollback:
     pattern_name: "DynamoDB Rollback"
@@ -188,16 +143,16 @@ rollback_procedures:
       
   full_rollback:
     pattern_name: "Complete Environment Rollback"
-    command: "aws cloudformation cancel-update-stack --stack-name LesserApiStack-production"
+    command: "aws cloudformation cancel-update-stack --stack-name <app>-live"
     alternative: "Deploy previous git tag"
 
 validation_checks:
   
   post_deployment:
     health_check:
-      endpoint: "https://domain.com/health"
+      endpoint: "https://<stage-domain>/health"
       expected_status: 200
-      expected_response: '{"status":"healthy"}'
+      note: "A newly deployed instance may be reachable-but-locked until activation is completed"
       
     federation_check:
       endpoint: "https://domain.com/.well-known/webfinger?resource=acct:admin@domain.com"
@@ -286,9 +241,11 @@ automation_examples:
             - uses: actions/checkout@v3
             - uses: actions/setup-go@v4
               with:
-                go-version: '1.24'
+                go-version: '1.25'
+            - name: Build Lesser CLI
+              run: go build -o lesser ./cmd/lesser
             - name: Build Lambdas
-              run: make build-lambdas
+              run: ./lesser build lambdas
             - name: Deploy CDK
               run: |
                 cd infra/cdk

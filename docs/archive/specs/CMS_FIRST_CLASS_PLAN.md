@@ -1,5 +1,7 @@
 # CMS: First-Class Citizen Implementation Plan
 
+> Archived: moved from `docs/specs/` on 2025-12-27. This plan is retained for historical context and may not reflect current behavior.
+
 > **Status**: Complete (Milestone 6 complete)  
 > **Owner**: Lesser  
 > **Last updated**: 2025-12-26  

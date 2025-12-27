@@ -166,7 +166,7 @@ func verifyCoverageSpec(repoRoot string, opts runOptions, spec *coverageSpec, mi
 		return errors.New("spec is nil")
 	}
 	if spec.Version < coverageSpecVersion {
-		return fmt.Errorf("coverage spec %s is version %d; run `make generate-graphql-coverage` to upgrade", opts.SpecPath, spec.Version)
+		return fmt.Errorf("coverage spec %s is version %d; run `lesser generate graphql-coverage` to upgrade", opts.SpecPath, spec.Version)
 	}
 	if !opts.Write {
 		if err := reportRouteDrift(opts.SpecPath, missing, stale); err != nil {
@@ -410,7 +410,7 @@ func fileExists(path string) bool {
 }
 
 func readCoverageSpec(path string) (*coverageSpec, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path is an operator-supplied local file
+	data, err := os.ReadFile(path) // #nosec G304 -- path is an operator-supplied local file
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
@@ -503,7 +503,7 @@ func extractConfiguredRoutes(repoRoot string) ([]routeDef, error) {
 	handleRE := regexp.MustCompile(`\bapp\.Handle\("([^"]+)",\s*"([^"]+)"`)
 
 	for _, path := range files {
-		data, err := os.ReadFile(path) //nolint:gosec // local source file path
+		data, err := os.ReadFile(path) // #nosec G304 -- local source file path
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", path, err)
 		}
@@ -620,7 +620,7 @@ type graphqlOperations struct {
 
 func loadGraphQLOperations(repoRoot string) (*graphqlOperations, error) {
 	cfgPath := filepath.Join(repoRoot, "gqlgen.yml")
-	data, err := os.ReadFile(cfgPath) //nolint:gosec // local file
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- local file
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", cfgPath, err)
 	}
@@ -657,7 +657,7 @@ func loadGraphQLOperations(repoRoot string) (*graphqlOperations, error) {
 	}
 
 	for _, path := range files {
-		content, err := os.ReadFile(path) //nolint:gosec // local schema file
+		content, err := os.ReadFile(path) // #nosec G304 -- local schema file
 		if err != nil {
 			return nil, fmt.Errorf("read schema %s: %w", path, err)
 		}

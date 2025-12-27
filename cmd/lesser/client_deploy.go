@@ -143,15 +143,15 @@ func parseClientDeployArgs(argv []string) (clientDeployArgs, error) {
 
 func parseStageSelection(value string) ([]naming.Stage, error) {
 	switch strings.TrimSpace(strings.ToLower(value)) {
-	case "dev":
+	case valueDev:
 		return []naming.Stage{naming.StageDev}, nil
-	case "staging":
+	case valueStaging:
 		return []naming.Stage{naming.StageStaging}, nil
 	case "live":
 		return []naming.Stage{naming.StageLive}, nil
 	case "", "both":
 		return []naming.Stage{naming.StageDev, naming.StageLive}, nil
-	case "all":
+	case valueAll:
 		return []naming.Stage{naming.StageDev, naming.StageStaging, naming.StageLive}, nil
 	default:
 		return nil, fmt.Errorf("invalid --stage %q (expected dev|live|staging|both|all)", value)
@@ -160,7 +160,7 @@ func parseStageSelection(value string) ([]naming.Stage, error) {
 
 func invalidateClientPaths(ctx context.Context, client *cloudfront.Client, distributionID string) error {
 	paths := []string{"/l", "/l/*"}
-	quantity := int32(len(paths)) //nolint:gosec // safe: constant small slice for invalidation paths
+	quantity := int32(len(paths)) // #nosec G115 -- len(paths) is bounded by static slice
 
 	_, err := client.CreateInvalidation(ctx, &cloudfront.CreateInvalidationInput{
 		DistributionId: aws.String(distributionID),

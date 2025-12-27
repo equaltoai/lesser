@@ -57,7 +57,7 @@ func loadAWSConfigFromProfile(ctx context.Context, awsProfile string) (aws.Confi
 
 func awsCLIConfigureGet(ctx context.Context, profile string, key string) (string, error) {
 	args := []string{"configure", "get", key, "--profile", profile}
-	cmd := exec.CommandContext(ctx, "aws", args...) //nolint:gosec // tool invocation
+	cmd := exec.CommandContext(ctx, "aws", args...) // #nosec G204 -- tool invocation, args are not interpreted by a shell
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("aws %s: %w\n%s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
@@ -67,7 +67,7 @@ func awsCLIConfigureGet(ctx context.Context, profile string, key string) (string
 
 func awsCLIExportCredentials(ctx context.Context, profile string) (exportedCredentials, error) {
 	args := []string{"configure", "export-credentials", "--profile", profile, "--format", "process"}
-	cmd := exec.CommandContext(ctx, "aws", args...) //nolint:gosec // tool invocation
+	cmd := exec.CommandContext(ctx, "aws", args...) // #nosec G204 -- tool invocation, args are not interpreted by a shell
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return exportedCredentials{}, fmt.Errorf("aws %s: %w\n%s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))

@@ -87,7 +87,7 @@ func (p *Parser) extractUnicodeEmojis(content string) []string {
 
 // isValidUnicodeEmoji performs additional validation for Unicode emoji characters
 func (p *Parser) isValidUnicodeEmoji(s string) bool {
-	if err := common.ValidateSliceNotEmpty("s", s); err != nil {
+	if err := common.ValidateRequiredParam("s", s); err != nil {
 		return false
 	}
 
