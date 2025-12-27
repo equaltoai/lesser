@@ -31,12 +31,24 @@ func cmsArticleID(domain, slug string) string {
 	return common.GenerateObjectID(domain, "articles", slug)
 }
 
+func cmsArticleObjectID(domain, objectID string) string {
+	return common.GenerateObjectID(domain, "objects", objectID)
+}
+
 func cmsCategoryID(domain, slug string) string {
 	return common.GenerateObjectID(domain, "categories", slug)
 }
 
+func cmsCategoryObjectID(domain, objectID string) string {
+	return common.GenerateObjectID(domain, "categories", objectID)
+}
+
 func cmsPublicationID(domain, slug string) string {
 	return common.GenerateObjectID(domain, "publications", slug)
+}
+
+func cmsPublicationObjectID(domain, objectID string) string {
+	return common.GenerateObjectID(domain, "publications", objectID)
 }
 
 func cmsExtractSlugFromURL(id string) string {

@@ -2,8 +2,12 @@ package cms
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
@@ -27,6 +31,21 @@ func NewPublicationService(pubRepo *repositories.PublicationRepository, pubMembe
 
 // CreatePublication creates a new publication
 func (s *PublicationService) CreatePublication(ctx context.Context, publication *models.Publication) error {
+	if publication == nil {
+		return errors.New("publication is required")
+	}
+
+	slug := strings.TrimSpace(publication.Slug)
+	if slug == "" {
+		return apperrors.ValidationFailedWithField("slug")
+	}
+	publication.Slug = slug
+
+	publicationID := strings.TrimSpace(publication.ID)
+	if publicationID == "" {
+		return apperrors.ValidationFailedWithField("id")
+	}
+
 	s.logger.Info("creating publication", zap.String("name", publication.Name))
 
 	if publication.CreatedAt.IsZero() {
@@ -34,7 +53,33 @@ func (s *PublicationService) CreatePublication(ctx context.Context, publication 
 	}
 	publication.UpdatedAt = time.Now()
 
-	return s.pubRepo.CreatePublication(ctx, publication)
+	host := cmsHostFromURL(publicationID)
+	if host != "" {
+		legacyID := common.GenerateObjectID(host, "publications", slug)
+		if legacyID != "" && !strings.EqualFold(legacyID, publicationID) {
+			_, err := s.pubRepo.GetPublication(ctx, legacyID)
+			if err == nil {
+				return apperrors.ItemAlreadyExistsWithID("publication slug", slug)
+			}
+			if err != nil && !apperrors.HasCode(err, apperrors.CodeNotFound) {
+				return err
+			}
+		}
+	}
+
+	slugCreated, err := cmsEnsurePublicationSlugIndex(ctx, s.pubRepo.GetDB(), slug, publicationID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.pubRepo.CreatePublication(ctx, publication); err != nil {
+		if slugCreated {
+			cmsDeletePublicationSlugIndex(ctx, s.pubRepo.GetDB(), slug)
+		}
+		return err
+	}
+
+	return nil
 }
 
 // GetPublication retrieves a publication by ID
@@ -44,9 +89,51 @@ func (s *PublicationService) GetPublication(ctx context.Context, id string) (*mo
 
 // UpdatePublication updates an existing publication
 func (s *PublicationService) UpdatePublication(ctx context.Context, publication *models.Publication) error {
+	if publication == nil {
+		return errors.New("publication is required")
+	}
+
+	slug := strings.TrimSpace(publication.Slug)
+	if slug == "" {
+		return apperrors.ValidationFailedWithField("slug")
+	}
+	publication.Slug = slug
+
+	publicationID := strings.TrimSpace(publication.ID)
+	if publicationID == "" {
+		return apperrors.ValidationFailedWithField("id")
+	}
+
 	s.logger.Info("updating publication", zap.String("id", publication.ID))
+
+	host := cmsHostFromURL(publicationID)
+	if host != "" {
+		legacyID := common.GenerateObjectID(host, "publications", slug)
+		if legacyID != "" && !strings.EqualFold(legacyID, publicationID) {
+			_, err := s.pubRepo.GetPublication(ctx, legacyID)
+			if err == nil {
+				return apperrors.ItemAlreadyExistsWithID("publication slug", slug)
+			}
+			if err != nil && !apperrors.HasCode(err, apperrors.CodeNotFound) {
+				return err
+			}
+		}
+	}
+
+	slugCreated, err := cmsEnsurePublicationSlugIndex(ctx, s.pubRepo.GetDB(), slug, publicationID)
+	if err != nil {
+		return err
+	}
+
 	publication.UpdatedAt = time.Now()
-	return s.pubRepo.Update(ctx, publication)
+	if err := s.pubRepo.Update(ctx, publication); err != nil {
+		if slugCreated {
+			cmsDeletePublicationSlugIndex(ctx, s.pubRepo.GetDB(), slug)
+		}
+		return err
+	}
+
+	return nil
 }
 
 // DeletePublication deletes a publication

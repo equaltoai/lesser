@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/transformations"
+	"github.com/google/uuid"
 	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -59,6 +62,16 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 		return errors.New("article is required")
 	}
 
+	slug := strings.TrimSpace(article.Slug)
+	if slug == "" {
+		return apperrors.ValidationFailedWithField("slug")
+	}
+	article.Slug = slug
+
+	if strings.TrimSpace(article.ID) == "" {
+		return apperrors.ValidationFailedWithField("id")
+	}
+
 	s.logger.Info("creating article", zap.String("title", article.Name))
 
 	if article.CreatedAt.IsZero() {
@@ -68,7 +81,19 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 
 	enrichArticleContent(article)
 
+	if err := s.ensureLegacyArticleSlugAvailable(ctx, slug, article.ID); err != nil {
+		return err
+	}
+
+	slugCreated, err := cmsEnsureArticleSlugIndex(ctx, s.articleRepo.GetDB(), slug, article.ID)
+	if err != nil {
+		return err
+	}
+
 	if err := s.articleRepo.CreateArticle(ctx, article); err != nil {
+		if slugCreated {
+			cmsDeleteArticleSlugIndex(ctx, s.articleRepo.GetDB(), slug)
+		}
 		return err
 	}
 
@@ -76,6 +101,9 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 		s.logger.Error("failed to upsert CMS article indexes on create", zap.Error(err), zap.String("article_id", article.ID))
 		// Best-effort rollback to avoid creating unreachable content.
 		s.deleteCMSArticleIndexes(ctx, article)
+		if slugCreated {
+			cmsDeleteArticleSlugIndex(ctx, s.articleRepo.GetDB(), slug)
+		}
 		_ = s.articleRepo.DeleteArticle(ctx, article.ID)
 		return err
 	}
@@ -86,6 +114,33 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 	go s.federateArticleCreation(context.Background(), article)
 
 	return nil
+}
+
+// GetArticleBySlug retrieves an article by its slug index (no legacy fallback).
+func (s *ArticleService) GetArticleBySlug(ctx context.Context, slug string) (*models.Article, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return nil, apperrors.ValidationFailedWithField("slug")
+	}
+
+	var idx models.CMSSlugIndex
+	err := s.articleRepo.GetDB().WithContext(ctx).Model(&models.CMSSlugIndex{}).
+		Where("PK", "=", models.CMSArticleSlugIndexPK(slug)).
+		Where("SK", "=", models.CMSSlugIndexSK()).
+		First(&idx)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return nil, apperrors.ItemNotFoundWithID("article slug", slug)
+		}
+		return nil, err
+	}
+
+	articleID := strings.TrimSpace(idx.TargetID)
+	if articleID == "" {
+		return nil, apperrors.ItemNotFoundWithID("article slug", slug)
+	}
+
+	return s.articleRepo.GetArticle(ctx, articleID)
 }
 
 // GetArticle retrieves an article by ID.
@@ -108,6 +163,22 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 
 	existing, _ := s.articleRepo.GetArticle(ctx, strings.TrimSpace(article.ID))
 
+	slug := strings.TrimSpace(article.Slug)
+	article.Slug = slug
+
+	slugCreated := false
+	if slug != "" {
+		if err := s.ensureLegacyArticleSlugAvailable(ctx, slug, article.ID); err != nil {
+			return err
+		}
+
+		created, err := cmsEnsureArticleSlugIndex(ctx, s.articleRepo.GetDB(), slug, article.ID)
+		if err != nil {
+			return err
+		}
+		slugCreated = created
+	}
+
 	// Snapshot existing state before applying the update.
 	if s.revisionService != nil && existing != nil {
 		_, _ = s.revisionService.CreateRevision(ctx, existing)
@@ -123,6 +194,9 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 	enrichArticleContent(article)
 
 	if err := s.articleRepo.UpdateArticle(ctx, article); err != nil {
+		if slugCreated {
+			cmsDeleteArticleSlugIndex(ctx, s.articleRepo.GetDB(), slug)
+		}
 		return err
 	}
 
@@ -159,6 +233,27 @@ func (s *ArticleService) DeleteArticle(ctx context.Context, article *models.Arti
 	go s.federateArticleDeletion(context.Background(), article)
 
 	return nil
+}
+
+func (s *ArticleService) ensureLegacyArticleSlugAvailable(ctx context.Context, slug string, articleID string) error {
+	host := cmsHostFromURL(articleID)
+	if host == "" {
+		return nil
+	}
+
+	legacyID := common.GenerateObjectID(host, "articles", slug)
+	if legacyID == "" || strings.EqualFold(legacyID, articleID) {
+		return nil
+	}
+
+	_, err := s.articleRepo.GetArticle(ctx, legacyID)
+	if err == nil {
+		return apperrors.ItemAlreadyExistsWithID("article slug", slug)
+	}
+	if apperrors.HasCode(err, apperrors.CodeNotFound) {
+		return nil
+	}
+	return err
 }
 
 func (s *ArticleService) upsertCMSArticleIndexes(ctx context.Context, article *models.Article) error {
@@ -246,7 +341,7 @@ func (s *ArticleService) federateArticleWriteActivity(ctx context.Context, artic
 	}
 
 	now := time.Now()
-	activityID := fmt.Sprintf("%s/activities/%s-%d-%s", apActor.ID, label, now.Unix(), article.ID)
+	activityID := fmt.Sprintf("%s/activities/%s-%d-%s", apActor.ID, label, now.Unix(), uuid.NewString())
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
 			Context:   activitypub.Context,
@@ -292,7 +387,7 @@ func (s *ArticleService) federateArticleDeletion(ctx context.Context, article *m
 	}
 
 	now := time.Now()
-	activityID := fmt.Sprintf("%s/activities/delete-%d-%s", apActor.ID, now.Unix(), article.ID)
+	activityID := fmt.Sprintf("%s/activities/delete-%d-%s", apActor.ID, now.Unix(), uuid.NewString())
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
 			Context:   activitypub.Context,

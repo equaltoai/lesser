@@ -200,9 +200,14 @@ func (r *Resolver) convertCMSArticle(ctx context.Context, article *models.Articl
 		})
 	}
 
+	slug := strings.TrimSpace(article.Slug)
+	if slug == "" {
+		slug = cmsExtractSlugFromURL(article.ID)
+	}
+
 	result := &model.Article{
 		ID:     article.ID,
-		Slug:   cmsExtractSlugFromURL(article.ID),
+		Slug:   slug,
 		Author: r.resolveActorByID(ctx, article.AttributedTo),
 
 		Title:    article.Name,

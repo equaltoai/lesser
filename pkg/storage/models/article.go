@@ -11,6 +11,7 @@ type Article struct {
 	Object // Embeds standard ActivityPub Object fields
 
 	// CMS-specific metadata
+	Slug            string     `dynamorm:"attr:slug" json:"slug,omitempty"`
 	Subtitle        string     `dynamorm:"attr:subtitle" json:"subtitle,omitempty"`
 	Excerpt         string     `dynamorm:"attr:excerpt" json:"excerpt,omitempty"`
 	FeaturedImage   *Media     `dynamorm:"attr:featuredImage" json:"featured_image,omitempty"`

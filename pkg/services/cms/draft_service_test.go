@@ -2,6 +2,7 @@ package cms
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,12 +83,14 @@ func cloneDraft(d *models.Draft) *models.Draft {
 }
 
 type memArticleService struct {
-	items map[string]*models.Article
+	items     map[string]*models.Article
+	slugIndex map[string]string
 }
 
 func newMemArticleService() *memArticleService {
 	return &memArticleService{
-		items: map[string]*models.Article{},
+		items:     map[string]*models.Article{},
+		slugIndex: map[string]string{},
 	}
 }
 
@@ -99,14 +102,39 @@ func (s *memArticleService) GetArticle(ctx context.Context, articleID string) (*
 	return cloneArticle(article), nil
 }
 
+func (s *memArticleService) GetArticleBySlug(ctx context.Context, slug string) (*models.Article, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return nil, apperrors.ValidationFailedWithField("slug")
+	}
+
+	articleID, ok := s.slugIndex[slug]
+	if !ok {
+		return nil, apperrors.ItemNotFoundWithID("article slug", slug)
+	}
+
+	return s.GetArticle(ctx, articleID)
+}
+
 func (s *memArticleService) CreateArticle(ctx context.Context, article *models.Article) error {
 	if article == nil {
 		return apperrors.ValidationFailedWithField("article")
 	}
+
+	slug := strings.TrimSpace(article.Slug)
+	if slug == "" {
+		return apperrors.ValidationFailedWithField("slug")
+	}
+
+	if existingID, ok := s.slugIndex[slug]; ok && !strings.EqualFold(existingID, article.ID) {
+		return apperrors.ItemAlreadyExistsWithID("article slug", slug)
+	}
+
 	if _, ok := s.items[article.ID]; ok {
 		return apperrors.AlreadyExists("article")
 	}
 	s.items[article.ID] = cloneArticle(article)
+	s.slugIndex[slug] = article.ID
 	return nil
 }
 
@@ -115,6 +143,12 @@ func (s *memArticleService) UpdateArticle(ctx context.Context, article *models.A
 		return apperrors.ValidationFailedWithField("article")
 	}
 	s.items[article.ID] = cloneArticle(article)
+	if slug := strings.TrimSpace(article.Slug); slug != "" {
+		if existingID, ok := s.slugIndex[slug]; ok && !strings.EqualFold(existingID, article.ID) {
+			return apperrors.ItemAlreadyExistsWithID("article slug", slug)
+		}
+		s.slugIndex[slug] = article.ID
+	}
 	return nil
 }
 
@@ -229,7 +263,8 @@ func TestDraftServicePublishDraftCreatesArticleAndDeletesDraft(t *testing.T) {
 	article, err := svc.PublishDraft(context.Background(), draft.AuthorID, draft.ID)
 	require.NoError(t, err)
 	require.NotNil(t, article)
-	require.Equal(t, "https://example.com/articles/hello-world", article.ID)
+	require.True(t, strings.HasPrefix(article.ID, "https://example.com/objects/"))
+	require.Equal(t, "hello-world", article.Slug)
 	require.Equal(t, "https://example.com/users/alice", article.AttributedTo)
 	require.Equal(t, activitypub.ArticleType, article.Type)
 
@@ -253,11 +288,12 @@ func TestDraftServicePublishDraftAlreadyExistsSameAuthor(t *testing.T) {
 
 	existing := &models.Article{
 		Object: models.Object{
-			ID:           "https://example.com/articles/hello-world",
+			ID:           "https://example.com/objects/existing",
 			Type:         activitypub.ArticleType,
 			Name:         "Existing",
 			AttributedTo: "https://example.com/users/alice",
 		},
+		Slug:          "hello-world",
 		ContentFormat: "markdown",
 	}
 	require.NoError(t, articles.CreateArticle(context.Background(), existing))
@@ -299,11 +335,12 @@ func TestDraftServicePublishDraftAlreadyExistsDifferentAuthorMarksFailed(t *test
 
 	existing := &models.Article{
 		Object: models.Object{
-			ID:           "https://example.com/articles/hello-world",
+			ID:           "https://example.com/objects/existing",
 			Type:         activitypub.ArticleType,
 			Name:         "Existing",
 			AttributedTo: "https://example.com/users/bob",
 		},
+		Slug:          "hello-world",
 		ContentFormat: "markdown",
 	}
 	require.NoError(t, articles.CreateArticle(context.Background(), existing))
@@ -356,5 +393,6 @@ func TestCMSSmokeDraftLifecycle(t *testing.T) {
 
 	article, err := svc.PublishDraft(context.Background(), draft.AuthorID, draft.ID)
 	require.NoError(t, err)
-	require.Equal(t, "https://example.com/articles/smoke-test", article.ID)
+	require.True(t, strings.HasPrefix(article.ID, "https://example.com/objects/"))
+	require.Equal(t, "smoke-test", article.Slug)
 }

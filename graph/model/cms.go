@@ -274,7 +274,7 @@ type UpdateDraftInput struct {
 
 // CreateArticleInput is the input payload for creating an article.
 type CreateArticleInput struct {
-	Slug          string        `json:"slug"`
+	Slug          *string       `json:"slug"`
 	Title         string        `json:"title"`
 	Content       string        `json:"content"`
 	ContentFormat ContentFormat `json:"contentFormat"`
@@ -298,6 +298,7 @@ type CreateArticleInput struct {
 
 // UpdateArticleInput is the input payload for updating an article.
 type UpdateArticleInput struct {
+	Slug          *string        `json:"slug"`
 	Title         *string        `json:"title"`
 	Content       *string        `json:"content"`
 	ContentFormat *ContentFormat `json:"contentFormat"`

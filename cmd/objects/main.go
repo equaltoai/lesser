@@ -160,8 +160,13 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 		zap.String("request_id", ctx.GetRequestID()),
 	)
 
+	lookupID := objectID
+	if !strings.HasPrefix(lookupID, "http://") && !strings.HasPrefix(lookupID, "https://") {
+		lookupID = fmt.Sprintf("%s/objects/%s", cfg.BaseURL(), objectID)
+	}
+
 	// Get the object from storage
-	objInterface, err := h.objectRepo.GetObject(ctx.Request.Context(), objectID)
+	objInterface, err := h.objectRepo.GetObject(ctx.Request.Context(), lookupID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			logger.Debug("object not found",

@@ -256,7 +256,13 @@ func (r *mutationResolver) CreateArticle(ctx context.Context, input model.Create
 	}
 
 	domain := r.getDomain()
-	slug := cmsSlugify(input.Slug)
+	slug := ""
+	if input.Slug != nil {
+		slug = cmsSlugify(*input.Slug)
+	}
+	if strings.TrimSpace(slug) == "" {
+		slug = cmsSlugify(input.Title)
+	}
 	if strings.TrimSpace(slug) == "" {
 		return nil, errors.New("slug is required")
 	}
@@ -265,7 +271,7 @@ func (r *mutationResolver) CreateArticle(ctx context.Context, input model.Create
 
 	article := &models.Article{
 		Object: models.Object{
-			ID:           cmsArticleID(domain, slug),
+			ID:           cmsArticleObjectID(domain, uuid.NewString()),
 			Type:         "Article",
 			Name:         input.Title,
 			Content:      input.Content,
@@ -274,6 +280,7 @@ func (r *mutationResolver) CreateArticle(ctx context.Context, input model.Create
 			Updated:      now,
 			CreatedAt:    now,
 		},
+		Slug:               slug,
 		Subtitle:           derefString(input.Subtitle),
 		Excerpt:            derefString(input.Excerpt),
 		ContentFormat:      cmsContentFormatToStorage(input.ContentFormat),
@@ -340,6 +347,14 @@ func (r *mutationResolver) UpdateArticle(ctx context.Context, id string, input m
 
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return nil, err
+	}
+
+	if input.Slug != nil {
+		slug := cmsSlugify(*input.Slug)
+		if strings.TrimSpace(slug) == "" {
+			return nil, errors.New("slug is required")
+		}
+		article.Slug = slug
 	}
 
 	cmsSetStringField(&article.Name, input.Title)
@@ -852,8 +867,9 @@ func (r *mutationResolver) CreateCategory(ctx context.Context, input model.Creat
 	}
 
 	now := time.Now()
+	domain := r.getDomain()
 	category := &models.Category{
-		ID:          cmsCategoryID(r.getDomain(), slug),
+		ID:          cmsCategoryObjectID(domain, uuid.NewString()),
 		Name:        input.Name,
 		Slug:        slug,
 		Description: derefString(input.Description),
@@ -894,6 +910,13 @@ func (r *mutationResolver) UpdateCategory(ctx context.Context, id string, input 
 		return nil, err
 	}
 
+	if input.Slug != nil {
+		slug := cmsSlugify(*input.Slug)
+		if slug == "" {
+			return nil, errors.New("category slug is required")
+		}
+		category.Slug = slug
+	}
 	if input.Name != nil {
 		category.Name = *input.Name
 	}
@@ -1082,7 +1105,7 @@ func (r *mutationResolver) CreatePublication(ctx context.Context, input model.Cr
 
 	now := time.Now()
 	domain := r.getDomain()
-	pubID := cmsPublicationID(domain, slug)
+	pubID := cmsPublicationObjectID(domain, uuid.NewString())
 
 	publication := &models.Publication{
 		ID:           pubID,
@@ -1203,6 +1226,13 @@ type cmsMediaGetter interface {
 }
 
 func cmsApplyPublicationUpdates(ctx context.Context, publication *models.Publication, input model.UpdatePublicationInput, mediaRepo cmsMediaGetter) error {
+	if input.Slug != nil {
+		slug := cmsSlugify(*input.Slug)
+		if slug == "" {
+			return errors.New("publication slug is required")
+		}
+		publication.Slug = slug
+	}
 	if input.Name != nil {
 		publication.Name = *input.Name
 	}

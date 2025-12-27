@@ -293,7 +293,7 @@ input UpdateDraftInput {
 }
 
 input CreateArticleInput {
-  slug: String!
+  slug: String
   title: String!
   content: String!
   contentFormat: ContentFormat! = MARKDOWN
@@ -316,6 +316,7 @@ input CreateArticleInput {
 }
 
 input UpdateArticleInput {
+  slug: String
   title: String
   content: String
   contentFormat: ContentFormat
@@ -362,6 +363,7 @@ input CreateCategoryInput {
 }
 
 input UpdateCategoryInput {
+  slug: String
   name: String
   description: String
   parentId: ID
@@ -380,6 +382,7 @@ input CreatePublicationInput {
 }
 
 input UpdatePublicationInput {
+  slug: String
   name: String
   tagline: String
   description: String

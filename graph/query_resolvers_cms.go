@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
+	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 )
 
@@ -32,6 +34,133 @@ func trimStringPtr(value *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*value)
+}
+
+func cmsResolveBySlug[E any](
+	ctx context.Context,
+	db dynamormcore.DB,
+	slug string,
+	pk string,
+	fetchByID func(string) (E, error),
+	fetchLegacy func() (E, error),
+	extractID func(E) string,
+) (E, error) {
+	var zero E
+
+	var idx models.CMSSlugIndex
+	err := db.WithContext(ctx).Model(&models.CMSSlugIndex{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", models.CMSSlugIndexSK()).
+		First(&idx)
+	if err == nil {
+		if targetID := strings.TrimSpace(idx.TargetID); targetID != "" {
+			return fetchByID(targetID)
+		}
+	}
+	if err != nil && !dynamormerrors.IsNotFound(err) {
+		return zero, err
+	}
+
+	entity, err := fetchLegacy()
+	if err != nil {
+		return zero, err
+	}
+
+	targetID := strings.TrimSpace(extractID(entity))
+	if targetID != "" {
+		backfill := &models.CMSSlugIndex{
+			PK:       pk,
+			Slug:     slug,
+			TargetID: targetID,
+		}
+		if err := backfill.UpdateKeys(); err == nil {
+			_ = db.WithContext(ctx).Model(backfill).IfNotExists().Create()
+		}
+	}
+
+	return entity, nil
+}
+
+func cmsCategoryGetter(store storagecore.RepositoryStorage) func(context.Context, string) (*models.Category, error) {
+	if store == nil {
+		return nil
+	}
+	repo := store.Category()
+	if repo == nil {
+		return nil
+	}
+	return repo.GetCategory
+}
+
+func cmsPublicationGetter(store storagecore.RepositoryStorage) func(context.Context, string) (*models.Publication, error) {
+	if store == nil {
+		return nil
+	}
+	repo := store.Publication()
+	if repo == nil {
+		return nil
+	}
+	return repo.GetPublication
+}
+
+func cmsCategoryIDFromStorage(category *models.Category) string {
+	if category == nil {
+		return ""
+	}
+	return category.ID
+}
+
+func cmsPublicationIDFromStorage(pub *models.Publication) string {
+	if pub == nil {
+		return ""
+	}
+	return pub.ID
+}
+
+func cmsFetchBySlug[E any](
+	ctx context.Context,
+	r *queryResolver,
+	rawSlug string,
+	require func(*Resolver) error,
+	pk func(string) string,
+	getter func(storagecore.RepositoryStorage) func(context.Context, string) (E, error),
+	legacyID func(domain, slug string) string,
+	extractID func(E) string,
+) (E, error) {
+	var zero E
+
+	if r == nil || r.Resolver == nil {
+		return zero, ErrStorageUnavailable
+	}
+	if require != nil {
+		if err := require(r.Resolver); err != nil {
+			return zero, err
+		}
+	}
+
+	store := r.cmsStorage()
+	getByID := getter(store)
+	if store == nil || getByID == nil {
+		return zero, ErrStorageUnavailable
+	}
+
+	slug := cmsSlugify(rawSlug)
+	if strings.TrimSpace(slug) == "" {
+		return zero, errors.New("slug is required")
+	}
+
+	domain := r.getDomain()
+	legacy := legacyID(domain, slug)
+
+	entity, err := cmsResolveBySlug(ctx, store.GetDB(), slug, pk(slug),
+		func(id string) (E, error) { return getByID(ctx, id) },
+		func() (E, error) { return getByID(ctx, legacy) },
+		extractID,
+	)
+	if err != nil {
+		return zero, err
+	}
+	return entity, nil
 }
 
 func cmsArticleMatchesFilters(article *models.Article, authorFilter string, seriesFilter string, categoryFilter string) bool {
@@ -297,10 +426,38 @@ func (r *queryResolver) ArticleBySlug(ctx context.Context, slug string) (*model.
 		return nil, errors.New("slug is required")
 	}
 
-	id := cmsArticleID(domain, slug)
-	article, err := store.Article().GetArticle(ctx, id)
+	// Preferred path: use a slug index so IDs are stable and slugs are editable.
+	var idx models.CMSSlugIndex
+	err := store.GetDB().WithContext(ctx).Model(&models.CMSSlugIndex{}).
+		Where("PK", "=", models.CMSArticleSlugIndexPK(slug)).
+		Where("SK", "=", models.CMSSlugIndexSK()).
+		First(&idx)
+	if err == nil && strings.TrimSpace(idx.TargetID) != "" {
+		article, err := store.Article().GetArticle(ctx, strings.TrimSpace(idx.TargetID))
+		if err == nil && article != nil {
+			return r.convertCMSArticle(ctx, article, true), nil
+		}
+	}
+	if err != nil && !dynamormerrors.IsNotFound(err) {
+		return nil, err
+	}
+
+	legacyID := cmsArticleID(domain, slug)
+	article, err := store.Article().GetArticle(ctx, legacyID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Best-effort backfill for legacy slug-derived IDs.
+	backfill := &models.CMSSlugIndex{
+		PK:       models.CMSArticleSlugIndexPK(slug),
+		Slug:     slug,
+		TargetID: strings.TrimSpace(article.ID),
+	}
+	if backfill.TargetID != "" {
+		if err := backfill.UpdateKeys(); err == nil {
+			_ = store.GetDB().WithContext(ctx).Model(backfill).IfNotExists().Create()
+		}
 	}
 
 	return r.convertCMSArticle(ctx, article, true), nil
@@ -567,26 +724,10 @@ func (r *queryResolver) Category(ctx context.Context, id string) (*model.Categor
 }
 
 func (r *queryResolver) CategoryBySlug(ctx context.Context, slug string) (*model.Category, error) {
-	if err := r.requireCMSCategoriesEnabled(); err != nil {
-		return nil, err
-	}
-
-	store := r.cmsStorage()
-	if store == nil || store.Category() == nil {
-		return nil, ErrStorageUnavailable
-	}
-
-	slug = cmsSlugify(slug)
-	if strings.TrimSpace(slug) == "" {
-		return nil, errors.New("slug is required")
-	}
-
-	id := cmsCategoryID(r.getDomain(), slug)
-	category, err := store.Category().GetCategory(ctx, id)
+	category, err := cmsFetchBySlug(ctx, r, slug, (*Resolver).requireCMSCategoriesEnabled, models.CMSCategorySlugIndexPK, cmsCategoryGetter, cmsCategoryID, cmsCategoryIDFromStorage)
 	if err != nil {
 		return nil, err
 	}
-
 	return r.convertCMSCategory(ctx, category, true), nil
 }
 
@@ -657,26 +798,10 @@ func (r *queryResolver) Publication(ctx context.Context, id string) (*model.Publ
 }
 
 func (r *queryResolver) PublicationBySlug(ctx context.Context, slug string) (*model.Publication, error) {
-	if err := r.requireCMSLongFormEnabled(); err != nil {
-		return nil, err
-	}
-
-	store := r.cmsStorage()
-	if store == nil || store.Publication() == nil {
-		return nil, ErrStorageUnavailable
-	}
-
-	slug = cmsSlugify(slug)
-	if strings.TrimSpace(slug) == "" {
-		return nil, errors.New("slug is required")
-	}
-
-	id := cmsPublicationID(r.getDomain(), slug)
-	pub, err := store.Publication().GetPublication(ctx, id)
+	pub, err := cmsFetchBySlug(ctx, r, slug, (*Resolver).requireCMSLongFormEnabled, models.CMSPublicationSlugIndexPK, cmsPublicationGetter, cmsPublicationID, cmsPublicationIDFromStorage)
 	if err != nil {
 		return nil, err
 	}
-
 	return r.convertCMSPublication(ctx, pub, true), nil
 }
 
