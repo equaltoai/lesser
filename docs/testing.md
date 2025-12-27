@@ -159,6 +159,10 @@ Run pkg-only coverage:
 ./lesser test coverage --scope pkg
 ```
 
+Notes:
+
+- `--scope pkg` excludes `pkg/testing/**` by default so the KPI reflects production code (use `--include-testing` to include test helper packages).
+
 Artifacts:
 
 - `coverage_pkg.out` (machine-readable)

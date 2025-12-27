@@ -90,7 +90,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  lesser schema [--out <path>] | lesser export-schema")
 	fmt.Fprintln(os.Stderr, "  lesser verify [all|docs|ai-training|schema|graphql-coverage|openapi|inventory|lambda-set|unit|smoke|cdk] [--smoke] [--cdk]")
 	fmt.Fprintln(os.Stderr, "  lesser test [all|unit|integration|race]")
-	fmt.Fprintln(os.Stderr, "  lesser test coverage [--scope all|pkg]")
+	fmt.Fprintln(os.Stderr, "  lesser test coverage [--scope all|pkg] [--include-testing]")
 	fmt.Fprintln(os.Stderr, "  lesser coverage scoreboard [--profile <path>] [--mode package|file] [--package <prefix>] [--top <n>]")
 	fmt.Fprintln(os.Stderr, "  lesser dev [init|dynamodb|seed-and-validate]   # local development")
 	fmt.Fprintln(os.Stderr, "  lesser fmt | lesser lint [--fix] | lesser tidy")

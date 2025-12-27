@@ -139,6 +139,7 @@ Run a specific verifier:
 ./lesser test
 ./lesser test coverage
 ./lesser test coverage --scope pkg
+./lesser test coverage --scope pkg --include-testing
 ./lesser test race
 ./lesser test integration
 ```

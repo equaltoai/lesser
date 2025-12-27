@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 )
 
 func runTest(argv []string) error {
@@ -112,6 +114,8 @@ func runTestCoverage(argv []string) error {
 	fs.StringVar(&args.Stage, "stage", "test", "value for STAGE (default: test)")
 	var scope string
 	fs.StringVar(&scope, "scope", "all", "coverage scope: all|pkg (default: all)")
+	var includeTesting bool
+	fs.BoolVar(&includeTesting, "include-testing", false, "include pkg/testing/* in pkg scope (default: false)")
 	if err := fs.Parse(argv); err != nil {
 		return err
 	}
@@ -128,22 +132,32 @@ func runTestCoverage(argv []string) error {
 	var (
 		profileName string
 		htmlName    string
-		pkgPath     string
+		pkgPaths    []string
 	)
 	switch scope {
 	case "all":
 		profileName = "coverage.out"
 		htmlName = "coverage.html"
-		pkgPath = "./..."
+		pkgPaths = []string{"./..."}
 	case "pkg":
 		profileName = "coverage_pkg.out"
 		htmlName = "coverage_pkg.html"
-		pkgPath = "./pkg/..."
+		if includeTesting {
+			pkgPaths = []string{"./pkg/..."}
+			break
+		}
+		pkgPaths, err = listPackagesForPkgCoverage(repoRoot, goCache)
+		if err != nil {
+			return err
+		}
+		if len(pkgPaths) == 0 {
+			return fmt.Errorf("no packages found for pkg coverage scope (after filtering)")
+		}
 	default:
 		return fmt.Errorf("unknown coverage scope %q (want all|pkg)", scope)
 	}
 
-	if err := runGoTests(args, []string{"test", "-v", "-coverprofile=" + profileName, pkgPath}, nil); err != nil {
+	if err := runGoTests(args, append([]string{"test", "-v", "-coverprofile=" + profileName}, pkgPaths...), nil); err != nil {
 		return err
 	}
 
@@ -187,4 +201,56 @@ func runGoTests(args testArgs, goArgs []string, extraEnv map[string]string) erro
 		Dir: repoRoot,
 		Env: env,
 	})
+}
+
+func listPackagesForPkgCoverage(repoRoot string, goCache string) ([]string, error) {
+	modulePath, err := readModulePath(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := captureCommandOutput(context.Background(), repoRoot, map[string]string{
+		"GOCACHE": goCache,
+	}, "go", "list", "./pkg/...")
+	if err != nil {
+		return nil, err
+	}
+
+	testingPrefix := modulePath + "/pkg/testing"
+
+	pkgs := make([]string, 0)
+	for _, line := range strings.Split(out, "\n") {
+		pkg := strings.TrimSpace(line)
+		if pkg == "" {
+			continue
+		}
+		if pkg == testingPrefix || strings.HasPrefix(pkg, testingPrefix+"/") {
+			continue
+		}
+		pkgs = append(pkgs, pkg)
+	}
+
+	sort.Strings(pkgs)
+	return pkgs, nil
+}
+
+func readModulePath(repoRoot string) (string, error) {
+	modPath := filepath.Join(repoRoot, "go.mod")
+	content, err := os.ReadFile(modPath)
+	if err != nil {
+		return "", fmt.Errorf("read go.mod: %w", err)
+	}
+
+	for _, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			modulePath := strings.TrimSpace(strings.TrimPrefix(line, "module "))
+			if modulePath == "" {
+				break
+			}
+			return modulePath, nil
+		}
+	}
+
+	return "", fmt.Errorf("unable to determine module path from go.mod")
 }
