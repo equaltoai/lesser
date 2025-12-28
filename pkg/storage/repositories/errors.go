@@ -21,7 +21,10 @@ func NewErrorUtils() *ErrorUtils {
 // HandleNotFound converts DynamORM not found errors to domain-specific errors
 func (e *ErrorUtils) HandleNotFound(err error, entityType, identifier string) error {
 	if dynamormErrors.IsNotFound(err) {
-		return errors.ItemNotFoundWithID(entityType, identifier)
+		// Preserve the original DynamORM not-found sentinel in the unwrap chain so
+		// downstream guards like dynamormErrors.IsNotFound continue to work even
+		// after mapping to our domain AppError.
+		return errors.ItemNotFoundWithID(entityType, identifier).WithInternalError(err)
 	}
 	return err
 }
@@ -33,7 +36,8 @@ func (e *ErrorUtils) HandleGetError(err error, entityType, identifier string) er
 	}
 
 	if dynamormErrors.IsNotFound(err) {
-		return errors.ItemNotFoundWithID(entityType, identifier)
+		// Preserve the original DynamORM not-found sentinel in the unwrap chain.
+		return errors.ItemNotFoundWithID(entityType, identifier).WithInternalError(err)
 	}
 
 	return errors.FailedToGet(entityType, err)
@@ -46,7 +50,8 @@ func (e *ErrorUtils) HandleCreateError(err error, entityType, identifier string)
 	}
 
 	if dynamormErrors.IsConditionFailed(err) {
-		return errors.ItemAlreadyExistsWithID(entityType, identifier)
+		// Preserve the original DynamORM condition-failed sentinel in the unwrap chain.
+		return errors.ItemAlreadyExistsWithID(entityType, identifier).WithInternalError(err)
 	}
 
 	return errors.FailedToCreate(entityType, err)
@@ -59,7 +64,8 @@ func (e *ErrorUtils) HandleUpdateError(err error, entityType, identifier string)
 	}
 
 	if dynamormErrors.IsNotFound(err) {
-		return errors.ItemNotFoundWithID(entityType, identifier)
+		// Preserve the original DynamORM not-found sentinel in the unwrap chain.
+		return errors.ItemNotFoundWithID(entityType, identifier).WithInternalError(err)
 	}
 
 	return errors.FailedToUpdate(entityType, err)

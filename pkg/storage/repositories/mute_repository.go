@@ -2,11 +2,13 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -62,7 +64,16 @@ func (r *MuteRepository) CreateMute(ctx context.Context, muterActor, mutedActor,
 
 	// Use enhanced validation and creation with automatic permission checking and event emission
 	if err := r.ValidateAndCreate(ctx, mute); err != nil {
+		var appErr *apperrors.AppError
 		// Check if it's a duplicate mute
+		if stdErrors.As(err, &appErr) && appErr.Code == apperrors.CodeAlreadyExists {
+			r.logger.Debug("mute relationship already exists",
+				zap.String("muter", muterActor),
+				zap.String("muted", mutedActor),
+				zap.Bool("validation_enabled", r.HasValidation()),
+				zap.Bool("events_enabled", r.HasEvents()))
+			return nil // Idempotent - don't fail if mute already exists
+		}
 		if errors.IsConditionFailed(err) {
 			r.logger.Debug("mute relationship already exists",
 				zap.String("muter", muterActor),
@@ -132,6 +143,10 @@ func (r *MuteRepository) IsMuted(ctx context.Context, muterActor, mutedActor str
 	var mute models.Mute
 	err := r.Get(ctx, pk, sk, &mute)
 	if err != nil {
+		var appErr *apperrors.AppError
+		if stdErrors.As(err, &appErr) && appErr.Code == apperrors.CodeNotFound {
+			return false, nil
+		}
 		if errors.IsNotFound(err) || strings.Contains(strings.ToLower(err.Error()), "not found") {
 			return false, nil
 		}

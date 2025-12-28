@@ -311,7 +311,7 @@ func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string)
 //
 //nolint:dupl // OAuth client operations are shared between account and oauth repositories
 func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error {
-	if err := common.ValidateSliceNotEmpty("updates", updates); err != nil {
+	if len(updates) == 0 {
 		return ErrorHandler.HandleUpdateError(ErrOAuthNoUpdatesProvided, EntityOAuthClient, "validation")
 	}
 

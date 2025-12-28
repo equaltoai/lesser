@@ -892,7 +892,7 @@ func generateRandomID(length int) string {
 // CreateVouch creates a new vouch
 func (r *UserRepository) CreateVouch(_ context.Context, vouch *storage.Vouch) error {
 	// Generate vouch ID if not set
-	if common.ValidateRequiredParam(vouch.ID, "vouch.ID") != nil {
+	if common.ValidateRequiredParam("vouch.ID", vouch.ID) != nil {
 		vouch.ID = fmt.Sprintf("vouch-%d-%s", time.Now().Unix(), generateRandomID(8))
 	}
 
@@ -941,7 +941,7 @@ func (r *UserRepository) GetVouch(_ context.Context, vouchID string) (*storage.V
 	vouchModel := vouchModels[0]
 
 	// Unmarshal vouch data
-	if common.ValidateRequiredParam(vouchModel.VouchData, "vouchData") != nil {
+	if common.ValidateRequiredParam("vouchData", vouchModel.VouchData) != nil {
 		return nil, ErrorHandler.HandleGetError(storage.ErrInvalidInput, "vouch", vouchID)
 	}
 
@@ -974,7 +974,7 @@ func (r *UserRepository) queryVouchesByGSI(actorID string, activeOnly bool, gsiI
 	// Convert to storage.Vouch slice
 	vouches := make([]*storage.Vouch, 0, len(vouchModels))
 	for _, model := range vouchModels {
-		if common.ValidateRequiredParam(model.VouchData, "vouchData") != nil {
+		if common.ValidateRequiredParam("vouchData", model.VouchData) != nil {
 			continue
 		}
 
@@ -1075,7 +1075,7 @@ func (r *UserRepository) GetMonthlyVouchCount(_ context.Context, actorID string,
 // CreateTrustRelationship creates or updates a trust relationship
 func (r *UserRepository) CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
 	// Generate ID if not set
-	if common.ValidateRequiredParam(relationship.ID, "relationship.ID") != nil {
+	if common.ValidateRequiredParam("relationship.ID", relationship.ID) != nil {
 		relationship.ID = fmt.Sprintf("trust_%s", generateRandomID(12))
 	}
 
@@ -1317,7 +1317,7 @@ func (r *UserRepository) RecordTrustUpdate(_ context.Context, update *storage.Tr
 	update.Timestamp = time.Now()
 
 	// Generate event ID if not set
-	if common.ValidateRequiredParam(update.EventID, "update.EventID") != nil {
+	if common.ValidateRequiredParam("update.EventID", update.EventID) != nil {
 		update.EventID = generateRandomID(12)
 	}
 
@@ -2970,14 +2970,14 @@ func (r *UserRepository) extractObjectMetadata(object map[string]interface{}, lo
 	}
 
 	// Validate required fields
-	if common.ValidateRequiredParam(metadata.objectID, "objectID") != nil || common.ValidateRequiredParam(metadata.attributedTo, "attributedTo") != nil {
+	if common.ValidateRequiredParam("objectID", metadata.objectID) != nil || common.ValidateRequiredParam("attributedTo", metadata.attributedTo) != nil {
 		log.Error("missing required fields in object", zap.Any("object", object))
 		return nil, ErrorHandler.HandleGetError(common.ValidationError{Field: "object", Message: "missing required fields"}, EntityObject, "validation")
 	}
 
 	// Extract username from actor ID
 	metadata.username = extractUsernameFromActorID(metadata.attributedTo)
-	if common.ValidateRequiredParam(metadata.username, "username") != nil {
+	if common.ValidateRequiredParam("username", metadata.username) != nil {
 		log.Error("failed to extract username from actor", zap.String("actor", metadata.attributedTo))
 		return nil, ErrorHandler.HandleGetError(common.ValidationError{Field: "actor ID", Message: "invalid format"}, EntityActor, "validation")
 	}
@@ -3087,7 +3087,7 @@ func (r *UserRepository) addPublicTimelineEntries(attributedTo string, baseEntry
 // addHashtagTimelineEntries adds entries for hashtag timelines
 func (r *UserRepository) addHashtagTimelineEntries(baseEntry *models.Timeline, tags []activitypub.Tag, entries []*models.Timeline) []*models.Timeline {
 	for _, tag := range tags {
-		if tag.Type != "Hashtag" || common.ValidateRequiredParam(tag.Name, "tag.Name") != nil {
+		if tag.Type != "Hashtag" || common.ValidateRequiredParam("tag.Name", tag.Name) != nil {
 			continue
 		}
 
@@ -3133,7 +3133,7 @@ func (r *UserRepository) createFollowerTimelineEntries(ctx context.Context, user
 		for _, followerID := range followers {
 			// Extract follower username
 			followerUsername := extractUsernameFromActorID(followerID)
-			if common.ValidateRequiredParam(followerUsername, "followerUsername") != nil {
+			if common.ValidateRequiredParam("followerUsername", followerUsername) != nil {
 				log.Warn("invalid follower ID", zap.String("follower_id", followerID))
 				continue
 			}
@@ -3147,7 +3147,7 @@ func (r *UserRepository) createFollowerTimelineEntries(ctx context.Context, user
 		}
 
 		// Check if there are more followers
-		if common.ValidateRequiredParam(nextCursor, "nextCursor") != nil {
+		if common.ValidateRequiredParam("nextCursor", nextCursor) != nil {
 			break
 		}
 		cursor = nextCursor
@@ -3176,10 +3176,10 @@ func (r *UserRepository) createListTimelineEntries(ctx context.Context, username
 		switch list.RepliesPolicy {
 		case "none":
 			// No replies
-			shouldInclude = common.ValidateRequiredParam(baseEntry.InReplyTo, "inReplyTo") != nil
+			shouldInclude = common.ValidateRequiredParam("inReplyTo", baseEntry.InReplyTo) != nil
 		case "followed":
 			// Replies to followed accounts only - check if replied-to account is followed
-			if common.ValidateRequiredParam(baseEntry.InReplyTo, "inReplyTo") != nil {
+			if common.ValidateRequiredParam("inReplyTo", baseEntry.InReplyTo) != nil {
 				// Not a reply, include it
 				shouldInclude = true
 			} else {
@@ -3333,7 +3333,7 @@ func (r *UserRepository) validateAndUpdateProfileURL(ctx context.Context, update
 	}
 
 	urlStr, ok := rawURL.(string)
-	if !ok || common.ValidateRequiredParam(urlStr, "urlStr") != nil {
+	if !ok || common.ValidateRequiredParam("urlStr", urlStr) != nil {
 		return warnings, nil
 	}
 

@@ -60,7 +60,7 @@ func generateRandomString() string {
 
 // CreateModerationEvent creates a new moderation event using BaseRepository
 func (r *ModerationRepository) CreateModerationEvent(ctx context.Context, event *storage.ModerationEvent) error {
-	if common.ValidateRequiredParam(event.ID, "event.ID") != nil {
+	if common.ValidateRequiredParam("event.ID", event.ID) != nil {
 		event.ID = fmt.Sprintf("evt_%s", generateRandomString())
 	}
 	event.Created = time.Now()
@@ -423,7 +423,7 @@ func (r *ModerationRepository) GetModerationEventsByActor(ctx context.Context, a
 
 // AddModerationReview adds a review to a moderation event
 func (r *ModerationRepository) AddModerationReview(ctx context.Context, review *storage.ModerationReview) error {
-	if common.ValidateRequiredParam(review.ID, "review.ID") != nil {
+	if common.ValidateRequiredParam("review.ID", review.ID) != nil {
 		review.ID = fmt.Sprintf("rev_%s", generateRandomString())
 	}
 	review.Created = time.Now()
@@ -501,7 +501,7 @@ func (r *ModerationRepository) GetModerationReviews(ctx context.Context, eventID
 
 // CreateModerationDecision creates a consensus decision
 func (r *ModerationRepository) CreateModerationDecision(ctx context.Context, decision *storage.ModerationDecision) error {
-	if common.ValidateRequiredParam(decision.ID, "decision.ID") != nil {
+	if common.ValidateRequiredParam("decision.ID", decision.ID) != nil {
 		decision.ID = fmt.Sprintf("dec_%s", generateRandomString())
 	}
 	decision.Decided = time.Now()
@@ -787,7 +787,7 @@ func (r *ModerationRepository) countReviews(ctx context.Context, eventID string)
 
 // CreateModerationPattern creates a new moderation pattern
 func (r *ModerationRepository) CreateModerationPattern(ctx context.Context, pattern *storage.ModerationPattern) error {
-	if common.ValidateRequiredParam(pattern.ID, "pattern.ID") != nil {
+	if common.ValidateRequiredParam("pattern.ID", pattern.ID) != nil {
 		pattern.ID = fmt.Sprintf("pat_%s", generateRandomString())
 	}
 
@@ -970,7 +970,10 @@ func (r *ModerationRepository) GetModerationEvents(ctx context.Context, filter *
 
 // shouldScanAllEvents checks if we should scan all events instead of using an index
 func (r *ModerationRepository) shouldScanAllEvents(filter *storage.ModerationEventFilter) bool {
-	return filter == nil || (common.ValidateRequiredParam(filter.EventType, "eventType") != nil && common.ValidateRequiredParam(filter.Category, "category") != nil && common.ValidateRequiredParam(filter.ActorID, "actorID") != nil && common.ValidateRequiredParam(filter.ObjectID, "objectID") != nil)
+	return filter == nil || (common.ValidateRequiredParam("eventType", filter.EventType) != nil &&
+		common.ValidateRequiredParam("category", filter.Category) != nil &&
+		common.ValidateRequiredParam("actorID", filter.ActorID) != nil &&
+		common.ValidateRequiredParam("objectID", filter.ObjectID) != nil)
 }
 
 // queryByTypeAndCategory queries events by type and category using GSI2
@@ -1361,7 +1364,7 @@ func (r *ModerationRepository) RecordPatternMatch(_ context.Context, patternID s
 // CreateFilter creates a new filter
 func (r *ModerationRepository) CreateFilter(ctx context.Context, filter *storage.Filter) error {
 	// Generate ID if not provided
-	if common.ValidateRequiredParam(filter.ID, "filter.ID") != nil {
+	if common.ValidateRequiredParam("filter.ID", filter.ID) != nil {
 		filter.ID = uuid.New().String()
 	}
 
@@ -1580,7 +1583,7 @@ func (r *ModerationRepository) DeleteFilter(ctx context.Context, filterID string
 // AddFilterKeyword adds a new keyword to a filter
 func (r *ModerationRepository) AddFilterKeyword(ctx context.Context, filterID string, keyword *storage.FilterKeyword) error {
 	// Generate UUID if not provided
-	if common.ValidateRequiredParam(keyword.ID, "keyword.ID") != nil {
+	if common.ValidateRequiredParam("keyword.ID", keyword.ID) != nil {
 		keyword.ID = uuid.New().String()
 	}
 
@@ -1730,7 +1733,7 @@ func (r *ModerationRepository) DeleteFilterKeyword(ctx context.Context, keywordI
 // AddFilterStatus adds a new status to a filter
 func (r *ModerationRepository) AddFilterStatus(ctx context.Context, filterID string, status *storage.FilterStatus) error {
 	// Generate UUID if not provided
-	if common.ValidateRequiredParam(status.ID, "status.ID") != nil {
+	if common.ValidateRequiredParam("status.ID", status.ID) != nil {
 		status.ID = uuid.New().String()
 	}
 
@@ -2014,7 +2017,7 @@ func (r *ModerationRepository) GetReportedStatuses(ctx context.Context, reportID
 // CreateFlag creates a new flag
 func (r *ModerationRepository) CreateFlag(ctx context.Context, flag *storage.Flag) error {
 	// Generate ID if not provided
-	if common.ValidateRequiredParam(flag.ID, "flag.ID") != nil {
+	if common.ValidateRequiredParam("flag.ID", flag.ID) != nil {
 		flag.ID = fmt.Sprintf("flag_%s", generateRandomString())
 	}
 
@@ -2024,7 +2027,7 @@ func (r *ModerationRepository) CreateFlag(ctx context.Context, flag *storage.Fla
 	if flag.Published.IsZero() {
 		flag.Published = now
 	}
-	if common.ValidateRequiredParam(flag.Status, "flag.Status") != nil {
+	if common.ValidateRequiredParam("flag.Status", flag.Status) != nil {
 		flag.Status = StatusPending
 	}
 
@@ -2344,7 +2347,7 @@ func (r *ModerationRepository) DeleteFlag(ctx context.Context, id string) error 
 // CreateReport creates a new report
 func (r *ModerationRepository) CreateReport(ctx context.Context, report *storage.Report) error {
 	// Generate ID if not provided
-	if common.ValidateRequiredParam(report.ID, "report.ID") != nil {
+	if common.ValidateRequiredParam("report.ID", report.ID) != nil {
 		report.ID = fmt.Sprintf("report_%s", generateRandomString())
 	}
 
@@ -2354,7 +2357,7 @@ func (r *ModerationRepository) CreateReport(ctx context.Context, report *storage
 	report.UpdatedAt = now
 
 	// Set default status if not provided
-	if common.ValidateRequiredParam(report.Status, "report.Status") != nil {
+	if common.ValidateRequiredParam("report.Status", report.Status) != nil {
 		report.Status = "open"
 	}
 
@@ -2779,7 +2782,7 @@ func (r *ModerationRepository) IncrementFalseReports(ctx context.Context, userna
 
 // CreateAuditLog creates a new audit log entry
 func (r *ModerationRepository) CreateAuditLog(ctx context.Context, auditLog *storage.AuditLog) error {
-	if common.ValidateRequiredParam(auditLog.ID, "auditLog.ID") != nil {
+	if common.ValidateRequiredParam("auditLog.ID", auditLog.ID) != nil {
 		auditLog.ID = fmt.Sprintf("audit_%s", generateRandomString())
 	}
 	auditLog.Timestamp = time.Now()
@@ -3014,7 +3017,7 @@ func (r *ModerationRepository) StoreAnalysisResult(ctx context.Context, analysis
 	}
 
 	analysisType, ok := analysisData["analysis_type"].(string)
-	if !ok || common.ValidateRequiredParam(analysisType, "analysisType") != nil {
+	if !ok || common.ValidateRequiredParam("analysisType", analysisType) != nil {
 		analysisType = "combined"
 	}
 

@@ -721,7 +721,7 @@ func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context
 		}
 	}
 
-	if err := common.ValidateSliceLength("statuses", statuses, limit); err == nil {
+	if limit > 0 && len(statuses) > limit {
 		statuses = statuses[:limit]
 	}
 
@@ -800,7 +800,7 @@ func (r *TrendingRepository) GetRecentLinks(ctx context.Context, since time.Time
 		}
 	}
 
-	if err := common.ValidateSliceLength("links", links, limit); err == nil {
+	if limit > 0 && len(links) > limit {
 		links = links[:limit]
 	}
 
@@ -1045,7 +1045,7 @@ func (r *TrendingRepository) GetPopularSearchQueries(ctx context.Context, limit 
 	}
 
 	// Apply limit
-	if err := common.ValidateSliceLength("results", results, limit); err == nil {
+	if limit > 0 && len(results) > limit {
 		results = results[:limit]
 	}
 
@@ -1487,7 +1487,7 @@ func (r *TrendingRepository) GetTopEngagedContent(ctx context.Context, metricTyp
 	}
 
 	// Apply limit
-	if err := common.ValidateSliceLength("rankings", rankings, limit); err == nil {
+	if limit > 0 && len(rankings) > limit {
 		rankings = rankings[:limit]
 	}
 

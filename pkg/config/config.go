@@ -519,6 +519,10 @@ func mustGetJWTSecret() string {
 	if secret := os.Getenv("JWT_SECRET"); secret != "" {
 		return secret
 	}
+	if isRunningTests() {
+		// Avoid reaching out to AWS Secrets Manager during unit tests.
+		return "dummy"
+	}
 
 	// Get ARN from environment
 	arn := os.Getenv("JWT_SECRET_ARN")
@@ -697,6 +701,21 @@ func parseInstanceMode(value string) InstanceMode {
 	}
 }
 
+func isRunningTests() bool {
+	// Common patterns:
+	// - os.Args[0] ends with ".test" for test binaries
+	// - go test passes flags prefixed with "-test."
+	if strings.HasSuffix(os.Args[0], ".test") {
+		return true
+	}
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(arg, "-test.") {
+			return true
+		}
+	}
+	return false
+}
+
 func resolveDynamoTableName() string {
 	table := resolveEnvFirst("DYNAMODB_TABLE", "DYNAMO_TABLE_NAME")
 	if table != "" {
@@ -706,6 +725,9 @@ func resolveDynamoTableName() string {
 	env, envRaw, stage := resolveEnvironmentAndStage()
 	derived := firstNonEmpty(env, envRaw, stage)
 	if derived == "" {
+		if isRunningTests() {
+			return "test-table"
+		}
 		panic("DYNAMODB_TABLE or DYNAMO_TABLE_NAME or ENVIRONMENT/STAGE must be set to determine the DynamoDB table name")
 	}
 	return fmt.Sprintf("lesser-%s", strings.ToLower(derived))

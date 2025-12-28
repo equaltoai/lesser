@@ -1,0 +1,113 @@
+package repositories
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/pay-theory/dynamorm/pkg/mocks"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestBookmarkRepository_Round08_HelperUtilities(t *testing.T) {
+	require.Equal(t, "BOOKMARK#alice", buildBookmarkPK("alice"))
+	require.Equal(t, "OBJECT#status-1", buildObjectSK("status-1"))
+
+	require.Equal(t, 20, sanitizeLimit(0, 20, 100))
+	require.Equal(t, 100, sanitizeLimit(200, 20, 100))
+	require.Equal(t, 33, sanitizeLimit(33, 20, 100))
+
+	require.Equal(t, []string{"a", "b"}, deduplicate([]string{"a", "a", "b"}))
+}
+
+func TestBookmarkRepository_Round08_CountAndQueryUnlockedTimeBookmarks(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	// CountUserBookmarks -> query.Count.
+	mockQuery.On("Count").Return(int64(3), nil).Once()
+
+	// queryUnlockedTimeBookmarks -> query.All.
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Bookmark)
+		pk := buildBookmarkPK("alice")
+		*dest = []models.Bookmark{
+			{PK: pk, SK: "TIME#3", ObjectID: "o3", Locked: false},
+			{PK: pk, SK: "TIME#2", ObjectID: "o2", Locked: false},
+			{PK: pk, SK: "TIME#1", ObjectID: "o1", Locked: false},
+		}
+	}).Return(nil).Once()
+
+	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC))
+
+	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())
+
+	count, err := repo.CountUserBookmarks(ctx, "alice")
+	require.NoError(t, err)
+	require.Equal(t, int64(3), count)
+
+	items, nextCursor, err := repo.queryUnlockedTimeBookmarks(ctx, "alice", 2, "")
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+	require.Equal(t, "TIME#2", nextCursor)
+}
+
+func TestBookmarkRepository_Round08_CascadeDeleteUserBookmarks_FallbackDeletes(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	// Query() is implemented with query.All; feed a batch once, then empty to stop.
+	allCalls := 0
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		allCalls++
+		dest := args.Get(0).(*[]*models.Bookmark)
+		if allCalls == 1 {
+			*dest = []*models.Bookmark{
+				{PK: buildBookmarkPK("alice"), SK: "OBJECT#o1"},
+				{PK: buildBookmarkPK("alice"), SK: "TIME#t1"},
+			}
+			return
+		}
+		*dest = []*models.Bookmark{}
+	}).Return(nil).Maybe()
+
+	// BatchDelete fails so the repository falls back to individual Delete calls.
+	mockQuery.On("BatchDelete", mock.Anything).Return(errors.New("batch delete failed")).Once()
+
+	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC))
+
+	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())
+	require.NoError(t, repo.CascadeDeleteUserBookmarks(ctx, "alice"))
+}
+
+func TestBookmarkRepository_Round08_CascadeDeleteObjectBookmarks_ScanAndBatchFallback(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Bookmark)
+		*dest = []models.Bookmark{
+			{PK: buildBookmarkPK("alice"), SK: "TIME#t1#obj-1", ObjectID: "obj-1"},
+			{PK: buildBookmarkPK("bob"), SK: "TIME#t2#obj-1x", ObjectID: "obj-1x"}, // filtered out (partial match)
+			{PK: buildBookmarkPK("carol"), SK: "OBJECT#obj-1", ObjectID: "obj-1"},
+		}
+	}).Return(nil).Once()
+
+	// BatchDelete fails so it falls back to individual Delete calls.
+	mockQuery.On("BatchDelete", mock.Anything).Return(errors.New("batch delete failed")).Once()
+
+	// Force one Delete failure to hit both branches; permissive mocks handle the rest.
+	mockQuery.On("Delete").Return(errors.New("delete failed")).Once()
+
+	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC))
+
+	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())
+	require.NoError(t, repo.CascadeDeleteObjectBookmarks(ctx, "obj-1"))
+}

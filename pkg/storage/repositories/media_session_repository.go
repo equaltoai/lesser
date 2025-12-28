@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/types"
@@ -54,6 +55,16 @@ func NewMediaSessionRepositoryWithCostTracking(db core.DB, tableName string, log
 // SetSessionTTL configures the TTL for streaming sessions
 func (r *MediaSessionRepository) SetSessionTTL(ttl time.Duration) {
 	r.sessionTTL = ttl
+}
+
+func (r *MediaSessionRepository) isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if dynamormerrors.IsNotFound(err) {
+		return true
+	}
+	return apperrors.HasCode(err, apperrors.CodeNotFound)
 }
 
 // ====================================================================================
@@ -227,7 +238,7 @@ func (r *MediaSessionRepository) ValidateSessionAccess(ctx context.Context, sess
 	var model models.MediaSession
 	err := r.Get(ctx, fmt.Sprintf("SESSION#%s", sessionID), "METADATA", &model)
 	if err != nil {
-		if dynamormerrors.IsNotFound(err) {
+		if r.isNotFoundError(err) {
 			return false, nil // Session doesn't exist
 		}
 		return false, ErrorHandler.HandleGetError(err, EntitySession, sessionID)
@@ -272,8 +283,8 @@ func (r *MediaSessionRepository) GetSession(ctx context.Context, sessionID strin
 
 	err := r.Get(ctx, fmt.Sprintf("SESSION#%s", sessionID), "METADATA", &model)
 	if err != nil {
-		if dynamormerrors.IsNotFound(err) {
-			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntitySession, sessionID)
+		if r.isNotFoundError(err) {
+			return nil, err
 		}
 		return nil, ErrorHandler.HandleGetError(err, EntitySession, sessionID)
 	}

@@ -2,15 +2,16 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"time"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 
-	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
@@ -56,7 +57,11 @@ func (r *MediaMetadataRepository) GetMediaMetadata(ctx context.Context, mediaID 
 	var metadata models.MediaMetadata
 	err := r.Get(ctx, fmt.Sprintf("MEDIA#%s", mediaID), "METADATA", &metadata)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		var appErr *apperrors.AppError
+		if stdErrors.As(err, &appErr) && appErr.Code == apperrors.CodeNotFound {
+			return nil, fmt.Errorf("%w: %s", ErrMediaMetadataNotFound, mediaID)
+		}
+		if dynamormerrors.IsNotFound(err) {
 			return nil, fmt.Errorf("%w: %s", ErrMediaMetadataNotFound, mediaID)
 		}
 		return nil, fmt.Errorf("%w: %w", ErrMediaMetadataQueryFailed, err)
@@ -155,10 +160,10 @@ func (r *MediaMetadataRepository) MarkProcessingStarted(ctx context.Context, med
 func (r *MediaMetadataRepository) MarkProcessingComplete(ctx context.Context, mediaID string, result ProcessingResult) error {
 	metadata, err := r.GetMediaMetadata(ctx, mediaID)
 	if err != nil {
-		// Create new metadata record if it doesn't exist
-		metadata = &models.MediaMetadata{
-			MediaID: mediaID,
+		if !stdErrors.Is(err, ErrMediaMetadataNotFound) {
+			return err
 		}
+		metadata = &models.MediaMetadata{MediaID: mediaID}
 	}
 
 	// Update metadata with processing results - this is the core media processing functionality
@@ -188,7 +193,7 @@ func (r *MediaMetadataRepository) MarkProcessingComplete(ctx context.Context, me
 		}
 	}
 
-	if err := common.ValidateRequiredParam("metadata.PK", metadata.PK); err != nil {
+	if stdErrors.Is(err, ErrMediaMetadataNotFound) {
 		return r.CreateMediaMetadata(ctx, metadata)
 	}
 	return r.UpdateMediaMetadata(ctx, metadata)
@@ -199,10 +204,10 @@ func (r *MediaMetadataRepository) MarkProcessingComplete(ctx context.Context, me
 func (r *MediaMetadataRepository) MarkProcessingFailed(ctx context.Context, mediaID string, errorMsg string) error {
 	metadata, err := r.GetMediaMetadata(ctx, mediaID)
 	if err != nil {
-		// Create new metadata record if it doesn't exist
-		metadata = &models.MediaMetadata{
-			MediaID: mediaID,
+		if !stdErrors.Is(err, ErrMediaMetadataNotFound) {
+			return err
 		}
+		metadata = &models.MediaMetadata{MediaID: mediaID}
 	}
 
 	metadata.SetFailed()
@@ -211,7 +216,7 @@ func (r *MediaMetadataRepository) MarkProcessingFailed(ctx context.Context, medi
 		zap.String("media_id", mediaID),
 		zap.String("error", errorMsg))
 
-	if err := common.ValidateRequiredParam("metadata.PK", metadata.PK); err != nil {
+	if stdErrors.Is(err, ErrMediaMetadataNotFound) {
 		return r.CreateMediaMetadata(ctx, metadata)
 	}
 	return r.UpdateMediaMetadata(ctx, metadata)

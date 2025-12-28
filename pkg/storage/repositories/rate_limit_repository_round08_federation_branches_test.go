@@ -1,0 +1,57 @@
+package repositories
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/pay-theory/dynamorm/pkg/mocks"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zaptest"
+)
+
+func TestRound08_RateLimitRepository_FederationAndLoginAttemptBranches(t *testing.T) {
+	baseTime := time.Now().UTC()
+	ctx := context.Background()
+
+	t.Run("RecordLoginAttempt create error", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("Create").Return(errors.New("create failed")).Once()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+
+		repo := NewRateLimitRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)
+		require.Error(t, repo.RecordLoginAttempt(ctx, "user-1", true))
+	})
+
+	t.Run("CheckFederationRateLimit blocked", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("First", mock.AnythingOfType("*models.APIRateLimit")).Run(func(args mock.Arguments) {
+			rl := args.Get(0).(*models.APIRateLimit)
+			rl.PK = "RATELIMIT#DOMAIN#example.com:endpoint"
+			rl.SK = "WINDOW#2025-01-01T00:00:00Z"
+			rl.Window = time.Now().Truncate(time.Minute)
+			rl.Blocked = true
+			rl.BlockedUntil = time.Now().Add(time.Minute)
+		}).Return(nil).Once()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+
+		repo := NewRateLimitRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)
+		require.Error(t, repo.CheckFederationRateLimit(ctx, "example.com", "endpoint", 10, time.Minute))
+	})
+
+	t.Run("CheckFederationRateLimit ignores get errors", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("First", mock.AnythingOfType("*models.APIRateLimit")).Return(errors.New("boom")).Once()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+
+		repo := NewRateLimitRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)
+		require.NoError(t, repo.CheckFederationRateLimit(ctx, "example.com", "endpoint", 10, time.Minute))
+	})
+}
+
