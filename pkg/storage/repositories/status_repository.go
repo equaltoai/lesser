@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -359,7 +360,7 @@ func (r *StatusRepository) DeleteBoostStatus(ctx context.Context, boosterID, tar
 
 	boostStatus, err := r.findBoostStatus(ctx, boosterID, targetStatusID)
 	if err != nil {
-		if errors.IsNotFound(err) || err == storage.ErrNotFound {
+		if errors.IsNotFound(err) || stdErrors.Is(err, storage.ErrNotFound) {
 			r.logger.Debug("no boost status found to delete",
 				zap.String("booster_id", boosterID),
 				zap.String("target_status_id", targetStatusID))

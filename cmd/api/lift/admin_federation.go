@@ -113,7 +113,7 @@ func (h *Handler) HandleGetAdminDomainBlockLift(ctx *lift.Context) error {
 	// Get domain block from storage
 	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context, blockID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "domain block not found"})
 		}
@@ -271,7 +271,7 @@ func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *lift.Context) error {
 
 	// Update domain block
 	if err := h.repos.DomainBlock().UpdateDomainBlock(ctx.Context, blockID, updates); err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "domain block not found"})
 		}
@@ -333,7 +333,7 @@ func (h *Handler) HandleDeleteAdminDomainBlockLift(ctx *lift.Context) error {
 	// Get block before deletion for logging
 	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context, blockID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "domain block not found"})
 		}
@@ -575,7 +575,7 @@ func (h *Handler) HandleGetFederationInstanceLift(ctx *lift.Context) error {
 	// Get instance info from storage
 	instance, err := h.repos.Federation().GetInstanceInfo(ctx.Context, domain)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "instance not found"})
 		}
@@ -805,7 +805,7 @@ func (h *Handler) adminDomainDeleteAction(ctx *lift.Context, itemType, validatio
 
 	// Delete the item
 	if err := deleteFn(itemID); err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": notFoundError})
 		}

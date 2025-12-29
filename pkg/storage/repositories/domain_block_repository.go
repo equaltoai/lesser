@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -390,7 +391,7 @@ func (r *DomainBlockRepository) DeleteInstanceDomainBlock(ctx context.Context, d
 func (r *DomainBlockRepository) IsInstanceDomainBlocked(ctx context.Context, domain string) (bool, *storage.InstanceDomainBlock, error) {
 	block, err := r.GetInstanceDomainBlock(ctx, domain)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			// Check parent domains (e.g., if sub.example.com is queried, check example.com)
 			parts := strings.Split(domain, ".")
 			for i := 1; i < len(parts); i++ {

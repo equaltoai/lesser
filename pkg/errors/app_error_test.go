@@ -2,6 +2,7 @@ package errors
 
 import (
 	stdErrors "errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -56,4 +57,18 @@ func TestHelpers_ExtractFields(t *testing.T) {
 	require.Equal(t, CategoryAuth, GetErrorCategory(err))
 
 	require.False(t, IsRetryable(err))
+}
+
+func TestAsAppError_WorksThroughWrapping(t *testing.T) {
+	inner := Forbidden("nope")
+	wrapped := fmt.Errorf("wrapped: %w", inner)
+
+	got, ok := AsAppError(wrapped)
+	require.True(t, ok)
+	require.Same(t, inner, got)
+
+	require.True(t, IsAppError(wrapped))
+	require.True(t, HasCode(wrapped, CodeForbidden))
+	require.True(t, HasCategory(wrapped, CategoryAuth))
+	require.Equal(t, 403, GetHTTPStatus(wrapped))
 }

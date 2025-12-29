@@ -27,6 +27,10 @@ func TestErrorUtils_Coverage(t *testing.T) {
 
 	// HandleGetError
 	require.NoError(t, utils.HandleGetError(nil, "entity", "id"))
+	err = utils.HandleGetError(storage.ErrNotFound, "entity", "id")
+	require.Error(t, err)
+	require.ErrorIs(t, err, storage.ErrNotFound)
+	require.True(t, repoerrors.HasCode(err, repoerrors.CodeNotFound))
 	err = utils.HandleGetError(dynamormerrors.ErrItemNotFound, "entity", "id")
 	require.Error(t, err)
 	require.True(t, dynamormerrors.IsNotFound(err))
@@ -36,6 +40,10 @@ func TestErrorUtils_Coverage(t *testing.T) {
 
 	// HandleCreateError
 	require.NoError(t, utils.HandleCreateError(nil, "entity", "id"))
+	err = utils.HandleCreateError(storage.ErrAlreadyExists, "entity", "id")
+	require.Error(t, err)
+	require.ErrorIs(t, err, storage.ErrAlreadyExists)
+	require.True(t, repoerrors.HasCode(err, repoerrors.CodeAlreadyExists))
 	err = utils.HandleCreateError(dynamormerrors.ErrConditionFailed, "entity", "id")
 	require.Error(t, err)
 	require.True(t, dynamormerrors.IsConditionFailed(err))
@@ -54,6 +62,7 @@ func TestErrorUtils_Coverage(t *testing.T) {
 
 	// HandleDeleteError
 	require.NoError(t, utils.HandleDeleteError(nil, "entity", "id"))
+	require.NoError(t, utils.HandleDeleteError(storage.ErrNotFound, "entity", "id"))
 	require.NoError(t, utils.HandleDeleteError(dynamormerrors.ErrItemNotFound, "entity", "id"))
 	err = utils.HandleDeleteError(errors.New("boom"), "entity", "id")
 	require.Error(t, err)
@@ -102,6 +111,8 @@ func TestRepositoryErrors_MappingAndHelpers_Coverage(t *testing.T) {
 	require.NoError(t, MapDynamoDBError(nil))
 	require.ErrorIs(t, MapDynamoDBError(dynamormerrors.ErrItemNotFound), storage.ErrNotFound)
 	require.ErrorIs(t, MapDynamoDBError(dynamormerrors.ErrConditionFailed), storage.ErrAlreadyExists)
+	require.True(t, dynamormerrors.IsNotFound(MapDynamoDBError(dynamormerrors.ErrItemNotFound)))
+	require.True(t, dynamormerrors.IsConditionFailed(MapDynamoDBError(dynamormerrors.ErrConditionFailed)))
 
 	require.ErrorIs(t, MapDynamoDBError(errors.New("validation failed")), storage.ErrInvalidInput)
 	require.ErrorIs(t, MapDynamoDBError(errors.New("unauthorized")), storage.ErrUnauthorized)

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	dmerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
@@ -52,7 +52,7 @@ func TestBlockRepository_CreateAndDeleteAndIsBlocked(t *testing.T) {
 	mockQuery.On("First", mock.Anything).Return(pkgErrors.ItemNotFoundWithID("block", "x")).Once()
 	ok, err = repo.IsBlocked(context.Background(), "https://example.com/users/a", "https://example.com/users/b")
 	require.False(t, ok)
-	require.Error(t, err)
+	require.NoError(t, err)
 
 	mockQuery.On("First", mock.Anything).Return(errors.New("not found")).Once()
 	ok, err = repo.IsBlocked(context.Background(), "https://example.com/users/a", "https://example.com/users/b")

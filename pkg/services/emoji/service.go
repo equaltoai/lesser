@@ -9,6 +9,7 @@ package emoji
 
 import (
 	"context"
+	stdErrors "errors"
 	"strings"
 	"time"
 
@@ -125,7 +126,7 @@ func (s *Service) GetEmoji(ctx context.Context, query *GetEmojiQuery) (*storage.
 
 	emoji, err := s.emojiRepo.GetCustomEmoji(ctx, query.Shortcode)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			return nil, errors.ErrEmojiNotFound
 		}
 		return nil, errors.ErrGetEmoji
@@ -207,7 +208,7 @@ func (s *Service) UpdateEmoji(ctx context.Context, cmd *UpdateEmojiCommand) (*Re
 	// Get existing emoji
 	emoji, err := s.emojiRepo.GetCustomEmoji(ctx, cmd.Shortcode)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			return nil, errors.ErrEmojiNotFound
 		}
 		return nil, errors.ErrGetEmoji
@@ -261,7 +262,7 @@ func (s *Service) DeleteEmoji(ctx context.Context, cmd *DeleteEmojiCommand) erro
 	// Get existing emoji to verify it exists
 	emoji, err := s.emojiRepo.GetCustomEmoji(ctx, cmd.Shortcode)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			return errors.ErrEmojiNotFound
 		}
 		return errors.ErrGetEmoji
@@ -292,7 +293,7 @@ func (s *Service) CopyRemoteEmoji(ctx context.Context, cmd *CopyEmojiCommand) (*
 	// Get the remote emoji
 	remoteEmoji, err := s.emojiRepo.GetRemoteEmoji(ctx, cmd.Shortcode, cmd.Domain)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			return nil, errors.ErrRemoteEmojiNotFound
 		}
 		return nil, errors.ErrGetRemoteEmoji
@@ -404,7 +405,7 @@ func (s *Service) IncrementUsage(ctx context.Context, cmd *IncrementUsageCommand
 	// Increment usage in repository
 	err := s.emojiRepo.IncrementEmojiUsage(ctx, cmd.Shortcode)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			// Don't treat missing emoji as error - might be from remote instance
 			s.logger.Debug("emoji not found for usage increment",
 				zap.String("shortcode", cmd.Shortcode))

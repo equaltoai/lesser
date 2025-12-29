@@ -3,6 +3,7 @@ package trust
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -46,7 +47,7 @@ func NewService(repo TrustRepositoryInterface, logger *zap.Logger) *Service {
 func (s *Service) GetTrustScore(ctx context.Context, fromActor, toActor string) (*TrustScore, error) {
 	// First try to get the direct trust relationship
 	relationship, err := s.repo.GetTrustRelationship(ctx, fromActor, toActor, string(TrustCategoryGeneral))
-	if err != nil && err != storage.ErrNotFound {
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		return nil, err
 	}
 
@@ -68,7 +69,7 @@ func (s *Service) GetTrustScore(ctx context.Context, fromActor, toActor string) 
 	// No direct relationship, get calculated score
 	calculatedScore, err := s.repo.GetTrustScore(ctx, toActor, string(TrustCategoryGeneral))
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			// No trust data available, return default neutral score
 			return &TrustScore{
 				ActorID:         toActor,
@@ -223,7 +224,7 @@ func (s *Service) GetTrustSummary(ctx context.Context, actorID string) (*TrustSu
 
 	for _, category := range categories {
 		score, err := s.repo.GetTrustScore(ctx, actorID, string(category))
-		if err != nil && err != storage.ErrNotFound {
+		if err != nil && !errors.Is(err, storage.ErrNotFound) {
 			s.logger.Warn("failed to get trust score for category",
 				zap.String("actor", actorID),
 				zap.String("category", string(category)),

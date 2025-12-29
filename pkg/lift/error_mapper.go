@@ -12,8 +12,7 @@ import (
 
 // MapCommonError converts common package errors to Lift errors
 func MapCommonError(err error) error {
-	switch e := err.(type) {
-	case *pkgerrors.AppError:
+	if e, ok := pkgerrors.AsAppError(err); ok {
 		// Map AppError based on status code
 		switch e.HTTPStatusCode {
 		case 400:
@@ -39,9 +38,8 @@ func MapCommonError(err error) error {
 		default:
 			return InternalError(e.Message)
 		}
-	default:
-		return err
 	}
+	return err
 }
 
 // MapStorageError converts storage errors to appropriate Lift errors
@@ -50,42 +48,46 @@ func MapStorageError(err error) error {
 		return nil
 	}
 
-	// Check for storage-specific errors
-	switch err {
-	case storage.ErrNotFound:
-		return NotFoundError("resource")
-	case storage.ErrAlreadyExists:
-		return ConflictError("resource", "already exists")
-	case storage.ErrInvalidInput:
-		return ValidationError("Invalid input")
-	// Note: condition failed is handled by DynamoDB-specific errors below
-	default:
-		// Check for DynamoDB-specific errors
-		var rnf *types.ResourceNotFoundException
-		if errors.As(err, &rnf) {
-			return NotFoundError("resource")
-		}
-
-		var ccf *types.ConditionalCheckFailedException
-		if errors.As(err, &ccf) {
-			return ConflictError("resource", "condition check failed")
-		}
-
-		// Note: ValidationException is not a separate type in AWS SDK v2
-
-		var rle *types.RequestLimitExceeded
-		if errors.As(err, &rle) {
-			return RateLimitError("Request throttled, please try again")
-		}
-
-		var pte *types.ProvisionedThroughputExceededException
-		if errors.As(err, &pte) {
-			return RateLimitError("Request throttled, please try again")
-		}
-
-		// For any other storage error, return internal error
-		return InternalError("Database operation failed")
+	// Prefer canonical AppError mapping first.
+	if pkgerrors.IsAppError(err) {
+		return MapCommonError(err)
 	}
+
+	// Check for storage-specific errors (legacy sentinels) and wrapped forms.
+	switch {
+	case errors.Is(err, storage.ErrNotFound):
+		return NotFoundError("resource")
+	case errors.Is(err, storage.ErrAlreadyExists):
+		return ConflictError("resource", "already exists")
+	case errors.Is(err, storage.ErrInvalidInput):
+		return ValidationError("Invalid input")
+	}
+
+	// Check for DynamoDB-specific errors
+	var rnf *types.ResourceNotFoundException
+	if errors.As(err, &rnf) {
+		return NotFoundError("resource")
+	}
+
+	var ccf *types.ConditionalCheckFailedException
+	if errors.As(err, &ccf) {
+		return ConflictError("resource", "condition check failed")
+	}
+
+	// Note: ValidationException is not a separate type in AWS SDK v2
+
+	var rle *types.RequestLimitExceeded
+	if errors.As(err, &rle) {
+		return RateLimitError("Request throttled, please try again")
+	}
+
+	var pte *types.ProvisionedThroughputExceededException
+	if errors.As(err, &pte) {
+		return RateLimitError("Request throttled, please try again")
+	}
+
+	// For any other storage error, return internal error
+	return InternalError("Database operation failed")
 }
 
 // MapAWSError maps AWS SDK errors to appropriate Lift errors

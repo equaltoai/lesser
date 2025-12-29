@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -58,7 +59,7 @@ func (d *DynamoDBChecker) Check(ctx context.Context, tableName string) (*Compone
 	result.LatencyMs = latency.Milliseconds()
 
 	// DynamoDB is healthy if we can query it (even if no results)
-	if err != nil && err != storage.ErrNotFound {
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		result.Status = HealthStatusCritical
 		result.Error = fmt.Sprintf("DynamoDB table '%s' query failed: %v", tableName, err)
 		return result, err

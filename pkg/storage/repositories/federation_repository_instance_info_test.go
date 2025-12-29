@@ -56,7 +56,7 @@ func TestFederationRepository_GetInstanceInfo_NotFound(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
-	assert.Equal(t, storage.ErrNotFound, err)
+	assert.ErrorIs(t, err, storage.ErrNotFound)
 	assert.Nil(t, result)
 
 	mockDB.AssertExpectations(t)

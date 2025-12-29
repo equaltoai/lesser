@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
@@ -55,8 +56,11 @@ func TestUserRepository_CreateUser_MissingEmail(t *testing.T) {
 	err := repo.CreateUser(context.Background(), user)
 
 	assert.Error(t, err)
-	// Validation error wrapped by error handler
-	assert.Contains(t, err.Error(), "Failed to create user")
+	// Validation errors must remain client errors and not be re-wrapped into 5xx errors.
+	appErr, ok := pkgErrors.AsAppError(err)
+	assert.True(t, ok)
+	assert.True(t, pkgErrors.HasCode(err, pkgErrors.CodeValidationFailed))
+	assert.NotEmpty(t, appErr.Metadata["field"])
 }
 
 func TestUserRepository_CreateUser_ConflictError(t *testing.T) {

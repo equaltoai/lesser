@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -697,7 +698,10 @@ func TestSearchDLQMessages_MissingServiceReturnsError(t *testing.T) {
 	assert.Nil(t, messages)
 	assert.Empty(t, cursor)
 	// The error should contain information about missing service
-	assert.Contains(t, err.Error(), "dlq")
+	appErr, ok := pkgErrors.AsAppError(err)
+	require.True(t, ok)
+	assert.True(t, pkgErrors.HasCode(err, pkgErrors.CodeRequiredFieldMissing))
+	assert.Equal(t, "service", appErr.Metadata["field"])
 }
 
 func TestSearchDLQMessages_BasicQuery(t *testing.T) {

@@ -2,6 +2,7 @@ package mastodon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -56,7 +57,7 @@ func (p *EmojiParser) ParseEmojis(ctx context.Context, content string) ([]Parsed
 			emoji, err := p.store.Emoji().GetCustomEmoji(ctx, shortcode)
 			if err != nil {
 				// If emoji not found, skip it (leave as plain text)
-				if err == storage.ErrNotFound {
+				if errors.Is(err, storage.ErrNotFound) {
 					continue
 				}
 				// For other errors, return the error

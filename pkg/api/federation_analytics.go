@@ -3,6 +3,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -194,7 +195,7 @@ func (fah *FederationAnalyticsHandler) GetInstanceMetadata(w http.ResponseWriter
 
 	metadata, err := fah.storage.Federation().GetInstanceMetadata(r.Context(), domain)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			http.Error(w, "Instance not found", http.StatusNotFound)
 			return
 		}

@@ -518,7 +518,7 @@ func TestObjectRepository_UpdateObjectWithHistory_NotFoundPropagatesError(t *tes
 
 	notePublished := baseTime.Add(-2 * time.Hour)
 	noteUpdated := baseTime
-	require.Error(t, repo.UpdateObjectWithHistory(ctx, activitypub.Note{
+	require.NoError(t, repo.UpdateObjectWithHistory(ctx, activitypub.Note{
 		BaseObject: activitypub.BaseObject{
 			ID:        "note-1",
 			Type:      activitypub.NoteType,

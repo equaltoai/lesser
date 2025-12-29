@@ -25,8 +25,9 @@ func TestShouldResetBudget(t *testing.T) {
 	t.Run("daily_reset_same_day", func(t *testing.T) {
 		now := time.Now()
 		budget := &models.RelayBudget{
-			Period:      "daily",
-			LastResetAt: now.Add(-1 * time.Hour), // Same day, 1 hour ago
+			Period: "daily",
+			// Always same calendar day regardless of when the test runs.
+			LastResetAt: time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()),
 		}
 
 		// Should NOT reset - same day

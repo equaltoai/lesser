@@ -1,6 +1,7 @@
 package errors
 
 import (
+	stdErrors "errors"
 	"fmt"
 	"time"
 )
@@ -51,6 +52,24 @@ func (e *AppError) Error() string {
 // Unwrap allows errors.Is and errors.As to work with the underlying error
 func (e *AppError) Unwrap() error {
 	return e.InternalError
+}
+
+// Clone creates a shallow copy of the error, including a copy of Metadata map,
+// so callers can safely add context without mutating shared instances.
+func (e *AppError) Clone() *AppError {
+	if e == nil {
+		return nil
+	}
+
+	clone := *e
+	if e.Metadata != nil {
+		clone.Metadata = make(map[string]interface{}, len(e.Metadata))
+		for k, v := range e.Metadata {
+			clone.Metadata[k] = v
+		}
+	}
+
+	return &clone
 }
 
 // WithMetadata adds metadata to the error
@@ -154,15 +173,21 @@ func WrapErrorf(err error, code ErrorCode, category ErrorCategory, format string
 
 // IsAppError checks if an error is an AppError
 func IsAppError(err error) bool {
-	_, ok := err.(*AppError)
+	_, ok := AsAppError(err)
 	return ok
 }
 
 // AsAppError attempts to convert an error to AppError
 func AsAppError(err error) (*AppError, bool) {
-	if appErr, ok := err.(*AppError); ok {
+	if err == nil {
+		return nil, false
+	}
+
+	var appErr *AppError
+	if stdErrors.As(err, &appErr) {
 		return appErr, true
 	}
+
 	return nil, false
 }
 

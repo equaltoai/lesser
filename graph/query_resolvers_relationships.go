@@ -412,14 +412,14 @@ func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category
 
 	// Get relationships where this actor is trusted (incoming trust)
 	incomingRels, _, err := trustRepo.GetTrustedByRelationships(ctx, actorID, 100, "")
-	if err != nil && err != storage.ErrNotFound {
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		r.Logger.Error("Failed to get incoming trust relationships", zap.Error(err))
 		return nil, errors.Join(errors.New("failed to fetch trust relationships"), err)
 	}
 
 	// Get relationships where this actor trusts others (outgoing trust)
 	outgoingRels, _, err := trustRepo.GetTrustRelationships(ctx, actorID, 100, "")
-	if err != nil && err != storage.ErrNotFound {
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		r.Logger.Error("Failed to get outgoing trust relationships", zap.Error(err))
 		return nil, errors.Join(errors.New("failed to fetch trust relationships"), err)
 	}
