@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+## You are prohibited from reverting changes or deleting files
+- if there is a need for such destructive actions your only recourse is to ask the user to perform the actions
+
 ## Project Structure & Module Organization
 - `cmd/` holds Lambda handlers that package to `bin/*.zip`.
 - `pkg/` hosts shared domain logic (`activitypub`, `services`, `storage`, `streaming`) and supporting helpers.
