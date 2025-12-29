@@ -47,8 +47,28 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 		"spoiler_text":   req.SpoilerText,
 		"language":       req.Language,
 		"in_reply_to_id": req.InReplyToID,
-		"media_ids":      req.MediaIDs,
-		"scheduled_at":   req.ScheduledAt,
+	}
+	if len(req.MediaIDs) > 0 {
+		mediaIDs := make([]interface{}, 0, len(req.MediaIDs))
+		for _, id := range req.MediaIDs {
+			mediaIDs = append(mediaIDs, id)
+		}
+		statusParams["media_ids"] = mediaIDs
+	}
+	if req.ScheduledAt != nil {
+		statusParams["scheduled_at"] = *req.ScheduledAt
+	}
+	if req.Poll != nil {
+		options := make([]interface{}, 0, len(req.Poll.Options))
+		for _, opt := range req.Poll.Options {
+			options = append(options, opt)
+		}
+		statusParams["poll"] = map[string]interface{}{
+			"options":     options,
+			"expires_in":  req.Poll.ExpiresIn,
+			"multiple":    req.Poll.Multiple,
+			"hide_totals": req.Poll.HideTotals,
+		}
 	}
 	if err := common.ValidateStatusParams(statusParams); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())

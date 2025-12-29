@@ -1,6 +1,7 @@
 package lift
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -8,7 +9,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/translation"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -26,6 +29,18 @@ type TranslationResult struct {
 type TranslationLanguage struct {
 	Code string `json:"code"`
 	Name string `json:"name"`
+}
+
+type translationService interface {
+	TranslateHTML(ctx context.Context, content, sourceLang, targetLang string) (string, string, error)
+	TranslateText(ctx context.Context, content, sourceLang, targetLang string) (string, string, error)
+	GetSupportedLanguages(ctx context.Context) ([]translation.LanguageInfo, error)
+}
+
+type translationServiceFactory func(ctx context.Context, cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger, cacheEnabled bool) (translationService, error)
+
+var newTranslationService translationServiceFactory = func(ctx context.Context, cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger, cacheEnabled bool) (translationService, error) {
+	return translation.NewService(ctx, cfg, repos, logger, cacheEnabled)
 }
 
 // HandleTranslateStatusLift handles POST /api/v1/statuses/:id/translate
@@ -244,8 +259,8 @@ func (h *Handler) performTranslation(ctx *lift.Context, statusID, content, spoil
 }
 
 // initializeTranslationService initializes the translation service
-func (h *Handler) initializeTranslationService(ctx *lift.Context) (*translation.Service, error) {
-	translationSvc, err := translation.NewService(ctx.Context, h.cfg, h.repos, h.logger, true)
+func (h *Handler) initializeTranslationService(ctx *lift.Context) (translationService, error) {
+	translationSvc, err := newTranslationService(ctx.Context, h.cfg, h.repos, h.logger, true)
 	if err != nil {
 		h.logger.Error("failed to initialize translation service", zap.Error(err))
 		return nil, common.RespondInternalServerError(ctx, "translation service initialization failed")
@@ -254,7 +269,7 @@ func (h *Handler) initializeTranslationService(ctx *lift.Context) (*translation.
 }
 
 // translateContent translates the main content
-func (h *Handler) translateContent(ctx *lift.Context, svc *translation.Service, statusID, content, sourceLang, targetLang string) (string, string, error) {
+func (h *Handler) translateContent(ctx *lift.Context, svc translationService, statusID, content, sourceLang, targetLang string) (string, string, error) {
 	translatedContent, detectedLang, err := svc.TranslateHTML(ctx.Context, content, sourceLang, targetLang)
 	if err != nil {
 		h.logger.Error("failed to translate content",
@@ -267,7 +282,7 @@ func (h *Handler) translateContent(ctx *lift.Context, svc *translation.Service, 
 }
 
 // translateSpoilerText translates the spoiler text if present
-func (h *Handler) translateSpoilerText(ctx *lift.Context, svc *translation.Service, spoilerText, sourceLang, targetLang string) string {
+func (h *Handler) translateSpoilerText(ctx *lift.Context, svc translationService, spoilerText, sourceLang, targetLang string) string {
 	if err := common.ValidateRequiredParam("spoiler_text", spoilerText); err != nil {
 		return ""
 	}
@@ -290,7 +305,7 @@ func (h *Handler) HandleGetTranslationLanguagesLift(ctx *lift.Context) error {
 	}
 
 	// Initialize translation service
-	translationSvc, err := translation.NewService(ctx.Context, h.cfg, h.repos, h.logger, true)
+	translationSvc, err := newTranslationService(ctx.Context, h.cfg, h.repos, h.logger, true)
 	if err != nil {
 		h.logger.Error("failed to initialize translation service", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "translation service initialization failed")

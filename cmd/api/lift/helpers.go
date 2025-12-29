@@ -423,7 +423,7 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 	transformCtx := context.WithValue(ctx, baseURLContextKey, h.cfg.BaseURL())
 
 	baseStatus, err := transformer.Transform(transformCtx, statusMap)
-	if err != nil {
+	if err != nil || baseStatus.ID == "" {
 		// Fallback to minimal status if transformation fails
 		baseStatus = models.Status{
 			ID:        storageStatus.StatusID,

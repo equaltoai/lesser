@@ -53,6 +53,7 @@ type CheckResult struct {
 type HealthChecker struct {
 	logger      *zap.Logger
 	repos       core.RepositoryStorage
+	httpClient  *http.Client
 	startTime   time.Time
 	version     string
 	environment string
@@ -63,10 +64,18 @@ func NewHealthChecker(logger *zap.Logger, repos core.RepositoryStorage) *HealthC
 	return &HealthChecker{
 		logger:      logger,
 		repos:       repos,
+		httpClient:  &http.Client{Timeout: 5 * time.Second},
 		startTime:   time.Now(),
 		version:     version.GetVersion(),
 		environment: lconfig.GetEnvironment(),
 	}
+}
+
+func (h *HealthChecker) httpClientOrDefault() *http.Client {
+	if h != nil && h.httpClient != nil {
+		return h.httpClient
+	}
+	return &http.Client{Timeout: 5 * time.Second}
 }
 
 // HandleLivenessCheck handles GET /health/live - basic liveness check
@@ -536,8 +545,7 @@ func (h *HealthChecker) checkExternalDependencies(ctx context.Context, checks ma
 func (h *HealthChecker) checkWellKnownEndpoint(_ context.Context, domain string) CheckResult {
 	start := time.Now()
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("https://%s/.well-known/nodeinfo", domain))
+	resp, err := h.httpClientOrDefault().Get(fmt.Sprintf("https://%s/.well-known/nodeinfo", domain))
 
 	duration := time.Since(start)
 
@@ -581,8 +589,7 @@ func (h *HealthChecker) checkFederationConnectivity(_ context.Context) CheckResu
 	start := time.Now()
 
 	// Check if we can connect to a well-known ActivityPub instance
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get("https://mastodon.social/.well-known/nodeinfo")
+	resp, err := h.httpClientOrDefault().Get("https://mastodon.social/.well-known/nodeinfo")
 
 	duration := time.Since(start)
 

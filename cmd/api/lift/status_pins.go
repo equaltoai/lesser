@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -117,7 +118,7 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 
 	// Store the pin
 	if err := h.repos.Social().CreateStatusPin(ctx.Context, pin); err != nil {
-		if strings.Contains(err.Error(), "already pinned") {
+		if strings.Contains(err.Error(), "already pinned") || apperrors.HasCode(err, apperrors.CodeAlreadyExists) {
 			ctx.Status(http.StatusUnprocessableEntity)
 			return ctx.JSON(map[string]string{
 				"error": "status already pinned",
@@ -383,7 +384,7 @@ func (h *Handler) storeMuteWithRetry(ctx *lift.Context, username, conversationID
 		return nil
 	}
 
-	if !strings.Contains(err.Error(), "already muted") {
+	if !strings.Contains(err.Error(), "already muted") && !apperrors.HasCode(err, apperrors.CodeAlreadyExists) {
 		h.logger.Error("failed to mute conversation", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": "internal server error"})

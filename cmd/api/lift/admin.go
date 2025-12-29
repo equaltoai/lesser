@@ -2,6 +2,7 @@ package lift
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -46,6 +48,10 @@ const (
 )
 
 // requireAdminLift is already defined in admin_federation.go
+
+func isNotFoundError(err error) bool {
+	return errors.Is(err, storage.ErrNotFound) || apperrors.HasCode(err, apperrors.CodeNotFound)
+}
 
 // processUserSessions processes user sessions to extract IP history and most recent IP
 func processUserSessions(sessions []*storage.Session) (lastIP *string, ipHistory []models.AdminIP) {
@@ -276,7 +282,7 @@ func (h *Handler) HandleAdminGetAccountLift(ctx *lift.Context) error {
 	// Get user from storage
 	user, err := h.repos.Account().GetUser(ctx.Context, username)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "account not found"})
 		}
@@ -694,7 +700,7 @@ func (h *Handler) HandleAdminGetReportLift(ctx *lift.Context) error {
 
 	apiReport, err := h.buildAdminReport(ctx.Context, reportID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
@@ -721,7 +727,7 @@ func (h *Handler) HandleAdminResolveReportLift(ctx *lift.Context) error {
 	// Update report status
 	err = h.repos.Moderation().UpdateReportStatus(ctx.Context, reportID, storage.ReportStatusResolved, "Resolved by admin", adminClaims.Username)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
@@ -764,7 +770,7 @@ func (h *Handler) HandleAdminReopenReportLift(ctx *lift.Context) error {
 	// Update report status
 	err = h.repos.Moderation().UpdateReportStatus(ctx.Context, reportID, storage.ReportStatusOpen, "Reopened by admin", adminClaims.Username)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
@@ -780,7 +786,7 @@ func (h *Handler) HandleAdminReopenReportLift(ctx *lift.Context) error {
 
 	apiReport, err := h.buildAdminReport(ctx.Context, reportID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
@@ -807,7 +813,7 @@ func (h *Handler) HandleAdminAssignReportLift(ctx *lift.Context) error {
 	// Verify report exists
 	_, err = h.repos.Moderation().GetReport(ctx.Context, reportID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
@@ -830,7 +836,7 @@ func (h *Handler) HandleAdminAssignReportLift(ctx *lift.Context) error {
 
 	apiReport, err := h.buildAdminReport(ctx.Context, reportID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
@@ -857,7 +863,7 @@ func (h *Handler) HandleAdminUnassignReportLift(ctx *lift.Context) error {
 	// Verify report exists
 	_, err = h.repos.Moderation().GetReport(ctx.Context, reportID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
@@ -880,7 +886,7 @@ func (h *Handler) HandleAdminUnassignReportLift(ctx *lift.Context) error {
 
 	apiReport, err := h.buildAdminReport(ctx.Context, reportID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
@@ -1042,7 +1048,7 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 	// Get the moderation event
 	event, err := h.repos.Moderation().GetModerationEvent(ctx.Context, eventID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "moderation event not found"})
 		}
@@ -1356,7 +1362,7 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
 	// Don't allow demoting admins
 	user, err := h.repos.Account().GetUser(ctx.Context, username)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "user not found"})
 		}
@@ -1564,29 +1570,48 @@ func (h *Handler) loadReportedStatuses(ctx context.Context, reportID string) []m
 		return []models.Status{}
 	}
 
-	// Convert storage statuses to API models
+	// Convert reported status IDs to API models.
+	// ModerationRepository currently returns status IDs (as strings) for the report, not full status objects.
 	result := make([]models.Status, 0, len(statuses))
 	for _, statusInterface := range statuses {
-		// Handle any type - in practice these would be map[string]any or struct types
-		statusMap, ok := statusInterface.(map[string]any)
-		if !ok {
+		switch v := statusInterface.(type) {
+		case string:
+			if err := common.ValidateEntityID(v, "status"); err != nil {
+				continue
+			}
+			storageStatus, err := h.repos.Status().GetStatus(ctx, v)
+			if err != nil {
+				h.logger.Warn("failed to load reported status", zap.String("report_id", reportID), zap.String("status_id", v), zap.Error(err))
+				continue
+			}
+			createdAt := ""
+			if !storageStatus.PublishedAt.IsZero() {
+				createdAt = storageStatus.PublishedAt.Format(time.RFC3339)
+			} else if !storageStatus.CreatedAt.IsZero() {
+				createdAt = storageStatus.CreatedAt.Format(time.RFC3339)
+			}
+			result = append(result, models.Status{
+				ID:        storageStatus.StatusID,
+				Content:   storageStatus.Content,
+				Sensitive: storageStatus.Sensitive,
+				CreatedAt: createdAt,
+			})
+		case map[string]any:
+			// Best-effort support if a future repo implementation returns full objects.
+			statusID := getStringFromMap(v, "id", getStringFromMap(v, "ID", ""))
+			content := getStringFromMap(v, "content", getStringFromMap(v, "Content", ""))
+			createdAt := getStringFromMap(v, "published", getStringFromMap(v, "CreatedAt", ""))
+			if err := common.ValidateEntityID(statusID, "status"); err != nil {
+				continue
+			}
+			result = append(result, models.Status{
+				ID:        statusID,
+				Content:   content,
+				CreatedAt: createdAt,
+			})
+		default:
 			continue
 		}
-
-		// Convert status using transformation framework - ELIMINATES 6+ LINES OF DUPLICATE CODE
-		transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
-		transformCtx := context.WithValue(ctx, baseURLContextKey, h.cfg.BaseURL())
-
-		apiStatus, err := transformer.Transform(transformCtx, statusMap)
-		if err != nil {
-			// Fallback for failed transformations
-			apiStatus = models.Status{
-				ID:        getStringFromMap(statusMap, "ID", ""),
-				Content:   getStringFromMap(statusMap, "Content", ""),
-				CreatedAt: getStringFromMap(statusMap, "CreatedAt", ""),
-			}
-		}
-		result = append(result, apiStatus)
 	}
 
 	return result
@@ -1852,7 +1877,7 @@ func (h *Handler) HandleAdminGetStatusLift(ctx *lift.Context) error {
 	// Get status
 	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "status not found"})
 		}
@@ -1879,7 +1904,7 @@ func (h *Handler) HandleAdminDeleteStatusLift(ctx *lift.Context) error {
 	// Get the status first to validate it exists
 	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "status not found"})
 		}
@@ -1936,7 +1961,7 @@ func (h *Handler) adminStatusSensitiveAction(ctx *lift.Context, sensitive bool, 
 	// Get the existing status first
 	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "status not found"})
 		}
@@ -1951,7 +1976,7 @@ func (h *Handler) adminStatusSensitiveAction(ctx *lift.Context, sensitive bool, 
 
 	err = h.repos.Status().UpdateStatus(ctx.Context, status)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "status not found"})
 		}

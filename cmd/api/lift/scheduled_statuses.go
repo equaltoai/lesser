@@ -523,8 +523,13 @@ func (h *Handler) convertAPIPollToMap(poll *apimodels.Poll) map[string]any {
 		return nil
 	}
 
+	options := make([]interface{}, 0, len(poll.Options))
+	for _, opt := range poll.Options {
+		options = append(options, opt)
+	}
+
 	return map[string]any{
-		"options":     poll.Options,
+		"options":     options,
 		"expires_in":  poll.ExpiresIn,
 		"multiple":    poll.Multiple,
 		"hide_totals": poll.HideTotals,

@@ -264,7 +264,7 @@ func (h *Handler) convertStatusResultToAPI(ctx *lift.Context, sr *storage.Status
 	transformCtx := context.WithValue(ctx.Context, baseURLContextKey, h.cfg.BaseURL())
 
 	status, err := transformer.Transform(transformCtx, statusMap)
-	if err != nil {
+	if err != nil || status.ID == "" {
 		// Fallback to minimal status if transformation fails
 		status = models.Status{
 			ID:        sr.StatusID,

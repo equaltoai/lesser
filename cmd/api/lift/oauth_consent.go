@@ -1,6 +1,7 @@
 package lift
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,6 +17,14 @@ import (
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
+
+type oauthSessionRepository interface {
+	CreateOAuthSession(ctx context.Context, session *models.OAuthAuthSession) error
+}
+
+var newOAuthSessionRepository = func(h *Handler) oauthSessionRepository {
+	return repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger, nil)
+}
 
 // HandleOAuthConsentLift handles the OAuth consent form submission using Lift patterns
 // POST /oauth/consent
@@ -195,7 +204,7 @@ func (h *Handler) HandleOAuthLoginLift(ctx *lift.Context) error {
 	}
 
 	// Create OAuth session for tracking the flow
-	oauthSessionRepo := repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger, nil)
+	oauthSessionRepo := newOAuthSessionRepository(h)
 
 	clientIP := ""  // Extract from Lambda event context
 	userAgent := "" // Extract from Lambda event headers

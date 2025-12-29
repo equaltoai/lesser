@@ -396,6 +396,102 @@ func populateRound08StructForCoverage(target any, idx int, baseTime time.Time) {
 		model.PK = "USER_CONVERSATIONS#user-1"
 		model.SK = now.Format(time.RFC3339) + "#conversation"
 
+	case *models.Draft:
+		model.AuthorID = "user-1"
+		model.ID = fmt.Sprintf("draft-%d", idx+1)
+		model.ContentType = "Article"
+		model.Content = "content"
+		model.ContentFormat = "markdown"
+		model.Status = "draft"
+		model.CreatedAt = now
+		model.UpdatedAt = now
+		_ = model.UpdateKeys()
+
+	case *models.Publication:
+		model.ID = fmt.Sprintf("pub-%d", idx+1)
+		model.Name = "Publication"
+		model.Slug = "publication"
+		model.ActorID = fmt.Sprintf("https://example.com/publications/%s", model.ID)
+		model.CreatedAt = now
+		model.UpdatedAt = now
+		_ = model.UpdateKeys()
+
+	case *models.PublicationMember:
+		model.PublicationID = "pub-1"
+		model.UserID = fmt.Sprintf("user-%d", idx+1)
+		model.Role = "writer"
+		model.DisplayName = "Display"
+		model.CreatedAt = now
+		model.JoinedAt = now
+		model.UpdatedAt = now
+		_ = model.UpdateKeys()
+
+	case *models.Category:
+		model.ID = fmt.Sprintf("cat-%d", idx+1)
+		model.Name = "Category"
+		model.Slug = "category"
+		model.ArticleCount = idx
+		model.CreatedAt = now
+		model.UpdatedAt = now
+		_ = model.UpdateKeys()
+
+	case *models.Revision:
+		model.ID = fmt.Sprintf("rev-%d", idx+1)
+		model.ObjectID = "object-1"
+		model.Version = idx + 1
+		model.Content = "content"
+		model.ContentHash = "hash"
+		model.ChangedBy = "user-1"
+		model.ChangeType = "update"
+		model.CreatedAt = now
+		model.UpdatedAt = now
+		_ = model.UpdateKeys()
+
+	case *models.DNSCache:
+		model.Hostname = fmt.Sprintf("example-%d.com", idx+1)
+		model.IPs = []string{"127.0.0.1"}
+		model.ResolvedAt = now
+		model.TTL = 60
+		model.ExpiresAt = now.Add(1 * time.Hour).Unix()
+		_ = model.UpdateKeys()
+
+	case *models.Series:
+		model.AuthorID = "user-1"
+		model.ID = fmt.Sprintf("series-%d", idx+1)
+		model.Title = "Series"
+		model.Slug = "series"
+		model.ArticleCount = idx
+		model.CreatedAt = now
+		model.UpdatedAt = now
+		_ = model.UpdateKeys()
+
+	case *models.Marker:
+		model.Username = fmt.Sprintf("user-%d", idx+1)
+		model.Timeline = "home"
+		model.LastReadID = "status-1"
+		model.Version = idx + 1
+		model.UpdatedAt = now
+		_ = model.UpdateKeys()
+
+	case *models.Hashtag:
+		model.Name = fmt.Sprintf("tag-%d", idx+1)
+		model.URL = fmt.Sprintf("https://example.com/tags/%s", model.Name)
+		model.UsageCount = int64(3 + idx)
+		model.FirstSeen = now.Add(-2 * time.Hour)
+		model.LastUsed = now
+		model.CreatedAt = now.Add(-2 * time.Hour)
+		model.UpdatedAt = now
+		_ = model.UpdateKeys()
+
+	case *models.HashtagFollow:
+		model.UserID = "user-1"
+		model.Hashtag = fmt.Sprintf("tag-%d", idx+1)
+		model.NotificationsEnabled = idx%2 == 0
+		model.Muted = idx%2 == 1
+		model.CreatedAt = now.Add(-1 * time.Hour)
+		model.UpdatedAt = now
+		_ = model.UpdateKeys()
+
 	case *models.WebAuthnCredential:
 		model.ID = fmt.Sprintf("cred-%d", idx+1)
 		model.UserID = "user-1"

@@ -28,8 +28,9 @@ type Handler struct {
 	converter      mastodon.Converter
 	businessLogic  services.BusinessLogicService
 	authService    services.AuthenticationService
-	registry       *services.Registry
+	registry       ServiceRegistry
 	streamQueue    streaming.StreamQueueService
+	remoteSearch   remoteSearchServiceFactory
 
 	// DataLoader instances for batched data loading to prevent N+1 queries
 	loaders *graph.Loaders
@@ -97,11 +98,12 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		logger.Warn("streamQueue is nil, registry will not have publisher")
 	}
 
-	registry, err := services.NewRegistry(registryOpts...)
+	registryImpl, err := services.NewRegistry(registryOpts...)
 	if err != nil {
 		logger.Error("failed to initialize service registry", zap.Error(err))
 		// Continue with nil registry for now - will be handled gracefully
 	}
+	registry := newServiceRegistry(registryImpl)
 
 	// Initialize enhanced business logic frameworks
 	streamingEmitter := &streamingEventEmitter{streamQueue: streamQueue}
@@ -131,6 +133,7 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		authService:         authService,
 		registry:            registry,
 		streamQueue:         streamQueue,
+		remoteSearch:        defaultRemoteSearchServiceFactory,
 		loaders:             loaders,
 		commonBusinessLogic: commonBusinessLogic,
 		activityPubLogic:    activityPubLogic,

@@ -38,6 +38,37 @@ import (
 	"go.uber.org/zap"
 )
 
+type httpDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+var (
+	runAsync = func(fn func()) { go fn() }
+
+	getDynamormClient     = dynamorm.GetClient
+	newRepositoryFactory  = factory.NewRepositoryFactory
+	getAuthMiddleware     = auth.GetMiddleware
+	startLambda           = lambda.Start
+	mustInitializeLambda  = common.MustInitializeLambda
+	initializeWithOptions = func(lambdaCtx *common.LambdaContext, options common.LambdaInitOptions) error {
+		return lambdaCtx.InitializeWithOptions(options)
+	}
+	newSecureHTTPClient = func(log *zap.Logger) httpDoer {
+		return httpclient.NewSecureClient(httpclient.WithTimeout(10*time.Second), httpclient.WithLogger(log))
+	}
+	initializeLambdaCtxFn = func(lambdaConfig common.LambdaConfig) *common.LambdaContext {
+		lambdaCtx := mustInitializeLambda(lambdaConfig)
+
+		options := common.DefaultLambdaInitOptions(common.LambdaTypeFederation)
+		if err := initializeWithOptions(lambdaCtx, options); err != nil {
+			// Fallback to manual initialization if needed
+			lambdaCtx.Logger.Warn("falling back to manual service initialization", zap.Error(err))
+		}
+
+		return lambdaCtx
+	}
+)
+
 // InboxHandler handles ActivityPub inbox requests using Lift
 type InboxHandler struct {
 	db                           dynamormCore.DB
@@ -163,13 +194,13 @@ func initializeStorage(repoFactory storageCore.RepositoryStorage, db interface{}
 	logger.Info("falling back to manual storage initialization")
 
 	// Initialize storage manually
-	manualDB, err := dynamorm.GetClient(context.Background())
+	manualDB, err := getDynamormClient(context.Background())
 	if err != nil {
 		return nil, nil, dynamORMInitError()
 	}
 
 	// Initialize repository factory
-	manualRepoFactory, err := factory.NewRepositoryFactory(manualDB, cfg.DynamoTableName, logger)
+	manualRepoFactory, err := newRepositoryFactory(manualDB, cfg.DynamoTableName, logger)
 	if err != nil {
 		return nil, nil, repositoryFactoryInitError()
 	}
@@ -195,7 +226,7 @@ func initializeFederationServices(services extractedServices, repoFactory storag
 		fed.costCalculator = federation.NewCostCalculator()
 	}
 	if fed.authMiddleware == nil {
-		middleware, err := auth.GetMiddleware()
+		middleware, err := getAuthMiddleware()
 		if err != nil {
 			logger.Error("failed to initialize auth middleware", zap.Error(err))
 		} else {
@@ -809,14 +840,31 @@ func (ih *InboxHandler) validateActivity(activity *activitypub.Activity, actor *
 	return nil
 }
 
+func stringSliceToInterfaceSlice(values []string) []interface{} {
+	result := make([]interface{}, len(values))
+	for i, value := range values {
+		result[i] = value
+	}
+	return result
+}
+
 // validateBasicActivity validates the basic activity structure
 func (ih *InboxHandler) validateBasicActivity(activity *activitypub.Activity) error {
+	context := []interface{}(activitypub.Context)
+	if len(activity.Context) > 0 {
+		context = []interface{}(activity.Context)
+	}
+
 	activityMap := map[string]interface{}{
-		"id":    activity.ID,
-		"type":  activity.Type,
-		"actor": activity.Actor,
-		"to":    activity.To,
-		"cc":    activity.CC,
+		"@context": context,
+		"id":       activity.ID,
+		"type":     activity.Type,
+		"actor":    activity.Actor,
+		"object":   activity.Object,
+		"to":       stringSliceToInterfaceSlice(activity.To),
+		"cc":       stringSliceToInterfaceSlice(activity.CC),
+		"bto":      stringSliceToInterfaceSlice(activity.BTo),
+		"bcc":      stringSliceToInterfaceSlice(activity.BCC),
 	}
 	if err := common.ValidateActivityPubActivity(activityMap); err != nil {
 		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid activity: %v", err), 400)
@@ -827,8 +875,12 @@ func (ih *InboxHandler) validateBasicActivity(activity *activitypub.Activity) er
 // validateBasicActor validates the basic actor structure
 func (ih *InboxHandler) validateBasicActor(actor *activitypub.Actor) error {
 	actorMap := map[string]interface{}{
-		"id":   actor.ID,
-		"type": actor.Type,
+		"@context":          []interface{}(activitypub.Context),
+		"id":                actor.ID,
+		"type":              actor.Type,
+		"preferredUsername": actor.PreferredUsername,
+		"inbox":             actor.Inbox,
+		"outbox":            actor.Outbox,
 	}
 	if err := common.ValidateActivityPubActor(actorMap); err != nil {
 		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid actor: %v", err), 400)
@@ -842,10 +894,10 @@ func (ih *InboxHandler) validateActivityAddressing(activity *activitypub.Activit
 		field interface{}
 		name  string
 	}{
-		{activity.To, "to"},
-		{activity.CC, "cc"},
-		{activity.BTo, "bto"},
-		{activity.BCC, "bcc"},
+		{stringSliceToInterfaceSlice(activity.To), "to"},
+		{stringSliceToInterfaceSlice(activity.CC), "cc"},
+		{stringSliceToInterfaceSlice(activity.BTo), "bto"},
+		{stringSliceToInterfaceSlice(activity.BCC), "bcc"},
 	}
 
 	for _, addr := range addressingFields {
@@ -858,7 +910,15 @@ func (ih *InboxHandler) validateActivityAddressing(activity *activitypub.Activit
 
 // validateActorUsername validates the actor's username format
 func (ih *InboxHandler) validateActorUsername(actorURL string) error {
-	if err := common.ValidateActivityPubUsername(actorURL); err != nil {
+	parsedURL, err := url.Parse(actorURL)
+	if err != nil {
+		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid actor username: %v", err), 400)
+	}
+
+	path := strings.Trim(parsedURL.Path, "/")
+	parts := strings.Split(path, "/")
+	username := parts[len(parts)-1]
+	if err := common.ValidateActivityPubUsername(username); err != nil {
 		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid actor username: %v", err), 400)
 	}
 	return nil
@@ -1163,16 +1223,16 @@ func (ih *InboxHandler) validateAddressingAndPrivacy(_ *lift.Context, req *Inbox
 // validateDirectMessage performs additional validation for direct messages
 func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ *activitypub.Actor) error {
 	// Validate all addressing fields using ActivityPub validators
-	if err := common.ValidateActivityPubAddressing(activity.To, "to"); err != nil {
+	if err := common.ValidateActivityPubAddressing(stringSliceToInterfaceSlice(activity.To), "to"); err != nil {
 		return dmToAddressingError()
 	}
-	if err := common.ValidateActivityPubAddressing(activity.CC, "cc"); err != nil {
+	if err := common.ValidateActivityPubAddressing(stringSliceToInterfaceSlice(activity.CC), "cc"); err != nil {
 		return dmCcAddressingError()
 	}
-	if err := common.ValidateActivityPubAddressing(activity.BTo, "bto"); err != nil {
+	if err := common.ValidateActivityPubAddressing(stringSliceToInterfaceSlice(activity.BTo), "bto"); err != nil {
 		return dmBtoAddressingError()
 	}
-	if err := common.ValidateActivityPubAddressing(activity.BCC, "bcc"); err != nil {
+	if err := common.ValidateActivityPubAddressing(stringSliceToInterfaceSlice(activity.BCC), "bcc"); err != nil {
 		return dmBccAddressingError()
 	}
 
@@ -1430,7 +1490,7 @@ func (ih *InboxHandler) recordSuccessAndComplete(ctx *lift.Context, req *InboxRe
 	req.CostParams.DynamoDBWriteCount++ // Cost tracking record itself
 
 	// Track with both federation-specific and centralized cost tracking
-	go func() {
+	runAsync(func() {
 		// Legacy federation cost tracking
 		cost := ih.costCalculator.CalculateFederationCosts(req.CostParams)
 		if err := ih.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
@@ -1444,7 +1504,7 @@ func (ih *InboxHandler) recordSuccessAndComplete(ctx *lift.Context, req *InboxRe
 
 		// Centralized cost tracking
 		ih.trackCentralizedCost(req, "Federation")
-	}()
+	})
 
 	// Mark rate limit success
 	if req.ActorDomain != "" {
@@ -1465,7 +1525,7 @@ func (ih *InboxHandler) recordFailureCost(req *InboxRequest, errorMsg string, re
 	}
 
 	// Track with both federation-specific and centralized cost tracking
-	go func() {
+	runAsync(func() {
 		// Legacy federation cost tracking
 		cost := ih.costCalculator.CalculateFederationCosts(req.CostParams)
 		if err := ih.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
@@ -1474,7 +1534,7 @@ func (ih *InboxHandler) recordFailureCost(req *InboxRequest, errorMsg string, re
 
 		// Centralized cost tracking for failures
 		ih.trackCentralizedCost(req, "Federation.Error")
-	}()
+	})
 }
 
 // isAddressedTo checks if the activity is addressed to the given actor
@@ -1587,10 +1647,7 @@ func (ih *InboxHandler) fetchActorPublicKey(ctx context.Context, actorURL string
 	log := common.WithContext(ctx)
 
 	// Create secure HTTP client with DNS caching
-	client := httpclient.NewSecureClient(
-		httpclient.WithTimeout(10*time.Second),
-		httpclient.WithLogger(log),
-	)
+	client := newSecureHTTPClient(log)
 
 	// Create request with ActivityPub Accept header
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, actorURL, nil)
@@ -3876,28 +3933,7 @@ func (ih *InboxHandler) trackCentralizedCost(req *InboxRequest, operationType st
 	}
 }
 
-func main() {
-	// Initialize Lambda with standardized federation configuration
-	config := common.LambdaConfig{
-		ServiceName: "inbox",
-		LambdaType:  common.LambdaTypeFederation, // Changed from API to Federation
-	}
-
-	lambdaCtx := common.MustInitializeLambda(config)
-
-	// Use standardized initialization with federation-specific options
-	options := common.DefaultLambdaInitOptions(common.LambdaTypeFederation)
-	err := lambdaCtx.InitializeWithOptions(options)
-	if err != nil {
-		// Fallback to manual initialization if needed
-		lambdaCtx.Logger.Warn("falling back to manual service initialization", zap.Error(err))
-	}
-
-	handler, err := NewInboxHandler(lambdaCtx)
-	if err != nil {
-		panic(fmt.Sprintf("failed to initialize inbox handler: %v", err))
-	}
-
+func buildInboxApp(lambdaCtx *common.LambdaContext, handler *InboxHandler) *lift.App {
 	app := lift.New()
 
 	// Panic recovery middleware (MUST be first to catch all panics)
@@ -3968,8 +4004,12 @@ func main() {
 	// Register all inbox routes
 	handler.RegisterRoutes(app)
 
+	return app
+}
+
+func buildInboxLambdaHandler(app *lift.App, handler *InboxHandler) func(ctx context.Context, event interface{}) (interface{}, error) {
 	// Wrap Lambda handler with federation observability
-	lambdaHandler := func(ctx context.Context, event interface{}) (interface{}, error) {
+	return func(ctx context.Context, event interface{}) (interface{}, error) {
 		requestStart := time.Now()
 
 		// Record cold start metric if this is a cold start
@@ -4002,9 +4042,27 @@ func main() {
 
 		return result, err
 	}
+}
+
+func main() {
+	// Initialize Lambda with standardized federation configuration
+	config := common.LambdaConfig{
+		ServiceName: "inbox",
+		LambdaType:  common.LambdaTypeFederation, // Changed from API to Federation
+	}
+
+	lambdaCtx := initializeLambdaCtxFn(config)
+
+	handler, err := NewInboxHandler(lambdaCtx)
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize inbox handler: %v", err))
+	}
+
+	app := buildInboxApp(lambdaCtx, handler)
+	lambdaHandler := buildInboxLambdaHandler(app, handler)
 
 	// Use app.HandleRequest for Lambda (not app.Start())
-	lambda.Start(lambdaHandler)
+	startLambda(lambdaHandler)
 }
 
 // createFederationMetricsMiddleware creates middleware for federation-specific metrics collection
@@ -4214,7 +4272,7 @@ func (ih *InboxHandler) triggerFederationHealthAlert(remoteInstance string) {
 		return
 	}
 
-	go func() {
+	runAsync(func() {
 		// Use a separate context for alerts to avoid blocking the request
 		alertCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -4222,5 +4280,5 @@ func (ih *InboxHandler) triggerFederationHealthAlert(remoteInstance string) {
 		// This would need to be enhanced with actual federation failure rate calculation
 		// For now, we'll trigger an alert for repeated failures from the same instance
 		ih.alertManager.CheckFederationHealth(alertCtx, remoteInstance, 100.0, 1) // 100% failure rate for this request
-	}()
+	})
 }

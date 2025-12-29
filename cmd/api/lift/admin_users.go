@@ -1,6 +1,8 @@
 package lift
 
 import (
+	"time"
+
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -34,6 +36,7 @@ func (h *Handler) HandleAdminCreateUserLift(ctx *lift.Context) error {
 		DisplayName:  req.DisplayName,
 		Role:         req.Role,
 		Approved:     true,
+		CreatedAt:    time.Now(),
 	}
 
 	if err := h.repos.User().CreateUser(ctx.Context, user); err != nil {

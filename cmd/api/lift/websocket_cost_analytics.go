@@ -41,6 +41,22 @@ type WebSocketCostSummaryResponse struct {
 	BudgetStatus       *repositories.BudgetStatus               `json:"budget_status,omitempty"`
 }
 
+type webSocketCostRepository interface {
+	GetRecentCosts(ctx context.Context, startTime time.Time, limit int) ([]*models.WebSocketCostRecord, error)
+	GetTopCostlyUsers(ctx context.Context, startDate, endDate time.Time, limit int) ([]*repositories.WebSocketUserCostRanking, error)
+	GetHighCostOperations(ctx context.Context, thresholdDollars float64, startTime, endTime time.Time, limit int) ([]*models.WebSocketCostRecord, error)
+	GetUserCostSummary(ctx context.Context, userID string, startTime, endTime time.Time) (*repositories.WebSocketUserCostSummary, error)
+	CheckBudgetLimits(ctx context.Context, userID string) (*repositories.BudgetStatus, error)
+	GetUserBudgets(ctx context.Context, userID string) ([]*models.WebSocketCostBudget, error)
+	GetBudget(ctx context.Context, userID, period string) (*models.WebSocketCostBudget, error)
+	UpdateBudget(ctx context.Context, budget *models.WebSocketCostBudget) error
+	CreateBudget(ctx context.Context, budget *models.WebSocketCostBudget) error
+}
+
+var webSocketCostRepoProvider = func(h *Handler) webSocketCostRepository {
+	return h.repos.WebSocketCost()
+}
+
 // WebSocketOverallSummary represents overall WebSocket cost summary
 type WebSocketOverallSummary struct {
 	DateRange                string  `json:"date_range"`
@@ -129,7 +145,7 @@ func (h *Handler) GetWebSocketCostAnalytics(ctx *lift.Context, req WebSocketCost
 	}
 
 	// Get WebSocket cost repository from the repository storage
-	costRepo := h.repos.WebSocketCost()
+	costRepo := webSocketCostRepoProvider(h)
 
 	// Build the response
 	response := WebSocketCostSummaryResponse{}
@@ -206,7 +222,7 @@ func (h *Handler) GetWebSocketCostAnalytics(ctx *lift.Context, req WebSocketCost
 }
 
 // buildWebSocketOverallSummary builds the overall cost summary
-func (h *Handler) buildWebSocketOverallSummary(costRepo *repositories.WebSocketCostRepository, startTime, endTime time.Time) (*WebSocketOverallSummary, error) {
+func (h *Handler) buildWebSocketOverallSummary(costRepo webSocketCostRepository, startTime, endTime time.Time) (*WebSocketOverallSummary, error) {
 	// Get recent costs to calculate summary
 	recentCosts, err := costRepo.GetRecentCosts(context.Background(), startTime, 10000)
 	if err != nil {
@@ -292,7 +308,7 @@ func (h *Handler) buildWebSocketOverallSummary(costRepo *repositories.WebSocketC
 }
 
 // buildWebSocketCostTrends builds cost trends analysis
-func (h *Handler) buildWebSocketCostTrends(costRepo *repositories.WebSocketCostRepository, startTime, endTime time.Time, period string) (*WebSocketCostTrends, error) {
+func (h *Handler) buildWebSocketCostTrends(costRepo webSocketCostRepository, startTime, endTime time.Time, period string) (*WebSocketCostTrends, error) {
 	if err := common.ValidateRequiredParam("period", period); err != nil {
 		period = periodDay
 	}
@@ -322,7 +338,7 @@ func (h *Handler) buildWebSocketCostTrends(costRepo *repositories.WebSocketCostR
 }
 
 // aggregateWebSocketCostData aggregates real WebSocket cost data by time period
-func (h *Handler) aggregateWebSocketCostData(costRepo *repositories.WebSocketCostRepository, startTime, endTime time.Time, period string) ([]WebSocketCostDataPoint, error) {
+func (h *Handler) aggregateWebSocketCostData(costRepo webSocketCostRepository, startTime, endTime time.Time, period string) ([]WebSocketCostDataPoint, error) {
 	// Determine the aggregation interval
 	var interval time.Duration
 	switch period {
@@ -592,7 +608,7 @@ func (h *Handler) GetUserWebSocketBudget(ctx *lift.Context) (interface{}, error)
 	}
 
 	// Get WebSocket cost repository from the repository storage
-	costRepo := h.repos.WebSocketCost()
+	costRepo := webSocketCostRepoProvider(h)
 
 	// Get user budgets
 	budgets, err := costRepo.GetUserBudgets(ctx.Request.Context(), userID)
@@ -685,7 +701,7 @@ func (h *Handler) CreateUserWebSocketBudget(ctx *lift.Context) (interface{}, err
 	}
 
 	// Get WebSocket cost repository from the repository storage
-	costRepo := h.repos.WebSocketCost()
+	costRepo := webSocketCostRepoProvider(h)
 
 	// Check if budget already exists
 	existingBudget, err := costRepo.GetBudget(ctx.Request.Context(), userID, budgetReq.Period)

@@ -48,7 +48,7 @@ func (d *round08TxDB) Close() error {
 }
 
 func TestRound08_AuthRefreshTokenRepository_CreateAndGet(t *testing.T) {
-	baseTime := time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC)
+	baseTime := time.Now().UTC()
 	ctx := context.Background()
 
 	t.Run("CreateRefreshToken succeeds", func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestRound08_AuthRefreshTokenRepository_CreateAndGet(t *testing.T) {
 }
 
 func TestRound08_AuthRefreshTokenRepository_RotationAndRevocation(t *testing.T) {
-	baseTime := time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC)
+	baseTime := time.Now().UTC()
 	ctx := context.Background()
 
 	t.Run("RotateRefreshToken handles reuse detection", func(t *testing.T) {
@@ -241,7 +241,7 @@ func TestRound08_AuthRefreshTokenRepository_RotationAndRevocation(t *testing.T) 
 }
 
 func TestRound08_AuthRefreshTokenRepository_CreateRefreshToken_Succeeds(t *testing.T) {
-	baseTime := time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC)
+	baseTime := time.Now().UTC()
 	ctx := context.Background()
 
 	mockDB := new(mocks.MockDB)

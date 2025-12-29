@@ -10,7 +10,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/transformations"
@@ -211,7 +210,14 @@ func (h *Handler) addRemoteSearchResults(ctx context.Context, actors *[]*activit
 		return
 	}
 
-	remoteSearchSvc := federation.NewRemoteSearchService(h.repos)
+	factory := h.remoteSearch
+	if factory == nil {
+		factory = defaultRemoteSearchServiceFactory
+	}
+	remoteSearchSvc := factory(h.repos)
+	if remoteSearchSvc == nil {
+		return
+	}
 	remoteResults, err := remoteSearchSvc.SearchRemoteActors(ctx, query, limit)
 	if err != nil {
 		h.logger.Debug("remote search failed",
