@@ -13,6 +13,8 @@ func TestErrorCode_GetHTTPStatusCode(t *testing.T) {
 	require.Equal(t, 401, CodeUnauthorized.GetHTTPStatusCode())
 	require.Equal(t, 403, CodeForbidden.GetHTTPStatusCode())
 	require.Equal(t, 409, CodeConflict.GetHTTPStatusCode())
+	require.Equal(t, 410, CodeGone.GetHTTPStatusCode())
+	require.Equal(t, 422, CodeUnprocessableEntity.GetHTTPStatusCode())
 	require.Equal(t, 400, CodeInvalidInput.GetHTTPStatusCode())
 	require.Equal(t, 500, ErrorCode("UNKNOWN").GetHTTPStatusCode())
 }

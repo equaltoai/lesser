@@ -2,10 +2,12 @@
 package lambda
 
 import (
+	stdErrors "errors"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/errors"
 	liftPkg "github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -29,6 +31,7 @@ type StandardErrorResponse struct {
 	Message   string                 `json:"message,omitempty"`
 	Details   map[string]interface{} `json:"details,omitempty"`
 	Code      string                 `json:"code,omitempty"`
+	ErrorCode string                 `json:"error_code,omitempty"`
 	RequestID string                 `json:"request_id,omitempty"`
 	Timestamp string                 `json:"timestamp,omitempty"`
 }
@@ -64,6 +67,7 @@ func (ep *ErrorPattern) handleError(ctx *liftPkg.Context, err error) error {
 			Message:   appErr.Message,
 			RequestID: requestID,
 			Code:      string(appErr.Code),
+			ErrorCode: string(appErr.Code),
 		}
 		ep.logError(requestID, appErr.HTTPStatusCode, appErr.Message, err)
 		return ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
@@ -76,6 +80,7 @@ func (ep *ErrorPattern) handleError(ctx *liftPkg.Context, err error) error {
 		Message:   appErr.Message,
 		RequestID: requestID,
 		Code:      string(appErr.Code),
+		ErrorCode: string(appErr.Code),
 	}
 
 	// Log the error
@@ -87,6 +92,11 @@ func (ep *ErrorPattern) handleError(ctx *liftPkg.Context, err error) error {
 
 // convertLegacyError converts legacy errors to centralized AppError
 func (ep *ErrorPattern) convertLegacyError(err error) *errors.AppError {
+	var legacy common.AppError
+	if stdErrors.As(err, &legacy) {
+		return ep.convertCommonAppError(legacy)
+	}
+
 	errMsg := err.Error()
 	errMsgLower := strings.ToLower(errMsg)
 
@@ -146,6 +156,47 @@ func (ep *ErrorPattern) convertLegacyError(err error) *errors.AppError {
 	return errors.WrapError(err, errors.CodeInternal, errors.CategoryInternal, "Internal server error")
 }
 
+func (ep *ErrorPattern) convertCommonAppError(err common.AppError) *errors.AppError {
+	code := errors.ErrorCode(err.Code)
+	category := errors.CategoryInternal
+
+	switch err.StatusCode {
+	case http.StatusUnauthorized:
+		category = errors.CategoryAuth
+		if err.Code == "" {
+			code = errors.CodeUnauthorized
+		}
+	case http.StatusForbidden:
+		category = errors.CategoryAuth
+		if err.Code == "" {
+			code = errors.CodeForbidden
+		}
+	case http.StatusNotFound:
+		category = errors.CategoryAPI
+		if err.Code == "" {
+			code = errors.CodeNotFound
+		}
+	case http.StatusBadRequest:
+		category = errors.CategoryValidation
+		// common.AppError uses VALIDATION_ERROR which isn't a canonical errors.ErrorCode.
+		if err.Code == "VALIDATION_ERROR" || err.Code == "" {
+			code = errors.CodeValidationFailed
+		}
+	}
+
+	// Fall back to internal if we can't map to a stable status code.
+	if code.GetHTTPStatusCode() != err.StatusCode {
+		code = errors.CodeInternal
+		category = errors.CategoryInternal
+	}
+
+	appErr := errors.NewAppError(code, category, err.UserMessage)
+	if err.InternalError != nil {
+		appErr.WithInternalError(err.InternalError)
+	}
+	return appErr
+}
+
 // logError logs errors with appropriate levels and context
 func (ep *ErrorPattern) logError(requestID string, statusCode int, message string, err error) {
 	fields := []zap.Field{
@@ -172,6 +223,7 @@ func (ep *ErrorPattern) HandleValidationError(ctx *liftPkg.Context, field string
 		Error:     string(appErr.Code),
 		Message:   appErr.Message,
 		Code:      string(appErr.Code),
+		ErrorCode: string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 		Details: map[string]interface{}{
 			"field":              field,
@@ -195,6 +247,7 @@ func (ep *ErrorPattern) HandleAuthenticationError(ctx *liftPkg.Context, message 
 		Error:     string(appErr.Code),
 		Message:   appErr.Message,
 		Code:      string(appErr.Code),
+		ErrorCode: string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 	}
 
@@ -213,6 +266,7 @@ func (ep *ErrorPattern) HandleAuthorizationError(ctx *liftPkg.Context, message s
 		Error:     string(appErr.Code),
 		Message:   appErr.Message,
 		Code:      string(appErr.Code),
+		ErrorCode: string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 	}
 
@@ -231,6 +285,7 @@ func (ep *ErrorPattern) HandleNotFoundError(ctx *liftPkg.Context, resource strin
 		Error:     string(appErr.Code),
 		Message:   appErr.Message,
 		Code:      string(appErr.Code),
+		ErrorCode: string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 		Details: map[string]interface{}{
 			"resource": resource,
@@ -252,6 +307,7 @@ func (ep *ErrorPattern) HandleInternalError(ctx *liftPkg.Context, err error, mes
 		Error:     string(appErr.Code),
 		Message:   appErr.Message,
 		Code:      string(appErr.Code),
+		ErrorCode: string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 	}
 
@@ -272,6 +328,7 @@ func (ep *ErrorPattern) HandleRateLimitError(ctx *liftPkg.Context, retryAfter in
 		Error:     string(appErr.Code),
 		Message:   appErr.Message,
 		Code:      string(appErr.Code),
+		ErrorCode: string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 		Details: map[string]interface{}{
 			"retry_after_seconds": retryAfter,
@@ -315,6 +372,7 @@ func (ep *ErrorPattern) CreatePanicRecoveryMiddleware() liftPkg.Middleware {
 						Error:     "INTERNAL_ERROR",
 						Message:   "Internal server error",
 						Code:      "PANIC_RECOVERED",
+						ErrorCode: "PANIC_RECOVERED",
 						RequestID: ctx.GetRequestID(),
 					}
 
@@ -365,6 +423,7 @@ func (ep *ErrorPattern) HandleActivityPubError(ctx *liftPkg.Context, appErr *err
 		Error:     string(appErr.Code),
 		Message:   appErr.Message,
 		Code:      string(appErr.Code),
+		ErrorCode: string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 	}
 

@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/handler/apollotracing"
 	"github.com/99designs/gqlgen/graphql/handler/extension"
@@ -38,6 +39,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/observability"
@@ -49,6 +51,7 @@ import (
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
 )
 
@@ -299,6 +302,7 @@ func initializeGraphQLSpecificServices() {
 
 	// Create GraphQL handler
 	graphQLHandler = handler.NewDefaultServer(schema)
+	graphQLHandler.SetErrorPresenter(graphQLErrorPresenter)
 
 	// Configure GraphQL handler
 	graphQLHandler.AddTransport(transport.Websocket{})
@@ -322,6 +326,19 @@ func initializeGraphQLSpecificServices() {
 		zap.String("version", "lift-dynamorm"),
 		zap.Bool("enabled", true),
 		zap.String("status", "ready"))
+}
+
+func graphQLErrorPresenter(ctx context.Context, err error) *gqlerror.Error {
+	gqlErr := graphql.DefaultErrorPresenter(ctx, err)
+	if appErr, ok := apperrors.AsAppError(err); ok {
+		if gqlErr.Extensions == nil {
+			gqlErr.Extensions = map[string]any{}
+		}
+		gqlErr.Extensions["code"] = string(appErr.Code)
+		gqlErr.Extensions["http_status"] = appErr.HTTPStatusCode
+		gqlErr.Message = appErr.Message
+	}
+	return gqlErr
 }
 
 // handleGraphQL processes GraphQL requests with proper context and DataLoader

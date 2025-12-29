@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -160,33 +161,28 @@ func (h *Handler) getBearerTokenLift(ctx *lift.Context) string {
 func (h *Handler) authenticateWithScope(ctx *lift.Context, requiredScope string) (*auth.Claims, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		_ = common.RespondMissingAuth(ctx)
-		return nil, auth.ErrInvalidToken
+		return nil, apperrors.Unauthorized("authentication required")
 	}
 
 	// Validate required scope format using centralized validation
 	if err := common.ValidateApplicationScopes(requiredScope); err != nil {
-		_ = common.RespondBadRequest(ctx, fmt.Sprintf("invalid required scope: %v", err))
-		return nil, fmt.Errorf("invalid required scope: %w", err)
+		return nil, apperrors.InternalWithCause(err, fmt.Sprintf("invalid required scope: %v", err))
 	}
 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		_ = common.RespondUnauthorized(ctx, err.Error())
 		return nil, err
 	}
 
 	// Validate token scopes using centralized validation
 	tokenScopes := strings.Join(claims.Scopes, " ")
 	if err := common.ValidateApplicationScopes(tokenScopes); err != nil {
-		_ = common.RespondForbidden(ctx, fmt.Sprintf("invalid token scopes: %v", err))
-		return nil, fmt.Errorf("invalid token scopes: %w", err)
+		return nil, auth.ErrInvalidToken
 	}
 
 	if !claims.HasScope(requiredScope) {
-		_ = common.RespondInsufficientScope(ctx, requiredScope)
-		return nil, fmt.Errorf("insufficient scope: requires %s", requiredScope)
+		return nil, apperrors.NewAuthError(apperrors.CodeInsufficientScope, fmt.Sprintf("insufficient scope: requires %s", requiredScope))
 	}
 
 	return claims, nil

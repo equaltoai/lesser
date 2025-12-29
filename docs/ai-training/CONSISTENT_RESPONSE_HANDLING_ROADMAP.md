@@ -34,9 +34,9 @@ Across the entire codebase:
 - [x] Milestone 1 — Canonical Error Introspection
 - [x] Milestone 2 — Repository + Storage Error Translation Contract
 - [x] Milestone 3 — Remove Pointer-Equality Error Handling
-- [ ] Milestone 4 — API Error Envelope and Status Code Standardization
-- [ ] Milestone 5 — GraphQL + Lambda Consistency
-- [ ] Milestone 6 — Documentation + Guardrails
+- [x] Milestone 4 — API Error Envelope and Status Code Standardization
+- [x] Milestone 5 — GraphQL + Lambda Consistency
+- [x] Milestone 6 — Documentation + Guardrails
 
 ---
 

@@ -6,14 +6,16 @@ type ErrorCode string
 // Common error codes
 const (
 	// Generic errors
-	CodeNotFound      ErrorCode = "NOT_FOUND"
-	CodeAlreadyExists ErrorCode = "ALREADY_EXISTS"
-	CodeInvalidInput  ErrorCode = "INVALID_INPUT"
-	CodeUnauthorized  ErrorCode = "UNAUTHORIZED"
-	CodeForbidden     ErrorCode = "FORBIDDEN"
-	CodeTimeout       ErrorCode = "TIMEOUT"
-	CodeRateLimited   ErrorCode = "RATE_LIMITED"
-	CodeInternal      ErrorCode = "INTERNAL_ERROR"
+	CodeNotFound            ErrorCode = "NOT_FOUND"
+	CodeAlreadyExists       ErrorCode = "ALREADY_EXISTS"
+	CodeInvalidInput        ErrorCode = "INVALID_INPUT"
+	CodeUnauthorized        ErrorCode = "UNAUTHORIZED"
+	CodeForbidden           ErrorCode = "FORBIDDEN"
+	CodeTimeout             ErrorCode = "TIMEOUT"
+	CodeRateLimited         ErrorCode = "RATE_LIMITED"
+	CodeInternal            ErrorCode = "INTERNAL_ERROR"
+	CodeGone                ErrorCode = "GONE"
+	CodeUnprocessableEntity ErrorCode = "UNPROCESSABLE_ENTITY"
 )
 
 // Authentication and authorization error codes
@@ -155,6 +157,10 @@ func (c ErrorCode) GetHTTPStatusCode() int {
 		return 403
 	case CodeAlreadyExists, CodeConflict:
 		return 409
+	case CodeGone:
+		return 410
+	case CodeUnprocessableEntity:
+		return 422
 	case CodeInvalidInput, CodeValidationFailed, CodeRequiredFieldMissing, CodeFieldTooLong,
 		CodeFieldTooShort, CodeInvalidFormat, CodeInvalidCharacters, CodeValueOutOfRange,
 		CodeBadRequest, CodeContentTooLarge:

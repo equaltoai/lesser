@@ -19,31 +19,9 @@ import (
 
 // HandlePinStatusLift handles POST /api/v1/statuses/:id/pin
 func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
-	// Extract token from Authorization header
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
-	}
-
-	// Check write scope
-	if !claims.HasScope(auth.ScopeWrite) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "insufficient scope",
-		})
+		return err
 	}
 
 	// Get status ID from path
@@ -59,20 +37,14 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	}
 
 	if err := common.ValidateMastodonStatusID(statusID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+		return err
 	}
 
 	// Get the user's actor
 	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return apperrors.InternalWithCause(err, "internal server error")
 	}
 
 	// Normalize the status ID to a full URL if it's not already
@@ -85,10 +57,10 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	// Get the object to verify ownership
 	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
-		ctx.Status(http.StatusNotFound)
-		return ctx.JSON(map[string]string{
-			"error": "status not found",
-		})
+		if apperrors.HasCode(err, apperrors.CodeNotFound) || apperrors.HasCode(err, apperrors.CodeActorNotFound) {
+			return apperrors.NotFound("status").WithInternalError(err)
+		}
+		return apperrors.InternalWithCause(err, "internal server error")
 	}
 
 	// Check if the user owns this object
@@ -103,10 +75,7 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	}
 
 	if attributedTo != actor.ID {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "you can only pin your own statuses",
-		})
+		return apperrors.Forbidden("you can only pin your own statuses")
 	}
 
 	// Create pin
@@ -118,23 +87,7 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 
 	// Store the pin
 	if err := h.repos.Social().CreateStatusPin(ctx.Context, pin); err != nil {
-		if strings.Contains(err.Error(), "already pinned") || apperrors.HasCode(err, apperrors.CodeAlreadyExists) {
-			ctx.Status(http.StatusUnprocessableEntity)
-			return ctx.JSON(map[string]string{
-				"error": "status already pinned",
-			})
-		}
-		if strings.Contains(err.Error(), "too many pinned") {
-			ctx.Status(http.StatusUnprocessableEntity)
-			return ctx.JSON(map[string]string{
-				"error": "too many pinned statuses (maximum 5)",
-			})
-		}
-		h.logger.Error("failed to pin status", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return err
 	}
 
 	// Return the status with pinned flag set to true
@@ -147,31 +100,9 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 
 // HandleUnpinStatusLift handles POST /api/v1/statuses/:id/unpin
 func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
-	// Extract token from Authorization header
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
-	}
-
-	// Check write scope
-	if !claims.HasScope(auth.ScopeWrite) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "insufficient scope",
-		})
+		return err
 	}
 
 	// Get status ID from path
@@ -187,10 +118,7 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 	}
 
 	if err := common.ValidateMastodonStatusID(statusID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+		return err
 	}
 
 	// Normalize the status ID to a full URL if it's not already
@@ -203,19 +131,16 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 	// Delete the pin
 	if err := h.repos.Social().DeleteStatusPin(ctx.Context, claims.Username, objectID); err != nil {
 		h.logger.Error("failed to unpin status", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return apperrors.InternalWithCause(err, "internal server error")
 	}
 
 	// Get the object to return status information
 	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
-		ctx.Status(http.StatusNotFound)
-		return ctx.JSON(map[string]string{
-			"error": "status not found",
-		})
+		if apperrors.HasCode(err, apperrors.CodeNotFound) || apperrors.HasCode(err, apperrors.CodeActorNotFound) {
+			return apperrors.NotFound("status").WithInternalError(err)
+		}
+		return apperrors.InternalWithCause(err, "internal server error")
 	}
 
 	// Get actor
@@ -261,34 +186,7 @@ func (h *Handler) HandleMuteConversationLift(ctx *lift.Context) error {
 
 // authenticateMuteRequest authenticates the mute request
 func (h *Handler) authenticateMuteRequest(ctx *lift.Context) (*auth.Claims, error) {
-	// Normal authentication flow
-	return h.authenticateWithWriteScope(ctx)
-}
-
-// authenticateWithWriteScope authenticates and checks write scope
-func (h *Handler) authenticateWithWriteScope(ctx *lift.Context) (*auth.Claims, error) {
-	// Extract token
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return nil, ctx.JSON(map[string]string{"error": "authentication required"})
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return nil, ctx.JSON(map[string]string{"error": "invalid token"})
-	}
-
-	// Check write scope
-	if !claims.HasScope(auth.ScopeWrite) {
-		ctx.Status(http.StatusForbidden)
-		return nil, ctx.JSON(map[string]string{"error": "insufficient scope"})
-	}
-
-	return claims, nil
+	return h.authenticateWithScope(ctx, auth.ScopeWrite)
 }
 
 // extractMuteStatusID extracts the status ID from the request
@@ -301,8 +199,7 @@ func (h *Handler) extractMuteStatusID(ctx *lift.Context) (string, error) {
 	}
 
 	if err := common.ValidateMastodonStatusID(statusID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return "", ctx.JSON(map[string]string{"error": err.Error()})
+		return "", err
 	}
 
 	return statusID, nil
@@ -384,14 +281,13 @@ func (h *Handler) storeMuteWithRetry(ctx *lift.Context, username, conversationID
 		return nil
 	}
 
-	if !strings.Contains(err.Error(), "already muted") && !apperrors.HasCode(err, apperrors.CodeAlreadyExists) {
-		h.logger.Error("failed to mute conversation", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "internal server error"})
+	if apperrors.HasCode(err, apperrors.CodeAlreadyExists) {
+		// Handle already muted - update existing mute (idempotent)
+		return h.replaceMute(ctx, username, conversationID, mute)
 	}
 
-	// Handle already muted - update existing mute (idempotent)
-	return h.replaceMute(ctx, username, conversationID, mute)
+	h.logger.Error("failed to mute conversation", zap.Error(err))
+	return apperrors.InternalWithCause(err, "internal server error")
 }
 
 // replaceMute replaces an existing mute
@@ -404,8 +300,7 @@ func (h *Handler) replaceMute(ctx *lift.Context, username, conversationID string
 	// Create new mute
 	if err := h.repos.Conversation().CreateConversationMute(ctx.Context, mute); err != nil {
 		h.logger.Error("failed to recreate conversation mute", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "internal server error"})
+		return apperrors.InternalWithCause(err, "internal server error")
 	}
 
 	return nil
@@ -416,8 +311,10 @@ func (h *Handler) buildMutedStatusResponse(ctx *lift.Context, objectID, username
 	// Get the object
 	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
-		ctx.Status(http.StatusNotFound)
-		return ctx.JSON(map[string]string{"error": "status not found"})
+		if apperrors.HasCode(err, apperrors.CodeNotFound) || apperrors.HasCode(err, apperrors.CodeActorNotFound) {
+			return apperrors.NotFound("status").WithInternalError(err)
+		}
+		return apperrors.InternalWithCause(err, "internal server error")
 	}
 
 	// Get actor
@@ -433,31 +330,9 @@ func (h *Handler) buildMutedStatusResponse(ctx *lift.Context, objectID, username
 
 // HandleUnmuteConversationLift handles POST /api/v1/statuses/:id/unmute
 func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
-	// Extract token from Authorization header
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
-	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
-	}
-
-	// Check write scope
-	if !claims.HasScope(auth.ScopeWrite) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "insufficient scope",
-		})
+		return err
 	}
 
 	// Get status ID from path
@@ -473,10 +348,7 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 	}
 
 	if err := common.ValidateMastodonStatusID(statusID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+		return err
 	}
 
 	// Normalize the status ID to a full URL if it's not already
@@ -492,19 +364,16 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 	// Delete the mute
 	if err := h.repos.Conversation().DeleteConversationMute(ctx.Context, claims.Username, conversationID); err != nil {
 		h.logger.Error("failed to unmute conversation", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return apperrors.InternalWithCause(err, "internal server error")
 	}
 
 	// Get the object to return status information
 	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
-		ctx.Status(http.StatusNotFound)
-		return ctx.JSON(map[string]string{
-			"error": "status not found",
-		})
+		if apperrors.HasCode(err, apperrors.CodeNotFound) || apperrors.HasCode(err, apperrors.CodeActorNotFound) {
+			return apperrors.NotFound("status").WithInternalError(err)
+		}
+		return apperrors.InternalWithCause(err, "internal server error")
 	}
 
 	// Get actor

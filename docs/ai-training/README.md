@@ -16,6 +16,7 @@ Each YAML file follows a consistent schema optimized for AI comprehension:
 
 - `PAY_THEORY_DOCUMENTATION_GUIDE.md` - Canonical documentation standard used by Lesser AI tooling
 - `REPOSITORY_TESTING_GUIDE.md` - Techniques for high/complete coverage in `pkg/storage/repositories`
+- `ERROR_HANDLING_CONTRACT.md` - Contract for consistent domain errors and response mapping (HTTP/GraphQL/Lambda)
 - `architecture-patterns.yaml` - System design and component interactions
 - `deployment-patterns.yaml` - Deployment procedures and patterns
 - `api-patterns.yaml` - API implementation and integration patterns

@@ -57,10 +57,10 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 		DefaultPostingVisibility: req.DefaultPostingVisibility,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "username already taken") || strings.Contains(err.Error(), "Username is already taken") {
+		if errors.Is(err, accounts.ErrUsernameAlreadyTaken) {
 			return common.RespondAlreadyExists(ctx, "Username")
 		}
-		if strings.Contains(err.Error(), "validation failed") || strings.Contains(err.Error(), "is required") {
+		if errors.Is(err, accounts.ErrValidationFailed) {
 			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
 		// Log the full error for debugging

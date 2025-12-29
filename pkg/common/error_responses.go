@@ -26,14 +26,19 @@ func RespondUnauthorized(ctx *lift.Context, message ...string) error {
 		msg = message[0]
 	}
 	appErr := errors.Unauthorized(msg)
-	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondUnauthorizedWithDescription handles authentication errors (401) with additional description
 func RespondUnauthorizedWithDescription(ctx *lift.Context, description string) error {
-	return ctx.Status(401).JSON(StandardErrorResponse{
-		Error:       "Unauthorized",
+	appErr := errors.Unauthorized("Unauthorized")
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error:       appErr.Message,
 		Description: description,
+		Code:        string(appErr.Code),
 	})
 }
 
@@ -44,12 +49,20 @@ func RespondMissingAuth(ctx *lift.Context) error {
 
 // RespondInvalidToken handles invalid token errors by returning a 401 unauthorized response
 func RespondInvalidToken(ctx *lift.Context) error {
-	return RespondUnauthorized(ctx, "invalid token")
+	appErr := errors.NewAuthError(errors.CodeTokenInvalid, "invalid token")
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondExpiredToken handles expired token errors by returning a 401 unauthorized response
 func RespondExpiredToken(ctx *lift.Context) error {
-	return RespondUnauthorized(ctx, "token expired")
+	appErr := errors.NewAuthError(errors.CodeTokenExpired, "token expired")
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondForbidden handles authorization/permission errors (403) - now using centralized errors
@@ -59,7 +72,10 @@ func RespondForbidden(ctx *lift.Context, message ...string) error {
 		msg = message[0]
 	}
 	appErr := errors.Forbidden(msg)
-	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondInsufficientScope handles insufficient OAuth scope errors by returning a 403 forbidden response
@@ -68,7 +84,11 @@ func RespondInsufficientScope(ctx *lift.Context, requiredScope ...string) error 
 	if len(requiredScope) > 0 {
 		msg = fmt.Sprintf("insufficient scope: requires %s", requiredScope[0])
 	}
-	return RespondForbidden(ctx, msg)
+	appErr := errors.NewAppError(errors.CodeInsufficientScope, errors.CategoryAuth, msg)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondNotAuthorized handles general authorization errors by returning a 403 forbidden response
@@ -93,7 +113,10 @@ func RespondBadRequest(ctx *lift.Context, message ...string) error {
 		msg = message[0]
 	}
 	appErr := errors.BadRequest(msg)
-	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondValidationError handles validation failed errors - now using centralized errors
@@ -108,7 +131,10 @@ func RespondValidationError(ctx *lift.Context, err error) error {
 	} else {
 		appErr = errors.ValidationFailed("input", "Validation failed")
 	}
-	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondMissingParameter handles missing required parameter errors by returning a 400 bad request response
@@ -144,7 +170,10 @@ func RespondNotFound(ctx *lift.Context, resource ...string) error {
 	} else {
 		appErr = errors.NotFound("resource")
 	}
-	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondAccountNotFound handles account not found errors by returning a 404 not found response
@@ -179,7 +208,11 @@ func RespondConversationNotFound(ctx *lift.Context) error {
 
 // RespondMethodNotAllowed handles HTTP method not allowed errors by returning a 405 response
 func RespondMethodNotAllowed(ctx *lift.Context) error {
-	return ctx.Status(405).JSON(StandardErrorResponse{Error: "Method Not Allowed"})
+	appErr := errors.NewAppError(errors.CodeMethodNotAllowed, errors.CategoryAPI, "Method Not Allowed")
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondConflict handles resource conflict errors (409) - now using centralized errors
@@ -189,7 +222,10 @@ func RespondConflict(ctx *lift.Context, message ...string) error {
 		msg = message[0]
 	}
 	appErr := errors.NewAppError(errors.CodeConflict, errors.CategoryBusiness, msg)
-	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondAlreadyExists handles resource already exists conflicts by returning a 409 conflict response
@@ -203,7 +239,11 @@ func RespondGone(ctx *lift.Context, message ...string) error {
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
 	}
-	return ctx.Status(410).JSON(StandardErrorResponse{Error: msg})
+	appErr := errors.NewAppError(errors.CodeGone, errors.CategoryAPI, msg)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondUnprocessableEntity handles unprocessable entity errors (422) with optional custom message
@@ -212,7 +252,11 @@ func RespondUnprocessableEntity(ctx *lift.Context, message ...string) error {
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
 	}
-	return ctx.Status(422).JSON(StandardErrorResponse{Error: msg})
+	appErr := errors.NewAppError(errors.CodeUnprocessableEntity, errors.CategoryValidation, msg)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondStatusTooLong handles status text too long errors by returning a 422 unprocessable entity response
@@ -227,7 +271,11 @@ func RespondInvalidContent(ctx *lift.Context) error {
 
 // RespondRateLimited handles rate limit exceeded errors by returning a 429 response
 func RespondRateLimited(ctx *lift.Context) error {
-	return ctx.Status(429).JSON(StandardErrorResponse{Error: "Rate limit exceeded"})
+	appErr := errors.NewAppError(errors.CodeRateLimited, errors.CategoryAPI, "Rate limit exceeded")
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondInternalServerError handles internal server errors (500) - now using centralized errors
@@ -237,7 +285,10 @@ func RespondInternalServerError(ctx *lift.Context, message ...string) error {
 		msg = message[0]
 	}
 	appErr := errors.Internal(msg)
-	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondDatabaseError handles database errors by returning a 500 internal server error response
@@ -271,7 +322,11 @@ func RespondServiceUnavailable(ctx *lift.Context, service ...string) error {
 	if len(service) > 0 && service[0] != "" {
 		msg = fmt.Sprintf("%s service unavailable", service[0])
 	}
-	return ctx.Status(503).JSON(StandardErrorResponse{Error: msg})
+	appErr := errors.NewAppError(errors.CodeExternalServiceUnavailable, errors.CategoryExternal, msg)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // Composite error response functions that handle common patterns
@@ -329,7 +384,10 @@ func RespondCreateError(ctx *lift.Context, resource string, err error) error {
 
 	// Check for centralized AppError
 	if appErr, ok := errors.AsAppError(err); ok {
-		return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+		return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+			Error: appErr.Message,
+			Code:  string(appErr.Code),
+		})
 	}
 
 	// Check for validation errors
@@ -354,7 +412,10 @@ func RespondUpdateError(ctx *lift.Context, resource string, err error) error {
 
 	// Check for centralized AppError
 	if appErr, ok := errors.AsAppError(err); ok {
-		return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+		return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+			Error: appErr.Message,
+			Code:  string(appErr.Code),
+		})
 	}
 
 	// Check for validation errors
@@ -379,7 +440,10 @@ func RespondDeleteError(ctx *lift.Context, resource string, err error) error {
 
 	// Check for centralized AppError
 	if appErr, ok := errors.AsAppError(err); ok {
-		return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+		return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+			Error: appErr.Message,
+			Code:  string(appErr.Code),
+		})
 	}
 
 	// Check for not found errors
@@ -399,7 +463,10 @@ func RespondGetError(ctx *lift.Context, resource string, err error) error {
 
 	// Check for centralized AppError
 	if appErr, ok := errors.AsAppError(err); ok {
-		return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+		return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+			Error: appErr.Message,
+			Code:  string(appErr.Code),
+		})
 	}
 
 	// Check for not found errors
@@ -426,12 +493,18 @@ func isNotFoundError(err error) bool {
 
 // RespondWithAppError creates a response from a centralized AppError
 func RespondWithAppError(ctx *lift.Context, appErr *errors.AppError) error {
-	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
+	})
 }
 
 // RespondWithErrorMessage creates a standardized error response with custom message
 func RespondWithErrorMessage(ctx *lift.Context, statusCode int, message string) error {
-	return ctx.Status(statusCode).JSON(StandardErrorResponse{Error: message})
+	return ctx.Status(statusCode).JSON(StandardErrorResponse{
+		Error: message,
+		Code:  errorCodeForHTTPStatus(statusCode),
+	})
 }
 
 // RespondWithErrorAndDescription creates a detailed error response
@@ -439,6 +512,7 @@ func RespondWithErrorAndDescription(ctx *lift.Context, statusCode int, errorMsg,
 	return ctx.Status(statusCode).JSON(StandardErrorResponse{
 		Error:       errorMsg,
 		Description: description,
+		Code:        errorCodeForHTTPStatus(statusCode),
 	})
 }
 
