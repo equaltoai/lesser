@@ -31,7 +31,7 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 			"admin": {
 				Username: "admin",
 				Actor: &activitypub.Actor{
-					BaseObject: activitypub.BaseObject{ID: "https://example.com/users/admin", Type: "Person"},
+					BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/admin", Type: "Person"},
 					PreferredUsername: "admin",
 					Name:              "Admin",
 				},
@@ -39,7 +39,7 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 			"alice": {
 				Username: "alice",
 				Actor: &activitypub.Actor{
-					BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice", Type: "Person"},
+					BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/alice", Type: "Person"},
 					PreferredUsername: "alice",
 					Name:              "Alice",
 				},
@@ -297,7 +297,7 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 			require.NoError(t, err)
 			ctx.SetParam("id", "user-missing")
 			require.NoError(t, h.HandleAdminGetAccountLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
 		})
 
 		t.Run("actor read error", func(t *testing.T) {

@@ -66,6 +66,27 @@ var (
 	startTime           time.Time
 )
 
+var (
+	lambdaStart = lambda.Start
+
+	newLambdaOptimizedClient = dynamorm.NewLambdaOptimizedClient
+	newRepositoryFactory = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
+		return factory.NewRepositoryFactory(db, tableName, logger)
+	}
+	newAuthService           = auth.NewAuthService
+	newStreamQueue           = streaming.NewDynamoStreamQueue
+
+	createAPIAuthMiddlewareFromAuthService = auth.CreateAPIAuthMiddlewareFromAuthService
+	newLiftHandler                         = liftHandlers.NewHandler
+
+	createInstanceLockMiddlewareFn = createInstanceLockMiddleware
+	configureLiftRoutesFn          = configureLiftRoutes
+
+	trackLambdaInvocation = func(ctx context.Context, service *cost.TrackingService, operation cost.LambdaOperation) error {
+		return service.TrackLambdaInvocation(ctx, operation)
+	}
+)
+
 func init() {
 	if common.RunningUnitTests() {
 		return
@@ -164,19 +185,19 @@ func initializeManualServices() {
 	}
 
 	// Initialize DynamORM with Lambda optimizations
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	db, err := newLambdaOptimizedClient(context.Background(), cfg.Region)
 	if err != nil {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
 	// Create repository storage using factory pattern
-	repos, err = factory.NewRepositoryFactory(db, tableName, logger)
+	repos, err = newRepositoryFactory(db, tableName, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
 
 	// Initialize auth service
-	authService, err = auth.NewAuthService(cfg, repos)
+	authService, err = newAuthService(cfg, repos)
 	if err != nil {
 		logger.Fatal("failed to initialize auth service", zap.Error(err))
 	}
@@ -253,7 +274,7 @@ func initializeAPISpecificServices() {
 	}
 
 	// Create unified auth middleware
-	unifiedAuthMiddleware := auth.CreateAPIAuthMiddlewareFromAuthService(authService, logger)
+	unifiedAuthMiddleware := createAPIAuthMiddlewareFromAuthService(authService, logger)
 
 	// Create stream queue service with proper fallback
 	var streamQueue streaming.StreamQueueService
@@ -276,17 +297,17 @@ func initializeAPISpecificServices() {
 
 		if coreDB == nil {
 			// Last resort: create DynamORM client
-			manualDB, dbErr := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+			manualDB, dbErr := newLambdaOptimizedClient(context.Background(), cfg.Region)
 			if dbErr != nil {
 				logger.Fatal("Failed to initialize DynamORM for stream queue", zap.Error(dbErr))
 			}
 			coreDB = manualDB
 		}
-		streamQueue = streaming.NewDynamoStreamQueue(coreDB, cfg.DynamoTableName, logger)
+		streamQueue = newStreamQueue(coreDB, cfg.DynamoTableName, logger)
 	}
 
 	// Create Lift handler for all endpoints
-	liftHandler = liftHandlers.NewHandler(cfg, repos, logger, unifiedAuthMiddleware, streamQueue)
+	liftHandler = newLiftHandler(cfg, repos, logger, unifiedAuthMiddleware, streamQueue)
 
 	logger.Info("initialized API-specific services")
 }
@@ -314,7 +335,7 @@ func main() {
 	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeAPI, logger)
 
 	// Block publishing/signups until instance activation completes.
-	app.Use(createInstanceLockMiddleware(repos, logger))
+	app.Use(createInstanceLockMiddlewareFn(repos, logger))
 
 	// Add unified error handling middleware
 	app.Use(common.CreateAPIErrorMiddleware(logger))
@@ -341,7 +362,7 @@ func main() {
 	// Not using global middleware to avoid incorrectly rate limiting read endpoints
 
 	// Configure native Lift routes
-	configureLiftRoutes(app)
+	configureLiftRoutesFn(app)
 
 	// Configure health check routes if available
 	if healthChecker != nil {
@@ -381,7 +402,7 @@ func main() {
 		return result, err
 	}
 
-	lambda.Start(lambdaHandler)
+	lambdaStart(lambdaHandler)
 }
 
 // requestInfo holds extracted request information
@@ -914,7 +935,7 @@ func createCentralizedCostTrackingMiddleware() lift.Middleware {
 
 			// Track the operation asynchronously to avoid blocking the response
 			go func() {
-				if trackErr := costTrackingService.TrackLambdaInvocation(context.Background(), lambdaOp); trackErr != nil {
+				if trackErr := trackLambdaInvocation(context.Background(), costTrackingService, lambdaOp); trackErr != nil {
 					logger.Warn("failed to track Lambda cost", zap.Error(trackErr))
 				}
 			}()

@@ -68,7 +68,7 @@ func TestExportHandlers_Round11(t *testing.T) {
 	require.NoError(t, handler.HandleGetExportStatusLift(ctxStatus))
 	require.Equal(t, http.StatusOK, ctxStatus.Response.StatusCode)
 
-	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports", nil, nil, nil)
+	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports", map[string]string{"X-Test-Username": "testuser_with_exports"}, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, handler.HandleListExportsLift(ctxList))
 	require.Equal(t, http.StatusOK, ctxList.Response.StatusCode)

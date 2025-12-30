@@ -42,4 +42,10 @@ func TestLiftErrors_Round11(t *testing.T) {
 	require.NotNil(t, failedToCreateJobQueueService())
 	require.NotNil(t, invalidStartDate())
 	require.NotNil(t, invalidEndDate())
+	require.NotNil(t, failedToGetFollowerActor())
+	require.NotNil(t, failedToGetFollowedActor())
+	require.NotNil(t, invalidSourceLanguageCode())
+	require.NotNil(t, invalidTargetLanguageCode())
+	require.NotNil(t, failedToGetCostRecords())
+	require.NotNil(t, failedToDetermineDeliveryRecipients())
 }

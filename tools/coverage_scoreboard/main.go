@@ -29,8 +29,8 @@ func (p packageCoverage) Percent() float64 {
 }
 
 type fileCoverage struct {
-	File           string
-	Package        string
+	File            string
+	Package         string
 	TotalStatements int
 	Covered         int
 }
@@ -47,30 +47,64 @@ func (f fileCoverage) Percent() float64 {
 }
 
 type scoreboardConfig struct {
-	ProfilePath      string
-	Prefix           string
-	Top              int
-	MinStatements    int
-	ZeroOnly         bool
-	SortByUncovered  bool
-	Mode             string
-	PackageFilter    string
-	StripModulePath  string
+	ProfilePath     string
+	Prefix          string
+	Top             int
+	MinStatements   int
+	ZeroOnly        bool
+	SortByUncovered bool
+	Mode            string
+	PackageFilter   string
+	StripModulePath string
 }
 
 func parseFlags() scoreboardConfig {
 	var cfg scoreboardConfig
-	flag.StringVar(&cfg.ProfilePath, "profile", "coverage_pkg.out", "path to coverage profile (coverprofile)")
-	flag.StringVar(&cfg.Prefix, "prefix", "github.com/equaltoai/lesser/pkg/", "only include files with this import-path prefix")
+
+	modulePrefix := detectModulePrefix()
+	defaultProfile := detectDefaultProfile()
+
+	flag.StringVar(&cfg.ProfilePath, "profile", defaultProfile, "path to coverage profile (coverprofile)")
+	flag.StringVar(&cfg.Prefix, "prefix", modulePrefix, "only include files with this import-path prefix")
 	flag.IntVar(&cfg.Top, "top", 30, "number of packages to print (after filtering)")
 	flag.IntVar(&cfg.MinStatements, "min", 0, "minimum statements per package to include")
 	flag.BoolVar(&cfg.ZeroOnly, "zero-only", false, "only show 0% coverage packages (after filtering)")
 	flag.BoolVar(&cfg.SortByUncovered, "sort-uncovered", true, "sort by uncovered statements (desc) instead of total statements")
 	flag.StringVar(&cfg.Mode, "mode", "package", "summary mode: package|file")
 	flag.StringVar(&cfg.PackageFilter, "package", "", "only include entries whose package has this prefix (optional)")
-	flag.StringVar(&cfg.StripModulePath, "strip", "github.com/equaltoai/lesser/", "strip this import-path prefix when printing file paths (file mode only)")
+	flag.StringVar(&cfg.StripModulePath, "strip", modulePrefix, "strip this import-path prefix when printing file paths (file mode only)")
 	flag.Parse()
 	return cfg
+}
+
+func detectDefaultProfile() string {
+	if _, err := os.Stat("coverage.out"); err == nil {
+		return "coverage.out"
+	}
+	if _, err := os.Stat("coverage_pkg.out"); err == nil {
+		return "coverage_pkg.out"
+	}
+	return "coverage.out"
+}
+
+func detectModulePrefix() string {
+	content, err := os.ReadFile("go.mod")
+	if err != nil {
+		return ""
+	}
+
+	for _, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			modulePath := strings.TrimSpace(strings.TrimPrefix(line, "module "))
+			if modulePath == "" {
+				return ""
+			}
+			return modulePath + "/"
+		}
+	}
+
+	return ""
 }
 
 func main() {

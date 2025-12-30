@@ -17,40 +17,42 @@ import (
 )
 
 // authenticateNotesUser handles authentication for notes endpoints with userID formatting
-func (h *Handler) authenticateNotesUser(ctx *lift.Context) (string, error) {
+func (h *Handler) authenticateNotesUser(ctx *lift.Context) (string, bool, error) {
 	// Extract and validate token
 	authHeader := ctx.Header("Authorization")
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
 	// Try direct access to headers if ctx.Header doesn't work
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		_ = common.RespondUnauthorized(ctx)
+		return "", true, nil
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		_ = common.RespondUnauthorized(ctx)
+		return "", true, nil
 	}
 
-	return fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username), nil
+	return fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username), false, nil
 }
 
 // HandleCreateNoteLift handles POST /api/v1/notes
 func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
-	userID, err := h.authenticateNotesUser(ctx)
-	if err != nil {
+	userID, handled, err := h.authenticateNotesUser(ctx)
+	if err != nil || handled {
 		return err
 	}
 
@@ -155,14 +157,14 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 	// Optional auth - for personalized scoring
 	var userID string
 	authHeader := ctx.Header("Authorization")
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
 	// Try direct access to headers if ctx.Header doesn't work
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
@@ -296,8 +298,8 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 		return common.RespondBadRequest(ctx, "note ID required")
 	}
 
-	userID, err := h.authenticateNotesUser(ctx)
-	if err != nil {
+	userID, handled, err := h.authenticateNotesUser(ctx)
+	if err != nil || handled {
 		return err
 	}
 
@@ -386,7 +388,7 @@ func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 	// Parse limit with fallback
 	limit := 20
 	limitStr := ctx.Query("limit")
-	if common.ValidateRequiredParam(limitStr, "limitStr") != nil && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("limitStr", limitStr) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
 	if limitStr != "" {

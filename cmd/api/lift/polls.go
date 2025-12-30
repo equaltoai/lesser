@@ -135,8 +135,8 @@ func (h *Handler) HandleVoteOnPollLift(ctx *lift.Context) error {
 	}
 
 	// Authenticate and get actor
-	claims, actor, err := h.authenticatePollVoter(ctx)
-	if err != nil {
+	claims, actor, handled, err := h.authenticatePollVoter(ctx)
+	if err != nil || handled {
 		return err
 	}
 
@@ -147,19 +147,20 @@ func (h *Handler) HandleVoteOnPollLift(ctx *lift.Context) error {
 	}
 
 	// Parse and validate vote request
-	req, err := h.parsePollVoteRequest(ctx)
-	if err != nil {
+	req, handled, err := h.parsePollVoteRequest(ctx)
+	if err != nil || handled {
 		return err
 	}
 
 	// Submit vote
-	if err := h.submitPollVote(ctx, pollID, actor.ID, req.Choices); err != nil {
+	handled, err = h.submitPollVote(ctx, pollID, actor.ID, req.Choices)
+	if err != nil || handled {
 		return err
 	}
 
 	// Get updated poll and build response
-	resp, err := h.buildPollVoteResponse(ctx, pollID, req.Choices)
-	if err != nil {
+	resp, handled, err := h.buildPollVoteResponse(ctx, pollID, req.Choices)
+	if err != nil || handled {
 		return err
 	}
 
@@ -171,7 +172,7 @@ func (h *Handler) HandleVoteOnPollLift(ctx *lift.Context) error {
 }
 
 // authenticatePollVoter handles authentication for poll voting
-func (h *Handler) authenticatePollVoter(ctx *lift.Context) (*auth.Claims, *storage.ActorRecord, error) {
+func (h *Handler) authenticatePollVoter(ctx *lift.Context) (*auth.Claims, *storage.ActorRecord, bool, error) {
 	// Extract auth header
 	authHeader := h.getPollAuthHeader(ctx)
 
@@ -179,7 +180,10 @@ func (h *Handler) authenticatePollVoter(ctx *lift.Context) (*auth.Claims, *stora
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
 		ctx.Status(http.StatusUnauthorized)
-		return nil, nil, ctx.JSON(map[string]any{"error": "unauthorized"})
+		if err := ctx.JSON(map[string]any{"error": "unauthorized"}); err != nil {
+			return nil, nil, false, err
+		}
+		return nil, nil, true, nil
 	}
 
 	// Validate token
@@ -187,7 +191,10 @@ func (h *Handler) authenticatePollVoter(ctx *lift.Context) (*auth.Claims, *stora
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		ctx.Status(http.StatusUnauthorized)
-		return nil, nil, ctx.JSON(map[string]any{"error": "unauthorized"})
+		if err := ctx.JSON(map[string]any{"error": "unauthorized"}); err != nil {
+			return nil, nil, false, err
+		}
+		return nil, nil, true, nil
 	}
 
 	// Get actor
@@ -195,11 +202,14 @@ func (h *Handler) authenticatePollVoter(ctx *lift.Context) (*auth.Claims, *stora
 	if err != nil || account.Actor == nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
-		return nil, nil, ctx.JSON(map[string]any{"error": "internal server error"})
+		if err := ctx.JSON(map[string]any{"error": "internal server error"}); err != nil {
+			return nil, nil, false, err
+		}
+		return nil, nil, true, nil
 	}
 
 	actor := h.convertToActorRecord(account.Actor)
-	return claims, actor, nil
+	return claims, actor, false, nil
 }
 
 // getPollAuthHeader extracts authorization header
@@ -226,49 +236,64 @@ func (h *Handler) convertToActorRecord(actorData *activitypub.Actor) *storage.Ac
 }
 
 // parsePollVoteRequest parses the poll vote request
-func (h *Handler) parsePollVoteRequest(ctx *lift.Context) (*models.PollVoteRequest, error) {
+func (h *Handler) parsePollVoteRequest(ctx *lift.Context) (*models.PollVoteRequest, bool, error) {
 	var req models.PollVoteRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
 				ctx.Status(http.StatusBadRequest)
-				return nil, ctx.JSON(map[string]any{"error": "invalid request body"})
+				if err := ctx.JSON(map[string]any{"error": "invalid request body"}); err != nil {
+					return nil, false, err
+				}
+				return nil, true, nil
 			}
 		} else {
 			ctx.Status(http.StatusBadRequest)
-			return nil, ctx.JSON(map[string]any{"error": "invalid request body"})
+			if err := ctx.JSON(map[string]any{"error": "invalid request body"}); err != nil {
+				return nil, false, err
+			}
+			return nil, true, nil
 		}
 	}
 
 	// Validate request
 	if err := common.ValidateSliceNotEmpty("req.Choices", req.Choices); err != nil {
 		ctx.Status(http.StatusUnprocessableEntity)
-		return nil, ctx.JSON(map[string]any{"error": "no choices provided"})
+		if err := ctx.JSON(map[string]any{"error": "no choices provided"}); err != nil {
+			return nil, false, err
+		}
+		return nil, true, nil
 	}
 
 	// Validate poll vote choices
 	for i, choice := range req.Choices {
 		if choice < 0 {
 			ctx.Status(http.StatusUnprocessableEntity)
-			return nil, ctx.JSON(map[string]any{"error": fmt.Sprintf("invalid choice index %d at position %d", choice, i)})
+			if err := ctx.JSON(map[string]any{"error": fmt.Sprintf("invalid choice index %d at position %d", choice, i)}); err != nil {
+				return nil, false, err
+			}
+			return nil, true, nil
 		}
 	}
 
-	return &req, nil
+	return &req, false, nil
 }
 
 // submitPollVote submits the vote to the poll
-func (h *Handler) submitPollVote(ctx *lift.Context, pollID, voterID string, choices []int) error {
+func (h *Handler) submitPollVote(ctx *lift.Context, pollID, voterID string, choices []int) (bool, error) {
 	if err := h.repos.Poll().VoteOnPoll(ctx.Context, pollID, voterID, choices); err != nil {
 		h.logger.Error("failed to vote on poll",
 			zap.String("poll_id", pollID),
 			zap.String("voter_id", voterID),
 			zap.Error(err))
 		ctx.Status(http.StatusUnprocessableEntity)
-		return ctx.JSON(map[string]any{"error": err.Error()})
+		if err := ctx.JSON(map[string]any{"error": err.Error()}); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 // pollVoteResponseData holds poll response data
@@ -278,13 +303,16 @@ type pollVoteResponseData struct {
 }
 
 // buildPollVoteResponse builds the response after voting
-func (h *Handler) buildPollVoteResponse(ctx *lift.Context, pollID string, choices []int) (*pollVoteResponseData, error) {
+func (h *Handler) buildPollVoteResponse(ctx *lift.Context, pollID string, choices []int) (*pollVoteResponseData, bool, error) {
 	// Get updated poll data
 	poll, err := h.repos.Poll().GetPoll(ctx.Context, pollID)
 	if err != nil {
 		h.logger.Error("failed to get poll after voting", zap.String("poll_id", pollID), zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
-		return nil, ctx.JSON(map[string]any{"error": "internal server error"})
+		if err := ctx.JSON(map[string]any{"error": "internal server error"}); err != nil {
+			return nil, false, err
+		}
+		return nil, true, nil
 	}
 
 	// Prepare vote counts
@@ -313,7 +341,7 @@ func (h *Handler) buildPollVoteResponse(ctx *lift.Context, pollID string, choice
 	// Hide totals if requested
 	h.hidePollTotalsIfNeeded(poll, &resp, expired)
 
-	return &pollVoteResponseData{response: resp, poll: poll}, nil
+	return &pollVoteResponseData{response: resp, poll: poll}, false, nil
 }
 
 // preparePollVoteCounts prepares vote counts for the poll

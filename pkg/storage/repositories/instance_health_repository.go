@@ -140,7 +140,7 @@ func (r *InstanceHealthRepository) GetLatestHealthCheck(ctx context.Context, dom
 	}
 
 	if len(healthChecks) == 0 {
-		return nil, ErrorHandler.HandleGetError(errors.New("not found"), EntityInstanceHealth, domain)
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityInstanceHealth, domain)
 	}
 
 	health := healthChecks[0]

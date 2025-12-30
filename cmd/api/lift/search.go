@@ -25,11 +25,17 @@ func (h *Handler) HandleAccountSearchLift(ctx *lift.Context) error {
 	if err != nil {
 		return err
 	}
+	if ctx.Response.IsWritten() || params == nil {
+		return nil
+	}
 
 	// Authenticate user if needed
 	authenticatedUser, err := h.authenticateAccountSearch(ctx, params.followingOnly)
 	if err != nil {
 		return err
+	}
+	if ctx.Response.IsWritten() {
+		return nil
 	}
 
 	// Perform the search with privacy enforcement
@@ -330,11 +336,17 @@ func (h *Handler) HandleStatusSearchLift(ctx *lift.Context) error {
 	if err != nil {
 		return err
 	}
+	if ctx.Response.IsWritten() || params == nil {
+		return nil
+	}
 
 	// Authenticate user - status search requires authentication for privacy
 	authenticatedUser, err := h.authenticateStatusSearch(ctx)
 	if err != nil {
 		return err
+	}
+	if ctx.Response.IsWritten() {
+		return nil
 	}
 
 	// Perform the status search with privacy enforcement
@@ -427,6 +439,9 @@ func (h *Handler) authenticateStatusSearch(ctx *lift.Context) (string, error) {
 // performStatusSearch performs the actual status search with privacy enforcement
 func (h *Handler) performStatusSearch(ctx context.Context, params *statusSearchParams, authenticatedUser string) ([]storage.StatusSearchResult, error) {
 	searchRepo := h.repos.Search()
+	if searchRepo == nil {
+		return nil, statusSearchFailed()
+	}
 
 	// Convert username to actor ID for privacy checks
 	searcherActorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, authenticatedUser)
@@ -438,36 +453,14 @@ func (h *Handler) performStatusSearch(ctx context.Context, params *statusSearchP
 		LocalOnly: params.localOnly,
 	}
 
-	// Use privacy-aware search
-	if searchRepo != nil {
-		results, err := searchRepo.SearchStatusesWithPrivacy(ctx, params.query, options, searcherActorID)
-		if err != nil {
-			h.logger.Error("privacy-aware status search failed",
-				zap.String("query", params.query),
-				zap.Int("limit", params.limit),
-				zap.String("searcher", authenticatedUser),
-				zap.Error(err))
-			return nil, errors.Join(privacyAwareStatusSearchFailed(), err)
-		}
-
-		// Convert pointer slice to value slice
-		statuses := make([]storage.StatusSearchResult, 0, len(results))
-		for _, result := range results {
-			if result != nil {
-				statuses = append(statuses, *result)
-			}
-		}
-		return statuses, nil
-	}
-
-	// Fallback to regular search (though this should be avoided for status search)
-	results, err := searchRepo.SearchStatusesWithOptions(ctx, params.query, options)
+	results, err := searchRepo.SearchStatusesWithPrivacy(ctx, params.query, options, searcherActorID)
 	if err != nil {
-		h.logger.Error("status search failed",
+		h.logger.Error("privacy-aware status search failed",
 			zap.String("query", params.query),
 			zap.Int("limit", params.limit),
+			zap.String("searcher", authenticatedUser),
 			zap.Error(err))
-		return nil, errors.Join(statusSearchFailed(), err)
+		return nil, errors.Join(privacyAwareStatusSearchFailed(), err)
 	}
 
 	// Convert pointer slice to value slice

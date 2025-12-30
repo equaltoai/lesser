@@ -38,7 +38,7 @@ func runCoverageScoreboard(argv []string) error {
 	fs.SetOutput(os.Stderr)
 
 	var args coverageScoreboardArgs
-	fs.StringVar(&args.Profile, "profile", "coverage_pkg.out", "coverage profile path (coverprofile)")
+	fs.StringVar(&args.Profile, "profile", "", "coverage profile path (coverprofile) (default: auto)")
 	fs.StringVar(&args.Mode, "mode", "package", "summary mode: package|file")
 	fs.StringVar(&args.Package, "package", "", "package prefix filter (optional)")
 	fs.IntVar(&args.Top, "top", 30, "number of entries to print (after filtering)")
@@ -63,11 +63,13 @@ func runCoverageScoreboard(argv []string) error {
 
 	toolArgs := []string{
 		"run", "./tools/coverage_scoreboard",
-		"--profile", args.Profile,
 		"--mode", args.Mode,
 		"--top", fmt.Sprintf("%d", args.Top),
 		"--min", fmt.Sprintf("%d", args.Min),
 		"--sort-uncovered=" + boolToFlag(args.SortUnc),
+	}
+	if args.Profile != "" {
+		toolArgs = append(toolArgs, "--profile", args.Profile)
 	}
 	if args.Zero {
 		toolArgs = append(toolArgs, "--zero-only")
@@ -90,4 +92,3 @@ func boolToFlag(value bool) string {
 	}
 	return "false"
 }
-

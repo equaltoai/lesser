@@ -258,7 +258,7 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 				"cursor": []string{nextCursor},
 			}.Encode(),
 		}
-		ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL.String())
+		ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL.String()))
 	}
 
 	ctx.Status(http.StatusOK)

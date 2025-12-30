@@ -116,6 +116,8 @@ func runTestCoverage(argv []string) error {
 	fs.StringVar(&scope, "scope", "all", "coverage scope: all|pkg (default: all)")
 	var includeTesting bool
 	fs.BoolVar(&includeTesting, "include-testing", false, "include pkg/testing/* in pkg scope (default: false)")
+	var includeTools bool
+	fs.BoolVar(&includeTools, "include-tools", false, "include tools/* packages in all scope (default: false)")
 	if err := fs.Parse(argv); err != nil {
 		return err
 	}
@@ -138,7 +140,13 @@ func runTestCoverage(argv []string) error {
 	case "all":
 		profileName = "coverage.out"
 		htmlName = "coverage.html"
-		pkgPaths = []string{"./..."}
+		pkgPaths, err = listPackagesForAllCoverage(repoRoot, goCache, includeTools)
+		if err != nil {
+			return err
+		}
+		if len(pkgPaths) == 0 {
+			return fmt.Errorf("no packages found for all coverage scope (after filtering)")
+		}
 	case "pkg":
 		profileName = "coverage_pkg.out"
 		htmlName = "coverage_pkg.html"
@@ -227,6 +235,41 @@ func listPackagesForPkgCoverage(repoRoot string, goCache string) ([]string, erro
 		if pkg == testingPrefix || strings.HasPrefix(pkg, testingPrefix+"/") {
 			continue
 		}
+		pkgs = append(pkgs, pkg)
+	}
+
+	sort.Strings(pkgs)
+	return pkgs, nil
+}
+
+func listPackagesForAllCoverage(repoRoot string, goCache string, includeTools bool) ([]string, error) {
+	modulePath, err := readModulePath(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := captureCommandOutput(context.Background(), repoRoot, map[string]string{
+		"GOCACHE": goCache,
+	}, "go", "list", "./...")
+	if err != nil {
+		return nil, err
+	}
+
+	toolsPrefix := modulePath + "/tools"
+
+	pkgs := make([]string, 0)
+	for _, line := range strings.Split(out, "\n") {
+		pkg := strings.TrimSpace(line)
+		if pkg == "" {
+			continue
+		}
+
+		if !includeTools {
+			if pkg == toolsPrefix || strings.HasPrefix(pkg, toolsPrefix+"/") {
+				continue
+			}
+		}
+
 		pkgs = append(pkgs, pkg)
 	}
 

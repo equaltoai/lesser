@@ -305,10 +305,9 @@ func (r *AccountRepository) GetUser(ctx context.Context, username string) (*stor
 
 	err := r.Get(ctx, pk, models.SKMetadata, user)
 	if err != nil {
-		if dynamormErrors.IsNotFound(err) {
-			return nil, ErrorHandler.HandleGetError(errors.New("not found"), EntityUser, username)
+		if !dynamormErrors.IsNotFound(err) {
+			r.logger.Error("failed to get user", zap.Error(err), zap.String("username", username))
 		}
-		r.logger.Error("failed to get user", zap.Error(err), zap.String("username", username))
 		return nil, ErrorHandler.HandleGetError(err, EntityUser, username)
 	}
 
@@ -329,9 +328,6 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, username string, upd
 	pk := fmt.Sprintf("USER#%s", username)
 	err := r.Get(ctx, pk, models.SKMetadata, user)
 	if err != nil {
-		if dynamormErrors.IsNotFound(err) {
-			return ErrorHandler.HandleGetError(errors.New("not found"), EntityUser, username)
-		}
 		return ErrorHandler.HandleGetError(err, EntityUser, username)
 	}
 
@@ -1253,9 +1249,6 @@ func (r *AccountRepository) GetAccountByURL(ctx context.Context, actorURL string
 		First(&actorModel)
 
 	if err != nil {
-		if isAccountNotFound(err) {
-			return nil, ErrorHandler.HandleGetError(errors.New("not found"), EntityUser, actorURL)
-		}
 		return nil, ErrorHandler.HandleGetError(err, EntityUser, actorURL)
 	}
 

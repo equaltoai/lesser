@@ -102,6 +102,14 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *storage.User) err
 		return err
 	}
 
+	// Ensure timestamps are set before enhanced validation runs.
+	if user.CreatedAt.IsZero() {
+		user.CreatedAt = time.Now()
+	}
+	if user.UpdatedAt.IsZero() {
+		user.UpdatedAt = user.CreatedAt
+	}
+
 	// Create the DynamORM model
 	userModel := &models.User{
 		Username:        user.Username,
@@ -114,6 +122,8 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *storage.User) err
 		Role:            user.Role,
 		Locale:          user.Locale,
 		RecoveryMethods: user.RecoveryMethods,
+		CreatedAt:       user.CreatedAt,
+		UpdatedAt:       user.UpdatedAt,
 	}
 
 	// Use enhanced validation and creation with automatic permission checking and event emission

@@ -91,7 +91,7 @@ func (h *Handler) initializeAuthorizeFlow(ctx *lift.Context) (*authorizeFlow, bo
 			zap.String("client_id", req.clientID),
 			zap.String("redirect_uri", req.redirectURI),
 			zap.Error(err))
-		return nil, false, errors.New("invalid redirect_uri")
+		return nil, true, h.oauthErrorLift(ctx, "invalid_request", "Invalid redirect_uri", "", req.state)
 	}
 
 	username, handled, err := h.resolveAuthorizeUser(ctx, req)
@@ -102,7 +102,7 @@ func (h *Handler) initializeAuthorizeFlow(ctx *lift.Context) (*authorizeFlow, bo
 
 	scopes, err := h.normalizeAuthorizeScopes(req.scope)
 	if err != nil {
-		return nil, false, h.oauthErrorLift(ctx, "invalid_scope", err.Error(), req.redirectURI, req.state)
+		return nil, true, h.oauthErrorLift(ctx, "invalid_scope", err.Error(), req.redirectURI, req.state)
 	}
 	flow.scopes = scopes
 
@@ -211,7 +211,7 @@ func (h *Handler) normalizeAuthorizeScopes(scope string) ([]string, error) {
 func (h *Handler) ensureConsentForFlow(ctx *lift.Context, flow *authorizeFlow) (bool, error) {
 	if h.registry == nil {
 		h.logger.Error("service registry not initialized for OAuth authorization")
-		return false, h.oauthErrorLift(ctx, "server_error", "Service unavailable", flow.request.redirectURI, flow.request.state)
+		return true, h.oauthErrorLift(ctx, "server_error", "Service unavailable", flow.request.redirectURI, flow.request.state)
 	}
 
 	if h.hasUserConsentedToApp(ctx.Context, flow.username, flow.request.clientID, flow.scopes) {
@@ -234,7 +234,7 @@ func (h *Handler) ensureConsentForFlow(ctx *lift.Context, flow *authorizeFlow) (
 		OAuthState: authState,
 	}); err != nil {
 		h.logger.Error("failed to save OAuth state", zap.Error(err))
-		return false, h.oauthErrorLift(ctx, "server_error", "Failed to save authorization state", flow.request.redirectURI, flow.request.state)
+		return true, h.oauthErrorLift(ctx, "server_error", "Failed to save authorization state", flow.request.redirectURI, flow.request.state)
 	}
 
 	h.logger.Info("redirecting to consent UI",

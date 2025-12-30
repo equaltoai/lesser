@@ -32,13 +32,13 @@ const (
 func (h *Handler) HandleCreateImportLift(ctx *lift.Context) error {
 	// Authenticate request
 	username, err := h.authenticateImportRequest(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Parse and validate request
 	req, err := h.parseImportRequest(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
@@ -49,34 +49,34 @@ func (h *Handler) HandleCreateImportLift(ctx *lift.Context) error {
 
 	// Process file data
 	fileData, err := h.processImportFileData(ctx, req.Data)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Check for existing imports
-	if err := h.checkExistingImports(ctx, username, req.Type); err != nil {
+	if err := h.checkExistingImports(ctx, username, req.Type); err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Check rate limits
-	if err := h.checkImportRateLimit(ctx, username, req.Type); err != nil {
+	if err := h.checkImportRateLimit(ctx, username, req.Type); err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Check budget limits before creating import
-	if err := h.checkImportBudgetLimits(ctx, username, req, len(fileData)); err != nil {
+	if err := h.checkImportBudgetLimits(ctx, username, req, len(fileData)); err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Create and store import
 	importID := uuid.New().String()
 	s3Key, err := h.storeImportFile(ctx, username, importID, req.Type, fileData)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Create import record and queue job
-	if err := h.createImportRecord(ctx, importID, username, req, s3Key); err != nil {
+	if err := h.createImportRecord(ctx, importID, username, req, s3Key); err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
@@ -339,7 +339,7 @@ func (h *Handler) queueImportJobSQS(ctx *lift.Context, importID, username string
 func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 	// Authenticate request using consolidated pattern
 	username, err := h.authenticateImportStatusRequest(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
@@ -395,7 +395,7 @@ func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
 	// Authenticate request using consolidated pattern
 	username, err := h.authenticateImportStatusRequest(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
@@ -447,7 +447,7 @@ func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
 	// Test mode support
 	// Authenticate user with write scope requirement
 	username, err := h.authenticateUserWithWriteScope(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 

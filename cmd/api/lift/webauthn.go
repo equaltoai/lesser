@@ -3,6 +3,7 @@ package lift
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -52,7 +53,7 @@ func (h *Handler) HandleBeginWebAuthnRegistrationLift(ctx *lift.Context) error {
 
 	// Get auth service
 	authService, err := h.requireAuthService(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err // Error response already set
 	}
 
@@ -89,13 +90,17 @@ func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *lift.Context) error 
 
 	// Parse request body
 	var req apimodels.WebAuthnFinishRegistrationRequest
-	if err := h.parseRequestBody(ctx, &req); err != nil {
+	if err := h.parseRequestBody(ctx, &req); err != nil || ctx.Response.IsWritten() {
 		return err // Error response already set by parseRequestBody
+	}
+
+	if err := common.ValidateRequiredParam("challenge", req.Challenge); err != nil {
+		return h.respondBadRequest(ctx, "challenge required")
 	}
 
 	// Get auth service
 	authService, err := h.requireAuthService(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err // Error response already set
 	}
 
@@ -121,7 +126,7 @@ func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *lift.Context) error 
 func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *lift.Context) error {
 	// Parse request body
 	var req apimodels.WebAuthnBeginLoginRequest
-	if err := h.parseRequestBody(ctx, &req); err != nil {
+	if err := h.parseRequestBody(ctx, &req); err != nil || ctx.Response.IsWritten() {
 		return err // Error response already set by parseRequestBody
 	}
 
@@ -131,7 +136,7 @@ func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *lift.Context) error {
 
 	// Get auth service
 	authService, err := h.requireAuthService(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err // Error response already set
 	}
 
@@ -162,7 +167,7 @@ func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *lift.Context) error {
 func (h *Handler) HandleFinishWebAuthnLoginLift(ctx *lift.Context) error {
 	// Parse request body
 	var req apimodels.WebAuthnFinishLoginRequest
-	if err := h.parseRequestBody(ctx, &req); err != nil {
+	if err := h.parseRequestBody(ctx, &req); err != nil || ctx.Response.IsWritten() {
 		return err // Error response already set by parseRequestBody
 	}
 
@@ -181,7 +186,7 @@ func (h *Handler) HandleFinishWebAuthnLoginLift(ctx *lift.Context) error {
 
 	// Get auth service
 	authService, err := h.requireAuthService(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err // Error response already set
 	}
 
@@ -289,7 +294,7 @@ func (h *Handler) HandleDeleteWebAuthnCredentialLift(ctx *lift.Context) error {
 				"error": "credential not found",
 			})
 		}
-		if err.Error() == "cannot delete last authentication method" {
+		if strings.Contains(strings.ToLower(err.Error()), "cannot delete last authentication method") {
 			ctx.Status(http.StatusBadRequest)
 			return ctx.JSON(map[string]string{
 				"error": "cannot delete last authentication method",
@@ -331,7 +336,7 @@ func (h *Handler) HandleUpdateWebAuthnCredentialNameLift(ctx *lift.Context) erro
 
 	// Parse request body
 	var req apimodels.WebAuthnUpdateCredentialRequest
-	if err := h.parseRequestBody(ctx, &req); err != nil {
+	if err := h.parseRequestBody(ctx, &req); err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 

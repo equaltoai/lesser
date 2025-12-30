@@ -218,6 +218,17 @@ func (h *Handler) searchStatusByContent(ctx *lift.Context, params *SearchParams,
 // convertObjectToStatusResult converts object to status search result
 func (h *Handler) convertObjectToStatusResult(obj interface{}) *storage.StatusSearchResult {
 	switch v := obj.(type) {
+	case *activitypub.Note:
+		result := &storage.StatusSearchResult{
+			StatusID: v.ID,
+			URL:      v.ID,
+			Content:  v.Content,
+			AuthorID: v.AttributedTo,
+		}
+		if v.Published != nil {
+			result.Published = *v.Published
+		}
+		return result
 	case *storagemodels.Object:
 		return &storage.StatusSearchResult{
 			StatusID:  v.ID,
@@ -354,7 +365,7 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 	// Authenticate user with read:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -742,7 +753,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 	// Authenticate user with read:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -805,7 +816,7 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 	// Authenticate user with write:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -844,7 +855,7 @@ func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
 	// Authenticate user with write:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -1210,7 +1221,7 @@ func (h *Handler) HandleGetGroupedNotificationsLift(ctx *lift.Context) error {
 	// Authenticate user with read:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -1415,7 +1426,7 @@ func (h *Handler) HandleMarkGroupAsReadLift(ctx *lift.Context) error {
 	// Authenticate user with write:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"write:notifications"})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)

@@ -54,6 +54,9 @@ func (h *Handler) HandleCreateCustomEmojiLift(ctx *lift.Context) error {
 	if err != nil {
 		return err
 	}
+	if username == "" {
+		return nil
+	}
 
 	// Check admin role using Accounts service
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, username)
@@ -129,6 +132,9 @@ func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 	if err != nil {
 		return err
 	}
+	if username == "" {
+		return nil
+	}
 
 	// Check admin role using Accounts service
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, username)
@@ -195,6 +201,9 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 	username, err := h.authenticateAdminRequest(ctx)
 	if err != nil {
 		return err
+	}
+	if username == "" {
+		return nil
 	}
 
 	// Check admin role using Accounts service

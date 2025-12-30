@@ -27,7 +27,7 @@ func (h *Handler) HandleUnifiedBoostLift(ctx *lift.Context) error {
 
 	// Authenticate user with write scope requirement
 	username, err := h.authenticateUserWithWriteScope(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
@@ -348,7 +348,7 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 
 	// Authenticate user
 	username, err := h.authenticateUndoBoostRequest(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 

@@ -2,6 +2,7 @@ package lift
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -297,14 +298,14 @@ func (h *Handler) extractUsernameFromContextForTags(ctx *lift.Context) (string, 
 // getAuthorizationHeader extracts Authorization header with case variations
 func (h *Handler) getAuthorizationHeader(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
 	// Try direct access to headers if ctx.Header doesn't work
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
@@ -487,7 +488,7 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 	err = h.repos.FeaturedTag().CreateFeaturedTag(ctx.Context, featuredTag)
 	if err != nil {
 		// Check if it's a duplicate
-		if err.Error() == "item already exists" {
+		if stdErrors.Is(err, storage.ErrAlreadyExists) {
 			return common.RespondAlreadyExists(ctx, "featured tag")
 		}
 		// Check if limit reached
@@ -546,7 +547,7 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 	// Delete the featured tag
 	err = h.repos.FeaturedTag().DeleteFeaturedTag(ctx.Context, username, tagID)
 	if err != nil {
-		if err.Error() == "item not found" {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			return common.RespondNotFound(ctx, "featured tag")
 		}
 		h.logger.Error("failed to delete featured tag", zap.Error(err))

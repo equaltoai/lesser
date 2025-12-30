@@ -59,7 +59,7 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 		h.logger.Error("Failed to get reputation", zap.Error(err), zap.String("actor", actorID))
 
 		// Check if it's an actor not found error
-		if strings.Contains(err.Error(), "actor not found") {
+		if errorChainContains(err, "actor not found") {
 			return common.RespondActorNotFound(ctx)
 		}
 
@@ -129,10 +129,14 @@ func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	// Set JSON-LD content type
-	ctx.Response.Header("Content-Type", "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"")
+	ctx.Status(http.StatusOK)
+	if err := ctx.JSON(portableRep); err != nil {
+		return err
+	}
 
-	return ctx.Status(http.StatusOK).JSON(portableRep)
+	// Set JSON-LD content type (Lift's JSON helper defaults to application/json).
+	ctx.Response.Header("Content-Type", "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"")
+	return nil
 }
 
 // HandleImportReputationLift handles POST /api/v1/reputation/import
@@ -245,10 +249,10 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 	vouch, err := repService.CreateVouch(ctx.Context, fromActorID, vouchReq.To, vouchReq.Confidence, vouchReq.Context)
 	if err != nil {
 		h.logger.Error("Failed to create vouch", zap.Error(err))
-		if strings.Contains(err.Error(), "insufficient reputation") {
+		if errorChainContains(err, "insufficient reputation") {
 			return common.RespondBadRequest(ctx, "insufficient reputation to vouch")
 		}
-		if strings.Contains(err.Error(), "monthly vouch limit") {
+		if errorChainContains(err, "monthly vouch limit") {
 			return common.RespondBadRequest(ctx, "monthly vouch limit reached")
 		}
 		return common.RespondInternalServerError(ctx)
@@ -316,7 +320,7 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 		h.logger.Error("Failed to get vouches", zap.Error(err), zap.String("actor", actorID))
 
 		// Check if it's an actor not found error
-		if strings.Contains(err.Error(), "actor not found") {
+		if errorChainContains(err, "actor not found") {
 			return common.RespondActorNotFound(ctx)
 		}
 
@@ -389,7 +393,7 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 	err = repService.RevokeVouch(ctx.Context, vouchID, actorID)
 	if err != nil {
 		h.logger.Error("Failed to revoke vouch", zap.Error(err))
-		if strings.Contains(err.Error(), "only the voucher can revoke") {
+		if errorChainContains(err, "only the voucher can revoke") {
 			return common.RespondForbidden(ctx, "only the voucher can revoke their vouch")
 		}
 		return common.RespondInternalServerError(ctx)
@@ -457,4 +461,33 @@ func (h *Handler) getReputationService() (*reputation.Service, error) {
 	}
 
 	return reputation.NewService(cfg)
+}
+
+func errorChainContains(err error, substring string) bool {
+	if err == nil {
+		return false
+	}
+	if strings.Contains(err.Error(), substring) {
+		return true
+	}
+
+	type multiUnwrapper interface {
+		Unwrap() []error
+	}
+	if u, ok := err.(multiUnwrapper); ok {
+		for _, nested := range u.Unwrap() {
+			if errorChainContains(nested, substring) {
+				return true
+			}
+		}
+	}
+
+	type unwrapper interface {
+		Unwrap() error
+	}
+	if u, ok := err.(unwrapper); ok {
+		return errorChainContains(u.Unwrap(), substring)
+	}
+
+	return false
 }

@@ -176,26 +176,26 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 
 	// Authenticate and authorize user
 	_, actor, err := h.authenticateStatusUpdate(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Get and verify object ownership
 	objectID := h.normalizeStatusIDForUpdate(statusID)
 	object, err := h.getAndVerifyStatusOwnership(ctx, objectID, actor.ID)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Parse update request
 	req, err := h.parseUpdateStatusRequest(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Convert object to Note and verify ownership
 	note, err := h.convertObjectToNoteWithOwnershipCheck(ctx, object, actor.ID)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
@@ -203,12 +203,12 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 	h.applyStatusUpdates(note, req)
 
 	// Save updated note
-	if err := h.saveUpdatedStatus(ctx, note); err != nil {
+	if err := h.saveUpdatedStatus(ctx, note); err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Create and deliver update activity
-	if err := h.createStatusUpdateActivity(ctx, note, actor); err != nil {
+	if err := h.createStatusUpdateActivity(ctx, note, actor); err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
@@ -299,6 +299,23 @@ func (h *Handler) convertObjectToNoteWithOwnershipCheck(ctx *lift.Context, objec
 			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
 		}
 		return obj, nil
+
+	case *storageMods.Status:
+		if obj.AuthorID != "" && obj.AuthorID != actorID {
+			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
+		}
+		if obj.AuthorID == "" && obj.AuthorUsername != "" && transformations.ExtractUsernameFromActorID(actorID) != obj.AuthorUsername {
+			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
+		}
+		if obj.Note == nil || obj.Note.Get() == nil {
+			h.logger.Error("status missing ActivityPub note", zap.String("status_id", obj.StatusID))
+			return nil, common.RespondInternalServerError(ctx, "failed to load status")
+		}
+		note := obj.Note.Get()
+		if note.AttributedTo != "" && note.AttributedTo != actorID {
+			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
+		}
+		return note, nil
 
 	case map[string]any:
 		if attr, ok := obj["attributedTo"].(string); ok && attr != actorID {
@@ -615,7 +632,7 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetStatusContextLift(ctx *lift.Context) error {
 	// Validate and normalize status ID
 	objectID, err := h.validateStatusIDForContext(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
@@ -722,6 +739,13 @@ func (h *Handler) extractInReplyTo(obj interface{}) string {
 	switch o := obj.(type) {
 	case *activitypub.Note:
 		return o.InReplyTo
+	case *storageMods.Status:
+		if o.Note != nil && o.Note.Note != nil {
+			return o.Note.Note.InReplyTo
+		}
+		if o.InReplyToID != "" {
+			return fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), o.InReplyToID)
+		}
 	case map[string]any:
 		if reply, ok := o["inReplyTo"].(string); ok {
 			return reply
@@ -1302,7 +1326,21 @@ func (h *Handler) determineUpdateDeliveryRecipients(ctx context.Context, actor *
 		h.logger.Warn("failed to get followers for update delivery", zap.Error(err))
 	} else {
 		for _, follower := range followers {
-			recipients[follower] = true
+			if strings.HasPrefix(follower, "https://") || strings.HasPrefix(follower, "http://") {
+				recipients[follower] = true
+				continue
+			}
+
+			// Stored relationship IDs are typically usernames or federated handles; normalize to actor IDs.
+			if strings.Contains(follower, "@") {
+				parts := strings.SplitN(follower, "@", 2)
+				if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+					recipients[fmt.Sprintf("https://%s/users/%s", parts[1], parts[0])] = true
+					continue
+				}
+			}
+
+			recipients[h.cfg.ActorURL(follower)] = true
 		}
 	}
 

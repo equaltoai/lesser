@@ -69,10 +69,16 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	// Validate report parameters
 	params := map[string]interface{}{
 		"account_id": req.AccountID,
-		"status_ids": req.StatusIDs,
 		"comment":    req.Comment,
 		"category":   req.Category,
 		"forward":    req.Forward,
+	}
+	if len(req.StatusIDs) > 0 {
+		statusIDs := make([]interface{}, len(req.StatusIDs))
+		for i, id := range req.StatusIDs {
+			statusIDs[i] = id
+		}
+		params["status_ids"] = statusIDs
 	}
 	if err := common.ValidateReportParams(params); err != nil {
 		h.logger.Info("report validation failed", zap.Error(err))
@@ -99,7 +105,11 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 
 	// Validate status IDs if provided
 	if len(req.StatusIDs) > 0 {
-		if err := common.ValidateReportStatusIDs(req.StatusIDs); err != nil {
+		statusIDs := make([]interface{}, len(req.StatusIDs))
+		for i, id := range req.StatusIDs {
+			statusIDs[i] = id
+		}
+		if err := common.ValidateReportStatusIDs(statusIDs); err != nil {
 			return h.respondBadRequest(ctx, err.Error())
 		}
 	}

@@ -1688,32 +1688,40 @@ func (r *ModerationRepository) UpdateFilterKeyword(ctx context.Context, keywordI
 // deleteFilterEntity is a helper to eliminate duplication between DeleteFilterKeyword and DeleteFilterStatus
 func (r *ModerationRepository) deleteFilterEntity(ctx context.Context, entityID, entityType string, modelType interface{}) error {
 	// First find the entity to get its FilterID
-	var existingModels []interface{}
-
-	err := r.db.WithContext(ctx).Model(modelType).
-		Where("SK", "=", fmt.Sprintf("%s#%s", entityType, entityID)).
-		All(&existingModels)
-
-	if err != nil || len(existingModels) == 0 {
-		if errors.IsNotFound(err) || len(existingModels) == 0 {
-			return ErrorHandler.HandleGetError(storage.ErrNotFound, "filter entity", entityID)
-		}
-		return ErrorHandler.HandleGetError(err, "filter entity", entityID)
-	}
-
-	// Extract FilterID - this assumes both models have a FilterID field
 	var filterID string
-	switch entity := existingModels[0].(type) {
-	case models.FilterKeyword:
-		filterID = entity.FilterID
-	case models.FilterStatus:
-		filterID = entity.FilterID
+	switch modelType.(type) {
+	case *models.FilterKeyword:
+		var existingModels []models.FilterKeyword
+		err := r.db.WithContext(ctx).Model(&existingModels).
+			Where("SK", "=", fmt.Sprintf("%s#%s", entityType, entityID)).
+			All(&existingModels)
+		if err != nil || len(existingModels) == 0 {
+			if errors.IsNotFound(err) || len(existingModels) == 0 {
+				return ErrorHandler.HandleGetError(storage.ErrNotFound, "filter entity", entityID)
+			}
+			return ErrorHandler.HandleGetError(err, "filter entity", entityID)
+		}
+		filterID = existingModels[0].FilterID
+
+	case *models.FilterStatus:
+		var existingModels []models.FilterStatus
+		err := r.db.WithContext(ctx).Model(&existingModels).
+			Where("SK", "=", fmt.Sprintf("%s#%s", entityType, entityID)).
+			All(&existingModels)
+		if err != nil || len(existingModels) == 0 {
+			if errors.IsNotFound(err) || len(existingModels) == 0 {
+				return ErrorHandler.HandleGetError(storage.ErrNotFound, "filter entity", entityID)
+			}
+			return ErrorHandler.HandleGetError(err, "filter entity", entityID)
+		}
+		filterID = existingModels[0].FilterID
+
 	default:
 		return ErrorHandler.HandleGetError(storage.ErrInvalidInput, "filter entity", entityID)
 	}
 
 	// Delete the entity
-	err = r.db.WithContext(ctx).Model(modelType).
+	err := r.db.WithContext(ctx).Model(modelType).
 		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
 		Where("SK", "=", fmt.Sprintf("%s#%s", entityType, entityID)).
 		Delete()

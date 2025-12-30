@@ -2,11 +2,14 @@ package lift
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -24,6 +27,9 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *lift.Context) error {
 	claims, err := h.authenticateQuoteRequest(ctx)
 	if err != nil {
 		return err
+	}
+	if claims == nil {
+		return nil
 	}
 
 	// Check write scope
@@ -139,6 +145,9 @@ func (h *Handler) HandleDeleteQuotePostLift(ctx *lift.Context) error {
 	if err != nil {
 		return err
 	}
+	if claims == nil {
+		return nil
+	}
 
 	// Check write scope
 	if !claims.HasScope("write:statuses") {
@@ -200,6 +209,9 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *lift.Context) error {
 	claims, err := h.authenticateQuoteRequest(ctx)
 	if err != nil {
 		return err
+	}
+	if claims == nil {
+		return nil
 	}
 
 	// Check write scope
@@ -321,10 +333,22 @@ func (h *Handler) createQuotePost(_ *lift.Context, username string, _ interface{
 	return quotePost, nil
 }
 
-func (h *Handler) getQuotesForStatus(_ *lift.Context, _ string, _ int, _ int) ([]interface{}, error) {
-	// Placeholder implementation
-	// In a full implementation, this would query quote relationships
-	return []interface{}{}, nil
+func (h *Handler) getQuotesForStatus(ctx *lift.Context, statusID string, limit int, _ int) ([]interface{}, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	result, err := h.repos.Quote().GetQuotesForStatus(ctx.Context, statusID, interfaces.PaginationOptions{Limit: limit})
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]interface{}, 0, len(result.Items))
+	for _, rel := range result.Items {
+		out = append(out, rel)
+	}
+
+	return out, nil
 }
 
 func (h *Handler) convertQuoteToAPI(_ *lift.Context, _ interface{}) apimodels.QuoteStatusSummary {
@@ -347,14 +371,22 @@ func (h *Handler) convertStatusToAPI(_ *lift.Context, _ interface{}) apimodels.Q
 	}
 }
 
-func (h *Handler) getQuoteRelationship(_ *lift.Context, _ string, _ string) (*storageModels.QuoteRelationship, error) {
-	// Placeholder implementation
-	return nil, nil
+func (h *Handler) getQuoteRelationship(ctx *lift.Context, quoteStatusID string, targetStatusID string) (*storageModels.QuoteRelationship, error) {
+	relationship, err := h.repos.Quote().GetQuoteRelationship(ctx.Context, quoteStatusID, targetStatusID)
+	if err != nil {
+		if pkgErrors.HasCode(err, pkgErrors.CodeNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return relationship, nil
 }
 
-func (h *Handler) deleteQuoteRelationship(_ *lift.Context, _ *storageModels.QuoteRelationship) error {
-	// Placeholder implementation
-	return nil
+func (h *Handler) deleteQuoteRelationship(ctx *lift.Context, relationship *storageModels.QuoteRelationship) error {
+	if relationship == nil {
+		return nil
+	}
+	return h.repos.Quote().DeleteQuoteRelationship(ctx.Context, relationship.QuoterNoteID, relationship.TargetNoteID)
 }
 
 func (h *Handler) getQuotePermissions(_ *lift.Context, username string) (*storageModels.QuotePermissions, error) {

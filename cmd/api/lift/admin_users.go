@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -23,16 +22,22 @@ func (h *Handler) HandleAdminCreateUserLift(ctx *lift.Context) error {
 		return h.respondUnprocessableEntity(ctx, "invalid user data")
 	}
 
-	hashedPassword, err := auth.HashPassword(req.Password)
-	if err != nil {
-		h.logger.Error("failed to hash password", zap.Error(err))
-		return common.RespondInternalServerError(ctx)
+	// NOTE: Password-based authentication is disabled (wallet/passkey only). Ignore any provided credentials.
+	if req.Password != "" {
+		h.logger.Warn("password provided in admin create user request but passwords are disabled",
+			zap.String("username", req.Username))
+		req.Password = ""
+	}
+	if req.Email != "" {
+		h.logger.Warn("email provided in admin create user request but email is disabled",
+			zap.String("username", req.Username))
+		req.Email = ""
 	}
 
 	user := &storage.User{
 		Username:     req.Username,
-		Email:        req.Email,
-		PasswordHash: hashedPassword,
+		Email:        "",
+		PasswordHash: "",
 		DisplayName:  req.DisplayName,
 		Role:         req.Role,
 		Approved:     true,
@@ -44,5 +49,7 @@ func (h *Handler) HandleAdminCreateUserLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
+	user.Email = ""
+	user.PasswordHash = ""
 	return ctx.Status(201).JSON(user)
 }

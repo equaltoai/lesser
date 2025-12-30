@@ -215,8 +215,8 @@ func TestModerationRepository_deleteFilterEntity_SuccessAndInvalidType(t *testin
 		mockQuery := new(mocks.MockQuery)
 
 		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			target := args.Get(0).(*[]interface{})
-			*target = []interface{}{models.FilterKeyword{FilterID: "filter-1"}}
+			target := args.Get(0).(*[]models.FilterKeyword)
+			*target = []models.FilterKeyword{{FilterID: "filter-1"}}
 		}).Return(nil).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
@@ -229,8 +229,8 @@ func TestModerationRepository_deleteFilterEntity_SuccessAndInvalidType(t *testin
 		mockQuery := new(mocks.MockQuery)
 
 		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			target := args.Get(0).(*[]interface{})
-			*target = []interface{}{models.FilterStatus{FilterID: "filter-1"}}
+			target := args.Get(0).(*[]models.FilterStatus)
+			*target = []models.FilterStatus{{FilterID: "filter-1"}}
 		}).Return(nil).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
@@ -240,16 +240,9 @@ func TestModerationRepository_deleteFilterEntity_SuccessAndInvalidType(t *testin
 
 	t.Run("invalid entity type returns error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			target := args.Get(0).(*[]interface{})
-			*target = []interface{}{struct{}{}}
-		}).Return(nil).Once()
-		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
-		err := repo.deleteFilterEntity(ctx, "id-1", "KEYWORD", &models.FilterKeyword{})
+		err := repo.deleteFilterEntity(ctx, "id-1", "KEYWORD", &struct{}{})
 		require.Error(t, err)
 	})
 }

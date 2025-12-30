@@ -190,7 +190,7 @@ func (h *Handler) statusActionHandler(ctx *lift.Context, requiredScope string, a
 	}
 	username, err := h.authenticateUser(ctx, scopes)
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondUnauthorized(ctx)

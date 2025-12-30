@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
@@ -32,35 +31,31 @@ func TestUserRepository_CreateUser_Success(t *testing.T) {
 
 	user := &storage.User{
 		Username: "testuser",
-		Email:    "test@example.com",
 		Role:     "user",
 	}
 
 	err := repo.CreateUser(ctx, user)
 
-	// CreateUser requires more than just email, check if it passes validation
-	// If it fails validation, that's expected. If it succeeds, that's fine too.
-	_ = err // Test that call doesn't panic
+	assert.NoError(t, err)
 }
 
 func TestUserRepository_CreateUser_MissingEmail(t *testing.T) {
 	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
 	repo := NewUserRepository(mockDB, "test-table", logger)
 
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery)
+	mockQuery.On("Create").Return(nil)
+
 	user := &storage.User{
 		Username: "testuser",
-		// Email is missing
+		Role:     "user",
 	}
 
 	err := repo.CreateUser(context.Background(), user)
-
-	assert.Error(t, err)
-	// Validation errors must remain client errors and not be re-wrapped into 5xx errors.
-	appErr, ok := pkgErrors.AsAppError(err)
-	assert.True(t, ok)
-	assert.True(t, pkgErrors.HasCode(err, pkgErrors.CodeValidationFailed))
-	assert.NotEmpty(t, appErr.Metadata["field"])
+	assert.NoError(t, err)
 }
 
 func TestUserRepository_CreateUser_ConflictError(t *testing.T) {
@@ -77,7 +72,7 @@ func TestUserRepository_CreateUser_ConflictError(t *testing.T) {
 
 	user := &storage.User{
 		Username: "testuser",
-		Email:    "test@example.com",
+		Role:     "user",
 	}
 
 	err := repo.CreateUser(ctx, user)

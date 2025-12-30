@@ -7,6 +7,7 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -28,5 +29,10 @@ func TestAdminCreateUserLift(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/users", headers, nil, req)
 	require.NoError(t, err)
 	require.NoError(t, handler.HandleAdminCreateUserLift(ctx))
-	require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+	require.Equal(t, http.StatusCreated, ctx.Response.StatusCode)
+	created, ok := ctx.Response.Body.(*storage.User)
+	require.True(t, ok)
+	require.Equal(t, "newuser", created.Username)
+	require.Empty(t, created.Email)
+	require.Empty(t, created.PasswordHash)
 }

@@ -281,13 +281,17 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *lift.Context) error {
 	if bootstrapUsername == "" {
 		bootstrapUsername = storageModels.DefaultBootstrapUsername
 	}
-	if _, err := h.requireSetupSession(ctx, bootstrapUsername, state); err != nil {
+	if _, handled, err := h.requireSetupSession(ctx, bootstrapUsername, state); err != nil {
 		return err
+	} else if handled {
+		return nil
 	}
 
-	req, err := h.parseSetupCreateAdminRequest(ctx, bootstrapUsername)
+	req, handled, err := h.parseSetupCreateAdminRequest(ctx, bootstrapUsername)
 	if err != nil {
 		return err
+	} else if handled {
+		return nil
 	}
 
 	authService, err := h.requireAuthService(ctx)
@@ -295,14 +299,18 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *lift.Context) error {
 		return err
 	}
 
-	walletChainID, adminWalletAddr, err := h.verifySetupCreateAdminWallet(ctx, authService, req.Username, req.Wallet)
+	walletChainID, adminWalletAddr, handled, err := h.verifySetupCreateAdminWallet(ctx, authService, req.Username, req.Wallet)
 	if err != nil {
 		return err
+	} else if handled {
+		return nil
 	}
 
-	actorID, err := h.ensureSetupAdminAccount(ctx, req.Username)
+	actorID, handled, err := h.ensureSetupAdminAccount(ctx, req.Username)
 	if err != nil {
 		return err
+	} else if handled {
+		return nil
 	}
 
 	updates := map[string]any{
@@ -332,20 +340,22 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *lift.Context) error {
 	})
 }
 
-func (h *Handler) parseSetupCreateAdminRequest(ctx *lift.Context, bootstrapUsername string) (apimodels.SetupCreateAdminRequest, error) {
+func (h *Handler) parseSetupCreateAdminRequest(ctx *lift.Context, bootstrapUsername string) (apimodels.SetupCreateAdminRequest, bool, error) {
 	var req apimodels.SetupCreateAdminRequest
 	if err := h.parseRequestBody(ctx, &req); err != nil {
-		return apimodels.SetupCreateAdminRequest{}, err
+		return apimodels.SetupCreateAdminRequest{}, false, err
 	}
 
 	req.Username = strings.TrimSpace(req.Username)
 	if err := common.ValidateRequiredParam("username", req.Username); err != nil {
-		return apimodels.SetupCreateAdminRequest{}, h.respondBadRequest(ctx, "username is required")
+		_ = h.respondBadRequest(ctx, "username is required")
+		return apimodels.SetupCreateAdminRequest{}, true, nil
 	}
 	if strings.EqualFold(req.Username, bootstrapUsername) {
-		return apimodels.SetupCreateAdminRequest{}, h.respondBadRequest(ctx, "username is reserved")
+		_ = h.respondBadRequest(ctx, "username is reserved")
+		return apimodels.SetupCreateAdminRequest{}, true, nil
 	}
-	return req, nil
+	return req, false, nil
 }
 
 func (h *Handler) verifySetupCreateAdminWallet(
@@ -353,51 +363,63 @@ func (h *Handler) verifySetupCreateAdminWallet(
 	authService *auth.AuthService,
 	username string,
 	wallet auth.WalletVerifyRequest,
-) (int, string, error) {
+) (int, string, bool, error) {
 	// Verify the new admin wallet signature (binds wallet to chosen username).
 	if err := common.ValidateRequiredParam("challengeId", wallet.ChallengeID); err != nil {
-		return 0, "", h.respondBadRequest(ctx, "wallet.challengeId is required")
+		_ = h.respondBadRequest(ctx, "wallet.challengeId is required")
+		return 0, "", true, nil
 	}
 	if err := common.ValidateRequiredParam("address", wallet.Address); err != nil {
-		return 0, "", h.respondBadRequest(ctx, "wallet.address is required")
+		_ = h.respondBadRequest(ctx, "wallet.address is required")
+		return 0, "", true, nil
 	}
 	if err := common.ValidateRequiredParam("signature", wallet.Signature); err != nil {
-		return 0, "", h.respondBadRequest(ctx, "wallet.signature is required")
+		_ = h.respondBadRequest(ctx, "wallet.signature is required")
+		return 0, "", true, nil
 	}
 	if err := common.ValidateRequiredParam("message", wallet.Message); err != nil {
-		return 0, "", h.respondBadRequest(ctx, "wallet.message is required")
+		_ = h.respondBadRequest(ctx, "wallet.message is required")
+		return 0, "", true, nil
 	}
 
 	challenge, err := authService.GetWalletChallenge(ctx.Context, wallet.ChallengeID)
 	if err != nil {
-		return 0, "", h.respondUnauthorized(ctx)
+		_ = h.respondUnauthorized(ctx)
+		return 0, "", true, nil
 	}
 	if challenge.Username != username {
-		return 0, "", h.respondForbidden(ctx, "wallet challenge username mismatch")
+		_ = h.respondForbidden(ctx, "wallet challenge username mismatch")
+		return 0, "", true, nil
 	}
 
 	adminWalletAddr := strings.ToLower(strings.TrimSpace(wallet.Address))
 	existingUsers, err := h.repos.Account().GetAllUsersForWallet(ctx.Context, "ethereum", adminWalletAddr)
 	if err != nil {
 		h.logger.Error("failed to check wallet index", zap.Error(err))
-		return 0, "", h.respondInternalError(ctx, "failed to validate wallet")
+		_ = h.respondInternalError(ctx, "failed to validate wallet")
+		return 0, "", true, nil
 	}
 	if len(existingUsers) > 0 {
-		return 0, "", h.respondConflict(ctx, "wallet is already linked to a user")
+		_ = h.respondConflict(ctx, "wallet is already linked to a user")
+		return 0, "", true, nil
 	}
 
 	if err := authService.VerifyWalletSignature(ctx.Context, &wallet); err != nil {
-		return 0, "", h.handleAuthServiceError(ctx, err, "verify admin wallet signature")
+		if respErr := h.handleAuthServiceError(ctx, err, "verify admin wallet signature"); respErr != nil {
+			return 0, "", false, respErr
+		}
+		return 0, "", true, nil
 	}
 	_ = authService.MarkWalletChallengeSpent(ctx.Context, wallet.ChallengeID)
 
-	return challenge.ChainID, adminWalletAddr, nil
+	return challenge.ChainID, adminWalletAddr, false, nil
 }
 
-func (h *Handler) ensureSetupAdminAccount(ctx *lift.Context, username string) (string, error) {
+func (h *Handler) ensureSetupAdminAccount(ctx *lift.Context, username string) (string, bool, error) {
 	if h.registry == nil {
 		h.logger.Error("service registry not initialized")
-		return "", h.respondInternalError(ctx, "internal server error")
+		_ = h.respondInternalError(ctx, "internal server error")
+		return "", true, nil
 	}
 
 	result, err := h.registry.Accounts().RegisterAccount(ctx.Context, &accounts.RegisterAccountCommand{
@@ -413,21 +435,23 @@ func (h *Handler) ensureSetupAdminAccount(ctx *lift.Context, username string) (s
 	if err != nil {
 		if !errors.Is(err, accounts.ErrUsernameAlreadyTaken) {
 			h.logger.Error("failed to create admin account", zap.String("username", username), zap.Error(err))
-			return "", h.respondUnprocessableEntity(ctx, "failed to create admin account")
+			_ = h.respondUnprocessableEntity(ctx, "failed to create admin account")
+			return "", true, nil
 		}
 
 		existingActor, actorErr := h.repos.Actor().GetActor(ctx.Context, username)
 		if actorErr != nil {
 			h.logger.Error("admin username exists but actor lookup failed", zap.String("username", username), zap.Error(actorErr))
-			return "", h.respondUnprocessableEntity(ctx, "failed to create admin account")
+			_ = h.respondUnprocessableEntity(ctx, "failed to create admin account")
+			return "", true, nil
 		}
-		return existingActor.ID, nil
+		return existingActor.ID, false, nil
 	}
 
 	if result != nil && result.Actor != nil && strings.TrimSpace(result.Actor.ID) != "" {
-		return result.Actor.ID, nil
+		return result.Actor.ID, false, nil
 	}
-	return h.cfg.ActorURL(username), nil
+	return h.cfg.ActorURL(username), false, nil
 }
 
 // HandleSetupFinalizeLift handles POST /setup/finalize.
@@ -492,7 +516,7 @@ func (h *Handler) HandleSetupFinalizeLift(ctx *lift.Context) error {
 	})
 }
 
-func (h *Handler) requireSetupSession(ctx *lift.Context, bootstrapUsername string, state *storageModels.InstanceState) (*storageModels.SetupSession, error) {
+func (h *Handler) requireSetupSession(ctx *lift.Context, bootstrapUsername string, state *storageModels.InstanceState) (*storageModels.SetupSession, bool, error) {
 	authHeader := ctx.Header("Authorization")
 	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		authHeader = ctx.Header("authorization")
@@ -500,7 +524,8 @@ func (h *Handler) requireSetupSession(ctx *lift.Context, bootstrapUsername strin
 
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil || strings.TrimSpace(token) == "" {
-		return nil, h.respondUnauthorized(ctx)
+		_ = h.respondUnauthorized(ctx)
+		return nil, true, nil
 	}
 
 	repo := repositories.NewBaseRepository[*storageModels.SetupSession](h.repos.GetDB(), h.repos.GetTableName(), h.logger)
@@ -508,30 +533,36 @@ func (h *Handler) requireSetupSession(ctx *lift.Context, bootstrapUsername strin
 	err = repo.Get(ctx.Context, "SETUP_SESSION#"+token, "SESSION", session)
 	if err != nil {
 		if appErrors.HasCode(err, appErrors.CodeNotFound) {
-			return nil, h.respondUnauthorized(ctx)
+			_ = h.respondUnauthorized(ctx)
+			return nil, true, nil
 		}
 		h.logger.Error("failed to get setup session", zap.Error(err))
-		return nil, h.respondInternalError(ctx, "failed to validate setup session")
+		_ = h.respondInternalError(ctx, "failed to validate setup session")
+		return nil, true, nil
 	}
 
 	if time.Now().After(session.ExpiresAt) {
 		_ = repo.Delete(ctx.Context, session.PK, session.SK)
-		return nil, h.respondUnauthorized(ctx)
+		_ = h.respondUnauthorized(ctx)
+		return nil, true, nil
 	}
 	if session.Purpose != setupSessionPurposeBootstrap {
-		return nil, h.respondUnauthorized(ctx)
+		_ = h.respondUnauthorized(ctx)
+		return nil, true, nil
 	}
 
 	bootstrapAddr := strings.ToLower(strings.TrimSpace(state.BootstrapWalletAddress))
 	if bootstrapAddr == "" || strings.ToLower(strings.TrimSpace(session.WalletAddr)) != bootstrapAddr {
-		return nil, h.respondUnauthorized(ctx)
+		_ = h.respondUnauthorized(ctx)
+		return nil, true, nil
 	}
 
 	if !strings.EqualFold(bootstrapUsername, state.BootstrapUsername) {
-		return nil, h.respondUnauthorized(ctx)
+		_ = h.respondUnauthorized(ctx)
+		return nil, true, nil
 	}
 
-	return session, nil
+	return session, false, nil
 }
 
 func generateSetupToken() (string, error) {

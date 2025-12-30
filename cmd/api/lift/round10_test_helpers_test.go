@@ -34,10 +34,12 @@ type round10QueryState struct {
 	usersByUsername             map[string]storagemodels.User
 	actorsByUser                map[string]storagemodels.Actor
 	actorList                   []storagemodels.Actor
+	activitiesByID              map[string]*storagemodels.Activity
 	statusByID                  map[string]storagemodels.Status
 	statusList                  []storagemodels.Status
 	objectsByID                 map[string]storagemodels.Object
 	objectList                  []storagemodels.Object
+	tombstonesByObjectID        map[string]storagemodels.Tombstone
 	reportsByID                 map[string]storagemodels.Report
 	eventsByID                  map[string]storagemodels.ModerationEvent
 	userMediaByUser             map[string][]*storagemodels.Media
@@ -47,28 +49,45 @@ type round10QueryState struct {
 	filterStatuses              map[string][]storagemodels.FilterStatus
 	importsByID                 map[string]storagemodels.Import
 	importsByUser               map[string][]storagemodels.Import
+	importBudgetsByPKSK         map[string]storagemodels.ImportBudget
 	pushSubscriptionsByUser     map[string][]storagemodels.PushSubscription
 	webAuthnCredentialsByUser   map[string][]storagemodels.WebAuthnCredential
 	webAuthnCredentialByID      map[string]storagemodels.WebAuthnCredential
 	webAuthnChallengesByID      map[string]storagemodels.WebAuthnChallenge
 	oauthClientsByID            map[string]storagemodels.OAuthClient
+	authorizationCodesByCode    map[string]storagemodels.AuthorizationCode
+	refreshTokensByToken        map[string]storagemodels.RefreshToken
+	setupSessionsByID           map[string]storagemodels.SetupSession
+	pollsByID                   map[string]storagemodels.Poll
+	pollVotesByKey              map[string]storagemodels.PollVote
 	costRecords                 []*storagemodels.DynamoDBCostRecord
 	costAggregations            []*storagemodels.DynamoDBCostAggregation
 	metricRecords               []storagemodels.MetricRecord
 	instanceHistories           []storagemodels.InstanceHistory
 	instanceMetrics             map[string]storagemodels.InstanceMetrics
+	instanceState               *storagemodels.InstanceState
 	quoteRelationships          []storagemodels.QuoteRelationship
 	announcesByKey              map[string]storagemodels.Announce
 	oauthStates                 map[string]storagemodels.OAuthState
 	notificationsByID           map[string]storagemodels.Notification
 	domainBlocks                []storagemodels.InstanceDomainBlock
+	domainAllows                []storagemodels.DomainAllow
+	emailDomainBlocks           []storagemodels.EmailDomainBlock
+	federationInstancesByDomain map[string]storagemodels.FederationInstance
+	federationInstances         []storagemodels.FederationInstance
 	moderationReviews           []storagemodels.ModerationReview
 	moderationDecisionsByObject map[string]storagemodels.ModerationDecision
 	exportsByID                 map[string]storagemodels.Export
 	exportList                  []storagemodels.Export
+	communityNotesByGSI3PK      map[string][]storagemodels.CommunityNote
 
-	trustRelationships []storagemodels.TrustRelationship
-	instanceRules      []storagemodels.InstanceRule
+	relationshipRecords []storagemodels.RelationshipRecord
+	trustRelationships  []storagemodels.TrustRelationship
+	instanceRules       []storagemodels.InstanceRule
+
+	reputationsByPK map[string][]storagemodels.Reputation
+	vouchModels     []*storagemodels.Vouch
+	vouchModelsByID map[string]*storagemodels.Vouch
 
 	vapidKeys *storage.VAPIDKeys
 
@@ -92,6 +111,7 @@ type round10QueryState struct {
 	forceVapidNotFound bool
 
 	notFoundPKs    map[string]bool
+	notFoundPKSK   map[string]bool
 	notFoundGSI3PK map[string]bool
 
 	allErrorOnce     error
@@ -235,6 +255,17 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		mockQuery.On("First", mock.AnythingOfType("*models.VAPIDKeyRecord")).Return(dynamormerrors.ErrItemNotFound).Maybe()
 	}
 
+	if len(state.notFoundPKSK) > 0 {
+		mockQuery.On("First", mock.MatchedBy(func(_ any) bool {
+			pk, okPK := state.whereString("PK")
+			sk, okSK := state.whereString("SK")
+			if !okPK || !okSK {
+				return false
+			}
+			return state.notFoundPKSK[pk+"#"+sk]
+		})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+	}
+
 	if len(state.notFoundPKs) > 0 || len(state.notFoundGSI3PK) > 0 {
 		mockQuery.On("First", mock.MatchedBy(func(_ any) bool {
 			if pk, ok := state.whereString("PK"); ok && state.notFoundPKs[pk] {
@@ -244,7 +275,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				return true
 			}
 			return false
-		})).Return(storage.ErrNotFound).Maybe()
+		})).Return(dynamormerrors.ErrItemNotFound).Maybe()
 	}
 
 	for pk, err := range state.firstErrorPK {
@@ -268,6 +299,111 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	if state.firstErrorOnce != nil {
 		mockQuery.On("First", mock.Anything).Return(state.firstErrorOnce).Once()
 	}
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.InstanceDomainBlock); !ok {
+			return false
+		}
+		pk, okPK := state.whereString("PK")
+		sk, okSK := state.whereString("SK")
+		if !okPK || !okSK {
+			return false
+		}
+		if !strings.HasPrefix(pk, "DOMAIN_BLOCK#") || !strings.HasPrefix(sk, "DOMAIN_BLOCK#") {
+			return false
+		}
+		domain := strings.TrimPrefix(pk, "DOMAIN_BLOCK#")
+		for _, block := range state.domainBlocks {
+			if block.Domain == domain || strings.TrimPrefix(block.PK, "DOMAIN_BLOCK#") == domain {
+				return false
+			}
+		}
+		return true
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.FederationInstance); !ok {
+			return false
+		}
+		pk, okPK := state.whereString("PK")
+		sk, okSK := state.whereString("SK")
+		if !okPK || !okSK {
+			return false
+		}
+		if !strings.HasPrefix(pk, "INSTANCE#") || !strings.HasPrefix(sk, "INSTANCE#") {
+			return false
+		}
+		domain := strings.TrimPrefix(pk, "INSTANCE#")
+		if _, ok := state.federationInstancesByDomain[domain]; ok {
+			return false
+		}
+		for _, instance := range state.federationInstances {
+			if instance.Domain == domain {
+				return false
+			}
+		}
+		return true
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.Tombstone); !ok {
+			return false
+		}
+		pk, okPK := state.whereString("PK")
+		sk, okSK := state.whereString("SK")
+		if !okPK || !okSK {
+			return false
+		}
+		if !strings.HasPrefix(pk, "OBJECT#") || sk != "TOMBSTONE" {
+			return false
+		}
+		objectID := strings.TrimPrefix(pk, "OBJECT#")
+		if _, ok := state.tombstonesByObjectID[objectID]; ok {
+			return false
+		}
+		return true
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.QuoteRelationship); !ok {
+			return false
+		}
+		pk, okPK := state.whereString("PK")
+		sk, okSK := state.whereString("SK")
+		if !okPK || !okSK {
+			return false
+		}
+		if !strings.HasPrefix(pk, "QUOTE#") || !strings.HasPrefix(sk, "QUOTED#") {
+			return false
+		}
+		for _, rel := range state.quoteRelationships {
+			if rel.PK == pk && rel.SK == sk {
+				return false
+			}
+		}
+		return true
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.RelationshipRecord); !ok {
+			return false
+		}
+		pk, okPK := state.whereString("PK")
+		sk, okSK := state.whereString("SK")
+		if !okPK || !okSK {
+			return false
+		}
+		if !strings.HasPrefix(pk, "FOLLOW#") || !strings.HasPrefix(sk, "FOLLOWING#") {
+			return false
+		}
+
+		for _, rel := range state.relationshipRecords {
+			if rel.PK == pk && rel.SK == sk {
+				return false
+			}
+		}
+		return true
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
 
 	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dest := args.Get(0)
@@ -330,6 +466,22 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				*d = state.objectList[0]
 				return
 			}
+		case *storagemodels.Tombstone:
+			objectID := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "OBJECT#") {
+				objectID = strings.TrimPrefix(pk, "OBJECT#")
+			}
+			if tombstone, ok := state.tombstonesByObjectID[objectID]; ok {
+				*d = tombstone
+				return
+			}
+			*d = storagemodels.Tombstone{
+				ID:         objectID,
+				Type:       "Tombstone",
+				FormerType: activitypub.NoteType,
+				Deleted:    time.Now().Add(-1 * time.Hour),
+				CreatedAt:  time.Now().Add(-1 * time.Hour),
+			}
 		case *storagemodels.Notification:
 			id := ""
 			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "NOTIFICATION#") {
@@ -361,6 +513,149 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				Username:    "alice",
 				RedirectURI: "https://client.example/redirect",
 				Scopes:      []string{"read"},
+			}
+		case *storagemodels.AuthorizationCode:
+			code := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "AUTHCODE#") {
+				code = strings.TrimPrefix(pk, "AUTHCODE#")
+			}
+			if authCode, ok := state.authorizationCodesByCode[code]; ok {
+				*d = authCode
+				return
+			}
+			*d = storagemodels.AuthorizationCode{
+				Code:          code,
+				ClientID:      "client-1",
+				Username:      "alice",
+				CodeChallenge: "",
+				ExpiresAt:     time.Now().Add(10 * time.Minute),
+				Scopes:        []string{"read", "write"},
+				CreatedAt:     time.Now().Add(-1 * time.Minute),
+			}
+			_ = d.UpdateKeys()
+		case *storagemodels.RefreshToken:
+			token := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "REFRESHTOKEN#") {
+				token = strings.TrimPrefix(pk, "REFRESHTOKEN#")
+			}
+			if refreshToken, ok := state.refreshTokensByToken[token]; ok {
+				*d = refreshToken
+				return
+			}
+			*d = storagemodels.RefreshToken{
+				Token:     token,
+				ClientID:  "client-1",
+				Username:  "alice",
+				ExpiresAt: time.Now().Add(24 * time.Hour),
+				Scopes:    []string{"read", "write"},
+				CreatedAt: time.Now().Add(-1 * time.Minute),
+			}
+			_ = d.UpdateKeys()
+		case *storagemodels.SetupSession:
+			sessionID := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "SETUP_SESSION#") {
+				sessionID = strings.TrimPrefix(pk, "SETUP_SESSION#")
+			}
+			if session, ok := state.setupSessionsByID[sessionID]; ok {
+				*d = session
+				return
+			}
+			now := time.Now().UTC()
+			*d = storagemodels.SetupSession{
+				ID:           sessionID,
+				Purpose:      "bootstrap",
+				WalletType:   "ethereum",
+				WalletAddr:   "0xabc",
+				IssuedAt:     now.Add(-1 * time.Minute),
+				ExpiresAt:    now.Add(1 * time.Hour),
+				InstanceLock: true,
+			}
+			_ = d.UpdateKeys()
+		case *storagemodels.InstanceState:
+			if state.instanceState != nil {
+				*d = *state.instanceState
+				return
+			}
+			defaultState := storagemodels.NewDefaultInstanceState()
+			*d = *defaultState
+			_ = d.UpdateKeys()
+		case *storagemodels.RelationshipRecord:
+			pk, _ := state.whereString("PK")
+			sk, _ := state.whereString("SK")
+			for _, rel := range state.relationshipRecords {
+				if rel.PK == pk && rel.SK == sk {
+					*d = rel
+					return
+				}
+			}
+
+			*d = storagemodels.RelationshipRecord{PK: pk, SK: sk, State: storagemodels.RelationshipPending}
+		case *storagemodels.QuoteRelationship:
+			pk, _ := state.whereString("PK")
+			sk, _ := state.whereString("SK")
+			for _, rel := range state.quoteRelationships {
+				if rel.PK == pk && rel.SK == sk {
+					*d = rel
+					return
+				}
+			}
+			*d = storagemodels.QuoteRelationship{
+				PK:           pk,
+				SK:           sk,
+				QuoterNoteID: strings.TrimPrefix(pk, "QUOTE#"),
+				TargetNoteID: strings.TrimPrefix(sk, "QUOTED#"),
+				QuoterID:     "alice",
+				Timestamp:    time.Now().Add(-1 * time.Hour),
+			}
+		case *storagemodels.Poll:
+			pollID := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "POLL#") {
+				pollID = strings.TrimPrefix(pk, "POLL#")
+			}
+			if poll, ok := state.pollsByID[pollID]; ok {
+				*d = poll
+				return
+			}
+			*d = storagemodels.Poll{
+				ID:          pollID,
+				StatusID:    "s1",
+				CreatedBy:   "alice",
+				Options:     []string{"a", "b"},
+				Multiple:    false,
+				HideTotals:  false,
+				ExpiresAt:   time.Now().Add(1 * time.Hour),
+				CreatedAt:   time.Now().Add(-5 * time.Minute),
+				UpdatedAt:   time.Now().Add(-1 * time.Minute),
+				VotesCount:  0,
+				VotersCount: 0,
+				Votes:       map[string][]int{},
+			}
+			_ = d.UpdateKeys()
+		case *storagemodels.PollVote:
+			pk, _ := state.whereString("PK")
+			sk, _ := state.whereString("SK")
+			if pk != "" && sk != "" {
+				if vote, ok := state.pollVotesByKey[pk+"#"+sk]; ok {
+					*d = vote
+					return
+				}
+			}
+
+			pollID := ""
+			if strings.HasPrefix(pk, "POLL#") {
+				pollID = strings.TrimPrefix(pk, "POLL#")
+			}
+			voterID := ""
+			if strings.HasPrefix(sk, "VOTE#") {
+				voterID = strings.TrimPrefix(sk, "VOTE#")
+			}
+			*d = storagemodels.PollVote{
+				VoterID: voterID,
+				Choices: []int{0},
+				VotedAt: time.Now().Add(-1 * time.Minute),
+			}
+			if pollID != "" {
+				d.SetPollID(pollID)
 			}
 		case *storagemodels.Announce:
 			pk, _ := state.whereString("PK")
@@ -671,6 +966,21 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				CreatedAt: time.Now().Add(-1 * time.Hour),
 				UpdatedAt: time.Now().Add(-30 * time.Minute),
 			}
+		case *storagemodels.ImportBudget:
+			pk, _ := state.whereString("PK")
+			sk, _ := state.whereString("SK")
+			if budget, ok := state.importBudgetsByPKSK[pk+"#"+sk]; ok {
+				*d = budget
+				return
+			}
+			*d = storagemodels.ImportBudget{
+				PK:          pk,
+				SK:          sk,
+				Username:    "alice",
+				Period:      "daily",
+				IsActive:    false,
+				NextResetAt: time.Now().Add(24 * time.Hour),
+			}
 		case *storagemodels.WebAuthnChallenge:
 			challenge := ""
 			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "CHALLENGE#") {
@@ -720,6 +1030,34 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				Scopes:       []string{"read", "write"},
 				CreatedAt:    time.Now().Add(-24 * time.Hour),
 			}
+		case *storagemodels.InstanceDomainBlock:
+			domain := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "DOMAIN_BLOCK#") {
+				domain = strings.TrimPrefix(pk, "DOMAIN_BLOCK#")
+			}
+			for _, block := range state.domainBlocks {
+				if block.Domain == domain || strings.TrimPrefix(block.PK, "DOMAIN_BLOCK#") == domain {
+					*d = block
+					return
+				}
+			}
+			*d = storagemodels.InstanceDomainBlock{Domain: domain}
+		case *storagemodels.FederationInstance:
+			domain := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "INSTANCE#") {
+				domain = strings.TrimPrefix(pk, "INSTANCE#")
+			}
+			if instance, ok := state.federationInstancesByDomain[domain]; ok {
+				*d = instance
+				return
+			}
+			for _, instance := range state.federationInstances {
+				if instance.Domain == domain {
+					*d = instance
+					return
+				}
+			}
+			*d = storagemodels.FederationInstance{Domain: domain}
 		case *storagemodels.InstanceMetrics:
 			key := ""
 			if pk, ok := state.whereString("PK"); ok {
@@ -763,6 +1101,15 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dest := args.Get(0)
 		switch d := dest.(type) {
+		case *[]*storagemodels.Activity:
+			activityID, _ := state.whereString("SK")
+			if activityID != "" {
+				if activity, ok := state.activitiesByID[activityID]; ok && activity != nil {
+					*d = []*storagemodels.Activity{activity}
+					return
+				}
+			}
+			*d = []*storagemodels.Activity{}
 		case *[]storagemodels.User:
 			role, _ := state.whereString("gsi3PK")
 			switch role {
@@ -819,16 +1166,41 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				},
 			}
 		case *[]storagemodels.RelationshipRecord:
+			if len(state.relationshipRecords) > 0 {
+				*d = state.relationshipRecords
+				return
+			}
 			*d = []storagemodels.RelationshipRecord{
 				{PK: "FOLLOW#alice", SK: "FOLLOWING#bob", GSI1PK: "FOLLOW#alice", GSI1SK: "FOLLOWER#bob", State: storagemodels.RelationshipAccepted},
 				{PK: "FOLLOW#alice", SK: "FOLLOWING#carol", GSI1PK: "FOLLOW#alice", GSI1SK: "FOLLOWER#carol", State: storagemodels.RelationshipAccepted},
 			}
+		case *[]storagemodels.Reputation:
+			pk, _ := state.whereString("PK")
+			if pk != "" {
+				if reps, ok := state.reputationsByPK[pk]; ok {
+					*d = reps
+					return
+				}
+			}
+			*d = []storagemodels.Reputation{}
 		case *[]storagemodels.ModerationEvent:
 			if len(state.eventsByID) == 0 {
 				*d = nil
 				return
 			}
 			*d = []storagemodels.ModerationEvent{state.eventsByID["evt1"], state.eventsByID["evt2"], state.eventsByID["evt3"]}
+		case *[]storagemodels.ModerationDecision:
+			objectID := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "DECISION#") {
+				objectID = strings.TrimPrefix(pk, "DECISION#")
+			}
+			if objectID != "" {
+				if decision, ok := state.moderationDecisionsByObject[objectID]; ok {
+					*d = []storagemodels.ModerationDecision{decision}
+					return
+				}
+			}
+			*d = []storagemodels.ModerationDecision{}
 		case *[]storagemodels.Filter:
 			if len(state.filtersByID) == 0 {
 				*d = []storagemodels.Filter{
@@ -912,6 +1284,32 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				return
 			}
 			*d = []storagemodels.Import{}
+		case *[]*storagemodels.Import:
+			if len(state.importsByUser) == 0 {
+				imp := storagemodels.Import{
+					ID:        "import-1",
+					Username:  "alice",
+					Type:      "followers",
+					Mode:      "merge",
+					Status:    "pending",
+					CreatedAt: time.Now().Add(-1 * time.Hour),
+					UpdatedAt: time.Now().Add(-30 * time.Minute),
+				}
+				*d = []*storagemodels.Import{&imp}
+				return
+			}
+			username, _ := state.whereString("gsi1PK")
+			username = strings.TrimPrefix(username, "USER#")
+			if items, ok := state.importsByUser[username]; ok {
+				result := make([]*storagemodels.Import, 0, len(items))
+				for _, item := range items {
+					imp := item
+					result = append(result, &imp)
+				}
+				*d = result
+				return
+			}
+			*d = []*storagemodels.Import{}
 		case *[]storagemodels.WebAuthnCredential:
 			username, _ := state.whereString("gsi1PK")
 			username = strings.TrimPrefix(username, "USER#")
@@ -950,8 +1348,34 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 					UpdatedAt: time.Now().Add(-30 * time.Minute),
 				},
 			}
+		case *[]*storagemodels.PushSubscription:
+			username, _ := state.whereString("PK")
+			username = strings.TrimPrefix(username, "PUSH#")
+			if subs, ok := state.pushSubscriptionsByUser[username]; ok {
+				out := make([]*storagemodels.PushSubscription, len(subs))
+				for i := range subs {
+					sub := subs[i]
+					out[i] = &sub
+				}
+				*d = out
+				return
+			}
+			*d = []*storagemodels.PushSubscription{
+				{
+					ID:       "sub-1",
+					Username: "alice",
+					Endpoint: "https://push.example.com",
+					P256dh:   "p256",
+					Auth:     "auth",
+					Alerts: storagemodels.PushSubscriptionAlerts{
+						Follow: true,
+					},
+					CreatedAt: time.Now().Add(-1 * time.Hour),
+					UpdatedAt: time.Now().Add(-30 * time.Minute),
+				},
+			}
 		case *[]*storagemodels.DynamoDBCostRecord:
-			if len(state.costRecords) > 0 {
+			if state.costRecords != nil {
 				*d = state.costRecords
 				return
 			}
@@ -964,7 +1388,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				},
 			}
 		case *[]*storagemodels.DynamoDBCostAggregation:
-			if len(state.costAggregations) > 0 {
+			if state.costAggregations != nil {
 				*d = state.costAggregations
 				return
 			}
@@ -984,8 +1408,37 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 					TotalOperations:     12,
 				},
 			}
+		case *[]*storagemodels.MetricRecord:
+			metricType := ""
+			if pk, ok := state.whereString("gsi2PK"); ok && strings.HasPrefix(pk, "METRIC_TYPE#") {
+				metricType = strings.TrimPrefix(pk, "METRIC_TYPE#")
+			}
+
+			var records []storagemodels.MetricRecord
+			if state.metricRecords != nil {
+				records = state.metricRecords
+			} else {
+				records = []storagemodels.MetricRecord{
+					{
+						MetricType: "api_endpoint",
+						Count:      5,
+						Sum:        250,
+						P50:        40,
+					},
+				}
+			}
+
+			out := make([]*storagemodels.MetricRecord, 0, len(records))
+			for i := range records {
+				rec := records[i]
+				if metricType != "" && rec.MetricType != metricType {
+					continue
+				}
+				out = append(out, &rec)
+			}
+			*d = out
 		case *[]storagemodels.MetricRecord:
-			if len(state.metricRecords) > 0 {
+			if state.metricRecords != nil {
 				*d = state.metricRecords
 				return
 			}
@@ -1018,14 +1471,105 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 					NewUsers:     1,
 				},
 			}
+		case *[]storagemodels.Poll:
+			gsi1pk, _ := state.whereString("gsi1PK")
+			if strings.HasPrefix(gsi1pk, "STATUS#") {
+				statusID := strings.TrimPrefix(gsi1pk, "STATUS#")
+				polls := make([]storagemodels.Poll, 0, len(state.pollsByID))
+				for _, poll := range state.pollsByID {
+					if poll.StatusID == statusID {
+						polls = append(polls, poll)
+					}
+				}
+				*d = polls
+				return
+			}
+			polls := make([]storagemodels.Poll, 0, len(state.pollsByID))
+			for _, poll := range state.pollsByID {
+				polls = append(polls, poll)
+			}
+			*d = polls
+		case *[]*storagemodels.Poll:
+			gsi1pk, _ := state.whereString("gsi1PK")
+			if strings.HasPrefix(gsi1pk, "STATUS#") {
+				statusID := strings.TrimPrefix(gsi1pk, "STATUS#")
+				polls := make([]*storagemodels.Poll, 0, len(state.pollsByID))
+				for _, poll := range state.pollsByID {
+					if poll.StatusID == statusID {
+						poll := poll
+						polls = append(polls, &poll)
+					}
+				}
+				*d = polls
+				return
+			}
+			polls := make([]*storagemodels.Poll, 0, len(state.pollsByID))
+			for _, poll := range state.pollsByID {
+				poll := poll
+				polls = append(polls, &poll)
+			}
+			*d = polls
 		case *[]storagemodels.QuoteRelationship:
 			*d = state.quoteRelationships
 		case *[]storagemodels.InstanceDomainBlock:
 			*d = state.domainBlocks
+		case *[]storagemodels.DomainAllow:
+			*d = state.domainAllows
+		case *[]storagemodels.EmailDomainBlock:
+			*d = state.emailDomainBlocks
+		case *[]*storagemodels.DomainAllow:
+			items := make([]*storagemodels.DomainAllow, 0, len(state.domainAllows))
+			for i := range state.domainAllows {
+				allow := state.domainAllows[i]
+				items = append(items, &allow)
+			}
+			*d = items
+		case *[]*storagemodels.EmailDomainBlock:
+			items := make([]*storagemodels.EmailDomainBlock, 0, len(state.emailDomainBlocks))
+			for i := range state.emailDomainBlocks {
+				block := state.emailDomainBlocks[i]
+				items = append(items, &block)
+			}
+			*d = items
 		case *[]storagemodels.ModerationReview:
 			*d = state.moderationReviews
 		case *[]storagemodels.Export:
 			*d = state.exportList
+		case *[]*storagemodels.Export:
+			username, _ := state.whereString("gsi1PK")
+			username = strings.TrimPrefix(username, "USER#")
+
+			if len(state.exportList) == 0 {
+				exp := storagemodels.Export{
+					ID:        "export-1",
+					Username:  username,
+					Type:      "archive",
+					Format:    "activitypub",
+					Status:    "pending",
+					CreatedAt: time.Now().Add(-1 * time.Hour),
+				}
+				*d = []*storagemodels.Export{&exp}
+				return
+			}
+
+			result := make([]*storagemodels.Export, 0, len(state.exportList))
+			for _, item := range state.exportList {
+				if username != "" && item.Username != "" && item.Username != username {
+					continue
+				}
+				exp := item
+				result = append(result, &exp)
+			}
+			*d = result
+		case *[]storagemodels.CommunityNote:
+			gsi3pk, _ := state.whereString("gsi3PK")
+			if gsi3pk != "" {
+				if notes, ok := state.communityNotesByGSI3PK[gsi3pk]; ok {
+					*d = notes
+					return
+				}
+			}
+			*d = []storagemodels.CommunityNote{}
 		case *[]storagemodels.TrustRelationship:
 			*d = state.trustRelationships
 		case *[]storagemodels.InstanceRule:
@@ -1181,8 +1725,56 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	mockQuery.On("Scan", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dest := args.Get(0)
 		switch d := dest.(type) {
+		case *[]storagemodels.FederationInstance:
+			*d = state.federationInstances
 		case *[]storagemodels.Status:
 			*d = []storagemodels.Status{state.statusByID["s1"]}
+		case *[]*storagemodels.Vouch:
+			pk, _ := state.whereString("PK")
+			sk, _ := state.whereString("SK")
+			if strings.HasPrefix(pk, "VOUCH#") && sk == storagemodels.SKMetadata {
+				vouchID := strings.TrimPrefix(pk, "VOUCH#")
+				if vouch, ok := state.vouchModelsByID[vouchID]; ok && vouch != nil {
+					*d = []*storagemodels.Vouch{vouch}
+					return
+				}
+				for _, model := range state.vouchModels {
+					if model != nil && model.PK == pk {
+						*d = []*storagemodels.Vouch{model}
+						return
+					}
+				}
+				*d = []*storagemodels.Vouch{}
+				return
+			}
+
+			if gsi1pk, ok := state.whereString("gsi1PK"); ok && gsi1pk != "" {
+				items := make([]*storagemodels.Vouch, 0)
+				for _, model := range state.vouchModels {
+					if model != nil && model.GSI1PK == gsi1pk {
+						items = append(items, model)
+					}
+				}
+				*d = items
+				return
+			}
+
+			if gsi2pk, ok := state.whereString("gsi2PK"); ok && gsi2pk != "" {
+				items := make([]*storagemodels.Vouch, 0)
+				for _, model := range state.vouchModels {
+					if model != nil && model.GSI2PK == gsi2pk {
+						items = append(items, model)
+					}
+				}
+				*d = items
+				return
+			}
+
+			if state.vouchModels != nil {
+				*d = state.vouchModels
+				return
+			}
+			*d = []*storagemodels.Vouch{}
 		case *[]*storagemodels.Media:
 			username := ""
 			if gsi1pk, ok := state.whereString("gsi1PK"); ok && strings.HasPrefix(gsi1pk, "USER_MEDIA#") {
