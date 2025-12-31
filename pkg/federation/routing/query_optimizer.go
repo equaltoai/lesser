@@ -466,6 +466,8 @@ func (c *queryCache) invalidatePattern(pattern string) {
 // LRU list operations
 
 func (l *lruList) pushFront(node *lruNode) {
+	node.prev = nil
+	node.next = nil
 	if l.head == nil {
 		l.head = node
 		l.tail = node
@@ -498,6 +500,9 @@ func (l *lruList) remove(node *lruNode) {
 	} else {
 		l.tail = node.prev
 	}
+
+	node.prev = nil
+	node.next = nil
 }
 
 // addQuery removed - using direct queries instead of background batching

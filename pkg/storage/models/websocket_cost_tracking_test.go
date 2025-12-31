@@ -520,3 +520,151 @@ func TestWebSocketCostRecordBuilder(t *testing.T) {
 		assert.Equal(t, breakdown.TotalCostMicroCents, record.TotalCostMicroCents)
 	})
 }
+
+func TestWebSocketCostRecord_BeforeCreate_AndBeforeUpdate(t *testing.T) {
+	t.Run("BeforeCreate sets timestamps, TTL, keys, and cost dollars", func(t *testing.T) {
+		w := &WebSocketCostRecord{
+			OperationType:      "connect",
+			ConnectionID:       "conn-123",
+			UserID:             "user-456",
+			TotalCostMicroCents: 2_500_000,
+		}
+
+		before := time.Now()
+		err := w.BeforeCreate()
+		require.NoError(t, err)
+
+		assert.False(t, w.CreatedAt.IsZero())
+		assert.True(t, w.CreatedAt.Equal(w.UpdatedAt))
+		assert.True(t, w.CreatedAt.Equal(w.Timestamp))
+		assert.WithinDuration(t, before.Add(30*24*time.Hour), time.Unix(w.ExpiresAt, 0), 2*time.Second)
+
+		assert.NotEmpty(t, w.ID)
+		assert.Equal(t, "WS_COST#connect", w.PK)
+		assert.Contains(t, w.SK, "ts#")
+
+		assert.Equal(t, "WS_CONN#conn-123", w.GSI1PK)
+		assert.Equal(t, "WS_USER#user-456", w.GSI2PK)
+
+		assert.InDelta(t, 2.5, w.EstimatedCostDollars, 0.000001)
+
+		assert.Equal(t, w.PK, w.GetPK())
+		assert.Equal(t, w.SK, w.GetSK())
+		assert.Equal(t, MainTableName, w.TableName())
+	})
+
+	t.Run("BeforeUpdate updates UpdatedAt, recalculates cost dollars, and refreshes GSIs", func(t *testing.T) {
+		ts := time.Date(2024, 6, 15, 10, 30, 45, 0, time.UTC)
+		w := &WebSocketCostRecord{
+			ID:            "record-id",
+			OperationType: "message_in",
+			ConnectionID:  "conn-old",
+			UserID:        "user-123",
+			Timestamp:     ts,
+			PK:            "WS_COST#message_in",
+			SK:            "ts#20240615103045#record-id",
+		}
+
+		w.setupGSIKeys()
+		oldGSI1PK := w.GSI1PK
+
+		w.TotalCostMicroCents = 1_250_000
+		w.ConnectionID = "conn-new"
+		previousUpdatedAt := w.UpdatedAt
+		err := w.BeforeUpdate()
+		require.NoError(t, err)
+
+		assert.True(t, w.UpdatedAt.After(previousUpdatedAt) || previousUpdatedAt.IsZero())
+		assert.InDelta(t, 1.25, w.EstimatedCostDollars, 0.000001)
+		assert.NotEqual(t, oldGSI1PK, w.GSI1PK)
+		assert.Equal(t, "WS_CONN#conn-new", w.GSI1PK)
+		assert.Equal(t, "WS_USER#user-123", w.GSI2PK)
+	})
+}
+
+func TestWebSocketCostBudget_BeforeUpdate(t *testing.T) {
+	now := time.Now()
+	earlier := now.Add(-time.Hour)
+
+	w := &WebSocketCostBudget{
+		UserID:           "user-123",
+		Period:           "monthly",
+		BudgetMicroCents: 1_000_000,
+		UsedMicroCents:   250_000,
+		WindowStart:      earlier,
+		WindowEnd:        now,
+	}
+	require.NoError(t, w.BeforeCreate())
+
+	w.UsedMicroCents = 2_000_000
+	require.NoError(t, w.BeforeUpdate())
+	assert.Equal(t, int64(0), w.RemainingMicroCents)
+	assert.Equal(t, "exceeded", w.Status)
+	assert.Equal(t, "WS_BUDGET#user-123#monthly", w.PK)
+	assert.Equal(t, "BUDGET#monthly", w.SK)
+	assert.Equal(t, "WS_USER_BUDGET#user-123", w.GSI1PK)
+	assert.Contains(t, w.GSI1SK, "exceeded")
+}
+
+func TestWebSocketCostAggregation_Lifecycle(t *testing.T) {
+	now := time.Now()
+	windowStart := now.Add(-time.Hour)
+
+	t.Run("BeforeCreate calculates metrics, TTL, and keys", func(t *testing.T) {
+		agg := &WebSocketCostAggregation{
+			Period:              "month",
+			OperationType:       "connect",
+			UserID:              "user-1",
+			WindowStart:         windowStart,
+			WindowEnd:           now,
+			TotalConnections:    2,
+			TotalMessagesIn:     1,
+			TotalMessagesOut:    1,
+			TotalMessageBytes:   300,
+			TotalConnectionMinutes: 10,
+			UniqueUsers:         2,
+			FailedConnections:   1,
+			TotalCostMicroCents: 1_000_000,
+		}
+
+		before := time.Now()
+		require.NoError(t, agg.BeforeCreate())
+
+		assert.InDelta(t, 1.0, agg.TotalCostDollars, 0.000001)
+		assert.InDelta(t, 0.5, agg.CostPerConnection, 0.000001)
+		assert.InDelta(t, 0.5, agg.CostPerMessage, 0.000001)
+		assert.InDelta(t, 150.0, agg.AverageMessageSize, 0.000001)
+		assert.InDelta(t, 0.1, agg.CostPerMinute, 0.000001)
+		assert.InDelta(t, 0.5, agg.CostPerUser, 0.000001)
+		assert.InDelta(t, 25.0, agg.ErrorRate, 0.000001)
+
+		assert.WithinDuration(t, before.Add(365*24*time.Hour), time.Unix(agg.ExpiresAt, 0), 2*time.Second)
+
+		assert.Equal(t, "WS_AGG#month#connect", agg.PK)
+		assert.Contains(t, agg.SK, "window#")
+		assert.Equal(t, "WS_USER_AGG#user-1#month", agg.GSI1PK)
+	})
+
+	t.Run("BeforeUpdate recalculates totals and error rate", func(t *testing.T) {
+		agg := &WebSocketCostAggregation{
+			Period:              "day",
+			OperationType:       "message_out",
+			WindowStart:         windowStart,
+			WindowEnd:           now,
+			TotalConnections:    1,
+			TotalMessagesOut:    3,
+			TotalMessageBytes:   300,
+			TotalCostMicroCents: 2_000_000,
+		}
+		require.NoError(t, agg.BeforeCreate())
+
+		agg.TotalMessagesOut = 1
+		agg.TotalMessageBytes = 100
+		agg.FailedConnections = 1
+		require.NoError(t, agg.BeforeUpdate())
+
+		assert.InDelta(t, 2.0, agg.TotalCostDollars, 0.000001)
+		assert.InDelta(t, 100.0, agg.AverageMessageSize, 0.000001)
+		assert.InDelta(t, 50.0, agg.ErrorRate, 0.000001)
+	})
+}

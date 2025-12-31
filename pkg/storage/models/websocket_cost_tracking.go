@@ -417,11 +417,11 @@ func (w *WebSocketCostBudget) BeforeCreate() error {
 	// Set TTL based on period
 	ttlDuration := 24 * time.Hour // Default to 1 day
 	switch w.Period {
-	case "daily":
+	case "daily", "day":
 		ttlDuration = 2 * 24 * time.Hour // Keep for 2 days
-	case "weekly":
+	case "weekly", "week":
 		ttlDuration = 14 * 24 * time.Hour // Keep for 2 weeks
-	case "monthly":
+	case "monthly", "month":
 		ttlDuration = 62 * 24 * time.Hour // Keep for ~2 months
 	}
 	w.ExpiresAt = now.Add(ttlDuration).Unix()
@@ -854,6 +854,7 @@ func isValidWebSocketPeriod(period string) bool {
 		"hour":    true,
 		"day":     true,
 		"week":    true,
+		"month":   true,
 		"monthly": true,
 		"daily":   true,
 		"weekly":  true,

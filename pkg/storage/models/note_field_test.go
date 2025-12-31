@@ -57,3 +57,29 @@ func TestNoteFieldUnmarshalFromMap(t *testing.T) {
 	require.NotNil(t, nf.Note.QuoteContext)
 	require.Equal(t, "original", nf.Note.QuoteContext.OriginalNoteID)
 }
+
+func TestNoteFieldMarshalAndUnmarshalNull(t *testing.T) {
+	av, err := (NoteField{}).MarshalDynamoDBAttributeValue()
+	require.NoError(t, err)
+	nullAv, ok := av.(*types.AttributeValueMemberNULL)
+	require.True(t, ok, "expected AttributeValueMemberNULL")
+	require.True(t, nullAv.Value)
+
+	var nf NoteField
+	require.NoError(t, nf.UnmarshalDynamoDBAttributeValue(&types.AttributeValueMemberNULL{Value: true}))
+	require.Nil(t, nf.Note)
+}
+
+func TestNoteFieldUnmarshalRejectsNonMap(t *testing.T) {
+	var nf NoteField
+	require.ErrorContains(t, nf.UnmarshalDynamoDBAttributeValue(&types.AttributeValueMemberS{Value: "nope"}), "invalid NoteField format")
+}
+
+func TestNoteFieldGetSet(t *testing.T) {
+	var nf NoteField
+	require.Nil(t, nf.Get())
+
+	note := &activitypub.Note{Content: "hi"}
+	nf.Set(note)
+	require.Equal(t, note, nf.Get())
+}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -1940,8 +1941,21 @@ func (s *Service) initialPostingVisibility(requested string) string {
 	return models.VisibilityPublic
 }
 
+func isNilInterface(value any) bool {
+	if value == nil {
+		return true
+	}
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Interface, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan:
+		return rv.IsNil()
+	default:
+		return false
+	}
+}
+
 func (s *Service) ensureQuotePermissionsForNewUser(ctx context.Context, repo quotePermissionsCreator, username, visibility string) error {
-	if repo == nil {
+	if isNilInterface(repo) {
 		return ErrQuoteRepositoryNotAvailable
 	}
 
@@ -1958,7 +1972,7 @@ func (s *Service) ensureQuotePermissionsForNewUser(ctx context.Context, repo quo
 }
 
 func (s *Service) persistDefaultPostingVisibility(ctx context.Context, repo accountRegistrationRepository, username, visibility string) error {
-	if repo == nil {
+	if isNilInterface(repo) {
 		return ErrAccountRepositoryNotAvailable
 	}
 
@@ -1974,7 +1988,7 @@ func (s *Service) persistDefaultPostingVisibility(ctx context.Context, repo acco
 }
 
 func (s *Service) rollbackAccountCreation(ctx context.Context, repo accountRegistrationRepository, username string, cause error) {
-	if repo == nil {
+	if isNilInterface(repo) {
 		s.logger.Error("unable to rollback account creation; account repository unavailable",
 			zap.String("username", username),
 			zap.NamedError("cause", cause))

@@ -30,15 +30,43 @@ type SQSClient interface {
 	SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
 }
 
+type ComprehendClient interface {
+	DetectDominantLanguage(ctx context.Context, params *comprehend.DetectDominantLanguageInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectDominantLanguageOutput, error)
+	DetectSentiment(ctx context.Context, params *comprehend.DetectSentimentInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectSentimentOutput, error)
+	ClassifyDocument(ctx context.Context, params *comprehend.ClassifyDocumentInput, optFns ...func(*comprehend.Options)) (*comprehend.ClassifyDocumentOutput, error)
+	DetectPiiEntities(ctx context.Context, params *comprehend.DetectPiiEntitiesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectPiiEntitiesOutput, error)
+	DetectEntities(ctx context.Context, params *comprehend.DetectEntitiesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectEntitiesOutput, error)
+	DetectKeyPhrases(ctx context.Context, params *comprehend.DetectKeyPhrasesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectKeyPhrasesOutput, error)
+}
+
+type RekognitionClient interface {
+	DetectModerationLabels(ctx context.Context, params *rekognition.DetectModerationLabelsInput, optFns ...func(*rekognition.Options)) (*rekognition.DetectModerationLabelsOutput, error)
+	DetectText(ctx context.Context, params *rekognition.DetectTextInput, optFns ...func(*rekognition.Options)) (*rekognition.DetectTextOutput, error)
+	RecognizeCelebrities(ctx context.Context, params *rekognition.RecognizeCelebritiesInput, optFns ...func(*rekognition.Options)) (*rekognition.RecognizeCelebritiesOutput, error)
+}
+
+type BedrockRuntimeClient interface {
+	InvokeModel(ctx context.Context, params *bedrockruntime.InvokeModelInput, optFns ...func(*bedrockruntime.Options)) (*bedrockruntime.InvokeModelOutput, error)
+}
+
+type S3Client interface {
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+}
+
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 // AIService provides AI-powered content moderation and analysis
 //
 //nolint:revive // AI prefix clarifies this is AI-specific service
 type AIService struct {
-	comprehend  *comprehend.Client
-	rekognition *rekognition.Client
-	bedrock     *bedrockruntime.Client
-	s3Client    *s3.Client
+	comprehend  ComprehendClient
+	rekognition RekognitionClient
+	bedrock     BedrockRuntimeClient
+	s3Client    S3Client
 	sqsClient   SQSClient
+	httpClient  HTTPClient
 	logger      *zap.Logger
 	config      *AIConfig
 }
@@ -77,6 +105,7 @@ func NewAIService(cfg aws.Config, aiConfig *AIConfig) *AIService {
 		bedrock:     bedrockruntime.NewFromConfig(cfg),
 		s3Client:    s3.NewFromConfig(cfg),
 		sqsClient:   sqs.NewFromConfig(cfg),
+		httpClient:  http.DefaultClient,
 		logger:      zap.L().Named("ai"),
 		config:      aiConfig,
 	}
@@ -90,6 +119,7 @@ func NewAIServiceWithSQS(cfg aws.Config, aiConfig *AIConfig, sqsClient SQSClient
 		bedrock:     bedrockruntime.NewFromConfig(cfg),
 		s3Client:    s3.NewFromConfig(cfg),
 		sqsClient:   sqsClient,
+		httpClient:  http.DefaultClient,
 		logger:      zap.L().Named("ai"),
 		config:      aiConfig,
 	}
@@ -986,13 +1016,21 @@ func (s *AIService) uploadImageToS3(ctx context.Context, imageURL string) (strin
 	}
 
 	// Prevent local network access
-	if parsedURL.Host == "localhost" || parsedURL.Host == "127.0.0.1" || strings.HasPrefix(parsedURL.Host, "10.") ||
-		strings.HasPrefix(parsedURL.Host, "192.168.") || strings.HasPrefix(parsedURL.Host, "172.") {
+	host := parsedURL.Hostname()
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasPrefix(host, "10.") ||
+		strings.HasPrefix(host, "192.168.") || strings.HasPrefix(host, "172.") {
 		return "", ErrLocalNetworkAccess
 	}
 
 	// Download the image using the validated URL
-	resp, err := http.Get(parsedURL.String())
+	if s.httpClient == nil {
+		s.httpClient = http.DefaultClient
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create image download request: %w", err)
+	}
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download image: %w", err)
 	}

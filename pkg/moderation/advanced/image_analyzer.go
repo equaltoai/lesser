@@ -619,6 +619,9 @@ func extractS3Key(urlStr string) string {
 }
 
 func isS3URL(url string) bool {
+	if strings.HasPrefix(url, "s3://") {
+		return true
+	}
 	return strings.Contains(url, ".s3.") && strings.Contains(url, ".amazonaws.com")
 }
 

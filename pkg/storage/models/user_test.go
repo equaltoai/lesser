@@ -289,7 +289,7 @@ func (suite *UserModelTestSuite) TestHasEmail() {
 		email    string
 		expected bool
 	}{
-		{"with email", "test@example.com", true},
+		{"with value", "somevalue", true},
 		{"empty email", "", false},
 		{"whitespace email", "   ", false},
 	}
@@ -308,7 +308,7 @@ func (suite *UserModelTestSuite) TestHasPassword() {
 		passwordHash string
 		expected     bool
 	}{
-		{"with password", "hashedpassword", true},
+		{"with value", "hashedpassword", true},
 		{"empty password", "", false},
 		{"whitespace password", "   ", false},
 	}
@@ -365,8 +365,10 @@ func (suite *UserModelTestSuite) TestIsModerator() {
 
 func (suite *UserModelTestSuite) TestTableName() {
 	user := &User{}
-	assert.Equal(suite.T(), "lesser-main", user.TableName())
+	assert.Equal(suite.T(), MainTableName, user.TableName())
 }
 
 // Run the test suite
-// TestUserModelTestSuite removed - complex suite-based model tests
+func TestUserModelTestSuite(t *testing.T) {
+	suite.Run(t, new(UserModelTestSuite))
+}

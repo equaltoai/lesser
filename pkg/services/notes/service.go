@@ -993,6 +993,10 @@ func (s *Service) buildNotesResult(filteredNotes []*models.Status, result *inter
 // Private helper methods
 
 func (s *Service) validateCreateCommand(ctx context.Context, cmd *CreateNoteCommand) error {
+	if cmd == nil {
+		return ErrNotesValidationFailed
+	}
+
 	// Use centralized business logic validation
 	rules := common.ValidationRules{
 		Required: []string{"author_id", "content"},

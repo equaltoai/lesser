@@ -36,11 +36,11 @@ const (
 
 // Service provides business logic for bulk operations
 type Service struct {
-	statusRepo       *repositories.StatusRepository
+	statusRepo       statusRepository
 	accountRepo      interfaces.AccountRepository
 	socialRepo       interfaces.SocialRepository
-	listRepo         *repositories.ListRepository
-	relationshipRepo *repositories.RelationshipRepository
+	listRepo         listRepository
+	relationshipRepo relationshipRepository
 	publisher        streaming.Publisher
 	federation       FederationService
 	logger           *zap.Logger
@@ -53,6 +53,24 @@ type Service struct {
 // FederationService defines the interface for federation operations
 type FederationService interface {
 	QueueActivity(ctx context.Context, activity *activitypub.Activity) error
+}
+
+type statusRepository interface {
+	GetStatus(ctx context.Context, statusID string) (*models.Status, error)
+	DeleteStatus(ctx context.Context, statusID string) error
+	UpdateStatus(ctx context.Context, status *models.Status) error
+}
+
+type listRepository interface {
+	AddListMember(ctx context.Context, listID, memberUsername string) error
+	RemoveListMember(ctx context.Context, listID, memberUsername string) error
+}
+
+type relationshipRepository interface {
+	CreateRelationship(ctx context.Context, followerUsername, followingUsername, activityID string) error
+	DeleteBlock(ctx context.Context, blockerActor, blockedActor string) error
+	CreateMute(ctx context.Context, muterActor, mutedActor, activityID string, hideNotifications bool, duration *time.Duration) error
+	CreateBlock(ctx context.Context, blockerActor, blockedActor, activityID string) error
 }
 
 // NewService creates a new bulk operations service
@@ -71,12 +89,25 @@ func NewService(
 		logger = zap.NewNop()
 	}
 
+	var statusRepository statusRepository
+	if statusRepo != nil {
+		statusRepository = statusRepo
+	}
+	var listRepository listRepository
+	if listRepo != nil {
+		listRepository = listRepo
+	}
+	var relationshipRepository relationshipRepository
+	if relationshipRepo != nil {
+		relationshipRepository = relationshipRepo
+	}
+
 	return &Service{
-		statusRepo:       statusRepo,
+		statusRepo:       statusRepository,
 		accountRepo:      accountRepo,
 		socialRepo:       socialRepo,
-		listRepo:         listRepo,
-		relationshipRepo: relationshipRepo,
+		listRepo:         listRepository,
+		relationshipRepo: relationshipRepository,
 		publisher:        publisher,
 		federation:       federation,
 		logger:           logger,
@@ -232,15 +263,15 @@ func (s *Service) BulkFollow(ctx context.Context, cmd *FollowCommand) (*Operatio
 	// Store operation for tracking
 	s.operations.Store(operation.ID, operation)
 
-	// Process in background to avoid timeout
-	go s.processBulkFollow(ctx, operation, cmd)
-
 	// Emit start event
 	if s.publisher != nil {
 		event := s.createOperationEvent("bulk_operation.started", operation)
 		_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		operation.Events = append(operation.Events, event)
 	}
+
+	// Process in background to avoid timeout
+	go s.processBulkFollow(ctx, operation, cmd)
 
 	return &OperationResult{
 		Operation: operation,
@@ -325,15 +356,15 @@ func (s *Service) BulkDeleteStatuses(ctx context.Context, cmd *DeleteStatusesCom
 	// Store operation for tracking
 	s.operations.Store(operation.ID, operation)
 
-	// Process in background
-	go s.processBulkDeleteStatuses(ctx, operation, cmd)
-
 	// Emit start event
 	if s.publisher != nil {
 		event := s.createOperationEvent("bulk_operation.started", operation)
 		_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		operation.Events = append(operation.Events, event)
 	}
+
+	// Process in background
+	go s.processBulkDeleteStatuses(ctx, operation, cmd)
 
 	return &OperationResult{
 		Operation: operation,
@@ -528,15 +559,15 @@ func (s *Service) BulkDelete(ctx context.Context, cmd *DeleteCommand) (*Operatio
 	// Store operation for tracking
 	s.operations.Store(operation.ID, operation)
 
-	// Process in background to avoid timeout
-	go s.processBulkDelete(ctx, operation, cmd)
-
 	// Emit start event
 	if s.publisher != nil {
 		event := s.createOperationEvent("bulk_operation.started", operation)
 		_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		operation.Events = append(operation.Events, event)
 	}
+
+	// Process in background to avoid timeout
+	go s.processBulkDelete(ctx, operation, cmd)
 
 	return &OperationResult{
 		Operation: operation,
@@ -688,15 +719,15 @@ func (s *Service) BulkArchive(ctx context.Context, cmd *ArchiveCommand) (*Operat
 	// Store operation for tracking
 	s.operations.Store(operation.ID, operation)
 
-	// Process in background to avoid timeout
-	go s.processBulkArchive(ctx, operation, cmd)
-
 	// Emit start event
 	if s.publisher != nil {
 		event := s.createOperationEvent("bulk_operation.started", operation)
 		_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		operation.Events = append(operation.Events, event)
 	}
+
+	// Process in background to avoid timeout
+	go s.processBulkArchive(ctx, operation, cmd)
 
 	return &OperationResult{
 		Operation: operation,
@@ -803,15 +834,15 @@ func (s *Service) BulkRestore(ctx context.Context, cmd *RestoreCommand) (*Operat
 	// Store operation for tracking
 	s.operations.Store(operation.ID, operation)
 
-	// Process in background to avoid timeout
-	go s.processBulkRestore(ctx, operation, cmd)
-
 	// Emit start event
 	if s.publisher != nil {
 		event := s.createOperationEvent("bulk_operation.started", operation)
 		_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		operation.Events = append(operation.Events, event)
 	}
+
+	// Process in background to avoid timeout
+	go s.processBulkRestore(ctx, operation, cmd)
 
 	return &OperationResult{
 		Operation: operation,
@@ -919,15 +950,15 @@ func (s *Service) BulkExport(ctx context.Context, cmd *ExportCommand) (*Operatio
 	// Store operation for tracking
 	s.operations.Store(operation.ID, operation)
 
-	// Process in background to avoid timeout
-	go s.processBulkExport(ctx, operation, cmd)
-
 	// Emit start event
 	if s.publisher != nil {
 		event := s.createOperationEvent("bulk_operation.started", operation)
 		_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		operation.Events = append(operation.Events, event)
 	}
+
+	// Process in background to avoid timeout
+	go s.processBulkExport(ctx, operation, cmd)
 
 	return &OperationResult{
 		Operation: operation,
@@ -1156,15 +1187,15 @@ func (s *Service) BulkUnblock(ctx context.Context, cmd *UnblockCommand) (*Operat
 	// Store operation for tracking
 	s.operations.Store(operation.ID, operation)
 
-	// Process in background to avoid timeout
-	go s.processBulkUnblock(ctx, operation, cmd)
-
 	// Emit start event
 	if s.publisher != nil {
 		event := s.createOperationEvent("bulk_operation.started", operation)
 		_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		operation.Events = append(operation.Events, event)
 	}
+
+	// Process in background to avoid timeout
+	go s.processBulkUnblock(ctx, operation, cmd)
 
 	return &OperationResult{
 		Operation: operation,
@@ -1241,15 +1272,15 @@ func (s *Service) BulkMute(ctx context.Context, cmd *MuteCommand) (*OperationRes
 	// Store operation for tracking
 	s.operations.Store(operation.ID, operation)
 
-	// Process in background to avoid timeout
-	go s.processBulkMute(ctx, operation, cmd)
-
 	// Emit start event
 	if s.publisher != nil {
 		event := s.createOperationEvent("bulk_operation.started", operation)
 		_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		operation.Events = append(operation.Events, event)
 	}
+
+	// Process in background to avoid timeout
+	go s.processBulkMute(ctx, operation, cmd)
 
 	return &OperationResult{
 		Operation: operation,
@@ -1325,15 +1356,15 @@ func (s *Service) BulkBlock(ctx context.Context, cmd *BlockCommand) (*OperationR
 	// Store operation for tracking
 	s.operations.Store(operation.ID, operation)
 
-	// Process in background to avoid timeout
-	go s.processBulkBlock(ctx, operation, cmd)
-
 	// Emit start event
 	if s.publisher != nil {
 		event := s.createOperationEvent("bulk_operation.started", operation)
 		_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		operation.Events = append(operation.Events, event)
 	}
+
+	// Process in background to avoid timeout
+	go s.processBulkBlock(ctx, operation, cmd)
 
 	return &OperationResult{
 		Operation: operation,

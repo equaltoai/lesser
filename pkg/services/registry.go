@@ -491,27 +491,46 @@ func (r *Registry) Threads() *threads.Service {
 // Severance returns the severance service, initializing it if necessary
 func (r *Registry) Severance() *severance.Service {
 	r.mu.Lock()
+	if r.severanceService != nil {
+		service := r.severanceService
+		r.mu.Unlock()
+		return service
+	}
+
+	severanceRepo := r.storage.Severance()
+	if severanceRepo == nil {
+		if r.logger != nil {
+			r.logger.Warn("failed to initialize Severance service: required repository not available")
+		}
+		r.mu.Unlock()
+		return nil
+	}
+
+	domain := r.getDomainName()
+	logger := r.logger
+	publisherAdapter := r.createSeveranceEventPublisherAdapter()
+
+	// Release registry lock before calling methods that acquire it (Federation / Notification).
+	r.mu.Unlock()
+
+	federationAdapter := r.createSeveranceFederationAdapter()
+	notificationAdapter := r.createSeveranceNotificationAdapter()
+
+	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Double-check in case another goroutine initialized it while we were unlocked.
 	if r.severanceService == nil {
-		severanceRepo := r.storage.Severance()
-
-		if severanceRepo != nil {
-			domain := r.getDomainName()
-
-			r.severanceService = severance.NewService(
-				severanceRepo,
-				r.createSeveranceFederationAdapter(),
-				r.createSeveranceNotificationAdapter(),
-				r.createSeveranceEventPublisherAdapter(),
-				r.logger,
-				domain,
-			)
-			if r.initialized != nil {
-				r.initialized["Severance"] = true
-			}
-		} else if r.logger != nil {
-			r.logger.Warn("failed to initialize Severance service: required repository not available")
+		r.severanceService = severance.NewService(
+			severanceRepo,
+			federationAdapter,
+			notificationAdapter,
+			publisherAdapter,
+			logger,
+			domain,
+		)
+		if r.initialized != nil {
+			r.initialized["Severance"] = true
 		}
 	}
 
@@ -2040,57 +2059,75 @@ func (r *Registry) extractDomainName() string {
 // Bulk returns the Bulk service, initializing it if necessary
 func (r *Registry) Bulk() *bulk.Service {
 	r.mu.Lock()
+	if r.bulkService != nil || r.storage == nil {
+		service := r.bulkService
+		r.mu.Unlock()
+		return service
+	}
+
+	// Initialize the Bulk service with repository interfaces
+	statusRepo := r.storage.Status()
+	accountRepo := r.storage.Account()
+	socialRepo := r.storage.Social()
+	listRepo := r.storage.List()
+	relationshipRepo := r.storage.Relationship()
+
+	// Check if repositories are available
+	if statusRepo == nil || accountRepo == nil || socialRepo == nil || listRepo == nil || relationshipRepo == nil {
+		if r.logger != nil {
+			r.logger.Warn("failed to initialize Bulk service: required repositories not available")
+		}
+		r.mu.Unlock()
+		return nil
+	}
+
+	domainName := DefaultLocalhost
+	if r.config != nil && r.config.BaseURL != "" {
+		// Extract domain from base URL
+		if strings.HasPrefix(r.config.BaseURL, "https://") {
+			domainName = strings.TrimPrefix(r.config.BaseURL, "https://")
+		} else if strings.HasPrefix(r.config.BaseURL, "http://") {
+			domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
+		}
+	}
+
+	publisher := r.publisher
+	logger := r.logger
+	r.mu.Unlock()
+
+	// Initialize federation service (may be nil during testing)
+	federationService := r.Federation()
+
+	// Create adapter for federation service interface
+	var bulkFederation bulk.FederationService
+	if federationService != nil {
+		jobQueue := r.getJobQueue()
+		bulkFederation = &federationServiceAdapter{
+			federation: federationService,
+			jobQueue:   jobQueue,
+		}
+	}
+
+	service := bulk.NewService(
+		statusRepo,
+		accountRepo,
+		socialRepo,
+		listRepo,
+		relationshipRepo,
+		publisher,
+		bulkFederation,
+		logger,
+		domainName,
+	)
+
+	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.bulkService == nil && r.storage != nil {
-		// Initialize the Bulk service with repository interfaces
-		statusRepo := r.storage.Status()
-		accountRepo := r.storage.Account()
-		socialRepo := r.storage.Social()
-		listRepo := r.storage.List()
-		relationshipRepo := r.storage.Relationship()
-
-		// Check if repositories are available
-		if statusRepo != nil && accountRepo != nil && socialRepo != nil && listRepo != nil && relationshipRepo != nil {
-			domainName := DefaultLocalhost
-			if r.config != nil && r.config.BaseURL != "" {
-				// Extract domain from base URL
-				if strings.HasPrefix(r.config.BaseURL, "https://") {
-					domainName = strings.TrimPrefix(r.config.BaseURL, "https://")
-				} else if strings.HasPrefix(r.config.BaseURL, "http://") {
-					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
-				}
-			}
-
-			// Initialize federation service (may be nil during testing)
-			federationService := r.Federation()
-
-			// Create adapter for federation service interface
-			var bulkFederation bulk.FederationService
-			if federationService != nil {
-				jobQueue := r.getJobQueue()
-				bulkFederation = &federationServiceAdapter{
-					federation: federationService,
-					jobQueue:   jobQueue,
-				}
-			}
-
-			r.bulkService = bulk.NewService(
-				statusRepo,
-				accountRepo,
-				socialRepo,
-				listRepo,
-				relationshipRepo,
-				r.publisher,
-				bulkFederation,
-				r.logger,
-				domainName,
-			)
+	// Double-check in case another goroutine initialized it while we were unlocked.
+	if r.bulkService == nil {
+		r.bulkService = service
+		if r.initialized != nil {
 			r.initialized["Bulk"] = true
-		} else {
-			if r.logger != nil {
-				r.logger.Warn("failed to initialize Bulk service: required repositories not available")
-			}
 		}
 	}
 

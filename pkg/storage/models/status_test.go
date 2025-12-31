@@ -22,7 +22,7 @@ func (StatusModelTestSuite) TableName() string {
 // Test TableName
 func (suite *StatusModelTestSuite) TestTableName() {
 	status := &Status{}
-	assert.Equal(suite.T(), "lesser-main", status.TableName())
+	assert.Equal(suite.T(), MainTableName, status.TableName())
 }
 
 // Test BeforeCreate
@@ -377,7 +377,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_Visibility() {
 		{
 			name:     "private message",
 			to:       []string{"https://example.com/users/bob", "https://example.com/users/charlie"},
-			expected: "private",
+			expected: "direct",
 		},
 	}
 
@@ -644,13 +644,13 @@ func (suite *StatusModelTestSuite) TestDetermineVisibilityFromAudience() {
 		{
 			name:     "private message",
 			to:       []string{"https://example.com/users/bob", "https://example.com/users/charlie"},
-			expected: "private",
+			expected: "direct",
 		},
 		{
 			name:     "empty audience",
 			to:       []string{},
 			cc:       []string{},
-			expected: "private",
+			expected: "direct",
 		},
 	}
 
@@ -795,7 +795,9 @@ func (suite *StatusModelTestSuite) TestIsFlagged() {
 }
 
 // Run the test suite
-// TestStatusModelTestSuite removed - complex suite-based model tests
+func TestStatusModelTestSuite(t *testing.T) {
+	suite.Run(t, new(StatusModelTestSuite))
+}
 
 // =============================================================================
 // Standalone Status Model Tests (additional coverage)

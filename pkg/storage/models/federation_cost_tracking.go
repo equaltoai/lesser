@@ -242,7 +242,10 @@ func (f *FederationCostTracking) AddRouteDeliveryAttempt(routeID string, bytes i
 	}
 
 	// Calculate per-route cost based on bytes sent
-	routeCost := (bytes * f.DataTransferCost) / f.DataTransferBytes // proportional cost
+	routeCost := int64(0)
+	if f.DataTransferBytes > 0 {
+		routeCost = (bytes * f.DataTransferCost) / f.DataTransferBytes // proportional cost
+	}
 	f.RouteBreakdown[routeID] += routeCost
 
 	// Update latency (running average)

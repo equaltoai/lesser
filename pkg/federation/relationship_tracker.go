@@ -32,7 +32,7 @@ type RelationshipTracker struct {
 	logger  *zap.Logger
 
 	// S3 client for archival operations
-	s3Client      *s3.Client
+	s3Client      s3API
 	archiveBucket string
 
 	// In-memory cache for active relationships (performance optimization)
@@ -43,6 +43,12 @@ type RelationshipTracker struct {
 	warmupDuration  time.Duration
 	archiveAfter    time.Duration
 	cleanupInterval time.Duration
+}
+
+type s3API interface {
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 }
 
 // NewRelationshipTracker creates a new relationship tracker with DynamORM persistence
@@ -66,7 +72,9 @@ func NewRelationshipTracker(store core.RepositoryStorage, db dynamormcore.DB, lo
 // NewRelationshipTrackerWithS3 creates a new relationship tracker with S3 archival support
 func NewRelationshipTrackerWithS3(store core.RepositoryStorage, db dynamormcore.DB, logger *zap.Logger, s3Client *s3.Client, archiveBucket string) *RelationshipTracker {
 	rt := NewRelationshipTracker(store, db, logger)
-	rt.s3Client = s3Client
+	if s3Client != nil {
+		rt.s3Client = s3Client
+	}
 	rt.archiveBucket = archiveBucket
 	return rt
 }

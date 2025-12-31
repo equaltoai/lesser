@@ -73,14 +73,14 @@ func executeRepositoryMethodWithFallback(
 	fallbackInterfaceCheck func(interface{}) ([]interface{}, string, error, bool),
 ) ([]interface{}, string, error) {
 	// Try primary repository with preferred interface
-	if primaryRepo != nil {
+	if !isNilInterface(primaryRepo) {
 		if result, cursor, err, ok := primaryInterfaceCheck(primaryRepo); ok {
 			return result, cursor, err
 		}
 	}
 
 	// Try fallback repository with typed interface and conversion
-	if fallbackRepo != nil {
+	if !isNilInterface(fallbackRepo) {
 		if result, cursor, err, ok := fallbackInterfaceCheck(fallbackRepo); ok {
 			return result, cursor, err
 		}
@@ -88,6 +88,27 @@ func executeRepositoryMethodWithFallback(
 
 	// Final fallback: return empty slice
 	return []interface{}{}, "", nil
+}
+
+func isNilInterface(v interface{}) bool {
+	if v == nil {
+		return true
+	}
+
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return rv.IsNil()
+	default:
+		return false
+	}
+}
+
+func repoPtrToInterface[T any](repo *T) interface{} {
+	if repo == nil {
+		return nil
+	}
+	return repo
 }
 
 // createTypedFallbackHandler creates a fallback check function that handles typed method calls with conversion.
@@ -138,29 +159,101 @@ func callRepositoryMethod(ctx context.Context, r interface{}, methodName string,
 		return nil, "", false, nil
 	}
 
-	// Call method with standard parameters: (ctx, param, limit, cursor)
-	args := []reflect.Value{
-		reflect.ValueOf(ctx),
-		reflect.ValueOf(paramValue),
-		reflect.ValueOf(limit),
-		reflect.ValueOf(cursor),
-	}
-
-	results := method.Call(args)
-	if len(results) != 3 {
+	methodType := method.Type()
+	args, ok := buildRepositoryMethodArgs(methodType, ctx, paramValue, limit, cursor)
+	if !ok {
 		return nil, "", false, nil
 	}
 
-	// Extract items, cursor, error from results
-	items := results[0].Interface()
-	newCursor := results[1].Interface().(string)
-	errResult := results[2].Interface()
+	results := method.Call(args)
+	switch len(results) {
+	case 3:
+		// Standard signature: (items, cursor, error)
+		items := results[0].Interface()
+		newCursor, _ := results[1].Interface().(string)
+		errResult := results[2].Interface()
 
-	if errResult != nil {
-		return items, newCursor, true, errResult.(error)
+		if errResult != nil {
+			return items, newCursor, true, errResult.(error)
+		}
+
+		return items, newCursor, true, nil
+	case 2:
+		// Pagination-style signature: (*PaginatedResult[T], error) or (items, error)
+		itemsOrPage := results[0].Interface()
+		errResult := results[1].Interface()
+		if errResult != nil {
+			return itemsOrPage, "", true, errResult.(error)
+		}
+
+		items, newCursor, extracted := extractItemsAndCursor(itemsOrPage)
+		if extracted {
+			return items, newCursor, true, nil
+		}
+
+		// If it isn't a paginated result, treat it as the items and leave cursor empty.
+		return itemsOrPage, "", true, nil
+	default:
+		return nil, "", false, nil
+	}
+}
+
+func buildRepositoryMethodArgs(methodType reflect.Type, ctx context.Context, paramValue string, limit int, cursor string) ([]reflect.Value, bool) {
+	if methodType.NumIn() < 2 {
+		return nil, false
 	}
 
-	return items, newCursor, true, nil
+	// Supported patterns:
+	// - (ctx, param, limit, cursor)
+	// - (ctx, param, interfaces.PaginationOptions)
+	switch methodType.NumIn() {
+	case 4:
+		return []reflect.Value{
+			reflect.ValueOf(ctx),
+			reflect.ValueOf(paramValue),
+			reflect.ValueOf(limit),
+			reflect.ValueOf(cursor),
+		}, true
+	case 3:
+		optsType := reflect.TypeOf(interfaces.PaginationOptions{})
+		if methodType.In(2) == optsType {
+			return []reflect.Value{
+				reflect.ValueOf(ctx),
+				reflect.ValueOf(paramValue),
+				reflect.ValueOf(interfaces.PaginationOptions{Limit: limit, Cursor: cursor}),
+			}, true
+		}
+		if methodType.In(2) == reflect.PointerTo(optsType) {
+			return []reflect.Value{
+				reflect.ValueOf(ctx),
+				reflect.ValueOf(paramValue),
+				reflect.ValueOf(&interfaces.PaginationOptions{Limit: limit, Cursor: cursor}),
+			}, true
+		}
+		return nil, false
+	default:
+		return nil, false
+	}
+}
+
+func extractItemsAndCursor(result interface{}) (items interface{}, cursor string, ok bool) {
+	rv := reflect.ValueOf(result)
+	if !rv.IsValid() || rv.Kind() != reflect.Pointer || rv.IsNil() {
+		return nil, "", false
+	}
+
+	elem := rv.Elem()
+	if !elem.IsValid() || elem.Kind() != reflect.Struct {
+		return nil, "", false
+	}
+
+	itemsField := elem.FieldByName("Items")
+	cursorField := elem.FieldByName("NextCursor")
+	if !itemsField.IsValid() || !cursorField.IsValid() || cursorField.Kind() != reflect.String {
+		return nil, "", false
+	}
+
+	return itemsField.Interface(), cursorField.String(), true
 }
 
 // createReflectionBasedMethodCallsMap creates method calls using reflection to eliminate all duplication
@@ -299,237 +392,237 @@ func executeSearchMethodWithTypedFallback[T any](
 
 // Account returns the Account repository instance
 func (s *StorageAdapter) Account() interface{} {
-	return s.repos.Account()
+	return repoPtrToInterface(s.repos.Account())
 }
 
 // Actor returns the Actor repository instance
 func (s *StorageAdapter) Actor() interface{} {
-	return s.repos.Actor()
+	return repoPtrToInterface(s.repos.Actor())
 }
 
 // Object returns the Object repository instance
 func (s *StorageAdapter) Object() interface{} {
-	return s.repos.Object()
+	return repoPtrToInterface(s.repos.Object())
 }
 
 // Activity returns the Activity repository instance
 func (s *StorageAdapter) Activity() interface{} {
-	return s.repos.Activity()
+	return repoPtrToInterface(s.repos.Activity())
 }
 
 // Timeline returns the Timeline repository instance
 func (s *StorageAdapter) Timeline() interface{} {
-	return s.repos.Timeline()
+	return repoPtrToInterface(s.repos.Timeline())
 }
 
 // Notification returns the Notification repository instance
 func (s *StorageAdapter) Notification() interface{} {
-	return s.repos.Notification()
+	return repoPtrToInterface(s.repos.Notification())
 }
 
 // Like returns the Like repository instance
 func (s *StorageAdapter) Like() interface{} {
-	return s.repos.Like()
+	return repoPtrToInterface(s.repos.Like())
 }
 
 // Moderation returns the Moderation repository instance
 func (s *StorageAdapter) Moderation() interface{} {
-	return s.repos.Moderation()
+	return repoPtrToInterface(s.repos.Moderation())
 }
 
 // List returns the List repository instance
 func (s *StorageAdapter) List() interface{} {
-	return s.repos.List()
+	return repoPtrToInterface(s.repos.List())
 }
 
 // Media returns the Media repository instance
 func (s *StorageAdapter) Media() interface{} {
-	return s.repos.Media()
+	return repoPtrToInterface(s.repos.Media())
 }
 
 // MediaMetadata returns the MediaMetadata repository instance
 func (s *StorageAdapter) MediaMetadata() interface{} {
-	return s.repos.MediaMetadata()
+	return repoPtrToInterface(s.repos.MediaMetadata())
 }
 
 // Poll returns the Poll repository instance
 func (s *StorageAdapter) Poll() interface{} {
-	return s.repos.Poll()
+	return repoPtrToInterface(s.repos.Poll())
 }
 
 // PushSubscription returns the PushSubscription repository instance
 func (s *StorageAdapter) PushSubscription() interface{} {
-	return s.repos.PushSubscription()
+	return repoPtrToInterface(s.repos.PushSubscription())
 }
 
 // Hashtag returns the Hashtag repository instance
 func (s *StorageAdapter) Hashtag() interface{} {
-	return s.repos.Hashtag()
+	return repoPtrToInterface(s.repos.Hashtag())
 }
 
 // ScheduledStatus returns the ScheduledStatus repository instance
 func (s *StorageAdapter) ScheduledStatus() interface{} {
-	return s.repos.ScheduledStatus()
+	return repoPtrToInterface(s.repos.ScheduledStatus())
 }
 
 // Announcement returns the Announcement repository instance
 func (s *StorageAdapter) Announcement() interface{} {
-	return s.repos.Announcement()
+	return repoPtrToInterface(s.repos.Announcement())
 }
 
 // DomainBlock returns the DomainBlock repository instance
 func (s *StorageAdapter) DomainBlock() interface{} {
-	return s.repos.DomainBlock()
+	return repoPtrToInterface(s.repos.DomainBlock())
 }
 
 // Relationship returns the Relationship repository instance
 func (s *StorageAdapter) Relationship() interface{} {
-	return s.repos.Relationship()
+	return repoPtrToInterface(s.repos.Relationship())
 }
 
 // Instance returns the Instance repository instance
 func (s *StorageAdapter) Instance() interface{} {
-	return s.repos.Instance()
+	return repoPtrToInterface(s.repos.Instance())
 }
 
 // Federation returns the Federation repository instance
 func (s *StorageAdapter) Federation() interface{} {
-	return s.repos.Federation()
+	return repoPtrToInterface(s.repos.Federation())
 }
 
 // Recovery returns the Recovery repository instance
 func (s *StorageAdapter) Recovery() interface{} {
-	return s.repos.Recovery()
+	return repoPtrToInterface(s.repos.Recovery())
 }
 
 // Analytics returns the Analytics repository instance
 func (s *StorageAdapter) Analytics() interface{} {
-	return s.repos.Analytics()
+	return repoPtrToInterface(s.repos.Analytics())
 }
 
 // Social returns the Social repository instance
 func (s *StorageAdapter) Social() interface{} {
-	return s.repos.Social()
+	return repoPtrToInterface(s.repos.Social())
 }
 
 // User returns the User repository instance
 func (s *StorageAdapter) User() interface{} {
-	return s.repos.User()
+	return repoPtrToInterface(s.repos.User())
 }
 
 // Status returns the Status repository instance
 func (s *StorageAdapter) Status() interface{} {
-	return s.repos.Status()
+	return repoPtrToInterface(s.repos.Status())
 }
 
 // Cost returns the Cost repository instance
 func (s *StorageAdapter) Cost() interface{} {
-	return s.repos.Cost()
+	return repoPtrToInterface(s.repos.Cost())
 }
 
 // WebSocketCost returns the WebSocketCost repository instance
 func (s *StorageAdapter) WebSocketCost() interface{} {
-	return s.repos.WebSocketCost()
+	return repoPtrToInterface(s.repos.WebSocketCost())
 }
 
 // Trust returns the Trust repository instance
 func (s *StorageAdapter) Trust() interface{} {
-	return s.repos.Trust()
+	return repoPtrToInterface(s.repos.Trust())
 }
 
 // Search returns the Search repository instance
 func (s *StorageAdapter) Search() interface{} {
-	return s.repos.Search()
+	return repoPtrToInterface(s.repos.Search())
 }
 
 // Relay returns the Relay repository instance
 func (s *StorageAdapter) Relay() interface{} {
-	return s.repos.Relay()
+	return repoPtrToInterface(s.repos.Relay())
 }
 
 // CommunityNote returns the CommunityNote repository instance
 func (s *StorageAdapter) CommunityNote() interface{} {
-	return s.repos.CommunityNote()
+	return repoPtrToInterface(s.repos.CommunityNote())
 }
 
 // Emoji returns the Emoji repository instance
 func (s *StorageAdapter) Emoji() interface{} {
-	return s.repos.Emoji()
+	return repoPtrToInterface(s.repos.Emoji())
 }
 
 // RateLimit returns the RateLimit repository instance
 func (s *StorageAdapter) RateLimit() interface{} {
-	return s.repos.RateLimit()
+	return repoPtrToInterface(s.repos.RateLimit())
 }
 
 // Conversation returns the Conversation repository instance
 func (s *StorageAdapter) Conversation() interface{} {
-	return s.repos.Conversation()
+	return repoPtrToInterface(s.repos.Conversation())
 }
 
 // Marker returns the Marker repository instance
 func (s *StorageAdapter) Marker() interface{} {
-	return s.repos.Marker()
+	return repoPtrToInterface(s.repos.Marker())
 }
 
 // FeaturedTag returns the FeaturedTag repository instance
 func (s *StorageAdapter) FeaturedTag() interface{} {
-	return s.repos.FeaturedTag()
+	return repoPtrToInterface(s.repos.FeaturedTag())
 }
 
 // AI returns the AI repository instance
 func (s *StorageAdapter) AI() interface{} {
-	return s.repos.AI()
+	return repoPtrToInterface(s.repos.AI())
 }
 
 // Export returns the Export repository instance
 func (s *StorageAdapter) Export() interface{} {
-	return s.repos.Export()
+	return repoPtrToInterface(s.repos.Export())
 }
 
 // Import returns the Import repository instance
 func (s *StorageAdapter) Import() interface{} {
-	return s.repos.Import()
+	return repoPtrToInterface(s.repos.Import())
 }
 
 // DLQ returns the DLQ repository instance
 func (s *StorageAdapter) DLQ() interface{} {
-	return s.repos.DLQ()
+	return repoPtrToInterface(s.repos.DLQ())
 }
 
 // MetricRecord returns the MetricRecord repository instance
 func (s *StorageAdapter) MetricRecord() interface{} {
-	return s.repos.MetricRecord()
+	return repoPtrToInterface(s.repos.MetricRecord())
 }
 
 // CloudWatchMetrics returns the CloudWatchMetrics repository instance
 func (s *StorageAdapter) CloudWatchMetrics() interface{} {
-	return s.repos.CloudWatchMetrics()
+	return repoPtrToInterface(s.repos.CloudWatchMetrics())
 }
 
 // StreamingCloudWatch returns the StreamingCloudWatch repository instance
 func (s *StorageAdapter) StreamingCloudWatch() interface{} {
-	return s.repos.StreamingCloudWatch()
+	return repoPtrToInterface(s.repos.StreamingCloudWatch())
 }
 
 // Audit returns the Audit repository instance
 func (s *StorageAdapter) Audit() interface{} {
-	return s.repos.Audit()
+	return repoPtrToInterface(s.repos.Audit())
 }
 
 // OAuth returns the OAuth repository instance
 func (s *StorageAdapter) OAuth() interface{} {
-	return s.repos.OAuth()
+	return repoPtrToInterface(s.repos.OAuth())
 }
 
 // DNSCache returns the DNSCache repository instance
 func (s *StorageAdapter) DNSCache() interface{} {
-	return s.repos.DNSCache()
+	return repoPtrToInterface(s.repos.DNSCache())
 }
 
 // Filter returns the Filter repository instance
 func (s *StorageAdapter) Filter() interface{} {
-	return s.repos.Filter()
+	return repoPtrToInterface(s.repos.Filter())
 }
 
 // GetDB returns the database connection instance.
@@ -549,17 +642,17 @@ func (s *StorageAdapter) GetLogger() interface{} {
 
 // MediaAnalytics returns the media analytics repository
 func (s *StorageAdapter) MediaAnalytics() interface{} {
-	return s.repos.MediaAnalytics()
+	return repoPtrToInterface(s.repos.MediaAnalytics())
 }
 
 // MediaPopularity returns the media popularity repository
 func (s *StorageAdapter) MediaPopularity() interface{} {
-	return s.repos.MediaPopularity()
+	return repoPtrToInterface(s.repos.MediaPopularity())
 }
 
 // MediaSession returns the media session repository
 func (s *StorageAdapter) MediaSession() interface{} {
-	return s.repos.MediaSession()
+	return repoPtrToInterface(s.repos.MediaSession())
 }
 
 // =======================================
@@ -725,6 +818,9 @@ func (s *StorageAdapter) GetUserByID(ctx context.Context, userID string) (interf
 	}); ok {
 		return basicRepo.GetUser(ctx, userID)
 	}
+	if repo, ok := userRepo.(*repositories.UserRepository); ok {
+		return repo.GetUser(ctx, userID)
+	}
 	return nil, fmt.Errorf("user repository does not support user ID lookups")
 }
 
@@ -749,6 +845,13 @@ func (s *StorageAdapter) GetUserPreferences(ctx context.Context, username string
 		GetPreferences(ctx context.Context, username string) (map[string]any, error)
 	}); ok {
 		return prefMapRepo.GetPreferences(ctx, username)
+	}
+	if repo, ok := userRepo.(*repositories.UserRepository); ok {
+		prefs, err := repo.GetAllPreferences(ctx, username)
+		if err != nil {
+			return nil, err
+		}
+		return prefs, nil
 	}
 	// Return empty preferences as fallback
 	return map[string]interface{}{}, nil
@@ -1456,7 +1559,10 @@ func (s *StorageAdapter) GetUserTimeline(ctx context.Context, username string, l
 		}
 		return result, cursor, nil
 	}
-	return []interface{}{}, "", nil
+	// Fall back to the same implementation as GetTimeline (supports newer repo pagination signatures).
+	return executeGetMethodWithTypedFallback[models.Timeline](
+		ctx, s.Timeline(), "GetTimeline", username, limit, cursor, nil, nil,
+	)
 }
 
 // AddToTimeline adds an entry to timeline
@@ -1654,6 +1760,20 @@ func (s *StorageAdapter) GetTrendingHashtags(ctx context.Context, limit int) ([]
 	}); ok {
 		return trendingRepo.GetTrendingHashtags(ctx, limit)
 	}
+	analyticsRepo := s.Analytics()
+	if trendingRepo, ok := analyticsRepo.(interface {
+		GetTrendingHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error)
+	}); ok {
+		hashtags, err := trendingRepo.GetTrendingHashtags(ctx, time.Now().Add(-24*time.Hour), limit)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]interface{}, len(hashtags))
+		for i, hashtag := range hashtags {
+			result[i] = hashtag
+		}
+		return result, nil
+	}
 	// Try hashtag repository
 	hashtagRepo := s.Hashtag()
 	if trendHashtagRepo, ok := hashtagRepo.(interface {
@@ -1679,6 +1799,20 @@ func (s *StorageAdapter) GetTrendingStatuses(ctx context.Context, limit int, cur
 		GetTrendingStatuses(ctx context.Context, limit int, cursor string) ([]interface{}, string, error)
 	}); ok {
 		return trendingRepo.GetTrendingStatuses(ctx, limit, cursor)
+	}
+	analyticsRepo := s.Analytics()
+	if trendingRepo, ok := analyticsRepo.(interface {
+		GetTrendingStatuses(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error)
+	}); ok {
+		statuses, err := trendingRepo.GetTrendingStatuses(ctx, time.Now().Add(-24*time.Hour), limit)
+		if err != nil {
+			return nil, "", err
+		}
+		result := make([]interface{}, len(statuses))
+		for i, status := range statuses {
+			result[i] = status
+		}
+		return result, "", nil
 	}
 	// Try status repository
 	statusRepo := s.Status()
@@ -2381,6 +2515,14 @@ func (s *StorageAdapter) SetDNSCache(ctx context.Context, hostname string, recor
 	}); ok {
 		return setRepo.SetDNSCache(ctx, hostname, record)
 	}
+	if repo, ok := dnsRepo.(*repositories.DNSCacheRepository); ok {
+		if entry, ok := record.(*storage.DNSCacheEntry); ok && entry != nil {
+			if entry.Hostname == "" {
+				entry.Hostname = hostname
+			}
+			return repo.SetDNSCache(ctx, entry)
+		}
+	}
 	return fmt.Errorf("DNS cache repository does not support cache setting")
 }
 
@@ -2392,6 +2534,9 @@ func (s *StorageAdapter) GetDNSCache(ctx context.Context, hostname string) (inte
 	}); ok {
 		return getRepo.GetDNSCache(ctx, hostname)
 	}
+	if repo, ok := dnsRepo.(*repositories.DNSCacheRepository); ok {
+		return repo.GetDNSCache(ctx, hostname)
+	}
 	return nil, fmt.Errorf("DNS cache repository does not support cache retrieval")
 }
 
@@ -2402,6 +2547,9 @@ func (s *StorageAdapter) DeleteDNSCache(ctx context.Context, hostname string) er
 		DeleteDNSCache(ctx context.Context, hostname string) error
 	}); ok {
 		return deleteRepo.DeleteDNSCache(ctx, hostname)
+	}
+	if repo, ok := dnsRepo.(*repositories.DNSCacheRepository); ok {
+		return repo.InvalidateDNSCache(ctx, hostname)
 	}
 	return fmt.Errorf("DNS cache repository does not support cache deletion")
 }
@@ -2712,6 +2860,11 @@ func (s *StorageAdapter) CreateScheduledStatus(ctx context.Context, scheduled in
 	}); ok {
 		return createRepo.CreateScheduledStatus(ctx, scheduled)
 	}
+	if repo, ok := schedRepo.(*repositories.ScheduledStatusRepository); ok {
+		if scheduledStatus, ok := scheduled.(*storage.ScheduledStatus); ok && scheduledStatus != nil {
+			return repo.CreateScheduledStatus(ctx, scheduledStatus)
+		}
+	}
 	return fmt.Errorf("scheduled status repository does not support creation")
 }
 
@@ -2722,6 +2875,9 @@ func (s *StorageAdapter) GetScheduledStatus(ctx context.Context, id string) (int
 		GetScheduledStatus(ctx context.Context, id string) (interface{}, error)
 	}); ok {
 		return getRepo.GetScheduledStatus(ctx, id)
+	}
+	if repo, ok := schedRepo.(*repositories.ScheduledStatusRepository); ok {
+		return repo.GetScheduledStatus(ctx, id)
 	}
 	return nil, fmt.Errorf("scheduled status repository does not support retrieval")
 }
@@ -2734,6 +2890,17 @@ func (s *StorageAdapter) GetScheduledStatuses(ctx context.Context, username stri
 	}); ok {
 		return getListRepo.GetScheduledStatuses(ctx, username, limit, cursor)
 	}
+	if repo, ok := schedRepo.(*repositories.ScheduledStatusRepository); ok {
+		statuses, nextCursor, err := repo.GetScheduledStatuses(ctx, username, limit, cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		result := make([]interface{}, len(statuses))
+		for i, scheduled := range statuses {
+			result[i] = scheduled
+		}
+		return result, nextCursor, nil
+	}
 	return []interface{}{}, "", nil
 }
 
@@ -2744,6 +2911,11 @@ func (s *StorageAdapter) UpdateScheduledStatus(ctx context.Context, scheduled in
 		UpdateScheduledStatus(ctx context.Context, scheduled interface{}) error
 	}); ok {
 		return updateRepo.UpdateScheduledStatus(ctx, scheduled)
+	}
+	if repo, ok := schedRepo.(*repositories.ScheduledStatusRepository); ok {
+		if scheduledStatus, ok := scheduled.(*storage.ScheduledStatus); ok && scheduledStatus != nil {
+			return repo.UpdateScheduledStatus(ctx, scheduledStatus)
+		}
 	}
 	return fmt.Errorf("scheduled status repository does not support updates")
 }
@@ -2766,6 +2938,17 @@ func (s *StorageAdapter) GetDueScheduledStatuses(ctx context.Context, before tim
 		GetDueScheduledStatuses(ctx context.Context, before time.Time, limit int) ([]interface{}, error)
 	}); ok {
 		return dueRepo.GetDueScheduledStatuses(ctx, before, limit)
+	}
+	if repo, ok := schedRepo.(*repositories.ScheduledStatusRepository); ok {
+		statuses, err := repo.GetDueScheduledStatuses(ctx, before, limit)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]interface{}, len(statuses))
+		for i, scheduled := range statuses {
+			result[i] = scheduled
+		}
+		return result, nil
 	}
 	return []interface{}{}, nil
 }
@@ -2838,6 +3021,11 @@ func (s *StorageAdapter) CreateList(ctx context.Context, list interface{}) error
 	}); ok {
 		return createRepo.CreateList(ctx, list)
 	}
+	if repo, ok := listRepo.(*repositories.ListRepository); ok {
+		if storageList, ok := list.(*models.List); ok && storageList != nil {
+			return repo.CreateList(ctx, storageList)
+		}
+	}
 	return fmt.Errorf("list repository does not support creation")
 }
 
@@ -2849,6 +3037,9 @@ func (s *StorageAdapter) GetList(ctx context.Context, listID string) (interface{
 	}); ok {
 		return getRepo.GetList(ctx, listID)
 	}
+	if repo, ok := listRepo.(*repositories.ListRepository); ok {
+		return repo.GetList(ctx, listID)
+	}
 	return nil, fmt.Errorf("list repository does not support retrieval")
 }
 
@@ -2859,6 +3050,11 @@ func (s *StorageAdapter) UpdateList(ctx context.Context, list interface{}) error
 		UpdateList(ctx context.Context, list interface{}) error
 	}); ok {
 		return updateRepo.UpdateList(ctx, list)
+	}
+	if repo, ok := listRepo.(*repositories.ListRepository); ok {
+		if storageList, ok := list.(*models.List); ok && storageList != nil {
+			return repo.UpdateList(ctx, storageList)
+		}
 	}
 	return fmt.Errorf("list repository does not support updates")
 }
@@ -2881,6 +3077,17 @@ func (s *StorageAdapter) GetListsByUser(ctx context.Context, username string, li
 		GetListsByUser(ctx context.Context, username string, limit int, cursor string) ([]interface{}, string, error)
 	}); ok {
 		return getUserRepo.GetListsByUser(ctx, username, limit, cursor)
+	}
+	if repo, ok := listRepo.(*repositories.ListRepository); ok {
+		lists, nextCursor, err := repo.GetListsForUserPaginated(ctx, username, limit, cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		result := make([]interface{}, len(lists))
+		for i, l := range lists {
+			result[i] = l
+		}
+		return result, nextCursor, nil
 	}
 	return []interface{}{}, "", nil
 }
@@ -2914,6 +3121,20 @@ func (s *StorageAdapter) GetListMembers(ctx context.Context, listID string, limi
 		GetListMembers(ctx context.Context, listID string, limit int, cursor string) ([]interface{}, string, error)
 	}); ok {
 		return getMembersRepo.GetListMembers(ctx, listID, limit, cursor)
+	}
+	if repo, ok := listRepo.(*repositories.ListRepository); ok {
+		page, err := repo.GetListMembers(ctx, listID, interfaces.PaginationOptions{Limit: limit, Cursor: cursor})
+		if err != nil {
+			return nil, "", err
+		}
+		if page == nil {
+			return []interface{}{}, "", nil
+		}
+		result := make([]interface{}, len(page.Items))
+		for i, account := range page.Items {
+			result[i] = account
+		}
+		return result, page.NextCursor, nil
 	}
 	return []interface{}{}, "", nil
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/equaltoai/lesser/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -148,6 +149,10 @@ func InternalServerError(err error) *events.APIGatewayV2HTTPResponse {
 
 // ErrorFromType returns an appropriate error response based on error type
 func ErrorFromType(err error) *events.APIGatewayV2HTTPResponse {
+	if appErr, ok := errors.AsAppError(err); ok {
+		return ErrorResponseWithCode(appErr.HTTPStatusCode, string(appErr.Code), err)
+	}
+
 	switch {
 	case IsNotFound(err):
 		return NotFound(err)

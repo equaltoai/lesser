@@ -227,7 +227,7 @@ func (vm *VouchManager) getActorReputation(ctx context.Context, actorID string) 
 }
 
 // ImportVouch imports a vouch from another instance
-func (vm *VouchManager) ImportVouch(ctx context.Context, vouch *Vouch, verifier *Verifier) error {
+func (vm *VouchManager) ImportVouch(ctx context.Context, vouch *Vouch, verifier vouchSignatureVerifier) error {
 	// Validate vouch
 	if vouch == nil {
 		return fmt.Errorf("vouch cannot be nil")
@@ -301,7 +301,7 @@ func (vm *VouchManager) ImportVouch(ctx context.Context, vouch *Vouch, verifier 
 }
 
 // ImportVouches imports multiple vouches in batch
-func (vm *VouchManager) ImportVouches(ctx context.Context, vouches []Vouch, verifier *Verifier) (int, error) {
+func (vm *VouchManager) ImportVouches(ctx context.Context, vouches []Vouch, verifier vouchSignatureVerifier) (int, error) {
 	imported := 0
 
 	for _, vouch := range vouches {

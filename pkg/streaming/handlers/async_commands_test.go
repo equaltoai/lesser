@@ -7,7 +7,6 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/services/bulk"
 	"github.com/equaltoai/lesser/pkg/services/importexport"
-	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/stretchr/testify/assert"
@@ -169,15 +168,7 @@ func (m *MockImportExportService) ListImports(ctx context.Context, query *import
 	return args.Get(0).(*importexport.ImportListResult), args.Error(1)
 }
 
-type MockRelationshipsService struct {
-	mock.Mock
-}
-
-// Add minimal mock implementation for relationships.Service
-// We only need to provide the interface that AsyncCommandHandler might use
-func createMockRelationshipsService() *relationships.Service {
-	// For test purposes, we'll create a nil service since it's not directly used in the constructor
-	// The real service would need proper repositories, but for these tests we just need to pass something
+func createMockRelationshipsService() RelationshipsService {
 	return nil
 }
 

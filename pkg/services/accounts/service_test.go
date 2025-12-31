@@ -461,7 +461,6 @@ func (suite *AccountsServiceTestSuite) createTestAccount(username string) *stora
 	return &storage.Account{
 		User: &storage.User{
 			Username:    username,
-			Email:       username + "@example.com",
 			DisplayName: "Test " + username,
 			CreatedAt:   now,
 			UpdatedAt:   now,
@@ -736,7 +735,7 @@ func (suite *AccountsServiceTestSuite) TestGetAccount_ViewOwnAccount() {
 	suite.NoError(err)
 	suite.NotNil(result)
 	suite.Equal("testuser", result.User.Username)
-	suite.Equal("testuser@example.com", result.User.Email) // Email visible to self
+	suite.Empty(result.User.Email)
 }
 
 func (suite *AccountsServiceTestSuite) TestGetAccount_SuspendedAccount() {

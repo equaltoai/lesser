@@ -1,0 +1,297 @@
+package accounts
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
+)
+
+type federationRecorder struct {
+	calls int
+	err   error
+}
+
+func (f *federationRecorder) QueueActivity(ctx context.Context, activity *activitypub.Activity) error {
+	_ = ctx
+	_ = activity
+	f.calls++
+	return f.err
+}
+
+func TestService_normalizeUsername(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{name: "empty", input: "   ", expected: ""},
+		{name: "plain username", input: " alice ", expected: "alice"},
+		{name: "acct prefix", input: "acct:alice", expected: "alice"},
+		{name: "leading at", input: "@alice", expected: "alice"},
+		{name: "acct + leading at + local domain", input: "acct:@alice@example.com", expected: "alice"},
+		{name: "local handle", input: "alice@example.com", expected: "alice"},
+		{name: "remote handle", input: "alice@remote.social", expected: "alice@remote.social"},
+		{name: "users url", input: "https://example.com/users/alice", expected: "alice"},
+		{name: "at url", input: "https://example.com/@alice", expected: "alice"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, svc.normalizeUsername(tt.input))
+		})
+	}
+}
+
+func TestService_normalizeBaseURL(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+	assert.Equal(t, "", svc.normalizeBaseURL(""))
+	assert.Equal(t, "https://example.com", svc.normalizeBaseURL("example.com/"))
+	assert.Equal(t, "https://example.com", svc.normalizeBaseURL("  example.com/// "))
+	assert.Equal(t, "http://example.com", svc.normalizeBaseURL("http://example.com///"))
+	assert.Equal(t, "https://example.com", svc.normalizeBaseURL("https://example.com/"))
+}
+
+func TestService_validateRegisterAccountCommand_DisallowsEmail(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+	err := svc.validateRegisterAccountCommand(context.Background(), &RegisterAccountCommand{
+		Username:   "alice",
+		Email:      "somevalue",
+		Agreement:  true,
+		InviteCode: "",
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "email is not supported")
+}
+
+func TestService_validateRegisterAccountCommand_RequiresAgreement(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+	err := svc.validateRegisterAccountCommand(context.Background(), &RegisterAccountCommand{
+		Username:  "alice",
+		Email:     "",
+		Agreement: false,
+	})
+	assert.ErrorIs(t, err, ErrMustAgreeToTerms)
+}
+
+func TestService_initialPostingVisibility(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+	assert.Equal(t, "private", svc.initialPostingVisibility("PRIVATE"))
+	assert.Equal(t, "public", svc.initialPostingVisibility(""))
+}
+
+func TestService_validateUpdatePreferencesCommand_InvalidValues(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+	err := svc.validateUpdatePreferencesCommand(context.Background(), &UpdatePreferencesCommand{
+		Username:                 "alice",
+		UpdaterID:                "alice",
+		DefaultPostingVisibility: "invalid",
+	})
+	assert.Error(t, err)
+
+	err = svc.validateUpdatePreferencesCommand(context.Background(), &UpdatePreferencesCommand{
+		Username:   "alice",
+		UpdaterID:  "alice",
+		ExpandMedia: "nope",
+	})
+	assert.ErrorIs(t, err, ErrInvalidExpandMediaSetting)
+
+	err = svc.validateUpdatePreferencesCommand(context.Background(), &UpdatePreferencesCommand{
+		Username:                "alice",
+		UpdaterID:               "alice",
+		PreferredTimelineOrder:  "nope",
+	})
+	assert.ErrorIs(t, err, ErrInvalidTimelineOrder)
+}
+
+func TestService_updateAccountProfile_InitializesActorAndSetsFields(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+	account := &storage.Account{
+		User: &storage.User{
+			Username: "alice",
+		},
+		Actor: nil,
+	}
+
+	cmd := &UpdateProfileCommand{
+		Username:    "alice",
+		UpdaterID:   "alice",
+		DisplayName: "Alice",
+		Bio:         "bio",
+		Avatar:      "https://cdn.example.com/a.png",
+		Header:      "https://cdn.example.com/h.png",
+		Locked:      true,
+		Bot:         true,
+		Fields: []ProfileField{
+			{Name: "Website", Value: "https://example.com"},
+		},
+		Discoverable: true,
+	}
+
+	err := svc.updateAccountProfile(account, cmd)
+	assert.NoError(t, err)
+	assert.Equal(t, "Alice", account.User.DisplayName)
+	assert.Equal(t, "bio", account.User.Note)
+	assert.Equal(t, "https://cdn.example.com/a.png", account.User.Avatar)
+	assert.Equal(t, "https://cdn.example.com/h.png", account.User.Header)
+	assert.True(t, account.User.Locked)
+	assert.True(t, account.User.Discoverable)
+
+	if assert.NotNil(t, account.Actor) {
+		assert.Equal(t, "Service", account.Actor.Type) // Bot account
+		assert.Equal(t, "Alice", account.Actor.Name)
+		assert.Equal(t, "bio", account.Actor.Summary)
+		assert.True(t, account.Actor.ManuallyApprovesFollowers)
+		assert.True(t, account.Actor.Discoverable)
+		if assert.NotNil(t, account.Actor.Icon) {
+			assert.Equal(t, "https://cdn.example.com/a.png", account.Actor.Icon.URL)
+		}
+		if assert.NotNil(t, account.Actor.Image) {
+			assert.Equal(t, "https://cdn.example.com/h.png", account.Actor.Image.URL)
+		}
+		assert.Len(t, account.Actor.Attachment, 1)
+	}
+}
+
+func TestService_sanitizeAccountForViewer(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+	account := &storage.Account{
+		User: &storage.User{
+			Username:     "alice",
+			Email:        "somevalue",
+			PasswordHash: "hash",
+			Silenced:     true,
+		},
+		Actor: &activitypub.Actor{
+			Summary: "original",
+		},
+	}
+
+	// Other viewer: hide internal fields and redact silenced content.
+	sanitized := svc.sanitizeAccountForViewer(account, "bob")
+	assert.NotNil(t, sanitized)
+	assert.Equal(t, "alice", sanitized.User.Username)
+	assert.Empty(t, sanitized.User.Email)
+	assert.Empty(t, sanitized.User.PasswordHash)
+	assert.Equal(t, "[Content hidden]", sanitized.Actor.Summary)
+
+	// Owner viewer: no redaction of internal fields.
+	ownerView := svc.sanitizeAccountForViewer(account, "alice")
+	assert.NotNil(t, ownerView)
+	assert.Equal(t, "somevalue", ownerView.User.Email)
+	assert.Equal(t, "hash", ownerView.User.PasswordHash)
+}
+
+func TestService_emitAccountUpdatedEvents_PublishesToUserAndFollowers(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+	ctx := context.Background()
+
+	account := &storage.Account{
+		User: &storage.User{
+			Username: "alice",
+		},
+		Actor: &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice",
+				Type: "Person",
+			},
+		},
+	}
+
+	events := svc.emitAccountUpdatedEvents(ctx, account)
+	assert.NotEmpty(t, events)
+
+	var sawUserStream bool
+	var sawFollowersStream bool
+	for _, event := range events {
+		if event == nil {
+			continue
+		}
+		if event.Stream == "user:alice" {
+			sawUserStream = true
+		}
+		if event.Stream == "followers:alice" {
+			sawFollowersStream = true
+		}
+	}
+	assert.True(t, sawUserStream)
+	assert.True(t, sawFollowersStream)
+}
+
+func TestService_emitPreferencesUpdatedEvents_PublishesToUserOnly(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+	ctx := context.Background()
+
+	events := svc.emitPreferencesUpdatedEvents(ctx, "alice", map[string]interface{}{"language": "en"})
+	if assert.Len(t, events, 1) {
+		assert.Equal(t, "user:alice", events[0].Stream)
+	}
+}
+
+func TestService_emitAccountCreatedEvents_SkipsWhenPublisherNil(t *testing.T) {
+	svc := NewService(nil, nil, nil, nil, nil, zap.NewNop(), "example.com")
+	events := svc.emitAccountCreatedEvents(context.Background(), &storage.Account{User: &storage.User{Username: "alice"}})
+	assert.Empty(t, events)
+}
+
+func TestService_queueFederationUpdate(t *testing.T) {
+	ctx := context.Background()
+	account := &storage.Account{
+		User: &storage.User{
+			Username: "alice",
+		},
+		Actor: &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice",
+				Type: "Person",
+			},
+		},
+	}
+
+	t.Run("no federation configured", func(t *testing.T) {
+		svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+		assert.NotPanics(t, func() {
+			svc.queueFederationUpdate(ctx, account)
+		})
+	})
+
+	t.Run("queues update activity", func(t *testing.T) {
+		fed := &federationRecorder{}
+		svc := NewService(nil, streaming.NewMockPublisher(), fed, nil, nil, zap.NewNop(), "example.com")
+		svc.queueFederationUpdate(ctx, account)
+		assert.Equal(t, 1, fed.calls)
+	})
+
+	t.Run("queue error is swallowed", func(t *testing.T) {
+		fed := &federationRecorder{err: errors.New("boom")}
+		svc := NewService(nil, streaming.NewMockPublisher(), fed, nil, nil, zap.NewNop(), "example.com")
+		assert.NotPanics(t, func() {
+			svc.queueFederationUpdate(ctx, account)
+		})
+		assert.Equal(t, 1, fed.calls)
+	})
+}
+
+func TestService_isValidPostingVisibility(t *testing.T) {
+	assert.True(t, isValidPostingVisibility(models.VisibilityPublic))
+	assert.True(t, isValidPostingVisibility(models.VisibilityUnlisted))
+	assert.True(t, isValidPostingVisibility(models.VisibilityPrivate))
+	assert.True(t, isValidPostingVisibility(models.VisibilityDirect))
+	assert.False(t, isValidPostingVisibility("nope"))
+}
+

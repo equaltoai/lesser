@@ -243,14 +243,14 @@ func ParseFederationLimit(limitStr string) (int, error) {
 
 // SanitizeInput performs basic input sanitization
 func SanitizeInput(input string) string {
-	// Trim whitespace
-	cleaned := strings.TrimSpace(input)
-
 	// Remove null bytes
-	cleaned = strings.ReplaceAll(cleaned, "\x00", "")
+	cleaned := strings.ReplaceAll(input, "\x00", "")
 
 	// Remove carriage returns (keep newlines)
 	cleaned = strings.ReplaceAll(cleaned, "\r", "")
+
+	// Trim whitespace (after removals, in case control characters prevented trimming)
+	cleaned = strings.TrimSpace(cleaned)
 
 	return cleaned
 }
