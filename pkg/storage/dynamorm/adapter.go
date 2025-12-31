@@ -160,7 +160,7 @@ func callRepositoryMethod(ctx context.Context, r interface{}, methodName string,
 	}
 
 	methodType := method.Type()
-	args, ok := buildRepositoryMethodArgs(methodType, ctx, paramValue, limit, cursor)
+	args, ok := buildRepositoryMethodArgs(ctx, methodType, paramValue, limit, cursor)
 	if !ok {
 		return nil, "", false, nil
 	}
@@ -198,7 +198,7 @@ func callRepositoryMethod(ctx context.Context, r interface{}, methodName string,
 	}
 }
 
-func buildRepositoryMethodArgs(methodType reflect.Type, ctx context.Context, paramValue string, limit int, cursor string) ([]reflect.Value, bool) {
+func buildRepositoryMethodArgs(ctx context.Context, methodType reflect.Type, paramValue string, limit int, cursor string) ([]reflect.Value, bool) {
 	if methodType.NumIn() < 2 {
 		return nil, false
 	}

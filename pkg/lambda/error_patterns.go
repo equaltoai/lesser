@@ -192,7 +192,7 @@ func (ep *ErrorPattern) convertCommonAppError(err common.AppError) *errors.AppEr
 
 	appErr := errors.NewAppError(code, category, err.UserMessage)
 	if err.InternalError != nil {
-		appErr.WithInternalError(err.InternalError)
+		appErr = appErr.WithInternalError(err.InternalError)
 	}
 	return appErr
 }

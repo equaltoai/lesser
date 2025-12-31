@@ -741,7 +741,7 @@ func (h *Handler) extractInReplyTo(obj interface{}) string {
 		return o.InReplyTo
 	case *storageMods.Status:
 		if o.Note != nil && o.Note.Note != nil {
-			return o.Note.Note.InReplyTo
+			return o.Note.InReplyTo
 		}
 		if o.InReplyToID != "" {
 			return fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), o.InReplyToID)

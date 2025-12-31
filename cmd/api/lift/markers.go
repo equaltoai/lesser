@@ -248,9 +248,7 @@ func (h *Handler) saveMarkers(ctx *lift.Context, username string, req map[string
 		Username: username,
 	})
 	currentMarkers := map[string]*storage.Marker{}
-	if err != nil || result == nil || result.Markers == nil {
-		currentMarkers = map[string]*storage.Marker{}
-	} else {
+	if err == nil && result != nil && result.Markers != nil {
 		currentMarkers = result.Markers
 	}
 

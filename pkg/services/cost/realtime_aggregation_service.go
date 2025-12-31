@@ -432,35 +432,7 @@ func (s *RealtimeAggregationService) unmarshalDynamoDBRecord(record events.Dynam
 	return dynamostream.UnmarshalItem(record, target)
 }
 
-// convertDynamoDBAttribute converts DynamoDB attribute to Go value
-func (s *RealtimeAggregationService) convertDynamoDBAttribute(attr events.DynamoDBAttributeValue) interface{} {
-	switch attr.DataType() {
-	case events.DataTypeString:
-		return attr.String()
-	case events.DataTypeNumber:
-		return attr.Number()
-	case events.DataTypeBoolean:
-		return attr.Boolean()
-	case events.DataTypeList:
-		list := attr.List()
-		result := make([]interface{}, len(list))
-		for i, item := range list {
-			result[i] = s.convertDynamoDBAttribute(item)
-		}
-		return result
-	case events.DataTypeMap:
-		mapData := attr.Map()
-		result := make(map[string]interface{})
-		for key, value := range mapData {
-			result[key] = s.convertDynamoDBAttribute(value)
-		}
-		return result
-	case events.DataTypeNull:
-		return nil
-	default:
-		return attr.String() // Fallback to string
-	}
-}
+
 
 // updateSummaryCache updates the in-memory cost summary cache
 func (s *RealtimeAggregationService) updateSummaryCache(cacheKey string, costDollars float64, operationType string) {

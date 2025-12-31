@@ -1233,7 +1233,7 @@ func (r *SearchRepository) CreateSearchSuggestion(ctx context.Context, suggestio
 
 // UpdateSearchSuggestion updates an existing search suggestion
 func (r *SearchRepository) UpdateSearchSuggestion(ctx context.Context, suggestionType, term string, updates map[string]interface{}) error {
-	if updates == nil || len(updates) == 0 {
+	if len(updates) == 0 {
 		return nil
 	}
 

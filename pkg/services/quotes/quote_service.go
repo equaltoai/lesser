@@ -348,9 +348,9 @@ func (qs *QuoteService) UpdateQuotePermissions(ctx context.Context, permissions 
 	// Try to get existing permissions first
 	existing, err := qs.storage.Quote().GetQuotePermissions(ctx, permissions.Username)
 	if err != nil {
-		if !(stdErrors.Is(err, storage.ErrNotFound) || apperrors.HasCode(err, apperrors.CodeNotFound)) {
-			qs.logger.Error("failed to check existing permissions", zap.String("username", permissions.Username), zap.Error(err))
-			return ErrCheckExistingPermissions(err)
+		// If error is something other than "not found", return it
+		if !stdErrors.Is(err, storage.ErrNotFound) && !apperrors.HasCode(err, apperrors.CodeNotFound) {
+			return err
 		}
 		existing = nil
 	}

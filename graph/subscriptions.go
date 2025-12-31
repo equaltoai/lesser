@@ -198,6 +198,11 @@ func (sm *SubscriptionManager) SubscribeToInfrastructureEvents(ctx context.Conte
 	return sm.manager.SubscribeToInfrastructureEvents(ctx, username)
 }
 
+// SubscribeToModerationQueueUpdate creates a channel for moderation queue updates using event bus
+func (sm *SubscriptionManager) SubscribeToModerationQueueUpdate(ctx context.Context, username string, priority *model.Priority) (<-chan *model.ModerationItem, error) {
+	return sm.manager.SubscribeToModerationQueueUpdate(ctx, username, priority)
+}
+
 // GetStats returns statistics about active subscriptions
 func (sm *SubscriptionManager) GetStats() map[string]interface{} {
 	return sm.manager.GetStats()

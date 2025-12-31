@@ -2140,88 +2140,96 @@ func (s *Service) buildRelationshipData(ctx context.Context, requesterID, target
 
 	// Prefer storage-backed repositories when available (new architecture).
 	if s.storage != nil {
-		relationshipRepo := s.storage.Relationship()
-		if relationshipRepo == nil {
-			return data, nil // Return default data if repo not available
-		}
-
-		// Get follow status (requester -> target)
-		following, err := relationshipRepo.IsFollowing(ctx, requesterID, targetID)
-		if err != nil {
-			s.logger.Warn("failed to check following status", zap.Error(err))
-		} else {
-			data.Following = following
-		}
-
-		// Get follow status (target -> requester)
-		followedBy, err := relationshipRepo.IsFollowing(ctx, targetID, requesterID)
-		if err != nil {
-			s.logger.Warn("failed to check followed_by status", zap.Error(err))
-		} else {
-			data.FollowedBy = followedBy
-		}
-
-		// Get block status (requester -> target)
-		blocking, err := relationshipRepo.IsBlocked(ctx, requesterID, targetID)
-		if err != nil {
-			s.logger.Warn("failed to check blocking status", zap.Error(err))
-		} else {
-			data.Blocking = blocking
-		}
-
-		// Get block status (target -> requester)
-		blockedBy, err := relationshipRepo.IsBlocked(ctx, targetID, requesterID)
-		if err != nil {
-			s.logger.Warn("failed to check blocked_by status", zap.Error(err))
-		} else {
-			data.BlockedBy = blockedBy
-		}
-
-		// Get mute status using SocialRepository
-		if socialRepo := s.storage.Social(); socialRepo != nil {
-			muting, err := socialRepo.IsMuted(ctx, requesterID, targetID)
-			if err != nil {
-				s.logger.Warn("failed to check muting status", zap.Error(err))
-			} else {
-				data.Muting = muting
-			}
-		}
-
-		// Get follow request status by checking if there's a pending request
-		hasPendingRequest, err := relationshipRepo.HasPendingFollowRequest(ctx, requesterID, targetID)
-		if err != nil {
-			s.logger.Warn("failed to check follow request status", zap.Error(err))
-		} else {
-			data.Requested = hasPendingRequest
-		}
-
-		// Get reverse follow request status
-		hasReversePendingRequest, err := relationshipRepo.HasPendingFollowRequest(ctx, targetID, requesterID)
-		if err != nil {
-			s.logger.Warn("failed to check reverse follow request status", zap.Error(err))
-		} else {
-			data.RequestedBy = hasReversePendingRequest
-		}
-
-		// Get relationship preferences if following
-		if data.Following {
-			relationship, err := relationshipRepo.GetRelationship(ctx, requesterID, targetID)
-			if err != nil {
-				s.logger.Warn("failed to get relationship details", zap.Error(err))
-			} else if relationship != nil {
-				data.Notifying = relationship.Notifying
-				data.ShowingReblogs = relationship.ShowingReblogs
-				data.Languages = relationship.Languages
-				data.Note = relationship.Note
-				data.CreatedAt = relationship.CreatedAt
-				data.UpdatedAt = relationship.UpdatedAt
-			}
-		}
-
-		return data, nil
+		return s.enrichRelationshipDataFromStorage(ctx, data, requesterID, targetID)
 	}
 
 	// Legacy (interface-based) repositories: best-effort population without requiring full storage.
+	return s.enrichRelationshipDataFromLegacy(ctx, data, requesterID, targetID)
+}
+
+func (s *Service) enrichRelationshipDataFromStorage(ctx context.Context, data *RelationshipData, requesterID, targetID string) (*RelationshipData, error) {
+	relationshipRepo := s.storage.Relationship()
+	if relationshipRepo == nil {
+		return data, nil // Return default data if repo not available
+	}
+
+	// Get follow status (requester -> target)
+	following, err := relationshipRepo.IsFollowing(ctx, requesterID, targetID)
+	if err != nil {
+		s.logger.Warn("failed to check following status", zap.Error(err))
+	} else {
+		data.Following = following
+	}
+
+	// Get follow status (target -> requester)
+	followedBy, err := relationshipRepo.IsFollowing(ctx, targetID, requesterID)
+	if err != nil {
+		s.logger.Warn("failed to check followed_by status", zap.Error(err))
+	} else {
+		data.FollowedBy = followedBy
+	}
+
+	// Get block status (requester -> target)
+	blocking, err := relationshipRepo.IsBlocked(ctx, requesterID, targetID)
+	if err != nil {
+		s.logger.Warn("failed to check blocking status", zap.Error(err))
+	} else {
+		data.Blocking = blocking
+	}
+
+	// Get block status (target -> requester)
+	blockedBy, err := relationshipRepo.IsBlocked(ctx, targetID, requesterID)
+	if err != nil {
+		s.logger.Warn("failed to check blocked_by status", zap.Error(err))
+	} else {
+		data.BlockedBy = blockedBy
+	}
+
+	// Get mute status using SocialRepository
+	if socialRepo := s.storage.Social(); socialRepo != nil {
+		muting, err := socialRepo.IsMuted(ctx, requesterID, targetID)
+		if err != nil {
+			s.logger.Warn("failed to check muting status", zap.Error(err))
+		} else {
+			data.Muting = muting
+		}
+	}
+
+	// Get follow request status by checking if there's a pending request
+	hasPendingRequest, err := relationshipRepo.HasPendingFollowRequest(ctx, requesterID, targetID)
+	if err != nil {
+		s.logger.Warn("failed to check follow request status", zap.Error(err))
+	} else {
+		data.Requested = hasPendingRequest
+	}
+
+	// Get reverse follow request status
+	hasReversePendingRequest, err := relationshipRepo.HasPendingFollowRequest(ctx, targetID, requesterID)
+	if err != nil {
+		s.logger.Warn("failed to check reverse follow request status", zap.Error(err))
+	} else {
+		data.RequestedBy = hasReversePendingRequest
+	}
+
+	// Get relationship preferences if following
+	if data.Following {
+		relationship, err := relationshipRepo.GetRelationship(ctx, requesterID, targetID)
+		if err != nil {
+			s.logger.Warn("failed to get relationship details", zap.Error(err))
+		} else if relationship != nil {
+			data.Notifying = relationship.Notifying
+			data.ShowingReblogs = relationship.ShowingReblogs
+			data.Languages = relationship.Languages
+			data.Note = relationship.Note
+			data.CreatedAt = relationship.CreatedAt
+			data.UpdatedAt = relationship.UpdatedAt
+		}
+	}
+
+	return data, nil
+}
+
+func (s *Service) enrichRelationshipDataFromLegacy(ctx context.Context, data *RelationshipData, requesterID, targetID string) (*RelationshipData, error) {
 	if s.relationshipRepo == nil {
 		return data, nil
 	}

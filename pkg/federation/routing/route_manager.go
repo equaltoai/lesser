@@ -230,11 +230,9 @@ func NewManager(
 			logger.Info("health checker configured successfully with repository")
 		} else {
 			logger.Warn("invalid instance health repository type - health checker disabled")
-			healthChecker = noopHealthChecker{}
 		}
 	} else {
 		logger.Warn("instance health repository not provided - health checker disabled")
-		healthChecker = noopHealthChecker{}
 	}
 	loadBalancer := NewAdaptiveLoadBalancer(logger)
 

@@ -30,6 +30,7 @@ type SQSClient interface {
 	SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
 }
 
+// ComprehendClient defines the interface for AWS Comprehend operations needed by AIService
 type ComprehendClient interface {
 	DetectDominantLanguage(ctx context.Context, params *comprehend.DetectDominantLanguageInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectDominantLanguageOutput, error)
 	DetectSentiment(ctx context.Context, params *comprehend.DetectSentimentInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectSentimentOutput, error)
@@ -39,20 +40,24 @@ type ComprehendClient interface {
 	DetectKeyPhrases(ctx context.Context, params *comprehend.DetectKeyPhrasesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectKeyPhrasesOutput, error)
 }
 
+// RekognitionClient defines the interface for AWS Rekognition operations needed by AIService
 type RekognitionClient interface {
 	DetectModerationLabels(ctx context.Context, params *rekognition.DetectModerationLabelsInput, optFns ...func(*rekognition.Options)) (*rekognition.DetectModerationLabelsOutput, error)
 	DetectText(ctx context.Context, params *rekognition.DetectTextInput, optFns ...func(*rekognition.Options)) (*rekognition.DetectTextOutput, error)
 	RecognizeCelebrities(ctx context.Context, params *rekognition.RecognizeCelebritiesInput, optFns ...func(*rekognition.Options)) (*rekognition.RecognizeCelebritiesOutput, error)
 }
 
+// BedrockRuntimeClient defines the interface for AWS Bedrock operations needed by AIService
 type BedrockRuntimeClient interface {
 	InvokeModel(ctx context.Context, params *bedrockruntime.InvokeModelInput, optFns ...func(*bedrockruntime.Options)) (*bedrockruntime.InvokeModelOutput, error)
 }
 
+// S3Client defines the interface for AWS S3 operations needed by AIService
 type S3Client interface {
 	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
 }
 
+// HTTPClient defines the interface for HTTP operations needed by AIService
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }

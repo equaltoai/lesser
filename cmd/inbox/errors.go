@@ -63,54 +63,6 @@ func dmNoRecipientsError() *errors.AppError {
 
 // Actor and authentication errors - using Auth domain functions
 
-// requestConversionError creates an error when request conversion fails.
-//
-//nolint:unused
-func requestConversionError() *errors.AppError {
-	return errors.ProcessingFailed("HTTP request conversion", stdErrors.New("failed to convert HTTP request"))
-}
-
-// createRequestError creates an error when HTTP request creation fails.
-//
-//nolint:unused
-func createRequestError() *errors.AppError {
-	return errors.ProcessingFailed("HTTP request creation", stdErrors.New("failed to create HTTP request"))
-}
-
-// fetchActorError creates an error when actor fetch fails.
-//
-//nolint:unused
-func fetchActorError() *errors.AppError {
-	return errors.ActorFetchFailed("", nil)
-}
-
-// actorResponseError creates an error when actor fetch returns invalid status.
-//
-//nolint:unused
-func actorResponseError() *errors.AppError {
-	return errors.ActorFetchFailed("", errors.NetworkError("invalid status response", nil))
-}
-
-// parseActorError creates an error when actor parsing fails.
-//
-//nolint:unused
-func parseActorError() *errors.AppError {
-	return errors.ParsingFailed("ActivityPub actor", nil)
-}
-
-// noPublicKeyError creates an error when actor has no public key.
-//
-//nolint:unused
-func noPublicKeyError() *errors.AppError {
-	return errors.ActivityMissingField("publicKey")
-}
-
-// parsePublicKeyError creates an error when public key parsing fails.
-//
-//nolint:unused
-func parsePublicKeyError() *errors.AppError {
-	return errors.ParsingFailed("public key", nil)
-}
 
 // Activity processing errors - using Federation domain functions
 

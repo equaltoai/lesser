@@ -87,25 +87,39 @@ func (r *subscriptionResolver) ModerationAlerts(ctx context.Context, severity *m
 }
 
 // ModerationQueueUpdate implements SubscriptionResolver
-// Note: This subscription needs to be adapted to the DynamoDB model
-// For now, return a placeholder channel that will be implemented when moderation events are queued
 func (r *subscriptionResolver) ModerationQueueUpdate(ctx context.Context, priority *model.Priority) (<-chan *model.ModerationItem, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create a channel for moderation queue updates
-	// This will be populated by stream-router when moderation events are queued
-	updateChan := make(chan *model.ModerationItem, 100)
+	// Use SubscriptionManager for consistent subscription handling
+	sm := r.SubscriptionManager
+	if sm == nil {
+		r.Logger.Error("subscription manager not available for moderation queue")
+		ch := make(chan *model.ModerationItem)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
+	}
 
-	// TODO: Implement proper moderation queue subscription via subscription manager
-	// For now, return empty channel - this will be implemented when moderation events
-	// are properly routed through the DynamoDB-backed system
+	if !sm.IsRunning() {
+		r.Logger.Error("subscription manager not running for moderation queue")
+		ch := make(chan *model.ModerationItem)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
+	}
 
-	r.Logger.Info("Started moderation queue subscription (placeholder)",
+	queueChan, err := sm.SubscribeToModerationQueueUpdate(ctx, username, priority)
+	if err != nil {
+		r.Logger.Error("failed to create moderation queue subscription",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, err
+	}
+
+	r.Logger.Info("Started moderation queue subscription",
 		zap.String("user", username),
 		zap.Any("priority", priority))
 
-	return updateChan, nil
+	return queueChan, nil
 }

@@ -279,7 +279,7 @@ func listPackagesForAllCoverage(repoRoot string, goCache string, includeTools bo
 
 func readModulePath(repoRoot string) (string, error) {
 	modPath := filepath.Join(repoRoot, "go.mod")
-	content, err := os.ReadFile(modPath)
+	content, err := os.ReadFile(filepath.Clean(modPath))
 	if err != nil {
 		return "", fmt.Errorf("read go.mod: %w", err)
 	}

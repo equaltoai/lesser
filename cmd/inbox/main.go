@@ -3,11 +3,9 @@ package main
 
 import (
 	"context"
-	"crypto"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -21,7 +19,6 @@ import (
 	costpkg "github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
-	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	notifpush "github.com/equaltoai/lesser/pkg/notifications"
@@ -38,10 +35,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type httpDoer interface {
-	Do(req *http.Request) (*http.Response, error)
-}
-
 var (
 	runAsync = func(fn func()) { go fn() }
 
@@ -52,9 +45,6 @@ var (
 	mustInitializeLambda  = common.MustInitializeLambda
 	initializeWithOptions = func(lambdaCtx *common.LambdaContext, options common.LambdaInitOptions) error {
 		return lambdaCtx.InitializeWithOptions(options)
-	}
-	newSecureHTTPClient = func(log *zap.Logger) httpDoer {
-		return httpclient.NewSecureClient(httpclient.WithTimeout(10*time.Second), httpclient.WithLogger(log))
 	}
 	initializeLambdaCtxFn = func(lambdaConfig common.LambdaConfig) *common.LambdaContext {
 		lambdaCtx := mustInitializeLambda(lambdaConfig)
@@ -1268,29 +1258,7 @@ func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ 
 	return nil
 }
 
-// verifyDigest verifies the digest header if present
-// Kept as alternative to verifyDigestEnhanced for potential future use
-//
-//nolint:unused // Kept as alternative implementation
-func (ih *InboxHandler) verifyDigest(ctx *lift.Context, req *InboxRequest) error {
-	if err := common.ValidateRequiredParam("digest", ctx.Header("Digest")); err != nil {
-		return nil
-	}
 
-	httpReq, err := ih.convertLiftRequest(ctx, req.Body)
-	if err != nil {
-		return nil
-	}
-
-	if err := federation.VerifyDigest(httpReq, req.Body); err != nil {
-		ih.logger.Warn("digest verification failed",
-			zap.String("actor", req.Activity.Actor),
-			zap.Error(err))
-		return lift.NewLiftError("VALIDATION_ERROR", "digest verification failed", 400)
-	}
-
-	return nil
-}
 
 // verifyDigestEnhanced verifies the digest header with enhanced compatibility support
 func (ih *InboxHandler) verifyDigestEnhanced(ctx *lift.Context, req *InboxRequest) error {
@@ -1573,19 +1541,7 @@ func (ih *InboxHandler) isAddressedTo(activity *activitypub.Activity, actor *act
 	return false
 }
 
-// verifyRequest verifies the HTTP signature on the request
-// Kept as alternative verification method for potential future use
-//
-//nolint:unused // Kept as alternative implementation
-func (ih *InboxHandler) verifyRequest(ctx *lift.Context, publicKey crypto.PublicKey, body []byte) error {
-	// Convert Lift request to http.Request for signature verification
-	req, err := ih.convertLiftRequest(ctx, body)
-	if err != nil {
-		return requestConversionError()
-	}
 
-	return federation.VerifyHTTPSignature(req, publicKey)
-}
 
 // convertLiftRequest converts a Lift request to an http.Request
 func (ih *InboxHandler) convertLiftRequest(ctx *lift.Context, body []byte) (*http.Request, error) {
@@ -1639,68 +1595,7 @@ func generateActivityID() string {
 	return fmt.Sprintf("%d-%x", time.Now().UnixNano(), b)
 }
 
-// fetchActorPublicKey fetches an actor's public key from their profile
-// Kept as alternative to repository-based key fetching for potential future use
-//
-//nolint:unused // Kept as alternative implementation
-func (ih *InboxHandler) fetchActorPublicKey(ctx context.Context, actorURL string) (crypto.PublicKey, error) {
-	log := common.WithContext(ctx)
 
-	// Create secure HTTP client with DNS caching
-	client := newSecureHTTPClient(log)
-
-	// Create request with ActivityPub Accept header
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, actorURL, nil)
-	if err != nil {
-		return nil, createRequestError()
-	}
-
-	req.Header.Set("Accept", "application/activity+json, application/ld+json")
-	req.Header.Set("User-Agent", "Lesser/1.0")
-
-	// Make request
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fetchActorError()
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			log.Warn("failed to close response body", zap.Error(err))
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Warn("failed to fetch actor profile",
-			zap.String("url", actorURL),
-			zap.Int("status", resp.StatusCode),
-			zap.String("body", string(body)))
-		return nil, actorResponseError()
-	}
-
-	// Parse actor
-	var actor activitypub.Actor
-	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
-		return nil, parseActorError()
-	}
-
-	// Extract public key
-	if actor.PublicKey == nil || common.ValidateRequiredParam("publicKeyPem", actor.PublicKey.PublicKeyPem) != nil {
-		return nil, noPublicKeyError()
-	}
-
-	// Parse PEM-encoded public key
-	publicKey, err := federation.ParsePublicKeyPEM([]byte(actor.PublicKey.PublicKeyPem))
-	if err != nil {
-		return nil, parsePublicKeyError()
-	}
-
-	log.Debug("fetched actor public key",
-		zap.String("actor", actorURL),
-		zap.String("key_id", actor.PublicKey.ID))
-
-	return publicKey, nil
-}
 
 // processFollowActivity processes an incoming Follow activity
 func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {

@@ -12601,6 +12601,8 @@ paths:
             operationId: post_api_v1_statuses_by_id_mute
             tags:
                 - statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -12648,11 +12650,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/statuses/{id}/pin:
         post:
             operationId: post_api_v1_statuses_by_id_pin
             tags:
                 - statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -12700,6 +12706,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/statuses/{id}/quote:
         post:
             operationId: post_api_v1_statuses_by_id_quote
@@ -13120,6 +13128,8 @@ paths:
             operationId: post_api_v1_statuses_by_id_unmute
             tags:
                 - statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -13167,11 +13177,15 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/statuses/{id}/unpin:
         post:
             operationId: post_api_v1_statuses_by_id_unpin
             tags:
                 - statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -13219,6 +13233,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes_lift.go
+            x-oauth-scopes:
+                - write
     /api/v1/statuses/{id}/unreblog:
         post:
             operationId: post_api_v1_statuses_by_id_unreblog

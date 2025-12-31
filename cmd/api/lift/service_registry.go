@@ -36,6 +36,7 @@ type ServiceRegistry interface {
 	Search() SearchService
 }
 
+// AccountsService defines the subset of account-related operations used by the Lift API
 type AccountsService interface {
 	CreateAuthorizationCode(ctx context.Context, cmd *accounts.CreateAuthorizationCodeCommand) (*accounts.CreateAuthorizationCodeResult, error)
 	GetAccount(ctx context.Context, username string) (*storage.Account, error)
@@ -59,18 +60,21 @@ type AccountsService interface {
 	UpdateProfile(ctx context.Context, cmd *accounts.UpdateProfileCommand) (*accounts.AccountResult, error)
 }
 
+// AIService defines the subset of AI-related operations used by the Lift API
 type AIService interface {
 	GetAnalysis(ctx context.Context, query *ai.GetAnalysisQuery) (*ai.GetAnalysisResult, error)
 	GetStats(ctx context.Context, query *ai.GetStatsQuery) (*ai.GetStatsResult, error)
 	QueueForAnalysis(ctx context.Context, cmd *ai.QueueAnalysisCommand) (*ai.QueueAnalysisResult, error)
 }
 
+// ConversationsService defines the subset of conversation-related operations used by the Lift API
 type ConversationsService interface {
 	DeleteConversation(ctx context.Context, cmd *conversations.DeleteConversationCommand) (*conversations.ConversationResult, error)
 	ListConversations(ctx context.Context, query *conversations.ListConversationsQuery) (*conversations.Result, error)
 	MarkConversationRead(ctx context.Context, cmd *conversations.MarkConversationReadCommand) (*conversations.ConversationResult, error)
 }
 
+// EmojiService defines the subset of emoji-related operations used by the Lift API
 type EmojiService interface {
 	CreateEmoji(ctx context.Context, cmd *emoji.CreateEmojiCommand) (*emoji.Result, error)
 	DeleteEmoji(ctx context.Context, cmd *emoji.DeleteEmojiCommand) error
@@ -78,6 +82,7 @@ type EmojiService interface {
 	UpdateEmoji(ctx context.Context, cmd *emoji.UpdateEmojiCommand) (*emoji.Result, error)
 }
 
+// ListsService defines the subset of list-related operations used by the Lift API
 type ListsService interface {
 	AddToList(ctx context.Context, cmd *lists.AddToListCommand) (*lists.MembershipResult, error)
 	CreateList(ctx context.Context, cmd *lists.CreateListCommand) (*lists.ListResult, error)
@@ -90,12 +95,14 @@ type ListsService interface {
 	UpdateList(ctx context.Context, cmd *lists.UpdateListCommand) (*lists.ListResult, error)
 }
 
+// MediaService defines the subset of media-related operations used by the Lift API
 type MediaService interface {
 	GetMedia(ctx context.Context, query *media.GetMediaQuery) (*storagemodels.Media, error)
 	UpdateMedia(ctx context.Context, cmd *media.UpdateMediaCommand) (*media.UpdateResult, error)
 	UploadMedia(ctx context.Context, cmd *media.UploadMediaCommand) (*media.Result, error)
 }
 
+// NotesService defines the subset of note-related operations used by the Lift API
 type NotesService interface {
 	BookmarkNote(ctx context.Context, cmd *notes.BookmarkNoteCommand) (*notes.BookmarkResult, error)
 	CountNotesByAuthor(ctx context.Context, authorID string) (int64, error)
@@ -128,6 +135,7 @@ type NotesService interface {
 	UnreblogNote(ctx context.Context, cmd *notes.UnreblogNoteCommand) (*notes.LikeResult, error)
 }
 
+// NotificationsService defines the subset of notification-related operations used by the Lift API
 type NotificationsService interface {
 	ClearNotifications(ctx context.Context, cmd *notifications.ClearCommand) (*notifications.ClearResult, error)
 	CreateNotification(ctx context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error)
@@ -135,6 +143,7 @@ type NotificationsService interface {
 	MarkAsRead(ctx context.Context, cmd *notifications.MarkAsReadCommand) (*notifications.NotificationResult, error)
 }
 
+// RelationshipsService defines the subset of relationship-related operations used by the Lift API
 type RelationshipsService interface {
 	AcceptFollowRequest(ctx context.Context, cmd *relationships.AcceptFollowRequestCommand) (*relationships.RelationshipResult, error)
 	AddDomainBlock(ctx context.Context, cmd *relationships.AddDomainBlockCommand) error
@@ -159,6 +168,7 @@ type RelationshipsService interface {
 	Unmute(ctx context.Context, cmd *relationships.UnmuteCommand) (*relationships.RelationshipResult, error)
 }
 
+// ScheduledService defines the subset of scheduled status operations used by the Lift API
 type ScheduledService interface {
 	CreateScheduledStatus(ctx context.Context, cmd *scheduled.CreateScheduledStatusCommand) (*scheduled.StatusResult, error)
 	DeleteScheduledStatus(ctx context.Context, cmd *scheduled.DeleteScheduledStatusCommand) error
@@ -168,6 +178,7 @@ type ScheduledService interface {
 	UpdateScheduledStatus(ctx context.Context, cmd *scheduled.UpdateScheduledStatusCommand) (*scheduled.StatusResult, error)
 }
 
+// SearchService defines the subset of search-related operations used by the Lift API
 type SearchService interface {
 	GetDirectory(ctx context.Context, query *search.DirectoryQuery) (*search.DirectoryResult, error)
 	GetSuggestions(ctx context.Context, query *search.SuggestionsQuery) (*search.SuggestionsResult, error)
