@@ -23,11 +23,29 @@ import (
 	"go.uber.org/zap"
 )
 
+type scheduledStatusRepository interface {
+	CreateScheduledStatus(ctx context.Context, scheduled *storage.ScheduledStatus) error
+	GetScheduledStatus(ctx context.Context, id string) (*storage.ScheduledStatus, error)
+	GetScheduledStatuses(ctx context.Context, username string, limit int, cursor string) ([]*storage.ScheduledStatus, string, error)
+	UpdateScheduledStatus(ctx context.Context, scheduled *storage.ScheduledStatus) error
+	DeleteScheduledStatus(ctx context.Context, id string) error
+	GetScheduledStatusMedia(ctx context.Context, scheduledStatusID string) ([]*models.Media, error)
+}
+
+type mediaRepository interface {
+	GetMedia(ctx context.Context, mediaID string) (*models.Media, error)
+}
+
+var (
+	_ scheduledStatusRepository = (*repositories.ScheduledStatusRepository)(nil)
+	_ mediaRepository          = (*repositories.MediaRepository)(nil)
+)
+
 // Service provides business logic for scheduled status operations
 type Service struct {
-	scheduledRepo *repositories.ScheduledStatusRepository
+	scheduledRepo scheduledStatusRepository
 	statusRepo    *repositories.StatusRepository
-	mediaRepo     *repositories.MediaRepository
+	mediaRepo     mediaRepository
 	publisher     streaming.Publisher
 	logger        *zap.Logger
 	domain        string
@@ -35,9 +53,9 @@ type Service struct {
 
 // NewService creates a new scheduled status service
 func NewService(
-	scheduledRepo *repositories.ScheduledStatusRepository,
+	scheduledRepo scheduledStatusRepository,
 	statusRepo *repositories.StatusRepository,
-	mediaRepo *repositories.MediaRepository,
+	mediaRepo mediaRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 	domain string,
@@ -461,7 +479,7 @@ func (s *Service) validateScheduledTime(scheduledAt time.Time) error {
 
 // validateMediaAttachments validates that media attachments exist
 func (s *Service) validateMediaAttachments(ctx context.Context, mediaIDs []string) error {
-	if err := common.ValidateSliceLength("mediaIDs", mediaIDs, 4); err == nil {
+	if err := common.ValidateSliceLength("mediaIDs", mediaIDs, 4); err != nil {
 		return svcErrors.ErrValidationFailed
 	}
 

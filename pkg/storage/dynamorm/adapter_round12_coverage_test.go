@@ -160,4 +160,3 @@ func TestStorageAdapter_ErrorPaths_WithNilRepos(t *testing.T) {
 	err = adapter.DeleteUser(ctx, "alice")
 	assert.Error(t, err)
 }
-

@@ -17,6 +17,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var loadDefaultAWSConfig = awsconfig.LoadDefaultConfig
+
 // RepositoryFactory manages all repository instances and their dependencies
 // and implements the RepositoryStorage interface
 type RepositoryFactory struct {
@@ -161,7 +163,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	}
 
 	if vapidSecretARN != "" {
-		if awsCfg, err := awsconfig.LoadDefaultConfig(context.Background()); err != nil {
+		if awsCfg, err := loadDefaultAWSConfig(context.Background()); err != nil {
 			if f.logger != nil {
 				f.logger.Warn("repository factory: failed to initialize secrets manager client for VAPID keys", zap.Error(err))
 			}

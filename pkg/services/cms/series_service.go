@@ -10,15 +10,33 @@ import (
 	"go.uber.org/zap"
 )
 
+type seriesRepository interface {
+	CreateSeries(ctx context.Context, series *models.Series) error
+	GetSeries(ctx context.Context, authorID, seriesID string) (*models.Series, error)
+	Update(ctx context.Context, series *models.Series) error
+	Delete(ctx context.Context, pk, sk string) error
+	ListSeriesByAuthor(ctx context.Context, authorID string, limit int) ([]*models.Series, error)
+}
+
+type articleSeriesRepository interface {
+	GetArticle(ctx context.Context, articleID string) (*models.Article, error)
+	UpdateArticle(ctx context.Context, article *models.Article) error
+}
+
+var (
+	_ seriesRepository        = (*repositories.SeriesRepository)(nil)
+	_ articleSeriesRepository = (*repositories.ArticleRepository)(nil)
+)
+
 // SeriesService handles business logic for series
 type SeriesService struct {
-	seriesRepo  *repositories.SeriesRepository
-	articleRepo *repositories.ArticleRepository
+	seriesRepo  seriesRepository
+	articleRepo articleSeriesRepository
 	logger      *zap.Logger
 }
 
 // NewSeriesService creates a new SeriesService
-func NewSeriesService(seriesRepo *repositories.SeriesRepository, articleRepo *repositories.ArticleRepository, logger *zap.Logger) *SeriesService {
+func NewSeriesService(seriesRepo seriesRepository, articleRepo articleSeriesRepository, logger *zap.Logger) *SeriesService {
 	return &SeriesService{
 		seriesRepo:  seriesRepo,
 		articleRepo: articleRepo,

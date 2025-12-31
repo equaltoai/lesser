@@ -10,18 +10,40 @@ import (
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+)
+
+type publicationRepository interface {
+	GetDB() dynamormcore.DB
+	CreatePublication(ctx context.Context, publication *models.Publication) error
+	GetPublication(ctx context.Context, id string) (*models.Publication, error)
+	Update(ctx context.Context, publication *models.Publication) error
+	Delete(ctx context.Context, pk, sk string) error
+}
+
+type publicationMemberRepository interface {
+	CreateMember(ctx context.Context, member *models.PublicationMember) error
+	DeleteMember(ctx context.Context, publicationID, userID string) error
+	GetMember(ctx context.Context, publicationID, userID string) (*models.PublicationMember, error)
+	Update(ctx context.Context, member *models.PublicationMember) error
+	ListMembers(ctx context.Context, publicationID string) ([]*models.PublicationMember, error)
+}
+
+var (
+	_ publicationRepository       = (*repositories.PublicationRepository)(nil)
+	_ publicationMemberRepository = (*repositories.PublicationMemberRepository)(nil)
 )
 
 // PublicationService handles business logic for publications
 type PublicationService struct {
-	pubRepo       *repositories.PublicationRepository
-	pubMemberRepo *repositories.PublicationMemberRepository
+	pubRepo       publicationRepository
+	pubMemberRepo publicationMemberRepository
 	logger        *zap.Logger
 }
 
 // NewPublicationService creates a new PublicationService
-func NewPublicationService(pubRepo *repositories.PublicationRepository, pubMemberRepo *repositories.PublicationMemberRepository, logger *zap.Logger) *PublicationService {
+func NewPublicationService(pubRepo publicationRepository, pubMemberRepo publicationMemberRepository, logger *zap.Logger) *PublicationService {
 	return &PublicationService{
 		pubRepo:       pubRepo,
 		pubMemberRepo: pubMemberRepo,

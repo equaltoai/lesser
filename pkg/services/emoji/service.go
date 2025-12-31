@@ -23,19 +23,36 @@ import (
 
 // Service provides business logic for custom emoji operations
 type Service struct {
-	emojiRepo *repositories.EmojiRepository
+	emojiRepo emojiRepository
 	publisher streaming.Publisher
 	logger    *zap.Logger
 	domain    string
 }
 
+type emojiRepository interface {
+	GetCustomEmoji(ctx context.Context, shortcode string) (*storage.CustomEmoji, error)
+	GetCustomEmojis(ctx context.Context) ([]*storage.CustomEmoji, error)
+	CreateCustomEmoji(ctx context.Context, emoji *storage.CustomEmoji) error
+	UpdateCustomEmoji(ctx context.Context, emoji *storage.CustomEmoji) error
+	DeleteCustomEmoji(ctx context.Context, shortcode string) error
+	GetRemoteEmoji(ctx context.Context, shortcode, domain string) (*storage.CustomEmoji, error)
+	SearchEmojis(ctx context.Context, query string, limit int) ([]*storage.CustomEmoji, error)
+	GetPopularEmojis(ctx context.Context, domain string, limit int) ([]*storage.CustomEmoji, error)
+	IncrementEmojiUsage(ctx context.Context, shortcode string) error
+}
+
+var _ emojiRepository = (*repositories.EmojiRepository)(nil)
+
 // NewService creates a new emoji service
 func NewService(
-	emojiRepo *repositories.EmojiRepository,
+	emojiRepo emojiRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 	domain string,
 ) *Service {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &Service{
 		emojiRepo: emojiRepo,
 		publisher: publisher,

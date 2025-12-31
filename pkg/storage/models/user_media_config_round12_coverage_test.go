@@ -183,9 +183,11 @@ func TestUserMediaConfig_ContentTypeAndBudgetsAndCounters(t *testing.T) {
 	umc.UpdateStorageUsage(-200)
 	assert.Equal(t, int64(0), umc.CurrentStorageUsage)
 
-	umc.LastResetAt = time.Now().AddDate(0, -1, 0)
+	now := time.Now()
+	prevMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Add(-time.Second)
+	umc.LastResetAt = prevMonth
 	assert.True(t, umc.ShouldResetCounters())
-	umc.LastResetAt = time.Now()
+	umc.LastResetAt = now
 	assert.False(t, umc.ShouldResetCounters())
 
 	umc.CurrentMonthlyUsage = 123

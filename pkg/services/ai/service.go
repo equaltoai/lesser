@@ -11,7 +11,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
@@ -22,12 +21,19 @@ var (
 	ErrSaveAnalysis = errors.New("failed to save AI analysis")
 )
 
+type aiRepository interface {
+	SaveAnalysis(ctx context.Context, analysis *ai.AIAnalysis) error
+	GetAnalysis(ctx context.Context, objectID string) (*ai.AIAnalysis, error)
+	QueueForAnalysis(ctx context.Context, objectID string) error
+	GetStats(ctx context.Context, period string) (*ai.AIStats, error)
+}
+
 // Service provides AI analysis operations following the service-first architecture
 type Service struct {
 	storage   core.RepositoryStorage
 	publisher streaming.Publisher
 	logger    *zap.Logger
-	aiRepo    *repositories.AIRepository
+	aiRepo    aiRepository
 }
 
 // NewService creates a new AI service
@@ -37,7 +43,7 @@ func NewService(storage core.RepositoryStorage, publisher streaming.Publisher, l
 	}
 
 	// For now, we need to type assert to get the factory
-	var aiRepo *repositories.AIRepository
+	var aiRepo aiRepository
 	if f, ok := storage.(*factory.RepositoryFactory); ok {
 		aiRepo = f.AI()
 	}
@@ -64,8 +70,14 @@ type SaveAnalysisResult struct {
 
 // SaveAnalysis saves an AI analysis result and publishes events
 func (s *Service) SaveAnalysis(ctx context.Context, cmd *SaveAnalysisCommand) (*SaveAnalysisResult, error) {
+	if cmd == nil {
+		return nil, &ValidationError{Field: "command", Message: "required"}
+	}
 	if cmd.Analysis == nil {
 		return nil, &ValidationError{Field: "analysis", Message: "required"}
+	}
+	if s.aiRepo == nil {
+		return nil, errors.New("AI repository not configured")
 	}
 
 	// Save the analysis using the repository
@@ -251,8 +263,14 @@ type GetAnalysisResult struct {
 
 // GetAnalysis retrieves AI analysis for an object
 func (s *Service) GetAnalysis(ctx context.Context, query *GetAnalysisQuery) (*GetAnalysisResult, error) {
+	if query == nil {
+		return nil, &ValidationError{Field: "query", Message: "required"}
+	}
 	if err := common.ValidateRequiredParam("query.ObjectID", query.ObjectID); err != nil {
 		return nil, &ValidationError{Field: "object_id", Message: "required"}
+	}
+	if s.aiRepo == nil {
+		return nil, errors.New("AI repository not configured")
 	}
 
 	analysis, err := s.aiRepo.GetAnalysis(ctx, query.ObjectID)
@@ -284,8 +302,14 @@ type QueueAnalysisResult struct {
 
 // QueueForAnalysis queues an object for AI analysis
 func (s *Service) QueueForAnalysis(ctx context.Context, cmd *QueueAnalysisCommand) (*QueueAnalysisResult, error) {
+	if cmd == nil {
+		return nil, &ValidationError{Field: "command", Message: "required"}
+	}
 	if err := common.ValidateRequiredParam("cmd.ObjectID", cmd.ObjectID); err != nil {
 		return nil, &ValidationError{Field: "object_id", Message: "required"}
+	}
+	if s.aiRepo == nil {
+		return nil, errors.New("AI repository not configured")
 	}
 
 	// Check if analysis exists and is recent (unless force is true)
@@ -330,6 +354,13 @@ type GetStatsResult struct {
 
 // GetStats retrieves AI analysis statistics
 func (s *Service) GetStats(ctx context.Context, query *GetStatsQuery) (*GetStatsResult, error) {
+	if query == nil {
+		return nil, &ValidationError{Field: "query", Message: "required"}
+	}
+	if s.aiRepo == nil {
+		return nil, errors.New("AI repository not configured")
+	}
+
 	period := query.Period
 	if err := common.ValidateRequiredParam("period", period); err != nil {
 		period = "day"

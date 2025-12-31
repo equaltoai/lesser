@@ -18,10 +18,14 @@ import (
 
 // AnalyticsService provides sophisticated cost analytics and forecasting
 type AnalyticsService struct {
-	aiCostRepo        *repositories.AICostRepository
+	aiCostRepo interface {
+		GetAICostsByTimeRange(ctx context.Context, startTime, endTime time.Time, operationType string, limit int) ([]*models.AICost, error)
+	}
 	federationRepo    *repositories.FederationRepository
-	webSocketCostRepo *repositories.WebSocketCostRepository
-	logger            *zap.Logger
+	webSocketCostRepo interface {
+		GetRecentCosts(ctx context.Context, since time.Time, limit int) ([]*models.WebSocketCostRecord, error)
+	}
+	logger *zap.Logger
 }
 
 // NewAnalyticsService creates a new cost analytics service
@@ -31,10 +35,28 @@ func NewAnalyticsService(
 	webSocketCostRepo *repositories.WebSocketCostRepository,
 	logger *zap.Logger,
 ) *AnalyticsService {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	var aiCostRepoInterface interface {
+		GetAICostsByTimeRange(ctx context.Context, startTime, endTime time.Time, operationType string, limit int) ([]*models.AICost, error)
+	}
+	if aiCostRepo != nil {
+		aiCostRepoInterface = aiCostRepo
+	}
+
+	var webSocketCostRepoInterface interface {
+		GetRecentCosts(ctx context.Context, since time.Time, limit int) ([]*models.WebSocketCostRecord, error)
+	}
+	if webSocketCostRepo != nil {
+		webSocketCostRepoInterface = webSocketCostRepo
+	}
+
 	return &AnalyticsService{
-		aiCostRepo:        aiCostRepo,
+		aiCostRepo:        aiCostRepoInterface,
 		federationRepo:    federationRepo,
-		webSocketCostRepo: webSocketCostRepo,
+		webSocketCostRepo: webSocketCostRepoInterface,
 		logger:            logger,
 	}
 }
@@ -207,6 +229,9 @@ func (s *AnalyticsService) CalculateGrowthTrends(ctx context.Context, metric str
 
 	switch metric {
 	case "ai_cost":
+		if s.aiCostRepo == nil {
+			return nil, serviceerrors.ErrGetAICostData
+		}
 		costs, err := s.aiCostRepo.GetAICostsByTimeRange(ctx, startTime.AddDate(0, 0, -periods), startTime, "", 0)
 		if err != nil {
 			s.logger.Error("failed to get AI cost data",
@@ -222,6 +247,15 @@ func (s *AnalyticsService) CalculateGrowthTrends(ctx context.Context, metric str
 		// Calculate the time range for getting WebSocket costs
 		endTime := startTime
 		fromTime := startTime.AddDate(0, 0, -periods)
+
+		if s.webSocketCostRepo == nil {
+			s.logger.Warn("WebSocket cost repository not configured, using sample data",
+				zap.Time("from_time", fromTime),
+				zap.Time("end_time", endTime))
+			dataPoints = s.generateSampleData(periods)
+			timestamps = s.generateTimestamps(periods, startTime)
+			break
+		}
 
 		// Get WebSocket costs for the time range
 		costs, err := s.webSocketCostRepo.GetRecentCosts(ctx, fromTime, periods*10) // Get more data for better analysis

@@ -52,12 +52,27 @@ func (a *costTrackerAdapter) TrackDynamoRead(items int) {
 	}
 }
 
+type batchWriterClient interface {
+	WriteItems(ctx context.Context, items []any) (*batch.BatchWriteResult, error)
+	WriteItemsParallel(ctx context.Context, items []any, workers int) (*batch.BatchWriteResult, error)
+}
+
+type batchReaderClient interface {
+	ReadItems(ctx context.Context, keys []any, dest any) (*batch.BatchReadResult, error)
+}
+
+type batchDeleterClient interface {
+	DeleteItems(ctx context.Context, keys []any) (*batch.BatchDeleteResult, error)
+	DeleteItemsParallel(ctx context.Context, keys []any, workers int) (*batch.BatchDeleteResult, error)
+	DeleteItemsWithRetry(ctx context.Context, keys []any, maxRetries int) (*batch.BatchDeleteResult, error)
+}
+
 // BatchRepository extends BaseRepository with advanced batch operations
 type BatchRepository struct {
 	*dynamorm.BaseRepository
-	batchWriter  *batch.BatchWriter
-	batchReader  *batch.BatchReader
-	batchDeleter *batch.BatchDeleter
+	batchWriter  batchWriterClient
+	batchReader  batchReaderClient
+	batchDeleter batchDeleterClient
 	logger       *zap.Logger
 	tracker      *cost.Tracker
 }
@@ -70,19 +85,19 @@ func NewBatchRepository(db core.DB, tableName string, logger *zap.Logger, tracke
 		costTrackerInterface = &costTrackerAdapter{tracker: tracker}
 	}
 
-	batchWriter := batch.NewBatchWriter(db, batch.BatchWriterConfig{
+	writer := batch.NewBatchWriter(db, batch.BatchWriterConfig{
 		BatchSize: batch.DefaultBatchSize,
 		Logger:    logger,
 		Tracker:   costTrackerInterface,
 	})
 
-	batchReader := batch.NewBatchReader(db, batch.BatchReaderConfig{
+	reader := batch.NewBatchReader(db, batch.BatchReaderConfig{
 		BatchSize: batch.MaxBatchReadSize,
 		Logger:    logger,
 		Tracker:   costTrackerInterface,
 	})
 
-	batchDeleter := batch.NewBatchDeleter(db, batch.BatchDeleterConfig{
+	deleter := batch.NewBatchDeleter(db, batch.BatchDeleterConfig{
 		BatchSize: batch.DefaultBatchSize,
 		Logger:    logger,
 		Tracker:   costTrackerInterface,
@@ -90,9 +105,9 @@ func NewBatchRepository(db core.DB, tableName string, logger *zap.Logger, tracke
 
 	return &BatchRepository{
 		BaseRepository: dynamorm.NewBaseRepository(db, tableName),
-		batchWriter:    batchWriter,
-		batchReader:    batchReader,
-		batchDeleter:   batchDeleter,
+		batchWriter:    writer,
+		batchReader:    reader,
+		batchDeleter:   deleter,
 		logger:         logger,
 		tracker:        tracker,
 	}

@@ -316,7 +316,18 @@ func (s *RevisionService) RestoreRevision(ctx context.Context, objectID string, 
 		return nil, err
 	}
 	s.deleteRemovedCMSArticleIndexesBestEffort(ctx, &before, article)
-	cmsUpdateArticleCountsBestEffort(ctx, s.seriesRepo, s.categoryRepo, &before, article, s.logger)
+
+	var seriesUpdater cmsSeriesArticleCountUpdater
+	if s.seriesRepo != nil {
+		seriesUpdater = s.seriesRepo
+	}
+
+	var categoryUpdater cmsCategoryArticleCountUpdater
+	if s.categoryRepo != nil {
+		categoryUpdater = s.categoryRepo
+	}
+
+	cmsUpdateArticleCountsBestEffort(ctx, seriesUpdater, categoryUpdater, &before, article, s.logger)
 
 	// Record a revision for the restored state (audit trail). This should not block the restore.
 	s.recordRestoredRevisionBestEffort(ctx, article, version)

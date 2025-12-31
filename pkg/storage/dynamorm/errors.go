@@ -53,8 +53,8 @@ func MapError(err error) error {
 			WithInternalError(stdErrors.Join(err, storage.ErrNotFound))
 	}
 
-	// Check for common error messages
-	errMsg := err.Error()
+	// Check for common error messages (case-insensitive)
+	errMsg := strings.ToLower(err.Error())
 
 	// Not found errors
 	if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "item not found") ||

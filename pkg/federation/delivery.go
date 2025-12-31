@@ -28,11 +28,15 @@ import (
 // DeliveryService handles sending activities to remote instances
 type DeliveryService struct {
 	store      FederationStorage
-	httpClient *httpclient.SecureClient
-	logger     *zap.Logger
-	sqsClient  *sqs.Client
-	queueURL   string
-	cfg        *appConfig.Config
+	httpClient interface {
+		Do(req *http.Request) (*http.Response, error)
+	}
+	logger    *zap.Logger
+	sqsClient interface {
+		SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
+	}
+	queueURL string
+	cfg      *appConfig.Config
 }
 
 // NewDeliveryService creates a new delivery service
@@ -629,7 +633,9 @@ func (d *DeliveryService) QueueDelivery(ctx context.Context, activity *activityp
 }
 
 // getSQSClient returns the SQS client if configured
-func (d *DeliveryService) getSQSClient() *sqs.Client {
+func (d *DeliveryService) getSQSClient() interface {
+	SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
+} {
 	// This would be initialized in NewDeliveryService if SQS is configured
 	// For now, return nil to indicate SQS is not configured
 	return d.sqsClient
@@ -687,7 +693,7 @@ func (d *DeliveryService) DeliverDirectMessage(ctx context.Context, activity *ac
 	addressingValidator := activitypub.NewAddressingValidator()
 	targets := addressingValidator.DetermineDeliveryRecipients(activity)
 
-	if err := common.ValidateSliceNotEmpty("direct_recipients", targets.DirectRecipients); err != nil {
+	if len(targets.DirectRecipients) == 0 {
 		log.Info("no remote recipients for direct message")
 		return nil
 	}

@@ -10,17 +10,29 @@ import (
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
+type categoryRepository interface {
+	GetDB() dynamormcore.DB
+	CreateCategory(ctx context.Context, category *models.Category) error
+	GetCategory(ctx context.Context, id string) (*models.Category, error)
+	Update(ctx context.Context, category *models.Category) error
+	Delete(ctx context.Context, pk, sk string) error
+	ListCategories(ctx context.Context, parentID *string, limit int) ([]*models.Category, error)
+}
+
+var _ categoryRepository = (*repositories.CategoryRepository)(nil)
+
 // CategoryService handles business logic for categories
 type CategoryService struct {
-	categoryRepo *repositories.CategoryRepository
+	categoryRepo categoryRepository
 	logger       *zap.Logger
 }
 
 // NewCategoryService creates a new CategoryService
-func NewCategoryService(categoryRepo *repositories.CategoryRepository, logger *zap.Logger) *CategoryService {
+func NewCategoryService(categoryRepo categoryRepository, logger *zap.Logger) *CategoryService {
 	return &CategoryService{
 		categoryRepo: categoryRepo,
 		logger:       logger,

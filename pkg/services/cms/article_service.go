@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/google/uuid"
+	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -24,24 +25,46 @@ type FederationService interface {
 	DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error
 }
 
+type articleServiceRepository interface {
+	GetDB() dynamormcore.DB
+	CreateArticle(ctx context.Context, article *models.Article) error
+	GetArticle(ctx context.Context, articleID string) (*models.Article, error)
+	UpdateArticle(ctx context.Context, article *models.Article) error
+	DeleteArticle(ctx context.Context, articleID string) error
+}
+
+type actorRepository interface {
+	GetActor(ctx context.Context, username string) (*activitypub.Actor, error)
+}
+
+type articleRevisionCreator interface {
+	CreateRevision(ctx context.Context, article *models.Article) (*models.Revision, error)
+}
+
+var (
+	_ articleServiceRepository = (*repositories.ArticleRepository)(nil)
+	_ actorRepository          = (*repositories.ActorRepository)(nil)
+	_ articleRevisionCreator   = (*RevisionService)(nil)
+)
+
 // ArticleService handles business logic for articles
 type ArticleService struct {
-	articleRepo     *repositories.ArticleRepository
-	actorRepo       *repositories.ActorRepository
+	articleRepo     articleServiceRepository
+	actorRepo       actorRepository
 	seriesRepo      *repositories.SeriesRepository
 	categoryRepo    *repositories.CategoryRepository
-	revisionService *RevisionService
+	revisionService articleRevisionCreator
 	federation      FederationService
 	logger          *zap.Logger
 }
 
 // NewArticleService creates a new ArticleService
 func NewArticleService(
-	articleRepo *repositories.ArticleRepository,
-	actorRepo *repositories.ActorRepository,
+	articleRepo articleServiceRepository,
+	actorRepo actorRepository,
 	seriesRepo *repositories.SeriesRepository,
 	categoryRepo *repositories.CategoryRepository,
-	revisionService *RevisionService,
+	revisionService articleRevisionCreator,
 	federation FederationService,
 	logger *zap.Logger,
 ) *ArticleService {
@@ -309,7 +332,17 @@ func (s *ArticleService) deleteCMSArticleIndexesForRemovedGroups(ctx context.Con
 }
 
 func (s *ArticleService) updateCMSArticleCountsBestEffort(ctx context.Context, before *models.Article, after *models.Article) {
-	cmsUpdateArticleCountsBestEffort(ctx, s.seriesRepo, s.categoryRepo, before, after, s.logger)
+	var seriesUpdater cmsSeriesArticleCountUpdater
+	if s.seriesRepo != nil {
+		seriesUpdater = s.seriesRepo
+	}
+
+	var categoryUpdater cmsCategoryArticleCountUpdater
+	if s.categoryRepo != nil {
+		categoryUpdater = s.categoryRepo
+	}
+
+	cmsUpdateArticleCountsBestEffort(ctx, seriesUpdater, categoryUpdater, before, after, s.logger)
 }
 
 func (s *ArticleService) federateArticleCreation(ctx context.Context, article *models.Article) {

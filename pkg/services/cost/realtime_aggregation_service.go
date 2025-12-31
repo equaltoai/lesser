@@ -2,7 +2,6 @@ package cost
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -13,6 +12,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
+	dynamostream "github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -31,13 +31,21 @@ const (
 // RealtimeAggregationService provides real-time cost aggregation using DynamoDB Streams
 type RealtimeAggregationService struct {
 	db                core.DB
-	aiCostRepo        *repositories.AICostRepository
+	aiCostRepo        aiAggregatedCostRepository
 	webSocketCostRepo *repositories.WebSocketCostRepository
-	notificationSvc   *notifications.Service
+	notificationSvc   notificationCreator
 	logger            *zap.Logger
 	aggregationCache  *AggregationCache
 	streamProcessors  map[string]*StreamProcessor
 	mu                sync.RWMutex
+}
+
+type aiAggregatedCostRepository interface {
+	CreateOrUpdateAggregatedCost(ctx context.Context, record *models.AIAggregatedCost) error
+}
+
+type notificationCreator interface {
+	CreateNotification(ctx context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error)
 }
 
 // NewRealtimeAggregationService creates a new real-time aggregation service
@@ -420,34 +428,8 @@ func (s *RealtimeAggregationService) processFederationCostRecord(_ context.Conte
 
 // unmarshalDynamoDBRecord unmarshals a DynamoDB stream record into a struct
 func (s *RealtimeAggregationService) unmarshalDynamoDBRecord(record events.DynamoDBEventRecord, target interface{}) error {
-	var recordData map[string]events.DynamoDBAttributeValue
-
-	switch record.EventName {
-	case "INSERT", "MODIFY":
-		recordData = record.Change.NewImage
-	case "REMOVE":
-		recordData = record.Change.OldImage
-	default:
-		return services.ErrUnsupportedEventType
-	}
-
-	// Convert DynamoDB attribute values to JSON
-	jsonData := make(map[string]interface{})
-	for key, attr := range recordData {
-		jsonData[key] = s.convertDynamoDBAttribute(attr)
-	}
-
-	// Marshal to JSON then unmarshal to target struct
-	jsonBytes, err := json.Marshal(jsonData)
-	if err != nil {
-		return errors.Join(services.ErrMarshalToJSON, err)
-	}
-
-	if err := json.Unmarshal(jsonBytes, target); err != nil {
-		return errors.Join(services.ErrUnmarshalToTarget, err)
-	}
-
-	return nil
+	// Prefer the shared stream unmarshaling logic so types and struct tags match production models.
+	return dynamostream.UnmarshalItem(record, target)
 }
 
 // convertDynamoDBAttribute converts DynamoDB attribute to Go value
@@ -513,6 +495,10 @@ func (s *RealtimeAggregationService) updateSummaryCache(cacheKey string, costDol
 
 // createOrUpdateAIAggregation creates or updates AI cost aggregation records
 func (s *RealtimeAggregationService) createOrUpdateAIAggregation(ctx context.Context, aiCost *models.AICost) error {
+	if s.aiCostRepo == nil {
+		return fmt.Errorf("ai cost repository not configured")
+	}
+
 	// Create hourly aggregation
 	hourlyAgg := s.createHourlyAIAggregation(aiCost)
 	if err := s.aiCostRepo.CreateOrUpdateAggregatedCost(ctx, hourlyAgg); err != nil {
@@ -579,19 +565,22 @@ func (s *RealtimeAggregationService) createDailyAIAggregation(aiCost *models.AIC
 
 // shouldCreateDailyAggregation determines if daily aggregation should be created
 func (s *RealtimeAggregationService) shouldCreateDailyAggregation(timestamp time.Time) bool {
-	s.aggregationCache.mu.RLock()
-	defer s.aggregationCache.mu.RUnlock()
-
 	dateKey := timestamp.Format("2006-01-02")
-	lastAgg, exists := s.aggregationCache.lastAggregation[dateKey]
+	s.aggregationCache.mu.Lock()
+	defer s.aggregationCache.mu.Unlock()
 
+	lastAgg, exists := s.aggregationCache.lastAggregation[dateKey]
 	if !exists {
 		s.aggregationCache.lastAggregation[dateKey] = timestamp
 		return true
 	}
 
 	// Create daily aggregation every hour
-	return timestamp.Sub(lastAgg) >= time.Hour
+	if timestamp.Sub(lastAgg) >= time.Hour {
+		s.aggregationCache.lastAggregation[dateKey] = timestamp
+		return true
+	}
+	return false
 }
 
 // updateAggregationCache updates aggregation cache with latest data

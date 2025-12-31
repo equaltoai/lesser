@@ -18,7 +18,13 @@ import (
 
 // TextAnalyzer handles text content analysis using AWS Comprehend
 type TextAnalyzer struct {
-	client      *comprehend.Client
+	client interface {
+		DetectDominantLanguage(ctx context.Context, params *comprehend.DetectDominantLanguageInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectDominantLanguageOutput, error)
+		DetectSentiment(ctx context.Context, params *comprehend.DetectSentimentInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectSentimentOutput, error)
+		DetectPiiEntities(ctx context.Context, params *comprehend.DetectPiiEntitiesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectPiiEntitiesOutput, error)
+		DetectEntities(ctx context.Context, params *comprehend.DetectEntitiesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectEntitiesOutput, error)
+		DetectKeyPhrases(ctx context.Context, params *comprehend.DetectKeyPhrasesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectKeyPhrasesOutput, error)
+	}
 	logger      *zap.Logger
 	config      *ModerationConfig
 	costTracker CostTracker
@@ -36,8 +42,23 @@ type CostTracker interface {
 
 // NewTextAnalyzer creates a new text analyzer
 func NewTextAnalyzer(client *comprehend.Client, logger *zap.Logger, config *ModerationConfig, costTracker CostTracker) *TextAnalyzer {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	var clientInterface interface {
+		DetectDominantLanguage(ctx context.Context, params *comprehend.DetectDominantLanguageInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectDominantLanguageOutput, error)
+		DetectSentiment(ctx context.Context, params *comprehend.DetectSentimentInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectSentimentOutput, error)
+		DetectPiiEntities(ctx context.Context, params *comprehend.DetectPiiEntitiesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectPiiEntitiesOutput, error)
+		DetectEntities(ctx context.Context, params *comprehend.DetectEntitiesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectEntitiesOutput, error)
+		DetectKeyPhrases(ctx context.Context, params *comprehend.DetectKeyPhrasesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectKeyPhrasesOutput, error)
+	}
+	if client != nil {
+		clientInterface = client
+	}
+
 	return &TextAnalyzer{
-		client:      client,
+		client:      clientInterface,
 		logger:      logger,
 		config:      config,
 		costTracker: costTracker,
@@ -282,7 +303,7 @@ func (ta *TextAnalyzer) detectToxicity(ctx context.Context, text, language strin
 	keyPhrases, err := ta.detectKeyPhrases(ctx, text, language)
 	if err == nil {
 		toxicPhrases := ta.checkToxicPhrases(keyPhrases)
-		if err := common.ValidateSliceNotEmpty("toxicPhrases", toxicPhrases); err == nil {
+		if len(toxicPhrases) > 0 {
 			toxicity.IsToxic = true
 			toxicity.ToxicityScore = maxFloat64(toxicity.ToxicityScore, 0.7)
 

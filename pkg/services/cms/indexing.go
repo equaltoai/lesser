@@ -6,9 +6,16 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
+
+type cmsSeriesArticleCountUpdater interface {
+	UpdateArticleCount(ctx context.Context, authorID string, seriesID string, delta int) error
+}
+
+type cmsCategoryArticleCountUpdater interface {
+	UpdateArticleCount(ctx context.Context, categoryID string, delta int) error
+}
 
 func cmsArticleIndexEntries(article *models.Article) []*models.CMSArticleIndex {
 	if article == nil {
@@ -186,7 +193,7 @@ func cmsExtractCategoryIDSet(article *models.Article) map[string]struct{} {
 	return out
 }
 
-func cmsUpdateArticleCountsBestEffort(ctx context.Context, seriesRepo *repositories.SeriesRepository, categoryRepo *repositories.CategoryRepository, before *models.Article, after *models.Article, logger *zap.Logger) {
+func cmsUpdateArticleCountsBestEffort(ctx context.Context, seriesRepo cmsSeriesArticleCountUpdater, categoryRepo cmsCategoryArticleCountUpdater, before *models.Article, after *models.Article, logger *zap.Logger) {
 	if seriesRepo == nil && categoryRepo == nil {
 		return
 	}

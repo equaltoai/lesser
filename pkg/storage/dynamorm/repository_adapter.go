@@ -2,6 +2,7 @@ package dynamorm
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 
@@ -151,7 +152,20 @@ func (r *GenericRepository) Delete(_ context.Context, id string, entityPtr any) 
 // List lists entities with optional filtering
 func (r *GenericRepository) List(_ context.Context, filter map[string]any, entities any) error {
 	// Start building the query
-	query := r.DB.Model(reflect.New(reflect.TypeOf(entities).Elem().Elem().Elem()).Interface())
+	entitiesType := reflect.TypeOf(entities)
+	if entitiesType == nil || entitiesType.Kind() != reflect.Ptr || entitiesType.Elem().Kind() != reflect.Slice {
+		return fmt.Errorf("entities must be a pointer to slice, got %T", entities)
+	}
+
+	modelType := entitiesType.Elem().Elem()
+	for modelType.Kind() == reflect.Ptr {
+		modelType = modelType.Elem()
+	}
+	if modelType.Kind() != reflect.Struct {
+		return fmt.Errorf("entities must contain structs, got %s", modelType.Kind())
+	}
+
+	query := r.DB.Model(reflect.New(modelType).Interface())
 
 	for key, value := range filter {
 		// Handle special case for GSI queries

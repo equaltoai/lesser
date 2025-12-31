@@ -17,18 +17,52 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	pkgerrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
 
+type searchRepository interface {
+	SearchAccounts(ctx context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error)
+	SearchStatuses(ctx context.Context, query string, limit int) ([]*storage.StatusSearchResult, error)
+	SearchHashtags(ctx context.Context, query string, limit int) ([]*storage.Hashtag, error)
+}
+
+type actorRepository interface {
+	GetAccountSuggestions(ctx context.Context, userID string, limit int) ([]*activitypub.Actor, error)
+	RemoveAccountSuggestion(ctx context.Context, userID, targetID string) error
+}
+
+type relationshipRepository interface {
+	CountFollowers(ctx context.Context, username string) (int, error)
+	CountFollowing(ctx context.Context, username string) (int, error)
+}
+
+type statusRepository interface {
+	CountStatusesByAuthor(ctx context.Context, authorID string) (int, error)
+	GetStatusCounts(ctx context.Context, statusID string) (likes, reblogs, replies int, err error)
+}
+
+type hashtagRepository interface {
+	IsFollowingHashtag(ctx context.Context, userID, hashtag string) (bool, error)
+}
+
+var (
+	_ searchRepository       = (*repositories.SearchRepository)(nil)
+	_ actorRepository        = (*repositories.ActorRepository)(nil)
+	_ relationshipRepository = (*repositories.RelationshipRepository)(nil)
+	_ statusRepository       = (*repositories.StatusRepository)(nil)
+	_ hashtagRepository      = (*repositories.HashtagRepository)(nil)
+)
+
 // Service provides business logic for search and discovery operations
 type Service struct {
-	searchRepo       *repositories.SearchRepository
-	actorRepo        *repositories.ActorRepository
-	relationshipRepo *repositories.RelationshipRepository
-	statusRepo       *repositories.StatusRepository
-	hashtagRepo      *repositories.HashtagRepository
+	searchRepo       searchRepository
+	actorRepo        actorRepository
+	relationshipRepo relationshipRepository
+	statusRepo       statusRepository
+	hashtagRepo      hashtagRepository
 	publisher        streaming.Publisher
 	logger           *zap.Logger
 	domain           string
@@ -36,15 +70,19 @@ type Service struct {
 
 // NewService creates a new search service
 func NewService(
-	searchRepo *repositories.SearchRepository,
-	actorRepo *repositories.ActorRepository,
-	relationshipRepo *repositories.RelationshipRepository,
-	statusRepo *repositories.StatusRepository,
-	hashtagRepo *repositories.HashtagRepository,
+	searchRepo searchRepository,
+	actorRepo actorRepository,
+	relationshipRepo relationshipRepository,
+	statusRepo statusRepository,
+	hashtagRepo hashtagRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 	domain string,
 ) *Service {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	return &Service{
 		searchRepo:       searchRepo,
 		actorRepo:        actorRepo,
@@ -502,6 +540,10 @@ func getStatusIDFromResult(result interface{}) string {
 		if id, ok := r["id"].(string); ok {
 			return id
 		}
+	case *storage.StatusSearchResult:
+		return r.ID
+	case storage.StatusSearchResult:
+		return r.ID
 	case struct{ ID string }:
 		return r.ID
 	default:

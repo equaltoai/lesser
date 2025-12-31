@@ -108,7 +108,7 @@ func TestShouldResetBudget(t *testing.T) {
 
 	t.Run("monthly_reset_different_month", func(t *testing.T) {
 		now := time.Now()
-		lastMonth := now.AddDate(0, -1, 0)
+		lastMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).AddDate(0, -1, 0)
 		budget := &models.RelayBudget{
 			Period:      "monthly",
 			LastResetAt: lastMonth,

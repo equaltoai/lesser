@@ -594,7 +594,9 @@ func extractHashtagsFromContent(content string) []string {
 
 // normalizeHashtagName lowercases and trims a hashtag identifier.
 func normalizeHashtagName(name string) string {
-	return strings.TrimSpace(strings.TrimPrefix(strings.ToLower(name), "#"))
+	name = strings.TrimSpace(strings.ToLower(name))
+	name = strings.TrimLeft(name, "#")
+	return strings.TrimSpace(name)
 }
 
 // uniqueNormalizedHashtags removes duplicates while normalizing each hashtag.

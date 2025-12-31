@@ -16,8 +16,15 @@ import (
 
 // DynamORMStorage handles persistence of cost data using DynamORM
 type DynamORMStorage struct {
-	repo   *repositories.TrackingRepository
+	repo   trackingRepository
 	logger *zap.Logger
+}
+
+type trackingRepository interface {
+	Create(ctx context.Context, record *models.DynamoDBCostRecord) error
+	GetAggregatedCostsByPeriod(ctx context.Context, period string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error)
+	GetCostsByOperationType(ctx context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error)
+	GetCostsByService(ctx context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error)
 }
 
 // NewDynamORMStorage creates a new DynamORM-based cost storage instance

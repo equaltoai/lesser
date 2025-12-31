@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,6 +68,16 @@ func TestGetStatusIDFromResult(t *testing.T) {
 	t.Run("struct_with_ID_field", func(t *testing.T) {
 		got := getStatusIDFromResult(struct{ ID string }{ID: "abc"})
 		assert.Equal(t, "abc", got)
+	})
+
+	t.Run("status_search_result_pointer", func(t *testing.T) {
+		got := getStatusIDFromResult(&storage.StatusSearchResult{ID: "s1"})
+		assert.Equal(t, "s1", got)
+	})
+
+	t.Run("status_search_result_value", func(t *testing.T) {
+		got := getStatusIDFromResult(storage.StatusSearchResult{ID: "s2"})
+		assert.Equal(t, "s2", got)
 	})
 
 	t.Run("unknown_type", func(t *testing.T) {

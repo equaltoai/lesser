@@ -16,15 +16,19 @@ import (
 	"go.uber.org/zap"
 )
 
+type cloudWatchAPI interface {
+	GetMetricStatistics(ctx context.Context, params *cloudwatch.GetMetricStatisticsInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.GetMetricStatisticsOutput, error)
+}
+
 // Service provides performance monitoring functionality
 type Service struct {
-	cloudWatch  *cloudwatch.Client
+	cloudWatch  cloudWatchAPI
 	logger      *zap.Logger
 	environment string
 }
 
 // NewService creates a new performance monitoring service
-func NewService(cloudWatch *cloudwatch.Client, environment string, logger *zap.Logger) *Service {
+func NewService(cloudWatch cloudWatchAPI, environment string, logger *zap.Logger) *Service {
 	return &Service{
 		cloudWatch:  cloudWatch,
 		logger:      logger,

@@ -15,10 +15,16 @@ import (
 
 // ManifestService handles HLS and DASH manifest operations
 type ManifestService struct {
-	s3Client  *s3.Client
+	s3Client  s3API
 	logger    *zap.Logger
 	bucket    string
 	cdnDomain string
+}
+
+type s3API interface {
+	HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
+	ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
 }
 
 // ManifestConfig holds configuration for manifest service
@@ -56,7 +62,7 @@ var (
 )
 
 // NewManifestService creates a new manifest service
-func NewManifestService(s3Client *s3.Client, config ManifestConfig, logger *zap.Logger) *ManifestService {
+func NewManifestService(s3Client s3API, config ManifestConfig, logger *zap.Logger) *ManifestService {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
