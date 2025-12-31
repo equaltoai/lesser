@@ -68,7 +68,7 @@ func TestSlugify(t *testing.T) {
 		{
 			name:     "unicode characters handled as non-ascii",
 			input:    "Héllo Wörld",
-			expected: "h-llo-w-rld", // Based on current implementation logic
+			expected: "h-llo-w-rld",
 		},
 		{
 			name:     "URL characters",
@@ -78,6 +78,31 @@ func TestSlugify(t *testing.T) {
 		{
 			name:     "mixed case",
 			input:    "HeLLo WoRLd",
+			expected: "hello-world",
+		},
+		{
+			name:     "newlines and tabs",
+			input:    "Hello\n\tWorld",
+			expected: "hello-world",
+		},
+		{
+			name:     "all special characters",
+			input:    "!@#$%^&*()",
+			expected: "",
+		},
+		{
+			name:     "underscore handling",
+			input:    "hello_world",
+			expected: "hello-world",
+		},
+		{
+			name:     "consecutive underscores",
+			input:    "hello__world",
+			expected: "hello-world",
+		},
+		{
+			name:     "unicode punctuation",
+			input:    "hello—world", // em dash
 			expected: "hello-world",
 		},
 	}
