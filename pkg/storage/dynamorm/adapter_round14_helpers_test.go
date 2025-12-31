@@ -272,7 +272,7 @@ func TestAdapterHelpers_buildRepositoryMethodArgs(t *testing.T) {
 	t.Run("false when too few args", func(t *testing.T) {
 		method := reflect.ValueOf(repoAllZeroes{}).MethodByName("OnlyContext")
 		require.True(t, method.IsValid())
-		args, ok := buildRepositoryMethodArgs(method.Type(), ctx, "q", 1, "c")
+		args, ok := buildRepositoryMethodArgs(ctx, method.Type(), "q", 1, "c")
 		require.False(t, ok)
 		require.Nil(t, args)
 	})
@@ -280,7 +280,7 @@ func TestAdapterHelpers_buildRepositoryMethodArgs(t *testing.T) {
 	t.Run("true for (ctx, string, limit, cursor)", func(t *testing.T) {
 		method := reflect.ValueOf(repoAllZeroes{}).MethodByName("StdThree")
 		require.True(t, method.IsValid())
-		args, ok := buildRepositoryMethodArgs(method.Type(), ctx, "q", 1, "c")
+		args, ok := buildRepositoryMethodArgs(ctx, method.Type(), "q", 1, "c")
 		require.True(t, ok)
 		require.Len(t, args, 4)
 	})
@@ -288,7 +288,7 @@ func TestAdapterHelpers_buildRepositoryMethodArgs(t *testing.T) {
 	t.Run("true for (ctx, string, PaginationOptions)", func(t *testing.T) {
 		method := reflect.ValueOf(repoAllZeroes{}).MethodByName("PageTwo")
 		require.True(t, method.IsValid())
-		args, ok := buildRepositoryMethodArgs(method.Type(), ctx, "q", 1, "c")
+		args, ok := buildRepositoryMethodArgs(ctx, method.Type(), "q", 1, "c")
 		require.True(t, ok)
 		require.Len(t, args, 3)
 	})
@@ -296,7 +296,7 @@ func TestAdapterHelpers_buildRepositoryMethodArgs(t *testing.T) {
 	t.Run("false for unsupported (ctx, string, int)", func(t *testing.T) {
 		method := reflect.ValueOf(repoAllZeroes{}).MethodByName("InvalidArgs")
 		require.True(t, method.IsValid())
-		args, ok := buildRepositoryMethodArgs(method.Type(), ctx, "q", 1, "c")
+		args, ok := buildRepositoryMethodArgs(ctx, method.Type(), "q", 1, "c")
 		require.False(t, ok)
 		require.Nil(t, args)
 	})

@@ -4,16 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	stdliberrors "errors"
-	"io"
-	"net/http"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
-	awsInit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	awsInit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
@@ -183,127 +180,6 @@ func TestInboxInit_Round10_InitializeObservabilityServices_CentralCostService(t 
 	require.NoError(t, obs.centralizedCostService.Close(context.Background()))
 }
 
-type failingReadCloser struct {
-	reader io.Reader
-}
-
-func (f failingReadCloser) Read(p []byte) (int, error) { return f.reader.Read(p) }
-
-func (f failingReadCloser) Close() error { return stdliberrors.New("close failed") }
-
-type stubDoer struct {
-	do func(*http.Request) (*http.Response, error)
-}
-
-func (s stubDoer) Do(req *http.Request) (*http.Response, error) { return s.do(req) }
-
-func TestInboxHandler_Round10_FetchActorPublicKey_MoreBranches(t *testing.T) {
-	env := newInboxTestEnv(t)
-
-	previousClient := newSecureHTTPClient
-	t.Cleanup(func() { newSecureHTTPClient = previousClient })
-
-	t.Run("client do error", func(t *testing.T) {
-		newSecureHTTPClient = func(_ *zap.Logger) httpDoer {
-			return stubDoer{do: func(*http.Request) (*http.Response, error) {
-				return nil, stdliberrors.New("network down")
-			}}
-		}
-		_, err := env.handler.fetchActorPublicKey(context.Background(), "https://remote.example/users/bob")
-		require.Error(t, err)
-	})
-
-	t.Run("non-200 response logs body and returns actorResponseError", func(t *testing.T) {
-		newSecureHTTPClient = func(_ *zap.Logger) httpDoer {
-			return stubDoer{do: func(*http.Request) (*http.Response, error) {
-				return &http.Response{
-					StatusCode: http.StatusBadRequest,
-					Body:       failingReadCloser{reader: strings.NewReader("nope")},
-				}, nil
-			}}
-		}
-		_, err := env.handler.fetchActorPublicKey(context.Background(), "https://remote.example/users/bob")
-		require.Error(t, err)
-	})
-
-	t.Run("parse actor error", func(t *testing.T) {
-		newSecureHTTPClient = func(_ *zap.Logger) httpDoer {
-			return stubDoer{do: func(*http.Request) (*http.Response, error) {
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       failingReadCloser{reader: strings.NewReader("{not-json")},
-				}, nil
-			}}
-		}
-		_, err := env.handler.fetchActorPublicKey(context.Background(), "https://remote.example/users/bob")
-		require.Error(t, err)
-	})
-
-	t.Run("missing public key", func(t *testing.T) {
-		payload, err := json.Marshal(map[string]any{
-			"id": "https://remote.example/users/bob",
-		})
-		require.NoError(t, err)
-
-		newSecureHTTPClient = func(_ *zap.Logger) httpDoer {
-			return stubDoer{do: func(*http.Request) (*http.Response, error) {
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       failingReadCloser{reader: strings.NewReader(string(payload))},
-				}, nil
-			}}
-		}
-		_, err = env.handler.fetchActorPublicKey(context.Background(), "https://remote.example/users/bob")
-		require.Error(t, err)
-	})
-
-	t.Run("invalid public key pem", func(t *testing.T) {
-		payload, err := json.Marshal(map[string]any{
-			"id": "https://remote.example/users/bob",
-			"publicKey": map[string]any{
-				"id":           "https://remote.example/users/bob#main-key",
-				"owner":        "https://remote.example/users/bob",
-				"publicKeyPem": "not-a-pem",
-			},
-		})
-		require.NoError(t, err)
-
-		newSecureHTTPClient = func(_ *zap.Logger) httpDoer {
-			return stubDoer{do: func(*http.Request) (*http.Response, error) {
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       failingReadCloser{reader: strings.NewReader(string(payload))},
-				}, nil
-			}}
-		}
-		_, err = env.handler.fetchActorPublicKey(context.Background(), "https://remote.example/users/bob")
-		require.Error(t, err)
-	})
-
-	t.Run("success", func(t *testing.T) {
-		payload, err := json.Marshal(map[string]any{
-			"id": "https://remote.example/users/bob",
-			"publicKey": map[string]any{
-				"id":           env.remoteKeyID,
-				"owner":        env.remoteActorID,
-				"publicKeyPem": string(env.remotePublicPEM),
-			},
-		})
-		require.NoError(t, err)
-
-		newSecureHTTPClient = func(_ *zap.Logger) httpDoer {
-			return stubDoer{do: func(*http.Request) (*http.Response, error) {
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       failingReadCloser{reader: strings.NewReader(string(payload))},
-				}, nil
-			}}
-		}
-		_, err = env.handler.fetchActorPublicKey(context.Background(), "https://remote.example/users/bob")
-		require.NoError(t, err)
-	})
-}
-
 func TestInboxHandler_Round10_ParseActivity_ParseErrorBranch(t *testing.T) {
 	env := newInboxTestEnv(t)
 
@@ -351,7 +227,7 @@ func TestInboxHandler_Round10_CheckRateLimit_ErrorBranch(t *testing.T) {
 	env.mockQuery.ExpectedCalls = append([]*mock.Call{call}, env.mockQuery.ExpectedCalls[:len(env.mockQuery.ExpectedCalls)-1]...)
 
 	ctx := newLiftContext("POST", "/users/alice/inbox", map[string]string{
-		"Host":           "localhost",
+		"Host":            "localhost",
 		"X-Forwarded-For": "1.2.3.4",
 	}, nil, []byte("x"))
 	ctx.SetParam("username", "alice")

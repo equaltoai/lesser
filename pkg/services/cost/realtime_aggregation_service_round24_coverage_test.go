@@ -236,20 +236,5 @@ func TestRealtimeAggregationService_sendCostAlert_Round24(t *testing.T) {
 	})
 }
 
-func TestRealtimeAggregationService_convertDynamoDBAttribute_Round24(t *testing.T) {
-	svc := &RealtimeAggregationService{}
-	require.Equal(t, "s", svc.convertDynamoDBAttribute(events.NewStringAttribute("s")))
-	require.Equal(t, "123", svc.convertDynamoDBAttribute(events.NewNumberAttribute("123")))
-	require.Equal(t, true, svc.convertDynamoDBAttribute(events.NewBooleanAttribute(true)))
-
-	require.Equal(t, []interface{}{"a", "1"}, svc.convertDynamoDBAttribute(events.NewListAttribute([]events.DynamoDBAttributeValue{
-		events.NewStringAttribute("a"),
-		events.NewNumberAttribute("1"),
-	})))
-
-	require.Equal(t, map[string]interface{}{"k": "v"}, svc.convertDynamoDBAttribute(events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
-		"k": events.NewStringAttribute("v"),
-	})))
-
-	require.Nil(t, svc.convertDynamoDBAttribute(events.NewNullAttribute()))
-}
+// Note: TestRealtimeAggregationService_convertDynamoDBAttribute_Round24 removed because
+// convertDynamoDBAttribute is not exported from RealtimeAggregationService

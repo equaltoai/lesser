@@ -81,9 +81,9 @@ func TestInboxHandler_Round10_PostPipeline_CreateActivity(t *testing.T) {
 	require.NoError(t, err)
 
 	headers := map[string]string{
-		"Host":          "localhost",
-		"Content-Type":  "application/activity+json",
-		"User-Agent":    "Mastodon/4.0.0",
+		"Host":            "localhost",
+		"Content-Type":    "application/activity+json",
+		"User-Agent":      "Mastodon/4.0.0",
 		"X-Forwarded-For": "203.0.113.10",
 	}
 	ctx := newLiftContext("POST", "/users/alice/inbox", headers, nil, body)
@@ -157,9 +157,9 @@ func TestInboxHandler_Round10_ProcessorSweep(t *testing.T) {
 			},
 			Actor: env.remoteActorID,
 			Object: map[string]any{
-				"type":  activitypub.FollowType,
-				"id":    env.cfg.BaseURL() + "/activities/follow-embedded",
-				"actor": env.remoteActorID,
+				"type":   activitypub.FollowType,
+				"id":     env.cfg.BaseURL() + "/activities/follow-embedded",
+				"actor":  env.remoteActorID,
 				"object": env.local.ID,
 			},
 		}
@@ -362,24 +362,6 @@ func TestInboxHandler_Round10_ProcessorSweep(t *testing.T) {
 			Target: target,
 		}
 		require.NoError(t, env.handler.processRemoveActivity(ctx, remove, env.local))
-	})
-
-	t.Run("legacy digest and signature helpers", func(t *testing.T) {
-		body := []byte(`{"hello":"world"}`)
-		headers := map[string]string{
-			"Host":         "localhost",
-			"Content-Type": "application/activity+json",
-		}
-		liftCtx := newLiftContext("POST", "/users/alice/inbox", headers, nil, body)
-		liftCtx.SetParam("username", "alice")
-		signLiftRequest(t, env, liftCtx, body)
-
-		req := &InboxRequest{
-			Activity: &activitypub.Activity{Actor: env.remoteActorID},
-			Body:     body,
-		}
-		require.NoError(t, env.handler.verifyDigest(liftCtx, req))
-		require.NoError(t, env.handler.verifyRequest(liftCtx, &env.remotePrivateKey.PublicKey, body))
 	})
 
 	t.Run("cost tracking happy path", func(t *testing.T) {

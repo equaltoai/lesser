@@ -63,7 +63,6 @@ func dmNoRecipientsError() *errors.AppError {
 
 // Actor and authentication errors - using Auth domain functions
 
-
 // Activity processing errors - using Federation domain functions
 
 // marshalFollowError creates an error when marshaling embedded follow fails.
@@ -213,7 +212,7 @@ func storeMigrationError() *errors.AppError {
 
 // unsupportedFlagObjectError creates an error for unsupported object type in flag activity.
 func unsupportedFlagObjectError() *errors.AppError {
-	return errors.ActivityTypeUnsupported("flag object type")
+	return errors.ActivityPubUnsupportedActivityType("flag object type")
 }
 
 // extractUsernameError creates an error when cannot extract username from new account ID.
@@ -228,7 +227,7 @@ func verifyMoveAuthError() *errors.AppError {
 
 // moveNotAuthorizedError creates an error when move is not authorized.
 func moveNotAuthorizedError() *errors.AppError {
-	return errors.OperationNotAllowed("move not authorized: new account does not list old account in alsoKnownAs field")
+	return errors.InsufficientPermissions("move not authorized: new account does not list old account in alsoKnownAs field")
 }
 
 // Collection ownership errors - using Auth and Validation domain functions
@@ -245,19 +244,19 @@ func extractCollectionOwnerError() *errors.AppError {
 
 // unauthorizedCollectionError creates an error when only the actor can manage their own featured collection.
 func unauthorizedCollectionError() *errors.AppError {
-	return errors.OperationNotAllowed("only the actor can manage their own featured collection")
+	return errors.InsufficientPermissions("only the actor can manage their own featured collection")
 }
 
 // unauthorizedCollectionModifyError creates an error when actor is not authorized to modify collection.
 func unauthorizedCollectionModifyError() *errors.AppError {
-	return errors.OperationNotAllowed("modify collection")
+	return errors.InsufficientPermissions("modify collection")
 }
 
 // Activity authorization errors - using Auth domain functions
 
 // activityBlockedError creates an error when activity is blocked because actors have blocked each other.
 func activityBlockedError() *errors.AppError {
-	return errors.OperationNotAllowed("activity blocked: actors have blocked each other")
+	return errors.InsufficientPermissions("activity blocked: actors have blocked each other")
 }
 
 // determineObjectOwnerError creates an error when cannot determine object owner for authorization.
@@ -267,12 +266,12 @@ func determineObjectOwnerError() *errors.AppError {
 
 // unauthorizedUpdateError creates an error when actor cannot update object.
 func unauthorizedUpdateError() *errors.AppError {
-	return errors.UpdateUnauthorized("", "")
+	return errors.InsufficientPermissions("update object")
 }
 
 // unauthorizedDeleteError creates an error when actor cannot delete object.
 func unauthorizedDeleteError() *errors.AppError {
-	return errors.DeleteUnauthorized("", "")
+	return errors.InsufficientPermissions("delete object")
 }
 
 // Object processing errors - using Federation and Lambda domain functions
@@ -294,7 +293,7 @@ func createUpdateHistoryError() *errors.AppError {
 
 // unsupportedDeleteObjectError creates an error for unsupported object type in delete activity.
 func unsupportedDeleteObjectError() *errors.AppError {
-	return errors.ActivityTypeUnsupported("delete object type")
+	return errors.ActivityPubUnsupportedActivityType("delete object type")
 }
 
 // getObjectLikesError creates an error when getting object likes fails.
@@ -317,4 +316,43 @@ func createTombstoneError() *errors.AppError {
 // updateTrusteeConfirmationError creates an error when updating trustee confirmation fails.
 func updateTrusteeConfirmationError() *errors.AppError {
 	return errors.FailedToUpdate("trustee confirmation", nil)
+}
+
+// Request and conversion errors - using Validation domain functions
+
+// requestConversionError creates an error when converting request fails.
+func requestConversionError() *errors.AppError {
+	return errors.ParsingFailed("request", nil)
+}
+
+// createRequestError creates an error when creating internal request structure fails.
+func createRequestError() *errors.AppError {
+	return errors.FailedToCreate("internal request", nil)
+}
+
+// Actor processing errors - using Federation domain functions
+
+// fetchActorError creates an error when fetching actor fails.
+func fetchActorError() *errors.AppError {
+	return errors.FailedToGet("actor", nil)
+}
+
+// actorResponseError creates an error when actor response is invalid.
+func actorResponseError() *errors.AppError {
+	return errors.ExternalAPIError("actor response", 502, nil)
+}
+
+// parseActorError creates an error when parsing actor fails.
+func parseActorError() *errors.AppError {
+	return errors.ParsingFailed("actor", nil)
+}
+
+// noPublicKeyError creates an error when actor has no public key.
+func noPublicKeyError() *errors.AppError {
+	return errors.RequiredFieldMissing("public_key")
+}
+
+// parsePublicKeyError creates an error when parsing public key fails.
+func parsePublicKeyError() *errors.AppError {
+	return errors.ParsingFailed("public key", nil)
 }

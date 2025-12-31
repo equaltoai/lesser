@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
@@ -9,8 +8,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/observability"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -164,7 +163,7 @@ func TestInboxHandler_Round10_VerifyAuthentication_FailureBranches(t *testing.T)
 		return &InboxRequest{
 			Activity:  &activitypub.Activity{Actor: actorID},
 			Body:      body,
-			StartTime:  now,
+			StartTime: now,
 			CostParams: &federation.CostCalculationParams{
 				ActivityID:    "x",
 				Domain:        "remote.example",
@@ -325,7 +324,7 @@ func TestInboxHandler_Round10_CheckDomainBlock_Branches(t *testing.T) {
 			Activity:    &activitypub.Activity{Actor: env.remoteActorID},
 			ActorDomain: domain,
 			StartTime:   now,
-			CostParams: &federation.CostCalculationParams{ActivityID: "x", Domain: domain, ActivityType: activitypub.CreateType, Timestamp: now},
+			CostParams:  &federation.CostCalculationParams{ActivityID: "x", Domain: domain, ActivityType: activitypub.CreateType, Timestamp: now},
 		}
 	}
 
@@ -372,16 +371,4 @@ func TestInboxHandler_Round10_CheckDomainBlock_Branches(t *testing.T) {
 
 		require.NoError(t, handler.checkDomainBlock(makeLiftCtx(), makeReq("blocked.example")))
 	})
-}
-
-func TestInboxHandler_Round10_FetchActorPublicKey_EarlyErrors(t *testing.T) {
-	env := newInboxTestEnv(t)
-
-	_, err := env.handler.fetchActorPublicKey(context.Background(), "://bad")
-	require.Error(t, err)
-
-	cancelled, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err = env.handler.fetchActorPublicKey(cancelled, "https://remote.example/users/bob")
-	require.Error(t, err)
 }

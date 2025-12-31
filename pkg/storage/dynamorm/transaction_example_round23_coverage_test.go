@@ -36,13 +36,20 @@ func (db *transactionTestDB) WithContext(_ context.Context) core.DB { return db 
 func TestExampleCreateUserWithPosts_UsesInjectedClient_Round23(t *testing.T) {
 	originalClient := client
 	originalErr := clientErr
-	originalOnce := clientOnce
 	originalLambdaDB := lambdaDB
+	// Avoid copying sync.Once which contains a mutex
+	wasInitialized := client != nil // Heuristic: if client is set, Once has likely run
+
 	t.Cleanup(func() {
 		client = originalClient
 		clientErr = originalErr
-		clientOnce = originalOnce
 		lambdaDB = originalLambdaDB
+
+		// Restore Once state
+		clientOnce = sync.Once{}
+		if wasInitialized {
+			clientOnce.Do(func() {})
+		}
 	})
 
 	db := &transactionTestDB{}
@@ -57,13 +64,20 @@ func TestExampleCreateUserWithPosts_UsesInjectedClient_Round23(t *testing.T) {
 func TestExampleCreateUserWithPosts_GetClientError_Round23(t *testing.T) {
 	originalClient := client
 	originalErr := clientErr
-	originalOnce := clientOnce
 	originalLambdaDB := lambdaDB
+	// Avoid copying sync.Once which contains a mutex
+	wasInitialized := client != nil // Heuristic: if client is set, Once has likely run
+
 	t.Cleanup(func() {
 		client = originalClient
 		clientErr = originalErr
-		clientOnce = originalOnce
 		lambdaDB = originalLambdaDB
+
+		// Restore Once state
+		clientOnce = sync.Once{}
+		if wasInitialized {
+			clientOnce.Do(func() {})
+		}
 	})
 
 	client = nil
@@ -79,13 +93,20 @@ func TestExampleCreateUserWithPosts_GetClientError_Round23(t *testing.T) {
 func TestExampleTransferBalance_SucceedsAndFailsForInsufficientFunds_Round23(t *testing.T) {
 	originalClient := client
 	originalErr := clientErr
-	originalOnce := clientOnce
 	originalLambdaDB := lambdaDB
+	// Avoid copying sync.Once which contains a mutex
+	wasInitialized := client != nil // Heuristic: if client is set, Once has likely run
+
 	t.Cleanup(func() {
 		client = originalClient
 		clientErr = originalErr
-		clientOnce = originalOnce
 		lambdaDB = originalLambdaDB
+
+		// Restore Once state
+		clientOnce = sync.Once{}
+		if wasInitialized {
+			clientOnce.Do(func() {})
+		}
 	})
 
 	q := new(dynamormMocks.MockQuery)

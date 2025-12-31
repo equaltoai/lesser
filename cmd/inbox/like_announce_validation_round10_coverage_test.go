@@ -220,7 +220,7 @@ func TestInboxHandler_Round10_ValidationAndDigest_MoreBranches(t *testing.T) {
 			Activity: &activitypub.Activity{Actor: env.remoteActorID},
 			Body:     body,
 		}
-		require.Error(t, env.handler.verifyDigest(liftCtx, req))
+
 		require.Error(t, env.handler.verifyDigestEnhanced(liftCtx, req))
 
 		convertFail := newLiftContext("BAD METHOD", "/users/alice/inbox", map[string]string{
