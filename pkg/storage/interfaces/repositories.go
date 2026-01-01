@@ -193,56 +193,7 @@ type RelationshipRepository interface {
 	GetRelationships(ctx context.Context, requestingUserID string, targetUserIDs []string) (map[string]*models.RelationshipRecord, error)
 }
 
-// MediaRepository defines the interface for media/attachment operations
-// This handles file uploads, processing, and CDN management
-type MediaRepository interface {
-	// Core media operations
-	CreateMedia(ctx context.Context, media *models.Media) error
-	GetMedia(ctx context.Context, mediaID string) (*models.Media, error)
-	UpdateMedia(ctx context.Context, media *models.Media) error
-	DeleteMedia(ctx context.Context, mediaID string) error
-
-	// Media processing
-	MarkMediaProcessing(ctx context.Context, mediaID string) error
-	MarkMediaReady(ctx context.Context, mediaID string) error
-	MarkMediaFailed(ctx context.Context, mediaID, errorMsg string) error
-	GetPendingMedia(ctx context.Context, opts PaginationOptions) (*PaginatedResult[*models.Media], error)
-	GetProcessingMedia(ctx context.Context, opts PaginationOptions) (*PaginatedResult[*models.Media], error)
-
-	// Media variants and thumbnails
-	AddMediaVariant(ctx context.Context, mediaID, variantName string, variant models.MediaVariant) error
-	GetMediaVariant(ctx context.Context, mediaID, variantName string) (*models.MediaVariant, error)
-	DeleteMediaVariant(ctx context.Context, mediaID, variantName string) error
-
-	// User media queries
-	GetUserMedia(ctx context.Context, userID string, opts PaginationOptions) (*PaginatedResult[*models.Media], error)
-	GetUserMediaByType(ctx context.Context, userID, contentType string, opts PaginationOptions) (*PaginatedResult[*models.Media], error)
-	GetUnusedMedia(ctx context.Context, olderThan time.Time, opts PaginationOptions) (*PaginatedResult[*models.Media], error)
-
-	// Media usage tracking
-	MarkMediaUsed(ctx context.Context, mediaID string) error
-	GetMediaUsageStats(ctx context.Context, mediaID string) (usageCount int, lastUsed *time.Time, err error)
-
-	// Content moderation
-	SetMediaModeration(ctx context.Context, mediaID string, isNSFW bool, score float64, labels []string) error
-	GetModerationPendingMedia(ctx context.Context, opts PaginationOptions) (*PaginatedResult[*models.Media], error)
-
-	// Batch operations
-	GetMediaByIDs(ctx context.Context, mediaIDs []string) ([]*models.Media, error)
-	DeleteExpiredMedia(ctx context.Context, expiredBefore time.Time) (int64, error)
-
-	// Storage and CDN operations
-	GetMediaStorageUsage(ctx context.Context, userID string) (int64, error)
-	GetTotalStorageUsage(ctx context.Context) (int64, error)
-
-	// Transcoding job operations
-	CreateTranscodingJob(ctx context.Context, job *models.TranscodingJob) error
-	GetTranscodingJob(ctx context.Context, jobID string) (*models.TranscodingJob, error)
-	UpdateTranscodingJob(ctx context.Context, job *models.TranscodingJob) error
-	GetTranscodingJobsByUser(ctx context.Context, userID string, limit int) ([]*models.TranscodingJob, error)
-	GetTranscodingJobsByMedia(ctx context.Context, mediaID string, limit int) ([]*models.TranscodingJob, error)
-	DeleteTranscodingJob(ctx context.Context, jobID string) error
-}
+// NOTE: MediaRepository is now defined in media.go with full method signatures
 
 // ConversationRepository defines the interface for direct message conversation operations
 type ConversationRepository interface {
@@ -274,29 +225,7 @@ type ConversationRepository interface {
 	SearchConversations(ctx context.Context, userID, query string, opts PaginationOptions) (*PaginatedResult[*models.Conversation], error)
 }
 
-// ListRepository defines the interface for user list operations
-// This handles Mastodon-style user-created lists for timeline organization
-type ListRepository interface {
-	// Core list operations
-	CreateList(ctx context.Context, list *models.List) error
-	GetList(ctx context.Context, listID string) (*models.List, error)
-	UpdateList(ctx context.Context, list *models.List) error
-	DeleteList(ctx context.Context, listID string) error
-
-	// User list management
-	GetUserLists(ctx context.Context, username string, opts PaginationOptions) (*PaginatedResult[*models.List], error)
-	GetListsByMember(ctx context.Context, memberUsername string, opts PaginationOptions) (*PaginatedResult[*models.List], error)
-
-	// List membership operations
-	AddListMember(ctx context.Context, listID, memberUsername string) error
-	RemoveListMember(ctx context.Context, listID, memberUsername string) error
-	GetListMembers(ctx context.Context, listID string, opts PaginationOptions) (*PaginatedResult[*storage.Account], error)
-	IsListMember(ctx context.Context, listID, memberUsername string) (bool, error)
-
-	// List timeline operations
-	GetListTimeline(ctx context.Context, listID string, opts PaginationOptions) (*PaginatedResult[*models.Status], error)
-	GetListStatuses(ctx context.Context, listID string, opts PaginationOptions) (*PaginatedResult[*models.Status], error)
-}
+// NOTE: ListRepository is now defined in list.go with full method signatures
 
 // FilterRepository defines the interface for content filter operations
 // This handles user-defined content filtering rules
@@ -379,13 +308,7 @@ type NotificationRepository interface {
 	SetNotificationPreference(ctx context.Context, userID string, preferenceType string, enabled bool) error
 }
 
-// LikeRepository defines the interface for like operations
-type LikeRepository interface {
-	CreateLike(ctx context.Context, actor, object, statusAuthorID string) (*models.Like, error)
-	DeleteLike(ctx context.Context, actor, object string) error
-	GetObjectLikes(ctx context.Context, objectID string, limit int, cursor string) ([]*models.Like, string, error)
-	GetActorLikes(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Like, string, error)
-}
+// NOTE: LikeRepository is now defined in like.go with full method signatures
 
 // SocialRepository defines the interface for social interaction operations
 type SocialRepository interface {

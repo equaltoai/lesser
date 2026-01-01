@@ -648,14 +648,11 @@ type StorageFactory interface {
 
 // NOTE: ModerationRepository is now defined in moderation.go with full method signatures
 
-// MediaMetadataRepository provides methods for media metadata management.
-type MediaMetadataRepository interface{}
+// NOTE: MediaMetadataRepository is now defined in media_metadata.go with full method signatures
 
-// PollRepository provides methods for poll data management.
-type PollRepository interface{}
+// NOTE: PollRepository is now defined in poll.go with full method signatures
 
-// PushSubscriptionRepository provides methods for push subscription management.
-type PushSubscriptionRepository interface{}
+// NOTE: PushSubscriptionRepository is now defined in push_subscription.go with full method signatures
 
 // HashtagRepository provides methods for hashtag data management.
 type HashtagRepository interface{}

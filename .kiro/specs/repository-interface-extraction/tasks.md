@@ -185,25 +185,25 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - Update RepositoryStorage.Moderation() return type
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-- [ ] 9. Checkpoint - Phase 2 Complete
+- [x] 9. Checkpoint - Phase 2 Complete
   - Run `go build ./...` to verify compilation
   - Run `go test ./...` to verify all existing tests pass
   - Ensure all tests pass, ask the user if questions arise.
   - _Requirements: 5.1, 5.2, 5.3, 6.2_
 
-- [ ] 10. Write property tests for Phase 2 repositories
-  - [ ] 10.1 Write mock coverage property test
+- [x] 10. Write property tests for Phase 2 repositories
+  - [x] 10.1 Write mock coverage property test
     - **Property 3: Mock Implementation Coverage**
     - Verify all 10 repository interfaces have corresponding mocks
     - **Validates: Requirements 2.1**
 
-  - [ ] 10.2 Write in-memory coverage property test
+  - [x] 10.2 Write in-memory coverage property test
     - **Property 4: In-Memory Implementation Coverage**
     - Verify all 10 repository interfaces have corresponding in-memory implementations
     - **Validates: Requirements 3.1**
 
-- [ ] 11. Phase 3: Remaining Repository Interfaces
-  - [ ] 11.1 Create interfaces for remaining repositories (batch 1)
+- [-] 11. Phase 3: Remaining Repository Interfaces
+  - [x] 11.1 Create interfaces for remaining repositories (batch 1)
     - BookmarkRepository, LikeRepository, ListRepository, MediaRepository
     - MediaMetadataRepository, PollRepository, PushSubscriptionRepository
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
