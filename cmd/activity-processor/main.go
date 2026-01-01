@@ -27,9 +27,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // Constants for common strings
@@ -65,7 +64,7 @@ type ActivityProcessor struct {
 	actorRepo        interfaces.ActorRepository
 	userRepo         interfaces.UserRepository
 	relationshipRepo interfaces.ConcreteRelationshipRepository
-	objectRepo       *repositories.ObjectRepository
+	objectRepo       interfaces.ObjectRepository
 	fetchService     *federation.AuthorizedFetchService
 	storageAdapter   storageCore.RepositoryStorage
 	baseURL          string

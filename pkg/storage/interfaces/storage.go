@@ -642,8 +642,7 @@ type StorageFactory interface {
 // These are the repositories that are referenced in the Storage interface
 // but don't have definitions in the existing repositories.go file
 
-// ObjectRepository provides methods for object data management.
-type ObjectRepository interface{}
+// NOTE: ObjectRepository is now defined in object.go with full method signatures
 
 // ActivityRepository provides methods for activity data management.
 type ActivityRepository interface{}

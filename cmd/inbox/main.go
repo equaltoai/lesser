@@ -66,7 +66,7 @@ type InboxHandler struct {
 	actorRepository              interfaces.ActorRepository
 	activityRepository           *repositories.ActivityRepository
 	relationshipRepository       interfaces.ConcreteRelationshipRepository
-	objectRepository             *repositories.ObjectRepository
+	objectRepository             interfaces.ObjectRepository
 	likeRepository               *repositories.LikeRepository
 	socialRepository             *repositories.SocialRepository
 	federationActivityRepository *repositories.FederationActivityRepository
@@ -125,7 +125,7 @@ type repositoryCollection struct {
 	actorRepo              interfaces.ActorRepository
 	activityRepo           *repositories.ActivityRepository
 	followRepo             interfaces.ConcreteRelationshipRepository
-	objectRepo             *repositories.ObjectRepository
+	objectRepo             interfaces.ObjectRepository
 	likeRepo               *repositories.LikeRepository
 	socialRepo             *repositories.SocialRepository
 	federationActivityRepo *repositories.FederationActivityRepository

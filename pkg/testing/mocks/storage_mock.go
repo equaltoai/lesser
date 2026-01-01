@@ -4098,7 +4098,7 @@ type MockRepositoryStorage struct {
 	accountRepo          *repositories.AccountRepository
 	bookmarkRepo         *repositories.BookmarkRepository
 	actorRepo            interfaces.ActorRepository
-	objectRepo           *repositories.ObjectRepository
+	objectRepo           interfaces.ObjectRepository
 	activityRepo         *repositories.ActivityRepository
 	timelineRepo         interfaces.TimelineRepository
 	notificationRepo     interfaces.NotificationRepository
@@ -4248,7 +4248,7 @@ func (m *MockRepositoryStorage) Actor() interfaces.ActorRepository {
 }
 
 // Object returns the mock object repository
-func (m *MockRepositoryStorage) Object() *repositories.ObjectRepository {
+func (m *MockRepositoryStorage) Object() interfaces.ObjectRepository {
 	return m.objectRepo
 }
 

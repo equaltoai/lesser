@@ -402,7 +402,7 @@ func (s *StorageAdapter) Actor() interface{} {
 
 // Object returns the Object repository instance
 func (s *StorageAdapter) Object() interface{} {
-	return repoPtrToInterface(s.repos.Object())
+	return s.repos.Object()
 }
 
 // Activity returns the Activity repository instance

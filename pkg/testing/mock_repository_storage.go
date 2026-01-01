@@ -32,11 +32,11 @@ type MockRepositoryStorage struct {
 	actorRepo    interfaces.ActorRepository
 	statusRepo   interfaces.StatusRepository
 	timelineRepo interfaces.TimelineRepository
+	objectRepo   interfaces.ObjectRepository
 
 	// Concrete repository implementations (for repositories not yet converted to interfaces)
-	accountRepo  *repositories.AccountRepository
-	bookmarkRepo *repositories.BookmarkRepository
-	objectRepo           *repositories.ObjectRepository
+	accountRepo          *repositories.AccountRepository
+	bookmarkRepo         *repositories.BookmarkRepository
 	activityRepo         *repositories.ActivityRepository
 	notificationRepo     interfaces.NotificationRepository
 	likeRepo             *repositories.LikeRepository
@@ -170,6 +170,7 @@ func NewMockRepositoryStorage(opts ...Option) *MockRepositoryStorage {
 		actorRepo:    inmemory.NewActorRepository(),
 		statusRepo:   inmemory.NewStatusRepository(),
 		timelineRepo: inmemory.NewTimelineRepository(),
+		objectRepo:   inmemory.NewObjectRepository(),
 		logger:       zap.NewNop(),
 		tableName:    "test-table",
 	}
@@ -202,8 +203,8 @@ func (s *MockRepositoryStorage) Actor() interfaces.ActorRepository {
 	return s.actorRepo
 }
 
-// Object returns the object repository.
-func (s *MockRepositoryStorage) Object() *repositories.ObjectRepository {
+// Object returns the object repository (interface type for mockability).
+func (s *MockRepositoryStorage) Object() interfaces.ObjectRepository {
 	return s.objectRepo
 }
 

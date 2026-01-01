@@ -46,13 +46,13 @@ func (m *MockRepositoryStorage) Actor() interfaces.ActorRepository {
 	return args.Get(0).(interfaces.ActorRepository)
 }
 
-// Object returns a mock object repository for testing
-func (m *MockRepositoryStorage) Object() *repositories.ObjectRepository {
+// Object returns a mock object repository for testing (interface type for mockability).
+func (m *MockRepositoryStorage) Object() interfaces.ObjectRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.ObjectRepository)
+	return args.Get(0).(interfaces.ObjectRepository)
 }
 
 // Activity returns a mock activity repository for testing

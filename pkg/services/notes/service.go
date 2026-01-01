@@ -43,7 +43,7 @@ type Service struct {
 	likeRepo          *repositories.LikeRepository
 	socialRepo        interfaces.SocialRepository
 	conversationRepo  interfaces.ConversationRepository
-	objectRepo        *repositories.ObjectRepository
+	objectRepo        interfaces.ObjectRepository
 	searchRepo        *repositories.SearchRepository
 	communityNoteRepo *repositories.CommunityNoteRepository
 	userRepo          interfaces.UserRepository
@@ -161,7 +161,7 @@ func NewService(
 	likeRepo *repositories.LikeRepository,
 	socialRepo interfaces.SocialRepository,
 	conversationRepo interfaces.ConversationRepository,
-	objectRepo *repositories.ObjectRepository,
+	objectRepo interfaces.ObjectRepository,
 	searchRepo *repositories.SearchRepository,
 	communityNoteRepo *repositories.CommunityNoteRepository,
 	userRepo interfaces.UserRepository,

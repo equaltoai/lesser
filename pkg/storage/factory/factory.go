@@ -326,7 +326,7 @@ func (f *RepositoryFactory) Actor() interfaces.ActorRepository {
 }
 
 // Object returns the Object repository instance
-func (f *RepositoryFactory) Object() *repositories.ObjectRepository {
+func (f *RepositoryFactory) Object() interfaces.ObjectRepository {
 	return f.objectRepo
 }
 

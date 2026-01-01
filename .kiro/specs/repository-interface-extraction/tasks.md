@@ -157,7 +157,7 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - Update RepositoryStorage.Relationship() return type
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-  - [ ] 8.7 Create ObjectRepository interface and implementations
+  - [x] 8.7 Create ObjectRepository interface and implementations
     - Create `pkg/storage/interfaces/object.go`
     - Create `pkg/testing/mocks/object_repository_mock.go`
     - Create `pkg/testing/inmemory/object_repository.go`
