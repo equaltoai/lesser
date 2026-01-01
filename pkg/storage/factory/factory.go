@@ -355,8 +355,8 @@ func (f *RepositoryFactory) Timeline() interfaces.TimelineRepository {
 	return f.timelineRepo
 }
 
-// Notification returns the Notification repository instance
-func (f *RepositoryFactory) Notification() *repositories.NotificationRepository {
+// Notification returns the Notification repository instance (interface type for mockability).
+func (f *RepositoryFactory) Notification() interfaces.NotificationRepository {
 	return f.notificationRepo
 }
 

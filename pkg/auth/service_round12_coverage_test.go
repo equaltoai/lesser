@@ -23,7 +23,7 @@ type fakeAuthRepos struct {
 func (f fakeAuthRepos) Account() *repositories.AccountRepository           { return f.account }
 func (f fakeAuthRepos) Actor() interfaces.ActorRepository                  { return nil }
 func (f fakeAuthRepos) Activity() *repositories.ActivityRepository         { return nil }
-func (f fakeAuthRepos) Notification() *repositories.NotificationRepository { return nil }
+func (f fakeAuthRepos) Notification() interfaces.NotificationRepository    { return nil }
 func (f fakeAuthRepos) Recovery() *repositories.RecoveryRepository         { return nil }
 func (f fakeAuthRepos) Audit() *repositories.AuditRepository               { return nil }
 

@@ -11,7 +11,7 @@ type StorageProvider interface {
 	Account() *repositories.AccountRepository
 	Actor() interfaces.ActorRepository
 	Activity() *repositories.ActivityRepository
-	Notification() *repositories.NotificationRepository
+	Notification() interfaces.NotificationRepository
 	Recovery() *repositories.RecoveryRepository
 	Audit() *repositories.AuditRepository
 }

@@ -41,7 +41,7 @@ func (s *serviceTestStorage) Actor() interfaces.ActorRepository             { re
 func (s *serviceTestStorage) Object() *repositories.ObjectRepository           { return nil }
 func (s *serviceTestStorage) Activity() *repositories.ActivityRepository       { return s.activityRepo }
 func (s *serviceTestStorage) Timeline() interfaces.TimelineRepository          { return nil }
-func (s *serviceTestStorage) Notification() *repositories.NotificationRepository { return nil }
+func (s *serviceTestStorage) Notification() interfaces.NotificationRepository  { return nil }
 func (s *serviceTestStorage) Like() *repositories.LikeRepository               { return nil }
 func (s *serviceTestStorage) Moderation() *repositories.ModerationRepository   { return s.moderationRepo }
 func (s *serviceTestStorage) List() *repositories.ListRepository               { return nil }

@@ -4101,7 +4101,7 @@ type MockRepositoryStorage struct {
 	objectRepo           *repositories.ObjectRepository
 	activityRepo         *repositories.ActivityRepository
 	timelineRepo         interfaces.TimelineRepository
-	notificationRepo     *repositories.NotificationRepository
+	notificationRepo     interfaces.NotificationRepository
 	likeRepo             *repositories.LikeRepository
 	moderationRepo       *repositories.ModerationRepository
 	listRepo             *repositories.ListRepository
@@ -4262,8 +4262,8 @@ func (m *MockRepositoryStorage) Timeline() interfaces.TimelineRepository {
 	return m.timelineRepo
 }
 
-// Notification returns the mock notification repository
-func (m *MockRepositoryStorage) Notification() *repositories.NotificationRepository {
+// Notification returns the mock notification repository (interface type for mockability).
+func (m *MockRepositoryStorage) Notification() interfaces.NotificationRepository {
 	return m.notificationRepo
 }
 

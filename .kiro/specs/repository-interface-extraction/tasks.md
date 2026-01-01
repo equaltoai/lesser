@@ -143,7 +143,7 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - Update RepositoryStorage.Timeline() return type
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-  - [ ] 8.5 Create NotificationRepository interface and implementations
+  - [x] 8.5 Create NotificationRepository interface and implementations
     - Create `pkg/storage/interfaces/notification.go`
     - Create `pkg/testing/mocks/notification_repository_mock.go`
     - Create `pkg/testing/inmemory/notification_repository.go`

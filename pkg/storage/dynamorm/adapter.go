@@ -417,7 +417,7 @@ func (s *StorageAdapter) Timeline() interface{} {
 
 // Notification returns the Notification repository instance
 func (s *StorageAdapter) Notification() interface{} {
-	return repoPtrToInterface(s.repos.Notification())
+	return s.repos.Notification()
 }
 
 // Like returns the Like repository instance

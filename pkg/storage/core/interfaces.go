@@ -17,8 +17,8 @@ type RepositoryStorage interface {
 	Actor() interfaces.ActorRepository    // Returns interface type for mockability
 	Object() *repositories.ObjectRepository
 	Activity() *repositories.ActivityRepository
-	Timeline() interfaces.TimelineRepository // Returns interface type for mockability
-	Notification() *repositories.NotificationRepository
+	Timeline() interfaces.TimelineRepository       // Returns interface type for mockability
+	Notification() interfaces.NotificationRepository // Returns interface type for mockability
 	Like() *repositories.LikeRepository
 	Moderation() *repositories.ModerationRepository
 	List() *repositories.ListRepository

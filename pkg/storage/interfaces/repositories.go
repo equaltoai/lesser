@@ -25,6 +25,11 @@ type PaginatedResult[T any] struct {
 	Total      int64  // Total count (if available, -1 if not calculated)
 }
 
+// NotificationDispatcher receives callbacks after notifications are persisted.
+type NotificationDispatcher interface {
+	DispatchPushForNotification(ctx context.Context, notification *models.Notification)
+}
+
 // StatusFilter represents filtering criteria for admin status listing
 type StatusFilter struct {
 	Local      *bool      // Filter by local vs remote statuses
@@ -324,6 +329,9 @@ type FilterRepository interface {
 // NotificationRepository defines the interface for notification operations
 // This handles user notifications for various ActivityPub and app events
 type NotificationRepository interface {
+	// Dispatcher configuration
+	SetDispatcher(dispatcher NotificationDispatcher)
+
 	// Core notification operations
 	CreateNotification(ctx context.Context, notification *models.Notification) error
 	GetNotification(ctx context.Context, notificationID string) (*models.Notification, error)
@@ -357,7 +365,18 @@ type NotificationRepository interface {
 	// Batch operations
 	CreateNotifications(ctx context.Context, notifications []*models.Notification) error
 	DeleteNotificationsByType(ctx context.Context, userID, notificationType string) error
+	DeleteNotificationsByObject(ctx context.Context, objectID string) error
 	DeleteExpiredNotifications(ctx context.Context, expiredBefore time.Time) (int64, error)
+
+	// Filtered and advanced queries
+	GetNotificationsFiltered(ctx context.Context, username string, filter map[string]interface{}) ([]*models.Notification, string, error)
+	ClearOldNotifications(ctx context.Context, username string, olderThan time.Time) (int, error)
+	GetNotificationsAdvanced(ctx context.Context, userID string, filters map[string]interface{}, pagination PaginationOptions) (*PaginatedResult[*models.Notification], error)
+
+	// Notification preferences
+	GetNotificationPreferences(ctx context.Context, userID string) (*models.NotificationPreferences, error)
+	UpdateNotificationPreferences(ctx context.Context, prefs *models.NotificationPreferences) error
+	SetNotificationPreference(ctx context.Context, userID string, preferenceType string, enabled bool) error
 }
 
 // LikeRepository defines the interface for like operations

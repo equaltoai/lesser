@@ -147,7 +147,7 @@ type permissiveRepositoryStorage struct {
 	timeline     interfaces.TimelineRepository
 	relationship *repositories.RelationshipRepository
 	like         *repositories.LikeRepository
-	notification *repositories.NotificationRepository
+	notification interfaces.NotificationRepository
 	media        *repositories.MediaRepository
 	mediaMeta    *repositories.MediaMetadataRepository
 	dnsCache     *repositories.DNSCacheRepository
@@ -169,7 +169,7 @@ func (s *permissiveRepositoryStorage) Relationship() *repositories.RelationshipR
 	return s.relationship
 }
 func (s *permissiveRepositoryStorage) Like() *repositories.LikeRepository { return s.like }
-func (s *permissiveRepositoryStorage) Notification() *repositories.NotificationRepository {
+func (s *permissiveRepositoryStorage) Notification() interfaces.NotificationRepository {
 	return s.notification
 }
 func (s *permissiveRepositoryStorage) Media() *repositories.MediaRepository { return s.media }

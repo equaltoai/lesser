@@ -75,7 +75,7 @@ type InboxHandler struct {
 	userRepository               interfaces.UserRepository
 	instanceRepository           *repositories.InstanceRepository
 	publicKeyCacheRepository     *repositories.PublicKeyCacheRepository
-	notificationRepository       *repositories.NotificationRepository
+	notificationRepository       interfaces.NotificationRepository
 	signatureService             *federation.SignatureService
 	logger                       *zap.Logger
 	authMiddleware               *auth.Middleware
@@ -134,7 +134,7 @@ type repositoryCollection struct {
 	userRepo               interfaces.UserRepository
 	instanceRepo           *repositories.InstanceRepository
 	publicKeyCacheRepo     *repositories.PublicKeyCacheRepository
-	notificationRepo       *repositories.NotificationRepository
+	notificationRepo       interfaces.NotificationRepository
 }
 
 // extractServicesFromContext extracts services from lambda context

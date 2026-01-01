@@ -19,12 +19,7 @@ import (
 // NotificationRepository handles notification operations using enhanced DynamORM patterns
 type NotificationRepository struct {
 	*EnhancedBaseRepository[*models.Notification]
-	dispatcher NotificationDispatcher
-}
-
-// NotificationDispatcher receives callbacks after notifications are persisted.
-type NotificationDispatcher interface {
-	DispatchPushForNotification(ctx context.Context, notification *models.Notification)
+	dispatcher interfaces.NotificationDispatcher
 }
 
 // NewNotificationRepository creates a new notification repository with enhanced functionality and cost tracking
@@ -44,7 +39,7 @@ func NewNotificationRepository(db core.DB, tableName string, logger *zap.Logger,
 }
 
 // SetDispatcher wires an optional dispatcher for post-create side effects.
-func (r *NotificationRepository) SetDispatcher(dispatcher NotificationDispatcher) {
+func (r *NotificationRepository) SetDispatcher(dispatcher interfaces.NotificationDispatcher) {
 	r.dispatcher = dispatcher
 }
 

@@ -73,13 +73,13 @@ func (m *MockRepositoryStorage) Timeline() interfaces.TimelineRepository {
 	return args.Get(0).(interfaces.TimelineRepository)
 }
 
-// Notification returns a mock notification repository for testing
-func (m *MockRepositoryStorage) Notification() *repositories.NotificationRepository {
+// Notification returns a mock notification repository for testing (interface type for mockability).
+func (m *MockRepositoryStorage) Notification() interfaces.NotificationRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.NotificationRepository)
+	return args.Get(0).(interfaces.NotificationRepository)
 }
 
 // Like returns a mock like repository for testing

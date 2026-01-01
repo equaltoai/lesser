@@ -45,7 +45,7 @@ type permissiveRegistryStorage struct {
 	object              *repositories.ObjectRepository
 	activity            *repositories.ActivityRepository
 	timeline            interfaces.TimelineRepository
-	notification        *repositories.NotificationRepository
+	notification        interfaces.NotificationRepository
 	like                *repositories.LikeRepository
 	list                *repositories.ListRepository
 	media               *repositories.MediaRepository
@@ -86,8 +86,8 @@ func (s *permissiveRegistryStorage) Bookmark() *repositories.BookmarkRepository 
 func (s *permissiveRegistryStorage) Actor() interfaces.ActorRepository       { return s.actor }
 func (s *permissiveRegistryStorage) Object() *repositories.ObjectRepository     { return s.object }
 func (s *permissiveRegistryStorage) Activity() *repositories.ActivityRepository { return s.activity }
-func (s *permissiveRegistryStorage) Timeline() interfaces.TimelineRepository    { return s.timeline }
-func (s *permissiveRegistryStorage) Notification() *repositories.NotificationRepository {
+func (s *permissiveRegistryStorage) Timeline() interfaces.TimelineRepository { return s.timeline }
+func (s *permissiveRegistryStorage) Notification() interfaces.NotificationRepository {
 	return s.notification
 }
 func (s *permissiveRegistryStorage) Like() *repositories.LikeRepository { return s.like }
