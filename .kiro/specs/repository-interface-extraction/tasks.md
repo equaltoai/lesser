@@ -164,7 +164,7 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - Update RepositoryStorage.Object() return type
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-  - [ ] 8.8 Create ActivityRepository interface and implementations
+  - [x] 8.8 Create ActivityRepository interface and implementations
     - Create `pkg/storage/interfaces/activity.go`
     - Create `pkg/testing/mocks/activity_repository_mock.go`
     - Create `pkg/testing/inmemory/activity_repository.go`

@@ -273,7 +273,7 @@ func (s *testRepositoryStorage) User() interfaces.UserRepository        { return
 func (s *testRepositoryStorage) Account() *repositories.AccountRepository             { return nil }
 func (s *testRepositoryStorage) Bookmark() *repositories.BookmarkRepository           { return nil }
 func (s *testRepositoryStorage) Object() *repositories.ObjectRepository               { return nil }
-func (s *testRepositoryStorage) Activity() *repositories.ActivityRepository           { return nil }
+func (s *testRepositoryStorage) Activity() interfaces.ActivityRepository              { return nil }
 func (s *testRepositoryStorage) Timeline() interfaces.TimelineRepository              { return nil }
 func (s *testRepositoryStorage) Notification() interfaces.NotificationRepository      { return nil }
 func (s *testRepositoryStorage) Like() *repositories.LikeRepository                   { return nil }

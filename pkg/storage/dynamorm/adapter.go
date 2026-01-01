@@ -407,7 +407,7 @@ func (s *StorageAdapter) Object() interface{} {
 
 // Activity returns the Activity repository instance
 func (s *StorageAdapter) Activity() interface{} {
-	return repoPtrToInterface(s.repos.Activity())
+	return s.repos.Activity()
 }
 
 // Timeline returns the Timeline repository instance

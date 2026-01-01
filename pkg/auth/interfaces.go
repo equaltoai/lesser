@@ -10,7 +10,7 @@ import (
 type StorageProvider interface {
 	Account() *repositories.AccountRepository
 	Actor() interfaces.ActorRepository
-	Activity() *repositories.ActivityRepository
+	Activity() interfaces.ActivityRepository
 	Notification() interfaces.NotificationRepository
 	Recovery() *repositories.RecoveryRepository
 	Audit() *repositories.AuditRepository

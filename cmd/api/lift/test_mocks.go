@@ -55,13 +55,13 @@ func (m *MockRepositoryStorage) Object() interfaces.ObjectRepository {
 	return args.Get(0).(interfaces.ObjectRepository)
 }
 
-// Activity returns a mock activity repository for testing
-func (m *MockRepositoryStorage) Activity() *repositories.ActivityRepository {
+// Activity returns a mock activity repository for testing (interface type for mockability).
+func (m *MockRepositoryStorage) Activity() interfaces.ActivityRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.ActivityRepository)
+	return args.Get(0).(interfaces.ActivityRepository)
 }
 
 // Timeline returns a mock timeline repository for testing (interface type for mockability).

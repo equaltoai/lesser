@@ -64,7 +64,7 @@ var (
 type InboxHandler struct {
 	db                           dynamormCore.DB
 	actorRepository              interfaces.ActorRepository
-	activityRepository           *repositories.ActivityRepository
+	activityRepository           interfaces.ActivityRepository
 	relationshipRepository       interfaces.ConcreteRelationshipRepository
 	objectRepository             interfaces.ObjectRepository
 	likeRepository               *repositories.LikeRepository
@@ -123,7 +123,7 @@ type observabilityServices struct {
 // repositoryCollection holds all repository instances
 type repositoryCollection struct {
 	actorRepo              interfaces.ActorRepository
-	activityRepo           *repositories.ActivityRepository
+	activityRepo           interfaces.ActivityRepository
 	followRepo             interfaces.ConcreteRelationshipRepository
 	objectRepo             interfaces.ObjectRepository
 	likeRepo               *repositories.LikeRepository

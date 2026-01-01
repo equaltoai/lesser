@@ -23,7 +23,7 @@ type serviceTestStorage struct {
 	userRepo          interfaces.UserRepository
 	actorRepo         interfaces.ActorRepository
 	statusRepo        *repositories.StatusRepository
-	activityRepo      *repositories.ActivityRepository
+	activityRepo      interfaces.ActivityRepository
 	relationshipRepo  *repositories.RelationshipRepository
 	trustRepo         *repositories.TrustRepository
 	moderationRepo    *repositories.ModerationRepository
@@ -39,7 +39,7 @@ func (s *serviceTestStorage) Account() *repositories.AccountRepository         {
 func (s *serviceTestStorage) Bookmark() *repositories.BookmarkRepository       { return nil }
 func (s *serviceTestStorage) Actor() interfaces.ActorRepository             { return s.actorRepo }
 func (s *serviceTestStorage) Object() *repositories.ObjectRepository           { return nil }
-func (s *serviceTestStorage) Activity() *repositories.ActivityRepository       { return s.activityRepo }
+func (s *serviceTestStorage) Activity() interfaces.ActivityRepository          { return s.activityRepo }
 func (s *serviceTestStorage) Timeline() interfaces.TimelineRepository          { return nil }
 func (s *serviceTestStorage) Notification() interfaces.NotificationRepository  { return nil }
 func (s *serviceTestStorage) Like() *repositories.LikeRepository               { return nil }

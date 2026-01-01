@@ -139,7 +139,7 @@ type permissiveRepositoryStorage struct {
 	*SimpleRepositoryStorage
 
 	actor        interfaces.ActorRepository
-	activity     *repositories.ActivityRepository
+	activity     interfaces.ActivityRepository
 	user         *repositories.UserRepository
 	account      *repositories.AccountRepository
 	object       *repositories.ObjectRepository
@@ -159,7 +159,7 @@ type permissiveRepositoryStorage struct {
 }
 
 func (s *permissiveRepositoryStorage) Actor() interfaces.ActorRepository          { return s.actor }
-func (s *permissiveRepositoryStorage) Activity() *repositories.ActivityRepository { return s.activity }
+func (s *permissiveRepositoryStorage) Activity() interfaces.ActivityRepository    { return s.activity }
 func (s *permissiveRepositoryStorage) User() interfaces.UserRepository            { return s.user }
 func (s *permissiveRepositoryStorage) Account() *repositories.AccountRepository   { return s.account }
 func (s *permissiveRepositoryStorage) Object() *repositories.ObjectRepository     { return s.object }

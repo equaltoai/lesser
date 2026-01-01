@@ -330,8 +330,8 @@ func (f *RepositoryFactory) Object() interfaces.ObjectRepository {
 	return f.objectRepo
 }
 
-// Activity returns the Activity repository instance
-func (f *RepositoryFactory) Activity() *repositories.ActivityRepository {
+// Activity returns the Activity repository instance (interface type for mockability).
+func (f *RepositoryFactory) Activity() interfaces.ActivityRepository {
 	return f.activityRepo
 }
 

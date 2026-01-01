@@ -37,7 +37,7 @@ type MockRepositoryStorage struct {
 	// Concrete repository implementations (for repositories not yet converted to interfaces)
 	accountRepo          *repositories.AccountRepository
 	bookmarkRepo         *repositories.BookmarkRepository
-	activityRepo         *repositories.ActivityRepository
+	activityRepo         interfaces.ActivityRepository
 	notificationRepo     interfaces.NotificationRepository
 	likeRepo             *repositories.LikeRepository
 	moderationRepo       *repositories.ModerationRepository
@@ -136,6 +136,14 @@ func WithTimelineRepository(repo interfaces.TimelineRepository) Option {
 	}
 }
 
+// WithActivityRepository sets a custom activity repository implementation.
+// Use this to inject a mock for testing specific activity repository behavior.
+func WithActivityRepository(repo interfaces.ActivityRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.activityRepo = repo
+	}
+}
+
 // WithLogger sets a custom logger for the mock storage.
 func WithLogger(logger *zap.Logger) Option {
 	return func(s *MockRepositoryStorage) {
@@ -171,6 +179,7 @@ func NewMockRepositoryStorage(opts ...Option) *MockRepositoryStorage {
 		statusRepo:   inmemory.NewStatusRepository(),
 		timelineRepo: inmemory.NewTimelineRepository(),
 		objectRepo:   inmemory.NewObjectRepository(),
+		activityRepo: inmemory.NewActivityRepository(),
 		logger:       zap.NewNop(),
 		tableName:    "test-table",
 	}
@@ -208,8 +217,8 @@ func (s *MockRepositoryStorage) Object() interfaces.ObjectRepository {
 	return s.objectRepo
 }
 
-// Activity returns the activity repository.
-func (s *MockRepositoryStorage) Activity() *repositories.ActivityRepository {
+// Activity returns the activity repository (interface type for mockability).
+func (s *MockRepositoryStorage) Activity() interfaces.ActivityRepository {
 	return s.activityRepo
 }
 

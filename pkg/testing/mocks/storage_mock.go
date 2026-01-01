@@ -4099,7 +4099,7 @@ type MockRepositoryStorage struct {
 	bookmarkRepo         *repositories.BookmarkRepository
 	actorRepo            interfaces.ActorRepository
 	objectRepo           interfaces.ObjectRepository
-	activityRepo         *repositories.ActivityRepository
+	activityRepo         interfaces.ActivityRepository
 	timelineRepo         interfaces.TimelineRepository
 	notificationRepo     interfaces.NotificationRepository
 	likeRepo             *repositories.LikeRepository
@@ -4252,8 +4252,8 @@ func (m *MockRepositoryStorage) Object() interfaces.ObjectRepository {
 	return m.objectRepo
 }
 
-// Activity returns the mock activity repository
-func (m *MockRepositoryStorage) Activity() *repositories.ActivityRepository {
+// Activity returns the mock activity repository (interface type for mockability).
+func (m *MockRepositoryStorage) Activity() interfaces.ActivityRepository {
 	return m.activityRepo
 }
 

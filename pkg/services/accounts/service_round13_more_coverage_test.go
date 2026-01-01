@@ -76,7 +76,7 @@ type permissiveAccountsStorage struct {
 	instance     *repositories.InstanceRepository
 	domainBlock  *repositories.DomainBlockRepository
 	quote        *repositories.QuoteRepository
-	activity     *repositories.ActivityRepository
+	activity     interfaces.ActivityRepository
 }
 
 func (s *permissiveAccountsStorage) Account() *repositories.AccountRepository { return s.account }
@@ -93,7 +93,7 @@ func (s *permissiveAccountsStorage) DomainBlock() *repositories.DomainBlockRepos
 	return s.domainBlock
 }
 func (s *permissiveAccountsStorage) Quote() *repositories.QuoteRepository       { return s.quote }
-func (s *permissiveAccountsStorage) Activity() *repositories.ActivityRepository { return s.activity }
+func (s *permissiveAccountsStorage) Activity() interfaces.ActivityRepository    { return s.activity }
 func (s *permissiveAccountsStorage) GetDB() dynamormcore.DB                     { return s.db }
 func (s *permissiveAccountsStorage) GetTableName() string                       { return s.tableName }
 func (s *permissiveAccountsStorage) GetLogger() *zap.Logger                     { return s.logger }

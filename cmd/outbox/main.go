@@ -34,7 +34,7 @@ type OutboxProcessor struct {
 	federationService            *federation.DeliveryService
 	db                           interface{} // DynamORM client interface
 	actorRepository              interfaces.ActorRepository
-	activityRepository           *repositories.ActivityRepository
+	activityRepository           interfaces.ActivityRepository
 	federationActivityRepository *repositories.FederationActivityRepository
 	federationCostRepository     *repositories.FederationCostRepository
 	logger                       *zap.Logger
