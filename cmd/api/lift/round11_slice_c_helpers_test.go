@@ -22,7 +22,7 @@ type round11TestRepos struct {
 	*MockRepositoryStorage
 	account      *repositories.AccountRepository
 	actor        interfaces.ActorRepository
-	moderation   *repositories.ModerationRepository
+	moderation   interfaces.ModerationRepository
 	push         *repositories.PushSubscriptionRepository
 	importRepo   *repositories.ImportRepository
 	cost         *repositories.TrackingRepository
@@ -39,7 +39,7 @@ type round11TestRepos struct {
 
 func (r *round11TestRepos) Account() *repositories.AccountRepository { return r.account }
 func (r *round11TestRepos) Actor() interfaces.ActorRepository        { return r.actor }
-func (r *round11TestRepos) Moderation() *repositories.ModerationRepository {
+func (r *round11TestRepos) Moderation() interfaces.ModerationRepository {
 	return r.moderation
 }
 func (r *round11TestRepos) PushSubscription() *repositories.PushSubscriptionRepository {

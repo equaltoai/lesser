@@ -155,6 +155,54 @@ func (m *MockNotificationRepository) DeleteExpiredNotifications(ctx context.Cont
 	return args.Get(0).(int64), args.Error(1)
 }
 
+func (m *MockNotificationRepository) SetDispatcher(dispatcher interfaces.NotificationDispatcher) {
+	m.Called(dispatcher)
+}
+
+func (m *MockNotificationRepository) DeleteNotificationsByObject(ctx context.Context, objectID string) error {
+	args := m.Called(ctx, objectID)
+	return args.Error(0)
+}
+
+func (m *MockNotificationRepository) GetNotificationsFiltered(ctx context.Context, username string, filter map[string]interface{}) ([]*models.Notification, string, error) {
+	args := m.Called(ctx, username, filter)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*models.Notification), args.String(1), args.Error(2)
+}
+
+func (m *MockNotificationRepository) ClearOldNotifications(ctx context.Context, username string, olderThan time.Time) (int, error) {
+	args := m.Called(ctx, username, olderThan)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockNotificationRepository) GetNotificationsAdvanced(ctx context.Context, userID string, filters map[string]interface{}, pagination interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Notification], error) {
+	args := m.Called(ctx, userID, filters, pagination)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*models.Notification]), args.Error(1)
+}
+
+func (m *MockNotificationRepository) GetNotificationPreferences(ctx context.Context, userID string) (*models.NotificationPreferences, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.NotificationPreferences), args.Error(1)
+}
+
+func (m *MockNotificationRepository) UpdateNotificationPreferences(ctx context.Context, prefs *models.NotificationPreferences) error {
+	args := m.Called(ctx, prefs)
+	return args.Error(0)
+}
+
+func (m *MockNotificationRepository) SetNotificationPreference(ctx context.Context, userID string, preferenceType string, enabled bool) error {
+	args := m.Called(ctx, userID, preferenceType, enabled)
+	return args.Error(0)
+}
+
 // MockAccountRepository implements interfaces.AccountRepository for testing
 type MockAccountRepository struct {
 	mock.Mock

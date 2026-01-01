@@ -366,7 +366,7 @@ func (f *RepositoryFactory) Like() *repositories.LikeRepository {
 }
 
 // Moderation returns the Moderation repository instance
-func (f *RepositoryFactory) Moderation() *repositories.ModerationRepository {
+func (f *RepositoryFactory) Moderation() interfaces.ModerationRepository {
 	return f.moderationRepo
 }
 

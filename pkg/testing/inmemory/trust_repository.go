@@ -3,6 +3,7 @@ package inmemory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -303,7 +304,7 @@ func (r *TrustRepository) GetUserTrustScore(ctx context.Context, userID string) 
 	// Get general trust score
 	score, err := r.GetTrustScore(ctx, userID, string(storage.TrustCategoryGeneral))
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			return 0.5, nil // Default neutral score
 		}
 		return 0.0, err

@@ -40,7 +40,7 @@ type MockRepositoryStorage struct {
 	activityRepo         interfaces.ActivityRepository
 	notificationRepo     interfaces.NotificationRepository
 	likeRepo             *repositories.LikeRepository
-	moderationRepo       *repositories.ModerationRepository
+	moderationRepo       interfaces.ModerationRepository // Interface type for mockability
 	listRepo             *repositories.ListRepository
 	mediaRepo            *repositories.MediaRepository
 	mediaMetadataRepo    *repositories.MediaMetadataRepository
@@ -166,6 +166,14 @@ func WithTrustRepository(repo interfaces.TrustRepository) Option {
 	}
 }
 
+// WithModerationRepository sets a custom moderation repository implementation.
+// Use this to inject a mock for testing specific moderation repository behavior.
+func WithModerationRepository(repo interfaces.ModerationRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.moderationRepo = repo
+	}
+}
+
 // NewMockRepositoryStorage creates a new MockRepositoryStorage with in-memory defaults.
 // All repositories default to in-memory implementations that can be overridden
 // using functional options.
@@ -182,15 +190,16 @@ func WithTrustRepository(repo interfaces.TrustRepository) Option {
 func NewMockRepositoryStorage(opts ...Option) *MockRepositoryStorage {
 	s := &MockRepositoryStorage{
 		// Default to in-memory repositories
-		userRepo:     inmemory.NewUserRepository(),
-		actorRepo:    inmemory.NewActorRepository(),
-		statusRepo:   inmemory.NewStatusRepository(),
-		timelineRepo: inmemory.NewTimelineRepository(),
-		objectRepo:   inmemory.NewObjectRepository(),
-		activityRepo: inmemory.NewActivityRepository(),
-		trustRepo:    inmemory.NewTrustRepository(),
-		logger:       zap.NewNop(),
-		tableName:    "test-table",
+		userRepo:       inmemory.NewUserRepository(),
+		actorRepo:      inmemory.NewActorRepository(),
+		statusRepo:     inmemory.NewStatusRepository(),
+		timelineRepo:   inmemory.NewTimelineRepository(),
+		objectRepo:     inmemory.NewObjectRepository(),
+		activityRepo:   inmemory.NewActivityRepository(),
+		trustRepo:      inmemory.NewTrustRepository(),
+		moderationRepo: inmemory.NewModerationRepository(),
+		logger:         zap.NewNop(),
+		tableName:      "test-table",
 	}
 
 	// Apply all options
@@ -246,8 +255,8 @@ func (s *MockRepositoryStorage) Like() *repositories.LikeRepository {
 	return s.likeRepo
 }
 
-// Moderation returns the moderation repository.
-func (s *MockRepositoryStorage) Moderation() *repositories.ModerationRepository {
+// Moderation returns the moderation repository (interface type for mockability).
+func (s *MockRepositoryStorage) Moderation() interfaces.ModerationRepository {
 	return s.moderationRepo
 }
 

@@ -20,7 +20,7 @@ type RepositoryStorage interface {
 	Timeline() interfaces.TimelineRepository       // Returns interface type for mockability
 	Notification() interfaces.NotificationRepository // Returns interface type for mockability
 	Like() *repositories.LikeRepository
-	Moderation() *repositories.ModerationRepository
+	Moderation() interfaces.ModerationRepository // Returns interface type for mockability
 	List() *repositories.ListRepository
 	Media() *repositories.MediaRepository
 	MediaMetadata() *repositories.MediaMetadataRepository

@@ -142,10 +142,10 @@ type permissiveRepositoryStorage struct {
 	activity     interfaces.ActivityRepository
 	user         *repositories.UserRepository
 	account      *repositories.AccountRepository
-	object       *repositories.ObjectRepository
+	object       interfaces.ObjectRepository
 	status       *repositories.StatusRepository
 	timeline     interfaces.TimelineRepository
-	relationship *repositories.RelationshipRepository
+	relationship interfaces.ConcreteRelationshipRepository
 	like         *repositories.LikeRepository
 	notification interfaces.NotificationRepository
 	media        *repositories.MediaRepository
@@ -162,10 +162,10 @@ func (s *permissiveRepositoryStorage) Actor() interfaces.ActorRepository        
 func (s *permissiveRepositoryStorage) Activity() interfaces.ActivityRepository    { return s.activity }
 func (s *permissiveRepositoryStorage) User() interfaces.UserRepository            { return s.user }
 func (s *permissiveRepositoryStorage) Account() *repositories.AccountRepository   { return s.account }
-func (s *permissiveRepositoryStorage) Object() *repositories.ObjectRepository     { return s.object }
+func (s *permissiveRepositoryStorage) Object() interfaces.ObjectRepository        { return s.object }
 func (s *permissiveRepositoryStorage) Status() interfaces.StatusRepository        { return s.status }
 func (s *permissiveRepositoryStorage) Timeline() interfaces.TimelineRepository    { return s.timeline }
-func (s *permissiveRepositoryStorage) Relationship() *repositories.RelationshipRepository {
+func (s *permissiveRepositoryStorage) Relationship() interfaces.ConcreteRelationshipRepository {
 	return s.relationship
 }
 func (s *permissiveRepositoryStorage) Like() *repositories.LikeRepository { return s.like }

@@ -646,8 +646,7 @@ type StorageFactory interface {
 
 // NOTE: ActivityRepository is now defined in activity.go with full method signatures
 
-// ModerationRepository provides methods for moderation data management.
-type ModerationRepository interface{}
+// NOTE: ModerationRepository is now defined in moderation.go with full method signatures
 
 // MediaMetadataRepository provides methods for media metadata management.
 type MediaMetadataRepository interface{}

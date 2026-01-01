@@ -57,12 +57,12 @@ func (s *SimpleRepositoryStorage) GetLogger() *zap.Logger { return s.logger }
 func (s *SimpleRepositoryStorage) Account() *repositories.AccountRepository             { return nil }
 func (s *SimpleRepositoryStorage) Bookmark() *repositories.BookmarkRepository           { return nil }
 func (s *SimpleRepositoryStorage) Actor() interfaces.ActorRepository                    { return nil }
-func (s *SimpleRepositoryStorage) Object() *repositories.ObjectRepository               { return nil }
+func (s *SimpleRepositoryStorage) Object() interfaces.ObjectRepository                  { return nil }
 func (s *SimpleRepositoryStorage) Activity() interfaces.ActivityRepository              { return nil }
 func (s *SimpleRepositoryStorage) Timeline() interfaces.TimelineRepository              { return nil }
 func (s *SimpleRepositoryStorage) Notification() interfaces.NotificationRepository      { return nil }
 func (s *SimpleRepositoryStorage) Like() *repositories.LikeRepository                   { return nil }
-func (s *SimpleRepositoryStorage) Moderation() *repositories.ModerationRepository       { return nil }
+func (s *SimpleRepositoryStorage) Moderation() interfaces.ModerationRepository          { return nil }
 func (s *SimpleRepositoryStorage) List() *repositories.ListRepository                   { return nil }
 func (s *SimpleRepositoryStorage) Media() *repositories.MediaRepository                 { return nil }
 func (s *SimpleRepositoryStorage) MediaMetadata() *repositories.MediaMetadataRepository { return nil }
@@ -76,7 +76,7 @@ func (s *SimpleRepositoryStorage) ScheduledStatus() *repositories.ScheduledStatu
 }
 func (s *SimpleRepositoryStorage) Announcement() *repositories.AnnouncementRepository   { return nil }
 func (s *SimpleRepositoryStorage) DomainBlock() *repositories.DomainBlockRepository     { return nil }
-func (s *SimpleRepositoryStorage) Relationship() *repositories.RelationshipRepository   { return nil }
+func (s *SimpleRepositoryStorage) Relationship() interfaces.ConcreteRelationshipRepository { return nil }
 func (s *SimpleRepositoryStorage) Instance() *repositories.InstanceRepository           { return nil }
 func (s *SimpleRepositoryStorage) Federation() *repositories.FederationRepository       { return nil }
 func (s *SimpleRepositoryStorage) Recovery() *repositories.RecoveryRepository           { return nil }

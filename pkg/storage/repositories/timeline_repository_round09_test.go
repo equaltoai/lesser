@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
@@ -128,7 +129,7 @@ func TestRound09_TimelineRepository_DeletionFiltersConversations(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, rangeEntries)
 
-	filters := TimelineFilters{OnlyMedia: true, ExcludeReplies: true, ExcludeBoosts: true, Language: "en", MinID: "0", MaxID: "9999999999"}
+	filters := interfaces.TimelineFilters{OnlyMedia: true, ExcludeReplies: true, ExcludeBoosts: true, Language: "en", MinID: "0", MaxID: "9999999999"}
 	filtered, _, err := repo.GetTimelineEntriesWithFilters(ctx, "HOME", "user-1", filters, 10, "")
 	require.NoError(t, err)
 	require.NotNil(t, filtered)

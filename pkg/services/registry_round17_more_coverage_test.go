@@ -42,7 +42,7 @@ type permissiveRegistryStorage struct {
 	account             *repositories.AccountRepository
 	bookmark            *repositories.BookmarkRepository
 	actor               interfaces.ActorRepository
-	object              *repositories.ObjectRepository
+	object              interfaces.ObjectRepository
 	activity            interfaces.ActivityRepository
 	timeline            interfaces.TimelineRepository
 	notification        interfaces.NotificationRepository
@@ -52,7 +52,7 @@ type permissiveRegistryStorage struct {
 	poll                *repositories.PollRepository
 	hashtag             *repositories.HashtagRepository
 	scheduledStatus     *repositories.ScheduledStatusRepository
-	relationship        *repositories.RelationshipRepository
+	relationship        interfaces.ConcreteRelationshipRepository
 	federation          *repositories.FederationRepository
 	social              *repositories.SocialRepository
 	user                *repositories.UserRepository
@@ -84,7 +84,7 @@ type permissiveRegistryStorage struct {
 func (s *permissiveRegistryStorage) Account() *repositories.AccountRepository   { return s.account }
 func (s *permissiveRegistryStorage) Bookmark() *repositories.BookmarkRepository { return s.bookmark }
 func (s *permissiveRegistryStorage) Actor() interfaces.ActorRepository       { return s.actor }
-func (s *permissiveRegistryStorage) Object() *repositories.ObjectRepository     { return s.object }
+func (s *permissiveRegistryStorage) Object() interfaces.ObjectRepository        { return s.object }
 func (s *permissiveRegistryStorage) Activity() interfaces.ActivityRepository    { return s.activity }
 func (s *permissiveRegistryStorage) Timeline() interfaces.TimelineRepository { return s.timeline }
 func (s *permissiveRegistryStorage) Notification() interfaces.NotificationRepository {
@@ -102,7 +102,7 @@ func (s *permissiveRegistryStorage) Hashtag() *repositories.HashtagRepository {
 func (s *permissiveRegistryStorage) ScheduledStatus() *repositories.ScheduledStatusRepository {
 	return s.scheduledStatus
 }
-func (s *permissiveRegistryStorage) Relationship() *repositories.RelationshipRepository {
+func (s *permissiveRegistryStorage) Relationship() interfaces.ConcreteRelationshipRepository {
 	return s.relationship
 }
 func (s *permissiveRegistryStorage) Federation() *repositories.FederationRepository {

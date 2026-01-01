@@ -4103,7 +4103,7 @@ type MockRepositoryStorage struct {
 	timelineRepo         interfaces.TimelineRepository
 	notificationRepo     interfaces.NotificationRepository
 	likeRepo             *repositories.LikeRepository
-	moderationRepo       *repositories.ModerationRepository
+	moderationRepo       interfaces.ModerationRepository
 	listRepo             *repositories.ListRepository
 	mediaRepo            *repositories.MediaRepository
 	mediaMetadataRepo    *repositories.MediaMetadataRepository
@@ -4273,7 +4273,7 @@ func (m *MockRepositoryStorage) Like() *repositories.LikeRepository {
 }
 
 // Moderation returns the mock moderation repository
-func (m *MockRepositoryStorage) Moderation() *repositories.ModerationRepository {
+func (m *MockRepositoryStorage) Moderation() interfaces.ModerationRepository {
 	return m.moderationRepo
 }
 

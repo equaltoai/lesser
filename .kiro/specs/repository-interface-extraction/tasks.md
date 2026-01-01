@@ -178,7 +178,7 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - Update RepositoryStorage.Trust() return type
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-  - [ ] 8.10 Create ModerationRepository interface and implementations
+  - [x] 8.10 Create ModerationRepository interface and implementations
     - Create `pkg/storage/interfaces/moderation.go`
     - Create `pkg/testing/mocks/moderation_repository_mock.go`
     - Create `pkg/testing/inmemory/moderation_repository.go`

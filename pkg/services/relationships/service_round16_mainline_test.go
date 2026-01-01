@@ -250,7 +250,7 @@ type testRepositoryStorage struct {
 
 	actorRepo        interfaces.ActorRepository
 	domainBlockRepo  *repositories.DomainBlockRepository
-	relationshipRepo *repositories.RelationshipRepository
+	relationshipRepo interfaces.ConcreteRelationshipRepository
 	socialRepo       *repositories.SocialRepository
 	userRepo         *repositories.UserRepository
 }
@@ -263,7 +263,7 @@ func (s *testRepositoryStorage) Actor() interfaces.ActorRepository { return s.ac
 func (s *testRepositoryStorage) DomainBlock() *repositories.DomainBlockRepository {
 	return s.domainBlockRepo
 }
-func (s *testRepositoryStorage) Relationship() *repositories.RelationshipRepository {
+func (s *testRepositoryStorage) Relationship() interfaces.ConcreteRelationshipRepository {
 	return s.relationshipRepo
 }
 func (s *testRepositoryStorage) Social() *repositories.SocialRepository { return s.socialRepo }
@@ -272,12 +272,12 @@ func (s *testRepositoryStorage) User() interfaces.UserRepository        { return
 // Repository access methods - return nil repositories unless a test needs them.
 func (s *testRepositoryStorage) Account() *repositories.AccountRepository             { return nil }
 func (s *testRepositoryStorage) Bookmark() *repositories.BookmarkRepository           { return nil }
-func (s *testRepositoryStorage) Object() *repositories.ObjectRepository               { return nil }
+func (s *testRepositoryStorage) Object() interfaces.ObjectRepository                  { return nil }
 func (s *testRepositoryStorage) Activity() interfaces.ActivityRepository              { return nil }
 func (s *testRepositoryStorage) Timeline() interfaces.TimelineRepository              { return nil }
 func (s *testRepositoryStorage) Notification() interfaces.NotificationRepository      { return nil }
 func (s *testRepositoryStorage) Like() *repositories.LikeRepository                   { return nil }
-func (s *testRepositoryStorage) Moderation() *repositories.ModerationRepository       { return nil }
+func (s *testRepositoryStorage) Moderation() interfaces.ModerationRepository          { return nil }
 func (s *testRepositoryStorage) List() *repositories.ListRepository                   { return nil }
 func (s *testRepositoryStorage) Media() *repositories.MediaRepository                 { return nil }
 func (s *testRepositoryStorage) MediaMetadata() *repositories.MediaMetadataRepository { return nil }

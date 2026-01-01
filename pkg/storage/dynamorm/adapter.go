@@ -427,7 +427,7 @@ func (s *StorageAdapter) Like() interface{} {
 
 // Moderation returns the Moderation repository instance
 func (s *StorageAdapter) Moderation() interface{} {
-	return repoPtrToInterface(s.repos.Moderation())
+	return s.repos.Moderation()
 }
 
 // List returns the List repository instance

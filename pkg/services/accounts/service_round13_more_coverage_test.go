@@ -68,7 +68,7 @@ type permissiveAccountsStorage struct {
 
 	account      *repositories.AccountRepository
 	actor        interfaces.ActorRepository
-	relationship *repositories.RelationshipRepository
+	relationship interfaces.ConcreteRelationshipRepository
 	social       *repositories.SocialRepository
 	user         *repositories.UserRepository
 	marker       *repositories.MarkerRepository
@@ -81,7 +81,7 @@ type permissiveAccountsStorage struct {
 
 func (s *permissiveAccountsStorage) Account() *repositories.AccountRepository { return s.account }
 func (s *permissiveAccountsStorage) Actor() interfaces.ActorRepository     { return s.actor }
-func (s *permissiveAccountsStorage) Relationship() *repositories.RelationshipRepository {
+func (s *permissiveAccountsStorage) Relationship() interfaces.ConcreteRelationshipRepository {
 	return s.relationship
 }
 func (s *permissiveAccountsStorage) Social() *repositories.SocialRepository      { return s.social }

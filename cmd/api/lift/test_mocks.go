@@ -92,12 +92,12 @@ func (m *MockRepositoryStorage) Like() *repositories.LikeRepository {
 }
 
 // Moderation returns a mock moderation repository for testing
-func (m *MockRepositoryStorage) Moderation() *repositories.ModerationRepository {
+func (m *MockRepositoryStorage) Moderation() interfaces.ModerationRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.ModerationRepository)
+	return args.Get(0).(interfaces.ModerationRepository)
 }
 
 // List returns a mock list repository for testing

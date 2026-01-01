@@ -26,7 +26,7 @@ type serviceTestStorage struct {
 	activityRepo      interfaces.ActivityRepository
 	relationshipRepo  interfaces.ConcreteRelationshipRepository
 	trustRepo         interfaces.TrustRepository
-	moderationRepo    *repositories.ModerationRepository
+	moderationRepo    interfaces.ModerationRepository
 	communityNoteRepo *repositories.CommunityNoteRepository
 	domainBlockRepo   *repositories.DomainBlockRepository
 }
@@ -43,7 +43,7 @@ func (s *serviceTestStorage) Activity() interfaces.ActivityRepository          {
 func (s *serviceTestStorage) Timeline() interfaces.TimelineRepository          { return nil }
 func (s *serviceTestStorage) Notification() interfaces.NotificationRepository  { return nil }
 func (s *serviceTestStorage) Like() *repositories.LikeRepository               { return nil }
-func (s *serviceTestStorage) Moderation() *repositories.ModerationRepository   { return s.moderationRepo }
+func (s *serviceTestStorage) Moderation() interfaces.ModerationRepository      { return s.moderationRepo }
 func (s *serviceTestStorage) List() *repositories.ListRepository               { return nil }
 func (s *serviceTestStorage) Media() *repositories.MediaRepository             { return nil }
 func (s *serviceTestStorage) MediaMetadata() *repositories.MediaMetadataRepository { return nil }
