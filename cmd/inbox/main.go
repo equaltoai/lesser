@@ -28,6 +28,7 @@ import (
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
@@ -62,7 +63,7 @@ var (
 // InboxHandler handles ActivityPub inbox requests using Lift
 type InboxHandler struct {
 	db                           dynamormCore.DB
-	actorRepository              *repositories.ActorRepository
+	actorRepository              interfaces.ActorRepository
 	activityRepository           *repositories.ActivityRepository
 	relationshipRepository       *repositories.RelationshipRepository
 	objectRepository             *repositories.ObjectRepository
@@ -71,7 +72,7 @@ type InboxHandler struct {
 	federationActivityRepository *repositories.FederationActivityRepository
 	federationCostRepository     *repositories.FederationCostRepository
 	domainBlockRepository        *repositories.DomainBlockRepository
-	userRepository               *repositories.UserRepository
+	userRepository               interfaces.UserRepository
 	instanceRepository           *repositories.InstanceRepository
 	publicKeyCacheRepository     *repositories.PublicKeyCacheRepository
 	notificationRepository       *repositories.NotificationRepository
@@ -121,7 +122,7 @@ type observabilityServices struct {
 
 // repositoryCollection holds all repository instances
 type repositoryCollection struct {
-	actorRepo              *repositories.ActorRepository
+	actorRepo              interfaces.ActorRepository
 	activityRepo           *repositories.ActivityRepository
 	followRepo             *repositories.RelationshipRepository
 	objectRepo             *repositories.ObjectRepository
@@ -130,7 +131,7 @@ type repositoryCollection struct {
 	federationActivityRepo *repositories.FederationActivityRepository
 	federationCostRepo     *repositories.FederationCostRepository
 	domainBlockRepo        *repositories.DomainBlockRepository
-	userRepo               *repositories.UserRepository
+	userRepo               interfaces.UserRepository
 	instanceRepo           *repositories.InstanceRepository
 	publicKeyCacheRepo     *repositories.PublicKeyCacheRepository
 	notificationRepo       *repositories.NotificationRepository

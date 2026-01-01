@@ -16,6 +16,7 @@ import (
 	appConfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
@@ -451,10 +452,10 @@ func (s *repoStorageStub) GetLogger() *zap.Logger                         { retu
 
 func (s *repoStorageStub) Account() *repositories.AccountRepository                     { return nil }
 func (s *repoStorageStub) Bookmark() *repositories.BookmarkRepository                   { return nil }
-func (s *repoStorageStub) Actor() *repositories.ActorRepository                         { return nil }
+func (s *repoStorageStub) Actor() interfaces.ActorRepository                            { return nil }
 func (s *repoStorageStub) Object() *repositories.ObjectRepository                       { return nil }
 func (s *repoStorageStub) Activity() *repositories.ActivityRepository                   { return nil }
-func (s *repoStorageStub) Timeline() *repositories.TimelineRepository                   { return nil }
+func (s *repoStorageStub) Timeline() interfaces.TimelineRepository                      { return nil }
 func (s *repoStorageStub) Notification() *repositories.NotificationRepository           { return nil }
 func (s *repoStorageStub) Like() *repositories.LikeRepository                           { return nil }
 func (s *repoStorageStub) Moderation() *repositories.ModerationRepository               { return nil }
@@ -472,8 +473,8 @@ func (s *repoStorageStub) Instance() *repositories.InstanceRepository           
 func (s *repoStorageStub) Recovery() *repositories.RecoveryRepository                   { return nil }
 func (s *repoStorageStub) Analytics() *repositories.TrendingRepository                  { return nil }
 func (s *repoStorageStub) Social() *repositories.SocialRepository                       { return nil }
-func (s *repoStorageStub) User() *repositories.UserRepository                           { return nil }
-func (s *repoStorageStub) Status() *repositories.StatusRepository                       { return nil }
+func (s *repoStorageStub) User() interfaces.UserRepository                              { return nil }
+func (s *repoStorageStub) Status() interfaces.StatusRepository                       { return nil }
 func (s *repoStorageStub) Cost() *repositories.TrackingRepository                       { return nil }
 func (s *repoStorageStub) WebSocketCost() *repositories.WebSocketCostRepository         { return nil }
 func (s *repoStorageStub) Trust() *repositories.TrustRepository                         { return nil }

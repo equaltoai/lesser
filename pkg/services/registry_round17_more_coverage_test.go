@@ -21,6 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/media"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
@@ -40,10 +41,10 @@ type permissiveRegistryStorage struct {
 
 	account             *repositories.AccountRepository
 	bookmark            *repositories.BookmarkRepository
-	actor               *repositories.ActorRepository
+	actor               interfaces.ActorRepository
 	object              *repositories.ObjectRepository
 	activity            *repositories.ActivityRepository
-	timeline            *repositories.TimelineRepository
+	timeline            interfaces.TimelineRepository
 	notification        *repositories.NotificationRepository
 	like                *repositories.LikeRepository
 	list                *repositories.ListRepository
@@ -82,10 +83,10 @@ type permissiveRegistryStorage struct {
 
 func (s *permissiveRegistryStorage) Account() *repositories.AccountRepository   { return s.account }
 func (s *permissiveRegistryStorage) Bookmark() *repositories.BookmarkRepository { return s.bookmark }
-func (s *permissiveRegistryStorage) Actor() *repositories.ActorRepository       { return s.actor }
+func (s *permissiveRegistryStorage) Actor() interfaces.ActorRepository       { return s.actor }
 func (s *permissiveRegistryStorage) Object() *repositories.ObjectRepository     { return s.object }
 func (s *permissiveRegistryStorage) Activity() *repositories.ActivityRepository { return s.activity }
-func (s *permissiveRegistryStorage) Timeline() *repositories.TimelineRepository { return s.timeline }
+func (s *permissiveRegistryStorage) Timeline() interfaces.TimelineRepository    { return s.timeline }
 func (s *permissiveRegistryStorage) Notification() *repositories.NotificationRepository {
 	return s.notification
 }
@@ -108,8 +109,8 @@ func (s *permissiveRegistryStorage) Federation() *repositories.FederationReposit
 	return s.federation
 }
 func (s *permissiveRegistryStorage) Social() *repositories.SocialRepository { return s.social }
-func (s *permissiveRegistryStorage) User() *repositories.UserRepository     { return s.user }
-func (s *permissiveRegistryStorage) Status() *repositories.StatusRepository { return s.status }
+func (s *permissiveRegistryStorage) User() interfaces.UserRepository        { return s.user }
+func (s *permissiveRegistryStorage) Status() interfaces.StatusRepository { return s.status }
 func (s *permissiveRegistryStorage) Search() *repositories.SearchRepository { return s.search }
 func (s *permissiveRegistryStorage) CommunityNote() *repositories.CommunityNoteRepository {
 	return s.communityNote

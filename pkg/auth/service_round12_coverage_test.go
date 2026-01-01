@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
@@ -20,7 +21,7 @@ type fakeAuthRepos struct {
 }
 
 func (f fakeAuthRepos) Account() *repositories.AccountRepository           { return f.account }
-func (f fakeAuthRepos) Actor() *repositories.ActorRepository               { return nil }
+func (f fakeAuthRepos) Actor() interfaces.ActorRepository                  { return nil }
 func (f fakeAuthRepos) Activity() *repositories.ActivityRepository         { return nil }
 func (f fakeAuthRepos) Notification() *repositories.NotificationRepository { return nil }
 func (f fakeAuthRepos) Recovery() *repositories.RecoveryRepository         { return nil }

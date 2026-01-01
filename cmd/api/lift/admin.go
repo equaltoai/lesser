@@ -17,7 +17,6 @@ import (
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -1769,7 +1768,7 @@ func (h *Handler) parseAdminStatusPagination(ctx *lift.Context) AdminStatusPagin
 }
 
 // parseAdminStatusFilter parses filter parameters from request
-func (h *Handler) parseAdminStatusFilter(ctx *lift.Context) *repositories.StatusFilter {
+func (h *Handler) parseAdminStatusFilter(ctx *lift.Context) *interfaces.StatusFilter {
 	local := ctx.Query("local") == boolTrue
 	remote := ctx.Query("remote") == boolTrue
 	flagged := ctx.Query("flagged") == boolTrue
@@ -1777,7 +1776,7 @@ func (h *Handler) parseAdminStatusFilter(ctx *lift.Context) *repositories.Status
 	withMedia := ctx.Query("media") == boolTrue
 	sensitive := ctx.Query("sensitive") == boolTrue
 
-	filter := &repositories.StatusFilter{
+	filter := &interfaces.StatusFilter{
 		ByDomain:   ctx.Query("by_domain"),
 		Visibility: ctx.Query("visibility"),
 		MinDate:    h.parseDate(ctx.Query("min_date")),
@@ -1819,10 +1818,14 @@ func (h *Handler) parseDate(dateStr string) *time.Time {
 }
 
 // addCountHeaderIfRequested adds total count header if requested
-func (h *Handler) addCountHeaderIfRequested(ctx *lift.Context, filter *repositories.StatusFilter) {
+func (h *Handler) addCountHeaderIfRequested(ctx *lift.Context, filter *interfaces.StatusFilter) {
 	if ctx.Query("include_count") == boolTrue {
-		if totalCount, countErr := h.repos.Status().CountStatusesForAdmin(ctx.Context, filter); countErr == nil {
-			ctx.Response.Headers["X-Total-Count"] = strconv.FormatInt(totalCount, 10)
+		if statusRepo, ok := h.repos.Status().(interface {
+			CountStatusesForAdmin(context.Context, *interfaces.StatusFilter) (int64, error)
+		}); ok {
+			if totalCount, countErr := statusRepo.CountStatusesForAdmin(ctx.Context, filter); countErr == nil {
+				ctx.Response.Headers["X-Total-Count"] = strconv.FormatInt(totalCount, 10)
+			}
 		}
 	}
 }

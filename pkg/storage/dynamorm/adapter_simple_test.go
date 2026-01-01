@@ -56,10 +56,10 @@ func (s *SimpleRepositoryStorage) GetLogger() *zap.Logger { return s.logger }
 // This is sufficient to test interface compliance and basic adapter functionality
 func (s *SimpleRepositoryStorage) Account() *repositories.AccountRepository             { return nil }
 func (s *SimpleRepositoryStorage) Bookmark() *repositories.BookmarkRepository           { return nil }
-func (s *SimpleRepositoryStorage) Actor() *repositories.ActorRepository                 { return nil }
+func (s *SimpleRepositoryStorage) Actor() interfaces.ActorRepository                    { return nil }
 func (s *SimpleRepositoryStorage) Object() *repositories.ObjectRepository               { return nil }
 func (s *SimpleRepositoryStorage) Activity() *repositories.ActivityRepository           { return nil }
-func (s *SimpleRepositoryStorage) Timeline() *repositories.TimelineRepository           { return nil }
+func (s *SimpleRepositoryStorage) Timeline() interfaces.TimelineRepository              { return nil }
 func (s *SimpleRepositoryStorage) Notification() *repositories.NotificationRepository   { return nil }
 func (s *SimpleRepositoryStorage) Like() *repositories.LikeRepository                   { return nil }
 func (s *SimpleRepositoryStorage) Moderation() *repositories.ModerationRepository       { return nil }
@@ -82,8 +82,8 @@ func (s *SimpleRepositoryStorage) Federation() *repositories.FederationRepositor
 func (s *SimpleRepositoryStorage) Recovery() *repositories.RecoveryRepository           { return nil }
 func (s *SimpleRepositoryStorage) Analytics() *repositories.TrendingRepository          { return nil }
 func (s *SimpleRepositoryStorage) Social() *repositories.SocialRepository               { return nil }
-func (s *SimpleRepositoryStorage) User() *repositories.UserRepository                   { return nil }
-func (s *SimpleRepositoryStorage) Status() *repositories.StatusRepository               { return nil }
+func (s *SimpleRepositoryStorage) User() interfaces.UserRepository                      { return nil }
+func (s *SimpleRepositoryStorage) Status() interfaces.StatusRepository                  { return nil }
 func (s *SimpleRepositoryStorage) Cost() *repositories.TrackingRepository               { return nil }
 func (s *SimpleRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepository { return nil }
 func (s *SimpleRepositoryStorage) Trust() *repositories.TrustRepository                 { return nil }

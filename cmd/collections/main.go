@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -66,7 +67,7 @@ const (
 
 // CollectionsHandler handles ActivityPub federation collections using Lift
 type CollectionsHandler struct {
-	actorRepo        *repositories.ActorRepository
+	actorRepo        interfaces.ActorRepository
 	relationshipRepo *repositories.RelationshipRepository
 	likeRepo         *repositories.LikeRepository
 }

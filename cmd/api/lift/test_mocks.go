@@ -2,6 +2,7 @@ package lift
 
 import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/mock"
@@ -37,12 +38,12 @@ func (m *MockRepositoryStorage) Bookmark() *repositories.BookmarkRepository {
 }
 
 // Actor returns a mock actor repository for testing
-func (m *MockRepositoryStorage) Actor() *repositories.ActorRepository {
+func (m *MockRepositoryStorage) Actor() interfaces.ActorRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.ActorRepository)
+	return args.Get(0).(interfaces.ActorRepository)
 }
 
 // Object returns a mock object repository for testing
@@ -63,13 +64,13 @@ func (m *MockRepositoryStorage) Activity() *repositories.ActivityRepository {
 	return args.Get(0).(*repositories.ActivityRepository)
 }
 
-// Timeline returns a mock timeline repository for testing
-func (m *MockRepositoryStorage) Timeline() *repositories.TimelineRepository {
+// Timeline returns a mock timeline repository for testing (interface type for mockability).
+func (m *MockRepositoryStorage) Timeline() interfaces.TimelineRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.TimelineRepository)
+	return args.Get(0).(interfaces.TimelineRepository)
 }
 
 // Notification returns a mock notification repository for testing
@@ -235,21 +236,21 @@ func (m *MockRepositoryStorage) Social() *repositories.SocialRepository {
 }
 
 // User returns a mock user repository for testing
-func (m *MockRepositoryStorage) User() *repositories.UserRepository {
+func (m *MockRepositoryStorage) User() interfaces.UserRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.UserRepository)
+	return args.Get(0).(interfaces.UserRepository)
 }
 
 // Status returns a mock status repository for testing
-func (m *MockRepositoryStorage) Status() *repositories.StatusRepository {
+func (m *MockRepositoryStorage) Status() interfaces.StatusRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.StatusRepository)
+	return args.Get(0).(interfaces.StatusRepository)
 }
 
 // Cost returns a mock cost repository for testing

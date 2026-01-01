@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
@@ -20,7 +21,7 @@ import (
 type round11TestRepos struct {
 	*MockRepositoryStorage
 	account      *repositories.AccountRepository
-	actor        *repositories.ActorRepository
+	actor        interfaces.ActorRepository
 	moderation   *repositories.ModerationRepository
 	push         *repositories.PushSubscriptionRepository
 	importRepo   *repositories.ImportRepository
@@ -37,7 +38,7 @@ type round11TestRepos struct {
 }
 
 func (r *round11TestRepos) Account() *repositories.AccountRepository { return r.account }
-func (r *round11TestRepos) Actor() *repositories.ActorRepository     { return r.actor }
+func (r *round11TestRepos) Actor() interfaces.ActorRepository        { return r.actor }
 func (r *round11TestRepos) Moderation() *repositories.ModerationRepository {
 	return r.moderation
 }
@@ -53,7 +54,7 @@ func (r *round11TestRepos) Instance() *repositories.InstanceRepository { return 
 func (r *round11TestRepos) MetricRecord() *repositories.MetricRecordRepository {
 	return r.metricRecord
 }
-func (r *round11TestRepos) Status() *repositories.StatusRepository { return r.status }
+func (r *round11TestRepos) Status() interfaces.StatusRepository { return r.status }
 func (r *round11TestRepos) Like() *repositories.LikeRepository     { return r.like }
 func (r *round11TestRepos) Social() *repositories.SocialRepository { return r.social }
 func (r *round11TestRepos) Bookmark() *repositories.BookmarkRepository {

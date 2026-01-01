@@ -291,10 +291,10 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 
 func (m *MockRepositoryStorage) Account() *repositories.AccountRepository           { return nil }
 func (m *MockRepositoryStorage) Bookmark() *repositories.BookmarkRepository         { return nil }
-func (m *MockRepositoryStorage) Actor() *repositories.ActorRepository               { return nil }
+func (m *MockRepositoryStorage) Actor() interfaces.ActorRepository               { return nil }
 func (m *MockRepositoryStorage) Object() *repositories.ObjectRepository             { return nil }
 func (m *MockRepositoryStorage) Activity() *repositories.ActivityRepository         { return nil }
-func (m *MockRepositoryStorage) Timeline() *repositories.TimelineRepository         { return nil }
+func (m *MockRepositoryStorage) Timeline() interfaces.TimelineRepository            { return nil }
 func (m *MockRepositoryStorage) Notification() *repositories.NotificationRepository { return nil }
 func (m *MockRepositoryStorage) Like() *repositories.LikeRepository                 { return nil }
 func (m *MockRepositoryStorage) Moderation() *repositories.ModerationRepository     { return nil }
@@ -314,8 +314,8 @@ func (m *MockRepositoryStorage) Federation() *repositories.FederationRepository 
 func (m *MockRepositoryStorage) Recovery() *repositories.RecoveryRepository               { return nil }
 func (m *MockRepositoryStorage) Analytics() *repositories.TrendingRepository              { return nil }
 func (m *MockRepositoryStorage) Social() *repositories.SocialRepository                   { return nil }
-func (m *MockRepositoryStorage) User() *repositories.UserRepository                       { return nil }
-func (m *MockRepositoryStorage) Status() *repositories.StatusRepository                   { return nil }
+func (m *MockRepositoryStorage) User() interfaces.UserRepository                          { return nil }
+func (m *MockRepositoryStorage) Status() interfaces.StatusRepository                   { return nil }
 func (m *MockRepositoryStorage) Cost() *repositories.TrackingRepository                   { return nil }
 func (m *MockRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepository     { return nil }
 func (m *MockRepositoryStorage) Trust() *repositories.TrustRepository                     { return nil }

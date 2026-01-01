@@ -28,7 +28,7 @@ import (
 type Service struct {
 	exportRepo    exportRepository
 	importRepo    importRepository
-	statusRepo    *repositories.StatusRepository
+	statusRepo    interfaces.StatusRepository
 	accountRepo   accountRepository
 	mediaRepo     *repositories.MediaRepository
 	socialRepo    interfaces.SocialRepository
@@ -79,7 +79,7 @@ type StorageClient interface {
 func NewService(
 	exportRepo exportRepository,
 	importRepo importRepository,
-	statusRepo *repositories.StatusRepository,
+	statusRepo interfaces.StatusRepository,
 	accountRepo accountRepository,
 	mediaRepo *repositories.MediaRepository,
 	socialRepo interfaces.SocialRepository,

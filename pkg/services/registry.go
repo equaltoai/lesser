@@ -2009,7 +2009,7 @@ func (r *Registry) initializeImportExportService() bool {
 type importExportRepositories struct {
 	exportRepo  *repositories.ExportRepository
 	importRepo  *repositories.ImportRepository
-	statusRepo  *repositories.StatusRepository
+	statusRepo  interfaces.StatusRepository
 	accountRepo interfaces.AccountRepository
 	mediaRepo   *repositories.MediaRepository
 	socialRepo  interfaces.SocialRepository

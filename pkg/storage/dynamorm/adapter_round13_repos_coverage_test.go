@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
@@ -137,13 +138,13 @@ func TestStorageAdapter_ExportedMethods_DoNotPanic_WithPermissiveRepos(t *testin
 type permissiveRepositoryStorage struct {
 	*SimpleRepositoryStorage
 
-	actor        *repositories.ActorRepository
+	actor        interfaces.ActorRepository
 	activity     *repositories.ActivityRepository
 	user         *repositories.UserRepository
 	account      *repositories.AccountRepository
 	object       *repositories.ObjectRepository
 	status       *repositories.StatusRepository
-	timeline     *repositories.TimelineRepository
+	timeline     interfaces.TimelineRepository
 	relationship *repositories.RelationshipRepository
 	like         *repositories.LikeRepository
 	notification *repositories.NotificationRepository
@@ -157,13 +158,13 @@ type permissiveRepositoryStorage struct {
 	cost         *repositories.TrackingRepository
 }
 
-func (s *permissiveRepositoryStorage) Actor() *repositories.ActorRepository       { return s.actor }
+func (s *permissiveRepositoryStorage) Actor() interfaces.ActorRepository          { return s.actor }
 func (s *permissiveRepositoryStorage) Activity() *repositories.ActivityRepository { return s.activity }
-func (s *permissiveRepositoryStorage) User() *repositories.UserRepository         { return s.user }
+func (s *permissiveRepositoryStorage) User() interfaces.UserRepository            { return s.user }
 func (s *permissiveRepositoryStorage) Account() *repositories.AccountRepository   { return s.account }
 func (s *permissiveRepositoryStorage) Object() *repositories.ObjectRepository     { return s.object }
-func (s *permissiveRepositoryStorage) Status() *repositories.StatusRepository     { return s.status }
-func (s *permissiveRepositoryStorage) Timeline() *repositories.TimelineRepository { return s.timeline }
+func (s *permissiveRepositoryStorage) Status() interfaces.StatusRepository        { return s.status }
+func (s *permissiveRepositoryStorage) Timeline() interfaces.TimelineRepository    { return s.timeline }
 func (s *permissiveRepositoryStorage) Relationship() *repositories.RelationshipRepository {
 	return s.relationship
 }

@@ -319,40 +319,56 @@ func updateTrusteeConfirmationError() *errors.AppError {
 }
 
 // Request and conversion errors - using Validation domain functions
+// These functions are used in test files for error coverage testing.
 
 // requestConversionError creates an error when converting request fails.
+//
+//nolint:unused // Used in errors_round10_coverage_test.go
 func requestConversionError() *errors.AppError {
 	return errors.ParsingFailed("request", nil)
 }
 
 // createRequestError creates an error when creating internal request structure fails.
+//
+//nolint:unused // Used in errors_round10_coverage_test.go
 func createRequestError() *errors.AppError {
 	return errors.FailedToCreate("internal request", nil)
 }
 
 // Actor processing errors - using Federation domain functions
+// These functions are used in test files for error coverage testing.
 
 // fetchActorError creates an error when fetching actor fails.
+//
+//nolint:unused // Used in errors_round10_coverage_test.go
 func fetchActorError() *errors.AppError {
 	return errors.FailedToGet("actor", nil)
 }
 
 // actorResponseError creates an error when actor response is invalid.
+//
+//nolint:unused // Used in errors_round10_coverage_test.go
 func actorResponseError() *errors.AppError {
 	return errors.ExternalAPIError("actor response", 502, nil)
 }
 
 // parseActorError creates an error when parsing actor fails.
+//
+//nolint:unused // Used in errors_round10_coverage_test.go
 func parseActorError() *errors.AppError {
 	return errors.ParsingFailed("actor", nil)
 }
 
 // noPublicKeyError creates an error when actor has no public key.
+//
+//nolint:unused // Used in errors_round10_coverage_test.go
 func noPublicKeyError() *errors.AppError {
 	return errors.RequiredFieldMissing("public_key")
 }
 
 // parsePublicKeyError creates an error when parsing public key fails.
+//
+//nolint:unused // Used in errors_round10_coverage_test.go
 func parsePublicKeyError() *errors.AppError {
 	return errors.ParsingFailed("public key", nil)
 }

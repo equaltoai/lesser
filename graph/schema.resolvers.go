@@ -2648,7 +2648,7 @@ type engagementMetrics struct {
 }
 
 // getThreadReplies fetches thread replies with error handling
-func (r *queryResolver) getThreadReplies(ctx context.Context, statusRepo *repositories.StatusRepository, noteID string) ([]*models.Status, error) {
+func (r *queryResolver) getThreadReplies(ctx context.Context, statusRepo interfaces.StatusRepository, noteID string) ([]*models.Status, error) {
 	paginationOpts := interfaces.PaginationOptions{
 		Limit:  100,
 		Cursor: "",
@@ -2681,7 +2681,7 @@ func (r *queryResolver) calculateEngagementMetrics(ctx context.Context, storage 
 }
 
 // calculateThreadMetrics calculates various thread metrics
-func (r *queryResolver) calculateThreadMetrics(ctx context.Context, statusRepo *repositories.StatusRepository, status *models.Status, replies []*models.Status) *threadMetrics {
+func (r *queryResolver) calculateThreadMetrics(ctx context.Context, statusRepo interfaces.StatusRepository, status *models.Status, replies []*models.Status) *threadMetrics {
 	participants := make(map[string]bool)
 	var lastActivity time.Time
 	missingPosts := 0
@@ -2726,7 +2726,7 @@ func (r *queryResolver) processOriginalStatus(status *models.Status, participant
 }
 
 // checkMissingParent checks if the parent status exists
-func (r *queryResolver) checkMissingParent(ctx context.Context, statusRepo *repositories.StatusRepository, parentID string) int {
+func (r *queryResolver) checkMissingParent(ctx context.Context, statusRepo interfaces.StatusRepository, parentID string) int {
 	parent, err := statusRepo.GetStatus(ctx, parentID)
 	if err != nil || parent == nil || parent.Deleted {
 		return 1 // Parent is missing or deleted
@@ -2735,7 +2735,7 @@ func (r *queryResolver) checkMissingParent(ctx context.Context, statusRepo *repo
 }
 
 // processReply processes a single reply for metrics calculation
-func (r *queryResolver) processReply(ctx context.Context, statusRepo *repositories.StatusRepository, reply *models.Status, participants map[string]bool, lastActivity *time.Time, maxDepth *int, replyIDs map[string]bool, missingPosts *int, noteID string) {
+func (r *queryResolver) processReply(ctx context.Context, statusRepo interfaces.StatusRepository, reply *models.Status, participants map[string]bool, lastActivity *time.Time, maxDepth *int, replyIDs map[string]bool, missingPosts *int, noteID string) {
 	replyIDs[reply.StatusID] = true
 
 	if reply.AuthorUsername != "" {

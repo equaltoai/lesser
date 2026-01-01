@@ -224,6 +224,24 @@ func (m *MockNoteRepository) DeleteBoostStatus(context.Context, string, string) 
 	return nil, nil
 }
 
+func (m *MockNoteRepository) CountStatusesByAuthor(ctx context.Context, authorID string) (int, error) {
+	args := m.Called(ctx, authorID)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockNoteRepository) CountReplies(ctx context.Context, statusID string) (int, error) {
+	args := m.Called(ctx, statusID)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockNoteRepository) ListStatusesForAdmin(ctx context.Context, filter *interfaces.StatusFilter, limit int, cursor string) ([]*models.Status, string, error) {
+	args := m.Called(ctx, filter, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*models.Status), args.String(1), args.Error(2)
+}
+
 type MockPublisher struct {
 	events []PublishedEvent
 }

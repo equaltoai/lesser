@@ -282,10 +282,10 @@ func TestStatusRepository_ext_sweep(t *testing.T) {
 	_ = repo.UpdateEngagementMetrics(ctx, "s1", 1, 2, 3, 4)
 	_, _ = repo.GetTotalStatusCount(ctx)
 
-	_, _, _ = repo.ListStatusesForAdmin(ctx, &repositories.StatusFilter{Local: ptr(true)}, 2, "")
-	_, _, _ = repo.ListStatusesForAdmin(ctx, &repositories.StatusFilter{Remote: ptr(true)}, 2, "")
-	_, _, _ = repo.ListStatusesForAdmin(ctx, &repositories.StatusFilter{ByDomain: "remote.example"}, 2, "")
-	_, _ = repo.CountStatusesForAdmin(ctx, &repositories.StatusFilter{Remote: ptr(true)})
+	_, _, _ = repo.ListStatusesForAdmin(ctx, &interfaces.StatusFilter{Local: ptr(true)}, 2, "")
+	_, _, _ = repo.ListStatusesForAdmin(ctx, &interfaces.StatusFilter{Remote: ptr(true)}, 2, "")
+	_, _, _ = repo.ListStatusesForAdmin(ctx, &interfaces.StatusFilter{ByDomain: "remote.example"}, 2, "")
+	_, _ = repo.CountStatusesForAdmin(ctx, &interfaces.StatusFilter{Remote: ptr(true)})
 
 	_, _ = repo.GetStatusByURL(ctx, "https://example.com/status/1")
 	_, _ = repo.GetStatusesByURL(ctx, "https://example.com/x", 1)

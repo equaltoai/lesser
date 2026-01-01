@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -247,7 +248,7 @@ type testRepositoryStorage struct {
 	tableName string
 	logger    *zap.Logger
 
-	actorRepo        *repositories.ActorRepository
+	actorRepo        interfaces.ActorRepository
 	domainBlockRepo  *repositories.DomainBlockRepository
 	relationshipRepo *repositories.RelationshipRepository
 	socialRepo       *repositories.SocialRepository
@@ -258,7 +259,7 @@ func (s *testRepositoryStorage) GetDB() dynamormCore.DB { return s.db }
 func (s *testRepositoryStorage) GetTableName() string   { return s.tableName }
 func (s *testRepositoryStorage) GetLogger() *zap.Logger { return s.logger }
 
-func (s *testRepositoryStorage) Actor() *repositories.ActorRepository { return s.actorRepo }
+func (s *testRepositoryStorage) Actor() interfaces.ActorRepository { return s.actorRepo }
 func (s *testRepositoryStorage) DomainBlock() *repositories.DomainBlockRepository {
 	return s.domainBlockRepo
 }
@@ -266,14 +267,14 @@ func (s *testRepositoryStorage) Relationship() *repositories.RelationshipReposit
 	return s.relationshipRepo
 }
 func (s *testRepositoryStorage) Social() *repositories.SocialRepository { return s.socialRepo }
-func (s *testRepositoryStorage) User() *repositories.UserRepository     { return s.userRepo }
+func (s *testRepositoryStorage) User() interfaces.UserRepository        { return s.userRepo }
 
 // Repository access methods - return nil repositories unless a test needs them.
 func (s *testRepositoryStorage) Account() *repositories.AccountRepository             { return nil }
 func (s *testRepositoryStorage) Bookmark() *repositories.BookmarkRepository           { return nil }
 func (s *testRepositoryStorage) Object() *repositories.ObjectRepository               { return nil }
 func (s *testRepositoryStorage) Activity() *repositories.ActivityRepository           { return nil }
-func (s *testRepositoryStorage) Timeline() *repositories.TimelineRepository           { return nil }
+func (s *testRepositoryStorage) Timeline() interfaces.TimelineRepository              { return nil }
 func (s *testRepositoryStorage) Notification() *repositories.NotificationRepository   { return nil }
 func (s *testRepositoryStorage) Like() *repositories.LikeRepository                   { return nil }
 func (s *testRepositoryStorage) Moderation() *repositories.ModerationRepository       { return nil }
@@ -293,7 +294,7 @@ func (s *testRepositoryStorage) Instance() *repositories.InstanceRepository     
 func (s *testRepositoryStorage) Federation() *repositories.FederationRepository     { return nil }
 func (s *testRepositoryStorage) Recovery() *repositories.RecoveryRepository         { return nil }
 func (s *testRepositoryStorage) Analytics() *repositories.TrendingRepository        { return nil }
-func (s *testRepositoryStorage) Status() *repositories.StatusRepository             { return nil }
+func (s *testRepositoryStorage) Status() interfaces.StatusRepository                { return nil }
 func (s *testRepositoryStorage) Cost() *repositories.TrackingRepository             { return nil }
 func (s *testRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepository {
 	return nil

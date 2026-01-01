@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
@@ -8,7 +9,7 @@ import (
 // This avoids importing pkg/storage/core which causes import cycles
 type StorageProvider interface {
 	Account() *repositories.AccountRepository
-	Actor() *repositories.ActorRepository
+	Actor() interfaces.ActorRepository
 	Activity() *repositories.ActivityRepository
 	Notification() *repositories.NotificationRepository
 	Recovery() *repositories.RecoveryRepository

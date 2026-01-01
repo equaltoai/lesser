@@ -35,7 +35,7 @@ const (
 
 // Service provides notes/status operations
 type Service struct {
-	noteRepo          *repositories.StatusRepository
+	noteRepo          interfaces.StatusRepository
 	accountRepo       interfaces.AccountRepository
 	bookmarkRepo      *repositories.BookmarkRepository
 	relationshipRepo  *repositories.RelationshipRepository
@@ -46,7 +46,7 @@ type Service struct {
 	objectRepo        *repositories.ObjectRepository
 	searchRepo        *repositories.SearchRepository
 	communityNoteRepo *repositories.CommunityNoteRepository
-	userRepo          *repositories.UserRepository
+	userRepo          interfaces.UserRepository
 	pollRepo          *repositories.PollRepository
 	scheduledRepo     ScheduledStatusRepository
 	publisher         streaming.Publisher
@@ -153,7 +153,7 @@ func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common
 
 // NewService creates a new Notes Service with the required dependencies
 func NewService(
-	noteRepo *repositories.StatusRepository,
+	noteRepo interfaces.StatusRepository,
 	accountRepo interfaces.AccountRepository,
 	bookmarkRepo *repositories.BookmarkRepository,
 	relationshipRepo *repositories.RelationshipRepository,
@@ -164,7 +164,7 @@ func NewService(
 	objectRepo *repositories.ObjectRepository,
 	searchRepo *repositories.SearchRepository,
 	communityNoteRepo *repositories.CommunityNoteRepository,
-	userRepo *repositories.UserRepository,
+	userRepo interfaces.UserRepository,
 	pollRepo *repositories.PollRepository,
 	publisher streaming.Publisher,
 	analytics AnalyticsService,

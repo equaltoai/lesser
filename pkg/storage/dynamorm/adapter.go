@@ -397,7 +397,7 @@ func (s *StorageAdapter) Account() interface{} {
 
 // Actor returns the Actor repository instance
 func (s *StorageAdapter) Actor() interface{} {
-	return repoPtrToInterface(s.repos.Actor())
+	return s.repos.Actor()
 }
 
 // Object returns the Object repository instance
@@ -412,7 +412,7 @@ func (s *StorageAdapter) Activity() interface{} {
 
 // Timeline returns the Timeline repository instance
 func (s *StorageAdapter) Timeline() interface{} {
-	return repoPtrToInterface(s.repos.Timeline())
+	return s.repos.Timeline()
 }
 
 // Notification returns the Notification repository instance
@@ -507,12 +507,14 @@ func (s *StorageAdapter) Social() interface{} {
 
 // User returns the User repository instance
 func (s *StorageAdapter) User() interface{} {
-	return repoPtrToInterface(s.repos.User())
+	// User() returns interfaces.UserRepository directly, no pointer conversion needed
+	return s.repos.User()
 }
 
 // Status returns the Status repository instance
 func (s *StorageAdapter) Status() interface{} {
-	return repoPtrToInterface(s.repos.Status())
+	// Status() returns interfaces.StatusRepository directly, no pointer conversion needed
+	return s.repos.Status()
 }
 
 // Cost returns the Cost repository instance

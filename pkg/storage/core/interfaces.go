@@ -2,6 +2,7 @@
 package core
 
 import (
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -13,10 +14,10 @@ type RepositoryStorage interface {
 	// Repository access methods - only expose the core repositories that are actually used
 	Account() *repositories.AccountRepository
 	Bookmark() *repositories.BookmarkRepository
-	Actor() *repositories.ActorRepository
+	Actor() interfaces.ActorRepository    // Returns interface type for mockability
 	Object() *repositories.ObjectRepository
 	Activity() *repositories.ActivityRepository
-	Timeline() *repositories.TimelineRepository
+	Timeline() interfaces.TimelineRepository // Returns interface type for mockability
 	Notification() *repositories.NotificationRepository
 	Like() *repositories.LikeRepository
 	Moderation() *repositories.ModerationRepository
@@ -35,8 +36,8 @@ type RepositoryStorage interface {
 	Recovery() *repositories.RecoveryRepository
 	Analytics() *repositories.TrendingRepository // Analytics/Trending repository
 	Social() *repositories.SocialRepository
-	User() *repositories.UserRepository
-	Status() *repositories.StatusRepository
+	User() interfaces.UserRepository   // Returns interface type for mockability
+	Status() interfaces.StatusRepository // Returns interface type for mockability
 	Cost() *repositories.TrackingRepository
 	WebSocketCost() *repositories.WebSocketCostRepository
 	Trust() *repositories.TrustRepository

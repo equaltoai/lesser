@@ -23,7 +23,7 @@ type Processor struct {
 	dlqRepo           *repositories.DLQRepository
 	costTrackingRepo  *repositories.TrackingRepository
 	logger            *zap.Logger
-	sqsClient         *sqs.Client
+	sqsClient         SQSClient
 	errorClassifier   *ErrorClassifier
 	reprocessorClient *ReprocessorClient
 }

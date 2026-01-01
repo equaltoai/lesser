@@ -321,7 +321,7 @@ func (f *RepositoryFactory) Bookmark() *repositories.BookmarkRepository {
 }
 
 // Actor returns the Actor repository instance
-func (f *RepositoryFactory) Actor() *repositories.ActorRepository {
+func (f *RepositoryFactory) Actor() interfaces.ActorRepository {
 	return f.actorRepo
 }
 
@@ -336,7 +336,7 @@ func (f *RepositoryFactory) Activity() *repositories.ActivityRepository {
 }
 
 // User returns the User repository instance
-func (f *RepositoryFactory) User() *repositories.UserRepository {
+func (f *RepositoryFactory) User() interfaces.UserRepository {
 	return f.userRepo
 }
 
@@ -350,8 +350,8 @@ func (f *RepositoryFactory) Conversation() *repositories.ConversationRepository 
 	return f.conversationRepo
 }
 
-// Timeline returns the Timeline repository instance
-func (f *RepositoryFactory) Timeline() *repositories.TimelineRepository {
+// Timeline returns the Timeline repository instance (interface type for mockability).
+func (f *RepositoryFactory) Timeline() interfaces.TimelineRepository {
 	return f.timelineRepo
 }
 
@@ -451,7 +451,7 @@ func (f *RepositoryFactory) Social() *repositories.SocialRepository {
 }
 
 // Status returns the Status repository instance
-func (f *RepositoryFactory) Status() *repositories.StatusRepository {
+func (f *RepositoryFactory) Status() interfaces.StatusRepository {
 	return f.statusRepo
 }
 

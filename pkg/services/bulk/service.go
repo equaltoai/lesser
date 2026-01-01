@@ -75,7 +75,7 @@ type relationshipRepository interface {
 
 // NewService creates a new bulk operations service
 func NewService(
-	statusRepo *repositories.StatusRepository,
+	statusRepo interfaces.StatusRepository,
 	accountRepo interfaces.AccountRepository,
 	socialRepo interfaces.SocialRepository,
 	listRepo *repositories.ListRepository,

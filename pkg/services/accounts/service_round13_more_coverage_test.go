@@ -67,7 +67,7 @@ type permissiveAccountsStorage struct {
 	logger    *zap.Logger
 
 	account      *repositories.AccountRepository
-	actor        *repositories.ActorRepository
+	actor        interfaces.ActorRepository
 	relationship *repositories.RelationshipRepository
 	social       *repositories.SocialRepository
 	user         *repositories.UserRepository
@@ -80,12 +80,12 @@ type permissiveAccountsStorage struct {
 }
 
 func (s *permissiveAccountsStorage) Account() *repositories.AccountRepository { return s.account }
-func (s *permissiveAccountsStorage) Actor() *repositories.ActorRepository     { return s.actor }
+func (s *permissiveAccountsStorage) Actor() interfaces.ActorRepository     { return s.actor }
 func (s *permissiveAccountsStorage) Relationship() *repositories.RelationshipRepository {
 	return s.relationship
 }
 func (s *permissiveAccountsStorage) Social() *repositories.SocialRepository      { return s.social }
-func (s *permissiveAccountsStorage) User() *repositories.UserRepository          { return s.user }
+func (s *permissiveAccountsStorage) User() interfaces.UserRepository             { return s.user }
 func (s *permissiveAccountsStorage) Marker() *repositories.MarkerRepository      { return s.marker }
 func (s *permissiveAccountsStorage) Analytics() *repositories.TrendingRepository { return s.analytics }
 func (s *permissiveAccountsStorage) Instance() *repositories.InstanceRepository  { return s.instance }

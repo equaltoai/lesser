@@ -415,3 +415,38 @@ func TestNewTrackingDB(t *testing.T) {
 	assert.Equal(t, tracker, trackingDB.tracker)
 	assert.Equal(t, logger, trackingDB.logger)
 }
+
+
+func TestTrackQuery(t *testing.T) {
+	logger := zap.NewNop()
+	tracker := NewDynamORMCostTracker(nil, logger)
+	tracker.circuitBreaker = nil
+
+	ctx := context.Background()
+	called := false
+
+	err := tracker.TrackQuery(ctx, "test-table", func() error {
+		called = true
+		return nil
+	})
+
+	assert.NoError(t, err)
+	assert.True(t, called)
+}
+
+func TestGetClient(t *testing.T) {
+	logger := zap.NewNop()
+	tracker := NewDynamORMCostTracker(nil, logger)
+
+	client := tracker.GetClient()
+	assert.Nil(t, client) // We passed nil
+}
+
+func TestTrackingDB_GetTracker(t *testing.T) {
+	baseTracker := New()
+	logger := zap.NewNop()
+	trackingDB := NewTrackingDB(nil, baseTracker, logger)
+
+	result := trackingDB.GetTracker()
+	assert.Equal(t, baseTracker, result)
+}

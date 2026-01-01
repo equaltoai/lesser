@@ -946,7 +946,10 @@ func TestService_round15_getTimeline_and_routeTimelineQuery_cases(t *testing.T) 
 	_, err = service.routeTimelineQuery(ctx, &ListNotesQuery{TimelineType: "home"})
 	assert.ErrorIs(t, err, ErrHomeTimelineRequiresViewerID)
 
-	service.noteRepo.SetRelationshipRepository(nil)
+	// Use type assertion to access concrete method for test setup
+	if concreteRepo, ok := service.noteRepo.(*repositories.StatusRepository); ok {
+		concreteRepo.SetRelationshipRepository(nil)
+	}
 	_, err = service.routeTimelineQuery(ctx, &ListNotesQuery{TimelineType: "home", ViewerID: "alice", Pagination: interfaces.PaginationOptions{Limit: 1}})
 	require.NoError(t, err)
 

@@ -108,6 +108,15 @@ func (s round08StatusRepo) GetStatusContext(context.Context, string) ([]*models.
 func (s round08StatusRepo) GetStatusEngagement(context.Context, string, string) (bool, bool, bool, error) {
 	panic("unexpected call")
 }
+func (s round08StatusRepo) CountStatusesByAuthor(context.Context, string) (int, error) {
+	panic("unexpected call")
+}
+func (s round08StatusRepo) CountReplies(context.Context, string) (int, error) {
+	panic("unexpected call")
+}
+func (s round08StatusRepo) ListStatusesForAdmin(context.Context, *interfaces.StatusFilter, int, string) ([]*models.Status, string, error) {
+	panic("unexpected call")
+}
 
 func TestRound08_AccountRepository_Social_Sweep(t *testing.T) {
 	baseTime := time.Now().UTC()

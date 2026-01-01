@@ -17,8 +17,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	liftPkg "github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -30,7 +30,7 @@ const (
 
 // WebFingerHandler handles WebFinger and NodeInfo requests using Lift
 type WebFingerHandler struct {
-	actorRepo *repositories.ActorRepository
+	actorRepo interfaces.ActorRepository
 	repos     core.RepositoryStorage
 	logger    *zap.Logger
 	cfg       *config.Config

@@ -466,22 +466,8 @@ func (r *StatusRepository) GetTotalStatusCount(ctx context.Context) (int64, erro
 	return count, nil
 }
 
-// StatusFilter represents filtering criteria for admin status listing
-type StatusFilter struct {
-	Local      *bool      // Filter by local vs remote statuses
-	Remote     *bool      // Filter by remote statuses only
-	ByDomain   string     // Filter by specific domain
-	Visibility string     // Filter by visibility (public, unlisted, private, direct)
-	Flagged    *bool      // Filter by flagged status
-	Reported   *bool      // Filter by reported status
-	WithMedia  *bool      // Filter by presence of media attachments
-	Sensitive  *bool      // Filter by sensitive flag
-	MinDate    *time.Time // Filter by minimum creation date
-	MaxDate    *time.Time // Filter by maximum creation date
-}
-
 // ListStatusesForAdmin retrieves statuses with comprehensive admin filtering
-func (r *StatusRepository) ListStatusesForAdmin(ctx context.Context, filter *StatusFilter, limit int, cursor string) ([]*models.Status, string, error) {
+func (r *StatusRepository) ListStatusesForAdmin(ctx context.Context, filter *interfaces.StatusFilter, limit int, cursor string) ([]*models.Status, string, error) {
 	r.logger.Debug("listing statuses for admin with filter",
 		zap.Any("filter", filter),
 		zap.Int("limit", limit),
@@ -510,7 +496,7 @@ func (r *StatusRepository) ListStatusesForAdmin(ctx context.Context, filter *Sta
 }
 
 // applyDomainFiltering applies domain-based filtering logic to admin status queries
-func (r *StatusRepository) applyDomainFiltering(ctx context.Context, query core.Query, filter *StatusFilter, limit int) ([]models.Status, error) {
+func (r *StatusRepository) applyDomainFiltering(ctx context.Context, query core.Query, filter *interfaces.StatusFilter, limit int) ([]models.Status, error) {
 	if filter.Local != nil && *filter.Local {
 		return r.applyLocalFiltering(query, filter, limit)
 	}
@@ -523,7 +509,7 @@ func (r *StatusRepository) applyDomainFiltering(ctx context.Context, query core.
 }
 
 // applyLocalFiltering filters for local statuses only
-func (r *StatusRepository) applyLocalFiltering(query core.Query, filter *StatusFilter, limit int) ([]models.Status, error) {
+func (r *StatusRepository) applyLocalFiltering(query core.Query, filter *interfaces.StatusFilter, limit int) ([]models.Status, error) {
 	var statuses []models.Status
 	domain := r.extractDomainFromEnv()
 	if domain != "" {
@@ -543,7 +529,7 @@ func (r *StatusRepository) applyLocalFiltering(query core.Query, filter *StatusF
 }
 
 // applyRemoteFiltering filters for remote statuses only (requires post-processing)
-func (r *StatusRepository) applyRemoteFiltering(_ context.Context, query core.Query, _ *StatusFilter, limit int) ([]models.Status, error) {
+func (r *StatusRepository) applyRemoteFiltering(_ context.Context, query core.Query, _ *interfaces.StatusFilter, limit int) ([]models.Status, error) {
 	var statuses []models.Status
 	domain := r.extractDomainFromEnv()
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
@@ -627,7 +613,7 @@ func (r *StatusRepository) GetStatusesByURL(ctx context.Context, targetURL strin
 }
 
 // applyStandardFiltering applies standard non-domain specific filters
-func (r *StatusRepository) applyStandardFiltering(query core.Query, filter *StatusFilter, limit int) ([]models.Status, error) {
+func (r *StatusRepository) applyStandardFiltering(query core.Query, filter *interfaces.StatusFilter, limit int) ([]models.Status, error) {
 	var statuses []models.Status
 
 	// Apply specific domain filter
@@ -649,7 +635,7 @@ func (r *StatusRepository) applyStandardFiltering(query core.Query, filter *Stat
 }
 
 // applyContentFilters applies content-related filters (visibility, flagged, sensitive, media)
-func (r *StatusRepository) applyContentFilters(query core.Query, filter *StatusFilter) core.Query {
+func (r *StatusRepository) applyContentFilters(query core.Query, filter *interfaces.StatusFilter) core.Query {
 	// Apply visibility filter
 	if filter.Visibility != "" {
 		query = query.Filter("Visibility", "=", filter.Visibility)
@@ -678,7 +664,7 @@ func (r *StatusRepository) applyContentFilters(query core.Query, filter *StatusF
 }
 
 // applyDateFilters applies date-related filters (MinDate, MaxDate)
-func (r *StatusRepository) applyDateFilters(query core.Query, filter *StatusFilter) core.Query {
+func (r *StatusRepository) applyDateFilters(query core.Query, filter *interfaces.StatusFilter) core.Query {
 	// Apply date filters
 	if filter.MinDate != nil {
 		query = query.Filter("PublishedAt", ">=", *filter.MinDate)
@@ -711,7 +697,7 @@ func (r *StatusRepository) generateNextCursor(result []*models.Status, limit int
 }
 
 // CountStatusesForAdmin counts statuses matching admin filter criteria
-func (r *StatusRepository) CountStatusesForAdmin(ctx context.Context, filter *StatusFilter) (int64, error) {
+func (r *StatusRepository) CountStatusesForAdmin(ctx context.Context, filter *interfaces.StatusFilter) (int64, error) {
 	r.logger.Debug("counting statuses for admin with filter", zap.Any("filter", filter))
 
 	var count int64

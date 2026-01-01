@@ -21,7 +21,7 @@ import (
 //
 //nolint:revive // DLQ prefix clarifies this is Dead Letter Queue sender
 type DLQSender struct {
-	sqsClient *sqs.Client
+	sqsClient SQSClient
 	logger    *zap.Logger
 	queueURLs map[string]string // Cache for queue URLs
 }
@@ -32,6 +32,11 @@ func NewDLQSender(logger *zap.Logger) *DLQSender {
 		logger:    logger,
 		queueURLs: make(map[string]string),
 	}
+}
+
+// SetSQSClient sets the SQS client (useful for testing)
+func (s *DLQSender) SetSQSClient(client SQSClient) {
+	s.sqsClient = client
 }
 
 // InitializeAWSClients initializes AWS clients

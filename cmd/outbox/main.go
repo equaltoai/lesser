@@ -19,6 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
@@ -32,7 +33,7 @@ const contentTypeActivityJSON = "application/activity+json"
 type OutboxProcessor struct {
 	federationService            *federation.DeliveryService
 	db                           interface{} // DynamORM client interface
-	actorRepository              *repositories.ActorRepository
+	actorRepository              interfaces.ActorRepository
 	activityRepository           *repositories.ActivityRepository
 	federationActivityRepository *repositories.FederationActivityRepository
 	federationCostRepository     *repositories.FederationCostRepository

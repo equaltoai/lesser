@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -307,7 +308,7 @@ func (r *TimelineRepository) GetTimelineEntriesInRange(ctx context.Context, time
 }
 
 // GetTimelineEntriesWithFilters retrieves timeline entries with various filters using BaseRepository
-func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, timelineType, timelineID string, filters TimelineFilters, limit int, _ string) ([]*models.Timeline, string, error) {
+func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, timelineType, timelineID string, filters interfaces.TimelineFilters, limit int, _ string) ([]*models.Timeline, string, error) {
 	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
 
 	// Build filter map for BaseRepository's QueryWithFilter
@@ -414,14 +415,4 @@ func (r *TimelineRepository) GetConversations(ctx context.Context, username stri
 func (r *TimelineRepository) RemoveFromTimelines(ctx context.Context, objectID string) error {
 	// Use the existing DeleteTimelineEntriesByPost method which handles all timeline entries for an object
 	return r.DeleteTimelineEntriesByPost(ctx, objectID)
-}
-
-// TimelineFilters represents filters for timeline queries
-type TimelineFilters struct {
-	OnlyMedia      bool   // Only show entries with media
-	ExcludeReplies bool   // Exclude reply entries
-	ExcludeBoosts  bool   // Exclude boost/announce entries
-	Language       string // Filter by language
-	MinID          string // Minimum entry ID (for pagination)
-	MaxID          string // Maximum entry ID (for pagination)
 }

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
@@ -27,10 +28,10 @@ func newMockStorage() *mockStorage {
 
 func (m *mockStorage) Account() *repositories.AccountRepository                         { return nil }
 func (m *mockStorage) Bookmark() *repositories.BookmarkRepository                       { return nil }
-func (m *mockStorage) Actor() *repositories.ActorRepository                             { return nil }
+func (m *mockStorage) Actor() interfaces.ActorRepository                             { return nil }
 func (m *mockStorage) Object() *repositories.ObjectRepository                           { return nil }
 func (m *mockStorage) Activity() *repositories.ActivityRepository                       { return nil }
-func (m *mockStorage) Timeline() *repositories.TimelineRepository                       { return nil }
+func (m *mockStorage) Timeline() interfaces.TimelineRepository                          { return nil }
 func (m *mockStorage) Notification() *repositories.NotificationRepository               { return nil }
 func (m *mockStorage) Like() *repositories.LikeRepository                               { return nil }
 func (m *mockStorage) Moderation() *repositories.ModerationRepository                   { return nil }
@@ -48,8 +49,8 @@ func (m *mockStorage) Federation() *repositories.FederationRepository           
 func (m *mockStorage) Recovery() *repositories.RecoveryRepository                       { return nil }
 func (m *mockStorage) Analytics() *repositories.TrendingRepository                      { return nil }
 func (m *mockStorage) Social() *repositories.SocialRepository                           { return nil }
-func (m *mockStorage) User() *repositories.UserRepository                               { return nil }
-func (m *mockStorage) Status() *repositories.StatusRepository                           { return nil }
+func (m *mockStorage) User() interfaces.UserRepository                                  { return nil }
+func (m *mockStorage) Status() interfaces.StatusRepository                           { return nil }
 func (m *mockStorage) Cost() *repositories.TrackingRepository                           { return nil }
 func (m *mockStorage) WebSocketCost() *repositories.WebSocketCostRepository             { return nil }
 func (m *mockStorage) Trust() *repositories.TrustRepository                             { return nil }

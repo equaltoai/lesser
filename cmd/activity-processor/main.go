@@ -28,6 +28,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
@@ -60,9 +61,9 @@ type ActivityProcessor struct {
 	db               core.DB
 	tableName        string
 	logger           *zap.Logger
-	timelineRepo     *repositories.TimelineRepository
-	actorRepo        *repositories.ActorRepository
-	userRepo         *repositories.UserRepository
+	timelineRepo     interfaces.TimelineRepository
+	actorRepo        interfaces.ActorRepository
+	userRepo         interfaces.UserRepository
 	relationshipRepo *repositories.RelationshipRepository
 	objectRepo       *repositories.ObjectRepository
 	fetchService     *federation.AuthorizedFetchService

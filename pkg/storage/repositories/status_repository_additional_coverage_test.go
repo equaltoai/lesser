@@ -440,7 +440,7 @@ func TestStatusRepository_filters_and_counts(t *testing.T) {
 		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
 
-		out, err := repo.applyRemoteFiltering(ctx, mockQuery, &StatusFilter{Remote: boolPtr(true)}, 2)
+		out, err := repo.applyRemoteFiltering(ctx, mockQuery, &interfaces.StatusFilter{Remote: boolPtr(true)}, 2)
 		assert.NoError(t, err)
 		assert.Len(t, out, 1)
 	})
@@ -462,7 +462,7 @@ func TestStatusRepository_filters_and_counts(t *testing.T) {
 		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
 
-		out, err := repo.applyRemoteFiltering(ctx, mockQuery, &StatusFilter{Remote: boolPtr(true)}, 1)
+		out, err := repo.applyRemoteFiltering(ctx, mockQuery, &interfaces.StatusFilter{Remote: boolPtr(true)}, 1)
 		assert.NoError(t, err)
 		assert.Len(t, out, 1)
 		assert.Equal(t, "remote", out[0].StatusID)
@@ -474,7 +474,7 @@ func TestStatusRepository_filters_and_counts(t *testing.T) {
 
 		config.Get().Domain = DefaultDomain
 
-		filter := &StatusFilter{Remote: boolPtr(true)}
+		filter := &interfaces.StatusFilter{Remote: boolPtr(true)}
 		mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Status)
 			*dest = []models.Status{
@@ -600,12 +600,12 @@ func TestStatusRepository_admin_filtering_and_cursor(t *testing.T) {
 
 	repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
 
-	out, cursor, err := repo.ListStatusesForAdmin(ctx, &StatusFilter{}, 2, "")
+	out, cursor, err := repo.ListStatusesForAdmin(ctx, &interfaces.StatusFilter{}, 2, "")
 	assert.NoError(t, err)
 	assert.Len(t, out, 2)
 	assert.NotEmpty(t, cursor)
 
-	out, _, err = repo.ListStatusesForAdmin(ctx, &StatusFilter{
+	out, _, err = repo.ListStatusesForAdmin(ctx, &interfaces.StatusFilter{
 		Local:      boolPtr(true),
 		Visibility: models.VisibilityPublic,
 		WithMedia:  boolPtr(false),
@@ -616,7 +616,7 @@ func TestStatusRepository_admin_filtering_and_cursor(t *testing.T) {
 
 	minDate := time.Date(2024, 12, 1, 0, 0, 0, 0, time.UTC)
 	maxDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	out, _, err = repo.ListStatusesForAdmin(ctx, &StatusFilter{
+	out, _, err = repo.ListStatusesForAdmin(ctx, &interfaces.StatusFilter{
 		ByDomain:  "remote.example",
 		MinDate:   &minDate,
 		MaxDate:   &maxDate,
@@ -626,9 +626,9 @@ func TestStatusRepository_admin_filtering_and_cursor(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, out)
 
-	_, err = repo.CountStatusesForAdmin(ctx, &StatusFilter{Local: boolPtr(true)})
+	_, err = repo.CountStatusesForAdmin(ctx, &interfaces.StatusFilter{Local: boolPtr(true)})
 	assert.NoError(t, err)
-	_, err = repo.CountStatusesForAdmin(ctx, &StatusFilter{Visibility: models.VisibilityPublic})
+	_, err = repo.CountStatusesForAdmin(ctx, &interfaces.StatusFilter{Visibility: models.VisibilityPublic})
 	assert.NoError(t, err)
 }
 

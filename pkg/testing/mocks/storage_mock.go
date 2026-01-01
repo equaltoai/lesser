@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm"
@@ -4065,7 +4066,7 @@ func (m *MockStorage) RemoveFromTimelines(ctx context.Context, objectID string) 
 }
 
 // ListStatusesForAdmin mocks the ListStatusesForAdmin method
-func (m *MockStorage) ListStatusesForAdmin(ctx context.Context, filter *repositories.StatusFilter, limit int, cursor string) ([]*models.Status, string, error) {
+func (m *MockStorage) ListStatusesForAdmin(ctx context.Context, filter *interfaces.StatusFilter, limit int, cursor string) ([]*models.Status, string, error) {
 	args := m.Called(ctx, filter, limit, cursor)
 	if args.Get(0) == nil {
 		return nil, args.String(1), args.Error(2)
@@ -4074,7 +4075,7 @@ func (m *MockStorage) ListStatusesForAdmin(ctx context.Context, filter *reposito
 }
 
 // CountStatusesForAdmin mocks the CountStatusesForAdmin method
-func (m *MockStorage) CountStatusesForAdmin(ctx context.Context, filter *repositories.StatusFilter) (int64, error) {
+func (m *MockStorage) CountStatusesForAdmin(ctx context.Context, filter *interfaces.StatusFilter) (int64, error) {
 	args := m.Called(ctx, filter)
 	return args.Get(0).(int64), args.Error(1)
 }
@@ -4096,10 +4097,10 @@ type MockRepositoryStorage struct {
 	mock.Mock
 	accountRepo          *repositories.AccountRepository
 	bookmarkRepo         *repositories.BookmarkRepository
-	actorRepo            *repositories.ActorRepository
+	actorRepo            interfaces.ActorRepository
 	objectRepo           *repositories.ObjectRepository
 	activityRepo         *repositories.ActivityRepository
-	timelineRepo         *repositories.TimelineRepository
+	timelineRepo         interfaces.TimelineRepository
 	notificationRepo     *repositories.NotificationRepository
 	likeRepo             *repositories.LikeRepository
 	moderationRepo       *repositories.ModerationRepository
@@ -4120,7 +4121,7 @@ type MockRepositoryStorage struct {
 	analyticsRepo        *repositories.TrendingRepository
 	socialRepo           *repositories.SocialRepository
 	userRepo             *repositories.UserRepository
-	statusRepo           *repositories.StatusRepository
+	statusRepo           interfaces.StatusRepository
 	costRepo             *repositories.TrackingRepository
 	trustRepo            *repositories.TrustRepository
 	searchRepo           *repositories.SearchRepository
@@ -4242,7 +4243,7 @@ func (m *MockRepositoryStorage) Bookmark() *repositories.BookmarkRepository {
 }
 
 // Actor returns the mock actor repository
-func (m *MockRepositoryStorage) Actor() *repositories.ActorRepository {
+func (m *MockRepositoryStorage) Actor() interfaces.ActorRepository {
 	return m.actorRepo
 }
 
@@ -4256,8 +4257,8 @@ func (m *MockRepositoryStorage) Activity() *repositories.ActivityRepository {
 	return m.activityRepo
 }
 
-// Timeline returns the mock timeline repository
-func (m *MockRepositoryStorage) Timeline() *repositories.TimelineRepository {
+// Timeline returns the mock timeline repository (interface type for mockability).
+func (m *MockRepositoryStorage) Timeline() interfaces.TimelineRepository {
 	return m.timelineRepo
 }
 
@@ -4357,12 +4358,12 @@ func (m *MockRepositoryStorage) Social() *repositories.SocialRepository {
 }
 
 // User returns the mock user repository
-func (m *MockRepositoryStorage) User() *repositories.UserRepository {
+func (m *MockRepositoryStorage) User() interfaces.UserRepository {
 	return m.userRepo
 }
 
 // Status returns the mock status repository
-func (m *MockRepositoryStorage) Status() *repositories.StatusRepository {
+func (m *MockRepositoryStorage) Status() interfaces.StatusRepository {
 	return m.statusRepo
 }
 

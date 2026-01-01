@@ -10,7 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"go.uber.org/zap"
 )
 
@@ -850,12 +850,12 @@ func mapAdminReportStatus(status model.AdminReportStatus) storage.ReportStatus {
 	}
 }
 
-func buildAdminStatusFilter(filter *model.AdminStatusFilter) *repositories.StatusFilter {
+func buildAdminStatusFilter(filter *model.AdminStatusFilter) *interfaces.StatusFilter {
 	if filter == nil {
-		return &repositories.StatusFilter{}
+		return &interfaces.StatusFilter{}
 	}
 
-	out := &repositories.StatusFilter{}
+	out := &interfaces.StatusFilter{}
 
 	if filter.Local != nil && *filter.Local {
 		local := true

@@ -25,6 +25,20 @@ type PaginatedResult[T any] struct {
 	Total      int64  // Total count (if available, -1 if not calculated)
 }
 
+// StatusFilter represents filtering criteria for admin status listing
+type StatusFilter struct {
+	Local      *bool      // Filter by local vs remote statuses
+	Remote     *bool      // Filter by remote statuses only
+	ByDomain   string     // Filter by specific domain
+	Visibility string     // Filter by visibility (public, unlisted, private, direct)
+	Flagged    *bool      // Filter by flagged status
+	Reported   *bool      // Filter by reported status
+	WithMedia  *bool      // Filter by presence of media attachments
+	Sensitive  *bool      // Filter by sensitive flag
+	MinDate    *time.Time // Filter by minimum creation date
+	MaxDate    *time.Time // Filter by maximum creation date
+}
+
 // StatusRepository defines the interface for status/note operations
 // This handles both local status creation and federated ActivityPub Note objects
 type StatusRepository interface {
@@ -69,6 +83,13 @@ type StatusRepository interface {
 	// Context and metadata
 	GetStatusContext(ctx context.Context, statusID string) (ancestors, descendants []*models.Status, err error)
 	GetStatusEngagement(ctx context.Context, statusID, userID string) (liked, reblogged, bookmarked bool, err error)
+
+	// Count operations
+	CountStatusesByAuthor(ctx context.Context, authorID string) (int, error)
+	CountReplies(ctx context.Context, statusID string) (int, error)
+
+	// Admin operations
+	ListStatusesForAdmin(ctx context.Context, filter *StatusFilter, limit int, cursor string) ([]*models.Status, string, error)
 }
 
 // AccountRepository defines the interface for user/actor operations

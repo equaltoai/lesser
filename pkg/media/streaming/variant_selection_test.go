@@ -8,6 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
@@ -59,10 +60,10 @@ type MockAnalytics struct {
 // Implement all required methods returning nil (only Analytics is used in tests)
 func (m *MockAnalytics) Account() *repositories.AccountRepository                         { return nil }
 func (m *MockAnalytics) Bookmark() *repositories.BookmarkRepository                       { return nil }
-func (m *MockAnalytics) Actor() *repositories.ActorRepository                             { return nil }
+func (m *MockAnalytics) Actor() interfaces.ActorRepository                                { return nil }
 func (m *MockAnalytics) Object() *repositories.ObjectRepository                           { return nil }
 func (m *MockAnalytics) Activity() *repositories.ActivityRepository                       { return nil }
-func (m *MockAnalytics) Timeline() *repositories.TimelineRepository                       { return nil }
+func (m *MockAnalytics) Timeline() interfaces.TimelineRepository                          { return nil }
 func (m *MockAnalytics) Like() *repositories.LikeRepository                               { return nil }
 func (m *MockAnalytics) PushSubscription() *repositories.PushSubscriptionRepository       { return nil }
 func (m *MockAnalytics) Hashtag() *repositories.HashtagRepository                         { return nil }
@@ -80,8 +81,8 @@ func (m *MockAnalytics) Federation() *repositories.FederationRepository         
 func (m *MockAnalytics) Recovery() *repositories.RecoveryRepository                       { return nil }
 func (m *MockAnalytics) Analytics() *repositories.TrendingRepository                      { return nil } // Not used in tests
 func (m *MockAnalytics) Social() *repositories.SocialRepository                           { return nil }
-func (m *MockAnalytics) User() *repositories.UserRepository                               { return nil }
-func (m *MockAnalytics) Status() *repositories.StatusRepository                           { return nil }
+func (m *MockAnalytics) User() interfaces.UserRepository                                  { return nil }
+func (m *MockAnalytics) Status() interfaces.StatusRepository                           { return nil }
 func (m *MockAnalytics) Cost() *repositories.TrackingRepository                           { return nil }
 func (m *MockAnalytics) WebSocketCost() *repositories.WebSocketCostRepository             { return nil }
 func (m *MockAnalytics) Trust() *repositories.TrustRepository                             { return nil }

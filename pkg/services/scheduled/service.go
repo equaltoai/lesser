@@ -44,7 +44,7 @@ var (
 // Service provides business logic for scheduled status operations
 type Service struct {
 	scheduledRepo scheduledStatusRepository
-	statusRepo    *repositories.StatusRepository
+	statusRepo    interfaces.StatusRepository
 	mediaRepo     mediaRepository
 	publisher     streaming.Publisher
 	logger        *zap.Logger
@@ -54,7 +54,7 @@ type Service struct {
 // NewService creates a new scheduled status service
 func NewService(
 	scheduledRepo scheduledStatusRepository,
-	statusRepo *repositories.StatusRepository,
+	statusRepo interfaces.StatusRepository,
 	mediaRepo mediaRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
