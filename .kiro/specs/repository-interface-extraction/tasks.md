@@ -226,7 +226,7 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - CloudWatchMetricsRepository, StreamingCloudWatchRepository
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-  - [ ] 11.5 Create interfaces for remaining repositories (batch 5)
+  - [x] 11.5 Create interfaces for remaining repositories (batch 5)
     - AuditRepository, OAuthRepository, DNSCacheRepository
     - FilterRepository, ThreadRepository, SeveranceRepository
     - ModerationMLRepository, QuoteRepository

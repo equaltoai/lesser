@@ -836,12 +836,9 @@ type TrustRepository interface {
 // - MetricRecordRepository (metric_record.go)
 // - CloudWatchMetricsRepository (cloudwatch_metrics.go)
 // - StreamingCloudWatchRepository (streaming_cloudwatch.go)
-
-// AuditRepository provides methods for audit log management.
-type AuditRepository interface{}
-
-// OAuthRepository provides methods for OAuth token management.
-type OAuthRepository interface{}
-
-// DNSCacheRepository provides methods for DNS cache management.
-type DNSCacheRepository interface{}
+// - AuditRepository (audit.go)
+// - OAuthRepository (oauth.go)
+// - DNSCacheRepository (dns_cache.go)
+// - ThreadRepository (thread.go)
+// - SeveranceRepository (severance.go)
+// - ModerationMLRepository (moderation_ml.go)

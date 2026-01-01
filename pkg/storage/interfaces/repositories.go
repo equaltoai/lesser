@@ -306,6 +306,9 @@ type QuoteRepository interface {
 	GetQuoteCount(ctx context.Context, statusID string) (int64, error)
 	IncrementQuoteCount(ctx context.Context, statusID string) error
 	DecrementQuoteCount(ctx context.Context, statusID string) error
+
+	// Quote withdrawal operations
+	WithdrawQuotes(ctx context.Context, noteID, userID string) (int, error)
 }
 
 // RepositoryRegistry provides access to all repository interfaces
