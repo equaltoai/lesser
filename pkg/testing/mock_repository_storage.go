@@ -82,10 +82,10 @@ type MockRepositoryStorage struct {
 	severanceRepo        *repositories.SeveranceRepository
 	moderationMLRepo     *repositories.ModerationMLRepository
 	quoteRepo            *repositories.QuoteRepository
-	mediaAnalyticsRepo   *repositories.MediaAnalyticsRepository
-	mediaPopularityRepo  *repositories.MediaPopularityRepository
-	mediaSessionRepo     *repositories.MediaSessionRepository
-	streamingConnRepo    *repositories.StreamingConnectionRepository
+	mediaAnalyticsRepo   interfaces.MediaAnalyticsRepository
+	mediaPopularityRepo  interfaces.MediaPopularityRepository
+	mediaSessionRepo     interfaces.MediaSessionRepository
+	streamingConnRepo    interfaces.StreamingConnectionRepository
 
 	// CMS repositories
 	articleRepo           *repositories.ArticleRepository
@@ -174,6 +174,38 @@ func WithModerationRepository(repo interfaces.ModerationRepository) Option {
 	}
 }
 
+// WithMediaAnalyticsRepository sets a custom media analytics repository implementation.
+// Use this to inject a mock for testing specific media analytics repository behavior.
+func WithMediaAnalyticsRepository(repo interfaces.MediaAnalyticsRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.mediaAnalyticsRepo = repo
+	}
+}
+
+// WithMediaPopularityRepository sets a custom media popularity repository implementation.
+// Use this to inject a mock for testing specific media popularity repository behavior.
+func WithMediaPopularityRepository(repo interfaces.MediaPopularityRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.mediaPopularityRepo = repo
+	}
+}
+
+// WithMediaSessionRepository sets a custom media session repository implementation.
+// Use this to inject a mock for testing specific media session repository behavior.
+func WithMediaSessionRepository(repo interfaces.MediaSessionRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.mediaSessionRepo = repo
+	}
+}
+
+// WithStreamingConnectionRepository sets a custom streaming connection repository implementation.
+// Use this to inject a mock for testing specific streaming connection repository behavior.
+func WithStreamingConnectionRepository(repo interfaces.StreamingConnectionRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.streamingConnRepo = repo
+	}
+}
+
 // NewMockRepositoryStorage creates a new MockRepositoryStorage with in-memory defaults.
 // All repositories default to in-memory implementations that can be overridden
 // using functional options.
@@ -190,16 +222,20 @@ func WithModerationRepository(repo interfaces.ModerationRepository) Option {
 func NewMockRepositoryStorage(opts ...Option) *MockRepositoryStorage {
 	s := &MockRepositoryStorage{
 		// Default to in-memory repositories
-		userRepo:       inmemory.NewUserRepository(),
-		actorRepo:      inmemory.NewActorRepository(),
-		statusRepo:     inmemory.NewStatusRepository(),
-		timelineRepo:   inmemory.NewTimelineRepository(),
-		objectRepo:     inmemory.NewObjectRepository(),
-		activityRepo:   inmemory.NewActivityRepository(),
-		trustRepo:      inmemory.NewTrustRepository(),
-		moderationRepo: inmemory.NewModerationRepository(),
-		logger:         zap.NewNop(),
-		tableName:      "test-table",
+		userRepo:            inmemory.NewUserRepository(),
+		actorRepo:           inmemory.NewActorRepository(),
+		statusRepo:          inmemory.NewStatusRepository(),
+		timelineRepo:        inmemory.NewTimelineRepository(),
+		objectRepo:          inmemory.NewObjectRepository(),
+		activityRepo:        inmemory.NewActivityRepository(),
+		trustRepo:           inmemory.NewTrustRepository(),
+		moderationRepo:      inmemory.NewModerationRepository(),
+		mediaAnalyticsRepo:  inmemory.NewMediaAnalyticsRepository(),
+		mediaPopularityRepo: inmemory.NewMediaPopularityRepository(),
+		mediaSessionRepo:    inmemory.NewMediaSessionRepository(),
+		streamingConnRepo:   inmemory.NewStreamingConnectionRepository(),
+		logger:              zap.NewNop(),
+		tableName:           "test-table",
 	}
 
 	// Apply all options
@@ -471,22 +507,22 @@ func (s *MockRepositoryStorage) Quote() *repositories.QuoteRepository {
 }
 
 // MediaAnalytics returns the media analytics repository.
-func (s *MockRepositoryStorage) MediaAnalytics() *repositories.MediaAnalyticsRepository {
+func (s *MockRepositoryStorage) MediaAnalytics() interfaces.MediaAnalyticsRepository {
 	return s.mediaAnalyticsRepo
 }
 
 // MediaPopularity returns the media popularity repository.
-func (s *MockRepositoryStorage) MediaPopularity() *repositories.MediaPopularityRepository {
+func (s *MockRepositoryStorage) MediaPopularity() interfaces.MediaPopularityRepository {
 	return s.mediaPopularityRepo
 }
 
 // MediaSession returns the media session repository.
-func (s *MockRepositoryStorage) MediaSession() *repositories.MediaSessionRepository {
+func (s *MockRepositoryStorage) MediaSession() interfaces.MediaSessionRepository {
 	return s.mediaSessionRepo
 }
 
 // StreamingConnection returns the streaming connection repository.
-func (s *MockRepositoryStorage) StreamingConnection() *repositories.StreamingConnectionRepository {
+func (s *MockRepositoryStorage) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return s.streamingConnRepo
 }
 

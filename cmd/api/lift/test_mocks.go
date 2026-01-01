@@ -480,22 +480,22 @@ func (m *MockRepositoryStorage) Quote() *repositories.QuoteRepository {
 }
 
 // MediaAnalytics returns a mock media analytics repository for testing
-func (m *MockRepositoryStorage) MediaAnalytics() *repositories.MediaAnalyticsRepository {
+func (m *MockRepositoryStorage) MediaAnalytics() interfaces.MediaAnalyticsRepository {
 	return nil
 }
 
 // MediaPopularity returns a mock media popularity repository for testing
-func (m *MockRepositoryStorage) MediaPopularity() *repositories.MediaPopularityRepository {
+func (m *MockRepositoryStorage) MediaPopularity() interfaces.MediaPopularityRepository {
 	return nil
 }
 
 // MediaSession returns a mock media session repository for testing
-func (m *MockRepositoryStorage) MediaSession() *repositories.MediaSessionRepository {
+func (m *MockRepositoryStorage) MediaSession() interfaces.MediaSessionRepository {
 	return nil
 }
 
 // StreamingConnection returns a mock streaming connection repository for testing
-func (m *MockRepositoryStorage) StreamingConnection() *repositories.StreamingConnectionRepository {
+func (m *MockRepositoryStorage) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return nil
 }
 

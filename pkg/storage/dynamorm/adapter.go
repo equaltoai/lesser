@@ -644,17 +644,17 @@ func (s *StorageAdapter) GetLogger() interface{} {
 
 // MediaAnalytics returns the media analytics repository
 func (s *StorageAdapter) MediaAnalytics() interface{} {
-	return repoPtrToInterface(s.repos.MediaAnalytics())
+	return s.repos.MediaAnalytics()
 }
 
 // MediaPopularity returns the media popularity repository
 func (s *StorageAdapter) MediaPopularity() interface{} {
-	return repoPtrToInterface(s.repos.MediaPopularity())
+	return s.repos.MediaPopularity()
 }
 
 // MediaSession returns the media session repository
 func (s *StorageAdapter) MediaSession() interface{} {
-	return repoPtrToInterface(s.repos.MediaSession())
+	return s.repos.MediaSession()
 }
 
 // =======================================

@@ -576,22 +576,22 @@ func (f *RepositoryFactory) Quote() *repositories.QuoteRepository {
 }
 
 // MediaAnalytics returns the MediaAnalytics repository instance
-func (f *RepositoryFactory) MediaAnalytics() *repositories.MediaAnalyticsRepository {
+func (f *RepositoryFactory) MediaAnalytics() interfaces.MediaAnalyticsRepository {
 	return f.mediaAnalyticsRepo
 }
 
 // MediaPopularity returns the MediaPopularity repository instance
-func (f *RepositoryFactory) MediaPopularity() *repositories.MediaPopularityRepository {
+func (f *RepositoryFactory) MediaPopularity() interfaces.MediaPopularityRepository {
 	return f.mediaPopularityRepo
 }
 
 // MediaSession returns the MediaSession repository instance
-func (f *RepositoryFactory) MediaSession() *repositories.MediaSessionRepository {
+func (f *RepositoryFactory) MediaSession() interfaces.MediaSessionRepository {
 	return f.mediaSessionRepo
 }
 
 // StreamingConnection returns the StreamingConnection repository instance
-func (f *RepositoryFactory) StreamingConnection() *repositories.StreamingConnectionRepository {
+func (f *RepositoryFactory) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return f.streamingConnectionRepo
 }
 

@@ -64,10 +64,10 @@ type RepositoryStorage interface {
 	Severance() *repositories.SeveranceRepository
 	ModerationML() *repositories.ModerationMLRepository
 	Quote() *repositories.QuoteRepository
-	MediaAnalytics() *repositories.MediaAnalyticsRepository
-	MediaPopularity() *repositories.MediaPopularityRepository
-	MediaSession() *repositories.MediaSessionRepository
-	StreamingConnection() *repositories.StreamingConnectionRepository
+	MediaAnalytics() interfaces.MediaAnalyticsRepository
+	MediaPopularity() interfaces.MediaPopularityRepository
+	MediaSession() interfaces.MediaSessionRepository
+	StreamingConnection() interfaces.StreamingConnectionRepository
 
 	// CMS Repositories
 	Article() *repositories.ArticleRepository

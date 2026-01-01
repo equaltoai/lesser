@@ -6,7 +6,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/moderation"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
@@ -21,7 +21,7 @@ type SubscriptionManager struct {
 
 // NewSubscriptionManager creates a new subscription manager with DynamoDB-backed persistence
 func NewSubscriptionManager(
-	connRepo *repositories.StreamingConnectionRepository,
+	connRepo interfaces.StreamingConnectionRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 ) *SubscriptionManager {

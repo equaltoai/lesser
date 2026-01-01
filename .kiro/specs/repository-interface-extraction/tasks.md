@@ -232,7 +232,7 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - ModerationMLRepository, QuoteRepository
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-  - [ ] 11.6 Create interfaces for remaining repositories (batch 6)
+  - [x] 11.6 Create interfaces for remaining repositories (batch 6) ✓
     - MediaAnalyticsRepository, MediaPopularityRepository
     - MediaSessionRepository, StreamingConnectionRepository
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_

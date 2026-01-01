@@ -2228,7 +2228,7 @@ func (r *Registry) createSeveranceEventPublisherAdapter() severance.EventPublish
 }
 
 // StreamingConnectionRepository returns the streaming connection repository for WebSocket subscriptions
-func (r *Registry) StreamingConnectionRepository() *repositories.StreamingConnectionRepository {
+func (r *Registry) StreamingConnectionRepository() interfaces.StreamingConnectionRepository {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

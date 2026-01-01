@@ -10,8 +10,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
@@ -34,7 +34,7 @@ const (
 //nolint:revive // Named this way for clarity in a codebase with multiple subscription types
 type GraphQLSubscriptionManager struct {
 	logger           *zap.Logger
-	connRepo         *repositories.StreamingConnectionRepository
+	connRepo         interfaces.StreamingConnectionRepository
 	publisher        streaming.Publisher
 	converter        *EventConverter
 	subscriptions    map[string]*GraphQLSubscription
@@ -62,7 +62,7 @@ type GraphQLSubscription struct {
 
 // NewGraphQLSubscriptionManager creates a new GraphQL subscription manager with DynamoDB backing
 func NewGraphQLSubscriptionManager(
-	connRepo *repositories.StreamingConnectionRepository,
+	connRepo interfaces.StreamingConnectionRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 ) *GraphQLSubscriptionManager {
