@@ -79,7 +79,7 @@ func NewService(
 	accountRepo interfaces.AccountRepository,
 	socialRepo interfaces.SocialRepository,
 	listRepo *repositories.ListRepository,
-	relationshipRepo *repositories.RelationshipRepository,
+	relationshipRepo interfaces.ConcreteRelationshipRepository,
 	publisher streaming.Publisher,
 	federation FederationService,
 	logger *zap.Logger,

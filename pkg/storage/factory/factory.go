@@ -371,7 +371,7 @@ func (f *RepositoryFactory) Moderation() *repositories.ModerationRepository {
 }
 
 // Relationship returns the Relationship repository instance
-func (f *RepositoryFactory) Relationship() *repositories.RelationshipRepository {
+func (f *RepositoryFactory) Relationship() interfaces.ConcreteRelationshipRepository {
 	return f.relationshipRepo
 }
 

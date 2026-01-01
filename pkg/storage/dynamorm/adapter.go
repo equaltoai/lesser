@@ -477,7 +477,7 @@ func (s *StorageAdapter) DomainBlock() interface{} {
 
 // Relationship returns the Relationship repository instance
 func (s *StorageAdapter) Relationship() interface{} {
-	return repoPtrToInterface(s.repos.Relationship())
+	return s.repos.Relationship()
 }
 
 // Instance returns the Instance repository instance

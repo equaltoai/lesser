@@ -64,7 +64,7 @@ type ActivityProcessor struct {
 	timelineRepo     interfaces.TimelineRepository
 	actorRepo        interfaces.ActorRepository
 	userRepo         interfaces.UserRepository
-	relationshipRepo *repositories.RelationshipRepository
+	relationshipRepo interfaces.ConcreteRelationshipRepository
 	objectRepo       *repositories.ObjectRepository
 	fetchService     *federation.AuthorizedFetchService
 	storageAdapter   storageCore.RepositoryStorage

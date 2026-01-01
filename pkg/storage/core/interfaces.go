@@ -30,7 +30,7 @@ type RepositoryStorage interface {
 	ScheduledStatus() *repositories.ScheduledStatusRepository
 	Announcement() *repositories.AnnouncementRepository
 	DomainBlock() *repositories.DomainBlockRepository
-	Relationship() *repositories.RelationshipRepository
+	Relationship() interfaces.ConcreteRelationshipRepository // Returns interface type for mockability
 	Instance() *repositories.InstanceRepository
 	Federation() *repositories.FederationRepository
 	Recovery() *repositories.RecoveryRepository

@@ -278,7 +278,7 @@ func (s *MockRepositoryStorage) DomainBlock() *repositories.DomainBlockRepositor
 }
 
 // Relationship returns the relationship repository.
-func (s *MockRepositoryStorage) Relationship() *repositories.RelationshipRepository {
+func (s *MockRepositoryStorage) Relationship() interfaces.ConcreteRelationshipRepository {
 	return s.relationshipRepo
 }
 

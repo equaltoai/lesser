@@ -150,7 +150,7 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - Update RepositoryStorage.Notification() return type
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-  - [ ] 8.6 Create RelationshipRepository interface and implementations
+  - [x] 8.6 Create RelationshipRepository interface and implementations
     - Create `pkg/storage/interfaces/relationship.go`
     - Create `pkg/testing/mocks/relationship_repository_mock.go`
     - Create `pkg/testing/inmemory/relationship_repository.go`

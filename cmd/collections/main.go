@@ -68,7 +68,7 @@ const (
 // CollectionsHandler handles ActivityPub federation collections using Lift
 type CollectionsHandler struct {
 	actorRepo        interfaces.ActorRepository
-	relationshipRepo *repositories.RelationshipRepository
+	relationshipRepo interfaces.ConcreteRelationshipRepository
 	likeRepo         *repositories.LikeRepository
 }
 

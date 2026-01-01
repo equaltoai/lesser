@@ -182,12 +182,12 @@ func (m *MockRepositoryStorage) DomainBlock() *repositories.DomainBlockRepositor
 }
 
 // Relationship returns a mock relationship repository for testing
-func (m *MockRepositoryStorage) Relationship() *repositories.RelationshipRepository {
+func (m *MockRepositoryStorage) Relationship() interfaces.ConcreteRelationshipRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.RelationshipRepository)
+	return args.Get(0).(interfaces.ConcreteRelationshipRepository)
 }
 
 // Instance returns a mock instance repository for testing
