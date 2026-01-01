@@ -208,7 +208,7 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - MediaMetadataRepository, PollRepository, PushSubscriptionRepository
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-  - [ ] 11.2 Create interfaces for remaining repositories (batch 2)
+  - [x] 11.2 Create interfaces for remaining repositories (batch 2)
     - HashtagRepository, ScheduledStatusRepository, AnnouncementRepository
     - DomainBlockRepository, InstanceRepository, FederationRepository
     - RecoveryRepository, TrendingRepository, SocialRepository
