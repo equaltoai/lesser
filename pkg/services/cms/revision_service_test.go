@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -98,6 +99,8 @@ func newMemArticleRepo() *memArticleRepo {
 		byID: map[string]*models.Article{},
 	}
 }
+
+func (r *memArticleRepo) GetDB() dynamormcore.DB { return nil }
 
 func (r *memArticleRepo) GetArticle(ctx context.Context, id string) (*models.Article, error) {
 	article, ok := r.byID[id]

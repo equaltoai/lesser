@@ -237,7 +237,7 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - MediaSessionRepository, StreamingConnectionRepository
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-  - [ ] 11.7 Create interfaces for CMS repositories
+  - [x] 11.7 Create interfaces for CMS repositories
     - ArticleRepository, DraftRepository, RevisionRepository
     - SeriesRepository, CategoryRepository, PublicationRepository
     - PublicationMemberRepository

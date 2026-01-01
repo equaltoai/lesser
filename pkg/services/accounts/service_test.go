@@ -347,20 +347,20 @@ func (m *MockRepositoryStorage) Severance() *repositories.SeveranceRepository   
 func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository                   { return nil }
 func (m *MockRepositoryStorage) ModerationML() *repositories.ModerationMLRepository       { return nil }
 func (m *MockRepositoryStorage) Quote() *repositories.QuoteRepository                     { return nil }
-func (m *MockRepositoryStorage) MediaAnalytics() *repositories.MediaAnalyticsRepository   { return nil }
-func (m *MockRepositoryStorage) MediaPopularity() *repositories.MediaPopularityRepository { return nil }
-func (m *MockRepositoryStorage) MediaSession() *repositories.MediaSessionRepository       { return nil }
-func (m *MockRepositoryStorage) StreamingConnection() *repositories.StreamingConnectionRepository {
+func (m *MockRepositoryStorage) MediaAnalytics() interfaces.MediaAnalyticsRepository     { return nil }
+func (m *MockRepositoryStorage) MediaPopularity() interfaces.MediaPopularityRepository   { return nil }
+func (m *MockRepositoryStorage) MediaSession() interfaces.MediaSessionRepository         { return nil }
+func (m *MockRepositoryStorage) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return nil
 }
 
-func (m *MockRepositoryStorage) Article() *repositories.ArticleRepository         { return nil }
-func (m *MockRepositoryStorage) Draft() *repositories.DraftRepository             { return nil }
-func (m *MockRepositoryStorage) Revision() *repositories.RevisionRepository       { return nil }
-func (m *MockRepositoryStorage) Series() *repositories.SeriesRepository           { return nil }
-func (m *MockRepositoryStorage) Category() *repositories.CategoryRepository       { return nil }
-func (m *MockRepositoryStorage) Publication() *repositories.PublicationRepository { return nil }
-func (m *MockRepositoryStorage) PublicationMember() *repositories.PublicationMemberRepository {
+func (m *MockRepositoryStorage) Article() interfaces.ArticleRepository         { return nil }
+func (m *MockRepositoryStorage) Draft() interfaces.DraftRepository             { return nil }
+func (m *MockRepositoryStorage) Revision() interfaces.RevisionRepository       { return nil }
+func (m *MockRepositoryStorage) Series() interfaces.SeriesRepository           { return nil }
+func (m *MockRepositoryStorage) Category() interfaces.CategoryRepository       { return nil }
+func (m *MockRepositoryStorage) Publication() interfaces.PublicationRepository { return nil }
+func (m *MockRepositoryStorage) PublicationMember() interfaces.PublicationMemberRepository {
 	return nil
 }
 

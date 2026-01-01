@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
@@ -22,11 +21,6 @@ type articleSeriesRepository interface {
 	GetArticle(ctx context.Context, articleID string) (*models.Article, error)
 	UpdateArticle(ctx context.Context, article *models.Article) error
 }
-
-var (
-	_ seriesRepository        = (*repositories.SeriesRepository)(nil)
-	_ articleSeriesRepository = (*repositories.ArticleRepository)(nil)
-)
 
 // SeriesService handles business logic for series
 type SeriesService struct {

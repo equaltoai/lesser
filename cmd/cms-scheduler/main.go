@@ -21,8 +21,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/cms"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -162,7 +162,7 @@ func (p *CMSSchedulerProcessor) HandleEvent(ctx *lift.Context, event events.Clou
 	return nil
 }
 
-func (p *CMSSchedulerProcessor) publishScheduledDraft(ctx context.Context, draftSvc *cms.DraftService, draftRepo *repositories.DraftRepository, draft *models.Draft) error {
+func (p *CMSSchedulerProcessor) publishScheduledDraft(ctx context.Context, draftSvc *cms.DraftService, draftRepo interfaces.DraftRepository, draft *models.Draft) error {
 	// NOTE: We accept drafts in any state; the scheduler only queries scheduled drafts, but publish can be retried safely.
 	const maxAttempts = 3
 
@@ -204,7 +204,7 @@ func (p *CMSSchedulerProcessor) publishScheduledDraft(ctx context.Context, draft
 	return lastErr
 }
 
-func (p *CMSSchedulerProcessor) markScheduledDraftFailed(ctx context.Context, draftRepo *repositories.DraftRepository, authorID, draftID string, err error) {
+func (p *CMSSchedulerProcessor) markScheduledDraftFailed(ctx context.Context, draftRepo interfaces.DraftRepository, authorID, draftID string, err error) {
 	draft, getErr := draftRepo.GetDraft(ctx, authorID, draftID)
 	if getErr != nil {
 		return

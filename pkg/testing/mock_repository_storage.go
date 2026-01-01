@@ -87,14 +87,14 @@ type MockRepositoryStorage struct {
 	mediaSessionRepo     interfaces.MediaSessionRepository
 	streamingConnRepo    interfaces.StreamingConnectionRepository
 
-	// CMS repositories
-	articleRepo           *repositories.ArticleRepository
-	draftRepo             *repositories.DraftRepository
-	revisionRepo          *repositories.RevisionRepository
-	seriesRepo            *repositories.SeriesRepository
-	categoryRepo          *repositories.CategoryRepository
-	publicationRepo       *repositories.PublicationRepository
-	publicationMemberRepo *repositories.PublicationMemberRepository
+	// CMS repositories (interface types for mockability)
+	articleRepo           interfaces.ArticleRepository
+	draftRepo             interfaces.DraftRepository
+	revisionRepo          interfaces.RevisionRepository
+	seriesRepo            interfaces.SeriesRepository
+	categoryRepo          interfaces.CategoryRepository
+	publicationRepo       interfaces.PublicationRepository
+	publicationMemberRepo interfaces.PublicationMemberRepository
 
 	// Utility fields
 	logger    *zap.Logger
@@ -206,6 +206,62 @@ func WithStreamingConnectionRepository(repo interfaces.StreamingConnectionReposi
 	}
 }
 
+// WithArticleRepository sets a custom article repository implementation.
+// Use this to inject a mock for testing specific article repository behavior.
+func WithArticleRepository(repo interfaces.ArticleRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.articleRepo = repo
+	}
+}
+
+// WithDraftRepository sets a custom draft repository implementation.
+// Use this to inject a mock for testing specific draft repository behavior.
+func WithDraftRepository(repo interfaces.DraftRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.draftRepo = repo
+	}
+}
+
+// WithRevisionRepository sets a custom revision repository implementation.
+// Use this to inject a mock for testing specific revision repository behavior.
+func WithRevisionRepository(repo interfaces.RevisionRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.revisionRepo = repo
+	}
+}
+
+// WithSeriesRepository sets a custom series repository implementation.
+// Use this to inject a mock for testing specific series repository behavior.
+func WithSeriesRepository(repo interfaces.SeriesRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.seriesRepo = repo
+	}
+}
+
+// WithCategoryRepository sets a custom category repository implementation.
+// Use this to inject a mock for testing specific category repository behavior.
+func WithCategoryRepository(repo interfaces.CategoryRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.categoryRepo = repo
+	}
+}
+
+// WithPublicationRepository sets a custom publication repository implementation.
+// Use this to inject a mock for testing specific publication repository behavior.
+func WithPublicationRepository(repo interfaces.PublicationRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.publicationRepo = repo
+	}
+}
+
+// WithPublicationMemberRepository sets a custom publication member repository implementation.
+// Use this to inject a mock for testing specific publication member repository behavior.
+func WithPublicationMemberRepository(repo interfaces.PublicationMemberRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.publicationMemberRepo = repo
+	}
+}
+
 // NewMockRepositoryStorage creates a new MockRepositoryStorage with in-memory defaults.
 // All repositories default to in-memory implementations that can be overridden
 // using functional options.
@@ -234,8 +290,16 @@ func NewMockRepositoryStorage(opts ...Option) *MockRepositoryStorage {
 		mediaPopularityRepo: inmemory.NewMediaPopularityRepository(),
 		mediaSessionRepo:    inmemory.NewMediaSessionRepository(),
 		streamingConnRepo:   inmemory.NewStreamingConnectionRepository(),
-		logger:              zap.NewNop(),
-		tableName:           "test-table",
+		// CMS repositories
+		articleRepo:           inmemory.NewArticleRepository(),
+		draftRepo:             inmemory.NewDraftRepository(),
+		revisionRepo:          inmemory.NewRevisionRepository(),
+		seriesRepo:            inmemory.NewSeriesRepository(),
+		categoryRepo:          inmemory.NewCategoryRepository(),
+		publicationRepo:       inmemory.NewPublicationRepository(),
+		publicationMemberRepo: inmemory.NewPublicationMemberRepository(),
+		logger:                zap.NewNop(),
+		tableName:             "test-table",
 	}
 
 	// Apply all options
@@ -528,38 +592,38 @@ func (s *MockRepositoryStorage) StreamingConnection() interfaces.StreamingConnec
 
 // CMS Repository accessors
 
-// Article returns the article repository.
-func (s *MockRepositoryStorage) Article() *repositories.ArticleRepository {
+// Article returns the article repository (interface type for mockability).
+func (s *MockRepositoryStorage) Article() interfaces.ArticleRepository {
 	return s.articleRepo
 }
 
-// Draft returns the draft repository.
-func (s *MockRepositoryStorage) Draft() *repositories.DraftRepository {
+// Draft returns the draft repository (interface type for mockability).
+func (s *MockRepositoryStorage) Draft() interfaces.DraftRepository {
 	return s.draftRepo
 }
 
-// Revision returns the revision repository.
-func (s *MockRepositoryStorage) Revision() *repositories.RevisionRepository {
+// Revision returns the revision repository (interface type for mockability).
+func (s *MockRepositoryStorage) Revision() interfaces.RevisionRepository {
 	return s.revisionRepo
 }
 
-// Series returns the series repository.
-func (s *MockRepositoryStorage) Series() *repositories.SeriesRepository {
+// Series returns the series repository (interface type for mockability).
+func (s *MockRepositoryStorage) Series() interfaces.SeriesRepository {
 	return s.seriesRepo
 }
 
-// Category returns the category repository.
-func (s *MockRepositoryStorage) Category() *repositories.CategoryRepository {
+// Category returns the category repository (interface type for mockability).
+func (s *MockRepositoryStorage) Category() interfaces.CategoryRepository {
 	return s.categoryRepo
 }
 
-// Publication returns the publication repository.
-func (s *MockRepositoryStorage) Publication() *repositories.PublicationRepository {
+// Publication returns the publication repository (interface type for mockability).
+func (s *MockRepositoryStorage) Publication() interfaces.PublicationRepository {
 	return s.publicationRepo
 }
 
-// PublicationMember returns the publication member repository.
-func (s *MockRepositoryStorage) PublicationMember() *repositories.PublicationMemberRepository {
+// PublicationMember returns the publication member repository (interface type for mockability).
+func (s *MockRepositoryStorage) PublicationMember() interfaces.PublicationMemberRepository {
 	return s.publicationMemberRepo
 }
 

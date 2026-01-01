@@ -337,31 +337,31 @@ func (s *testRepositoryStorage) ModerationML() *repositories.ModerationMLReposit
 	return nil
 }
 func (s *testRepositoryStorage) Quote() *repositories.QuoteRepository { return nil }
-func (s *testRepositoryStorage) MediaAnalytics() *repositories.MediaAnalyticsRepository {
+func (s *testRepositoryStorage) MediaAnalytics() interfaces.MediaAnalyticsRepository {
 	return nil
 }
-func (s *testRepositoryStorage) MediaPopularity() *repositories.MediaPopularityRepository {
+func (s *testRepositoryStorage) MediaPopularity() interfaces.MediaPopularityRepository {
 	return nil
 }
-func (s *testRepositoryStorage) MediaSession() *repositories.MediaSessionRepository {
+func (s *testRepositoryStorage) MediaSession() interfaces.MediaSessionRepository {
 	return nil
 }
-func (s *testRepositoryStorage) StreamingConnection() *repositories.StreamingConnectionRepository {
+func (s *testRepositoryStorage) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return nil
 }
-func (s *testRepositoryStorage) Article() *repositories.ArticleRepository { return nil }
-func (s *testRepositoryStorage) Draft() *repositories.DraftRepository     { return nil }
-func (s *testRepositoryStorage) Revision() *repositories.RevisionRepository {
+func (s *testRepositoryStorage) Article() interfaces.ArticleRepository { return nil }
+func (s *testRepositoryStorage) Draft() interfaces.DraftRepository     { return nil }
+func (s *testRepositoryStorage) Revision() interfaces.RevisionRepository {
 	return nil
 }
-func (s *testRepositoryStorage) Series() *repositories.SeriesRepository { return nil }
-func (s *testRepositoryStorage) Category() *repositories.CategoryRepository {
+func (s *testRepositoryStorage) Series() interfaces.SeriesRepository { return nil }
+func (s *testRepositoryStorage) Category() interfaces.CategoryRepository {
 	return nil
 }
-func (s *testRepositoryStorage) Publication() *repositories.PublicationRepository {
+func (s *testRepositoryStorage) Publication() interfaces.PublicationRepository {
 	return nil
 }
-func (s *testRepositoryStorage) PublicationMember() *repositories.PublicationMemberRepository {
+func (s *testRepositoryStorage) PublicationMember() interfaces.PublicationMemberRepository {
 	return nil
 }
 

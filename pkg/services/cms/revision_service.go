@@ -10,7 +10,6 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
@@ -66,9 +65,10 @@ type revisionRepository interface {
 	Delete(ctx context.Context, pk, sk string) error
 }
 
-type articleRepository interface {
+type articleRepositoryWithDB interface {
 	GetArticle(ctx context.Context, id string) (*models.Article, error)
 	UpdateArticle(ctx context.Context, article *models.Article) error
+	GetDB() dynamormcore.DB
 }
 
 type cmsArticleIndexWriter interface {
@@ -97,9 +97,9 @@ func (w dynamormCMSArticleIndexWriter) Delete(ctx context.Context, entry *models
 // RevisionService handles business logic for content revisions
 type RevisionService struct {
 	revisionRepo          revisionRepository
-	articleRepo           articleRepository
-	seriesRepo            *repositories.SeriesRepository
-	categoryRepo          *repositories.CategoryRepository
+	articleRepo           articleRepositoryWithDB
+	seriesRepo            cmsSeriesArticleCountUpdater
+	categoryRepo          cmsCategoryArticleCountUpdater
 	articleIndexWriter    cmsArticleIndexWriter
 	maxRevisionsPerObject int
 	logger                *zap.Logger
@@ -107,10 +107,10 @@ type RevisionService struct {
 
 // NewRevisionService creates a new RevisionService
 func NewRevisionService(
-	revisionRepo *repositories.RevisionRepository,
-	articleRepo *repositories.ArticleRepository,
-	seriesRepo *repositories.SeriesRepository,
-	categoryRepo *repositories.CategoryRepository,
+	revisionRepo revisionRepository,
+	articleRepo articleRepositoryWithDB,
+	seriesRepo cmsSeriesArticleCountUpdater,
+	categoryRepo cmsCategoryArticleCountUpdater,
 	maxRevisionsPerObject int,
 	logger *zap.Logger,
 ) *RevisionService {

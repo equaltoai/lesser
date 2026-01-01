@@ -846,7 +846,7 @@ func (r *queryResolver) MyPublications(ctx context.Context) ([]*model.Publicatio
 			// Best-effort self-heal: ensure GSI keys exist so future lookups use the index.
 			if member.GSI1PK == "" || member.GSI1SK == "" {
 				if err := member.UpdateKeys(); err == nil {
-					_ = store.PublicationMember().ValidateAndUpdate(ctx, member)
+					_ = store.PublicationMember().Update(ctx, member)
 				}
 			}
 		}

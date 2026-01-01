@@ -595,40 +595,40 @@ func (f *RepositoryFactory) StreamingConnection() interfaces.StreamingConnection
 	return f.streamingConnectionRepo
 }
 
-// CMS Repository Getters
+// CMS Repository Getters (interface types for mockability)
 
 // Article returns the Article repository instance
-func (f *RepositoryFactory) Article() *repositories.ArticleRepository {
+func (f *RepositoryFactory) Article() interfaces.ArticleRepository {
 	return f.articleRepo
 }
 
 // Draft returns the Draft repository instance
-func (f *RepositoryFactory) Draft() *repositories.DraftRepository {
+func (f *RepositoryFactory) Draft() interfaces.DraftRepository {
 	return f.draftRepo
 }
 
 // Revision returns the Revision repository instance
-func (f *RepositoryFactory) Revision() *repositories.RevisionRepository {
+func (f *RepositoryFactory) Revision() interfaces.RevisionRepository {
 	return f.revisionRepo
 }
 
 // Series returns the Series repository instance
-func (f *RepositoryFactory) Series() *repositories.SeriesRepository {
+func (f *RepositoryFactory) Series() interfaces.SeriesRepository {
 	return f.seriesRepo
 }
 
 // Category returns the Category repository instance
-func (f *RepositoryFactory) Category() *repositories.CategoryRepository {
+func (f *RepositoryFactory) Category() interfaces.CategoryRepository {
 	return f.categoryRepo
 }
 
 // Publication returns the Publication repository instance
-func (f *RepositoryFactory) Publication() *repositories.PublicationRepository {
+func (f *RepositoryFactory) Publication() interfaces.PublicationRepository {
 	return f.publicationRepo
 }
 
 // PublicationMember returns the PublicationMember repository instance
-func (f *RepositoryFactory) PublicationMember() *repositories.PublicationMemberRepository {
+func (f *RepositoryFactory) PublicationMember() interfaces.PublicationMemberRepository {
 	return f.publicationMemberRepo
 }
 

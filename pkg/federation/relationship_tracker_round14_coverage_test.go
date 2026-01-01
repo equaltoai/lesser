@@ -503,19 +503,19 @@ func (s *repoStorageStub) Thread() *repositories.ThreadRepository               
 func (s *repoStorageStub) Severance() *repositories.SeveranceRepository             { return nil }
 func (s *repoStorageStub) ModerationML() *repositories.ModerationMLRepository       { return nil }
 func (s *repoStorageStub) Quote() *repositories.QuoteRepository                     { return nil }
-func (s *repoStorageStub) MediaAnalytics() *repositories.MediaAnalyticsRepository   { return nil }
-func (s *repoStorageStub) MediaPopularity() *repositories.MediaPopularityRepository { return nil }
-func (s *repoStorageStub) MediaSession() *repositories.MediaSessionRepository       { return nil }
-func (s *repoStorageStub) StreamingConnection() *repositories.StreamingConnectionRepository {
+func (s *repoStorageStub) MediaAnalytics() interfaces.MediaAnalyticsRepository     { return nil }
+func (s *repoStorageStub) MediaPopularity() interfaces.MediaPopularityRepository   { return nil }
+func (s *repoStorageStub) MediaSession() interfaces.MediaSessionRepository         { return nil }
+func (s *repoStorageStub) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return nil
 }
-func (s *repoStorageStub) Article() *repositories.ArticleRepository                     { return nil }
-func (s *repoStorageStub) Draft() *repositories.DraftRepository                         { return nil }
-func (s *repoStorageStub) Revision() *repositories.RevisionRepository                   { return nil }
-func (s *repoStorageStub) Series() *repositories.SeriesRepository                       { return nil }
-func (s *repoStorageStub) Category() *repositories.CategoryRepository                   { return nil }
-func (s *repoStorageStub) Publication() *repositories.PublicationRepository             { return nil }
-func (s *repoStorageStub) PublicationMember() *repositories.PublicationMemberRepository { return nil }
+func (s *repoStorageStub) Article() interfaces.ArticleRepository                     { return nil }
+func (s *repoStorageStub) Draft() interfaces.DraftRepository                         { return nil }
+func (s *repoStorageStub) Revision() interfaces.RevisionRepository                   { return nil }
+func (s *repoStorageStub) Series() interfaces.SeriesRepository                       { return nil }
+func (s *repoStorageStub) Category() interfaces.CategoryRepository                   { return nil }
+func (s *repoStorageStub) Publication() interfaces.PublicationRepository             { return nil }
+func (s *repoStorageStub) PublicationMember() interfaces.PublicationMemberRepository { return nil }
 
 func newTrackerHarness(t *testing.T, db *memDB) (*RelationshipTracker, *repoStorageStub) {
 	t.Helper()

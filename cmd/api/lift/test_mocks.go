@@ -502,37 +502,37 @@ func (m *MockRepositoryStorage) StreamingConnection() interfaces.StreamingConnec
 // CMS Repository Mocks
 
 // Article returns a mock article repository for testing
-func (m *MockRepositoryStorage) Article() *repositories.ArticleRepository {
+func (m *MockRepositoryStorage) Article() interfaces.ArticleRepository {
 	return nil
 }
 
 // Draft returns a mock draft repository for testing
-func (m *MockRepositoryStorage) Draft() *repositories.DraftRepository {
+func (m *MockRepositoryStorage) Draft() interfaces.DraftRepository {
 	return nil
 }
 
 // Revision returns a mock revision repository for testing
-func (m *MockRepositoryStorage) Revision() *repositories.RevisionRepository {
+func (m *MockRepositoryStorage) Revision() interfaces.RevisionRepository {
 	return nil
 }
 
 // Series returns a mock series repository for testing
-func (m *MockRepositoryStorage) Series() *repositories.SeriesRepository {
+func (m *MockRepositoryStorage) Series() interfaces.SeriesRepository {
 	return nil
 }
 
 // Category returns a mock category repository for testing
-func (m *MockRepositoryStorage) Category() *repositories.CategoryRepository {
+func (m *MockRepositoryStorage) Category() interfaces.CategoryRepository {
 	return nil
 }
 
 // Publication returns a mock publication repository for testing
-func (m *MockRepositoryStorage) Publication() *repositories.PublicationRepository {
+func (m *MockRepositoryStorage) Publication() interfaces.PublicationRepository {
 	return nil
 }
 
 // PublicationMember returns a mock publication member repository for testing
-func (m *MockRepositoryStorage) PublicationMember() *repositories.PublicationMemberRepository {
+func (m *MockRepositoryStorage) PublicationMember() interfaces.PublicationMemberRepository {
 	return nil
 }
 

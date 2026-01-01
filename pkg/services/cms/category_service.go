@@ -9,7 +9,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -22,8 +21,6 @@ type categoryRepository interface {
 	Delete(ctx context.Context, pk, sk string) error
 	ListCategories(ctx context.Context, parentID *string, limit int) ([]*models.Category, error)
 }
-
-var _ categoryRepository = (*repositories.CategoryRepository)(nil)
 
 // CategoryService handles business logic for categories
 type CategoryService struct {

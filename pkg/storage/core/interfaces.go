@@ -69,14 +69,14 @@ type RepositoryStorage interface {
 	MediaSession() interfaces.MediaSessionRepository
 	StreamingConnection() interfaces.StreamingConnectionRepository
 
-	// CMS Repositories
-	Article() *repositories.ArticleRepository
-	Draft() *repositories.DraftRepository
-	Revision() *repositories.RevisionRepository
-	Series() *repositories.SeriesRepository
-	Category() *repositories.CategoryRepository
-	Publication() *repositories.PublicationRepository
-	PublicationMember() *repositories.PublicationMemberRepository
+	// CMS Repositories (interface types for mockability)
+	Article() interfaces.ArticleRepository
+	Draft() interfaces.DraftRepository
+	Revision() interfaces.RevisionRepository
+	Series() interfaces.SeriesRepository
+	Category() interfaces.CategoryRepository
+	Publication() interfaces.PublicationRepository
+	PublicationMember() interfaces.PublicationMemberRepository
 
 	// Utility methods
 	GetDB() dynamormCore.DB

@@ -10,7 +10,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -47,7 +46,7 @@ type DraftService struct {
 }
 
 // NewDraftService creates a new DraftService
-func NewDraftService(draftRepo *repositories.DraftRepository, articleService *ArticleService, domain string, schedulingEnabled bool, logger *zap.Logger) *DraftService {
+func NewDraftService(draftRepo draftRepository, articleService *ArticleService, domain string, schedulingEnabled bool, logger *zap.Logger) *DraftService {
 	return &DraftService{
 		draftRepo:      draftRepo,
 		articleService: articleService,

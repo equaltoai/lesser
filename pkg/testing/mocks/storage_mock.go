@@ -4562,38 +4562,38 @@ func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository {
 
 // CMS Repository Mocks
 
-// Article returns the mock Article repository
-func (m *MockRepositoryStorage) Article() *repositories.ArticleRepository {
+// Article returns the mock Article repository (interface type for mockability)
+func (m *MockRepositoryStorage) Article() interfaces.ArticleRepository {
 	return nil // Mock can be implemented as needed
 }
 
-// Draft returns the mock Draft repository
-func (m *MockRepositoryStorage) Draft() *repositories.DraftRepository {
+// Draft returns the mock Draft repository (interface type for mockability)
+func (m *MockRepositoryStorage) Draft() interfaces.DraftRepository {
 	return nil // Mock can be implemented as needed
 }
 
-// Revision returns the mock Revision repository
-func (m *MockRepositoryStorage) Revision() *repositories.RevisionRepository {
+// Revision returns the mock Revision repository (interface type for mockability)
+func (m *MockRepositoryStorage) Revision() interfaces.RevisionRepository {
 	return nil // Mock can be implemented as needed
 }
 
-// Series returns the mock Series repository
-func (m *MockRepositoryStorage) Series() *repositories.SeriesRepository {
+// Series returns the mock Series repository (interface type for mockability)
+func (m *MockRepositoryStorage) Series() interfaces.SeriesRepository {
 	return nil // Mock can be implemented as needed
 }
 
-// Category returns the mock Category repository
-func (m *MockRepositoryStorage) Category() *repositories.CategoryRepository {
+// Category returns the mock Category repository (interface type for mockability)
+func (m *MockRepositoryStorage) Category() interfaces.CategoryRepository {
 	return nil // Mock can be implemented as needed
 }
 
-// Publication returns the mock Publication repository
-func (m *MockRepositoryStorage) Publication() *repositories.PublicationRepository {
+// Publication returns the mock Publication repository (interface type for mockability)
+func (m *MockRepositoryStorage) Publication() interfaces.PublicationRepository {
 	return nil // Mock can be implemented as needed
 }
 
-// PublicationMember returns the mock PublicationMember repository
-func (m *MockRepositoryStorage) PublicationMember() *repositories.PublicationMemberRepository {
+// PublicationMember returns the mock PublicationMember repository (interface type for mockability)
+func (m *MockRepositoryStorage) PublicationMember() interfaces.PublicationMemberRepository {
 	return nil // Mock can be implemented as needed
 }
 

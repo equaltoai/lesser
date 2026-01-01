@@ -66,19 +66,19 @@ type permissiveRegistryStorage struct {
 	threadRepo          *repositories.ThreadRepository
 	severanceRepo       *repositories.SeveranceRepository
 	moderationMLRepo    *repositories.ModerationMLRepository
-	mediaAnalyticsRepo  *repositories.MediaAnalyticsRepository
-	mediaPopularityRepo *repositories.MediaPopularityRepository
-	mediaSessionRepo    *repositories.MediaSessionRepository
-	streamingConnRepo   *repositories.StreamingConnectionRepository
+	mediaAnalyticsRepo  interfaces.MediaAnalyticsRepository
+	mediaPopularityRepo interfaces.MediaPopularityRepository
+	mediaSessionRepo    interfaces.MediaSessionRepository
+	streamingConnRepo   interfaces.StreamingConnectionRepository
 
 	// CMS repos
-	articleRepo           *repositories.ArticleRepository
-	draftRepo             *repositories.DraftRepository
-	revisionRepo          *repositories.RevisionRepository
-	seriesRepo            *repositories.SeriesRepository
-	categoryRepo          *repositories.CategoryRepository
-	publicationRepo       *repositories.PublicationRepository
-	publicationMemberRepo *repositories.PublicationMemberRepository
+	articleRepo           interfaces.ArticleRepository
+	draftRepo             interfaces.DraftRepository
+	revisionRepo          interfaces.RevisionRepository
+	seriesRepo            interfaces.SeriesRepository
+	categoryRepo          interfaces.CategoryRepository
+	publicationRepo       interfaces.PublicationRepository
+	publicationMemberRepo interfaces.PublicationMemberRepository
 }
 
 func (s *permissiveRegistryStorage) Account() *repositories.AccountRepository   { return s.account }
@@ -128,31 +128,31 @@ func (s *permissiveRegistryStorage) Severance() *repositories.SeveranceRepositor
 func (s *permissiveRegistryStorage) ModerationML() *repositories.ModerationMLRepository {
 	return s.moderationMLRepo
 }
-func (s *permissiveRegistryStorage) MediaAnalytics() *repositories.MediaAnalyticsRepository {
+func (s *permissiveRegistryStorage) MediaAnalytics() interfaces.MediaAnalyticsRepository {
 	return s.mediaAnalyticsRepo
 }
-func (s *permissiveRegistryStorage) MediaPopularity() *repositories.MediaPopularityRepository {
+func (s *permissiveRegistryStorage) MediaPopularity() interfaces.MediaPopularityRepository {
 	return s.mediaPopularityRepo
 }
-func (s *permissiveRegistryStorage) MediaSession() *repositories.MediaSessionRepository {
+func (s *permissiveRegistryStorage) MediaSession() interfaces.MediaSessionRepository {
 	return s.mediaSessionRepo
 }
-func (s *permissiveRegistryStorage) StreamingConnection() *repositories.StreamingConnectionRepository {
+func (s *permissiveRegistryStorage) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return s.streamingConnRepo
 }
-func (s *permissiveRegistryStorage) Article() *repositories.ArticleRepository { return s.articleRepo }
-func (s *permissiveRegistryStorage) Draft() *repositories.DraftRepository     { return s.draftRepo }
-func (s *permissiveRegistryStorage) Revision() *repositories.RevisionRepository {
+func (s *permissiveRegistryStorage) Article() interfaces.ArticleRepository { return s.articleRepo }
+func (s *permissiveRegistryStorage) Draft() interfaces.DraftRepository     { return s.draftRepo }
+func (s *permissiveRegistryStorage) Revision() interfaces.RevisionRepository {
 	return s.revisionRepo
 }
-func (s *permissiveRegistryStorage) Series() *repositories.SeriesRepository { return s.seriesRepo }
-func (s *permissiveRegistryStorage) Category() *repositories.CategoryRepository {
+func (s *permissiveRegistryStorage) Series() interfaces.SeriesRepository { return s.seriesRepo }
+func (s *permissiveRegistryStorage) Category() interfaces.CategoryRepository {
 	return s.categoryRepo
 }
-func (s *permissiveRegistryStorage) Publication() *repositories.PublicationRepository {
+func (s *permissiveRegistryStorage) Publication() interfaces.PublicationRepository {
 	return s.publicationRepo
 }
-func (s *permissiveRegistryStorage) PublicationMember() *repositories.PublicationMemberRepository {
+func (s *permissiveRegistryStorage) PublicationMember() interfaces.PublicationMemberRepository {
 	return s.publicationMemberRepo
 }
 func (s *permissiveRegistryStorage) GetDB() dynamormcore.DB { return s.db }

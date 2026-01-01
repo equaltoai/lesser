@@ -9,7 +9,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -29,11 +28,6 @@ type publicationMemberRepository interface {
 	Update(ctx context.Context, member *models.PublicationMember) error
 	ListMembers(ctx context.Context, publicationID string) ([]*models.PublicationMember, error)
 }
-
-var (
-	_ publicationRepository       = (*repositories.PublicationRepository)(nil)
-	_ publicationMemberRepository = (*repositories.PublicationMemberRepository)(nil)
-)
 
 // PublicationService handles business logic for publications
 type PublicationService struct {

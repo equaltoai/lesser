@@ -12,7 +12,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/google/uuid"
 	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
@@ -41,18 +40,12 @@ type articleRevisionCreator interface {
 	CreateRevision(ctx context.Context, article *models.Article) (*models.Revision, error)
 }
 
-var (
-	_ articleServiceRepository = (*repositories.ArticleRepository)(nil)
-	_ actorRepository          = (*repositories.ActorRepository)(nil)
-	_ articleRevisionCreator   = (*RevisionService)(nil)
-)
-
 // ArticleService handles business logic for articles
 type ArticleService struct {
 	articleRepo     articleServiceRepository
 	actorRepo       actorRepository
-	seriesRepo      *repositories.SeriesRepository
-	categoryRepo    *repositories.CategoryRepository
+	seriesRepo      cmsSeriesArticleCountUpdater
+	categoryRepo    cmsCategoryArticleCountUpdater
 	revisionService articleRevisionCreator
 	federation      FederationService
 	logger          *zap.Logger
@@ -62,8 +55,8 @@ type ArticleService struct {
 func NewArticleService(
 	articleRepo articleServiceRepository,
 	actorRepo actorRepository,
-	seriesRepo *repositories.SeriesRepository,
-	categoryRepo *repositories.CategoryRepository,
+	seriesRepo cmsSeriesArticleCountUpdater,
+	categoryRepo cmsCategoryArticleCountUpdater,
 	revisionService articleRevisionCreator,
 	federation FederationService,
 	logger *zap.Logger,
