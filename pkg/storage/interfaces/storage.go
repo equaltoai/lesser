@@ -798,7 +798,47 @@ type TrackingRepository interface{}
 type WebSocketCostRepository interface{}
 
 // TrustRepository provides methods for trust relationship management.
-type TrustRepository interface{}
+// This handles trust relationships between actors, trust scores, and trust updates.
+type TrustRepository interface {
+	// ===== Trust Relationship Operations =====
+
+	// CreateTrustRelationship creates or updates a trust relationship between two actors
+	CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error
+
+	// GetTrustRelationship retrieves a specific trust relationship
+	GetTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) (*storage.TrustRelationship, error)
+
+	// UpdateTrustRelationship updates an existing trust relationship
+	UpdateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error
+
+	// DeleteTrustRelationship removes a trust relationship
+	DeleteTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) error
+
+	// GetTrustRelationships retrieves all trust relationships for a truster with pagination
+	GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
+
+	// GetTrustedByRelationships retrieves all relationships where the actor is trusted with pagination
+	GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
+
+	// GetAllTrustRelationships retrieves all trust relationships for admin visualization
+	GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error)
+
+	// ===== Trust Score Operations =====
+
+	// GetTrustScore retrieves a cached trust score or calculates it
+	GetTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error)
+
+	// UpdateTrustScore updates a cached trust score
+	UpdateTrustScore(ctx context.Context, score *storage.TrustScore) error
+
+	// GetUserTrustScore retrieves the trust score for a user
+	GetUserTrustScore(ctx context.Context, userID string) (float64, error)
+
+	// ===== Trust Update Operations =====
+
+	// RecordTrustUpdate records a trust score update event
+	RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error
+}
 
 // SearchRepository provides methods for search data management.
 type SearchRepository interface{}

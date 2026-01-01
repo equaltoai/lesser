@@ -272,12 +272,12 @@ func (m *MockRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepos
 }
 
 // Trust returns a mock trust repository for testing
-func (m *MockRepositoryStorage) Trust() *repositories.TrustRepository {
+func (m *MockRepositoryStorage) Trust() interfaces.TrustRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.TrustRepository)
+	return args.Get(0).(interfaces.TrustRepository)
 }
 
 // Search returns a mock search repository for testing

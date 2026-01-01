@@ -58,7 +58,7 @@ type MockRepositoryStorage struct {
 	socialRepo           *repositories.SocialRepository
 	costRepo             *repositories.TrackingRepository
 	webSocketCostRepo    *repositories.WebSocketCostRepository
-	trustRepo            *repositories.TrustRepository
+	trustRepo            interfaces.TrustRepository
 	searchRepo           *repositories.SearchRepository
 	relayRepo            *repositories.RelayRepository
 	communityNoteRepo    *repositories.CommunityNoteRepository
@@ -158,6 +158,14 @@ func WithTableName(tableName string) Option {
 	}
 }
 
+// WithTrustRepository sets a custom trust repository implementation.
+// Use this to inject a mock for testing specific trust repository behavior.
+func WithTrustRepository(repo interfaces.TrustRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.trustRepo = repo
+	}
+}
+
 // NewMockRepositoryStorage creates a new MockRepositoryStorage with in-memory defaults.
 // All repositories default to in-memory implementations that can be overridden
 // using functional options.
@@ -180,6 +188,7 @@ func NewMockRepositoryStorage(opts ...Option) *MockRepositoryStorage {
 		timelineRepo: inmemory.NewTimelineRepository(),
 		objectRepo:   inmemory.NewObjectRepository(),
 		activityRepo: inmemory.NewActivityRepository(),
+		trustRepo:    inmemory.NewTrustRepository(),
 		logger:       zap.NewNop(),
 		tableName:    "test-table",
 	}
@@ -332,8 +341,8 @@ func (s *MockRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepos
 	return s.webSocketCostRepo
 }
 
-// Trust returns the trust repository.
-func (s *MockRepositoryStorage) Trust() *repositories.TrustRepository {
+// Trust returns the trust repository (interface type for mockability).
+func (s *MockRepositoryStorage) Trust() interfaces.TrustRepository {
 	return s.trustRepo
 }
 

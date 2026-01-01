@@ -34,7 +34,7 @@ type round11TestRepos struct {
 	social       *repositories.SocialRepository
 	bookmark     *repositories.BookmarkRepository
 	conversation *repositories.ConversationRepository
-	trust        *repositories.TrustRepository
+	trust        interfaces.TrustRepository
 }
 
 func (r *round11TestRepos) Account() *repositories.AccountRepository { return r.account }
@@ -63,7 +63,7 @@ func (r *round11TestRepos) Bookmark() *repositories.BookmarkRepository {
 func (r *round11TestRepos) Conversation() *repositories.ConversationRepository {
 	return r.conversation
 }
-func (r *round11TestRepos) Trust() *repositories.TrustRepository { return r.trust }
+func (r *round11TestRepos) Trust() interfaces.TrustRepository { return r.trust }
 
 func round11NewHandlerSliceC(t *testing.T, state *round10QueryState) (*Handler, *round10DynamoHarness, *round11TestRepos) {
 	t.Helper()

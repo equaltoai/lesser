@@ -24,8 +24,8 @@ type serviceTestStorage struct {
 	actorRepo         interfaces.ActorRepository
 	statusRepo        *repositories.StatusRepository
 	activityRepo      interfaces.ActivityRepository
-	relationshipRepo  *repositories.RelationshipRepository
-	trustRepo         *repositories.TrustRepository
+	relationshipRepo  interfaces.ConcreteRelationshipRepository
+	trustRepo         interfaces.TrustRepository
 	moderationRepo    *repositories.ModerationRepository
 	communityNoteRepo *repositories.CommunityNoteRepository
 	domainBlockRepo   *repositories.DomainBlockRepository
@@ -38,7 +38,7 @@ func newServiceTestStorage() *serviceTestStorage {
 func (s *serviceTestStorage) Account() *repositories.AccountRepository         { return nil }
 func (s *serviceTestStorage) Bookmark() *repositories.BookmarkRepository       { return nil }
 func (s *serviceTestStorage) Actor() interfaces.ActorRepository             { return s.actorRepo }
-func (s *serviceTestStorage) Object() *repositories.ObjectRepository           { return nil }
+func (s *serviceTestStorage) Object() interfaces.ObjectRepository              { return nil }
 func (s *serviceTestStorage) Activity() interfaces.ActivityRepository          { return s.activityRepo }
 func (s *serviceTestStorage) Timeline() interfaces.TimelineRepository          { return nil }
 func (s *serviceTestStorage) Notification() interfaces.NotificationRepository  { return nil }
@@ -53,7 +53,7 @@ func (s *serviceTestStorage) Hashtag() *repositories.HashtagRepository         {
 func (s *serviceTestStorage) ScheduledStatus() *repositories.ScheduledStatusRepository { return nil }
 func (s *serviceTestStorage) Announcement() *repositories.AnnouncementRepository { return nil }
 func (s *serviceTestStorage) DomainBlock() *repositories.DomainBlockRepository { return s.domainBlockRepo }
-func (s *serviceTestStorage) Relationship() *repositories.RelationshipRepository { return s.relationshipRepo }
+func (s *serviceTestStorage) Relationship() interfaces.ConcreteRelationshipRepository { return s.relationshipRepo }
 func (s *serviceTestStorage) Instance() *repositories.InstanceRepository       { return nil }
 func (s *serviceTestStorage) Federation() *repositories.FederationRepository   { return nil }
 func (s *serviceTestStorage) Recovery() *repositories.RecoveryRepository       { return nil }
@@ -63,7 +63,7 @@ func (s *serviceTestStorage) User() interfaces.UserRepository                  {
 func (s *serviceTestStorage) Status() interfaces.StatusRepository           { return s.statusRepo }
 func (s *serviceTestStorage) Cost() *repositories.TrackingRepository           { return nil }
 func (s *serviceTestStorage) WebSocketCost() *repositories.WebSocketCostRepository { return nil }
-func (s *serviceTestStorage) Trust() *repositories.TrustRepository             { return s.trustRepo }
+func (s *serviceTestStorage) Trust() interfaces.TrustRepository                { return s.trustRepo }
 func (s *serviceTestStorage) Search() *repositories.SearchRepository           { return nil }
 func (s *serviceTestStorage) Relay() *repositories.RelayRepository             { return nil }
 func (s *serviceTestStorage) CommunityNote() *repositories.CommunityNoteRepository { return s.communityNoteRepo }

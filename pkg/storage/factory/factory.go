@@ -340,8 +340,8 @@ func (f *RepositoryFactory) User() interfaces.UserRepository {
 	return f.userRepo
 }
 
-// Trust returns the Trust repository instance
-func (f *RepositoryFactory) Trust() *repositories.TrustRepository {
+// Trust returns the Trust repository instance (interface type for mockability).
+func (f *RepositoryFactory) Trust() interfaces.TrustRepository {
 	return f.trustRepo
 }
 

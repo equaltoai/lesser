@@ -299,7 +299,7 @@ func (s *testRepositoryStorage) Cost() *repositories.TrackingRepository         
 func (s *testRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepository {
 	return nil
 }
-func (s *testRepositoryStorage) Trust() *repositories.TrustRepository { return nil }
+func (s *testRepositoryStorage) Trust() interfaces.TrustRepository { return nil }
 func (s *testRepositoryStorage) Search() *repositories.SearchRepository {
 	return nil
 }

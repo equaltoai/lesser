@@ -4123,7 +4123,7 @@ type MockRepositoryStorage struct {
 	userRepo             *repositories.UserRepository
 	statusRepo           interfaces.StatusRepository
 	costRepo             *repositories.TrackingRepository
-	trustRepo            *repositories.TrustRepository
+	trustRepo            interfaces.TrustRepository
 	searchRepo           *repositories.SearchRepository
 	relayRepo            *repositories.RelayRepository
 	communityNoteRepo    *repositories.CommunityNoteRepository
@@ -4378,7 +4378,7 @@ func (m *MockRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepos
 }
 
 // Trust returns the mock trust repository
-func (m *MockRepositoryStorage) Trust() *repositories.TrustRepository {
+func (m *MockRepositoryStorage) Trust() interfaces.TrustRepository {
 	return m.trustRepo
 }
 

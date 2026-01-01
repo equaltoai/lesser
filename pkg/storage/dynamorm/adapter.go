@@ -529,7 +529,7 @@ func (s *StorageAdapter) WebSocketCost() interface{} {
 
 // Trust returns the Trust repository instance
 func (s *StorageAdapter) Trust() interface{} {
-	return repoPtrToInterface(s.repos.Trust())
+	return s.repos.Trust()
 }
 
 // Search returns the Search repository instance

@@ -171,7 +171,7 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - Update RepositoryStorage.Activity() return type
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-  - [ ] 8.9 Create TrustRepository interface and implementations
+  - [x] 8.9 Create TrustRepository interface and implementations
     - Create `pkg/storage/interfaces/trust.go`
     - Create `pkg/testing/mocks/trust_repository_mock.go`
     - Create `pkg/testing/inmemory/trust_repository.go`

@@ -40,7 +40,7 @@ type RepositoryStorage interface {
 	Status() interfaces.StatusRepository // Returns interface type for mockability
 	Cost() *repositories.TrackingRepository
 	WebSocketCost() *repositories.WebSocketCostRepository
-	Trust() *repositories.TrustRepository
+	Trust() interfaces.TrustRepository
 	Search() *repositories.SearchRepository
 	Relay() *repositories.RelayRepository
 	CommunityNote() *repositories.CommunityNoteRepository
