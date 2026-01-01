@@ -73,7 +73,7 @@ func (r *FederationRepository) GetFederationStatistics(_ context.Context, startT
 	defer r.mu.RUnlock()
 
 	return &storage.FederationStats{
-		TotalInstances: int64(len(r.instances)),
+		ActiveInstances: int64(len(r.instances)),
 	}, nil
 }
 

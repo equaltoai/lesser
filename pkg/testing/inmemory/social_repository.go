@@ -4,7 +4,6 @@ package inmemory
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -50,7 +49,7 @@ func (r *SocialRepository) CreateBlock(_ context.Context, block *storage.Block) 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	key := block.Actor + ":" + block.BlockedActor
+	key := block.Actor + ":" + block.BlockedActorID
 	r.blocks[key] = block
 	return nil
 }
@@ -124,7 +123,7 @@ func (r *SocialRepository) CreateMute(_ context.Context, mute *storage.Mute) err
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	key := mute.Actor + ":" + mute.MutedActor
+	key := mute.Actor + ":" + mute.MutedActorID
 	r.mutes[key] = mute
 	return nil
 }
@@ -405,8 +404,8 @@ func (r *SocialRepository) DeleteStatusPin(_ context.Context, username, statusID
 	return nil
 }
 
-// GetUserPinnedStatuses retrieves all pinned statuses for a user
-func (r *SocialRepository) GetUserPinnedStatuses(_ context.Context, username string) ([]*storage.StatusPin, error) {
+// GetStatusPins retrieves all pinned statuses for a user
+func (r *SocialRepository) GetStatusPins(_ context.Context, username string) ([]*storage.StatusPin, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -420,6 +419,23 @@ func (r *SocialRepository) GetUserPinnedStatuses(_ context.Context, username str
 	return result, nil
 }
 
+// GetStatusPinsPaginated retrieves pinned statuses for a user with pagination
+func (r *SocialRepository) GetStatusPinsPaginated(_ context.Context, username string, limit int, cursor string) ([]*storage.StatusPin, string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	prefix := username + ":"
+	var result []*storage.StatusPin
+	for key, pin := range r.statusPins {
+		if len(key) > len(prefix) && key[:len(prefix)] == prefix {
+			result = append(result, pin)
+		}
+	}
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+	return result, "", nil
+}
 
 // IsStatusPinned checks if a status is pinned by a user
 func (r *SocialRepository) IsStatusPinned(_ context.Context, username, statusID string) (bool, error) {
@@ -429,6 +445,12 @@ func (r *SocialRepository) IsStatusPinned(_ context.Context, username, statusID 
 	key := username + ":" + statusID
 	_, exists := r.statusPins[key]
 	return exists, nil
+}
+
+// ReorderStatusPins reorders pinned statuses
+func (r *SocialRepository) ReorderStatusPins(_ context.Context, username string, statusIDs []string) error {
+	// No-op for in-memory implementation
+	return nil
 }
 
 // CountUserPinnedStatuses counts the number of pinned statuses for a user

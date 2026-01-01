@@ -112,11 +112,17 @@ type SocialRepository interface {
 	// DeleteStatusPin deletes a status pin
 	DeleteStatusPin(ctx context.Context, username, statusID string) error
 
-	// GetUserPinnedStatuses retrieves all pinned statuses for a user
-	GetUserPinnedStatuses(ctx context.Context, username string) ([]*storage.StatusPin, error)
+	// GetStatusPins retrieves all pinned statuses for a user
+	GetStatusPins(ctx context.Context, username string) ([]*storage.StatusPin, error)
+
+	// GetStatusPinsPaginated retrieves pinned statuses for a user with pagination
+	GetStatusPinsPaginated(ctx context.Context, username string, limit int, cursor string) ([]*storage.StatusPin, string, error)
 
 	// IsStatusPinned checks if a status is pinned by a user
 	IsStatusPinned(ctx context.Context, username, statusID string) (bool, error)
+
+	// ReorderStatusPins reorders pinned statuses
+	ReorderStatusPins(ctx context.Context, username string, statusIDs []string) error
 
 	// CountUserPinnedStatuses counts the number of pinned statuses for a user
 	CountUserPinnedStatuses(ctx context.Context, username string) (int, error)

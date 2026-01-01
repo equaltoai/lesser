@@ -234,8 +234,8 @@ func (m *MockSocialRepository) DeleteStatusPin(ctx context.Context, username, st
 	return args.Error(0)
 }
 
-// GetUserPinnedStatuses mocks the GetUserPinnedStatuses method
-func (m *MockSocialRepository) GetUserPinnedStatuses(ctx context.Context, username string) ([]*storage.StatusPin, error) {
+// GetStatusPins mocks the GetStatusPins method
+func (m *MockSocialRepository) GetStatusPins(ctx context.Context, username string) ([]*storage.StatusPin, error) {
 	args := m.Called(ctx, username)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -243,10 +243,25 @@ func (m *MockSocialRepository) GetUserPinnedStatuses(ctx context.Context, userna
 	return args.Get(0).([]*storage.StatusPin), args.Error(1)
 }
 
+// GetStatusPinsPaginated mocks the GetStatusPinsPaginated method
+func (m *MockSocialRepository) GetStatusPinsPaginated(ctx context.Context, username string, limit int, cursor string) ([]*storage.StatusPin, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.StatusPin), args.String(1), args.Error(2)
+}
+
 // IsStatusPinned mocks the IsStatusPinned method
 func (m *MockSocialRepository) IsStatusPinned(ctx context.Context, username, statusID string) (bool, error) {
 	args := m.Called(ctx, username, statusID)
 	return args.Bool(0), args.Error(1)
+}
+
+// ReorderStatusPins mocks the ReorderStatusPins method
+func (m *MockSocialRepository) ReorderStatusPins(ctx context.Context, username string, statusIDs []string) error {
+	args := m.Called(ctx, username, statusIDs)
+	return args.Error(0)
 }
 
 // CountUserPinnedStatuses mocks the CountUserPinnedStatuses method

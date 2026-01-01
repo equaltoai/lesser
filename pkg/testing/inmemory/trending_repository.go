@@ -132,8 +132,8 @@ func (r *TrendingRepository) GetTrendingHashtags(_ context.Context, since time.T
 	var result []*storage.TrendingHashtag
 	for _, c := range counts {
 		result = append(result, &storage.TrendingHashtag{
-			Name:  c.name,
-			Count: int64(c.count),
+			Name:       c.name,
+			UsageCount: int64(c.count),
 		})
 	}
 	return result, nil
@@ -213,8 +213,8 @@ func (r *TrendingRepository) GetTrendingLinks(_ context.Context, since time.Time
 	var result []*storage.TrendingLink
 	for _, c := range counts {
 		result = append(result, &storage.TrendingLink{
-			URL:   c.url,
-			Count: int64(c.count),
+			URL:        c.url,
+			ShareCount: int64(c.count),
 		})
 	}
 	return result, nil

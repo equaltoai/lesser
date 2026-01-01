@@ -195,35 +195,7 @@ type RelationshipRepository interface {
 
 // NOTE: MediaRepository is now defined in media.go with full method signatures
 
-// ConversationRepository defines the interface for direct message conversation operations
-type ConversationRepository interface {
-	// Core conversation operations
-	CreateConversation(ctx context.Context, conversation *models.Conversation, participants []string) error
-	GetConversation(ctx context.Context, conversationID string) (*models.Conversation, error)
-	UpdateConversation(ctx context.Context, conversation *models.Conversation) error
-	DeleteConversation(ctx context.Context, conversationID string) error
-
-	// Conversation discovery
-	GetUserConversations(ctx context.Context, userID string, opts PaginationOptions) (*PaginatedResult[*models.Conversation], error)
-	GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error)
-
-	// Conversation management
-	AddParticipant(ctx context.Context, conversationID, participantID string) error
-	RemoveParticipant(ctx context.Context, conversationID, participantID string) error
-	GetConversationParticipants(ctx context.Context, conversationID string) ([]string, error)
-
-	// Conversation status tracking
-	MarkConversationRead(ctx context.Context, conversationID, userID string) error
-	MarkConversationUnread(ctx context.Context, conversationID, userID string) error
-	GetUnreadConversations(ctx context.Context, userID string, opts PaginationOptions) (*PaginatedResult[*models.Conversation], error)
-
-	// Conversation muting
-	CreateConversationMute(ctx context.Context, mute *storage.ConversationMute) error
-	DeleteConversationMute(ctx context.Context, username, conversationID string) error
-
-	// Conversation search
-	SearchConversations(ctx context.Context, userID, query string, opts PaginationOptions) (*PaginatedResult[*models.Conversation], error)
-}
+// NOTE: ConversationRepository is now defined in conversation.go with full method signatures
 
 // NOTE: ListRepository is now defined in list.go with full method signatures
 
@@ -310,15 +282,7 @@ type NotificationRepository interface {
 
 // NOTE: LikeRepository is now defined in like.go with full method signatures
 
-// SocialRepository defines the interface for social interaction operations
-type SocialRepository interface {
-	CreateAnnounce(ctx context.Context, announce *storage.Announce) error
-	DeleteAnnounce(ctx context.Context, actor, object string) error
-	GetAnnounce(ctx context.Context, actor, object string) (*storage.Announce, error)
-	GetStatusAnnounces(ctx context.Context, statusID string, limit int, cursor string) ([]*storage.Announce, string, error)
-	CreateStatusPin(ctx context.Context, pin *storage.StatusPin) error
-	DeleteStatusPin(ctx context.Context, userID, statusID string) error
-}
+// NOTE: SocialRepository is now defined in social.go with full method signatures
 
 // QuoteRepository defines the interface for quote post operations
 type QuoteRepository interface {

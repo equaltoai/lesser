@@ -98,15 +98,15 @@ func (r *InstanceRepository) SetInstanceRules(_ context.Context, rules []storage
 }
 
 // GetRulesByCategory retrieves rules filtered by category
+// Note: InstanceRule doesn't have a Category field, so this returns all rules
 func (r *InstanceRepository) GetRulesByCategory(_ context.Context, category string) ([]storage.InstanceRule, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var result []storage.InstanceRule
+	// Return all rules since InstanceRule doesn't have a Category field
+	result := make([]storage.InstanceRule, 0, len(r.rules))
 	for _, rule := range r.rules {
-		if rule.Category == category {
-			result = append(result, rule)
-		}
+		result = append(result, rule)
 	}
 	return result, nil
 }

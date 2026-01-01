@@ -3,7 +3,6 @@ package inmemory
 
 import (
 	"context"
-	"sort"
 	"strings"
 	"sync"
 	"time"

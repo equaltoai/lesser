@@ -4,7 +4,6 @@ package inmemory
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"

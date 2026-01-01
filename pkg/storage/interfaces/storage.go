@@ -654,29 +654,21 @@ type StorageFactory interface {
 
 // NOTE: PushSubscriptionRepository is now defined in push_subscription.go with full method signatures
 
-// HashtagRepository provides methods for hashtag data management.
-type HashtagRepository interface{}
+// NOTE: HashtagRepository is now defined in hashtag.go with full method signatures
 
-// ScheduledStatusRepository provides methods for scheduled status management.
-type ScheduledStatusRepository interface{}
+// NOTE: ScheduledStatusRepository is now defined in scheduled_status.go with full method signatures
 
-// AnnouncementRepository provides methods for announcement management.
-type AnnouncementRepository interface{}
+// NOTE: AnnouncementRepository is now defined in announcement.go with full method signatures
 
-// DomainBlockRepository provides methods for domain blocking management.
-type DomainBlockRepository interface{}
+// NOTE: DomainBlockRepository is now defined in domain_block.go with full method signatures
 
-// InstanceRepository provides methods for instance data management.
-type InstanceRepository interface{}
+// NOTE: InstanceRepository is now defined in instance.go with full method signatures
 
-// FederationRepository provides methods for federation data management.
-type FederationRepository interface{}
+// NOTE: FederationRepository is now defined in federation.go with full method signatures
 
-// RecoveryRepository provides methods for recovery data management.
-type RecoveryRepository interface{}
+// NOTE: RecoveryRepository is now defined in recovery.go with full method signatures
 
-// TrendingRepository provides methods for trending analytics data management.
-type TrendingRepository interface{}
+// NOTE: TrendingRepository is now defined in trending.go with full method signatures
 
 // UserRepository provides methods for user data management.
 // This interface mirrors the public methods of repositories.UserRepository,
@@ -688,6 +680,7 @@ type UserRepository interface {
 	GetUserByEmail(ctx context.Context, email string) (*storage.User, error)
 	UpdateUser(ctx context.Context, username string, updates map[string]any) error
 	DeleteUser(ctx context.Context, username string) error
+
 	ListUsers(ctx context.Context, limit int32, cursor string) ([]*storage.User, string, error)
 	ListUsersByRole(ctx context.Context, role string) ([]*storage.User, error)
 
@@ -787,11 +780,9 @@ type UserRepository interface {
 	FanOutPost(ctx context.Context, activity *activitypub.Activity) error
 }
 
-// TrackingRepository provides methods for tracking data management.
-type TrackingRepository interface{}
+// NOTE: TrackingRepository is now defined in tracking.go with full method signatures
 
-// WebSocketCostRepository provides methods for WebSocket cost tracking.
-type WebSocketCostRepository interface{}
+// NOTE: WebSocketCostRepository is now defined in websocket_cost.go with full method signatures
 
 // TrustRepository provides methods for trust relationship management.
 // This handles trust relationships between actors, trust scores, and trust updates.
@@ -835,24 +826,6 @@ type TrustRepository interface {
 	// RecordTrustUpdate records a trust score update event
 	RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error
 }
-
-// SearchRepository provides methods for search data management.
-type SearchRepository interface{}
-
-// RelayRepository provides methods for relay management.
-type RelayRepository interface{}
-
-// CommunityNoteRepository provides methods for community note management.
-type CommunityNoteRepository interface{}
-
-// EmojiRepository provides methods for emoji data management.
-type EmojiRepository interface{}
-
-// RateLimitRepository provides methods for rate limiting management.
-type RateLimitRepository interface{}
-
-// MarkerRepository provides methods for marker data management.
-type MarkerRepository interface{}
 
 // FeaturedTagRepository provides methods for featured tag management.
 type FeaturedTagRepository interface{}

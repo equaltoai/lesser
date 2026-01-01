@@ -41,7 +41,7 @@ func (r *RecoveryRepository) StoreTrustee(_ context.Context, username string, tr
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	key := username + ":" + trustee.TrusteeActorID
+	key := username + ":" + trustee.TrusteeID
 	r.trustees[key] = trustee
 	return nil
 }
@@ -89,7 +89,7 @@ func (r *RecoveryRepository) StoreRecoveryRequest(_ context.Context, request *st
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.requests[request.RequestID] = request
+	r.requests[request.ID] = request
 	return nil
 }
 
@@ -110,10 +110,10 @@ func (r *RecoveryRepository) UpdateRecoveryRequest(_ context.Context, request *s
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.requests[request.RequestID]; !exists {
+	if _, exists := r.requests[request.ID]; !exists {
 		return storage.ErrNotFound
 	}
-	r.requests[request.RequestID] = request
+	r.requests[request.ID] = request
 	return nil
 }
 

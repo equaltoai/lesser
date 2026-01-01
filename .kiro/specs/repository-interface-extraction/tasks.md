@@ -214,7 +214,7 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - RecoveryRepository, TrendingRepository, SocialRepository
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-  - [ ] 11.3 Create interfaces for remaining repositories (batch 3)
+  - [x] 11.3 Create interfaces for remaining repositories (batch 3)
     - TrackingRepository, WebSocketCostRepository, SearchRepository
     - RelayRepository, CommunityNoteRepository, EmojiRepository
     - RateLimitRepository, ConversationRepository, MarkerRepository
