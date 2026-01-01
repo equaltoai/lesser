@@ -220,7 +220,7 @@ This implementation plan refactors `core.RepositoryStorage` to return interfaces
     - RateLimitRepository, ConversationRepository, MarkerRepository
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1_
 
-  - [ ] 11.4 Create interfaces for remaining repositories (batch 4)
+  - [x] 11.4 Create interfaces for remaining repositories (batch 4)
     - FeaturedTagRepository, AIRepository, ExportRepository
     - ImportRepository, DLQRepository, MetricRecordRepository
     - CloudWatchMetricsRepository, StreamingCloudWatchRepository

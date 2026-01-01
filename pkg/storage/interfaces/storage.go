@@ -827,29 +827,15 @@ type TrustRepository interface {
 	RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error
 }
 
-// FeaturedTagRepository provides methods for featured tag management.
-type FeaturedTagRepository interface{}
-
-// AIRepository provides methods for AI service integration.
-type AIRepository interface{}
-
-// ExportRepository provides methods for data export management.
-type ExportRepository interface{}
-
-// ImportRepository provides methods for data import management.
-type ImportRepository interface{}
-
-// DLQRepository provides methods for dead letter queue management.
-type DLQRepository interface{}
-
-// MetricRecordRepository provides methods for metric record management.
-type MetricRecordRepository interface{}
-
-// CloudWatchMetricsRepository provides methods for CloudWatch metrics management.
-type CloudWatchMetricsRepository interface{}
-
-// StreamingCloudWatchRepository provides methods for streaming CloudWatch data.
-type StreamingCloudWatchRepository interface{}
+// NOTE: The following repository interfaces are defined in their own files:
+// - FeaturedTagRepository (featured_tag.go)
+// - AIRepository (ai.go)
+// - ExportRepository (export.go)
+// - ImportRepository (import.go)
+// - DLQRepository (dlq.go)
+// - MetricRecordRepository (metric_record.go)
+// - CloudWatchMetricsRepository (cloudwatch_metrics.go)
+// - StreamingCloudWatchRepository (streaming_cloudwatch.go)
 
 // AuditRepository provides methods for audit log management.
 type AuditRepository interface{}
