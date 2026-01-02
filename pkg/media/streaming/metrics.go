@@ -31,6 +31,10 @@ type MetricsTracker struct {
 
 // NewMetricsTracker creates a new metrics tracker with CloudWatch integration
 func NewMetricsTracker(cloudWatch *cloudwatch.Client, logger *zap.Logger) *MetricsTracker {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	tracker := &MetricsTracker{
 		cloudWatch:    cloudWatch,
 		logger:        logger,
@@ -40,8 +44,10 @@ func NewMetricsTracker(cloudWatch *cloudwatch.Client, logger *zap.Logger) *Metri
 		lastPublish:   time.Now(),
 	}
 
-	// Start background batch publisher
-	go tracker.batchPublisher()
+	// Start background batch publisher only when CloudWatch is enabled
+	if tracker.cloudWatch != nil {
+		go tracker.batchPublisher()
+	}
 
 	return tracker
 }
@@ -583,6 +589,10 @@ func (smt *MetricsTracker) publishSessionMetrics(metrics *SessionMetrics, sessio
 
 // addToBatch adds a metric to the batch for publishing
 func (smt *MetricsTracker) addToBatch(metric types.MetricDatum) {
+	if smt.cloudWatch == nil {
+		return
+	}
+
 	smt.batchMutex.Lock()
 	defer smt.batchMutex.Unlock()
 
@@ -609,6 +619,10 @@ func (smt *MetricsTracker) batchPublisher() {
 
 // publishBatch publishes the current metrics batch to CloudWatch
 func (smt *MetricsTracker) publishBatch() {
+	if smt.cloudWatch == nil {
+		return
+	}
+
 	smt.batchMutex.Lock()
 	if err := common.ValidateSliceNotEmpty("smt.metricsBatch", smt.metricsBatch); err != nil {
 		smt.batchMutex.Unlock()

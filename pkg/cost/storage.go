@@ -15,13 +15,19 @@ import (
 
 // Storage handles persistence of cost data
 type Storage struct {
-	client    *dynamodb.Client
+	client    dynamodbAPI
 	tableName string
 	logger    *zap.Logger
 }
 
+type dynamodbAPI interface {
+	PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
+	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
+	Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
+}
+
 // NewStorage creates a new cost storage instance
-func NewStorage(client *dynamodb.Client, tableName string, logger *zap.Logger) *Storage {
+func NewStorage(client dynamodbAPI, tableName string, logger *zap.Logger) *Storage {
 	return &Storage{
 		client:    client,
 		tableName: tableName,

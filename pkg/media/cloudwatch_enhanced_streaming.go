@@ -9,24 +9,32 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 
+type streamingCloudWatchRepo interface {
+	GetQualityBreakdown(ctx context.Context, mediaID string) (*models.StreamingCloudWatchMetrics, error)
+	CacheQualityBreakdown(ctx context.Context, mediaID string, qualityMetrics map[string]models.QualityMetric) error
+	GetGeographicData(ctx context.Context, mediaID string) (*models.StreamingCloudWatchMetrics, error)
+	CacheGeographicData(ctx context.Context, mediaID string, geoMetrics map[string]models.GeographicMetric) error
+	GetConcurrentViewers(ctx context.Context, mediaID string) (*models.StreamingCloudWatchMetrics, error)
+	CacheConcurrentViewers(ctx context.Context, mediaID string, concurrentMetrics models.ConcurrentViewerMetrics) error
+}
+
 // CloudWatchEnhancedStreamingService provides real CloudWatch data for streaming optimization
 type CloudWatchEnhancedStreamingService struct {
-	cloudWatch *cloudwatch.Client
-	storage    core.RepositoryStorage
+	cloudWatch cloudWatchAPI
+	repo       streamingCloudWatchRepo
 	logger     *zap.Logger
 	namespace  string
 }
 
 // NewCloudWatchEnhancedStreamingService creates a new CloudWatch enhanced streaming service
-func NewCloudWatchEnhancedStreamingService(awsConfig aws.Config, storage core.RepositoryStorage, logger *zap.Logger) *CloudWatchEnhancedStreamingService {
+func NewCloudWatchEnhancedStreamingService(awsConfig aws.Config, repo streamingCloudWatchRepo, logger *zap.Logger) *CloudWatchEnhancedStreamingService {
 	return &CloudWatchEnhancedStreamingService{
 		cloudWatch: cloudwatch.NewFromConfig(awsConfig),
-		storage:    storage,
+		repo:       repo,
 		logger:     logger,
 		namespace:  "Lesser/Streaming",
 	}
@@ -35,10 +43,10 @@ func NewCloudWatchEnhancedStreamingService(awsConfig aws.Config, storage core.Re
 // GetRealQualityBreakdown retrieves real quality breakdown from CloudWatch with DynamORM caching
 func (s *CloudWatchEnhancedStreamingService) GetRealQualityBreakdown(ctx context.Context, mediaID string, totalViews int64) (map[string]int64, error) {
 	return s.getMetricsWithCaching(ctx, mediaID, totalViews, "quality",
-		func() (interface{}, error) { return s.storage.StreamingCloudWatch().GetQualityBreakdown(ctx, mediaID) },
+		func() (interface{}, error) { return s.repo.GetQualityBreakdown(ctx, mediaID) },
 		func() (interface{}, error) { return s.fetchQualityMetricsFromCloudWatch(ctx, mediaID) },
 		func(data interface{}) error {
-			return s.storage.StreamingCloudWatch().CacheQualityBreakdown(ctx, mediaID, data.(map[string]models.QualityMetric))
+			return s.repo.CacheQualityBreakdown(ctx, mediaID, data.(map[string]models.QualityMetric))
 		},
 		func() map[string]int64 { return s.generateFallbackQualityBreakdown(totalViews) },
 		s.extractQualityViewerCounts,
@@ -48,10 +56,10 @@ func (s *CloudWatchEnhancedStreamingService) GetRealQualityBreakdown(ctx context
 // GetRealGeographicData retrieves real geographic distribution from CloudWatch with DynamORM caching
 func (s *CloudWatchEnhancedStreamingService) GetRealGeographicData(ctx context.Context, mediaID string, totalViews int64) (map[string]int64, error) {
 	return s.getMetricsWithCaching(ctx, mediaID, totalViews, "geographic",
-		func() (interface{}, error) { return s.storage.StreamingCloudWatch().GetGeographicData(ctx, mediaID) },
+		func() (interface{}, error) { return s.repo.GetGeographicData(ctx, mediaID) },
 		func() (interface{}, error) { return s.fetchGeographicMetricsFromCloudWatch(ctx, mediaID) },
 		func(data interface{}) error {
-			return s.storage.StreamingCloudWatch().CacheGeographicData(ctx, mediaID, data.(map[string]models.GeographicMetric))
+			return s.repo.CacheGeographicData(ctx, mediaID, data.(map[string]models.GeographicMetric))
 		},
 		func() map[string]int64 { return s.generateFallbackGeographicData(totalViews) },
 		s.extractGeographicViewerCounts,
@@ -61,7 +69,7 @@ func (s *CloudWatchEnhancedStreamingService) GetRealGeographicData(ctx context.C
 // GetRealConcurrentMetrics retrieves real concurrent viewer metrics from CloudWatch with DynamORM caching
 func (s *CloudWatchEnhancedStreamingService) GetRealConcurrentMetrics(ctx context.Context, mediaID string, totalViews int64) (int64, error) {
 	// Try to get from cache first
-	cachedMetrics, err := s.storage.StreamingCloudWatch().GetConcurrentViewers(ctx, mediaID)
+	cachedMetrics, err := s.repo.GetConcurrentViewers(ctx, mediaID)
 	if err != nil {
 		s.logger.Warn("failed to get cached concurrent viewers", zap.Error(err), zap.String("media_id", mediaID))
 	}
@@ -82,7 +90,7 @@ func (s *CloudWatchEnhancedStreamingService) GetRealConcurrentMetrics(ctx contex
 	}
 
 	// Cache the results using DynamORM
-	if err := s.storage.StreamingCloudWatch().CacheConcurrentViewers(ctx, mediaID, realMetrics); err != nil {
+	if err := s.repo.CacheConcurrentViewers(ctx, mediaID, realMetrics); err != nil {
 		s.logger.Warn("failed to cache concurrent viewers", zap.Error(err), zap.String("media_id", mediaID))
 	}
 
@@ -96,14 +104,14 @@ func (s *CloudWatchEnhancedStreamingService) GetRealConcurrentMetrics(ctx contex
 // GetOptimalQuality determines the best quality based on real CloudWatch performance data
 func (s *CloudWatchEnhancedStreamingService) GetOptimalQuality(ctx context.Context, mediaID, userRegion string) (string, error) {
 	// Get cached quality metrics
-	qualityMetrics, err := s.storage.StreamingCloudWatch().GetQualityBreakdown(ctx, mediaID)
+	qualityMetrics, err := s.repo.GetQualityBreakdown(ctx, mediaID)
 	if err != nil || qualityMetrics == nil || qualityMetrics.IsExpired() {
 		s.logger.Debug("no valid quality metrics available, using default", zap.String("media_id", mediaID))
 		return Resolution720p, nil // Safe default
 	}
 
 	// Get geographic metrics for region-specific optimization
-	geoMetrics, err := s.storage.StreamingCloudWatch().GetGeographicData(ctx, mediaID)
+	geoMetrics, err := s.repo.GetGeographicData(ctx, mediaID)
 	if err != nil || geoMetrics == nil || geoMetrics.IsExpired() {
 		// Use global optimization
 		return qualityMetrics.GetBestQuality(), nil
@@ -133,7 +141,7 @@ func (s *CloudWatchEnhancedStreamingService) fetchQualityMetricsFromCloudWatch(c
 		result[quality] = *metrics
 	}
 
-	if err := common.ValidateSliceNotEmpty("quality_metrics", result); err != nil {
+	if len(result) == 0 {
 		return nil, ErrNoQualityMetrics
 	}
 
@@ -218,7 +226,7 @@ func (s *CloudWatchEnhancedStreamingService) fetchGeographicMetricsFromCloudWatc
 		}
 	}
 
-	if err := common.ValidateSliceNotEmpty("geographic_metrics", result); err != nil {
+	if len(result) == 0 {
 		return nil, ErrNoGeographicMetrics
 	}
 
@@ -443,7 +451,7 @@ func (s *CloudWatchEnhancedStreamingService) getMetricsWithCaching(
 	// Check if cached data is valid and not expired
 	if cachedData != nil {
 		// Check expiration - assume all cached data implements IsExpired()
-		if data, ok := cachedData.(*models.StreamingCloudWatchMetrics); ok {
+		if data, ok := cachedData.(*models.StreamingCloudWatchMetrics); ok && data != nil {
 			if !data.IsExpired() {
 				s.logger.Debug("using cached data", zap.String("media_id", mediaID), zap.String("metric_type", metricType))
 

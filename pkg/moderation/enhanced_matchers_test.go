@@ -98,6 +98,43 @@ func TestEnhancedURLMatcher(t *testing.T) {
 	}
 }
 
+func TestEnhancedURLMatcher_DomainPatternWithSchemeAndPort(t *testing.T) {
+	matcher := NewEnhancedURLMatcher()
+
+	withScheme := "https://example.com"
+	if err := matcher.CompileURLPattern(withScheme, URLPatternDomain); err != nil {
+		t.Fatalf("failed to compile domain pattern: %v", err)
+	}
+
+	compiled, ok := matcher.compiled[withScheme]
+	if !ok {
+		t.Fatalf("expected compiled pattern to be stored")
+	}
+	if compiled.scheme != "https" {
+		t.Fatalf("expected scheme=https, got %q", compiled.scheme)
+	}
+
+	withPort := "example.com:8443"
+	if err := matcher.CompileURLPattern(withPort, URLPatternDomain); err != nil {
+		t.Fatalf("failed to compile domain pattern: %v", err)
+	}
+	compiled, ok = matcher.compiled[withPort]
+	if !ok {
+		t.Fatalf("expected compiled pattern to be stored")
+	}
+	if compiled.port != "8443" {
+		t.Fatalf("expected port=8443, got %q", compiled.port)
+	}
+
+	matched, matchedPattern, err := matcher.MatchURL("https://sub.example.com:8443/path", []string{withPort})
+	if err != nil {
+		t.Fatalf("failed to match URL: %v", err)
+	}
+	if !matched || matchedPattern != withPort {
+		t.Fatalf("expected match for %s, got match=%v pattern=%s", withPort, matched, matchedPattern)
+	}
+}
+
 func TestEnhancedIPMatcher(t *testing.T) {
 	matcher := NewEnhancedIPMatcher()
 
@@ -173,6 +210,14 @@ func TestEnhancedIPMatcher(t *testing.T) {
 			shouldMatch: true,
 			description: "IPv6 CIDR should match IPs in range",
 		},
+		{
+			name:        "regex_ipv4",
+			pattern:     `^192\.168\.[0-9]+\.[0-9]+$`,
+			patternType: IPPatternRegex,
+			testIP:      "192.168.1.5",
+			shouldMatch: true,
+			description: "Regex IP pattern should match",
+		},
 	}
 
 	for _, tt := range tests {
@@ -223,11 +268,67 @@ func TestURLValidation(t *testing.T) {
 			description: "Valid domain should pass validation",
 		},
 		{
+			name:        "valid_domain_with_scheme_and_port",
+			pattern:     "https://example.com:8443",
+			patternType: URLPatternDomain,
+			shouldError: false,
+			description: "Domain patterns may include scheme and port",
+		},
+		{
 			name:        "valid_subdomain",
 			pattern:     "*.example.com",
 			patternType: URLPatternSubdomain,
 			shouldError: false,
 			description: "Valid subdomain pattern should pass validation",
+		},
+		{
+			name:        "valid_query",
+			pattern:     "?param=test",
+			patternType: URLPatternQuery,
+			shouldError: false,
+			description: "Valid query pattern should pass validation",
+		},
+		{
+			name:        "invalid_query_spaces",
+			pattern:     "param=bad value",
+			patternType: URLPatternQuery,
+			shouldError: true,
+			description: "Query patterns may not include spaces",
+		},
+		{
+			name:        "invalid_domain_character",
+			pattern:     "example!.com",
+			patternType: URLPatternDomain,
+			shouldError: true,
+			description: "Domains may not include punctuation",
+		},
+		{
+			name:        "invalid_domain_hyphen",
+			pattern:     "bad-.com",
+			patternType: URLPatternDomain,
+			shouldError: true,
+			description: "Domain parts may not start or end with hyphen",
+		},
+		{
+			name:        "invalid_domain_port",
+			pattern:     "example.com:80:90",
+			patternType: URLPatternDomain,
+			shouldError: true,
+			description: "Invalid host:port format should be rejected",
+		},
+		{
+			name:        "invalid_path_missing_slash",
+			pattern:     "api/*",
+			patternType: URLPatternPath,
+			shouldError: true,
+			description: "Path patterns must start with /",
+		},
+		{
+			name:        "invalid_path_traversal",
+			pattern:     "/../etc",
+			patternType: URLPatternPath,
+			shouldError: true,
+			description: "Path traversal should be rejected",
 		},
 		{
 			name:        "invalid_domain",
@@ -300,6 +401,13 @@ func TestIPValidation(t *testing.T) {
 			patternType: IPPatternRange,
 			shouldError: false,
 			description: "Valid IP range should pass validation",
+		},
+		{
+			name:        "valid_regex",
+			pattern:     `^192\.168\.[0-9]+\.[0-9]+$`,
+			patternType: IPPatternRegex,
+			shouldError: false,
+			description: "Valid IP regex should pass validation",
 		},
 		{
 			name:        "invalid_ipv4",
@@ -441,6 +549,38 @@ func TestSecurityValidation(t *testing.T) {
 					tt.shouldBeSafe, isSafe, tt.description, err)
 			}
 		})
+	}
+}
+
+func TestEnhancedMatchers_ErrorPaths(t *testing.T) {
+	urlMatcher := NewEnhancedURLMatcher()
+
+	// Invalid URL should fail normalization.
+	_, _, err := urlMatcher.MatchURL("http://[bad", []string{"example.com"})
+	if err == nil {
+		t.Fatalf("expected error for invalid URL")
+	}
+
+	ipMatcher := NewEnhancedIPMatcher()
+
+	// Unsupported pattern type.
+	if err := ipMatcher.CompileIPPattern("x", IPPatternType("unknown")); err == nil {
+		t.Fatalf("expected error for unsupported IP pattern type")
+	}
+
+	// Invalid range format.
+	if err := ipMatcher.CompileIPPattern("1.1.1.1", IPPatternRange); err == nil {
+		t.Fatalf("expected error for invalid range format")
+	}
+
+	// Invalid regex pattern.
+	if err := ipMatcher.CompileIPPattern("[invalid(", IPPatternRegex); err == nil {
+		t.Fatalf("expected error for invalid IP regex")
+	}
+
+	// Invalid regex syntax is rejected by validator.
+	if err := validateRegexPattern("[invalid("); err == nil {
+		t.Fatalf("expected error for invalid regex syntax")
 	}
 }
 

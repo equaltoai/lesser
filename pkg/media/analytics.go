@@ -139,8 +139,8 @@ type CloudFrontLogEntry struct {
 
 // bandwidthAnalytics implements BandwidthAnalytics
 type bandwidthAnalytics struct {
-	s3Client       *s3.Client
-	cloudWatch     *cloudwatch.Client
+	s3Client       s3ListGetAPI
+	cloudWatch     cloudWatchAPI
 	storageService interface {
 		StoreBandwidthUsage(ctx context.Context, usage *BandwidthUsage) error
 		GetBandwidthUsage(ctx context.Context, start, end time.Time) ([]*BandwidthUsage, error)

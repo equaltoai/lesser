@@ -158,17 +158,15 @@ type dnsCacheManager struct {
 func (d *dnsCacheManager) getCachedIPs(ctx context.Context, hostname string) ([]net.IP, bool) {
 	// Check local cache first
 	d.mu.RLock()
-	if entry, ok := d.local[hostname]; ok {
-		d.mu.RUnlock()
-		if time.Since(entry.ResolvedAt) < dnsCacheTTL {
-			ips := make([]net.IP, len(entry.IPs))
-			for i, ipStr := range entry.IPs {
-				ips[i] = net.ParseIP(ipStr)
-			}
-			return ips, true
-		}
-	}
+	entry, ok := d.local[hostname]
 	d.mu.RUnlock()
+	if ok && time.Since(entry.ResolvedAt) < dnsCacheTTL {
+		ips := make([]net.IP, len(entry.IPs))
+		for i, ipStr := range entry.IPs {
+			ips[i] = net.ParseIP(ipStr)
+		}
+		return ips, true
+	}
 
 	// Check DynamoDB if we have a store
 	if d.store != nil {

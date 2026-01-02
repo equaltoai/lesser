@@ -24,13 +24,17 @@ var (
 	// Default timeout buffer to prevent Lambda timeouts
 	// This is subtracted from the Lambda function timeout
 	defaultTimeoutBuffer = 500 * time.Millisecond
+
+	getAppConfig               = config.Get
+	newDynamormStandardClient  = func(cfg session.Config) (core.DB, error) { return dynamorm.New(cfg) }
+	newDynamormLambdaOptimized = dynamorm.NewLambdaOptimized
 )
 
 // GetClient returns a singleton DynamORM client instance
 // This ensures that the client is only initialized once per Lambda container
 func GetClient(_ context.Context) (core.DB, error) {
 	clientOnce.Do(func() {
-		cfg := config.Get()
+		cfg := getAppConfig()
 		region := cfg.Region
 		if err := common.ValidateRequiredParam("region", region); err != nil {
 			region = "us-east-1" // Default region
@@ -52,7 +56,7 @@ func GetClient(_ context.Context) (core.DB, error) {
 		}
 
 		// Initialize with standard client creation
-		client, clientErr = dynamorm.New(sessionConfig)
+		client, clientErr = newDynamormStandardClient(sessionConfig)
 	})
 
 	return client, clientErr
@@ -68,7 +72,7 @@ func GetLambdaClient(ctx context.Context) (*dynamorm.LambdaDB, error) {
 
 		// Create Lambda-optimized client
 		var err error
-		lambdaDB, err = dynamorm.NewLambdaOptimized()
+		lambdaDB, err = newDynamormLambdaOptimized()
 		if err != nil {
 			clientErr = err
 			zap.L().Error("failed to initialize DynamORM", zap.Error(err))

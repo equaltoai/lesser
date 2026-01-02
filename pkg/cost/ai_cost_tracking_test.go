@@ -27,11 +27,8 @@ func TestAIServiceWithCostTracking_EstimateTokenCount(t *testing.T) {
 
 	t.Run("estimates tokens for normal text", func(t *testing.T) {
 		// "Hello World" = 11 chars, ~3 tokens (11/4 + 1)
-		// But ValidateSliceNotEmpty returns error for non-empty, so returns 0
-		// The function uses ValidateSliceNotEmpty incorrectly - it returns 0 for valid text
 		tokens := service.estimateTokenCount("Hello World")
-		// Due to the validation logic, non-empty strings return 0
-		assert.Equal(t, 0, tokens)
+		assert.Equal(t, 3, tokens)
 	})
 
 	t.Run("returns 0 for empty text", func(t *testing.T) {
@@ -123,7 +120,7 @@ func TestAIServiceWithCostTracking_Fields(t *testing.T) {
 	logger := zap.NewNop()
 	service := NewAIServiceWithCostTracking(nil, tracker, logger)
 
-	assert.Nil(t, service.AIService)
+	assert.Nil(t, service.aiService)
 	assert.Equal(t, tracker, service.costTracker)
 	assert.Equal(t, logger, service.logger)
 }

@@ -22,6 +22,11 @@ func ValidateRedirectURL(redirectURL string, currentHost string) (string, error)
 		return "", ErrRedirectURLEmpty
 	}
 
+	// Block protocol-relative URLs (e.g. //example.com/path), which bypass scheme checks.
+	if strings.HasPrefix(redirectURL, "//") {
+		return "", ErrProtocolRelativeURLsNotAllowed
+	}
+
 	// Parse the URL
 	u, err := url.Parse(redirectURL)
 	if err != nil {
@@ -32,10 +37,6 @@ func ValidateRedirectURL(redirectURL string, currentHost string) (string, error)
 
 	// Relative URLs are safe (same origin)
 	if u.Host == "" {
-		// But check for protocol-relative URLs
-		if strings.HasPrefix(redirectURL, "//") {
-			return "", ErrProtocolRelativeURLsNotAllowed
-		}
 		// Check for javascript: or data: URLs
 		if scheme == "javascript" || scheme == "data" {
 			return "", ErrJavascriptDataURLsNotAllowed

@@ -333,7 +333,7 @@ func (m *Media) GetVariant(name string) (MediaVariant, bool) {
 
 // GetBestVariant returns the best variant for the requested dimensions
 func (m *Media) GetBestVariant(maxWidth, maxHeight int) MediaVariant {
-	if err := common.ValidateSliceNotEmpty("m.Variants", m.Variants); err != nil {
+	if len(m.Variants) == 0 {
 		// Return original as fallback
 		return MediaVariant{
 			S3Key:       m.S3Key,

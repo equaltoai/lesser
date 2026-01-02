@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -20,12 +21,31 @@ import (
 // Processor handles dead letter queue message processing
 type Processor struct {
 	db                core.DB
-	dlqRepo           *repositories.DLQRepository
-	costTrackingRepo  *repositories.TrackingRepository
+	dlqRepo           dlqRepository
+	costTrackingRepo  costTrackingRepository
 	logger            *zap.Logger
 	sqsClient         SQSClient
 	errorClassifier   *ErrorClassifier
 	reprocessorClient *ReprocessorClient
+}
+
+var (
+	loadDefaultAWSConfigFunc = awsconfig.LoadDefaultConfig
+	newSQSClientFunc         = func(cfg aws.Config) SQSClient { return sqs.NewFromConfig(cfg) }
+)
+
+type dlqRepository interface {
+	CreateDLQMessage(ctx context.Context, msg *models.DLQMessage) error
+	UpdateDLQMessage(ctx context.Context, msg *models.DLQMessage) error
+	GetDLQMessagesForReprocessing(ctx context.Context, service string, status string, limit int, cursor string) ([]*models.DLQMessage, string, error)
+	GetDLQAnalytics(ctx context.Context, service string, timeRange repositories.DLQTimeRange) (*repositories.DLQAnalytics, error)
+	GetDLQTrends(ctx context.Context, service string, days int) (*repositories.DLQTrends, error)
+	SearchDLQMessages(ctx context.Context, filter *repositories.DLQSearchFilter) ([]*models.DLQMessage, string, error)
+	CleanupExpiredMessages(ctx context.Context, before time.Time) (int, error)
+}
+
+type costTrackingRepository interface {
+	Create(ctx context.Context, record *models.DynamoDBCostRecord) error
 }
 
 // NewProcessor creates a new DLQ processor
@@ -42,12 +62,12 @@ func NewProcessor(db core.DB, tableName string, logger *zap.Logger) *Processor {
 
 // InitializeAWSClients initializes AWS clients
 func (p *Processor) InitializeAWSClients(ctx context.Context) error {
-	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	cfg, err := loadDefaultAWSConfigFunc(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	p.sqsClient = sqs.NewFromConfig(cfg)
+	p.sqsClient = newSQSClientFunc(cfg)
 	p.reprocessorClient.SetSQSClient(p.sqsClient)
 
 	return nil
@@ -185,6 +205,9 @@ func (p *Processor) createDLQMessage(record events.SQSMessage, originalMessage *
 	if err := common.ValidateRequiredParam("sourceQueue", sourceQueue); err != nil {
 		sourceQueue = strings.ReplaceAll(queueName, "-dlq", "") // Remove DLQ suffix
 	}
+	if err := common.ValidateRequiredParam("originalMessage.SourceQueue", originalMessage.SourceQueue); err != nil {
+		originalMessage.SourceQueue = sourceQueue
+	}
 
 	// Extract function context
 	functionName := common.GetLambdaFunctionName()
@@ -228,7 +251,14 @@ func (p *Processor) createDLQMessage(record events.SQSMessage, originalMessage *
 	}
 	builder.WithTags(tags...)
 
-	return builder.Build()
+	msg := builder.Build()
+	if msg.MaxReprocessAttempts == 0 {
+		msg.MaxReprocessAttempts = 3
+	}
+	if msg.Status == "" {
+		msg.Status = "new"
+	}
+	return msg
 }
 
 // extractServiceName extracts the service name from the SQS record

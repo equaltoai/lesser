@@ -9,6 +9,23 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	initializeDynamORMFunc           = initializeDynamORM
+	initializeRepositoryFactoryFunc  = initializeRepositoryFactory
+	initializeEMFMetricsFunc         = initializeEMFMetrics
+	initializeHealthCheckerFunc      = initializeHealthChecker
+	initializeTracingManagerFunc     = initializeTracingManager
+	initializeMetricsCollectorFunc   = initializeMetricsCollector
+	initializeLatencyTrackingFunc    = initializeLatencyTracking
+	initializeAlertManagerFunc       = initializeAlertManager
+	initializeAuthServicesFunc       = initializeAuthServices
+	initializeFederationServicesFunc = initializeFederationServices
+	initializeStreamingServicesFunc  = initializeStreamingServices
+	flushEMFMetricsFunc              = flushEMFMetrics
+	flushMetricsCollectorFunc        = flushMetricsCollector
+	isTracingEnabledFunc             = isTracingEnabled
+)
+
 // LambdaInitOptions provides additional initialization options
 type LambdaInitOptions struct {
 	// Storage options
@@ -161,14 +178,14 @@ func (lambdaCtx *LambdaContext) InitializeStorageServices(options LambdaInitOpti
 
 	if options.OptimizeForColdStart {
 		// Use Lambda-optimized client for faster cold starts
-		dynamormClient, dynamormErr := initializeDynamORM(context.Background(), cfg.Region, true)
+		dynamormClient, dynamormErr := initializeDynamORMFunc(context.Background(), cfg.Region, true)
 		if dynamormErr != nil {
 			return fmt.Errorf("failed to initialize Lambda-optimized DynamORM: %w", dynamormErr)
 		}
 		db = dynamormClient
 	} else {
 		// Use standard client for long-running operations
-		dynamormClient, dynamormErr := initializeDynamORM(context.Background(), cfg.Region, false)
+		dynamormClient, dynamormErr := initializeDynamORMFunc(context.Background(), cfg.Region, false)
 		if dynamormErr != nil {
 			return fmt.Errorf("failed to initialize DynamORM: %w", dynamormErr)
 		}
@@ -179,7 +196,7 @@ func (lambdaCtx *LambdaContext) InitializeStorageServices(options LambdaInitOpti
 
 	// Initialize repository factory if requested
 	if options.InitializeRepositories {
-		repos, repoErr := initializeRepositoryFactory(db, tableName, lambdaCtx.AWSServices, logger)
+		repos, repoErr := initializeRepositoryFactoryFunc(db, tableName, lambdaCtx.AWSServices, logger)
 		if repoErr != nil {
 			return fmt.Errorf("failed to initialize repository factory: %w", repoErr)
 		}
@@ -212,7 +229,7 @@ func (lambdaCtx *LambdaContext) InitializeObservabilityServices(options LambdaIn
 	// Initialize EMF Metrics
 	if options.InitializeEMFMetrics {
 		namespace := fmt.Sprintf("Lesser/%s", TitleCase(lambdaCtx.ServiceName))
-		emfMetrics := initializeEMFMetrics(logger, namespace, lambdaCtx.ServiceName, cfg)
+		emfMetrics := initializeEMFMetricsFunc(logger, namespace, lambdaCtx.ServiceName, cfg)
 		lambdaCtx.EMFMetrics = emfMetrics
 
 		logger.Debug("initialized EMF metrics",
@@ -227,7 +244,7 @@ func (lambdaCtx *LambdaContext) InitializeObservabilityServices(options LambdaIn
 			tableName = cfg.DynamoTableName
 		}
 
-		healthChecker := initializeHealthChecker(logger, lambdaCtx.AWSServices, lambdaCtx.ServiceName, cfg.Version, tableName)
+		healthChecker := initializeHealthCheckerFunc(logger, lambdaCtx.AWSServices, lambdaCtx.ServiceName, cfg.Version, tableName)
 		lambdaCtx.HealthChecker = healthChecker
 
 		logger.Debug("initialized health checker",
@@ -236,17 +253,17 @@ func (lambdaCtx *LambdaContext) InitializeObservabilityServices(options LambdaIn
 
 	// Initialize Tracing Manager
 	if options.InitializeTracingManager && lambdaCtx.Config != nil {
-		tracingManager := initializeTracingManager(logger, lambdaCtx.ServiceName, cfg.Version)
+		tracingManager := initializeTracingManagerFunc(logger, lambdaCtx.ServiceName, cfg.Version)
 		lambdaCtx.TracingManager = tracingManager
 
 		logger.Debug("initialized tracing manager",
 			zap.String("service", lambdaCtx.ServiceName),
-			zap.Bool("enabled", isTracingEnabled(tracingManager)))
+			zap.Bool("enabled", isTracingEnabledFunc(tracingManager)))
 	}
 
 	// Initialize Metrics Collector (legacy support)
 	if options.InitializeMetricsCollector && lambdaCtx.AWSServices != nil {
-		metricsCollector := initializeMetricsCollector(lambdaCtx.AWSServices, logger, lambdaCtx.ServiceName)
+		metricsCollector := initializeMetricsCollectorFunc(lambdaCtx.AWSServices, logger, lambdaCtx.ServiceName)
 		lambdaCtx.MetricsCollector = metricsCollector
 
 		logger.Debug("initialized metrics collector")
@@ -254,7 +271,7 @@ func (lambdaCtx *LambdaContext) InitializeObservabilityServices(options LambdaIn
 
 	// Initialize Latency Tracking
 	if options.InitializeLatencyTracking && lambdaCtx.Repos != nil {
-		latencyAggregator, latencyAlerter := initializeLatencyTracking(logger, lambdaCtx.Repos, lambdaCtx.ServiceName)
+		latencyAggregator, latencyAlerter := initializeLatencyTrackingFunc(logger, lambdaCtx.Repos, lambdaCtx.ServiceName)
 		lambdaCtx.LatencyAggregator = latencyAggregator
 		lambdaCtx.LatencyAlerter = latencyAlerter
 
@@ -263,7 +280,7 @@ func (lambdaCtx *LambdaContext) InitializeObservabilityServices(options LambdaIn
 
 	// Initialize Alert Manager (federation-specific)
 	if options.InitializeAlerting {
-		alertManager := initializeAlertManager(logger)
+		alertManager := initializeAlertManagerFunc(logger)
 		lambdaCtx.AlertManager = alertManager
 
 		logger.Debug("initialized alert manager")
@@ -283,7 +300,7 @@ func (lambdaCtx *LambdaContext) InitializeServiceSpecificDependencies(options La
 
 	// Initialize Auth Service
 	if options.InitializeAuthService && lambdaCtx.Repos != nil {
-		authService, authMiddleware, err := initializeAuthServices(lambdaCtx.Repos)
+		authService, authMiddleware, err := initializeAuthServicesFunc(lambdaCtx.Repos)
 		if err != nil {
 			return fmt.Errorf("failed to initialize auth services: %w", err)
 		}
@@ -295,7 +312,7 @@ func (lambdaCtx *LambdaContext) InitializeServiceSpecificDependencies(options La
 
 	// Initialize Federation Services
 	if options.InitializeFederationServices && lambdaCtx.Repos != nil {
-		signatureService, deliveryService, costCalculator, rateLimiter := initializeFederationServices(lambdaCtx.Repos, logger)
+		signatureService, deliveryService, costCalculator, rateLimiter := initializeFederationServicesFunc(lambdaCtx.Repos, logger)
 		lambdaCtx.SignatureService = signatureService
 		lambdaCtx.DeliveryService = deliveryService
 		lambdaCtx.CostCalculator = costCalculator
@@ -306,7 +323,7 @@ func (lambdaCtx *LambdaContext) InitializeServiceSpecificDependencies(options La
 
 	// Initialize Streaming Services
 	if options.InitializeStreamingServices && lambdaCtx.DynamoDB != nil {
-		streamQueue := initializeStreamingServices(lambdaCtx.DynamoDB, lambdaCtx.Config.DynamoTableName, logger)
+		streamQueue := initializeStreamingServicesFunc(lambdaCtx.DynamoDB, lambdaCtx.Config.DynamoTableName, logger)
 		lambdaCtx.StreamQueue = streamQueue
 
 		logger.Debug("initialized streaming services")
@@ -355,12 +372,12 @@ func (lambdaCtx *LambdaContext) InitializeWithOptions(options LambdaInitOptions)
 func (lambdaCtx *LambdaContext) FlushObservabilityServices() {
 	// Flush EMF metrics
 	if lambdaCtx.EMFMetrics != nil {
-		flushEMFMetrics(lambdaCtx.EMFMetrics)
+		flushEMFMetricsFunc(lambdaCtx.EMFMetrics)
 	}
 
 	// Flush legacy metrics collector
 	if lambdaCtx.MetricsCollector != nil {
-		flushMetricsCollector(lambdaCtx.MetricsCollector)
+		flushMetricsCollectorFunc(lambdaCtx.MetricsCollector)
 	}
 
 	// Note: Latency aggregator stops automatically due to Lambda termination

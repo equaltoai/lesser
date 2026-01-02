@@ -12,6 +12,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var initializeAWSServicesFunc = awsInit.InitializeServices
+
 // LambdaType defines the type of Lambda function for initialization
 type LambdaType string
 
@@ -159,7 +161,7 @@ func InitializeLambda(lambdaConfig LambdaConfig) (*LambdaContext, error) {
 	serviceConfig.RetryMaxAttempts = lambdaConfig.RetryMaxAttempts
 
 	// Initialize AWS services
-	awsServices, err := awsInit.InitializeServices(ctx, serviceConfig, logger)
+	awsServices, err := initializeAWSServicesFunc(ctx, serviceConfig, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize AWS services: %w", err)
 	}

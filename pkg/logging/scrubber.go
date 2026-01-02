@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,8 +16,9 @@ import (
 
 // SensitiveDataScrubber handles detection and redaction of sensitive information in logs
 type SensitiveDataScrubber struct {
-	patterns map[string]*regexp.Regexp
-	enabled  bool
+	patterns     map[string]*regexp.Regexp
+	patternOrder []string
+	enabled      bool
 }
 
 // NewSensitiveDataScrubber creates a new scrubber with comprehensive sensitive data patterns
@@ -50,7 +52,7 @@ func NewSensitiveDataScrubber() *SensitiveDataScrubber {
 	patterns["email"] = regexp.MustCompile(`([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})`)
 
 	// Phone numbers (international format)
-	patterns["phone"] = regexp.MustCompile(`(\+?[1-9]\d{1,14})`)
+	patterns["phone"] = regexp.MustCompile(`(\+?[1-9]\d{6,14})`)
 
 	// IP addresses (in auth contexts)
 	patterns["ip_address"] = regexp.MustCompile(`\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b`)
@@ -76,9 +78,16 @@ func NewSensitiveDataScrubber() *SensitiveDataScrubber {
 	// WebAuthn credentials
 	patterns["webauthn_credential"] = regexp.MustCompile(`(?i)(credential[_-]?id[\s]*[:=][\s]*)([A-Za-z0-9+/=]{20,})`)
 
+	patternOrder := make([]string, 0, len(patterns))
+	for name := range patterns {
+		patternOrder = append(patternOrder, name)
+	}
+	sort.Strings(patternOrder)
+
 	return &SensitiveDataScrubber{
-		patterns: patterns,
-		enabled:  true,
+		patterns:     patterns,
+		patternOrder: patternOrder,
+		enabled:      true,
 	}
 }
 
@@ -90,7 +99,8 @@ func (s *SensitiveDataScrubber) ScrubString(input string) string {
 
 	result := input
 
-	for patternName, regex := range s.patterns {
+	for _, patternName := range s.patternOrder {
+		regex := s.patterns[patternName]
 		switch patternName {
 		case "bearer_token", "api_key", "access_token", "refresh_token", "session_id", "auth_header":
 			result = regex.ReplaceAllStringFunc(result, func(match string) string {
@@ -235,6 +245,27 @@ func NewScrubbingCore(core zapcore.Core, scrubber *SensitiveDataScrubber) *Scrub
 	}
 }
 
+// Enabled passes through to the underlying core.
+func (c *ScrubbingCore) Enabled(level zapcore.Level) bool {
+	return c.Core.Enabled(level)
+}
+
+// With wraps the underlying core to preserve scrubbing behavior.
+func (c *ScrubbingCore) With(fields []zapcore.Field) zapcore.Core {
+	return &ScrubbingCore{
+		Core:     c.Core.With(fields),
+		scrubber: c.scrubber,
+	}
+}
+
+// Check ensures the scrubbing core is the one that gets written.
+func (c *ScrubbingCore) Check(entry zapcore.Entry, checkedEntry *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	if c.Enabled(entry.Level) {
+		return checkedEntry.AddCore(entry, c)
+	}
+	return checkedEntry
+}
+
 // Write implements zapcore.Core interface with scrubbing
 func (c *ScrubbingCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 	if c.scrubber.IsEnabled() {
@@ -250,6 +281,11 @@ func (c *ScrubbingCore) Write(entry zapcore.Entry, fields []zapcore.Field) error
 	}
 
 	return c.Core.Write(entry, fields)
+}
+
+// Sync passes through to the underlying core.
+func (c *ScrubbingCore) Sync() error {
+	return c.Core.Sync()
 }
 
 // scrubField scrubs individual zap fields

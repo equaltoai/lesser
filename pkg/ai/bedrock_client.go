@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -17,10 +18,18 @@ import (
 
 // BedrockClient provides AI analysis using AWS Bedrock
 type BedrockClient struct {
-	runtime *bedrockruntime.Client
-	bedrock *bedrock.Client
+	runtime bedrockRuntimeAPI
+	bedrock bedrockAPI
 	logger  *zap.Logger
 	modelID string
+}
+
+type bedrockRuntimeAPI interface {
+	InvokeModel(ctx context.Context, params *bedrockruntime.InvokeModelInput, optFns ...func(*bedrockruntime.Options)) (*bedrockruntime.InvokeModelOutput, error)
+}
+
+type bedrockAPI interface {
+	ListFoundationModels(ctx context.Context, params *bedrock.ListFoundationModelsInput, optFns ...func(*bedrock.Options)) (*bedrock.ListFoundationModelsOutput, error)
 }
 
 // ReputationAnalysisRequest represents the input for reputation analysis
@@ -359,7 +368,7 @@ func (c *BedrockClient) testConnectivity(ctx context.Context) error {
 
 // isClaudeModel checks if the configured model is a Claude model
 func (c *BedrockClient) isClaudeModel() bool {
-	return len(c.modelID) > 0 && (c.modelID[:8] == "anthropic" || c.modelID[:6] == "claude")
+	return strings.HasPrefix(c.modelID, "anthropic") || strings.HasPrefix(c.modelID, "claude")
 }
 
 // Helper functions for configuration

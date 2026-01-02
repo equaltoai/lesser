@@ -315,9 +315,9 @@ func TestJSONField_MarshalUnmarshal(t *testing.T) {
 		{
 			name: "object",
 			data: map[string]any{
-				"name":  "John",
-				"age":   30,
-				"email": "john@example.com",
+				"name":   "John",
+				"age":    30,
+				"handle": "john_doe",
 			},
 		},
 		{
@@ -368,18 +368,18 @@ func TestJSONField_MarshalUnmarshal(t *testing.T) {
 func TestJSONField_UnmarshalInto(t *testing.T) {
 	// Test data
 	data := map[string]any{
-		"name":  "John Doe",
-		"age":   30,
-		"email": "john@example.com",
+		"name":   "John Doe",
+		"age":    30,
+		"handle": "john_doe",
 	}
 
 	jf := NewJSONField(data)
 
 	// Unmarshal into struct
 	type User struct {
-		Name  string `json:"name"`
-		Age   int    `json:"age"`
-		Email string `json:"email"`
+		Name   string `json:"name"`
+		Age    int    `json:"age"`
+		Handle string `json:"handle"`
 	}
 
 	var user User
@@ -388,7 +388,7 @@ func TestJSONField_UnmarshalInto(t *testing.T) {
 
 	assert.Equal(t, "John Doe", user.Name)
 	assert.Equal(t, 30, user.Age)
-	assert.Equal(t, "john@example.com", user.Email)
+	assert.Equal(t, "john_doe", user.Handle)
 }
 
 func TestJSONField_String(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/pay-theory/lift/pkg/lift"
+	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -25,24 +26,61 @@ const (
 
 // NewTestContext creates a basic test context
 // Note: Use TestApp for HTTP testing, this is for lower-level context testing
-func NewTestContext(_, _ string) *lift.Context {
-	// For now, return a basic context
-	// In practice, you'd use _ = TestApp.GET(), TestApp.POST(), etc.
-	ctx := context.Background()
-	liftCtx := &lift.Context{Context: ctx}
-	return liftCtx
+func NewTestContext(method, rawPath string) *lift.Context {
+	path, queryParams := parseRawPath(rawPath)
+
+	req := lift.NewRequest(&adapters.Request{
+		Method:      method,
+		Path:        path,
+		Headers:     map[string]string{},
+		QueryParams: queryParams,
+		TriggerType: adapters.TriggerAPIGatewayV2,
+	})
+	return lift.NewContext(context.Background(), req)
 }
 
 // NewTestContextWithBody creates a test context with a request body
 // Note: Use TestApp for HTTP testing, this is for lower-level context testing
-func NewTestContextWithBody(method, path string, _ interface{}) *lift.Context {
-	return NewTestContext(method, path)
+func NewTestContextWithBody(method, rawPath string, body interface{}) *lift.Context {
+	path, queryParams := parseRawPath(rawPath)
+
+	encodedBody, err := encodeBody(body)
+	if err != nil {
+		encodedBody = nil
+	}
+
+	headers := map[string]string{}
+	if len(encodedBody) > 0 {
+		headers["Content-Type"] = "application/json"
+	}
+
+	req := lift.NewRequest(&adapters.Request{
+		Method:      method,
+		Path:        path,
+		Headers:     headers,
+		QueryParams: queryParams,
+		TriggerType: adapters.TriggerAPIGatewayV2,
+		Body:        encodedBody,
+	})
+	return lift.NewContext(context.Background(), req)
 }
 
 // NewTestContextWithHeaders creates a test context with headers
 // Note: Use TestApp for HTTP testing, this is for lower-level context testing
-func NewTestContextWithHeaders(method, path string, _ map[string]string) *lift.Context {
-	return NewTestContext(method, path)
+func NewTestContextWithHeaders(method, rawPath string, headers map[string]string) *lift.Context {
+	path, queryParams := parseRawPath(rawPath)
+	if headers == nil {
+		headers = map[string]string{}
+	}
+
+	req := lift.NewRequest(&adapters.Request{
+		Method:      method,
+		Path:        path,
+		Headers:     headers,
+		QueryParams: queryParams,
+		TriggerType: adapters.TriggerAPIGatewayV2,
+	})
+	return lift.NewContext(context.Background(), req)
 }
 
 // Authentication Test Helpers

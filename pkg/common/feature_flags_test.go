@@ -1,8 +1,10 @@
 package common
 
 import (
+	"context"
 	"testing"
 
+	pkgconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,19 +15,32 @@ func TestErrFeatureDisabled(t *testing.T) {
 	assert.Contains(t, err.Error(), "test-feature")
 }
 
-// Note: IsModerationMLEnabled and MustCheckModerationMLAccess depend on
-// pkg/config.Get() which returns nil in tests without proper setup.
-// Testing the nil config path.
+func TestIsModerationMLEnabled_AndAccessCheck(t *testing.T) {
+	cfg := pkgconfig.Get()
 
-func TestIsModerationMLEnabled_NilConfig(t *testing.T) {
-	// When config is nil, should return false
-	result := IsModerationMLEnabled(nil, "test-tenant")
-	assert.False(t, result)
-}
+	previousEnabled := cfg.ModerationMLEnabled
+	previousTenants := append([]string(nil), cfg.ModerationMLTenants...)
+	t.Cleanup(func() {
+		cfg.ModerationMLEnabled = previousEnabled
+		cfg.ModerationMLTenants = previousTenants
+	})
 
-func TestMustCheckModerationMLAccess_NilConfig(t *testing.T) {
-	// When config is nil, IsModerationMLEnabled returns false, so error expected
-	err := MustCheckModerationMLAccess(nil, "test-tenant")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "feature disabled")
+	// Disabled globally: always false.
+	cfg.ModerationMLEnabled = false
+	cfg.ModerationMLTenants = nil
+	assert.False(t, IsModerationMLEnabled(context.Background(), "tenant-1"))
+
+	// Enabled globally with no tenant allow-list: true for all tenants.
+	cfg.ModerationMLEnabled = true
+	cfg.ModerationMLTenants = nil
+	assert.True(t, IsModerationMLEnabled(context.Background(), "tenant-1"))
+
+	// Tenant allow-list: only allowed tenants get access.
+	cfg.ModerationMLTenants = []string{"tenant-2", "tenant-3"}
+	assert.False(t, IsModerationMLEnabled(context.Background(), "tenant-1"))
+	assert.True(t, IsModerationMLEnabled(context.Background(), "tenant-2"))
+
+	// MustCheckModerationMLAccess follows IsModerationMLEnabled.
+	assert.Error(t, MustCheckModerationMLAccess(context.Background(), "tenant-1"))
+	assert.NoError(t, MustCheckModerationMLAccess(context.Background(), "tenant-2"))
 }

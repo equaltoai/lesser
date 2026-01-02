@@ -55,6 +55,7 @@ func (m *MockStorage) GetKeyframeData(mediaID string, quality Quality) ([]byte, 
 // MockAnalytics implements a minimal core.RepositoryStorage for testing
 type MockAnalytics struct {
 	mock.Mock
+	analyticsRepo *repositories.TrendingRepository
 }
 
 // Implement all required methods returning nil (only Analytics is used in tests)
@@ -79,7 +80,7 @@ func (m *MockAnalytics) Relationship() interfaces.ConcreteRelationshipRepository
 func (m *MockAnalytics) Instance() *repositories.InstanceRepository                       { return nil }
 func (m *MockAnalytics) Federation() *repositories.FederationRepository                   { return nil }
 func (m *MockAnalytics) Recovery() *repositories.RecoveryRepository                       { return nil }
-func (m *MockAnalytics) Analytics() *repositories.TrendingRepository                      { return nil } // Not used in tests
+func (m *MockAnalytics) Analytics() *repositories.TrendingRepository                      { return m.analyticsRepo }
 func (m *MockAnalytics) Social() *repositories.SocialRepository                           { return nil }
 func (m *MockAnalytics) User() interfaces.UserRepository                                  { return nil }
 func (m *MockAnalytics) Status() interfaces.StatusRepository                           { return nil }

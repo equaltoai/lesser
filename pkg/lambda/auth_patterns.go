@@ -10,7 +10,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/federation"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/golang-jwt/jwt/v5"
 	liftPkg "github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -52,18 +52,14 @@ func (sap *StandardAuthPattern) AuthenticateRequest(ctx *liftPkg.Context, config
 	// Require token if not allowing anonymous
 	if token == "" {
 		sap.logger.Warn("missing authentication token")
-		return nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return nil, apperrors.Unauthorized("authentication required")
 	}
 
 	// Validate JWT token
 	claims, err := sap.validateJWTToken(token)
 	if err != nil {
 		sap.logger.Warn("invalid access token", zap.Error(err))
-		return nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return nil, apperrors.Unauthorized("invalid token").WithInternalError(err)
 	}
 
 	// Check required scopes
@@ -74,9 +70,7 @@ func (sap *StandardAuthPattern) AuthenticateRequest(ctx *liftPkg.Context, config
 					zap.String("username", claims.Username),
 					zap.String("required_scope", scope),
 				)
-				return nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{
-					"error": fmt.Sprintf("insufficient scope - %s access required", scope),
-				})
+				return nil, apperrors.Forbidden(fmt.Sprintf("insufficient scope - %s access required", scope))
 			}
 		}
 	}
@@ -84,9 +78,7 @@ func (sap *StandardAuthPattern) AuthenticateRequest(ctx *liftPkg.Context, config
 	// Check admin requirement
 	if config.RequireAdmin && !claims.HasScope(auth.ScopeAdmin) {
 		sap.logger.Warn("admin access required", zap.String("username", claims.Username))
-		return nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{
-			"error": "admin access required",
-		})
+		return nil, apperrors.Forbidden("admin access required")
 	}
 
 	// Store claims in context for use by handlers
@@ -121,9 +113,7 @@ func (sap *StandardAuthPattern) AuthenticateWithUsernameMatch(ctx *liftPkg.Conte
 			zap.String("token_username", claims.Username),
 			zap.String("path_username", pathUsername),
 		)
-		return nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{
-			"error": "cannot access another user's resource",
-		})
+		return nil, apperrors.Forbidden("cannot access another user's resource")
 	}
 
 	return claims, nil
@@ -238,12 +228,16 @@ func ActivityPubFederationAuthConfig() AuthConfig {
 
 // HTTPSignatureAuth provides HTTP signature-based authentication for ActivityPub federation
 type HTTPSignatureAuth struct {
-	signatureService *federation.SignatureService
-	logger           *zap.Logger
+	signatureService interface {
+		VerifySignature(ctx context.Context, req *http.Request, actorURL string) error
+	}
+	logger *zap.Logger
 }
 
 // NewHTTPSignatureAuth creates a new HTTP signature authentication pattern
-func NewHTTPSignatureAuth(signatureService *federation.SignatureService, logger *zap.Logger) *HTTPSignatureAuth {
+func NewHTTPSignatureAuth(signatureService interface {
+	VerifySignature(ctx context.Context, req *http.Request, actorURL string) error
+}, logger *zap.Logger) *HTTPSignatureAuth {
 	return &HTTPSignatureAuth{
 		signatureService: signatureService,
 		logger:           logger,

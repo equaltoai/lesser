@@ -5,21 +5,41 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
+type communityNoteRepository interface {
+	CreateCommunityNote(ctx context.Context, note *storage.CommunityNote) error
+	GetCommunityNote(ctx context.Context, noteID string) (*storage.CommunityNote, error)
+	GetVisibleCommunityNotes(ctx context.Context, objectID string) ([]*storage.CommunityNote, error)
+	CreateCommunityNoteVote(ctx context.Context, vote *storage.CommunityNoteVote) error
+	GetCommunityNoteVotes(ctx context.Context, noteID string) ([]*storage.CommunityNoteVote, error)
+	GetUserCommunityNoteVotes(ctx context.Context, userID string, noteIDs []string) (map[string]*storage.CommunityNoteVote, error)
+	GetCommunityNotesByAuthor(ctx context.Context, authorID string, limit int, cursor string) ([]*storage.CommunityNote, string, error)
+	UpdateCommunityNoteScore(ctx context.Context, noteID string, score float64, status string) error
+}
+
 // Service provides methods for managing community notes
 type Service struct {
-	storage core.RepositoryStorage
-	logger  *zap.Logger
+	repo   communityNoteRepository
+	logger *zap.Logger
 }
 
 // NewService creates a new notes service
 func NewService(storage core.RepositoryStorage, logger *zap.Logger) *Service {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	var repo communityNoteRepository
+	if storage != nil {
+		repo = storage.CommunityNote()
+	}
 	return &Service{
-		storage: storage,
-		logger:  logger,
+		repo:   repo,
+		logger: logger,
 	}
 }
 
@@ -73,7 +93,7 @@ func (s *Service) StoreNote(ctx context.Context, note *CommunityNote) error {
 	storageNote := convertToStorageNote(note)
 
 	// Create note using storage adapter
-	err := s.storage.CommunityNote().CreateCommunityNote(ctx, storageNote)
+	err := s.repo.CreateCommunityNote(ctx, storageNote)
 	if err != nil {
 		return fmt.Errorf("failed to store note: %w", err)
 	}
@@ -83,7 +103,7 @@ func (s *Service) StoreNote(ctx context.Context, note *CommunityNote) error {
 // GetNote retrieves a note by ID
 func (s *Service) GetNote(ctx context.Context, noteID string) (*CommunityNote, error) {
 	// Get note from storage
-	storageNote, err := s.storage.CommunityNote().GetCommunityNote(ctx, noteID)
+	storageNote, err := s.repo.GetCommunityNote(ctx, noteID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get note: %w", err)
 	}
@@ -94,7 +114,7 @@ func (s *Service) GetNote(ctx context.Context, noteID string) (*CommunityNote, e
 // GetVisibleNotes retrieves visible notes for an object
 func (s *Service) GetVisibleNotes(ctx context.Context, objectID string) ([]CommunityNote, error) {
 	// Get visible notes from storage
-	storageNotes, err := s.storage.CommunityNote().GetVisibleCommunityNotes(ctx, objectID)
+	storageNotes, err := s.repo.GetVisibleCommunityNotes(ctx, objectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query notes: %w", err)
 	}
@@ -112,7 +132,7 @@ func (s *Service) StoreVote(ctx context.Context, vote *Vote) error {
 	storageVote := convertToStorageVote(vote)
 
 	// Create vote using storage
-	err := s.storage.CommunityNote().CreateCommunityNoteVote(ctx, storageVote)
+	err := s.repo.CreateCommunityNoteVote(ctx, storageVote)
 	if err != nil {
 		return fmt.Errorf("failed to store vote: %w", err)
 	}
@@ -122,7 +142,7 @@ func (s *Service) StoreVote(ctx context.Context, vote *Vote) error {
 // GetVotesForNote retrieves all votes for a note
 func (s *Service) GetVotesForNote(ctx context.Context, noteID string) ([]Vote, error) {
 	// Get votes from storage
-	storageVotes, err := s.storage.CommunityNote().GetCommunityNoteVotes(ctx, noteID)
+	storageVotes, err := s.repo.GetCommunityNoteVotes(ctx, noteID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query votes: %w", err)
 	}
@@ -137,7 +157,7 @@ func (s *Service) GetVotesForNote(ctx context.Context, noteID string) ([]Vote, e
 // GetUserVotes retrieves a user's votes on specific notes
 func (s *Service) GetUserVotes(ctx context.Context, userID string, noteIDs []string) (map[string]Vote, error) {
 	// Get all user votes for these notes at once
-	storageVotes, err := s.storage.CommunityNote().GetUserCommunityNoteVotes(ctx, userID, noteIDs)
+	storageVotes, err := s.repo.GetUserCommunityNoteVotes(ctx, userID, noteIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user votes: %w", err)
 	}
@@ -155,7 +175,7 @@ func (s *Service) GetUserVotes(ctx context.Context, userID string, noteIDs []str
 // GetNotesByAuthor retrieves notes created by a specific author
 func (s *Service) GetNotesByAuthor(ctx context.Context, authorID string, limit int32) ([]CommunityNote, error) {
 	// Get notes by author from storage
-	storageNotes, _, err := s.storage.CommunityNote().GetCommunityNotesByAuthor(ctx, authorID, int(limit), "")
+	storageNotes, _, err := s.repo.GetCommunityNotesByAuthor(ctx, authorID, int(limit), "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query author notes: %w", err)
 	}
@@ -170,7 +190,7 @@ func (s *Service) GetNotesByAuthor(ctx context.Context, authorID string, limit i
 // UpdateNoteScore updates a note's score and visibility status
 func (s *Service) UpdateNoteScore(ctx context.Context, noteID string, score float64, status VisibilityStatus) error {
 	// Update note score and status using storage
-	err := s.storage.CommunityNote().UpdateCommunityNoteScore(ctx, noteID, score, string(status))
+	err := s.repo.UpdateCommunityNoteScore(ctx, noteID, score, string(status))
 	if err != nil {
 		return fmt.Errorf("failed to update note score: %w", err)
 	}

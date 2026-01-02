@@ -1,6 +1,9 @@
 package common // nolint:revive // "common" package name is acceptable for shared utilities
 
 import (
+	"context"
+	stdErrors "errors"
+	"net"
 	"runtime"
 	"time"
 
@@ -249,10 +252,27 @@ func TimeoutErrorMiddleware(serviceName string, logger *zap.Logger) lift.Middlew
 }
 
 // isTimeoutError checks if an error is a timeout error
-func isTimeoutError(_ error) bool {
-	// This would check for specific timeout error types
-	// Implementation depends on your timeout mechanism
-	return false
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Standard library context timeouts.
+	if stdErrors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	// Network timeouts (e.g., net/http).
+	var netErr net.Error
+	if stdErrors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+
+	// Centralized error codes.
+	return errors.HasCode(err, errors.CodeTimeout) ||
+		errors.HasCode(err, errors.CodeLambdaTimeout) ||
+		errors.HasCode(err, errors.CodeStreamingTimeout) ||
+		errors.HasCode(err, errors.CodeExternalServiceTimeout)
 }
 
 // ErrorRecoveryMiddleware provides graceful degradation for critical errors
@@ -263,9 +283,11 @@ func ErrorRecoveryMiddleware(serviceName string, logger *zap.Logger) lift.Middle
 
 			if err != nil {
 				// Attempt graceful recovery for specific error types
-				if recoveredErr := attemptErrorRecovery(ctx, err, serviceName, logger); recoveredErr != nil {
-					return recoveredErr
+				recoveredErr := attemptErrorRecovery(ctx, err, serviceName, logger)
+				if recoveredErr == nil {
+					return nil
 				}
+				return recoveredErr
 			}
 
 			return err
@@ -295,14 +317,41 @@ func attemptErrorRecovery(ctx *lift.Context, err error, serviceName string, logg
 }
 
 // isTemporaryError checks if an error is temporary
-func isTemporaryError(_ error) bool {
-	// Implementation would check for specific temporary error patterns
+func isTemporaryError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Common temporary pattern used by net.Error and similar interfaces.
+	type temporary interface {
+		Temporary() bool
+	}
+	var te temporary
+	if stdErrors.As(err, &te) {
+		return te.Temporary()
+	}
 	return false
 }
 
 // isRetryableError checks if an error is retryable
-func isRetryableError(_ error) bool {
-	// Implementation would check for specific retryable error patterns
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Centralized retryable flag for AppError.
+	if errors.IsRetryable(err) {
+		return true
+	}
+
+	// Generic retryable interface.
+	type retryable interface {
+		Retryable() bool
+	}
+	var re retryable
+	if stdErrors.As(err, &re) {
+		return re.Retryable()
+	}
 	return false
 }
 

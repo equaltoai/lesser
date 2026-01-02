@@ -11,6 +11,14 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/session"
 )
 
+var newDynamormClient = func(cfg session.Config) (core.DB, error) {
+	db, err := dynamorm.New(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
 // BaseModel provides common fields for all DynamORM models
 type BaseModel struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -84,7 +92,7 @@ func NewLambdaOptimizedClient(_ context.Context, region string) (core.DB, error)
 	}
 
 	// Use the standard client creation method with the latest DynamORM version
-	client, err := dynamorm.New(config)
+	client, err := newDynamormClient(config)
 	if err != nil {
 		return nil, err
 	}

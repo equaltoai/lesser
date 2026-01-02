@@ -17,6 +17,15 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	initializeLambdaFunc      = common.InitializeLambda
+	initializeWithOptionsFunc = func(lambdaCtx *common.LambdaContext, options common.LambdaInitOptions) error {
+		return lambdaCtx.InitializeWithOptions(options)
+	}
+	lambdaStartFunc = lambda.Start
+	logFatalfFunc   = log.Fatalf
+)
+
 // MainConfig defines configuration for standardized Lambda main function
 type MainConfig struct {
 	ServiceName     string
@@ -56,21 +65,21 @@ func StandardizedMain(config MainConfig) {
 		RequestTimeout: config.Timeout,
 	}
 
-	lambdaCtx, err := common.InitializeLambda(lambdaConfig)
+	lambdaCtx, err := initializeLambdaFunc(lambdaConfig)
 	if err != nil {
-		log.Fatalf("failed to initialize Lambda %s: %v", config.ServiceName, err)
+		logFatalfFunc("failed to initialize Lambda %s: %v", config.ServiceName, err)
 	}
 
 	// Initialize with default options for the Lambda type
 	options := common.DefaultLambdaInitOptions(config.LambdaType)
-	if err := lambdaCtx.InitializeWithOptions(options); err != nil {
-		log.Fatalf("failed to initialize %s Lambda services: %v", config.ServiceName, err)
+	if err := initializeWithOptionsFunc(lambdaCtx, options); err != nil {
+		logFatalfFunc("failed to initialize %s Lambda services: %v", config.ServiceName, err)
 	}
 
 	// Initialize custom services if provided
 	if config.InitCustomServices != nil {
 		if err := config.InitCustomServices(lambdaCtx); err != nil {
-			log.Fatalf("failed to initialize custom services for %s: %v", config.ServiceName, err)
+			logFatalfFunc("failed to initialize custom services for %s: %v", config.ServiceName, err)
 		}
 	}
 
@@ -91,7 +100,7 @@ func StandardizedMain(config MainConfig) {
 	// Configure routes
 	if config.ConfigureRoutes != nil {
 		if err := config.ConfigureRoutes(app, lambdaCtx); err != nil {
-			log.Fatalf("failed to configure routes for %s: %v", config.ServiceName, err)
+			logFatalfFunc("failed to configure routes for %s: %v", config.ServiceName, err)
 		}
 	}
 
@@ -99,7 +108,7 @@ func StandardizedMain(config MainConfig) {
 	lambdaHandler := createStandardizedLambdaHandler(app, lambdaCtx, config.ServiceName)
 
 	// Start Lambda
-	lambda.Start(lambdaHandler)
+	lambdaStartFunc(lambdaHandler)
 }
 
 // createStandardizedLiftApp creates a Lift app with standard configuration

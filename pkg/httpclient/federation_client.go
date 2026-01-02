@@ -13,6 +13,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var lookupIP = net.LookupIP
+
 // FederationClient provides a secure HTTP client for ActivityPub federation
 type FederationClient struct {
 	client *http.Client
@@ -111,7 +113,7 @@ func secureDialContext(ctx context.Context, dialer *net.Dialer, network, address
 	}
 
 	// Resolve hostname to IPs
-	ips, err := net.LookupIP(host)
+	ips, err := lookupIP(host)
 	if err != nil {
 		return nil, fmt.Errorf("DNS resolution failed: %w", err)
 	}

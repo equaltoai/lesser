@@ -10,6 +10,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var limitedRateLimitFunc = liftMiddleware.LimitedRateLimit
+
 // ApplyRateLimit wraps a handler with Limited-based rate limiting
 // Returns the handler unchanged if rate limiter creation fails (fail-open)
 func ApplyRateLimit(handler lift.Handler, limit int, window time.Duration, logger *zap.Logger) lift.Handler {
@@ -31,7 +33,7 @@ func ApplyRateLimit(handler lift.Handler, limit int, window time.Duration, logge
 	}
 
 	// Create rate limiter using Limited library
-	limiter, err := liftMiddleware.LimitedRateLimit(liftMiddleware.LimitedConfig{
+	limiter, err := limitedRateLimitFunc(liftMiddleware.LimitedConfig{
 		Region:    region,
 		TableName: tableName,
 		Window:    window,

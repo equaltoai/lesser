@@ -266,17 +266,19 @@ func (bt *BandwidthTracker) updateCache(userID string, bytesTransferred int64, n
 		}
 	}
 
+	previousMeasurement := stats.LastMeasurement
+
 	// Update stats
 	stats.TotalBytes += bytesTransferred
 	stats.SessionBytes += bytesTransferred
 	stats.LastMeasurement = now
 	stats.lastUpdate = now
 
-	// Calculate bandwidth in bits per second
-	if !stats.LastMeasurement.IsZero() {
-		duration := now.Sub(stats.LastMeasurement)
+	// Calculate bandwidth in Kbps
+	if !previousMeasurement.IsZero() {
+		duration := now.Sub(previousMeasurement)
 		if duration > 0 {
-			bandwidth := int(float64(bytesTransferred*8) / duration.Seconds()) // Convert to bits per second
+			bandwidth := int(float64(bytesTransferred*8)/duration.Seconds()/1000) // Convert to Kbps
 
 			// Update average (simple moving average)
 			if stats.AverageBandwidth == 0 {

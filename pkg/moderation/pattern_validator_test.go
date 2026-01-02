@@ -2,6 +2,7 @@ package moderation
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -455,6 +456,24 @@ func TestPatternValidator_TestInjectionSafety(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPatternValidator_generateRecommendations_CoversAllSignals(t *testing.T) {
+	validator := NewPatternValidator(zap.NewNop())
+
+	pattern := &models.EnhancedModerationPattern{
+		PatternID:      "rec-1",
+		PatternType:    URLPatternRegexStr,
+		PatternContent: strings.Repeat("x", 501),
+	}
+	result := &ValidationResult{
+		SecurityScore:    0.6,
+		PerformanceScore: 0.6,
+		CompilationTime:  100,
+	}
+
+	validator.generateRecommendations(pattern, result)
+	assert.Len(t, result.Recommendations, 5)
 }
 
 func TestPatternValidator_CreateTestResult(t *testing.T) {

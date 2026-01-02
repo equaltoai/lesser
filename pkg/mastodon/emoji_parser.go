@@ -16,15 +16,23 @@ import (
 // Format: :shortcode: where shortcode contains alphanumeric characters and underscores
 var EmojiRegex = regexp.MustCompile(`:([a-zA-Z0-9_]+):`)
 
+type emojiRepository interface {
+	GetCustomEmoji(ctx context.Context, shortcode string) (*storage.CustomEmoji, error)
+}
+
 // EmojiParser handles parsing and replacing emoji shortcodes in content
 type EmojiParser struct {
-	store core.RepositoryStorage
+	repo emojiRepository
 }
 
 // NewEmojiParser creates a new emoji parser
 func NewEmojiParser(store core.RepositoryStorage) *EmojiParser {
+	var repo emojiRepository
+	if store != nil {
+		repo = store.Emoji()
+	}
 	return &EmojiParser{
-		store: store,
+		repo: repo,
 	}
 }
 
@@ -54,7 +62,7 @@ func (p *EmojiParser) ParseEmojis(ctx context.Context, content string) ([]Parsed
 			}
 
 			// Look up emoji in storage
-			emoji, err := p.store.Emoji().GetCustomEmoji(ctx, shortcode)
+			emoji, err := p.repo.GetCustomEmoji(ctx, shortcode)
 			if err != nil {
 				// If emoji not found, skip it (leave as plain text)
 				if errors.Is(err, storage.ErrNotFound) {

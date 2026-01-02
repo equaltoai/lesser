@@ -21,8 +21,8 @@ import (
 
 // Service provides translation functionality using AWS Translate
 type Service struct {
-	client       *translate.Client
-	dynamoClient *dynamodb.Client
+	client       translateAPI
+	dynamoClient dynamodbAPI
 	tableName    string
 	store        core.RepositoryStorage
 	logger       *zap.Logger
@@ -30,8 +30,22 @@ type Service struct {
 	cacheTTL     time.Duration
 }
 
+type translateAPI interface {
+	TranslateText(ctx context.Context, params *translate.TranslateTextInput, optFns ...func(*translate.Options)) (*translate.TranslateTextOutput, error)
+	ListLanguages(ctx context.Context, params *translate.ListLanguagesInput, optFns ...func(*translate.Options)) (*translate.ListLanguagesOutput, error)
+}
+
+type dynamodbAPI interface {
+	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
+	PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
+}
+
 // NewService creates a new translation service
 func NewService(ctx context.Context, cfg *lesserconfig.Config, store core.RepositoryStorage, logger *zap.Logger, cacheEnabled bool) (*Service, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	awsCfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
@@ -236,7 +250,12 @@ func (s *Service) getCachedTranslation(ctx context.Context, cacheKey string) (*T
 		}
 	}
 	if cachedAt, ok := result.Item["CachedAt"]; ok {
-		if timeVal, ok := cachedAt.(*types.AttributeValueMemberN); ok {
+		switch timeVal := cachedAt.(type) {
+		case *types.AttributeValueMemberS:
+			if timestamp, err := time.Parse(time.RFC3339, timeVal.Value); err == nil {
+				cache.CachedAt = timestamp
+			}
+		case *types.AttributeValueMemberN:
 			if timestamp, err := time.Parse(time.RFC3339, timeVal.Value); err == nil {
 				cache.CachedAt = timestamp
 			}

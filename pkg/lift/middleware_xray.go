@@ -85,7 +85,7 @@ func (xm *XRayMiddleware) addStandardAnnotations(seg *xray.Segment, ctx *lift.Co
 		"service":    xm.serviceName,
 		"method":     ctx.Request.Method,
 		"path":       ctx.Request.Path,
-		"tenant_id":  ctx.TenantID,
+		"tenant_id":  ctx.TenantID(),
 		"request_id": ctx.RequestID,
 	}
 

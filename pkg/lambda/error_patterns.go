@@ -414,8 +414,9 @@ func (ep *ErrorPattern) HandleActivityPubError(ctx *liftPkg.Context, appErr *err
 			Summary: summary,
 		}
 
+		err := ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
 		ctx.Response.Header("Content-Type", "application/activity+json")
-		return ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
+		return err
 	}
 
 	// Return standard JSON error for non-ActivityPub clients

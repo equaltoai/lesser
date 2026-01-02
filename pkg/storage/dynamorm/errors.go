@@ -56,6 +56,13 @@ func MapError(err error) error {
 	// Check for common error messages (case-insensitive)
 	errMsg := strings.ToLower(err.Error())
 
+	// Resource not found errors (table/index missing) should map to service unavailable,
+	// not a 404 for an item.
+	if strings.Contains(errMsg, "resource not found") || strings.Contains(errMsg, "table not found") {
+		return errors.DatabaseUnavailable(stdErrors.Join(err, ErrResourceNotFound)).
+			AsRetryable()
+	}
+
 	// Not found errors
 	if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "item not found") ||
 		strings.Contains(errMsg, "record not found") {
@@ -94,12 +101,6 @@ func MapError(err error) error {
 		strings.Contains(errMsg, "capacity exceed") {
 		return errors.DynamoDBProvisionedThroughputExceeded().
 			WithInternalError(stdErrors.Join(err, ErrThrottling))
-	}
-
-	// Resource not found errors
-	if strings.Contains(errMsg, "resource not found") || strings.Contains(errMsg, "table not found") {
-		return errors.DatabaseUnavailable(stdErrors.Join(err, ErrResourceNotFound)).
-			AsRetryable()
 	}
 
 	// Batch operation errors

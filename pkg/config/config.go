@@ -11,9 +11,17 @@ import (
 	"sync"
 	"time"
 
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 )
+
+type secretsManagerValueGetter interface {
+	GetSecretValue(ctx context.Context, params *secretsmanager.GetSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
+}
+
+var newSecretsManagerValueGetter = func(cfg aws.Config) secretsManagerValueGetter {
+	return secretsmanager.NewFromConfig(cfg)
+}
 
 // InstanceMode controls which product surface is enabled for an instance.
 type InstanceMode string
@@ -228,6 +236,19 @@ func Get() *Config {
 		config = loadConfig()
 	}
 	return config
+}
+
+// ResetForTests clears cached configuration so tests can vary environment variables
+// safely within a single package test run.
+//
+// This should only be used in tests.
+func ResetForTests() {
+	config = nil
+	jwtSecretLoader = struct {
+		once  sync.Once
+		value string
+		err   error
+	}{}
 }
 
 // loadConfig loads configuration from environment variables
@@ -545,12 +566,12 @@ func mustGetJWTSecret() string {
 
 func fetchSecretValue(arn string) (string, error) {
 	ctx := context.Background()
-	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	cfg, err := loadDefaultAWSConfig(ctx)
 	if err != nil {
 		return "", fmt.Errorf("load AWS config: %w", err)
 	}
 
-	sm := secretsmanager.NewFromConfig(cfg)
+	sm := newSecretsManagerValueGetter(cfg)
 	output, err := sm.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: &arn})
 	if err != nil {
 		return "", fmt.Errorf("get secret value: %w", err)
