@@ -17,9 +17,9 @@ import (
 // HealthMonitor monitors infrastructure health
 type HealthMonitor struct {
 	monitor      *PerformanceMonitor
-	dynamoClient *dynamodb.Client
-	lambdaClient *lambda.Client
-	sqsClient    *sqs.Client
+	dynamoClient dynamoDBAPI
+	lambdaClient lambdaAPI
+	sqsClient    sqsAPI
 	mu           sync.RWMutex
 	healthStatus map[string]*ComponentHealth
 }

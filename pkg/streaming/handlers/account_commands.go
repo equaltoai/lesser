@@ -13,7 +13,12 @@ import (
 // AccountCommandHandler handles WebSocket commands related to accounts/users
 type AccountCommandHandler struct {
 	*streaming.BaseCommandHandler
-	accountsService *accounts.Service
+	accountsService accountsUpdater
+}
+
+type accountsUpdater interface {
+	UpdateProfile(ctx context.Context, cmd *accounts.UpdateProfileCommand) (*accounts.AccountResult, error)
+	UpdatePreferences(ctx context.Context, cmd *accounts.UpdatePreferencesCommand) (*accounts.PreferencesResult, error)
 }
 
 // NewAccountCommandHandler creates a new account command handler
@@ -108,6 +113,7 @@ func (ach *AccountCommandHandler) handleUpdatePreferences(ctx context.Context, c
 		Language:                 defaultLanguage,
 		DefaultPostingVisibility: defaultPrivacy,
 		DefaultMediaSensitive:    defaultSensitive,
+		UpdaterID:                conn.UserID,
 	}
 
 	result, err := ach.accountsService.UpdatePreferences(ctx, updateCmd)

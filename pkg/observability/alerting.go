@@ -21,7 +21,7 @@ import (
 // AlertingSystem provides comprehensive alerting with webhook delivery and SNS integration
 type AlertingSystem struct {
 	logger          *zap.Logger
-	snsClient       *sns.Client
+	snsClient       snsPublishAPI
 	snsTopicArn     string
 	webhookDelivery *WebhookDeliveryService
 	alertRepo       *StandaloneAlertRepository
@@ -40,7 +40,7 @@ type AlertingConfig struct {
 	DB             core.DB
 	TableName      string
 	CostService    *cost.TrackingService
-	SNSClient      *sns.Client
+	SNSClient      snsPublishAPI
 	SNSTopicArn    string
 	WebhookURL     string
 	WebhookHeaders map[string]string
@@ -48,6 +48,10 @@ type AlertingConfig struct {
 	Region         string
 	ServiceName    string
 	Enabled        bool
+}
+
+type snsPublishAPI interface {
+	Publish(ctx context.Context, params *sns.PublishInput, optFns ...func(*sns.Options)) (*sns.PublishOutput, error)
 }
 
 // NewAlertingSystem creates a new comprehensive alerting system
@@ -79,12 +83,17 @@ func NewAlertingSystem(config *AlertingConfig) (*AlertingSystem, error) {
 		config.ServiceName = "lesser"
 	}
 
+	var costTracker dynamoCostTracker
+	if config.CostService != nil {
+		costTracker = config.CostService
+	}
+
 	// Create alert repository
 	alertRepo := NewStandaloneAlertRepository(
 		config.DB,
 		config.TableName,
 		config.Logger,
-		config.CostService,
+		costTracker,
 	)
 
 	// Store SNS configuration directly

@@ -117,6 +117,62 @@ func (m *mockConversationRepository) DeleteConversationMute(ctx context.Context,
 	return args.Error(0)
 }
 
+func (m *mockConversationRepository) GetUnreadConversationCount(ctx context.Context, username string) (int, error) {
+	args := m.Called(ctx, username)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *mockConversationRepository) AddStatusToConversation(ctx context.Context, conversationID, statusID, senderUsername string) error {
+	args := m.Called(ctx, conversationID, statusID, senderUsername)
+	return args.Error(0)
+}
+
+func (m *mockConversationRepository) GetConversationStatuses(ctx context.Context, conversationID string, limit int, cursor string) ([]*storage.ConversationStatus, string, error) {
+	args := m.Called(ctx, conversationID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.ConversationStatus), args.String(1), args.Error(2)
+}
+
+func (m *mockConversationRepository) RemoveStatusFromConversation(ctx context.Context, conversationID, statusID string) error {
+	args := m.Called(ctx, conversationID, statusID)
+	return args.Error(0)
+}
+
+func (m *mockConversationRepository) MarkStatusRead(ctx context.Context, conversationID, statusID, username string) error {
+	args := m.Called(ctx, conversationID, statusID, username)
+	return args.Error(0)
+}
+
+func (m *mockConversationRepository) GetUnreadStatusCount(ctx context.Context, conversationID, username string) (int, error) {
+	args := m.Called(ctx, conversationID, username)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *mockConversationRepository) UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error {
+	args := m.Called(ctx, id, lastStatusID)
+	return args.Error(0)
+}
+
+func (m *mockConversationRepository) LeaveConversation(ctx context.Context, conversationID, username string) error {
+	args := m.Called(ctx, conversationID, username)
+	return args.Error(0)
+}
+
+func (m *mockConversationRepository) IsConversationMuted(ctx context.Context, username, conversationID string) (bool, error) {
+	args := m.Called(ctx, username, conversationID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *mockConversationRepository) GetMutedConversations(ctx context.Context, username string) ([]string, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
 type mockNoteRepository struct {
 	mock.Mock
 }

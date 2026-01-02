@@ -24,8 +24,18 @@ type RefreshToken = models.AuthRefreshToken
 
 // RefreshTokenStore manages refresh tokens using DynamORM
 type RefreshTokenStore struct {
-	repo   *repositories.AuthRefreshTokenRepository
+	repo   authRefreshTokenRepository
 	logger *zap.Logger
+}
+
+type authRefreshTokenRepository interface {
+	CreateRefreshToken(ctx context.Context, userID string, deviceName string, ipAddress string) (*RefreshToken, error)
+	GetRefreshToken(ctx context.Context, token string) (*RefreshToken, error)
+	RotateRefreshToken(ctx context.Context, oldToken string, ipAddress string) (*RefreshToken, error)
+	RevokeTokenFamily(ctx context.Context, family string, reason string) error
+	RevokeUserTokens(ctx context.Context, userID string, reason string) error
+	GetTokensByUser(ctx context.Context, userID string) ([]RefreshToken, error)
+	GetTokensByFamily(ctx context.Context, family string) ([]RefreshToken, error)
 }
 
 // NewRefreshTokenStore creates a new refresh token store

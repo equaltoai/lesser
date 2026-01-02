@@ -221,7 +221,7 @@ func (sv *SessionValidator) validateBasicSession(ctx context.Context, request *S
 
 	// Get session by ID or refresh token
 	if request.SessionID != "" {
-		session, err = sv.sessionManager.repos.Account().GetSession(ctx, request.SessionID)
+		session, err = sv.sessionManager.repo.GetSession(ctx, request.SessionID)
 		if err != nil {
 			response.FailedChecks = append(response.FailedChecks, "session_not_found")
 			return nil, nil

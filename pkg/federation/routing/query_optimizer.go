@@ -23,7 +23,7 @@ const (
 
 // QueryOptimizer optimizes DynamoDB query patterns for federation routing
 type QueryOptimizer struct {
-	cacheRepo *repositories.QueryCacheRepository
+	cacheRepo queryCacheRepository
 	logger    *zap.Logger
 
 	// Query result cache (in-memory for batching)
@@ -31,6 +31,16 @@ type QueryOptimizer struct {
 
 	// Batch query coordinator for optimizing federation requests
 	batchCoordinator *BatchQueryCoordinator
+}
+
+type queryCacheRepository interface {
+	GetInstance(ctx context.Context, instanceID string) (*fedTypes.Instance, error)
+	SetInstance(ctx context.Context, instance *fedTypes.Instance, ttl time.Duration) error
+	GetInstancesByStatus(ctx context.Context, status fedTypes.InstanceStatus) ([]*fedTypes.Instance, error)
+	BatchGetInstances(ctx context.Context, instanceIDs []string) ([]*fedTypes.Instance, error)
+	GetMetricsInRange(ctx context.Context, routeID string, start, end time.Time, limit int) ([]*fedTypes.DeliveryResult, error)
+	PrewarmActiveInstances(ctx context.Context) error
+	InvalidateCachePattern(ctx context.Context, pattern string) error
 }
 
 // queryCache implements an LRU cache for query results
@@ -65,7 +75,7 @@ type lruList struct {
 type BatchQueryCoordinator struct {
 	mu        sync.RWMutex
 	logger    *zap.Logger
-	cacheRepo *repositories.QueryCacheRepository
+	cacheRepo queryCacheRepository
 
 	// Query queues by type
 	instanceQueries map[string]*batchQuery
@@ -114,6 +124,14 @@ type QueryRequest struct {
 
 // NewQueryOptimizer creates a new query optimizer
 func NewQueryOptimizer(cacheRepo *repositories.QueryCacheRepository, logger *zap.Logger) *QueryOptimizer {
+	var repo queryCacheRepository
+	if cacheRepo != nil {
+		repo = cacheRepo
+	}
+	return newQueryOptimizer(repo, logger)
+}
+
+func newQueryOptimizer(cacheRepo queryCacheRepository, logger *zap.Logger) *QueryOptimizer {
 	qo := &QueryOptimizer{
 		cacheRepo: cacheRepo,
 		logger:    logger,
@@ -123,7 +141,7 @@ func NewQueryOptimizer(cacheRepo *repositories.QueryCacheRepository, logger *zap
 			maxSize: 10000, // Cache up to 10k entries
 			ttl:     5 * time.Minute,
 		},
-		batchCoordinator: NewBatchQueryCoordinator(cacheRepo, logger),
+		batchCoordinator: newBatchQueryCoordinator(cacheRepo, logger),
 	}
 
 	// Start the batch coordinator
@@ -521,6 +539,14 @@ func matchPattern(str, pattern string) (bool, error) {
 
 // NewBatchQueryCoordinator creates a new batch query coordinator
 func NewBatchQueryCoordinator(cacheRepo *repositories.QueryCacheRepository, logger *zap.Logger) *BatchQueryCoordinator {
+	var repo queryCacheRepository
+	if cacheRepo != nil {
+		repo = cacheRepo
+	}
+	return newBatchQueryCoordinator(repo, logger)
+}
+
+func newBatchQueryCoordinator(cacheRepo queryCacheRepository, logger *zap.Logger) *BatchQueryCoordinator {
 	return &BatchQueryCoordinator{
 		logger:          logger,
 		cacheRepo:       cacheRepo,
@@ -579,7 +605,6 @@ func (bc *BatchQueryCoordinator) AddMetricsQuery(ctx context.Context, routeID st
 // addQuery is the core method for adding queries to batches
 func (bc *BatchQueryCoordinator) addQuery(_ context.Context, queryType, key string, priority int) (interface{}, error) {
 	bc.mu.Lock()
-	defer bc.mu.Unlock()
 
 	// Check for existing batch or create new one
 	batchKey := bc.getBatchKey(queryType, key)
@@ -591,9 +616,10 @@ func (bc *BatchQueryCoordinator) addQuery(_ context.Context, queryType, key stri
 			bc.logger.Debug("query deduplicated",
 				zap.String("type", queryType),
 				zap.String("key", key))
-			return bc.waitForBatchResult(existingBatch, key)
+		} else {
+			existingBatch.addKey(key)
 		}
-		existingBatch.addKey(key)
+		bc.mu.Unlock()
 		return bc.waitForBatchResult(existingBatch, key)
 	}
 
@@ -618,6 +644,9 @@ func (bc *BatchQueryCoordinator) addQuery(_ context.Context, queryType, key stri
 		bc.statusQueries[batchKey] = batch
 	case QueryTypeMetrics:
 		bc.metricsQueries[batchKey] = batch
+	default:
+		bc.mu.Unlock()
+		return nil, ErrUnknownQueryType
 	}
 
 	bc.logger.Debug("new batch query created",
@@ -625,6 +654,7 @@ func (bc *BatchQueryCoordinator) addQuery(_ context.Context, queryType, key stri
 		zap.String("key", key),
 		zap.Int("priority", priority))
 
+	bc.mu.Unlock()
 	return bc.waitForBatchResult(batch, key)
 }
 

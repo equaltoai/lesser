@@ -30,13 +30,21 @@ type SecretsManager interface {
 
 // AWSSecretsManager implements SecretsManager using AWS Secrets Manager
 type AWSSecretsManager struct {
-	client      *secretsmanager.Client
+	client      secretsManagerClient
 	logger      *zap.Logger
 	keyPrefix   string
 	region      string
 	cache       *secretCache
 	cacheTTL    time.Duration
 	description string
+}
+
+type secretsManagerClient interface {
+	CreateSecret(ctx context.Context, params *secretsmanager.CreateSecretInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.CreateSecretOutput, error)
+	UpdateSecret(ctx context.Context, params *secretsmanager.UpdateSecretInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.UpdateSecretOutput, error)
+	GetSecretValue(ctx context.Context, params *secretsmanager.GetSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
+	DeleteSecret(ctx context.Context, params *secretsmanager.DeleteSecretInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.DeleteSecretOutput, error)
+	ListSecrets(ctx context.Context, params *secretsmanager.ListSecretsInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.ListSecretsOutput, error)
 }
 
 // SecretValue represents the structure stored in AWS Secrets Manager
@@ -66,8 +74,17 @@ type SecretsManagerConfig struct {
 	Description string
 }
 
+type awsConfigLoader func(context.Context, ...func(*config.LoadOptions) error) (aws.Config, error)
+type secretsManagerClientFactory func(aws.Config) secretsManagerClient
+
 // NewAWSSecretsManager creates a new AWS Secrets Manager client
 func NewAWSSecretsManager(cfg SecretsManagerConfig, logger *zap.Logger) (*AWSSecretsManager, error) {
+	return newAWSSecretsManager(cfg, logger, config.LoadDefaultConfig, func(awsCfg aws.Config) secretsManagerClient {
+		return secretsmanager.NewFromConfig(awsCfg)
+	})
+}
+
+func newAWSSecretsManager(cfg SecretsManagerConfig, logger *zap.Logger, loadConfig awsConfigLoader, newClient secretsManagerClientFactory) (*AWSSecretsManager, error) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -90,7 +107,7 @@ func NewAWSSecretsManager(cfg SecretsManagerConfig, logger *zap.Logger) (*AWSSec
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	awsCfg, err := config.LoadDefaultConfig(ctx,
+	awsCfg, err := loadConfig(ctx,
 		config.WithRegion(cfg.Region),
 	)
 	if err != nil {
@@ -98,7 +115,7 @@ func NewAWSSecretsManager(cfg SecretsManagerConfig, logger *zap.Logger) (*AWSSec
 	}
 
 	// Create Secrets Manager client
-	client := secretsmanager.NewFromConfig(awsCfg)
+	client := newClient(awsCfg)
 
 	// Test connectivity by listing a single secret (don't fail if none exist)
 	_, err = client.ListSecrets(ctx, &secretsmanager.ListSecretsInput{

@@ -19,15 +19,33 @@ import (
 
 // RemoteSearchService handles remote actor discovery via WebFinger and ActivityPub
 type RemoteSearchService struct {
-	store      core.RepositoryStorage
-	httpClient *httpclient.SecureClient
+	actorRepo  remoteSearchActorRepository
+	userRepo   remoteSearchUserRepository
+	httpClient httpDoer
 	logger     *zap.Logger
+}
+
+type remoteSearchActorRepository interface {
+	GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error)
+	GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error)
+}
+
+type remoteSearchUserRepository interface {
+	CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error
 }
 
 // NewRemoteSearchService creates a new remote search service
 func NewRemoteSearchService(store core.RepositoryStorage) *RemoteSearchService {
+	var actorRepo remoteSearchActorRepository
+	var userRepo remoteSearchUserRepository
+	if store != nil {
+		actorRepo = store.Actor()
+		userRepo = store.User()
+	}
+
 	return &RemoteSearchService{
-		store:      store,
+		actorRepo:  actorRepo,
+		userRepo:   userRepo,
 		httpClient: httpclient.NewSecureClient(httpclient.WithTimeout(30 * time.Second)),
 		logger:     common.Logger(),
 	}
@@ -61,7 +79,7 @@ func (s *RemoteSearchService) ResolveActorURL(ctx context.Context, actorURL stri
 	// Attempt cache hit using a username inferred from the actor URL path.
 	if username := usernameFromActorPath(parsed.Path); username != "" {
 		cacheKey := fmt.Sprintf("%s@%s", username, domain)
-		cachedActor, err := s.store.Actor().GetCachedRemoteActor(ctx, cacheKey)
+		cachedActor, err := s.actorRepo.GetCachedRemoteActor(ctx, cacheKey)
 		if err == nil && cachedActor != nil {
 			return &SearchResult{
 				Actor:        cachedActor,
@@ -83,7 +101,7 @@ func (s *RemoteSearchService) ResolveActorURL(ctx context.Context, actorURL stri
 	}
 	if cacheUser != "" {
 		cacheKey := fmt.Sprintf("%s@%s", cacheUser, domain)
-		if err := s.store.User().CacheRemoteActor(ctx, cacheKey, actor, 24*time.Hour); err != nil {
+		if err := s.userRepo.CacheRemoteActor(ctx, cacheKey, actor, 24*time.Hour); err != nil {
 			s.logger.Warn("failed to cache remote actor resolved by URL",
 				zap.String("handle", cacheKey),
 				zap.String("actor_url", actorURL),
@@ -113,7 +131,7 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 	// Check if it's a local actor (no domain or our domain)
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		// Local actor lookup
-		actor, err := s.store.Actor().GetActorByUsername(ctx, username)
+		actor, err := s.actorRepo.GetActorByUsername(ctx, username)
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +143,7 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 
 	// For remote actors, check cache first
 	cacheKey := fmt.Sprintf("%s@%s", username, domain)
-	cachedActor, err := s.store.Actor().GetCachedRemoteActor(ctx, cacheKey)
+	cachedActor, err := s.actorRepo.GetCachedRemoteActor(ctx, cacheKey)
 	if err == nil && cachedActor != nil {
 		s.logger.Debug("found actor in cache",
 			zap.String("handle", cacheKey))
@@ -156,7 +174,7 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 	}
 
 	// Cache the remote actor with 24 hour TTL
-	if err := s.store.User().CacheRemoteActor(ctx, cacheKey, actor, 24*time.Hour); err != nil {
+	if err := s.userRepo.CacheRemoteActor(ctx, cacheKey, actor, 24*time.Hour); err != nil {
 		s.logger.Error("failed to cache remote actor",
 			zap.String("handle", cacheKey),
 			zap.Error(err))
@@ -380,7 +398,7 @@ func isValidHandle(query string) bool {
 // searchKnownInstances performs fuzzy search on known remote instances
 func (s *RemoteSearchService) searchKnownInstances(ctx context.Context, query string, limit int) ([]*SearchResult, error) {
 	// Get list of known instances from storage
-	if s.store == nil {
+	if s.httpClient == nil {
 		return nil, nil // No storage available
 	}
 

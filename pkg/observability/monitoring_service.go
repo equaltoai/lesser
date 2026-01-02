@@ -16,6 +16,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
+var monitoringTimeNow = time.Now
+var monitoringAPIServiceConfig = awsinit.APIServiceConfig
+var monitoringInitializeServices = awsinit.InitializeServices
+
 // MonitoringService provides centralized monitoring and alerting configuration
 type MonitoringService struct {
 	logger         *zap.Logger
@@ -188,9 +192,9 @@ func NewMonitoringService(monitoringConfig *MonitoringServiceConfig) (*Monitorin
 // NewMonitoringServiceFromEnv creates a monitoring service from centralized configuration
 func NewMonitoringServiceFromEnv(logger *zap.Logger, db core.DB) (*MonitoringService, error) {
 	// Initialize AWS services
-	awsConfig := awsinit.APIServiceConfig()
+	awsConfig := monitoringAPIServiceConfig()
 	awsConfig.RequiresSNS = true
-	awsServices, err := awsinit.InitializeServices(context.Background(), awsConfig, logger)
+	awsServices, err := monitoringInitializeServices(context.Background(), awsConfig, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize AWS services: %w", err)
 	}
@@ -405,7 +409,7 @@ func (ms *MonitoringService) shouldSuppressAlertBySchedule(_ *AlertRequest, sche
 	// Simplified schedule checking - in practice, you'd implement proper time zone
 	// and business hours checking
 	if schedule.BusinessHoursOnly {
-		now := time.Now()
+		now := monitoringTimeNow()
 		hour := now.Hour()
 		// Simple business hours check (9 AM to 5 PM)
 		if hour < 9 || hour >= 17 {

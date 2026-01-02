@@ -15,14 +15,26 @@ import (
 
 // DistributedCircuitBreaker implements circuit breaker pattern with DynamORM persistence
 type DistributedCircuitBreaker struct {
-	repo             *repositories.CircuitBreakerRepository
+	repo             circuitBreakerRepository
 	thresholdManager *RouteThresholdManager
 	logger           *zap.Logger
 	config           *models.CircuitBreakerConfig
 }
 
+type circuitBreakerRepository interface {
+	GetCircuitState(ctx context.Context, instanceID string) (*models.CircuitBreakerState, error)
+	SaveCircuitState(ctx context.Context, state *models.CircuitBreakerState) error
+	UpdateCircuitState(ctx context.Context, instanceID string, updateFn func(*models.CircuitBreakerState) error) (*models.CircuitBreakerState, error)
+	RecordStateChange(ctx context.Context, instanceID, oldStatus, newStatus, reason string) error
+	RecordMetric(ctx context.Context, instanceID string, success bool, err error, errorType string) error
+}
+
 // NewDistributedCircuitBreaker creates a new circuit breaker
 func NewDistributedCircuitBreaker(repo *repositories.CircuitBreakerRepository, thresholdManager *RouteThresholdManager, logger *zap.Logger, config *models.CircuitBreakerConfig) *DistributedCircuitBreaker {
+	return newDistributedCircuitBreaker(repo, thresholdManager, logger, config)
+}
+
+func newDistributedCircuitBreaker(repo circuitBreakerRepository, thresholdManager *RouteThresholdManager, logger *zap.Logger, config *models.CircuitBreakerConfig) *DistributedCircuitBreaker {
 	if config == nil {
 		config = models.DefaultCircuitBreakerConfig()
 	}

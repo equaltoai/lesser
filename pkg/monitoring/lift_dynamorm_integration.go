@@ -53,7 +53,7 @@ func DefaultProductionConfig() ProductionMetricsConfig {
 // ProductionMonitor provides comprehensive monitoring following Lift/DynamORM patterns
 type ProductionMonitor struct {
 	config      ProductionMetricsConfig
-	cloudwatch  *cloudwatch.Client
+	cloudwatch  cloudWatchAPI
 	logger      *zap.Logger
 	buffer      *MetricBuffer
 	costTracker *cost.Tracker

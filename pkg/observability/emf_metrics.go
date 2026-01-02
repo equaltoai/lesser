@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -286,14 +287,20 @@ func (emc *EMFMetricsCollector) writeEMFLog(metrics []EMFMetric) error {
 
 // dimensionsKey creates a consistent key from dimensions for grouping
 func (emc *EMFMetricsCollector) dimensionsKey(dims map[string]string) string {
-	if err := common.ValidateSliceNotEmpty("dims", dims); err != nil {
+	if len(dims) == 0 {
 		return ""
 	}
 
 	// Create a consistent key by sorting dimension names
+	keys := make([]string, 0, len(dims))
+	for k := range dims {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	var key string
-	for k, v := range dims {
-		key += fmt.Sprintf("%s=%s;", k, v)
+	for _, k := range keys {
+		key += fmt.Sprintf("%s=%s;", k, dims[k])
 	}
 	return key
 }

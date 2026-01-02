@@ -113,6 +113,27 @@ func TestBalance_LeastConnections(t *testing.T) {
 	})
 }
 
+func TestBalance_WeightedRandom(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	lb := NewAdaptiveLoadBalancer(logger)
+	lb.SetAlgorithm(AlgorithmWeightedRandom)
+
+	routes := []*types.Route{
+		createLBTestRoute("route-1"),
+		createLBTestRoute("route-2"),
+	}
+
+	result := lb.Balance(routes, 5)
+
+	total := 0
+	for routeID, count := range result {
+		total += count
+		assert.Contains(t, []string{"route-1", "route-2"}, routeID)
+		assert.GreaterOrEqual(t, count, 0)
+	}
+	assert.Equal(t, 5, total)
+}
+
 func TestBalance_Adaptive(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	lb := NewAdaptiveLoadBalancer(logger)

@@ -199,10 +199,18 @@ type AuditEvent struct {
 
 // AuditLogger handles authentication audit logging
 type AuditLogger struct {
-	repos         StorageProvider
+	auditRepo     auditRepository
 	logger        *zap.Logger
 	config        *AuditConfig
 	privacyHasher *privacy.Hasher
+}
+
+type auditRepository interface {
+	StoreAuditEvent(ctx context.Context, eventType, severity, username, userID, ipAddress, userAgent, deviceName, sessionID, requestID string, success bool, failureReason string, metadata map[string]interface{}) error
+	GetUserAuditLogs(ctx context.Context, username string, limit int, startTime, endTime time.Time) ([]*models.AuthAuditLog, error)
+	GetIPAuditLogs(ctx context.Context, ipAddress string, limit int, startTime, endTime time.Time) ([]*models.AuthAuditLog, error)
+	GetSessionAuditLogs(ctx context.Context, sessionID string) ([]*models.AuthAuditLog, error)
+	GetSecurityEvents(ctx context.Context, severity string, startTime, endTime time.Time, limit int, cursor string) ([]*models.AuthAuditLog, string, error)
 }
 
 // AuditConfig defines audit logging configuration
@@ -261,11 +269,22 @@ func NewAuditLogger(repos StorageProvider, logger *zap.Logger, config *AuditConf
 	}
 
 	return &AuditLogger{
-		repos:         repos,
+		auditRepo:     getAuditRepo(repos),
 		logger:        logger,
 		config:        config,
 		privacyHasher: privacyHasher,
 	}
+}
+
+func getAuditRepo(repos StorageProvider) auditRepository {
+	if repos == nil {
+		return nil
+	}
+	auditRepo := repos.Audit()
+	if auditRepo == nil {
+		return nil
+	}
+	return auditRepo
 }
 
 // DefaultAuditConfig returns default audit configuration
@@ -490,8 +509,8 @@ func (al *AuditLogger) storeToDB(ctx context.Context, event *AuditEvent) error {
 	}
 
 	// Use the audit repository if available
-	if auditRepo := al.repos.Audit(); auditRepo != nil {
-		return auditRepo.StoreAuditEvent(
+	if al.auditRepo != nil {
+		return al.auditRepo.StoreAuditEvent(
 			ctx,
 			string(event.EventType),
 			string(event.Severity),
@@ -882,8 +901,8 @@ func (al *AuditLogger) getRecentFailureCount(_ context.Context, _ string) int {
 
 // GetUserAuditLogs retrieves audit logs for a specific user
 func (al *AuditLogger) GetUserAuditLogs(ctx context.Context, username string, limit int) ([]*AuditEvent, error) {
-	if auditRepo := al.repos.Audit(); auditRepo != nil {
-		logs, err := auditRepo.GetUserAuditLogs(ctx, username, limit, time.Time{}, time.Time{})
+	if al.auditRepo != nil {
+		logs, err := al.auditRepo.GetUserAuditLogs(ctx, username, limit, time.Time{}, time.Time{})
 		if err != nil {
 			return nil, err
 		}
@@ -894,8 +913,8 @@ func (al *AuditLogger) GetUserAuditLogs(ctx context.Context, username string, li
 
 // GetIPAuditLogs retrieves audit logs for a specific IP address
 func (al *AuditLogger) GetIPAuditLogs(ctx context.Context, ipAddress string, limit int) ([]*AuditEvent, error) {
-	if auditRepo := al.repos.Audit(); auditRepo != nil {
-		logs, err := auditRepo.GetIPAuditLogs(ctx, ipAddress, limit, time.Time{}, time.Time{})
+	if al.auditRepo != nil {
+		logs, err := al.auditRepo.GetIPAuditLogs(ctx, ipAddress, limit, time.Time{}, time.Time{})
 		if err != nil {
 			return nil, err
 		}
@@ -906,8 +925,8 @@ func (al *AuditLogger) GetIPAuditLogs(ctx context.Context, ipAddress string, lim
 
 // GetSessionAuditLogs retrieves audit logs for a specific session
 func (al *AuditLogger) GetSessionAuditLogs(ctx context.Context, sessionID string) ([]*AuditEvent, error) {
-	if auditRepo := al.repos.Audit(); auditRepo != nil {
-		logs, err := auditRepo.GetSessionAuditLogs(ctx, sessionID)
+	if al.auditRepo != nil {
+		logs, err := al.auditRepo.GetSessionAuditLogs(ctx, sessionID)
 		if err != nil {
 			return nil, err
 		}
@@ -918,10 +937,10 @@ func (al *AuditLogger) GetSessionAuditLogs(ctx context.Context, sessionID string
 
 // GetSecurityEvents retrieves security events within a time range
 func (al *AuditLogger) GetSecurityEvents(ctx context.Context, startTime, endTime time.Time, severityFilter []AuditSeverity) ([]*AuditEvent, error) {
-	if auditRepo := al.repos.Audit(); auditRepo != nil {
+	if al.auditRepo != nil {
 		var events []*AuditEvent
 		for _, severity := range severityFilter {
-			logs, _, err := auditRepo.GetSecurityEvents(ctx, string(severity), startTime, endTime, 100, "")
+			logs, _, err := al.auditRepo.GetSecurityEvents(ctx, string(severity), startTime, endTime, 100, "")
 			if err != nil {
 				return nil, err
 			}

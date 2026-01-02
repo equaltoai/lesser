@@ -21,14 +21,16 @@ const (
 
 // TrendAnalyzer analyzes federation flow trends and patterns
 type TrendAnalyzer struct {
-	storage core.RepositoryStorage
+	connectionsRepo instanceConnectionsRepository
+}
+
+type instanceConnectionsRepository interface {
+	GetInstanceConnections(ctx context.Context, domain string, cursor string) ([]*storage.InstanceConnection, error)
 }
 
 // NewTrendAnalyzer creates a new trend analyzer
 func NewTrendAnalyzer(store core.RepositoryStorage) *TrendAnalyzer {
-	return &TrendAnalyzer{
-		storage: store,
-	}
+	return &TrendAnalyzer{connectionsRepo: store.Federation()}
 }
 
 // AnalyzeTrends analyzes federation trends for a specific domain
@@ -39,7 +41,7 @@ func (ta *TrendAnalyzer) AnalyzeTrends(ctx context.Context, domain string, perio
 
 	// This would require implementing GetFederationTimeSeriesRange
 	// For now, we'll work with available connection data
-	connections, err := ta.storage.Federation().GetInstanceConnections(ctx, domain, "")
+	connections, err := ta.connectionsRepo.GetInstanceConnections(ctx, domain, "")
 	if err != nil {
 		return nil, errors.Join(ErrGetConnectionsFailed, err)
 	}

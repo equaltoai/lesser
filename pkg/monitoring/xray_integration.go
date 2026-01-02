@@ -87,12 +87,12 @@ func (xt *XRayTracer) TraceLiftHandler(handlerName string, handler func(*lift.Co
 		// Add metadata for detailed tracing
 		_ = seg.AddMetadata("request", map[string]interface{}{
 			"headers":    ctx.Request.Headers,
-			"tenant_id":  ctx.TenantID,
+			"tenant_id":  ctx.TenantID(),
 			"request_id": ctx.RequestID,
 		})
 
 		// Track cold start
-		if lambdaCtx, ok := lambdacontext.FromContext(context.Background()); ok {
+		if lambdaCtx, ok := lambdacontext.FromContext(ctx.Context); ok {
 			_ = seg.AddAnnotation("cold_start", true)
 			_ = seg.AddMetadata("lambda", map[string]interface{}{
 				"request_id":    lambdaCtx.AwsRequestID,

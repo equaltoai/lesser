@@ -17,7 +17,7 @@ import (
 
 // CloudWatchMetrics provides enhanced metrics collection with DynamORM integration
 type CloudWatchMetrics struct {
-	client      *cloudwatch.Client
+	client      cloudWatchAPI
 	namespace   string
 	environment string
 	logger      *zap.Logger

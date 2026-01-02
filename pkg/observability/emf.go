@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"
 )
@@ -377,7 +376,7 @@ func (emf *EMFMetrics) Flush() {
 	emf.mu.Lock()
 	defer emf.mu.Unlock()
 
-	if err := common.ValidateSliceNotEmpty("emf.metrics", emf.metrics); err != nil {
+	if len(emf.metrics) == 0 {
 		return
 	}
 
@@ -480,7 +479,13 @@ func (emf *EMFMetrics) buildMetricsMap() map[string]interface{} {
 }
 
 func (emf *EMFMetrics) isMetricMetadata(key string) bool {
-	return key[len(key)-5:] == "_unit" || key[len(key)-10:] == "_timestamp"
+	if len(key) >= 5 && key[len(key)-5:] == "_unit" {
+		return true
+	}
+	if len(key) >= 10 && key[len(key)-10:] == "_timestamp" {
+		return true
+	}
+	return false
 }
 
 // SetProperty adds a property to the EMF output

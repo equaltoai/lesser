@@ -69,6 +69,10 @@ func NewRelationshipTracker(store core.RepositoryStorage, db dynamormcore.DB, lo
 	return rt
 }
 
+func (rt *RelationshipTracker) UpdateInstanceMetadata(ctx context.Context, metadata *storage.InstanceMetadata) error {
+	return rt.storage.Federation().UpdateInstanceMetadata(ctx, metadata)
+}
+
 // NewRelationshipTrackerWithS3 creates a new relationship tracker with S3 archival support
 func NewRelationshipTrackerWithS3(store core.RepositoryStorage, db dynamormcore.DB, logger *zap.Logger, s3Client *s3.Client, archiveBucket string) *RelationshipTracker {
 	rt := NewRelationshipTracker(store, db, logger)

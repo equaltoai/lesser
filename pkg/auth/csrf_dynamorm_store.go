@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -11,7 +12,17 @@ import (
 
 // DynamORMCSRFStore implements CSRFStore using DynamORM patterns
 type DynamORMCSRFStore struct {
-	repo *repositories.CSRFRepository
+	repo csrfRepository
+}
+
+type csrfRepository interface {
+	Store(ctx context.Context, token string, userID string, expiresAt time.Time) error
+	Get(ctx context.Context, token string) (string, string, time.Time, bool, error)
+	Delete(ctx context.Context, token string) error
+	CleanExpired(ctx context.Context) error
+	ValidateAndConsume(ctx context.Context, token string, userID string) error
+	GetUserActiveTokenCount(ctx context.Context, userID string) (int, error)
+	CleanupUserTokens(ctx context.Context, userID string) error
 }
 
 // NewDynamORMCSRFStore creates a new DynamORM-backed CSRF store

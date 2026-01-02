@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -23,9 +24,22 @@ import (
 // overhead of the full storage.Storage interface.
 type DynamORMFederationStorage struct {
 	db                           core.DB
-	actorRepository              *repositories.ActorRepository
-	federationActivityRepository *repositories.FederationActivityRepository
-	relationshipRepository       *repositories.RelationshipRepository
+	actorRepository              dynamormFederationActorRepository
+	federationActivityRepository dynamormFederationActivityRepository
+	relationshipRepository       dynamormFederationRelationshipRepository
+}
+
+type dynamormFederationActorRepository interface {
+	GetActorPrivateKey(ctx context.Context, username string) (string, error)
+	GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error)
+}
+
+type dynamormFederationActivityRepository interface {
+	Create(ctx context.Context, activity *models.FederationActivity) error
+}
+
+type dynamormFederationRelationshipRepository interface {
+	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
 }
 
 // NewDynamORMFederationStorage creates a new DynamORM-based federation storage implementation.
@@ -162,24 +176,28 @@ func (s *DynamORMFederationStorage) RecordFederationActivity(ctx context.Context
 // extractHandleFromURL extracts the handle (user@domain) from an actor ID URL
 // e.g., "https://example.com/users/alice" -> "alice@example.com"
 func extractHandleFromURL(actorID string) string {
-	// Remove protocol
-	withoutProtocol := strings.TrimPrefix(actorID, "https://")
-	withoutProtocol = strings.TrimPrefix(withoutProtocol, "http://")
-
-	// Split by /
-	parts := strings.Split(withoutProtocol, "/")
-	if len(parts) < 3 {
+	if actorID == "" {
 		return ""
 	}
 
-	// Extract domain and username
-	domain := parts[0]
+	parsed, err := url.Parse(actorID)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
 
-	// Find users part and get username
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ""
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return ""
+	}
+
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
 	for i, part := range parts {
-		if part == "users" && i+1 < len(parts) {
-			username := parts[i+1]
-			return fmt.Sprintf("%s@%s", username, domain)
+		if part == "users" && i+1 < len(parts) && parts[i+1] != "" {
+			return fmt.Sprintf("%s@%s", parts[i+1], host)
 		}
 	}
 

@@ -15,8 +15,20 @@ import (
 //
 //nolint:revive // Federation prefix clarifies this is federation-specific hooks
 type FederationHooks struct {
-	tracker *RelationshipTracker
-	monitor *monitoring.PerformanceMonitor
+	tracker federationHooksRelationshipTracker
+	monitor federationHooksPerformanceMonitor
+}
+
+type federationHooksRelationshipTracker interface {
+	TrackDeliveryAttempt(ctx context.Context, attempt *DeliveryAttempt) error
+	TrackInboundActivity(ctx context.Context, activity *InboundActivity) error
+	UpdateInstanceMetadata(ctx context.Context, metadata *storage.InstanceMetadata) error
+	AnalyzeRelationshipStrength(ctx context.Context, sourceDomain, targetDomain string) (*RelationshipAnalysis, error)
+	GenerateRecommendations(ctx context.Context, domain string) ([]*FederationRecommendation, error)
+}
+
+type federationHooksPerformanceMonitor interface {
+	RecordFederationPerformance(ctx context.Context, domain string, operation string, latencyMs float64, success bool) error
 }
 
 // NewFederationHooks creates a new federation hooks instance
@@ -108,7 +120,7 @@ func (fh *FederationHooks) OnInstanceDiscovery(ctx context.Context, instance *In
 	}
 
 	// Store or update the instance metadata
-	return fh.tracker.storage.Federation().UpdateInstanceMetadata(ctx, metadata)
+	return fh.tracker.UpdateInstanceMetadata(ctx, metadata)
 }
 
 // OnConnectionError is called when there's an error connecting to an instance

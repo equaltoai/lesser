@@ -359,6 +359,72 @@ type stubSocialRepo struct {
 	pins      map[string]*storage.StatusPin
 }
 
+func (s *stubSocialRepo) CreateBlock(_ context.Context, _ *storage.Block) error { return nil }
+func (s *stubSocialRepo) DeleteBlock(_ context.Context, _, _ string) error      { return nil }
+func (s *stubSocialRepo) GetBlock(_ context.Context, _, _ string) (*storage.Block, error) {
+	return nil, pkgerrors.ItemNotFound("block")
+}
+func (s *stubSocialRepo) IsBlocked(_ context.Context, _, _ string) (bool, error) { return false, nil }
+func (s *stubSocialRepo) GetBlockedUsers(_ context.Context, _ string, _ int, _ string) ([]*storage.Block, string, error) {
+	return nil, "", nil
+}
+func (s *stubSocialRepo) GetBlockedByUsers(_ context.Context, _ string, _ int, _ string) ([]*storage.Block, string, error) {
+	return nil, "", nil
+}
+func (s *stubSocialRepo) CreateMute(_ context.Context, _ *storage.Mute) error { return nil }
+func (s *stubSocialRepo) DeleteMute(_ context.Context, _, _ string) error     { return nil }
+func (s *stubSocialRepo) GetMute(_ context.Context, _, _ string) (*storage.Mute, error) {
+	return nil, pkgerrors.ItemNotFound("mute")
+}
+func (s *stubSocialRepo) IsMuted(_ context.Context, _, _ string) (bool, error) { return false, nil }
+func (s *stubSocialRepo) GetMutedUsers(_ context.Context, _ string, _ int, _ string) ([]*storage.Mute, string, error) {
+	return nil, "", nil
+}
+func (s *stubSocialRepo) HasUserAnnounced(_ context.Context, _, _ string) (bool, error) {
+	return false, nil
+}
+func (s *stubSocialRepo) GetActorAnnounces(_ context.Context, _ string, _ int, _ string) ([]*storage.Announce, string, error) {
+	return nil, "", nil
+}
+func (s *stubSocialRepo) CountObjectAnnounces(_ context.Context, _ string) (int, error) { return 0, nil }
+func (s *stubSocialRepo) CascadeDeleteAnnounces(_ context.Context, _ string) error      { return nil }
+func (s *stubSocialRepo) CreateAccountPin(_ context.Context, _ *storage.AccountPin) error {
+	return nil
+}
+func (s *stubSocialRepo) DeleteAccountPin(_ context.Context, _, _ string) error { return nil }
+func (s *stubSocialRepo) GetAccountPins(_ context.Context, _ string) ([]*storage.AccountPin, error) {
+	return nil, nil
+}
+func (s *stubSocialRepo) GetAccountPinsPaginated(_ context.Context, _ string, _ int, _ string) ([]*storage.AccountPin, string, error) {
+	return nil, "", nil
+}
+func (s *stubSocialRepo) IsAccountPinned(_ context.Context, _, _ string) (bool, error) {
+	return false, nil
+}
+func (s *stubSocialRepo) CreateAccountNote(_ context.Context, _ *storage.AccountNote) error {
+	return nil
+}
+func (s *stubSocialRepo) UpdateAccountNote(_ context.Context, _ *storage.AccountNote) error {
+	return nil
+}
+func (s *stubSocialRepo) DeleteAccountNote(_ context.Context, _, _ string) error { return nil }
+func (s *stubSocialRepo) GetAccountNote(_ context.Context, _, _ string) (*storage.AccountNote, error) {
+	return nil, pkgerrors.ItemNotFound("note")
+}
+func (s *stubSocialRepo) GetStatusPins(_ context.Context, _ string) ([]*storage.StatusPin, error) {
+	return nil, nil
+}
+func (s *stubSocialRepo) GetStatusPinsPaginated(_ context.Context, _ string, _ int, _ string) ([]*storage.StatusPin, string, error) {
+	return nil, "", nil
+}
+func (s *stubSocialRepo) IsStatusPinned(_ context.Context, _, _ string) (bool, error) {
+	return false, nil
+}
+func (s *stubSocialRepo) ReorderStatusPins(_ context.Context, _ string, _ []string) error { return nil }
+func (s *stubSocialRepo) CountUserPinnedStatuses(_ context.Context, _ string) (int, error) {
+	return 0, nil
+}
+
 func (s *stubSocialRepo) CreateAnnounce(_ context.Context, announce *storage.Announce) error {
 	if s.announces == nil {
 		s.announces = map[string]*storage.Announce{}

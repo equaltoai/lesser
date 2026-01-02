@@ -17,8 +17,13 @@ import (
 // CompressionPipeline implements the progressive compression strategy
 // from federation-analytics-guidance.md for time series data
 type CompressionPipeline struct {
-	federationRepo *repositories.FederationRepository
+	federationRepo compressionFederationRepository
 	logger         *zap.Logger
+}
+
+type compressionFederationRepository interface {
+	GetDetailedMetricsByPeriod(ctx context.Context, period string, startTime, endTime time.Time, limit int) ([]*models.FederationAnalyticsTimeSeries, error)
+	StoreDetailedFederationMetrics(ctx context.Context, metrics *models.FederationAnalyticsTimeSeries) error
 }
 
 // NewCompressionPipeline creates a new compression pipeline

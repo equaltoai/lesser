@@ -1,10 +1,13 @@
 package observability
 
 import (
+	"math"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -132,11 +135,33 @@ func TestConvertUnit(t *testing.T) {
 		expected string
 	}{
 		{types.StandardUnitSeconds, "Seconds"},
+		{types.StandardUnitMicroseconds, "Microseconds"},
 		{types.StandardUnitMilliseconds, "Milliseconds"},
 		{types.StandardUnitBytes, "Bytes"},
+		{types.StandardUnitKilobytes, "Kilobytes"},
+		{types.StandardUnitMegabytes, "Megabytes"},
+		{types.StandardUnitGigabytes, "Gigabytes"},
+		{types.StandardUnitTerabytes, "Terabytes"},
+		{types.StandardUnitBits, "Bits"},
+		{types.StandardUnitKilobits, "Kilobits"},
+		{types.StandardUnitMegabits, "Megabits"},
+		{types.StandardUnitGigabits, "Gigabits"},
+		{types.StandardUnitTerabits, "Terabits"},
 		{types.StandardUnitPercent, "Percent"},
 		{types.StandardUnitCount, "Count"},
+		{types.StandardUnitCountSecond, "Count/Second"},
+		{types.StandardUnitBytesSecond, "Bytes/Second"},
+		{types.StandardUnitKilobytesSecond, "Kilobytes/Second"},
+		{types.StandardUnitMegabytesSecond, "Megabytes/Second"},
+		{types.StandardUnitGigabytesSecond, "Gigabytes/Second"},
+		{types.StandardUnitTerabytesSecond, "Terabytes/Second"},
+		{types.StandardUnitBitsSecond, "Bits/Second"},
+		{types.StandardUnitKilobitsSecond, "Kilobits/Second"},
+		{types.StandardUnitMegabitsSecond, "Megabits/Second"},
+		{types.StandardUnitGigabitsSecond, "Gigabits/Second"},
+		{types.StandardUnitTerabitsSecond, "Terabits/Second"},
 		{types.StandardUnitNone, "None"},
+		{types.StandardUnit("unknown"), "None"},
 	}
 
 	for _, test := range tests {
@@ -145,6 +170,47 @@ func TestConvertUnit(t *testing.T) {
 			t.Errorf("convertUnit(%v) = %s, expected %s", test.input, result, test.expected)
 		}
 	}
+}
+
+func TestEMFMetricsCollector_AdditionalRecordersAndStop(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	collector := NewEMFMetricsCollector("TestNamespace", logger)
+
+	collector.RecordThroughput("op", 123)
+	collector.RecordErrorRate("op", 0, 0)
+	collector.RecordErrorRate("op", 1, 10)
+	collector.RecordPerformanceMetrics(&PerformanceMetrics{
+		ColdStartDuration: 10 * time.Millisecond,
+		ExecutionDuration: 20 * time.Millisecond,
+		MemoryUsed:        123,
+		MemoryAllocated:   456,
+		CPUUtilization:    0.5,
+		GoroutineCount:    2,
+		GCPauseTime:       time.Microsecond,
+	})
+
+	require.Greater(t, collector.GetBufferSize(), 0)
+
+	key := collector.dimensionsKey(map[string]string{"b": "2", "a": "1"})
+	// Sorted key for stable grouping.
+	require.Equal(t, "a=1;b=2;", key)
+
+	collector.Stop()
+}
+
+func TestEMFMetricsCollector_StopFlushErrorPath(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	collector := NewEMFMetricsCollector("TestNamespace", logger)
+
+	// NaN values cannot be marshaled to JSON, which forces Flush to return an error.
+	collector.recordMetricWithDimensions("BadMetric", math.NaN(), "Count", map[string]string{"Operation": "op"})
+	collector.Stop()
+}
+
+func TestGetEnvWithDefault(t *testing.T) {
+	t.Setenv("EMF_TEST_KEY", "value")
+	assert.Equal(t, "value", getEnvWithDefault("EMF_TEST_KEY", "default"))
+	assert.Equal(t, "default", getEnvWithDefault("EMF_MISSING_KEY", "default"))
 }
 
 // TestGetEnvironment removed - cannot run due to centralized environment config

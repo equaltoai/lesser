@@ -82,6 +82,95 @@ func (m *MockListRepository) GetListStatuses(ctx context.Context, listID string,
 	return args.Get(0).(*interfaces.PaginatedResult[*models.Status]), args.Error(1)
 }
 
+func (m *MockListRepository) GetListsForUser(ctx context.Context, username string) ([]*storage.List, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.List), args.Error(1)
+}
+
+func (m *MockListRepository) GetListsForUserPaginated(ctx context.Context, username string, limit int, cursor string) ([]*storage.List, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.List), args.String(1), args.Error(2)
+}
+
+func (m *MockListRepository) CountUserLists(ctx context.Context, username string) (int, error) {
+	args := m.Called(ctx, username)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockListRepository) CountListMembers(ctx context.Context, listID string) (int, error) {
+	args := m.Called(ctx, listID)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockListRepository) GetAccountLists(ctx context.Context, accountID string) ([]*storage.List, error) {
+	args := m.Called(ctx, accountID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.List), args.Error(1)
+}
+
+func (m *MockListRepository) GetAccountListsPaginated(ctx context.Context, accountID string, limit int, cursor string) ([]*storage.List, string, error) {
+	args := m.Called(ctx, accountID, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.List), args.String(1), args.Error(2)
+}
+
+func (m *MockListRepository) GetAccountListsForUser(ctx context.Context, accountID, username string) ([]*storage.List, error) {
+	args := m.Called(ctx, accountID, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.List), args.Error(1)
+}
+
+func (m *MockListRepository) RemoveAccountFromAllLists(ctx context.Context, accountID string) error {
+	args := m.Called(ctx, accountID)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) GetExclusiveLists(ctx context.Context, username string) ([]*storage.List, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.List), args.Error(1)
+}
+
+func (m *MockListRepository) AddAccountsToList(ctx context.Context, listID string, accountIDs []string) error {
+	args := m.Called(ctx, listID, accountIDs)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) RemoveAccountsFromList(ctx context.Context, listID string, accountIDs []string) error {
+	args := m.Called(ctx, listID, accountIDs)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) GetListAccounts(ctx context.Context, listID string) ([]string, error) {
+	args := m.Called(ctx, listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *MockListRepository) GetListsContainingAccount(ctx context.Context, accountID, username string) ([]*storage.List, error) {
+	args := m.Called(ctx, accountID, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*storage.List), args.Error(1)
+}
+
 type MockNoteRepository struct {
 	mock.Mock
 }

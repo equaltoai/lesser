@@ -175,6 +175,190 @@ func (m *MockMediaRepository) DeleteTranscodingJob(ctx context.Context, jobID st
 	return args.Error(0)
 }
 
+func (m *MockMediaRepository) GetMediaByUser(ctx context.Context, userID string, limit int) ([]*models.Media, error) {
+	args := m.Called(ctx, userID, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Media), args.Error(1)
+}
+
+func (m *MockMediaRepository) GetMediaByStatus(ctx context.Context, status string, limit int) ([]*models.Media, error) {
+	args := m.Called(ctx, status, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Media), args.Error(1)
+}
+
+func (m *MockMediaRepository) GetMediaByContentType(ctx context.Context, contentType string, limit int) ([]*models.Media, error) {
+	args := m.Called(ctx, contentType, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Media), args.Error(1)
+}
+
+func (m *MockMediaRepository) GetUserMediaLegacy(ctx context.Context, username string) ([]any, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]any), args.Error(1)
+}
+
+func (m *MockMediaRepository) UpdateMediaAttachment(ctx context.Context, mediaID string, updates map[string]any) error {
+	args := m.Called(ctx, mediaID, updates)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) UnmarkAllMediaAsSensitive(ctx context.Context, username string) error {
+	args := m.Called(ctx, username)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) CreateMediaJob(ctx context.Context, job *models.MediaJob) error {
+	args := m.Called(ctx, job)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) GetMediaJob(ctx context.Context, jobID string) (*models.MediaJob, error) {
+	args := m.Called(ctx, jobID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.MediaJob), args.Error(1)
+}
+
+func (m *MockMediaRepository) UpdateMediaJob(ctx context.Context, job *models.MediaJob) error {
+	args := m.Called(ctx, job)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) DeleteMediaJob(ctx context.Context, jobID string) error {
+	args := m.Called(ctx, jobID)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) GetJobsByStatus(ctx context.Context, status string, limit int) ([]*models.MediaJob, error) {
+	args := m.Called(ctx, status, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.MediaJob), args.Error(1)
+}
+
+func (m *MockMediaRepository) GetJobsByUser(ctx context.Context, username string, limit int) ([]*models.MediaJob, error) {
+	args := m.Called(ctx, username, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.MediaJob), args.Error(1)
+}
+
+func (m *MockMediaRepository) CreateUserMediaConfig(ctx context.Context, config *models.UserMediaConfig) error {
+	args := m.Called(ctx, config)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) GetUserMediaConfig(ctx context.Context, userID string) (*models.UserMediaConfig, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.UserMediaConfig), args.Error(1)
+}
+
+func (m *MockMediaRepository) GetUserMediaConfigByUsername(ctx context.Context, username string) (*models.UserMediaConfig, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.UserMediaConfig), args.Error(1)
+}
+
+func (m *MockMediaRepository) UpdateUserMediaConfig(ctx context.Context, config *models.UserMediaConfig) error {
+	args := m.Called(ctx, config)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) DeleteUserMediaConfig(ctx context.Context, userID string) error {
+	args := m.Called(ctx, userID)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) CreateMediaSpending(ctx context.Context, spending *models.MediaSpending) error {
+	args := m.Called(ctx, spending)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) GetMediaSpending(ctx context.Context, userID, period string) (*models.MediaSpending, error) {
+	args := m.Called(ctx, userID, period)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.MediaSpending), args.Error(1)
+}
+
+func (m *MockMediaRepository) UpdateMediaSpending(ctx context.Context, spending *models.MediaSpending) error {
+	args := m.Called(ctx, spending)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) GetMediaSpendingByTimeRange(ctx context.Context, userID string, periodType string, limit int) ([]*models.MediaSpending, error) {
+	args := m.Called(ctx, userID, periodType, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.MediaSpending), args.Error(1)
+}
+
+func (m *MockMediaRepository) GetOrCreateMediaSpending(ctx context.Context, userID, period, periodType string) (*models.MediaSpending, error) {
+	args := m.Called(ctx, userID, period, periodType)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.MediaSpending), args.Error(1)
+}
+
+func (m *MockMediaRepository) CreateMediaSpendingTransaction(ctx context.Context, transaction *models.MediaSpendingTransaction) error {
+	args := m.Called(ctx, transaction)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) GetMediaSpendingTransactions(ctx context.Context, userID string, limit int) ([]*models.MediaSpendingTransaction, error) {
+	args := m.Called(ctx, userID, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.MediaSpendingTransaction), args.Error(1)
+}
+
+func (m *MockMediaRepository) AddSpendingTransaction(ctx context.Context, transaction *models.MediaSpendingTransaction) error {
+	args := m.Called(ctx, transaction)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) GetTranscodingJobsByStatus(ctx context.Context, status string, limit int) ([]*models.TranscodingJob, error) {
+	args := m.Called(ctx, status, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.TranscodingJob), args.Error(1)
+}
+
+func (m *MockMediaRepository) GetTranscodingCostsByUser(ctx context.Context, userID string, timeRange string) (map[string]int64, error) {
+	args := m.Called(ctx, userID, timeRange)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]int64), args.Error(1)
+}
+
+func (m *MockMediaRepository) SetDependencies(deps map[string]interface{}) {
+	m.Called(deps)
+}
+
 type MockJobQueueService struct {
 	mock.Mock
 }

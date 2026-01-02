@@ -15,7 +15,7 @@ import (
 
 // PerformanceMonitor handles performance metrics collection
 type PerformanceMonitor struct {
-	cloudwatch  *cloudwatch.Client
+	cloudwatch  cloudWatchAPI
 	namespace   string
 	environment string
 }

@@ -3,6 +3,7 @@ package circuit
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,89 +13,161 @@ import (
 
 // MockCircuitBreakerRepository for testing
 type MockCircuitBreakerRepository struct {
+	mu sync.Mutex
+
 	states map[string]*models.CircuitBreakerState
 	events []*models.CircuitBreakerEvent
+
+	getErr          error
+	updateErr       error
+	recordStateErr  error
+	recordMetricErr error
+
+	updateCalls      chan struct{}
+	stateChangeCalls chan struct{}
+	metricCalls      chan struct{}
 }
 
 func NewMockCircuitBreakerRepository() *MockCircuitBreakerRepository {
 	return &MockCircuitBreakerRepository{
-		states: make(map[string]*models.CircuitBreakerState),
-		events: make([]*models.CircuitBreakerEvent, 0),
+		states:           make(map[string]*models.CircuitBreakerState),
+		events:           make([]*models.CircuitBreakerEvent, 0),
+		updateCalls:      make(chan struct{}, 128),
+		stateChangeCalls: make(chan struct{}, 128),
+		metricCalls:      make(chan struct{}, 128),
 	}
 }
 
 func (m *MockCircuitBreakerRepository) GetCircuitState(_ context.Context, instanceID string) (*models.CircuitBreakerState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+
 	if state, exists := m.states[instanceID]; exists {
-		return state, nil
+		stateCopy := *state
+		return &stateCopy, nil
 	}
 	// Return a new closed circuit state if not found
 	return &models.CircuitBreakerState{
 		InstanceID:      instanceID,
-		Status:          "closed",
+		Status:          stateClosed,
 		LastStateChange: time.Now(),
 	}, nil
 }
 
 func (m *MockCircuitBreakerRepository) SaveCircuitState(_ context.Context, state *models.CircuitBreakerState) error {
-	state.UpdateKeys()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_ = state.UpdateKeys()
 	m.states[state.InstanceID] = state
 	return nil
 }
 
 func (m *MockCircuitBreakerRepository) UpdateCircuitState(ctx context.Context, instanceID string, updateFn func(*models.CircuitBreakerState) error) (*models.CircuitBreakerState, error) {
-	state, err := m.GetCircuitState(ctx, instanceID)
-	if err != nil {
-		return nil, err
+	select {
+	case m.updateCalls <- struct{}{}:
+	default:
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.updateErr != nil {
+		return nil, m.updateErr
+	}
+
+	state, exists := m.states[instanceID]
+	if !exists {
+		state = &models.CircuitBreakerState{
+			InstanceID:      instanceID,
+			Status:          stateClosed,
+			LastStateChange: time.Now(),
+		}
+		m.states[instanceID] = state
 	}
 
 	if err := updateFn(state); err != nil {
 		return nil, err
 	}
 
-	if err := m.SaveCircuitState(ctx, state); err != nil {
-		return nil, err
-	}
+	_ = state.UpdateKeys()
 
-	return state, nil
+	stateCopy := *state
+	return &stateCopy, nil
 }
 
 func (m *MockCircuitBreakerRepository) RecordEvent(_ context.Context, event *models.CircuitBreakerEvent) error {
-	event.UpdateKeys()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_ = event.UpdateKeys()
 	m.events = append(m.events, event)
 	return nil
 }
 
 func (m *MockCircuitBreakerRepository) RecordStateChange(ctx context.Context, instanceID, oldStatus, newStatus, reason string) error {
-	event := &models.CircuitBreakerEvent{
-		InstanceID: instanceID,
-		EventType:  "state_change",
-		OldStatus:  oldStatus,
-		NewStatus:  newStatus,
-		Reason:     reason,
-		Timestamp:  time.Now(),
+	var recordErr error
+	if m.recordStateErr != nil {
+		recordErr = m.recordStateErr
+	} else {
+		event := &models.CircuitBreakerEvent{
+			InstanceID: instanceID,
+			EventType:  "state_change",
+			OldStatus:  oldStatus,
+			NewStatus:  newStatus,
+			Reason:     reason,
+			Timestamp:  time.Now(),
+		}
+		recordErr = m.RecordEvent(ctx, event)
 	}
-	return m.RecordEvent(ctx, event)
+
+	select {
+	case m.stateChangeCalls <- struct{}{}:
+	default:
+	}
+
+	return recordErr
 }
 
 func (m *MockCircuitBreakerRepository) RecordMetric(ctx context.Context, instanceID string, success bool, err error, errorType string) error {
-	event := &models.CircuitBreakerEvent{
-		InstanceID: instanceID,
-		EventType:  "metric",
-		Success:    &success,
-		Timestamp:  time.Now(),
+	var recordErr error
+	if m.recordMetricErr != nil {
+		recordErr = m.recordMetricErr
+	} else {
+		event := &models.CircuitBreakerEvent{
+			InstanceID: instanceID,
+			EventType:  "metric",
+			Success:    &success,
+			Timestamp:  time.Now(),
+		}
+		if err != nil {
+			event.Error = err.Error()
+			event.ErrorType = errorType
+		}
+		recordErr = m.RecordEvent(ctx, event)
 	}
-	if err != nil {
-		event.Error = err.Error()
-		event.ErrorType = errorType
+
+	select {
+	case m.metricCalls <- struct{}{}:
+	default:
 	}
-	return m.RecordEvent(ctx, event)
+
+	return recordErr
 }
 
 func (m *MockCircuitBreakerRepository) GetRecentEvents(_ context.Context, instanceID string, limit int) ([]*models.CircuitBreakerEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	var result []*models.CircuitBreakerEvent
 	for _, event := range m.events {
 		if event.InstanceID == instanceID {
-			result = append(result, event)
+			eventCopy := *event
+			result = append(result, &eventCopy)
 			if len(result) >= limit {
 				break
 			}
@@ -104,16 +177,40 @@ func (m *MockCircuitBreakerRepository) GetRecentEvents(_ context.Context, instan
 }
 
 func (m *MockCircuitBreakerRepository) DeleteCircuitState(_ context.Context, instanceID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	delete(m.states, instanceID)
 	return nil
 }
 
 func (m *MockCircuitBreakerRepository) GetAllCircuitStates(_ context.Context) ([]*models.CircuitBreakerState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	result := make([]*models.CircuitBreakerState, 0, len(m.states))
 	for _, state := range m.states {
-		result = append(result, state)
+		stateCopy := *state
+		result = append(result, &stateCopy)
 	}
 	return result, nil
+}
+
+func (m *MockCircuitBreakerRepository) waitForCall(t *testing.T, ch <-chan struct{}) {
+	t.Helper()
+
+	select {
+	case <-ch:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("timed out waiting for async call")
+	}
+}
+
+func (m *MockCircuitBreakerRepository) waitForCalls(t *testing.T, ch <-chan struct{}, n int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		m.waitForCall(t, ch)
+	}
 }
 
 func TestServerlessCircuitBreaker_BasicFlow(t *testing.T) {
@@ -174,8 +271,9 @@ func TestServerlessCircuitBreaker_BasicFlow(t *testing.T) {
 		t.Errorf("Expected 3 successes, got %v", metrics["totalSuccesses"])
 	}
 
-	// Test 5: Verify events were recorded (wait a bit for async operations)
-	time.Sleep(10 * time.Millisecond)
+	// Test 5: Verify events were recorded (wait for async operations)
+	mockRepo.waitForCall(t, mockRepo.metricCalls)
+	mockRepo.waitForCall(t, mockRepo.stateChangeCalls)
 	events, err := mockRepo.GetRecentEvents(ctx, instanceID, 10)
 	if err != nil {
 		t.Errorf("Failed to get events: %v", err)

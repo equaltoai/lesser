@@ -19,12 +19,27 @@ import (
 // ServerlessHealthChecker performs stateless health checks triggered by EventBridge
 type ServerlessHealthChecker struct {
 	// Dependencies
-	healthRepo       *repositories.InstanceHealthRepository
+	healthRepo       instanceHealthRepository
 	logger           *zap.Logger
-	federationClient *httpclient.FederationClient
+	federationClient federationHTTPClient
 
 	// Configuration
 	config CheckerConfig
+}
+
+type instanceHealthRepository interface {
+	SaveHealthChecks(ctx context.Context, checks []*models.InstanceHealth) error
+	CalculateHealthSummary(ctx context.Context, domain string, window time.Duration) (*models.InstanceHealthSummary, error)
+	SaveHealthSummary(ctx context.Context, summary *models.InstanceHealthSummary) error
+	CleanupOldHealthData(ctx context.Context, retentionDuration time.Duration) (int, error)
+	GetLatestHealthCheck(ctx context.Context, domain string) (*models.InstanceHealth, error)
+	GetHealthHistory(ctx context.Context, domain string, since time.Time, limit int) ([]*models.InstanceHealth, error)
+	GetHealthSummary(ctx context.Context, domain string, window time.Duration) (*models.InstanceHealthSummary, error)
+	GetUnhealthyInstances(ctx context.Context, threshold float64) ([]string, error)
+}
+
+type federationHTTPClient interface {
+	Get(ctx context.Context, url string) (*http.Response, error)
 }
 
 // CheckerConfig contains configuration for the health checker

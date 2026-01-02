@@ -30,6 +30,21 @@ func TestCostCalculator_EstimateDataTransferCost(t *testing.T) {
 			expected: 0.81,                    // 9GB at $0.09/GB
 		},
 		{
+			name:     "20GB transfer (second tier)",
+			bytes:    20 * 1024 * 1024 * 1024, // 20GB
+			expected: 1.66,
+		},
+		{
+			name:     "60GB transfer (third tier)",
+			bytes:    60 * 1024 * 1024 * 1024, // 60GB
+			expected: 4.91,
+		},
+		{
+			name:     "200GB transfer (fourth tier)",
+			bytes:    200 * 1024 * 1024 * 1024, // 200GB
+			expected: 13.70,
+		},
+		{
 			name:     "regional adjustment",
 			bytes:    2 * 1024 * 1024 * 1024, // 2GB
 			expected: 0.10,                   // With 15% regional markup

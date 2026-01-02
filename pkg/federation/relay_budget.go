@@ -7,22 +7,30 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
 // RelayBudgetService manages relay budgets and cost limits
 type RelayBudgetService struct {
-	store  core.RepositoryStorage
-	logger *zap.Logger
+	costRepo relayBudgetCostRepository
+	logger   *zap.Logger
+}
+
+type relayBudgetCostRepository interface {
+	CreateRelayBudget(ctx context.Context, budget *models.RelayBudget) error
+	GetRelayBudget(ctx context.Context, relayURL, period string) (*models.RelayBudget, error)
+	UpdateRelayBudget(ctx context.Context, budget *models.RelayBudget) error
+	AggregateRelayCosts(ctx context.Context, relayURL, period string, windowStart, windowEnd time.Time) error
+	GetRelayCostSummary(ctx context.Context, relayURL string, startTime, endTime time.Time) (*repositories.RelayCostSummary, error)
 }
 
 // NewRelayBudgetService creates a new relay budget service
-func NewRelayBudgetService(store core.RepositoryStorage, logger *zap.Logger) *RelayBudgetService {
+func NewRelayBudgetService(costRepo relayBudgetCostRepository, logger *zap.Logger) *RelayBudgetService {
 	return &RelayBudgetService{
-		store:  store,
-		logger: logger,
+		costRepo: costRepo,
+		logger:   logger,
 	}
 }
 
@@ -42,7 +50,7 @@ func (rbs *RelayBudgetService) CreateRelayBudget(ctx context.Context, relayURL, 
 		ReduceFrequency:          false,
 	}
 
-	err := rbs.store.Cost().CreateRelayBudget(ctx, budget)
+	err := rbs.costRepo.CreateRelayBudget(ctx, budget)
 	if err != nil {
 		rbs.logger.Error("failed to create relay budget",
 			zap.String("relay_url", relayURL),
@@ -65,7 +73,7 @@ func (rbs *RelayBudgetService) CreateRelayBudget(ctx context.Context, relayURL, 
 // UpdateRelayBudgetUsage updates the current usage for a relay budget
 func (rbs *RelayBudgetService) UpdateRelayBudgetUsage(ctx context.Context, relayURL, period string, additionalCostMicroCents int64) error {
 	// Get existing budget
-	budget, err := rbs.store.Cost().GetRelayBudget(ctx, relayURL, period)
+	budget, err := rbs.costRepo.GetRelayBudget(ctx, relayURL, period)
 	if err != nil {
 		// No budget configured - nothing to update
 		return nil
@@ -78,6 +86,7 @@ func (rbs *RelayBudgetService) UpdateRelayBudgetUsage(ctx context.Context, relay
 		budget.WarningAlertSent = false
 		budget.CriticalAlertSent = false
 		budget.BudgetExceeded = false
+		budget.CurrentUsagePercent = 0
 
 		rbs.logger.Info("reset relay budget for new period",
 			zap.String("relay_url", relayURL),
@@ -86,6 +95,10 @@ func (rbs *RelayBudgetService) UpdateRelayBudgetUsage(ctx context.Context, relay
 
 	// Update usage
 	budget.CurrentUsageMicroCents += additionalCostMicroCents
+	if budget.LimitMicroCents > 0 {
+		budget.CurrentUsagePercent = float64(budget.CurrentUsageMicroCents) / float64(budget.LimitMicroCents) * 100.0
+		budget.BudgetExceeded = budget.CurrentUsageMicroCents > budget.LimitMicroCents
+	}
 
 	// Check thresholds and send alerts
 	if err := rbs.checkBudgetThresholds(ctx, budget); err != nil {
@@ -93,12 +106,12 @@ func (rbs *RelayBudgetService) UpdateRelayBudgetUsage(ctx context.Context, relay
 	}
 
 	// Update budget in storage
-	return rbs.store.Cost().UpdateRelayBudget(ctx, budget)
+	return rbs.costRepo.UpdateRelayBudget(ctx, budget)
 }
 
 // GetRelayBudgetStatus returns the current budget status for a relay
 func (rbs *RelayBudgetService) GetRelayBudgetStatus(ctx context.Context, relayURL, period string) (*RelayBudgetStatus, error) {
-	budget, err := rbs.store.Cost().GetRelayBudget(ctx, relayURL, period)
+	budget, err := rbs.costRepo.GetRelayBudget(ctx, relayURL, period)
 	if err != nil {
 		return &RelayBudgetStatus{
 			RelayURL:       relayURL,
@@ -115,9 +128,10 @@ func (rbs *RelayBudgetService) GetRelayBudgetStatus(ctx context.Context, relayUR
 		budget.WarningAlertSent = false
 		budget.CriticalAlertSent = false
 		budget.BudgetExceeded = false
+		budget.CurrentUsagePercent = 0
 
 		// Update in storage
-		if updateErr := rbs.store.Cost().UpdateRelayBudget(ctx, budget); updateErr != nil {
+		if updateErr := rbs.costRepo.UpdateRelayBudget(ctx, budget); updateErr != nil {
 			rbs.logger.Error("failed to reset budget", zap.Error(updateErr))
 		}
 	}
@@ -205,13 +219,16 @@ func (rbs *RelayBudgetService) CheckRelayBudget(ctx context.Context, relayURL st
 
 // AggregateRelayCosts aggregates relay costs into metrics for budget tracking
 func (rbs *RelayBudgetService) AggregateRelayCosts(ctx context.Context, relayURL string) error {
-	now := time.Now()
+	return rbs.aggregateRelayCostsAt(ctx, relayURL, time.Now())
+}
+
+func (rbs *RelayBudgetService) aggregateRelayCostsAt(ctx context.Context, relayURL string, now time.Time) error {
 
 	// Aggregate daily costs
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	dayEnd := dayStart.Add(24 * time.Hour)
 
-	if err := rbs.store.Cost().AggregateRelayCosts(ctx, relayURL, "daily", dayStart, dayEnd); err != nil {
+	if err := rbs.costRepo.AggregateRelayCosts(ctx, relayURL, "daily", dayStart, dayEnd); err != nil {
 		rbs.logger.Error("failed to aggregate daily relay costs",
 			zap.String("relay_url", relayURL),
 			zap.Error(err))
@@ -220,7 +237,7 @@ func (rbs *RelayBudgetService) AggregateRelayCosts(ctx context.Context, relayURL
 	// Aggregate weekly costs (if it's Sunday)
 	if now.Weekday() == time.Sunday {
 		weekStart := dayStart.AddDate(0, 0, -6) // 7 days ago
-		if err := rbs.store.Cost().AggregateRelayCosts(ctx, relayURL, "weekly", weekStart, dayEnd); err != nil {
+		if err := rbs.costRepo.AggregateRelayCosts(ctx, relayURL, "weekly", weekStart, dayEnd); err != nil {
 			rbs.logger.Error("failed to aggregate weekly relay costs",
 				zap.String("relay_url", relayURL),
 				zap.Error(err))
@@ -231,7 +248,7 @@ func (rbs *RelayBudgetService) AggregateRelayCosts(ctx context.Context, relayURL
 	if now.Day() == 1 {
 		monthStart := time.Date(now.Year(), now.Month()-1, 1, 0, 0, 0, 0, now.Location())
 		monthEnd := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-		if err := rbs.store.Cost().AggregateRelayCosts(ctx, relayURL, "monthly", monthStart, monthEnd); err != nil {
+		if err := rbs.costRepo.AggregateRelayCosts(ctx, relayURL, "monthly", monthStart, monthEnd); err != nil {
 			rbs.logger.Error("failed to aggregate monthly relay costs",
 				zap.String("relay_url", relayURL),
 				zap.Error(err))
@@ -247,7 +264,7 @@ func (rbs *RelayBudgetService) GetRelayBudgetRecommendations(ctx context.Context
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -30) // Last 30 days
 
-	summary, err := rbs.store.Cost().GetRelayCostSummary(ctx, relayURL, startTime, endTime)
+	summary, err := rbs.costRepo.GetRelayCostSummary(ctx, relayURL, startTime, endTime)
 	if err != nil {
 		rbs.logger.Error("failed to get relay cost summary",
 			zap.String("relay_url", relayURL),

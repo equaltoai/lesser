@@ -232,7 +232,7 @@ func GenerateCSRFTokenHandler(manager *CSRFManager) http.HandlerFunc {
 		// Generate token
 		token, err := manager.GenerateToken(claims.Username)
 		if err != nil {
-			statusCode, message := common.HandleError(nil, common.ErrInternal(err))
+			statusCode, message := common.HandleError(common.Logger(), common.ErrInternal(err))
 			w.WriteHeader(statusCode)
 			_, _ = w.Write([]byte(message))
 			return

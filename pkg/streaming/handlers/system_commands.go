@@ -25,10 +25,28 @@ import (
 // SystemCommandHandler handles WebSocket commands for system-level operations
 type SystemCommandHandler struct {
 	*streaming.BaseCommandHandler
-	notesService         *notes.Service
-	listsService         *lists.Service
+	notesService         notesTimelineAPI
+	listsService         listsAPI
 	mediaService         mediaUploader
-	notificationsService *notifications.Service
+	notificationsService notificationsAPI
+}
+
+type notesTimelineAPI interface {
+	GetTimeline(ctx context.Context, query *notes.GetTimelineQuery) (*notes.Result, error)
+}
+
+type listsAPI interface {
+	CreateList(ctx context.Context, cmd *lists.CreateListCommand) (*lists.ListResult, error)
+	UpdateList(ctx context.Context, cmd *lists.UpdateListCommand) (*lists.ListResult, error)
+	DeleteList(ctx context.Context, cmd *lists.DeleteListCommand) error
+	AddToList(ctx context.Context, cmd *lists.AddToListCommand) (*lists.MembershipResult, error)
+	RemoveFromList(ctx context.Context, cmd *lists.RemoveFromListCommand) (*lists.MembershipResult, error)
+}
+
+type notificationsAPI interface {
+	MarkAsRead(ctx context.Context, cmd *notifications.MarkAsReadCommand) (*notifications.NotificationResult, error)
+	ClearNotifications(ctx context.Context, cmd *notifications.ClearCommand) (*notifications.ClearResult, error)
+	ListNotifications(ctx context.Context, query *notifications.ListNotificationsQuery) (*notifications.NotificationListResult, error)
 }
 
 type mediaUploader interface {

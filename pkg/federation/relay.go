@@ -37,23 +37,52 @@ type DynamoDBAPI interface {
 
 // RelayService handles ActivityPub relay functionality
 type RelayService struct {
-	store      core.RepositoryStorage
+	actorRepo  relayActorRepository
+	relayRepo  relayRelayRepository
+	costRepo   relayCostRepository
 	logger     *zap.Logger
-	httpClient *httpclient.SecureClient
+	httpClient httpDoer
+	delivery   relayDeliveryService
 	domain     string
 }
 
 // NewRelayService creates a new relay service
 func NewRelayService(store core.RepositoryStorage, domain string, logger *zap.Logger) *RelayService {
+	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(store), config.Get())
+
 	return &RelayService{
-		store:  store,
-		logger: logger,
+		actorRepo: store.Actor(),
+		relayRepo: store.Relay(),
+		costRepo:  store.Cost(),
+		logger:    logger,
 		httpClient: httpclient.NewSecureClient(
 			httpclient.WithTimeout(10*time.Second),
 			httpclient.WithLogger(logger),
 		),
-		domain: domain,
+		delivery: deliverySvc,
+		domain:   domain,
 	}
+}
+
+type relayActorRepository interface {
+	GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error)
+}
+
+type relayRelayRepository interface {
+	StoreRelayInfo(ctx context.Context, relay *storage.RelayInfo) error
+	GetRelayInfo(ctx context.Context, relayURL string) (*storage.RelayInfo, error)
+	RemoveRelayInfo(ctx context.Context, relayURL string) error
+	GetActiveRelays(ctx context.Context) ([]*storage.RelayInfo, error)
+}
+
+type relayCostRepository interface {
+	CreateRelayCost(ctx context.Context, relayCost *models.RelayCost) error
+	GetRelayBudget(ctx context.Context, relayURL, period string) (*models.RelayBudget, error)
+	UpdateRelayBudget(ctx context.Context, budget *models.RelayBudget) error
+}
+
+type relayDeliveryService interface {
+	DeliverActivity(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor) error
 }
 
 // RelayInfo represents information about a relay
@@ -69,6 +98,9 @@ type RelayInfo struct {
 func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, actorUsername string) error {
 	start := time.Now()
 	operationID := fmt.Sprintf("subscribe-%d", start.UnixNano())
+	success := true
+	errorMessage := ""
+	activityType := ""
 
 	r.logger.Info("subscribing to relay",
 		zap.String("relay_url", relayURL),
@@ -77,15 +109,15 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 
 	// Track cost for this operation
 	defer func() {
-		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "",
-			start, operationID, true, "") // Will be updated if error occurs
+		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", activityType,
+			start, operationID, success, errorMessage)
 	}()
 
 	// Parse relay URL
 	_, err := url.Parse(relayURL)
 	if err != nil {
-		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "",
-			start, operationID, false, fmt.Sprintf("invalid URL: %v", err))
+		success = false
+		errorMessage = fmt.Sprintf("invalid URL: %v", err)
 		r.logger.Error("invalid relay URL", zap.String("relay_url", relayURL), zap.Error(err))
 		return errors.Join(ErrInvalidRelayURL, err)
 	}
@@ -93,17 +125,17 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 	// Get relay actor information
 	relayActor, err := r.fetchRelayActor(ctx, relayURL)
 	if err != nil {
-		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "",
-			start, operationID, false, fmt.Sprintf("fetch actor failed: %v", err))
+		success = false
+		errorMessage = fmt.Sprintf("fetch actor failed: %v", err)
 		r.logger.Error("failed to fetch relay actor", zap.String("relay_url", relayURL), zap.Error(err))
 		return errors.Join(ErrFetchRelayActorFailed, err)
 	}
 
 	// Get subscribing actor
-	actor, err := r.store.Actor().GetActorByUsername(ctx, actorUsername)
+	actor, err := r.actorRepo.GetActorByUsername(ctx, actorUsername)
 	if err != nil {
-		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "",
-			start, operationID, false, fmt.Sprintf("get actor failed: %v", err))
+		success = false
+		errorMessage = fmt.Sprintf("get actor failed: %v", err)
 		r.logger.Error("failed to get actor", zap.String("actor_username", actorUsername), zap.Error(err))
 		return errors.Join(ErrGetActorFailed, err)
 	}
@@ -120,6 +152,7 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 		Actor:  actor.ID,
 		Object: relayActor.ID,
 	}
+	activityType = followActivity.Type
 
 	// Store relay info
 	relayInfo := &RelayInfo{
@@ -131,17 +164,16 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 	}
 
 	if err := r.storeRelayInfo(ctx, relayInfo); err != nil {
-		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", followActivity.Type,
-			start, operationID, false, fmt.Sprintf("store relay info failed: %v", err))
+		success = false
+		errorMessage = fmt.Sprintf("store relay info failed: %v", err)
 		r.logger.Error("failed to store relay info", zap.String("relay_url", relayURL), zap.Error(err))
 		return errors.Join(ErrStoreRelayInfoFailed, err)
 	}
 
 	// Send follow activity to relay
-	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store), config.Get())
-	if err := deliverySvc.DeliverActivity(ctx, followActivity, relayActor.Inbox, actor); err != nil {
-		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", followActivity.Type,
-			start, operationID, false, fmt.Sprintf("delivery failed: %v", err))
+	if err := r.delivery.DeliverActivity(ctx, followActivity, relayActor.Inbox, actor); err != nil {
+		success = false
+		errorMessage = fmt.Sprintf("delivery failed: %v", err)
 		r.logger.Error("failed to deliver follow activity", zap.String("relay_url", relayURL), zap.Error(err))
 		return errors.Join(ErrDeliverFollowActivityFailed, err)
 	}
@@ -167,7 +199,7 @@ func (r *RelayService) UnsubscribeFromRelay(ctx context.Context, relayURL string
 	}
 
 	// Get actor
-	actor, err := r.store.Actor().GetActorByUsername(ctx, actorUsername)
+	actor, err := r.actorRepo.GetActorByUsername(ctx, actorUsername)
 	if err != nil {
 		r.logger.Error("failed to get actor for unsubscribe", zap.String("actor_username", actorUsername), zap.Error(err))
 		return errors.Join(ErrGetActorFailed, err)
@@ -191,8 +223,7 @@ func (r *RelayService) UnsubscribeFromRelay(ctx context.Context, relayURL string
 	}
 
 	// Send undo activity to relay
-	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store), config.Get())
-	if err := deliverySvc.DeliverActivity(ctx, undoActivity, relayInfo.InboxURL, actor); err != nil {
+	if err := r.delivery.DeliverActivity(ctx, undoActivity, relayInfo.InboxURL, actor); err != nil {
 		r.logger.Error("failed to deliver undo activity",
 			zap.String("relay_url", relayURL),
 			zap.Error(err))
@@ -215,6 +246,8 @@ func (r *RelayService) UnsubscribeFromRelay(ctx context.Context, relayURL string
 func (r *RelayService) HandleRelayActivity(ctx context.Context, activity *activitypub.Activity, relayURL string) error {
 	start := time.Now()
 	operationID := fmt.Sprintf("handle-%d", start.UnixNano())
+	success := true
+	errorMessage := ""
 
 	r.logger.Debug("handling relay activity",
 		zap.String("activity_type", activity.Type),
@@ -224,15 +257,15 @@ func (r *RelayService) HandleRelayActivity(ctx context.Context, activity *activi
 	// Track cost for inbound processing
 	defer func() {
 		r.trackRelayCost(ctx, relayURL, "processing", "inbound", activity.Type,
-			start, operationID, true, "") // Will be updated if error occurs
+			start, operationID, success, errorMessage)
 	}()
 
 	// Verify the activity is from a known relay
 	relayInfo, err := r.getRelayInfo(ctx, relayURL)
-	if err != nil || !relayInfo.Active {
+	if err != nil || relayInfo == nil || (!relayInfo.Active && activity.Type != activitypub.AcceptType && activity.Type != activitypub.RejectType) {
+		success = false
 		errMsg := fmt.Sprintf("activity from unknown or inactive relay: %s", relayURL)
-		r.trackRelayCost(ctx, relayURL, "processing", "inbound", activity.Type,
-			start, operationID, false, errMsg)
+		errorMessage = errMsg
 		r.logger.Error("activity from unknown or inactive relay", zap.String("relay_url", relayURL), zap.Bool("relay_active", relayInfo != nil && relayInfo.Active))
 		return ErrUnknownInactiveRelay
 	}
@@ -269,10 +302,9 @@ func (r *RelayService) HandleRelayActivity(ctx context.Context, activity *activi
 		processErr = nil
 	}
 
-	// Update cost tracking with final result
 	if processErr != nil {
-		r.trackRelayCost(ctx, relayURL, "processing", "inbound", activity.Type,
-			start, operationID, false, fmt.Sprintf("processing failed: %v", processErr))
+		success = false
+		errorMessage = fmt.Sprintf("processing failed: %v", processErr)
 	}
 
 	return processErr
@@ -316,7 +348,6 @@ func (r *RelayService) ForwardToRelays(ctx context.Context, activity *activitypu
 	}
 
 	// Send to each relay
-	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store), config.Get())
 	var errors []error
 	successCount := 0
 
@@ -343,7 +374,7 @@ func (r *RelayService) ForwardToRelays(ctx context.Context, activity *activitypu
 		}
 
 		// Attempt delivery
-		if err := deliverySvc.DeliverActivity(ctx, announceActivity, relay.InboxURL, actor); err != nil {
+		if err := r.delivery.DeliverActivity(ctx, announceActivity, relay.InboxURL, actor); err != nil {
 			r.logger.Error("failed to forward to relay",
 				zap.String("relay_url", relay.URL),
 				zap.String("operation_id", relayOpID),
@@ -485,11 +516,11 @@ func (r *RelayService) storeRelayInfo(ctx context.Context, relay *RelayInfo) err
 		LastSeenAt: relay.LastSeenAt,
 	}
 
-	return r.store.Relay().StoreRelayInfo(ctx, storageRelay)
+	return r.relayRepo.StoreRelayInfo(ctx, storageRelay)
 }
 
 func (r *RelayService) getRelayInfo(ctx context.Context, relayURL string) (*RelayInfo, error) {
-	storageRelay, err := r.store.Relay().GetRelayInfo(ctx, relayURL)
+	storageRelay, err := r.relayRepo.GetRelayInfo(ctx, relayURL)
 	if err != nil {
 		return nil, err
 	}
@@ -505,11 +536,11 @@ func (r *RelayService) getRelayInfo(ctx context.Context, relayURL string) (*Rela
 }
 
 func (r *RelayService) removeRelayInfo(ctx context.Context, relayURL string) error {
-	return r.store.Relay().RemoveRelayInfo(ctx, relayURL)
+	return r.relayRepo.RemoveRelayInfo(ctx, relayURL)
 }
 
 func (r *RelayService) getActiveRelays(ctx context.Context) ([]*RelayInfo, error) {
-	storageRelays, err := r.store.Relay().GetActiveRelays(ctx)
+	storageRelays, err := r.relayRepo.GetActiveRelays(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -645,7 +676,7 @@ func (r *RelayService) doTrackRelayCost(ctx context.Context, relayURL, operation
 	}
 
 	// Store the cost record
-	return r.store.Cost().CreateRelayCost(ctx, relayCost)
+	return r.costRepo.CreateRelayCost(ctx, relayCost)
 }
 
 // extractDomainFromRelayURL extracts domain from relay URL
@@ -711,7 +742,7 @@ func calculateDynamoDBCost(operations int64) int64 {
 // checkRelayBudget checks if relay operation would exceed budget
 func (r *RelayService) checkRelayBudget(ctx context.Context, relayURL string, estimatedCostMicroCents int64) error {
 	// Get daily budget for this relay
-	budget, err := r.store.Cost().GetRelayBudget(ctx, relayURL, "daily")
+	budget, err := r.costRepo.GetRelayBudget(ctx, relayURL, "daily")
 	if err != nil {
 		// No budget configured - allow operation
 		return nil
@@ -733,7 +764,7 @@ func (r *RelayService) checkRelayBudget(ctx context.Context, relayURL string, es
 
 		// Mark warning as sent
 		budget.WarningAlertSent = true
-		if updateErr := r.store.Cost().UpdateRelayBudget(ctx, budget); updateErr != nil {
+		if updateErr := r.costRepo.UpdateRelayBudget(ctx, budget); updateErr != nil {
 			r.logger.Error("failed to update relay budget warning flag", zap.Error(updateErr))
 		}
 	}

@@ -13,8 +13,16 @@ import (
 // AnalyticsAggregator implements the 5-minute primary aggregation pattern
 // following the federation-analytics-guidance.md specifications
 type AnalyticsAggregator struct {
-	federationRepo *repositories.FederationRepository
+	federationRepo analyticsFederationRepository
 	logger         *zap.Logger
+}
+
+type analyticsFederationRepository interface {
+	StoreDetailedFederationMetrics(ctx context.Context, metrics *models.FederationAnalyticsTimeSeries) error
+	AggregateFederationMetrics(ctx context.Context, domain, fromPeriod, toPeriod string, timestamp time.Time) error
+	GetDomainHealthScore(ctx context.Context, domain string) (float64, error)
+	GetDetailedMetricsByPeriod(ctx context.Context, period string, startTime, endTime time.Time, limit int) ([]*models.FederationAnalyticsTimeSeries, error)
+	GetUnhealthyDomains(ctx context.Context, healthThreshold float64) ([]*models.FederationAnalyticsTimeSeries, error)
 }
 
 // NewAnalyticsAggregator creates a new analytics aggregator

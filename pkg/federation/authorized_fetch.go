@@ -12,23 +12,38 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/httpclient"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
 
 // AuthorizedFetchService handles authorized fetch for ActivityPub objects
 type AuthorizedFetchService struct {
-	store      core.RepositoryStorage
-	logger     *zap.Logger
-	httpClient *httpclient.SecureClient
-	domain     string
+	actorRepo    authorizedFetchActorRepository
+	instanceRepo authorizedFetchInstanceRepository
+	logger       *zap.Logger
+	httpClient   httpDoer
+	domain       string
+}
+
+type httpDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+type authorizedFetchActorRepository interface {
+	GetActorPrivateKey(ctx context.Context, username string) (string, error)
+}
+
+type authorizedFetchInstanceRepository interface {
+	GetInstanceRules(ctx context.Context) ([]storage.InstanceRule, error)
 }
 
 // NewAuthorizedFetchService creates a new authorized fetch service
 func NewAuthorizedFetchService(store core.RepositoryStorage, domain string, logger *zap.Logger) *AuthorizedFetchService {
 	return &AuthorizedFetchService{
-		store:  store,
-		logger: logger,
+		actorRepo:    store.Actor(),
+		instanceRepo: store.Instance(),
+		logger:       logger,
 		httpClient: httpclient.NewSecureClient(
 			httpclient.WithTimeout(10*time.Second),
 			httpclient.WithLogger(logger),
@@ -55,13 +70,13 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 	req.Header.Set("User-Agent", UserAgent)
 
 	// Validate repository access for private key retrieval
-	if err := common.ValidateRepositoryAccess(signingActor.PreferredUsername, signingActor.ID, "GetActorPrivateKey"); err != nil {
+	if err := common.ValidateRepositoryAccess(signingActor.PreferredUsername, signingActor.ID, "read"); err != nil {
 		f.logger.Error("repository access validation failed", zap.String("username", signingActor.PreferredUsername), zap.Error(err))
 		return nil, errors.Join(ErrRepositoryAccessValidationFailed, err)
 	}
 
 	// Get the actor's private key
-	privateKeyPEM, err := f.store.Actor().GetActorPrivateKey(ctx, signingActor.PreferredUsername)
+	privateKeyPEM, err := f.actorRepo.GetActorPrivateKey(ctx, signingActor.PreferredUsername)
 	if err != nil {
 		f.logger.Error("failed to get private key", zap.String("username", signingActor.PreferredUsername), zap.Error(err))
 		return nil, errors.Join(ErrPrivateKeyRetrievalFailed, err)
@@ -217,7 +232,7 @@ func (f *AuthorizedFetchService) IsAuthorizedFetchEnabled(ctx context.Context) b
 	}
 
 	// Fall back to checking instance configuration from storage
-	rules, err := f.store.Instance().GetInstanceRules(ctx)
+	rules, err := f.instanceRepo.GetInstanceRules(ctx)
 	if err != nil {
 		f.logger.Debug("failed to get instance rules, defaulting authorized fetch to disabled",
 			zap.Error(err))

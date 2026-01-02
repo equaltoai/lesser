@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 )
@@ -23,7 +23,7 @@ type JobQueue interface {
 
 // ErrorRecoveryManager handles connection error recovery and reconnection strategies
 type ErrorRecoveryManager struct {
-	connRepo  *repositories.StreamingConnectionRepository
+	connRepo  interfaces.StreamingConnectionRepository
 	apiClient streamer.Client
 	jobQueue  JobQueue
 	logger    *zap.Logger
@@ -153,7 +153,7 @@ func (cb *CircuitBreaker) GetState() CircuitBreakerState {
 
 // NewErrorRecoveryManager creates a new error recovery manager
 func NewErrorRecoveryManager(
-	connRepo *repositories.StreamingConnectionRepository,
+	connRepo interfaces.StreamingConnectionRepository,
 	apiClient streamer.Client,
 	jobQueue JobQueue,
 	logger *zap.Logger,

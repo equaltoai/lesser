@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
@@ -15,7 +16,7 @@ import (
 
 // MetricsCollector collects and aggregates streaming connection metrics
 type MetricsCollector struct {
-	connRepo *repositories.StreamingConnectionRepository
+	connRepo interfaces.StreamingConnectionRepository
 	logger   *zap.Logger
 
 	// Aggregated metrics
@@ -88,7 +89,7 @@ func DefaultMetricsCollectorConfig() *MetricsCollectorConfig {
 
 // NewMetricsCollector creates a new metrics collector
 func NewMetricsCollector(
-	connRepo *repositories.StreamingConnectionRepository,
+	connRepo interfaces.StreamingConnectionRepository,
 	logger *zap.Logger,
 	config *MetricsCollectorConfig,
 ) *MetricsCollector {
