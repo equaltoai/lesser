@@ -17,6 +17,7 @@ func TestValidateVAPIDKeysForProduction_Round10Coverage(t *testing.T) {
 	t.Run("non-production skips validation", func(t *testing.T) {
 		cfg := &config.Config{Stage: "dev"}
 		repos := &MockRepositoryStorage{}
+		repos.On("Audit").Return(nil).Maybe()
 		require.NoError(t, ValidateVAPIDKeysForProduction(context.Background(), cfg, repos, logger))
 	})
 
@@ -36,6 +37,7 @@ func TestValidateVAPIDKeysForProduction_Round10Coverage(t *testing.T) {
 
 		repos := &MockRepositoryStorage{}
 		repos.On("PushSubscription").Return(pushRepo).Maybe()
+		repos.On("Audit").Return(nil).Maybe()
 
 		require.NoError(t, ValidateVAPIDKeysForProduction(context.Background(), cfg, repos, logger))
 	})
@@ -48,6 +50,7 @@ func TestValidateVAPIDKeysForProduction_Round10Coverage(t *testing.T) {
 
 		repos := &MockRepositoryStorage{}
 		repos.On("PushSubscription").Return(pushRepo).Maybe()
+		repos.On("Audit").Return(nil).Maybe()
 
 		require.Error(t, ValidateVAPIDKeysForProduction(context.Background(), cfg, repos, logger))
 	})

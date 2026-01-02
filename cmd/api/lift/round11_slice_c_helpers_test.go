@@ -21,6 +21,7 @@ import (
 type round11TestRepos struct {
 	*MockRepositoryStorage
 	account      *repositories.AccountRepository
+	activity     interfaces.ActivityRepository
 	actor        interfaces.ActorRepository
 	moderation   interfaces.ModerationRepository
 	push         *repositories.PushSubscriptionRepository
@@ -38,6 +39,7 @@ type round11TestRepos struct {
 }
 
 func (r *round11TestRepos) Account() *repositories.AccountRepository { return r.account }
+func (r *round11TestRepos) Activity() interfaces.ActivityRepository  { return r.activity }
 func (r *round11TestRepos) Actor() interfaces.ActorRepository        { return r.actor }
 func (r *round11TestRepos) Moderation() interfaces.ModerationRepository {
 	return r.moderation
@@ -64,6 +66,9 @@ func (r *round11TestRepos) Conversation() *repositories.ConversationRepository {
 	return r.conversation
 }
 func (r *round11TestRepos) Trust() interfaces.TrustRepository { return r.trust }
+func (r *round11TestRepos) Audit() *repositories.AuditRepository {
+	return nil
+}
 
 func round11NewHandlerSliceC(t *testing.T, state *round10QueryState) (*Handler, *round10DynamoHarness, *round11TestRepos) {
 	t.Helper()
@@ -84,6 +89,7 @@ func round11NewHandlerSliceC(t *testing.T, state *round10QueryState) (*Handler, 
 	repos := &round11TestRepos{
 		MockRepositoryStorage: &MockRepositoryStorage{},
 		account:               repositories.NewAccountRepository(harness.db, cfg.DynamoTableName, cfg.Domain, logger),
+		activity:              repositories.NewActivityRepository(harness.db, cfg.DynamoTableName, logger, nil),
 		actor:                 repositories.NewActorRepository(harness.db, cfg.DynamoTableName, logger),
 		moderation:            repositories.NewModerationRepository(harness.db, cfg.DynamoTableName, logger),
 		push:                  repositories.NewPushSubscriptionRepository(harness.db, cfg.DynamoTableName, logger, nil, nil, "", "mailto:push@example.com"),

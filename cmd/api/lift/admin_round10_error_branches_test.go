@@ -31,6 +31,7 @@ func TestAdminLift_Round10Coverage_ErrorBranches(t *testing.T) {
 		repos := &MockRepositoryStorage{}
 		repos.On("User").Return(userRepo).Maybe()
 		repos.On("Account").Return(accountRepo).Maybe()
+		repos.On("Audit").Return((*repositories.AuditRepository)(nil)).Maybe()
 		repos.On("GetDB").Return(harness.db).Maybe()
 
 		h := &Handler{cfg: cfg, repos: repos, logger: logger}
@@ -56,6 +57,7 @@ func TestAdminLift_Round10Coverage_ErrorBranches(t *testing.T) {
 		repos := &MockRepositoryStorage{}
 		repos.On("Account").Return(accountRepo).Maybe()
 		repos.On("Moderation").Return(moderationRepo).Maybe()
+		repos.On("Audit").Return((*repositories.AuditRepository)(nil)).Maybe()
 		repos.On("GetDB").Return(harness.db).Maybe()
 
 		h := &Handler{cfg: cfg, repos: repos, logger: logger}
@@ -81,6 +83,7 @@ func TestAdminLift_Round10Coverage_ErrorBranches(t *testing.T) {
 		repos := &MockRepositoryStorage{}
 		repos.On("Account").Return(accountRepo).Maybe()
 		repos.On("Status").Return(statusRepo).Maybe()
+		repos.On("Audit").Return((*repositories.AuditRepository)(nil)).Maybe()
 		repos.On("GetDB").Return(harness.db).Maybe()
 
 		h := &Handler{cfg: cfg, repos: repos, logger: logger}
@@ -108,6 +111,7 @@ func TestAdminLift_Round10Coverage_ErrorBranches(t *testing.T) {
 		repos := &MockRepositoryStorage{}
 		repos.On("Account").Return(accountRepo).Maybe()
 		repos.On("Moderation").Return(moderationRepo).Maybe()
+		repos.On("Audit").Return((*repositories.AuditRepository)(nil)).Maybe()
 		repos.On("GetDB").Return(harness.db).Maybe()
 
 		h := &Handler{cfg: cfg, repos: repos, logger: logger}

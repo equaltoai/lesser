@@ -124,6 +124,7 @@ func TestServiceRegistryAdapter(t *testing.T) {
 		mockStorage.On("Conversation").Return((*repositories.ConversationRepository)(nil)).Maybe()
 		mockStorage.On("Status").Return((*repositories.StatusRepository)(nil)).Maybe()
 		mockStorage.On("Account").Return((*repositories.AccountRepository)(nil)).Maybe()
+		mockStorage.On("Audit").Return((*repositories.AuditRepository)(nil)).Maybe()
 
 		rv := reflect.ValueOf(reg).Elem().FieldByName("storage")
 		require.True(t, rv.IsValid())

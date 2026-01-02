@@ -149,6 +149,7 @@ func TestWebSocketBudgetHandlers(t *testing.T) {
 
 	repos := &MockRepositoryStorage{}
 	repos.On("Account").Return(accountRepo).Maybe()
+	repos.On("Audit").Return(nil).Maybe()
 
 	fakeRepo := &fakeWebSocketCostRepo{
 		budget: &repositories.BudgetStatus{AllowConnection: true, AllowMessages: true},

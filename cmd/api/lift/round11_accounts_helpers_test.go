@@ -114,11 +114,15 @@ func TestAccountsHandlers_SimpleFlows(t *testing.T) {
 		},
 	}
 
+	repos := &MockRepositoryStorage{}
+	repos.On("Account").Return(nil).Maybe()
+	repos.On("Audit").Return(nil).Maybe()
+
 	h := &Handler{
 		cfg:      cfg,
 		logger:   logger,
 		registry: registry,
-		repos:    &MockRepositoryStorage{},
+		repos:    repos,
 	}
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice", nil, nil, nil)
