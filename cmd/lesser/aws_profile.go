@@ -20,6 +20,13 @@ type exportedCredentials struct {
 	Expiration      string `json:"Expiration"`
 }
 
+var loadAWSConfigFromProfileFn = loadAWSConfigFromProfile
+var awsLoadDefaultConfigFn = awsconfig.LoadDefaultConfig
+var execCommandCombinedOutputFn = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- tool invocation, args are not interpreted by a shell
+	return cmd.CombinedOutput()
+}
+
 func loadAWSConfigFromProfile(ctx context.Context, awsProfile string) (aws.Config, error) {
 	profile := strings.TrimSpace(awsProfile)
 	if profile == "" {
@@ -39,7 +46,7 @@ func loadAWSConfigFromProfile(ctx context.Context, awsProfile string) (aws.Confi
 		return aws.Config{}, err
 	}
 
-	cfg, err := awsconfig.LoadDefaultConfig(
+	cfg, err := awsLoadDefaultConfigFn(
 		ctx,
 		awsconfig.WithRegion(region),
 		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
@@ -57,8 +64,7 @@ func loadAWSConfigFromProfile(ctx context.Context, awsProfile string) (aws.Confi
 
 func awsCLIConfigureGet(ctx context.Context, profile string, key string) (string, error) {
 	args := []string{"configure", "get", key, "--profile", profile}
-	cmd := exec.CommandContext(ctx, "aws", args...) // #nosec G204 -- tool invocation, args are not interpreted by a shell
-	out, err := cmd.CombinedOutput()
+	out, err := execCommandCombinedOutputFn(ctx, "aws", args...)
 	if err != nil {
 		return "", fmt.Errorf("aws %s: %w\n%s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
@@ -67,8 +73,7 @@ func awsCLIConfigureGet(ctx context.Context, profile string, key string) (string
 
 func awsCLIExportCredentials(ctx context.Context, profile string) (exportedCredentials, error) {
 	args := []string{"configure", "export-credentials", "--profile", profile, "--format", "process"}
-	cmd := exec.CommandContext(ctx, "aws", args...) // #nosec G204 -- tool invocation, args are not interpreted by a shell
-	out, err := cmd.CombinedOutput()
+	out, err := execCommandCombinedOutputFn(ctx, "aws", args...)
 	if err != nil {
 		return exportedCredentials{}, fmt.Errorf("aws %s: %w\n%s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}

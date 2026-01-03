@@ -8,6 +8,11 @@ import (
 	"unicode"
 )
 
+var (
+	userHomeDirFn = os.UserHomeDir
+	mkdirAllFn    = os.MkdirAll
+)
+
 func normalizeBaseDomain(input string) (string, error) {
 	domain := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(input)), ".")
 	if domain == "" {
@@ -48,13 +53,13 @@ func normalizeBaseDomain(input string) (string, error) {
 }
 
 func ensureLocalStateDir(app, baseDomain string) (string, error) {
-	home, err := os.UserHomeDir()
+	home, err := userHomeDirFn()
 	if err != nil {
 		return "", fmt.Errorf("resolve home dir: %w", err)
 	}
 
 	dir := filepath.Join(home, ".lesser", app, baseDomain)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := mkdirAllFn(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create state dir: %w", err)
 	}
 	return dir, nil

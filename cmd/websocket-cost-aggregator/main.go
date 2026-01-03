@@ -39,14 +39,36 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
+type websocketCostRepository interface {
+	GetTopCostlyUsers(ctx context.Context, startTime, endTime time.Time, limit int) ([]*repositories.WebSocketUserCostRanking, error)
+	CheckBudgetLimits(ctx context.Context, userID string) (*repositories.BudgetStatus, error)
+	Create(ctx context.Context, record *models.WebSocketCostRecord) error
+}
+
+type websocketConnectionRepository interface {
+	GetIdleConnections(ctx context.Context, idleThreshold time.Time) ([]models.WebSocketConnection, error)
+	GetStaleConnections(ctx context.Context, staleThreshold time.Time) ([]models.WebSocketConnection, error)
+	DeleteConnection(ctx context.Context, connectionID string) error
+	DeleteAllSubscriptions(ctx context.Context, connectionID string) error
+}
+
+type websocketCostTracker interface {
+	TrackIdleConnections(ctx context.Context, connections []models.WebSocketConnection) error
+	PerformCostAggregation(ctx context.Context, period string, windowStart, windowEnd time.Time) error
+}
+
+type snsPublisher interface {
+	Publish(ctx context.Context, params *sns.PublishInput, optFns ...func(*sns.Options)) (*sns.PublishOutput, error)
+}
+
 // WebSocketCostAggregatorHandler handles scheduled WebSocket cost operations
 type WebSocketCostAggregatorHandler struct {
-	costRepo       *repositories.WebSocketCostRepository
-	connectionRepo *repositories.StreamingConnectionRepository
-	costTracker    *repositories.WebSocketCostTracker
+	costRepo       websocketCostRepository
+	connectionRepo websocketConnectionRepository
+	costTracker    websocketCostTracker
 	logger         *zap.Logger
 	cfg            *common.LambdaContext
-	snsClient      *sns.Client
+	snsClient      snsPublisher
 	webhookURL     string
 	snsTopicArn    string
 }
@@ -56,12 +78,18 @@ var (
 	handler   *WebSocketCostAggregatorHandler
 )
 
-func init() {
-	if common.RunningUnitTests() {
-		return
-	}
+var (
+	mustInitializeLambdaFn = common.MustInitializeLambda
+	getLambdaClientFn      = dynamorm.GetLambdaClient
+	loadAWSConfigFn        = awsconfig.LoadDefaultConfig
+	newSNSClientFn         = func(cfg aws.Config) snsPublisher { return sns.NewFromConfig(cfg) }
+	timeNowFn              = time.Now
+	lambdaStartFn          = lambda.Start
+)
+
+func initializeWebSocketCostAggregator() {
 	// Initialize Lambda with basic configuration for WebSocket cost aggregation
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName:        "websocket-cost-aggregator",
 		LambdaType:         common.LambdaTypeBasic,
 		Version:            "1.0.0",
@@ -74,7 +102,7 @@ func init() {
 	})
 
 	// Initialize DynamORM database connection
-	db, err := dynamorm.GetLambdaClient(context.Background())
+	db, err := getLambdaClientFn(context.Background())
 	if err != nil {
 		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
@@ -101,14 +129,14 @@ func init() {
 	costTracker := repositories.NewWebSocketCostTracker(costRepo, lambdaCtx.Logger)
 
 	// Initialize AWS SDK config for SNS
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+	awsCfg, err := loadAWSConfigFn(context.Background())
 	if err != nil {
 		lambdaCtx.Logger.Error("failed to load AWS config for SNS", zap.Error(err))
 	}
 
-	var snsClient *sns.Client
+	var snsClient snsPublisher
 	if awsCfg.Region != "" {
-		snsClient = sns.NewFromConfig(awsCfg)
+		snsClient = newSNSClientFn(awsCfg)
 	}
 
 	// Get alerting configuration from centralized config
@@ -132,6 +160,13 @@ func init() {
 		webhookURL:     webhookURL,
 		snsTopicArn:    snsTopicArn,
 	}
+}
+
+func init() {
+	if common.RunningUnitTests() {
+		return
+	}
+	initializeWebSocketCostAggregator()
 }
 
 // HandleScheduledEvent handles CloudWatch Events (EventBridge) scheduled events
@@ -267,7 +302,7 @@ func (h *WebSocketCostAggregatorHandler) trackIdleConnections(ctx context.Contex
 func (h *WebSocketCostAggregatorHandler) performCostAggregation(ctx context.Context) error {
 	h.logger.Info("performing WebSocket cost aggregation")
 
-	now := time.Now()
+	now := timeNowFn()
 
 	// Perform hourly aggregation for the previous hour
 	hourStart := now.Add(-1 * time.Hour).Truncate(time.Hour)
@@ -865,5 +900,5 @@ func main() {
 	})
 
 	// Start the Lambda handler with Lift
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }

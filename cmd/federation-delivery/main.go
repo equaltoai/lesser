@@ -130,12 +130,54 @@ var (
 	repos     core.RepositoryStorage
 )
 
+var (
+	runningUnitTestsFn       = common.RunningUnitTests
+	mustInitializeLambdaFn   = common.MustInitializeLambda
+	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	loadAWSConfigFn          = awsconfig.LoadDefaultConfig
+	newSQSClientFn           = sqs.NewFromConfig
+	newDeliveryServiceFn     = federation.NewDeliveryService
+	lambdaStartFn            = lambda.Start
+
+	getSigningActorFn = func(ctx context.Context, storage core.RepositoryStorage, signingActorID string) (*activitypub.Actor, error) {
+		return storage.Account().GetActor(ctx, signingActorID)
+	}
+	getInstanceStatsFn = func(ctx context.Context, storage core.RepositoryStorage, domain string) (*storage.InstanceStats, error) {
+		return storage.Federation().GetInstanceStats(ctx, domain)
+	}
+	recordFederationActivityFn = func(ctx context.Context, storage core.RepositoryStorage, activity *storage.FederationActivity) error {
+		return storage.Federation().RecordFederationActivity(ctx, activity)
+	}
+	createObjectFn = func(ctx context.Context, storage core.RepositoryStorage, obj any) error {
+		return storage.Object().CreateObject(ctx, obj)
+	}
+	deliverActivityFn = func(ctx context.Context, svc *federation.DeliveryService, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor) error {
+		return svc.DeliverActivity(ctx, activity, targetInbox, signingActor)
+	}
+	sendSQSMessageFn = func(ctx context.Context, client *sqs.Client, input *sqs.SendMessageInput) (*sqs.SendMessageOutput, error) {
+		return client.SendMessage(ctx, input)
+	}
+)
+
 func init() {
-	if common.RunningUnitTests() {
+	initializeFederationDeliveryOnStart()
+}
+
+func initializeFederationDeliveryOnStart() {
+	if runningUnitTestsFn() {
 		return
 	}
+	if err := initializeFederationDelivery(); err != nil {
+		if logger == nil {
+			logger = zap.NewNop()
+		}
+		logger.Fatal("failed to initialize federation-delivery lambda", zap.Error(err))
+	}
+}
+
+func initializeFederationDelivery() error {
 	// Standardized Lambda initialization for federation-delivery function
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "federation-delivery",      // federation-delivery
 		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
 	})
@@ -143,33 +185,36 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	repos = lambdaCtx.Repos.(core.RepositoryStorage)
 
 	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
+	err := initializeWithDefaultsFn(lambdaCtx)
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
 	// Function-specific initialization only
 	// Initialize AWS SQS client config
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+	awsCfg, err := loadAWSConfigFn(context.Background())
 	if err != nil {
-		logger.Fatal("Failed to load AWS config", zap.Error(err))
+		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
 	// Create federation storage adapter that implements FederationStorage interface
 	federationStore := &FederationStorageAdapter{repos: repos}
 
 	// Initialize federation delivery service
-	deliveryService := federation.NewDeliveryService(federationStore, cfg)
+	deliveryService := newDeliveryServiceFn(federationStore, cfg)
 
-	sqsClient := sqs.NewFromConfig(awsCfg)
+	sqsClient := newSQSClientFn(awsCfg)
 
 	// Get queue URL from environment
 	queueURL := cfg.FederationQueueURL
 	if err := common.ValidateRequiredParam("queueURL", queueURL); err != nil {
-		logger.Fatal("FEDERATION_DELIVERY_QUEUE_URL environment variable is required")
+		return fmt.Errorf("FEDERATION_DELIVERY_QUEUE_URL environment variable is required")
 	}
 
 	// Create processor instance
@@ -181,27 +226,26 @@ func init() {
 		queueURL:        queueURL,
 		logger:          logger,
 	}
+	return nil
 }
 
-func main() {
-
-	// Create Lift app
+func buildApp() *lift.App {
 	app := lift.New()
 
 	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	app.Use(lift.MarkGlobalMiddleware(middleware.PanicRecovery(lambdaCtx.Logger)))
 
 	// Add request ID middleware
-	app.Use(func(next lift.Handler) lift.Handler {
+	app.Use(lift.MarkGlobalMiddleware(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			requestID := fmt.Sprintf("federation-delivery-%d", time.Now().UnixNano())
 			ctx.Set("requestID", requestID)
 			return next.Handle(ctx)
 		})
-	})
+	}))
 
 	// Add logging middleware
-	app.Use(func(next lift.Handler) lift.Handler {
+	app.Use(lift.MarkGlobalMiddleware(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
 			requestID := ctx.Get("requestID").(string)
@@ -218,30 +262,39 @@ func main() {
 
 			return err
 		})
-	})
+	}))
 
-	// Handle SQS events (using Lift pattern from notification-processor)
-	_ = app.Handle("POST", "/", func(ctx *lift.Context) error {
-		// Parse event from context
-		var event events.SQSEvent
-		if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
-			event = sqsEvent
-		} else {
-			// Try to parse from interface if it's a map
-			eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-			if err != nil {
-				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
-			}
+	_ = app.SQS("federation-delivery", handleFederationDeliverySQS)
 
-			if err := json.Unmarshal(eventBytes, &event); err != nil {
-				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
-			}
+	return app
+}
+
+func main() {
+	lambdaStartFn(buildApp().HandleRequest)
+}
+
+func handleFederationDeliverySQS(ctx *lift.Context) error {
+	if ctx.Request.RawEvent == nil {
+		return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
+	}
+
+	// Parse the raw event as SQS event
+	var event events.SQSEvent
+	if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
+		event = sqsEvent
+	} else {
+		// Try to parse from interface if it's a map
+		eventBytes, err := json.Marshal(ctx.Request.RawEvent)
+		if err != nil {
+			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
 		}
 
-		return processor.HandleSQS(ctx, event)
-	})
+		if err := json.Unmarshal(eventBytes, &event); err != nil {
+			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
+		}
+	}
 
-	lambda.Start(app.HandleRequest)
+	return processor.HandleSQS(ctx, event)
 }
 
 // HandleSQS implements the SQS handler interface for Lift
@@ -299,7 +352,7 @@ func (p *FederationDeliveryProcessor) processDeliveryMessage(ctx context.Context
 	}
 
 	// Get the signing actor
-	signingActor, err := p.repos.Account().GetActor(ctx, msg.SigningActorID)
+	signingActor, err := getSigningActorFn(ctx, p.repos, msg.SigningActorID)
 	if err != nil {
 		logger.Error("signing actor not found",
 			zap.String("signing_actor_id", msg.SigningActorID),
@@ -507,7 +560,7 @@ func (p *FederationDeliveryProcessor) requeueDelivery(ctx context.Context, msg *
 	delaySeconds32 := int32(delaySeconds)
 
 	// Send message to SQS with delay
-	_, err = p.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+	_, err = sendSQSMessageFn(ctx, p.sqsClient, &sqs.SendMessageInput{
 		QueueUrl:     aws.String(p.queueURL),
 		MessageBody:  aws.String(string(messageBody)),
 		DelaySeconds: delaySeconds32,
@@ -548,13 +601,13 @@ func (p *FederationDeliveryProcessor) storeDeliveryStatus(ctx context.Context, s
 
 	// Use the CreateObject method to store the delivery status record
 	// The Object repository will handle the operations
-	return p.repos.Object().CreateObject(ctx, status)
+	return createObjectFn(ctx, p.repos, status)
 }
 
 // assessTargetHealth performs health assessment of target domain before delivery
 func (p *FederationDeliveryProcessor) assessTargetHealth(ctx context.Context, targetDomain string, retryCount int) (bool, string) {
 	// Get instance health information
-	instanceStats, err := p.repos.Federation().GetInstanceStats(ctx, targetDomain)
+	instanceStats, err := getInstanceStatsFn(ctx, p.repos, targetDomain)
 	if err != nil {
 		p.logger.Debug("no instance stats available, allowing delivery",
 			zap.String("domain", targetDomain),
@@ -609,7 +662,7 @@ func calculateHealthBasedBackoff(retryCount int, healthReason string) int {
 // deliverWithRoutingOptimization attempts delivery with route optimization
 func (p *FederationDeliveryProcessor) deliverWithRoutingOptimization(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor, targetDomain string) error {
 	// First try standard delivery
-	err := p.deliveryService.DeliverActivity(ctx, activity, targetInbox, signingActor)
+	err := deliverActivityFn(ctx, p.deliveryService, activity, targetInbox, signingActor)
 	if err != nil {
 		// Log delivery failure with routing context
 		p.logger.Debug("standard delivery failed, no alternate routes available",
@@ -647,7 +700,7 @@ func (p *FederationDeliveryProcessor) recordRoutingFailure(ctx context.Context, 
 		ByteSize:     0, // Unknown since delivery failed
 	}
 
-	return p.repos.Federation().RecordFederationActivity(ctx, activity)
+	return recordFederationActivityFn(ctx, p.repos, activity)
 }
 
 // recordRoutingSuccess records successful delivery analytics
@@ -663,7 +716,7 @@ func (p *FederationDeliveryProcessor) recordRoutingSuccess(ctx context.Context, 
 		ByteSize:     0, // Would need to measure in real implementation
 	}
 
-	return p.repos.Federation().RecordFederationActivity(ctx, activity)
+	return recordFederationActivityFn(ctx, p.repos, activity)
 }
 
 // classifyDeliveryError classifies delivery errors as temporary or permanent

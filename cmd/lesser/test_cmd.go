@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -114,6 +116,8 @@ func runTestCoverage(argv []string) error {
 	fs.StringVar(&args.Stage, "stage", "test", "value for STAGE (default: test)")
 	var scope string
 	fs.StringVar(&scope, "scope", "all", "coverage scope: all|pkg (default: all)")
+	var excludeGenerated bool
+	fs.BoolVar(&excludeGenerated, "exclude-generated", true, "exclude generated files (\"Code generated... DO NOT EDIT\") from coverage profiles (default: true)")
 	var includeTesting bool
 	fs.BoolVar(&includeTesting, "include-testing", false, "include pkg/testing/* in pkg scope (default: false)")
 	var includeTools bool
@@ -122,7 +126,7 @@ func runTestCoverage(argv []string) error {
 		return err
 	}
 
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
@@ -170,7 +174,12 @@ func runTestCoverage(argv []string) error {
 	}
 
 	coveragePath := filepath.Join(repoRoot, profileName)
-	return runCommand(context.Background(), "go", []string{"tool", "cover", "-html=" + coveragePath, "-o", htmlName}, execOptions{
+	if excludeGenerated {
+		if err := filterGeneratedFilesFromCoverProfile(repoRoot, coveragePath); err != nil {
+			return err
+		}
+	}
+	return runCommandFn(context.Background(), "go", []string{"tool", "cover", "-html=" + coveragePath, "-o", htmlName}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GOCACHE": goCache,
@@ -178,12 +187,128 @@ func runTestCoverage(argv []string) error {
 	})
 }
 
-func runGoTests(args testArgs, goArgs []string, extraEnv map[string]string) error {
-	repoRoot, err := findRepoRoot()
+func filterGeneratedFilesFromCoverProfile(repoRoot string, coverProfilePath string) error {
+	modulePath, err := readModulePath(repoRoot)
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("go"); err != nil {
+	modulePrefix := modulePath + "/"
+
+	// #nosec G304 -- reads a developer-controlled coverage profile path.
+	in, err := os.Open(coverProfilePath)
+	if err != nil {
+		return fmt.Errorf("open coverprofile: %w", err)
+	}
+	defer func() {
+		if err := in.Close(); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: close coverprofile:", err)
+		}
+	}()
+
+	tmp, err := os.CreateTemp(filepath.Dir(coverProfilePath), filepath.Base(coverProfilePath)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp coverprofile: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		_ = os.Remove(tmpName)
+	}()
+
+	w := bufio.NewWriter(tmp)
+	defer func() {
+		_ = w.Flush()
+	}()
+
+	isGeneratedCache := make(map[string]bool)
+	isGenerated := func(filePath string) bool {
+		if cached, ok := isGeneratedCache[filePath]; ok {
+			return cached
+		}
+
+		localPath := filePath
+		if modulePrefix != "" && strings.HasPrefix(filePath, modulePrefix) {
+			localPath = strings.TrimPrefix(filePath, modulePrefix)
+		}
+		localPath = filepath.Clean(localPath)
+		if !filepath.IsAbs(localPath) {
+			localPath = filepath.Join(repoRoot, localPath)
+		}
+
+		// #nosec G304 -- reads module-owned files from disk.
+		f, err := os.Open(localPath)
+		if err != nil {
+			isGeneratedCache[filePath] = false
+			return false
+		}
+		defer func() {
+			if err := f.Close(); err != nil {
+				fmt.Fprintln(os.Stderr, "warning: close source file:", err)
+			}
+		}()
+
+		buf := make([]byte, 2048)
+		n, readErr := f.Read(buf)
+		if readErr != nil && readErr != io.EOF {
+			isGeneratedCache[filePath] = false
+			return false
+		}
+
+		header := string(buf[:n])
+		generated := strings.Contains(header, "Code generated") || strings.Contains(header, "DO NOT EDIT")
+		isGeneratedCache[filePath] = generated
+		return generated
+	}
+
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "mode:") {
+			if _, err := w.WriteString(line + "\n"); err != nil {
+				return fmt.Errorf("write coverprofile: %w", err)
+			}
+			continue
+		}
+
+		colon := strings.IndexByte(line, ':')
+		if colon < 0 {
+			if _, err := w.WriteString(line + "\n"); err != nil {
+				return fmt.Errorf("write coverprofile: %w", err)
+			}
+			continue
+		}
+		filePath := line[:colon]
+		if isGenerated(filePath) {
+			continue
+		}
+
+		if _, err := w.WriteString(line + "\n"); err != nil {
+			return fmt.Errorf("write coverprofile: %w", err)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read coverprofile: %w", err)
+	}
+
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("flush coverprofile: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp coverprofile: %w", err)
+	}
+
+	if err := os.Rename(tmpName, coverProfilePath); err != nil {
+		return fmt.Errorf("replace coverprofile: %w", err)
+	}
+
+	return nil
+}
+
+func runGoTests(args testArgs, goArgs []string, extraEnv map[string]string) error {
+	repoRoot, err := findRepoRootFn()
+	if err != nil {
+		return err
+	}
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
 
@@ -205,7 +330,7 @@ func runGoTests(args testArgs, goArgs []string, extraEnv map[string]string) erro
 		env[key] = value
 	}
 
-	return runCommand(context.Background(), "go", goArgs, execOptions{
+	return runCommandFn(context.Background(), "go", goArgs, execOptions{
 		Dir: repoRoot,
 		Env: env,
 	})
@@ -217,7 +342,7 @@ func listPackagesForPkgCoverage(repoRoot string, goCache string) ([]string, erro
 		return nil, err
 	}
 
-	out, err := captureCommandOutput(context.Background(), repoRoot, map[string]string{
+	out, err := captureCommandOutputFn(context.Background(), repoRoot, map[string]string{
 		"GOCACHE": goCache,
 	}, "go", "list", "./pkg/...")
 	if err != nil {
@@ -248,7 +373,7 @@ func listPackagesForAllCoverage(repoRoot string, goCache string, includeTools bo
 		return nil, err
 	}
 
-	out, err := captureCommandOutput(context.Background(), repoRoot, map[string]string{
+	out, err := captureCommandOutputFn(context.Background(), repoRoot, map[string]string{
 		"GOCACHE": goCache,
 	}, "go", "list", "./...")
 	if err != nil {

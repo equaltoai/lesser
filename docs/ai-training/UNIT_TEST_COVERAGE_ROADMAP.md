@@ -11,6 +11,7 @@ This document defines milestones to reach **≥90% statement coverage** (unit te
 **Source of truth:** `go test` statement coverage via `./lesser test coverage --scope all`.
 
 **Exclusions (for “application coverage”):**
+- Generated code: any file containing `Code generated ... DO NOT EDIT` (filtered by `./lesser test coverage` unless `--exclude-generated=false`)
 - Test code: `*_test.go` (implicitly excluded by Go coverage tooling)
 - Test harness packages: `github.com/equaltoai/lesser/pkg/testing/**`, `github.com/equaltoai/lesser/pkg/lift/testing/**`
 - Tooling/non-app code: `github.com/equaltoai/lesser/tools/**`, `github.com/equaltoai/lesser/scripts/**`
@@ -146,4 +147,3 @@ Always re-check at the start of each milestone using the Coverage Measurement Co
 - No weakening compile-time contracts (interfaces, dependency wiring) to make tests pass.
 - No real network calls in unit tests.
 - If a test requires a dependency seam, add the seam (interface/DI), don’t mock by global patching unless already established in the codebase.
-

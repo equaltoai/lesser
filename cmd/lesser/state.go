@@ -42,6 +42,8 @@ type stageReceipt struct {
 	BootstrappedAt   time.Time         `json:"bootstrapped_at"`
 }
 
+var writeReceiptFn = writeReceipt
+
 func newUpReceipt(app, baseDomain, awsProfile, accountID, region string, stages []naming.Stage, hz hostedZone) *upReceipt {
 	stageMap := map[string]*stageReceipt{}
 	for _, stage := range stages {

@@ -7,15 +7,15 @@ import (
 )
 
 func runSecScan(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("gosec"); err != nil {
+	if err := ensureToolAvailableFn("gosec"); err != nil {
 		return err
 	}
 
-	if err := runCommand(context.Background(), "gosec", []string{
+	if err := runCommandFn(context.Background(), "gosec", []string{
 		"-exclude-generated",
 		"-exclude-dir=tmp",
 		"-exclude-dir=infra",
@@ -28,7 +28,7 @@ func runSecScan(_ []string) error {
 
 	infraCDKDir := filepath.Join(repoRoot, "infra", "cdk")
 	if _, err := os.Stat(filepath.Join(infraCDKDir, "go.mod")); err == nil {
-		return runCommand(context.Background(), "gosec", []string{
+		return runCommandFn(context.Background(), "gosec", []string{
 			"-exclude-generated",
 			"-exclude-dir=cdk.out",
 			"./...",
@@ -41,14 +41,14 @@ func runSecScan(_ []string) error {
 }
 
 func runVulnCheck(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("govulncheck"); err != nil {
+	if err := ensureToolAvailableFn("govulncheck"); err != nil {
 		return err
 	}
-	return runCommand(context.Background(), "govulncheck", []string{"./..."}, execOptions{
+	return runCommandFn(context.Background(), "govulncheck", []string{"./..."}, execOptions{
 		Dir: repoRoot,
 	})
 }

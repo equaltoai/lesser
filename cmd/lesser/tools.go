@@ -5,6 +5,11 @@ import (
 	"os/exec"
 )
 
+var (
+	ensureToolAvailableFn  = ensureToolAvailable
+	ensureToolsAvailableFn = ensureToolsAvailable
+)
+
 func ensureToolAvailable(name string) error {
 	if _, err := exec.LookPath(name); err != nil {
 		return fmt.Errorf("required tool %q not found on PATH", name)
@@ -14,7 +19,7 @@ func ensureToolAvailable(name string) error {
 
 func ensureToolsAvailable() error {
 	for _, name := range []string{"aws", "cdk", "go", "pnpm"} {
-		if err := ensureToolAvailable(name); err != nil {
+		if err := ensureToolAvailableFn(name); err != nil {
 			return err
 		}
 	}
@@ -22,5 +27,5 @@ func ensureToolsAvailable() error {
 }
 
 func ensureAWSCLIToolAvailable() error {
-	return ensureToolAvailable("aws")
+	return ensureToolAvailableFn("aws")
 }

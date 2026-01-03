@@ -15,13 +15,21 @@ import (
 	"time"
 )
 
+var (
+	loadLambdaNamesFromInventoryFn = loadLambdaNamesFromInventory
+	latestGoSourceUpdateFn         = latestGoSourceUpdate
+	buildLambdaBinaryFn            = buildLambdaBinary
+	zipSingleFileFn                = zipSingleFile
+	runExecCmdFn                   = func(cmd *exec.Cmd) error { return cmd.Run() }
+)
+
 func buildLambdaZips(repoRoot string, force bool) error {
-	lambdaNames, err := loadLambdaNamesFromInventory(repoRoot)
+	lambdaNames, err := loadLambdaNamesFromInventoryFn(repoRoot)
 	if err != nil {
 		return err
 	}
 
-	sourceUpdatedAt, err := latestGoSourceUpdate(repoRoot)
+	sourceUpdatedAt, err := latestGoSourceUpdateFn(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -55,10 +63,10 @@ func buildLambdaZips(repoRoot string, force bool) error {
 		fmt.Println("Building Lambda:", lambdaName)
 
 		bootstrapPath := filepath.Join(binDir, "bootstrap")
-		if err := buildLambdaBinary(repoRoot, cacheDir, lambdaName, bootstrapPath); err != nil {
+		if err := buildLambdaBinaryFn(repoRoot, cacheDir, lambdaName, bootstrapPath); err != nil {
 			return err
 		}
-		if err := zipSingleFile(zipPath, "bootstrap", bootstrapPath); err != nil {
+		if err := zipSingleFileFn(zipPath, "bootstrap", bootstrapPath); err != nil {
 			return err
 		}
 		_ = os.Remove(bootstrapPath)
@@ -96,7 +104,7 @@ func buildLambdaBinary(repoRoot string, cacheDir string, lambdaName string, outP
 		"GOCACHE="+cacheDir,
 	)
 
-	if err := cmd.Run(); err != nil {
+	if err := runExecCmdFn(cmd); err != nil {
 		return fmt.Errorf("go build %s: %w", lambdaName, err)
 	}
 	return nil

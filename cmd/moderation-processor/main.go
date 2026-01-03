@@ -50,6 +50,11 @@ const (
 )
 
 var (
+	runningUnitTests = common.RunningUnitTests
+	lambdaStart      = lambda.Start
+	mustInitializeLambda = common.MustInitializeLambda
+	newLambdaOptimizedClient = dynamorm.NewLambdaOptimizedClient
+	initializeWithDefaults = (*common.LambdaContext).InitializeWithDefaults
 	lambdaCtx        *common.LambdaContext
 	db               core.DB
 	consensusEngine  *moderation.ConsensusEngine
@@ -403,11 +408,15 @@ var (
 )
 
 func init() {
-	if common.RunningUnitTests() {
+	initialize()
+}
+
+func initialize() {
+	if runningUnitTests() {
 		return
 	}
 	// Standardized Lambda initialization for processor functions
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambda(common.LambdaConfig{
 		ServiceName: "moderation-processor",
 		LambdaType:  common.LambdaTypeProcessor,
 	})
@@ -420,13 +429,13 @@ func init() {
 	}
 
 	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
+	err := initializeWithDefaults(lambdaCtx)
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
 	// Initialize DynamORM with Lambda optimizations
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
+	db, err = newLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
 		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
@@ -468,7 +477,7 @@ func init() {
 
 // initAdvancedModerationEngine initializes the advanced moderation engine with or without AWS
 func initAdvancedModerationEngine() {
-	if common.RunningUnitTests() {
+	if runningUnitTests() {
 		return
 	}
 	// Determine moderation mode based on configuration
@@ -1640,6 +1649,13 @@ func (mp *ModerationProcessor) filterFromTimelines(ctx context.Context, username
 
 // updateSearchVisibility updates user/content visibility in search indexes
 func (mp *ModerationProcessor) updateSearchVisibility(_ context.Context, username, visibility string) error {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("visibility", visibility); err != nil {
+		return err
+	}
+
 	mp.logger.Debug("Updating search visibility",
 		zap.String("username", username),
 		zap.String("visibility", visibility))
@@ -1658,6 +1674,13 @@ func (mp *ModerationProcessor) updateSearchVisibility(_ context.Context, usernam
 
 // applyFederationConstraints applies moderation constraints to federation
 func (mp *ModerationProcessor) applyFederationConstraints(_ context.Context, username, constraint string) error {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("constraint", constraint); err != nil {
+		return err
+	}
+
 	mp.logger.Debug("Applying federation constraints",
 		zap.String("username", username),
 		zap.String("constraint", constraint))
@@ -1677,6 +1700,10 @@ func (mp *ModerationProcessor) applyFederationConstraints(_ context.Context, use
 
 // removeFromTimelines removes specific content from timelines
 func (mp *ModerationProcessor) removeFromTimelines(_ context.Context, objectID string) error {
+	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
+		return err
+	}
+
 	mp.logger.Debug("Removing content from timelines",
 		zap.String("object_id", objectID))
 
@@ -1694,6 +1721,10 @@ func (mp *ModerationProcessor) removeFromTimelines(_ context.Context, objectID s
 
 // removeFromSearch removes content from search indexes
 func (mp *ModerationProcessor) removeFromSearch(_ context.Context, objectID string) error {
+	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
+		return err
+	}
+
 	mp.logger.Debug("Removing content from search",
 		zap.String("object_id", objectID))
 
@@ -1755,6 +1786,13 @@ func (mp *ModerationProcessor) sendFederationDeletion(ctx context.Context, objec
 
 // sendTimelineUpdateEvent sends real-time updates to connected WebSocket clients
 func (mp *ModerationProcessor) sendTimelineUpdateEvent(_ context.Context, username, action string) error {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("action", action); err != nil {
+		return err
+	}
+
 	// Create timeline update event for WebSocket streaming
 	updateEvent := map[string]interface{}{
 		"event":     "moderation.timeline_update",
@@ -2136,7 +2174,7 @@ func main() {
 		return nil
 	})
 
-	lambda.Start(app.HandleRequest)
+	lambdaStart(app.HandleRequest)
 }
 
 // patternRepositoryAdapter adapts repositories.PatternRepository to advanced.PatternRepository interface

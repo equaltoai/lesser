@@ -18,7 +18,6 @@ import (
 	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
-	awsInit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
@@ -36,10 +35,37 @@ type CostAggregator struct {
 	db                     dynamormCore.DB
 	tableName              string
 	logger                 *zap.Logger
-	costTrackingRepository *repositories.TrackingRepository
-	awsServices            *awsInit.AWSServices
+	costTrackingRepository costTrackingStore
+	snsClient              snsPublisher
+	cloudWatchClient       cloudWatchPutter
+	sqsClient              sqsSender
+	lambdaClient           lambdaInvoker
 	cfg                    *config.Config
 	lambdaCtx              *common.LambdaContext
+}
+
+type costTrackingStore interface {
+	CreateAggregated(ctx context.Context, aggregated *models.DynamoDBCostAggregation) error
+	Create(ctx context.Context, tracking *models.DynamoDBCostRecord) error
+	Aggregate(ctx context.Context, operationType, period string, windowStart, windowEnd time.Time) error
+	GetAggregated(ctx context.Context, period, operationType string, windowStart time.Time) (*models.DynamoDBCostAggregation, error)
+	GetHighCostOperations(ctx context.Context, thresholdDollars float64, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error)
+}
+
+type snsPublisher interface {
+	Publish(ctx context.Context, params *sns.PublishInput, optFns ...func(*sns.Options)) (*sns.PublishOutput, error)
+}
+
+type cloudWatchPutter interface {
+	PutMetricData(ctx context.Context, params *cloudwatch.PutMetricDataInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.PutMetricDataOutput, error)
+}
+
+type sqsSender interface {
+	SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
+}
+
+type lambdaInvoker interface {
+	Invoke(ctx context.Context, params *awslambda.InvokeInput, optFns ...func(*awslambda.Options)) (*awslambda.InvokeOutput, error)
 }
 
 var (
@@ -88,8 +114,22 @@ func init() {
 	if common.RunningUnitTests() {
 		return
 	}
+	initializeCostAggregator()
+}
+
+var (
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	initializeWithDefaultsFn   = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	newCostTrackingRepoFn      = func(db dynamormCore.DB, tableName string, logger *zap.Logger) costTrackingStore {
+		return repositories.NewTrackingRepository(db, tableName, logger, nil)
+	}
+	lambdaStartFn = lambda.Start
+)
+
+func initializeCostAggregator() {
 	// Standardized Lambda initialization for cost-aggregator function
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "cost-aggregator",          // cost-aggregator
 		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
 	})
@@ -99,38 +139,64 @@ func init() {
 	logger = lambdaCtx.Logger
 
 	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
 	// Function-specific initialization only
-	// Get table name from environment or config
 	tableName := cfg.DynamoTableName
 
 	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	db, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
 	if err != nil {
 		logger.Fatal("failed to initialize DynamORM", zap.Error(err))
 	}
 
-	// Initialize cost tracking repository
-	costTrackingRepository := repositories.NewTrackingRepository(
-		db,
-		tableName,
-		logger,
-		nil,
-	)
+	costTrackingRepository := newCostTrackingRepoFn(db, tableName, logger)
+
+	var snsClient snsPublisher
+	var cloudWatchClient cloudWatchPutter
+	var sqsClient sqsSender
+	var lambdaClient lambdaInvoker
+	if lambdaCtx.AWSServices != nil {
+		if lambdaCtx.AWSServices.SNS != nil {
+			snsClient = lambdaCtx.AWSServices.SNS
+		}
+		if lambdaCtx.AWSServices.CloudWatch != nil {
+			cloudWatchClient = lambdaCtx.AWSServices.CloudWatch
+		}
+		if lambdaCtx.AWSServices.SQS != nil {
+			sqsClient = lambdaCtx.AWSServices.SQS
+		}
+		if lambdaCtx.AWSServices.Lambda != nil {
+			lambdaClient = lambdaCtx.AWSServices.Lambda
+		}
+	}
 
 	processor = &CostAggregator{
 		db:                     db,
 		tableName:              tableName,
 		logger:                 logger,
 		costTrackingRepository: costTrackingRepository,
-		awsServices:            lambdaCtx.AWSServices,
+		snsClient:              snsClient,
+		cloudWatchClient:       cloudWatchClient,
+		sqsClient:              sqsClient,
+		lambdaClient:           lambdaClient,
 		cfg:                    cfg,
 		lambdaCtx:              lambdaCtx,
 	}
+}
+
+func handleCostAggregatorStream(ctx *lift.Context) error {
+	if processor == nil {
+		return lift.NewLiftError("MISSING_PROCESSOR", "cost aggregator processor not initialized", 500)
+	}
+
+	records, err := ctx.DynamoDBRecords()
+	if err != nil {
+		return err
+	}
+	return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
 }
 
 func main() {
@@ -138,15 +204,9 @@ func main() {
 	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
 	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
-	})
+	_ = app.DynamoDB("*", handleCostAggregatorStream)
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }
 
 // HandleStream implements the DynamoDBStreamHandler interface for Lift
@@ -289,6 +349,9 @@ func (ca *CostAggregator) extractCostFromStreamRecord(record events.DynamoDBEven
 		image = record.Change.NewImage
 	} else {
 		image = record.Change.NewImage
+	}
+	if image == nil {
+		return nil, nil
 	}
 
 	// Check if this is a cost tracking record
@@ -618,6 +681,10 @@ func (ca *CostAggregator) sendCostAlert(ctx context.Context, alert CostAlert) {
 }
 
 func (ca *CostAggregator) sendSNSAlert(ctx context.Context, alert CostAlert) error {
+	if ca.snsClient == nil {
+		return pkgErrors.NewAppError(pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "SNS client not configured")
+	}
+
 	// Construct SNS topic ARN - assuming standard naming convention
 	topicARN := fmt.Sprintf("arn:aws:sns:%s:%s:cost-alerts", ca.cfg.Region, ca.cfg.AWSAccountID)
 
@@ -651,19 +718,23 @@ func (ca *CostAggregator) sendSNSAlert(ctx context.Context, alert CostAlert) err
 		},
 	}
 
-	result, err := ca.awsServices.SNS.Publish(ctx, input)
+	result, err := ca.snsClient.Publish(ctx, input)
 	if err != nil {
 		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to publish SNS message")
 	}
 
 	ca.logger.Info("SNS alert sent successfully",
-		zap.String("message_id", *result.MessageId),
+		zap.String("message_id", aws.ToString(result.MessageId)),
 		zap.String("topic_arn", topicARN))
 
 	return nil
 }
 
 func (ca *CostAggregator) putCloudWatchMetric(ctx context.Context, alert CostAlert) error {
+	if ca.cloudWatchClient == nil {
+		return pkgErrors.NewAppError(pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "CloudWatch client not configured")
+	}
+
 	namespace := "Lesser/DynamoDB/Costs"
 
 	// Put metric for cost threshold breach
@@ -707,7 +778,7 @@ func (ca *CostAggregator) putCloudWatchMetric(ctx context.Context, alert CostAle
 		MetricData: metricData,
 	}
 
-	_, err := ca.awsServices.CloudWatch.PutMetricData(ctx, input)
+	_, err := ca.cloudWatchClient.PutMetricData(ctx, input)
 	if err != nil {
 		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to put CloudWatch metric")
 	}
@@ -763,17 +834,26 @@ func (ca *CostAggregator) triggerAggregation(ctx context.Context, event Aggregat
 		DelaySeconds: 0, // Process immediately
 	}
 
-	sqsResult, sqsErr := ca.awsServices.SQS.SendMessage(ctx, sqsInput)
-	if sqsErr == nil {
-		ca.logger.Info("Successfully queued cost aggregation via SQS",
-			zap.String("message_id", *sqsResult.MessageId),
-			zap.String("type", event.Type))
-		return nil
+	var sqsErr error
+	if ca.sqsClient != nil {
+		var sqsResult *sqs.SendMessageOutput
+		sqsResult, sqsErr = ca.sqsClient.SendMessage(ctx, sqsInput)
+		if sqsErr == nil {
+			ca.logger.Info("Successfully queued cost aggregation via SQS",
+				zap.String("message_id", aws.ToString(sqsResult.MessageId)),
+				zap.String("type", event.Type))
+			return nil
+		}
 	}
 
 	// If SQS fails, fallback to direct Lambda invocation
-	ca.logger.Warn("SQS send failed, falling back to direct Lambda invocation",
-		zap.Error(sqsErr))
+	if sqsErr != nil {
+		ca.logger.Warn("SQS send failed, falling back to direct Lambda invocation",
+			zap.Error(sqsErr))
+	}
+	if ca.lambdaClient == nil {
+		return pkgErrors.NewAppError(pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Lambda client not configured")
+	}
 
 	// Option 2: Direct Lambda invocation (fallback)
 	functionName := "cost-aggregator" // This Lambda function name
@@ -785,7 +865,7 @@ func (ca *CostAggregator) triggerAggregation(ctx context.Context, event Aggregat
 		Qualifier:      stringPtr("$LATEST"), // Use latest version
 	}
 
-	lambdaResult, err := ca.awsServices.Lambda.Invoke(ctx, lambdaInput)
+	lambdaResult, err := ca.lambdaClient.Invoke(ctx, lambdaInput)
 	if err != nil {
 		ca.logger.Error("lambda invocation failed after SQS failure",
 			zap.Error(err),

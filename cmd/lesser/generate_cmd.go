@@ -29,18 +29,18 @@ func runGenerate(argv []string) error {
 }
 
 func runGenerateOpenAPI(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
 	goCache, err := ensureGoCacheDir(repoRoot)
 	if err != nil {
 		return err
 	}
-	return runCommand(context.Background(), "go", []string{"run", "./tools/openapi", "--write"}, execOptions{
+	return runCommandFn(context.Background(), "go", []string{"run", "./tools/openapi", "--write"}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GOCACHE": goCache,
@@ -49,18 +49,18 @@ func runGenerateOpenAPI(_ []string) error {
 }
 
 func runGenerateGraphQLCoverage(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
 	goCache, err := ensureGoCacheDir(repoRoot)
 	if err != nil {
 		return err
 	}
-	return runCommand(context.Background(), "go", []string{"run", "./tools/graphql_coverage", "--write"}, execOptions{
+	return runCommandFn(context.Background(), "go", []string{"run", "./tools/graphql_coverage", "--write"}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GOCACHE": goCache,
@@ -69,11 +69,11 @@ func runGenerateGraphQLCoverage(_ []string) error {
 }
 
 func runGenerateInventory(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
 	goCache, err := ensureGoCacheDir(repoRoot)
@@ -81,7 +81,7 @@ func runGenerateInventory(_ []string) error {
 		return err
 	}
 
-	return runCommand(context.Background(), "go", []string{"run", "./cmd/generate-inventory"}, execOptions{
+	return runCommandFn(context.Background(), "go", []string{"run", "./cmd/generate-inventory"}, execOptions{
 		Dir: filepath.Join(repoRoot, "infra", "cdk"),
 		Env: map[string]string{
 			"GOCACHE": goCache,

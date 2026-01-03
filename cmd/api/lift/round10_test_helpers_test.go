@@ -1704,6 +1704,18 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				}
 			}
 			*d = []storagemodels.Device{}
+		case *[]*storagemodels.HashtagTrend:
+			items := make([]*storagemodels.HashtagTrend, 0, len(state.trendingHashtags))
+			for i := range state.trendingHashtags {
+				items = append(items, &state.trendingHashtags[i])
+			}
+			*d = items
+		case *[]*storagemodels.StatusTrend:
+			items := make([]*storagemodels.StatusTrend, 0, len(state.trendingStatuses))
+			for i := range state.trendingStatuses {
+				items = append(items, &state.trendingStatuses[i])
+			}
+			*d = items
 		case *[]storagemodels.HashtagTrend:
 			*d = state.trendingHashtags
 		case *[]storagemodels.StatusTrend:

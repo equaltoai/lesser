@@ -17,6 +17,14 @@ import (
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 )
 
+var (
+	replaceBucketWithDirFn  = replaceBucketWithDir
+	invalidateClientPathsFn = invalidateClientPaths
+	createCloudfrontInvalidationFn = func(ctx context.Context, client *cloudfront.Client, input *cloudfront.CreateInvalidationInput) (*cloudfront.CreateInvalidationOutput, error) {
+		return client.CreateInvalidation(ctx, input)
+	}
+)
+
 type clientDeployArgs struct {
 	App        string
 	BaseDomain string
@@ -60,7 +68,7 @@ func runClientDeploy(argv []string) error {
 		return err
 	}
 
-	awsCfg, err := loadAWSConfigFromProfile(ctx, awsProfile)
+	awsCfg, err := loadAWSConfigFromProfileFn(ctx, awsProfile)
 	if err != nil {
 		return err
 	}
@@ -106,11 +114,11 @@ func runClientDeploy(argv []string) error {
 
 		fmt.Printf("\nUploading client assets (%s):\n", stageKey)
 		fmt.Printf("  bucket: s3://%s/\n", clientBucket)
-		if err := replaceBucketWithDir(ctx, s3Client, clientBucket, distDir); err != nil {
+		if err := replaceBucketWithDirFn(ctx, s3Client, clientBucket, distDir); err != nil {
 			return fmt.Errorf("upload client UI (%s): %w", stageKey, err)
 		}
 
-		if err := invalidateClientPaths(ctx, cfClient, distID); err != nil {
+		if err := invalidateClientPathsFn(ctx, cfClient, distID); err != nil {
 			return fmt.Errorf("cloudfront invalidation (%s): %w", stageKey, err)
 		}
 	}
@@ -162,7 +170,7 @@ func invalidateClientPaths(ctx context.Context, client *cloudfront.Client, distr
 	paths := []string{"/l", "/l/*"}
 	quantity := int32(len(paths)) // #nosec G115 -- len(paths) is bounded by static slice
 
-	_, err := client.CreateInvalidation(ctx, &cloudfront.CreateInvalidationInput{
+	_, err := createCloudfrontInvalidationFn(ctx, client, &cloudfront.CreateInvalidationInput{
 		DistributionId: aws.String(distributionID),
 		InvalidationBatch: &cloudfronttypes.InvalidationBatch{
 			CallerReference: aws.String(fmt.Sprintf("lesser-client-%d", time.Now().UnixNano())),

@@ -1,0 +1,405 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/services"
+	severanceService "github.com/equaltoai/lesser/pkg/services/severance"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
+	storageInterfaces "github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+type fakeSeveranceService struct {
+	calls int
+	err   error
+}
+
+func (f *fakeSeveranceService) DetectSeverance(context.Context, string, models.SeveranceReason, int, int, string) (*severanceService.SeveredRelationship, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &severanceService.SeveredRelationship{}, nil
+}
+
+type fakeRepoStorage struct {
+	*testingmocks.MockRepositoryStorage
+	rel storageInterfaces.ConcreteRelationshipRepository
+}
+
+func (f *fakeRepoStorage) Relationship() storageInterfaces.ConcreteRelationshipRepository {
+	return f.rel
+}
+
+type fakeRegistry struct {
+	storage storageCore.RepositoryStorage
+	sev     severanceDetector
+}
+
+func (f *fakeRegistry) Severance() severanceDetector              { return f.sev }
+func (f *fakeRegistry) GetStorage() storageCore.RepositoryStorage { return f.storage }
+
+func TestInitializeSeveranceProcessor_SetsGlobalsAndAdapter(t *testing.T) {
+	originalMustInitialize := mustInitializeLambdaFn
+	originalInitializeDefaults := initializeWithDefaultsFn
+	originalNewRegistry := newRegistryFn
+	t.Cleanup(func() {
+		mustInitializeLambdaFn = originalMustInitialize
+		initializeWithDefaultsFn = originalInitializeDefaults
+		newRegistryFn = originalNewRegistry
+	})
+
+	storage := testingmocks.NewMockRepositoryStorage()
+	storage.On("Severance").Return(nil).Maybe()
+
+	fakeLambdaCtx := &common.LambdaContext{
+		Config: &config.Config{
+			Domain: "https://example.com",
+		},
+		Logger: zap.NewNop(),
+		Repos:  storage,
+	}
+
+	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext { return fakeLambdaCtx }
+	initializeWithDefaultsFn = func(*common.LambdaContext) error { return errors.New("defaults") }
+	newRegistryFn = services.NewRegistry
+
+	require.NoError(t, initializeSeveranceProcessor())
+	require.NotNil(t, cfg)
+	require.NotNil(t, logger)
+	require.NotNil(t, registry)
+	require.NotNil(t, processor)
+
+	adapter := servicesRegistryAdapter{Registry: registry}
+	require.Equal(t, registry.GetStorage(), adapter.GetStorage())
+	require.Nil(t, adapter.Severance())
+}
+
+func TestInitializeSeveranceProcessor_RegistryError(t *testing.T) {
+	originalMustInitialize := mustInitializeLambdaFn
+	originalInitializeDefaults := initializeWithDefaultsFn
+	originalNewRegistry := newRegistryFn
+	t.Cleanup(func() {
+		mustInitializeLambdaFn = originalMustInitialize
+		initializeWithDefaultsFn = originalInitializeDefaults
+		newRegistryFn = originalNewRegistry
+	})
+
+	storage := testingmocks.NewMockRepositoryStorage()
+	fakeLambdaCtx := &common.LambdaContext{
+		Config: &config.Config{Domain: "https://example.com"},
+		Logger: zap.NewNop(),
+		Repos:  storage,
+	}
+
+	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext { return fakeLambdaCtx }
+	initializeWithDefaultsFn = func(*common.LambdaContext) error { return nil }
+	newRegistryFn = func(...services.RegistryOption) (*services.Registry, error) {
+		return nil, errors.New("boom")
+	}
+
+	require.Error(t, initializeSeveranceProcessor())
+}
+
+func TestSeveranceHelpers_Getters(t *testing.T) {
+	image := map[string]events.DynamoDBAttributeValue{
+		"Domain":    events.NewStringAttribute("remote.example"),
+		"IsHealthy": events.NewBooleanAttribute(false),
+	}
+
+	require.Equal(t, "remote.example", getStringValue(image, "Domain"))
+	require.Equal(t, "", getStringValue(image, "Missing"))
+	require.False(t, getBoolValue(image, "IsHealthy", true))
+	require.True(t, getBoolValue(image, "Missing", true))
+}
+
+func TestSeveranceProcessor_CountAffectedRelationships_Branches(t *testing.T) {
+	p := &SeveranceProcessor{logger: zap.NewNop(), registry: &fakeRegistry{}}
+	followers, following := p.countAffectedRelationships(context.Background(), "remote.example")
+	require.Equal(t, 0, followers)
+	require.Equal(t, 0, following)
+
+	baseStorage := testingmocks.NewMockRepositoryStorage()
+	p.registry = &fakeRegistry{storage: &fakeRepoStorage{MockRepositoryStorage: baseStorage, rel: nil}}
+	followers, following = p.countAffectedRelationships(context.Background(), "remote.example")
+	require.Equal(t, 0, followers)
+	require.Equal(t, 0, following)
+
+	relRepo := testingmocks.NewMockRelationshipRepository()
+	relRepo.On("CountRelationshipsByDomain", mock.Anything, "remote.example").Return(0, 0, errors.New("boom"))
+	p.registry = &fakeRegistry{storage: &fakeRepoStorage{MockRepositoryStorage: baseStorage, rel: relRepo}}
+	followers, following = p.countAffectedRelationships(context.Background(), "remote.example")
+	require.Equal(t, 0, followers)
+	require.Equal(t, 0, following)
+
+	relRepo2 := testingmocks.NewMockRelationshipRepository()
+	relRepo2.On("CountRelationshipsByDomain", mock.Anything, "remote.example").Return(3, 4, nil)
+	p.registry = &fakeRegistry{storage: &fakeRepoStorage{MockRepositoryStorage: baseStorage, rel: relRepo2}}
+	followers, following = p.countAffectedRelationships(context.Background(), "remote.example")
+	require.Equal(t, 3, followers)
+	require.Equal(t, 4, following)
+}
+
+func TestSeveranceProcessor_HandleDynamoDBStreamEvent_ContinuesOnError(t *testing.T) {
+	sev := &fakeSeveranceService{err: errors.New("boom")}
+	p := &SeveranceProcessor{
+		logger: zap.NewNop(),
+		registry: &fakeRegistry{
+			storage: &fakeRepoStorage{
+				MockRepositoryStorage: testingmocks.NewMockRepositoryStorage(),
+				rel: func() storageInterfaces.ConcreteRelationshipRepository {
+					rel := testingmocks.NewMockRelationshipRepository()
+					rel.On("CountRelationshipsByDomain", mock.Anything, "remote.example").Return(1, 2, nil)
+					return rel
+				}(),
+			},
+			sev: sev,
+		},
+	}
+
+	event := events.DynamoDBEvent{
+		Records: []events.DynamoDBEventRecord{
+			{
+				EventName: "INSERT",
+				EventID:   "e1",
+				Change: events.DynamoDBStreamRecord{
+					NewImage: map[string]events.DynamoDBAttributeValue{
+						"PK":     events.NewStringAttribute("DOMAIN_BLOCK#remote.example"),
+						"SK":     events.NewStringAttribute("METADATA"),
+						"Domain": events.NewStringAttribute("remote.example"),
+					},
+				},
+			},
+			{EventName: "REMOVE", EventID: "e2"},
+		},
+	}
+
+	require.NoError(t, p.HandleDynamoDBStreamEvent(context.Background(), event))
+
+	h := &Handler{processor: p}
+	require.NoError(t, h.HandleDynamoDBStreamEvent(context.Background(), event))
+}
+
+func TestSeveranceProcessor_ProcessRecord_RoutesAndBranches(t *testing.T) {
+	sev := &fakeSeveranceService{}
+	p := &SeveranceProcessor{
+		logger: zap.NewNop(),
+		registry: &fakeRegistry{
+			storage: &fakeRepoStorage{
+				MockRepositoryStorage: testingmocks.NewMockRepositoryStorage(),
+				rel: func() storageInterfaces.ConcreteRelationshipRepository {
+					rel := testingmocks.NewMockRelationshipRepository()
+					rel.On("CountRelationshipsByDomain", mock.Anything, "remote.example").Return(1, 2, nil)
+					return rel
+				}(),
+			},
+			sev: sev,
+		},
+	}
+
+	require.NoError(t, p.processRecord(context.Background(), events.DynamoDBEventRecord{EventName: "REMOVE"}))
+	require.NoError(t, p.processRecord(context.Background(), events.DynamoDBEventRecord{EventName: "INSERT"}))
+
+	require.NoError(t, p.processRecord(context.Background(), events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		Change:    events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("x")}},
+	}))
+
+	// Domain block -> DetectSeverance called.
+	domainBlock := events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK":     events.NewStringAttribute("DOMAIN_BLOCK#remote.example"),
+				"SK":     events.NewStringAttribute("METADATA"),
+				"Domain": events.NewStringAttribute("remote.example"),
+			},
+		},
+	}
+	require.NoError(t, p.processRecord(context.Background(), domainBlock))
+	require.Equal(t, 1, sev.calls)
+
+	// Federation issue -> DetectSeverance called.
+	issue := events.DynamoDBEventRecord{
+		EventName: "MODIFY",
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK":        events.NewStringAttribute("FEDERATION_ISSUE#1"),
+				"SK":        events.NewStringAttribute("METADATA"),
+				"Domain":    events.NewStringAttribute("remote.example"),
+				"IssueType": events.NewStringAttribute("unreachable"),
+				"Severity":  events.NewStringAttribute("critical"),
+			},
+		},
+	}
+	require.NoError(t, p.processRecord(context.Background(), issue))
+	require.Equal(t, 2, sev.calls)
+
+	// Health metrics -> DetectSeverance called.
+	health := events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK":        events.NewStringAttribute("FEDERATION_METRICS#1"),
+				"SK":        events.NewStringAttribute("HEALTH#v1"),
+				"Domain":    events.NewStringAttribute("remote.example"),
+				"IsHealthy": events.NewBooleanAttribute(false),
+			},
+		},
+	}
+	require.NoError(t, p.processRecord(context.Background(), health))
+	require.Equal(t, 3, sev.calls)
+}
+
+func TestSeveranceProcessor_HandleDomainBlock_Branches(t *testing.T) {
+	p := &SeveranceProcessor{
+		logger: zap.NewNop(),
+		registry: &fakeRegistry{
+			storage: &fakeRepoStorage{
+				MockRepositoryStorage: testingmocks.NewMockRepositoryStorage(),
+				rel: func() storageInterfaces.ConcreteRelationshipRepository {
+					rel := testingmocks.NewMockRelationshipRepository()
+					rel.On("CountRelationshipsByDomain", mock.Anything, "remote.example").Return(1, 2, nil)
+					return rel
+				}(),
+			},
+			sev: nil,
+		},
+	}
+
+	require.NoError(t, p.handleDomainBlock(context.Background(), map[string]events.DynamoDBAttributeValue{}))
+
+	err := p.handleDomainBlock(context.Background(), map[string]events.DynamoDBAttributeValue{
+		"Domain": events.NewStringAttribute("remote.example"),
+	})
+	require.Error(t, err)
+
+	sev := &fakeSeveranceService{err: errors.New("boom")}
+	p.registry = &fakeRegistry{
+		storage: &fakeRepoStorage{
+			MockRepositoryStorage: testingmocks.NewMockRepositoryStorage(),
+			rel: func() storageInterfaces.ConcreteRelationshipRepository {
+				rel := testingmocks.NewMockRelationshipRepository()
+				rel.On("CountRelationshipsByDomain", mock.Anything, "remote.example").Return(1, 2, nil)
+				return rel
+			}(),
+		},
+		sev: sev,
+	}
+	require.Error(t, p.handleDomainBlock(context.Background(), map[string]events.DynamoDBAttributeValue{
+		"Domain": events.NewStringAttribute("remote.example"),
+	}))
+}
+
+func TestSeveranceProcessor_HandleFederationIssue_AndHealth_Branches(t *testing.T) {
+	baseStorage := testingmocks.NewMockRepositoryStorage()
+
+	withCounts := func(followers, following int) storageCore.RepositoryStorage {
+		return &fakeRepoStorage{
+			MockRepositoryStorage: baseStorage,
+			rel: func() storageInterfaces.ConcreteRelationshipRepository {
+				rel := testingmocks.NewMockRelationshipRepository()
+				rel.On("CountRelationshipsByDomain", mock.Anything, "remote.example").Return(followers, following, nil)
+				return rel
+			}(),
+		}
+	}
+
+	p := &SeveranceProcessor{
+		logger: zap.NewNop(),
+		registry: &fakeRegistry{
+			storage: withCounts(0, 0),
+			sev:     &fakeSeveranceService{},
+		},
+	}
+
+	// Issue gating branches.
+	require.NoError(t, p.handleFederationIssue(context.Background(), map[string]events.DynamoDBAttributeValue{}))
+	require.NoError(t, p.handleFederationIssue(context.Background(), map[string]events.DynamoDBAttributeValue{
+		"Domain":    events.NewStringAttribute("remote.example"),
+		"IssueType": events.NewStringAttribute("unreachable"),
+		"Severity":  events.NewStringAttribute("low"),
+	}))
+	require.NoError(t, p.handleFederationIssue(context.Background(), map[string]events.DynamoDBAttributeValue{
+		"Domain":    events.NewStringAttribute("remote.example"),
+		"IssueType": events.NewStringAttribute("other"),
+		"Severity":  events.NewStringAttribute("critical"),
+	}))
+
+	// Early return when no relationships.
+	require.NoError(t, p.handleFederationIssue(context.Background(), map[string]events.DynamoDBAttributeValue{
+		"Domain":    events.NewStringAttribute("remote.example"),
+		"IssueType": events.NewStringAttribute("timeout"),
+		"Severity":  events.NewStringAttribute("high"),
+	}))
+
+	// Severance service nil branch.
+	p.registry = &fakeRegistry{storage: withCounts(1, 2), sev: nil}
+	require.Error(t, p.handleFederationIssue(context.Background(), map[string]events.DynamoDBAttributeValue{
+		"Domain":    events.NewStringAttribute("remote.example"),
+		"IssueType": events.NewStringAttribute("timeout"),
+		"Severity":  events.NewStringAttribute("critical"),
+	}))
+
+	// DetectSeverance error branch.
+	p.registry = &fakeRegistry{storage: withCounts(1, 2), sev: &fakeSeveranceService{err: errors.New("boom")}}
+	require.Error(t, p.handleFederationIssue(context.Background(), map[string]events.DynamoDBAttributeValue{
+		"Domain":    events.NewStringAttribute("remote.example"),
+		"IssueType": events.NewStringAttribute("unreachable"),
+		"Severity":  events.NewStringAttribute("critical"),
+	}))
+
+	// Federation health gating branches.
+	require.NoError(t, p.handleFederationHealth(context.Background(), map[string]events.DynamoDBAttributeValue{}))
+	require.NoError(t, p.handleFederationHealth(context.Background(), map[string]events.DynamoDBAttributeValue{
+		"Domain":    events.NewStringAttribute("remote.example"),
+		"IsHealthy": events.NewBooleanAttribute(true),
+	}))
+
+	// Early return when no relationships.
+	p.registry = &fakeRegistry{storage: withCounts(0, 0), sev: &fakeSeveranceService{}}
+	require.NoError(t, p.handleFederationHealth(context.Background(), map[string]events.DynamoDBAttributeValue{
+		"Domain":    events.NewStringAttribute("remote.example"),
+		"IsHealthy": events.NewBooleanAttribute(false),
+	}))
+
+	// Severance service nil branch.
+	p.registry = &fakeRegistry{storage: withCounts(1, 2), sev: nil}
+	require.Error(t, p.handleFederationHealth(context.Background(), map[string]events.DynamoDBAttributeValue{
+		"Domain":    events.NewStringAttribute("remote.example"),
+		"IsHealthy": events.NewBooleanAttribute(false),
+	}))
+
+	// DetectSeverance error branch.
+	p.registry = &fakeRegistry{storage: withCounts(1, 2), sev: &fakeSeveranceService{err: errors.New("boom")}}
+	require.Error(t, p.handleFederationHealth(context.Background(), map[string]events.DynamoDBAttributeValue{
+		"Domain":    events.NewStringAttribute("remote.example"),
+		"IsHealthy": events.NewBooleanAttribute(false),
+	}))
+}
+
+func TestMain_UsesLambdaStartFn(t *testing.T) {
+	originalStart := lambdaStartFn
+	originalLogger := logger
+	t.Cleanup(func() {
+		lambdaStartFn = originalStart
+		logger = originalLogger
+	})
+
+	logger = zap.NewNop()
+	called := false
+	lambdaStartFn = func(interface{}) { called = true }
+
+	main()
+	require.True(t, called)
+}

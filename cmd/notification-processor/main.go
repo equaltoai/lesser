@@ -28,24 +28,57 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/middleware"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
+
+type notificationRepository interface {
+	GetNotification(ctx context.Context, notificationID string) (*models.Notification, error)
+	UpdateNotification(ctx context.Context, notification *models.Notification) error
+	MarkNotificationPushSent(ctx context.Context, notificationID string) error
+}
+
+type userRepository interface {
+	GetUserPreferences(ctx context.Context, username string) (*storage.UserPreferences, error)
+}
+
+type trackingRepository interface {
+	Create(ctx context.Context, tracking *models.DynamoDBCostRecord) error
+}
+
+type notificationCostRepository interface {
+	CreateCostTracking(ctx context.Context, tracking *models.NotificationCostTracking) error
+	GetBudget(ctx context.Context, username, period string) (*models.NotificationBudget, error)
+	GetDailySpending(ctx context.Context, username string) (int64, error)
+}
+
+type webSocketSubscriptionRepository interface {
+	GetUserConnections(ctx context.Context, userID string) ([]string, error)
+}
+
+type snsPublisher interface {
+	Publish(ctx context.Context, params *sns.PublishInput, optFns ...func(*sns.Options)) (*sns.PublishOutput, error)
+}
+
+type sqsSender interface {
+	SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
+}
 
 // NotificationProcessor handles notification delivery across multiple channels
 type NotificationProcessor struct {
 	db                        core.DB
 	tableName                 string
 	logger                    *zap.Logger
-	notificationRepo          *repositories.NotificationRepository
-	userRepo                  *repositories.UserRepository
-	costTrackingRepo          *repositories.TrackingRepository
-	notificationCostRepo      *repositories.NotificationCostRepository
-	webSocketSubscriptionRepo *repositories.WebSocketSubscriptionManagerRepository
-	snsClient                 *sns.Client
+	notificationRepo          notificationRepository
+	userRepo                  userRepository
+	costTrackingRepo          trackingRepository
+	notificationCostRepo      notificationCostRepository
+	webSocketSubscriptionRepo webSocketSubscriptionRepository
+	snsClient                 snsPublisher
 	wsClient                  streamer.Client
-	sqsClient                 *sqs.Client
+	sqsClient                 sqsSender
 	domain                    string
 	webSocketEndpoint         string
 	retryQueueURL             string
@@ -126,7 +159,7 @@ func NewNotificationProcessor(lambdaCtx *common.LambdaContext) *NotificationProc
 	cfg := lambdaCtx.Config
 
 	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
+	db, err := dynamormGetClientFn(context.Background())
 	if err != nil {
 		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
@@ -145,7 +178,7 @@ func NewNotificationProcessor(lambdaCtx *common.LambdaContext) *NotificationProc
 
 	var wsClient streamer.Client
 	if webSocketEndpoint != "" && lambdaCtx.AWSServices != nil {
-		client, err := streamer.NewClient(context.Background(), streamer.ClientConfig{
+		client, err := streamerNewClientFn(context.Background(), streamer.ClientConfig{
 			AWSConfig: &lambdaCtx.AWSServices.Config,
 			Endpoint:  webSocketEndpoint,
 		})
@@ -785,8 +818,25 @@ func init() {
 	if common.RunningUnitTests() {
 		return
 	}
+
+	if err := initializeNotificationProcessor(); err != nil {
+		lambdaCtx.Logger.Fatal("failed to initialize notification processor", zap.Error(err))
+	}
+}
+
+var (
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	initializeWithDefaultsFn   = (*common.LambdaContext).InitializeWithDefaults
+	newNotificationProcessorFn = NewNotificationProcessor
+	dynamormGetClientFn        = dynamorm.GetClient
+	streamerNewClientFn        = streamer.NewClient
+	randReadFn                 = rand.Read
+	lambdaStartFn              = lambda.Start
+)
+
+func initializeNotificationProcessor() error {
 	// Standardized Lambda initialization for processor functions
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "notification-processor",
 		LambdaType:  common.LambdaTypeProcessor,
 		CustomServiceConfig: &awsInit.ServiceConfig{
@@ -801,34 +851,31 @@ func init() {
 	// Automatic dependency injection handled by processor initialization
 
 	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		lambdaCtx.Logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
-	// Initialize processor
-	processor = NewNotificationProcessor(lambdaCtx)
+	processor = newNotificationProcessorFn(lambdaCtx)
+	return nil
 }
 
-func main() {
-
-	// Create Lift app
+func buildApp() *lift.App {
 	app := lift.New()
 
 	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	app.Use(lift.MarkGlobalMiddleware(middleware.PanicRecovery(lambdaCtx.Logger)))
 
 	// Add request ID middleware
-	app.Use(func(next lift.Handler) lift.Handler {
+	app.Use(lift.MarkGlobalMiddleware(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			requestID := fmt.Sprintf("notification-%d", time.Now().UnixNano())
 			ctx.Set("requestID", requestID)
 			return next.Handle(ctx)
 		})
-	})
+	}))
 
 	// Add logging middleware
-	app.Use(func(next lift.Handler) lift.Handler {
+	app.Use(lift.MarkGlobalMiddleware(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
 			requestID := ctx.Get("requestID").(string)
@@ -855,10 +902,10 @@ func main() {
 
 			return err
 		})
-	})
+	}))
 
 	// Add error handling middleware
-	app.Use(func(next lift.Handler) lift.Handler {
+	app.Use(lift.MarkGlobalMiddleware(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			err := next.Handle(ctx)
 			if err != nil {
@@ -869,35 +916,40 @@ func main() {
 			}
 			return err
 		})
-	})
+	}))
 
-	// Set SQS handler for notification delivery
-	_ = app.SQS("notification-delivery", func(ctx *lift.Context) error {
-		// Extract SQS event from Lift context
-		if ctx.Request.RawEvent == nil {
-			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
+	_ = app.SQS("notification-delivery", handleNotificationDeliverySQS)
+
+	return app
+}
+
+func handleNotificationDeliverySQS(ctx *lift.Context) error {
+	// Extract SQS event from Lift context
+	if ctx.Request.RawEvent == nil {
+		return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
+	}
+
+	// Parse the raw event as SQS event
+	var event events.SQSEvent
+	if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
+		event = sqsEvent
+	} else {
+		// Try to parse from interface if it's a map
+		eventBytes, err := json.Marshal(ctx.Request.RawEvent)
+		if err != nil {
+			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
 		}
 
-		// Parse the raw event as SQS event
-		var event events.SQSEvent
-		if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
-			event = sqsEvent
-		} else {
-			// Try to parse from interface if it's a map
-			eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-			if err != nil {
-				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
-			}
-
-			if err := json.Unmarshal(eventBytes, &event); err != nil {
-				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
-			}
+		if err := json.Unmarshal(eventBytes, &event); err != nil {
+			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
 		}
+	}
 
-		return processor.HandleSQS(ctx, event)
-	})
+	return processor.HandleSQS(ctx, event)
+}
 
-	lambda.Start(app.HandleRequest)
+func main() {
+	lambdaStartFn(buildApp().HandleRequest)
 }
 
 // storeCostTracking stores the notification cost tracking record
@@ -1250,7 +1302,7 @@ func (np *NotificationProcessor) calculateRetryDelay(retryCount int, policy *Ret
 
 		// Generate random jitter
 		jitterBytes := make([]byte, 8)
-		if _, err := rand.Read(jitterBytes); err != nil {
+		if _, err := randReadFn(jitterBytes); err != nil {
 			// If we can't generate random jitter, proceed without it
 			np.logger.Warn("failed to generate random jitter", zap.Error(err))
 			return delay

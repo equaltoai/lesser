@@ -9,6 +9,12 @@ import (
 	"strings"
 )
 
+var (
+	buildLambdaZipsFn          = buildLambdaZips
+	buildCloudfrontKeygenZipFn = buildCloudfrontKeygenZip
+	buildAuthUIFn              = buildAuthUI
+)
+
 func runBuild(argv []string) error {
 	if len(argv) > 0 {
 		switch argv[0] {
@@ -46,15 +52,15 @@ func runBuildAll(argv []string) error {
 		return err
 	}
 
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
 
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("pnpm"); err != nil {
+	if err := ensureToolAvailableFn("pnpm"); err != nil {
 		return err
 	}
 
@@ -71,20 +77,20 @@ func runBuildAll(argv []string) error {
 	_ = os.Remove(filepath.Join(repoRoot, "coverage.html"))
 	fmt.Println("✓ Clean complete")
 
-	if err := buildLambdaZips(repoRoot, rebuildLambdas); err != nil {
+	if err := buildLambdaZipsFn(repoRoot, rebuildLambdas); err != nil {
 		return err
 	}
 
-	if err := buildCloudfrontKeygenZip(repoRoot, goCache); err != nil {
+	if err := buildCloudfrontKeygenZipFn(repoRoot, goCache); err != nil {
 		return err
 	}
 
-	if _, err := buildAuthUI(repoRoot); err != nil {
+	if _, err := buildAuthUIFn(repoRoot); err != nil {
 		return err
 	}
 
 	fmt.Println("\nBuilding Go binaries...")
-	if err := runCommand(context.Background(), "go", []string{"build", "./..."}, execOptions{
+	if err := runCommandFn(context.Background(), "go", []string{"build", "./..."}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GOCACHE": goCache,
@@ -108,16 +114,16 @@ func runBuildLambdas(argv []string) error {
 		return err
 	}
 
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
 
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
 
-	return buildLambdaZips(repoRoot, rebuild)
+	return buildLambdaZipsFn(repoRoot, rebuild)
 }
 
 func runBuildSingleLambda(argv []string) error {
@@ -139,11 +145,11 @@ func runBuildSingleLambda(argv []string) error {
 		return fmt.Errorf("lambda name is required")
 	}
 
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
 
@@ -164,10 +170,10 @@ func runBuildSingleLambda(argv []string) error {
 		return fmt.Errorf("create bin dir: %w", err)
 	}
 
-	if err := buildLambdaBinary(repoRoot, goCache, lambdaName, bootstrapPath); err != nil {
+	if err := buildLambdaBinaryFn(repoRoot, goCache, lambdaName, bootstrapPath); err != nil {
 		return err
 	}
-	if err := zipSingleFile(zipPath, "bootstrap", bootstrapPath); err != nil {
+	if err := zipSingleFileFn(zipPath, "bootstrap", bootstrapPath); err != nil {
 		return err
 	}
 	_ = os.Remove(bootstrapPath)
@@ -191,7 +197,7 @@ func buildCloudfrontKeygenZip(repoRoot string, cacheDir string) error {
 	bootstrapPath := filepath.Join(tmpDir, "bootstrap")
 	args := []string{"build", "-tags", "lambda.norpc", "-ldflags=-s -w", "-o", bootstrapPath, "./cmd/cloudfront-keygen"}
 
-	if err := runCommand(context.Background(), "go", args, execOptions{
+	if err := runCommandFn(context.Background(), "go", args, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GOOS":        "linux",
@@ -204,7 +210,7 @@ func buildCloudfrontKeygenZip(repoRoot string, cacheDir string) error {
 	}
 
 	zipPath := filepath.Join(binDir, "cloudfront-keygen.zip")
-	if err := zipSingleFile(zipPath, "bootstrap", bootstrapPath); err != nil {
+	if err := zipSingleFileFn(zipPath, "bootstrap", bootstrapPath); err != nil {
 		return err
 	}
 

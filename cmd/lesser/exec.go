@@ -14,6 +14,8 @@ type execOptions struct {
 	Env map[string]string
 }
 
+var runCommandFn = runCommand
+
 func runCommand(ctx context.Context, name string, args []string, opts execOptions) error {
 	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // tool invocation
 	if opts.Dir != "" {

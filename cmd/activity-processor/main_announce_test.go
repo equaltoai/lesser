@@ -1,0 +1,109 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	dynamock "github.com/pay-theory/dynamorm/pkg/mocks"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestActivityProcessor_AnnounceFanoutAndObjectReferencePaths(t *testing.T) {
+	ctx := context.Background()
+
+	mockDB := new(dynamock.MockDB)
+	mockQuery := new(dynamock.MockQuery)
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Create").Return(nil)
+
+	timelineRepo := testmocks.NewMockTimelineRepositoryInterface()
+	objectRepo := testmocks.NewMockObjectRepository()
+	actorRepo := testmocks.NewMockActorRepository()
+	relationshipRepo := testmocks.NewMockRelationshipRepository()
+
+	ap := &ActivityProcessor{
+		db:               mockDB,
+		logger:           zap.NewNop(),
+		timelineRepo:     timelineRepo,
+		objectRepo:       objectRepo,
+		actorRepo:        actorRepo,
+		relationshipRepo: relationshipRepo,
+		baseURL:          "https://example.com",
+		retryAttempts:    1,
+		retryDelay:       4 * time.Nanosecond,
+	}
+
+	// Announce fanout uses local content when present.
+	objectRepo.On("GetObject", mock.Anything, "https://example.com/objects/1").Return(&models.Object{Content: "boosted"}, nil)
+	actorRepo.On("GetActor", mock.Anything, "alice").Return(&activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}}, nil)
+	relationshipRepo.On("GetFollowers", mock.Anything, "alice", 1000, "").Return([]string{"bob"}, "", nil)
+
+	var gotEntries int
+	timelineRepo.On("CreateTimelineEntries", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		entries := args.Get(1).([]*models.Timeline)
+		gotEntries = len(entries)
+	}).Return(nil)
+
+	announce := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{ID: "announce-1", Type: activitypub.AnnounceType},
+		Actor:      "https://example.com/users/alice",
+		Object:     "https://example.com/objects/1",
+	}
+	require.NoError(t, ap.fanOutAnnounceToTimelines(ctx, announce, "alice"))
+	require.Equal(t, 4, gotEntries)
+
+	// String object references: local object path + missing local object fallback.
+	objectRepo.On("GetObject", mock.Anything, "https://example.com/objects/local").Return(&models.Object{Content: "local"}, nil)
+	obj, err := ap.processStringObject(ctx, &activitypub.Activity{BaseObject: activitypub.BaseObject{To: []string{"https://www.w3.org/ns/activitystreams#Public"}}}, "https://example.com/objects/local")
+	require.NoError(t, err)
+	require.Equal(t, "local", obj.Content)
+
+	objectRepo.On("GetObject", mock.Anything, "https://example.com/objects/missing").Return(nil, errors.New("not found"))
+	obj, err = ap.processStringObject(ctx, &activitypub.Activity{}, "https://example.com/objects/missing")
+	require.NoError(t, err)
+	require.Contains(t, obj.Content, "Missing local object")
+
+	mockQuery.AssertExpectations(t)
+	mockDB.AssertExpectations(t)
+	timelineRepo.AssertExpectations(t)
+	objectRepo.AssertExpectations(t)
+	actorRepo.AssertExpectations(t)
+	relationshipRepo.AssertExpectations(t)
+}
+
+func TestActivityProcessor_StoreRemoteObject(t *testing.T) {
+	ctx := context.Background()
+
+	objectRepo := testmocks.NewMockObjectRepository()
+	objectRepo.On("CreateObject", mock.Anything, mock.Anything).Return(nil)
+
+	ap := &ActivityProcessor{
+		logger:    zap.NewNop(),
+		objectRepo: objectRepo,
+	}
+
+	now := time.Now()
+	note := &activitypub.Note{
+		BaseObject: activitypub.BaseObject{
+			ID:        "https://remote.example/objects/1",
+			Type:      "Note",
+			Published: &now,
+			To:        []string{"https://www.w3.org/ns/activitystreams#Public"},
+		},
+		Content:      "remote",
+		AttributedTo: "https://remote.example/users/bob",
+	}
+
+	ap.storeRemoteObject(ctx, note)
+
+	objectRepo.AssertExpectations(t)
+}
+

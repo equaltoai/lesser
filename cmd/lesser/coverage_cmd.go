@@ -24,13 +24,14 @@ func runCoverage(argv []string) error {
 }
 
 type coverageScoreboardArgs struct {
-	Profile string
-	Mode    string
-	Package string
-	Top     int
-	Min     int
-	Zero    bool
-	SortUnc bool
+	Profile          string
+	Mode             string
+	Package          string
+	Top              int
+	Min              int
+	Zero             bool
+	SortUnc          bool
+	ExcludeGenerated bool
 }
 
 func runCoverageScoreboard(argv []string) error {
@@ -45,15 +46,16 @@ func runCoverageScoreboard(argv []string) error {
 	fs.IntVar(&args.Min, "min", 0, "minimum statements per entry to include")
 	fs.BoolVar(&args.Zero, "zero-only", false, "only show 0% coverage entries (after filtering)")
 	fs.BoolVar(&args.SortUnc, "sort-uncovered", true, "sort by uncovered statements (desc) instead of total statements")
+	fs.BoolVar(&args.ExcludeGenerated, "exclude-generated", true, "exclude generated files (\"Code generated... DO NOT EDIT\") from metrics")
 	if err := fs.Parse(argv); err != nil {
 		return err
 	}
 
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
 	goCache, err := ensureGoCacheDir(repoRoot)
@@ -67,6 +69,7 @@ func runCoverageScoreboard(argv []string) error {
 		"--top", fmt.Sprintf("%d", args.Top),
 		"--min", fmt.Sprintf("%d", args.Min),
 		"--sort-uncovered=" + boolToFlag(args.SortUnc),
+		"--exclude-generated=" + boolToFlag(args.ExcludeGenerated),
 	}
 	if args.Profile != "" {
 		toolArgs = append(toolArgs, "--profile", args.Profile)
@@ -78,7 +81,7 @@ func runCoverageScoreboard(argv []string) error {
 		toolArgs = append(toolArgs, "--package", args.Package)
 	}
 
-	return runCommand(context.Background(), "go", toolArgs, execOptions{
+	return runCommandFn(context.Background(), "go", toolArgs, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GOCACHE": goCache,

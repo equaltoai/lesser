@@ -16,8 +16,23 @@ type hostedZone struct {
 	Name string
 }
 
+type stsAPI interface {
+	GetCallerIdentity(context.Context, *sts.GetCallerIdentityInput, ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
+}
+
+type route53API interface {
+	ListHostedZonesByName(context.Context, *route53.ListHostedZonesByNameInput, ...func(*route53.Options)) (*route53.ListHostedZonesByNameOutput, error)
+}
+
+var (
+	resolveAWSAccountIDFn = resolveAWSAccountID
+	resolveHostedZoneFn   = resolveHostedZone
+	newSTSClientFn        = func(cfg aws.Config) stsAPI { return sts.NewFromConfig(cfg) }
+	newRoute53ClientFn    = func(cfg aws.Config) route53API { return route53.NewFromConfig(cfg) }
+)
+
 func resolveAWSAccountID(ctx context.Context, cfg aws.Config) (string, error) {
-	client := sts.NewFromConfig(cfg)
+	client := newSTSClientFn(cfg)
 	out, err := client.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return "", fmt.Errorf("sts:GetCallerIdentity: %w", err)
@@ -31,7 +46,7 @@ func resolveAWSAccountID(ctx context.Context, cfg aws.Config) (string, error) {
 
 func resolveHostedZone(ctx context.Context, cfg aws.Config, baseDomain string) (hostedZone, error) {
 	dnsName := strings.TrimSuffix(strings.TrimSpace(baseDomain), ".") + "."
-	client := route53.NewFromConfig(cfg)
+	client := newRoute53ClientFn(cfg)
 
 	var found []hostedZone
 	var startDNSName *string

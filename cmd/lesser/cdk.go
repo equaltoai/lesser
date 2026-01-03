@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -25,6 +24,11 @@ type cdkDeployResult struct {
 	Outputs   map[string]string
 }
 
+var (
+	cdkBootstrapFn        = cdkBootstrap
+	cdkDeployWithOutputsFn = cdkDeployWithOutputs
+)
+
 func cdkBootstrap(ctx context.Context, repoRoot string, awsProfile string, accountID string, region string) error {
 	cdkDir := filepath.Join(repoRoot, "infra", "cdk")
 
@@ -36,18 +40,16 @@ func cdkBootstrap(ctx context.Context, repoRoot string, awsProfile string, accou
 		"--context",
 		"stage=shared",
 	}
-	cmd := exec.CommandContext(ctx, "cdk", args...) // #nosec G204 -- tool invocation, args are not interpreted by a shell
-	cmd.Dir = cdkDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(),
-		"AWS_PROFILE="+awsProfile,
-		"AWS_REGION="+region,
-		"AWS_DEFAULT_REGION="+region,
-	)
 
 	fmt.Println("\nEnsuring CDK bootstrap:", args[len(args)-1])
-	if err := cmd.Run(); err != nil {
+	if err := runCommandFn(ctx, "cdk", args, execOptions{
+		Dir: cdkDir,
+		Env: map[string]string{
+			"AWS_PROFILE":        awsProfile,
+			"AWS_REGION":         region,
+			"AWS_DEFAULT_REGION": region,
+		},
+	}); err != nil {
 		return fmt.Errorf("cdk bootstrap: %w", err)
 	}
 	return nil
@@ -83,18 +85,14 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 	if req.WithStaging {
 		args = append(args, "--context", "withStaging=true")
 	}
-
-	cmd := exec.CommandContext(ctx, "cdk", args...) // #nosec G204 -- tool invocation, args are not interpreted by a shell
-	cmd.Dir = cdkDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(),
-		"AWS_PROFILE="+awsProfile,
-		"AWS_REGION="+req.Region,
-		"AWS_DEFAULT_REGION="+req.Region,
-	)
-
-	if err := cmd.Run(); err != nil {
+	if err := runCommandFn(ctx, "cdk", args, execOptions{
+		Dir: cdkDir,
+		Env: map[string]string{
+			"AWS_PROFILE":        awsProfile,
+			"AWS_REGION":         req.Region,
+			"AWS_DEFAULT_REGION": req.Region,
+		},
+	}); err != nil {
 		return cdkDeployResult{}, fmt.Errorf("cdk deploy %s: %w", req.StackName, err)
 	}
 

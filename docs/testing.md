@@ -144,6 +144,10 @@ Generate an HTML report:
 ./lesser test coverage
 ```
 
+Notes:
+
+- By default, `./lesser test coverage` filters generated files (for example gqlgen outputs with `Code generated ... DO NOT EDIT`) out of the coverprofile so coverage reflects handwritten code. Use `--exclude-generated=false` to include generated files.
+
 Artifacts:
 
 - `coverage.out` (machine-readable)

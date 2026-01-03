@@ -5,11 +5,11 @@ import (
 )
 
 func runGqlgen(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
 	goCache, err := ensureGoCacheDir(repoRoot)
@@ -17,7 +17,7 @@ func runGqlgen(_ []string) error {
 		return err
 	}
 
-	return runCommand(context.Background(), "go", []string{"run", "github.com/99designs/gqlgen@v0.17.78", "generate"}, execOptions{
+	return runCommandFn(context.Background(), "go", []string{"run", "github.com/99designs/gqlgen@v0.17.78", "generate"}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GOCACHE": goCache,
@@ -26,14 +26,14 @@ func runGqlgen(_ []string) error {
 }
 
 func runTidy(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
-	return runCommand(context.Background(), "go", []string{"mod", "tidy"}, execOptions{
+	return runCommandFn(context.Background(), "go", []string{"mod", "tidy"}, execOptions{
 		Dir: repoRoot,
 	})
 }

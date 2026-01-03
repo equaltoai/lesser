@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -15,7 +14,7 @@ func resolveReceiptPath(app, baseDomain, explicitPath string) (string, error) {
 		return path, nil
 	}
 
-	home, err := os.UserHomeDir()
+	home, err := userHomeDirFn()
 	if err != nil {
 		return "", fmt.Errorf("resolve home dir: %w", err)
 	}

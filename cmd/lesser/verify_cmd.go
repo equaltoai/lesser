@@ -143,31 +143,31 @@ func runVerifyAll(argv []string) error {
 }
 
 func runVerifyDocs(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	return runCommand(context.Background(), "bash", []string{"scripts/verify_docs.sh"}, execOptions{
+	return runCommandFn(context.Background(), "bash", []string{"scripts/verify_docs.sh"}, execOptions{
 		Dir: repoRoot,
 	})
 }
 
 func runVerifyAITraining(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	return runCommand(context.Background(), "bash", []string{"scripts/verify_ai_training.sh"}, execOptions{
+	return runCommandFn(context.Background(), "bash", []string{"scripts/verify_ai_training.sh"}, execOptions{
 		Dir: repoRoot,
 	})
 }
 
 func runVerifySchema(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	return runCommand(context.Background(), "bash", []string{"scripts/verify_schema.sh"}, execOptions{
+	return runCommandFn(context.Background(), "bash", []string{"scripts/verify_schema.sh"}, execOptions{
 		Dir: repoRoot,
 	})
 }
@@ -182,11 +182,11 @@ func runVerifyGraphQLCoverage(argv []string) error {
 		return err
 	}
 
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
 	goCache, err := ensureGoCacheDir(repoRoot)
@@ -199,7 +199,7 @@ func runVerifyGraphQLCoverage(argv []string) error {
 		args = append(args, "--strict")
 	}
 
-	return runCommand(context.Background(), "go", args, execOptions{
+	return runCommandFn(context.Background(), "go", args, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GOCACHE": goCache,
@@ -217,11 +217,11 @@ func runVerifyOpenAPI(argv []string) error {
 		return err
 	}
 
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
 	goCache, err := ensureGoCacheDir(repoRoot)
@@ -233,7 +233,7 @@ func runVerifyOpenAPI(argv []string) error {
 	if strict {
 		args = append(args, "--strict")
 	}
-	return runCommand(context.Background(), "go", args, execOptions{
+	return runCommandFn(context.Background(), "go", args, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GOCACHE": goCache,
@@ -242,7 +242,7 @@ func runVerifyOpenAPI(argv []string) error {
 }
 
 func runVerifyInventory(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
@@ -250,7 +250,7 @@ func runVerifyInventory(_ []string) error {
 	if err != nil {
 		return err
 	}
-	return runCommand(context.Background(), "bash", []string{"scripts/verify_inventory.sh"}, execOptions{
+	return runCommandFn(context.Background(), "bash", []string{"scripts/verify_inventory.sh"}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GOCACHE": goCache,
@@ -259,11 +259,11 @@ func runVerifyInventory(_ []string) error {
 }
 
 func runVerifyLambdaSet(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	return runCommand(context.Background(), "bash", []string{"scripts/verify_lambda_set.sh"}, execOptions{
+	return runCommandFn(context.Background(), "bash", []string{"scripts/verify_lambda_set.sh"}, execOptions{
 		Dir: repoRoot,
 	})
 }
@@ -331,11 +331,11 @@ func runVerifyCDK(argv []string) error {
 }
 
 func runCDKSynth(awsProfile string, region string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("cdk"); err != nil {
+	if err := ensureToolAvailableFn("cdk"); err != nil {
 		return err
 	}
 	if strings.TrimSpace(awsProfile) == "" {
@@ -351,7 +351,7 @@ func runCDKSynth(awsProfile string, region string) error {
 		return err
 	}
 
-	return runCommand(context.Background(), "cdk", []string{"synth", "--context", "stage=shared"}, execOptions{
+	return runCommandFn(context.Background(), "cdk", []string{"synth", "--context", "stage=shared"}, execOptions{
 		Dir: filepath.Join(repoRoot, "infra", "cdk"),
 		Env: map[string]string{
 			"AWS_PROFILE":        awsProfile,

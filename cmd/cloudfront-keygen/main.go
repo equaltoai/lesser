@@ -33,6 +33,32 @@ type KeyPairData struct {
 	PublicKey  string `json:"publicKey"`
 }
 
+type secretsManagerAPI interface {
+	CreateSecret(ctx context.Context, params *secretsmanager.CreateSecretInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.CreateSecretOutput, error)
+	PutSecretValue(ctx context.Context, params *secretsmanager.PutSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.PutSecretValueOutput, error)
+	DescribeSecret(ctx context.Context, params *secretsmanager.DescribeSecretInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.DescribeSecretOutput, error)
+}
+
+type cloudFrontAPI interface {
+	ListPublicKeys(ctx context.Context, params *cloudfront.ListPublicKeysInput, optFns ...func(*cloudfront.Options)) (*cloudfront.ListPublicKeysOutput, error)
+	GetPublicKeyConfig(ctx context.Context, params *cloudfront.GetPublicKeyConfigInput, optFns ...func(*cloudfront.Options)) (*cloudfront.GetPublicKeyConfigOutput, error)
+	UpdatePublicKey(ctx context.Context, params *cloudfront.UpdatePublicKeyInput, optFns ...func(*cloudfront.Options)) (*cloudfront.UpdatePublicKeyOutput, error)
+	CreatePublicKey(ctx context.Context, params *cloudfront.CreatePublicKeyInput, optFns ...func(*cloudfront.Options)) (*cloudfront.CreatePublicKeyOutput, error)
+
+	ListKeyGroups(ctx context.Context, params *cloudfront.ListKeyGroupsInput, optFns ...func(*cloudfront.Options)) (*cloudfront.ListKeyGroupsOutput, error)
+	GetKeyGroupConfig(ctx context.Context, params *cloudfront.GetKeyGroupConfigInput, optFns ...func(*cloudfront.Options)) (*cloudfront.GetKeyGroupConfigOutput, error)
+	UpdateKeyGroup(ctx context.Context, params *cloudfront.UpdateKeyGroupInput, optFns ...func(*cloudfront.Options)) (*cloudfront.UpdateKeyGroupOutput, error)
+	CreateKeyGroup(ctx context.Context, params *cloudfront.CreateKeyGroupInput, optFns ...func(*cloudfront.Options)) (*cloudfront.CreateKeyGroupOutput, error)
+}
+
+var (
+	loadAWSConfigFn             = config.LoadDefaultConfig
+	newSecretsManagerClientFn   = func(cfg aws.Config) secretsManagerAPI { return secretsmanager.NewFromConfig(cfg) }
+	newCloudFrontClientFn       = func(cfg aws.Config) cloudFrontAPI { return cloudfront.NewFromConfig(cfg) }
+	rsaGenerateKeyFn            = rsa.GenerateKey
+	ensureCloudFrontResourcesFn = ensureCloudFrontResources
+)
+
 // handler processes CloudFormation custom resource events for CloudFront key pair generation
 func handler(ctx context.Context, event cfn.Event) (physicalResourceID string, data map[string]interface{}, err error) {
 	log.Printf("Processing CloudFormation event: %s for resource: %s", event.RequestType, event.LogicalResourceID)
@@ -62,7 +88,7 @@ func handler(ctx context.Context, event cfn.Event) (physicalResourceID string, d
 	log.Printf("Generating RSA-2048 key pair for secret: %s", secretName)
 
 	// Generate RSA-2048 key pair
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	privateKey, err := rsaGenerateKeyFn(rand.Reader, 2048)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to generate RSA key: %w", err)
 	}
@@ -95,12 +121,12 @@ func handler(ctx context.Context, event cfn.Event) (physicalResourceID string, d
 	}
 
 	// Load AWS SDK config
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := loadAWSConfigFn(ctx)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	client := secretsmanager.NewFromConfig(cfg)
+	client := newSecretsManagerClientFn(cfg)
 
 	// Try to create the secret
 	log.Printf("Storing key pair in Secrets Manager: %s", secretName)
@@ -143,11 +169,11 @@ func handler(ctx context.Context, event cfn.Event) (physicalResourceID string, d
 	}
 
 	// Ensure CloudFront resources exist and are updated
-	cfClient := cloudfront.NewFromConfig(cfg)
+	cfClient := newCloudFrontClientFn(cfg)
 
 	trimmedPublicKey := strings.TrimSpace(string(publicKeyPEM))
 
-	publicKeyID, keyGroupID, err := ensureCloudFrontResources(ctx, cfClient, keyName, keyGroupName, trimmedPublicKey)
+	publicKeyID, keyGroupID, err := ensureCloudFrontResourcesFn(ctx, cfClient, keyName, keyGroupName, trimmedPublicKey)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to ensure CloudFront resources: %w", err)
 	}
@@ -165,7 +191,7 @@ func stringPtr(s string) *string {
 	return &s
 }
 
-func ensureCloudFrontResources(ctx context.Context, client *cloudfront.Client, keyName, keyGroupName, encodedKey string) (string, string, error) {
+func ensureCloudFrontResources(ctx context.Context, client cloudFrontAPI, keyName, keyGroupName, encodedKey string) (string, string, error) {
 	publicKeyID, err := upsertPublicKey(ctx, client, keyName, encodedKey)
 	if err != nil {
 		return "", "", err
@@ -179,7 +205,7 @@ func ensureCloudFrontResources(ctx context.Context, client *cloudfront.Client, k
 	return publicKeyID, keyGroupID, nil
 }
 
-func upsertPublicKey(ctx context.Context, client *cloudfront.Client, keyName, encodedKey string) (string, error) {
+func upsertPublicKey(ctx context.Context, client cloudFrontAPI, keyName, encodedKey string) (string, error) {
 	existingID, existingConfig, etag, err := findPublicKeyByName(ctx, client, keyName)
 	if err != nil {
 		return "", err
@@ -220,7 +246,7 @@ func upsertPublicKey(ctx context.Context, client *cloudfront.Client, keyName, en
 	return aws.ToString(out.PublicKey.Id), nil
 }
 
-func upsertKeyGroup(ctx context.Context, client *cloudfront.Client, keyGroupName, publicKeyID string) (string, error) {
+func upsertKeyGroup(ctx context.Context, client cloudFrontAPI, keyGroupName, publicKeyID string) (string, error) {
 	existingID, existingConfig, etag, err := findKeyGroupByName(ctx, client, keyGroupName)
 	if err != nil {
 		return "", err
@@ -260,7 +286,7 @@ func upsertKeyGroup(ctx context.Context, client *cloudfront.Client, keyGroupName
 	return aws.ToString(out.KeyGroup.Id), nil
 }
 
-func findPublicKeyByName(ctx context.Context, client *cloudfront.Client, keyName string) (string, *cftypes.PublicKeyConfig, *string, error) {
+func findPublicKeyByName(ctx context.Context, client cloudFrontAPI, keyName string) (string, *cftypes.PublicKeyConfig, *string, error) {
 	params := &cloudfront.ListPublicKeysInput{}
 	for {
 		out, err := client.ListPublicKeys(ctx, params)
@@ -289,7 +315,7 @@ func findPublicKeyByName(ctx context.Context, client *cloudfront.Client, keyName
 	return "", nil, nil, nil
 }
 
-func findKeyGroupByName(ctx context.Context, client *cloudfront.Client, keyGroupName string) (string, *cftypes.KeyGroupConfig, *string, error) {
+func findKeyGroupByName(ctx context.Context, client cloudFrontAPI, keyGroupName string) (string, *cftypes.KeyGroupConfig, *string, error) {
 	params := &cloudfront.ListKeyGroupsInput{}
 	for {
 		out, err := client.ListKeyGroups(ctx, params)

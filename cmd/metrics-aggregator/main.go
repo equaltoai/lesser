@@ -21,12 +21,19 @@ import (
 	"go.uber.org/zap"
 )
 
+type metricsRepository interface {
+	CreateAggregated(ctx context.Context, aggregated *models.AggregatedMetrics) error
+	CleanupOldMetrics(ctx context.Context, granularity string, cutoffTime time.Time) (int, error)
+	GetServiceStats(ctx context.Context, service string, metricType string, startTime, endTime time.Time) (*repositories.ServiceStats, error)
+	Aggregate(ctx context.Context, metricType, period string, windowStart, windowEnd time.Time) error
+}
+
 // MetricsAggregator implements the DynamoDBStreamHandler interface for Lift
 type MetricsAggregator struct {
 	db                core.DB
 	tableName         string
 	logger            *zap.Logger
-	metricsRepository *repositories.MetricsRepository
+	metricsRepository metricsRepository
 }
 
 // NewMetricsAggregator creates a new metrics aggregator instance
@@ -103,14 +110,25 @@ type AggregationEvent struct {
 }
 
 func main() {
-	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+	runMetricsAggregator()
+}
+
+var (
+	mustInitializeLambdaFn = common.MustInitializeLambda
+	dynamormGetClientFn    = dynamorm.GetClient
+	lambdaStartFn          = lambda.Start
+	unmarshalItemFn        = stream.UnmarshalItem
+)
+
+func runMetricsAggregator() {
+	lambdaCtx := mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "metrics-aggregator",
 		LambdaType:  common.LambdaTypeProcessor,
 		Version:     "1.0.0",
 	})
 
 	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
+	db, err := dynamormGetClientFn(context.Background())
 	if err != nil {
 		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
@@ -130,7 +148,7 @@ func main() {
 		return processor.HandleStreamWithContext(ctx.Request.Context(), ctx, events.DynamoDBEvent{Records: records})
 	})
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }
 
 // Additional methods for handling scheduled aggregation events
@@ -311,7 +329,7 @@ func (ma *MetricsAggregator) extractMetricFromRecord(record events.DynamoDBEvent
 	// Use DynamORM stream utilities for proper unmarshaling
 	var metric models.Metrics
 
-	if err := stream.UnmarshalItem(record, &metric); err != nil {
+	if err := unmarshalItemFn(record, &metric); err != nil {
 		return nil, pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to unmarshal metric from stream record")
 	}
 

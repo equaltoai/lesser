@@ -90,6 +90,12 @@ func TestValidateFileType(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name:        "valid JPEG data with no claimed type",
+			fileData:    createTestJPEGData(),
+			claimedType: "",
+			expectError: false,
+		},
+		{
 			name:        "valid PNG data",
 			fileData:    createTestPNGData(),
 			claimedType: "image/png",
@@ -111,6 +117,12 @@ func TestValidateFileType(t *testing.T) {
 			name:        "type mismatch",
 			fileData:    createTestJPEGData(),
 			claimedType: "image/png",
+			expectError: true,
+		},
+		{
+			name:        "detected type invalid for claimed image",
+			fileData:    []byte("not an image"),
+			claimedType: "image/jpeg",
 			expectError: true,
 		},
 	}
@@ -182,6 +194,12 @@ func TestCheckFileSizeLimit(t *testing.T) {
 			name:        "GIF exceeds limit",
 			mimeType:    "image/gif",
 			fileSize:    16 * 1024 * 1024, // 16MB
+			expectError: true,
+		},
+		{
+			name:        "unknown type returns error",
+			mimeType:    "application/octet-stream",
+			fileSize:    1024,
 			expectError: true,
 		},
 	}
@@ -386,6 +404,12 @@ func TestExtractAudioDuration(t *testing.T) {
 		expectRange bool // true if we expect a reasonable duration range
 	}{
 		{
+			name:        "minimal ID3 header yields estimated duration",
+			fileData:    createTestID3AudioData(),
+			expectError: false,
+			expectRange: true,
+		},
+		{
 			name:        "valid MP3 data",
 			fileData:    createTestAudioData(),
 			expectError: true, // Our test data won't have valid headers
@@ -553,4 +577,11 @@ func createTestAudioData() []byte {
 		0xFF, 0xFB, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	}
+}
+
+func createTestID3AudioData() []byte {
+	// Minimal, valid ID3v2.4 header with zero tag size (10 bytes), padded to allow duration estimation.
+	data := make([]byte, 2000)
+	copy(data, []byte{'I', 'D', '3', 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+	return data
 }

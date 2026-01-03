@@ -42,13 +42,41 @@ type subscriptionState struct {
 	cancel context.CancelFunc
 }
 
+type tokenValidator interface {
+	ValidateAccessToken(tokenString string) (*auth.Claims, error)
+}
+
+type gqlExecutor interface {
+	CreateOperationContext(ctx context.Context, params *graphql.RawParams) (*graphql.OperationContext, gqlerror.List)
+	DispatchOperation(ctx context.Context, opCtx *graphql.OperationContext) (graphql.ResponseHandler, context.Context)
+}
+
+type graphqlConnectionRepo interface {
+	WriteConnection(ctx context.Context, connectionID string, userID string, username string, streams []string) (*models.WebSocketConnection, error)
+	UpdateConnection(ctx context.Context, connection *models.WebSocketConnection) error
+	DeleteAllSubscriptions(ctx context.Context, connectionID string) error
+	DeleteConnection(ctx context.Context, connectionID string) error
+	GetConnection(ctx context.Context, connectionID string) (*models.WebSocketConnection, error)
+	DeleteSubscription(ctx context.Context, connectionID string, stream string) error
+}
+
+type subscriptionManager interface {
+	IsRunning() bool
+	Start(ctx context.Context) error
+}
+
+type instanceStateRepo interface {
+	GetInstanceState(ctx context.Context) (*models.InstanceState, error)
+}
+
 type wsServer struct {
-	oauthService *auth.OAuthService
-	logger       *zap.Logger
-	resolver     *graph.Resolver
-	exec         *executor.Executor
+	oauthService        tokenValidator
+	logger              *zap.Logger
+	subscriptionManager subscriptionManager
+	exec                gqlExecutor
 	startOnce    sync.Once
-	connRepo     *repositories.StreamingConnectionRepository
+	connRepo     graphqlConnectionRepo
+	instanceRepo instanceStateRepo
 
 	mu          sync.RWMutex
 	connections map[string]*connectionState
@@ -89,19 +117,25 @@ var (
 	server         *wsServer
 )
 
-func newServer(oauthService *auth.OAuthService, resolver *graph.Resolver, exec *executor.Executor, log *zap.Logger, connRepo *repositories.StreamingConnectionRepository) *wsServer {
+func newServer(oauthService tokenValidator, resolver *graph.Resolver, exec gqlExecutor, log *zap.Logger, connRepo graphqlConnectionRepo, instanceRepo instanceStateRepo) *wsServer {
 	if log == nil {
 		log = zap.NewNop()
 	}
 
+	var subManager subscriptionManager
+	if resolver != nil {
+		subManager = resolver.SubscriptionManager
+	}
+
 	return &wsServer{
-		oauthService: oauthService,
-		logger:       log,
-		resolver:     resolver,
-		exec:         exec,
-		connRepo:     connRepo,
-		connections:  make(map[string]*connectionState),
-		wsContexts:   make(map[string]*lift.WebSocketContext),
+		oauthService:        oauthService,
+		logger:              log,
+		subscriptionManager: subManager,
+		exec:                exec,
+		connRepo:            connRepo,
+		instanceRepo:        instanceRepo,
+		connections:         make(map[string]*connectionState),
+		wsContexts:          make(map[string]*lift.WebSocketContext),
 	}
 }
 
@@ -319,15 +353,15 @@ func (s *wsServer) clearSubscription(ctx context.Context, connectionID, subscrip
 }
 
 func (s *wsServer) ensureSubscriptionManagerStarted() {
-	if s.resolver == nil || s.resolver.SubscriptionManager == nil {
+	if s.subscriptionManager == nil {
 		return
 	}
 
 	s.startOnce.Do(func() {
-		if s.resolver.SubscriptionManager.IsRunning() {
+		if s.subscriptionManager.IsRunning() {
 			return
 		}
-		if err := s.resolver.SubscriptionManager.Start(context.Background()); err != nil {
+		if err := s.subscriptionManager.Start(context.Background()); err != nil {
 			s.logger.Warn("failed to start subscription manager", zap.Error(err))
 		}
 	})
@@ -403,6 +437,11 @@ func (s *wsServer) handleConnectLift(ctx *lift.Context) error {
 			zap.Any("query_params", ctx.Request.QueryParams),
 			zap.Any("headers", ctx.Request.Headers))
 		return lift.NewLiftError("UNAUTHORIZED", "Access token required", 401)
+	}
+
+	if s.oauthService == nil {
+		log.Error("oauth service not configured for graphql websocket server")
+		return lift.NewLiftError("INTERNAL_ERROR", "OAuth service unavailable", 500)
 	}
 
 	claims, err := s.oauthService.ValidateAccessToken(tokenValue)
@@ -561,7 +600,14 @@ func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, w
 		return
 	}
 
-	instanceState, instanceErr := repos.Instance().GetInstanceState(ctx)
+	if s.instanceRepo == nil {
+		s.logger.Error("instance repository unavailable for graphql subscriptions")
+		s.sendErrorViaLift(wsCtx, msg.ID, "internal_error", "instance repository unavailable")
+		_ = wsCtx.SendJSONMessage(responseEnvelope{ID: msg.ID, Type: "complete"})
+		return
+	}
+
+	instanceState, instanceErr := s.instanceRepo.GetInstanceState(ctx)
 	if instanceErr != nil || instanceState.Locked {
 		s.sendErrorViaLift(wsCtx, msg.ID, "instance_locked", "instance is locked")
 		_ = wsCtx.SendJSONMessage(responseEnvelope{ID: msg.ID, Type: "complete"})
@@ -813,12 +859,12 @@ func initializeManualServices() {
 		zap.String("AWS_REGION_env", os.Getenv("AWS_REGION")),
 		zap.String("AWS_DEFAULT_REGION_env", os.Getenv("AWS_DEFAULT_REGION")))
 
-	client, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	client, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
 	if err != nil {
 		logger.Fatal("failed to initialize DynamORM client", zap.Error(err))
 	}
 
-	repoFactory, err := factory.NewRepositoryFactory(client, cfg.DynamoTableName, logger)
+	repoFactory, err := newRepositoryFactoryFn(client, cfg.DynamoTableName, logger)
 	if err != nil {
 		logger.Fatal("failed to create repository factory", zap.Error(err))
 	}
@@ -953,7 +999,7 @@ func resolveStreamQueue() streaming.StreamQueueService {
 	}
 
 	if coreDB == nil {
-		client, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+		client, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
 		if err != nil {
 			logger.Error("failed to initialize dynamo client for stream queue",
 				zap.String("region", cfg.Region),
@@ -966,15 +1012,32 @@ func resolveStreamQueue() streaming.StreamQueueService {
 	return streaming.NewDynamoStreamQueue(coreDB, cfg.DynamoTableName, logger)
 }
 
+var (
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	initializeWithDefaultsFn   = func(lambdaCtx *common.LambdaContext) error { return lambdaCtx.InitializeWithDefaults() }
+	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	newRepositoryFactoryFn     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
+		return factory.NewRepositoryFactory(db, tableName, logger)
+	}
+	lambdaStartFn = lambda.Start
+)
+
 func init() {
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	if common.RunningUnitTests() {
+		return
+	}
+	initializeGraphQLWS()
+}
+
+func initializeGraphQLWS() {
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "graphql-ws",
 		LambdaType:  common.LambdaTypeBasic,
 	})
 
 	extractServices()
 
-	if err := lambdaCtx.InitializeWithDefaults(); err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		initializeManualServices()
 	} else {
 		extractServices()
@@ -995,7 +1058,11 @@ func init() {
 	resolver, exec := initializeResolver()
 	initializeConnectionRepository()
 
-	server = newServer(oauth, resolver, exec, logger, connectionRepo)
+	var instanceRepo instanceStateRepo
+	if repos != nil {
+		instanceRepo = repos.Instance()
+	}
+	server = newServer(oauth, resolver, exec, logger, connectionRepo, instanceRepo)
 
 	logger.Info("graphql-ws lambda initialized")
 }
@@ -1073,5 +1140,5 @@ func main() {
 	app.WebSocket("$default", server.handleDefaultLift)
 
 	// Start Lambda handler
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }

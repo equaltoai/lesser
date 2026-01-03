@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -16,9 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -30,12 +29,23 @@ var (
 	repos     core.RepositoryStorage
 )
 
+var (
+	mustInitializeLambdaFn   = common.MustInitializeLambda
+	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	lambdaStartFn            = lambda.Start
+	newCollectionsHandlerFn  = NewCollectionsHandler
+)
+
 func init() {
 	if common.RunningUnitTests() {
 		return
 	}
+	initializeCollections()
+}
+
+func initializeCollections() {
 	// Standardized Lambda initialization with automatic service detection
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "collections",
 		LambdaType:  common.LambdaTypeAPI,
 	})
@@ -43,11 +53,18 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	storage, ok := lambdaCtx.Repos.(core.RepositoryStorage)
+	if !ok || storage == nil {
+		logger.Fatal("lambda context repository is not core.RepositoryStorage")
+	}
+	repos = storage
 
 	// Initialize with default options for API Lambda type
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
 	}
 }
@@ -67,9 +84,30 @@ const (
 
 // CollectionsHandler handles ActivityPub federation collections using Lift
 type CollectionsHandler struct {
-	actorRepo        interfaces.ActorRepository
-	relationshipRepo interfaces.ConcreteRelationshipRepository
-	likeRepo         *repositories.LikeRepository
+	actorRepo        collectionsActorRepo
+	relationshipRepo collectionsRelationshipRepo
+	likeRepo         collectionsLikeRepo
+	instanceRepo     instanceStateGetter
+}
+
+type collectionsActorRepo interface {
+	GetActor(ctx context.Context, username string) (*activitypub.Actor, error)
+}
+
+type collectionsRelationshipRepo interface {
+	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	CountFollowers(ctx context.Context, username string) (int, error)
+	CountFollowing(ctx context.Context, username string) (int, error)
+}
+
+type collectionsLikeRepo interface {
+	GetActorLikes(ctx context.Context, actorID string, limit int, cursor string) ([]*storageModels.Like, string, error)
+	CountActorLikes(ctx context.Context, actorID string) (int64, error)
+}
+
+type instanceStateGetter interface {
+	GetInstanceState(ctx context.Context) (*storageModels.InstanceState, error)
 }
 
 // NewCollectionsHandler creates a new collections handler with standardized initialization
@@ -78,6 +116,7 @@ func NewCollectionsHandler() *CollectionsHandler {
 		actorRepo:        repos.Actor(),
 		relationshipRepo: repos.Relationship(),
 		likeRepo:         repos.Like(),
+		instanceRepo:     repos.Instance(),
 	}
 }
 
@@ -112,7 +151,13 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 		return lift.ValidationError("missing username")
 	}
 
-	state, stateErr := repos.Instance().GetInstanceState(ctx.Context)
+	var state *storageModels.InstanceState
+	var stateErr error
+	if ch.instanceRepo != nil {
+		state, stateErr = ch.instanceRepo.GetInstanceState(ctx.Context)
+	} else {
+		stateErr = errors.New("missing instance repository")
+	}
 	bootstrapUsername := storageModels.DefaultBootstrapUsername
 	if stateErr == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
 		bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
@@ -167,9 +212,7 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 	if locked && collectionType == collectionTypeLiked {
 		collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
 		if !isPage {
-			ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
-			ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
-			return ctx.JSON(&activitypub.OrderedCollection{
+			if err := ctx.JSON(&activitypub.OrderedCollection{
 				Collection: activitypub.Collection{
 					BaseObject: activitypub.BaseObject{
 						Context: activitypub.Context,
@@ -178,12 +221,15 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 					},
 					TotalItems: 0,
 				},
-			})
+			}); err != nil {
+				return err
+			}
+			ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+			ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
+			return nil
 		}
 
-		ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
-		ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
-		return ctx.JSON(&activitypub.OrderedCollectionPage{
+		if err := ctx.JSON(&activitypub.OrderedCollectionPage{
 			CollectionPage: activitypub.CollectionPage{
 				Collection: activitypub.Collection{
 					BaseObject: activitypub.BaseObject{
@@ -195,7 +241,12 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 				},
 				PartOf: collectionID,
 			},
-		})
+		}); err != nil {
+			return err
+		}
+		ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+		ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
+		return nil
 	}
 
 	// If not requesting a page, return the collection metadata
@@ -301,9 +352,12 @@ func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activit
 	}
 
 	// Set ActivityPub content type and caching headers
+	if err := ctx.JSON(collection); err != nil {
+		return err
+	}
 	ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
 	ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
-	return ctx.JSON(collection)
+	return nil
 }
 
 // returnCollectionPage returns a page of the collection
@@ -376,9 +430,12 @@ func (ch *CollectionsHandler) returnCollectionPage(ctx *lift.Context, actor *act
 	}
 
 	// Set ActivityPub content type and caching headers
+	if err := ctx.JSON(page); err != nil {
+		return err
+	}
 	ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
 	ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
-	return ctx.JSON(page)
+	return nil
 }
 
 // generatePreviousCursor generates a cursor for reverse pagination
@@ -561,20 +618,27 @@ func (ch *CollectionsHandler) returnCollectionPageReverse(ctx *lift.Context, act
 	}
 
 	// Set ActivityPub content type and caching headers
+	if err := ctx.JSON(page); err != nil {
+		return err
+	}
 	ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
 	ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
-	return ctx.JSON(page)
+	return nil
 }
 
 func main() {
+	runCollections()
+}
+
+func runCollections() {
 	// Create the handler with standardized services
-	handler := NewCollectionsHandler()
+	handler := newCollectionsHandlerFn()
 
 	// Create new Lift app
 	app := lift.New()
 
 	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	app.Use(middleware.PanicRecovery(logger))
 
 	// Add request ID middleware (first - generates request ID)
 	app.Use(func(next lift.Handler) lift.Handler {
@@ -652,5 +716,5 @@ func main() {
 		return app.HandleRequest(ctx, event)
 	})
 
-	lambda.Start(standardHandler)
+	lambdaStartFn(standardHandler)
 }

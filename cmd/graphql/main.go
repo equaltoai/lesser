@@ -64,17 +64,36 @@ const (
 	contextKeyLoaders     contextKey = "loaders"
 )
 
+type lambdaInvocationTracker interface {
+	TrackLambdaInvocation(ctx context.Context, operation cost.LambdaOperation) error
+}
+
 var (
 	lambdaCtx *common.LambdaContext
 	cfg       *config.Config
 	repos     core.RepositoryStorage
 	//nolint:gochecknoglobals // These are initialized once at startup
 	logger              *zap.Logger
-	graphQLHandler      *handler.Server
-	emfMetricsService   interface{}           // *observability.EMFMetricsService interface
-	costTracker         *cost.Tracker         // Legacy tracker for resolver compatibility
-	costTrackingService *cost.TrackingService // Centralized service
+	graphQLHandler      http.Handler
+	emfMetricsService   interface{}   // *observability.EMFMetricsService interface
+	costTracker         *cost.Tracker // Legacy tracker for resolver compatibility
+	costTrackingService lambdaInvocationTracker
 	initTime            time.Time
+)
+
+var (
+	runningUnitTestsFn       = common.RunningUnitTests
+	mustInitializeLambdaFn   = common.MustInitializeLambda
+	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+
+	extractStandardizedServicesFn       = extractStandardizedServices
+	initializeManualServicesFn          = initializeManualServices
+	initializeGraphQLSpecificServicesFn = initializeGraphQLSpecificServices
+	lambdaStartFn                       = lambda.Start
+	newLambdaOptimizedClientFn          = dynamorm.NewLambdaOptimizedClient
+	newRepositoryFactoryFn              = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
+		return factory.NewRepositoryFactory(db, tableName, logger)
+	}
 )
 
 type oauthMiddlewareAdapter struct {
@@ -94,30 +113,38 @@ func (a *oauthMiddlewareAdapter) ValidateAccessToken(token string) (common.Claim
 }
 
 func init() {
-	if common.RunningUnitTests() {
+	initializeGraphQLOnStart()
+}
+
+func initializeGraphQLOnStart() {
+	if runningUnitTestsFn() {
 		return
 	}
+
+	initializeGraphQL()
+}
+
+func initializeGraphQL() {
 	initTime = time.Now()
 
 	// Standardized Lambda initialization with automatic service detection
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName:    "graphql",
 		LambdaType:     common.LambdaTypeAPI,
 		RequestTimeout: 30 * time.Second,
 	})
 
 	// Initialize with default options for API Lambda type
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		// Fallback to manual initialization for services requiring it
-		initializeManualServices()
+		initializeManualServicesFn()
 	} else {
 		// Extract standardized services
-		extractStandardizedServices()
+		extractStandardizedServicesFn()
 	}
 
 	// Initialize GraphQL-specific services
-	initializeGraphQLSpecificServices()
+	initializeGraphQLSpecificServicesFn()
 }
 
 // extractStandardizedServices extracts services from standardized initialization
@@ -165,13 +192,13 @@ func initializeManualServices() {
 	}
 
 	// Initialize DynamORM client optimized for Lambda cold starts
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	db, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
 	if err != nil {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
 	// Initialize repository factory to provide core storage interfaces
-	repoFactory, err := factory.NewRepositoryFactory(db, tableName, logger)
+	repoFactory, err := newRepositoryFactoryFn(db, tableName, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
@@ -206,7 +233,7 @@ func resolveStreamQueue() streaming.StreamQueueService {
 	}
 
 	if coreDB == nil {
-		client, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+		client, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
 		if err != nil {
 			logger.Error("failed to initialize dynamo client for stream queue",
 				zap.String("region", cfg.Region),
@@ -301,26 +328,28 @@ func initializeGraphQLSpecificServices() {
 	})
 
 	// Create GraphQL handler
-	graphQLHandler = handler.NewDefaultServer(schema)
-	graphQLHandler.SetErrorPresenter(graphQLErrorPresenter)
+	server := handler.NewDefaultServer(schema)
+	server.SetErrorPresenter(graphQLErrorPresenter)
 
 	// Configure GraphQL handler
-	graphQLHandler.AddTransport(transport.Websocket{})
-	graphQLHandler.AddTransport(transport.Options{})
-	graphQLHandler.AddTransport(transport.GET{})
-	graphQLHandler.AddTransport(transport.POST{})
-	graphQLHandler.AddTransport(transport.MultipartForm{
+	server.AddTransport(transport.Websocket{})
+	server.AddTransport(transport.Options{})
+	server.AddTransport(transport.GET{})
+	server.AddTransport(transport.POST{})
+	server.AddTransport(transport.MultipartForm{
 		MaxUploadSize: cfg.MaxUploadSize,
 		MaxMemory:     cfg.MaxUploadSize,
 	})
 
 	// Add extensions
-	graphQLHandler.Use(extension.Introspection{})
+	server.Use(extension.Introspection{})
 
 	// Add Apollo tracing in development
 	if cfg.DebugMode {
-		graphQLHandler.Use(apollotracing.Tracer{})
+		server.Use(apollotracing.Tracer{})
 	}
+
+	graphQLHandler = server
 
 	logger.Info("GraphQL service initialized successfully",
 		zap.String("version", "lift-dynamorm"),
@@ -776,5 +805,5 @@ func main() {
 		return app.HandleRequest(ctx, event)
 	})
 
-	lambda.Start(standardHandler)
+	lambdaStartFn(standardHandler)
 }

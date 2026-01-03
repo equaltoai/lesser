@@ -1,0 +1,467 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	"github.com/stretchr/testify/require"
+)
+
+func TestParseUpArgs(t *testing.T) {
+	_, err := parseUpArgs(nil)
+	require.Error(t, err)
+
+	args, err := parseUpArgs([]string{"--app", "app", "--base-domain", "example.com", "--aws-profile", "profile"})
+	require.NoError(t, err)
+	require.Equal(t, "app", args.App)
+}
+
+func TestUpStages(t *testing.T) {
+	require.Equal(t, []naming.Stage{naming.StageDev, naming.StageLive}, upStages(false))
+	require.Equal(t, []naming.Stage{naming.StageDev, naming.StageStaging, naming.StageLive}, upStages(true))
+}
+
+func TestPrepareUpEnv_RequiresOutWhenBootstrapGenerated(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousHome := userHomeDirFn
+	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousAccount := resolveAWSAccountIDFn
+	previousZone := resolveHostedZoneFn
+	previousInspect := inspectBootstrapRequirementsFn
+	previousWallet := determineBootstrapWalletFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		userHomeDirFn = previousHome
+		loadAWSConfigFromProfileFn = previousLoadAWS
+		resolveAWSAccountIDFn = previousAccount
+		resolveHostedZoneFn = previousZone
+		inspectBootstrapRequirementsFn = previousInspect
+		determineBootstrapWalletFn = previousWallet
+	})
+
+	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	home := t.TempDir()
+	userHomeDirFn = func() (string, error) { return home, nil }
+
+	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
+	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
+	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
+		return hostedZone{ID: "Z1", Name: "example.com"}, nil
+	}
+	inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+		return "", true, nil
+	}
+	determineBootstrapWalletFn = func(string) (bootstrapWallet, error) {
+		return bootstrapWallet{Address: "0xabc", Mnemonic: "mnemonic", DerivationPath: defaultBootstrapDerivationPath, ChainID: 1}, nil
+	}
+
+	_, err := prepareUpEnv(context.Background(), upArgs{App: "app", BaseDomain: "example.com", AWSProfile: "profile"})
+	require.Error(t, err)
+}
+
+func TestRunUp_HappyPathWithStubs(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousHome := userHomeDirFn
+	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousAccount := resolveAWSAccountIDFn
+	previousZone := resolveHostedZoneFn
+	previousInspect := inspectBootstrapRequirementsFn
+	previousTools := ensureToolsAvailableFn
+	previousBuildZips := buildLambdaZipsFn
+	previousBootstrap := ensureStageBootstrapStateFn
+	previousCdkBootstrap := cdkBootstrapFn
+	previousCdkDeploy := cdkDeployWithOutputsFn
+	previousAPIGW := ensureAPIGatewayCloudWatchLogsRoleFn
+	previousWriteReceipt := writeReceiptFn
+	previousBuildAuthUI := buildAuthUIFn
+	previousReplaceBucket := replaceBucketWithDirFn
+	previousS3Exists := s3ObjectExistsFn
+	previousInvalidate := invalidateFrontendFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		userHomeDirFn = previousHome
+		loadAWSConfigFromProfileFn = previousLoadAWS
+		resolveAWSAccountIDFn = previousAccount
+		resolveHostedZoneFn = previousZone
+		inspectBootstrapRequirementsFn = previousInspect
+		ensureToolsAvailableFn = previousTools
+		buildLambdaZipsFn = previousBuildZips
+		ensureStageBootstrapStateFn = previousBootstrap
+		cdkBootstrapFn = previousCdkBootstrap
+		cdkDeployWithOutputsFn = previousCdkDeploy
+		ensureAPIGatewayCloudWatchLogsRoleFn = previousAPIGW
+		writeReceiptFn = previousWriteReceipt
+		buildAuthUIFn = previousBuildAuthUI
+		replaceBucketWithDirFn = previousReplaceBucket
+		s3ObjectExistsFn = previousS3Exists
+		invalidateFrontendFn = previousInvalidate
+	})
+
+	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
+
+	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
+	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
+	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
+		return hostedZone{ID: "Z1", Name: "example.com"}, nil
+	}
+	inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+		return "0xabc", false, nil
+	}
+
+	ensureToolsAvailableFn = func() error { return nil }
+	buildLambdaZipsFn = func(string, bool) error { return nil }
+	cdkBootstrapFn = func(context.Context, string, string, string, string) error { return nil }
+	ensureAPIGatewayCloudWatchLogsRoleFn = func(context.Context, aws.Config) error { return nil }
+
+	cdkDeployWithOutputsFn = func(_ context.Context, _ string, _ string, req cdkDeployRequest) (cdkDeployResult, error) {
+		return cdkDeployResult{StackName: req.StackName, Outputs: map[string]string{"FrontendDistributionId": "DIST"}}, nil
+	}
+
+	ensureStageBootstrapStateFn = func(context.Context, dynamodbAPI, string, naming.Stage, string) (stageBootstrapState, error) {
+		return stageBootstrapState{Locked: true, Address: "0xabc", Updated: true}, nil
+	}
+
+	buildAuthUIFn = func(string) (string, error) { return t.TempDir(), nil }
+	replaceBucketWithDirFn = func(context.Context, s3BucketUploaderAPI, string, string) error { return nil }
+	s3ObjectExistsFn = func(context.Context, s3HeadObjectAPI, string, string) (bool, error) { return true, nil }
+	invalidateFrontendFn = func(context.Context, *cloudfront.Client, string) error { return nil }
+
+	var wrotePath string
+	var wroteReceipt *upReceipt
+	writeReceiptFn = func(path string, receipt *upReceipt) error {
+		wrotePath = path
+		wroteReceipt = receipt
+		return nil
+	}
+
+	require.NoError(t, runUp([]string{"--app", "app", "--base-domain", "example.com", "--aws-profile", "profile"}))
+	require.NotEmpty(t, wrotePath)
+	require.NotNil(t, wroteReceipt)
+	require.Contains(t, wrotePath, filepath.Join(".lesser", "app", "example.com", "state.json"))
+	require.Contains(t, wroteReceipt.Stages, "dev")
+}
+
+func TestUpEnv_HandleBootstrapOutput_WritesWhenConfigured(t *testing.T) {
+	previous := writeBootstrapKeyMaterialFn
+	t.Cleanup(func() { writeBootstrapKeyMaterialFn = previous })
+
+	var wrotePath string
+	writeBootstrapKeyMaterialFn = func(path string, wallet bootstrapWallet) error {
+		wrotePath = path
+		require.NotEmpty(t, wallet.Mnemonic)
+		return nil
+	}
+
+	env := &upEnv{
+		args:      upArgs{OutPath: "/tmp/bootstrap.json"},
+		stateDir:  t.TempDir(),
+		bootstrap: bootstrapWallet{Address: "0xabc", Mnemonic: "mnemonic", DerivationPath: defaultBootstrapDerivationPath, ChainID: 1},
+	}
+
+	require.NoError(t, env.handleBootstrapOutput())
+	require.Equal(t, "/tmp/bootstrap.json", wrotePath)
+
+	// No out path -> no write.
+	wrotePath = ""
+	env.args.OutPath = ""
+	require.NoError(t, env.handleBootstrapOutput())
+	require.Empty(t, wrotePath)
+
+	// No mnemonic -> no write.
+	env.bootstrap.Mnemonic = ""
+	env.args.OutPath = "/tmp/bootstrap.json"
+	require.NoError(t, env.handleBootstrapOutput())
+	require.Empty(t, wrotePath)
+}
+
+func TestUpEnv_HandleBootstrapOutput_PropagatesWriteError(t *testing.T) {
+	previous := writeBootstrapKeyMaterialFn
+	t.Cleanup(func() { writeBootstrapKeyMaterialFn = previous })
+
+	writeBootstrapKeyMaterialFn = func(string, bootstrapWallet) error { return errSentinel }
+
+	env := &upEnv{
+		args:      upArgs{OutPath: "/tmp/bootstrap.json"},
+		bootstrap: bootstrapWallet{Address: "0xabc", Mnemonic: "mnemonic", DerivationPath: defaultBootstrapDerivationPath, ChainID: 1},
+	}
+
+	require.ErrorIs(t, env.handleBootstrapOutput(), errSentinel)
+}
+
+var errSentinel = errors.New("sentinel")
+
+func TestPrepareUpEnv_OutPathLoadsLocalBootstrapMaterial(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousHome := userHomeDirFn
+	previousMkdir := mkdirAllFn
+	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousAccount := resolveAWSAccountIDFn
+	previousZone := resolveHostedZoneFn
+	previousInspect := inspectBootstrapRequirementsFn
+	previousRead := readBootstrapKeyMaterialFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		userHomeDirFn = previousHome
+		mkdirAllFn = previousMkdir
+		loadAWSConfigFromProfileFn = previousLoadAWS
+		resolveAWSAccountIDFn = previousAccount
+		resolveHostedZoneFn = previousZone
+		inspectBootstrapRequirementsFn = previousInspect
+		readBootstrapKeyMaterialFn = previousRead
+	})
+
+	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	home := t.TempDir()
+	userHomeDirFn = func() (string, error) { return home, nil }
+	mkdirAllFn = os.MkdirAll
+
+	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
+	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
+	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
+		return hostedZone{ID: "Z1", Name: "example.com"}, nil
+	}
+	inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+		return "0xabc", false, nil
+	}
+
+	args := upArgs{
+		App:        "app",
+		BaseDomain: "example.com",
+		AWSProfile: "profile",
+		OutPath:    "/tmp/bootstrap.json",
+	}
+
+	t.Run("missing local material is error", func(t *testing.T) {
+		readBootstrapKeyMaterialFn = func(string) (bootstrapWallet, error) {
+			t.Fatal("unexpected readBootstrapKeyMaterial call")
+			return bootstrapWallet{}, nil
+		}
+
+		_, err := prepareUpEnv(context.Background(), args)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "--out requires local bootstrap key material")
+	})
+
+	t.Run("address mismatch is error", func(t *testing.T) {
+		stateDir := filepath.Join(home, ".lesser", "app", "example.com")
+		require.NoError(t, os.MkdirAll(stateDir, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(stateDir, "bootstrap.json"), []byte("x"), 0o600))
+
+		readBootstrapKeyMaterialFn = func(string) (bootstrapWallet, error) {
+			return bootstrapWallet{Address: "0xdef", Mnemonic: "mnemonic", DerivationPath: defaultBootstrapDerivationPath, ChainID: 1}, nil
+		}
+
+		_, err := prepareUpEnv(context.Background(), args)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "does not match deployed bootstrap address")
+	})
+
+	t.Run("loads local material on match", func(t *testing.T) {
+		stateDir := filepath.Join(home, ".lesser", "app", "example.com")
+		require.NoError(t, os.MkdirAll(stateDir, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(stateDir, "bootstrap.json"), []byte("x"), 0o600))
+
+		readBootstrapKeyMaterialFn = func(path string) (bootstrapWallet, error) {
+			require.Contains(t, path, "bootstrap.json")
+			return bootstrapWallet{Address: "0xabc", Mnemonic: "mnemonic", DerivationPath: defaultBootstrapDerivationPath, ChainID: 1}, nil
+		}
+
+		env, err := prepareUpEnv(context.Background(), args)
+		require.NoError(t, err)
+		require.Equal(t, "mnemonic", env.bootstrap.Mnemonic)
+	})
+}
+
+func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousHome := userHomeDirFn
+	previousMkdir := mkdirAllFn
+	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousAccount := resolveAWSAccountIDFn
+	previousZone := resolveHostedZoneFn
+	previousInspect := inspectBootstrapRequirementsFn
+	previousWallet := determineBootstrapWalletFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		userHomeDirFn = previousHome
+		mkdirAllFn = previousMkdir
+		loadAWSConfigFromProfileFn = previousLoadAWS
+		resolveAWSAccountIDFn = previousAccount
+		resolveHostedZoneFn = previousZone
+		inspectBootstrapRequirementsFn = previousInspect
+		determineBootstrapWalletFn = previousWallet
+	})
+
+	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
+	mkdirAllFn = os.MkdirAll
+
+	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
+	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
+	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
+		return hostedZone{ID: "Z1", Name: "example.com"}, nil
+	}
+	inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+		return "0xabc", false, nil
+	}
+
+	base := upArgs{App: "app", BaseDomain: "example.com", AWSProfile: "profile"}
+
+	t.Run("repo root error", func(t *testing.T) {
+		findRepoRootFn = func() (string, error) { return "", errSentinel }
+		_, err := prepareUpEnv(context.Background(), base)
+		require.ErrorIs(t, err, errSentinel)
+		findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	})
+
+	t.Run("invalid app name", func(t *testing.T) {
+		_, err := prepareUpEnv(context.Background(), upArgs{App: "APP!", BaseDomain: "example.com", AWSProfile: "profile"})
+		require.Error(t, err)
+	})
+
+	t.Run("invalid base domain", func(t *testing.T) {
+		_, err := prepareUpEnv(context.Background(), upArgs{App: "app", BaseDomain: "example.com/", AWSProfile: "profile"})
+		require.Error(t, err)
+	})
+
+	t.Run("aws profile required", func(t *testing.T) {
+		_, err := prepareUpEnv(context.Background(), upArgs{App: "app", BaseDomain: "example.com", AWSProfile: " "})
+		require.Error(t, err)
+	})
+
+	t.Run("load aws config error", func(t *testing.T) {
+		loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{}, errSentinel }
+		_, err := prepareUpEnv(context.Background(), base)
+		require.ErrorIs(t, err, errSentinel)
+		loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
+	})
+
+	t.Run("resolve account error", func(t *testing.T) {
+		resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "", errSentinel }
+		_, err := prepareUpEnv(context.Background(), base)
+		require.ErrorIs(t, err, errSentinel)
+		resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
+	})
+
+	t.Run("resolve hosted zone error", func(t *testing.T) {
+		resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) { return hostedZone{}, errSentinel }
+		_, err := prepareUpEnv(context.Background(), base)
+		require.ErrorIs(t, err, errSentinel)
+		resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
+			return hostedZone{ID: "Z1", Name: "example.com"}, nil
+		}
+	})
+
+	t.Run("inspect bootstrap requirements error", func(t *testing.T) {
+		inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+			return "", false, errSentinel
+		}
+		_, err := prepareUpEnv(context.Background(), base)
+		require.ErrorIs(t, err, errSentinel)
+		inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+			return "0xabc", false, nil
+		}
+	})
+
+	t.Run("determine bootstrap wallet error", func(t *testing.T) {
+		inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+			return "", true, nil
+		}
+		determineBootstrapWalletFn = func(string) (bootstrapWallet, error) { return bootstrapWallet{}, errSentinel }
+		_, err := prepareUpEnv(context.Background(), base)
+		require.ErrorIs(t, err, errSentinel)
+	})
+}
+
+func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
+	previousTools := ensureToolsAvailableFn
+	previousBuildZips := buildLambdaZipsFn
+	previousWriteBootstrap := writeBootstrapKeyMaterialFn
+	previousCdkBootstrap := cdkBootstrapFn
+	previousAPIGW := ensureAPIGatewayCloudWatchLogsRoleFn
+	previousCdkDeploy := cdkDeployWithOutputsFn
+	previousDeployUI := buildAuthUIFn
+	t.Cleanup(func() {
+		ensureToolsAvailableFn = previousTools
+		buildLambdaZipsFn = previousBuildZips
+		writeBootstrapKeyMaterialFn = previousWriteBootstrap
+		cdkBootstrapFn = previousCdkBootstrap
+		ensureAPIGatewayCloudWatchLogsRoleFn = previousAPIGW
+		cdkDeployWithOutputsFn = previousCdkDeploy
+		buildAuthUIFn = previousDeployUI
+	})
+
+	baseEnv := func() *upEnv {
+		return &upEnv{
+			args:       upArgs{OutPath: "/tmp/bootstrap.json"},
+			repoRoot:   t.TempDir(),
+			app:        "app",
+			baseDomain: "example.com",
+			awsProfile: "profile",
+			awsCfg:     aws.Config{Region: "us-east-1"},
+			accountID:  "123456789012",
+			hostedZone: hostedZone{ID: "Z1", Name: "example.com"},
+			stages:     []naming.Stage{naming.StageDev},
+			stateDir:   t.TempDir(),
+		}
+	}
+
+	t.Run("tools error", func(t *testing.T) {
+		env := baseEnv()
+		ensureToolsAvailableFn = func() error { return errSentinel }
+		buildLambdaZipsFn = func(string, bool) error { return nil }
+		require.ErrorIs(t, env.run(context.Background()), errSentinel)
+	})
+
+	t.Run("build zips error", func(t *testing.T) {
+		env := baseEnv()
+		ensureToolsAvailableFn = func() error { return nil }
+		buildLambdaZipsFn = func(string, bool) error { return errSentinel }
+		require.ErrorIs(t, env.run(context.Background()), errSentinel)
+	})
+
+	t.Run("bootstrap output error", func(t *testing.T) {
+		env := baseEnv()
+		env.bootstrap = bootstrapWallet{Address: "0xabc", Mnemonic: "mnemonic", DerivationPath: defaultBootstrapDerivationPath, ChainID: 1}
+		ensureToolsAvailableFn = func() error { return nil }
+		buildLambdaZipsFn = func(string, bool) error { return nil }
+		writeBootstrapKeyMaterialFn = func(string, bootstrapWallet) error { return errSentinel }
+		require.ErrorIs(t, env.run(context.Background()), errSentinel)
+	})
+
+	t.Run("deploy error", func(t *testing.T) {
+		env := baseEnv()
+		ensureToolsAvailableFn = func() error { return nil }
+		buildLambdaZipsFn = func(string, bool) error { return nil }
+		writeBootstrapKeyMaterialFn = func(string, bootstrapWallet) error { return nil }
+		cdkBootstrapFn = func(context.Context, string, string, string, string) error { return errSentinel }
+		require.ErrorIs(t, env.run(context.Background()), errSentinel)
+	})
+
+	t.Run("deploy UI error", func(t *testing.T) {
+		env := baseEnv()
+		ensureToolsAvailableFn = func() error { return nil }
+		buildLambdaZipsFn = func(string, bool) error { return nil }
+		writeBootstrapKeyMaterialFn = func(string, bootstrapWallet) error { return nil }
+		cdkBootstrapFn = func(context.Context, string, string, string, string) error { return nil }
+		ensureAPIGatewayCloudWatchLogsRoleFn = func(context.Context, aws.Config) error { return nil }
+		cdkDeployWithOutputsFn = func(_ context.Context, _ string, _ string, req cdkDeployRequest) (cdkDeployResult, error) {
+			return cdkDeployResult{StackName: req.StackName, Outputs: map[string]string{}}, nil
+		}
+		buildAuthUIFn = func(string) (string, error) { return "", errSentinel }
+		require.ErrorIs(t, env.run(context.Background()), errSentinel)
+	})
+
+	t.Run("print summary covers mnemonic branch", func(t *testing.T) {
+		env := baseEnv()
+		env.bootstrap = bootstrapWallet{Mnemonic: "mnemonic"}
+		env.printSummary(filepath.Join(t.TempDir(), "state.json"))
+	})
+}

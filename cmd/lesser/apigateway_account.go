@@ -17,8 +17,30 @@ import (
 
 const apiGatewayLogsRoleName = "lesser-apigateway-cloudwatch-logs"
 
+var ensureAPIGatewayCloudWatchLogsRoleFn = ensureAPIGatewayCloudWatchLogsRole
+var sleepFn = time.Sleep
+
+type apiGatewayAccountAPI interface {
+	GetAccount(ctx context.Context, params *apigateway.GetAccountInput, optFns ...func(*apigateway.Options)) (*apigateway.GetAccountOutput, error)
+	UpdateAccount(ctx context.Context, params *apigateway.UpdateAccountInput, optFns ...func(*apigateway.Options)) (*apigateway.UpdateAccountOutput, error)
+}
+
+type iamRoleAPI interface {
+	GetRole(ctx context.Context, params *iam.GetRoleInput, optFns ...func(*iam.Options)) (*iam.GetRoleOutput, error)
+	CreateRole(ctx context.Context, params *iam.CreateRoleInput, optFns ...func(*iam.Options)) (*iam.CreateRoleOutput, error)
+	AttachRolePolicy(ctx context.Context, params *iam.AttachRolePolicyInput, optFns ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error)
+}
+
+var newAPIGatewayClientFn = func(cfg aws.Config) apiGatewayAccountAPI {
+	return apigateway.NewFromConfig(cfg)
+}
+
+var newIAMClientFn = func(cfg aws.Config) iamRoleAPI {
+	return iam.NewFromConfig(cfg)
+}
+
 func ensureAPIGatewayCloudWatchLogsRole(ctx context.Context, cfg aws.Config) error {
-	client := apigateway.NewFromConfig(cfg)
+	client := newAPIGatewayClientFn(cfg)
 
 	account, err := client.GetAccount(ctx, &apigateway.GetAccountInput{})
 	if err != nil {
@@ -48,14 +70,14 @@ func ensureAPIGatewayCloudWatchLogsRole(ctx context.Context, cfg aws.Config) err
 			return nil
 		}
 		lastErr = err
-		time.Sleep(time.Duration(attempt) * 2 * time.Second)
+		sleepFn(time.Duration(attempt) * 2 * time.Second)
 	}
 
 	return fmt.Errorf("apigateway:UpdateAccount (set cloudwatchRoleArn): %w", lastErr)
 }
 
 func ensureIAMRoleForAPIGatewayLogs(ctx context.Context, cfg aws.Config) (string, error) {
-	client := iam.NewFromConfig(cfg)
+	client := newIAMClientFn(cfg)
 
 	existing, err := client.GetRole(ctx, &iam.GetRoleInput{RoleName: aws.String(apiGatewayLogsRoleName)})
 	if err == nil && existing.Role != nil && strings.TrimSpace(aws.ToString(existing.Role.Arn)) != "" {
@@ -105,7 +127,7 @@ func ensureIAMRoleForAPIGatewayLogs(ctx context.Context, cfg aws.Config) (string
 	return roleArn, nil
 }
 
-func ensureRoleHasAPIGatewayLogsPolicy(ctx context.Context, client *iam.Client) error {
+func ensureRoleHasAPIGatewayLogsPolicy(ctx context.Context, client iamRoleAPI) error {
 	const policyArn = "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
 	_, err := client.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
 		RoleName:  aws.String(apiGatewayLogsRoleName),

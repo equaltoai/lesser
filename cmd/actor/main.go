@@ -14,6 +14,7 @@ This service handles federation requests from other ActivityPub servers.
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -43,32 +44,38 @@ var (
 	repos     core.RepositoryStorage
 )
 
+var (
+	mustInitializeLambdaFn   = common.MustInitializeLambda
+	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	lambdaStartFn            = lambda.Start
+	newHandlerFn             = NewHandler
+)
+
 func init() {
 	if common.RunningUnitTests() {
 		return
 	}
-	// Standardized Lambda initialization with automatic service detection
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
-		ServiceName: "actor",
-		LambdaType:  common.LambdaTypeAPI,
-	})
-
-	// Automatic dependency injection
-	cfg = lambdaCtx.Config
-	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(core.RepositoryStorage)
-
-	// Initialize with default options for API Lambda type
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
-		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
-	}
+	initializeActor()
 }
 
 // Handler contains dependencies for the actor service
 type Handler struct {
-	actorRepo              *repositories.ActorRepository
-	authorizedFetchService *federation.AuthorizedFetchService
+	actorRepo              actorGetter
+	authorizedFetchService authorizedFetchVerifier
+	instanceRepo           instanceStateGetter
+}
+
+type actorGetter interface {
+	GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error)
+}
+
+type authorizedFetchVerifier interface {
+	IsAuthorizedFetchEnabled(ctx context.Context) bool
+	VerifyAuthorizedFetch(ctx context.Context, req *http.Request) (*activitypub.Actor, error)
+}
+
+type instanceStateGetter interface {
+	GetInstanceState(ctx context.Context) (*storageModels.InstanceState, error)
 }
 
 // NewHandler creates a new handler instance using standardized services
@@ -88,6 +95,33 @@ func NewHandler() *Handler {
 	return &Handler{
 		actorRepo:              actorRepo,
 		authorizedFetchService: authorizedFetchService,
+		instanceRepo:           repos.Instance(),
+	}
+}
+
+func initializeActor() {
+	// Standardized Lambda initialization with automatic service detection
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
+		ServiceName: "actor",
+		LambdaType:  common.LambdaTypeAPI,
+	})
+
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	storage, ok := lambdaCtx.Repos.(core.RepositoryStorage)
+	if !ok || storage == nil {
+		logger.Fatal("lambda context repository is not core.RepositoryStorage")
+	}
+	repos = storage
+
+	// Initialize with default options for API Lambda type
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
+		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
 	}
 }
 
@@ -99,7 +133,13 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 		return liftErrors.ValidationErrorWithField("username", "missing username")
 	}
 
-	state, stateErr := repos.Instance().GetInstanceState(ctx.Context)
+	var state *storageModels.InstanceState
+	var stateErr error
+	if h.instanceRepo != nil {
+		state, stateErr = h.instanceRepo.GetInstanceState(ctx.Context)
+	} else {
+		stateErr = errors.New("missing instance repository")
+	}
 	bootstrapUsername := storageModels.DefaultBootstrapUsername
 	if stateErr == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
 		bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
@@ -187,8 +227,11 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 		}
 
 		// Return ActivityStreams JSON
-		ctx.Response.Headers["Content-Type"] = "application/activity+json"
-		return ctx.JSON(actor)
+		if err := ctx.JSON(actor); err != nil {
+			return err
+		}
+		ctx.Response.Header("Content-Type", "application/activity+json")
+		return nil
 	}
 
 	// Return HTML for browsers
@@ -376,21 +419,25 @@ func (h *Handler) convertLiftRequest(ctx *lift.Context) (*http.Request, error) {
 }
 
 func main() {
+	runActor()
+}
+
+func runActor() {
 	// Create a new Lift application
 	app := lift.New()
 
 	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	app.Use(middleware.PanicRecovery(logger))
 
 	// Apply federation security middleware
-	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, lambdaCtx.Logger)
+	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, logger)
 
 	// Initialize handler dependencies
-	handler := NewHandler()
+	handler := newHandlerFn()
 
 	// Register actor profile route
 	if err := app.GET("/users/:username", handler.HandleActorProfile); err != nil {
-		lambdaCtx.Logger.Fatal("failed to register actor route", zap.Error(err))
+		logger.Fatal("failed to register actor route", zap.Error(err))
 	}
 
 	// Use standardized Lambda handler wrapper with observability
@@ -398,5 +445,5 @@ func main() {
 		return app.HandleRequest(ctx, event)
 	})
 
-	lambda.Start(standardHandler)
+	lambdaStartFn(standardHandler)
 }

@@ -33,10 +33,10 @@ import (
 // ImportProcessor handles data import processing from SQS messages
 type ImportProcessor struct {
 	db               core.DB
-	importRepo       *repositories.ImportRepository
-	costTrackingRepo *repositories.TrackingRepository
+	importRepo       importRepo
+	costTrackingRepo costTrackingRepo
 	s3Client         *s3.Client
-	repos            storageCore.RepositoryStorage
+	repos            importStorage
 	cfg              *config.Config
 	logger           *zap.Logger
 	bucketName       string
@@ -44,6 +44,78 @@ type ImportProcessor struct {
 }
 
 var processor *ImportProcessor
+var startSQSLambda = patterns.StartSQSLambda
+var loadAWSConfig = func(ctx context.Context) (aws.Config, error) {
+	return awsconfig.LoadDefaultConfig(ctx)
+}
+var newS3Client = func(cfg aws.Config) *s3.Client {
+	return s3.NewFromConfig(cfg)
+}
+
+type importRepo interface {
+	UpdateImportStatus(ctx context.Context, importID, status string, completionData map[string]any, errorMsg string) error
+	UpdateBudgetUsage(ctx context.Context, username, period string, importCostMicroCents, exportCostMicroCents int64) error
+	UpdateImportProgress(ctx context.Context, importID string, progress int) error
+}
+
+type costTrackingRepo interface {
+	Create(ctx context.Context, tracking *models.DynamoDBCostRecord) error
+}
+
+type objectCreator interface {
+	CreateObject(ctx context.Context, obj any) error
+}
+
+type actorGetter interface {
+	GetActor(ctx context.Context, username string) (*activitypub.Actor, error)
+}
+
+type activityCreator interface {
+	CreateActivity(ctx context.Context, activity *activitypub.Activity) error
+}
+
+type bookmarkCreator interface {
+	CreateBookmark(ctx context.Context, username, objectID string) (*models.Bookmark, error)
+}
+
+type importStorage interface {
+	Object() objectCreator
+	Actor() actorGetter
+	Activity() activityCreator
+	Bookmark() bookmarkCreator
+}
+
+type importStorageAdapter struct {
+	storage storageCore.RepositoryStorage
+}
+
+func (a importStorageAdapter) Object() objectCreator {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.Object()
+}
+
+func (a importStorageAdapter) Actor() actorGetter {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.Actor()
+}
+
+func (a importStorageAdapter) Activity() activityCreator {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.Activity()
+}
+
+func (a importStorageAdapter) Bookmark() bookmarkCreator {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.Bookmark()
+}
 
 // ImportProcessorEvent represents the event triggered for import processing
 type ImportProcessorEvent struct {
@@ -182,7 +254,7 @@ func init() {
 		db:               db,
 		importRepo:       importRepo,
 		costTrackingRepo: costTrackingRepo,
-		repos:            repos,
+		repos:            importStorageAdapter{storage: repos},
 		cfg:              lambdaCtx.Config,
 		logger:           lambdaCtx.Logger,
 		bucketName:       bucketName,
@@ -192,7 +264,7 @@ func init() {
 
 func main() {
 	// Use the standard Lift SQS pattern
-	patterns.StartSQSLambda("import-processing", processor, processor.logger)
+	startSQSLambda("import-processing", processor, processor.logger)
 }
 
 // HandleSQS implements the SQS handler interface for Lift
@@ -263,13 +335,13 @@ func (p *ImportProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) er
 
 func (p *ImportProcessor) initializeAWSClients(ctx context.Context) error {
 	// Load AWS configuration
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	awsCfg, err := loadAWSConfig(ctx)
 	if err != nil {
 		return ErrAWSConfigLoad(err)
 	}
 
 	// Initialize S3 client
-	p.s3Client = s3.NewFromConfig(awsCfg)
+	p.s3Client = newS3Client(awsCfg)
 
 	return nil
 }
@@ -959,7 +1031,7 @@ func (p *ImportProcessor) followAccount(ctx context.Context, username, targetAcc
 	}
 
 	// Get the follower actor to send the follow activity
-	followerActor, err := p.repos.Account().GetActor(ctx, username)
+	followerActor, err := p.repos.Actor().GetActor(ctx, username)
 	if err != nil {
 		return ErrFollowerActorGet(err)
 	}

@@ -19,7 +19,7 @@ func runSchema(argv []string) error {
 		return err
 	}
 
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
@@ -29,7 +29,7 @@ func runSchema(argv []string) error {
 		args = append(args, "--out", outPath)
 	}
 
-	return runCommand(context.Background(), "bash", args, execOptions{
+	return runCommandFn(context.Background(), "bash", args, execOptions{
 		Dir: repoRoot,
 	})
 }
@@ -43,7 +43,7 @@ func runExportSchema(argv []string) error {
 		}
 	}
 
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}

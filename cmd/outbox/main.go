@@ -23,26 +23,47 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 const contentTypeActivityJSON = "application/activity+json"
 
+type outboxFederationService interface {
+	DeliverActivity(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor) error
+	DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error
+	DeliverToRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error
+}
+
+type outboxInstanceStateRepository interface {
+	GetInstanceState(ctx context.Context) (*models.InstanceState, error)
+}
+
+type outboxFederationActivityRepository interface {
+	Create(ctx context.Context, activity *models.FederationActivity) error
+}
+
+type outboxFederationCostRepository interface {
+	RecordFederationCost(ctx context.Context, cost *models.FederationCostTracking) error
+	UpdateBudgetUsage(ctx context.Context, domain, period, activityType, direction string, cost int64) error
+	CheckBudgetLimits(ctx context.Context, domain, period, activityType, direction string, estimatedCost int64) (*repositories.BudgetCheckResult, error)
+}
+
 // OutboxProcessor handles ActivityPub federation delivery via SQS
 type OutboxProcessor struct {
-	federationService            *federation.DeliveryService
-	db                           interface{} // DynamORM client interface
+	federationService            outboxFederationService
+	db                           dynamormCore.DB
 	actorRepository              interfaces.ActorRepository
 	activityRepository           interfaces.ActivityRepository
-	federationActivityRepository *repositories.FederationActivityRepository
-	federationCostRepository     *repositories.FederationCostRepository
+	instanceRepository           outboxInstanceStateRepository
+	federationActivityRepository outboxFederationActivityRepository
+	federationCostRepository     outboxFederationCostRepository
 	logger                       *zap.Logger
 	cfg                          interface{} // config.Config interface
 	httpClient                   *http.Client
 	retryConfig                  RetryConfig
 	costCalculator               *federation.CostCalculator
-	repos                        core.RepositoryStorage
 	lambdaCtx                    *common.LambdaContext
 }
 
@@ -117,9 +138,10 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 
 	return &OutboxProcessor{
 		federationService:            federationService,
-		db:                           lambdaCtx.DynamoDB,
+		db:                           repos.GetDB(),
 		actorRepository:              actorRepo,
 		activityRepository:           activityRepo,
+		instanceRepository:           repos.Instance(),
 		federationActivityRepository: federationActivityRepo,
 		federationCostRepository:     federationCostRepo,
 		logger:                       lambdaCtx.Logger,
@@ -142,7 +164,6 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 			},
 		},
 		costCalculator: costCalculator,
-		repos:          repos,
 		lambdaCtx:      lambdaCtx,
 	}, nil
 }
@@ -294,11 +315,11 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 		costParams.LambdaDurationMs = time.Since(start).Milliseconds()
 
 		cost := op.costCalculator.CalculateFederationCosts(costParams)
-		go func() {
+		outboxRunAsync(func() {
 			if err := op.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
 				op.logger.Warn("failed to record federation cost", zap.Error(err))
 			}
-		}()
+		})
 
 		return deliveryBudgetLimitExceeded()
 	}
@@ -341,7 +362,7 @@ func (op *OutboxProcessor) deliverActivityWithRetry(ctx context.Context, msg Act
 				zap.Int("attempt", attempt),
 				zap.Duration("delay", delay),
 			)
-			time.Sleep(delay)
+			outboxSleep(delay)
 		}
 
 		// Attempt delivery
@@ -490,7 +511,7 @@ func (op *OutboxProcessor) recordComprehensiveCostTracking(msg ActivityDeliveryM
 	cost := op.costCalculator.CalculateFederationCosts(costParams)
 
 	// Record cost tracking asynchronously
-	go func() {
+	outboxRunAsync(func() {
 		// Record detailed cost tracking
 		if err := op.federationCostRepository.RecordFederationCost(context.Background(), cost); err != nil {
 			op.logger.Warn("failed to record federation cost", zap.Error(err))
@@ -501,7 +522,7 @@ func (op *OutboxProcessor) recordComprehensiveCostTracking(msg ActivityDeliveryM
 			costParams.Domain, "daily", costParams.ActivityType, "outbound", cost.TotalCostMicroCents); err != nil {
 			op.logger.Warn("failed to update budget usage", zap.Error(err))
 		}
-	}()
+	})
 
 	op.logger.Info("comprehensive federation cost recorded",
 		zap.String("activity_type", msg.Activity.Type),
@@ -564,7 +585,7 @@ func (op *OutboxProcessor) HandleOutboxGet(ctx *lift.Context) error {
 		})
 	}
 
-	state, stateErr := op.repos.Instance().GetInstanceState(ctx.Context)
+	state, stateErr := op.instanceRepository.GetInstanceState(ctx.Context)
 	bootstrapUsername := models.DefaultBootstrapUsername
 	if stateErr == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
 		bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
@@ -717,7 +738,7 @@ func (op *OutboxProcessor) countOutboxActivities(ctx context.Context, username s
 	pk := "ACTOR#" + username
 	const skPrefix = "ACTIVITY#"
 
-	count, err := op.repos.GetDB().WithContext(ctx).Model(&models.Activity{}).
+	count, err := op.db.WithContext(ctx).Model(&models.Activity{}).
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", skPrefix).
 		Count()
@@ -744,7 +765,7 @@ func (op *OutboxProcessor) HandleOutboxPost(ctx *lift.Context) error {
 	}
 
 	// Block publishing until instance activation completes.
-	state, err := op.repos.Instance().GetInstanceState(ctx.Context)
+	state, err := op.instanceRepository.GetInstanceState(ctx.Context)
 	if err != nil {
 		op.logger.Warn("failed to get instance lock state; defaulting to locked",
 			zap.String("request_id", requestID),
@@ -790,6 +811,9 @@ func (op *OutboxProcessor) HandleOutboxPost(ctx *lift.Context) error {
 
 	// Set the actor and published timestamp if not set
 	activity.Actor = actor.ID
+	if len(activity.Context) == 0 {
+		activity.Context = activitypub.DefaultContext
+	}
 	if activity.Published == nil {
 		now := time.Now()
 		activity.Published = &now
@@ -802,6 +826,13 @@ func (op *OutboxProcessor) HandleOutboxPost(ctx *lift.Context) error {
 			strings.ToLower(activity.Type),
 			time.Now().Unix(),
 			generateRandomStringOutbox())
+	}
+
+	if err := common.ValidateActivityPubActivity(outboxActivityValidationMap(activity)); err != nil {
+		op.logger.Warn("invalid ActivityPub activity", zap.Error(err))
+		return ctx.Status(http.StatusUnprocessableEntity).JSON(map[string]string{
+			"error": fmt.Sprintf("invalid activity format: %v", err),
+		})
 	}
 
 	// Store the activity in the outbox
@@ -843,26 +874,20 @@ func (op *OutboxProcessor) authenticateOutboxRequest(ctx *lift.Context, username
 	token := op.getBearerToken(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
 		op.logger.Warn("missing authentication token")
-		return nil, nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return nil, nil, lift.NewLiftError("UNAUTHORIZED", "authentication required", http.StatusUnauthorized)
 	}
 
 	// Validate the token directly using JWT parsing (avoiding complex storage interface)
 	claims, err := op.validateJWTToken(token)
 	if err != nil {
 		op.logger.Warn("invalid access token", zap.Error(err))
-		return nil, nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return nil, nil, lift.NewLiftError("UNAUTHORIZED", "invalid token", http.StatusUnauthorized).WithCause(err)
 	}
 
 	// Verify write scope
 	if !claims.HasScope(auth.ScopeWrite) {
 		op.logger.Warn("insufficient scope", zap.String("username", claims.Username))
-		return nil, nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{
-			"error": "insufficient scope - write access required",
-		})
+		return nil, nil, lift.NewLiftError("FORBIDDEN", "insufficient scope - write access required", http.StatusForbidden)
 	}
 
 	// Verify the authenticated user matches the username in the path
@@ -871,18 +896,14 @@ func (op *OutboxProcessor) authenticateOutboxRequest(ctx *lift.Context, username
 			zap.String("token_username", claims.Username),
 			zap.String("path_username", username),
 		)
-		return nil, nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{
-			"error": "cannot post to another user's outbox",
-		})
+		return nil, nil, lift.NewLiftError("FORBIDDEN", "cannot post to another user's outbox", http.StatusForbidden)
 	}
 
 	// Get the actor for the authenticated user
 	actor, err := op.actorRepository.GetActor(ctx.Request.Context(), username)
 	if err != nil {
 		op.logger.Error("failed to get actor", zap.String("username", username), zap.Error(err))
-		return nil, nil, ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
-			"error": "failed to get actor information",
-		})
+		return nil, nil, lift.NewLiftError("INTERNAL_ERROR", "failed to get actor information", http.StatusInternalServerError).WithCause(err)
 	}
 
 	return claims, actor, nil
@@ -914,31 +935,12 @@ func (op *OutboxProcessor) parseActivityFromRequest(ctx *lift.Context) (*activit
 	// Parse the request body as JSON
 	if err := ctx.ParseRequest(&activity); err != nil {
 		op.logger.Error("failed to parse activity JSON", zap.Error(err))
-		return nil, ctx.Status(http.StatusBadRequest).JSON(map[string]string{
-			"error": "invalid JSON activity",
-		})
+		return nil, lift.NewLiftError("BAD_REQUEST", "invalid JSON activity", http.StatusBadRequest).WithCause(err)
 	}
 
 	// Validate required fields
 	if err := common.ValidateRequiredParam("activityType", activity.Type); err != nil {
-		return nil, ctx.Status(http.StatusUnprocessableEntity).JSON(map[string]string{
-			"error": "activity type is required",
-		})
-	}
-
-	// Validate ActivityPub activity structure
-	activityMap := map[string]interface{}{
-		"id":    activity.ID,
-		"type":  activity.Type,
-		"actor": activity.Actor,
-		"to":    activity.To,
-		"cc":    activity.CC,
-	}
-	if err := common.ValidateActivityPubActivity(activityMap); err != nil {
-		op.logger.Warn("invalid ActivityPub activity", zap.Error(err))
-		return nil, ctx.Status(http.StatusUnprocessableEntity).JSON(map[string]string{
-			"error": fmt.Sprintf("invalid activity format: %v", err),
-		})
+		return nil, lift.NewLiftError("UNPROCESSABLE_ENTITY", "activity type is required", http.StatusUnprocessableEntity)
 	}
 
 	// Validate activity type
@@ -963,12 +965,57 @@ func (op *OutboxProcessor) parseActivityFromRequest(ctx *lift.Context) (*activit
 	}
 
 	if !validType {
-		return nil, ctx.Status(http.StatusUnprocessableEntity).JSON(map[string]string{
-			"error": fmt.Sprintf("unsupported activity type: %s", activity.Type),
-		})
+		return nil, lift.NewLiftError("UNPROCESSABLE_ENTITY", fmt.Sprintf("unsupported activity type: %s", activity.Type), http.StatusUnprocessableEntity)
 	}
 
 	return &activity, nil
+}
+
+func outboxActivityValidationMap(activity *activitypub.Activity) map[string]interface{} {
+	payload := map[string]interface{}{
+		"id":     activity.ID,
+		"type":   activity.Type,
+		"actor":  activity.Actor,
+	}
+
+	if activity.Object != nil {
+		payload["object"] = activity.Object
+	}
+
+	if len(activity.Context) > 0 {
+		payload["@context"] = []any(activity.Context)
+	}
+
+	if len(activity.To) > 0 {
+		to := make([]any, 0, len(activity.To))
+		for _, entry := range activity.To {
+			to = append(to, entry)
+		}
+		payload["to"] = to
+	}
+	if len(activity.CC) > 0 {
+		cc := make([]any, 0, len(activity.CC))
+		for _, entry := range activity.CC {
+			cc = append(cc, entry)
+		}
+		payload["cc"] = cc
+	}
+	if len(activity.BTo) > 0 {
+		bto := make([]any, 0, len(activity.BTo))
+		for _, entry := range activity.BTo {
+			bto = append(bto, entry)
+		}
+		payload["bto"] = bto
+	}
+	if len(activity.BCC) > 0 {
+		bcc := make([]any, 0, len(activity.BCC))
+		for _, entry := range activity.BCC {
+			bcc = append(bcc, entry)
+		}
+		payload["bcc"] = bcc
+	}
+
+	return payload
 }
 
 // triggerFederationDelivery triggers appropriate federation delivery based on activity
@@ -1064,12 +1111,14 @@ func (op *OutboxProcessor) validateJWTToken(tokenString string) (*auth.Claims, e
 	return nil, invalidToken()
 }
 
-func main() {
-	processor, err := NewOutboxProcessor()
-	if err != nil {
-		panic(outboxProcessorInitializationFailed())
-	}
+var (
+	outboxSleep    = time.Sleep
+	outboxRunAsync = func(fn func()) { go fn() }
+	newOutboxProc  = NewOutboxProcessor
+	startLambda    = lambda.Start
+)
 
+func buildOutboxApp(processor *OutboxProcessor) *lift.App {
 	app := lift.New()
 
 	// Panic recovery middleware (MUST be first to catch all panics)
@@ -1077,9 +1126,6 @@ func main() {
 
 	// Apply federation security middleware
 	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, processor.lambdaCtx.Logger)
-
-	// Use standardized Lambda handler wrapper for observability
-	standardHandler := processor.lambdaCtx.CreateStandardizedLambdaHandler
 
 	// Add request ID middleware
 	app.Use(func(next lift.Handler) lift.Handler {
@@ -1168,8 +1214,22 @@ func main() {
 		return processor.HandleOutboxPost(ctx)
 	})
 
+	return app
+}
+
+func main() {
+	processor, err := newOutboxProc()
+	if err != nil {
+		panic(outboxProcessorInitializationFailed())
+	}
+
+	app := buildOutboxApp(processor)
+
+	// Use standardized Lambda handler wrapper for observability
+	standardHandler := processor.lambdaCtx.CreateStandardizedLambdaHandler
+
 	// Wrap the main Lambda handler with standardized observability
-	lambda.Start(standardHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
+	startLambda(standardHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
 		return app.HandleRequest(ctx, event)
 	}))
 }

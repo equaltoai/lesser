@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,17 +18,28 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/dlq"
 	"github.com/equaltoai/lesser/pkg/middleware"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
+type dlqProcessor interface {
+	InitializeAWSClients(ctx context.Context) error
+	ProcessDLQMessages(ctx context.Context, event events.SQSEvent) error
+	ScheduledReprocessing(ctx context.Context) error
+	CleanupExpiredMessages(ctx context.Context) error
+	GetAnalytics(ctx context.Context, service string, timeRange repositories.DLQTimeRange) (*repositories.DLQAnalytics, error)
+	GetTrends(ctx context.Context, service string, days int) (*repositories.DLQTrends, error)
+	SearchMessages(ctx context.Context, filter *repositories.DLQSearchFilter) ([]*models.DLQMessage, string, error)
+}
+
 // DLQProcessorHandler handles dead letter queue message processing
 type DLQProcessorHandler struct {
-	processor *dlq.Processor
+	processor dlqProcessor
 	logger    *zap.Logger
 }
 
 // NewDLQProcessorHandler creates a new DLQ processor handler
-func NewDLQProcessorHandler(processor *dlq.Processor, logger *zap.Logger) *DLQProcessorHandler {
+func NewDLQProcessorHandler(processor dlqProcessor, logger *zap.Logger) *DLQProcessorHandler {
 	return &DLQProcessorHandler{
 		processor: processor,
 		logger:    logger,
@@ -156,6 +168,7 @@ var (
 	logger    *zap.Logger
 	repos     interface{} //nolint:unused // dependency injection pattern - available for processor extensions
 	handler   *DLQProcessorHandler
+	lambdaStartFn = lambda.Start
 )
 
 func init() {
@@ -203,7 +216,7 @@ func main() {
 	setupRouteHandlers(app)
 
 	// Start the Lambda handler
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }
 
 // setupMiddleware configures all middleware for the application

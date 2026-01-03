@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 )
 
+var findRepoRootFn = findRepoRoot
+
 func findRepoRoot() (string, error) {
 	start, err := os.Getwd()
 	if err != nil {

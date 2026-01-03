@@ -31,9 +31,36 @@ import (
 type AIProcessor struct {
 	db         core.DB
 	tableName  string
-	aiAnalyzer *ai.AIService      // For AI analysis (Comprehend, Rekognition, etc.)
-	aiService  *aiService.Service // For storage and event publishing
+	aiAnalyzer contentAnalyzer // For AI analysis (Comprehend, Rekognition, etc.)
+	aiService  analysisSaver   // For storage and event publishing
 	logger     *zap.Logger
+}
+
+type contentAnalyzer interface {
+	AnalyzeContent(ctx context.Context, content *ai.Content) (*ai.AIAnalysis, error)
+}
+
+type analysisSaver interface {
+	SaveAnalysis(ctx context.Context, cmd *aiService.SaveAnalysisCommand) (*aiService.SaveAnalysisResult, error)
+}
+
+type analyzableStreamItem struct {
+	PK   string `dynamorm:"pk"`
+	Type string `json:"type"`
+}
+
+type contentStreamAttachment struct {
+	Type      string `json:"type"`
+	MediaType string `json:"mediaType"`
+	URL       string `json:"url"`
+}
+
+type contentStreamItem struct {
+	PK         string                  `dynamorm:"pk"`
+	Type       string                  `json:"type"`
+	Content    string                  `json:"content"`
+	ActorID    string                  `json:"actor_id"`
+	Attachment []contentStreamAttachment `json:"attachment"`
 }
 
 // HandleStreamWithContext processes DynamoDB stream events with explicit context
@@ -112,12 +139,9 @@ func (ap *AIProcessor) isAnalyzableRecord(record events.DynamoDBEventRecord) boo
 	}
 
 	// Try to unmarshal into a basic model to check PK
-	var item struct {
-		PK   string `dynamorm:"pk"`
-		Type string `json:"type"`
-	}
+	var item analyzableStreamItem
 
-	if err := stream.UnmarshalItem(record, &item); err != nil {
+	if err := unmarshalItemFn(record, &item); err != nil {
 		return false
 	}
 
@@ -131,19 +155,9 @@ func (ap *AIProcessor) isAnalyzableRecord(record events.DynamoDBEventRecord) boo
 
 func (ap *AIProcessor) extractContent(record events.DynamoDBEventRecord) (*ai.Content, error) {
 	// Unmarshal the stream record into a content model
-	var item struct {
-		PK         string `dynamorm:"pk"`
-		Type       string `json:"type"`
-		Content    string `json:"content"`
-		ActorID    string `json:"actor_id"`
-		Attachment []struct {
-			Type      string `json:"type"`
-			MediaType string `json:"mediaType"`
-			URL       string `json:"url"`
-		} `json:"attachment"`
-	}
+	var item contentStreamItem
 
-	if err := stream.UnmarshalItem(record, &item); err != nil {
+	if err := unmarshalItemFn(record, &item); err != nil {
 		return nil, pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to unmarshal stream record")
 	}
 
@@ -267,6 +281,8 @@ var (
 	logger    *zap.Logger
 	repos     storageCore.RepositoryStorage //nolint:unused // Reserved for dependency injection pattern
 	processor *AIProcessor
+	unmarshalItemFn = stream.UnmarshalItem
+	lambdaStartFn   = lambda.Start
 )
 
 func init() {
@@ -306,18 +322,20 @@ func NewSimplifiedAIProcessor(lambdaCtx *common.LambdaContext) *AIProcessor {
 	}
 }
 
+func handleAIProcessorStream(ctx *lift.Context) error {
+	records, err := ctx.DynamoDBRecords()
+	if err != nil {
+		return err
+	}
+	return processor.HandleStreamWithContext(ctx.Request.Context(), ctx, events.DynamoDBEvent{Records: records})
+}
+
 func main() {
 	app := lift.New()
 	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
 	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return processor.HandleStreamWithContext(ctx.Request.Context(), ctx, events.DynamoDBEvent{Records: records})
-	})
+	_ = app.DynamoDB("*", handleAIProcessorStream)
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }

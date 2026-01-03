@@ -30,11 +30,16 @@ const (
 
 // WebFingerHandler handles WebFinger and NodeInfo requests using Lift
 type WebFingerHandler struct {
-	actorRepo interfaces.ActorRepository
-	repos     core.RepositoryStorage
-	logger    *zap.Logger
-	cfg       *config.Config
-	lambdaCtx *common.LambdaContext
+	actorRepo    interfaces.ActorRepository
+	repos        core.RepositoryStorage
+	instanceRepo instanceStateRepository
+	logger       *zap.Logger
+	cfg          *config.Config
+	lambdaCtx    *common.LambdaContext
+}
+
+type instanceStateRepository interface {
+	GetInstanceState(ctx context.Context) (*storageModels.InstanceState, error)
 }
 
 // parseWebFingerResource parses a WebFinger resource identifier
@@ -101,13 +106,18 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *liftPkg.Context) error {
 		return liftPkg.NotFound("actor not found")
 	}
 
-	state, stateErr := wh.repos.Instance().GetInstanceState(ctx.Context)
+	var state *storageModels.InstanceState
+	stateErr := fmt.Errorf("instance state repository not available")
+	if wh.instanceRepo != nil {
+		state, stateErr = wh.instanceRepo.GetInstanceState(ctx.Context)
+	}
+
 	bootstrapUsername := storageModels.DefaultBootstrapUsername
-	if stateErr == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
+	if stateErr == nil && state != nil && strings.TrimSpace(state.BootstrapUsername) != "" {
 		bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
 	}
 
-	locked := stateErr != nil || state.Locked
+	locked := stateErr != nil || state == nil || state.Locked
 	if locked && !strings.EqualFold(username, bootstrapUsername) {
 		return liftPkg.NotFound("actor not found")
 	}
@@ -165,9 +175,12 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *liftPkg.Context) error {
 	)
 
 	// Return WebFinger response with proper content type and caching
-	ctx.Response.Headers["Content-Type"] = "application/jrd+json"
 	ctx.Response.Headers["Cache-Control"] = CacheControlMaxAge
-	return ctx.JSON(response)
+	if err := ctx.JSON(response); err != nil {
+		return err
+	}
+	ctx.Response.Headers["Content-Type"] = "application/jrd+json"
+	return nil
 }
 
 func (wh *WebFingerHandler) ensureBootstrapActor(ctx context.Context, username string) error {
@@ -179,7 +192,7 @@ func (wh *WebFingerHandler) ensureBootstrapActor(ctx context.Context, username s
 		return err
 	}
 
-	priv, err := rsa.GenerateKey(rand.Reader, 4096)
+	priv, err := rsaGenerateKeyFn(rand.Reader, 4096)
 	if err != nil {
 		return err
 	}
@@ -197,7 +210,7 @@ func (wh *WebFingerHandler) ensureBootstrapActor(ctx context.Context, username s
 	publicKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubBytes})
 
 	actorID := fmt.Sprintf("https://%s/users/%s", cfg.Domain, username)
-	now := time.Now().UTC()
+	now := timeNowFn().UTC()
 	actor := activitypub.NewActor(activitypub.PersonType, actorID, username)
 	actor.Name = username
 	actor.URL = fmt.Sprintf("https://%s/@%s", cfg.Domain, username)
@@ -228,11 +241,12 @@ func (wh *WebFingerHandler) ensureBootstrapActor(ctx context.Context, username s
 // NewWebFingerHandler creates a new webfinger handler with standardized initialization
 func NewWebFingerHandler() *WebFingerHandler {
 	return &WebFingerHandler{
-		actorRepo: repos.Actor(),
-		repos:     repos,
-		logger:    logger,
-		cfg:       cfg,
-		lambdaCtx: lambdaCtx,
+		actorRepo:    repos.Actor(),
+		repos:        repos,
+		instanceRepo: repos.Instance(),
+		logger:       logger,
+		cfg:          cfg,
+		lambdaCtx:    lambdaCtx,
 	}
 }
 
@@ -241,14 +255,25 @@ var (
 	cfg       *config.Config
 	logger    *zap.Logger
 	repos     core.RepositoryStorage
+
+	mustInitializeLambdaFn   = common.MustInitializeLambda
+	initializeWithDefaultsFn = (*common.LambdaContext).InitializeWithDefaults
+	lambdaStartFn            = lambda.Start
+	rsaGenerateKeyFn         = rsa.GenerateKey
+	timeNowFn                = time.Now
 )
 
 func init() {
 	if common.RunningUnitTests() {
 		return
 	}
+
+	initializeWebFinger()
+}
+
+func initializeWebFinger() {
 	// Standardized Lambda initialization with automatic service detection
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "webfinger",
 		LambdaType:  common.LambdaTypeAPI,
 	})
@@ -259,24 +284,34 @@ func init() {
 	repos = lambdaCtx.Repos.(core.RepositoryStorage)
 
 	// Initialize with default options for API Lambda type
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
 	}
 }
 
 func main() {
-	// Create webfinger handler using standardized services
-	handler := NewWebFingerHandler()
+	runWebFinger(NewWebFingerHandler(), lambdaCtx)
+}
 
-	// Create Lift application
+func runWebFinger(handler *WebFingerHandler, lambdaCtx *common.LambdaContext) {
+	app := buildApp(handler, lambdaCtx.Logger)
+
+	// Use standardized Lambda handler with observability
+	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
+		return app.HandleRequest(ctx, event)
+	})
+
+	lambdaStartFn(standardHandler)
+}
+
+func buildApp(handler *WebFingerHandler, lambdaLogger *zap.Logger) *liftPkg.App {
 	app := liftPkg.New()
 
 	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	app.Use(middleware.PanicRecovery(lambdaLogger))
 
 	// Apply federation security middleware
-	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, lambdaCtx.Logger)
+	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, lambdaLogger)
 
 	// Add request ID middleware
 	app.Use(func(next liftPkg.Handler) liftPkg.Handler {
@@ -324,15 +359,8 @@ func main() {
 		})
 	})
 
-	// Rate limiting is now handled by ApplySecurityMiddleware
-
 	// Register webfinger routes
 	handler.RegisterRoutes(app)
 
-	// Use standardized Lambda handler with observability
-	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
-		return app.HandleRequest(ctx, event)
-	})
-
-	lambda.Start(standardHandler)
+	return app
 }

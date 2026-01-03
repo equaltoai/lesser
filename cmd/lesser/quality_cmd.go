@@ -7,18 +7,18 @@ import (
 )
 
 func runFmt(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
 	goCache, err := ensureGoCacheDir(repoRoot)
 	if err != nil {
 		return err
 	}
-	return runCommand(context.Background(), "go", []string{"fmt", "./..."}, execOptions{
+	return runCommandFn(context.Background(), "go", []string{"fmt", "./..."}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GOCACHE": goCache,
@@ -37,14 +37,14 @@ func runLint(argv []string) error {
 		return err
 	}
 
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("golangci-lint"); err != nil {
+	if err := ensureToolAvailableFn("golangci-lint"); err != nil {
 		return err
 	}
 
@@ -62,7 +62,7 @@ func runLint(argv []string) error {
 		args = append(args, "--fix")
 	}
 
-	return runCommand(context.Background(), "golangci-lint", args, execOptions{
+	return runCommandFn(context.Background(), "golangci-lint", args, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GOCACHE":        goCache,

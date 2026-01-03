@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+var captureCommandOutputFn = captureCommandOutput
+
 func runDev(argv []string) error {
 	if len(argv) == 0 {
 		return runDevServer(nil)
@@ -36,7 +38,7 @@ func runDev(argv []string) error {
 }
 
 func runDevInit(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
@@ -73,7 +75,7 @@ func runDevInit(_ []string) error {
 }
 
 func runDevServer(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
@@ -86,35 +88,32 @@ func runDevServer(_ []string) error {
 		return fmt.Errorf("stat .env: %w", err)
 	}
 
-	if err := ensureToolAvailable("go"); err != nil {
+	if err := ensureToolAvailableFn("go"); err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("bash"); err != nil {
+	if err := ensureToolAvailableFn("bash"); err != nil {
 		return err
 	}
 
 	fmt.Println("Starting local development server...")
-	cmd := exec.Command("bash", "-lc", "set -a; source ./.env; set +a; go run ./cmd/api") //nolint:gosec // tool invocation
-	cmd.Dir = repoRoot
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	return cmd.Run()
+	return runCommandFn(context.Background(), "bash", []string{"-lc", "set -a; source ./.env; set +a; go run ./cmd/api"}, execOptions{
+		Dir: repoRoot,
+	})
 }
 
 func runDevDynamoDB(_ []string) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
 	_ = repoRoot
 
-	if err := ensureToolAvailable("docker"); err != nil {
+	if err := ensureToolAvailableFn("docker"); err != nil {
 		return err
 	}
 
 	fmt.Println("Starting local DynamoDB (docker)...")
-	return runCommand(context.Background(), "docker", []string{"run", "-p", "8000:8000", "amazon/dynamodb-local"}, execOptions{})
+	return runCommandFn(context.Background(), "docker", []string{"run", "-p", "8000:8000", "amazon/dynamodb-local"}, execOptions{})
 }
 
 type seedValidateArgs struct {
@@ -148,23 +147,23 @@ func runDevSeedAndValidate(argv []string) error {
 		args.GraphQLEndpoint = strings.TrimRight(args.BaseURL, "/") + "/api/graphql"
 	}
 
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
 
-	if err := ensureToolAvailable("python3"); err != nil {
+	if err := ensureToolAvailableFn("python3"); err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("aws"); err != nil {
+	if err := ensureToolAvailableFn("aws"); err != nil {
 		return err
 	}
-	if err := ensureToolAvailable("bash"); err != nil {
+	if err := ensureToolAvailableFn("bash"); err != nil {
 		return err
 	}
 
 	fmt.Println("=== Step 1: Clearing existing data ===")
-	if err := runCommand(context.Background(), "python3", []string{"scripts/clear_all_data.py"}, execOptions{
+	if err := runCommandFn(context.Background(), "python3", []string{"scripts/clear_all_data.py"}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"AWS_PROFILE":    args.AWSProfile,
@@ -175,7 +174,7 @@ func runDevSeedAndValidate(argv []string) error {
 	}
 
 	fmt.Println("\n=== Step 2: Seeding fresh data ===")
-	if err := runCommand(context.Background(), "python3", []string{"scripts/seed_runner/main.py"}, execOptions{
+	if err := runCommandFn(context.Background(), "python3", []string{"scripts/seed_runner/main.py"}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"LESSER_BASE_URL":         args.BaseURL,
@@ -185,7 +184,7 @@ func runDevSeedAndValidate(argv []string) error {
 		return err
 	}
 
-	token, err := captureCommandOutput(context.Background(), repoRoot, map[string]string{
+	token, err := captureCommandOutputFn(context.Background(), repoRoot, map[string]string{
 		"LESSER_BASE_URL": args.BaseURL,
 	}, "python3", "scripts/seed_runner/main.py", "get_token")
 	if err != nil {
@@ -197,7 +196,7 @@ func runDevSeedAndValidate(argv []string) error {
 	}
 
 	fmt.Println("\n=== Step 3: Running GraphQL validation tests ===")
-	if err := runCommand(context.Background(), "python3", []string{"tests/system/test_graphql.py"}, execOptions{
+	if err := runCommandFn(context.Background(), "python3", []string{"tests/system/test_graphql.py"}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GRAPHQL_STAGE":    args.GraphQLStage,
@@ -210,7 +209,7 @@ func runDevSeedAndValidate(argv []string) error {
 	}
 
 	fmt.Println("\n=== Step 4: Running GraphQL read validation tests ===")
-	if err := runCommand(context.Background(), "python3", []string{"tests/system/test_graphql_reads.py"}, execOptions{
+	if err := runCommandFn(context.Background(), "python3", []string{"tests/system/test_graphql_reads.py"}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GRAPHQL_STAGE":    args.GraphQLStage,
@@ -223,7 +222,7 @@ func runDevSeedAndValidate(argv []string) error {
 	}
 
 	fmt.Println("\n=== Step 5: Running comprehensive GraphQL validation ===")
-	if err := runCommand(context.Background(), "bash", []string{"scripts/run_graphql_validation.sh"}, execOptions{
+	if err := runCommandFn(context.Background(), "bash", []string{"scripts/run_graphql_validation.sh"}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GRAPHQL_STAGE":      args.GraphQLStage,
@@ -237,7 +236,7 @@ func runDevSeedAndValidate(argv []string) error {
 	}
 
 	fmt.Println("\n=== Step 6: Running expanded GraphQL validation ===")
-	if err := runCommand(context.Background(), "python3", []string{"scripts/validate_graphql_expanded.py"}, execOptions{
+	if err := runCommandFn(context.Background(), "python3", []string{"scripts/validate_graphql_expanded.py"}, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{
 			"GRAPHQL_STAGE":      args.GraphQLStage,

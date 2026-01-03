@@ -24,6 +24,7 @@ import (
 	notifsvc "github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/transformations"
@@ -103,20 +104,24 @@ type ActivityHandler struct {
 	DB               core.DB
 	TableName        string
 	Logger           *zap.Logger
-	ActivityRepo     *repositories.ActivityRepository
-	ObjectRepo       *repositories.ObjectRepository
-	ActorRepo        *repositories.ActorRepository
-	TimelineRepo     *repositories.TimelineRepository
-	RelationshipRepo *repositories.RelationshipRepository
-	LikeRepo         *repositories.LikeRepository
-	SocialRepo       *repositories.SocialRepository
-	ModerationRepo   *repositories.ModerationRepository
-	ListRepo         *repositories.ListRepository
-	RouteManager     *routing.Manager
+	ActivityRepo     interfaces.ActivityRepository
+	ObjectRepo       interfaces.ObjectRepository
+	ActorRepo        interfaces.ActorRepository
+	TimelineRepo     interfaces.TimelineRepository
+	RelationshipRepo interfaces.ConcreteRelationshipRepository
+	LikeRepo         interfaces.LikeRepository
+	SocialRepo       interfaces.SocialRepository
+	ModerationRepo   interfaces.ModerationRepository
+	ListRepo         interfaces.ListRepository
+	RouteManager     federationRouteManager
 	PushService      *notifpush.PushService
-	AccountRepo      *repositories.AccountRepository
-	NotificationRepo *repositories.NotificationRepository
+	AccountRepo      interfaces.AccountRepository
+	NotificationRepo interfaces.NotificationRepository
 	NotificationSvc  *notifsvc.Service
+}
+
+type federationRouteManager interface {
+	DeliverMessage(ctx context.Context, message *types.FederationMessage, options types.DeliveryOptions) (*types.DeliveryResult, error)
 }
 
 // NewActivityHandler creates a new ActivityHandler
@@ -2702,7 +2707,7 @@ func (h *ActivityHandler) filterRemoteRecipients(recipients []string) []string {
 // Note: linter false positive - this function IS used (lines 334, 430, 833, 1122, 1244)
 //
 //nolint:unused // false positive - function is used
-func (h *ActivityHandler) createNotificationRepo() *repositories.NotificationRepository {
+func (h *ActivityHandler) createNotificationRepo() interfaces.NotificationRepository {
 	if h.NotificationRepo == nil {
 		repo := repositories.NewNotificationRepository(h.DB, h.TableName, h.Logger, nil)
 		if h.NotificationSvc != nil {

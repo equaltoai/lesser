@@ -26,23 +26,42 @@ var (
 	cfg                          *config.Config
 	logger                       *zap.Logger
 	repos                        core.RepositoryStorage //nolint:unused // dependency injection pattern - available for processor extensions
-	federationActivityRepository *repositories.FederationActivityRepository
+	federationActivityRepository federationActivityStore
 	db                           dynamormCore.DB
 )
+
+type federationActivityStore interface {
+	Create(ctx context.Context, activity *models.FederationActivity) error
+	UpdateInstanceInfo(ctx context.Context, info *models.InstanceInfo) error
+}
 
 // FederationTracker implements the DynamoDBStreamHandler interface
 type FederationTracker struct {
 	logger                       *zap.Logger
 	cfg                          *common.LambdaContext
-	federationActivityRepository *repositories.FederationActivityRepository
+	federationActivityRepository federationActivityStore
 }
+
+var (
+	mustInitializeLambdaFn      = common.MustInitializeLambda
+	initializeWithDefaultsFn    = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	newLambdaOptimizedClientFn  = dynamorm.NewLambdaOptimizedClient
+	newFederationActivityRepoFn = func(db dynamormCore.DB, tableName string, logger *zap.Logger) federationActivityStore {
+		return repositories.NewFederationActivityRepository(db, tableName, logger, nil)
+	}
+	lambdaStartFn = lambda.Start
+)
 
 func init() {
 	if common.RunningUnitTests() {
 		return
 	}
+	initializeFederationTracker()
+}
+
+func initializeFederationTracker() {
 	// Standardized Lambda initialization for federation-tracker function
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "federation-tracker",       // federation-tracker
 		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
 	})
@@ -50,26 +69,32 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	if storage, ok := lambdaCtx.Repos.(core.RepositoryStorage); ok {
+		repos = storage
+	}
 
 	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
+	err := initializeWithDefaultsFn(lambdaCtx)
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
 	// Function-specific initialization only
 	// Initialize DynamORM with Lambda optimizations
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	db, err = newLambdaOptimizedClientFn(context.Background(), cfg.Region)
 	if err != nil {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
 	// Initialize repository
-	federationActivityRepository = repositories.NewFederationActivityRepository(db, cfg.DynamoTableName, logger, nil)
+	federationActivityRepository = newFederationActivityRepoFn(db, cfg.DynamoTableName, logger)
 }
 
 func main() {
+	runFederationTracker()
+}
+
+func runFederationTracker() {
 	// Create the handler
 	handler := &FederationTracker{
 		logger:                       logger,
@@ -89,7 +114,7 @@ func main() {
 		return handler.HandleStream(ctx, events.DynamoDBEvent{Records: records})
 	})
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }
 
 // HandleStream implements the DynamoDBStreamHandler interface

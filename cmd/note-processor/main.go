@@ -31,6 +31,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	storageInterfaces "github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
@@ -87,21 +88,46 @@ type contextKey string
 
 const requestIDKey contextKey = "request_id"
 
+type comprehendAPI interface {
+	DetectSentiment(ctx context.Context, params *comprehend.DetectSentimentInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectSentimentOutput, error)
+	DetectPiiEntities(ctx context.Context, params *comprehend.DetectPiiEntitiesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectPiiEntitiesOutput, error)
+}
+
+type bedrockAnalyzer interface {
+	AnalyzeReputation(ctx context.Context, req ai.ReputationAnalysisRequest) (*ai.ReputationAnalysisResponse, error)
+}
+
+type websocketSubscriptionManager interface {
+	GetSubscriptionsForType(ctx context.Context, subscriptionType string) ([]models.WebSocketEventSubscription, error)
+	HandleDisconnect(ctx context.Context, connectionID string) error
+}
+
 // NoteProcessor handles DynamoDB stream events for community notes with AI cost tracking
 type NoteProcessor struct {
 	db                core.DB
 	tableName         string
 	logger            *zap.Logger
-	communityNoteRepo *repositories.CommunityNoteRepository
-	activityRepo      *repositories.ActivityRepository
+	communityNoteRepo storageInterfaces.CommunityNoteRepository
+	activityRepo      storageInterfaces.ActivityRepository
+	userRepo          storageInterfaces.UserRepository
+	relationshipRepo  storageInterfaces.ConcreteRelationshipRepository
+	moderationRepo    storageInterfaces.ModerationRepository
 	aiCostRepo        *repositories.AICostRepository
-	comprehendClient  *comprehend.Client
-	bedrockClient     *ai.BedrockClient
+	comprehendClient  comprehendAPI
+	bedrockClient     bedrockAnalyzer
 	wsClient          streamer.Client
-	wsRepo            *repositories.WebSocketSubscriptionManagerRepository
+	wsRepo            websocketSubscriptionManager
 	wsEndpoint        string
 	baseURL           string
 }
+
+var (
+	randReadFn          = rand.Read
+	dynamormGetClientFn = dynamorm.GetClient
+	newBedrockClientFn  = ai.NewBedrockClient
+	newStreamerClientFn = streamer.NewClient
+	lambdaStartFn       = lambda.Start
+)
 
 // NewNoteProcessor creates a new note processor with AI cost tracking
 func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
@@ -110,7 +136,7 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 	cfg := lambdaCtx.Config
 
 	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
+	db, err := dynamormGetClientFn(context.Background())
 	if err != nil {
 		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
@@ -118,14 +144,20 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 	// Initialize repositories
 	communityNoteRepo := repositories.NewCommunityNoteRepository(db, cfg.DynamoTableName, logger, nil)
 	activityRepo := repositories.NewActivityRepository(db, cfg.DynamoTableName, logger, nil)
+	userRepo := repositories.NewUserRepository(db, cfg.DynamoTableName, logger)
+	relationshipRepo := repositories.NewRelationshipRepository(db, cfg.DynamoTableName, logger)
+	moderationRepo := repositories.NewModerationRepository(db, cfg.DynamoTableName, logger)
 	aiCostRepo := repositories.NewAICostRepository(db, cfg.DynamoTableName, logger, nil)
 	wsRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, cfg.DynamoTableName, logger, nil)
 
 	// Use pre-initialized AWS clients
-	comprehendClient := lambdaCtx.AWSServices.Comprehend
+	var comprehendClient comprehendAPI
+	if lambdaCtx.AWSServices != nil {
+		comprehendClient = lambdaCtx.AWSServices.Comprehend
+	}
 
 	// Initialize Bedrock client with proper error handling
-	bedrockClient, err := ai.NewBedrockClient(context.Background(), logger)
+	bedrockClient, err := newBedrockClientFn(context.Background(), logger)
 	if err != nil {
 		logger.Warn("failed to initialize Bedrock client, will use fallback analysis", zap.Error(err))
 		bedrockClient = nil // Will trigger fallback behavior
@@ -134,8 +166,8 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 	// WebSocket endpoint for broadcasting updates
 	wsEndpoint := cfg.WebSocketEndpoint
 	var wsClient streamer.Client
-	if wsEndpoint != "" {
-		client, err := streamer.NewClient(context.Background(), streamer.ClientConfig{
+	if wsEndpoint != "" && lambdaCtx.AWSServices != nil {
+		client, err := newStreamerClientFn(context.Background(), streamer.ClientConfig{
 			AWSConfig: &lambdaCtx.AWSServices.Config,
 			Endpoint:  wsEndpoint,
 		})
@@ -154,6 +186,9 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 		logger:            logger,
 		communityNoteRepo: communityNoteRepo,
 		activityRepo:      activityRepo,
+		userRepo:          userRepo,
+		relationshipRepo:  relationshipRepo,
+		moderationRepo:    moderationRepo,
 		aiCostRepo:        aiCostRepo,
 		comprehendClient:  comprehendClient,
 		bedrockClient:     bedrockClient,
@@ -173,23 +208,25 @@ func (np *NoteProcessor) HandleStream(ctx context.Context, event events.DynamoDB
 	// Process records with error collection
 	var errors []error
 	for _, record := range event.Records {
+		if record.EventName != "INSERT" {
+			continue
+		}
+
+		pkAttr, ok := record.Change.NewImage["PK"]
+		pk := getStringAttribute(pkAttr)
+		if !ok || common.ValidateRequiredParam("pk", pk) != nil || !strings.HasPrefix(pk, "NOTE#") {
+			continue
+		}
+
+		skAttr, ok := record.Change.NewImage["SK"]
+		sk := getStringAttribute(skAttr)
+		if !ok {
+			continue
+		}
+
 		// Process INSERT events for new notes
-		if record.EventName == "INSERT" {
-			// Check if this is a note record
-			pk, ok := record.Change.NewImage["PK"]
-			if !ok || (func() error { return common.ValidateRequiredParam("pk", getStringAttribute(pk)) }() != nil) || !strings.HasPrefix(getStringAttribute(pk), "NOTE#") {
-				continue
-			}
-
-			sk, ok := record.Change.NewImage["SK"]
-			if !ok || getStringAttribute(sk) != "METADATA" {
-				continue
-			}
-
-			// Extract note ID
-			noteID := strings.TrimPrefix(getStringAttribute(pk), "NOTE#")
-
-			// Process the note
+		if sk == "METADATA" {
+			noteID := strings.TrimPrefix(pk, "NOTE#")
 			if err := np.processNewNoteByID(ctx, noteID); err != nil {
 				np.logger.Error("failed to process note",
 					zap.String("note_id", noteID),
@@ -199,21 +236,8 @@ func (np *NoteProcessor) HandleStream(ctx context.Context, event events.DynamoDB
 		}
 
 		// Process INSERT events for new votes
-		if record.EventName == "INSERT" {
-			// Check if this is a vote record
-			sk, ok := record.Change.NewImage["SK"]
-			if !ok || !strings.HasPrefix(getStringAttribute(sk), "VOTE#") {
-				continue
-			}
-
-			// Extract note ID from PK
-			pk, ok := record.Change.NewImage["PK"]
-			if !ok || !strings.HasPrefix(getStringAttribute(pk), "NOTE#") {
-				continue
-			}
-			noteID := strings.TrimPrefix(getStringAttribute(pk), "NOTE#")
-
-			// Recalculate note score
+		if strings.HasPrefix(sk, "VOTE#") {
+			noteID := strings.TrimPrefix(pk, "NOTE#")
 			if err := np.recalculateNoteScore(ctx, noteID); err != nil {
 				np.logger.Error("failed to recalculate note score",
 					zap.String("note_id", noteID),
@@ -349,10 +373,11 @@ func (np *NoteProcessor) extractUsernameFromActorID(actorID string) string {
 
 // calculateAccountAgeScore calculates reputation score based on account age
 func (np *NoteProcessor) calculateAccountAgeScore(ctx context.Context, username string) float64 {
-	// Get user from user repository using shared database connection
-	userRepo := repositories.NewUserRepository(np.communityNoteRepo.GetDB(), np.tableName, np.logger)
+	if np.userRepo == nil {
+		return 0.0
+	}
 
-	user, err := userRepo.GetUser(ctx, username)
+	user, err := np.userRepo.GetUser(ctx, username)
 	if err != nil {
 		np.logger.Debug("could not get user for age calculation",
 			zap.String("username", username),
@@ -376,11 +401,12 @@ func (np *NoteProcessor) calculateAccountAgeScore(ctx context.Context, username 
 
 // calculateSocialScore calculates reputation score based on social metrics
 func (np *NoteProcessor) calculateSocialScore(ctx context.Context, username string) float64 {
-	// Get relationship repository
-	relationshipRepo := repositories.NewRelationshipRepository(np.communityNoteRepo.GetDB(), np.tableName, np.logger)
+	if np.relationshipRepo == nil {
+		return 0.0
+	}
 
 	// Get follower count
-	followers, err := relationshipRepo.GetFollowerCount(ctx, username)
+	followers, err := np.relationshipRepo.GetFollowerCount(ctx, username)
 	if err != nil {
 		np.logger.Debug("could not get follower count",
 			zap.String("username", username),
@@ -389,7 +415,7 @@ func (np *NoteProcessor) calculateSocialScore(ctx context.Context, username stri
 	}
 
 	// Get following count
-	following, err := relationshipRepo.GetFollowingCount(ctx, username)
+	following, err := np.relationshipRepo.GetFollowingCount(ctx, username)
 	if err != nil {
 		np.logger.Debug("could not get following count",
 			zap.String("username", username),
@@ -426,6 +452,10 @@ func (np *NoteProcessor) calculateSocialScore(ctx context.Context, username stri
 
 // calculateActivityScore calculates reputation score based on posting activity
 func (np *NoteProcessor) calculateActivityScore(ctx context.Context, username string) float64 {
+	if np.activityRepo == nil {
+		return 0.0
+	}
+
 	// Get user's outbox activities (posts they've created)
 	activities, _, err := np.activityRepo.GetOutboxActivities(ctx, username, 1000, "") // Get up to 1000 recent activities
 	if err != nil {
@@ -518,14 +548,15 @@ func (np *NoteProcessor) calculateVotingHistoryScore(ctx context.Context, userna
 
 // calculateModerationPenalty calculates reputation penalty based on moderation actions
 func (np *NoteProcessor) calculateModerationPenalty(ctx context.Context, username string) float64 {
-	// Get moderation repository and query actual moderation actions
-	moderationRepo := repositories.NewModerationRepository(np.communityNoteRepo.GetDB(), np.tableName, np.logger)
+	if np.moderationRepo == nil {
+		return 0.0
+	}
 
 	// Look at last 90 days of moderation actions against this user (not by them)
 	since := time.Now().AddDate(0, 0, -90)
 
 	// Get actual moderation events against this user's content/account
-	events, _, err := moderationRepo.GetModerationEventsByObject(ctx, username, 100, "")
+	events, _, err := np.moderationRepo.GetModerationEventsByObject(ctx, username, 100, "")
 	if err != nil {
 		np.logger.Debug("could not get moderation history",
 			zap.String("username", username),
@@ -658,6 +689,9 @@ type Source struct {
 }
 
 func (np *NoteProcessor) analyzeContentWithCostTracking(ctx context.Context, note *storage.CommunityNote) (*Analysis, error) {
+	if np.comprehendClient == nil {
+		return nil, fmt.Errorf("comprehend client not configured")
+	}
 	// Use AWS Comprehend for analysis
 
 	// Detect sentiment
@@ -844,6 +878,10 @@ func (np *NoteProcessor) broadcastNoteUpdate(ctx context.Context, note *storage.
 		np.logger.Warn("websocket endpoint not configured, skipping broadcast")
 		return
 	}
+	if np.wsRepo == nil {
+		np.logger.Warn("websocket subscription repository not configured, skipping broadcast")
+		return
+	}
 
 	// Create update message
 	message := map[string]any{
@@ -952,7 +990,7 @@ func (np *NoteProcessor) determineAction(note *storage.CommunityNote) string {
 
 func (np *NoteProcessor) generateID() string {
 	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := randReadFn(b); err != nil {
 		// Fallback to timestamp-based ID if crypto/rand fails
 		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
@@ -1359,57 +1397,59 @@ func init() {
 	processor = NewNoteProcessor(lambdaCtx)
 }
 
+func handleDynamoDBStream(ctx *lift.Context) error {
+	start := time.Now()
+	requestID := ctx.GetRequestID()
+	if requestID == "" {
+		requestID = fmt.Sprintf("note-processor-%d", time.Now().UnixNano())
+		ctx.SetRequestID(requestID)
+	}
+
+	records, err := ctx.DynamoDBRecords()
+	if err != nil {
+		lambdaCtx.Logger.Error("failed to decode DynamoDB stream records",
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return err
+	}
+
+	event := events.DynamoDBEvent{Records: records}
+	processorCtx := context.WithValue(ctx.Request.Context(), requestIDKey, requestID)
+
+	lambdaCtx.Logger.Info("processing note stream batch",
+		zap.String("request_id", requestID),
+		zap.Int("record_count", len(event.Records)),
+	)
+
+	procErr := processor.HandleStream(processorCtx, event)
+
+	duration := time.Since(start)
+	if procErr != nil {
+		lambdaCtx.Logger.Error("DynamoDB stream processing failed",
+			zap.String("request_id", requestID),
+			zap.Error(procErr),
+			zap.Duration("duration", duration),
+			zap.Int("record_count", len(event.Records)),
+		)
+		return procErr
+	}
+
+	lambdaCtx.Logger.Info("DynamoDB stream processing completed",
+		zap.String("request_id", requestID),
+		zap.Duration("duration", duration),
+		zap.Int("record_count", len(event.Records)),
+	)
+
+	return nil
+}
+
 func main() {
 	app := lift.New()
 	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
 	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		start := time.Now()
-		requestID := ctx.GetRequestID()
-		if requestID == "" {
-			requestID = fmt.Sprintf("note-processor-%d", time.Now().UnixNano())
-			ctx.SetRequestID(requestID)
-		}
+	_ = app.DynamoDB("*", handleDynamoDBStream)
 
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			lambdaCtx.Logger.Error("failed to decode DynamoDB stream records",
-				zap.String("request_id", requestID),
-				zap.Error(err),
-			)
-			return err
-		}
-
-		event := events.DynamoDBEvent{Records: records}
-		processorCtx := context.WithValue(ctx.Request.Context(), requestIDKey, requestID)
-
-		lambdaCtx.Logger.Info("processing note stream batch",
-			zap.String("request_id", requestID),
-			zap.Int("record_count", len(event.Records)),
-		)
-
-		procErr := processor.HandleStream(processorCtx, event)
-
-		duration := time.Since(start)
-		if procErr != nil {
-			lambdaCtx.Logger.Error("DynamoDB stream processing failed",
-				zap.String("request_id", requestID),
-				zap.Error(procErr),
-				zap.Duration("duration", duration),
-				zap.Int("record_count", len(event.Records)),
-			)
-			return procErr
-		}
-
-		lambdaCtx.Logger.Info("DynamoDB stream processing completed",
-			zap.String("request_id", requestID),
-			zap.Duration("duration", duration),
-			zap.Int("record_count", len(event.Records)),
-		)
-
-		return nil
-	})
-
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }

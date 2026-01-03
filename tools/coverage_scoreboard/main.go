@@ -5,7 +5,9 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,15 +49,18 @@ func (f fileCoverage) Percent() float64 {
 }
 
 type scoreboardConfig struct {
-	ProfilePath     string
-	Prefix          string
-	Top             int
-	MinStatements   int
-	ZeroOnly        bool
-	SortByUncovered bool
-	Mode            string
-	PackageFilter   string
-	StripModulePath string
+	ProfilePath      string
+	Prefix           string
+	Top              int
+	MinStatements    int
+	ZeroOnly         bool
+	SortByUncovered  bool
+	Mode             string
+	PackageFilter    string
+	StripModulePath  string
+	ExcludeGenerated bool
+
+	ModulePrefix string
 }
 
 func parseFlags() scoreboardConfig {
@@ -73,7 +78,10 @@ func parseFlags() scoreboardConfig {
 	flag.StringVar(&cfg.Mode, "mode", "package", "summary mode: package|file")
 	flag.StringVar(&cfg.PackageFilter, "package", "", "only include entries whose package has this prefix (optional)")
 	flag.StringVar(&cfg.StripModulePath, "strip", modulePrefix, "strip this import-path prefix when printing file paths (file mode only)")
+	flag.BoolVar(&cfg.ExcludeGenerated, "exclude-generated", true, "exclude generated files (\"Code generated... DO NOT EDIT\") from metrics")
 	flag.Parse()
+
+	cfg.ModulePrefix = modulePrefix
 	return cfg
 }
 
@@ -112,7 +120,7 @@ func main() {
 
 	switch cfg.Mode {
 	case "package":
-		byPkg, err := readPackageCoverage(cfg.ProfilePath, cfg.Prefix, cfg.PackageFilter)
+		byPkg, err := readPackageCoverage(cfg.ProfilePath, cfg.Prefix, cfg.PackageFilter, cfg.ExcludeGenerated, cfg.ModulePrefix)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
@@ -137,13 +145,16 @@ func main() {
 		if cfg.PackageFilter != "" {
 			fmt.Printf("package: %s\n", cfg.PackageFilter)
 		}
+		if !cfg.ExcludeGenerated {
+			fmt.Printf("exclude-generated: false\n")
+		}
 		fmt.Printf("total:   %.1f%% (%d/%d statements)\n\n", totalPct, totalCovered, totalStatements)
 		fmt.Printf("%6s  %14s  %s\n", "%cov", "covered/total", "package")
 		for _, p := range pkgs {
 			fmt.Printf("%6.1f  %6d/%-6d  %s\n", p.Percent(), p.Covered, p.TotalStatements, p.Package)
 		}
 	case "file":
-		byFile, err := readFileCoverage(cfg.ProfilePath, cfg.Prefix, cfg.PackageFilter)
+		byFile, err := readFileCoverage(cfg.ProfilePath, cfg.Prefix, cfg.PackageFilter, cfg.ExcludeGenerated, cfg.ModulePrefix)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
@@ -168,6 +179,9 @@ func main() {
 		if cfg.PackageFilter != "" {
 			fmt.Printf("package: %s\n", cfg.PackageFilter)
 		}
+		if !cfg.ExcludeGenerated {
+			fmt.Printf("exclude-generated: false\n")
+		}
 		fmt.Printf("total:   %.1f%% (%d/%d statements)\n\n", totalPct, totalCovered, totalStatements)
 		fmt.Printf("%6s  %14s  %s\n", "%cov", "covered/total", "file")
 		for _, f := range files {
@@ -183,7 +197,55 @@ func main() {
 	}
 }
 
-func readPackageCoverage(profilePath string, prefix string, packageFilter string) (map[string]*packageCoverage, error) {
+type generatedFileDetector struct {
+	modulePrefix string
+	cache        map[string]bool
+}
+
+func newGeneratedFileDetector(modulePrefix string) *generatedFileDetector {
+	return &generatedFileDetector{
+		modulePrefix: modulePrefix,
+		cache:        make(map[string]bool),
+	}
+}
+
+func (d *generatedFileDetector) isGenerated(importPath string) bool {
+	if v, ok := d.cache[importPath]; ok {
+		return v
+	}
+
+	localPath := importPath
+	if d.modulePrefix != "" && strings.HasPrefix(importPath, d.modulePrefix) {
+		localPath = strings.TrimPrefix(importPath, d.modulePrefix)
+	}
+	localPath = filepath.Clean(localPath)
+
+	// #nosec G304 -- local developer tool reads module-owned files from disk.
+	f, err := os.Open(localPath)
+	if err != nil {
+		d.cache[importPath] = false
+		return false
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: close file:", err)
+		}
+	}()
+
+	buf := make([]byte, 2048)
+	n, readErr := f.Read(buf)
+	if readErr != nil && readErr != io.EOF {
+		d.cache[importPath] = false
+		return false
+	}
+
+	header := string(buf[:n])
+	isGenerated := strings.Contains(header, "Code generated") || strings.Contains(header, "DO NOT EDIT")
+	d.cache[importPath] = isGenerated
+	return isGenerated
+}
+
+func readPackageCoverage(profilePath string, prefix string, packageFilter string, excludeGenerated bool, modulePrefix string) (map[string]*packageCoverage, error) {
 	// #nosec G304 -- local developer tool reads a developer-supplied local path
 	f, err := os.Open(profilePath)
 	if err != nil {
@@ -196,6 +258,11 @@ func readPackageCoverage(profilePath string, prefix string, packageFilter string
 	}()
 
 	byPkg := make(map[string]*packageCoverage)
+	var detector *generatedFileDetector
+	if excludeGenerated {
+		detector = newGeneratedFileDetector(modulePrefix)
+	}
+
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -207,16 +274,19 @@ func readPackageCoverage(profilePath string, prefix string, packageFilter string
 		if colon < 0 {
 			continue
 		}
-		filepath := line[:colon]
-		if prefix != "" && !strings.HasPrefix(filepath, prefix) {
+		filePath := line[:colon]
+		if prefix != "" && !strings.HasPrefix(filePath, prefix) {
+			continue
+		}
+		if excludeGenerated && detector.isGenerated(filePath) {
 			continue
 		}
 
-		lastSlash := strings.LastIndexByte(filepath, '/')
+		lastSlash := strings.LastIndexByte(filePath, '/')
 		if lastSlash < 0 {
 			continue
 		}
-		pkg := filepath[:lastSlash]
+		pkg := filePath[:lastSlash]
 		if packageFilter != "" && !strings.HasPrefix(pkg, packageFilter) {
 			continue
 		}
@@ -244,7 +314,7 @@ func readPackageCoverage(profilePath string, prefix string, packageFilter string
 	return byPkg, nil
 }
 
-func readFileCoverage(profilePath string, prefix string, packageFilter string) (map[string]*fileCoverage, error) {
+func readFileCoverage(profilePath string, prefix string, packageFilter string, excludeGenerated bool, modulePrefix string) (map[string]*fileCoverage, error) {
 	// #nosec G304 -- local developer tool reads a developer-supplied local path
 	f, err := os.Open(profilePath)
 	if err != nil {
@@ -257,6 +327,11 @@ func readFileCoverage(profilePath string, prefix string, packageFilter string) (
 	}()
 
 	byFile := make(map[string]*fileCoverage)
+	var detector *generatedFileDetector
+	if excludeGenerated {
+		detector = newGeneratedFileDetector(modulePrefix)
+	}
+
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -268,15 +343,18 @@ func readFileCoverage(profilePath string, prefix string, packageFilter string) (
 		if colon < 0 {
 			continue
 		}
-		filepath := line[:colon]
-		if prefix != "" && !strings.HasPrefix(filepath, prefix) {
+		filePath := line[:colon]
+		if prefix != "" && !strings.HasPrefix(filePath, prefix) {
+			continue
+		}
+		if excludeGenerated && detector.isGenerated(filePath) {
 			continue
 		}
 
 		pkg := ""
-		lastSlash := strings.LastIndexByte(filepath, '/')
+		lastSlash := strings.LastIndexByte(filePath, '/')
 		if lastSlash >= 0 {
-			pkg = filepath[:lastSlash]
+			pkg = filePath[:lastSlash]
 		}
 		if packageFilter != "" && pkg != "" && !strings.HasPrefix(pkg, packageFilter) {
 			continue
@@ -287,10 +365,10 @@ func readFileCoverage(profilePath string, prefix string, packageFilter string) (
 			continue
 		}
 
-		entry := byFile[filepath]
+		entry := byFile[filePath]
 		if entry == nil {
-			entry = &fileCoverage{File: filepath, Package: pkg}
-			byFile[filepath] = entry
+			entry = &fileCoverage{File: filePath, Package: pkg}
+			byFile[filePath] = entry
 		}
 
 		entry.TotalStatements += numStatements

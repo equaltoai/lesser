@@ -72,7 +72,7 @@ func runSmokeFederationFromArgs(argv []string) error {
 }
 
 func runSmokeCore(args smokeArgs) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
@@ -92,14 +92,14 @@ func runSmokeCore(args smokeArgs) error {
 		env["SMOKE_INSECURE"] = "1"
 	}
 
-	return runCommand(context.Background(), "bash", []string{"scripts/smoke_core.sh"}, execOptions{
+	return runCommandFn(context.Background(), "bash", []string{"scripts/smoke_core.sh"}, execOptions{
 		Dir: repoRoot,
 		Env: env,
 	})
 }
 
 func runSmokeFederation(args smokeArgs) error {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func runSmokeFederation(args smokeArgs) error {
 		env["SMOKE_INSECURE"] = "1"
 	}
 
-	return runCommand(context.Background(), "bash", []string{"scripts/smoke_federation.sh"}, execOptions{
+	return runCommandFn(context.Background(), "bash", []string{"scripts/smoke_federation.sh"}, execOptions{
 		Dir: repoRoot,
 		Env: env,
 	})

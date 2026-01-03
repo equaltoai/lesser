@@ -55,7 +55,7 @@ type upEnv struct {
 }
 
 func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoRootFn()
 	if err != nil {
 		return nil, err
 	}
@@ -75,17 +75,17 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		return nil, errors.New("aws profile is required")
 	}
 
-	awsCfg, err := loadAWSConfigFromProfile(ctx, awsProfile)
+	awsCfg, err := loadAWSConfigFromProfileFn(ctx, awsProfile)
 	if err != nil {
 		return nil, err
 	}
 
-	accountID, err := resolveAWSAccountID(ctx, awsCfg)
+	accountID, err := resolveAWSAccountIDFn(ctx, awsCfg)
 	if err != nil {
 		return nil, err
 	}
 
-	hostedZone, err := resolveHostedZone(ctx, awsCfg, baseDomain)
+	hostedZone, err := resolveHostedZoneFn(ctx, awsCfg, baseDomain)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 	stages := upStages(args.WithStaging)
 	ddb := dynamodb.NewFromConfig(awsCfg)
 
-	existingBootstrapAddr, bootstrapRequired, err := inspectBootstrapRequirements(ctx, ddb, app, stages)
+	existingBootstrapAddr, bootstrapRequired, err := inspectBootstrapRequirementsFn(ctx, ddb, app, stages)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		ChainID:        1,
 	}
 	if bootstrapRequired {
-		bootstrap, err = determineBootstrapWallet(existingBootstrapAddr)
+		bootstrap, err = determineBootstrapWalletFn(existingBootstrapAddr)
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +125,7 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		if !fileExists(defaultPath) {
 			return nil, errors.New("--out requires local bootstrap key material; no mnemonic found in ~/.lesser (cannot recover from AWS)")
 		}
-		loaded, err := readBootstrapKeyMaterial(defaultPath)
+		loaded, err := readBootstrapKeyMaterialFn(defaultPath)
 		if err != nil {
 			return nil, err
 		}
@@ -160,10 +160,10 @@ func upStages(withStaging bool) []naming.Stage {
 }
 
 func (e *upEnv) run(ctx context.Context) error {
-	if err := ensureToolsAvailable(); err != nil {
+	if err := ensureToolsAvailableFn(); err != nil {
 		return err
 	}
-	if err := buildLambdaZips(e.repoRoot, e.args.RebuildLambdas); err != nil {
+	if err := buildLambdaZipsFn(e.repoRoot, e.args.RebuildLambdas); err != nil {
 		return err
 	}
 	if err := e.handleBootstrapOutput(); err != nil {
@@ -190,7 +190,7 @@ func (e *upEnv) run(ctx context.Context) error {
 	}
 
 	statePath := filepath.Join(e.stateDir, "state.json")
-	if err := writeReceipt(statePath, receipt); err != nil {
+	if err := writeReceiptFn(statePath, receipt); err != nil {
 		return err
 	}
 
@@ -211,7 +211,7 @@ func (e *upEnv) handleBootstrapOutput() error {
 		return nil
 	}
 
-	if err := writeBootstrapKeyMaterial(e.args.OutPath, e.bootstrap); err != nil {
+	if err := writeBootstrapKeyMaterialFn(e.args.OutPath, e.bootstrap); err != nil {
 		return err
 	}
 	fmt.Println("Wrote bootstrap key material to:", e.args.OutPath)
@@ -222,18 +222,18 @@ func (e *upEnv) handleBootstrapOutput() error {
 func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 	receipt := newUpReceipt(e.app, e.baseDomain, e.awsProfile, e.accountID, e.awsCfg.Region, e.stages, e.hostedZone)
 
-	if err := cdkBootstrap(ctx, e.repoRoot, e.awsProfile, e.accountID, e.awsCfg.Region); err != nil {
+	if err := cdkBootstrapFn(ctx, e.repoRoot, e.awsProfile, e.accountID, e.awsCfg.Region); err != nil {
 		return nil, err
 	}
 
 	fmt.Println("\nEnsuring API Gateway account logging role...")
-	if err := ensureAPIGatewayCloudWatchLogsRole(ctx, e.awsCfg); err != nil {
+	if err := ensureAPIGatewayCloudWatchLogsRoleFn(ctx, e.awsCfg); err != nil {
 		return nil, err
 	}
 
 	sharedStack := naming.SharedStackName(e.app)
 	fmt.Println("\nDeploying shared stack:", sharedStack)
-	sharedResult, err := cdkDeployWithOutputs(ctx, e.repoRoot, e.awsProfile, cdkDeployRequest{
+	sharedResult, err := cdkDeployWithOutputsFn(ctx, e.repoRoot, e.awsProfile, cdkDeployRequest{
 		StackName:    sharedStack,
 		App:          e.app,
 		BaseDomain:   e.baseDomain,
@@ -250,7 +250,7 @@ func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 	for _, stage := range e.stages {
 		stack := naming.StageStackName(e.app, stage)
 		fmt.Println("\nDeploying stage stack:", stack)
-		stageResult, err := cdkDeployWithOutputs(ctx, e.repoRoot, e.awsProfile, cdkDeployRequest{
+		stageResult, err := cdkDeployWithOutputsFn(ctx, e.repoRoot, e.awsProfile, cdkDeployRequest{
 			StackName:    stack,
 			App:          e.app,
 			BaseDomain:   e.baseDomain,
@@ -273,7 +273,7 @@ func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 
 func (e *upEnv) bootstrapStages(ctx context.Context, receipt *upReceipt) error {
 	for _, stage := range e.stages {
-		state, err := ensureStageBootstrapState(ctx, e.ddb, e.app, stage, e.bootstrap.Address)
+		state, err := ensureStageBootstrapStateFn(ctx, e.ddb, e.app, stage, e.bootstrap.Address)
 		if err != nil {
 			return err
 		}

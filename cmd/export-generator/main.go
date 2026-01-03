@@ -24,7 +24,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services"
-	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -35,9 +35,10 @@ import (
 // ExportProcessor handles data export generation from SQS messages
 type ExportProcessor struct {
 	db               core.DB
-	repos            storageCore.RepositoryStorage
-	exportRepo       *repositories.ExportRepository
-	costTrackingRepo *repositories.TrackingRepository
+	repos            exportStorage
+	exportRepo       exportRepo
+	costTrackingRepo costTrackingRepo
+	budgetUpdater    budgetUpdater
 	s3Client         *s3.Client
 	logger           *zap.Logger
 	tableName        string
@@ -45,8 +46,170 @@ type ExportProcessor struct {
 	baseURL          string
 }
 
+type exportRepo interface {
+	UpdateExportStatus(ctx context.Context, exportID, status string, completionData map[string]any, errorMsg string) error
+}
+
+type costTrackingRepo interface {
+	Create(ctx context.Context, tracking *models.DynamoDBCostRecord) error
+}
+
+type budgetUpdater interface {
+	UpdateBudgetUsage(ctx context.Context, username, period string, importCostMicroCents, exportCostMicroCents int64) error
+}
+
+type exportStorage interface {
+	Account() accountRepo
+	Relationship() relationshipRepo
+	Social() socialRepo
+	List() listRepo
+	User() userRepo
+	Object() objectRepo
+	Activity() activityRepo
+	Like() likeRepo
+	DomainBlock() domainBlockRepo
+	Media() mediaRepo
+}
+
+type accountRepo interface {
+	GetActor(ctx context.Context, username string) (*activitypub.Actor, error)
+}
+
+type relationshipRepo interface {
+	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+}
+
+type socialRepo interface {
+	GetBlockedUsers(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error)
+	GetMutedUsers(ctx context.Context, actor string, limit int, cursor string) ([]*storage.Mute, string, error)
+}
+
+type listRepo interface {
+	GetListsForUser(ctx context.Context, username string) ([]*storage.List, error)
+	GetListAccounts(ctx context.Context, listID string) ([]string, error)
+}
+
+type userRepo interface {
+	GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+}
+
+type objectRepo interface {
+	GetObject(ctx context.Context, id string) (any, error)
+}
+
+type activityRepo interface {
+	GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error)
+}
+
+type likeRepo interface {
+	GetActorLikes(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Like, string, error)
+}
+
+type domainBlockRepo interface {
+	GetUserDomainBlocks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+}
+
+type mediaRepo interface {
+	GetUserMedia(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Media], error)
+}
+
+type exportStorageCore interface {
+	Account() *repositories.AccountRepository
+	Relationship() interfaces.ConcreteRelationshipRepository
+	Social() *repositories.SocialRepository
+	List() *repositories.ListRepository
+	User() interfaces.UserRepository
+	Object() interfaces.ObjectRepository
+	Activity() interfaces.ActivityRepository
+	Like() *repositories.LikeRepository
+	DomainBlock() *repositories.DomainBlockRepository
+	Media() *repositories.MediaRepository
+}
+
+type exportStorageAdapter struct {
+	storage exportStorageCore
+}
+
+func (a exportStorageAdapter) Account() accountRepo {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.Account()
+}
+
+func (a exportStorageAdapter) Relationship() relationshipRepo {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.Relationship()
+}
+
+func (a exportStorageAdapter) Social() socialRepo {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.Social()
+}
+
+func (a exportStorageAdapter) List() listRepo {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.List()
+}
+
+func (a exportStorageAdapter) User() userRepo {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.User()
+}
+
+func (a exportStorageAdapter) Object() objectRepo {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.Object()
+}
+
+func (a exportStorageAdapter) Activity() activityRepo {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.Activity()
+}
+
+func (a exportStorageAdapter) Like() likeRepo {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.Like()
+}
+
+func (a exportStorageAdapter) DomainBlock() domainBlockRepo {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.DomainBlock()
+}
+
+func (a exportStorageAdapter) Media() mediaRepo {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.Media()
+}
+
 var (
-	processor *ExportProcessor
+	processor            *ExportProcessor
+	mustInitializeLambda = common.MustInitializeLambda
+	getDynamormClient    = dynamorm.GetClient
+	newRepoFactory       = factory.NewRepositoryFactory
+	newExportRepo        = repositories.NewExportRepository
+	newTrackingRepo      = repositories.NewTrackingRepository
+	newImportRepo        = repositories.NewImportRepository
+	startLambda          = lambda.Start
 )
 
 // ExportGeneratorEvent represents the event triggered for export generation
@@ -67,7 +230,7 @@ type DateRange struct {
 }
 
 func main() {
-	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx := mustInitializeLambda(common.LambdaConfig{
 		ServiceName: "export-generator",
 		LambdaType:  common.LambdaTypeProcessor,
 		Version:     "1.0.0",
@@ -76,29 +239,31 @@ func main() {
 	// AWS config no longer needed - DynamORM handles configuration internally
 
 	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
+	db, err := getDynamormClient(context.Background())
 	if err != nil {
 		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
 
 	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	repos, err := newRepoFactory(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 	if err != nil {
 		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
 
 	// Initialize export repository
-	exportRepo := repositories.NewExportRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	exportRepo := newExportRepo(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
 	// Initialize cost tracking repository
-	costTrackingRepo := repositories.NewTrackingRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger, nil)
+	costTrackingRepo := newTrackingRepo(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger, nil)
+	importRepo := newImportRepo(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
 	// Create processor instance
 	processor = &ExportProcessor{
 		db:               db,
-		repos:            repos,
+		repos:            exportStorageAdapter{storage: repos},
 		exportRepo:       exportRepo,
 		costTrackingRepo: costTrackingRepo,
+		budgetUpdater:    importRepo,
 		logger:           lambdaCtx.Logger,
 		tableName:        lambdaCtx.Config.DynamoTableName,
 		bucketName:       lambdaCtx.Config.S3BucketName,
@@ -112,7 +277,7 @@ func main() {
 		processor.baseURL = "https://example.com" // Default
 	}
 
-	lambda.Start(func(ctx context.Context, event events.SQSEvent) (err error) {
+	startLambda(func(ctx context.Context, event events.SQSEvent) (err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				requestID := fmt.Sprintf("export-%d", time.Now().UnixNano())
@@ -278,10 +443,11 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 				zap.Error(err))
 		}
 
-		// Create a dedicated ImportRepository instance to update budget usage
-		// This tracks actual costs against user budgets
-		importRepo := repositories.NewImportRepository(ep.db, ep.tableName, ep.logger)
-		if err := importRepo.UpdateBudgetUsage(ctx, event.Username, "daily", 0, exportCostTracking.TotalCostMicroCents); err != nil {
+		budgetUpdater := ep.budgetUpdater
+		if budgetUpdater == nil {
+			budgetUpdater = repositories.NewImportRepository(ep.db, ep.tableName, ep.logger)
+		}
+		if err := budgetUpdater.UpdateBudgetUsage(ctx, event.Username, "daily", 0, exportCostTracking.TotalCostMicroCents); err != nil {
 			ep.logger.Warn("failed to update budget usage",
 				zap.String("export_id", event.ExportID),
 				zap.String("username", event.Username),

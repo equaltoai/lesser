@@ -20,8 +20,10 @@ import (
 	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
@@ -87,17 +89,33 @@ type StreamRouterHandler struct {
 	wsEndpoint         string
 	userRepo           *repositories.UserRepository
 	actorRepo          *repositories.ActorRepository
-	accountRepo        *repositories.AccountRepository
-	statusRepo         *repositories.StatusRepository
+	accountRepo        followerActorRepository
+	statusRepo         statusRepository
 	publisher          streaming.Publisher
-	streamingRepo      *repositories.StreamingConnectionRepository
+	streamingRepo      streamConnectionRepository
 	domain             string
 	streamEventLog     *streaming.StreamEventLog
 }
 
+type followerActorRepository interface {
+	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Actor, string, error)
+}
+
+type statusRepository interface {
+	GetStatus(ctx context.Context, statusID string) (*models.Status, error)
+}
+
+type streamConnectionRepository interface {
+	GetConnection(ctx context.Context, connectionID string) (*models.WebSocketConnection, error)
+	GetConnectionsByUser(ctx context.Context, userID string) ([]models.WebSocketConnection, error)
+	GetSubscriptionsForStream(ctx context.Context, stream string) ([]models.WebSocketSubscription, error)
+	DeleteSubscription(ctx context.Context, connectionID, stream string) error
+	DeleteConnection(ctx context.Context, connectionID string) error
+}
+
 // connectionRepositoryAdapter adapts StreamingConnectionRepository to streaming.ConnectionRepository
 type connectionRepositoryAdapter struct {
-	streamingRepo *repositories.StreamingConnectionRepository
+	streamingRepo streamConnectionRepository
 	logger        *zap.Logger
 }
 
@@ -145,7 +163,6 @@ func (a *connectionRepositoryAdapter) GetStreamConnections(ctx context.Context, 
 	var streamConns []*streaming.StreamConnection
 
 	for connID := range connectionIDs {
-		// Get the connection details by querying for the specific connection
 		conn, err := a.getConnectionByID(ctx, connID)
 		if err != nil {
 			a.logger.Warn("failed to get connection details, skipping",
@@ -165,24 +182,17 @@ func (a *connectionRepositoryAdapter) GetStreamConnections(ctx context.Context, 
 
 // getConnectionByID retrieves a connection by its ID
 func (a *connectionRepositoryAdapter) getConnectionByID(ctx context.Context, connectionID string) (*streaming.StreamConnection, error) {
-	// We need to query the connection directly from the database
-	// Since we don't have a direct GetConnection method, we'll scan for it
-	var connections []models.WebSocketConnection
-
-	// Query by PK pattern CONN#{connectionID}
-	err := a.streamingRepo.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
-		Where("PK", "=", fmt.Sprintf("CONN#%s", connectionID)).
-		All(&connections)
-
+	conn, err := a.streamingRepo.GetConnection(ctx, connectionID)
 	if err != nil {
+		if errors.HasCode(err, errors.CodeNotFound) {
+			return nil, ConnectionNotFound()
+		}
 		return nil, FailedToQueryConnection(err)
 	}
-
-	if err := common.ValidateSliceNotEmpty("connections", connections); err != nil {
+	if conn == nil {
 		return nil, ConnectionNotFound()
 	}
 
-	conn := connections[0]
 	return &streaming.StreamConnection{
 		ConnectionID: conn.ConnectionID,
 		UserID:       conn.UserID,
@@ -210,6 +220,12 @@ func (a *connectionRepositoryAdapter) GetConversationConnections(ctx context.Con
 var (
 	lambdaCtx *common.LambdaContext
 	handler   *StreamRouterHandler
+
+	newLambdaOptimizedClient = dynamorm.NewLambdaOptimizedClient
+	newStreamerClient        = func(ctx context.Context, cfg streamer.ClientConfig) (streamer.Client, error) {
+		return streamer.NewClient(ctx, cfg)
+	}
+	startLambda = lambda.Start
 )
 
 func init() {
@@ -265,7 +281,7 @@ func initializeManualServices() error {
 		cfg.Region = region
 	}
 
-	client, err := dynamorm.NewLambdaOptimizedClient(context.Background(), region)
+	client, err := newLambdaOptimizedClient(context.Background(), region)
 	if err != nil {
 		lambdaCtx.Logger.Error("failed to initialize dynamo client manually",
 			zap.String("region", region),
@@ -378,7 +394,7 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	accountRepo := repositories.NewAccountRepository(db, tableName, domain, lambdaCtx.Logger)
 	statusRepo := repositories.NewStatusRepository(db, tableName, lambdaCtx.Logger, nil)
 
-	apiClient, err := streamer.NewClient(context.Background(), streamer.ClientConfig{
+	apiClient, err := newStreamerClient(context.Background(), streamer.ClientConfig{
 		AWSConfig: &globalCfg,
 		Endpoint:  wsEndpoint,
 	})
@@ -1825,5 +1841,5 @@ func main() {
 		return handler.HandleStream(ctx, events.DynamoDBEvent{Records: records})
 	})
 
-	lambda.Start(app.HandleRequest)
+	startLambda(app.HandleRequest)
 }

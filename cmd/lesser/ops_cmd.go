@@ -61,7 +61,7 @@ func runLogs(argv []string) error {
 		overrides["AWS_PROFILE"] = awsProfile
 	}
 
-	return runCommand(context.Background(), "aws", []string{"logs", "tail", logGroup, "--follow"}, execOptions{
+	return runCommandFn(context.Background(), "aws", []string{"logs", "tail", logGroup, "--follow"}, execOptions{
 		Env: overrides,
 	})
 }
@@ -124,7 +124,7 @@ func runMetrics(argv []string) error {
 		overrides["AWS_PROFILE"] = awsProfile
 	}
 
-	return runCommand(context.Background(), "aws", []string{
+	return runCommandFn(context.Background(), "aws", []string{
 		"cloudwatch", "get-metric-statistics",
 		"--namespace", "AWS/Lambda",
 		"--metric-name", "Invocations",
@@ -187,7 +187,7 @@ func runErrors(argv []string) error {
 		overrides["AWS_PROFILE"] = awsProfile
 	}
 
-	return runCommand(context.Background(), "aws", []string{
+	return runCommandFn(context.Background(), "aws", []string{
 		"logs", "filter-log-events",
 		"--log-group-name", logGroup,
 		"--filter-pattern", "ERROR",

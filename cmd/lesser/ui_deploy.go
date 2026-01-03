@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,12 +15,17 @@ import (
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 )
 
+var (
+	invalidateFrontendFn       = invalidateFrontend
+	uploadClientPlaceholderFn  = uploadClientPlaceholder
+)
+
 func (e *upEnv) deployUIAssets(ctx context.Context, receipt *upReceipt) error {
 	if receipt == nil {
 		return fmt.Errorf("deployment receipt is nil")
 	}
 
-	authUIDist, err := buildAuthUI(e.repoRoot)
+	authUIDist, err := buildAuthUIFn(e.repoRoot)
 	if err != nil {
 		return err
 	}
@@ -50,16 +54,16 @@ func (e *upEnv) deployUIAssets(ctx context.Context, receipt *upReceipt) error {
 		fmt.Printf("  auth_ui:  s3://%s/\n", authBucket)
 		fmt.Printf("  client:   s3://%s/\n", clientBucket)
 
-		if err := replaceBucketWithDir(ctx, s3Client, authBucket, authUIDist); err != nil {
+		if err := replaceBucketWithDirFn(ctx, s3Client, authBucket, authUIDist); err != nil {
 			return fmt.Errorf("upload auth UI (%s): %w", stageKey, err)
 		}
 
-		hasIndex, err := s3ObjectExists(ctx, s3Client, clientBucket, "index.html")
+		hasIndex, err := s3ObjectExistsFn(ctx, s3Client, clientBucket, "index.html")
 		if err != nil {
 			return fmt.Errorf("inspect client bucket (%s): %w", stageKey, err)
 		}
 		if !hasIndex {
-			if err := uploadClientPlaceholder(ctx, s3Client, clientBucket, stageReceipt.Domain); err != nil {
+			if err := uploadClientPlaceholderFn(ctx, s3Client, clientBucket, stageReceipt.Domain); err != nil {
 				return fmt.Errorf("upload client placeholder (%s): %w", stageKey, err)
 			}
 		}
@@ -68,7 +72,7 @@ func (e *upEnv) deployUIAssets(ctx context.Context, receipt *upReceipt) error {
 		if distID == "" {
 			continue
 		}
-		if err := invalidateFrontend(ctx, cfClient, distID); err != nil {
+		if err := invalidateFrontendFn(ctx, cfClient, distID); err != nil {
 			return fmt.Errorf("cloudfront invalidation (%s): %w", stageKey, err)
 		}
 	}
@@ -85,22 +89,14 @@ func buildAuthUI(repoRoot string) (string, error) {
 	}
 
 	if _, err := os.Stat(filepath.Join(authDir, "node_modules")); err != nil {
-		cmd := exec.Command("pnpm", "install", "--frozen-lockfile") //nolint:gosec // tool invocation
-		cmd.Dir = authDir
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
 		fmt.Println("\nInstalling auth UI dependencies...")
-		if err := cmd.Run(); err != nil {
+		if err := runCommandFn(context.Background(), "pnpm", []string{"install", "--frozen-lockfile"}, execOptions{Dir: authDir}); err != nil {
 			return "", fmt.Errorf("pnpm install (auth-ui): %w", err)
 		}
 	}
 
-	cmd := exec.Command("pnpm", "-s", "build") //nolint:gosec // tool invocation
-	cmd.Dir = authDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	fmt.Println("\nBuilding auth UI...")
-	if err := cmd.Run(); err != nil {
+	if err := runCommandFn(context.Background(), "pnpm", []string{"-s", "build"}, execOptions{Dir: authDir}); err != nil {
 		return "", fmt.Errorf("pnpm build (auth-ui): %w", err)
 	}
 
@@ -114,7 +110,7 @@ func invalidateFrontend(ctx context.Context, client *cloudfront.Client, distribu
 	paths := []string{"/auth", "/auth/*", "/l", "/l/*"}
 	quantity := int32(len(paths)) // #nosec G115 -- len(paths) is bounded by static slice
 
-	_, err := client.CreateInvalidation(ctx, &cloudfront.CreateInvalidationInput{
+	_, err := createCloudfrontInvalidationFn(ctx, client, &cloudfront.CreateInvalidationInput{
 		DistributionId: aws.String(distributionID),
 		InvalidationBatch: &cloudfronttypes.InvalidationBatch{
 			CallerReference: aws.String(fmt.Sprintf("lesser-%d", time.Now().UnixNano())),
@@ -158,5 +154,5 @@ func uploadClientPlaceholder(ctx context.Context, client *s3.Client, bucket stri
 </html>
 `, stageDomain, stageDomain, stageDomain, stageDomain)
 
-	return putObjectString(ctx, client, bucket, "index.html", content, "text/html; charset=utf-8", "public, max-age=60")
+	return putObjectStringFn(ctx, client, bucket, "index.html", content, "text/html; charset=utf-8", "public, max-age=60")
 }

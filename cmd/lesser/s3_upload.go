@@ -16,7 +16,30 @@ import (
 	"github.com/aws/smithy-go"
 )
 
-func s3ObjectExists(ctx context.Context, client *s3.Client, bucket string, key string) (bool, error) {
+type s3HeadObjectAPI interface {
+	HeadObject(context.Context, *s3.HeadObjectInput, ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
+}
+
+type s3PutObjectAPI interface {
+	PutObject(context.Context, *s3.PutObjectInput, ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+}
+
+type s3BucketAPI interface {
+	s3.ListObjectsV2APIClient
+	DeleteObjects(context.Context, *s3.DeleteObjectsInput, ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error)
+}
+
+type s3BucketUploaderAPI interface {
+	s3BucketAPI
+	s3PutObjectAPI
+}
+
+var (
+	s3ObjectExistsFn   = s3ObjectExists
+	putObjectStringFn  = putObjectString
+)
+
+func s3ObjectExists(ctx context.Context, client s3HeadObjectAPI, bucket string, key string) (bool, error) {
 	_, err := client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -40,7 +63,7 @@ func s3ObjectExists(ctx context.Context, client *s3.Client, bucket string, key s
 	return false, err
 }
 
-func replaceBucketWithDir(ctx context.Context, client *s3.Client, bucket string, dir string) error {
+func replaceBucketWithDir(ctx context.Context, client s3BucketUploaderAPI, bucket string, dir string) error {
 	if strings.TrimSpace(bucket) == "" {
 		return fmt.Errorf("bucket is empty")
 	}
@@ -127,7 +150,7 @@ func listFiles(root string) ([]localFile, error) {
 	return files, nil
 }
 
-func deleteAllObjects(ctx context.Context, client *s3.Client, bucket string) error {
+func deleteAllObjects(ctx context.Context, client s3BucketAPI, bucket string) error {
 	paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
 	})
@@ -169,7 +192,7 @@ func deleteAllObjects(ctx context.Context, client *s3.Client, bucket string) err
 	return nil
 }
 
-func putObjectString(ctx context.Context, client *s3.Client, bucket, key, content, contentType, cacheControl string) error {
+func putObjectString(ctx context.Context, client s3PutObjectAPI, bucket, key, content, contentType, cacheControl string) error {
 	_, err := client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:       aws.String(bucket),
 		Key:          aws.String(key),
