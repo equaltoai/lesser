@@ -1,15 +1,15 @@
-# Lesser: 10/10 Roadmap (Rubric v1.0)
+# Lesser: 10/10 Roadmap (Rubric v1.1)
 
 This roadmap is the execution plan for achieving and maintaining **10/10** across **Quality**, **Consistency**,
 **Completeness**, and **Security**, as defined by:
 
 - `docs/planning/lesser-10of10-rubric.md` (source of truth; versioned)
 
-## Current scorecard (Rubric v1.0, 2026-01-04)
+## Current scorecard (Rubric v1.1, 2026-01-04)
 
 | Category | Grade | Blocking rubric items |
 | --- | ---: | --- |
-| Quality | 8/10 | QUA-3 (pkg coverage ≥ 90.0%) |
+| Quality | 10/10 | — |
 | Consistency | 10/10 | — |
 | Completeness | 10/10 | — |
 | Security | 10/10 | — |
@@ -17,7 +17,9 @@ This roadmap is the execution plan for achieving and maintaining **10/10** acros
 Evidence (most recent):
 
 - `./lesser verify ci` is green.
-- `./lesser coverage scoreboard --profile coverage_pkg.out` reports `total: 89.8% (83219/92720 statements)`.
+- `./lesser coverage scoreboard --profile coverage_pkg.out --min-total 90.0` reports `total: 90.0% (83450/92722 statements)`.
+- `./lesser coverage scoreboard --profile coverage_overall.out --min-total 85.0` reports overall coverage (testing + generated excluded).
+- `./lesser coverage scoreboard --profile coverage_overall.out --package github.com/equaltoai/lesser/cmd --min-total 90.0` reports `cmd/` coverage.
 - `./lesser verify openapi --strict` is green (`ok: docs/contracts/openapi.yaml (215 paths)`).
 
 ## Rubric-to-milestone mapping
@@ -25,8 +27,9 @@ Evidence (most recent):
 | Rubric ID | Status | Milestone |
 | --- | --- | --- |
 | QUA-1 | ✅ passing | Maintain via CI |
-| QUA-2 | ✅ passing | Maintain via CI |
-| QUA-3 | ❌ failing | M2 |
+| QUA-2 | ✅ passing | ✅ completed (M3) |
+| QUA-3 | ✅ passing | ✅ completed (M2) |
+| QUA-4 | ✅ passing | ✅ completed (M3) |
 | CON-1 | ✅ passing | Maintain via CI |
 | CON-2 | ✅ passing | Maintain via CI |
 | COM-1 | ✅ passing | Maintain via CI |
@@ -70,7 +73,7 @@ Evidence (most recent):
 
 ---
 
-### M2 — Raise `pkg/` coverage to ≥ 90.0% (QUA-3)
+### M2 — Raise `pkg/` coverage to ≥ 90.0% (QUA-3) (done)
 
 **Closes:** QUA-3  
 **Goal:** move `pkg/` coverage from **89.8% → 90.0%+** (generated excluded).
@@ -92,7 +95,7 @@ go tool cover -func=coverage_pkg.out | tail -n 1
 
 ---
 
-### M3 — Make “maintain 10/10” automatic in CI (QUA-3 + COM-4)
+### M3 — Make “maintain 10/10” automatic in CI (QUA-3 + COM-4) (done)
 
 **Closes:** (maintenance) keeps QUA-3 + COM-4 from regressing silently  
 **Goal:** ensure the rubric’s “10/10” gates run in CI, not just locally.
@@ -101,6 +104,9 @@ go tool cover -func=coverage_pkg.out | tail -n 1
 - CI runs (or `./lesser verify ci` runs) these rubric-critical checks:
   - `./lesser verify openapi --strict`
   - `./lesser test coverage --scope pkg` + a hard threshold check for **≥ 90.0%**
+  - `./lesser test coverage --scope overall` + hard threshold checks for:
+    - overall **≥ 85.0%** (testing + generated excluded)
+    - `cmd/` **≥ 90.0%** (generated excluded)
 - A failing gate produces a clear, actionable error message.
 
 **Suggested verification**
@@ -108,4 +114,5 @@ go tool cover -func=coverage_pkg.out | tail -n 1
 ./lesser verify ci
 ./lesser verify openapi --strict
 ./lesser test coverage --scope pkg
+./lesser test coverage --scope overall
 ```

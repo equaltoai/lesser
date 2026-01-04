@@ -190,6 +190,55 @@ func TestBatchRepository_BatchDelete_DelegatesToDeleter(t *testing.T) {
 	deleter.mu.Unlock()
 }
 
+func TestBatchRepository_BatchDeleteParallel_DelegatesToDeleter(t *testing.T) {
+	t.Parallel()
+
+	repo := NewBatchRepository(&repoTesting.MockDB{}, "test", zap.NewNop(), cost.New())
+	deleter := &fakeBatchDeleter{}
+	repo.batchDeleter = deleter
+
+	keys := []any{map[string]any{"PK": "p1", "SK": "s1"}}
+	result, err := repo.BatchDeleteParallel(context.Background(), keys, 2)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	deleter.mu.Lock()
+	require.Len(t, deleter.deleteItemsParallelCalls, 1)
+	require.Equal(t, keys, deleter.deleteItemsParallelCalls[0].keys)
+	require.Equal(t, 2, deleter.deleteItemsParallelCalls[0].workers)
+	deleter.mu.Unlock()
+}
+
+func TestBatchRepository_BatchDeleteWithRetry_DelegatesToDeleter(t *testing.T) {
+	t.Parallel()
+
+	repo := NewBatchRepository(&repoTesting.MockDB{}, "test", zap.NewNop(), cost.New())
+	deleter := &fakeBatchDeleter{}
+	repo.batchDeleter = deleter
+
+	keys := []any{map[string]any{"PK": "p1", "SK": "s1"}}
+	result, err := repo.BatchDeleteWithRetry(context.Background(), keys, 3)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	deleter.mu.Lock()
+	require.Len(t, deleter.deleteItemsWithRetryCalls, 1)
+	require.Equal(t, keys, deleter.deleteItemsWithRetryCalls[0].keys)
+	require.Equal(t, 3, deleter.deleteItemsWithRetryCalls[0].maxRetries)
+	deleter.mu.Unlock()
+}
+
+func TestCostTrackerAdapter_TrackDynamoRead_ErrorPathIsHandled(t *testing.T) {
+	t.Parallel()
+
+	tracker := cost.New()
+	adapter := &costTrackerAdapter{tracker: tracker}
+
+	// Exceed the per-request cost threshold to force an error in the underlying tracker.
+	adapter.TrackDynamoRead(41)
+	adapter.TrackDynamoWrite(9)
+}
+
 func TestTimelineBatchOperations_BatchInsertTimelineEntries_SuccessSequential(t *testing.T) {
 	t.Parallel()
 
@@ -541,4 +590,84 @@ func TestBatchValidationProcessor_ProcessWithValidation_BatchWriteFails(t *testi
 	_, err := processor.ProcessWithValidation(context.Background(), []any{"a"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "batch processing failed")
+}
+
+func TestExtractKeysFromStruct(t *testing.T) {
+	t.Parallel()
+
+	type keyed struct {
+		PK string `dynamodbav:"PK"`
+		SK string `dynamodbav:"SK"`
+	}
+
+	pk, sk := extractKeysFromStruct(keyed{PK: "p1", SK: "s1"})
+	require.Equal(t, "p1", pk)
+	require.Equal(t, "s1", sk)
+
+	pk, sk = extractKeysFromStruct(&keyed{PK: "p2", SK: "s2"})
+	require.Equal(t, "p2", pk)
+	require.Equal(t, "s2", sk)
+
+	pk, sk = extractKeysFromStruct(map[string]any{"PK": "p3", "SK": "s3"})
+	require.Empty(t, pk)
+	require.Empty(t, sk)
+
+	pk, sk = extractKeysFromStruct(nil)
+	require.Empty(t, pk)
+	require.Empty(t, sk)
+}
+
+func TestCreateSameTypeInstance(t *testing.T) {
+	t.Parallel()
+
+	type sample struct {
+		PK string
+	}
+
+	ptrInstance := createSameTypeInstance(&sample{})
+	_, ok := ptrInstance.(*sample)
+	require.True(t, ok)
+
+	valInstance := createSameTypeInstance(sample{})
+	_, ok = valInstance.(*sample)
+	require.True(t, ok)
+
+	mapInstance := createSameTypeInstance(map[string]int{"a": 1})
+	_, ok = mapInstance.(map[string]int)
+	require.True(t, ok)
+
+	otherInstance := createSameTypeInstance(123)
+	_, ok = otherInstance.(*int)
+	require.True(t, ok)
+}
+
+func TestIsNotFoundError(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, isNotFoundError(nil))
+	require.True(t, isNotFoundError(errors.New("record not found")))
+	require.False(t, isNotFoundError(errors.New("boom")))
+}
+
+func TestIsDynamoDBNotFoundError(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, isDynamoDBNotFoundError(nil))
+	require.True(t, isDynamoDBNotFoundError(errors.New("ResourceNotFoundException")))
+	require.False(t, isDynamoDBNotFoundError(errors.New("boom")))
+}
+
+func TestCostTrackerAdapter_CalculateCost(t *testing.T) {
+	t.Parallel()
+
+	empty := (&costTrackerAdapter{}).CalculateCost()
+	require.Equal(t, batch.CostMetrics{}, empty)
+
+	tracker := cost.New()
+	require.NoError(t, tracker.TrackDynamoRead(1))
+	require.NoError(t, tracker.TrackDynamoWrite(2))
+
+	metrics := (&costTrackerAdapter{tracker: tracker}).CalculateCost()
+	require.EqualValues(t, 1, metrics.DynamoDBReads)
+	require.EqualValues(t, 2, metrics.DynamoDBWrites)
 }

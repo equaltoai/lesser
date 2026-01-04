@@ -53,6 +53,7 @@ type scoreboardConfig struct {
 	Prefix           string
 	Top              int
 	MinStatements    int
+	MinTotal         float64
 	ZeroOnly         bool
 	SortByUncovered  bool
 	Mode             string
@@ -73,6 +74,7 @@ func parseFlags() scoreboardConfig {
 	flag.StringVar(&cfg.Prefix, "prefix", modulePrefix, "only include files with this import-path prefix")
 	flag.IntVar(&cfg.Top, "top", 30, "number of packages to print (after filtering)")
 	flag.IntVar(&cfg.MinStatements, "min", 0, "minimum statements per package to include")
+	flag.Float64Var(&cfg.MinTotal, "min-total", 0, "fail if total coverage is below this percentage (optional)")
 	flag.BoolVar(&cfg.ZeroOnly, "zero-only", false, "only show 0% coverage packages (after filtering)")
 	flag.BoolVar(&cfg.SortByUncovered, "sort-uncovered", true, "sort by uncovered statements (desc) instead of total statements")
 	flag.StringVar(&cfg.Mode, "mode", "package", "summary mode: package|file")
@@ -158,6 +160,9 @@ func handlePackageMode(cfg scoreboardConfig) error {
 	for _, p := range pkgs {
 		fmt.Printf("%6.1f  %6d/%-6d  %s\n", p.Percent(), p.Covered, p.TotalStatements, p.Package)
 	}
+	if cfg.MinTotal > 0 && totalPct < cfg.MinTotal {
+		return fmt.Errorf("total coverage %.3f%% is below --min-total %.3f%%", totalPct, cfg.MinTotal)
+	}
 	return nil
 }
 
@@ -187,6 +192,9 @@ func handleFileMode(cfg scoreboardConfig) error {
 			path = strings.TrimPrefix(path, cfg.StripModulePath)
 		}
 		fmt.Printf("%6.1f  %6d/%-6d  %s\n", f.Percent(), f.Covered, f.TotalStatements, path)
+	}
+	if cfg.MinTotal > 0 && totalPct < cfg.MinTotal {
+		return fmt.Errorf("total coverage %.3f%% is below --min-total %.3f%%", totalPct, cfg.MinTotal)
 	}
 	return nil
 }

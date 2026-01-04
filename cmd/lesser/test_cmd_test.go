@@ -29,6 +29,7 @@ func TestRunTest_DispatchAndCoverageScopes(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "infra", "cdk"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "infra", "cdk", "cdk.json"), []byte("{}"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "coverage.out"), []byte("mode: set\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "coverage_overall.out"), []byte("mode: set\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "coverage_pkg.out"), []byte("mode: set\n"), 0o644))
 
 	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, _ string, args ...string) (string, error) {
@@ -62,6 +63,7 @@ func TestRunTest_DispatchAndCoverageScopes(t *testing.T) {
 	require.NoError(t, runTestIntegration(nil))
 
 	require.NoError(t, runTestCoverage([]string{"--scope", "all"}))
+	require.NoError(t, runTestCoverage([]string{"--scope", "overall"}))
 	require.NoError(t, runTestCoverage([]string{"--scope", "pkg"}))
 	require.Error(t, runTestCoverage([]string{"--scope", "wat"}))
 

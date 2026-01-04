@@ -12,6 +12,10 @@ import (
 )
 
 func newSSRFProtectedHTTPClient(logger *zap.Logger) *http.Client {
+	return newSSRFProtectedHTTPClientWithLookup(logger, net.LookupIP)
+}
+
+func newSSRFProtectedHTTPClientWithLookup(logger *zap.Logger, lookupIP func(string) ([]net.IP, error)) *http.Client {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -44,7 +48,7 @@ func newSSRFProtectedHTTPClient(logger *zap.Logger) *http.Client {
 			return nil, fmt.Errorf("%w: %s", ErrLocalNetworkAccess, host)
 		}
 
-		ips, err := net.LookupIP(host)
+		ips, err := lookupIP(host)
 		if err != nil {
 			return nil, fmt.Errorf("DNS resolution failed: %w", err)
 		}

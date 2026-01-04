@@ -172,6 +172,29 @@ Artifacts:
 - `coverage_pkg.out` (machine-readable)
 - `coverage_pkg.html` (human readable)
 
+### Coverage KPI (overall)
+
+For the “overall coverage” KPI (exclude test helper packages so the metric reflects production code):
+
+```bash
+./lesser test coverage --scope overall
+```
+
+Notes:
+
+- `--scope overall` excludes `pkg/testing/**` by default (use `--include-testing` to include those packages).
+
+Artifacts:
+
+- `coverage_overall.out` (machine-readable)
+- `coverage_overall.html` (human readable)
+
+To check `cmd/` coverage from the same profile:
+
+```bash
+./lesser coverage scoreboard --profile coverage_overall.out --package github.com/equaltoai/lesser/cmd --min-total 90.0
+```
+
 Print a package-level scoreboard (largest uncovered first):
 
 ```bash

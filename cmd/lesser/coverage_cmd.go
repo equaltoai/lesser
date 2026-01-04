@@ -29,6 +29,7 @@ type coverageScoreboardArgs struct {
 	Package          string
 	Top              int
 	Min              int
+	MinTotal         float64
 	Zero             bool
 	SortUnc          bool
 	ExcludeGenerated bool
@@ -44,6 +45,7 @@ func runCoverageScoreboard(argv []string) error {
 	fs.StringVar(&args.Package, "package", "", "package prefix filter (optional)")
 	fs.IntVar(&args.Top, "top", 30, "number of entries to print (after filtering)")
 	fs.IntVar(&args.Min, "min", 0, "minimum statements per entry to include")
+	fs.Float64Var(&args.MinTotal, "min-total", 0, "fail if total coverage is below this percentage (optional)")
 	fs.BoolVar(&args.Zero, "zero-only", false, "only show 0% coverage entries (after filtering)")
 	fs.BoolVar(&args.SortUnc, "sort-uncovered", true, "sort by uncovered statements (desc) instead of total statements")
 	fs.BoolVar(&args.ExcludeGenerated, "exclude-generated", true, "exclude generated files (\"Code generated... DO NOT EDIT\") from metrics")
@@ -70,6 +72,9 @@ func runCoverageScoreboard(argv []string) error {
 		"--min", fmt.Sprintf("%d", args.Min),
 		"--sort-uncovered=" + boolToFlag(args.SortUnc),
 		"--exclude-generated=" + boolToFlag(args.ExcludeGenerated),
+	}
+	if args.MinTotal > 0 {
+		toolArgs = append(toolArgs, "--min-total", fmt.Sprintf("%g", args.MinTotal))
 	}
 	if args.Profile != "" {
 		toolArgs = append(toolArgs, "--profile", args.Profile)

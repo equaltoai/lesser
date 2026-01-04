@@ -88,10 +88,12 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifyAll(t *testing.T) {
 	previousRunCommand := runCommandFn
 	previousEnsureTool := ensureToolAvailableFn
 	previousRepoRoot := findRepoRootFn
+	previousCapture := captureCommandOutputFn
 	t.Cleanup(func() {
 		runCommandFn = previousRunCommand
 		ensureToolAvailableFn = previousEnsureTool
 		findRepoRootFn = previousRepoRoot
+		captureCommandOutputFn = previousCapture
 	})
 
 	ensureToolAvailableFn = func(string) error { return nil }
@@ -99,10 +101,37 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifyAll(t *testing.T) {
 	repoRoot := t.TempDir()
 	findRepoRootFn = func() (string, error) { return repoRoot, nil }
 
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n\ngo 1.25\n"), 0o644))
+
+	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, _ string, args ...string) (string, error) {
+		if len(args) >= 2 && args[0] == "list" && args[1] == "./pkg/..." {
+			return "github.com/equaltoai/lesser/pkg/common\n", nil
+		}
+		if len(args) >= 2 && args[0] == "list" && args[1] == "./..." {
+			return strings.Join([]string{
+				"github.com/equaltoai/lesser/cmd/lesser",
+				"github.com/equaltoai/lesser/pkg/common",
+				"github.com/equaltoai/lesser/pkg/testing/harness",
+				"github.com/equaltoai/lesser/tools/coverage_scoreboard",
+			}, "\n"), nil
+		}
+		return "", nil
+	}
+
 	var calls []string
 	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
 		if name == "go" && firstArgOrEmpty(args) == "run" {
 			calls = append(calls, name+" "+strings.Join(args, " "))
+		} else if name == "go" && firstArgOrEmpty(args) == "test" && strings.Contains(strings.Join(args, " "), "-coverprofile=coverage_pkg.out") {
+			calls = append(calls, name+" "+strings.Join(args, " "))
+			coveragePath := filepath.Join(repoRoot, "coverage_pkg.out")
+			coverageData := "mode: set\n" + "github.com/equaltoai/lesser/pkg/common/errors.go:1.1,1.2 1 1\n"
+			return os.WriteFile(coveragePath, []byte(coverageData), 0o644)
+		} else if name == "go" && firstArgOrEmpty(args) == "test" && strings.Contains(strings.Join(args, " "), "-coverprofile=coverage_overall.out") {
+			calls = append(calls, name+" "+strings.Join(args, " "))
+			coveragePath := filepath.Join(repoRoot, "coverage_overall.out")
+			coverageData := "mode: set\n" + "github.com/equaltoai/lesser/pkg/common/errors.go:1.1,1.2 1 1\n"
+			return os.WriteFile(coveragePath, []byte(coverageData), 0o644)
 		} else {
 			calls = append(calls, name+" "+firstArgOrEmpty(args))
 		}
@@ -116,6 +145,10 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifyAll(t *testing.T) {
 	require.Contains(t, calls, "govulncheck ./...")
 	require.Contains(t, calls, "bash scripts/verify_supply_chain.sh")
 	require.Contains(t, calls, "bash scripts/verify_docs.sh")
+	require.Contains(t, calls, "go run ./tools/openapi --check --strict")
+	require.Contains(t, calls, "go run ./tools/coverage_scoreboard --mode package --top 10 --min 0 --sort-uncovered=true --exclude-generated=true --min-total 90 --profile coverage_pkg.out")
+	require.Contains(t, calls, "go run ./tools/coverage_scoreboard --mode package --top 10 --min 0 --sort-uncovered=true --exclude-generated=true --min-total 85 --profile coverage_overall.out")
+	require.Contains(t, calls, "go run ./tools/coverage_scoreboard --mode package --top 10 --min 0 --sort-uncovered=true --exclude-generated=true --min-total 90 --profile coverage_overall.out --package github.com/equaltoai/lesser/cmd")
 }
 
 func TestRunVerifyGraphQLCoverage_StrictFlag(t *testing.T) {

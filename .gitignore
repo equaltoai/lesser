@@ -61,6 +61,7 @@ node_modules/
 coverage.txt
 coverage.html
 coverage_pkg.html
+coverage_overall.html
 results.csv
 
 # Temporary files

@@ -111,6 +111,10 @@ func newSSRFProtectedInsecureTransport(dialer *net.Dialer) *http.Transport {
 }
 
 func dialWithSSRFProtection(ctx context.Context, dialer *net.Dialer, network, address string) (net.Conn, error) {
+	return dialWithSSRFProtectionWithLookup(ctx, dialer, network, address, net.LookupIP)
+}
+
+func dialWithSSRFProtectionWithLookup(ctx context.Context, dialer *net.Dialer, network, address string, lookupIP func(string) ([]net.IP, error)) (net.Conn, error) {
 	if dialer == nil {
 		dialer = &net.Dialer{}
 	}
@@ -132,7 +136,7 @@ func dialWithSSRFProtection(ctx context.Context, dialer *net.Dialer, network, ad
 		return nil, fmt.Errorf("blocked dial to internal hostname: %s", host)
 	}
 
-	ips, err := net.LookupIP(host)
+	ips, err := lookupIP(host)
 	if err != nil {
 		return nil, fmt.Errorf("DNS resolution failed: %w", err)
 	}

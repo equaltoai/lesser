@@ -115,13 +115,13 @@ func runTestCoverage(argv []string) error {
 	fs.StringVar(&args.Environment, "environment", "test", "value for ENVIRONMENT (default: test)")
 	fs.StringVar(&args.Stage, "stage", "test", "value for STAGE (default: test)")
 	var scope string
-	fs.StringVar(&scope, "scope", "all", "coverage scope: all|pkg (default: all)")
+	fs.StringVar(&scope, "scope", "all", "coverage scope: all|overall|pkg (default: all)")
 	var excludeGenerated bool
 	fs.BoolVar(&excludeGenerated, "exclude-generated", true, "exclude generated files (\"Code generated... DO NOT EDIT\") from coverage profiles (default: true)")
 	var includeTesting bool
-	fs.BoolVar(&includeTesting, "include-testing", false, "include pkg/testing/* in pkg scope (default: false)")
+	fs.BoolVar(&includeTesting, "include-testing", false, "include pkg/testing/* in pkg and overall scopes (default: false)")
 	var includeTools bool
-	fs.BoolVar(&includeTools, "include-tools", false, "include tools/* packages in all scope (default: false)")
+	fs.BoolVar(&includeTools, "include-tools", false, "include tools/* packages in all and overall scopes (default: false)")
 	if err := fs.Parse(argv); err != nil {
 		return err
 	}
@@ -151,6 +151,16 @@ func runTestCoverage(argv []string) error {
 		if len(pkgPaths) == 0 {
 			return fmt.Errorf("no packages found for all coverage scope (after filtering)")
 		}
+	case "overall":
+		profileName = "coverage_overall.out"
+		htmlName = "coverage_overall.html"
+		pkgPaths, err = listPackagesForOverallCoverage(repoRoot, goCache, includeTools, includeTesting)
+		if err != nil {
+			return err
+		}
+		if len(pkgPaths) == 0 {
+			return fmt.Errorf("no packages found for overall coverage scope (after filtering)")
+		}
 	case "pkg":
 		profileName = "coverage_pkg.out"
 		htmlName = "coverage_pkg.html"
@@ -166,7 +176,7 @@ func runTestCoverage(argv []string) error {
 			return fmt.Errorf("no packages found for pkg coverage scope (after filtering)")
 		}
 	default:
-		return fmt.Errorf("unknown coverage scope %q (want all|pkg)", scope)
+		return fmt.Errorf("unknown coverage scope %q (want all|overall|pkg)", scope)
 	}
 
 	if err := runGoTests(args, append([]string{"test", "-v", "-coverprofile=" + profileName}, pkgPaths...), nil); err != nil {
@@ -396,6 +406,48 @@ func listPackagesForAllCoverage(repoRoot string, goCache string, includeTools bo
 
 		if !includeTools {
 			if pkg == toolsPrefix || strings.HasPrefix(pkg, toolsPrefix+"/") {
+				continue
+			}
+		}
+
+		pkgs = append(pkgs, pkg)
+	}
+
+	sort.Strings(pkgs)
+	return pkgs, nil
+}
+
+func listPackagesForOverallCoverage(repoRoot string, goCache string, includeTools bool, includeTesting bool) ([]string, error) {
+	modulePath, err := readModulePath(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := captureCommandOutputFn(context.Background(), repoRoot, map[string]string{
+		"GOCACHE": goCache,
+	}, "go", "list", "./...")
+	if err != nil {
+		return nil, err
+	}
+
+	toolsPrefix := modulePath + "/tools"
+	testingPrefix := modulePath + "/pkg/testing"
+
+	pkgs := make([]string, 0)
+	for _, line := range strings.Split(out, "\n") {
+		pkg := strings.TrimSpace(line)
+		if pkg == "" {
+			continue
+		}
+
+		if !includeTools {
+			if pkg == toolsPrefix || strings.HasPrefix(pkg, toolsPrefix+"/") {
+				continue
+			}
+		}
+
+		if !includeTesting {
+			if pkg == testingPrefix || strings.HasPrefix(pkg, testingPrefix+"/") {
 				continue
 			}
 		}

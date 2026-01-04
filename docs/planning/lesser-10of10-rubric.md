@@ -5,9 +5,14 @@ goalpost drift between audit passes by making scoring **versioned, measurable, a
 
 ## Versioning (no moving goalposts)
 
-- **Rubric version:** `v1.0` (2026-01-04)
+- **Rubric version:** `v1.1` (2026-01-04)
 - **Comparability rule:** grades are only comparable within the same rubric version.
 - **Change rule:** any rubric change must bump the version and include a brief changelog entry (what changed + why).
+
+### Changelog
+
+- `v1.1` (2026-01-04): Expand QUA coverage requirements to include `cmd/` (≥ 90.0%) and overall (≥ 85.0%, excluding testing + generated code) so “10/10” reflects the whole Go surface, not just `pkg/`.
+- `v1.0` (2026-01-04): Initial rubric.
 
 ## Scoring (deterministic)
 
@@ -33,10 +38,11 @@ Notes:
 | ID | Points | Requirement | How to verify |
 | --- | ---: | --- | --- |
 | QUA-1 | 5 | Unit tests stay green | `./lesser test unit` |
-| QUA-2 | 3 | `pkg/` coverage stays at or above **85.0%** (generated code excluded) | `./lesser test coverage --scope pkg` then `go tool cover -func=coverage_pkg.out \| tail -n 1` |
+| QUA-2 | 2 | Overall coverage stays at or above **85.0%** (testing + generated code excluded) | `./lesser test coverage --scope overall` then `go tool cover -func=coverage_overall.out \| tail -n 1` |
 | QUA-3 | 2 | `pkg/` coverage stays at or above **90.0%** (generated code excluded) | `./lesser test coverage --scope pkg` then `go tool cover -func=coverage_pkg.out \| tail -n 1` |
+| QUA-4 | 1 | `cmd/` coverage stays at or above **90.0%** (generated code excluded) | `./lesser test coverage --scope overall` then `./lesser coverage scoreboard --profile coverage_overall.out --package github.com/equaltoai/lesser/cmd --min-total 90.0` |
 
-**10/10 definition:** QUA-1 through QUA-3 pass.
+**10/10 definition:** QUA-1 through QUA-4 pass.
 
 ---
 
@@ -87,6 +93,7 @@ To keep grades stable over time, CI should run (at minimum):
 ./lesser verify ci
 ./lesser verify openapi --strict
 ./lesser test coverage --scope pkg
+./lesser test coverage --scope overall
 ```
 
 If any of the above fail, at least one category cannot be 10/10 under this rubric.

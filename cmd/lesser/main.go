@@ -124,7 +124,7 @@ func printUsageTo(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  lesser verify [all|ci|docs|ai-training|schema|audit|supply-chain|graphql-coverage|openapi|inventory|lambda-set|unit|smoke|cdk] [--smoke] [--cdk]")
 	_, _ = fmt.Fprintln(w, "  lesser test [all|unit|integration|race]")
 	_, _ = fmt.Fprintln(w, "  lesser test coverage [--scope all|pkg] [--exclude-generated=true|false] [--include-testing] [--include-tools]")
-	_, _ = fmt.Fprintln(w, "  lesser coverage scoreboard [--profile <path>] [--mode package|file] [--package <prefix>] [--top <n>] [--exclude-generated=true|false]")
+	_, _ = fmt.Fprintln(w, "  lesser coverage scoreboard [--profile <path>] [--mode package|file] [--package <prefix>] [--top <n>] [--min-total <pct>] [--exclude-generated=true|false]")
 	_, _ = fmt.Fprintln(w, "  lesser dev [init|dynamodb|seed-and-validate]   # local development")
 	_, _ = fmt.Fprintln(w, "  lesser fmt | lesser lint [--fix] | lesser tidy")
 	_, _ = fmt.Fprintln(w, "  lesser sec-scan | lesser vuln-check | lesser gqlgen")
