@@ -5,12 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -899,17 +899,9 @@ func ValidateNoteURL(noteURL string) error {
 		return ErrInvalidNoteURL
 	}
 
-	parsed, err := url.Parse(noteURL)
+	_, err := ssrf.ValidateURLString(noteURL)
 	if err != nil {
 		return errors.Join(ErrInvalidNoteURL, err)
-	}
-
-	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return errors.Join(ErrInvalidNoteURL, fmt.Errorf("invalid scheme: %s", parsed.Scheme))
-	}
-
-	if parsed.Host == "" {
-		return errors.Join(ErrInvalidNoteURL, fmt.Errorf("missing host"))
 	}
 
 	return nil

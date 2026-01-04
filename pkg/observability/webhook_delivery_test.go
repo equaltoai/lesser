@@ -107,12 +107,14 @@ func TestValidateWebhookURL(t *testing.T) {
 		{
 			name:        "valid localhost URL returns nil",
 			url:         "http://localhost:8080/webhook",
-			expectError: false,
+			expectError: true,
+			errContains: "blocked",
 		},
 		{
 			name:        "valid IP URL returns nil",
 			url:         "http://192.168.1.1/webhook",
-			expectError: false,
+			expectError: true,
+			errContains: "blocked",
 		},
 	}
 

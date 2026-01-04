@@ -26,6 +26,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -192,9 +193,11 @@ func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 		rateLimiter: &RateLimiter{
 			limits: make(map[string]*userLimit),
 		},
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		httpClient: httpclient.NewSecureHTTPClient(
+			httpclient.WithTimeout(30*time.Second),
+			httpclient.WithLogger(lambdaCtx.Logger),
+			httpclient.WithMaxRedirects(10),
+		),
 	}, nil
 }
 

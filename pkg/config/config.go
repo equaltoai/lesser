@@ -115,6 +115,11 @@ type Config struct {
 	DisableFederationRateLimiting bool   // Disable federation-specific rate limiting
 	DisableAI                     bool   // Disable AI features
 	EnablePlayground              bool   // Enable GraphQL playground
+	GraphQLAllowIntrospection     bool   // Allow GraphQL introspection (non-debug deployments should keep this off)
+	GraphQLMaxDepth               int    // Maximum GraphQL query depth (0 disables)
+	GraphQLMaxComplexity          int    // Maximum GraphQL query complexity (0 disables)
+	GraphQLParserTokenLimit       int    // Maximum GraphQL parser tokens (0 disables)
+	GraphQLRequestTimeout         time.Duration
 	TranslationEnabled            bool   // Enable translation features
 	XRayTracingEnabled            bool   // Enable X-Ray tracing
 	DebugMode                     bool   // Enable debug mode
@@ -342,6 +347,11 @@ func loadConfig() *Config {
 		DisableFederationRateLimiting: getEnvAsBoolOrDefault("DISABLE_FEDERATION_RATE_LIMITING", false),
 		DisableAI:                     getEnvAsBoolOrDefault("DISABLE_AI", false),
 		EnablePlayground:              getEnvAsBoolOrDefault("ENABLE_PLAYGROUND", false),
+		GraphQLAllowIntrospection:     getEnvAsBoolOrDefault("GRAPHQL_ALLOW_INTROSPECTION", false),
+		GraphQLMaxDepth:               getEnvAsIntOrDefault("GRAPHQL_MAX_DEPTH", 12),
+		GraphQLMaxComplexity:          getEnvAsIntOrDefault("GRAPHQL_MAX_COMPLEXITY", 500),
+		GraphQLParserTokenLimit:       getEnvAsIntOrDefault("GRAPHQL_PARSER_TOKEN_LIMIT", 15000),
+		GraphQLRequestTimeout:         getEnvAsDurationOrDefault("GRAPHQL_REQUEST_TIMEOUT", 25*time.Second),
 		TranslationEnabled:            getEnvAsBoolOrDefault("TRANSLATION_ENABLED", false),
 		XRayTracingEnabled:            getEnvAsBoolOrDefault("XRAY_TRACING_ENABLED", true),
 		DebugMode:                     getEnvAsBoolOrDefault("DEBUG", false),

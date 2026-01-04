@@ -31,6 +31,8 @@ Run the same guardrails we expect to stay green:
 ```bash
 ./lesser fmt
 ./lesser lint
+./lesser sec-scan
+./lesser vuln-check
 ./lesser test unit
 ./lesser verify
 ```
@@ -39,6 +41,15 @@ Notes:
 
 - `./lesser verify` includes drift checks (docs, schema, OpenAPI, GraphQL coverage, inventory) plus `go test -short ./...`.
 - `./lesser test` runs the full unit test sweep (all packages).
+
+### Quality bar (what we gate on)
+
+The project aims for “secure by default” and predictable contributor workflows. New work should preserve these properties:
+
+- **One-shot CI verification**: `./lesser verify ci` (runs `lint`, security scans, and `verify all` without mutating the working tree).
+- **GraphQL abuse limits**: depth/complexity/token/timeout limits must remain enabled in non-debug deployments (tunable via env vars; see `docs/configuration.md`).
+- **SSRF/URL validation**: untrusted outbound URLs must pass the shared URL/SSRF validator and use hardened dialing paths (no bespoke validators).
+- **No secrets in logs**: sensitive values must be scrubbed/redacted; add tests when touching auth/logging.
 
 ## Repo conventions
 

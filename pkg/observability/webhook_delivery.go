@@ -8,14 +8,17 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
@@ -65,8 +68,90 @@ type WebhookDeliveryConfig struct {
 	Enabled              bool
 }
 
+const webhookMaxRedirects = 10
+
+func webhookCheckRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= webhookMaxRedirects {
+		return fmt.Errorf("too many redirects: %d", len(via))
+	}
+	if err := ssrf.ValidateURL(req.URL); err != nil {
+		return fmt.Errorf("redirect URL blocked: %w", err)
+	}
+	return nil
+}
+
+func newSSRFProtectedTransport(dialer *net.Dialer) *http.Transport {
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		base = &http.Transport{}
+	}
+	transport := base.Clone()
+	transport.Proxy = nil
+
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		return dialWithSSRFProtection(ctx, dialer, network, address)
+	}
+
+	return transport
+}
+
+func dialWithSSRFProtection(ctx context.Context, dialer *net.Dialer, network, address string) (net.Conn, error) {
+	if dialer == nil {
+		dialer = &net.Dialer{}
+	}
+
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid dial address: %w", err)
+	}
+
+	// Avoid DNS lookups when the host is already an IP literal.
+	if ip := net.ParseIP(host); ip != nil {
+		if ssrf.IsBlockedIP(ip) {
+			return nil, fmt.Errorf("blocked dial to private IP: %s", ip.String())
+		}
+		return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+	}
+
+	if ssrf.IsBlockedHostname(host) {
+		return nil, fmt.Errorf("blocked dial to internal hostname: %s", host)
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return nil, fmt.Errorf("DNS resolution failed: %w", err)
+	}
+
+	for _, ip := range ips {
+		if ssrf.IsBlockedIP(ip) {
+			return nil, fmt.Errorf("blocked dial to private IP: %s", ip.String())
+		}
+	}
+
+	// Dial a resolved public IP to avoid TOCTOU/DNS-rebinding between validation and connect.
+	var lastErr error
+	for _, ip := range ips {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("DNS resolution returned no IPs for %s", host)
+}
+
 // NewWebhookDeliveryService creates a new webhook delivery service
 func NewWebhookDeliveryService(config *WebhookDeliveryConfig) *WebhookDeliveryService {
+	if config.Logger == nil {
+		config.Logger = zap.NewNop()
+	}
 	if config.HTTPTimeout == 0 {
 		config.HTTPTimeout = 30 * time.Second
 	}
@@ -78,12 +163,9 @@ func NewWebhookDeliveryService(config *WebhookDeliveryConfig) *WebhookDeliverySe
 	}
 
 	httpClient := &http.Client{
-		Timeout: config.HTTPTimeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     90 * time.Second,
-		},
+		Timeout:       config.HTTPTimeout,
+		Transport:     newSSRFProtectedTransport(&net.Dialer{}),
+		CheckRedirect: webhookCheckRedirect,
 	}
 
 	return &WebhookDeliveryService{
@@ -533,17 +615,18 @@ func ValidateWebhookURL(webhookURL string) error {
 		return fmt.Errorf("webhook URL cannot be empty")
 	}
 
-	parsedURL, err := url.Parse(webhookURL)
+	_, err := ssrf.ValidateURLString(webhookURL)
 	if err != nil {
-		return fmt.Errorf("invalid webhook URL: %w", err)
-	}
-
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("webhook URL must use http or https scheme")
-	}
-
-	if parsedURL.Host == "" {
-		return fmt.Errorf("webhook URL must have a host")
+		switch {
+		case errors.Is(err, ssrf.ErrInvalidScheme):
+			return fmt.Errorf("webhook URL must use http or https scheme")
+		case errors.Is(err, ssrf.ErrEmptyHostname):
+			return fmt.Errorf("webhook URL must have a host")
+		case errors.Is(err, ssrf.ErrBlockedHostname):
+			return fmt.Errorf("webhook URL host is blocked")
+		default:
+			return fmt.Errorf("invalid webhook URL: %w", err)
+		}
 	}
 
 	return nil

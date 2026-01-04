@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -125,6 +124,10 @@ func NewSecureClient(opts ...Option) *SecureClient {
 		base = &http.Transport{}
 	}
 	transport := base.Clone()
+	// Disable ProxyFromEnvironment for SSRF-hardened clients. If a proxy is used,
+	// the proxy (not the validated destination IP) becomes the dial target and
+	// can reintroduce DNS rebinding / TOCTOU gaps at the proxy layer.
+	transport.Proxy = nil
 
 	secure := &secureTransport{
 		base:     transport,
@@ -392,23 +395,25 @@ func (c *SecureClient) checkRedirect(req *http.Request, via []*http.Request) err
 
 // validateURL checks if a URL is safe to request
 func validateURL(u *url.URL, _ *zap.Logger) error {
-	// Check scheme
-	scheme := strings.ToLower(u.Scheme)
-	if err := common.ValidateHTTPScheme(scheme); err != nil {
-		if blockedSchemes[scheme] {
-			return fmt.Errorf("%w: %s", ErrInvalidScheme, scheme)
+	if u == nil {
+		return errors.New("nil URL")
+	}
+
+	scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
+	if err := ssrf.ValidateURL(u); err != nil {
+		switch {
+		case errors.Is(err, ssrf.ErrInvalidScheme):
+			if blockedSchemes[scheme] {
+				return fmt.Errorf("%w: %s", ErrInvalidScheme, scheme)
+			}
+			return fmt.Errorf("%w: only http/https allowed, got %s", ErrInvalidScheme, scheme)
+		case errors.Is(err, ssrf.ErrEmptyHostname):
+			return errors.New("empty hostname")
+		case errors.Is(err, ssrf.ErrBlockedHostname):
+			return errors.New("hostname is blocked")
+		default:
+			return err
 		}
-		return fmt.Errorf("%w: only http/https allowed, got %s", ErrInvalidScheme, scheme)
-	}
-
-	// Get hostname
-	hostname := u.Hostname()
-	if err := common.ValidateRequiredParam("hostname", hostname); err != nil {
-		return errors.New("empty hostname")
-	}
-
-	if ssrf.IsBlockedHostname(hostname) {
-		return errors.New("hostname is blocked")
 	}
 
 	return nil
@@ -474,4 +479,11 @@ func (c *SecureClient) PostWithContext(ctx context.Context, url string, contentT
 // DefaultClient returns a pre-configured secure client with sensible defaults
 func DefaultClient() *SecureClient {
 	return NewSecureClient()
+}
+
+// NewSecureHTTPClient returns an *http.Client configured with the same SSRF
+// protections as NewSecureClient. Prefer NewSecureClient when you don't
+// specifically need an *http.Client.
+func NewSecureHTTPClient(opts ...Option) *http.Client {
+	return NewSecureClient(opts...).client
 }

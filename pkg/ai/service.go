@@ -3,10 +3,10 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -1013,20 +1013,20 @@ func (s *AIService) uploadImageToS3(ctx context.Context, imageURL string) (strin
 	}
 
 	// Validate the URL for security
-	parsedURL, err := url.Parse(imageURL)
+	parsedURL, err := ssrf.ValidateURLString(imageURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid URL: %w", err)
-	}
-
-	// Only allow HTTP/HTTPS schemes
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return "", fmt.Errorf("%w: %s (only http/https allowed)", ErrInvalidURLScheme, parsedURL.Scheme)
-	}
-
-	// Prevent local network access
-	host := parsedURL.Hostname()
-	if ssrf.IsBlockedHostname(host) {
-		return "", ErrLocalNetworkAccess
+		switch {
+		case errors.Is(err, ssrf.ErrInvalidScheme):
+			scheme := ""
+			if parsedURL != nil {
+				scheme = parsedURL.Scheme
+			}
+			return "", fmt.Errorf("%w: %s (only http/https allowed)", ErrInvalidURLScheme, scheme)
+		case errors.Is(err, ssrf.ErrBlockedHostname):
+			return "", ErrLocalNetworkAccess
+		default:
+			return "", fmt.Errorf("invalid URL: %w", err)
+		}
 	}
 
 	// Download the image using the validated URL

@@ -21,6 +21,9 @@ func newSSRFProtectedHTTPClient(logger *zap.Logger) *http.Client {
 		base = &http.Transport{}
 	}
 	transport := base.Clone()
+	// Disable ProxyFromEnvironment for SSRF-hardened clients. A proxy becomes the
+	// dial target and can bypass destination-IP validation.
+	transport.Proxy = nil
 
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)

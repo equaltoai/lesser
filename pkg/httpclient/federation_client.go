@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -166,21 +165,8 @@ func isBlockedIP(ip net.IP) bool {
 
 // validateFederationURL validates a URL for SSRF protection
 func validateFederationURL(rawURL string, _ *FederationClientConfig, _ *zap.Logger) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("invalid URL: %w", err)
-	}
-
-	host := parsed.Hostname()
-	if host == "" {
-		return fmt.Errorf("empty hostname")
-	}
-
-	if ssrf.IsBlockedHostname(host) {
-		return fmt.Errorf("hostname not allowed: %s", host)
-	}
-
-	return nil
+	_, err := ssrf.ValidateURLString(rawURL)
+	return err
 }
 
 // Get performs a GET request with ActivityPub headers

@@ -13,11 +13,13 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/executor"
+	"github.com/99designs/gqlgen/graphql/handler/extension"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/graph"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	appconfig "github.com/equaltoai/lesser/pkg/config"
+	gqllimits "github.com/equaltoai/lesser/pkg/graphql/limits"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -957,6 +959,22 @@ func initializeResolver() (*graph.Resolver, *executor.Executor) {
 
 	schema := graph.NewExecutableSchema(graph.Config{Resolvers: resolver})
 	exec := executor.New(schema)
+	if cfg != nil {
+		if cfg.GraphQLParserTokenLimit > 0 {
+			exec.SetParserTokenLimit(cfg.GraphQLParserTokenLimit)
+		}
+		if cfg.GraphQLMaxDepth > 0 {
+			exec.Use(gqllimits.FixedDepthLimit(cfg.GraphQLMaxDepth))
+		}
+		if cfg.GraphQLMaxComplexity > 0 {
+			exec.Use(extension.FixedComplexityLimit(cfg.GraphQLMaxComplexity))
+		}
+
+		// Introspection is disabled by default; enable it explicitly for debug/playground workflows.
+		if cfg.DebugMode || cfg.EnablePlayground || cfg.GraphQLAllowIntrospection {
+			exec.Use(extension.Introspection{})
+		}
+	}
 
 	return resolver, exec
 }

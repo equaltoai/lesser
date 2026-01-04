@@ -72,6 +72,34 @@ func TestRunVerifyAll_WiresSubcommands(t *testing.T) {
 	require.NotEmpty(t, calls)
 }
 
+func TestRunVerifyCI_RunsLintSecurityAndVerifyAll(t *testing.T) {
+	previousRunCommand := runCommandFn
+	previousEnsureTool := ensureToolAvailableFn
+	previousRepoRoot := findRepoRootFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		ensureToolAvailableFn = previousEnsureTool
+		findRepoRootFn = previousRepoRoot
+	})
+
+	ensureToolAvailableFn = func(string) error { return nil }
+
+	repoRoot := t.TempDir()
+	findRepoRootFn = func() (string, error) { return repoRoot, nil }
+
+	var calls []string
+	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
+		calls = append(calls, name+" "+firstArgOrEmpty(args))
+		return nil
+	}
+
+	require.NoError(t, runVerify([]string{"ci"}))
+	require.Contains(t, calls, "golangci-lint run")
+	require.Contains(t, calls, "gosec -exclude-generated")
+	require.Contains(t, calls, "govulncheck ./...")
+	require.Contains(t, calls, "bash scripts/verify_docs.sh")
+}
+
 func TestRunVerifyGraphQLCoverage_StrictFlag(t *testing.T) {
 	previousRunCommand := runCommandFn
 	previousEnsureTool := ensureToolAvailableFn

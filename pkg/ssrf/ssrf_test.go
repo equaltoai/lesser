@@ -1,6 +1,7 @@
 package ssrf
 
 import (
+	"errors"
 	"net"
 	"testing"
 
@@ -74,6 +75,43 @@ func TestIsBlockedHostname(t *testing.T) {
 		t.Run(tt.testName, func(t *testing.T) {
 			t.Parallel()
 			assert.Equal(t, tt.expected, IsBlockedHostname(tt.hostname))
+		})
+	}
+}
+
+func TestValidateURLString(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		raw       string
+		wantErrIs error
+		wantOK    bool
+	}{
+		{name: "valid_https", raw: "https://example.com/users/alice", wantOK: true},
+		{name: "valid_http", raw: "http://example.com/", wantOK: true},
+		{name: "invalid_scheme", raw: "ftp://example.com/", wantErrIs: ErrInvalidScheme},
+		{name: "empty_hostname", raw: "https:///path", wantErrIs: ErrEmptyHostname},
+		{name: "blocked_hostname", raw: "http://localhost:8080/", wantErrIs: ErrBlockedHostname},
+		{name: "parse_error", raw: "https://example.com/%zz/", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			parsed, err := ValidateURLString(tt.raw)
+			if tt.wantOK {
+				require.NoError(t, err)
+				require.NotNil(t, parsed)
+				return
+			}
+
+			require.Error(t, err)
+			if tt.wantErrIs != nil {
+				require.True(t, errors.Is(err, tt.wantErrIs), "expected errors.Is(%v, %v)", err, tt.wantErrIs)
+			}
 		})
 	}
 }

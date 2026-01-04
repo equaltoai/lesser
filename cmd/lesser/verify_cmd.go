@@ -20,6 +20,8 @@ func runVerify(argv []string) error {
 		return nil
 	case valueAll:
 		return runVerifyAll(argv[1:])
+	case "ci":
+		return runVerifyCI(argv[1:])
 	case "docs":
 		return runVerifyDocs(argv[1:])
 	case "ai-training":
@@ -139,6 +141,38 @@ func runVerifyAll(argv []string) error {
 	}
 
 	fmt.Println("✓ verify complete (lambda set, inventory, docs, ai-training docs, graphql schema, graphql coverage, openapi, unit tests)")
+	return nil
+}
+
+func runVerifyCI(argv []string) error {
+	fs := flag.NewFlagSet("lesser verify ci", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	var includeSecurity bool
+	fs.BoolVar(&includeSecurity, "security", true, "run security scans (gosec + govulncheck)")
+
+	if err := fs.Parse(argv); err != nil {
+		return err
+	}
+
+	// CI should not run formatting because it mutates the working tree.
+	// Prefer fast failure: lint first, then security, then the full verify suite.
+	if err := runLint(nil); err != nil {
+		return err
+	}
+	if includeSecurity {
+		if err := runSecScan(nil); err != nil {
+			return err
+		}
+		if err := runVulnCheck(nil); err != nil {
+			return err
+		}
+	}
+	if err := runVerifyAll(nil); err != nil {
+		return err
+	}
+
+	fmt.Println("✓ verify ci complete (lint, security, verify all)")
 	return nil
 }
 

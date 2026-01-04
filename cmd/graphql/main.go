@@ -40,6 +40,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	gqllimits "github.com/equaltoai/lesser/pkg/graphql/limits"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/observability"
@@ -328,7 +329,7 @@ func initializeGraphQLSpecificServices() {
 	})
 
 	// Create GraphQL handler
-	server := handler.NewDefaultServer(schema)
+	server := handler.New(schema)
 	server.SetErrorPresenter(graphQLErrorPresenter)
 
 	// Configure GraphQL handler
@@ -341,8 +342,21 @@ func initializeGraphQLSpecificServices() {
 		MaxMemory:     cfg.MaxUploadSize,
 	})
 
-	// Add extensions
-	server.Use(extension.Introspection{})
+	// Harden request parsing and execution limits (abuse-resilience).
+	if cfg.GraphQLParserTokenLimit > 0 {
+		server.SetParserTokenLimit(cfg.GraphQLParserTokenLimit)
+	}
+	if cfg.GraphQLMaxDepth > 0 {
+		server.Use(gqllimits.FixedDepthLimit(cfg.GraphQLMaxDepth))
+	}
+	if cfg.GraphQLMaxComplexity > 0 {
+		server.Use(extension.FixedComplexityLimit(cfg.GraphQLMaxComplexity))
+	}
+
+	// Introspection is disabled by default; enable it explicitly for debug/playground workflows.
+	if cfg.DebugMode || cfg.EnablePlayground || cfg.GraphQLAllowIntrospection {
+		server.Use(extension.Introspection{})
+	}
 
 	// Add Apollo tracing in development
 	if cfg.DebugMode {
@@ -372,8 +386,15 @@ func graphQLErrorPresenter(ctx context.Context, err error) *gqlerror.Error {
 
 // handleGraphQL processes GraphQL requests with proper context and DataLoader
 func handleGraphQL(ctx *lift.Context) error {
+	requestCtx := ctx.Request.Context()
+	if cfg != nil && cfg.GraphQLRequestTimeout > 0 {
+		var cancel context.CancelFunc
+		requestCtx, cancel = context.WithTimeout(requestCtx, cfg.GraphQLRequestTimeout)
+		defer cancel()
+	}
+
 	// Create request context with user information
-	requestCtx := context.WithValue(ctx.Request.Context(), contextKeyUser, ctx.Get("user"))
+	requestCtx = context.WithValue(requestCtx, contextKeyUser, ctx.Get("user"))
 
 	authHeader := common.ExtractAuthHeader(ctx)
 	logger.Info("GraphQL request auth header check",
