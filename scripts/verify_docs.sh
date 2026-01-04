@@ -21,7 +21,10 @@ echo "=== Doc Drift Verification (Spec 07 R7) ==="
 echo "Expected Lambda count (from Makefile): ${LAMBDA_COUNT}"
 echo
 
-DOC_SEARCH_PATHS=(docs README.md CONTRIBUTING.md CLAUDE.md AGENTS.md infra/cdk/README.md infra/cdk/inventory/README.md)
+DOC_SEARCH_PATHS=(docs README.md CONTRIBUTING.md AGENTS.md infra/cdk/README.md infra/cdk/inventory/README.md)
+if [[ -f "CLAUDE.md" ]]; then
+  DOC_SEARCH_PATHS+=(CLAUDE.md)
+fi
 
 pulumi_hits=$(grep -Rni --exclude-dir=archive --binary-files=without-match "Pulumi" "${DOC_SEARCH_PATHS[@]}" || true)
 if [[ -n "${pulumi_hits}" ]]; then

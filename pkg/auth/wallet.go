@@ -308,7 +308,10 @@ func (s *WalletService) verifyEthereumSignature(address, message, signature stri
 	// Decode signature
 	sig, err := hexutil.Decode(signature)
 	if err != nil {
-		s.logger.Error("failed to decode signature", zap.Error(err), zap.String("signature", signature))
+		s.logger.Error("failed to decode signature",
+			zap.Error(err),
+			zap.Int("signature_len", len(signature)),
+			zap.Bool("signature_has_0x_prefix", strings.HasPrefix(strings.ToLower(signature), "0x")))
 		return errors.Join(ErrInvalidSignatureFormat, err)
 	}
 

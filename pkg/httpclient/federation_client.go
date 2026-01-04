@@ -15,6 +15,10 @@ import (
 
 var lookupIP = net.LookupIP
 
+var dialerDialContext = func(dialer *net.Dialer, ctx context.Context, network, address string) (net.Conn, error) {
+	return dialer.DialContext(ctx, network, address)
+}
+
 // FederationClient provides a secure HTTP client for ActivityPub federation
 type FederationClient struct {
 	client *http.Client
@@ -112,6 +116,10 @@ func secureDialContext(ctx context.Context, dialer *net.Dialer, network, address
 		return nil, fmt.Errorf("invalid address format: %w", err)
 	}
 
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	// Resolve hostname to IPs
 	ips, err := lookupIP(host)
 	if err != nil {
@@ -130,8 +138,23 @@ func secureDialContext(ctx context.Context, dialer *net.Dialer, network, address
 		}
 	}
 
-	// Use the original dialer to establish connection
-	return dialer.DialContext(ctx, network, net.JoinHostPort(host, port))
+	// Dial a resolved IP address (not the hostname) to avoid TOCTOU/DNS-rebinding between validation and connect.
+	var lastErr error
+	for _, ip := range ips {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		conn, err := dialerDialContext(dialer, ctx, network, net.JoinHostPort(ip.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("DNS resolution returned no IPs for %s", host)
 }
 
 // isBlockedIP checks if an IP address should be blocked for SSRF protection

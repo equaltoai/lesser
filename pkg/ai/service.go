@@ -104,28 +104,30 @@ type AIConfig struct {
 
 // NewAIService creates a new AI service instance
 func NewAIService(cfg aws.Config, aiConfig *AIConfig) *AIService {
+	logger := zap.L().Named("ai")
 	return &AIService{
 		comprehend:  comprehend.NewFromConfig(cfg),
 		rekognition: rekognition.NewFromConfig(cfg),
 		bedrock:     bedrockruntime.NewFromConfig(cfg),
 		s3Client:    s3.NewFromConfig(cfg),
 		sqsClient:   sqs.NewFromConfig(cfg),
-		httpClient:  http.DefaultClient,
-		logger:      zap.L().Named("ai"),
+		httpClient:  newSSRFProtectedHTTPClient(logger),
+		logger:      logger,
 		config:      aiConfig,
 	}
 }
 
 // NewAIServiceWithSQS creates a new AI service instance with custom SQS client
 func NewAIServiceWithSQS(cfg aws.Config, aiConfig *AIConfig, sqsClient SQSClient) *AIService {
+	logger := zap.L().Named("ai")
 	return &AIService{
 		comprehend:  comprehend.NewFromConfig(cfg),
 		rekognition: rekognition.NewFromConfig(cfg),
 		bedrock:     bedrockruntime.NewFromConfig(cfg),
 		s3Client:    s3.NewFromConfig(cfg),
 		sqsClient:   sqsClient,
-		httpClient:  http.DefaultClient,
-		logger:      zap.L().Named("ai"),
+		httpClient:  newSSRFProtectedHTTPClient(logger),
+		logger:      logger,
 		config:      aiConfig,
 	}
 }
@@ -1029,7 +1031,11 @@ func (s *AIService) uploadImageToS3(ctx context.Context, imageURL string) (strin
 
 	// Download the image using the validated URL
 	if s.httpClient == nil {
-		s.httpClient = http.DefaultClient
+		logger := s.logger
+		if logger == nil {
+			logger = zap.NewNop()
+		}
+		s.httpClient = newSSRFProtectedHTTPClient(logger)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), nil)
 	if err != nil {

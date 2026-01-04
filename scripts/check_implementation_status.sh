@@ -7,7 +7,9 @@ echo "Date: $(date)"
 echo
 
 # Report file for detailed results
-DETAIL_FILE="INCOMPLETE_IMPLEMENTATIONS.md"
+DETAIL_FILE="report/incomplete_implementations.md"
+STATUS_FILE="report/.implementation_status_last"
+mkdir -p "$(dirname "$DETAIL_FILE")"
 
 # Truncate report file and write header
 {
@@ -158,8 +160,8 @@ echo "- Context: $CONTEXT_TODO_COUNT context.TODO() to fix"
 echo
 
 # Check if getting better or worse
-if [ -f .implementation_status_last ]; then
-    LAST_TOTAL=$(cat .implementation_status_last)
+if [ -f "$STATUS_FILE" ]; then
+    LAST_TOTAL=$(cat "$STATUS_FILE")
     if [ $TOTAL_ISSUES -lt $LAST_TOTAL ]; then
         echo "✅ Progress! Reduced from $LAST_TOTAL to $TOTAL_ISSUES issues"
     elif [ $TOTAL_ISSUES -gt $LAST_TOTAL ]; then
@@ -170,7 +172,7 @@ if [ -f .implementation_status_last ]; then
 fi
 
 # Save current status
-echo $TOTAL_ISSUES > .implementation_status_last
+echo $TOTAL_ISSUES > "$STATUS_FILE"
 
 echo
-echo "For detailed list, see INCOMPLETE_IMPLEMENTATIONS.md"
+echo "For detailed list, see $DETAIL_FILE"

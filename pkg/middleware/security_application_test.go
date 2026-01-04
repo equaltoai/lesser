@@ -30,6 +30,7 @@ func TestApplySecurityMiddleware_EndToEnd(t *testing.T) {
 		assert.Equal(t, "https://app.example", ctx.Response.Headers["Access-Control-Allow-Origin"])
 		assert.Equal(t, "true", ctx.Response.Headers["Access-Control-Allow-Credentials"])
 		assert.NotEmpty(t, ctx.Response.Headers["Content-Security-Policy"])
+		assert.NotContains(t, ctx.Response.Headers["Content-Security-Policy"], "'unsafe-inline'")
 		assert.NotEmpty(t, ctx.Get("csp-nonce"))
 	})
 

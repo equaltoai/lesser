@@ -191,6 +191,8 @@ func TestIsPrivateIP(t *testing.T) {
 	}{
 		// Private IPs
 		{"10.0.0.1", true},
+		{"100.64.0.1", true},
+		{"100.100.100.200", true},
 		{"172.16.0.1", true},
 		{"192.168.1.1", true},
 		{"127.0.0.1", true},

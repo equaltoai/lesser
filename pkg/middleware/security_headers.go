@@ -81,8 +81,8 @@ func DefaultSecurityHeadersConfig() *SecurityHeadersConfig {
 		EnableCSP: true,
 		CSPDirectives: map[string][]string{
 			"default-src":               {"'self'"},
-			"script-src":                {"'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"},
-			"style-src":                 {"'self'", "'unsafe-inline'", "https://fonts.googleapis.com"},
+			"script-src":                {"'self'", "https://cdn.jsdelivr.net"},
+			"style-src":                 {"'self'", "https://fonts.googleapis.com"},
 			"img-src":                   {"'self'", "data:", "https:", "blob:"},
 			"font-src":                  {"'self'", "data:", "https://fonts.gstatic.com"},
 			"connect-src":               {"'self'", "wss:", "https:"},
@@ -129,7 +129,8 @@ func DevelopmentSecurityHeadersConfig() *SecurityHeadersConfig {
 	config.DevelopmentMode = true
 
 	// Relax CSP for development
-	config.CSPDirectives["script-src"] = append(config.CSPDirectives["script-src"], "'unsafe-eval'")
+	config.CSPDirectives["script-src"] = append(config.CSPDirectives["script-src"], "'unsafe-inline'", "'unsafe-eval'")
+	config.CSPDirectives["style-src"] = append(config.CSPDirectives["style-src"], "'unsafe-inline'")
 	config.CSPDirectives["connect-src"] = append(config.CSPDirectives["connect-src"], "ws://localhost:*", "http://localhost:*")
 
 	// Disable HSTS in development
@@ -241,7 +242,10 @@ func (sh *EnhancedSecurityHeaders) setSecurityHeaders(ctx *lift.Context, nonce s
 func (sh *EnhancedSecurityHeaders) buildCSP(nonce string) string {
 	var directives []string
 
-	for directive, sources := range sh.config.CSPDirectives {
+	for directive, configuredSources := range sh.config.CSPDirectives {
+		// Copy the configured sources so we never mutate the shared config when appending a nonce.
+		sources := append([]string(nil), configuredSources...)
+
 		// Add nonce to script-src and style-src if generated
 		if nonce != "" && (directive == "script-src" || directive == "style-src") {
 			sources = append(sources, fmt.Sprintf("'nonce-%s'", nonce))
@@ -417,8 +421,8 @@ func WebClientSecurityHeaders() *SecurityHeadersConfig {
 	// Stricter CSP for web clients
 	config.CSPDirectives = map[string][]string{
 		"default-src":     {"'self'"},
-		"script-src":      {"'self'", "'unsafe-inline'"},
-		"style-src":       {"'self'", "'unsafe-inline'"},
+		"script-src":      {"'self'"},
+		"style-src":       {"'self'"},
 		"img-src":         {"'self'", "data:", "https:"},
 		"connect-src":     {"'self'", "wss:", "https:"},
 		"font-src":        {"'self'", "data:"},

@@ -52,8 +52,10 @@ func TestEnhancedSecurityHeaders_Middleware_SetsResponseHeaders(t *testing.T) {
 	nonce, _ := ctx.Get("csp-nonce").(string)
 	require.NotEmpty(t, nonce)
 
-	require.NotEmpty(t, ctx.Response.Headers["Content-Security-Policy"])
-	assert.Contains(t, ctx.Response.Headers["Content-Security-Policy"], "'nonce-")
+	csp := ctx.Response.Headers["Content-Security-Policy"]
+	require.NotEmpty(t, csp)
+	assert.Contains(t, csp, "'nonce-")
+	assert.NotContains(t, csp, "'unsafe-inline'")
 	assert.Equal(t, "ok", ctx.Response.Headers["X-Test"])
 	assert.Equal(t, "", ctx.Response.Headers["X-Powered-By"])
 }
@@ -71,6 +73,29 @@ func TestDevelopmentSecurityHeadersConfig(t *testing.T) {
 	assert.False(t, cfg.EnableHSTS)
 	assert.Equal(t, "SAMEORIGIN", cfg.XFrameOptions)
 	assert.Contains(t, strings.Join(cfg.CSPDirectives["connect-src"], " "), "localhost")
+	assert.Contains(t, strings.Join(cfg.CSPDirectives["script-src"], " "), "'unsafe-inline'")
+	assert.Contains(t, strings.Join(cfg.CSPDirectives["script-src"], " "), "'unsafe-eval'")
+	assert.Contains(t, strings.Join(cfg.CSPDirectives["style-src"], " "), "'unsafe-inline'")
+}
+
+func TestEnhancedSecurityHeaders_buildCSP_DoesNotMutateConfig(t *testing.T) {
+	cfg := DefaultSecurityHeadersConfig()
+	sh := NewEnhancedSecurityHeaders(cfg, zap.NewNop())
+
+	scriptSrcLen := len(cfg.CSPDirectives["script-src"])
+	styleSrcLen := len(cfg.CSPDirectives["style-src"])
+
+	first := sh.buildCSP("first")
+	assert.Contains(t, first, "'nonce-first'")
+	assert.NotContains(t, first, "'unsafe-inline'")
+	assert.Equal(t, scriptSrcLen, len(cfg.CSPDirectives["script-src"]))
+	assert.Equal(t, styleSrcLen, len(cfg.CSPDirectives["style-src"]))
+
+	second := sh.buildCSP("second")
+	assert.Contains(t, second, "'nonce-second'")
+	assert.NotContains(t, second, "'nonce-first'")
+	assert.Equal(t, scriptSrcLen, len(cfg.CSPDirectives["script-src"]))
+	assert.Equal(t, styleSrcLen, len(cfg.CSPDirectives["style-src"]))
 }
 
 func TestGetSecurityConfigForEndpoint(t *testing.T) {

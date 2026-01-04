@@ -108,3 +108,7 @@ lint-report.json
 /*/dist/
 
 /docs/github
+
+# Generated status reports
+INCOMPLETE_IMPLEMENTATIONS.md
+.implementation_status_last

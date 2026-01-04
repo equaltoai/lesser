@@ -39,6 +39,7 @@ var (
 	privateIPBlocks = []net.IPNet{
 		// IPv4 private ranges
 		{IP: net.IPv4(10, 0, 0, 0), Mask: net.CIDRMask(8, 32)},     // 10.0.0.0/8
+		{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)},  // 100.64.0.0/10 (RFC 6598: shared address space)
 		{IP: net.IPv4(172, 16, 0, 0), Mask: net.CIDRMask(12, 32)},  // 172.16.0.0/12
 		{IP: net.IPv4(192, 168, 0, 0), Mask: net.CIDRMask(16, 32)}, // 192.168.0.0/16
 		{IP: net.IPv4(127, 0, 0, 0), Mask: net.CIDRMask(8, 32)},    // 127.0.0.0/8 (loopback)
@@ -132,13 +133,24 @@ func NewSecureClient(opts ...Option) *SecureClient {
 		local:  make(map[string]*storage.DNSCacheEntry),
 	}
 
-	// Configure transport with security checks
-	c.client.Transport = &secureTransport{
-		base:     http.DefaultTransport,
+	// Configure transport with security checks.
+	//
+	// Clone the default transport so we can override dialing behavior without
+	// mutating the global http.DefaultTransport.
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		base = &http.Transport{}
+	}
+	transport := base.Clone()
+
+	secure := &secureTransport{
+		base:     transport,
 		logger:   c.logger,
 		dnsCache: c.dnsCache,
 		lookupIP: net.LookupIP,
 	}
+	transport.DialContext = secure.dialContext
+	c.client.Transport = secure
 
 	// Configure redirect policy
 	c.client.CheckRedirect = c.checkRedirect
@@ -225,6 +237,85 @@ type secureTransport struct {
 	logger   *zap.Logger
 	dnsCache *dnsCacheManager
 	lookupIP func(string) ([]net.IP, error)
+	dial     func(ctx context.Context, network, addr string) (net.Conn, error)
+}
+
+func (t *secureTransport) dialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid dial address: %w", err)
+	}
+
+	// Avoid DNS lookups when the host is already an IP literal.
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateIP(ip) {
+			return nil, fmt.Errorf("request blocked: %w", ErrPrivateIPAddress)
+		}
+		return t.dialIP(ctx, network, net.JoinHostPort(ip.String(), port))
+	}
+
+	// Prefer cached resolutions so we dial the same (pre-validated) IPs used by RoundTrip.
+	var ips []net.IP
+	var fromCache bool
+	if t.dnsCache != nil {
+		ips, fromCache = t.dnsCache.getCachedIPs(ctx, host)
+	}
+
+	// If not in cache, resolve hostname and cache the result.
+	if !fromCache {
+		lookup := t.lookupIP
+		if lookup == nil {
+			lookup = net.LookupIP
+		}
+		ips, err = lookup(host)
+		if err != nil {
+			return nil, fmt.Errorf("DNS lookup failed: %w", err)
+		}
+		if t.dnsCache != nil {
+			t.dnsCache.setCachedIPs(ctx, host, ips)
+		}
+	}
+
+	// Validate each resolved IP (defense-in-depth; RoundTrip already enforces this).
+	for _, ip := range ips {
+		if isPrivateIP(ip) {
+			logger := t.logger
+			if logger == nil {
+				logger = zap.NewNop()
+			}
+			logger.Warn("blocked dial to private IP",
+				zap.String("host", host),
+				zap.String("ip", ip.String()),
+				zap.Bool("from_cache", fromCache))
+			return nil, fmt.Errorf("request blocked: %w", ErrPrivateIPAddress)
+		}
+	}
+
+	// Dial a resolved public IP to avoid TOCTOU/DNS-rebinding between validation and connect.
+	var lastErr error
+	for _, ip := range ips {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		conn, err := t.dialIP(ctx, network, net.JoinHostPort(ip.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("DNS lookup returned no IPs for %s", host)
+}
+
+func (t *secureTransport) dialIP(ctx context.Context, network, address string) (net.Conn, error) {
+	dial := t.dial
+	if dial == nil {
+		dial = (&net.Dialer{}).DialContext
+	}
+	return dial(ctx, network, address)
 }
 
 // RoundTrip implements http.RoundTripper with security checks
@@ -286,8 +377,7 @@ func (t *secureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	// Verify the connection actually went to one of our resolved IPs
-	// This prevents TOCTOU attacks where DNS changes between check and use
+	// Defensive check: ensure a misbehaving RoundTripper didn't mutate the request host.
 	if resp.Request.URL.Hostname() != hostname {
 		if err := resp.Body.Close(); err != nil {
 			t.logger.Warn("failed to close response body after hostname change", zap.Error(err))
