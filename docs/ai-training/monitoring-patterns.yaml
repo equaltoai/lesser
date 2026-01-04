@@ -247,7 +247,7 @@ distributed_tracing:
       latency_distribution: "Performance bottleneck identification"
       
     implementation: |
-      import "github.com/aws/aws-xray-sdk-go/xray"
+      import "github.com/aws/aws-xray-sdk-go/v2/xray"
       
       func TracedOperation(ctx context.Context) error {
           ctx, seg := xray.BeginSegment(ctx, "OperationName")

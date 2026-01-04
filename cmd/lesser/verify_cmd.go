@@ -28,6 +28,8 @@ func runVerify(argv []string) error {
 		return runVerifyAITraining(argv[1:])
 	case valueSchema:
 		return runVerifySchema(argv[1:])
+	case "supply-chain":
+		return runVerifySupplyChain(argv[1:])
 	case "graphql-coverage":
 		return runVerifyGraphQLCoverage(argv[1:])
 	case "openapi":
@@ -168,11 +170,14 @@ func runVerifyCI(argv []string) error {
 			return err
 		}
 	}
+	if err := runVerifySupplyChain(nil); err != nil {
+		return err
+	}
 	if err := runVerifyAll(nil); err != nil {
 		return err
 	}
 
-	fmt.Println("✓ verify ci complete (lint, security, verify all)")
+	fmt.Println("✓ verify ci complete (lint, security, supply chain, verify all)")
 	return nil
 }
 
@@ -202,6 +207,16 @@ func runVerifySchema(_ []string) error {
 		return err
 	}
 	return runCommandFn(context.Background(), "bash", []string{"scripts/verify_schema.sh"}, execOptions{
+		Dir: repoRoot,
+	})
+}
+
+func runVerifySupplyChain(_ []string) error {
+	repoRoot, err := findRepoRootFn()
+	if err != nil {
+		return err
+	}
+	return runCommandFn(context.Background(), "bash", []string{"scripts/verify_supply_chain.sh"}, execOptions{
 		Dir: repoRoot,
 	})
 }

@@ -46,7 +46,7 @@ Notes:
 
 The project aims for “secure by default” and predictable contributor workflows. New work should preserve these properties:
 
-- **One-shot CI verification**: `./lesser verify ci` (runs `lint`, security scans, and `verify all` without mutating the working tree).
+- **One-shot CI verification**: `./lesser verify ci` (runs `lint`, security scans, supply chain verification, and `verify all` without mutating tracked files).
 - **GraphQL abuse limits**: depth/complexity/token/timeout limits must remain enabled in non-debug deployments (tunable via env vars; see `docs/configuration.md`).
 - **SSRF/URL validation**: untrusted outbound URLs must pass the shared URL/SSRF validator and use hardened dialing paths (no bespoke validators).
 - **No secrets in logs**: sensitive values must be scrubbed/redacted; add tests when touching auth/logging.

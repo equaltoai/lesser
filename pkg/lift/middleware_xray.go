@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambdacontext"
-	"github.com/aws/aws-xray-sdk-go/xray"
+	"github.com/aws/aws-xray-sdk-go/v2/xray"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"

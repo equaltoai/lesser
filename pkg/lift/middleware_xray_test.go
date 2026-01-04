@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-lambda-go/lambdacontext"
-	"github.com/aws/aws-xray-sdk-go/xray"
+	"github.com/aws/aws-xray-sdk-go/v2/xray"
 	liftPkg "github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"

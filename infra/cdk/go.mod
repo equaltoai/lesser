@@ -7,7 +7,7 @@ require (
 	github.com/aws/constructs-go/constructs/v10 v10.4.2
 	github.com/aws/jsii-runtime-go v1.117.0
 	github.com/equaltoai/lesser v0.0.0
-	github.com/pay-theory/lift v1.0.81
+	github.com/pay-theory/lift v1.0.82
 )
 
 require (
@@ -28,7 +28,5 @@ require (
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 )
-
-replace github.com/pay-theory/lift => ../../../../lift
 
 replace github.com/equaltoai/lesser => ../..

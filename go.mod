@@ -31,7 +31,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.4
 	github.com/aws/aws-sdk-go-v2/service/transcribe v1.53.2
 	github.com/aws/aws-sdk-go-v2/service/translate v1.33.8
-	github.com/aws/aws-xray-sdk-go v1.8.5
+	github.com/aws/aws-xray-sdk-go/v2 v2.0.0
 	github.com/aws/smithy-go v1.24.0
 	github.com/bbrks/go-blurhash v1.1.1
 	github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8
@@ -45,7 +45,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/pay-theory/dynamorm v1.0.39
-	github.com/pay-theory/lift v1.0.81
+	github.com/pay-theory/lift v1.0.82
 	github.com/shopspring/decimal v1.4.0
 	github.com/spruceid/siwe-go v0.2.1
 	github.com/stretchr/testify v1.11.1
@@ -62,8 +62,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/pay-theory/lift => ../../lift
-
 require (
 	github.com/FactomProject/basen v0.0.0-20150613233007-fe3947df716e // indirect
 	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec // indirect
@@ -71,7 +69,6 @@ require (
 	github.com/PaesslerAG/jsonpath v0.1.1 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
-	github.com/aws/aws-sdk-go v1.55.8 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.4 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.16 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.16 // indirect
@@ -93,7 +90,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.66.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.12 // indirect
-	github.com/aws/aws-xray-sdk-go/v2 v2.0.0 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bits-and-blooms/bitset v1.24.3 // indirect
 	github.com/consensys/gnark-crypto v0.19.2 // indirect
@@ -112,7 +108,6 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
-	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/klauspost/compress v1.18.1 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect

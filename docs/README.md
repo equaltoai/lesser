@@ -64,6 +64,7 @@ internal/CI-only (except for building the `lesser` CLI itself).
 - CLI workflows: `docs/lesser-cli.md`
 - Configure: `docs/configuration.md`
 - Operate: `docs/monitoring.md`, `docs/security.md`, `docs/backup-recovery.md`, `docs/operations/runbook.md`
+- Release checklist: `docs/release-checklist.md`
 - Troubleshoot: `docs/troubleshooting.md`
 - Federation checks: `docs/federation.md`
 

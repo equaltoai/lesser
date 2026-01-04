@@ -41,11 +41,13 @@ func TestRunVerify_Subcommands_InvokeExpectedCommands(t *testing.T) {
 	require.NoError(t, runVerify([]string{"docs"}))
 	require.NoError(t, runVerify([]string{"ai-training"}))
 	require.NoError(t, runVerify([]string{valueSchema}))
+	require.NoError(t, runVerify([]string{"supply-chain"}))
 	require.NoError(t, runVerify([]string{"lambda-set"}))
 
 	require.Contains(t, calls, "bash scripts/verify_docs.sh")
 	require.Contains(t, calls, "bash scripts/verify_ai_training.sh")
 	require.Contains(t, calls, "bash scripts/verify_schema.sh")
+	require.Contains(t, calls, "bash scripts/verify_supply_chain.sh")
 	require.Contains(t, calls, "bash scripts/verify_lambda_set.sh")
 }
 
@@ -97,6 +99,7 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifyAll(t *testing.T) {
 	require.Contains(t, calls, "golangci-lint run")
 	require.Contains(t, calls, "gosec -exclude-generated")
 	require.Contains(t, calls, "govulncheck ./...")
+	require.Contains(t, calls, "bash scripts/verify_supply_chain.sh")
 	require.Contains(t, calls, "bash scripts/verify_docs.sh")
 }
 

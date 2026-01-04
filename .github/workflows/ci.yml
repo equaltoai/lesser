@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Go tools
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+
+      - name: Build lesser CLI
+        run: go build -o lesser ./cmd/lesser
+
+      - name: Build lambda artifacts
+        run: ./lesser build lambdas
+
+      - name: Verify (CI gate)
+        run: ./lesser verify ci
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: report/
+          if-no-files-found: ignore

@@ -203,15 +203,10 @@ bash scripts/check_implementation_status.sh
 
 ### M6 — Supply chain + CI hardening (P1 security + P1 quality)
 
-- [ ] Remove/replace legacy dependency `github.com/aws/aws-sdk-go` if not required; otherwise document compensating controls.
-- [ ] Add CI (e.g., GitHub Actions) that runs:
-  - `./lesser verify`
-  - `./lesser lint`
-  - `./lesser test unit`
-  - `./lesser sec-scan`
-  - `govulncheck ./...`
-- [ ] Add a lightweight SBOM generation step (or at least a reproducible module inventory snapshot).
-- [ ] Add a release checklist that includes security scanning + docs verification.
+- [x] Remove/replace legacy dependency `github.com/aws/aws-sdk-go` (indirect v1 removed by migrating to `github.com/aws/aws-xray-sdk-go/v2`).
+- [x] Add CI (GitHub Actions) that builds lambdas and runs `./lesser verify ci`.
+- [x] Add a reproducible module inventory snapshot (`./lesser verify supply-chain` → `report/module_inventory.txt`) and run it in `./lesser verify ci`.
+- [x] Add a release checklist that includes security scanning + docs verification.
 
 **Acceptance criteria**
 - Reachable vulns: 0; module-level vulns: 0 (or explicitly accepted with rationale).
