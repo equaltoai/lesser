@@ -101,22 +101,7 @@ func (r *AIRepository) GetStats(_ context.Context, period string) (*ai.AIStats, 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Calculate date range based on period
-	now := time.Now()
-	var startDate time.Time
-
-	switch period {
-	case "hour":
-		startDate = now.Add(-1 * time.Hour)
-	case "day":
-		startDate = now.AddDate(0, 0, -1)
-	case "week":
-		startDate = now.AddDate(0, 0, -7)
-	case "month":
-		startDate = now.AddDate(0, -1, 0)
-	default:
-		startDate = now.AddDate(0, 0, -1) // Default to 24 hours
-	}
+	startDate := r.calculateStartDate(period)
 
 	stats := &ai.AIStats{
 		Period:            period,
@@ -129,33 +114,7 @@ func (r *AIRepository) GetStats(_ context.Context, period string) (*ai.AIStats, 
 			if analysis.AnalyzedAt.Before(startDate) {
 				continue
 			}
-
-			stats.TotalAnalyses++
-
-			// Count based on analysis results
-			if analysis.TextAnalysis != nil && analysis.TextAnalysis.ToxicityScore > 0.7 {
-				stats.ToxicContent++
-			}
-
-			if analysis.SpamAnalysis != nil && analysis.SpamAnalysis.SpamScore > 0.7 {
-				stats.SpamDetected++
-			}
-
-			if analysis.AIDetection != nil && analysis.AIDetection.AIGeneratedProbability > 0.7 {
-				stats.AIGenerated++
-			}
-
-			if analysis.ImageAnalysis != nil && analysis.ImageAnalysis.IsNSFW {
-				stats.NSFWContent++
-			}
-
-			if analysis.TextAnalysis != nil && len(analysis.TextAnalysis.PIIEntities) > 0 {
-				stats.PIIDetected++
-			}
-
-			if analysis.ModerationAction != "" {
-				stats.ModerationActions[analysis.ModerationAction]++
-			}
+			r.updateStatsFromAnalysis(stats, analysis)
 		}
 	}
 
@@ -168,6 +127,51 @@ func (r *AIRepository) GetStats(_ context.Context, period string) (*ai.AIStats, 
 	}
 
 	return stats, nil
+}
+
+func (r *AIRepository) calculateStartDate(period string) time.Time {
+	now := time.Now()
+	switch period {
+	case "hour":
+		return now.Add(-1 * time.Hour)
+	case "day":
+		return now.AddDate(0, 0, -1)
+	case "week":
+		return now.AddDate(0, 0, -7)
+	case "month":
+		return now.AddDate(0, -1, 0)
+	default:
+		return now.AddDate(0, 0, -1) // Default to 24 hours
+	}
+}
+
+func (r *AIRepository) updateStatsFromAnalysis(stats *ai.AIStats, analysis *ai.AIAnalysis) {
+	stats.TotalAnalyses++
+
+	// Count based on analysis results
+	if analysis.TextAnalysis != nil && analysis.TextAnalysis.ToxicityScore > 0.7 {
+		stats.ToxicContent++
+	}
+
+	if analysis.SpamAnalysis != nil && analysis.SpamAnalysis.SpamScore > 0.7 {
+		stats.SpamDetected++
+	}
+
+	if analysis.AIDetection != nil && analysis.AIDetection.AIGeneratedProbability > 0.7 {
+		stats.AIGenerated++
+	}
+
+	if analysis.ImageAnalysis != nil && analysis.ImageAnalysis.IsNSFW {
+		stats.NSFWContent++
+	}
+
+	if analysis.TextAnalysis != nil && len(analysis.TextAnalysis.PIIEntities) > 0 {
+		stats.PIIDetected++
+	}
+
+	if analysis.ModerationAction != "" {
+		stats.ModerationActions[analysis.ModerationAction]++
+	}
 }
 
 // ===== Queue Operations =====

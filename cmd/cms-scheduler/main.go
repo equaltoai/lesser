@@ -78,15 +78,7 @@ func (p *CMSSchedulerProcessor) HandleEvent(ctx *lift.Context, event events.Clou
 	runCtx := ctx.Request.Context()
 	now := time.Now().UTC()
 
-	if p.cfg == nil || !p.cfg.CMSLongFormEnabled() || !p.cfg.CMSDraftsEnabled() || !p.cfg.CMSSchedulingEnabled() {
-		instanceMode := ""
-		if p.cfg != nil {
-			instanceMode = string(p.cfg.EffectiveInstanceMode())
-		}
-		p.logger.Info("cms scheduler disabled by configuration",
-			zap.String("request_id", ctx.GetRequestID()),
-			zap.String("instance_mode", instanceMode),
-		)
+	if !p.isSchedulerEnabled(ctx) {
 		return nil
 	}
 
@@ -99,11 +91,46 @@ func (p *CMSSchedulerProcessor) HandleEvent(ctx *lift.Context, event events.Clou
 		zap.Int("max_drafts", p.maxDraftsPerRun),
 	)
 
+	draftRepo, draftSvc, err := p.resolveDependencies(ctx)
+	if err != nil {
+		return nil // logged inside resolveDependencies
+	}
+
+	attempted, published, err := p.processDrafts(runCtx, draftRepo, draftSvc, now)
+	if err != nil {
+		return err
+	}
+
+	p.logger.Info("cms scheduler run complete",
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.Int("attempted", attempted),
+		zap.Int("published", published),
+	)
+
+	return nil
+}
+
+func (p *CMSSchedulerProcessor) isSchedulerEnabled(ctx *lift.Context) bool {
+	if p.cfg == nil || !p.cfg.CMSLongFormEnabled() || !p.cfg.CMSDraftsEnabled() || !p.cfg.CMSSchedulingEnabled() {
+		instanceMode := ""
+		if p.cfg != nil {
+			instanceMode = string(p.cfg.EffectiveInstanceMode())
+		}
+		p.logger.Info("cms scheduler disabled by configuration",
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("instance_mode", instanceMode),
+		)
+		return false
+	}
+	return true
+}
+
+func (p *CMSSchedulerProcessor) resolveDependencies(ctx *lift.Context) (interfaces.DraftRepository, draftPublisher, error) {
 	if p.registry == nil {
 		p.logger.Warn("cms scheduler registry not available; skipping run",
 			zap.String("request_id", ctx.GetRequestID()),
 		)
-		return nil
+		return nil, nil, fmt.Errorf("registry missing")
 	}
 
 	storage := p.registry.GetStorage()
@@ -115,7 +142,7 @@ func (p *CMSSchedulerProcessor) HandleEvent(ctx *lift.Context, event events.Clou
 		p.logger.Warn("cms scheduler storage not available; skipping run",
 			zap.String("request_id", ctx.GetRequestID()),
 		)
-		return nil
+		return nil, nil, fmt.Errorf("storage missing")
 	}
 
 	stateRepo := p.instanceRepo
@@ -128,22 +155,22 @@ func (p *CMSSchedulerProcessor) HandleEvent(ctx *lift.Context, event events.Clou
 		p.logger.Warn("cms scheduler instance repository not available; skipping run",
 			zap.String("request_id", ctx.GetRequestID()),
 		)
-		return nil
+		return nil, nil, fmt.Errorf("instance repo missing")
 	}
 
-	state, err := stateRepo.GetInstanceState(runCtx)
+	state, err := stateRepo.GetInstanceState(ctx.Request.Context())
 	if err != nil {
 		p.logger.Warn("failed to get instance state; defaulting to locked and skipping cms scheduler run",
 			zap.String("request_id", ctx.GetRequestID()),
 			zap.Error(err),
 		)
-		return nil
+		return nil, nil, err
 	}
 	if state.Locked {
 		p.logger.Info("instance is locked; skipping cms scheduler run",
 			zap.String("request_id", ctx.GetRequestID()),
 		)
-		return nil
+		return nil, nil, fmt.Errorf("instance locked")
 	}
 
 	draftSvc := p.draftSvc
@@ -156,12 +183,17 @@ func (p *CMSSchedulerProcessor) HandleEvent(ctx *lift.Context, event events.Clou
 		p.logger.Warn("draft service not available; skipping cms scheduler run",
 			zap.String("request_id", ctx.GetRequestID()),
 		)
-		return nil
+		return nil, nil, fmt.Errorf("draft service missing")
 	}
 
+	return draftRepo, draftSvc, nil
+}
+
+func (p *CMSSchedulerProcessor) processDrafts(ctx context.Context, draftRepo interfaces.DraftRepository, draftSvc draftPublisher, now time.Time) (int, int, error) {
 	attempted := 0
 	published := 0
 	cursor := ""
+
 	for attempted < p.maxDraftsPerRun {
 		remaining := p.maxDraftsPerRun - attempted
 		limit := p.pageSize
@@ -169,9 +201,9 @@ func (p *CMSSchedulerProcessor) HandleEvent(ctx *lift.Context, event events.Clou
 			limit = remaining
 		}
 
-		drafts, nextCursor, err := draftRepo.ListScheduledDraftsDuePaginated(runCtx, now, limit, cursor)
+		drafts, nextCursor, err := draftRepo.ListScheduledDraftsDuePaginated(ctx, now, limit, cursor)
 		if err != nil {
-			return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "failed to list scheduled drafts")
+			return attempted, published, pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "failed to list scheduled drafts")
 		}
 		if len(drafts) == 0 {
 			break
@@ -181,7 +213,7 @@ func (p *CMSSchedulerProcessor) HandleEvent(ctx *lift.Context, event events.Clou
 			if attempted >= p.maxDraftsPerRun {
 				break
 			}
-			if err := p.publishScheduledDraft(runCtx, draftSvc, draftRepo, draft); err != nil {
+			if err := p.publishScheduledDraft(ctx, draftSvc, draftRepo, draft); err != nil {
 				p.logger.Error("failed to publish scheduled draft",
 					zap.String("draft_id", draft.ID),
 					zap.String("author_id", draft.AuthorID),
@@ -201,13 +233,7 @@ func (p *CMSSchedulerProcessor) HandleEvent(ctx *lift.Context, event events.Clou
 		cursor = nextCursor
 	}
 
-	p.logger.Info("cms scheduler run complete",
-		zap.String("request_id", ctx.GetRequestID()),
-		zap.Int("attempted", attempted),
-		zap.Int("published", published),
-	)
-
-	return nil
+	return attempted, published, nil
 }
 
 func (p *CMSSchedulerProcessor) publishScheduledDraft(ctx context.Context, draftSvc draftPublisher, draftRepo interfaces.DraftRepository, draft *models.Draft) error {

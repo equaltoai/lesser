@@ -215,51 +215,30 @@ func filterGeneratedFilesFromCoverProfile(repoRoot string, coverProfilePath stri
 	}()
 
 	w := bufio.NewWriter(tmp)
-	defer func() {
-		_ = w.Flush()
-	}()
-
-	isGeneratedCache := make(map[string]bool)
-	isGenerated := func(filePath string) bool {
-		if cached, ok := isGeneratedCache[filePath]; ok {
-			return cached
-		}
-
-		localPath := filePath
-		if modulePrefix != "" && strings.HasPrefix(filePath, modulePrefix) {
-			localPath = strings.TrimPrefix(filePath, modulePrefix)
-		}
-		localPath = filepath.Clean(localPath)
-		if !filepath.IsAbs(localPath) {
-			localPath = filepath.Join(repoRoot, localPath)
-		}
-
-		// #nosec G304 -- reads module-owned files from disk.
-		f, err := os.Open(localPath)
-		if err != nil {
-			isGeneratedCache[filePath] = false
-			return false
-		}
-		defer func() {
-			if err := f.Close(); err != nil {
-				fmt.Fprintln(os.Stderr, "warning: close source file:", err)
-			}
-		}()
-
-		buf := make([]byte, 2048)
-		n, readErr := f.Read(buf)
-		if readErr != nil && readErr != io.EOF {
-			isGeneratedCache[filePath] = false
-			return false
-		}
-
-		header := string(buf[:n])
-		generated := strings.Contains(header, "Code generated") || strings.Contains(header, "DO NOT EDIT")
-		isGeneratedCache[filePath] = generated
-		return generated
+	if err := filterCoverageData(in, w, repoRoot, modulePrefix); err != nil {
+		_ = tmp.Close()
+		return err
 	}
 
-	scanner := bufio.NewScanner(in)
+	if err := w.Flush(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("flush coverprofile: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp coverprofile: %w", err)
+	}
+
+	if err := os.Rename(tmpName, coverProfilePath); err != nil {
+		return fmt.Errorf("replace coverprofile: %w", err)
+	}
+
+	return nil
+}
+
+func filterCoverageData(r io.Reader, w *bufio.Writer, repoRoot, modulePrefix string) error {
+	isGeneratedCache := make(map[string]bool)
+	scanner := bufio.NewScanner(r)
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "mode:") {
@@ -277,7 +256,14 @@ func filterGeneratedFilesFromCoverProfile(repoRoot string, coverProfilePath stri
 			continue
 		}
 		filePath := line[:colon]
-		if isGenerated(filePath) {
+
+		isGen, ok := isGeneratedCache[filePath]
+		if !ok {
+			isGen = isGeneratedFile(repoRoot, modulePrefix, filePath)
+			isGeneratedCache[filePath] = isGen
+		}
+
+		if isGen {
 			continue
 		}
 
@@ -288,19 +274,38 @@ func filterGeneratedFilesFromCoverProfile(repoRoot string, coverProfilePath stri
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read coverprofile: %w", err)
 	}
-
-	if err := w.Flush(); err != nil {
-		return fmt.Errorf("flush coverprofile: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temp coverprofile: %w", err)
-	}
-
-	if err := os.Rename(tmpName, coverProfilePath); err != nil {
-		return fmt.Errorf("replace coverprofile: %w", err)
-	}
-
 	return nil
+}
+
+func isGeneratedFile(repoRoot, modulePrefix, filePath string) bool {
+	localPath := filePath
+	if modulePrefix != "" && strings.HasPrefix(filePath, modulePrefix) {
+		localPath = strings.TrimPrefix(filePath, modulePrefix)
+	}
+	localPath = filepath.Clean(localPath)
+	if !filepath.IsAbs(localPath) {
+		localPath = filepath.Join(repoRoot, localPath)
+	}
+
+	// #nosec G304 -- reads module-owned files from disk.
+	f, err := os.Open(localPath)
+	if err != nil {
+		return false
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: close source file:", err)
+		}
+	}()
+
+	buf := make([]byte, 2048)
+	n, readErr := f.Read(buf)
+	if readErr != nil && readErr != io.EOF {
+		return false
+	}
+
+	header := string(buf[:n])
+	return strings.Contains(header, "Code generated") || strings.Contains(header, "DO NOT EDIT")
 }
 
 func runGoTests(args testArgs, goArgs []string, extraEnv map[string]string) error {

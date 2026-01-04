@@ -264,49 +264,18 @@ func (fdp *FederationDeliveryPattern) deliverActivityWithRetry(ctx context.Conte
 		}
 
 		// Attempt delivery
-		err := fdp.federationService.DeliverActivity(ctx, msg.Activity, msg.TargetInbox, msg.Actor)
-
-		statusCode := 500
-		if err != nil {
-			if appErr, ok := apperrors.AsAppError(err); ok {
-				if raw, exists := appErr.Metadata["status_code"]; exists {
-					switch value := raw.(type) {
-					case int:
-						if value > 0 {
-							statusCode = value
-						}
-					case int32:
-						if value > 0 {
-							statusCode = int(value)
-						}
-					case int64:
-						if value > 0 {
-							statusCode = int(value)
-						}
-					case float64:
-						if value > 0 {
-							statusCode = int(value)
-						}
-					case string:
-						if parsed, parseErr := strconv.Atoi(value); parseErr == nil && parsed > 0 {
-							statusCode = parsed
-						}
-					}
-				}
-			}
-		}
+		err, statusCode := fdp.performDeliveryAttempt(ctx, msg)
 
 		lastResult = DeliveryResult{
 			TargetInbox: msg.TargetInbox,
 			Success:     err == nil,
 			Duration:    federationTimeSince(start),
 			Attempt:     attempt,
+			StatusCode:  statusCode,
+			Error:       err,
 		}
 
 		if err != nil {
-			lastResult.Error = err
-			lastResult.StatusCode = statusCode
-
 			fdp.logger.Warn("delivery attempt failed",
 				zap.String("activity_id", msg.Activity.ID),
 				zap.String("target_inbox", msg.TargetInbox),
@@ -315,21 +284,17 @@ func (fdp *FederationDeliveryPattern) deliverActivityWithRetry(ctx context.Conte
 			)
 
 			// Check if this is a permanent error
-			if fdp.isPermanentError(lastResult.StatusCode, retryConfig) {
+			if fdp.isPermanentError(statusCode, retryConfig) {
 				fdp.logger.Info("permanent error detected, not retrying",
 					zap.String("activity_id", msg.Activity.ID),
-					zap.Int("status_code", lastResult.StatusCode),
+					zap.Int("status_code", statusCode),
 				)
 				break
 			}
-
 			continue
 		}
 
 		// Success
-		lastResult.Success = true
-		lastResult.StatusCode = 200
-
 		fdp.logger.Info("activity delivered successfully",
 			zap.String("activity_id", msg.Activity.ID),
 			zap.String("target_inbox", msg.TargetInbox),
@@ -340,6 +305,46 @@ func (fdp *FederationDeliveryPattern) deliverActivityWithRetry(ctx context.Conte
 	}
 
 	return lastResult
+}
+
+func (fdp *FederationDeliveryPattern) performDeliveryAttempt(ctx context.Context, msg ActivityDeliveryMessage) (error, int) {
+	err := fdp.federationService.DeliverActivity(ctx, msg.Activity, msg.TargetInbox, msg.Actor)
+	statusCode := 200
+	if err != nil {
+		statusCode = fdp.extractStatusCode(err)
+	}
+	return err, statusCode
+}
+
+func (fdp *FederationDeliveryPattern) extractStatusCode(err error) int {
+	statusCode := 500
+	if appErr, ok := apperrors.AsAppError(err); ok {
+		if raw, exists := appErr.Metadata["status_code"]; exists {
+			switch value := raw.(type) {
+			case int:
+				if value > 0 {
+					statusCode = value
+				}
+			case int32:
+				if value > 0 {
+					statusCode = int(value)
+				}
+			case int64:
+				if value > 0 {
+					statusCode = int(value)
+				}
+			case float64:
+				if value > 0 {
+					statusCode = int(value)
+				}
+			case string:
+				if parsed, parseErr := strconv.Atoi(value); parseErr == nil && parsed > 0 {
+					statusCode = parsed
+				}
+			}
+		}
+	}
+	return statusCode
 }
 
 // calculateBackoffDelay calculates the delay for exponential backoff

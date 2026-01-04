@@ -120,81 +120,89 @@ func main() {
 
 	switch cfg.Mode {
 	case "package":
-		byPkg, err := readPackageCoverage(cfg.ProfilePath, cfg.Prefix, cfg.PackageFilter, cfg.ExcludeGenerated, cfg.ModulePrefix)
-		if err != nil {
+		if err := handlePackageMode(cfg); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
-		}
-
-		pkgs, totalCovered, totalStatements := summarizePackages(byPkg, cfg.MinStatements, cfg.ZeroOnly)
-		sortPackages(pkgs, cfg.SortByUncovered)
-
-		if cfg.Top > 0 && len(pkgs) > cfg.Top {
-			pkgs = pkgs[:cfg.Top]
-		}
-
-		totalPct := 0.0
-		if totalStatements > 0 {
-			totalPct = float64(totalCovered) / float64(totalStatements) * 100
-		}
-
-		fmt.Printf("profile: %s\n", cfg.ProfilePath)
-		if cfg.Prefix != "" {
-			fmt.Printf("prefix:  %s\n", cfg.Prefix)
-		}
-		if cfg.PackageFilter != "" {
-			fmt.Printf("package: %s\n", cfg.PackageFilter)
-		}
-		if !cfg.ExcludeGenerated {
-			fmt.Printf("exclude-generated: false\n")
-		}
-		fmt.Printf("total:   %.1f%% (%d/%d statements)\n\n", totalPct, totalCovered, totalStatements)
-		fmt.Printf("%6s  %14s  %s\n", "%cov", "covered/total", "package")
-		for _, p := range pkgs {
-			fmt.Printf("%6.1f  %6d/%-6d  %s\n", p.Percent(), p.Covered, p.TotalStatements, p.Package)
 		}
 	case "file":
-		byFile, err := readFileCoverage(cfg.ProfilePath, cfg.Prefix, cfg.PackageFilter, cfg.ExcludeGenerated, cfg.ModulePrefix)
-		if err != nil {
+		if err := handleFileMode(cfg); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
-		}
-
-		files, totalCovered, totalStatements := summarizeFiles(byFile, cfg.MinStatements, cfg.ZeroOnly)
-		sortFiles(files, cfg.SortByUncovered)
-
-		if cfg.Top > 0 && len(files) > cfg.Top {
-			files = files[:cfg.Top]
-		}
-
-		totalPct := 0.0
-		if totalStatements > 0 {
-			totalPct = float64(totalCovered) / float64(totalStatements) * 100
-		}
-
-		fmt.Printf("profile: %s\n", cfg.ProfilePath)
-		if cfg.Prefix != "" {
-			fmt.Printf("prefix:  %s\n", cfg.Prefix)
-		}
-		if cfg.PackageFilter != "" {
-			fmt.Printf("package: %s\n", cfg.PackageFilter)
-		}
-		if !cfg.ExcludeGenerated {
-			fmt.Printf("exclude-generated: false\n")
-		}
-		fmt.Printf("total:   %.1f%% (%d/%d statements)\n\n", totalPct, totalCovered, totalStatements)
-		fmt.Printf("%6s  %14s  %s\n", "%cov", "covered/total", "file")
-		for _, f := range files {
-			path := f.File
-			if cfg.StripModulePath != "" {
-				path = strings.TrimPrefix(path, cfg.StripModulePath)
-			}
-			fmt.Printf("%6.1f  %6d/%-6d  %s\n", f.Percent(), f.Covered, f.TotalStatements, path)
 		}
 	default:
 		fmt.Fprintln(os.Stderr, "error: unknown -mode (want package|file):", cfg.Mode)
 		os.Exit(2)
 	}
+}
+
+func handlePackageMode(cfg scoreboardConfig) error {
+	byPkg, err := readPackageCoverage(cfg.ProfilePath, cfg.Prefix, cfg.PackageFilter, cfg.ExcludeGenerated, cfg.ModulePrefix)
+	if err != nil {
+		return err
+	}
+
+	pkgs, totalCovered, totalStatements := summarizePackages(byPkg, cfg.MinStatements, cfg.ZeroOnly)
+	sortPackages(pkgs, cfg.SortByUncovered)
+
+	if cfg.Top > 0 && len(pkgs) > cfg.Top {
+		pkgs = pkgs[:cfg.Top]
+	}
+
+	totalPct := 0.0
+	if totalStatements > 0 {
+		totalPct = float64(totalCovered) / float64(totalStatements) * 100
+	}
+
+	printHeader(cfg, totalPct, totalCovered, totalStatements)
+	fmt.Printf("%6s  %14s  %s\n", "%cov", "covered/total", "package")
+	for _, p := range pkgs {
+		fmt.Printf("%6.1f  %6d/%-6d  %s\n", p.Percent(), p.Covered, p.TotalStatements, p.Package)
+	}
+	return nil
+}
+
+func handleFileMode(cfg scoreboardConfig) error {
+	byFile, err := readFileCoverage(cfg.ProfilePath, cfg.Prefix, cfg.PackageFilter, cfg.ExcludeGenerated, cfg.ModulePrefix)
+	if err != nil {
+		return err
+	}
+
+	files, totalCovered, totalStatements := summarizeFiles(byFile, cfg.MinStatements, cfg.ZeroOnly)
+	sortFiles(files, cfg.SortByUncovered)
+
+	if cfg.Top > 0 && len(files) > cfg.Top {
+		files = files[:cfg.Top]
+	}
+
+	totalPct := 0.0
+	if totalStatements > 0 {
+		totalPct = float64(totalCovered) / float64(totalStatements) * 100
+	}
+
+	printHeader(cfg, totalPct, totalCovered, totalStatements)
+	fmt.Printf("%6s  %14s  %s\n", "%cov", "covered/total", "file")
+	for _, f := range files {
+		path := f.File
+		if cfg.StripModulePath != "" {
+			path = strings.TrimPrefix(path, cfg.StripModulePath)
+		}
+		fmt.Printf("%6.1f  %6d/%-6d  %s\n", f.Percent(), f.Covered, f.TotalStatements, path)
+	}
+	return nil
+}
+
+func printHeader(cfg scoreboardConfig, totalPct float64, totalCovered, totalStatements int) {
+	fmt.Printf("profile: %s\n", cfg.ProfilePath)
+	if cfg.Prefix != "" {
+		fmt.Printf("prefix:  %s\n", cfg.Prefix)
+	}
+	if cfg.PackageFilter != "" {
+		fmt.Printf("package: %s\n", cfg.PackageFilter)
+	}
+	if !cfg.ExcludeGenerated {
+		fmt.Printf("exclude-generated: false\n")
+	}
+	fmt.Printf("total:   %.1f%% (%d/%d statements)\n\n", totalPct, totalCovered, totalStatements)
 }
 
 type generatedFileDetector struct {

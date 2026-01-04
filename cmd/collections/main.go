@@ -151,20 +151,9 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 		return lift.ValidationError("missing username")
 	}
 
-	var state *storageModels.InstanceState
-	var stateErr error
-	if ch.instanceRepo != nil {
-		state, stateErr = ch.instanceRepo.GetInstanceState(ctx.Context)
-	} else {
-		stateErr = errors.New("missing instance repository")
-	}
-	bootstrapUsername := storageModels.DefaultBootstrapUsername
-	if stateErr == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
-		bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
-	}
-	locked := stateErr != nil || state.Locked
-	if locked && strings.EqualFold(username, bootstrapUsername) {
-		return lift.NewLiftError("FORBIDDEN", "bootstrap actor is not available while instance is locked", 403)
+	locked, err := ch.checkInstanceState(ctx, username)
+	if err != nil {
+		return err
 	}
 
 	// Get request ID from context
@@ -210,43 +199,7 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 
 	// While locked, collections should be reachable but empty for content-bearing collections.
 	if locked && collectionType == collectionTypeLiked {
-		collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
-		if !isPage {
-			if err := ctx.JSON(&activitypub.OrderedCollection{
-				Collection: activitypub.Collection{
-					BaseObject: activitypub.BaseObject{
-						Context: activitypub.Context,
-						ID:      collectionID,
-						Type:    activitypub.OrderedCollectionType,
-					},
-					TotalItems: 0,
-				},
-			}); err != nil {
-				return err
-			}
-			ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
-			ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
-			return nil
-		}
-
-		if err := ctx.JSON(&activitypub.OrderedCollectionPage{
-			CollectionPage: activitypub.CollectionPage{
-				Collection: activitypub.Collection{
-					BaseObject: activitypub.BaseObject{
-						Context: activitypub.Context,
-						ID:      fmt.Sprintf("%s?page=1", collectionID),
-						Type:    activitypub.OrderedCollectionPageType,
-					},
-					OrderedItems: []any{},
-				},
-				PartOf: collectionID,
-			},
-		}); err != nil {
-			return err
-		}
-		ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
-		ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
-		return nil
+		return ch.handleLockedCollection(ctx, actor, collectionType, isPage)
 	}
 
 	// If not requesting a page, return the collection metadata
@@ -259,10 +212,82 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 		return ch.handleReverseDirection(ctx, actor, collectionType, username, cursor, limit)
 	}
 
-	// Get relationships based on type
+	usernames, likes, nextCursor, err := ch.fetchCollectionItems(ctx, collectionType, username, actor.ID, limit, cursor)
+	if err != nil {
+		logger.Error("failed to get relationships",
+			zap.String("type", collectionType),
+			zap.Error(err))
+		return lift.NewLiftError("DATABASE_ERROR", "failed to retrieve collection data", 500)
+	}
+
+	// Build and return page
+	return ch.returnCollectionPage(ctx, actor, collectionType, usernames, likes, cursor, nextCursor, limit)
+}
+
+func (ch *CollectionsHandler) checkInstanceState(ctx *lift.Context, username string) (bool, error) {
+	var state *storageModels.InstanceState
+	var stateErr error
+	if ch.instanceRepo != nil {
+		state, stateErr = ch.instanceRepo.GetInstanceState(ctx.Context)
+	} else {
+		stateErr = errors.New("missing instance repository")
+	}
+	bootstrapUsername := storageModels.DefaultBootstrapUsername
+	if stateErr == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
+		bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
+	}
+	locked := stateErr != nil || state.Locked
+	if locked && strings.EqualFold(username, bootstrapUsername) {
+		return false, lift.NewLiftError("FORBIDDEN", "bootstrap actor is not available while instance is locked", 403)
+	}
+	return locked, nil
+}
+
+func (ch *CollectionsHandler) handleLockedCollection(ctx *lift.Context, actor *activitypub.Actor, collectionType string, isPage bool) error {
+	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
+	if !isPage {
+		if err := ctx.JSON(&activitypub.OrderedCollection{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      collectionID,
+					Type:    activitypub.OrderedCollectionType,
+				},
+				TotalItems: 0,
+			},
+		}); err != nil {
+			return err
+		}
+		ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+		ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
+		return nil
+	}
+
+	if err := ctx.JSON(&activitypub.OrderedCollectionPage{
+		CollectionPage: activitypub.CollectionPage{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      fmt.Sprintf("%s?page=1", collectionID),
+					Type:    activitypub.OrderedCollectionPageType,
+				},
+				OrderedItems: []any{},
+			},
+			PartOf: collectionID,
+		},
+	}); err != nil {
+		return err
+	}
+	ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+	ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
+	return nil
+}
+
+func (ch *CollectionsHandler) fetchCollectionItems(ctx *lift.Context, collectionType, username, actorID string, limit int, cursor string) ([]string, []*storage.Like, string, error) {
 	var usernames []string
 	var likes []*storage.Like
 	var nextCursor string
+	var err error
 
 	switch collectionType {
 	case collectionTypeFollowers:
@@ -271,9 +296,9 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 		usernames, nextCursor, err = ch.relationshipRepo.GetFollowing(ctx.Context, username, limit, cursor)
 	case collectionTypeLiked:
 		// For liked collection, we get Like objects and convert to storage.Like
-		modelLikes, likesNextCursor, err := ch.likeRepo.GetActorLikes(ctx.Context, actor.ID, limit, cursor)
+		var modelLikes []*storageModels.Like
+		modelLikes, nextCursor, err = ch.likeRepo.GetActorLikes(ctx.Context, actorID, limit, cursor)
 		if err == nil {
-			nextCursor = likesNextCursor
 			// Convert models.Like to storage.Like
 			likes = make([]*storage.Like, len(modelLikes))
 			for i, modelLike := range modelLikes {
@@ -286,16 +311,7 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 			}
 		}
 	}
-
-	if err != nil {
-		logger.Error("failed to get relationships",
-			zap.String("type", collectionType),
-			zap.Error(err))
-		return lift.NewLiftError("DATABASE_ERROR", "failed to retrieve collection data", 500)
-	}
-
-	// Build and return page
-	return ch.returnCollectionPage(ctx, actor, collectionType, usernames, likes, cursor, nextCursor, limit)
+	return usernames, likes, nextCursor, err
 }
 
 // returnCollection returns the collection metadata (not a page)
