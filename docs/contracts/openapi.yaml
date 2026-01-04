@@ -940,7 +940,6 @@ components:
                     type: string
             required:
                 - client_id
-                - client_secret
                 - id
                 - name
                 - redirect_uri

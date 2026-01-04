@@ -11,14 +11,14 @@ This roadmap is the execution plan for achieving and maintaining **10/10** acros
 | --- | ---: | --- |
 | Quality | 8/10 | QUA-3 (pkg coverage ≥ 90.0%) |
 | Consistency | 10/10 | — |
-| Completeness | 8/10 | COM-4 (OpenAPI strict) |
+| Completeness | 10/10 | — |
 | Security | 10/10 | — |
 
 Evidence (most recent):
 
 - `./lesser verify ci` is green.
 - `./lesser coverage scoreboard --profile coverage_pkg.out` reports `total: 89.8% (83219/92720 statements)`.
-- `./lesser verify openapi --strict` fails with “spec is out-of-date”.
+- `./lesser verify openapi --strict` is green (`ok: docs/contracts/openapi.yaml (215 paths)`).
 
 ## Rubric-to-milestone mapping
 
@@ -32,7 +32,7 @@ Evidence (most recent):
 | COM-1 | ✅ passing | Maintain via CI |
 | COM-2 | ✅ passing | Maintain via CI |
 | COM-3 | ✅ passing | Maintain via CI |
-| COM-4 | ❌ failing | M1 |
+| COM-4 | ✅ passing | ✅ completed (M1) |
 | COM-5 | ✅ passing | Maintain via CI |
 | COM-6 | ✅ passing | Maintain via CI |
 | SEC-1 | ✅ passing | Maintain via CI |
@@ -53,7 +53,7 @@ Evidence (most recent):
 
 ---
 
-### M1 — Make OpenAPI strict verification pass (COM-4)
+### M1 — Make OpenAPI strict verification pass (COM-4) (done)
 
 **Closes:** COM-4  
 **Goal:** make OpenAPI a drift-checked contract (not just route presence).
