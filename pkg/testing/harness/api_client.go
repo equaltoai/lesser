@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -130,8 +131,10 @@ func (c *APIClient) makeRequest(method, path string, body interface{}, params ..
 	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body
-	respBody, err := io.ReadAll(resp.Body)
+	const maxResponseBodyBytes = int64(8 * 1024 * 1024) // 8MB
+	respBody, truncated, err := common.ReadUntrustedHTTPResponseBody(resp.Body, maxResponseBodyBytes)
 	require.NoError(c.t, err)
+	require.False(c.t, truncated, "response body exceeded limit: %d bytes", maxResponseBodyBytes)
 
 	return &APIResponse{
 		StatusCode: resp.StatusCode,

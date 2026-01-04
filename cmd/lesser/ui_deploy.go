@@ -134,22 +134,13 @@ func uploadClientPlaceholder(ctx context.Context, client *s3.Client, bucket stri
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Lesser</title>
-    <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 3rem 1.5rem; line-height: 1.5; }
-      .card { max-width: 720px; margin: 0 auto; padding: 1.5rem; border: 1px solid #e5e7eb; border-radius: 12px; }
-      code { background: #f3f4f6; padding: 0.15rem 0.35rem; border-radius: 6px; }
-      a { color: #2563eb; text-decoration: none; }
-      a:hover { text-decoration: underline; }
-    </style>
   </head>
   <body>
-    <div class="card">
-      <h1>Lesser is deployed</h1>
-      <p>The client UI has not been deployed yet.</p>
-      <p>Auth UI: <a href="https://%s/auth">https://%s/auth</a></p>
-      <p>API: <a href="https://%s/">https://%s/</a></p>
-      <p>Setup status: <code>GET /setup/status</code></p>
-    </div>
+    <h1>Lesser is deployed</h1>
+    <p>The client UI has not been deployed yet.</p>
+    <p>Auth UI: <a href="https://%s/auth">https://%s/auth</a></p>
+    <p>API: <a href="https://%s/">https://%s/</a></p>
+    <p>Setup status: <code>GET /setup/status</code></p>
   </body>
 </html>
 `, stageDomain, stageDomain, stageDomain, stageDomain)

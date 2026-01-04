@@ -103,11 +103,11 @@ Baseline: `tools/audit_gates/baseline.yml`.
 
 ### M1 — CloudFront CSP hardening (P0 security)
 
-- [ ] Split response header policies by behavior (HTML vs APIs/assets) so CSP is not one-size-fits-all.
-- [ ] Remove `'unsafe-eval'`; remove `'unsafe-inline'` for HTML behaviors (use nonces/hashes if inline scripts/styles are required).
-- [ ] Ensure origin CSP is preserved for dynamic HTML (avoid CloudFront overriding when the origin should be authoritative).
-- [ ] Add CDK assertions/unit tests verifying the deployed policy.
-- [ ] Update docs/runbooks: how to extend CSP safely.
+- [x] Split response header policies by behavior (HTML vs APIs/assets) so CSP is not one-size-fits-all.
+- [x] Remove `'unsafe-eval'`; remove `'unsafe-inline'` for HTML behaviors (use nonces/hashes if inline scripts/styles are required).
+- [x] Ensure origin CSP is preserved for dynamic HTML (avoid CloudFront overriding when the origin should be authoritative).
+- [x] Add CDK assertions/unit tests verifying the deployed policy.
+- [x] Update docs/runbooks: how to extend CSP safely.
 
 **Acceptance criteria**
 - HTML routes served via CloudFront have a strict CSP without unsafe directives, and origin CSP is not unintentionally weakened.
@@ -216,6 +216,7 @@ Decision needed: hash vs encrypt (threat model + operational requirements).
 Create one epic per milestone and tag PRs with:
 
 - `security`, `quality`, `consistency`, `docs`, `testing`, `infra`
+
 
 Each PR should include:
 

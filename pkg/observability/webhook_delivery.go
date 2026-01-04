@@ -10,13 +10,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/google/uuid"
@@ -473,12 +473,13 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 	}()
 
 	// Read response
-	responseBody, err := io.ReadAll(resp.Body)
+	responseBodyBytes, responseBodyTruncated, err := common.ReadUntrustedHTTPResponseBody(resp.Body, common.MaxUntrustedHTTPResponseBodyBytes)
 	if err != nil {
 		duration := time.Since(startTime)
 		delivery.MarkFailed(err.Error(), "response_read", resp.StatusCode, "", duration)
 		return fmt.Errorf("failed to read response: %w", err)
 	}
+	responseBody := common.FormatUntrustedHTTPBodySnippet(responseBodyBytes, responseBodyTruncated)
 
 	duration := time.Since(startTime)
 
@@ -489,7 +490,7 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 			fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Status),
 			errorType,
 			resp.StatusCode,
-			string(responseBody),
+			responseBody,
 			duration,
 		)
 		return fmt.Errorf("webhook returned status %d", resp.StatusCode)
@@ -503,7 +504,7 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 		}
 	}
 
-	delivery.MarkSuccess(resp.StatusCode, string(responseBody), responseHeaders, duration)
+	delivery.MarkSuccess(resp.StatusCode, responseBody, responseHeaders, duration)
 	return nil
 }
 

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -1519,15 +1518,19 @@ func (m *Manager) performHTTPDelivery(ctx context.Context, activity *activitypub
 	// Update result with status code
 	result.StatusCode = resp.StatusCode
 
-	// Read the response body for logging
-	respBody, _ := io.ReadAll(resp.Body)
+	respBodyBytes, respBodyTruncated, readErr := common.ReadUntrustedHTTPResponseBody(resp.Body, common.MaxUntrustedHTTPResponseBodyBytes)
+	if readErr != nil {
+		m.logger.Warn("failed to read response body", zap.String("targetInbox", targetInbox), zap.Error(readErr))
+	}
+	respBody := common.FormatUntrustedHTTPBodySnippet(respBodyBytes, respBodyTruncated)
 
 	// Check the response
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		m.logger.Debug("HTTP delivery successful",
 			zap.String("targetInbox", targetInbox),
 			zap.Int("statusCode", resp.StatusCode),
-			zap.String("response", string(respBody)))
+			zap.Bool("response_truncated", respBodyTruncated),
+			zap.String("response", respBody))
 		return nil
 	}
 
@@ -1535,12 +1538,14 @@ func (m *Manager) performHTTPDelivery(ctx context.Context, activity *activitypub
 	m.logger.Warn("HTTP delivery failed",
 		zap.String("targetInbox", targetInbox),
 		zap.Int("statusCode", resp.StatusCode),
-		zap.String("response", string(respBody)))
+		zap.Bool("response_truncated", respBodyTruncated),
+		zap.String("response", respBody))
 
 	m.logger.Error("HTTP delivery failed",
 		zap.String("targetInbox", targetInbox),
 		zap.Int("statusCode", resp.StatusCode),
-		zap.String("responseBody", string(respBody)))
+		zap.Bool("response_truncated", respBodyTruncated),
+		zap.String("responseBody", respBody))
 	return ErrHTTPDeliveryFailed
 }
 

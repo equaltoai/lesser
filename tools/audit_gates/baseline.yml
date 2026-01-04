@@ -15,17 +15,11 @@ disabledGoFiles:
 
 # Exact occurrences of `io.ReadAll(resp.Body)` in non-test Go code (tracked by count per file).
 goReadAllRespBody:
-  pkg/federation/delivery.go: 2
-  pkg/federation/routing/route_manager.go: 1
-  pkg/observability/webhook_delivery.go: 1
-  pkg/storage/repositories/federation_repository.go: 1
-  pkg/testing/harness/api_client.go: 1
+  {}
 
 # Exact occurrences of unsafe CSP directives in CloudFront/CDK code (tracked by count per file).
 infraCdkCspUnsafeInline:
-  infra/cdk/constructs/api_caching.go: 2
-  infra/cdk/constructs/cloudfront_caching.go: 2
+  {}
 
 infraCdkCspUnsafeEval:
-  infra/cdk/constructs/cloudfront_caching.go: 1
-
+  {}

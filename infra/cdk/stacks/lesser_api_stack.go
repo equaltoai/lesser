@@ -253,6 +253,10 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 		Stage:               jsii.String(string(stage)),
 		ClientBucketName:    jsii.String(clientBucket),
 		AuthBucketName:      jsii.String(authBucket),
+		StaticResponseHeadersPolicy: localconstructs.NewFrontendStaticResponseHeadersPolicy(
+			s.Stack,
+			jsii.String(domain),
+		),
 		AuthSinglePageApp:   jsii.Bool(false),
 		RemovalPolicy:       getRemovalPolicy(isProd),
 		AutoDeleteObjects:   jsii.Bool(!isProd),

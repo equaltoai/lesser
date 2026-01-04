@@ -327,8 +327,8 @@ func createResponseHeadersPolicy(scope constructs.Construct, environment string)
 				Override:            jsii.Bool(true),
 			},
 			ContentSecurityPolicy: &awscloudfront.ResponseHeadersContentSecurityPolicy{
-				ContentSecurityPolicy: jsii.String("default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' wss: https:"),
-				Override:              jsii.Bool(true),
+				ContentSecurityPolicy: jsii.String("default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: https:; font-src 'self' data: https:; style-src 'self'; script-src 'self'; connect-src 'self' wss: https:"),
+				Override:              jsii.Bool(false),
 			},
 		},
 

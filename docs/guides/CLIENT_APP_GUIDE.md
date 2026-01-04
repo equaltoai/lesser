@@ -113,6 +113,16 @@ Use the Greater CLI vendored mode so the client app is self-contained:
 
 This matches how `auth-ui/` is set up today.
 
+### 5) CSP compatibility (no inline scripts/styles)
+
+The stage apex CloudFront distribution serves `/l/*` (client UI) and `/auth/*` (auth UI) from S3 and enforces a strict
+Content Security Policy (CSP) at the CDN layer.
+
+- Inline `<script>` and `<style>` blocks are blocked by default. Build your client so HTML only references external
+  JS/CSS files (e.g., `<script src="...">`, `<link rel="stylesheet" ...>`).
+- If you intentionally add inline scripts/styles, you must add hash allow-list entries to the deployed CDN policy and
+  redeploy the stage stacks. See `infra/cdk/constructs/frontend_response_headers.go`.
+
 ## Recommended implementation: SvelteKit (static)
 
 SvelteKit gives you routing + data loading ergonomics while still producing a static build.
