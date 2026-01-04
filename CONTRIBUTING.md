@@ -47,6 +47,7 @@ Notes:
 The project aims for “secure by default” and predictable contributor workflows. New work should preserve these properties:
 
 - **One-shot CI verification**: `./lesser verify ci` (runs `lint`, security scans, supply chain verification, and `verify all` without mutating tracked files).
+- **Audit gates**: `./lesser verify audit` (run as part of `./lesser verify ci`) prevents common regressions while security/maintainability work is in flight. Baselines live in `tools/audit_gates/baseline.yml` and should be updated in the same PR that removes the underlying issue.
 - **GraphQL abuse limits**: depth/complexity/token/timeout limits must remain enabled in non-debug deployments (tunable via env vars; see `docs/configuration.md`).
 - **SSRF/URL validation**: untrusted outbound URLs must pass the shared URL/SSRF validator and use hardened dialing paths (no bespoke validators).
 - **No secrets in logs**: sensitive values must be scrubbed/redacted; add tests when touching auth/logging.

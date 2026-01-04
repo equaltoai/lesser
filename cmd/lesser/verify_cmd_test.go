@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,18 +23,25 @@ func TestRunVerify_Dispatch(t *testing.T) {
 
 func TestRunVerify_Subcommands_InvokeExpectedCommands(t *testing.T) {
 	previousRunCommand := runCommandFn
+	previousEnsureTool := ensureToolAvailableFn
 	previousRepoRoot := findRepoRootFn
 	t.Cleanup(func() {
 		runCommandFn = previousRunCommand
+		ensureToolAvailableFn = previousEnsureTool
 		findRepoRootFn = previousRepoRoot
 	})
 
 	repoRoot := t.TempDir()
 	findRepoRootFn = func() (string, error) { return repoRoot, nil }
+	ensureToolAvailableFn = func(string) error { return nil }
 
 	var calls []string
 	runCommandFn = func(_ context.Context, name string, args []string, opts execOptions) error {
-		calls = append(calls, name+" "+firstArgOrEmpty(args))
+		if name == "go" && firstArgOrEmpty(args) == "run" {
+			calls = append(calls, name+" "+strings.Join(args, " "))
+		} else {
+			calls = append(calls, name+" "+firstArgOrEmpty(args))
+		}
 		require.Equal(t, repoRoot, opts.Dir)
 		return nil
 	}
@@ -41,12 +49,14 @@ func TestRunVerify_Subcommands_InvokeExpectedCommands(t *testing.T) {
 	require.NoError(t, runVerify([]string{"docs"}))
 	require.NoError(t, runVerify([]string{"ai-training"}))
 	require.NoError(t, runVerify([]string{valueSchema}))
+	require.NoError(t, runVerify([]string{"audit"}))
 	require.NoError(t, runVerify([]string{"supply-chain"}))
 	require.NoError(t, runVerify([]string{"lambda-set"}))
 
 	require.Contains(t, calls, "bash scripts/verify_docs.sh")
 	require.Contains(t, calls, "bash scripts/verify_ai_training.sh")
 	require.Contains(t, calls, "bash scripts/verify_schema.sh")
+	require.Contains(t, calls, "go run ./tools/audit_gates --check")
 	require.Contains(t, calls, "bash scripts/verify_supply_chain.sh")
 	require.Contains(t, calls, "bash scripts/verify_lambda_set.sh")
 }
@@ -91,12 +101,17 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifyAll(t *testing.T) {
 
 	var calls []string
 	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
-		calls = append(calls, name+" "+firstArgOrEmpty(args))
+		if name == "go" && firstArgOrEmpty(args) == "run" {
+			calls = append(calls, name+" "+strings.Join(args, " "))
+		} else {
+			calls = append(calls, name+" "+firstArgOrEmpty(args))
+		}
 		return nil
 	}
 
 	require.NoError(t, runVerify([]string{"ci"}))
 	require.Contains(t, calls, "golangci-lint run")
+	require.Contains(t, calls, "go run ./tools/audit_gates --check")
 	require.Contains(t, calls, "gosec -exclude-generated")
 	require.Contains(t, calls, "govulncheck ./...")
 	require.Contains(t, calls, "bash scripts/verify_supply_chain.sh")

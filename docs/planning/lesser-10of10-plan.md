@@ -82,18 +82,22 @@ Related docs:
 
 Goal: prevent regressions while the high-impact fixes land.
 
-- [ ] Extend `./lesser verify ci` (or add `./lesser verify audit`) with checks for:
-  - CloudFront CSP directives (no `'unsafe-eval'`; no `'unsafe-inline'` for HTML behaviors; avoid global CSP that overrides origin for HTML).
-  - No `io.ReadAll(resp.Body)` on `*http.Response` bodies outside tests.
-  - No `*.go.disabled` files (or allowlist with tracked replacements).
+- [x] Add `./lesser verify audit` and run it as part of `./lesser verify ci`, enforcing:
+  - CloudFront/CDK CSP regressions (no new `'unsafe-eval'` / `'unsafe-inline'` usage in `infra/cdk` beyond the tracked baseline).
+  - No new `io.ReadAll(resp.Body)` callsites in non-test code beyond the tracked baseline.
+  - No new `*.go.disabled` files (baseline until removed).
   - `.golangci.yml` staticcheck `go:` matches `go.mod`.
-- [ ] Document the new gates in `CONTRIBUTING.md` and link from this plan.
+- [x] Document the new gates in `CONTRIBUTING.md` and link from this plan.
+
+Details: `CONTRIBUTING.md` (“Quality bar (what we gate on)”).
+Baseline: `tools/audit_gates/baseline.yml`.
 
 **Acceptance criteria**
 - `./lesser verify ci` fails on new violations and is green on main.
 
 **Suggested verification**
 ```bash
+./lesser verify audit
 ./lesser verify ci
 ```
 

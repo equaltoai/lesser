@@ -123,7 +123,7 @@ linters-settings:
     
   staticcheck:
     # Go version
-    go: "1.21"
+    go: "1.25"
     # Checks to run
     checks: ["all"]
   

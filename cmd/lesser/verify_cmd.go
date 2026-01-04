@@ -28,6 +28,8 @@ func runVerify(argv []string) error {
 		return runVerifyAITraining(argv[1:])
 	case valueSchema:
 		return runVerifySchema(argv[1:])
+	case "audit":
+		return runVerifyAudit(argv[1:])
 	case "supply-chain":
 		return runVerifySupplyChain(argv[1:])
 	case "graphql-coverage":
@@ -162,6 +164,9 @@ func runVerifyCI(argv []string) error {
 	if err := runLint(nil); err != nil {
 		return err
 	}
+	if err := runVerifyAudit(nil); err != nil {
+		return err
+	}
 	if includeSecurity {
 		if err := runSecScan(nil); err != nil {
 			return err
@@ -218,6 +223,27 @@ func runVerifySupplyChain(_ []string) error {
 	}
 	return runCommandFn(context.Background(), "bash", []string{"scripts/verify_supply_chain.sh"}, execOptions{
 		Dir: repoRoot,
+	})
+}
+
+func runVerifyAudit(_ []string) error {
+	repoRoot, err := findRepoRootFn()
+	if err != nil {
+		return err
+	}
+	if err := ensureToolAvailableFn("go"); err != nil {
+		return err
+	}
+	goCache, err := ensureGoCacheDir(repoRoot)
+	if err != nil {
+		return err
+	}
+
+	return runCommandFn(context.Background(), "go", []string{"run", "./tools/audit_gates", "--check"}, execOptions{
+		Dir: repoRoot,
+		Env: map[string]string{
+			"GOCACHE": goCache,
+		},
 	})
 }
 
