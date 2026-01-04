@@ -201,9 +201,12 @@ Decision: **hash at rest (bcrypt)**. Secrets are non-recoverable; verification i
 
 ### M6 — Reduce maintainability hotspots (P2 quality)
 
-- [ ] Break `cmd/inbox/main.go` into cohesive internal packages (routing, validation, federation, persistence) with clear interfaces.
-- [ ] Add targeted unit tests around extracted units (parsers, validators, signature flows, idempotency).
-- [ ] Ratchet complexity budgets downward for the moved code.
+- [x] Break `cmd/inbox/main.go` into cohesive internal packages with clear interfaces:
+  - `cmd/inbox/internal/routing` (Lambda wiring + HTTP routing/handlers)
+  - `cmd/inbox/internal/validation` (ActivityPub request/activity parsing + validation)
+  - Federation and persistence responsibilities continue to be delegated to existing `pkg/federation` + `pkg/storage/...` services behind interfaces.
+- [x] Add targeted unit tests around extracted units (parsers, validators, signature flows, idempotency).
+- [x] Ratchet complexity budgets downward for the moved code (no longer exempted by `cmd/.*/main.go` lint exclusions; `./lesser lint` remains green).
 
 **Acceptance criteria**
 - `cmd/inbox` entrypoint is mostly wiring; complex logic lives in testable packages with focused unit tests.
