@@ -3,14 +3,17 @@
 Date: 2026-01-04  
 Repo: `penny-advanced-interfaces/lesser`
 
-## Executive Summary (Grades 1–10)
+## Executive Summary (Rubric v1.0)
 
-| Category | Grade | Why |
+Numerical scoring is defined by `docs/planning/lesser-10of10-rubric.md` (versioned, repeatable). The table below is the
+rubric-based scorecard at the time of this audit.
+
+| Category | Grade | Blocking rubric items |
 | --- | ---: | --- |
-| Quality | 8/10 | Strong modularity and test discipline; remaining drag is primarily maintainability hotspots (very large handlers/services) and a few legacy sharp edges. |
-| Consistency | 8/10 | Canonical GraphQL limits, URL/SSRF validation, and log scrubbing are now standardized; some naming/shape inconsistencies remain in older handlers. |
-| Completeness | 9/10 | Deterministic verification gates exist, “implementation status” tooling is signal-not-noise, and docs are closer to reality; remaining work is largely M4 refactors and CI/supply chain hardening. |
-| Security | 8/10 | GraphQL abuse limits + SSRF URL policy + default log scrubbing are in place with regression tests; CSP tightening and broader outbound-call auditing remain. |
+| Quality | 8/10 | QUA-3 (pkg coverage ≥ 90.0%) |
+| Consistency | 10/10 | — |
+| Completeness | 8/10 | COM-4 (OpenAPI strict) |
+| Security | 10/10 | — |
 
 ## Method & Scope
 
@@ -50,12 +53,15 @@ implemented and configurable.
 
 ### P1 — CSP defaults are permissive for scripts/styles (open)
 
-**Impact:** default `script-src` includes `'unsafe-inline'`; nonce generation exists but doesn’t remove unsafe inline allowances, reducing XSS hardening.
+**Impact:** if unsafe CSP directives are enabled outside development, XSS hardening is significantly reduced.
 
 **Location:**
-- `pkg/middleware/security_headers.go` default CSP directives.
+- `pkg/middleware/security_headers.go` (`DevelopmentSecurityHeadersConfig()` includes `'unsafe-inline'`/`'unsafe-eval'`).
 
-**Recommended remediation:** shift to nonce-based `script-src`/`style-src` (remove `'unsafe-inline'`), tighten `frame-src`/`connect-src` to known needs, and add tests for header output.
+**Status:** default CSP is nonce-based and does not include unsafe directives; development config intentionally relaxes CSP.
+
+**Recommended remediation:** ensure “dev-only CSP” cannot be enabled accidentally in production deployments and keep CSP
+coverage in tests (including any CloudFront header policies).
 
 ### P2 — Doc drift + verifier false positives (addressed)
 
@@ -73,12 +79,13 @@ implemented and configurable.
 
 **Locations:**
 - `pkg/httpclient/client.go` vs `pkg/httpclient/federation_client.go` vs `pkg/ai/service.go`.
+  - (dialing implementation lives in `pkg/ai/ssrf_http_client.go`)
 
 **Recommended remediation:** centralize “blocked IP / metadata” logic into a shared helper (or export from `pkg/httpclient`) and apply consistently.
 
-## Category Notes
+## Category Notes (Narrative)
 
-### Quality (7/10)
+### Quality
 
 - Good:
   - Clear domain separation in `pkg/` and extensive unit tests; coverage baseline is high (repository artifact `coverage.out` reports ~77% statements).
@@ -87,33 +94,34 @@ implemented and configurable.
   - Historically, some security checks looked correct but did not enforce what they claimed (DNS-rebinding/TOCTOU); primary outbound clients are now hardened, but duplicated SSRF logic remains.
   - Some overbroad “string-prefix” network checks (e.g., blocking all `172.*`) risk breaking legitimate traffic.
 
-### Consistency (6/10)
+### Consistency
 
 - Good:
   - Package organization is mostly coherent (`pkg/services`, `pkg/storage`, `graph/`).
   - “CLI-first” workflow exists (`./lesser`), and repo tooling is robust.
 - Needs attention:
-  - Multiple bespoke SSRF validators exist; URL validation rules should be consistent across federation/media/AI download paths.
+  - SSRF policy is centralized in `pkg/ssrf`, but SSRF-hardened dialing exists in multiple callers (`pkg/httpclient`, `pkg/ai`); keep behavior aligned and consider consolidating the dial logic.
 
-### Completeness (6/10)
+### Completeness
 
 - Good:
   - Many features have coverage and harness support; multiple verification commands exist.
 - Needs attention:
-  - Tracked TODOs/incomplete items exist (generate via `scripts/check_implementation_status.sh`), and some docs don’t perfectly match current behavior.
+  - Keep strict contract checks (especially OpenAPI) green to prevent spec drift.
 
-### Security (6/10)
+### Security
 
 - Good:
   - There is an explicit SSRF-focused HTTP client (`pkg/httpclient`), and middleware contains a comprehensive security header set.
 - Needs attention:
-  - Consolidate SSRF/IP-blocking logic and verify remaining outbound call sites (including proxy behavior) follow the same rules.
-  - CSP defaults should be tightened to match the presence of nonce support.
-  - Sensitive auth artifacts should not be logged.
+  - Keep SSRF-hardened outbound paths consistent (including proxy behavior and “dial validated IPs” invariants).
+  - Keep “dev-only relaxations” (CSP, insecure TLS) gated so they cannot be enabled accidentally.
 
 ## Recommended Remediation Plan
 
 See:
 
-- `docs/planning/lesser-10of10-plan.md` (10/10 milestones)
+- `docs/planning/lesser-10of10-rubric.md` (versioned scoring)
+- `docs/planning/lesser-10of10-roadmap.md` (milestones mapped to rubric IDs)
+- `docs/planning/lesser-10of10-plan.md` (Phase 1 hardening history)
 - `docs/security-milestones.md` (security milestone framing)

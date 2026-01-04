@@ -1,6 +1,14 @@
 # Lesser: 10/10 Plan (Quality, Consistency, Completeness, Security)
 
-This plan turns the 2026-01-04 audit into sequenced, measurable work to bring Lesser from the current **8/10s** to **10/10** across: **Quality**, **Consistency**, **Completeness**, and **Security**.
+> **Status:** this document is the **Phase 1 hardening plan** from the 2026-01-04 audit and its milestones are now
+> marked complete. It is kept for historical context.
+>
+> **Source of truth for grading + next work:**
+> - `docs/planning/lesser-10of10-rubric.md` (versioned scoring; prevents goalpost drift)
+> - `docs/planning/lesser-10of10-roadmap.md` (milestones mapped to rubric IDs)
+
+This document captured the initial 2026-01-04 hardening work as a set of sequenced milestones. For the current 10/10
+requirements and remaining work, use the rubric + roadmap linked above.
 
 ## Baseline (2026-01-04)
 
