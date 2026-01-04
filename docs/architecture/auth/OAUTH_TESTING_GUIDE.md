@@ -69,7 +69,7 @@ curl -X POST http://localhost:8080/api/v1/apps \
     "redirect_uris": "http://localhost:4321/callback",
     "scopes": "read write follow"
   }'
-# Save the client_id and client_secret
+# Save the client_id and client_secret (the secret is only returned at registration time)
 ```
 
 2. Initiate OAuth flow:

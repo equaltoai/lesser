@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 )
 
@@ -726,6 +727,11 @@ func buildWalletIndexItem(username, addressLower string) (map[string]dynamotypes
 }
 
 func buildOAuthClientItem(ownerID, clientID, clientSecret string, redirectURIs []string, now time.Time) (map[string]dynamotypes.AttributeValue, error) {
+	storedSecret, err := common.HashOAuthClientSecret(clientSecret)
+	if err != nil {
+		return nil, err
+	}
+
 	descTs := encodeDescendingTimestamp(now)
 	item := map[string]any{
 		"PK": "OAUTH_CLIENT#" + clientID,
@@ -738,7 +744,7 @@ func buildOAuthClientItem(ownerID, clientID, clientSecret string, redirectURIs [
 		"oauthClientsSK": fmt.Sprintf("CREATED_AT#%019d#CLIENT#%s", descTs, clientID),
 
 		"clientID":     clientID,
-		"clientSecret": clientSecret,
+		"clientSecret": storedSecret,
 		"name":         "Owner Console",
 		"redirectURIs": redirectURIs,
 		"grantTypes":   []string{"authorization_code", "refresh_token"},

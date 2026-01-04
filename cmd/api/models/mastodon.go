@@ -9,7 +9,7 @@ import (
 type AccountRegistrationRequest struct {
 	Username                 string `json:"username"`
 	Password                 string `json:"password,omitempty"` // Ignored - passwordless auth only
-	Agreement                bool   `json:"agreement"` // ToS agreement
+	Agreement                bool   `json:"agreement"`          // ToS agreement
 	Locale                   string `json:"locale,omitempty"`
 	Reason                   string `json:"reason,omitempty"` // For approval
 	DefaultPostingVisibility string `json:"default_posting_visibility,omitempty"`
@@ -64,7 +64,7 @@ type AppRegistrationResponse struct {
 	Website      string `json:"website,omitempty"`
 	RedirectURI  string `json:"redirect_uri"`
 	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
+	ClientSecret string `json:"client_secret,omitempty"`
 	VapidKey     string `json:"vapid_key,omitempty"` // For push notifications
 }
 

@@ -209,16 +209,6 @@ func (s *SharedStack) attachApplicationPolicies(appName string) {
 			},
 		}))
 
-		// WebSocket connections
-		role.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
-			Effect: awsiam.Effect_ALLOW,
-			Actions: &[]*string{
-				jsii.String("execute-api:ManageConnections"),
-				jsii.String("execute-api:Invoke"),
-			},
-			Resources: &[]*string{jsii.String("arn:aws:execute-api:*:*:*/*")},
-		}))
-
 		// Bedrock AI
 		role.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 			Effect: awsiam.Effect_ALLOW,

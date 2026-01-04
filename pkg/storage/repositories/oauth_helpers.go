@@ -138,6 +138,12 @@ func (h *OAuthHelper) CreateOAuthClientGeneric(ctx context.Context, client *stor
 		client.ClientSecret = secret
 	}
 
+	storedSecret, err := common.HashOAuthClientSecret(client.ClientSecret)
+	if err != nil {
+		return ErrorHandler.HandleCreateError(err, "oauth client secret", "hashing")
+	}
+	client.ClientSecretHash = storedSecret
+
 	// Set timestamps
 	if client.CreatedAt.IsZero() {
 		client.CreatedAt = time.Now()
@@ -147,7 +153,7 @@ func (h *OAuthHelper) CreateOAuthClientGeneric(ctx context.Context, client *stor
 	// Create DynamORM model
 	model := &models.OAuthClient{
 		ClientID:     client.ClientID,
-		ClientSecret: client.ClientSecret,
+		ClientSecret: storedSecret,
 		Name:         client.Name,
 		Description:  client.Description,
 		RedirectURIs: client.RedirectURIs,
@@ -164,7 +170,7 @@ func (h *OAuthHelper) CreateOAuthClientGeneric(ctx context.Context, client *stor
 	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Create the item
-	err := h.db.WithContext(ctx).Model(model).Create()
+	err = h.db.WithContext(ctx).Model(model).Create()
 	if err != nil {
 		h.logger.Error("failed to create OAuth client",
 			zap.String("client_id", client.ClientID),
@@ -196,18 +202,18 @@ func (h *OAuthHelper) GetOAuthClientGeneric(ctx context.Context, clientID string
 
 	// Convert to storage model
 	return &storage.OAuthClient{
-		ClientID:     model.ClientID,
-		ClientSecret: model.ClientSecret,
-		Name:         model.Name,
-		Description:  model.Description,
-		RedirectURIs: model.RedirectURIs,
-		GrantTypes:   model.GrantTypes,
-		Scopes:       model.Scopes,
-		Website:      model.Website,
-		OwnerID:      model.OwnerID,
-		Confidential: model.Confidential,
-		CreatedAt:    model.CreatedAt,
-		UpdatedAt:    model.UpdatedAt,
+		ClientID:         model.ClientID,
+		ClientSecretHash: model.ClientSecret,
+		Name:             model.Name,
+		Description:      model.Description,
+		RedirectURIs:     model.RedirectURIs,
+		GrantTypes:       model.GrantTypes,
+		Scopes:           model.Scopes,
+		Website:          model.Website,
+		OwnerID:          model.OwnerID,
+		Confidential:     model.Confidential,
+		CreatedAt:        model.CreatedAt,
+		UpdatedAt:        model.UpdatedAt,
 	}, nil
 }
 
@@ -261,7 +267,7 @@ func (h *OAuthHelper) UpdateOAuthClientGeneric(ctx context.Context, clientID str
 	// Create updated model
 	model := &models.OAuthClient{
 		ClientID:     existing.ClientID,
-		ClientSecret: existing.ClientSecret,
+		ClientSecret: existing.ClientSecretHash,
 		Name:         existing.Name,
 		Description:  existing.Description,
 		RedirectURIs: existing.RedirectURIs,
@@ -334,18 +340,18 @@ func (h *OAuthHelper) ListOAuthClientsGeneric(ctx context.Context, ownerID strin
 	clients := make([]*storage.OAuthClient, len(models))
 	for i, model := range models {
 		clients[i] = &storage.OAuthClient{
-			ClientID:     model.ClientID,
-			ClientSecret: model.ClientSecret,
-			Name:         model.Name,
-			Description:  model.Description,
-			RedirectURIs: model.RedirectURIs,
-			GrantTypes:   model.GrantTypes,
-			Scopes:       model.Scopes,
-			Website:      model.Website,
-			OwnerID:      model.OwnerID,
-			Confidential: model.Confidential,
-			CreatedAt:    model.CreatedAt,
-			UpdatedAt:    model.UpdatedAt,
+			ClientID:         model.ClientID,
+			ClientSecretHash: model.ClientSecret,
+			Name:             model.Name,
+			Description:      model.Description,
+			RedirectURIs:     model.RedirectURIs,
+			GrantTypes:       model.GrantTypes,
+			Scopes:           model.Scopes,
+			Website:          model.Website,
+			OwnerID:          model.OwnerID,
+			Confidential:     model.Confidential,
+			CreatedAt:        model.CreatedAt,
+			UpdatedAt:        model.UpdatedAt,
 		}
 	}
 

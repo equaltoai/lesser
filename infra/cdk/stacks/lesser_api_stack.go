@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
@@ -696,6 +697,18 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 		Functions:            s.Functions,
 		HostedZone:           s.HostedZone,
 	})
+
+	apis := []awsapigatewayv2.WebSocketApi{s.API.WebSocketApi}
+	if s.API.GraphQLWebSocketApi != nil {
+		apis = append(apis, s.API.GraphQLWebSocketApi)
+	}
+	attachWebSocketManageConnectionsPolicy(
+		s.Stack,
+		s.AppName,
+		s.Environment,
+		[]awsiam.IRole{s.LambdaBasicRole, s.LambdaEncryptionRole},
+		apis,
+	)
 
 	// Output API URLs
 	awscdk.NewCfnOutput(s.Stack, jsii.String("RestApiUrl"), &awscdk.CfnOutputProps{

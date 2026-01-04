@@ -120,14 +120,14 @@ Baseline: `tools/audit_gates/baseline.yml`.
 
 ### M2 — Cap untrusted outbound HTTP body reads (P0 security + P1 quality)
 
-- [ ] Add a shared helper: read response bodies with a hard cap + truncation marker (and ensure `resp.Body.Close()` always happens).
-- [ ] Replace unbounded `io.ReadAll(resp.Body)` callsites in:
+- [x] Add a shared helper: read response bodies with a hard cap + truncation marker (and ensure `resp.Body.Close()` always happens).
+- [x] Replace unbounded `io.ReadAll(resp.Body)` callsites in:
   - `pkg/federation/delivery.go`
   - `pkg/observability/webhook_delivery.go`
   - `pkg/federation/routing/route_manager.go`
   - `pkg/storage/repositories/federation_repository.go`
-- [ ] Ensure logs only include truncated snippets and scrubber remains enforced.
-- [ ] Add unit tests: cap enforced, snippet formatting stable, and large bodies do not allocate unbounded memory.
+- [x] Ensure logs only include truncated snippets and scrubber remains enforced.
+- [x] Add unit tests: cap enforced, snippet formatting stable, and large bodies do not allocate unbounded memory.
 
 **Acceptance criteria**
 - No production code reads untrusted HTTP bodies without a size cap.
@@ -141,9 +141,9 @@ Baseline: `tools/audit_gates/baseline.yml`.
 
 ### M3 — Least-privilege execute-api permissions (P1 security)
 
-- [ ] Replace wildcard `arn:aws:execute-api:*:*:*/*` with stack-scoped API/stage ARNs where possible.
-- [ ] Split policies/roles by function (websocket management vs invoke) to reduce blast radius.
-- [ ] Add CDK assertions that fail on wildcard execute-api resources.
+- [x] Replace wildcard `arn:aws:execute-api:*:*:*/*` with stack-scoped API/stage ARNs where possible.
+- [x] Split policies/roles by function (websocket management vs invoke) to reduce blast radius.
+- [x] Add CDK assertions that fail on wildcard execute-api resources.
 
 **Acceptance criteria**
 - Shared roles cannot invoke/manage arbitrary API Gateway resources outside the intended stack outputs.
@@ -155,17 +155,20 @@ Baseline: `tools/audit_gates/baseline.yml`.
 
 ### M4 — Harden OAuth client secret storage (P1 security + P2 completeness)
 
-Decision needed: hash vs encrypt (threat model + operational requirements).
+Decision: **hash at rest (bcrypt)**. Secrets are non-recoverable; verification is equality-only.
 
-- [ ] Pick and document an approach:
-  - Hash (preferred): Argon2id/bcrypt; only verify equality; never recover.
-  - Encrypt: KMS envelope encryption; recoverable for specific workflows.
-- [ ] Implement storage + verification changes with backwards-compatible migration.
-- [ ] Add secret rotation workflow and operator docs.
-- [ ] Add tests: migration, verification, and “never log the secret” regression coverage.
+- [x] Pick and document an approach:
+  - Hash (implemented): bcrypt with a `bcrypt:` prefix to make the stored representation unambiguous.
+- [x] Implement storage + verification changes with backwards-compatible migration:
+  - New writes store only the hashed representation (no plaintext-at-rest).
+  - Reads never populate `client_secret` for OAuth clients/apps.
+  - Legacy plaintext secrets auto-migrate (best-effort) on first successful client authentication.
+- [x] Add secret rotation workflow and operator docs.
+- [x] Add tests: migration, verification, and “never log the secret” regression coverage.
 
 **Acceptance criteria**
 - New secrets are not stored in plaintext; legacy secrets are migrated/rotated without downtime.
+  - `client_secret` is only returned at app registration time and is never returned by `/api/v1/apps/verify_credentials`.
 
 **Suggested verification**
 ```bash

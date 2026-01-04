@@ -138,9 +138,32 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 		return ErrInvalidClient
 	}
 
-	// For client authentication, secret is required and must match exactly
-	if err := common.ValidateRequiredParam("clientSecret", clientSecret); err != nil || client.ClientSecret != clientSecret {
+	// For client authentication, secret is required and must verify against the stored representation.
+	if err := common.ValidateRequiredParam("clientSecret", clientSecret); err != nil {
 		return ErrInvalidClient
+	}
+
+	storedSecret := client.ClientSecretHash
+	if storedSecret == "" {
+		// Backwards compatibility for stubs/older storage codepaths.
+		storedSecret = client.ClientSecret
+	}
+
+	ok, needsMigration, verifyErr := VerifyOAuthClientSecret(clientSecret, storedSecret)
+	if verifyErr != nil || !ok {
+		return ErrInvalidClient
+	}
+
+	if needsMigration {
+		// Best-effort lazy migration: convert legacy plaintext secrets to hashes on first successful use.
+		type secretUpdater interface {
+			UpdateOAuthClientSecretHash(ctx context.Context, clientID, clientSecretHash string) error
+		}
+		if updater, ok := accountRepo.(secretUpdater); ok {
+			if hashed, err := HashOAuthClientSecret(clientSecret); err == nil {
+				_ = updater.UpdateOAuthClientSecretHash(ctx, clientID, hashed)
+			}
+		}
 	}
 
 	return nil

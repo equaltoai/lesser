@@ -458,6 +458,7 @@ curl -X POST https://dev.lesser.host/api/v1/apps \
     "scopes": "read write follow",
     "website": "http://localhost:4321"
   }'
+# Save the returned client_secret; it is only returned at registration time.
 ```
 
 ### 3. Testing
@@ -509,6 +510,7 @@ const response = await fetch('https://dev.lesser.host/api/v1/apps', {
 });
 
 const { client_id, client_secret } = await response.json();
+// Store client_secret securely; it is only returned during registration and is hashed at rest by Lesser.
 ```
 
 **2. Initiate OAuth flow:**

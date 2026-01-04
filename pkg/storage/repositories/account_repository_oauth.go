@@ -228,10 +228,15 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 		client.ClientSecret = clientSecret
 	}
 
+	storedSecret, err := common.HashOAuthClientSecret(client.ClientSecret)
+	if err != nil {
+		return ErrorHandler.HandleCreateError(err, EntityOAuthClient, "client_secret_hashing")
+	}
+
 	// Create DynamORM model
 	model := &models.OAuthClient{
 		ClientID:     client.ClientID,
-		ClientSecret: client.ClientSecret,
+		ClientSecret: storedSecret,
 		Name:         client.Name,
 		Website:      client.Website,
 		RedirectURIs: client.RedirectURIs,
@@ -246,7 +251,7 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 	}
 
 	// Create the item with condition that it doesn't exist
-	err := r.db.WithContext(ctx).Model(model).Create()
+	err = r.db.WithContext(ctx).Model(model).Create()
 	if err != nil {
 		// Check if it's a duplicate key error
 		if strings.Contains(err.Error(), "ConditionalCheckFailed") || strings.Contains(err.Error(), "already exists") {
@@ -259,6 +264,7 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 	// Update the input client with generated values
 	client.CreatedAt = model.CreatedAt
 	client.UpdatedAt = model.UpdatedAt
+	client.ClientSecretHash = storedSecret
 
 	r.logger.Debug("created OAuth client",
 		zap.String("client_id", client.ClientID),
@@ -290,14 +296,14 @@ func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string)
 
 	// Convert to storage model
 	result := &storage.OAuthClient{
-		ClientID:     model.ClientID,
-		ClientSecret: model.ClientSecret,
-		Name:         model.Name,
-		Website:      model.Website,
-		RedirectURIs: model.RedirectURIs,
-		Scopes:       model.Scopes,
-		CreatedAt:    model.CreatedAt,
-		UpdatedAt:    model.UpdatedAt,
+		ClientID:         model.ClientID,
+		ClientSecretHash: model.ClientSecret,
+		Name:             model.Name,
+		Website:          model.Website,
+		RedirectURIs:     model.RedirectURIs,
+		Scopes:           model.Scopes,
+		CreatedAt:        model.CreatedAt,
+		UpdatedAt:        model.UpdatedAt,
 	}
 
 	r.logger.Debug("retrieved OAuth client",
@@ -305,6 +311,36 @@ func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string)
 		zap.String("name", result.Name))
 
 	return result, nil
+}
+
+// UpdateOAuthClientSecretHash updates the stored secret representation for an OAuth client.
+// The value must be a hash string (e.g. prefixed bcrypt hash) and should never be a plaintext secret.
+func (r *AccountRepository) UpdateOAuthClientSecretHash(ctx context.Context, clientID, clientSecretHash string) error {
+	if err := common.ValidateMultipleRequiredParams(map[string]string{
+		"clientID":         clientID,
+		"clientSecretHash": clientSecretHash,
+	}); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityOAuthClient, "validation")
+	}
+
+	pk := "OAUTH_CLIENT#" + clientID
+	sk := oauthClientSortKey
+
+	updateBuilder := r.db.WithContext(ctx).Model(&models.OAuthClient{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder()
+	updateBuilder.Set("ClientSecret", clientSecretHash)
+	updateBuilder.Set("UpdatedAt", time.Now().UTC())
+
+	if err := updateBuilder.Execute(); err != nil {
+		r.logger.Error("failed to update OAuth client secret hash",
+			zap.String("client_id", clientID),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityOAuthClient, clientID)
+	}
+
+	return nil
 }
 
 // UpdateOAuthClient updates an existing OAuth client
@@ -471,14 +507,14 @@ func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, cur
 	clients := make([]*storage.OAuthClient, len(clientModels))
 	for i, model := range clientModels {
 		clients[i] = &storage.OAuthClient{
-			ClientID:     model.ClientID,
-			ClientSecret: model.ClientSecret,
-			Name:         model.Name,
-			Website:      model.Website,
-			RedirectURIs: model.RedirectURIs,
-			Scopes:       model.Scopes,
-			CreatedAt:    model.CreatedAt,
-			UpdatedAt:    model.UpdatedAt,
+			ClientID:         model.ClientID,
+			ClientSecretHash: model.ClientSecret,
+			Name:             model.Name,
+			Website:          model.Website,
+			RedirectURIs:     model.RedirectURIs,
+			Scopes:           model.Scopes,
+			CreatedAt:        model.CreatedAt,
+			UpdatedAt:        model.UpdatedAt,
 		}
 	}
 
@@ -502,12 +538,12 @@ func (r *AccountRepository) GetOAuthApp(ctx context.Context, clientID string) (*
 	}
 
 	return &storage.OAuthApp{
-		ClientID:     client.ClientID,
-		ClientSecret: client.ClientSecret,
-		Name:         client.Name,
-		RedirectURIs: client.RedirectURIs,
-		Scopes:       client.Scopes,
-		CreatedAt:    client.CreatedAt,
+		ClientID:         client.ClientID,
+		ClientSecretHash: client.ClientSecretHash,
+		Name:             client.Name,
+		RedirectURIs:     client.RedirectURIs,
+		Scopes:           client.Scopes,
+		CreatedAt:        client.CreatedAt,
 	}, nil
 }
 
