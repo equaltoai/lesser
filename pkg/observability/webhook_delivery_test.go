@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -630,6 +631,69 @@ func TestWebhookDeliveryService_DeliverWebhook_Success(t *testing.T) {
 		assert.Equal(t, "success", delivery.Status)
 		assert.Equal(t, 202, delivery.ResponseCode)
 	})
+}
+
+func TestWebhookDeliveryService_CreateDelivery_TLSVerificationPolicy(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	svc := &WebhookDeliveryService{logger: logger}
+	alert := &models.Alert{AlertID: "a1"}
+	webhook := &WebhookConfig{
+		ID:            "w1",
+		URL:           "https://example.com/webhook",
+		Headers:       map[string]string{"Content-Type": "application/json"},
+		Timeout:       time.Second,
+		MaxAttempts:   1,
+		RetryInterval: time.Second,
+		VerifySSL:     false,
+		Enabled:       true,
+	}
+
+	t.Run("blocks insecure TLS without override env", func(t *testing.T) {
+		delivery := svc.createDelivery(alert, webhook)
+		assert.False(t, delivery.InsecureSkipTLSVerify)
+	})
+
+	t.Run("allows insecure TLS with override env", func(t *testing.T) {
+		t.Setenv(common.InsecureTLSOverrideEnvVar, "true")
+		delivery := svc.createDelivery(alert, webhook)
+		assert.True(t, delivery.InsecureSkipTLSVerify)
+	})
+}
+
+func TestWebhookDeliveryService_DeliverWebhook_UsesInsecureClientWhenEnabled(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	t.Setenv(common.InsecureTLSOverrideEnvVar, "true")
+
+	secureRT := webhookRTFunc(func(_ *http.Request) (*http.Response, error) {
+		return nil, errors.New("secure client should not be used")
+	})
+	insecureRT := webhookRTFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(strings.NewReader("ok")),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})
+
+	service := &WebhookDeliveryService{
+		logger:         logger,
+		httpClient:     &http.Client{Transport: secureRT},
+		insecureClient: &http.Client{Transport: insecureRT},
+	}
+
+	alert := &models.Alert{AlertID: "test-alert", FiredAt: time.Now()}
+	delivery := &models.WebhookDelivery{
+		URL:                   "https://example.com/webhook",
+		MaxAttempts:           1,
+		InsecureSkipTLSVerify: true,
+	}
+
+	err := service.deliverWebhook(context.Background(), delivery, alert)
+	require.NoError(t, err)
+	assert.Equal(t, "success", delivery.Status)
+	assert.Equal(t, 200, delivery.ResponseCode)
 }
 
 func TestWebhookDeliveryService_DeliverWebhook_WithSignature(t *testing.T) {

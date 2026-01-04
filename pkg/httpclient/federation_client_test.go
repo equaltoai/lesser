@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -114,6 +115,7 @@ func TestFederationClient_setActivityPubHeaders(t *testing.T) {
 func TestNewFederationClient_AllowsInsecureTLSOption(t *testing.T) {
 	cfg := DefaultFederationClientConfig()
 	cfg.AllowInsecureTLS = true
+	t.Setenv(common.InsecureTLSOverrideEnvVar, "true")
 	fc := NewFederationClient(cfg, zap.NewNop())
 	require.NotNil(t, fc)
 
@@ -121,6 +123,19 @@ func TestNewFederationClient_AllowsInsecureTLSOption(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, transport.TLSClientConfig)
 	assert.True(t, transport.TLSClientConfig.InsecureSkipVerify)
+}
+
+func TestNewFederationClient_BlocksInsecureTLSWithoutOverrideEnv(t *testing.T) {
+	cfg := DefaultFederationClientConfig()
+	cfg.AllowInsecureTLS = true
+
+	fc := NewFederationClient(cfg, zap.NewNop())
+	require.NotNil(t, fc)
+
+	transport, ok := fc.client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.NotNil(t, transport.TLSClientConfig)
+	assert.False(t, transport.TLSClientConfig.InsecureSkipVerify)
 }
 
 func TestFederationClient_validateRedirectURL(t *testing.T) {

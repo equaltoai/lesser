@@ -17,6 +17,11 @@ disabledGoFiles:
 goReadAllRespBody:
   {}
 
+# Exact occurrences of `InsecureSkipVerify: true` in non-test Go code (tracked by count per file).
+goInsecureSkipVerify:
+  pkg/httpclient/federation_client.go: 1
+  pkg/observability/webhook_delivery.go: 1
+
 # Exact occurrences of unsafe CSP directives in CloudFront/CDK code (tracked by count per file).
 infraCdkCspUnsafeInline:
   {}

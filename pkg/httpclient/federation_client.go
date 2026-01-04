@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/ssrf"
 	"go.uber.org/zap"
 )
@@ -55,6 +56,21 @@ func NewFederationClient(config *FederationClientConfig, logger *zap.Logger) *Fe
 	if config == nil {
 		config = DefaultFederationClientConfig()
 	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	allowInsecureTLS := false
+	if config.AllowInsecureTLS {
+		if common.InsecureTLSOverrideEnabled() {
+			allowInsecureTLS = true
+			logger.Warn("insecure TLS enabled for federation client (certificate verification disabled)",
+				zap.String("override_env", common.InsecureTLSOverrideEnvVar))
+		} else {
+			logger.Warn("insecure TLS requested for federation client but blocked (override env not enabled)",
+				zap.String("override_env", common.InsecureTLSOverrideEnvVar))
+		}
+	}
 
 	// Create custom dialer with DNS validation
 	dialer := &net.Dialer{
@@ -75,7 +91,7 @@ func NewFederationClient(config *FederationClientConfig, logger *zap.Logger) *Fe
 	}
 
 	// Configure TLS
-	if config.AllowInsecureTLS {
+	if allowInsecureTLS {
 		transport.TLSClientConfig = &tls.Config{
 			MinVersion:         tls.VersionTLS12,
 			InsecureSkipVerify: true, // #nosec G402 - a temporary measure for federation compatibility

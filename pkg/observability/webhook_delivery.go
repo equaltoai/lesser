@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -45,6 +46,7 @@ type WebhookConfig struct {
 type WebhookDeliveryService struct {
 	logger         *zap.Logger
 	httpClient     *http.Client
+	insecureClient *http.Client
 	webhookRepo    *StandaloneWebhookRepository
 	alertRepo      *StandaloneAlertRepository
 	deadLetterRepo *StandaloneDeadLetterRepository
@@ -87,11 +89,24 @@ func newSSRFProtectedTransport(dialer *net.Dialer) *http.Transport {
 	}
 	transport := base.Clone()
 	transport.Proxy = nil
+	transport.TLSClientConfig = &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
 
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		return dialWithSSRFProtection(ctx, dialer, network, address)
 	}
 
+	return transport
+}
+
+func newSSRFProtectedInsecureTransport(dialer *net.Dialer) *http.Transport {
+	transport := newSSRFProtectedTransport(dialer)
+	transport.TLSClientConfig = &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		// #nosec G402 -- explicitly guarded by LESSER_ALLOW_INSECURE_TLS; intended for debug-only scenarios.
+		InsecureSkipVerify: true,
+	}
 	return transport
 }
 
@@ -168,9 +183,16 @@ func NewWebhookDeliveryService(config *WebhookDeliveryConfig) *WebhookDeliverySe
 		CheckRedirect: webhookCheckRedirect,
 	}
 
+	insecureClient := &http.Client{
+		Timeout:       config.HTTPTimeout,
+		Transport:     newSSRFProtectedInsecureTransport(&net.Dialer{}),
+		CheckRedirect: webhookCheckRedirect,
+	}
+
 	return &WebhookDeliveryService{
 		logger:               config.Logger,
 		httpClient:           httpClient,
+		insecureClient:       insecureClient,
 		webhookRepo:          config.WebhookRepository,
 		alertRepo:            config.AlertRepository,
 		deadLetterRepo:       config.DeadLetterRepository,
@@ -339,6 +361,11 @@ func (w *WebhookDeliveryService) getMatchingWebhooks(_ context.Context, alert *m
 
 	// Add default webhook from environment if configured
 	if webhookURL := w.getWebhookURLFromEnv(); webhookURL != "" {
+		verifySSL := true
+		if cfg := config.Get(); cfg != nil {
+			verifySSL = cfg.AlertWebhookVerifySSL
+		}
+
 		webhook := &WebhookConfig{
 			ID:             "default",
 			URL:            webhookURL,
@@ -346,7 +373,7 @@ func (w *WebhookDeliveryService) getMatchingWebhooks(_ context.Context, alert *m
 			Timeout:        w.defaultTimeout,
 			MaxAttempts:    w.defaultMaxAttempts,
 			RetryInterval:  w.defaultRetryInterval,
-			VerifySSL:      true,
+			VerifySSL:      verifySSL,
 			Enabled:        true,
 			AlertTypes:     []string{}, // Accept all types
 			SeverityLevels: []string{}, // Accept all severities
@@ -405,21 +432,38 @@ func (w *WebhookDeliveryService) matchesWebhookFilters(alert *models.Alert, webh
 func (w *WebhookDeliveryService) createDelivery(alert *models.Alert, webhook *WebhookConfig) *models.WebhookDelivery {
 	now := time.Now()
 
+	insecureSkipTLSVerify := false
+	if webhook != nil && !webhook.VerifySSL {
+		if common.InsecureTLSOverrideEnabled() {
+			insecureSkipTLSVerify = true
+			w.logger.Warn("webhook TLS verification disabled (insecure TLS enabled)",
+				zap.String("webhook_id", webhook.ID),
+				zap.String("url", webhook.URL),
+				zap.String("override_env", common.InsecureTLSOverrideEnvVar))
+		} else {
+			w.logger.Warn("webhook TLS verification disable requested but blocked (override env not set)",
+				zap.String("webhook_id", webhook.ID),
+				zap.String("url", webhook.URL),
+				zap.String("override_env", common.InsecureTLSOverrideEnvVar))
+		}
+	}
+
 	delivery := &models.WebhookDelivery{
-		DeliveryID:    uuid.New().String(),
-		AlertID:       alert.AlertID,
-		WebhookID:     webhook.ID,
-		URL:           webhook.URL,
-		Headers:       webhook.Headers,
-		SecretToken:   webhook.SecretToken,
-		Timeout:       int(webhook.Timeout.Seconds()),
-		Status:        "pending",
-		AttemptNumber: 1,
-		MaxAttempts:   webhook.MaxAttempts,
-		ScheduledAt:   now,
-		RetryInterval: int(webhook.RetryInterval.Seconds()),
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		DeliveryID:            uuid.New().String(),
+		AlertID:               alert.AlertID,
+		WebhookID:             webhook.ID,
+		URL:                   webhook.URL,
+		Headers:               webhook.Headers,
+		SecretToken:           webhook.SecretToken,
+		InsecureSkipTLSVerify: insecureSkipTLSVerify,
+		Timeout:               int(webhook.Timeout.Seconds()),
+		Status:                "pending",
+		AttemptNumber:         1,
+		MaxAttempts:           webhook.MaxAttempts,
+		ScheduledAt:           now,
+		RetryInterval:         int(webhook.RetryInterval.Seconds()),
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}
 
 	return delivery
@@ -461,7 +505,25 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 	}
 
 	// Send request
-	resp, err := w.httpClient.Do(req)
+	client := w.httpClient
+	if delivery.InsecureSkipTLSVerify {
+		if common.InsecureTLSOverrideEnabled() && w.insecureClient != nil {
+			client = w.insecureClient
+		} else {
+			w.logger.Warn("webhook delivery stored insecure TLS setting but override env is not enabled; using TLS verification",
+				zap.String("delivery_id", delivery.DeliveryID),
+				zap.String("webhook_id", delivery.WebhookID),
+				zap.String("override_env", common.InsecureTLSOverrideEnvVar))
+		}
+	}
+	if client == nil {
+		duration := time.Since(startTime)
+		err := fmt.Errorf("http client not configured")
+		delivery.MarkFailed(err.Error(), "request_failed", 0, "", duration)
+		return err
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		duration := time.Since(startTime)
 		errorType := w.categorizeError(err)

@@ -20,7 +20,8 @@ type baseline struct {
 
 	DisabledGoFiles []string `yaml:"disabledGoFiles"`
 
-	GoReadAllRespBody map[string]int `yaml:"goReadAllRespBody"`
+	GoReadAllRespBody    map[string]int `yaml:"goReadAllRespBody"`
+	GoInsecureSkipVerify map[string]int `yaml:"goInsecureSkipVerify"`
 
 	InfraCdkCspUnsafeInline map[string]int `yaml:"infraCdkCspUnsafeInline"`
 	InfraCdkCspUnsafeEval   map[string]int `yaml:"infraCdkCspUnsafeEval"`
@@ -65,6 +66,10 @@ func run(opts options) error {
 	}
 
 	if err := checkGoReadAllRespBody(b); err != nil {
+		problems = append(problems, err.Error())
+	}
+
+	if err := checkGoInsecureSkipVerify(b); err != nil {
 		problems = append(problems, err.Error())
 	}
 
@@ -217,6 +222,20 @@ func checkGoReadAllRespBody(b baseline) error {
 	}
 
 	return compareCounts("io.ReadAll(resp.Body) occurrences", actual, b.GoReadAllRespBody)
+}
+
+func checkGoInsecureSkipVerify(b baseline) error {
+	const needle = "InsecureSkipVerify: true"
+
+	actual, err := countSubstringOccurrences([]string{"cmd", "pkg", "graph"}, needle, scanOptions{
+		IncludeTests: false,
+		Skips:        defaultSkips(),
+	})
+	if err != nil {
+		return err
+	}
+
+	return compareCounts("InsecureSkipVerify: true occurrences", actual, b.GoInsecureSkipVerify)
 }
 
 func checkInfraCdkCspUnsafe(b baseline) error {

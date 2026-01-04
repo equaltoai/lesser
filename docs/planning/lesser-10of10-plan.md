@@ -179,10 +179,15 @@ Decision: **hash at rest (bcrypt)**. Secrets are non-recoverable; verification i
 
 ### M5 — Config + tooling hygiene (P2 consistency + P2 completeness)
 
-- [ ] Wire `WebhookConfig.VerifySSL` to actual TLS verification behavior (default true) or replace it with a clearly named setting that matches the intended semantics.
-- [ ] Add guardrails so `AllowInsecureTLS` cannot be enabled accidentally in production (explicit env + warning + CI gate).
-- [ ] Align `.golangci.yml` staticcheck `go:` with `go.mod` (and pin toolchain versions where needed).
-- [ ] Resolve `*.go.disabled` artifacts: re-enable with fixes, replace with tracked skipped tests, or move behind build tags with documented rationale.
+- [x] Wire `WebhookConfig.VerifySSL` to actual TLS verification behavior (default true):
+  - Add `ALERT_WEBHOOK_VERIFY_SSL` (default `true`).
+  - Persist per-delivery TLS verification intent (`insecure_skip_tls_verify`) for retry parity.
+- [x] Add guardrails so `AllowInsecureTLS` cannot be enabled accidentally (explicit env + warning + CI gate):
+  - Require `LESSER_ALLOW_INSECURE_TLS=true` to activate any `InsecureSkipVerify` path (federation client or webhook delivery).
+  - Emit warnings when insecure TLS is requested/blocked or requested/enabled.
+  - `./lesser verify audit` now tracks `InsecureSkipVerify: true` occurrences by file to prevent drift.
+- [x] Align `.golangci.yml` staticcheck `go:` with `go.mod` (enforced by audit gate).
+- [x] Resolve `*.go.disabled` artifacts: keep only as documented historical stubs pointing to the active replacements (non-destructive policy).
 
 **Acceptance criteria**
 - No dead config knobs; toolchain/analyzer versions are consistent; disabled artifacts have an explicit, tested story.

@@ -275,6 +275,8 @@ type WebhookDelivery struct {
 	Headers     map[string]string `dynamorm:"attr:headers" json:"headers"`
 	SecretToken string            `dynamorm:"attr:secretToken" json:"secret_token,omitempty"`
 	Timeout     int               `dynamorm:"attr:timeoutSeconds" json:"timeout_seconds"`
+	// InsecureSkipTLSVerify disables TLS certificate verification when delivering the webhook (debug-only).
+	InsecureSkipTLSVerify bool `dynamorm:"attr:insecureSkipTLSVerify" json:"insecure_skip_tls_verify,omitempty"`
 
 	// Delivery details
 	Status        string `dynamorm:"attr:status" json:"status"` // pending, success, failed, retrying

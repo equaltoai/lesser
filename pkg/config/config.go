@@ -109,16 +109,16 @@ type Config struct {
 	DisableRekognition   bool // Disable AWS Rekognition image/video analysis
 
 	// Development & Debug Features
-	DisableMetrics                bool   // Disable metrics collection
-	DisableCostTracking           bool   // Disable cost tracking
-	DisableRateLimiting           bool   // Disable rate limiting
-	DisableFederationRateLimiting bool   // Disable federation-specific rate limiting
-	DisableAI                     bool   // Disable AI features
-	EnablePlayground              bool   // Enable GraphQL playground
-	GraphQLAllowIntrospection     bool   // Allow GraphQL introspection (non-debug deployments should keep this off)
-	GraphQLMaxDepth               int    // Maximum GraphQL query depth (0 disables)
-	GraphQLMaxComplexity          int    // Maximum GraphQL query complexity (0 disables)
-	GraphQLParserTokenLimit       int    // Maximum GraphQL parser tokens (0 disables)
+	DisableMetrics                bool // Disable metrics collection
+	DisableCostTracking           bool // Disable cost tracking
+	DisableRateLimiting           bool // Disable rate limiting
+	DisableFederationRateLimiting bool // Disable federation-specific rate limiting
+	DisableAI                     bool // Disable AI features
+	EnablePlayground              bool // Enable GraphQL playground
+	GraphQLAllowIntrospection     bool // Allow GraphQL introspection (non-debug deployments should keep this off)
+	GraphQLMaxDepth               int  // Maximum GraphQL query depth (0 disables)
+	GraphQLMaxComplexity          int  // Maximum GraphQL query complexity (0 disables)
+	GraphQLParserTokenLimit       int  // Maximum GraphQL parser tokens (0 disables)
 	GraphQLRequestTimeout         time.Duration
 	TranslationEnabled            bool   // Enable translation features
 	XRayTracingEnabled            bool   // Enable X-Ray tracing
@@ -157,6 +157,7 @@ type Config struct {
 	// Alerting & Monitoring
 	AlertSNSTopicArn          string // SNS topic ARN for alerts
 	AlertWebhookURL           string // Webhook URL for alerts
+	AlertWebhookVerifySSL     bool   // Verify TLS certificates for alert webhooks (default true)
 	AlertEmail                string // Email address for alerts
 	WebSocketEndpoint         string // WebSocket endpoint for real-time updates
 	NotificationRetryQueueURL string // Notification retry queue URL
@@ -368,6 +369,7 @@ func loadConfig() *Config {
 		// Alerting & Monitoring
 		AlertSNSTopicArn:          getEnvOrDefault("ALERT_SNS_TOPIC_ARN", ""),
 		AlertWebhookURL:           getEnvOrDefault("ALERT_WEBHOOK_URL", ""),
+		AlertWebhookVerifySSL:     getEnvAsBoolOrDefault("ALERT_WEBHOOK_VERIFY_SSL", true),
 		AlertEmail:                getEnvOrDefault("ALERT_EMAIL", ""),
 		WebSocketEndpoint:         resolveWebsocketEndpoint(),
 		NotificationRetryQueueURL: getEnvOrDefault("NOTIFICATION_RETRY_QUEUE_URL", ""),
