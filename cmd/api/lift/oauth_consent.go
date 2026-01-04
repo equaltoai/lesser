@@ -183,15 +183,16 @@ func (h *Handler) HandleOAuthLoginLift(ctx *lift.Context) error {
 		})
 	}
 
+	const authReturnPath = "/oauth/authorize"
 	if strings.TrimSpace(returnTo) == "" {
-		returnTo = "/oauth/authorize"
+		returnTo = authReturnPath
 	}
 
 	returnTo = strings.TrimSpace(returnTo)
 	if !strings.HasPrefix(returnTo, "/") || strings.HasPrefix(returnTo, "//") {
-		returnTo = "/oauth/authorize"
+		returnTo = authReturnPath
 	} else if parsedReturnTo, err := url.Parse(returnTo); err != nil || parsedReturnTo.IsAbs() || parsedReturnTo.Host != "" {
-		returnTo = "/oauth/authorize"
+		returnTo = authReturnPath
 	}
 
 	// Validate auth request is valid JSON (Auth UI expects JSON here).

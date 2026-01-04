@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"go.uber.org/zap"
 )
 
@@ -159,82 +161,23 @@ func secureDialContext(ctx context.Context, dialer *net.Dialer, network, address
 
 // isBlockedIP checks if an IP address should be blocked for SSRF protection
 func isBlockedIP(ip net.IP) bool {
-	// Loopback addresses (127.0.0.0/8, ::1/128)
-	if ip.IsLoopback() {
-		return true
-	}
-
-	// Link-local addresses
-	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-		return true
-	}
-
-	// Private IPv4 ranges
-	privateIPv4Ranges := []string{
-		"10.0.0.0/8",
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-		"169.254.0.0/16", // Link-local
-	}
-
-	for _, cidr := range privateIPv4Ranges {
-		_, network, err := net.ParseCIDR(cidr)
-		if err != nil {
-			continue
-		}
-		if network.Contains(ip) {
-			return true
-		}
-	}
-
-	// Private IPv6 ranges
-	if ip.To4() == nil { // IPv6
-		// Unique local addresses (fc00::/7)
-		if len(ip) >= 1 && (ip[0]&0xfe) == 0xfc {
-			return true
-		}
-		// Site-local addresses (fec0::/10) - deprecated but still blocked
-		if len(ip) >= 2 && ip[0] == 0xfe && (ip[1]&0xc0) == 0xc0 {
-			return true
-		}
-	}
-
-	// Block certain cloud metadata endpoints
-	metadataIPs := []string{
-		"169.254.169.254", // AWS, Azure, GCP metadata
-		"169.254.170.2",   // AWS ECS metadata
-		"100.100.100.200", // Alibaba Cloud metadata
-	}
-
-	for _, metadataIP := range metadataIPs {
-		if ip.Equal(net.ParseIP(metadataIP)) {
-			return true
-		}
-	}
-
-	return false
+	return ssrf.IsBlockedIP(ip)
 }
 
 // validateFederationURL validates a URL for SSRF protection
 func validateFederationURL(rawURL string, _ *FederationClientConfig, _ *zap.Logger) error {
-	if strings.Contains(rawURL, "127.0.0.1") ||
-		strings.Contains(rawURL, "localhost") ||
-		strings.Contains(rawURL, "::1") {
-		return fmt.Errorf("localhost URLs not allowed")
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
 	}
 
-	// Block common internal hostnames
-	internalHostnames := []string{
-		"metadata.google.internal",
-		"instance-data",
-		"consul",
-		"vault",
+	host := parsed.Hostname()
+	if host == "" {
+		return fmt.Errorf("empty hostname")
 	}
 
-	for _, hostname := range internalHostnames {
-		if strings.Contains(rawURL, hostname) {
-			return fmt.Errorf("internal hostname not allowed: %s", hostname)
-		}
+	if ssrf.IsBlockedHostname(host) {
+		return fmt.Errorf("hostname not allowed: %s", host)
 	}
 
 	return nil

@@ -28,6 +28,7 @@ func (r *mutationResolver) AdminCreateUser(ctx context.Context, input model.Admi
 		return nil, err
 	}
 
+	//nolint:staticcheck // Legacy password field support
 	if input.Password != nil && strings.TrimSpace(*input.Password) != "" {
 		r.Logger.Warn("password provided in admin user creation but passwords are disabled",
 			zap.String("username", username))

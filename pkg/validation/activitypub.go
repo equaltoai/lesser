@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"go.uber.org/zap"
 )
 
@@ -224,14 +225,23 @@ func (v *ActivityPubValidator) validateURL(rawURL, fieldName string, config *Con
 func (v *ActivityPubValidator) validateURLNotInternal(u *url.URL) error {
 	host := u.Hostname()
 
-	// Block localhost variants
-	localhostPatterns := []string{
-		"localhost", "127.0.0.1", "::1", "0.0.0.0",
+	if host == "" {
+		return nil
 	}
-	for _, pattern := range localhostPatterns {
-		if strings.EqualFold(host, pattern) {
-			return fmt.Errorf("localhost URLs not allowed: %s", host)
+
+	if strings.EqualFold(host, "localhost") || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0" {
+		return fmt.Errorf("localhost URLs not allowed: %s", host)
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		if ssrf.IsBlockedIP(ip) {
+			return fmt.Errorf("private IP addresses not allowed: %s", host)
 		}
+		return nil
+	}
+
+	if ssrf.IsBlockedHostname(host) {
+		return fmt.Errorf("internal hostname not allowed: %s", host)
 	}
 
 	// Resolve and check IP
@@ -255,42 +265,7 @@ func (v *ActivityPubValidator) validateURLNotInternal(u *url.URL) error {
 
 // isPrivateIP checks if an IP address is private/internal
 func (v *ActivityPubValidator) isPrivateIP(ip net.IP) bool {
-	// Check for private IPv4 ranges
-	privateRanges := []string{
-		"10.0.0.0/8",
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-		"127.0.0.0/8",    // Loopback
-		"169.254.0.0/16", // Link-local
-	}
-
-	for _, rangeStr := range privateRanges {
-		_, network, err := net.ParseCIDR(rangeStr)
-		if err != nil {
-			continue
-		}
-		if network.Contains(ip) {
-			return true
-		}
-	}
-
-	// Check for private IPv6 ranges
-	if ip.To4() == nil { // IPv6
-		// Link-local
-		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			return true
-		}
-		// Unique local addresses (fc00::/7)
-		if len(ip) >= 1 && (ip[0]&0xfe) == 0xfc {
-			return true
-		}
-		// Loopback
-		if ip.IsLoopback() {
-			return true
-		}
-	}
-
-	return false
+	return ssrf.IsBlockedIP(ip)
 }
 
 // validateHostname validates hostname format

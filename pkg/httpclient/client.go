@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
@@ -34,24 +35,6 @@ var (
 
 	// ErrDNSRebindingDetected indicates a DNS rebinding attack was detected
 	ErrDNSRebindingDetected = errors.New("DNS rebinding attack detected")
-
-	// Private IP ranges to block (RFC 1918 and others)
-	privateIPBlocks = []net.IPNet{
-		// IPv4 private ranges
-		{IP: net.IPv4(10, 0, 0, 0), Mask: net.CIDRMask(8, 32)},     // 10.0.0.0/8
-		{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)},  // 100.64.0.0/10 (RFC 6598: shared address space)
-		{IP: net.IPv4(172, 16, 0, 0), Mask: net.CIDRMask(12, 32)},  // 172.16.0.0/12
-		{IP: net.IPv4(192, 168, 0, 0), Mask: net.CIDRMask(16, 32)}, // 192.168.0.0/16
-		{IP: net.IPv4(127, 0, 0, 0), Mask: net.CIDRMask(8, 32)},    // 127.0.0.0/8 (loopback)
-		{IP: net.IPv4(169, 254, 0, 0), Mask: net.CIDRMask(16, 32)}, // 169.254.0.0/16 (link-local)
-		{IP: net.IPv4(0, 0, 0, 0), Mask: net.CIDRMask(8, 32)},      // 0.0.0.0/8
-
-		// IPv6 private ranges
-		{IP: net.ParseIP("::1"), Mask: net.CIDRMask(128, 128)},   // ::1/128 (loopback)
-		{IP: net.ParseIP("fc00::"), Mask: net.CIDRMask(7, 128)},  // fc00::/7 (unique local)
-		{IP: net.ParseIP("fe80::"), Mask: net.CIDRMask(10, 128)}, // fe80::/10 (link-local)
-		{IP: net.ParseIP("::"), Mask: net.CIDRMask(128, 128)},    // ::/128 (unspecified)
-	}
 
 	// Blocked schemes
 	blockedSchemes = map[string]bool{
@@ -424,9 +407,8 @@ func validateURL(u *url.URL, _ *zap.Logger) error {
 		return errors.New("empty hostname")
 	}
 
-	// Check for metadata endpoints (AWS, GCP, Azure)
-	if isMetadataEndpoint(hostname) {
-		return errors.New("metadata endpoints are blocked")
+	if ssrf.IsBlockedHostname(hostname) {
+		return errors.New("hostname is blocked")
 	}
 
 	return nil
@@ -434,38 +416,7 @@ func validateURL(u *url.URL, _ *zap.Logger) error {
 
 // isPrivateIP checks if an IP address is in a private range
 func isPrivateIP(ip net.IP) bool {
-	// Check against all private IP blocks
-	for _, block := range privateIPBlocks {
-		if block.Contains(ip) {
-			return true
-		}
-	}
-
-	// Additional checks for special addresses
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-		return true
-	}
-
-	return false
-}
-
-// isMetadataEndpoint checks for known cloud metadata endpoints
-func isMetadataEndpoint(hostname string) bool {
-	metadataEndpoints := []string{
-		"169.254.169.254",          // AWS
-		"metadata.google.internal", // GCP
-		"metadata.azure.com",       // Azure
-		"metadata",                 // Generic
-	}
-
-	hostname = strings.ToLower(hostname)
-	for _, endpoint := range metadataEndpoints {
-		if hostname == endpoint || strings.HasSuffix(hostname, "."+endpoint) {
-			return true
-		}
-	}
-
-	return false
+	return ssrf.IsBlockedIP(ip)
 }
 
 // Do performs an HTTP request with security checks

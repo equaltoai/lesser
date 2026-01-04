@@ -102,7 +102,7 @@ func NewAuthService(cfg *config.Config, repos StorageProvider) (*AuthService, er
 }
 
 // AuthenticateWithPassword authenticates a user with username and password
-func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, password, deviceName, userAgent, ipAddress string) (*AuthResponse, error) {
+func (as *AuthService) AuthenticateWithPassword(_ context.Context, _, _, _, _, _ string) (*AuthResponse, error) {
 	return nil, ErrPasswordAuthDisabled
 }
 
@@ -231,7 +231,7 @@ func (as *AuthService) ValidateAccessToken(tokenString string) (*EnhancedClaims,
 }
 
 // ChangePassword changes a user's password
-func (as *AuthService) ChangePassword(ctx context.Context, username, oldPassword, newPassword string) error {
+func (as *AuthService) ChangePassword(_ context.Context, _, _, _ string) error {
 	return ErrPasswordAuthDisabled
 }
 
@@ -565,16 +565,6 @@ func (as *AuthService) account() authAccountRepository {
 	}
 	if as.repos != nil {
 		return as.repos.Account()
-	}
-	return nil
-}
-
-func (as *AuthService) activity() storageinterfaces.ActivityRepository {
-	if as.activityRepo != nil {
-		return as.activityRepo
-	}
-	if as.repos != nil {
-		return as.repos.Activity()
 	}
 	return nil
 }

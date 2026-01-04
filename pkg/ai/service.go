@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqs_types "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -1024,8 +1025,7 @@ func (s *AIService) uploadImageToS3(ctx context.Context, imageURL string) (strin
 
 	// Prevent local network access
 	host := parsedURL.Hostname()
-	if host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasPrefix(host, "10.") ||
-		strings.HasPrefix(host, "192.168.") || strings.HasPrefix(host, "172.") {
+	if ssrf.IsBlockedHostname(host) {
 		return "", ErrLocalNetworkAccess
 	}
 
