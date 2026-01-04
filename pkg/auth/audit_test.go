@@ -1,10 +1,11 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -144,24 +145,36 @@ func TestAuditLogger_SendToSIEM_AndMarshalFailures(t *testing.T) {
 	require.ErrorIs(t, al.sendToSIEM(&AuditEvent{Metadata: map[string]interface{}{"bad": make(chan int)}}), ErrAuditEventMarshal)
 
 	// Non-2xx response returns ErrSIEMResponseError.
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(server.Close)
-
-	al.config.SIEMEndpoint = server.URL
+	al.httpClient = &httpDoerStub{doFn: func(_ *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader(nil)),
+		}, nil
+	}}
+	al.config.SIEMEndpoint = "https://example.invalid/siem"
 	require.ErrorIs(t, al.sendToSIEM(&AuditEvent{ID: "e"}), ErrSIEMResponseError)
 
 	// Successful delivery uses auth header when configured.
-	serverOK := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "Bearer api-key", r.Header.Get("Authorization"))
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(serverOK.Close)
-
-	al.config.SIEMEndpoint = serverOK.URL
+	al.httpClient = &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
+		require.Equal(t, "Bearer api-key", req.Header.Get("Authorization"))
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader(nil)),
+		}, nil
+	}}
+	al.config.SIEMEndpoint = "https://example.invalid/siem"
 	al.config.SIEMAPIKey = "api-key"
 	require.NoError(t, al.sendToSIEM(&AuditEvent{ID: "e"}))
+}
+
+type httpDoerStub struct {
+	doFn func(req *http.Request) (*http.Response, error)
+}
+
+func (d *httpDoerStub) Do(req *http.Request) (*http.Response, error) {
+	return d.doFn(req)
 }
 
 func TestAuditLogger_PrivacyHashing_Redaction_AndQueryMethods(t *testing.T) {

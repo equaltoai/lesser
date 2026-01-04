@@ -569,6 +569,16 @@ func (as *AuthService) account() authAccountRepository {
 	return nil
 }
 
+func (as *AuthService) activity() storageinterfaces.ActivityRepository {
+	if as.activityRepo != nil {
+		return as.activityRepo
+	}
+	if as.repos != nil {
+		return as.repos.Activity()
+	}
+	return nil
+}
+
 // ServiceConfig represents auth service configuration
 type ServiceConfig struct {
 	Environment string

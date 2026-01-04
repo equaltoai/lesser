@@ -1,11 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"errors"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -261,15 +262,6 @@ func TestImportProcessor_ActivityPubImport_Round12(t *testing.T) {
 
 func TestImportProcessor_ProcessImportJob_AndHandleSQS_Round12(t *testing.T) {
 	t.Run("processImportJob covers csv/json/activitypub formats", func(t *testing.T) {
-		makeServer := func(status int, payload []byte) *httptest.Server {
-			return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(status)
-				if status == http.StatusOK {
-					_, _ = w.Write(payload)
-				}
-			}))
-		}
-
 		makeProcessor := func(repo *importRepoRecorder, costRepo *costTrackingRepoRecorder) *ImportProcessor {
 			return &ImportProcessor{
 				importRepo:       repo,
@@ -285,15 +277,16 @@ func TestImportProcessor_ProcessImportJob_AndHandleSQS_Round12(t *testing.T) {
 		}
 
 		t.Run("csv followers success", func(t *testing.T) {
-			server := makeServer(http.StatusOK, []byte("Account address\nalice@example.com\n"))
-			t.Cleanup(server.Close)
-			setAWSEnvForS3Test(t, server.URL)
+			setAWSEnvForS3Test(t, "https://example.com")
 
 			repo := &importRepoRecorder{statusErrByStatus: map[string]error{"processing": errors.New("status update failed")}, budgetErr: errors.New("budget update failed")}
 			costRepo := &costTrackingRepoRecorder{createErr: errors.New("tracking create failed")}
 			p := makeProcessor(repo, costRepo)
 
 			require.NoError(t, p.initializeAWSClients(context.Background()))
+			p.s3Client = &s3ClientStub{getObjectFn: func(_ *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+				return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader([]byte("Account address\nalice@example.com\n")))}, nil
+			}}
 			require.NoError(t, p.processImportJob(context.Background(), ImportProcessorEvent{ImportID: "imp-1", Username: "alice", Type: "followers", Mode: "merge", S3Key: "followers.csv"}))
 			require.Contains(t, repo.statusCalls, "processing")
 			require.Contains(t, repo.statusCalls, "completed")
@@ -301,82 +294,88 @@ func TestImportProcessor_ProcessImportJob_AndHandleSQS_Round12(t *testing.T) {
 		})
 
 		t.Run("json lists success", func(t *testing.T) {
-			server := makeServer(http.StatusOK, []byte(`{"Friends":["bob@remote.example"]}`))
-			t.Cleanup(server.Close)
-			setAWSEnvForS3Test(t, server.URL)
+			setAWSEnvForS3Test(t, "https://example.com")
 
 			repo := &importRepoRecorder{}
 			costRepo := &costTrackingRepoRecorder{}
 			p := makeProcessor(repo, costRepo)
 
 			require.NoError(t, p.initializeAWSClients(context.Background()))
+			p.s3Client = &s3ClientStub{getObjectFn: func(_ *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+				return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader([]byte(`{"Friends":["bob@remote.example"]}`)))}, nil
+			}}
 			require.NoError(t, p.processImportJob(context.Background(), ImportProcessorEvent{ImportID: "imp-2", Username: "alice", Type: "lists", Mode: "merge", S3Key: "lists.json"}))
 		})
 
 		t.Run("activitypub archive success", func(t *testing.T) {
-			server := makeServer(http.StatusOK, []byte(`{"@context":"https://www.w3.org/ns/activitystreams","orderedItems":[{"type":"Unknown"}]}`))
-			t.Cleanup(server.Close)
-			setAWSEnvForS3Test(t, server.URL)
+			setAWSEnvForS3Test(t, "https://example.com")
 
 			repo := &importRepoRecorder{}
 			costRepo := &costTrackingRepoRecorder{}
 			p := makeProcessor(repo, costRepo)
 
 			require.NoError(t, p.initializeAWSClients(context.Background()))
+			p.s3Client = &s3ClientStub{getObjectFn: func(_ *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+				return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader([]byte(`{"@context":"https://www.w3.org/ns/activitystreams","orderedItems":[{"type":"Unknown"}]}`)))}, nil
+			}}
 			require.NoError(t, p.processImportJob(context.Background(), ImportProcessorEvent{ImportID: "imp-3", Username: "alice", Type: "archive", Mode: "merge", S3Key: "archive.json"}))
 		})
 
 		t.Run("download failure returns wrapped error", func(t *testing.T) {
-			server := makeServer(http.StatusNotFound, nil)
-			t.Cleanup(server.Close)
-			setAWSEnvForS3Test(t, server.URL)
+			setAWSEnvForS3Test(t, "https://example.com")
 
 			repo := &importRepoRecorder{}
 			costRepo := &costTrackingRepoRecorder{}
 			p := makeProcessor(repo, costRepo)
 
 			require.NoError(t, p.initializeAWSClients(context.Background()))
+			p.s3Client = &s3ClientStub{getObjectFn: func(_ *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+				return nil, errors.New("not found")
+			}}
 			require.Error(t, p.processImportJob(context.Background(), ImportProcessorEvent{ImportID: "imp-4", Username: "alice", Type: "followers", Mode: "merge", S3Key: "missing.csv"}))
 		})
 
 		t.Run("unsupported format returns error", func(t *testing.T) {
-			server := makeServer(http.StatusOK, []byte("hello world"))
-			t.Cleanup(server.Close)
-			setAWSEnvForS3Test(t, server.URL)
+			setAWSEnvForS3Test(t, "https://example.com")
 
 			repo := &importRepoRecorder{}
 			costRepo := &costTrackingRepoRecorder{}
 			p := makeProcessor(repo, costRepo)
 
 			require.NoError(t, p.initializeAWSClients(context.Background()))
+			p.s3Client = &s3ClientStub{getObjectFn: func(_ *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+				return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader([]byte("hello world")))}, nil
+			}}
 			require.Error(t, p.processImportJob(context.Background(), ImportProcessorEvent{ImportID: "imp-5", Username: "alice", Type: "followers", Mode: "merge", S3Key: "unknown.bin"}))
 		})
 
 		t.Run("import status update failure returns wrapped error", func(t *testing.T) {
-			server := makeServer(http.StatusOK, []byte("Account address\nalice@example.com\n"))
-			t.Cleanup(server.Close)
-			setAWSEnvForS3Test(t, server.URL)
+			setAWSEnvForS3Test(t, "https://example.com")
 
 			repo := &importRepoRecorder{statusErrByStatus: map[string]error{"completed": errors.New("status update failed")}}
 			costRepo := &costTrackingRepoRecorder{}
 			p := makeProcessor(repo, costRepo)
 
 			require.NoError(t, p.initializeAWSClients(context.Background()))
+			p.s3Client = &s3ClientStub{getObjectFn: func(_ *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+				return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader([]byte("Account address\nalice@example.com\n")))}, nil
+			}}
 			require.Error(t, p.processImportJob(context.Background(), ImportProcessorEvent{ImportID: "imp-6", Username: "alice", Type: "followers", Mode: "merge", S3Key: "followers.csv"}))
 		})
 	})
 
 	t.Run("HandleSQS parses formats and updates failures", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.Contains(r.URL.Path, "bad.csv") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("Account address\nalice@example.com\n"))
-		}))
-		t.Cleanup(server.Close)
-		setAWSEnvForS3Test(t, server.URL)
+		setAWSEnvForS3Test(t, "https://example.com")
+		origNew := newS3Client
+		t.Cleanup(func() { newS3Client = origNew })
+		newS3Client = func(_ aws.Config) s3API {
+			return &s3ClientStub{getObjectFn: func(input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+				if strings.Contains(aws.ToString(input.Key), "bad.csv") {
+					return nil, errors.New("not found")
+				}
+				return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader([]byte("Account address\nalice@example.com\n")))}, nil
+			}}
+		}
 
 		repo := &importRepoRecorder{statusErrByStatus: map[string]error{"failed": errors.New("failed status update failed")}}
 		costRepo := &costTrackingRepoRecorder{}
@@ -401,6 +400,17 @@ func TestImportProcessor_ProcessImportJob_AndHandleSQS_Round12(t *testing.T) {
 		require.NoError(t, p.HandleSQS(newLiftContext(), event))
 		require.NotEmpty(t, repo.statusCalls)
 	})
+}
+
+type s3ClientStub struct {
+	getObjectFn func(input *s3.GetObjectInput) (*s3.GetObjectOutput, error)
+}
+
+func (s *s3ClientStub) GetObject(_ context.Context, input *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	if s.getObjectFn != nil {
+		return s.getObjectFn(input)
+	}
+	return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader(nil))}, nil
 }
 
 func TestImportTransaction_RollbackFailure_Round12(t *testing.T) {
@@ -486,7 +496,7 @@ func TestImportProcessor_AdditionalErrorBranches_Round12(t *testing.T) {
 		loadAWSConfig = func(_ context.Context) (aws.Config, error) {
 			return aws.Config{}, errors.New("config load failed")
 		}
-		newS3Client = func(_ aws.Config) *s3.Client {
+		newS3Client = func(_ aws.Config) s3API {
 			t.Fatal("newS3Client should not be called when loadAWSConfig fails")
 			return nil
 		}

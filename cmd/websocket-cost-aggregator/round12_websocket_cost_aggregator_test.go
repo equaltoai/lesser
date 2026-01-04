@@ -1,12 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -185,32 +185,38 @@ func TestSendWebhookAlert_SuccessAndFailures(t *testing.T) {
 	config.ResetForTests()
 	t.Setenv("DOMAIN", "example.com")
 
-	received := make(chan *http.Request, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received <- r
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(server.Close)
-
+	var captured *http.Request
 	h := &WebSocketCostAggregatorHandler{
-		logger:     zap.NewNop(),
-		webhookURL: server.URL,
+		logger:      zap.NewNop(),
+		webhookURL:  "https://example.com/webhook",
+		httpClient: &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
+			captured = req
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(nil)),
+				Request:    req,
+			}, nil
+		}},
 	}
 
 	require.NoError(t, h.sendWebhookAlert(context.Background(), []byte(`{"ok":true}`)))
-	req := <-received
-	require.Equal(t, "budget-alert", req.Header.Get("X-Alert-Type"))
-	require.Equal(t, "example.com", req.Header.Get("X-Instance-Domain"))
+	require.NotNil(t, captured)
+	require.Equal(t, "budget-alert", captured.Header.Get("X-Alert-Type"))
+	require.Equal(t, "example.com", captured.Header.Get("X-Instance-Domain"))
 
 	h.webhookURL = "://bad"
 	require.Error(t, h.sendWebhookAlert(context.Background(), []byte(`{}`)))
 
-	failServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(failServer.Close)
-
-	h.webhookURL = failServer.URL
+	h.webhookURL = "https://example.com/webhook"
+	h.httpClient = &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader(nil)),
+			Request:    req,
+		}, nil
+	}}
 	require.Error(t, h.sendWebhookAlert(context.Background(), []byte(`{}`)))
 }
 
@@ -218,15 +224,12 @@ func TestSendWebhookAlert_ClientDoError(t *testing.T) {
 	config.ResetForTests()
 	t.Setenv("DOMAIN", "example.com")
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	url := server.URL
-	server.Close()
-
 	h := &WebSocketCostAggregatorHandler{
 		logger:     zap.NewNop(),
-		webhookURL: url,
+		webhookURL: "https://example.com/webhook",
+		httpClient: &httpDoerStub{doFn: func(_ *http.Request) (*http.Response, error) {
+			return nil, errors.New("client error")
+		}},
 	}
 	require.Error(t, h.sendWebhookAlert(context.Background(), []byte(`{"ok":true}`)))
 }
@@ -349,12 +352,6 @@ func TestCleanupStaleConnections_SendsCleanupAlert(t *testing.T) {
 		body   []byte
 	}
 	received := make(chan captured, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		received <- captured{header: r.Header.Clone(), body: body}
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(server.Close)
 
 	now := time.Now().UTC()
 	connRepo := &fakeConnectionRepo{
@@ -370,7 +367,20 @@ func TestCleanupStaleConnections_SendsCleanupAlert(t *testing.T) {
 		connectionRepo: connRepo,
 		costTracker:    &fakeCostTracker{},
 		logger:         zap.NewNop(),
-		webhookURL:     server.URL,
+		webhookURL:     "https://example.com/webhook",
+		httpClient: &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
+			if req.Body != nil {
+				body, _ := io.ReadAll(req.Body)
+				_ = req.Body.Close()
+				received <- captured{header: req.Header.Clone(), body: body}
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(nil)),
+				Request:    req,
+			}, nil
+		}},
 		snsTopicArn:    "arn:aws:sns:us-east-1:123:topic",
 		snsClient:      snsClient,
 	}
@@ -394,16 +404,20 @@ func TestSendCleanupAlert_LogsFailures(t *testing.T) {
 	t.Setenv("DOMAIN", "example.com")
 
 	received := make(chan struct{}, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		received <- struct{}{}
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(server.Close)
 
 	snsClient := &fakeSNS{publishErr: errors.New("sns failed")}
 	h := &WebSocketCostAggregatorHandler{
 		logger:      zap.NewNop(),
-		webhookURL:  server.URL,
+		webhookURL:  "https://example.com/webhook",
+		httpClient: &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
+			received <- struct{}{}
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(nil)),
+				Request:    req,
+			}, nil
+		}},
 		snsTopicArn: "arn:aws:sns:us-east-1:123:topic",
 		snsClient:   snsClient,
 	}
@@ -434,11 +448,6 @@ func TestBudgetAlerts_AndAllMethodsFailed(t *testing.T) {
 		createErrs: []error{errors.New("create failed")},
 	}
 
-	failWebhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(failWebhook.Close)
-
 	snsClient := &fakeSNS{publishErr: errors.New("sns failed")}
 
 	h := &WebSocketCostAggregatorHandler{
@@ -446,18 +455,29 @@ func TestBudgetAlerts_AndAllMethodsFailed(t *testing.T) {
 		connectionRepo: &fakeConnectionRepo{},
 		costTracker:    &fakeCostTracker{},
 		logger:         zap.NewNop(),
-		webhookURL:     failWebhook.URL,
+		webhookURL:     "https://example.com/webhook",
+		httpClient: &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(nil)),
+				Request:    req,
+			}, nil
+		}},
 		snsTopicArn:    "arn:aws:sns:us-east-1:123:topic",
 		snsClient:      snsClient,
 	}
 
 	require.Error(t, h.sendBudgetAlert(context.Background(), costRepo.topUsers[0], costRepo.budgetByUser["u1"]))
 
-	okWebhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(okWebhook.Close)
-	h.webhookURL = okWebhook.URL
+	h.httpClient = &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader(nil)),
+			Request:    req,
+		}, nil
+	}}
 	require.NoError(t, h.sendBudgetAlert(context.Background(), costRepo.topUsers[0], costRepo.budgetByUser["u1"]))
 
 	costRepo.topUsersErr = errors.New("query failed")
@@ -467,11 +487,6 @@ func TestBudgetAlerts_AndAllMethodsFailed(t *testing.T) {
 func TestUpdateBudgetAlerts_LogsSendBudgetAlertError(t *testing.T) {
 	config.ResetForTests()
 	t.Setenv("DOMAIN", "example.com")
-
-	failWebhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(failWebhook.Close)
 
 	costRepo := &fakeCostRepo{
 		topUsers: []*repositories.WebSocketUserCostRanking{
@@ -487,7 +502,15 @@ func TestUpdateBudgetAlerts_LogsSendBudgetAlertError(t *testing.T) {
 		connectionRepo: &fakeConnectionRepo{},
 		costTracker:    &fakeCostTracker{},
 		logger:         zap.NewNop(),
-		webhookURL:     failWebhook.URL,
+		webhookURL:     "https://example.com/webhook",
+		httpClient: &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(nil)),
+				Request:    req,
+			}, nil
+		}},
 		snsTopicArn:    "arn:aws:sns:us-east-1:123:topic",
 		snsClient:      &fakeSNS{publishErr: errors.New("sns failed")},
 	}
@@ -500,12 +523,6 @@ func TestUpdateBudgetAlerts_SendsOnlyWhenNeeded(t *testing.T) {
 	t.Setenv("DOMAIN", "example.com")
 
 	received := make(chan []byte, 10)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		received <- body
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(server.Close)
 
 	costRepo := &fakeCostRepo{
 		topUsers: []*repositories.WebSocketUserCostRanking{
@@ -523,7 +540,20 @@ func TestUpdateBudgetAlerts_SendsOnlyWhenNeeded(t *testing.T) {
 		connectionRepo: &fakeConnectionRepo{},
 		costTracker:    &fakeCostTracker{},
 		logger:         zap.NewNop(),
-		webhookURL:     server.URL,
+		webhookURL:     "https://example.com/webhook",
+		httpClient: &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
+			if req.Body != nil {
+				body, _ := io.ReadAll(req.Body)
+				_ = req.Body.Close()
+				received <- body
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(nil)),
+				Request:    req,
+			}, nil
+		}},
 	}
 
 	require.NoError(t, h.updateBudgetAlerts(context.Background()))
@@ -540,6 +570,14 @@ func TestUpdateBudgetAlerts_SendsOnlyWhenNeeded(t *testing.T) {
 		t.Fatal("expected only one alert")
 	default:
 	}
+}
+
+type httpDoerStub struct {
+	doFn func(req *http.Request) (*http.Response, error)
+}
+
+func (d *httpDoerStub) Do(req *http.Request) (*http.Response, error) {
+	return d.doFn(req)
 }
 
 func TestUpdateBudgetAlerts_ContinuesOnBudgetCheckError(t *testing.T) {

@@ -17,9 +17,13 @@ import (
 // ReprocessorClient handles reprocessing of failed messages
 type ReprocessorClient struct {
 	sqsClient  SQSClient
-	httpClient *httpclient.SecureClient
+	httpClient httpDoer
 	logger     *zap.Logger
 	queueURLs  map[string]string // Cache for queue URLs
+}
+
+type httpDoer interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
 // NewReprocessorClient creates a new reprocessor client

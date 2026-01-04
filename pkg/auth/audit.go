@@ -203,6 +203,11 @@ type AuditLogger struct {
 	logger        *zap.Logger
 	config        *AuditConfig
 	privacyHasher *privacy.Hasher
+	httpClient    httpDoer
+}
+
+type httpDoer interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
 type auditRepository interface {
@@ -596,7 +601,10 @@ func (al *AuditLogger) sendToSIEM(event *AuditEvent) error {
 		req.Header.Set("Authorization", "Bearer "+al.config.SIEMAPIKey)
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := al.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return errors.Join(ErrSIEMTransmission, err)

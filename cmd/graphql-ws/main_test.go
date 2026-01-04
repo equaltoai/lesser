@@ -3,9 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -97,19 +94,18 @@ func TestHandleDefaultLift_SendsExpectedMessages(t *testing.T) {
 	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
 
 	var bodies [][]byte
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
-		b, _ := io.ReadAll(r.Body)
-		bodies = append(bodies, b)
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(srv.Close)
-
 	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	s.sendJSONMessage = func(_ *lift.WebSocketContext, payload any) error {
+		b, err := json.Marshal(payload)
+		require.NoError(t, err)
+		bodies = append(bodies, b)
+		return nil
+	}
 
-	require.NoError(t, s.handleDefaultLift(newWebSocketLiftContext(t, srv.URL, "c1", `{"type":"connection_init"}`)))
-	require.NoError(t, s.handleDefaultLift(newWebSocketLiftContext(t, srv.URL, "c1", `{"type":"ping"}`)))
-	require.NoError(t, s.handleDefaultLift(newWebSocketLiftContext(t, srv.URL, "c1", `{"id":"sub1","type":"complete"}`)))
+	endpoint := "https://example.com"
+	require.NoError(t, s.handleDefaultLift(newWebSocketLiftContext(t, endpoint, "c1", `{"type":"connection_init"}`)))
+	require.NoError(t, s.handleDefaultLift(newWebSocketLiftContext(t, endpoint, "c1", `{"type":"ping"}`)))
+	require.NoError(t, s.handleDefaultLift(newWebSocketLiftContext(t, endpoint, "c1", `{"id":"sub1","type":"complete"}`)))
 
 	require.Len(t, bodies, 3)
 	var env responseEnvelope
@@ -121,10 +117,10 @@ func TestHandleDefaultLift_SendsExpectedMessages(t *testing.T) {
 	require.Equal(t, "complete", env.Type)
 
 	// Unsupported type returns a 400 error without sending.
-	err := s.handleDefaultLift(newWebSocketLiftContext(t, srv.URL, "c1", `{"type":"nope"}`))
+	err := s.handleDefaultLift(newWebSocketLiftContext(t, endpoint, "c1", `{"type":"nope"}`))
 	require.Error(t, err)
 
 	// Invalid JSON returns 400 error without sending.
-	err = s.handleDefaultLift(newWebSocketLiftContext(t, srv.URL, "c1", `{"type":`))
+	err = s.handleDefaultLift(newWebSocketLiftContext(t, endpoint, "c1", `{"type":`))
 	require.Error(t, err)
 }

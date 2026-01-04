@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -961,21 +960,21 @@ func TestRelayService_VerifyHTTPSRequestConstruction(t *testing.T) {
 	ctx := context.Background()
 
 	var gotReq *http.Request
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotReq = r
-		w.Header().Set("Content-Type", "application/activity+json")
-		_, _ = w.Write([]byte(`{"id":"` + r.URL.String() + `","type":"Application","inbox":"` + r.URL.String() + `/inbox"}`))
-	}))
-	defer ts.Close()
 
 	svc := &RelayService{
 		logger: logger,
-		httpClient: &http.Client{
-			Timeout: 2 * time.Second,
-		},
+		httpClient: &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
+			gotReq = req
+			body := []byte(`{"id":"` + req.URL.String() + `","type":"Application","inbox":"` + req.URL.String() + `/inbox"}`)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/activity+json"}},
+				Body:       io.NopCloser(bytes.NewReader(body)),
+			}, nil
+		}},
 	}
 
-	_, err := svc.fetchRelayActor(ctx, ts.URL)
+	_, err := svc.fetchRelayActor(ctx, "https://relay.example/actor")
 	require.NoError(t, err)
 	require.NotNil(t, gotReq)
 	assert.Equal(t, http.MethodGet, gotReq.Method)

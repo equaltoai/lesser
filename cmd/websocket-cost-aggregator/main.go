@@ -61,6 +61,10 @@ type snsPublisher interface {
 	Publish(ctx context.Context, params *sns.PublishInput, optFns ...func(*sns.Options)) (*sns.PublishOutput, error)
 }
 
+type httpDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 // WebSocketCostAggregatorHandler handles scheduled WebSocket cost operations
 type WebSocketCostAggregatorHandler struct {
 	costRepo       websocketCostRepository
@@ -69,6 +73,7 @@ type WebSocketCostAggregatorHandler struct {
 	logger         *zap.Logger
 	cfg            *common.LambdaContext
 	snsClient      snsPublisher
+	httpClient     httpDoer
 	webhookURL     string
 	snsTopicArn    string
 }
@@ -458,10 +463,12 @@ func (h *WebSocketCostAggregatorHandler) sendWebhookAlert(ctx context.Context, a
 	req.Header.Set("X-Alert-Type", "budget-alert")
 	req.Header.Set("X-Instance-Domain", config.Get().Domain)
 
-	client := &http.Client{
-		Timeout: 10 * time.Second,
+	client := h.httpClient
+	if client == nil {
+		client = &http.Client{
+			Timeout: 10 * time.Second,
+		}
 	}
-
 	resp, err := client.Do(req)
 	if err != nil {
 		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Webhook request failed")

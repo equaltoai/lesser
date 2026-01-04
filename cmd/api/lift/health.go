@@ -272,7 +272,7 @@ func (h *HealthChecker) checkS3Storage(ctx context.Context, checks map[string]Ch
 	}
 
 	// Load AWS config
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(h.httpClientOrDefault()))
 	if err != nil {
 		checks["s3_storage"] = CheckResult{
 			Status:   HealthStatusUnhealthy,

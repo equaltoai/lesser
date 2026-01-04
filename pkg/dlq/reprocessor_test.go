@@ -3,8 +3,8 @@ package dlq
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -1406,14 +1406,16 @@ func TestReprocessActivity_ValidationError(t *testing.T) {
 }
 
 func TestReprocessMedia_Success(t *testing.T) {
-	// Create a test HTTP server that returns 200 OK
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer ts.Close()
-
 	logger := zaptest.NewLogger(t)
 	client := NewReprocessorClient(logger)
+	client.httpClient = &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    req,
+		}, nil
+	}}
 
 	mockSQS := new(MockSQSClient)
 	client.SetSQSClient(mockSQS)
@@ -1433,7 +1435,7 @@ func TestReprocessMedia_Success(t *testing.T) {
 
 	originalMessage := &OriginalMessage{
 		MessageID:   "orig-msg-789",
-		Body:        fmt.Sprintf(`{"media_id": "m123", "media_url": "%s/media/image.jpg", "processing_type": "thumbnail"}`, ts.URL),
+		Body:        `{"media_id": "m123", "media_url": "https://example.com/media/image.jpg", "processing_type": "thumbnail"}`,
 		SourceQueue: "media-queue",
 		Attributes:  map[string]string{},
 	}
@@ -1460,14 +1462,16 @@ func TestReprocessMedia_ValidationError(t *testing.T) {
 }
 
 func TestReprocessFederation_Success(t *testing.T) {
-	// Create a test HTTP server that returns 200 OK for inbox check
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer ts.Close()
-
 	logger := zaptest.NewLogger(t)
 	client := NewReprocessorClient(logger)
+	client.httpClient = &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    req,
+		}, nil
+	}}
 
 	mockSQS := new(MockSQSClient)
 	client.SetSQSClient(mockSQS)
@@ -1487,7 +1491,7 @@ func TestReprocessFederation_Success(t *testing.T) {
 
 	originalMessage := &OriginalMessage{
 		MessageID:   "orig-msg-fed",
-		Body:        fmt.Sprintf(`{"inbox_url": "%s/inbox", "activity": {"type": "Create"}, "actor_id": "https://local.example/users/alice"}`, ts.URL),
+		Body:        `{"inbox_url": "https://example.com/inbox", "activity": {"type": "Create"}, "actor_id": "https://local.example/users/alice"}`,
 		SourceQueue: "federation-queue",
 		Attributes:  map[string]string{},
 	}
@@ -1496,6 +1500,14 @@ func TestReprocessFederation_Success(t *testing.T) {
 	assert.NoError(t, err)
 
 	mockSQS.AssertExpectations(t)
+}
+
+type httpDoerStub struct {
+	doFn func(req *http.Request) (*http.Response, error)
+}
+
+func (d *httpDoerStub) Do(req *http.Request) (*http.Response, error) {
+	return d.doFn(req)
 }
 
 func TestReprocessSearch_Success(t *testing.T) {

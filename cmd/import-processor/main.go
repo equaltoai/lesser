@@ -35,7 +35,7 @@ type ImportProcessor struct {
 	db               core.DB
 	importRepo       importRepo
 	costTrackingRepo costTrackingRepo
-	s3Client         *s3.Client
+	s3Client         s3API
 	repos            importStorage
 	cfg              *config.Config
 	logger           *zap.Logger
@@ -48,8 +48,12 @@ var startSQSLambda = patterns.StartSQSLambda
 var loadAWSConfig = func(ctx context.Context) (aws.Config, error) {
 	return awsconfig.LoadDefaultConfig(ctx)
 }
-var newS3Client = func(cfg aws.Config) *s3.Client {
+var newS3Client = func(cfg aws.Config) s3API {
 	return s3.NewFromConfig(cfg)
+}
+
+type s3API interface {
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 }
 
 type importRepo interface {

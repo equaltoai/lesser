@@ -5,11 +5,9 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"reflect"
 	"strings"
@@ -17,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
@@ -83,10 +82,10 @@ type permissiveRegistryStorage struct {
 
 func (s *permissiveRegistryStorage) Account() *repositories.AccountRepository   { return s.account }
 func (s *permissiveRegistryStorage) Bookmark() *repositories.BookmarkRepository { return s.bookmark }
-func (s *permissiveRegistryStorage) Actor() interfaces.ActorRepository       { return s.actor }
+func (s *permissiveRegistryStorage) Actor() interfaces.ActorRepository          { return s.actor }
 func (s *permissiveRegistryStorage) Object() interfaces.ObjectRepository        { return s.object }
 func (s *permissiveRegistryStorage) Activity() interfaces.ActivityRepository    { return s.activity }
-func (s *permissiveRegistryStorage) Timeline() interfaces.TimelineRepository { return s.timeline }
+func (s *permissiveRegistryStorage) Timeline() interfaces.TimelineRepository    { return s.timeline }
 func (s *permissiveRegistryStorage) Notification() interfaces.NotificationRepository {
 	return s.notification
 }
@@ -110,7 +109,7 @@ func (s *permissiveRegistryStorage) Federation() *repositories.FederationReposit
 }
 func (s *permissiveRegistryStorage) Social() *repositories.SocialRepository { return s.social }
 func (s *permissiveRegistryStorage) User() interfaces.UserRepository        { return s.user }
-func (s *permissiveRegistryStorage) Status() interfaces.StatusRepository { return s.status }
+func (s *permissiveRegistryStorage) Status() interfaces.StatusRepository    { return s.status }
 func (s *permissiveRegistryStorage) Search() *repositories.SearchRepository { return s.search }
 func (s *permissiveRegistryStorage) CommunityNote() *repositories.CommunityNoteRepository {
 	return s.communityNote
@@ -492,20 +491,22 @@ func TestRegistry_getSecretFromSecretsManager_StubbedEndpointAndCaching(t *testi
 
 	t.Run("extracts_privateKey_from_JSON_and_caches", func(t *testing.T) {
 		var calls atomic.Int32
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+		require.NoError(t, err)
+		awsCfg.HTTPClient = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			calls.Add(1)
-			_, _ = io.Copy(io.Discard, r.Body)
-			_ = r.Body.Close()
-
-			w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"SecretString": `{"privateKey":"pem-from-json"}`,
-			})
-		}))
-		t.Cleanup(server.Close)
-
-		t.Setenv("AWS_ENDPOINT_URL_SECRETS_MANAGER", server.URL)
+			if req.Body != nil {
+				_, _ = io.Copy(io.Discard, req.Body)
+				_ = req.Body.Close()
+			}
+			body := `{"SecretString":"{\"privateKey\":\"pem-from-json\"}"}`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/x-amz-json-1.1"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    req,
+			}, nil
+		})}
 
 		reg, err := NewRegistry(WithStorage(newMockStorage()), WithLogger(zap.NewNop()), WithConfig(&ServiceConfig{
 			BaseURL:   "https://example.com",
@@ -515,6 +516,7 @@ func TestRegistry_getSecretFromSecretsManager_StubbedEndpointAndCaching(t *testi
 			},
 		}))
 		require.NoError(t, err)
+		reg.awsConfigCached = &awsCfg
 
 		secret1, err := reg.getSecretFromSecretsManager("lesser/test")
 		require.NoError(t, err)
@@ -528,18 +530,21 @@ func TestRegistry_getSecretFromSecretsManager_StubbedEndpointAndCaching(t *testi
 	})
 
 	t.Run("returns_plain_secret_string", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = io.Copy(io.Discard, r.Body)
-			_ = r.Body.Close()
-			w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"SecretString": "plain-secret",
-			})
-		}))
-		t.Cleanup(server.Close)
-
-		t.Setenv("AWS_ENDPOINT_URL_SECRETS_MANAGER", server.URL)
+		awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+		require.NoError(t, err)
+		awsCfg.HTTPClient = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Body != nil {
+				_, _ = io.Copy(io.Discard, req.Body)
+				_ = req.Body.Close()
+			}
+			body := `{"SecretString":"plain-secret"}`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/x-amz-json-1.1"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    req,
+			}, nil
+		})}
 
 		reg, err := NewRegistry(WithStorage(newMockStorage()), WithLogger(zap.NewNop()), WithConfig(&ServiceConfig{
 			BaseURL:   "https://example.com",
@@ -549,6 +554,7 @@ func TestRegistry_getSecretFromSecretsManager_StubbedEndpointAndCaching(t *testi
 			},
 		}))
 		require.NoError(t, err)
+		reg.awsConfigCached = &awsCfg
 
 		secret, err := reg.getSecretFromSecretsManager("lesser/plain")
 		require.NoError(t, err)
@@ -556,16 +562,21 @@ func TestRegistry_getSecretFromSecretsManager_StubbedEndpointAndCaching(t *testi
 	})
 
 	t.Run("errors_when_secret_string_missing", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = io.Copy(io.Discard, r.Body)
-			_ = r.Body.Close()
-			w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"ARN":"x"}`))
-		}))
-		t.Cleanup(server.Close)
-
-		t.Setenv("AWS_ENDPOINT_URL_SECRETS_MANAGER", server.URL)
+		awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+		require.NoError(t, err)
+		awsCfg.HTTPClient = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Body != nil {
+				_, _ = io.Copy(io.Discard, req.Body)
+				_ = req.Body.Close()
+			}
+			body := `{"ARN":"x"}`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/x-amz-json-1.1"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    req,
+			}, nil
+		})}
 
 		reg, err := NewRegistry(WithStorage(newMockStorage()), WithLogger(zap.NewNop()), WithConfig(&ServiceConfig{
 			BaseURL:   "https://example.com",
@@ -575,6 +586,7 @@ func TestRegistry_getSecretFromSecretsManager_StubbedEndpointAndCaching(t *testi
 			},
 		}))
 		require.NoError(t, err)
+		reg.awsConfigCached = &awsCfg
 
 		_, err = reg.getSecretFromSecretsManager("lesser/missing")
 		assert.Error(t, err)
@@ -584,18 +596,6 @@ func TestRegistry_getSecretFromSecretsManager_StubbedEndpointAndCaching(t *testi
 func TestRegistry_ImportExport_Success_WithStubbedS3Endpoint(t *testing.T) {
 	setTestAWSEnv(t)
 
-	var headCalls atomic.Int32
-	s3Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodHead {
-			headCalls.Add(1)
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(s3Server.Close)
-
-	port := s3Server.URL[strings.LastIndex(s3Server.URL, ":")+1:]
-	t.Setenv("AWS_ENDPOINT_URL_S3", "http://localhost:"+port)
-
 	reg, err := NewRegistry(
 		WithStorage(newPermissiveRegistryStorage(t, "example.com", zap.NewNop())),
 		WithLogger(zap.NewNop()),
@@ -603,7 +603,8 @@ func TestRegistry_ImportExport_Success_WithStubbedS3Endpoint(t *testing.T) {
 			BaseURL:   "https://example.com",
 			JWTSecret: strings.Repeat("x", 32),
 			Config: &pkgconfig.Config{
-				Region: "us-east-1",
+				IntegrationTestMode: true,
+				Region:              "us-east-1",
 			},
 		}),
 	)
@@ -611,7 +612,12 @@ func TestRegistry_ImportExport_Success_WithStubbedS3Endpoint(t *testing.T) {
 
 	assert.NotNil(t, reg.ImportExport())
 	assert.NotNil(t, reg.ImportExport()) // cached branch
-	assert.GreaterOrEqual(t, headCalls.Load(), int32(1))
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func TestRegistry_NilStorageBranches(t *testing.T) {

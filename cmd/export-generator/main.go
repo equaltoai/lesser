@@ -39,11 +39,17 @@ type ExportProcessor struct {
 	exportRepo       exportRepo
 	costTrackingRepo costTrackingRepo
 	budgetUpdater    budgetUpdater
-	s3Client         *s3.Client
+	s3Client         s3API
+	s3PresignClient  *s3.PresignClient
 	logger           *zap.Logger
 	tableName        string
 	bucketName       string
 	baseURL          string
+}
+
+type s3API interface {
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 }
 
 type exportRepo interface {
@@ -300,9 +306,11 @@ func main() {
 // HandleSQSWithContext implements the SQS handler interface for Lift with explicit context
 func (ep *ExportProcessor) HandleSQSWithContext(ctx context.Context, liftCtx *lift.Context, event events.SQSEvent) error {
 	// Initialize AWS clients
-	if err := ep.initializeAWSClients(ctx); err != nil {
-		ep.logger.Error("failed to initialize AWS clients", zap.Error(err))
-		return lift.NewLiftError("AWS_INIT_FAILED", "failed to initialize AWS clients", 500).WithCause(err)
+	if ep.s3Client == nil || ep.s3PresignClient == nil {
+		if err := ep.initializeAWSClients(ctx); err != nil {
+			ep.logger.Error("failed to initialize AWS clients", zap.Error(err))
+			return lift.NewLiftError("AWS_INIT_FAILED", "failed to initialize AWS clients", 500).WithCause(err)
+		}
 	}
 
 	ep.logger.Info("processing export generation batch",
@@ -384,7 +392,9 @@ func (ep *ExportProcessor) initializeAWSClients(ctx context.Context) error {
 	}
 
 	// Initialize S3 client
-	ep.s3Client = s3.NewFromConfig(awsCfg)
+	s3Client := s3.NewFromConfig(awsCfg)
+	ep.s3Client = s3Client
+	ep.s3PresignClient = s3.NewPresignClient(s3Client)
 
 	return nil
 }
@@ -504,7 +514,15 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 	exportCostTracking.Status = "completed"
 
 	// Generate pre-signed URL (24 hour expiry)
-	presignClient := s3.NewPresignClient(ep.s3Client)
+	presignClient := ep.s3PresignClient
+	if presignClient == nil {
+		s3Client, ok := ep.s3Client.(*s3.Client)
+		if !ok {
+			return ErrS3PresignedURL(fmt.Errorf("s3 presign client not initialized"))
+		}
+		presignClient = s3.NewPresignClient(s3Client)
+		ep.s3PresignClient = presignClient
+	}
 	presignReq, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(ep.bucketName),
 		Key:    aws.String(s3Key),

@@ -5,12 +5,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
+	"io"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -314,18 +314,7 @@ func setAWSEnvForS3Test(t *testing.T, endpoint string) {
 
 func TestExportProcessor_ProcessExportJob_And_HandleSQSWithContext_Round12(t *testing.T) {
 	now := time.Now()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("media-bytes"))
-		default:
-			w.WriteHeader(http.StatusOK)
-		}
-	}))
-	t.Cleanup(server.Close)
-	setAWSEnvForS3Test(t, server.URL)
+	setAWSEnvForS3Test(t, "https://example.com")
 
 	repo := &exportRepoRecorder{errByStatus: map[string]error{"failed": errors.New("status update failed")}}
 	costRepo := &costTrackingRepoRecorder{createErr: errors.New("tracking create failed")}
@@ -357,6 +346,11 @@ func TestExportProcessor_ProcessExportJob_And_HandleSQSWithContext_Round12(t *te
 		baseURL:          "https://example.com",
 	}
 	require.NoError(t, ep.initializeAWSClients(context.Background()))
+	ep.s3Client = &s3ClientStub{
+		getObjectFn: func(_ *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+			return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader([]byte("media-bytes")))}, nil
+		},
+	}
 
 	dateRange := &DateRange{Start: now.Add(-24 * time.Hour), End: now.Add(24 * time.Hour)}
 
@@ -561,17 +555,18 @@ func TestExportProcessor_ZipHelpers_ErrorBranches_Round12(t *testing.T) {
 
 func TestExportProcessor_downloadSingleMediaFile_ErrorBranches_Round12(t *testing.T) {
 	t.Run("download error returns false", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		t.Cleanup(server.Close)
-		setAWSEnvForS3Test(t, server.URL)
+		setAWSEnvForS3Test(t, "https://example.com")
 
 		ep := &ExportProcessor{
 			logger:     zap.NewNop(),
 			bucketName: "bucket",
 		}
 		require.NoError(t, ep.initializeAWSClients(context.Background()))
+		ep.s3Client = &s3ClientStub{
+			getObjectFn: func(_ *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+				return nil, errors.New("download failed")
+			},
+		}
 
 		var buf bytes.Buffer
 		zw := zip.NewWriter(&buf)
@@ -581,19 +576,18 @@ func TestExportProcessor_downloadSingleMediaFile_ErrorBranches_Round12(t *testin
 	})
 
 	t.Run("zip add error returns false", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Length", "10")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("x"))
-		}))
-		t.Cleanup(server.Close)
-		setAWSEnvForS3Test(t, server.URL)
+		setAWSEnvForS3Test(t, "https://example.com")
 
 		ep := &ExportProcessor{
 			logger:     zap.NewNop(),
 			bucketName: "bucket",
 		}
 		require.NoError(t, ep.initializeAWSClients(context.Background()))
+		ep.s3Client = &s3ClientStub{
+			getObjectFn: func(_ *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+				return &s3.GetObjectOutput{Body: io.NopCloser(failingReader{})}, nil
+			},
+		}
 
 		var buf bytes.Buffer
 		zw := zip.NewWriter(&buf)
@@ -772,4 +766,23 @@ func TestExportGenerator_Main_InitializesAndStartsLambda_Round12(t *testing.T) {
 	require.NotNil(t, processor)
 	require.Equal(t, "bucket", processor.bucketName)
 	require.Equal(t, "https://example.com", processor.baseURL)
+}
+
+type s3ClientStub struct {
+	putObjectFn func(input *s3.PutObjectInput) (*s3.PutObjectOutput, error)
+	getObjectFn func(input *s3.GetObjectInput) (*s3.GetObjectOutput, error)
+}
+
+func (s *s3ClientStub) PutObject(_ context.Context, input *s3.PutObjectInput, _ ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+	if s.putObjectFn != nil {
+		return s.putObjectFn(input)
+	}
+	return &s3.PutObjectOutput{}, nil
+}
+
+func (s *s3ClientStub) GetObject(_ context.Context, input *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	if s.getObjectFn != nil {
+		return s.getObjectFn(input)
+	}
+	return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader(nil))}, nil
 }

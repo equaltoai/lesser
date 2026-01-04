@@ -81,6 +81,8 @@ type wsServer struct {
 	mu          sync.RWMutex
 	connections map[string]*connectionState
 	wsContexts  map[string]*lift.WebSocketContext // Store WebSocket contexts for message sending
+
+	sendJSONMessage func(wsCtx *lift.WebSocketContext, payload any) error
 }
 
 type wsMessage struct {
@@ -136,7 +138,20 @@ func newServer(oauthService tokenValidator, resolver *graph.Resolver, exec gqlEx
 		instanceRepo:        instanceRepo,
 		connections:         make(map[string]*connectionState),
 		wsContexts:          make(map[string]*lift.WebSocketContext),
+		sendJSONMessage: func(wsCtx *lift.WebSocketContext, payload any) error {
+			return wsCtx.SendJSONMessage(payload)
+		},
 	}
+}
+
+func (s *wsServer) sendJSON(wsCtx *lift.WebSocketContext, payload any) error {
+	if wsCtx == nil {
+		return fmt.Errorf("websocket context is nil")
+	}
+	if s != nil && s.sendJSONMessage != nil {
+		return s.sendJSONMessage(wsCtx, payload)
+	}
+	return wsCtx.SendJSONMessage(payload)
 }
 
 func (s *wsServer) registerConnection(ctx context.Context, connectionID, username string, claims *auth.Claims) error {
@@ -531,9 +546,9 @@ func (s *wsServer) handleDefaultLift(ctx *lift.Context) error {
 	case "connection_init":
 		s.logger.Info("received connection_init",
 			zap.String("connection_id", connectionID))
-		return wsCtx.SendJSONMessage(responseEnvelope{Type: "connection_ack"})
+		return s.sendJSON(wsCtx, responseEnvelope{Type: "connection_ack"})
 	case "ping":
-		return wsCtx.SendJSONMessage(responseEnvelope{Type: "pong"})
+		return s.sendJSON(wsCtx, responseEnvelope{Type: "pong"})
 	case "subscribe":
 		s.handleSubscribeWithLift(ctx.Request.Context(), msg, wsCtx)
 		return nil
@@ -542,7 +557,7 @@ func (s *wsServer) handleDefaultLift(ctx *lift.Context) error {
 			zap.String("connection_id", connectionID),
 			zap.String("subscription_id", msg.ID))
 		if !s.cancelSubscription(ctx.Request.Context(), connectionID, msg.ID) {
-			_ = wsCtx.SendJSONMessage(responseEnvelope{
+			_ = s.sendJSON(wsCtx, responseEnvelope{
 				ID:   msg.ID,
 				Type: "complete",
 			})
@@ -603,14 +618,14 @@ func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, w
 	if s.instanceRepo == nil {
 		s.logger.Error("instance repository unavailable for graphql subscriptions")
 		s.sendErrorViaLift(wsCtx, msg.ID, "internal_error", "instance repository unavailable")
-		_ = wsCtx.SendJSONMessage(responseEnvelope{ID: msg.ID, Type: "complete"})
+		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
 	instanceState, instanceErr := s.instanceRepo.GetInstanceState(ctx)
 	if instanceErr != nil || instanceState.Locked {
 		s.sendErrorViaLift(wsCtx, msg.ID, "instance_locked", "instance is locked")
-		_ = wsCtx.SendJSONMessage(responseEnvelope{ID: msg.ID, Type: "complete"})
+		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
@@ -621,14 +636,14 @@ func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, w
 			zap.String("connection_id", connectionID),
 			zap.Error(err))
 		s.sendErrorViaLift(wsCtx, msg.ID, "unauthorized", "connection context not found")
-		_ = wsCtx.SendJSONMessage(responseEnvelope{ID: msg.ID, Type: "complete"})
+		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
 	if s.exec == nil {
 		s.logger.Error("graphql executor not initialized")
 		s.sendErrorViaLift(wsCtx, msg.ID, "internal_error", "GraphQL executor unavailable")
-		_ = wsCtx.SendJSONMessage(responseEnvelope{ID: msg.ID, Type: "complete"})
+		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
@@ -639,14 +654,14 @@ func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, w
 				zap.String("connection_id", connectionID),
 				zap.Error(err))
 			s.sendErrorViaLift(wsCtx, msg.ID, "invalid_payload", "subscription payload could not be parsed")
-			_ = wsCtx.SendJSONMessage(responseEnvelope{ID: msg.ID, Type: "complete"})
+			_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 			return
 		}
 	}
 
 	if strings.TrimSpace(payload.Query) == "" {
 		s.sendErrorViaLift(wsCtx, msg.ID, "invalid_request", "subscription payload must include a query")
-		_ = wsCtx.SendJSONMessage(responseEnvelope{ID: msg.ID, Type: "complete"})
+		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
@@ -672,7 +687,7 @@ func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, w
 			zap.String("subscription_id", msg.ID),
 			zap.Errors("errors", convertErrors(gqlErrs)))
 		s.sendGraphQLErrorsViaLift(wsCtx, msg.ID, gqlErrs)
-		_ = wsCtx.SendJSONMessage(responseEnvelope{ID: msg.ID, Type: "complete"})
+		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
@@ -681,7 +696,7 @@ func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, w
 			zap.String("connection_id", connectionID),
 			zap.String("subscription_id", msg.ID))
 		s.sendErrorViaLift(wsCtx, msg.ID, "invalid_operation", "operation must be a subscription")
-		_ = wsCtx.SendJSONMessage(responseEnvelope{ID: msg.ID, Type: "complete"})
+		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
@@ -691,7 +706,7 @@ func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, w
 	if !s.addSubscription(connectionID, msg.ID, cancel) {
 		cancel()
 		s.sendErrorViaLift(wsCtx, msg.ID, "connection_closed", "connection no longer active")
-		_ = wsCtx.SendJSONMessage(responseEnvelope{ID: msg.ID, Type: "complete"})
+		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
@@ -711,7 +726,7 @@ func (s *wsServer) sendErrorViaLift(wsCtx *lift.WebSocketContext, id, code, mess
 		Type:    "error",
 		Payload: payload,
 	}
-	_ = wsCtx.SendJSONMessage(env)
+	_ = s.sendJSON(wsCtx, env)
 }
 
 func (s *wsServer) sendGraphQLErrorsViaLift(wsCtx *lift.WebSocketContext, id string, errs gqlerror.List) {
@@ -729,7 +744,7 @@ func (s *wsServer) sendGraphQLErrorsViaLift(wsCtx *lift.WebSocketContext, id str
 		Type:    "error",
 		Payload: payload,
 	}
-	_ = wsCtx.SendJSONMessage(env)
+	_ = s.sendJSON(wsCtx, env)
 }
 
 func (s *wsServer) sendGraphQLResponseViaLift(wsCtx *lift.WebSocketContext, id string, resp *graphql.Response) error {
@@ -765,7 +780,7 @@ func (s *wsServer) sendGraphQLResponseViaLift(wsCtx *lift.WebSocketContext, id s
 		payload["data"] = nil
 	}
 
-	return wsCtx.SendJSONMessage(responseEnvelope{ID: id, Type: "next", Payload: payload})
+	return s.sendJSON(wsCtx, responseEnvelope{ID: id, Type: "next", Payload: payload})
 }
 
 func (s *wsServer) executeSubscriptionWithLift(ctx context.Context, connectionID, subscriptionID string, opCtx *graphql.OperationContext, cancel context.CancelFunc, wsCtx *lift.WebSocketContext) {
@@ -782,7 +797,7 @@ func (s *wsServer) executeSubscriptionWithLift(ctx context.Context, connectionID
 		_ = s.clearSubscription(ctx, connectionID, subscriptionID, false)
 		cancel()
 
-		if err := wsCtx.SendJSONMessage(responseEnvelope{ID: subscriptionID, Type: "complete"}); err != nil {
+		if err := s.sendJSON(wsCtx, responseEnvelope{ID: subscriptionID, Type: "complete"}); err != nil {
 			s.logger.Warn("failed to send subscription completion",
 				zap.String("connection_id", connectionID),
 				zap.String("subscription_id", subscriptionID),

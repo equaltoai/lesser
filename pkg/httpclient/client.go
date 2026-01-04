@@ -414,6 +414,10 @@ func validateURL(u *url.URL, _ *zap.Logger) error {
 	return nil
 }
 
+func isMetadataEndpoint(hostname string) bool {
+	return ssrf.IsBlockedHostname(hostname)
+}
+
 // isPrivateIP checks if an IP address is in a private range
 func isPrivateIP(ip net.IP) bool {
 	return ssrf.IsBlockedIP(ip)
