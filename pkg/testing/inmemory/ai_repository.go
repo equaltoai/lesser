@@ -188,7 +188,7 @@ func (r *AIRepository) QueueForAnalysis(_ context.Context, objectID string) erro
 // ===== Content Analysis =====
 
 // AnalyzeContent performs comprehensive AI content analysis
-func (r *AIRepository) AnalyzeContent(ctx context.Context, content string, modelType string) (*ai.AIAnalysis, error) {
+func (r *AIRepository) AnalyzeContent(ctx context.Context, _ string, modelType string) (*ai.AIAnalysis, error) {
 	// Create a mock analysis result
 	analysis := &ai.AIAnalysis{
 		ID:         fmt.Sprintf("analysis_%d", time.Now().UnixNano()),

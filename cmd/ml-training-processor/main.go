@@ -628,41 +628,7 @@ func (p *MLTrainingProcessor) markJobAsTimeout(ctx context.Context, jobARN strin
 	}
 }
 
-// convertEventAttributeValue converts from events.DynamoDBAttributeValue to SDK v2 types.AttributeValue
-func convertEventAttributeValue(attr events.DynamoDBAttributeValue) dynamodbtypes.AttributeValue {
-	switch attr.DataType() {
-	case events.DataTypeString:
-		return &dynamodbtypes.AttributeValueMemberS{Value: attr.String()}
-	case events.DataTypeNumber:
-		return &dynamodbtypes.AttributeValueMemberN{Value: attr.Number()}
-	case events.DataTypeBinary:
-		return &dynamodbtypes.AttributeValueMemberB{Value: attr.Binary()}
-	case events.DataTypeBoolean:
-		return &dynamodbtypes.AttributeValueMemberBOOL{Value: attr.Boolean()}
-	case events.DataTypeNull:
-		return &dynamodbtypes.AttributeValueMemberNULL{Value: true}
-	case events.DataTypeList:
-		list := make([]dynamodbtypes.AttributeValue, 0, len(attr.List()))
-		for _, item := range attr.List() {
-			list = append(list, convertEventAttributeValue(item))
-		}
-		return &dynamodbtypes.AttributeValueMemberL{Value: list}
-	case events.DataTypeMap:
-		m := make(map[string]dynamodbtypes.AttributeValue)
-		for k, v := range attr.Map() {
-			m[k] = convertEventAttributeValue(v)
-		}
-		return &dynamodbtypes.AttributeValueMemberM{Value: m}
-	case events.DataTypeStringSet:
-		return &dynamodbtypes.AttributeValueMemberSS{Value: attr.StringSet()}
-	case events.DataTypeNumberSet:
-		return &dynamodbtypes.AttributeValueMemberNS{Value: attr.NumberSet()}
-	case events.DataTypeBinarySet:
-		return &dynamodbtypes.AttributeValueMemberBS{Value: attr.BinarySet()}
-	default:
-		return nil
-	}
-}
+
 
 // parseMetricsFromS3 downloads and parses training metrics from S3 output
 func (p *MLTrainingProcessor) parseMetricsFromS3(ctx context.Context, s3URI string) (*models.TrainingMetrics, error) {

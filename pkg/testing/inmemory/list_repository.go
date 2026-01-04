@@ -140,23 +140,7 @@ func (r *ListRepository) GetUserLists(_ context.Context, username string, opts i
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	listIDs := r.byUser[username]
-	if len(listIDs) == 0 {
-		return &interfaces.PaginatedResult[*models.List]{Items: []*models.List{}}, nil
-	}
-
-	// Sort by creation time
-	sortedLists := make([]*models.List, 0, len(listIDs))
-	for _, id := range listIDs {
-		if l, exists := r.lists[id]; exists {
-			sortedLists = append(sortedLists, l)
-		}
-	}
-	sort.Slice(sortedLists, func(i, j int) bool {
-		return sortedLists[i].CreatedAt.After(sortedLists[j].CreatedAt)
-	})
-
-	return paginateListResults(sortedLists, opts), nil
+	return r.getModelsListsFromIDs(r.byUser[username], opts)
 }
 
 // GetListsByMember retrieves all lists containing a member with pagination
@@ -164,11 +148,15 @@ func (r *ListRepository) GetListsByMember(_ context.Context, memberUsername stri
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	listIDs := r.listsByMember[memberUsername]
+	return r.getModelsListsFromIDs(r.listsByMember[memberUsername], opts)
+}
+
+func (r *ListRepository) getModelsListsFromIDs(listIDs []string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.List], error) {
 	if len(listIDs) == 0 {
 		return &interfaces.PaginatedResult[*models.List]{Items: []*models.List{}}, nil
 	}
 
+	// Sort by creation time
 	sortedLists := make([]*models.List, 0, len(listIDs))
 	for _, id := range listIDs {
 		if l, exists := r.lists[id]; exists {
@@ -212,50 +200,7 @@ func (r *ListRepository) GetListsForUserPaginated(_ context.Context, username st
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	listIDs := r.byUser[username]
-	if len(listIDs) == 0 {
-		return []*storage.List{}, "", nil
-	}
-
-	// Sort by ID for consistent pagination
-	sortedIDs := make([]string, len(listIDs))
-	copy(sortedIDs, listIDs)
-	sort.Strings(sortedIDs)
-
-	safeLimit := clampListLimit(limit)
-
-	startIdx := 0
-	if cursor != "" {
-		for i, id := range sortedIDs {
-			if id == cursor {
-				startIdx = i + 1
-				break
-			}
-		}
-	}
-
-	var results []*storage.List
-	var nextCursor string
-
-	for i := startIdx; i < len(sortedIDs) && len(results) < safeLimit; i++ {
-		if l, exists := r.lists[sortedIDs[i]]; exists {
-			results = append(results, &storage.List{
-				ID:            l.ID,
-				Username:      l.Username,
-				Title:         l.Title,
-				RepliesPolicy: l.RepliesPolicy,
-				Exclusive:     l.Exclusive,
-				CreatedAt:     l.CreatedAt,
-				UpdatedAt:     l.UpdatedAt,
-			})
-		}
-	}
-
-	if startIdx+safeLimit < len(sortedIDs) && len(results) > 0 {
-		nextCursor = results[len(results)-1].ID
-	}
-
-	return results, nextCursor, nil
+	return r.getStorageListsFromIDs(r.byUser[username], limit, cursor)
 }
 
 // CountUserLists returns the number of lists owned by a user
@@ -376,7 +321,10 @@ func (r *ListRepository) GetAccountListsPaginated(_ context.Context, accountID s
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	listIDs := r.listsByMember[accountID]
+	return r.getStorageListsFromIDs(r.listsByMember[accountID], limit, cursor)
+}
+
+func (r *ListRepository) getStorageListsFromIDs(listIDs []string, limit int, cursor string) ([]*storage.List, string, error) {
 	if len(listIDs) == 0 {
 		return []*storage.List{}, "", nil
 	}

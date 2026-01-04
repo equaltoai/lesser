@@ -14,6 +14,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
+const (
+	DLQStatusNew    = "new"
+	DLQStatusFailed = "failed"
+)
+
 // DLQRepository is a thread-safe in-memory implementation of interfaces.DLQRepository.
 type DLQRepository struct {
 	mu       sync.RWMutex
@@ -282,13 +287,13 @@ func (r *DLQRepository) GetDLQAnalytics(_ context.Context, service string, timeR
 		analytics.TotalMessages++
 
 		switch msg.Status {
-		case "new":
+		case DLQStatusNew:
 			analytics.NewMessages++
 		case "reprocessing":
 			analytics.ReprocessingMessages++
 		case "resolved":
 			analytics.ResolvedMessages++
-		case "failed":
+		case DLQStatusFailed:
 			analytics.FailedMessages++
 		case "abandoned":
 			analytics.AbandonedMessages++
@@ -404,16 +409,16 @@ func (r *DLQRepository) SendToDeadLetterQueue(ctx context.Context, service, mess
 
 	if isPermanent {
 		message.IsPermanent = true
-		message.Status = "failed"
+		message.Status = DLQStatusFailed
 	} else {
-		message.Status = "new"
+		message.Status = DLQStatusNew
 	}
 
 	return r.CreateDLQMessage(ctx, message)
 }
 
 // RetryFailedMessage attempts to reprocess a DLQ message with exponential backoff.
-func (r *DLQRepository) RetryFailedMessage(ctx context.Context, messageID string) error {
+func (r *DLQRepository) RetryFailedMessage(_ context.Context, messageID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

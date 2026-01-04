@@ -122,29 +122,9 @@ func (r *BookmarkRepository) GetUserBookmarks(_ context.Context, username string
 		return sortedBookmarks[i].CreatedAt.After(sortedBookmarks[j].CreatedAt)
 	})
 
-	safeLimit := clampBookmarkLimit(limit)
-
-	// Find start index based on cursor
-	startIdx := 0
-	if cursor != "" {
-		for i, b := range sortedBookmarks {
-			if b.SK == cursor {
-				startIdx = i + 1
-				break
-			}
-		}
-	}
-
-	var results []*models.Bookmark
-	var nextCursor string
-
-	for i := startIdx; i < len(sortedBookmarks) && len(results) < safeLimit; i++ {
-		results = append(results, sortedBookmarks[i])
-	}
-
-	if startIdx+safeLimit < len(sortedBookmarks) && len(results) > 0 {
-		nextCursor = results[len(results)-1].SK
-	}
+	results, nextCursor := paginateItems(sortedBookmarks, limit, cursor, func(b *models.Bookmark) string {
+		return b.SK
+	})
 
 	return results, nextCursor, nil
 }
@@ -258,18 +238,7 @@ func removeBookmarkKeyFromSlice(slice []string, item string) []string {
 	return result
 }
 
-func clampBookmarkLimit(limit int) int {
-	const defaultLimit = 20
-	const maxLimit = 100
 
-	if limit <= 0 {
-		return defaultLimit
-	}
-	if limit > maxLimit {
-		return maxLimit
-	}
-	return limit
-}
 
 // Test helper methods
 

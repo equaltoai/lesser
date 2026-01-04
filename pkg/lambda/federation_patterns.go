@@ -264,7 +264,7 @@ func (fdp *FederationDeliveryPattern) deliverActivityWithRetry(ctx context.Conte
 		}
 
 		// Attempt delivery
-		err, statusCode := fdp.performDeliveryAttempt(ctx, msg)
+		statusCode, err := fdp.performDeliveryAttempt(ctx, msg)
 
 		lastResult = DeliveryResult{
 			TargetInbox: msg.TargetInbox,
@@ -307,13 +307,13 @@ func (fdp *FederationDeliveryPattern) deliverActivityWithRetry(ctx context.Conte
 	return lastResult
 }
 
-func (fdp *FederationDeliveryPattern) performDeliveryAttempt(ctx context.Context, msg ActivityDeliveryMessage) (error, int) {
+func (fdp *FederationDeliveryPattern) performDeliveryAttempt(ctx context.Context, msg ActivityDeliveryMessage) (int, error) {
 	err := fdp.federationService.DeliverActivity(ctx, msg.Activity, msg.TargetInbox, msg.Actor)
 	statusCode := 200
 	if err != nil {
 		statusCode = fdp.extractStatusCode(err)
 	}
-	return err, statusCode
+	return statusCode, err
 }
 
 func (fdp *FederationDeliveryPattern) extractStatusCode(err error) int {

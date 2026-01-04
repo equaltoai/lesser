@@ -129,29 +129,9 @@ func (r *LikeRepository) GetObjectLikes(_ context.Context, objectID string, limi
 		return sortedLikes[i].CreatedAt.Before(sortedLikes[j].CreatedAt)
 	})
 
-	safeLimit := clampLikeLimit(limit)
-
-	// Find start index based on cursor
-	startIdx := 0
-	if cursor != "" {
-		for i, l := range sortedLikes {
-			if l.ID == cursor {
-				startIdx = i + 1
-				break
-			}
-		}
-	}
-
-	var results []*models.Like
-	var nextCursor string
-
-	for i := startIdx; i < len(sortedLikes) && len(results) < safeLimit; i++ {
-		results = append(results, sortedLikes[i])
-	}
-
-	if startIdx+safeLimit < len(sortedLikes) && len(results) > 0 {
-		nextCursor = results[len(results)-1].ID
-	}
+	results, nextCursor := paginateItems(sortedLikes, limit, cursor, func(l *models.Like) string {
+		return l.ID
+	})
 
 	return results, nextCursor, nil
 }
@@ -177,29 +157,9 @@ func (r *LikeRepository) GetActorLikes(_ context.Context, actorID string, limit 
 		return sortedLikes[i].CreatedAt.Before(sortedLikes[j].CreatedAt)
 	})
 
-	safeLimit := clampLikeLimit(limit)
-
-	// Find start index based on cursor
-	startIdx := 0
-	if cursor != "" {
-		for i, l := range sortedLikes {
-			if l.ID == cursor {
-				startIdx = i + 1
-				break
-			}
-		}
-	}
-
-	var results []*models.Like
-	var nextCursor string
-
-	for i := startIdx; i < len(sortedLikes) && len(results) < safeLimit; i++ {
-		results = append(results, sortedLikes[i])
-	}
-
-	if startIdx+safeLimit < len(sortedLikes) && len(results) > 0 {
-		nextCursor = results[len(results)-1].ID
-	}
+	results, nextCursor := paginateItems(sortedLikes, limit, cursor, func(l *models.Like) string {
+		return l.ID
+	})
 
 	return results, nextCursor, nil
 }
@@ -329,18 +289,7 @@ func removeLikeKeyFromSlice(slice []string, item string) []string {
 	return result
 }
 
-func clampLikeLimit(limit int) int {
-	const defaultLimit = 20
-	const maxLimit = 100
 
-	if limit <= 0 {
-		return defaultLimit
-	}
-	if limit > maxLimit {
-		return maxLimit
-	}
-	return limit
-}
 
 // Test helper methods
 

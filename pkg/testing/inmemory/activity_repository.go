@@ -29,7 +29,7 @@ type ActivityRepository struct {
 	outboxByUser map[string][]string
 
 	// Activity metrics
-	activityMetrics map[string][]*activityMetric // actorID -> []metrics
+	activityMetrics map[string][]*ActivityMetric // actorID -> []metrics
 
 	// Federation activity records
 	federationActivities map[string][]*storage.FederationActivity // domain -> []activities
@@ -46,8 +46,8 @@ type activityEntry struct {
 	createdAt time.Time
 }
 
-// activityMetric stores activity metric data
-type activityMetric struct {
+// ActivityMetric stores activity metric data
+type ActivityMetric struct {
 	activityType string
 	actorID      string
 	timestamp    time.Time
@@ -59,7 +59,7 @@ func NewActivityRepository() *ActivityRepository {
 		activities:           make(map[string]*activityEntry),
 		inboxByUser:          make(map[string][]string),
 		outboxByUser:         make(map[string][]string),
-		activityMetrics:      make(map[string][]*activityMetric),
+		activityMetrics:      make(map[string][]*ActivityMetric),
 		federationActivities: make(map[string][]*storage.FederationActivity),
 		weeklyStats:          make(map[int64]*storage.WeeklyActivity),
 	}
@@ -129,40 +129,7 @@ func (r *ActivityRepository) GetInboxActivities(_ context.Context, username stri
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	activityIDs := r.inboxByUser[username]
-	if len(activityIDs) == 0 {
-		return []*activitypub.Activity{}, "", nil
-	}
-
-	// Apply safe limit
-	safeLimit := clampLimit(limit)
-
-	// Find start index based on cursor
-	startIdx := 0
-	if cursor != "" {
-		for i, id := range activityIDs {
-			if id == cursor {
-				startIdx = i + 1
-				break
-			}
-		}
-	}
-
-	var results []*activitypub.Activity
-	var nextCursor string
-
-	for i := startIdx; i < len(activityIDs) && len(results) < safeLimit; i++ {
-		if entry, exists := r.activities[activityIDs[i]]; exists {
-			results = append(results, entry.activity)
-		}
-	}
-
-	// Set next cursor if there are more results
-	if startIdx+safeLimit < len(activityIDs) {
-		nextCursor = activityIDs[startIdx+safeLimit-1]
-	}
-
-	return results, nextCursor, nil
+	return r.getActivitiesFromIDs(r.inboxByUser[username], limit, cursor)
 }
 
 // GetOutboxActivities retrieves activities created by a user with pagination
@@ -170,7 +137,10 @@ func (r *ActivityRepository) GetOutboxActivities(_ context.Context, username str
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	activityIDs := r.outboxByUser[username]
+	return r.getActivitiesFromIDs(r.outboxByUser[username], limit, cursor)
+}
+
+func (r *ActivityRepository) getActivitiesFromIDs(activityIDs []string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
 	if len(activityIDs) == 0 {
 		return []*activitypub.Activity{}, "", nil
 	}
@@ -320,7 +290,7 @@ func (r *ActivityRepository) RecordActivity(_ context.Context, activityType stri
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	metric := &activityMetric{
+	metric := &ActivityMetric{
 		activityType: activityType,
 		actorID:      actorID,
 		timestamp:    timestamp,
@@ -452,7 +422,7 @@ func (r *ActivityRepository) GetFederationActivities(domain string) []*storage.F
 }
 
 // GetActivityMetrics returns activity metrics for an actor (test helper)
-func (r *ActivityRepository) GetActivityMetrics(actorID string) []*activityMetric {
+func (r *ActivityRepository) GetActivityMetrics(actorID string) []*ActivityMetric {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -467,7 +437,7 @@ func (r *ActivityRepository) Clear() {
 	r.activities = make(map[string]*activityEntry)
 	r.inboxByUser = make(map[string][]string)
 	r.outboxByUser = make(map[string][]string)
-	r.activityMetrics = make(map[string][]*activityMetric)
+	r.activityMetrics = make(map[string][]*ActivityMetric)
 	r.federationActivities = make(map[string][]*storage.FederationActivity)
 	r.weeklyStats = make(map[int64]*storage.WeeklyActivity)
 }

@@ -99,15 +99,13 @@ func (r *InstanceRepository) SetInstanceRules(_ context.Context, rules []storage
 
 // GetRulesByCategory retrieves rules filtered by category
 // Note: InstanceRule doesn't have a Category field, so this returns all rules
-func (r *InstanceRepository) GetRulesByCategory(_ context.Context, category string) ([]storage.InstanceRule, error) {
+func (r *InstanceRepository) GetRulesByCategory(_ context.Context, _ string) ([]storage.InstanceRule, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	// Return all rules since InstanceRule doesn't have a Category field
 	result := make([]storage.InstanceRule, 0, len(r.rules))
-	for _, rule := range r.rules {
-		result = append(result, rule)
-	}
+	result = append(result, r.rules...)
 	return result, nil
 }
 
@@ -145,7 +143,7 @@ func (r *InstanceRepository) GetTotalDomainCount(_ context.Context) (int64, erro
 }
 
 // GetActiveUserCount returns the number of active users in the last N days
-func (r *InstanceRepository) GetActiveUserCount(_ context.Context, days int) (int64, error) {
+func (r *InstanceRepository) GetActiveUserCount(_ context.Context, _ int) (int64, error) {
 	return 0, nil
 }
 
@@ -177,7 +175,7 @@ func (r *InstanceRepository) GetWeeklyActivity(_ context.Context, weekTimestamp 
 }
 
 // RecordActivity records activity data for analytics
-func (r *InstanceRepository) RecordActivity(_ context.Context, activityType string, userID string, timestamp time.Time) error {
+func (r *InstanceRepository) RecordActivity(_ context.Context, _ string, _ string, _ time.Time) error {
 	return nil
 }
 
@@ -192,17 +190,17 @@ func (r *InstanceRepository) GetStorageUsage(_ context.Context) (any, error) {
 }
 
 // GetStorageHistory returns storage usage history for the last N days
-func (r *InstanceRepository) GetStorageHistory(_ context.Context, days int) ([]any, error) {
+func (r *InstanceRepository) GetStorageHistory(_ context.Context, _ int) ([]any, error) {
 	return []any{}, nil
 }
 
 // GetUserGrowthHistory returns user growth data for the last N days
-func (r *InstanceRepository) GetUserGrowthHistory(_ context.Context, days int) ([]any, error) {
+func (r *InstanceRepository) GetUserGrowthHistory(_ context.Context, _ int) ([]any, error) {
 	return []any{}, nil
 }
 
 // GetDomainStats returns statistics for a specific domain
-func (r *InstanceRepository) GetDomainStats(_ context.Context, domain string) (any, error) {
+func (r *InstanceRepository) GetDomainStats(_ context.Context, _ string) (any, error) {
 	return map[string]any{}, nil
 }
 
@@ -217,7 +215,7 @@ func (r *InstanceRepository) RecordDailyMetrics(_ context.Context, date string, 
 }
 
 // GetMetricsSummary returns aggregated metrics for a given time range
-func (r *InstanceRepository) GetMetricsSummary(_ context.Context, timeRange string) (map[string]interface{}, error) {
+func (r *InstanceRepository) GetMetricsSummary(_ context.Context, _ string) (map[string]interface{}, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

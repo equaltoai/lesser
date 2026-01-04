@@ -227,7 +227,7 @@ func (r *WebSocketCostRepository) CreateBudget(_ context.Context, budget *models
 
 // UpdateBudget updates an existing WebSocket cost budget
 func (r *WebSocketCostRepository) UpdateBudget(_ context.Context, budget *models.WebSocketCostBudget) error {
-	return r.CreateBudget(nil, budget)
+	return r.CreateBudget(context.Background(), budget)
 }
 
 // GetBudget retrieves WebSocket cost budget for a user and period
@@ -297,7 +297,7 @@ func (r *WebSocketCostRepository) CreateAggregation(_ context.Context, aggregati
 
 // UpdateAggregation updates an existing WebSocket cost aggregation
 func (r *WebSocketCostRepository) UpdateAggregation(_ context.Context, aggregation *models.WebSocketCostAggregation) error {
-	return r.CreateAggregation(nil, aggregation)
+	return r.CreateAggregation(context.Background(), aggregation)
 }
 
 // GetAggregation retrieves WebSocket cost aggregation

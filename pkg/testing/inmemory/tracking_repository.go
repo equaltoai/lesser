@@ -179,7 +179,7 @@ func (r *TrackingRepository) CreateAggregated(_ context.Context, aggregated *mod
 
 // UpdateAggregated updates an existing aggregated cost tracking record
 func (r *TrackingRepository) UpdateAggregated(_ context.Context, aggregated *models.DynamoDBCostAggregation) error {
-	return r.CreateAggregated(nil, aggregated)
+	return r.CreateAggregated(context.Background(), aggregated)
 }
 
 
@@ -369,7 +369,7 @@ func (r *TrackingRepository) CreateRelayMetrics(_ context.Context, metrics *mode
 
 // UpdateRelayMetrics updates existing relay metrics
 func (r *TrackingRepository) UpdateRelayMetrics(_ context.Context, metrics *models.RelayMetrics) error {
-	return r.CreateRelayMetrics(nil, metrics)
+	return r.CreateRelayMetrics(context.Background(), metrics)
 }
 
 // GetRelayMetrics retrieves relay metrics for a specific relay and period

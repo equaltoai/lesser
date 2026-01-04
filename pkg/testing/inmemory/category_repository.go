@@ -12,6 +12,8 @@ import (
 	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 )
 
+const RootCategoryKey = "ROOT"
+
 // CategoryRepository is a thread-safe in-memory implementation of interfaces.CategoryRepository.
 type CategoryRepository struct {
 	mu sync.RWMutex
@@ -54,7 +56,7 @@ func (r *CategoryRepository) CreateCategory(_ context.Context, category *models.
 	r.categories[category.ID] = category
 
 	// Index by parent
-	parentKey := "ROOT"
+	parentKey := RootCategoryKey
 	if category.ParentID != nil && *category.ParentID != "" {
 		parentKey = *category.ParentID
 	}
@@ -89,7 +91,7 @@ func (r *CategoryRepository) ListCategories(_ context.Context, parentID *string,
 
 	if parentID != nil {
 		// Filter by parent
-		parentKey := "ROOT"
+		parentKey := RootCategoryKey
 		if *parentID != "" {
 			parentKey = *parentID
 		}
@@ -159,7 +161,7 @@ func (r *CategoryRepository) Update(_ context.Context, category *models.Category
 }
 
 // Delete deletes a category by PK and SK
-func (r *CategoryRepository) Delete(_ context.Context, pk, sk string) error {
+func (r *CategoryRepository) Delete(_ context.Context, _, sk string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -176,7 +178,7 @@ func (r *CategoryRepository) Delete(_ context.Context, pk, sk string) error {
 	}
 
 	// Remove from categoriesByParent index
-	parentKey := "ROOT"
+	parentKey := RootCategoryKey
 	if category.ParentID != nil && *category.ParentID != "" {
 		parentKey = *category.ParentID
 	}
