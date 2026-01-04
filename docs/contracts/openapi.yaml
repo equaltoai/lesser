@@ -138,7 +138,6 @@ components:
                     type: string
             required:
                 - agreement
-                - password
                 - username
             type: object
         AccountRegistrationResponse:
@@ -313,10 +312,6 @@ components:
                 username:
                     type: string
             required:
-                - display_name
-                - email
-                - password
-                - role
                 - username
             type: object
         AdminDemoteModeratorResponse:

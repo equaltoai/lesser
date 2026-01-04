@@ -16,6 +16,9 @@ var (
 	// Length requirement error for policy validation
 	ErrPasswordInsufficientLength = apperrors.PasswordInsufficientLength()
 
+	// Passwordless enforcement
+	ErrPasswordAuthDisabled = errors.New("password authentication is disabled")
+
 	// Password processing errors
 	ErrPasswordHashFailed = apperrors.PasswordHashingFailed(errors.New("password hashing failed"))
 

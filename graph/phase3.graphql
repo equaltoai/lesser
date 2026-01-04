@@ -629,7 +629,10 @@ type AdminAccountConnection {
 input AdminCreateUserInput {
   username: String!
   email: String
-  password: String!
+  """
+  Deprecated: Lesser is passwordless; this field is ignored if provided.
+  """
+  password: String
   displayName: String
   role: String
 }

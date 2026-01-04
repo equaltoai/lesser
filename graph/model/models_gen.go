@@ -148,9 +148,10 @@ type AdminCreateAnnouncementInput struct {
 }
 
 type AdminCreateUserInput struct {
-	Username    string  `json:"username"`
-	Email       *string `json:"email,omitempty"`
-	Password    string  `json:"password"`
+	Username string  `json:"username"`
+	Email    *string `json:"email,omitempty"`
+	// Deprecated: Lesser is passwordless; this field is ignored if provided.
+	Password    *string `json:"password,omitempty"`
 	DisplayName *string `json:"displayName,omitempty"`
 	Role        *string `json:"role,omitempty"`
 }

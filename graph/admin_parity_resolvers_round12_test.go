@@ -23,20 +23,17 @@ func TestRound12AdminParity_QueriesAndMutations(t *testing.T) {
 
 	_, err := mut.AdminCreateUser(ctx, model.AdminCreateUserInput{
 		Username: "bob",
-		Password: "password123",
 	})
 	require.NoError(t, err)
 
 	_, err = mut.AdminCreateUser(ctx, model.AdminCreateUserInput{
 		Username: "mod",
-		Password: "password123",
 		Role:     &moderatorRole,
 	})
 	require.NoError(t, err)
 
 	_, err = mut.AdminCreateUser(ctx, model.AdminCreateUserInput{
 		Username: "other-admin",
-		Password: "password123",
 		Role:     &adminRole,
 	})
 	require.NoError(t, err)

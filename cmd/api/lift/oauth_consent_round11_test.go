@@ -11,26 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type oauthSessionRepoStub struct {
-	createErr error
-}
-
-func (s oauthSessionRepoStub) CreateOAuthSession(ctx context.Context, session *storagemodels.OAuthAuthSession) error {
-	if session != nil && session.SessionID == "" {
-		session.SessionID = "session-1"
-	}
-	return s.createErr
-}
-
 func TestOAuthConsentHandlers_Round11(t *testing.T) {
-	origFactory := newOAuthSessionRepository
-	newOAuthSessionRepository = func(_ *Handler) oauthSessionRepository {
-		return oauthSessionRepoStub{}
-	}
-	t.Cleanup(func() {
-		newOAuthSessionRepository = origFactory
-	})
-
 	cfg := round10TestConfig()
 	state := &round10QueryState{
 		oauthStates: map[string]storagemodels.OAuthState{
@@ -68,5 +49,6 @@ func TestOAuthConsentHandlers_Round11(t *testing.T) {
 	require.NoError(t, err)
 	ctxLogin.Context = context.WithValue(ctxLogin.Context, common.ContextKeyClaims, &auth.Claims{Username: "alice"})
 	require.NoError(t, handler.HandleOAuthLoginLift(ctxLogin))
-	require.Equal(t, http.StatusOK, ctxLogin.Response.StatusCode)
+	require.Equal(t, http.StatusFound, ctxLogin.Response.StatusCode)
+	require.Contains(t, ctxLogin.Response.Headers["Location"], "https://example.com/auth/login")
 }

@@ -229,7 +229,7 @@ func (s *SocialRecoveryService) ConfirmRecovery(ctx context.Context, requestID, 
 	if request.ReceivedVotes >= request.RequiredVotes {
 		request.Status = "approved"
 
-		// Enable recovery token for password reset
+		// Enable recovery token for completing account recovery (e.g., adding a new passkey/wallet).
 		if err := s.enableRecoveryToken(ctx, request); err != nil {
 			s.logger.Error("failed to enable recovery token",
 				zap.String("request_id", requestID),

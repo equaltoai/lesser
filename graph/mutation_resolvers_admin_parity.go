@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
@@ -29,9 +28,9 @@ func (r *mutationResolver) AdminCreateUser(ctx context.Context, input model.Admi
 		return nil, err
 	}
 
-	hashedPassword, err := auth.HashPassword(input.Password)
-	if err != nil {
-		return nil, errors.Join(errors.New("failed to hash password"), err)
+	if input.Password != nil && strings.TrimSpace(*input.Password) != "" {
+		r.Logger.Warn("password provided in admin user creation but passwords are disabled",
+			zap.String("username", username))
 	}
 
 	role := adminRoleUser
@@ -42,7 +41,7 @@ func (r *mutationResolver) AdminCreateUser(ctx context.Context, input model.Admi
 	user := &storage.User{
 		Username:     username,
 		Email:        ptrOrEmpty(input.Email),
-		PasswordHash: hashedPassword,
+		PasswordHash: "",
 		DisplayName:  ptrOrEmpty(input.DisplayName),
 		Role:         role,
 		Approved:     true,

@@ -1,7 +1,6 @@
 package lift
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,19 +11,9 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
-
-type oauthSessionRepository interface {
-	CreateOAuthSession(ctx context.Context, session *models.OAuthAuthSession) error
-}
-
-var newOAuthSessionRepository = func(h *Handler) oauthSessionRepository {
-	return repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger, nil)
-}
 
 // HandleOAuthConsentLift handles the OAuth consent form submission using Lift patterns
 // POST /oauth/consent
@@ -194,7 +183,18 @@ func (h *Handler) HandleOAuthLoginLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Decode auth request
+	if strings.TrimSpace(returnTo) == "" {
+		returnTo = "/oauth/authorize"
+	}
+
+	returnTo = strings.TrimSpace(returnTo)
+	if !strings.HasPrefix(returnTo, "/") || strings.HasPrefix(returnTo, "//") {
+		returnTo = "/oauth/authorize"
+	} else if parsedReturnTo, err := url.Parse(returnTo); err != nil || parsedReturnTo.IsAbs() || parsedReturnTo.Host != "" {
+		returnTo = "/oauth/authorize"
+	}
+
+	// Validate auth request is valid JSON (Auth UI expects JSON here).
 	var authRequest map[string]string
 	if err := json.Unmarshal([]byte(authRequestParam), &authRequest); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
@@ -203,104 +203,17 @@ func (h *Handler) HandleOAuthLoginLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Create OAuth session for tracking the flow
-	oauthSessionRepo := newOAuthSessionRepository(h)
+	authUIBaseURL := fmt.Sprintf("https://%s/auth", h.cfg.Domain)
+	loginURL := fmt.Sprintf("%s/login?return_to=%s&auth_request=%s",
+		authUIBaseURL,
+		url.QueryEscape(returnTo),
+		url.QueryEscape(authRequestParam))
 
-	clientIP := ""  // Extract from Lambda event context
-	userAgent := "" // Extract from Lambda event headers
-
-	oauthSession := &models.OAuthAuthSession{
-		ClientID:            authRequest["client_id"],
-		RedirectURI:         authRequest["redirect_uri"],
-		State:               authRequest["state"],
-		CodeChallenge:       authRequest["code_challenge"],
-		CodeChallengeMethod: authRequest["code_challenge_method"],
-		FlowStep:            "login",
-		IPAddress:           clientIP,
-		UserAgent:           userAgent,
-		ReturnURL:           returnTo,
-		IsSecure:            true,
+	if h.isOAuthAuthorizeUIMode(ctx) {
+		return ctx.Status(http.StatusOK).JSON(apimodels.OAuthAuthorizeResponse{NextURL: loginURL})
 	}
 
-	// Parse scopes
-	if scopeStr := authRequest["scope"]; scopeStr != "" {
-		oauthSession.Scopes = strings.Fields(scopeStr)
-	}
-
-	err := oauthSessionRepo.CreateOAuthSession(ctx.Context, oauthSession)
-	if err != nil {
-		h.logger.Error("failed to create OAuth login session", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
-			"error":             "server_error",
-			"error_description": "Failed to initiate login flow",
-		})
-	}
-
-	// Render login page with OAuth context
-	html := h.renderOAuthLoginPage(authRequest, oauthSession.SessionID)
-
-	ctx.Response.Header("Content-Type", "text/html; charset=utf-8")
-	return ctx.Text(html)
-}
-
-// renderOAuthLoginPage renders the OAuth login page
-func (h *Handler) renderOAuthLoginPage(authRequest map[string]string, sessionID string) string {
-	clientName := authRequest["client_id"] // In production, fetch app name from client_id
-
-	return fmt.Sprintf(`
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Login - OAuth Authorization</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; }
-        .oauth-info { background: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
-        .login-form { background: white; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input[type="text"], input[type="password"] { 
-            width: 100%%; padding: 10px; border: 1px solid #ddd; border-radius: 3px; 
-        }
-        button { 
-            background: #007bff; color: white; padding: 10px 20px; 
-            border: none; border-radius: 3px; cursor: pointer; width: 100%%; 
-        }
-        button:hover { background: #0056b3; }
-        .error { color: #dc3545; margin-top: 10px; }
-        .security-info { font-size: 12px; color: #666; margin-top: 15px; }
-    </style>
-</head>
-<body>
-    <div class="oauth-info">
-        <h2>Login Required</h2>
-        <p><strong>%s</strong> is requesting access to your account.</p>
-        <p>Please login to continue with the authorization.</p>
-    </div>
-    
-    <div class="login-form">
-        <form method="POST" action="/auth/login">
-            <input type="hidden" name="oauth_session_id" value="%s">
-            <input type="hidden" name="return_to" value="/oauth/authorize">
-            
-            <div class="form-group">
-                <label for="username">Username or Email:</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            
-            <div class="form-group">
-                <label for="password">Password:</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            
-            <button type="submit">Login</button>
-            
-            <div class="security-info">
-                <p>🔒 Your login is secured with enterprise-grade encryption.</p>
-                <p>By logging in, you'll be redirected back to complete the authorization.</p>
-            </div>
-        </form>
-    </div>
-</body>
-</html>
-	`, clientName, sessionID)
+	ctx.Response.Header("Location", loginURL)
+	ctx.Status(http.StatusFound)
+	return nil
 }

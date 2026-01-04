@@ -183,9 +183,9 @@ GO_ENV=test go test ./pkg/storage/dynamodb/... -run OAuth
 ## Future Enhancements
 
 1. **User Authentication**
-   - Implement actual login page
-   - User password verification
-   - Multi-factor authentication
+   - Expand passwordless login UI (passkeys/wallets)
+   - Account recovery UX (recovery codes / social recovery)
+   - Multi-factor authentication (passwordless-friendly)
 
 2. **Client Management**
    - Dynamic client registration

@@ -8,7 +8,7 @@ import (
 // AccountRegistrationRequest represents a user registration request
 type AccountRegistrationRequest struct {
 	Username                 string `json:"username"`
-	Password                 string `json:"password"`  // Ignored - passwordless auth only
+	Password                 string `json:"password,omitempty"` // Ignored - passwordless auth only
 	Agreement                bool   `json:"agreement"` // ToS agreement
 	Locale                   string `json:"locale,omitempty"`
 	Reason                   string `json:"reason,omitempty"` // For approval

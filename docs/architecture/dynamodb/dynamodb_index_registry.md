@@ -216,7 +216,7 @@ To make this actionable, the rest of this document treats each `(pkAttr, skAttr)
 ### 6.2 Ambiguous index names (same name used with different key schemas)
 These index names cannot correspond to a single DynamoDB GSI without an alias layer (none exists globally in DynamORM):
 - `service-index`: used with `gsi1PK/gsi1SK` in `pkg/storage/models/metrics.go:21`, and with `gsi3PK/gsi3SK` in `pkg/storage/models/dlq_message.go:29`.
-- `token-index`: used with `gsi1PK/gsi1SK` (`pkg/storage/models/password_reset.go:16`) and with `gsi2PK/gsi2SK` (`pkg/storage/models/session.go:28`).
+- `token-index`: used with `gsi1PK/gsi1SK` (`pkg/storage/models/password_reset.go:16`, legacy password-reset token model) and with `gsi2PK/gsi2SK` (`pkg/storage/models/session.go:28`).
 
 ### 6.3 Invalid DynamORM tags (won’t register)
 - `AuthRefreshToken.CreatedAtSK` uses semicolons to try to attach multiple index tags in one struct tag (`pkg/storage/models/auth_refresh_token.go:21`). DynamORM tag parsing does not support this; the model likely cannot be registered.

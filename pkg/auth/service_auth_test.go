@@ -9,9 +9,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
-	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -158,95 +155,18 @@ func (s oauthStub) GenerateAuthorizationCode() (string, error) { return s.authCo
 func TestAuthService_AuthenticateWithPassword_SuccessAndErrorPaths(t *testing.T) {
 	t.Parallel()
 
-	accountRepo := newInMemoryAuthAccountRepo()
-	passwordHash, err := HashPassword("correct-horse-battery-staple")
-	require.NoError(t, err)
-
-	accountRepo.users["alice"] = &storage.User{
-		Username:     "alice",
-		PasswordHash: passwordHash,
-		Approved:     true,
-		Suspended:    false,
-	}
-	accountRepo.actors["alice"] = &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}}
-
-	sessionRepo := newInMemorySessionRepo()
-	sessionManager := newSessionManager(sessionRepo)
-
-	rlRepo := newFakeRateLimitRepo()
-	rateLimiter := &RateLimiter{accountRepo: rlRepo}
-
-	activityRepo := testmocks.NewMockActivityRepository()
-	activityRepo.On("RecordActivity", mock.Anything, "login", "https://example.com/users/alice", mock.Anything).Return(nil)
-
-	auditLogger := &AuditLogger{
-		logger: zap.NewNop(),
-		config: &AuditConfig{
-			Enabled:         true,
-			StoreToDB:       false,
-			StoreToFile:     false,
-			StoreToSIEM:     false,
-			RedactSensitive: true,
-		},
-	}
-
 	as := &AuthService{
-		accountRepo:    accountRepo,
-		activityRepo:   activityRepo,
-		sessionManager: sessionManager,
-		rateLimiter:    rateLimiter,
-		auditLogger:    auditLogger,
+		accountRepo:    newInMemoryAuthAccountRepo(),
+		sessionManager: newSessionManager(newInMemorySessionRepo()),
+		rateLimiter:    &RateLimiter{accountRepo: newFakeRateLimitRepo()},
+		auditLogger:    &AuditLogger{logger: zap.NewNop(), config: &AuditConfig{Enabled: false}},
 		jwtSecret:      []byte("a-very-strong-jwt-key-without-weak-patterns-9876543210"),
 		config:         &config.Config{Domain: "example.com"},
 		oauthService:   oauthStub{authCode: "code"},
 	}
 
-	resp, err := as.AuthenticateWithPassword(context.Background(), "alice", "correct-horse-battery-staple", "device", "ua", "192.0.2.10")
-	require.NoError(t, err)
-	require.NotEmpty(t, resp.AccessToken)
-	require.NotEmpty(t, resp.RefreshToken)
-	require.Equal(t, "alice", resp.Me)
-
-	// ValidateAccessToken fails until the session exists in the account repo.
-	_, err = as.ValidateAccessToken(resp.AccessToken)
-	require.ErrorIs(t, err, ErrInvalidToken)
-
-	token, err := jwt.ParseWithClaims(resp.AccessToken, &EnhancedClaims{}, func(token *jwt.Token) (any, error) {
-		return as.jwtSecret, nil
-	})
-	require.NoError(t, err)
-	claims := token.Claims.(*EnhancedClaims)
-	accountRepo.sessions[claims.SessionID] = &storage.Session{SessionID: claims.SessionID, ExpiresAt: time.Now().Add(time.Hour)}
-	_, err = as.ValidateAccessToken(resp.AccessToken)
-	require.NoError(t, err)
-
-	// Not found user.
-	accountRepo.errGetUser = errors.New("boom")
-	_, err = as.AuthenticateWithPassword(context.Background(), "missing", "x", "device", "ua", "192.0.2.10")
-	require.ErrorIs(t, err, ErrInvalidCredentials)
-
-	// Suspended user.
-	accountRepo.errGetUser = nil
-	accountRepo.users["suspended"] = &storage.User{Username: "suspended", PasswordHash: passwordHash, Approved: true, Suspended: true}
-	_, err = as.AuthenticateWithPassword(context.Background(), "suspended", "correct-horse-battery-staple", "device", "ua", "192.0.2.10")
-	require.ErrorIs(t, err, ErrUserSuspended)
-
-	// Not approved.
-	accountRepo.users["pending"] = &storage.User{Username: "pending", PasswordHash: passwordHash, Approved: false, Suspended: false}
-	_, err = as.AuthenticateWithPassword(context.Background(), "pending", "correct-horse-battery-staple", "device", "ua", "192.0.2.10")
-	require.ErrorIs(t, err, ErrUserNotApproved)
-
-	// Wrong password triggers invalid credentials and brute force logging path.
-	rlRepo.attempts["account:alice"] = 5
-	_, err = as.AuthenticateWithPassword(context.Background(), "alice", "wrong", "device", "curl/8.0", "203.0.113.5")
-	require.ErrorIs(t, err, ErrInvalidCredentials)
-
-	// Rate limited.
-	rlRepo.limited["ip:203.0.113.99"] = true
-	_, err = as.AuthenticateWithPassword(context.Background(), "alice", "correct-horse-battery-staple", "device", "ua", "203.0.113.99")
-	require.ErrorIs(t, err, ErrIPRateLimited)
-
-	activityRepo.AssertExpectations(t)
+	_, err := as.AuthenticateWithPassword(context.Background(), "alice", "password", "device", "ua", "192.0.2.10")
+	require.ErrorIs(t, err, ErrPasswordAuthDisabled)
 }
 
 func TestAuthService_RefreshAccessToken_AndLegacyDelegates(t *testing.T) {
@@ -305,10 +225,7 @@ func TestAuthService_ChangePassword_TrustDevice_GetConfig_AndRecoveryToken(t *te
 	t.Parallel()
 
 	accountRepo := newInMemoryAuthAccountRepo()
-	oldPassword := "old-password-strong-1234567890"
-	oldHash, err := HashPassword(oldPassword)
-	require.NoError(t, err)
-	accountRepo.users["alice"] = &storage.User{Username: "alice", PasswordHash: oldHash, Approved: true}
+	accountRepo.users["alice"] = &storage.User{Username: "alice", PasswordHash: "hash", Approved: true}
 	accountRepo.devices["dev-1"] = &storage.Device{DeviceID: "dev-1", Username: "bob"}
 
 	sessionManager := newSessionManager(newInMemorySessionRepo())
@@ -321,13 +238,7 @@ func TestAuthService_ChangePassword_TrustDevice_GetConfig_AndRecoveryToken(t *te
 		config:         &config.Config{Stage: ""},
 	}
 
-	require.ErrorIs(t, as.ChangePassword(context.Background(), "alice", "wrong", "new-password-strong-1234567890"), ErrInvalidCredentials)
-
-	accountRepo.errUpdateUser = errors.New("update failed")
-	require.ErrorIs(t, as.ChangePassword(context.Background(), "alice", oldPassword, "new-password-strong-1234567890"), ErrPasswordUpdateFailed)
-	accountRepo.errUpdateUser = nil
-
-	require.NoError(t, as.ChangePassword(context.Background(), "alice", oldPassword, "new-password-strong-1234567890"))
+	require.ErrorIs(t, as.ChangePassword(context.Background(), "alice", "wrong", "new-password-strong-1234567890"), ErrPasswordAuthDisabled)
 
 	require.ErrorIs(t, as.TrustDevice(context.Background(), "alice", "dev-1"), ErrDeviceOwnershipMismatch)
 

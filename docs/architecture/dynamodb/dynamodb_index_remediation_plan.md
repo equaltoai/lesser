@@ -291,7 +291,7 @@ These index names are used with **different** key schemas, which is impossible:
 
 | File | Key Schema | Usage |
 |------|------------|-------|
-| `pkg/storage/models/password_reset.go` | `gsi1PK/gsi1SK` | Password reset tokens |
+| `pkg/storage/models/password_reset.go` | `gsi1PK/gsi1SK` | Legacy password reset tokens (unused in passwordless flow) |
 | `pkg/storage/models/session.go` | `gsi2PK/gsi2SK` | Session tokens |
 
 **Resolution**:

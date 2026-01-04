@@ -100,9 +100,10 @@ func TestWebAuthnService_DeleteCredential_AndUpdateCredentialName_SuccessPaths(t
 	repo.usersByUsername["alice"].PasswordHash = ""
 	require.NoError(t, svc.DeleteCredential(context.Background(), "alice", cred1.ID))
 
-	// Single credential with password -> delete allowed.
+	// Single credential with wallet -> delete allowed.
 	repo2 := newInMemoryWebAuthnRepo()
 	repo2.usersByUsername["alice"] = &storage.User{Username: "alice", PasswordHash: "hash"}
+	repo2.walletsByUsername["alice"] = []*storage.WalletCredential{{Username: "alice", Address: "0xabc", Type: "ethereum", ChainID: 1}}
 	only := &storage.WebAuthnCredential{ID: "Aw==", UserID: "alice", PublicKey: []byte("pub")}
 	repo2.credentialsByUsername["alice"] = []*storage.WebAuthnCredential{only}
 	repo2.credentialsByID[only.ID] = only
@@ -125,4 +126,3 @@ func TestWebAuthnService_DeleteCredential_AndUpdateCredentialName_SuccessPaths(t
 	repo2.credentialsByID[only.ID] = &storage.WebAuthnCredential{ID: only.ID, UserID: "alice", SignCount: 1, LastUsedAt: time.Now().Add(-time.Hour)}
 	require.NoError(t, svc2.UpdateCredentialName(context.Background(), "alice", only.ID, "renamed"))
 }
-

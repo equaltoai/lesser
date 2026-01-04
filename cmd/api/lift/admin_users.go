@@ -1,6 +1,7 @@
 package lift
 
 import (
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -22,6 +23,16 @@ func (h *Handler) HandleAdminCreateUserLift(ctx *lift.Context) error {
 		return h.respondUnprocessableEntity(ctx, "invalid user data")
 	}
 
+	req.Username = strings.TrimSpace(req.Username)
+	if err := common.ValidateRequiredParam("username", req.Username); err != nil {
+		return h.respondUnprocessableEntity(ctx, "username is required")
+	}
+
+	role := strings.TrimSpace(req.Role)
+	if role == "" {
+		role = "user"
+	}
+
 	// NOTE: Password-based authentication is disabled (wallet/passkey only). Ignore any provided credentials.
 	if req.Password != "" {
 		h.logger.Warn("password provided in admin create user request but passwords are disabled",
@@ -38,8 +49,8 @@ func (h *Handler) HandleAdminCreateUserLift(ctx *lift.Context) error {
 		Username:     req.Username,
 		Email:        "",
 		PasswordHash: "",
-		DisplayName:  req.DisplayName,
-		Role:         req.Role,
+		DisplayName:  strings.TrimSpace(req.DisplayName),
+		Role:         role,
 		Approved:     true,
 		CreatedAt:    time.Now(),
 	}

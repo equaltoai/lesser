@@ -19,6 +19,7 @@ type inMemoryWebAuthnRepo struct {
 	credentialsByUsername map[string][]*storage.WebAuthnCredential
 	credentialsByID       map[string]*storage.WebAuthnCredential
 	challengesByChallenge map[string]*storage.WebAuthnChallenge
+	walletsByUsername     map[string][]*storage.WalletCredential
 
 	updateCalls int
 }
@@ -29,6 +30,7 @@ func newInMemoryWebAuthnRepo() *inMemoryWebAuthnRepo {
 		credentialsByUsername: make(map[string][]*storage.WebAuthnCredential),
 		credentialsByID:       make(map[string]*storage.WebAuthnCredential),
 		challengesByChallenge: make(map[string]*storage.WebAuthnChallenge),
+		walletsByUsername:     make(map[string][]*storage.WalletCredential),
 	}
 }
 
@@ -42,6 +44,10 @@ func (r *inMemoryWebAuthnRepo) GetUser(_ context.Context, username string) (*sto
 
 func (r *inMemoryWebAuthnRepo) GetUserWebAuthnCredentials(_ context.Context, username string) ([]*storage.WebAuthnCredential, error) {
 	return append([]*storage.WebAuthnCredential(nil), r.credentialsByUsername[username]...), nil
+}
+
+func (r *inMemoryWebAuthnRepo) GetUserWalletCredentials(_ context.Context, username string) ([]*storage.WalletCredential, error) {
+	return append([]*storage.WalletCredential(nil), r.walletsByUsername[username]...), nil
 }
 
 func (r *inMemoryWebAuthnRepo) StoreWebAuthnChallenge(_ context.Context, challenge *storage.WebAuthnChallenge) error {

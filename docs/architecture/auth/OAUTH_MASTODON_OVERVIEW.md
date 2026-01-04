@@ -174,10 +174,9 @@ The client redirects the user's browser to the authorization URL. The server the
 
 ### Step 3: User Authentication
 
-If the user is not authenticated, the server presents a login interface. Mastodon servers may implement:
+If the user is not authenticated, the server presents a login interface.
 
-- **Passwordless Authentication**: WebAuthn (passkeys), cryptocurrency wallets, or other methods
-- **Traditional Authentication**: Password-based login (if supported)
+In Lesser, authentication is **passwordless** (WebAuthn/passkeys and cryptocurrency wallets). Password-based login is not supported.
 
 After successful authentication, the user is redirected back to the authorization endpoint.
 
@@ -793,4 +792,3 @@ OAuth 2.0 for Mastodon provides a secure, standardized way for client applicatio
 6. **Scopes**: Granular permission system for user control
 
 Understanding these components enables developers to build secure, compliant Mastodon client applications that respect user privacy and security.
-

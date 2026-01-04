@@ -50,6 +50,7 @@ type webAuthnEngine interface {
 type webAuthnRepository interface {
 	GetUser(ctx context.Context, username string) (*storage.User, error)
 	GetUserWebAuthnCredentials(ctx context.Context, username string) ([]*storage.WebAuthnCredential, error)
+	GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error)
 	StoreWebAuthnChallenge(ctx context.Context, challenge *storage.WebAuthnChallenge) error
 	GetWebAuthnChallenge(ctx context.Context, challenge string) (*storage.WebAuthnChallenge, error)
 	DeleteWebAuthnChallenge(ctx context.Context, challenge string) error
@@ -401,13 +402,12 @@ func (s *WebAuthnService) DeleteCredential(ctx context.Context, username string,
 	}
 
 	if len(credentials) <= 1 {
-		// Check if user has a password set
-		user, err := s.repo.GetUser(ctx, username)
+		// Ensure the user has at least one other auth method (wallet).
+		wallets, err := s.repo.GetUserWalletCredentials(ctx, username)
 		if err != nil {
 			return err
 		}
-
-		if err := common.ValidateRequiredParam("user.PasswordHash", user.PasswordHash); err != nil {
+		if len(wallets) == 0 {
 			return ErrLastAuthMethodDelete
 		}
 	}
