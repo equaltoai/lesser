@@ -1,228 +1,217 @@
-# Lesser: 10/10 Codebase Plan (Quality, Consistency, Completeness, Security)
+# Lesser: 10/10 Plan (Quality, Consistency, Completeness, Security)
 
-This document synthesizes the current audit findings into an actionable plan to bring Lesser to **10/10** across:
-**Quality**, **Consistency**, **Completeness**, and **Security**.
+This plan turns the 2026-01-04 audit into sequenced, measurable work to bring Lesser from the current **8/10s** to **10/10** across: **Quality**, **Consistency**, **Completeness**, and **Security**.
 
-## Baseline (observed)
-
-Current observed grades (2026-01-04):
+## Baseline (2026-01-04)
 
 | Category | Grade |
 | --- | ---: |
 | Quality | 8/10 |
-| Consistency | 7/10 |
+| Consistency | 8/10 |
 | Completeness | 8/10 |
-| Security | 7/10 |
+| Security | 8/10 |
 
-Supporting signals and repo tooling:
+### What was actually verified
 
-- Lint: `./lesser lint` → `0 issues`
-- Security static scan: `./lesser sec-scan` (gosec) → `0 issues`
-- Go vuln scan: `govulncheck -show verbose ./...` → `0` reachable vulns (but `github.com/aws/aws-sdk-go` has module-level advisories)
-- Unit tests: `./lesser test unit` → pass
-- Docs drift: `./lesser verify docs` → pass
-- Coverage snapshot: `go tool cover -func=coverage.out` → ~`77%` statements (repo artifact; not a gate yet)
+- Ran: `./lesser test unit`, `./lesser lint` (0 issues), `./lesser sec-scan` (gosec: 0 issues), `./lesser vuln-check` (no vulns), `./lesser verify ci` (lint + security + supply-chain + docs/schema/OpenAPI/GraphQL coverage + inventory/lambda-set parity + unit tests).
+- Manual review focused on: auth/session + CSRF, outbound HTTP/SSRF, federation signatures + authorized fetch, GraphQL abuse limits, log scrubbing/PII hygiene, and key CDK constructs (IAM/KMS/CloudFront).
 
-Related audit artifacts:
+### Key blockers to 10/10 (prioritized)
 
-- `docs/lesser-code-audit.md` (older snapshot; update as part of this plan)
-- `docs/security-milestones.md` (existing milestone framing; extend/close gaps)
+**Security**
+
+- High: CloudFront CSP weakens XSS defenses if serving HTML (CSP includes `'unsafe-inline'` and `'unsafe-eval'` and can override stricter origin headers): `infra/cdk/constructs/cloudfront_caching.go:330`, `infra/cdk/constructs/api_caching.go:452`.
+- High: Unbounded reads of untrusted HTTP bodies (`io.ReadAll(resp.Body)`) in production paths: `pkg/federation/delivery.go:210`, `pkg/observability/webhook_delivery.go:476`, `pkg/federation/routing/route_manager.go:1523`, `pkg/storage/repositories/federation_repository.go:1359`.
+- Medium: Broad execute-api scope (`arn:aws:execute-api:*:*:*/*`) for `ManageConnections`/`Invoke`: `infra/cdk/stacks/shared_stack.go:216`, `infra/cdk/stacks/shared_stack.go:219`.
+- Medium: OAuth client secrets stored as plaintext field: `pkg/storage/models/oauth_client.go:24`.
+- Low: “Insecure TLS” capability exists (gated): `pkg/httpclient/federation_client.go:81`.
+- Low: Misleading config knob (`WebhookConfig.VerifySSL`) exists but is unused: `pkg/observability/webhook_delivery.go:37`.
+
+**Quality / Consistency / Completeness**
+
+- Maintainability hot spot: `cmd/inbox/main.go` is very large, increasing review surface and making subtle bugs harder to spot.
+- Tooling mismatch: staticcheck Go version pinned to 1.21 while module targets Go 1.25: `.golangci.yml:126`, `go.mod:3`.
+- Disabled/parked artifacts remain: `pkg/auth/refresh_tokens_test.go.disabled`, `graph/dataloader_test.go.disabled`, `pkg/moderation/advanced/pattern_repository_bridge.go.disabled`.
+
+### Strengths to keep (already in place)
+
+- GraphQL has enforced token/depth/complexity limits; introspection defaults off.
+- SSRF protections exist and are used by hardened outbound HTTP clients.
+- Log scrubber exists for PII/sensitive hygiene.
+- `./lesser verify ci` already enforces lint + security + supply chain + contract drift prevention.
+
+Related docs:
+
+- `docs/lesser-code-audit.md` (audit details)
+- `docs/security-milestones.md` (security milestone framing)
 
 ## What “10/10” Means (Definition of Done)
 
-10/10 means “excellent by default”, not “perfect forever”. The criteria below are intentionally measurable.
-
-### Quality 10/10 (Maintainable, testable, change-friendly)
-
-- No “god files” in critical paths: largest handlers/services are broken into cohesive packages with clear boundaries.
-- Panics are limited to true invariants (startup wiring, codegen); runtime request paths never panic without recovery.
-- Clear interfaces + dependency injection where it reduces coupling (esp. outbound IO).
-- Tests are fast, reliable, and meaningful: unit tests run deterministically; integration tests are scoped and opt-in.
-- Complexity budgets are enforced (gocyclo/gocognit) and steadily ratcheted down in hotspots.
-
-### Consistency 10/10 (One way to do the important things)
-
-- One canonical approach each for:
-  - URL validation + SSRF rules
-  - outbound HTTP client construction
-  - auth/session/cookie primitives
-  - error shaping (REST + GraphQL)
-  - logging fields (request_id, actor/user, tenant/app)
-- Environment/config keys are standardized; legacy keys are supported via deprecation shims and documented.
-- Security middleware selection is uniform (API vs federation vs media vs websocket).
-
-### Completeness 10/10 (No “mystery meat”)
-
-- No disabled tests (`*.go.disabled`) without an explicit tracked replacement.
-- No “not implemented” placeholders outside mocks/examples.
-- Pagination semantics are consistent across REST + GraphQL and fully documented.
-- Docs are accurate, CLI-first, and aligned with the intended passwordless posture.
-- Coverage targets are explicit and met for security-critical packages.
+10/10 means “excellent by default”, not “perfect forever”. The criteria below are intentionally measurable and CI-enforceable.
 
 ### Security 10/10 (Abuse-resilient and reviewable)
 
-- GraphQL has enforced depth/complexity/time limits; introspection/playground are gated.
-- All outbound HTTP that touches user-controlled URLs is SSRF-hardened and uses shared rules.
-- No misleading “constant-time” comparisons; auth/security comparisons use `crypto/subtle`.
-- Logging is scrubbed by default; sensitive fields never appear in logs even on errors.
-- Supply chain is actively managed (reachable vulns: 0; module vulns: 0 or documented exceptions + compensating controls).
-- CI runs security checks and blocks merges on regressions.
+- CloudFront CSP is behavior-specific and never weakens HTML routes (no `'unsafe-eval'`; no `'unsafe-inline'` for HTML) and does not unintentionally override stricter origin CSP for dynamic pages.
+- All outbound HTTP reads from untrusted servers are size-capped and safely logged (truncated snippets only; scrubber always applied).
+- IAM policies are least-privilege (no broad wildcards where stack outputs can scope ARNs).
+- OAuth client secret storage is hardened (hashed or KMS-encrypted) with a migration + rotation story.
+- Debug-only TLS bypasses cannot be enabled accidentally in production.
+- `./lesser verify ci` blocks regressions in all of the above.
 
-## Milestones (Sequenced for Safety + Momentum)
+### Quality 10/10 (Maintainable, testable, change-friendly)
 
-### M0 — Establish the 10/10 bar (1–2 days)
+- No “god files” in critical paths: largest handlers/services are split into cohesive packages with clear boundaries.
+- Complexity budgets (gocyclo/gocognit) are enforced and trending down in hotspots.
+- Tests cover security-critical helpers and failure modes (size caps, SSRF edge cases, signature failures).
 
-- [ ] Create a “quality bar” doc section in `docs/CONTRIBUTING.md` (what’s gated; what’s best-effort).
-- [ ] Add a single `./lesser verify all` (or equivalent) command that CI can run deterministically.
-- [ ] Decide and document target numbers:
-  - GraphQL max depth + complexity
-  - Min coverage for security-critical packages (`pkg/auth`, `pkg/httpclient`, `pkg/ssrf`, `pkg/middleware`)
-  - Complexity thresholds (start with “no worse than today”, then ratchet).
+### Consistency 10/10 (One way to do the important things)
+
+- Toolchain/analyzer versions are aligned (Go/staticcheck/golangci-lint settings match `go.mod`).
+- One canonical approach for outbound HTTP: client construction, SSRF validation, timeouts, response-size caps, and logging behavior.
+- Config knobs match behavior (no dead flags that mislead operators).
+
+### Completeness 10/10 (No “mystery meat”)
+
+- No `*.go.disabled` files without an explicit tracked replacement and rationale.
+- No “not implemented” placeholders outside mocks/examples.
+- Docs are accurate, CLI-first, and reflect actual runtime/security posture.
+
+## Milestones (sequenced for safety + momentum)
+
+### M0 — Turn the audit into enforced gates (P0)
+
+Goal: prevent regressions while the high-impact fixes land.
+
+- [ ] Extend `./lesser verify ci` (or add `./lesser verify audit`) with checks for:
+  - CloudFront CSP directives (no `'unsafe-eval'`; no `'unsafe-inline'` for HTML behaviors; avoid global CSP that overrides origin for HTML).
+  - No `io.ReadAll(resp.Body)` on `*http.Response` bodies outside tests.
+  - No `*.go.disabled` files (or allowlist with tracked replacements).
+  - `.golangci.yml` staticcheck `go:` matches `go.mod`.
+- [ ] Document the new gates in `CONTRIBUTING.md` and link from this plan.
 
 **Acceptance criteria**
-- One command exists that a CI job can run to validate quality/security/docs gates.
-- Targets are written down (even if initially conservative).
+- `./lesser verify ci` fails on new violations and is green on main.
 
 **Suggested verification**
 ```bash
-./lesser verify
-./lesser lint
-./lesser sec-scan
-govulncheck ./...
+./lesser verify ci
+```
+
+### M1 — CloudFront CSP hardening (P0 security)
+
+- [ ] Split response header policies by behavior (HTML vs APIs/assets) so CSP is not one-size-fits-all.
+- [ ] Remove `'unsafe-eval'`; remove `'unsafe-inline'` for HTML behaviors (use nonces/hashes if inline scripts/styles are required).
+- [ ] Ensure origin CSP is preserved for dynamic HTML (avoid CloudFront overriding when the origin should be authoritative).
+- [ ] Add CDK assertions/unit tests verifying the deployed policy.
+- [ ] Update docs/runbooks: how to extend CSP safely.
+
+**Acceptance criteria**
+- HTML routes served via CloudFront have a strict CSP without unsafe directives, and origin CSP is not unintentionally weakened.
+
+**Suggested verification**
+```bash
 ./lesser test unit
-./lesser verify docs
+./lesser verify ci
 ```
 
-### M1 — GraphQL abuse-resilience (P1 security + P1 quality)
+### M2 — Cap untrusted outbound HTTP body reads (P0 security + P1 quality)
 
-Primary gaps: GraphQL currently lacks enforced limits and enables introspection unconditionally.
-
-- [ ] Add enforced GraphQL query depth limit.
-- [ ] Add enforced GraphQL complexity limit (use gqlgen complexity config/extensions).
-- [ ] Gate introspection (and playground) behind `DebugMode` and/or explicit allowlist config.
-- [ ] Add request timeout enforcement at the handler layer (ensure every request has a deadline).
-- [ ] Add tests that prove limits are enforced (unit tests; no network required).
-- [ ] Add operational docs: “why limits exist”, “how to tune”, “how to debug”.
-
-**Acceptance criteria**
-- In non-debug deployments: introspection disabled and queries above limits are rejected with clear errors.
-- Limits are covered by tests and cannot regress silently.
-
-**Suggested verification**
-```bash
-go test ./cmd/graphql/... ./graph/... ./pkg/...
-./lesser test unit
-```
-
-### M2 — Canonical outbound URL + SSRF rules (P2 consistency + P1 security)
-
-Primary gap: federation client URL validation is weaker/different than the general secure client.
-
-- [ ] Create a single shared URL validation helper (scheme + hostname + blocked host suffixes + IP literal rules).
-- [ ] Apply it to:
-  - `pkg/httpclient` SecureClient
-  - `pkg/httpclient` FederationClient
-  - AI/media download paths (and any other external fetchers)
-- [ ] Add redirect validation parity tests (scheme/host/blocked hostnames).
-- [ ] Decide proxy posture for hardened clients (explicitly disable proxies or validate proxy behavior) and document it.
+- [ ] Add a shared helper: read response bodies with a hard cap + truncation marker (and ensure `resp.Body.Close()` always happens).
+- [ ] Replace unbounded `io.ReadAll(resp.Body)` callsites in:
+  - `pkg/federation/delivery.go`
+  - `pkg/observability/webhook_delivery.go`
+  - `pkg/federation/routing/route_manager.go`
+  - `pkg/storage/repositories/federation_repository.go`
+- [ ] Ensure logs only include truncated snippets and scrubber remains enforced.
+- [ ] Add unit tests: cap enforced, snippet formatting stable, and large bodies do not allocate unbounded memory.
 
 **Acceptance criteria**
-- The same URL/SSRF policy is enforced across all outbound paths that can be influenced by untrusted input.
-- Tests cover representative edge cases (IPv6, IP literals, metadata hostnames, mixed A/AAAA).
-
-**Suggested verification**
-```bash
-go test ./pkg/httpclient/... ./pkg/ssrf/... ./pkg/ai/...
-./lesser sec-scan
-```
-
-### M3 — Auth primitives correctness + log hygiene (P2 security + P2 consistency)
-
-- [x] Replace any “constant-time compare” placeholders with real constant-time comparisons (`crypto/subtle`).
-- [x] Ensure scrubber is applied to all logger cores used in production Lambdas (not just opt-in call sites).
-- [x] Add “sensitive logging” regression tests (authorization headers, JWTs, wallet signatures, CSRF tokens).
-- [x] Normalize auth/security event logging fields (username/user_id, request_id, ip prefixing, user agent).
-
-**Acceptance criteria**
-- Security comparisons are truly constant-time where claimed/needed.
-- Sensitive values cannot appear in logs in normal error paths.
-
-**Suggested verification**
-```bash
-go test ./pkg/auth/... ./pkg/logging/...
-./lesser sec-scan
-```
-
-### M4 — Pay down maintainability hotspots (P1 quality + P2 consistency)
-
-Primary gap: several critical files are extremely large, which increases regression risk and review cost.
-
-- [ ] Refactor the largest Lambda handlers into cohesive internal packages:
-  - `cmd/inbox` (route handlers, validation, persistence, federation logic)
-  - `cmd/outbox`
-  - `cmd/activity-processor`
-- [ ] Refactor oversized services/repositories similarly:
-  - `pkg/services/accounts`
-  - `pkg/services/notes`
-  - `pkg/storage/repositories/user_repository`
-- [ ] Remove or narrow runtime `panic(...)` usage; ensure every Lambda entrypoint has panic recovery.
-- [ ] Tighten complexity budgets incrementally and keep the trend line moving down.
-
-**Acceptance criteria**
-- Critical entrypoints are navigable (clear files/dirs by responsibility) and easier to test in isolation.
-- No new panics are introduced in request paths; panics are recovered consistently.
+- No production code reads untrusted HTTP bodies without a size cap.
 
 **Suggested verification**
 ```bash
 ./lesser lint
 ./lesser test unit
+./lesser verify ci
 ```
 
-### M5 — “No surprises” completeness pass (P1 completeness)
+### M3 — Least-privilege execute-api permissions (P1 security)
 
-- [x] Re-enable disabled tests (rename/fix):
-  - `graph/dataloader_test.go.disabled`
-  - `pkg/auth/refresh_tokens_test.go.disabled`
-  - `pkg/moderation/advanced/pattern_repository_bridge.go.disabled`
-- [x] Make `scripts/check_implementation_status.sh` ignore transient caches (e.g. `tmp/go-mod-cache`) to remove false positives.
-- [x] Resolve remaining pagination TODO markers and document pagination rules for REST + GraphQL.
-- [x] Align auth docs with the passwordless posture; remove/mark deprecated flows.
-- [x] Update `docs/lesser-code-audit.md` to reflect current reality and link to this plan.
+- [ ] Replace wildcard `arn:aws:execute-api:*:*:*/*` with stack-scoped API/stage ARNs where possible.
+- [ ] Split policies/roles by function (websocket management vs invoke) to reduce blast radius.
+- [ ] Add CDK assertions that fail on wildcard execute-api resources.
 
 **Acceptance criteria**
-- No disabled tests remain without a documented replacement and rationale.
-- “Implementation status” report is signal, not noise.
-- Docs and code agree on auth posture and operator workflow.
+- Shared roles cannot invoke/manage arbitrary API Gateway resources outside the intended stack outputs.
 
 **Suggested verification**
 ```bash
-bash scripts/check_implementation_status.sh
-./lesser verify docs
-./lesser test unit
+./lesser verify ci
 ```
 
-### M6 — Supply chain + CI hardening (P1 security + P1 quality)
+### M4 — Harden OAuth client secret storage (P1 security + P2 completeness)
 
-- [x] Remove/replace legacy dependency `github.com/aws/aws-sdk-go` (indirect v1 removed by migrating to `github.com/aws/aws-xray-sdk-go/v2`).
-- [x] Add CI (GitHub Actions) that builds lambdas and runs `./lesser verify ci`.
-- [x] Add a reproducible module inventory snapshot (`./lesser verify supply-chain` → `report/module_inventory.txt`) and run it in `./lesser verify ci`.
-- [x] Add a release checklist that includes security scanning + docs verification.
+Decision needed: hash vs encrypt (threat model + operational requirements).
+
+- [ ] Pick and document an approach:
+  - Hash (preferred): Argon2id/bcrypt; only verify equality; never recover.
+  - Encrypt: KMS envelope encryption; recoverable for specific workflows.
+- [ ] Implement storage + verification changes with backwards-compatible migration.
+- [ ] Add secret rotation workflow and operator docs.
+- [ ] Add tests: migration, verification, and “never log the secret” regression coverage.
 
 **Acceptance criteria**
-- Reachable vulns: 0; module-level vulns: 0 (or explicitly accepted with rationale).
-- CI enforces the quality bar on every PR.
+- New secrets are not stored in plaintext; legacy secrets are migrated/rotated without downtime.
 
-## Recommended Sequencing
+**Suggested verification**
+```bash
+./lesser test unit
+./lesser sec-scan
+./lesser verify ci
+```
 
-1. M0 (define the bar) → 2. M1 (GraphQL limits) → 3. M2 (SSRF/URL policy unification)
-4. M3 (auth + logs) → 5. M5 (completeness) in parallel with 6. M4 (refactors)
-7. M6 (CI + supply chain) once the gates are stable
+### M5 — Config + tooling hygiene (P2 consistency + P2 completeness)
 
-## Tracking (Suggested)
+- [ ] Wire `WebhookConfig.VerifySSL` to actual TLS verification behavior (default true) or replace it with a clearly named setting that matches the intended semantics.
+- [ ] Add guardrails so `AllowInsecureTLS` cannot be enabled accidentally in production (explicit env + warning + CI gate).
+- [ ] Align `.golangci.yml` staticcheck `go:` with `go.mod` (and pin toolchain versions where needed).
+- [ ] Resolve `*.go.disabled` artifacts: re-enable with fixes, replace with tracked skipped tests, or move behind build tags with documented rationale.
 
-Create one tracking epic per milestone and tag PRs with:
+**Acceptance criteria**
+- No dead config knobs; toolchain/analyzer versions are consistent; disabled artifacts have an explicit, tested story.
 
-- `security`, `quality`, `consistency`, `docs`, `testing`, `infra`, `deps`
+**Suggested verification**
+```bash
+./lesser lint
+./lesser test unit
+./lesser verify ci
+```
+
+### M6 — Reduce maintainability hotspots (P2 quality)
+
+- [ ] Break `cmd/inbox/main.go` into cohesive internal packages (routing, validation, federation, persistence) with clear interfaces.
+- [ ] Add targeted unit tests around extracted units (parsers, validators, signature flows, idempotency).
+- [ ] Ratchet complexity budgets downward for the moved code.
+
+**Acceptance criteria**
+- `cmd/inbox` entrypoint is mostly wiring; complex logic lives in testable packages with focused unit tests.
+
+**Suggested verification**
+```bash
+./lesser lint
+./lesser test unit
+./lesser verify ci
+```
+
+## Recommended sequencing
+
+1. M0 → 2. M1 → 3. M2 → 4. M3 → 5. M4 → 6. M5 → 7. M6
+
+## Tracking (suggested)
+
+Create one epic per milestone and tag PRs with:
+
+- `security`, `quality`, `consistency`, `docs`, `testing`, `infra`
 
 Each PR should include:
 
