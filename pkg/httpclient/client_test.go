@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -238,7 +239,7 @@ func TestIsMetadataEndpoint(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.hostname, func(t *testing.T) {
-			assert.Equal(t, tt.expected, isMetadataEndpoint(tt.hostname))
+			assert.Equal(t, tt.expected, ssrf.IsBlockedHostname(tt.hostname))
 		})
 	}
 }

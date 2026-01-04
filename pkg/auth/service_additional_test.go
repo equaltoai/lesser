@@ -105,14 +105,16 @@ func TestAuthService_ActivityFallbackBranches(t *testing.T) {
 
 	mockActivity := testmocks.NewMockActivityRepository()
 	as := &AuthService{activityRepo: mockActivity}
-	require.Same(t, mockActivity, as.activity())
+	require.Same(t, mockActivity, as.activityRepo)
 
 	repos := &storageProviderStub{activityRepo: testmocks.NewMockActivityRepository()}
 	as = &AuthService{repos: repos}
-	require.NotNil(t, as.activity())
+	require.Nil(t, as.activityRepo)
+	require.NotNil(t, as.repos.Activity())
 
 	as = &AuthService{}
-	require.Nil(t, as.activity())
+	require.Nil(t, as.activityRepo)
+	require.Nil(t, as.repos)
 }
 
 func TestAuthService_WalletFlows(t *testing.T) {
