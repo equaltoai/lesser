@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-lambda-go/lambdacontext"
+	"github.com/equaltoai/lesser/pkg/logging"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -43,7 +44,9 @@ func init() {
 	zapCfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 
 	var err error
-	logger, err = zapCfg.Build()
+	logger, err = zapCfg.Build(zap.WrapCore(func(core zapcore.Core) zapcore.Core {
+		return logging.NewScrubbingCore(core, logging.GetGlobalScrubber())
+	}))
 	if err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}

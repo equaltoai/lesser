@@ -50,20 +50,20 @@ const (
 )
 
 var (
-	runningUnitTests = common.RunningUnitTests
-	lambdaStart      = lambda.Start
-	mustInitializeLambda = common.MustInitializeLambda
+	runningUnitTests         = common.RunningUnitTests
+	lambdaStart              = lambda.Start
+	mustInitializeLambda     = common.MustInitializeLambda
 	newLambdaOptimizedClient = dynamorm.NewLambdaOptimizedClient
-	initializeWithDefaults = (*common.LambdaContext).InitializeWithDefaults
-	lambdaCtx        *common.LambdaContext
-	db               core.DB
-	consensusEngine  *moderation.ConsensusEngine
-	advancedEngine   *advanced.Engine
-	moderationRepo   *repositories.ModerationRepository
-	userRepo         *repositories.UserRepository
-	notificationRepo *repositories.NotificationRepository
-	objectRepo       *repositories.ObjectRepository
-	patternRepo      *repositories.PatternRepository
+	initializeWithDefaults   = (*common.LambdaContext).InitializeWithDefaults
+	lambdaCtx                *common.LambdaContext
+	db                       core.DB
+	consensusEngine          *moderation.ConsensusEngine
+	advancedEngine           *advanced.Engine
+	moderationRepo           *repositories.ModerationRepository
+	userRepo                 *repositories.UserRepository
+	notificationRepo         *repositories.NotificationRepository
+	objectRepo               *repositories.ObjectRepository
+	patternRepo              *repositories.PatternRepository
 )
 
 const (
@@ -532,9 +532,7 @@ func initAdvancedModerationEngine() {
 	costTracker := cost.NewDynamORMCostTracker(db, lambdaCtx.Logger)
 
 	// Create a pattern repository adapter for the advanced moderation engine
-	patternRepoAdapter := &patternRepositoryAdapter{
-		repo: patternRepo,
-	}
+	patternRepoAdapter := advanced.NewPatternRepositoryAdapter(patternRepo)
 
 	// Create the advanced moderation engine
 	advancedEngine = advanced.NewEngineWithMode(advanced.EngineOptions{
@@ -2175,147 +2173,4 @@ func main() {
 	})
 
 	lambdaStart(app.HandleRequest)
-}
-
-// patternRepositoryAdapter adapts repositories.PatternRepository to advanced.PatternRepository interface
-type patternRepositoryAdapter struct {
-	repo *repositories.PatternRepository
-}
-
-// CreatePattern creates a new moderation pattern
-func (a *patternRepositoryAdapter) CreatePattern(ctx context.Context, pattern *advanced.ModerationPattern) error {
-	// Convert from advanced.ModerationPattern to models.ModerationPattern
-	modelPattern := &models.ModerationPattern{
-		PatternID:   pattern.ID,
-		Pattern:     pattern.Pattern,
-		Type:        pattern.Type,
-		Category:    pattern.Category,
-		Name:        pattern.Name,
-		Severity:    pattern.Severity,
-		Description: pattern.Description,
-		Active:      pattern.Active,
-		Flags:       pattern.Flags,
-		CreatedAt:   pattern.CreatedAt,
-		UpdatedAt:   pattern.UpdatedAt,
-		HitCount:    pattern.HitCount,
-		LastHit:     pattern.LastHit,
-	}
-	return a.repo.CreatePattern(ctx, modelPattern)
-}
-
-// UpdatePattern updates an existing moderation pattern
-func (a *patternRepositoryAdapter) UpdatePattern(ctx context.Context, patternID string, pattern *advanced.ModerationPattern) error {
-	// Convert from advanced.ModerationPattern to models.ModerationPattern
-	modelPattern := &models.ModerationPattern{
-		PatternID:   pattern.ID,
-		Pattern:     pattern.Pattern,
-		Type:        pattern.Type,
-		Category:    pattern.Category,
-		Name:        pattern.Name,
-		Severity:    pattern.Severity,
-		Description: pattern.Description,
-		Active:      pattern.Active,
-		Flags:       pattern.Flags,
-	}
-	return a.repo.UpdatePattern(ctx, patternID, modelPattern)
-}
-
-// DeletePattern deletes a moderation pattern
-func (a *patternRepositoryAdapter) DeletePattern(ctx context.Context, patternID string) error {
-	return a.repo.DeletePattern(ctx, patternID)
-}
-
-// GetPattern retrieves a moderation pattern by ID
-func (a *patternRepositoryAdapter) GetPattern(ctx context.Context, patternID string) (*advanced.ModerationPattern, error) {
-	modelPattern, err := a.repo.GetPattern(ctx, patternID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert from models.ModerationPattern to advanced.ModerationPattern
-	return &advanced.ModerationPattern{
-		ID:          modelPattern.PatternID,
-		Pattern:     modelPattern.Pattern,
-		Type:        modelPattern.Type,
-		Category:    modelPattern.Category,
-		Name:        modelPattern.Name,
-		Severity:    modelPattern.Severity,
-		Description: modelPattern.Description,
-		Active:      modelPattern.Active,
-		Flags:       modelPattern.Flags,
-		CreatedAt:   modelPattern.CreatedAt,
-		UpdatedAt:   modelPattern.UpdatedAt,
-		HitCount:    modelPattern.HitCount,
-		LastHit:     modelPattern.LastHit,
-	}, nil
-}
-
-// GetPatterns retrieves patterns based on filter criteria
-func (a *patternRepositoryAdapter) GetPatterns(ctx context.Context, filter advanced.PatternFilter) ([]*advanced.ModerationPattern, error) {
-	// Get patterns from repository (simplified - using category and active from filter)
-	activeOnly := false
-	if filter.Active != nil {
-		activeOnly = *filter.Active
-	}
-	modelPatterns, err := a.repo.GetPatterns(ctx, filter.Category, activeOnly)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert from models.ModerationPattern to advanced.ModerationPattern
-	var patterns []*advanced.ModerationPattern
-	for _, mp := range modelPatterns {
-		patterns = append(patterns, &advanced.ModerationPattern{
-			ID:          mp.PatternID,
-			Pattern:     mp.Pattern,
-			Type:        mp.Type,
-			Category:    mp.Category,
-			Name:        mp.Name,
-			Severity:    mp.Severity,
-			Description: mp.Description,
-			Active:      mp.Active,
-			Flags:       mp.Flags,
-			CreatedAt:   mp.CreatedAt,
-			UpdatedAt:   mp.UpdatedAt,
-			HitCount:    mp.HitCount,
-			LastHit:     mp.LastHit,
-		})
-	}
-
-	return patterns, nil
-}
-
-// IncrementHitCount increments the hit count for a pattern
-func (a *patternRepositoryAdapter) IncrementHitCount(ctx context.Context, patternID string) error {
-	return a.repo.IncrementHitCount(ctx, patternID)
-}
-
-// LoadActivePatterns loads all active patterns
-func (a *patternRepositoryAdapter) LoadActivePatterns(ctx context.Context) ([]*advanced.ModerationPattern, error) {
-	modelPatterns, err := a.repo.LoadActivePatterns(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert from models.ModerationPattern to advanced.ModerationPattern
-	var patterns []*advanced.ModerationPattern
-	for _, mp := range modelPatterns {
-		patterns = append(patterns, &advanced.ModerationPattern{
-			ID:          mp.PatternID,
-			Pattern:     mp.Pattern,
-			Type:        mp.Type,
-			Category:    mp.Category,
-			Name:        mp.Name,
-			Severity:    mp.Severity,
-			Description: mp.Description,
-			Active:      mp.Active,
-			Flags:       mp.Flags,
-			CreatedAt:   mp.CreatedAt,
-			UpdatedAt:   mp.UpdatedAt,
-			HitCount:    mp.HitCount,
-			LastHit:     mp.LastHit,
-		})
-	}
-
-	return patterns, nil
 }

@@ -161,6 +161,52 @@ func (m *CSRFManager) ValidateToken(token string, userID string) error {
 	return nil
 }
 
+func csrfTokenFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if token := r.Header.Get("X-CSRF-Token"); token != "" {
+		return token
+	}
+	return r.FormValue("csrf_token")
+}
+
+func csrfRequestID(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if requestID := r.Header.Get("X-Request-Id"); requestID != "" {
+		return requestID
+	}
+	return r.Header.Get("X-Request-ID")
+}
+
+func csrfUsernameFromContext(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	claims, _ := GetClaims(r.Context())
+	if claims == nil {
+		return ""
+	}
+	return claims.Username
+}
+
+func logCSRFFailure(r *http.Request, reason, username string) {
+	if r == nil {
+		common.LogCSRFFailure(reason, username, "", "", "", "")
+		return
+	}
+	common.LogCSRFFailure(reason, username, r.RemoteAddr, r.URL.Path, r.UserAgent(), csrfRequestID(r))
+}
+
+func csrfFailureReason(err error) string {
+	if err == ErrExpiredCSRF {
+		return "expired_token"
+	}
+	return "invalid_token"
+}
+
 // CSRFMiddleware creates middleware for CSRF protection
 func CSRFMiddleware(manager *CSRFManager) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
@@ -171,20 +217,10 @@ func CSRFMiddleware(manager *CSRFManager) func(http.HandlerFunc) http.HandlerFun
 				return
 			}
 
-			// Extract CSRF token from header or form
-			csrfToken := r.Header.Get("X-CSRF-Token")
-			if err := common.ValidateRequiredParam("csrfToken", csrfToken); err != nil {
-				csrfToken = r.FormValue("csrf_token")
-			}
+			csrfToken := csrfTokenFromRequest(r)
 
 			if err := common.ValidateRequiredParam("csrfToken", csrfToken); err != nil {
-				// Log CSRF failure
-				claims, _ := GetClaims(r.Context())
-				userID := ""
-				if claims != nil {
-					userID = claims.Username
-				}
-				common.LogCSRFFailure("missing_token", userID, r.RemoteAddr, r.URL.Path)
+				logCSRFFailure(r, "missing_token", csrfUsernameFromContext(r))
 
 				http.Error(w, "Missing CSRF token", http.StatusForbidden)
 				return
@@ -199,12 +235,8 @@ func CSRFMiddleware(manager *CSRFManager) func(http.HandlerFunc) http.HandlerFun
 
 			// Validate token
 			if err := manager.ValidateToken(csrfToken, claims.Username); err != nil {
-				// Log CSRF failure
-				reason := "invalid_token"
-				if err == ErrExpiredCSRF {
-					reason = "expired_token"
-				}
-				common.LogCSRFFailure(reason, claims.Username, r.RemoteAddr, r.URL.Path)
+				reason := csrfFailureReason(err)
+				logCSRFFailure(r, reason, claims.Username)
 
 				if err == ErrExpiredCSRF {
 					http.Error(w, "CSRF token expired", http.StatusForbidden)

@@ -110,7 +110,7 @@ func (sap *StandardAuthPattern) AuthenticateWithUsernameMatch(ctx *liftPkg.Conte
 	// Verify the authenticated user matches the username in the path
 	if claims.Username != pathUsername {
 		sap.logger.Warn("username mismatch",
-			zap.String("token_username", claims.Username),
+			zap.String("auth_username", claims.Username),
 			zap.String("path_username", pathUsername),
 		)
 		return nil, apperrors.Forbidden("cannot access another user's resource")

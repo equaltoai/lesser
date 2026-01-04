@@ -7,10 +7,10 @@ Repo: `penny-advanced-interfaces/lesser`
 
 | Category | Grade | Why |
 | --- | ---: | --- |
-| Quality | 7/10 | Strong modularity, good error hygiene, and solid test/coverage discipline; a few sharp edges (duplicated security logic, some misleading checks, and pockets of over/under-validation). |
-| Consistency | 6/10 | Most packages follow clear conventions, but key security primitives (SSRF checks, IP blocking, URL validation) are implemented differently in multiple places. |
-| Completeness | 6/10 | Broad feature surface with extensive test coverage; some TODOs/incomplete paths and doc drift (notably around auth docs and verifier false positives). |
-| Security | 6/10 | Good baseline controls; the highest-impact SSRF/DNS-rebinding gap in outbound HTTP dialing paths is addressed, but additional issues (sensitive logging, permissive CSP, duplicated SSRF logic) remain. |
+| Quality | 8/10 | Strong modularity and test discipline; remaining drag is primarily maintainability hotspots (very large handlers/services) and a few legacy sharp edges. |
+| Consistency | 8/10 | Canonical GraphQL limits, URL/SSRF validation, and log scrubbing are now standardized; some naming/shape inconsistencies remain in older handlers. |
+| Completeness | 9/10 | Deterministic verification gates exist, “implementation status” tooling is signal-not-noise, and docs are closer to reality; remaining work is largely M4 refactors and CI/supply chain hardening. |
+| Security | 8/10 | GraphQL abuse limits + SSRF URL policy + default log scrubbing are in place with regression tests; CSP tightening and broader outbound-call auditing remain. |
 
 ## Method & Scope
 
@@ -21,7 +21,7 @@ Repo: `penny-advanced-interfaces/lesser`
 
 ## Key Findings (Prioritized)
 
-### P0 — SSRF / DNS rebinding hardening
+### P0 — SSRF / DNS rebinding hardening (addressed)
 
 **Impact:** attacker-controlled hostnames can pass “resolved-IP checks” but later be dialed by hostname again, reintroducing private-network access via DNS rebinding (TOCTOU between check and use).
 
@@ -30,18 +30,25 @@ Repo: `penny-advanced-interfaces/lesser`
 - `pkg/httpclient/federation_client.go` (now dials resolved IPs inside `secureDialContext`).
 - `pkg/ai/ssrf_http_client.go` (AI image download defaults to an SSRF-protected `*http.Client` without importing `pkg/httpclient`).
 
-**Status:** addressed by dialing resolved IPs (not hostnames) after validation, with unit tests asserting `IP:port` dialing.
+**Status:** addressed by dialing resolved IPs (not hostnames) after validation, with shared URL validation (`pkg/ssrf`) and
+unit tests asserting `IP:port` dialing.
 
-### P1 — Sensitive material logged
+### P1 — GraphQL abuse-resilience limits (addressed)
+
+**Impact:** without enforced limits, GraphQL endpoints are susceptible to resource exhaustion via deep/complex queries.
+
+**Status:** enforced request timeout, depth limit, complexity limit, parser token limit, and introspection gating are now
+implemented and configurable.
+
+### P1 — Sensitive material logged (addressed)
 
 **Impact:** authentication artifacts can end up in logs (and therefore log retention/search systems).
 
-**Location:**
-- `pkg/auth/wallet.go` logs the raw signature on hex decode failure.
+**Status:**
+- Sensitive log scrubbing is enabled on the default production loggers (core-wrapped zap).
+- Scrubbing covers both messages and fields, including error fields (`zap.Error(...)`), with regression tests.
 
-**Recommended remediation:** do not log raw signatures; log only structured error context (length, prefix, address) or a short hash.
-
-### P1 — CSP defaults are permissive for scripts/styles
+### P1 — CSP defaults are permissive for scripts/styles (open)
 
 **Impact:** default `script-src` includes `'unsafe-inline'`; nonce generation exists but doesn’t remove unsafe inline allowances, reducing XSS hardening.
 
@@ -50,13 +57,13 @@ Repo: `penny-advanced-interfaces/lesser`
 
 **Recommended remediation:** shift to nonce-based `script-src`/`style-src` (remove `'unsafe-inline'`), tighten `frame-src`/`connect-src` to known needs, and add tests for header output.
 
-### P2 — Doc drift + verifier false positives
+### P2 — Doc drift + verifier false positives (addressed)
 
 **Impact:** doc verification tooling can block changes unrelated to real drift; auth documentation can mislead implementers.
 
 **Locations:**
-- `scripts/verify_docs.sh` has a “make …” grep that can false-positive on certain phrases in docs.
-- `docs/architecture/auth/PASSWORDLESS_OAUTH.md` appears inconsistent with current auth service behavior.
+- `scripts/check_implementation_status.sh` now excludes transient caches and avoids substring false positives (e.g. “Mastodon”).
+- `pkg/auth/README.md` is aligned to Lesser’s passwordless posture and points to architecture docs.
 
 **Recommended remediation:** adjust docs to match the CLI-first workflow and reconcile auth docs with actual code paths.
 
@@ -106,4 +113,7 @@ Repo: `penny-advanced-interfaces/lesser`
 
 ## Recommended Remediation Plan
 
-See `docs/security-milestones.md` for milestones and acceptance criteria (Milestone 1 targets the P0 SSRF/DNS rebinding gap).
+See:
+
+- `docs/planning/lesser-10of10-plan.md` (10/10 milestones)
+- `docs/security-milestones.md` (security milestone framing)

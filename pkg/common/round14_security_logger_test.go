@@ -35,8 +35,8 @@ func TestSecurityLoggerHelpers(t *testing.T) {
 		}
 		fields := entries[0].ContextMap()
 		assert.Equal(t, "u1", fields["user_id"])
-		assert.Equal(t, "s1", fields["session_id"])
-		assert.Equal(t, "127.0.0.1", fields["ip"])
+		assert.Equal(t, "****", fields["session_id"])
+		assert.Equal(t, "127.0.0.0/24", fields["ip"])
 		assert.Equal(t, "ua", fields["user_agent"])
 		assert.Equal(t, "r1", fields["request_id"])
 	})
@@ -53,10 +53,10 @@ func TestLogSecurityEvent_DoesNotPanic(t *testing.T) {
 	LogSecurityEvent(EventAuthFailure, zap.String("k", "v"))
 	LogSecurityEvent(EventSuspiciousActivity, zap.String("k", "v"))
 
-	LogAuthFailure("bad", "alice", "127.0.0.1", "ua")
-	LogCSRFFailure("bad", "user-1", "127.0.0.1", "/path")
-	LogRateLimit("user-1", "127.0.0.1", "/endpoint", 10)
-	LogSuspiciousActivity("weird", "user-1", "127.0.0.1", map[string]any{"a": 1})
+	LogAuthFailure("bad", "alice", "127.0.0.1", "ua", "r1")
+	LogCSRFFailure("bad", "user-1", "127.0.0.1", "/path", "ua", "r1")
+	LogRateLimit("user-1", "127.0.0.1", "/endpoint", 10, "r1")
+	LogSuspiciousActivity("weird", "user-1", "127.0.0.1", map[string]any{"a": 1}, "r1")
 }
 
 func TestLogSecurityEvent_InitializesGlobalLoggerWhenNil(t *testing.T) {

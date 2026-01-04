@@ -117,6 +117,13 @@ curl -i -s "https://<stage-domain>/api/v1/timelines/public?limit=20" | sed -n '1
 
 Follow the `rel="next"` URL (it typically includes `max_id=...`) to fetch the next page.
 
+### Pattern: paginate Lesser-native list endpoints (limit/offset/page)
+
+Some Lesser-native endpoints use `limit` + `offset` pagination, with an optional `page` parameter that is converted to
+an offset (`offset = (page-1)*limit`).
+
+When both are present, `offset` wins. Defaults are implementation-specific but typically `limit=20`.
+
 ### Error and rate-limit handling
 
 Common responses:

@@ -84,6 +84,31 @@ func TestScrubbingCore_ScrubsMessageAndFields(t *testing.T) {
 	assert.Equal(t, "[REDACTED]", ctx["payload"].(map[string]interface{})["password"])
 }
 
+func TestScrubbingCore_ScrubsSensitiveKeysAndErrors(t *testing.T) {
+	core, recorded := observer.New(zapcore.DebugLevel)
+	logger := zap.New(NewScrubbingCore(core, NewSensitiveDataScrubber()))
+
+	logger.Info("ok",
+		zap.String("Authorization", "Bearer abcdefghijklmnopqrstuvwxyz0123456789"),
+		zap.String("payload", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhbGljZSJ9.signature"),
+		zap.String("signature", "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+		zap.String("csrf_token", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+		zap.String("client_secret", "super-secret-value"),
+		zap.Error(errors.New("Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789")),
+	)
+
+	entries := recorded.All()
+	require.Len(t, entries, 1)
+
+	fields := entries[0].ContextMap()
+	assert.Equal(t, "[REDACTED]", fields["Authorization"])
+	assert.Contains(t, fields["payload"].(string), "JWT_REDACTED")
+	assert.Equal(t, "[REDACTED]", fields["signature"])
+	assert.Equal(t, "[REDACTED]", fields["csrf_token"])
+	assert.Equal(t, "[REDACTED]", fields["client_secret"])
+	assert.Contains(t, fields["error"].(string), "[REDACTED]")
+}
+
 func TestLoggerMiddleware_WithContextAndSafeLogs(t *testing.T) {
 	core, recorded := observer.New(zapcore.DebugLevel)
 	logger := zap.New(core)

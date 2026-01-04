@@ -11,6 +11,10 @@ The auth package implements:
 - Middleware for protecting endpoints
 - Scope-based authorization
 
+Lesser is **passwordless** by design: users authenticate via WebAuthn/passkeys and/or wallet signatures. OAuth tokens
+are still presented as `Authorization: Bearer …`, but Lesser does not support password-based login or password grant
+flows.
+
 ## Components
 
 ### OAuthService
@@ -92,9 +96,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
      state=RANDOM_STATE
    ```
 
-2. **User Authorization** (currently simplified)
-   - In production, this would show a login/consent page
-   - Currently assumes user is authenticated as "testuser"
+2. **User Authorization**
+   - Users authenticate via the passwordless auth UI (WebAuthn/passkeys and/or wallet challenge + signature).
+   - See `docs/architecture/auth/PASSWORDLESS_OAUTH.md` for the end-to-end flow and endpoints.
 
 3. **Authorization Code Response**
    ```

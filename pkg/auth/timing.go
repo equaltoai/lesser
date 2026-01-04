@@ -15,6 +15,20 @@ func ConstantTimeCompare(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
+// ConstantTimeComparePadded performs a constant-time comparison without early exit on length mismatch.
+// Length still influences runtime due to required padding work; for secrets of fixed length this is acceptable.
+func ConstantTimeComparePadded(a, b string) bool {
+	maxLen := len(a)
+	if len(b) > maxLen {
+		maxLen = len(b)
+	}
+
+	paddedA := padToLength(a, maxLen)
+	paddedB := padToLength(b, maxLen)
+
+	return subtle.ConstantTimeCompare([]byte(paddedA), []byte(paddedB)) == 1 && len(a) == len(b)
+}
+
 // ConstantTimeDelay adds a small random delay to prevent timing analysis
 func ConstantTimeDelay() {
 	// Random delay between 0-10ms

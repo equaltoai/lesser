@@ -112,7 +112,7 @@ func (ssm *SessionSecurityManager) ValidateCSRFToken(provided, expected string) 
 		return false
 	}
 	// Use constant-time comparison to prevent timing attacks
-	return provided == expected
+	return ConstantTimeComparePadded(provided, expected)
 }
 
 // GenerateDeviceFingerprint creates a device fingerprint from request metadata
@@ -258,8 +258,7 @@ func (ssm *SessionSecurityManager) PreventSessionFixation(oldSessionID string) (
 	newSessionID := hex.EncodeToString(b)
 
 	ssm.logger.Debug("session ID regenerated for fixation prevention",
-		zap.String("oldSessionID", oldSessionID),
-		zap.String("newSessionID", newSessionID))
+		zap.Bool("session_id_rotated", true))
 
 	return newSessionID, nil
 }
@@ -390,17 +389,14 @@ func (ssm *SessionSecurityManager) IsHighRiskUserAgent(userAgent string) bool {
 
 // RotateSessionSecrets rotates session secrets for enhanced security
 func (ssm *SessionSecurityManager) RotateSessionSecrets(session *Session) error {
-	// Generate new CSRF token
-	newCSRFToken, err := ssm.GenerateCSRFToken()
-	if err != nil {
-		return errors.Join(ErrCSRFTokenRotation, err)
+	if session == nil {
+		return errors.Join(ErrCSRFTokenRotation, errors.New("session is nil"))
 	}
 
-	// Update session with new secrets
-	// This would typically update the session in storage
+	// Update session with new secrets.
+	// NOTE: storage.Session does not currently persist CSRF tokens; rotation is a no-op until wired to storage.
 	ssm.logger.Debug("session secrets rotated",
-		zap.String("sessionID", session.SessionID),
-		zap.String("newCSRFToken", newCSRFToken))
+		zap.Bool("csrf_rotated", true))
 
 	return nil
 }

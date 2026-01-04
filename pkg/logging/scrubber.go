@@ -14,6 +14,8 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+const redactedPlaceholder = "[REDACTED]"
+
 // SensitiveDataScrubber handles detection and redaction of sensitive information in logs
 type SensitiveDataScrubber struct {
 	patterns     map[string]*regexp.Regexp
@@ -106,9 +108,9 @@ func (s *SensitiveDataScrubber) ScrubString(input string) string {
 			result = regex.ReplaceAllStringFunc(result, func(match string) string {
 				parts := regex.FindStringSubmatch(match)
 				if len(parts) >= 3 {
-					return parts[1] + "[REDACTED]"
+					return parts[1] + redactedPlaceholder
 				}
-				return "[REDACTED]"
+				return redactedPlaceholder
 			})
 		case "email":
 			result = regex.ReplaceAllStringFunc(result, func(match string) string {
@@ -178,7 +180,7 @@ func (s *SensitiveDataScrubber) ScrubJSON(input map[string]interface{}) map[stri
 		}
 
 		if isSensitive {
-			result[key] = "[REDACTED]"
+			result[key] = redactedPlaceholder
 		} else {
 			switch v := value.(type) {
 			case string:
@@ -237,6 +239,88 @@ type ScrubbingCore struct {
 	scrubber *SensitiveDataScrubber
 }
 
+func isSensitiveKey(key string) bool {
+	lower := strings.ToLower(key)
+
+	if strings.Contains(lower, "authorization") {
+		return true
+	}
+	if strings.Contains(lower, "cookie") {
+		return true
+	}
+	if strings.Contains(lower, "csrf") {
+		return true
+	}
+	if containsDelimitedWord(lower, "signature") || strings.Contains(lower, "signature") {
+		return true
+	}
+	if containsDelimitedWord(lower, "jwt") || strings.Contains(lower, "jwt") {
+		return true
+	}
+	if containsDelimitedWord(lower, "token") {
+		return true
+	}
+	if containsDelimitedWord(lower, "password") {
+		return true
+	}
+	if containsDelimitedWord(lower, "secret") && !isSecretIdentifierKey(lower) {
+		return true
+	}
+	if strings.Contains(lower, "sessionid") || containsDelimitedWord(lower, "session_id") {
+		return true
+	}
+
+	return false
+}
+
+func isSecretIdentifierKey(lowerKey string) bool {
+	return strings.HasSuffix(lowerKey, "_id") ||
+		strings.HasSuffix(lowerKey, "_arn") ||
+		strings.HasSuffix(lowerKey, "_name") ||
+		strings.HasSuffix(lowerKey, "id") ||
+		strings.HasSuffix(lowerKey, "arn") ||
+		strings.HasSuffix(lowerKey, "name")
+}
+
+func containsDelimitedWord(s, word string) bool {
+	if s == "" || word == "" || len(word) > len(s) {
+		return false
+	}
+
+	isWordChar := func(b byte) bool {
+		switch {
+		case b >= 'a' && b <= 'z':
+			return true
+		case b >= '0' && b <= '9':
+			return true
+		default:
+			return false
+		}
+	}
+
+	searchStart := 0
+	for {
+		idx := strings.Index(s[searchStart:], word)
+		if idx < 0 {
+			return false
+		}
+
+		idx += searchStart
+		beforeOK := idx == 0 || !isWordChar(s[idx-1])
+		afterIdx := idx + len(word)
+		afterOK := afterIdx == len(s) || !isWordChar(s[afterIdx])
+
+		if beforeOK && afterOK {
+			return true
+		}
+
+		searchStart = idx + 1
+		if searchStart >= len(s) {
+			return false
+		}
+	}
+}
+
 // NewScrubbingCore creates a new core that automatically scrubs logs
 func NewScrubbingCore(core zapcore.Core, scrubber *SensitiveDataScrubber) *ScrubbingCore {
 	return &ScrubbingCore{
@@ -290,11 +374,37 @@ func (c *ScrubbingCore) Sync() error {
 
 // scrubField scrubs individual zap fields
 func (c *ScrubbingCore) scrubField(field zapcore.Field) zapcore.Field {
+	if isSensitiveKey(field.Key) {
+		switch field.Type {
+		case zapcore.ByteStringType:
+			field.Interface = []byte(redactedPlaceholder)
+		case zapcore.ErrorType:
+			field.Type = zapcore.StringType
+			field.Interface = nil
+			field.String = redactedPlaceholder
+		case zapcore.ReflectType:
+			field.Interface = redactedPlaceholder
+		default:
+			field.String = redactedPlaceholder
+		}
+		return field
+	}
+
 	switch field.Type {
 	case zapcore.StringType:
 		field.String = c.scrubber.ScrubString(field.String)
 	case zapcore.ByteStringType:
-		field.String = c.scrubber.ScrubString(field.String)
+		if b, ok := field.Interface.([]byte); ok {
+			field.Interface = []byte(c.scrubber.ScrubString(string(b)))
+		} else {
+			field.String = c.scrubber.ScrubString(field.String)
+		}
+	case zapcore.ErrorType:
+		if err, ok := field.Interface.(error); ok && err != nil {
+			field.Type = zapcore.StringType
+			field.Interface = nil
+			field.String = c.scrubber.ScrubString(err.Error())
+		}
 	case zapcore.ReflectType:
 		// Handle structured data
 		if data, ok := field.Interface.(map[string]interface{}); ok {

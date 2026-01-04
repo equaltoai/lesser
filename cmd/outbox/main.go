@@ -893,7 +893,7 @@ func (op *OutboxProcessor) authenticateOutboxRequest(ctx *lift.Context, username
 	// Verify the authenticated user matches the username in the path
 	if claims.Username != username {
 		op.logger.Warn("username mismatch",
-			zap.String("token_username", claims.Username),
+			zap.String("auth_username", claims.Username),
 			zap.String("path_username", username),
 		)
 		return nil, nil, lift.NewLiftError("FORBIDDEN", "cannot post to another user's outbox", http.StatusForbidden)
@@ -973,9 +973,9 @@ func (op *OutboxProcessor) parseActivityFromRequest(ctx *lift.Context) (*activit
 
 func outboxActivityValidationMap(activity *activitypub.Activity) map[string]interface{} {
 	payload := map[string]interface{}{
-		"id":     activity.ID,
-		"type":   activity.Type,
-		"actor":  activity.Actor,
+		"id":    activity.ID,
+		"type":  activity.Type,
+		"actor": activity.Actor,
 	}
 
 	if activity.Object != nil {

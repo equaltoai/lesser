@@ -138,10 +138,10 @@ go test ./pkg/httpclient/... ./pkg/ssrf/... ./pkg/ai/...
 
 ### M3 — Auth primitives correctness + log hygiene (P2 security + P2 consistency)
 
-- [ ] Replace any “constant-time compare” placeholders with real constant-time comparisons (`crypto/subtle`).
-- [ ] Ensure scrubber is applied to all logger cores used in production Lambdas (not just opt-in call sites).
-- [ ] Add “sensitive logging” regression tests (authorization headers, JWTs, wallet signatures, CSRF tokens).
-- [ ] Normalize auth/security event logging fields (username/user_id, request_id, ip prefixing, user agent).
+- [x] Replace any “constant-time compare” placeholders with real constant-time comparisons (`crypto/subtle`).
+- [x] Ensure scrubber is applied to all logger cores used in production Lambdas (not just opt-in call sites).
+- [x] Add “sensitive logging” regression tests (authorization headers, JWTs, wallet signatures, CSRF tokens).
+- [x] Normalize auth/security event logging fields (username/user_id, request_id, ip prefixing, user agent).
 
 **Acceptance criteria**
 - Security comparisons are truly constant-time where claimed/needed.
@@ -180,14 +180,14 @@ Primary gap: several critical files are extremely large, which increases regress
 
 ### M5 — “No surprises” completeness pass (P1 completeness)
 
-- [ ] Re-enable disabled tests (rename/fix):
+- [x] Re-enable disabled tests (rename/fix):
   - `graph/dataloader_test.go.disabled`
   - `pkg/auth/refresh_tokens_test.go.disabled`
   - `pkg/moderation/advanced/pattern_repository_bridge.go.disabled`
-- [ ] Make `scripts/check_implementation_status.sh` ignore transient caches (e.g. `tmp/go-mod-cache`) to remove false positives.
-- [ ] Resolve remaining pagination TODO markers and document pagination rules for REST + GraphQL.
-- [ ] Align auth docs with the passwordless posture; remove/mark deprecated flows.
-- [ ] Update `docs/lesser-code-audit.md` to reflect current reality and link to this plan.
+- [x] Make `scripts/check_implementation_status.sh` ignore transient caches (e.g. `tmp/go-mod-cache`) to remove false positives.
+- [x] Resolve remaining pagination TODO markers and document pagination rules for REST + GraphQL.
+- [x] Align auth docs with the passwordless posture; remove/mark deprecated flows.
+- [x] Update `docs/lesser-code-audit.md` to reflect current reality and link to this plan.
 
 **Acceptance criteria**
 - No disabled tests remain without a documented replacement and rationale.
@@ -234,4 +234,3 @@ Each PR should include:
 - The acceptance criteria it closes
 - The verification commands executed (copy/paste)
 - Any behavior changes or migration notes
-

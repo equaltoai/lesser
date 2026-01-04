@@ -450,10 +450,10 @@ func TestModerationProcessor_TriggerAutomaticActions_HighSeverityBranches(t *tes
 			logger:         zap.NewNop(),
 			moderationRepo: newModerationRepoWithCreate(nil),
 			consensusEngine: moderation.NewConsensusEngine(storageBackend, &moderation.ConsensusConfig{
-				MinReviewers: 1,
-				MinTrustWeight: 0,
-				ConsensusThreshold: 0,
-				CriticalThreshold: 0,
+				MinReviewers:        1,
+				MinTrustWeight:      0,
+				ConsensusThreshold:  0,
+				CriticalThreshold:   0,
 				EscalationThreshold: 1.1,
 			}),
 		}
@@ -569,7 +569,7 @@ func TestModerationProcessor_HandleNewEvent_AndContentRemoval(t *testing.T) {
 		objectRepo := repositories.NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
 
 		mp := &ModerationProcessor{
-			logger:    zap.NewNop(),
+			logger:     zap.NewNop(),
 			objectRepo: objectRepo,
 		}
 
@@ -590,7 +590,7 @@ func TestModerationProcessor_HandleNewEvent_AndContentRemoval(t *testing.T) {
 		objectRepo := repositories.NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
 
 		mp := &ModerationProcessor{
-			logger:    zap.NewNop(),
+			logger:     zap.NewNop(),
 			objectRepo: objectRepo,
 		}
 
@@ -651,7 +651,7 @@ func TestPatternRepositoryAdapter_AllMethods(t *testing.T) {
 	}).Return(nil).Maybe()
 
 	patternRepo := repositories.NewPatternRepository(mockDB, "test-table", zap.NewNop(), nil)
-	adapter := &patternRepositoryAdapter{repo: patternRepo}
+	adapter := advanced.NewPatternRepositoryAdapter(patternRepo)
 
 	pattern := &advanced.ModerationPattern{
 		ID:          "pat-1",
@@ -752,10 +752,10 @@ func TestModerationProcessor_HandleDecision_UnknownAndNone(t *testing.T) {
 			EventName: "INSERT",
 			Change: events.DynamoDBStreamRecord{
 				NewImage: map[string]events.DynamoDBAttributeValue{
-					"Type":   events.NewStringAttribute("DECISION"),
-					"ID":     events.NewStringAttribute("dec-1"),
+					"Type":    events.NewStringAttribute("DECISION"),
+					"ID":      events.NewStringAttribute("dec-1"),
 					"EventID": events.NewStringAttribute("evt-1"),
-					"Action": events.NewStringAttribute("weird"),
+					"Action":  events.NewStringAttribute("weird"),
 				},
 				Keys: map[string]events.DynamoDBAttributeValue{
 					"PK": events.NewStringAttribute("DECISION#obj-1"),
@@ -778,10 +778,10 @@ func TestModerationProcessor_HandleDecision_UnknownAndNone(t *testing.T) {
 			EventName: "INSERT",
 			Change: events.DynamoDBStreamRecord{
 				NewImage: map[string]events.DynamoDBAttributeValue{
-					"Type":   events.NewStringAttribute("DECISION"),
-					"ID":     events.NewStringAttribute("dec-2"),
+					"Type":    events.NewStringAttribute("DECISION"),
+					"ID":      events.NewStringAttribute("dec-2"),
 					"EventID": events.NewStringAttribute("evt-2"),
-					"Action": events.NewStringAttribute("none"),
+					"Action":  events.NewStringAttribute("none"),
 				},
 				Keys: map[string]events.DynamoDBAttributeValue{
 					"PK": events.NewStringAttribute("DECISION#obj-1"),
@@ -928,10 +928,10 @@ func TestModerationProcessor_ProcessRecord_RoutesDecision(t *testing.T) {
 		EventName: "INSERT",
 		Change: events.DynamoDBStreamRecord{
 			NewImage: map[string]events.DynamoDBAttributeValue{
-				"Type":   events.NewStringAttribute("DECISION"),
-				"ID":     events.NewStringAttribute("dec-1"),
+				"Type":    events.NewStringAttribute("DECISION"),
+				"ID":      events.NewStringAttribute("dec-1"),
 				"EventID": events.NewStringAttribute("evt-1"),
-				"Action": events.NewStringAttribute("weird"),
+				"Action":  events.NewStringAttribute("weird"),
 			},
 			Keys: map[string]events.DynamoDBAttributeValue{
 				"PK": events.NewStringAttribute("DECISION#obj-1"),
@@ -1107,8 +1107,8 @@ func TestInitialize_CoversRepositoryWiring_WithInjectedDependencies(t *testing.T
 	mustInitializeLambda = func(_ common.LambdaConfig) *common.LambdaContext {
 		return &common.LambdaContext{
 			Config: &config.Config{
-				Region:              "us-east-1",
-				Domain:              "example.com",
+				Region:               "us-east-1",
+				Domain:               "example.com",
 				DynamoTableName:      "test-table",
 				DisableAWSModeration: true,
 			},
@@ -1156,8 +1156,8 @@ func TestMain_DynamoDBHandler_CoversBatchProcessingPaths(t *testing.T) {
 		Records: []events.DynamoDBEventRecord{
 			{
 				EventSource: "aws:dynamodb",
-				EventName: "REMOVE",
-				EventID:   "success",
+				EventName:   "REMOVE",
+				EventID:     "success",
 				Change: events.DynamoDBStreamRecord{
 					Keys: map[string]events.DynamoDBAttributeValue{
 						"PK": events.NewStringAttribute("IGNORED"),
@@ -1178,8 +1178,8 @@ func TestMain_DynamoDBHandler_CoversBatchProcessingPaths(t *testing.T) {
 		Records: []events.DynamoDBEventRecord{
 			{
 				EventSource: "aws:dynamodb",
-				EventName: "INSERT",
-				EventID:   "bad-review",
+				EventName:   "INSERT",
+				EventID:     "bad-review",
 				Change: events.DynamoDBStreamRecord{
 					Keys: map[string]events.DynamoDBAttributeValue{
 						"PK": events.NewStringAttribute("REVIEW#evt-1"),
@@ -1458,7 +1458,7 @@ func TestModerationProcessor_Enforcement_SuccessPaths(t *testing.T) {
 
 		objectRepo := repositories.NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
 		mp := &ModerationProcessor{
-			logger:    zap.NewNop(),
+			logger:     zap.NewNop(),
 			objectRepo: objectRepo,
 		}
 
@@ -1581,11 +1581,11 @@ func TestModerationProcessor_HandleDecision_ActionBranches(t *testing.T) {
 			EventName: "INSERT",
 			Change: events.DynamoDBStreamRecord{
 				NewImage: map[string]events.DynamoDBAttributeValue{
-					"Type":   events.NewStringAttribute("DECISION"),
-					"ID":     events.NewStringAttribute("dec-1"),
+					"Type":    events.NewStringAttribute("DECISION"),
+					"ID":      events.NewStringAttribute("dec-1"),
 					"EventID": events.NewStringAttribute("evt-1"),
-					"Action": events.NewStringAttribute(action),
-					"Reason": events.NewStringAttribute("reason"),
+					"Action":  events.NewStringAttribute(action),
+					"Reason":  events.NewStringAttribute("reason"),
 				},
 				Keys: map[string]events.DynamoDBAttributeValue{
 					"PK": events.NewStringAttribute("DECISION#" + objectID),

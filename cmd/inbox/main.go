@@ -464,7 +464,7 @@ func (ih *InboxHandler) authenticateInboxRequest(ctx *lift.Context, username str
 	// Verify user authorization
 	if claims.Username != username {
 		ih.logger.Warn("user mismatch in inbox request",
-			zap.String("token_user", claims.Username),
+			zap.String("auth_username", claims.Username),
 			zap.String("requested_user", username))
 		return nil, lift.NewLiftError("FORBIDDEN", "cannot access another user's inbox", 403)
 	}
@@ -1259,8 +1259,6 @@ func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ 
 	return nil
 }
 
-
-
 // verifyDigestEnhanced verifies the digest header with enhanced compatibility support
 func (ih *InboxHandler) verifyDigestEnhanced(ctx *lift.Context, req *InboxRequest) error {
 	digestHeader := ctx.Header("Digest")
@@ -1542,8 +1540,6 @@ func (ih *InboxHandler) isAddressedTo(activity *activitypub.Activity, actor *act
 	return false
 }
 
-
-
 // convertLiftRequest converts a Lift request to an http.Request
 func (ih *InboxHandler) convertLiftRequest(ctx *lift.Context, body []byte) (*http.Request, error) {
 	// Build URL
@@ -1595,8 +1591,6 @@ func generateActivityID() string {
 	}
 	return fmt.Sprintf("%d-%x", time.Now().UnixNano(), b)
 }
-
-
 
 // processFollowActivity processes an incoming Follow activity
 func (ih *InboxHandler) processFollowActivity(ctx context.Context, activity *activitypub.Activity, targetActor *activitypub.Actor) error {
