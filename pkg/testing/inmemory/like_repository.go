@@ -4,7 +4,6 @@ package inmemory
 import (
 	"context"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -113,27 +112,7 @@ func (r *LikeRepository) GetObjectLikes(_ context.Context, objectID string, limi
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	keys := r.byObject[objectID]
-	if len(keys) == 0 {
-		return []*models.Like{}, "", nil
-	}
-
-	// Sort by creation time
-	sortedLikes := make([]*models.Like, 0, len(keys))
-	for _, key := range keys {
-		if l, exists := r.likes[key]; exists {
-			sortedLikes = append(sortedLikes, l)
-		}
-	}
-	sort.Slice(sortedLikes, func(i, j int) bool {
-		return sortedLikes[i].CreatedAt.Before(sortedLikes[j].CreatedAt)
-	})
-
-	results, nextCursor := paginateItems(sortedLikes, limit, cursor, func(l *models.Like) string {
-		return l.ID
-	})
-
-	return results, nextCursor, nil
+	return r.getLikesPaginated(r.byObject[objectID], limit, cursor)
 }
 
 // GetActorLikes retrieves all likes by an actor with pagination
@@ -141,20 +120,19 @@ func (r *LikeRepository) GetActorLikes(_ context.Context, actorID string, limit 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	keys := r.byActor[actorID]
+	return r.getLikesPaginated(r.byActor[actorID], limit, cursor)
+}
+
+func (r *LikeRepository) getLikesPaginated(keys []string, limit int, cursor string) ([]*models.Like, string, error) {
 	if len(keys) == 0 {
 		return []*models.Like{}, "", nil
 	}
 
-	// Sort by creation time
-	sortedLikes := make([]*models.Like, 0, len(keys))
-	for _, key := range keys {
-		if l, exists := r.likes[key]; exists {
-			sortedLikes = append(sortedLikes, l)
-		}
-	}
-	sort.Slice(sortedLikes, func(i, j int) bool {
-		return sortedLikes[i].CreatedAt.Before(sortedLikes[j].CreatedAt)
+	sortedLikes := collectAndSort(keys, func(key string) (*models.Like, bool) {
+		like, exists := r.likes[key]
+		return like, exists
+	}, func(a, b *models.Like) bool {
+		return a.CreatedAt.Before(b.CreatedAt)
 	})
 
 	results, nextCursor := paginateItems(sortedLikes, limit, cursor, func(l *models.Like) string {
@@ -289,8 +267,6 @@ func removeLikeKeyFromSlice(slice []string, item string) []string {
 	return result
 }
 
-
-
 // Test helper methods
 
 // Clear clears all data (test helper)
@@ -306,7 +282,7 @@ func (r *LikeRepository) Clear() {
 	r.reblogs = make(map[string]bool)
 }
 
-// GetLikeCount returns the number of likes (test helper)
+// GetLikeCountTotal returns the number of likes (test helper).
 func (r *LikeRepository) GetLikeCountTotal() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

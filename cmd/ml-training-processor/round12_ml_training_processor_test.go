@@ -927,6 +927,41 @@ func TestMetricsExtractionHelpers_Branches_Round12(t *testing.T) {
 	})
 }
 
+func convertEventAttributeValue(attr events.DynamoDBAttributeValue) dynamodbtypes.AttributeValue {
+	switch attr.DataType() {
+	case events.DataTypeString:
+		return &dynamodbtypes.AttributeValueMemberS{Value: attr.String()}
+	case events.DataTypeNumber:
+		return &dynamodbtypes.AttributeValueMemberN{Value: attr.Number()}
+	case events.DataTypeBinary:
+		return &dynamodbtypes.AttributeValueMemberB{Value: attr.Binary()}
+	case events.DataTypeBoolean:
+		return &dynamodbtypes.AttributeValueMemberBOOL{Value: attr.Boolean()}
+	case events.DataTypeNull:
+		return &dynamodbtypes.AttributeValueMemberNULL{Value: true}
+	case events.DataTypeStringSet:
+		return &dynamodbtypes.AttributeValueMemberSS{Value: attr.StringSet()}
+	case events.DataTypeNumberSet:
+		return &dynamodbtypes.AttributeValueMemberNS{Value: attr.NumberSet()}
+	case events.DataTypeBinarySet:
+		return &dynamodbtypes.AttributeValueMemberBS{Value: attr.BinarySet()}
+	case events.DataTypeList:
+		list := make([]dynamodbtypes.AttributeValue, 0, len(attr.List()))
+		for _, item := range attr.List() {
+			list = append(list, convertEventAttributeValue(item))
+		}
+		return &dynamodbtypes.AttributeValueMemberL{Value: list}
+	case events.DataTypeMap:
+		m := make(map[string]dynamodbtypes.AttributeValue)
+		for k, v := range attr.Map() {
+			m[k] = convertEventAttributeValue(v)
+		}
+		return &dynamodbtypes.AttributeValueMemberM{Value: m}
+	default:
+		return nil
+	}
+}
+
 func TestConvertEventAttributeValue_Branches_Round12(t *testing.T) {
 	require.IsType(t, &dynamodbtypes.AttributeValueMemberS{}, convertEventAttributeValue(events.NewStringAttribute("s")))
 	require.IsType(t, &dynamodbtypes.AttributeValueMemberN{}, convertEventAttributeValue(events.NewNumberAttribute("123")))

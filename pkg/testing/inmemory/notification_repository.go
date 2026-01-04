@@ -59,22 +59,22 @@ func copyNotification(n *models.Notification) *models.Notification {
 	if n == nil {
 		return nil
 	}
-	copy := *n
+	notificationCopy := *n
 	if n.Data != nil {
-		copy.Data = make(map[string]interface{})
+		notificationCopy.Data = make(map[string]interface{})
 		for k, v := range n.Data {
-			copy.Data[k] = v
+			notificationCopy.Data[k] = v
 		}
 	}
 	if n.ReadAt != nil {
 		readAt := *n.ReadAt
-		copy.ReadAt = &readAt
+		notificationCopy.ReadAt = &readAt
 	}
 	if n.PushSentAt != nil {
 		pushSentAt := *n.PushSentAt
-		copy.PushSentAt = &pushSentAt
+		notificationCopy.PushSentAt = &pushSentAt
 	}
-	return &copy
+	return &notificationCopy
 }
 
 // SetDispatcher sets the notification dispatcher
@@ -83,7 +83,6 @@ func (r *NotificationRepository) SetDispatcher(dispatcher interfaces.Notificatio
 	defer r.mu.Unlock()
 	r.dispatcher = dispatcher
 }
-
 
 // Core notification operations
 
@@ -177,7 +176,6 @@ func (r *NotificationRepository) DeleteNotification(_ context.Context, notificat
 	delete(r.notifications, notificationID)
 	return nil
 }
-
 
 // User notification queries
 
@@ -318,7 +316,6 @@ func (r *NotificationRepository) MarkNotificationsReadByType(_ context.Context, 
 
 	return nil
 }
-
 
 // Push notification tracking
 
@@ -494,7 +491,6 @@ func (r *NotificationRepository) ConsolidateNotifications(_ context.Context, gro
 	return nil
 }
 
-
 // Notification counts and summaries
 
 // GetUnreadNotificationCount returns the count of unread notifications
@@ -628,7 +624,6 @@ func (r *NotificationRepository) DeleteExpiredNotifications(_ context.Context, e
 	return deleted, nil
 }
 
-
 // Filtered and advanced queries
 
 // GetNotificationsFiltered gets notifications with a filter
@@ -680,7 +675,7 @@ func (r *NotificationRepository) GetNotificationsFiltered(ctx context.Context, u
 }
 
 // ClearOldNotifications clears old notifications for a user
-func (r *NotificationRepository) ClearOldNotifications(ctx context.Context, username string, olderThan time.Time) (int, error) {
+func (r *NotificationRepository) ClearOldNotifications(_ context.Context, username string, olderThan time.Time) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -753,7 +748,6 @@ func (r *NotificationRepository) GetNotificationsAdvanced(_ context.Context, use
 	return r.paginateNotifications(filteredIDs, pagination)
 }
 
-
 // Notification preferences
 
 // GetNotificationPreferences gets notification preferences for a user
@@ -780,8 +774,8 @@ func (r *NotificationRepository) GetNotificationPreferences(_ context.Context, u
 	}
 
 	// Return a copy
-	copy := *prefs
-	return &copy, nil
+	prefsCopy := *prefs
+	return &prefsCopy, nil
 }
 
 // UpdateNotificationPreferences updates notification preferences for a user
@@ -794,8 +788,8 @@ func (r *NotificationRepository) UpdateNotificationPreferences(_ context.Context
 	}
 
 	prefs.UpdateKeys()
-	copy := *prefs
-	r.preferences[prefs.Username] = &copy
+	prefsCopy := *prefs
+	r.preferences[prefs.Username] = &prefsCopy
 
 	return nil
 }
@@ -833,7 +827,6 @@ func (r *NotificationRepository) SetNotificationPreference(ctx context.Context, 
 
 	return r.UpdateNotificationPreferences(ctx, prefs)
 }
-
 
 // Helper methods
 

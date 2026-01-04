@@ -491,7 +491,7 @@ func (r *ListRepository) GetListsContainingAccount(_ context.Context, accountID,
 }
 
 // GetListTimeline retrieves statuses from list members (stub implementation)
-func (r *ListRepository) GetListTimeline(_ context.Context, listID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+func (r *ListRepository) GetListTimeline(_ context.Context, listID string, _ interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

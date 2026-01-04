@@ -22,7 +22,7 @@ type AIRepository struct {
 	analysesByObject map[string][]*ai.AIAnalysis
 
 	// Analysis by ID: analysisID -> AIAnalysis
-	analysesById map[string]*ai.AIAnalysis
+	analysesByID map[string]*ai.AIAnalysis
 
 	// Queue for analysis: objectID -> queued
 	analysisQueue map[string]bool
@@ -38,7 +38,7 @@ type AIRepository struct {
 func NewAIRepository() *AIRepository {
 	return &AIRepository{
 		analysesByObject: make(map[string][]*ai.AIAnalysis),
-		analysesById:     make(map[string]*ai.AIAnalysis),
+		analysesByID:     make(map[string]*ai.AIAnalysis),
 		analysisQueue:    make(map[string]bool),
 		modelPerformance: make(map[string]map[string]float64),
 		mlFeedback:       make(map[string]map[string]interface{}),
@@ -57,7 +57,7 @@ func (r *AIRepository) SaveAnalysis(_ context.Context, analysis *ai.AIAnalysis) 
 	}
 
 	// Store by ID
-	r.analysesById[analysis.ID] = analysis
+	r.analysesByID[analysis.ID] = analysis
 
 	// Store by object ID (prepend for most recent first)
 	r.analysesByObject[analysis.ObjectID] = append([]*ai.AIAnalysis{analysis}, r.analysesByObject[analysis.ObjectID]...)
@@ -86,7 +86,7 @@ func (r *AIRepository) GetAnalysisByID(_ context.Context, _, analysisID string) 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	analysis, exists := r.analysesById[analysisID]
+	analysis, exists := r.analysesByID[analysisID]
 	if !exists {
 		return nil, storage.ErrNotFound
 	}
@@ -298,7 +298,7 @@ func (r *AIRepository) Clear() {
 	defer r.mu.Unlock()
 
 	r.analysesByObject = make(map[string][]*ai.AIAnalysis)
-	r.analysesById = make(map[string]*ai.AIAnalysis)
+	r.analysesByID = make(map[string]*ai.AIAnalysis)
 	r.analysisQueue = make(map[string]bool)
 	r.modelPerformance = make(map[string]map[string]float64)
 	r.mlFeedback = make(map[string]map[string]interface{})

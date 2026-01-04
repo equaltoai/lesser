@@ -65,7 +65,6 @@ func (r *RateLimitRepository) RecordLoginAttempt(_ context.Context, identifier s
 	return nil
 }
 
-
 // GetLoginAttemptCount returns the number of login attempts since the given time
 func (r *RateLimitRepository) GetLoginAttemptCount(_ context.Context, identifier string, since time.Time) (int, error) {
 	r.mu.RLock()
@@ -167,7 +166,6 @@ func (r *RateLimitRepository) CheckFederationRateLimit(_ context.Context, domain
 	return nil
 }
 
-
 // GetFederationRateLimitInfo returns current federation rate limit info
 func (r *RateLimitRepository) GetFederationRateLimitInfo(_ context.Context, domain, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
 	r.mu.RLock()
@@ -185,7 +183,7 @@ func (r *RateLimitRepository) GetFederationRateLimitInfo(_ context.Context, doma
 }
 
 // GetViolationCount returns the number of violations in a time period
-func (r *RateLimitRepository) GetViolationCount(_ context.Context, userID, domain string, since time.Duration) (int, error) {
+func (r *RateLimitRepository) GetViolationCount(_ context.Context, userID, domain string, _ time.Duration) (int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

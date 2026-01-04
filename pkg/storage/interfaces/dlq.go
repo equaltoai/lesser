@@ -1,5 +1,5 @@
 // Package interfaces defines the repository interfaces for the Lesser application.
-package interfaces
+package interfaces //nolint:revive // Standard interfaces package name
 
 import (
 	"context"
@@ -16,19 +16,19 @@ type DLQTimeRange struct {
 
 // DLQAnalytics represents analytics data for DLQ messages.
 type DLQAnalytics struct {
-	Service               string                      `json:"service"`
-	TimeRange             DLQTimeRange                `json:"time_range"`
-	TotalMessages         int                         `json:"total_messages"`
-	NewMessages           int                         `json:"new_messages"`
-	ReprocessingMessages  int                         `json:"reprocessing_messages"`
-	ResolvedMessages      int                         `json:"resolved_messages"`
-	FailedMessages        int                         `json:"failed_messages"`
-	AbandonedMessages     int                         `json:"abandoned_messages"`
-	ResolutionRate        float64                     `json:"resolution_rate"`
-	AbandonmentRate       float64                     `json:"abandonment_rate"`
-	TotalCostMicroCents   int64                       `json:"total_cost_micro_cents"`
-	TotalCostDollars      float64                     `json:"total_cost_dollars"`
-	AverageCostPerMessage float64                     `json:"average_cost_per_message"`
+	Service               string                         `json:"service"`
+	TimeRange             DLQTimeRange                   `json:"time_range"`
+	TotalMessages         int                            `json:"total_messages"`
+	NewMessages           int                            `json:"new_messages"`
+	ReprocessingMessages  int                            `json:"reprocessing_messages"`
+	ResolvedMessages      int                            `json:"resolved_messages"`
+	FailedMessages        int                            `json:"failed_messages"`
+	AbandonedMessages     int                            `json:"abandoned_messages"`
+	ResolutionRate        float64                        `json:"resolution_rate"`
+	AbandonmentRate       float64                        `json:"abandonment_rate"`
+	TotalCostMicroCents   int64                          `json:"total_cost_micro_cents"`
+	TotalCostDollars      float64                        `json:"total_cost_dollars"`
+	AverageCostPerMessage float64                        `json:"average_cost_per_message"`
 	ErrorTypeStats        map[string]*DLQErrorTypeStats  `json:"error_type_stats"`
 	ServiceStats          map[string]*DLQServiceStats    `json:"service_stats"`
 	SimilarityGroups      map[string]*DLQSimilarityGroup `json:"similarity_groups"`
@@ -66,8 +66,8 @@ type DLQSimilarityGroup struct {
 
 // DLQTrends represents trend data over time.
 type DLQTrends struct {
-	Service    string                 `json:"service"`
-	Days       int                    `json:"days"`
+	Service    string                    `json:"service"`
+	Days       int                       `json:"days"`
 	DailyStats map[string]*DLQDailyStats `json:"daily_stats"`
 }
 

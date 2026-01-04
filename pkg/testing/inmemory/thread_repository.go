@@ -200,7 +200,7 @@ func (r *ThreadRepository) GetPendingMissingReplies(_ context.Context, limit int
 	var result []*models.MissingReply
 	for _, missingMap := range r.missingReplies {
 		for _, missing := range missingMap {
-			if missing.Status == "pending" {
+			if missing.Status == statusPending {
 				result = append(result, missing)
 				if limit > 0 && len(result) >= limit {
 					return result, nil

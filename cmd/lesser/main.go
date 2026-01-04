@@ -56,7 +56,7 @@ func runCLI(args []string, stderr io.Writer) int {
 			return 0
 		default:
 			printUsageTo(stderr)
-			fmt.Fprintln(stderr, "\nUnknown client command:", args[2])
+			_, _ = fmt.Fprintln(stderr, "\nUnknown client command:", args[2])
 			return 2
 		}
 	case "build":
@@ -102,7 +102,7 @@ func runCLI(args []string, stderr io.Writer) int {
 		return 0
 	default:
 		printUsageTo(stderr)
-		fmt.Fprintln(stderr, "\nUnknown command:", args[1])
+		_, _ = fmt.Fprintln(stderr, "\nUnknown command:", args[1])
 		return 2
 	}
 }
@@ -112,31 +112,31 @@ func printUsage() {
 }
 
 func printUsageTo(w io.Writer) {
-	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  lesser up --app <slug> --base-domain <example.com> --aws-profile <profile> [--with-staging] [--out <path>] [--rebuild-lambdas]")
-	fmt.Fprintln(w, "  lesser client deploy --app <slug> --base-domain <example.com> --aws-profile <profile> --dist <dir> [--stage dev|live|staging|both|all] [--state <path>]")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "  lesser build [--rebuild-lambdas]                # rebuild deployment artifacts (lambdas, auth-ui, go build)")
-	fmt.Fprintln(w, "  lesser build lambdas [--rebuild]               # (re)build bin/*.zip")
-	fmt.Fprintln(w, "  lesser build lambda <name>                     # build a single bin/<name>.zip")
-	fmt.Fprintln(w, "  lesser generate openapi|graphql-coverage|inventory|schema")
-	fmt.Fprintln(w, "  lesser schema [--out <path>] | lesser export-schema")
-	fmt.Fprintln(w, "  lesser verify [all|docs|ai-training|schema|graphql-coverage|openapi|inventory|lambda-set|unit|smoke|cdk] [--smoke] [--cdk]")
-	fmt.Fprintln(w, "  lesser test [all|unit|integration|race]")
-	fmt.Fprintln(w, "  lesser test coverage [--scope all|pkg] [--exclude-generated=true|false] [--include-testing] [--include-tools]")
-	fmt.Fprintln(w, "  lesser coverage scoreboard [--profile <path>] [--mode package|file] [--package <prefix>] [--top <n>] [--exclude-generated=true|false]")
-	fmt.Fprintln(w, "  lesser dev [init|dynamodb|seed-and-validate]   # local development")
-	fmt.Fprintln(w, "  lesser fmt | lesser lint [--fix] | lesser tidy")
-	fmt.Fprintln(w, "  lesser sec-scan | lesser vuln-check | lesser gqlgen")
-	fmt.Fprintln(w, "  lesser logs --app <slug> --function <name> [--env dev|staging|live] [--aws-profile <profile>]")
-	fmt.Fprintln(w, "  lesser metrics|errors|dashboard --app <slug> [--env dev|staging|live] [--aws-profile <profile>] [--region <aws-region>]")
-	fmt.Fprintln(w, "  lesser smoke core|federation [flags...]")
+	_, _ = fmt.Fprintln(w, "Usage:")
+	_, _ = fmt.Fprintln(w, "  lesser up --app <slug> --base-domain <example.com> --aws-profile <profile> [--with-staging] [--out <path>] [--rebuild-lambdas]")
+	_, _ = fmt.Fprintln(w, "  lesser client deploy --app <slug> --base-domain <example.com> --aws-profile <profile> --dist <dir> [--stage dev|live|staging|both|all] [--state <path>]")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "  lesser build [--rebuild-lambdas]                # rebuild deployment artifacts (lambdas, auth-ui, go build)")
+	_, _ = fmt.Fprintln(w, "  lesser build lambdas [--rebuild]               # (re)build bin/*.zip")
+	_, _ = fmt.Fprintln(w, "  lesser build lambda <name>                     # build a single bin/<name>.zip")
+	_, _ = fmt.Fprintln(w, "  lesser generate openapi|graphql-coverage|inventory|schema")
+	_, _ = fmt.Fprintln(w, "  lesser schema [--out <path>] | lesser export-schema")
+	_, _ = fmt.Fprintln(w, "  lesser verify [all|docs|ai-training|schema|graphql-coverage|openapi|inventory|lambda-set|unit|smoke|cdk] [--smoke] [--cdk]")
+	_, _ = fmt.Fprintln(w, "  lesser test [all|unit|integration|race]")
+	_, _ = fmt.Fprintln(w, "  lesser test coverage [--scope all|pkg] [--exclude-generated=true|false] [--include-testing] [--include-tools]")
+	_, _ = fmt.Fprintln(w, "  lesser coverage scoreboard [--profile <path>] [--mode package|file] [--package <prefix>] [--top <n>] [--exclude-generated=true|false]")
+	_, _ = fmt.Fprintln(w, "  lesser dev [init|dynamodb|seed-and-validate]   # local development")
+	_, _ = fmt.Fprintln(w, "  lesser fmt | lesser lint [--fix] | lesser tidy")
+	_, _ = fmt.Fprintln(w, "  lesser sec-scan | lesser vuln-check | lesser gqlgen")
+	_, _ = fmt.Fprintln(w, "  lesser logs --app <slug> --function <name> [--env dev|staging|live] [--aws-profile <profile>]")
+	_, _ = fmt.Fprintln(w, "  lesser metrics|errors|dashboard --app <slug> [--env dev|staging|live] [--aws-profile <profile>] [--region <aws-region>]")
+	_, _ = fmt.Fprintln(w, "  lesser smoke core|federation [flags...]")
 }
 
 func exitCodeFromErr(err error, stderr io.Writer) int {
 	if err == nil {
 		return 0
 	}
-	fmt.Fprintln(stderr, "Error:", err)
+	_, _ = fmt.Fprintln(stderr, "Error:", err)
 	return 1
 }

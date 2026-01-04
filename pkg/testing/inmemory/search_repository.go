@@ -31,7 +31,7 @@ func NewSearchRepository() *SearchRepository {
 }
 
 // SearchAccounts searches for accounts matching the given query
-func (r *SearchRepository) SearchAccounts(_ context.Context, query string, limit int, followingOnly bool, offset int) ([]*activitypub.Actor, error) {
+func (r *SearchRepository) SearchAccounts(_ context.Context, query string, limit int, _ bool, offset int) ([]*activitypub.Actor, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -57,13 +57,12 @@ func (r *SearchRepository) SearchAccounts(_ context.Context, query string, limit
 }
 
 // SearchAccountsWithPrivacy searches for accounts with privacy enforcement
-func (r *SearchRepository) SearchAccountsWithPrivacy(ctx context.Context, query string, limit int, followingOnly bool, offset int, searcherActorID string) ([]*activitypub.Actor, error) {
+func (r *SearchRepository) SearchAccountsWithPrivacy(ctx context.Context, query string, limit int, followingOnly bool, offset int, _ string) ([]*activitypub.Actor, error) {
 	return r.SearchAccounts(ctx, query, limit, followingOnly, offset)
 }
 
-
 // SearchAccountsAdvanced searches for accounts with advanced filtering
-func (r *SearchRepository) SearchAccountsAdvanced(ctx context.Context, query string, resolve bool, limit int, offset int, following bool, accountID string) ([]*activitypub.Actor, error) {
+func (r *SearchRepository) SearchAccountsAdvanced(ctx context.Context, query string, _ bool, limit int, offset int, following bool, _ string) ([]*activitypub.Actor, error) {
 	return r.SearchAccounts(ctx, query, limit, following, offset)
 }
 
@@ -106,17 +105,17 @@ func (r *SearchRepository) SearchStatusesWithOptionsPaginated(ctx context.Contex
 }
 
 // SearchStatusesWithPrivacy searches for statuses with privacy enforcement
-func (r *SearchRepository) SearchStatusesWithPrivacy(ctx context.Context, query string, options storage.StatusSearchOptions, searcherActorID string) ([]*storage.StatusSearchResult, error) {
+func (r *SearchRepository) SearchStatusesWithPrivacy(ctx context.Context, query string, options storage.StatusSearchOptions, _ string) ([]*storage.StatusSearchResult, error) {
 	return r.SearchStatuses(ctx, query, options.Limit)
 }
 
 // SearchStatusesWithPrivacyPaginated searches for statuses with privacy and pagination
-func (r *SearchRepository) SearchStatusesWithPrivacyPaginated(ctx context.Context, query string, options storage.StatusSearchOptions, searcherActorID string) ([]*storage.StatusSearchResult, *interfaces.PaginationResult, error) {
+func (r *SearchRepository) SearchStatusesWithPrivacyPaginated(ctx context.Context, query string, options storage.StatusSearchOptions, _ string) ([]*storage.StatusSearchResult, *interfaces.PaginationResult, error) {
 	return r.SearchStatusesWithOptionsPaginated(ctx, query, options)
 }
 
 // SearchStatusesAdvanced searches for statuses with advanced filtering
-func (r *SearchRepository) SearchStatusesAdvanced(ctx context.Context, query string, limit int, maxID, minID *string, accountID string) ([]*storage.StatusSearchResult, error) {
+func (r *SearchRepository) SearchStatusesAdvanced(ctx context.Context, query string, limit int, _, _ *string, _ string) ([]*storage.StatusSearchResult, error) {
 	return r.SearchStatuses(ctx, query, limit)
 }
 

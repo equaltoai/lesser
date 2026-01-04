@@ -4,7 +4,6 @@ package inmemory
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 
@@ -85,57 +84,12 @@ func (r *SeriesRepository) ListSeriesByAuthorPaginated(_ context.Context, author
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	authorID = strings.TrimSpace(authorID)
-	if authorID == "" {
-		return nil, "", storage.ErrInvalidInput
-	}
-
-	if limit <= 0 {
-		limit = 25
-	}
-
-	// Get series for author
-	keys := r.seriesByAuthor[authorID]
-	seriesList := make([]*models.Series, 0, len(keys))
-	for _, key := range keys {
-		if s, exists := r.series[key]; exists {
-			seriesList = append(seriesList, s)
-		}
-	}
-
-	// Sort by SK (ID#...) ascending
-	sort.Slice(seriesList, func(i, j int) bool {
-		return seriesList[i].SK < seriesList[j].SK
+	return listByAuthorPaginated(authorID, limit, cursor, r.seriesByAuthor, func(key string) (*models.Series, bool) {
+		series, exists := r.series[key]
+		return series, exists
+	}, func(s *models.Series) string {
+		return s.SK
 	})
-
-	// Apply cursor
-	startIdx := 0
-	cursor = strings.TrimSpace(cursor)
-	if cursor != "" {
-		if !strings.HasPrefix(cursor, "ID#") {
-			cursor = "ID#" + cursor
-		}
-		for i, s := range seriesList {
-			if s.SK > cursor {
-				startIdx = i
-				break
-			}
-		}
-	}
-
-	// Apply limit
-	endIdx := startIdx + limit
-	if endIdx > len(seriesList) {
-		endIdx = len(seriesList)
-	}
-
-	result := seriesList[startIdx:endIdx]
-	nextCursor := ""
-	if endIdx < len(seriesList) && len(result) > 0 {
-		nextCursor = result[len(result)-1].SK
-	}
-
-	return result, nextCursor, nil
 }
 
 // UpdateArticleCount atomically increments/decrements a series's ArticleCount

@@ -155,48 +155,7 @@ func (r *QuoteRepository) GetQuotesForStatus(_ context.Context, statusID string,
 	defer r.mu.RUnlock()
 
 	quotes := r.quotesByTarget[statusID]
-
-	// Filter out withdrawn quotes
-	var activeQuotes []*models.QuoteRelationship
-	for _, q := range quotes {
-		if q.IsActive() {
-			activeQuotes = append(activeQuotes, q)
-		}
-	}
-
-	// Apply pagination
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 20
-	}
-
-	startIdx := 0
-	if opts.Cursor != "" {
-		for i, q := range activeQuotes {
-			if q.PK+"#"+q.SK == opts.Cursor {
-				startIdx = i + 1
-				break
-			}
-		}
-	}
-
-	endIdx := startIdx + limit
-	if endIdx > len(activeQuotes) {
-		endIdx = len(activeQuotes)
-	}
-
-	result := &interfaces.PaginatedResult[*models.QuoteRelationship]{
-		Items:   activeQuotes[startIdx:endIdx],
-		HasMore: endIdx < len(activeQuotes),
-		Total:   int64(len(activeQuotes)),
-	}
-
-	if endIdx < len(activeQuotes) && len(result.Items) > 0 {
-		lastQuote := result.Items[len(result.Items)-1]
-		result.NextCursor = lastQuote.PK + "#" + lastQuote.SK
-	}
-
-	return result, nil
+	return paginateQuoteRelationships(quotes, opts), nil
 }
 
 // GetQuotesByUser retrieves quotes created by a specific user
@@ -205,16 +164,17 @@ func (r *QuoteRepository) GetQuotesByUser(_ context.Context, userID string, opts
 	defer r.mu.RUnlock()
 
 	quotes := r.quotesByUser[userID]
+	return paginateQuoteRelationships(quotes, opts), nil
+}
 
-	// Filter out withdrawn quotes
-	var activeQuotes []*models.QuoteRelationship
+func paginateQuoteRelationships(quotes []*models.QuoteRelationship, opts interfaces.PaginationOptions) *interfaces.PaginatedResult[*models.QuoteRelationship] {
+	activeQuotes := make([]*models.QuoteRelationship, 0, len(quotes))
 	for _, q := range quotes {
 		if q.IsActive() {
 			activeQuotes = append(activeQuotes, q)
 		}
 	}
 
-	// Apply pagination
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = 20
@@ -241,12 +201,12 @@ func (r *QuoteRepository) GetQuotesByUser(_ context.Context, userID string, opts
 		Total:   int64(len(activeQuotes)),
 	}
 
-	if endIdx < len(activeQuotes) && len(result.Items) > 0 {
+	if result.HasMore && len(result.Items) > 0 {
 		lastQuote := result.Items[len(result.Items)-1]
 		result.NextCursor = lastQuote.PK + "#" + lastQuote.SK
 	}
 
-	return result, nil
+	return result
 }
 
 // ===== Quote Permissions Operations =====

@@ -64,7 +64,6 @@ func (r *SocialRepository) DeleteBlock(_ context.Context, actor, blockedActor st
 	return nil
 }
 
-
 // GetBlock retrieves a specific block relationship
 func (r *SocialRepository) GetBlock(_ context.Context, actor, blockedActor string) (*storage.Block, error) {
 	r.mu.RLock()
@@ -89,7 +88,7 @@ func (r *SocialRepository) IsBlocked(_ context.Context, actor, targetActor strin
 }
 
 // GetBlockedUsers returns a paginated list of actors blocked by the given actor
-func (r *SocialRepository) GetBlockedUsers(_ context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error) {
+func (r *SocialRepository) GetBlockedUsers(_ context.Context, actor string, _ int, _ string) ([]*storage.Block, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -104,7 +103,7 @@ func (r *SocialRepository) GetBlockedUsers(_ context.Context, actor string, limi
 }
 
 // GetBlockedByUsers returns a paginated list of actors who have blocked the given actor
-func (r *SocialRepository) GetBlockedByUsers(_ context.Context, actor string, limit int, cursor string) ([]*storage.Block, string, error) {
+func (r *SocialRepository) GetBlockedByUsers(_ context.Context, actor string, _ int, _ string) ([]*storage.Block, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -151,7 +150,6 @@ func (r *SocialRepository) GetMute(_ context.Context, actor, mutedActor string) 
 	return mute, nil
 }
 
-
 // IsMuted checks if targetActor is muted by actor
 func (r *SocialRepository) IsMuted(_ context.Context, actor, targetActor string) (bool, error) {
 	r.mu.RLock()
@@ -163,7 +161,7 @@ func (r *SocialRepository) IsMuted(_ context.Context, actor, targetActor string)
 }
 
 // GetMutedUsers returns all actors muted by the given actor
-func (r *SocialRepository) GetMutedUsers(_ context.Context, actor string, limit int, cursor string) ([]*storage.Mute, string, error) {
+func (r *SocialRepository) GetMutedUsers(_ context.Context, actor string, _ int, _ string) ([]*storage.Mute, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -211,7 +209,7 @@ func (r *SocialRepository) GetAnnounce(_ context.Context, actor, object string) 
 }
 
 // GetStatusAnnounces retrieves all announces for a specific object
-func (r *SocialRepository) GetStatusAnnounces(_ context.Context, objectID string, limit int, cursor string) ([]*storage.Announce, string, error) {
+func (r *SocialRepository) GetStatusAnnounces(_ context.Context, objectID string, _ int, _ string) ([]*storage.Announce, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -235,9 +233,8 @@ func (r *SocialRepository) HasUserAnnounced(_ context.Context, actor, object str
 	return exists, nil
 }
 
-
 // GetActorAnnounces retrieves all objects announced by a specific actor with pagination
-func (r *SocialRepository) GetActorAnnounces(_ context.Context, actorID string, limit int, cursor string) ([]*storage.Announce, string, error) {
+func (r *SocialRepository) GetActorAnnounces(_ context.Context, actorID string, _ int, _ string) ([]*storage.Announce, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -316,7 +313,7 @@ func (r *SocialRepository) GetAccountPins(_ context.Context, username string) ([
 }
 
 // GetAccountPinsPaginated retrieves pinned accounts for a user with pagination
-func (r *SocialRepository) GetAccountPinsPaginated(_ context.Context, username string, limit int, cursor string) ([]*storage.AccountPin, string, error) {
+func (r *SocialRepository) GetAccountPinsPaginated(_ context.Context, username string, _ int, _ string) ([]*storage.AccountPin, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -329,7 +326,6 @@ func (r *SocialRepository) GetAccountPinsPaginated(_ context.Context, username s
 	}
 	return result, "", nil
 }
-
 
 // IsAccountPinned checks if an account is pinned
 func (r *SocialRepository) IsAccountPinned(_ context.Context, username, pinnedActorID string) (bool, error) {
@@ -420,7 +416,7 @@ func (r *SocialRepository) GetStatusPins(_ context.Context, username string) ([]
 }
 
 // GetStatusPinsPaginated retrieves pinned statuses for a user with pagination
-func (r *SocialRepository) GetStatusPinsPaginated(_ context.Context, username string, limit int, cursor string) ([]*storage.StatusPin, string, error) {
+func (r *SocialRepository) GetStatusPinsPaginated(_ context.Context, username string, limit int, _ string) ([]*storage.StatusPin, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -448,7 +444,7 @@ func (r *SocialRepository) IsStatusPinned(_ context.Context, username, statusID 
 }
 
 // ReorderStatusPins reorders pinned statuses
-func (r *SocialRepository) ReorderStatusPins(_ context.Context, username string, statusIDs []string) error {
+func (r *SocialRepository) ReorderStatusPins(_ context.Context, _ string, _ []string) error {
 	// No-op for in-memory implementation
 	return nil
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
+// DLQStatus* values match the status stored on DLQ messages.
 const (
 	DLQStatusNew    = "new"
 	DLQStatusFailed = "failed"

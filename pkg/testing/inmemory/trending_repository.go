@@ -49,6 +49,41 @@ type linkShareRecord struct {
 	Timestamp time.Time
 }
 
+func buildTrending[K comparable, R any, Out any](records map[K][]R, since time.Time, limit int, getTime func(R) time.Time, build func(K, int) Out) []Out {
+	type count struct {
+		key   K
+		count int
+	}
+
+	counts := make([]count, 0, len(records))
+	for key, recs := range records {
+		c := 0
+		for _, rec := range recs {
+			if getTime(rec).After(since) {
+				c++
+			}
+		}
+		if c > 0 {
+			counts = append(counts, count{key: key, count: c})
+		}
+	}
+
+	sort.Slice(counts, func(i, j int) bool {
+		return counts[i].count > counts[j].count
+	})
+
+	if limit > 0 && len(counts) > limit {
+		counts = counts[:limit]
+	}
+
+	result := make([]Out, 0, len(counts))
+	for _, c := range counts {
+		result = append(result, build(c.key, c.count))
+	}
+
+	return result
+}
+
 // NewTrendingRepository creates a new in-memory trending repository
 func NewTrendingRepository() *TrendingRepository {
 	return &TrendingRepository{
@@ -58,7 +93,6 @@ func NewTrendingRepository() *TrendingRepository {
 		engagementMetrics: make(map[string]*storage.EngagementMetrics),
 	}
 }
-
 
 // RecordHashtagUsage records when a hashtag is used in a status
 func (r *TrendingRepository) RecordHashtagUsage(_ context.Context, hashtag string, statusID string, authorID string) error {
@@ -104,80 +138,29 @@ func (r *TrendingRepository) GetTrendingHashtags(_ context.Context, since time.T
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	type hashtagCount struct {
-		name  string
-		count int
-	}
-	var counts []hashtagCount
-	for hashtag, records := range r.hashtagUsage {
-		count := 0
-		for _, rec := range records {
-			if rec.Timestamp.After(since) {
-				count++
-			}
+	return buildTrending(r.hashtagUsage, since, limit, func(rec *hashtagUsageRecord) time.Time {
+		return rec.Timestamp
+	}, func(hashtag string, count int) *storage.TrendingHashtag {
+		return &storage.TrendingHashtag{
+			Name:       hashtag,
+			UsageCount: int64(count),
 		}
-		if count > 0 {
-			counts = append(counts, hashtagCount{name: hashtag, count: count})
-		}
-	}
-
-	sort.Slice(counts, func(i, j int) bool {
-		return counts[i].count > counts[j].count
-	})
-
-	if limit > 0 && len(counts) > limit {
-		counts = counts[:limit]
-	}
-
-	var result []*storage.TrendingHashtag
-	for _, c := range counts {
-		result = append(result, &storage.TrendingHashtag{
-			Name:       c.name,
-			UsageCount: int64(c.count),
-		})
-	}
-	return result, nil
+	}), nil
 }
-
 
 // GetTrendingStatuses returns the top trending statuses since the given time
 func (r *TrendingRepository) GetTrendingStatuses(_ context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	type statusCount struct {
-		id    string
-		count int
-	}
-	var counts []statusCount
-	for statusID, records := range r.statusEngagement {
-		count := 0
-		for _, rec := range records {
-			if rec.Timestamp.After(since) {
-				count++
-			}
+	return buildTrending(r.statusEngagement, since, limit, func(rec *engagementRecord) time.Time {
+		return rec.Timestamp
+	}, func(statusID string, count int) *storage.TrendingStatus {
+		return &storage.TrendingStatus{
+			StatusID: statusID,
+			Score:    float64(count),
 		}
-		if count > 0 {
-			counts = append(counts, statusCount{id: statusID, count: count})
-		}
-	}
-
-	sort.Slice(counts, func(i, j int) bool {
-		return counts[i].count > counts[j].count
-	})
-
-	if limit > 0 && len(counts) > limit {
-		counts = counts[:limit]
-	}
-
-	var result []*storage.TrendingStatus
-	for _, c := range counts {
-		result = append(result, &storage.TrendingStatus{
-			StatusID: c.id,
-			Score:    float64(c.count),
-		})
-	}
-	return result, nil
+	}), nil
 }
 
 // GetTrendingLinks returns the top trending links since the given time
@@ -185,39 +168,14 @@ func (r *TrendingRepository) GetTrendingLinks(_ context.Context, since time.Time
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	type linkCount struct {
-		url   string
-		count int
-	}
-	var counts []linkCount
-	for url, records := range r.linkShares {
-		count := 0
-		for _, rec := range records {
-			if rec.Timestamp.After(since) {
-				count++
-			}
+	return buildTrending(r.linkShares, since, limit, func(rec *linkShareRecord) time.Time {
+		return rec.Timestamp
+	}, func(url string, count int) *storage.TrendingLink {
+		return &storage.TrendingLink{
+			URL:        url,
+			ShareCount: int64(count),
 		}
-		if count > 0 {
-			counts = append(counts, linkCount{url: url, count: count})
-		}
-	}
-
-	sort.Slice(counts, func(i, j int) bool {
-		return counts[i].count > counts[j].count
-	})
-
-	if limit > 0 && len(counts) > limit {
-		counts = counts[:limit]
-	}
-
-	var result []*storage.TrendingLink
-	for _, c := range counts {
-		result = append(result, &storage.TrendingLink{
-			URL:        c.url,
-			ShareCount: int64(c.count),
-		})
-	}
-	return result, nil
+	}), nil
 }
 
 // GetRecentHashtags returns recent hashtags since the given time
@@ -234,7 +192,6 @@ func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context
 func (r *TrendingRepository) GetRecentLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
 	return r.GetTrendingLinks(ctx, since, limit)
 }
-
 
 // StoreEngagementMetrics stores engagement metrics for a status
 func (r *TrendingRepository) StoreEngagementMetrics(_ context.Context, metrics *storage.EngagementMetrics) error {
@@ -258,17 +215,17 @@ func (r *TrendingRepository) GetEngagementMetrics(_ context.Context, statusID st
 }
 
 // StoreHashtagTrend stores a hashtag trend record
-func (r *TrendingRepository) StoreHashtagTrend(_ context.Context, trend any) error {
+func (r *TrendingRepository) StoreHashtagTrend(_ context.Context, _ any) error {
 	return nil
 }
 
 // StoreStatusTrend stores a status trend record
-func (r *TrendingRepository) StoreStatusTrend(_ context.Context, trend any) error {
+func (r *TrendingRepository) StoreStatusTrend(_ context.Context, _ any) error {
 	return nil
 }
 
 // StoreLinkTrend stores a link trend record
-func (r *TrendingRepository) StoreLinkTrend(_ context.Context, trend any) error {
+func (r *TrendingRepository) StoreLinkTrend(_ context.Context, _ any) error {
 	return nil
 }
 

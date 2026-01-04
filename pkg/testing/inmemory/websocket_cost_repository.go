@@ -32,11 +32,11 @@ type WebSocketCostRepository struct {
 func NewWebSocketCostRepository() *WebSocketCostRepository {
 	return &WebSocketCostRepository{
 		records:       make(map[string]*models.WebSocketCostRecord),
-		recordsByOp:  make(map[string][]string),
+		recordsByOp:   make(map[string][]string),
 		recordsByConn: make(map[string][]string),
 		recordsByUser: make(map[string][]string),
-		budgets:      make(map[string]*models.WebSocketCostBudget),
-		aggregations: make(map[string]*models.WebSocketCostAggregation),
+		budgets:       make(map[string]*models.WebSocketCostBudget),
+		aggregations:  make(map[string]*models.WebSocketCostAggregation),
 	}
 }
 
@@ -61,7 +61,6 @@ func (r *WebSocketCostRepository) CreateRecord(_ context.Context, record *models
 func (r *WebSocketCostRepository) Create(ctx context.Context, record *models.WebSocketCostRecord) error {
 	return r.CreateRecord(ctx, record)
 }
-
 
 // BatchCreate creates multiple WebSocket cost tracking records
 func (r *WebSocketCostRepository) BatchCreate(ctx context.Context, records []*models.WebSocketCostRecord) error {
@@ -164,7 +163,6 @@ func (r *WebSocketCostRepository) GetRecentCosts(_ context.Context, since time.T
 	}
 	return results, nil
 }
-
 
 // GetConnectionCostSummary calculates cost summary for a specific connection
 func (r *WebSocketCostRepository) GetConnectionCostSummary(_ context.Context, connectionID string, startTime, endTime time.Time) (*interfaces.WebSocketConnectionCostSummary, error) {
@@ -284,7 +282,6 @@ func (r *WebSocketCostRepository) CheckBudgetLimits(_ context.Context, userID st
 	return status, nil
 }
 
-
 // CreateAggregation creates a new WebSocket cost aggregation
 func (r *WebSocketCostRepository) CreateAggregation(_ context.Context, aggregation *models.WebSocketCostAggregation) error {
 	r.mu.Lock()
@@ -346,7 +343,7 @@ func (r *WebSocketCostRepository) ListAggregationsByPeriod(_ context.Context, pe
 }
 
 // AggregateWebSocketCosts performs aggregation of raw WebSocket cost data
-func (r *WebSocketCostRepository) AggregateWebSocketCosts(_ context.Context, operationType, period string, windowStart, windowEnd time.Time) error {
+func (r *WebSocketCostRepository) AggregateWebSocketCosts(_ context.Context, _, _ string, _, _ time.Time) error {
 	return nil // No-op for in-memory
 }
 

@@ -81,7 +81,7 @@ func (r *PublicationRepository) Update(_ context.Context, publication *models.Pu
 }
 
 // Delete deletes a publication by PK and SK
-func (r *PublicationRepository) Delete(_ context.Context, pk, sk string) error {
+func (r *PublicationRepository) Delete(_ context.Context, pk, _ string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

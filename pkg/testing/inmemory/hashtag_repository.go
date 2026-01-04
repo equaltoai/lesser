@@ -44,7 +44,7 @@ func NewHashtagRepository() *HashtagRepository {
 }
 
 // IndexHashtag indexes a hashtag when used in a status
-func (r *HashtagRepository) IndexHashtag(_ context.Context, hashtag string, statusID string, authorID string, visibility string) error {
+func (r *HashtagRepository) IndexHashtag(_ context.Context, hashtag string, statusID string, _ string, _ string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -53,9 +53,8 @@ func (r *HashtagRepository) IndexHashtag(_ context.Context, hashtag string, stat
 	return nil
 }
 
-
 // IndexStatusHashtags indexes a status with its hashtags for efficient search
-func (r *HashtagRepository) IndexStatusHashtags(_ context.Context, statusID string, authorID string, authorHandle string, statusURL string, content string, hashtags []string, published time.Time, visibility string) error {
+func (r *HashtagRepository) IndexStatusHashtags(_ context.Context, statusID string, _ string, _ string, _ string, _ string, hashtags []string, _ time.Time, _ string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -103,14 +102,13 @@ func (r *HashtagRepository) GetHashtagInfo(_ context.Context, hashtag string) (*
 }
 
 // GetHashtagUsageHistory retrieves recent usage history for a hashtag
-func (r *HashtagRepository) GetHashtagUsageHistory(_ context.Context, hashtag string, days int) ([]int64, error) {
+func (r *HashtagRepository) GetHashtagUsageHistory(_ context.Context, _ string, days int) ([]int64, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	result := make([]int64, days)
 	return result, nil
 }
-
 
 // GetHashtagActivity retrieves activities for a hashtag since a specific time
 func (r *HashtagRepository) GetHashtagActivity(_ context.Context, hashtag string, since time.Time) ([]*storage.Activity, error) {
@@ -139,7 +137,7 @@ func (r *HashtagRepository) GetHashtagStats(_ context.Context, hashtag string) (
 }
 
 // GetHashtagTimelineAdvanced retrieves hashtag timeline with advanced filtering
-func (r *HashtagRepository) GetHashtagTimelineAdvanced(_ context.Context, hashtag string, maxID *string, limit int, visibility string) ([]*storage.StatusSearchResult, error) {
+func (r *HashtagRepository) GetHashtagTimelineAdvanced(_ context.Context, _ string, _ *string, _ int, _ string) ([]*storage.StatusSearchResult, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -147,7 +145,7 @@ func (r *HashtagRepository) GetHashtagTimelineAdvanced(_ context.Context, hashta
 }
 
 // GetMultiHashtagTimeline retrieves timeline for multiple hashtags
-func (r *HashtagRepository) GetMultiHashtagTimeline(_ context.Context, hashtags []string, maxID *string, limit int, userID string) ([]*storage.StatusSearchResult, error) {
+func (r *HashtagRepository) GetMultiHashtagTimeline(_ context.Context, _ []string, _ *string, _ int, _ string) ([]*storage.StatusSearchResult, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -155,7 +153,7 @@ func (r *HashtagRepository) GetMultiHashtagTimeline(_ context.Context, hashtags 
 }
 
 // GetSuggestedHashtags gets suggested hashtags for a user
-func (r *HashtagRepository) GetSuggestedHashtags(_ context.Context, userID string, limit int) ([]*storage.HashtagSearchResult, error) {
+func (r *HashtagRepository) GetSuggestedHashtags(_ context.Context, _ string, _ int) ([]*storage.HashtagSearchResult, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -185,7 +183,6 @@ func (r *HashtagRepository) UnfollowHashtag(_ context.Context, userID, hashtag s
 	delete(r.follows, key)
 	return nil
 }
-
 
 // IsFollowingHashtag checks if a user is following a hashtag
 func (r *HashtagRepository) IsFollowingHashtag(_ context.Context, userID, hashtag string) (bool, error) {

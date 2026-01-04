@@ -4,7 +4,6 @@ package inmemory
 import (
 	"context"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -111,15 +110,11 @@ func (r *BookmarkRepository) GetUserBookmarks(_ context.Context, username string
 		return []*models.Bookmark{}, "", nil
 	}
 
-	// Sort by creation time (descending)
-	sortedBookmarks := make([]*models.Bookmark, 0, len(keys))
-	for _, key := range keys {
-		if b, exists := r.bookmarks[key]; exists {
-			sortedBookmarks = append(sortedBookmarks, b)
-		}
-	}
-	sort.Slice(sortedBookmarks, func(i, j int) bool {
-		return sortedBookmarks[i].CreatedAt.After(sortedBookmarks[j].CreatedAt)
+	sortedBookmarks := collectAndSort(keys, func(key string) (*models.Bookmark, bool) {
+		b, exists := r.bookmarks[key]
+		return b, exists
+	}, func(a, b *models.Bookmark) bool {
+		return a.CreatedAt.After(b.CreatedAt)
 	})
 
 	results, nextCursor := paginateItems(sortedBookmarks, limit, cursor, func(b *models.Bookmark) string {
@@ -237,8 +232,6 @@ func removeBookmarkKeyFromSlice(slice []string, item string) []string {
 	}
 	return result
 }
-
-
 
 // Test helper methods
 

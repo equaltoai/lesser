@@ -14,6 +14,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
+const draftStatusDraft = "draft"
+
 // DraftRepository is a thread-safe in-memory implementation of interfaces.DraftRepository.
 type DraftRepository struct {
 	mu sync.RWMutex
@@ -65,7 +67,7 @@ func (r *DraftRepository) CreateDraft(_ context.Context, draft *models.Draft) er
 	// Index by status
 	status := strings.ToLower(strings.TrimSpace(draft.Status))
 	if status == "" {
-		status = "draft"
+		status = draftStatusDraft
 	}
 	r.draftsByStatus[status] = append(r.draftsByStatus[status], key)
 
@@ -104,11 +106,11 @@ func (r *DraftRepository) UpdateDraft(_ context.Context, draft *models.Draft) er
 	// Update status index if status changed
 	oldStatus := strings.ToLower(strings.TrimSpace(oldDraft.Status))
 	if oldStatus == "" {
-		oldStatus = "draft"
+		oldStatus = draftStatusDraft
 	}
 	newStatus := strings.ToLower(strings.TrimSpace(draft.Status))
 	if newStatus == "" {
-		newStatus = "draft"
+		newStatus = draftStatusDraft
 	}
 
 	if oldStatus != newStatus {
@@ -137,7 +139,7 @@ func (r *DraftRepository) DeleteDraft(_ context.Context, authorID, draftID strin
 	// Remove from status index
 	status := strings.ToLower(strings.TrimSpace(draft.Status))
 	if status == "" {
-		status = "draft"
+		status = draftStatusDraft
 	}
 	r.draftsByStatus[status] = draftRemoveFromSlice(r.draftsByStatus[status], key)
 
@@ -156,57 +158,12 @@ func (r *DraftRepository) ListDraftsByAuthorPaginated(_ context.Context, authorI
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	authorID = strings.TrimSpace(authorID)
-	if authorID == "" {
-		return nil, "", storage.ErrInvalidInput
-	}
-
-	if limit <= 0 {
-		limit = 25
-	}
-
-	// Get drafts for author
-	keys := r.draftsByAuthor[authorID]
-	drafts := make([]*models.Draft, 0, len(keys))
-	for _, key := range keys {
-		if draft, exists := r.drafts[key]; exists {
-			drafts = append(drafts, draft)
-		}
-	}
-
-	// Sort by SK (ID#...) ascending
-	sort.Slice(drafts, func(i, j int) bool {
-		return drafts[i].SK < drafts[j].SK
+	return listByAuthorPaginated(authorID, limit, cursor, r.draftsByAuthor, func(key string) (*models.Draft, bool) {
+		draft, exists := r.drafts[key]
+		return draft, exists
+	}, func(d *models.Draft) string {
+		return d.SK
 	})
-
-	// Apply cursor
-	startIdx := 0
-	cursor = strings.TrimSpace(cursor)
-	if cursor != "" {
-		if !strings.HasPrefix(cursor, "ID#") {
-			cursor = "ID#" + cursor
-		}
-		for i, draft := range drafts {
-			if draft.SK > cursor {
-				startIdx = i
-				break
-			}
-		}
-	}
-
-	// Apply limit
-	endIdx := startIdx + limit
-	if endIdx > len(drafts) {
-		endIdx = len(drafts)
-	}
-
-	result := drafts[startIdx:endIdx]
-	nextCursor := ""
-	if endIdx < len(drafts) && len(result) > 0 {
-		nextCursor = result[len(result)-1].SK
-	}
-
-	return result, nextCursor, nil
 }
 
 // ListScheduledDraftsDuePaginated lists drafts scheduled to publish at or before the provided time

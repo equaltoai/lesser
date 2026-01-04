@@ -35,12 +35,12 @@ type TrackingRepository struct {
 func NewTrackingRepository() *TrackingRepository {
 	return &TrackingRepository{
 		records:        make(map[string]*models.DynamoDBCostRecord),
-		recordsByOp:   make(map[string][]string),
+		recordsByOp:    make(map[string][]string),
 		recordsByTable: make(map[string][]string),
-		aggregations:  make(map[string]*models.DynamoDBCostAggregation),
-		relayCosts:    make(map[string][]*models.RelayCost),
-		relayMetrics:  make(map[string]*models.RelayMetrics),
-		relayBudgets:  make(map[string]*models.RelayBudget),
+		aggregations:   make(map[string]*models.DynamoDBCostAggregation),
+		relayCosts:     make(map[string][]*models.RelayCost),
+		relayMetrics:   make(map[string]*models.RelayMetrics),
+		relayBudgets:   make(map[string]*models.RelayBudget),
 	}
 }
 
@@ -59,7 +59,6 @@ func (r *TrackingRepository) Create(_ context.Context, tracking *models.DynamoDB
 	r.recordsByTable[tracking.Table] = append(r.recordsByTable[tracking.Table], key)
 	return nil
 }
-
 
 // BatchCreate creates multiple cost tracking records efficiently
 func (r *TrackingRepository) BatchCreate(ctx context.Context, trackingList []*models.DynamoDBCostRecord) error {
@@ -109,7 +108,7 @@ func (r *TrackingRepository) ListByOperationType(_ context.Context, operationTyp
 }
 
 // ListByTable lists cost tracking records by table
-func (r *TrackingRepository) ListByTable(_ context.Context, tableName string, startTime, endTime time.Time, limit int, cursor string) ([]*models.DynamoDBCostRecord, string, error) {
+func (r *TrackingRepository) ListByTable(_ context.Context, tableName string, startTime, endTime time.Time, limit int, _ string) ([]*models.DynamoDBCostRecord, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -182,9 +181,8 @@ func (r *TrackingRepository) UpdateAggregated(_ context.Context, aggregated *mod
 	return r.CreateAggregated(context.Background(), aggregated)
 }
 
-
 // ListAggregatedByPeriod lists aggregated cost tracking for a period
-func (r *TrackingRepository) ListAggregatedByPeriod(_ context.Context, period, operationType string, startTime, endTime time.Time, limit int, cursor string) ([]*models.DynamoDBCostAggregation, string, error) {
+func (r *TrackingRepository) ListAggregatedByPeriod(_ context.Context, period, operationType string, startTime, endTime time.Time, limit int, _ string) ([]*models.DynamoDBCostAggregation, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -203,7 +201,7 @@ func (r *TrackingRepository) ListAggregatedByPeriod(_ context.Context, period, o
 }
 
 // Aggregate performs aggregation of raw cost tracking data
-func (r *TrackingRepository) Aggregate(_ context.Context, operationType, period string, windowStart, windowEnd time.Time) error {
+func (r *TrackingRepository) Aggregate(_ context.Context, _, _ string, _, _ time.Time) error {
 	return nil // No-op for in-memory
 }
 
@@ -266,17 +264,17 @@ func (r *TrackingRepository) GetHighCostOperations(_ context.Context, thresholdD
 }
 
 // GetCostTrends calculates cost trends over time
-func (r *TrackingRepository) GetCostTrends(_ context.Context, period string, operationType string, lookbackDays int) (*interfaces.CostTrend, error) {
+func (r *TrackingRepository) GetCostTrends(_ context.Context, period string, operationType string, _ int) (*interfaces.CostTrend, error) {
 	return &interfaces.CostTrend{Period: period, OperationType: operationType}, nil
 }
 
 // GetCostsByOperationType retrieves costs grouped by operation type
-func (r *TrackingRepository) GetCostsByOperationType(_ context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error) {
+func (r *TrackingRepository) GetCostsByOperationType(_ context.Context, _, _ time.Time) (map[string]*models.DynamoDBServiceCostStats, error) {
 	return make(map[string]*models.DynamoDBServiceCostStats), nil
 }
 
 // GetCostsByService retrieves costs grouped by service/function
-func (r *TrackingRepository) GetCostsByService(_ context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error) {
+func (r *TrackingRepository) GetCostsByService(_ context.Context, _, _ time.Time) (map[string]*models.DynamoDBServiceCostStats, error) {
 	return make(map[string]*models.DynamoDBServiceCostStats), nil
 }
 
@@ -295,7 +293,7 @@ func (r *TrackingRepository) GetCostsByDateRange(_ context.Context, startDate, e
 }
 
 // GetDailyAggregates returns aggregated daily costs
-func (r *TrackingRepository) GetDailyAggregates(_ context.Context, startDate, endDate time.Time) ([]*interfaces.DailyAggregate, error) {
+func (r *TrackingRepository) GetDailyAggregates(_ context.Context, _, _ time.Time) ([]*interfaces.DailyAggregate, error) {
 	return []*interfaces.DailyAggregate{}, nil
 }
 
@@ -305,10 +303,9 @@ func (r *TrackingRepository) GetMonthlyAggregate(_ context.Context, year, month 
 }
 
 // GetCostProjections retrieves the most recent cost projection
-func (r *TrackingRepository) GetCostProjections(_ context.Context, period string) (*storage.CostProjection, error) {
+func (r *TrackingRepository) GetCostProjections(_ context.Context, _ string) (*storage.CostProjection, error) {
 	return nil, storage.ErrNotFound
 }
-
 
 // CreateRelayCost creates a new relay cost record
 func (r *TrackingRepository) CreateRelayCost(_ context.Context, relayCost *models.RelayCost) error {
@@ -320,7 +317,7 @@ func (r *TrackingRepository) CreateRelayCost(_ context.Context, relayCost *model
 }
 
 // GetRelayCostsByURL retrieves relay costs for a specific relay URL
-func (r *TrackingRepository) GetRelayCostsByURL(_ context.Context, relayURL string, startTime, endTime time.Time, limit int, cursor string, operationType string) ([]*models.RelayCost, string, error) {
+func (r *TrackingRepository) GetRelayCostsByURL(_ context.Context, relayURL string, startTime, endTime time.Time, limit int, _ string, operationType string) ([]*models.RelayCost, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -386,7 +383,7 @@ func (r *TrackingRepository) GetRelayMetrics(_ context.Context, relayURL, period
 }
 
 // GetRelayMetricsHistory retrieves metrics history for a relay
-func (r *TrackingRepository) GetRelayMetricsHistory(_ context.Context, relayURL string, startTime, endTime time.Time, limit int, cursor string) ([]*models.RelayMetrics, string, error) {
+func (r *TrackingRepository) GetRelayMetricsHistory(_ context.Context, relayURL string, startTime, endTime time.Time, limit int, _ string) ([]*models.RelayMetrics, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

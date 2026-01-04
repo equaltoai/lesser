@@ -4,7 +4,6 @@ package inmemory
 import (
 	"context"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -112,7 +111,7 @@ func (r *ImportRepository) UpdateImportStatus(_ context.Context, importID, statu
 			importRecord.Errors = errors
 		}
 
-		if status == "completed" {
+		if status == statusCompleted {
 			now := time.Now()
 			importRecord.CompletedAt = &now
 		}
@@ -149,34 +148,10 @@ func (r *ImportRepository) GetImportsForUser(_ context.Context, username string,
 	defer r.mu.RUnlock()
 
 	importIDs := r.importsByUser[username]
-	if len(importIDs) == 0 {
-		return []*models.Import{}, "", nil
-	}
-
-	safeLimit := clampLimit(limit)
-
-	startIdx := 0
-	if cursor != "" {
-		for i, id := range importIDs {
-			if id == cursor {
-				startIdx = i + 1
-				break
-			}
-		}
-	}
-
-	var results []*models.Import
-	for i := startIdx; i < len(importIDs) && len(results) < safeLimit; i++ {
-		if importRecord, exists := r.imports[importIDs[i]]; exists {
-			results = append(results, importRecord)
-		}
-	}
-
-	var nextCursor string
-	if startIdx+safeLimit < len(importIDs) {
-		nextCursor = importIDs[startIdx+safeLimit-1]
-	}
-
+	results, nextCursor := paginateFromIDs(importIDs, limit, cursor, func(id string) (*models.Import, bool) {
+		item, exists := r.imports[id]
+		return item, exists
+	})
 	return results, nextCursor, nil
 }
 
@@ -297,9 +272,9 @@ func (r *ImportRepository) GetImportCostSummary(ctx context.Context, username st
 		summary.TotalRecordsFailed += cost.ErrorCount
 
 		switch cost.Status {
-		case "completed":
+		case statusCompleted:
 			summary.CompletedImports++
-		case "failed":
+		case statusFailed:
 			summary.FailedImports++
 		}
 	}
@@ -321,24 +296,10 @@ func (r *ImportRepository) GetHighCostImports(_ context.Context, thresholdMicroC
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var results []*models.ImportCostTracking
-	for _, costs := range r.costByUser {
-		for _, cost := range costs {
-			if cost.TotalCostMicroCents >= thresholdMicroCents &&
-				cost.CreatedAt.After(startDate) && cost.CreatedAt.Before(endDate) {
-				results = append(results, cost)
-				if len(results) >= limit {
-					sort.Slice(results, func(i, j int) bool {
-						return results[i].TotalCostMicroCents > results[j].TotalCostMicroCents
-					})
-					return results, nil
-				}
-			}
-		}
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].TotalCostMicroCents > results[j].TotalCostMicroCents
+	results := highCostItems(r.costByUser, thresholdMicroCents, startDate, endDate, limit, func(cost *models.ImportCostTracking) int64 {
+		return cost.TotalCostMicroCents
+	}, func(cost *models.ImportCostTracking) time.Time {
+		return cost.CreatedAt
 	})
 
 	return results, nil

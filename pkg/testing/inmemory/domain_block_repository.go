@@ -60,9 +60,8 @@ func (r *DomainBlockRepository) RemoveDomainBlock(_ context.Context, username, d
 	return nil
 }
 
-
 // GetUserDomainBlocks retrieves all domains blocked by a user
-func (r *DomainBlockRepository) GetUserDomainBlocks(_ context.Context, username string, limit int, cursor string) ([]string, string, error) {
+func (r *DomainBlockRepository) GetUserDomainBlocks(_ context.Context, username string, _ int, _ string) ([]string, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -120,7 +119,7 @@ func (r *DomainBlockRepository) GetInstanceDomainBlockByID(_ context.Context, id
 }
 
 // ListInstanceDomainBlocks lists all instance domain blocks with pagination
-func (r *DomainBlockRepository) ListInstanceDomainBlocks(_ context.Context, limit int, cursor string) ([]*storage.InstanceDomainBlock, string, error) {
+func (r *DomainBlockRepository) ListInstanceDomainBlocks(_ context.Context, _ int, _ string) ([]*storage.InstanceDomainBlock, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -130,7 +129,6 @@ func (r *DomainBlockRepository) ListInstanceDomainBlocks(_ context.Context, limi
 	}
 	return result, "", nil
 }
-
 
 // UpdateInstanceDomainBlock updates an existing domain block
 func (r *DomainBlockRepository) UpdateInstanceDomainBlock(_ context.Context, domain string, updates map[string]any) error {
@@ -212,7 +210,6 @@ func (r *DomainBlockRepository) DeleteDomainBlock(_ context.Context, id string) 
 	return nil
 }
 
-
 // IsDomainBlocked checks if a domain is blocked at the instance level (alias)
 func (r *DomainBlockRepository) IsDomainBlocked(ctx context.Context, domain string) (bool, *storage.InstanceDomainBlock, error) {
 	return r.IsInstanceDomainBlocked(ctx, domain)
@@ -228,7 +225,7 @@ func (r *DomainBlockRepository) CreateEmailDomainBlock(_ context.Context, block 
 }
 
 // GetEmailDomainBlocks retrieves email domain blocks with pagination
-func (r *DomainBlockRepository) GetEmailDomainBlocks(_ context.Context, limit int, cursor string) ([]*storage.EmailDomainBlock, string, error) {
+func (r *DomainBlockRepository) GetEmailDomainBlocks(_ context.Context, _ int, _ string) ([]*storage.EmailDomainBlock, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -249,7 +246,7 @@ func (r *DomainBlockRepository) DeleteEmailDomainBlock(_ context.Context, id str
 }
 
 // GetDomainAllows retrieves domain allows (for allowlist mode)
-func (r *DomainBlockRepository) GetDomainAllows(_ context.Context, limit int, cursor string) ([]*storage.DomainAllow, string, error) {
+func (r *DomainBlockRepository) GetDomainAllows(_ context.Context, _ int, _ string) ([]*storage.DomainAllow, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

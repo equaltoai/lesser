@@ -158,44 +158,7 @@ func (r *TrustRepository) GetTrustRelationships(_ context.Context, trusterID str
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	keys := r.byTruster[trusterID]
-	if len(keys) == 0 {
-		return []*storage.TrustRelationship{}, "", nil
-	}
-
-	// Sort keys for consistent pagination
-	sortedKeys := make([]string, len(keys))
-	copy(sortedKeys, keys)
-	sort.Strings(sortedKeys)
-
-	// Apply safe limit
-	safeLimit := clampTrustLimit(limit)
-
-	// Find start index based on cursor
-	startIdx := 0
-	if cursor != "" {
-		for i, k := range sortedKeys {
-			if k == cursor {
-				startIdx = i + 1
-				break
-			}
-		}
-	}
-
-	var results []*storage.TrustRelationship
-	var nextCursor string
-
-	for i := startIdx; i < len(sortedKeys) && len(results) < safeLimit; i++ {
-		if rel, exists := r.relationships[sortedKeys[i]]; exists {
-			results = append(results, rel)
-		}
-	}
-
-	// Set next cursor if there are more results
-	if startIdx+safeLimit < len(sortedKeys) {
-		nextCursor = sortedKeys[startIdx+safeLimit-1]
-	}
-
+	results, nextCursor := r.getTrustRelationshipsPaginated(r.byTruster[trusterID], limit, cursor)
 	return results, nextCursor, nil
 }
 
@@ -204,20 +167,21 @@ func (r *TrustRepository) GetTrustedByRelationships(_ context.Context, trusteeID
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	keys := r.byTrustee[trusteeID]
+	results, nextCursor := r.getTrustRelationshipsPaginated(r.byTrustee[trusteeID], limit, cursor)
+	return results, nextCursor, nil
+}
+
+func (r *TrustRepository) getTrustRelationshipsPaginated(keys []string, limit int, cursor string) ([]*storage.TrustRelationship, string) {
 	if len(keys) == 0 {
-		return []*storage.TrustRelationship{}, "", nil
+		return []*storage.TrustRelationship{}, ""
 	}
 
-	// Sort keys for consistent pagination
 	sortedKeys := make([]string, len(keys))
 	copy(sortedKeys, keys)
 	sort.Strings(sortedKeys)
 
-	// Apply safe limit
 	safeLimit := clampTrustLimit(limit)
 
-	// Find start index based on cursor
 	startIdx := 0
 	if cursor != "" {
 		for i, k := range sortedKeys {
@@ -228,21 +192,19 @@ func (r *TrustRepository) GetTrustedByRelationships(_ context.Context, trusteeID
 		}
 	}
 
-	var results []*storage.TrustRelationship
-	var nextCursor string
-
+	results := make([]*storage.TrustRelationship, 0, safeLimit)
 	for i := startIdx; i < len(sortedKeys) && len(results) < safeLimit; i++ {
 		if rel, exists := r.relationships[sortedKeys[i]]; exists {
 			results = append(results, rel)
 		}
 	}
 
-	// Set next cursor if there are more results
+	nextCursor := ""
 	if startIdx+safeLimit < len(sortedKeys) {
 		nextCursor = sortedKeys[startIdx+safeLimit-1]
 	}
 
-	return results, nextCursor, nil
+	return results, nextCursor
 }
 
 // GetAllTrustRelationships retrieves all trust relationships for admin visualization

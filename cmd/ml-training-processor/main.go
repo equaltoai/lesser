@@ -14,7 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock/types"
-	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -627,8 +626,6 @@ func (p *MLTrainingProcessor) markJobAsTimeout(ctx context.Context, jobARN strin
 		p.logger.Error("failed to mark job as timeout", zap.Error(err))
 	}
 }
-
-
 
 // parseMetricsFromS3 downloads and parses training metrics from S3 output
 func (p *MLTrainingProcessor) parseMetricsFromS3(ctx context.Context, s3URI string) (*models.TrainingMetrics, error) {

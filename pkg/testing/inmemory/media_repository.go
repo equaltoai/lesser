@@ -477,14 +477,14 @@ func (r *MediaRepository) MarkMediaFailed(_ context.Context, mediaID, errorMsg s
 	}
 
 	oldStatus := media.Status
-	media.Status = "failed"
+	media.Status = statusFailed
 	media.Error = errorMsg
 	now := time.Now()
 	media.ProcessedAt = &now
 	media.UpdatedAt = now
 
 	r.byStatus[oldStatus] = removeMediaKeyFromSlice(r.byStatus[oldStatus], mediaID)
-	r.byStatus["failed"] = append(r.byStatus["failed"], mediaID)
+	r.byStatus[statusFailed] = append(r.byStatus[statusFailed], mediaID)
 
 	return nil
 }
@@ -494,7 +494,7 @@ func (r *MediaRepository) GetPendingMedia(_ context.Context, opts interfaces.Pag
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	mediaIDs := r.byStatus["pending"]
+	mediaIDs := r.byStatus[statusPending]
 	return paginateMediaByIDs(r.media, mediaIDs, opts), nil
 }
 
@@ -1073,7 +1073,7 @@ func (r *MediaRepository) DeleteTranscodingJob(_ context.Context, jobID string) 
 }
 
 // GetTranscodingCostsByUser retrieves transcoding costs by user
-func (r *MediaRepository) GetTranscodingCostsByUser(_ context.Context, userID string, timeRange string) (map[string]int64, error) {
+func (r *MediaRepository) GetTranscodingCostsByUser(_ context.Context, userID string, _ string) (map[string]int64, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

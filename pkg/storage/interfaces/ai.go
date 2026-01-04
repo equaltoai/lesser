@@ -1,5 +1,5 @@
 // Package interfaces defines the repository interfaces for the Lesser application.
-package interfaces
+package interfaces //nolint:revive // Standard interfaces package name
 
 import (
 	"context"

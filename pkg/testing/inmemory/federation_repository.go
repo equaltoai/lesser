@@ -66,9 +66,8 @@ func (r *FederationRepository) GetKnownInstances(_ context.Context, limit int, c
 	return paginateFederationInstances(result, limit, cursor)
 }
 
-
 // GetFederationStatistics retrieves federation statistics for a time range
-func (r *FederationRepository) GetFederationStatistics(_ context.Context, startTime, endTime time.Time) (*storage.FederationStats, error) {
+func (r *FederationRepository) GetFederationStatistics(_ context.Context, _, _ time.Time) (*storage.FederationStats, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -99,7 +98,7 @@ func (r *FederationRepository) RecordFederationActivity(_ context.Context, activ
 }
 
 // GetFederationCosts retrieves aggregated federation costs
-func (r *FederationRepository) GetFederationCosts(_ context.Context, startTime, endTime time.Time, limit int, cursor string) ([]*storage.FederationCost, string, error) {
+func (r *FederationRepository) GetFederationCosts(_ context.Context, _, _ time.Time, _ int, _ string) ([]*storage.FederationCost, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -107,7 +106,7 @@ func (r *FederationRepository) GetFederationCosts(_ context.Context, startTime, 
 }
 
 // GetInstanceHealthReport generates a health report for a specific instance
-func (r *FederationRepository) GetInstanceHealthReport(_ context.Context, domain string, period time.Duration) (*storage.InstanceHealthReport, error) {
+func (r *FederationRepository) GetInstanceHealthReport(_ context.Context, domain string, _ time.Duration) (*storage.InstanceHealthReport, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -115,12 +114,12 @@ func (r *FederationRepository) GetInstanceHealthReport(_ context.Context, domain
 }
 
 // GetCostProjections generates cost projections based on historical data
-func (r *FederationRepository) GetCostProjections(_ context.Context, period string) (*storage.CostProjection, error) {
+func (r *FederationRepository) GetCostProjections(_ context.Context, _ string) (*storage.CostProjection, error) {
 	return &storage.CostProjection{}, nil
 }
 
 // GetFederationNodes retrieves federation nodes up to a certain depth
-func (r *FederationRepository) GetFederationNodes(_ context.Context, depth int) ([]*storage.FederationNode, error) {
+func (r *FederationRepository) GetFederationNodes(_ context.Context, _ int) ([]*storage.FederationNode, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -132,13 +131,12 @@ func (r *FederationRepository) GetFederationNodes(_ context.Context, depth int) 
 }
 
 // GetFederationNodesByHealth retrieves federation nodes filtered by health status
-func (r *FederationRepository) GetFederationNodesByHealth(_ context.Context, healthStatus string, limit int) ([]*storage.FederationNode, error) {
+func (r *FederationRepository) GetFederationNodesByHealth(_ context.Context, _ string, _ int) ([]*storage.FederationNode, error) {
 	return []*storage.FederationNode{}, nil
 }
 
-
 // GetFederationEdges retrieves edges between specified domains
-func (r *FederationRepository) GetFederationEdges(_ context.Context, domains []string) ([]*storage.FederationEdge, error) {
+func (r *FederationRepository) GetFederationEdges(_ context.Context, _ []string) ([]*storage.FederationEdge, error) {
 	return []*storage.FederationEdge{}, nil
 }
 

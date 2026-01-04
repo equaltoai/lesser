@@ -19,7 +19,7 @@ type FilterRepository struct {
 	mu sync.RWMutex
 
 	// Filters by ID: filterID -> Filter
-	filtersById map[string]*models.Filter
+	filtersByID map[string]*models.Filter
 
 	// Filters by user: username -> []Filter
 	filtersByUser map[string][]*models.Filter
@@ -28,24 +28,24 @@ type FilterRepository struct {
 	keywordsByFilter map[string][]*models.FilterKeyword
 
 	// Keywords by ID: keywordID -> FilterKeyword
-	keywordsById map[string]*models.FilterKeyword
+	keywordsByID map[string]*models.FilterKeyword
 
 	// Statuses by filter: filterID -> []FilterStatus
 	statusesByFilter map[string][]*models.FilterStatus
 
 	// Statuses by ID: statusID -> FilterStatus
-	statusesById map[string]*models.FilterStatus
+	statusesByID map[string]*models.FilterStatus
 }
 
 // NewFilterRepository creates a new in-memory filter repository
 func NewFilterRepository() *FilterRepository {
 	return &FilterRepository{
-		filtersById:      make(map[string]*models.Filter),
+		filtersByID:      make(map[string]*models.Filter),
 		filtersByUser:    make(map[string][]*models.Filter),
 		keywordsByFilter: make(map[string][]*models.FilterKeyword),
-		keywordsById:     make(map[string]*models.FilterKeyword),
+		keywordsByID:     make(map[string]*models.FilterKeyword),
 		statusesByFilter: make(map[string][]*models.FilterStatus),
-		statusesById:     make(map[string]*models.FilterStatus),
+		statusesByID:     make(map[string]*models.FilterStatus),
 	}
 }
 
@@ -64,7 +64,7 @@ func (r *FilterRepository) CreateFilter(_ context.Context, filter *models.Filter
 	filter.CreatedAt = now
 	filter.UpdatedAt = now
 
-	r.filtersById[filter.ID] = filter
+	r.filtersByID[filter.ID] = filter
 	r.filtersByUser[filter.Username] = append(r.filtersByUser[filter.Username], filter)
 
 	return nil
@@ -75,7 +75,7 @@ func (r *FilterRepository) GetFilter(_ context.Context, filterID string) (*model
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	filter, exists := r.filtersById[filterID]
+	filter, exists := r.filtersByID[filterID]
 	if !exists {
 		return nil, storage.ErrNotFound
 	}
@@ -87,12 +87,12 @@ func (r *FilterRepository) UpdateFilter(_ context.Context, filter *models.Filter
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.filtersById[filter.ID]; !exists {
+	if _, exists := r.filtersByID[filter.ID]; !exists {
 		return storage.ErrNotFound
 	}
 
 	filter.UpdatedAt = time.Now()
-	r.filtersById[filter.ID] = filter
+	r.filtersByID[filter.ID] = filter
 
 	// Update in user's list
 	for i, f := range r.filtersByUser[filter.Username] {
@@ -110,20 +110,20 @@ func (r *FilterRepository) DeleteFilter(_ context.Context, filterID string) erro
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	filter, exists := r.filtersById[filterID]
+	filter, exists := r.filtersByID[filterID]
 	if !exists {
 		return storage.ErrNotFound
 	}
 
 	// Delete keywords
 	for _, keyword := range r.keywordsByFilter[filterID] {
-		delete(r.keywordsById, keyword.ID)
+		delete(r.keywordsByID, keyword.ID)
 	}
 	delete(r.keywordsByFilter, filterID)
 
 	// Delete statuses
 	for _, status := range r.statusesByFilter[filterID] {
-		delete(r.statusesById, status.ID)
+		delete(r.statusesByID, status.ID)
 	}
 	delete(r.statusesByFilter, filterID)
 
@@ -137,7 +137,7 @@ func (r *FilterRepository) DeleteFilter(_ context.Context, filterID string) erro
 	r.filtersByUser[filter.Username] = newFilters
 
 	// Delete filter
-	delete(r.filtersById, filterID)
+	delete(r.filtersByID, filterID)
 
 	return nil
 }
@@ -206,7 +206,7 @@ func (r *FilterRepository) AddFilterKeyword(_ context.Context, keyword *models.F
 	}
 	keyword.CreatedAt = time.Now()
 
-	r.keywordsById[keyword.ID] = keyword
+	r.keywordsByID[keyword.ID] = keyword
 	r.keywordsByFilter[keyword.FilterID] = append(r.keywordsByFilter[keyword.FilterID], keyword)
 
 	return nil
@@ -217,7 +217,7 @@ func (r *FilterRepository) RemoveFilterKeyword(_ context.Context, keywordID stri
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	keyword, exists := r.keywordsById[keywordID]
+	keyword, exists := r.keywordsByID[keywordID]
 	if !exists {
 		return storage.ErrNotFound
 	}
@@ -231,7 +231,7 @@ func (r *FilterRepository) RemoveFilterKeyword(_ context.Context, keywordID stri
 	}
 	r.keywordsByFilter[keyword.FilterID] = newKeywords
 
-	delete(r.keywordsById, keywordID)
+	delete(r.keywordsByID, keywordID)
 	return nil
 }
 
@@ -258,7 +258,7 @@ func (r *FilterRepository) AddFilterStatus(_ context.Context, filterStatus *mode
 	}
 	filterStatus.CreatedAt = time.Now()
 
-	r.statusesById[filterStatus.ID] = filterStatus
+	r.statusesByID[filterStatus.ID] = filterStatus
 	r.statusesByFilter[filterStatus.FilterID] = append(r.statusesByFilter[filterStatus.FilterID], filterStatus)
 
 	return nil
@@ -269,7 +269,7 @@ func (r *FilterRepository) RemoveFilterStatus(_ context.Context, filterStatusID 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	status, exists := r.statusesById[filterStatusID]
+	status, exists := r.statusesByID[filterStatusID]
 	if !exists {
 		return storage.ErrNotFound
 	}
@@ -283,7 +283,7 @@ func (r *FilterRepository) RemoveFilterStatus(_ context.Context, filterStatusID 
 	}
 	r.statusesByFilter[status.FilterID] = newStatuses
 
-	delete(r.statusesById, filterStatusID)
+	delete(r.statusesByID, filterStatusID)
 	return nil
 }
 
@@ -386,12 +386,12 @@ func (r *FilterRepository) Clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.filtersById = make(map[string]*models.Filter)
+	r.filtersByID = make(map[string]*models.Filter)
 	r.filtersByUser = make(map[string][]*models.Filter)
 	r.keywordsByFilter = make(map[string][]*models.FilterKeyword)
-	r.keywordsById = make(map[string]*models.FilterKeyword)
+	r.keywordsByID = make(map[string]*models.FilterKeyword)
 	r.statusesByFilter = make(map[string][]*models.FilterStatus)
-	r.statusesById = make(map[string]*models.FilterStatus)
+	r.statusesByID = make(map[string]*models.FilterStatus)
 }
 
 // Ensure FilterRepository implements interfaces.FilterRepository

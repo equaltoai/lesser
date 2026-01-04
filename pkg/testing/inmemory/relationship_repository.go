@@ -67,7 +67,6 @@ func NewRelationshipRepository() *RelationshipRepository {
 	}
 }
 
-
 // ===== Core Follow Relationship Operations =====
 
 // CreateRelationship creates a new follow relationship
@@ -195,7 +194,6 @@ func (r *RelationshipRepository) IsFollowing(_ context.Context, followerUsername
 	return record.State == models.RelationshipAccepted, nil
 }
 
-
 // ===== Follow Request Operations =====
 
 // GetFollowRequest gets a follow request by follower and target IDs
@@ -316,7 +314,6 @@ func (r *RelationshipRepository) RejectFollowRequest(_ context.Context, follower
 	return nil
 }
 
-
 // ===== Follower/Following List Operations =====
 
 // GetFollowers retrieves all followers for a user
@@ -424,11 +421,10 @@ func (r *RelationshipRepository) Unfollow(ctx context.Context, followerID, follo
 	return r.DeleteRelationship(ctx, followerID, followingID)
 }
 
-
 // ===== Block Operations =====
 
 // CreateBlock creates a new block relationship
-func (r *RelationshipRepository) CreateBlock(_ context.Context, blockerActor, blockedActor, activityID string) error {
+func (r *RelationshipRepository) CreateBlock(_ context.Context, blockerActor, blockedActor, _ string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -590,7 +586,6 @@ func (r *RelationshipRepository) CountUsersWhoBlocked(_ context.Context, blocked
 
 	return len(r.reverseBlocks[blockedActor]), nil
 }
-
 
 // ===== Mute Operations =====
 
@@ -782,7 +777,6 @@ func (r *RelationshipRepository) CountUsersWhoMuted(_ context.Context, mutedActo
 	return count, nil
 }
 
-
 // ===== Endorsement Operations =====
 
 // IsEndorsed checks if a user has endorsed (pinned) a target account
@@ -891,7 +885,6 @@ func (r *RelationshipRepository) SetRelationshipNote(userID, targetID, noteText 
 		UpdatedAt:     now,
 	}
 }
-
 
 // ===== Move Operations =====
 
@@ -1030,7 +1023,6 @@ func (r *RelationshipRepository) HasMovedFrom(_ context.Context, oldActor, newAc
 	return exists, nil
 }
 
-
 // ===== Collection Operations =====
 
 // AddToCollection adds an item to a collection
@@ -1117,7 +1109,6 @@ func (r *RelationshipRepository) ClearCollection(_ context.Context, collection s
 	delete(r.collections, collection)
 	return nil
 }
-
 
 // ===== Helper Functions =====
 

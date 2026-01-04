@@ -55,7 +55,6 @@ func (r *AnnouncementRepository) GetAnnouncement(_ context.Context, id string) (
 	return ann, nil
 }
 
-
 // GetAnnouncements retrieves all announcements (for backward compatibility)
 func (r *AnnouncementRepository) GetAnnouncements(_ context.Context, active bool) ([]*storage.Announcement, error) {
 	r.mu.RLock()
@@ -91,7 +90,7 @@ func (r *AnnouncementRepository) GetAnnouncementsPaginated(_ context.Context, ac
 }
 
 // GetAnnouncementsByAdmin retrieves announcements created by a specific admin
-func (r *AnnouncementRepository) GetAnnouncementsByAdmin(_ context.Context, adminUsername string, limit int, cursor string) ([]*storage.Announcement, string, error) {
+func (r *AnnouncementRepository) GetAnnouncementsByAdmin(_ context.Context, _ string, limit int, cursor string) ([]*storage.Announcement, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -113,7 +112,6 @@ func (r *AnnouncementRepository) UpdateAnnouncement(_ context.Context, announcem
 	r.announcements[announcement.ID] = announcement
 	return nil
 }
-
 
 // DeleteAnnouncement deletes an announcement
 func (r *AnnouncementRepository) DeleteAnnouncement(_ context.Context, id string) error {
@@ -189,7 +187,6 @@ func (r *AnnouncementRepository) RemoveAnnouncementReaction(_ context.Context, u
 	r.reactions[announcementID][emojiName] = filtered
 	return nil
 }
-
 
 // GetAnnouncementReactions gets all reactions for an announcement
 func (r *AnnouncementRepository) GetAnnouncementReactions(_ context.Context, announcementID string) (map[string][]string, error) {

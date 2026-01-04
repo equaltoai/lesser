@@ -254,6 +254,12 @@ issues:
       text: "var-naming: avoid meaningless package names"
       linters:
         - revive
+
+    # interfaces package name is part of public API; suppress revive package-name warnings there
+    - path: "pkg/storage/interfaces"
+      text: "avoid meaningless package names"
+      linters:
+        - revive
     
 severity:
   # Default severity for all linters

@@ -36,12 +36,12 @@ type ConversationRepository struct {
 func NewConversationRepository() *ConversationRepository {
 	return &ConversationRepository{
 		conversations:     make(map[string]*models.Conversation),
-		participants:     make(map[string][]string),
+		participants:      make(map[string][]string),
 		userConversations: make(map[string][]string),
-		statuses:         make(map[string]*storage.ConversationStatus),
-		statusesByConv:   make(map[string][]string),
-		readStatus:       make(map[string]bool),
-		mutes:            make(map[string]*storage.ConversationMute),
+		statuses:          make(map[string]*storage.ConversationStatus),
+		statusesByConv:    make(map[string][]string),
+		readStatus:        make(map[string]bool),
+		mutes:             make(map[string]*storage.ConversationMute),
 	}
 }
 
@@ -60,7 +60,6 @@ func (r *ConversationRepository) CreateConversation(_ context.Context, conversat
 	}
 	return nil
 }
-
 
 // GetConversation retrieves a conversation by ID
 func (r *ConversationRepository) GetConversation(_ context.Context, id string) (*models.Conversation, error) {
@@ -165,7 +164,6 @@ func (r *ConversationRepository) GetConversationByParticipants(_ context.Context
 	}
 	return nil, storage.ErrNotFound
 }
-
 
 // GetUnreadConversations retrieves unread conversations for a user
 func (r *ConversationRepository) GetUnreadConversations(_ context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
@@ -279,7 +277,7 @@ func (r *ConversationRepository) AddStatusToConversation(_ context.Context, conv
 }
 
 // GetConversationStatuses retrieves messages in a conversation with pagination
-func (r *ConversationRepository) GetConversationStatuses(_ context.Context, conversationID string, limit int, cursor string) ([]*storage.ConversationStatus, string, error) {
+func (r *ConversationRepository) GetConversationStatuses(_ context.Context, conversationID string, limit int, _ string) ([]*storage.ConversationStatus, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -305,7 +303,6 @@ func (r *ConversationRepository) RemoveStatusFromConversation(_ context.Context,
 	delete(r.statuses, key)
 	return nil
 }
-
 
 // MarkStatusRead marks a specific status as read by a user
 func (r *ConversationRepository) MarkStatusRead(_ context.Context, conversationID, statusID, username string) error {

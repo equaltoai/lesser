@@ -12,6 +12,7 @@ import (
 	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 )
 
+// RootCategoryKey is the parent key used for top-level categories.
 const RootCategoryKey = "ROOT"
 
 // CategoryRepository is a thread-safe in-memory implementation of interfaces.CategoryRepository.

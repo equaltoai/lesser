@@ -19,7 +19,7 @@ type AuditRepository struct {
 	mu sync.RWMutex
 
 	// Logs by ID: id -> log
-	logsById map[string]*models.AuthAuditLog
+	logsByID map[string]*models.AuthAuditLog
 
 	// Logs by date: date (YYYY-MM-DD) -> []logs
 	logsByDate map[string][]*models.AuthAuditLog
@@ -40,7 +40,7 @@ type AuditRepository struct {
 // NewAuditRepository creates a new in-memory audit repository
 func NewAuditRepository() *AuditRepository {
 	return &AuditRepository{
-		logsById:       make(map[string]*models.AuthAuditLog),
+		logsByID:       make(map[string]*models.AuthAuditLog),
 		logsByDate:     make(map[string][]*models.AuthAuditLog),
 		logsByUser:     make(map[string][]*models.AuthAuditLog),
 		logsByIP:       make(map[string][]*models.AuthAuditLog),
@@ -59,7 +59,7 @@ func (r *AuditRepository) StoreAuditLog(_ context.Context, log *models.AuthAudit
 	}
 
 	// Store by ID
-	r.logsById[log.ID] = log
+	r.logsByID[log.ID] = log
 
 	// Store by date
 	dateKey := log.Timestamp.Format("2006-01-02")
@@ -93,7 +93,7 @@ func (r *AuditRepository) GetAuditLogByID(_ context.Context, id string, _ time.T
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	log, exists := r.logsById[id]
+	log, exists := r.logsByID[id]
 	if !exists {
 		return nil, storage.ErrNotFound
 	}
@@ -216,9 +216,9 @@ func (r *AuditRepository) CleanupOldLogs(_ context.Context, retentionDays int) e
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
 
 	// Remove old logs from all indexes
-	for id, log := range r.logsById {
+	for id, log := range r.logsByID {
 		if log.Timestamp.Before(cutoff) {
-			delete(r.logsById, id)
+			delete(r.logsByID, id)
 		}
 	}
 
@@ -296,7 +296,7 @@ func (r *AuditRepository) Clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.logsById = make(map[string]*models.AuthAuditLog)
+	r.logsByID = make(map[string]*models.AuthAuditLog)
 	r.logsByDate = make(map[string][]*models.AuthAuditLog)
 	r.logsByUser = make(map[string][]*models.AuthAuditLog)
 	r.logsByIP = make(map[string][]*models.AuthAuditLog)

@@ -12,6 +12,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
+const quoteTypeDisabled = "disabled"
+
 // ObjectRepository is a thread-safe in-memory implementation of interfaces.ObjectRepository.
 // It stores data in memory for integration-style testing without requiring DynamoDB.
 type ObjectRepository struct {
@@ -46,19 +48,19 @@ type ObjectRepository struct {
 	withdrawnStatus map[string]bool                       // statusID -> withdrawn
 
 	// Thread sync
-	threadSynced   map[string]bool                       // statusID -> synced
-	missingReplies map[string][]string                   // statusID -> []missingReplyID
-	threadContexts map[string]*storage.ThreadContext     // statusID -> context
+	threadSynced   map[string]bool                   // statusID -> synced
+	missingReplies map[string][]string               // statusID -> []missingReplyID
+	threadContexts map[string]*storage.ThreadContext // statusID -> context
 }
 
 // objectEntry stores an object with its metadata
 type objectEntry struct {
-	object       any
-	objectType   string
-	actorID      string
-	inReplyTo    string
-	createdAt    time.Time
-	updatedAt    time.Time
+	object     any
+	objectType string
+	actorID    string
+	inReplyTo  string
+	createdAt  time.Time
+	updatedAt  time.Time
 }
 
 // NewObjectRepository creates a new in-memory object repository
@@ -164,7 +166,7 @@ func (r *ObjectRepository) UpdateObject(_ context.Context, object any) error {
 }
 
 // UpdateObjectWithHistory updates an object and tracks the edit history
-func (r *ObjectRepository) UpdateObjectWithHistory(ctx context.Context, object any, updatedBy string) error {
+func (r *ObjectRepository) UpdateObjectWithHistory(_ context.Context, object any, updatedBy string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -227,37 +229,9 @@ func (r *ObjectRepository) GetObjectsByActor(_ context.Context, actorID string, 
 	defer r.mu.RUnlock()
 
 	objectIDs := r.objectsByActor[actorID]
-	if len(objectIDs) == 0 {
-		return []any{}, "", nil
-	}
-
-	// Apply cursor-based pagination
-	startIdx := 0
-	if cursor != "" {
-		for i, id := range objectIDs {
-			if id == cursor {
-				startIdx = i + 1
-				break
-			}
-		}
-	}
-
-	var results []any
-	var nextCursor string
-
-	for i := startIdx; i < len(objectIDs) && len(results) < limit; i++ {
-		if entry, exists := r.objects[objectIDs[i]]; exists {
-			results = append(results, entry.object)
-		}
-	}
-
-	if startIdx+limit < len(objectIDs) {
-		nextCursor = objectIDs[startIdx+limit-1]
-	}
-
+	results, nextCursor := r.paginateObjects(objectIDs, limit, cursor)
 	return results, nextCursor, nil
 }
-
 
 // ===== Status Operations =====
 
@@ -308,14 +282,22 @@ func (r *ObjectRepository) GetReplies(_ context.Context, objectID string, limit 
 	defer r.mu.RUnlock()
 
 	replyIDs := r.repliesByParent[objectID]
-	if len(replyIDs) == 0 {
-		return []any{}, "", nil
+	results, nextCursor := r.paginateObjects(replyIDs, limit, cursor)
+	return results, nextCursor, nil
+}
+
+func (r *ObjectRepository) paginateObjects(objectIDs []string, limit int, cursor string) ([]any, string) {
+	if len(objectIDs) == 0 {
+		return []any{}, ""
 	}
 
-	// Apply cursor-based pagination
+	if limit <= 0 {
+		limit = 20
+	}
+
 	startIdx := 0
 	if cursor != "" {
-		for i, id := range replyIDs {
+		for i, id := range objectIDs {
 			if id == cursor {
 				startIdx = i + 1
 				break
@@ -323,20 +305,19 @@ func (r *ObjectRepository) GetReplies(_ context.Context, objectID string, limit 
 		}
 	}
 
-	var results []any
-	var nextCursor string
-
-	for i := startIdx; i < len(replyIDs) && len(results) < limit; i++ {
-		if entry, exists := r.objects[replyIDs[i]]; exists {
+	results := make([]any, 0, limit)
+	for i := startIdx; i < len(objectIDs) && len(results) < limit; i++ {
+		if entry, exists := r.objects[objectIDs[i]]; exists {
 			results = append(results, entry.object)
 		}
 	}
 
-	if startIdx+limit < len(replyIDs) {
-		nextCursor = replyIDs[startIdx+limit-1]
+	nextCursor := ""
+	if startIdx+limit < len(objectIDs) {
+		nextCursor = objectIDs[startIdx+limit-1]
 	}
 
-	return results, nextCursor, nil
+	return results, nextCursor
 }
 
 // IncrementReplyCount increments the reply count for an object
@@ -363,7 +344,7 @@ func (r *ObjectRepository) GetReplyCount(_ context.Context, statusID string) (in
 // ===== Tombstone Operations =====
 
 // TombstoneObject marks an object as deleted by creating a tombstone
-func (r *ObjectRepository) TombstoneObject(ctx context.Context, objectID string, deletedBy string) error {
+func (r *ObjectRepository) TombstoneObject(_ context.Context, objectID string, deletedBy string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -524,7 +505,7 @@ func (r *ObjectRepository) CleanupExpiredTombstones(_ context.Context, batchSize
 }
 
 // ReplaceObjectWithTombstone atomically replaces an object with a tombstone
-func (r *ObjectRepository) ReplaceObjectWithTombstone(ctx context.Context, objectID, formerType, deletedBy string) error {
+func (r *ObjectRepository) ReplaceObjectWithTombstone(_ context.Context, objectID, formerType, deletedBy string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -552,7 +533,6 @@ func (r *ObjectRepository) ReplaceObjectWithTombstone(ctx context.Context, objec
 
 	return nil
 }
-
 
 // ===== Update History Operations =====
 
@@ -834,14 +814,14 @@ func (r *ObjectRepository) UpdateQuotePermissions(_ context.Context, statusID st
 	} else if permissions.AllowMentioned {
 		r.quoteTypes[statusID] = "mentioned"
 	} else {
-		r.quoteTypes[statusID] = "disabled"
+		r.quoteTypes[statusID] = quoteTypeDisabled
 	}
 
 	return nil
 }
 
 // IsQuoteAllowed checks if a quote is allowed for a status by a quoter
-func (r *ObjectRepository) IsQuoteAllowed(_ context.Context, statusID, quoterID string) (bool, error) {
+func (r *ObjectRepository) IsQuoteAllowed(_ context.Context, statusID, _ string) (bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -854,13 +834,13 @@ func (r *ObjectRepository) IsQuoteAllowed(_ context.Context, statusID, quoterID 
 	switch quoteType {
 	case "public":
 		return true, nil
-	case "disabled":
+	case quoteTypeDisabled:
 		return false, nil
 	case "followers", "mentioned":
 		// Simplified - would need relationship check in real implementation
 		return false, nil
 	default:
-		// Default to disabled
+		// Default to disabled.
 		return false, nil
 	}
 }
@@ -872,7 +852,7 @@ func (r *ObjectRepository) GetQuoteType(_ context.Context, statusID string) (str
 
 	quoteType, exists := r.quoteTypes[statusID]
 	if !exists {
-		return "disabled", nil
+		return quoteTypeDisabled, nil
 	}
 	return quoteType, nil
 }
@@ -909,7 +889,6 @@ func (r *ObjectRepository) GetQuotesOfStatus(_ context.Context, statusID string,
 
 	return results, nil
 }
-
 
 // ===== Thread Operations =====
 

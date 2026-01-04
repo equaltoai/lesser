@@ -39,16 +39,16 @@ type ModerationRepository struct {
 	patternMatches map[string][]*patternMatchRecord // patternID -> []matches
 
 	// Filters
-	filters        map[string]*storage.Filter        // filterID -> filter
-	filtersByUser  map[string][]string               // username -> []filterID
+	filters        map[string]*storage.Filter          // filterID -> filter
+	filtersByUser  map[string][]string                 // username -> []filterID
 	filterKeywords map[string][]*storage.FilterKeyword // filterID -> []keywords
 	filterStatuses map[string][]*storage.FilterStatus  // filterID -> []statuses
 
 	// Reports
-	reports         map[string]*storage.Report // reportID -> report
-	reportsByUser   map[string][]string        // username -> []reportID
-	reportsByTarget map[string][]string        // targetAccountID -> []reportID
-	reportsByStatus map[string][]string        // status -> []reportID
+	reports         map[string]*storage.Report      // reportID -> report
+	reportsByUser   map[string][]string             // username -> []reportID
+	reportsByTarget map[string][]string             // targetAccountID -> []reportID
+	reportsByStatus map[string][]string             // status -> []reportID
 	reportStats     map[string]*storage.ReportStats // username -> stats
 
 	// Flags
@@ -58,9 +58,9 @@ type ModerationRepository struct {
 	pendingFlagIDs []string                 // list of pending flag IDs
 
 	// Audit logs
-	auditLogs        []*storage.AuditLog // ordered by timestamp
-	auditLogsByAdmin map[string][]int    // adminID -> []index in auditLogs
-	auditLogsByTarget map[string][]int   // targetID -> []index in auditLogs
+	auditLogs         []*storage.AuditLog // ordered by timestamp
+	auditLogsByAdmin  map[string][]int    // adminID -> []index in auditLogs
+	auditLogsByTarget map[string][]int    // targetID -> []index in auditLogs
 
 	// Review queue
 	reviewQueue []*models.ModerationReviewQueue
@@ -82,32 +82,32 @@ type patternMatchRecord struct {
 // NewModerationRepository creates a new in-memory moderation repository
 func NewModerationRepository() *ModerationRepository {
 	return &ModerationRepository{
-		events:           make(map[string]*storage.ModerationEvent),
-		eventsByObject:   make(map[string][]string),
-		eventsByActor:    make(map[string][]string),
-		reviews:          make(map[string][]*storage.ModerationReview),
-		decisions:        make(map[string]*storage.ModerationDecision),
-		patterns:         make(map[string]*storage.ModerationPattern),
-		patternMatches:   make(map[string][]*patternMatchRecord),
-		filters:          make(map[string]*storage.Filter),
-		filtersByUser:    make(map[string][]string),
-		filterKeywords:   make(map[string][]*storage.FilterKeyword),
-		filterStatuses:   make(map[string][]*storage.FilterStatus),
-		reports:          make(map[string]*storage.Report),
-		reportsByUser:    make(map[string][]string),
-		reportsByTarget:  make(map[string][]string),
-		reportsByStatus:  make(map[string][]string),
-		reportStats:      make(map[string]*storage.ReportStats),
-		flags:            make(map[string]*storage.Flag),
-		flagsByObject:    make(map[string][]string),
-		flagsByActor:     make(map[string][]string),
-		pendingFlagIDs:   []string{},
-		auditLogs:        []*storage.AuditLog{},
-		auditLogsByAdmin: make(map[string][]int),
+		events:            make(map[string]*storage.ModerationEvent),
+		eventsByObject:    make(map[string][]string),
+		eventsByActor:     make(map[string][]string),
+		reviews:           make(map[string][]*storage.ModerationReview),
+		decisions:         make(map[string]*storage.ModerationDecision),
+		patterns:          make(map[string]*storage.ModerationPattern),
+		patternMatches:    make(map[string][]*patternMatchRecord),
+		filters:           make(map[string]*storage.Filter),
+		filtersByUser:     make(map[string][]string),
+		filterKeywords:    make(map[string][]*storage.FilterKeyword),
+		filterStatuses:    make(map[string][]*storage.FilterStatus),
+		reports:           make(map[string]*storage.Report),
+		reportsByUser:     make(map[string][]string),
+		reportsByTarget:   make(map[string][]string),
+		reportsByStatus:   make(map[string][]string),
+		reportStats:       make(map[string]*storage.ReportStats),
+		flags:             make(map[string]*storage.Flag),
+		flagsByObject:     make(map[string][]string),
+		flagsByActor:      make(map[string][]string),
+		pendingFlagIDs:    []string{},
+		auditLogs:         []*storage.AuditLog{},
+		auditLogsByAdmin:  make(map[string][]int),
 		auditLogsByTarget: make(map[string][]int),
-		reviewQueue:      []*models.ModerationReviewQueue{},
-		decisionResults:  make(map[string][]*models.ModerationDecisionResult),
-		analysisResults:  make(map[string]map[string]interface{}),
+		reviewQueue:       []*models.ModerationReviewQueue{},
+		decisionResults:   make(map[string][]*models.ModerationDecisionResult),
+		analysisResults:   make(map[string]map[string]interface{}),
 	}
 }
 
@@ -413,7 +413,6 @@ func (r *ModerationRepository) GetReviewerStats(_ context.Context, reviewerID st
 	return stats, nil
 }
 
-
 // ===== Moderation Decision Operations =====
 
 // CreateModerationDecision creates a consensus decision
@@ -454,7 +453,7 @@ func (r *ModerationRepository) StoreModerationDecision(ctx context.Context, deci
 }
 
 // UpdateModerationDecision updates a moderation decision based on a review
-func (r *ModerationRepository) UpdateModerationDecision(ctx context.Context, contentID string, review *storage.ModerationReview) error {
+func (r *ModerationRepository) UpdateModerationDecision(_ context.Context, contentID string, review *storage.ModerationReview) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -632,7 +631,7 @@ func (r *ModerationRepository) GetModerationHistory(_ context.Context, objectID 
 			},
 		})
 	} else {
-		history.CurrentStatus = "pending"
+		history.CurrentStatus = statusPending
 	}
 
 	return history, nil
@@ -875,7 +874,6 @@ func (r *ModerationRepository) DeleteFilterStatus(_ context.Context, statusID st
 
 	return storage.ErrNotFound
 }
-
 
 // ===== Report Operations =====
 
@@ -1145,7 +1143,7 @@ func (r *ModerationRepository) CreateFlag(_ context.Context, flag *storage.Flag)
 		flag.Published = now
 	}
 	if flag.Status == "" {
-		flag.Status = "pending"
+		flag.Status = statusPending
 	}
 
 	r.flags[flag.ID] = flag
@@ -1159,7 +1157,7 @@ func (r *ModerationRepository) CreateFlag(_ context.Context, flag *storage.Flag)
 	r.flagsByActor[flag.Actor] = append(r.flagsByActor[flag.Actor], flag.ID)
 
 	// Add to pending if status is pending
-	if flag.Status == "pending" {
+	if flag.Status == statusPending {
 		r.pendingFlagIDs = append(r.pendingFlagIDs, flag.ID)
 	}
 
@@ -1255,7 +1253,7 @@ func (r *ModerationRepository) UpdateFlagStatus(_ context.Context, id string, st
 	}
 
 	// Remove from pending if it was pending
-	if flag.Status == "pending" {
+	if flag.Status == statusPending {
 		for i, fid := range r.pendingFlagIDs {
 			if fid == id {
 				r.pendingFlagIDs = append(r.pendingFlagIDs[:i], r.pendingFlagIDs[i+1:]...)
@@ -1317,7 +1315,7 @@ func (r *ModerationRepository) DeleteFlag(_ context.Context, id string) error {
 	}
 
 	// Remove from pending if applicable
-	if flag.Status == "pending" {
+	if flag.Status == statusPending {
 		for i, fid := range r.pendingFlagIDs {
 			if fid == id {
 				r.pendingFlagIDs = append(r.pendingFlagIDs[:i], r.pendingFlagIDs[i+1:]...)
@@ -1329,7 +1327,6 @@ func (r *ModerationRepository) DeleteFlag(_ context.Context, id string) error {
 	delete(r.flags, id)
 	return nil
 }
-
 
 // ===== Audit Log Operations =====
 
@@ -1427,7 +1424,7 @@ func (r *ModerationRepository) GetPendingModerationCount(_ context.Context, mode
 
 	// Count assigned flags that are pending
 	for _, flag := range r.flags {
-		if flag.Status == "pending" {
+		if flag.Status == statusPending {
 			count++
 		}
 	}
@@ -1471,7 +1468,7 @@ func (r *ModerationRepository) StoreDecision(_ context.Context, decisionData map
 		ContentID:         contentID,
 		Action:            action,
 		DecidedAt:         time.Now(),
-		EnforcementStatus: "pending",
+		EnforcementStatus: statusPending,
 	}
 
 	if authorID, ok := decisionData["author_id"].(string); ok {
@@ -1492,7 +1489,7 @@ func (r *ModerationRepository) StoreDecision(_ context.Context, decisionData map
 			ID:        fmt.Sprintf("queue_%d", time.Now().UnixNano()),
 			ContentID: contentID,
 			AuthorID:  result.AuthorID,
-			Status:    "pending",
+			Status:    statusPending,
 			Category:  "moderation",
 			Severity:  "medium",
 			CreatedAt: time.Now(),
@@ -1509,7 +1506,7 @@ func (r *ModerationRepository) GetReviewQueue(_ context.Context, filters map[str
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	status := "pending"
+	status := statusPending
 	if filterStatus, ok := filters["status"].(string); ok && filterStatus != "" {
 		status = filterStatus
 	}

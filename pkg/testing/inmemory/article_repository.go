@@ -18,7 +18,7 @@ type ArticleRepository struct {
 	mu sync.RWMutex
 
 	// Articles by ID
-	articlesById map[string]*models.Article
+	articlesByID map[string]*models.Article
 
 	// Articles by author: authorActorID -> []articleID
 	articlesByAuthor map[string][]string
@@ -33,7 +33,7 @@ type ArticleRepository struct {
 // NewArticleRepository creates a new in-memory article repository
 func NewArticleRepository() *ArticleRepository {
 	return &ArticleRepository{
-		articlesById:       make(map[string]*models.Article),
+		articlesByID:       make(map[string]*models.Article),
 		articlesByAuthor:   make(map[string][]string),
 		articlesBySeries:   make(map[string][]string),
 		articlesByCategory: make(map[string][]string),
@@ -49,12 +49,12 @@ func (r *ArticleRepository) CreateArticle(_ context.Context, article *models.Art
 		return storage.ErrInvalidInput
 	}
 
-	if _, exists := r.articlesById[article.ID]; exists {
+	if _, exists := r.articlesByID[article.ID]; exists {
 		return storage.ErrAlreadyExists
 	}
 
 	// Store article
-	r.articlesById[article.ID] = article
+	r.articlesByID[article.ID] = article
 
 	// Index by author
 	if article.AttributedTo != "" {
@@ -79,7 +79,7 @@ func (r *ArticleRepository) GetArticle(_ context.Context, id string) (*models.Ar
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	article, exists := r.articlesById[id]
+	article, exists := r.articlesByID[id]
 	if !exists {
 		return nil, storage.ErrNotFound
 	}
@@ -96,11 +96,11 @@ func (r *ArticleRepository) UpdateArticle(_ context.Context, article *models.Art
 		return storage.ErrInvalidInput
 	}
 
-	if _, exists := r.articlesById[article.ID]; !exists {
+	if _, exists := r.articlesByID[article.ID]; !exists {
 		return storage.ErrNotFound
 	}
 
-	r.articlesById[article.ID] = article
+	r.articlesByID[article.ID] = article
 	return nil
 }
 
@@ -109,7 +109,7 @@ func (r *ArticleRepository) DeleteArticle(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	article, exists := r.articlesById[id]
+	article, exists := r.articlesByID[id]
 	if !exists {
 		return storage.ErrNotFound
 	}
@@ -129,7 +129,7 @@ func (r *ArticleRepository) DeleteArticle(_ context.Context, id string) error {
 		r.articlesByCategory[catID] = articleRemoveFromSlice(r.articlesByCategory[catID], id)
 	}
 
-	delete(r.articlesById, id)
+	delete(r.articlesByID, id)
 	return nil
 }
 
@@ -149,8 +149,8 @@ func (r *ArticleRepository) ListArticlesPaginated(_ context.Context, limit int, 
 	}
 
 	// Get all articles and sort by GSI2SK (published time) descending
-	articles := make([]*models.Article, 0, len(r.articlesById))
-	for _, article := range r.articlesById {
+	articles := make([]*models.Article, 0, len(r.articlesByID))
+	for _, article := range r.articlesByID {
 		articles = append(articles, article)
 	}
 
@@ -244,7 +244,7 @@ func (r *ArticleRepository) paginateArticlesByIDs(articleIDs []string, limit int
 	// Get articles and sort by published time descending
 	articles := make([]*models.Article, 0, len(articleIDs))
 	for _, id := range articleIDs {
-		if article, exists := r.articlesById[id]; exists {
+		if article, exists := r.articlesByID[id]; exists {
 			articles = append(articles, article)
 		}
 	}
@@ -285,7 +285,7 @@ func (r *ArticleRepository) Clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.articlesById = make(map[string]*models.Article)
+	r.articlesByID = make(map[string]*models.Article)
 	r.articlesByAuthor = make(map[string][]string)
 	r.articlesBySeries = make(map[string][]string)
 	r.articlesByCategory = make(map[string][]string)

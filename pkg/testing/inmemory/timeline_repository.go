@@ -55,7 +55,6 @@ func NewTimelineRepository() *TimelineRepository {
 	}
 }
 
-
 // makeEntryKey creates a unique key for a timeline entry
 func makeEntryKey(timelineType, timelineID, entryID string, timelineAt time.Time) string {
 	return fmt.Sprintf("%s#%s#%d#%s", timelineType, timelineID, timelineAt.Unix(), entryID)
@@ -71,8 +70,8 @@ func copyTimeline(t *models.Timeline) *models.Timeline {
 	if t == nil {
 		return nil
 	}
-	copy := *t
-	return &copy
+	timelineCopy := *t
+	return &timelineCopy
 }
 
 // Core timeline entry operations
@@ -173,7 +172,6 @@ func (r *TimelineRepository) DeleteTimelineEntry(_ context.Context, timelineType
 	return nil
 }
 
-
 // Timeline retrieval by type
 
 // GetHomeTimeline retrieves home timeline entries for a user
@@ -243,7 +241,6 @@ func (r *TimelineRepository) getTimelineEntries(timelineType, timelineID string,
 
 	return r.paginateEntries(sortedKeys, limit, cursor)
 }
-
 
 // Timeline retrieval by index
 
@@ -375,7 +372,6 @@ func (r *TimelineRepository) CountTimelineEntries(_ context.Context, timelineTyp
 	return len(keys), nil
 }
 
-
 // Batch operations
 
 // DeleteTimelineEntriesByPost deletes all timeline entries for a specific post
@@ -492,7 +488,6 @@ func (r *TimelineRepository) GetConversations(_ context.Context, username string
 
 	return results, nextCursor, nil
 }
-
 
 // Helper methods
 

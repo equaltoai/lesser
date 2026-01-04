@@ -69,6 +69,7 @@ func NewRelationshipTracker(store core.RepositoryStorage, db dynamormcore.DB, lo
 	return rt
 }
 
+// UpdateInstanceMetadata updates stored metadata for a federated instance.
 func (rt *RelationshipTracker) UpdateInstanceMetadata(ctx context.Context, metadata *storage.InstanceMetadata) error {
 	return rt.storage.Federation().UpdateInstanceMetadata(ctx, metadata)
 }

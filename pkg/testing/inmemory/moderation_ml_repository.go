@@ -19,7 +19,7 @@ type ModerationMLRepository struct {
 	mu sync.RWMutex
 
 	// Samples by ID: sampleID -> ModerationSample
-	samplesById map[string]*models.ModerationSample
+	samplesByID map[string]*models.ModerationSample
 
 	// Samples by label: label -> []ModerationSample
 	samplesByLabel map[string][]*models.ModerationSample
@@ -46,7 +46,7 @@ type ModerationMLRepository struct {
 // NewModerationMLRepository creates a new in-memory moderation ML repository
 func NewModerationMLRepository() *ModerationMLRepository {
 	return &ModerationMLRepository{
-		samplesById:          make(map[string]*models.ModerationSample),
+		samplesByID:          make(map[string]*models.ModerationSample),
 		samplesByLabel:       make(map[string][]*models.ModerationSample),
 		samplesByReviewer:    make(map[string][]*models.ModerationSample),
 		modelVersions:        make(map[string]*models.ModerationModelVersion),
@@ -72,7 +72,7 @@ func (r *ModerationMLRepository) CreateSample(_ context.Context, sample *models.
 	sample.UpdatedAt = now
 	sample.Timestamp = now
 
-	r.samplesById[sample.ID] = sample
+	r.samplesByID[sample.ID] = sample
 	r.samplesByLabel[sample.Label] = append(r.samplesByLabel[sample.Label], sample)
 	r.samplesByReviewer[sample.ReviewerID] = append(r.samplesByReviewer[sample.ReviewerID], sample)
 
@@ -84,7 +84,7 @@ func (r *ModerationMLRepository) GetSample(_ context.Context, sampleID string) (
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	sample, exists := r.samplesById[sampleID]
+	sample, exists := r.samplesByID[sampleID]
 	if !exists {
 		return nil, storage.ErrNotFound
 	}
@@ -304,7 +304,7 @@ func (r *ModerationMLRepository) Clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.samplesById = make(map[string]*models.ModerationSample)
+	r.samplesByID = make(map[string]*models.ModerationSample)
 	r.samplesByLabel = make(map[string][]*models.ModerationSample)
 	r.samplesByReviewer = make(map[string][]*models.ModerationSample)
 	r.modelVersions = make(map[string]*models.ModerationModelVersion)

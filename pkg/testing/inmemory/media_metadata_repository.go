@@ -49,7 +49,7 @@ func (r *MediaMetadataRepository) CreateMediaMetadata(_ context.Context, metadat
 	metadata.UpdatedAt = now
 
 	if metadata.Status == "" {
-		metadata.Status = "pending"
+		metadata.Status = statusPending
 	}
 
 	r.metadata[metadata.MediaID] = metadata
@@ -136,7 +136,7 @@ func (r *MediaMetadataRepository) GetMediaMetadataByStatus(_ context.Context, st
 
 // GetPendingMediaMetadata retrieves pending metadata
 func (r *MediaMetadataRepository) GetPendingMediaMetadata(ctx context.Context, limit int) ([]*models.MediaMetadata, error) {
-	return r.GetMediaMetadataByStatus(ctx, "pending", limit)
+	return r.GetMediaMetadataByStatus(ctx, statusPending, limit)
 }
 
 // GetProcessingMediaMetadata retrieves processing metadata
@@ -192,7 +192,7 @@ func (r *MediaMetadataRepository) MarkProcessingComplete(_ context.Context, medi
 }
 
 // MarkProcessingFailed marks metadata as failed
-func (r *MediaMetadataRepository) MarkProcessingFailed(_ context.Context, mediaID string, errorMsg string) error {
+func (r *MediaMetadataRepository) MarkProcessingFailed(_ context.Context, mediaID string, _ string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -202,7 +202,7 @@ func (r *MediaMetadataRepository) MarkProcessingFailed(_ context.Context, mediaI
 	}
 
 	oldStatus := metadata.Status
-	metadata.Status = "failed"
+	metadata.Status = statusFailed
 	now := time.Now()
 	metadata.ProcessedAt = now
 	metadata.UpdatedAt = now
@@ -210,7 +210,7 @@ func (r *MediaMetadataRepository) MarkProcessingFailed(_ context.Context, mediaI
 	metadata.TTL = now.Add(7 * 24 * time.Hour).Unix()
 
 	r.byStatus[oldStatus] = removeMetadataKeyFromSlice(r.byStatus[oldStatus], mediaID)
-	r.byStatus["failed"] = append(r.byStatus["failed"], mediaID)
+	r.byStatus[statusFailed] = append(r.byStatus[statusFailed], mediaID)
 
 	return nil
 }
