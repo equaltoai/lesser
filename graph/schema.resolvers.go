@@ -1940,7 +1940,7 @@ func (r *mutationResolver) RequestAIAnalysis(ctx context.Context, objectID strin
 // ModerationDashboard returns the moderation dashboard data
 
 // getRecentModerationDecisions retrieves recent moderation decisions
-func (r *queryResolver) getRecentModerationDecisions(ctx context.Context, moderationRepo interface{}, since time.Time, limit int) ([]*moderation.ModerationDecision, error) {
+func (r *queryResolver) getRecentModerationDecisions(ctx context.Context, moderationRepo interfaces.ModerationRepository, since time.Time, limit int) ([]*moderation.ModerationDecision, error) {
 	// Create a filter for recent events that resulted in decisions
 	now := time.Now()
 	filter := &storage.ModerationEventFilter{
@@ -1950,7 +1950,7 @@ func (r *queryResolver) getRecentModerationDecisions(ctx context.Context, modera
 	}
 
 	// Get recent moderation events
-	events, _, err := moderationRepo.(*repositories.ModerationRepository).GetModerationEvents(ctx, filter, limit*2, "") // Get more to filter for decisions
+	events, _, err := moderationRepo.GetModerationEvents(ctx, filter, limit*2, "") // Get more to filter for decisions
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to get moderation events"), err)
 	}
@@ -1964,7 +1964,7 @@ func (r *queryResolver) getRecentModerationDecisions(ctx context.Context, modera
 		}
 
 		// Get any decision for this event
-		decision, err := moderationRepo.(*repositories.ModerationRepository).GetModerationDecision(ctx, event.ObjectID)
+		decision, err := moderationRepo.GetModerationDecision(ctx, event.ObjectID)
 		if err != nil || decision == nil {
 			continue // Skip events without decisions
 		}
@@ -1990,7 +1990,7 @@ func (r *queryResolver) getRecentModerationDecisions(ctx context.Context, modera
 }
 
 // calculateAverageResponseTime calculates average response time for moderation decisions
-func (r *queryResolver) calculateAverageResponseTime(ctx context.Context, moderationRepo interface{}, since time.Time) (time.Duration, error) {
+func (r *queryResolver) calculateAverageResponseTime(ctx context.Context, moderationRepo interfaces.ModerationRepository, since time.Time) (time.Duration, error) {
 	// Get recent events to calculate response times
 	now := time.Now()
 	filter := &storage.ModerationEventFilter{
@@ -1998,7 +1998,7 @@ func (r *queryResolver) calculateAverageResponseTime(ctx context.Context, modera
 		EndDate:   &now,
 	}
 
-	events, _, err := moderationRepo.(*repositories.ModerationRepository).GetModerationEvents(ctx, filter, 100, "")
+	events, _, err := moderationRepo.GetModerationEvents(ctx, filter, 100, "")
 	if err != nil {
 		return 0, errors.Join(errors.New("failed to get moderation events"), err)
 	}
@@ -2012,7 +2012,7 @@ func (r *queryResolver) calculateAverageResponseTime(ctx context.Context, modera
 		}
 
 		// Get decision for this event to calculate response time
-		decision, err := moderationRepo.(*repositories.ModerationRepository).GetModerationDecision(ctx, event.ObjectID)
+		decision, err := moderationRepo.GetModerationDecision(ctx, event.ObjectID)
 		if err != nil || decision == nil {
 			continue
 		}
@@ -2033,9 +2033,9 @@ func (r *queryResolver) calculateAverageResponseTime(ctx context.Context, modera
 }
 
 // getTopModerationPatterns gets top moderation patterns with statistics
-func (r *queryResolver) getTopModerationPatterns(ctx context.Context, moderationRepo interface{}, limit int) ([]*model.PatternStats, error) {
+func (r *queryResolver) getTopModerationPatterns(ctx context.Context, moderationRepo interfaces.ModerationRepository, limit int) ([]*model.PatternStats, error) {
 	// Get active moderation patterns
-	patterns, err := moderationRepo.(*repositories.ModerationRepository).GetModerationPatterns(ctx, true, "", limit*2)
+	patterns, err := moderationRepo.GetModerationPatterns(ctx, true, "", limit*2)
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to get moderation patterns"), err)
 	}
@@ -2108,7 +2108,7 @@ func (r *queryResolver) getTopModerationPatterns(ctx context.Context, moderation
 }
 
 // calculateFalsePositiveRate calculates false positive rate for moderation decisions
-func (r *queryResolver) calculateFalsePositiveRate(ctx context.Context, moderationRepo interface{}, since time.Time) (float64, error) {
+func (r *queryResolver) calculateFalsePositiveRate(ctx context.Context, moderationRepo interfaces.ModerationRepository, since time.Time) (float64, error) {
 	// Get recent events to analyze decision accuracy
 	now := time.Now()
 	filter := &storage.ModerationEventFilter{
@@ -2116,7 +2116,7 @@ func (r *queryResolver) calculateFalsePositiveRate(ctx context.Context, moderati
 		EndDate:   &now,
 	}
 
-	events, _, err := moderationRepo.(*repositories.ModerationRepository).GetModerationEvents(ctx, filter, 200, "")
+	events, _, err := moderationRepo.GetModerationEvents(ctx, filter, 200, "")
 	if err != nil {
 		return 0, errors.Join(errors.New("failed to get moderation events"), err)
 	}
@@ -2129,7 +2129,7 @@ func (r *queryResolver) calculateFalsePositiveRate(ctx context.Context, moderati
 			continue
 		}
 
-		decision, err := moderationRepo.(*repositories.ModerationRepository).GetModerationDecision(ctx, event.ObjectID)
+		decision, err := moderationRepo.GetModerationDecision(ctx, event.ObjectID)
 		if err != nil || decision == nil {
 			continue
 		}
@@ -2151,9 +2151,9 @@ func (r *queryResolver) calculateFalsePositiveRate(ctx context.Context, moderati
 }
 
 // calculatePatternEffectiveness calculates effectiveness metrics for a specific moderation pattern
-func (r *queryResolver) calculatePatternEffectiveness(ctx context.Context, moderationRepo interface{}, patternID string, startTime, endTime time.Time) (*model.ModerationEffectiveness, error) {
+func (r *queryResolver) calculatePatternEffectiveness(ctx context.Context, moderationRepo interfaces.ModerationRepository, patternID string, startTime, endTime time.Time) (*model.ModerationEffectiveness, error) {
 	// Get the pattern to verify it exists
-	pattern, err := moderationRepo.(*repositories.ModerationRepository).GetModerationPattern(ctx, patternID)
+	pattern, err := moderationRepo.GetModerationPattern(ctx, patternID)
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to get moderation pattern"), err)
 	}
@@ -2167,7 +2167,7 @@ func (r *queryResolver) calculatePatternEffectiveness(ctx context.Context, moder
 		EndDate:   &endTime,
 	}
 
-	events, _, err := moderationRepo.(*repositories.ModerationRepository).GetModerationEvents(ctx, filter, 1000, "")
+	events, _, err := moderationRepo.GetModerationEvents(ctx, filter, 1000, "")
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to get moderation events"), err)
 	}
@@ -2185,7 +2185,7 @@ func (r *queryResolver) calculatePatternEffectiveness(ctx context.Context, moder
 		patternMatched := r.wouldPatternMatch(event, pattern)
 
 		// Get actual moderation decision for this event
-		decision, err := moderationRepo.(*repositories.ModerationRepository).GetModerationDecision(ctx, event.ObjectID)
+		decision, err := moderationRepo.GetModerationDecision(ctx, event.ObjectID)
 		if err != nil {
 			continue
 		}
@@ -2583,7 +2583,7 @@ func (r *queryResolver) convertToTrends(threatCounts map[string]map[model.Modera
 }
 
 // getThreatTrends analyzes threat trends from recent moderation activity
-func (r *queryResolver) getThreatTrends(ctx context.Context, moderationRepo interface{}, since time.Time) ([]*model.ThreatTrend, error) {
+func (r *queryResolver) getThreatTrends(ctx context.Context, moderationRepo interfaces.ModerationRepository, since time.Time) ([]*model.ThreatTrend, error) {
 	// Get recent events for trend analysis
 	now := time.Now()
 	filter := &storage.ModerationEventFilter{
@@ -2591,7 +2591,7 @@ func (r *queryResolver) getThreatTrends(ctx context.Context, moderationRepo inte
 		EndDate:   &now,
 	}
 
-	events, _, err := moderationRepo.(*repositories.ModerationRepository).GetModerationEvents(ctx, filter, 500, "")
+	events, _, err := moderationRepo.GetModerationEvents(ctx, filter, 500, "")
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to get moderation events"), err)
 	}

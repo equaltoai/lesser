@@ -629,6 +629,10 @@ func (s *Service) checkMediaAccess(ctx context.Context, media *models.Media, vie
 func (s *Service) emitMediaUploadedEvents(ctx context.Context, media *models.Media) []*streaming.Event {
 	var events []*streaming.Event
 
+	if s.publisher == nil {
+		return events
+	}
+
 	// Create base event
 	event := &streaming.Event{
 		Type:      "media.uploaded",
@@ -652,6 +656,10 @@ func (s *Service) emitMediaUploadedEvents(ctx context.Context, media *models.Med
 
 func (s *Service) emitMediaUpdatedEvents(ctx context.Context, media *models.Media) []*streaming.Event {
 	var events []*streaming.Event
+
+	if s.publisher == nil {
+		return events
+	}
 
 	// Create base event
 	event := &streaming.Event{
@@ -677,6 +685,10 @@ func (s *Service) emitMediaUpdatedEvents(ctx context.Context, media *models.Medi
 func (s *Service) emitMediaProcessedEvents(ctx context.Context, media *models.Media) []*streaming.Event {
 	var events []*streaming.Event
 
+	if s.publisher == nil {
+		return events
+	}
+
 	// Create base event
 	event := &streaming.Event{
 		Type:      "media.processed",
@@ -700,6 +712,10 @@ func (s *Service) emitMediaProcessedEvents(ctx context.Context, media *models.Me
 
 func (s *Service) emitMediaFailedEvents(ctx context.Context, media *models.Media, errorMsg string) []*streaming.Event {
 	var events []*streaming.Event
+
+	if s.publisher == nil {
+		return events
+	}
 
 	// Create base event
 	event := &streaming.Event{

@@ -1972,19 +1972,33 @@ func (r *Registry) initializeImportExportService() bool {
 	// Extract domain name from configuration
 	domainName := r.extractDomainName()
 
-	// Initialize AWS services for import/export
-	ctx := context.Background()
-	queueService, queueErr := NewImportExportQueueService(ctx, r.config.Config, repos.exportRepo, repos.importRepo, r.logger)
-	storageClient, storageErr := NewAWSS3StorageClient(ctx, r.logger)
+	var (
+		queueService  importexport.QueueService
+		storageClient importexport.StorageClient
+	)
 
-	// Log errors but don't fail initialization - services can work without AWS integration
-	if queueErr != nil {
-		r.logger.Warn("failed to initialize AWS queue service, import/export will work without async processing",
-			zap.Error(queueErr))
-	}
-	if storageErr != nil {
-		r.logger.Warn("failed to initialize AWS storage client, import/export will work with limited file support",
-			zap.Error(storageErr))
+	// Initialize AWS services for import/export.
+	//
+	// Unit tests and local harnesses don't need (and often can't support) live AWS clients.
+	// When IntegrationTestMode is enabled, keep initialization local and fast by skipping
+	// AWS wiring entirely.
+	if r.config != nil && r.config.Config != nil && !r.config.Config.IntegrationTestMode {
+		ctx := context.Background()
+		queue, queueErr := NewImportExportQueueService(ctx, r.config.Config, repos.exportRepo, repos.importRepo, r.logger)
+		storage, storageErr := NewAWSS3StorageClient(ctx, r.logger)
+
+		queueService = queue
+		storageClient = storage
+
+		// Log errors but don't fail initialization - services can work without AWS integration
+		if queueErr != nil {
+			r.logger.Warn("failed to initialize AWS queue service, import/export will work without async processing",
+				zap.Error(queueErr))
+		}
+		if storageErr != nil {
+			r.logger.Warn("failed to initialize AWS storage client, import/export will work with limited file support",
+				zap.Error(storageErr))
+		}
 	}
 
 	// Create the ImportExport service

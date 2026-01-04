@@ -264,9 +264,19 @@ func (w repositoryStorageWrapper) Activity() activityRepository { return w.repos
 func (w repositoryStorageWrapper) Relationship() relationshipRepository {
 	return w.repos.Relationship()
 }
-func (w repositoryStorageWrapper) Like() likeRepository { return w.repos.Like() }
+func (w repositoryStorageWrapper) Like() likeRepository {
+	repo := w.repos.Like()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
 func (w repositoryStorageWrapper) Analytics() analyticsRepository {
-	return w.repos.Analytics()
+	repo := w.repos.Analytics()
+	if repo == nil {
+		return nil
+	}
+	return repo
 }
 func (w repositoryStorageWrapper) User() userRepository         { return w.repos.User() }
 func (w repositoryStorageWrapper) Timeline() timelineRepository { return w.repos.Timeline() }
@@ -274,16 +284,54 @@ func (w repositoryStorageWrapper) Notification() notificationRepository {
 	return w.repos.Notification()
 }
 func (w repositoryStorageWrapper) ScheduledStatus() scheduledStatusRepository {
-	return w.repos.ScheduledStatus()
+	repo := w.repos.ScheduledStatus()
+	if repo == nil {
+		return nil
+	}
+	return repo
 }
-func (w repositoryStorageWrapper) Instance() instanceRepository { return w.repos.Instance() }
-func (w repositoryStorageWrapper) DLQ() dlqRepository           { return w.repos.DLQ() }
+func (w repositoryStorageWrapper) Instance() instanceRepository {
+	repo := w.repos.Instance()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+func (w repositoryStorageWrapper) DLQ() dlqRepository {
+	repo := w.repos.DLQ()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
 func (w repositoryStorageWrapper) CloudWatchMetrics() cloudWatchMetricsRepository {
-	return w.repos.CloudWatchMetrics()
+	repo := w.repos.CloudWatchMetrics()
+	if repo == nil {
+		return nil
+	}
+	return repo
 }
-func (w repositoryStorageWrapper) Cost() costRepository               { return w.repos.Cost() }
-func (w repositoryStorageWrapper) DomainBlock() domainBlockRepository { return w.repos.DomainBlock() }
-func (w repositoryStorageWrapper) Federation() federationRepository   { return w.repos.Federation() }
+func (w repositoryStorageWrapper) Cost() costRepository {
+	repo := w.repos.Cost()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+func (w repositoryStorageWrapper) DomainBlock() domainBlockRepository {
+	repo := w.repos.DomainBlock()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+func (w repositoryStorageWrapper) Federation() federationRepository {
+	repo := w.repos.Federation()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
 
 func (w repositoryStorageWrapper) DB() dynamormDB {
 	db := w.repos.GetDB()
@@ -512,18 +560,22 @@ func (r *repositoryStorageAdapter) checkServiceHealth(ctx context.Context) ([]*m
 	}
 
 	// Test repository operations to verify API health
-	start := time.Now()
-	_, err := r.repos.Instance().GetInstanceRules(ctx)
-	latency := time.Since(start)
+	if instanceRepo := r.repos.Instance(); instanceRepo == nil {
+		apiStatus.Status = model.HealthStatusDegraded
+	} else {
+		start := time.Now()
+		_, err := instanceRepo.GetInstanceRules(ctx)
+		latency := time.Since(start)
 
-	if err != nil && !IsNotFoundError(err) {
-		apiStatus.Status = model.HealthStatusDown
-		apiStatus.ErrorRate = 1.0
-	}
+		if err != nil && !IsNotFoundError(err) {
+			apiStatus.Status = model.HealthStatusDown
+			apiStatus.ErrorRate = 1.0
+		}
 
-	if latency > serviceHealthDownLatencyThreshold {
-		// Lambda timeout approaching
-		apiStatus.Status = model.HealthStatusDown
+		if latency > serviceHealthDownLatencyThreshold {
+			// Lambda timeout approaching
+			apiStatus.Status = model.HealthStatusDown
+		}
 	}
 
 	// Check database service status
@@ -573,20 +625,22 @@ func (r *repositoryStorageAdapter) checkQueueHealth(ctx context.Context) ([]*mod
 	}
 
 	// Get recent DLQ messages to assess queue health
-	recentMessages, _, err := r.repos.DLQ().GetDLQMessagesForReprocessing(ctx, "health-check", "PENDING", 100, "")
-	if err == nil {
-		dlqStatus.Depth = len(recentMessages)
-		dlqStatus.DlqCount = len(recentMessages)
+	if dlqRepo := r.repos.DLQ(); dlqRepo != nil {
+		recentMessages, _, err := dlqRepo.GetDLQMessagesForReprocessing(ctx, "health-check", "PENDING", 100, "")
+		if err == nil {
+			dlqStatus.Depth = len(recentMessages)
+			dlqStatus.DlqCount = len(recentMessages)
 
-		if err := common.ValidateSliceNotEmpty("recent_messages", recentMessages); err == nil {
-			// Find oldest message
-			oldestTime := recentMessages[0].FirstSeenAt
-			for _, msg := range recentMessages {
-				if msg.FirstSeenAt.Before(oldestTime) {
-					oldestTime = msg.FirstSeenAt
+			if err := common.ValidateSliceNotEmpty("recent_messages", recentMessages); err == nil {
+				// Find oldest message
+				oldestTime := recentMessages[0].FirstSeenAt
+				for _, msg := range recentMessages {
+					if msg.FirstSeenAt.Before(oldestTime) {
+						oldestTime = msg.FirstSeenAt
+					}
 				}
+				dlqStatus.OldestMessage = (*model.Time)(&oldestTime)
 			}
-			dlqStatus.OldestMessage = (*model.Time)(&oldestTime)
 		}
 	}
 

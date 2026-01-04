@@ -30,12 +30,14 @@ func (r *queryResolver) AdminAccounts(ctx context.Context, first *int, after *mo
 		limit = clampInt(*first, 1, 100)
 	}
 
+	const maxInt32 = int32(^uint32(0) >> 1)
 	var safeLimit32 int32
-	if limit > int(^int32(0)) {
-		safeLimit32 = ^int32(0)
-	} else if limit < 0 {
+	switch {
+	case limit <= 0:
 		safeLimit32 = 0
-	} else {
+	case limit > int(maxInt32):
+		safeLimit32 = maxInt32
+	default:
 		safeLimit32 = int32(limit)
 	}
 

@@ -82,6 +82,19 @@ func deriveAdminIPInfo(sessions []*storage.Session) (*string, []*model.AdminIP) 
 		return nil, []*model.AdminIP{}
 	}
 
+	filtered := make([]*storage.Session, 0, len(sessions))
+	for _, sess := range sessions {
+		if sess == nil {
+			continue
+		}
+		filtered = append(filtered, sess)
+	}
+	if len(filtered) == 0 {
+		return nil, []*model.AdminIP{}
+	}
+
+	sessions = filtered
+
 	sort.Slice(sessions, func(i, j int) bool {
 		return sessions[i].LastActivity.After(sessions[j].LastActivity)
 	})
