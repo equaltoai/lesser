@@ -1,7 +1,7 @@
 # Lesser Test Suite Requirements
 
 # Core testing libraries
-requests>=2.31.0
+requests>=2.32.4
 websocket-client>=1.6.1
 
 # Federation testing
@@ -9,9 +9,6 @@ cryptography>=41.0.0
 
 # Media testing
 Pillow>=10.0.0
-
-# Async support
-asyncio>=3.4.3
 
 # JSON handling
 jsonschema>=4.19.0
@@ -26,7 +23,7 @@ pytest-cov>=4.1.0
 
 # Utilities
 python-dateutil>=2.8.2
-urllib3>=2.0.0
+urllib3>=2.6.0
 
 # Environment management
 python-dotenv>=1.0.0 

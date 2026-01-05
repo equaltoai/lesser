@@ -66,10 +66,11 @@ func (r *queryResolver) cmsCollectArticleEdges(
 		limit = defaultCMSPageSize
 	}
 
-	fetchLimit := limit
-	if fetchLimit > maxCMSPageSize {
-		fetchLimit = maxCMSPageSize
+	if limit > maxCMSPageSize {
+		limit = maxCMSPageSize
 	}
+
+	fetchLimit := limit
 
 	edges := make([]*model.ArticleEdge, 0, limit)
 	nextCursor := cursor

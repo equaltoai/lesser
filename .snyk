@@ -43,3 +43,12 @@ exclude:
     - path: '*.out'
       reason: test/tooling outputs
     - path: package-lock.json
+ignore:
+  SNYK-GOLANG-GITHUBCOMDISINTEGRATIONIMAGING-5880692:
+    - '*':
+        reason: no fixed version; Lesser does not decode TIFFs via imaging (only resizes already-decoded images)
+        expires: '2026-12-31T00:00:00.000Z'
+  SNYK-GOLANG-GITHUBCOMETHEREUMGOETHEREUM-6004145:
+    - '*':
+        reason: no fixed version; Lesser uses go-ethereum only for local key derivation/address formatting, not untrusted network/EVM workloads
+        expires: '2026-12-31T00:00:00.000Z'

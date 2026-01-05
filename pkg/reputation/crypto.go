@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/jsonld"
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
@@ -199,16 +201,96 @@ type Verifier struct {
 	keyCache map[string]ed25519.PublicKey
 }
 
+const verifierMaxRedirects = 10
+
+func verifierCheckRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= verifierMaxRedirects {
+		return fmt.Errorf("too many redirects: %d", len(via))
+	}
+	if err := ssrf.ValidateURL(req.URL); err != nil {
+		return fmt.Errorf("redirect URL blocked: %w", err)
+	}
+	return nil
+}
+
+func newSSRFProtectedHTTPClient(logger *zap.Logger) *http.Client {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		base = &http.Transport{}
+	}
+	transport := base.Clone()
+	transport.Proxy = nil
+
+	dialer := &net.Dialer{}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, fmt.Errorf("invalid dial address: %w", err)
+		}
+
+		if ip := net.ParseIP(host); ip != nil {
+			if ssrf.IsBlockedIP(ip) {
+				logger.Warn("blocked dial to private IP", zap.String("ip", ip.String()))
+				return nil, fmt.Errorf("blocked dial to private IP: %s", ip.String())
+			}
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		}
+
+		if ssrf.IsBlockedHostname(host) {
+			logger.Warn("blocked dial to internal hostname", zap.String("host", host))
+			return nil, fmt.Errorf("blocked dial to internal hostname: %s", host)
+		}
+
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			return nil, fmt.Errorf("DNS resolution failed: %w", err)
+		}
+		for _, ip := range ips {
+			if ssrf.IsBlockedIP(ip) {
+				logger.Warn("blocked dial to private IP",
+					zap.String("host", host),
+					zap.String("ip", ip.String()))
+				return nil, fmt.Errorf("blocked dial to private IP: %s", ip.String())
+			}
+		}
+
+		var lastErr error
+		for _, ip := range ips {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+
+		if lastErr != nil {
+			return nil, lastErr
+		}
+		return nil, fmt.Errorf("DNS resolution returned no IPs for %s", host)
+	}
+
+	return &http.Client{
+		Timeout:       10 * time.Second,
+		Transport:     transport,
+		CheckRedirect: verifierCheckRedirect,
+	}
+}
+
 // NewVerifier creates a new reputation verifier
 func NewVerifier(instanceURL string, logger *zap.Logger, storage core.RepositoryStorage) *Verifier {
 	return &Verifier{
 		instanceURL: instanceURL,
 		logger:      logger,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-		storage:  storage,
-		keyCache: make(map[string]ed25519.PublicKey),
+		httpClient:  newSSRFProtectedHTTPClient(logger),
+		storage:     storage,
+		keyCache:    make(map[string]ed25519.PublicKey),
 	}
 }
 
@@ -265,10 +347,10 @@ func (v *Verifier) VerifyPortableReputation(pr *PortableReputation) (*Verificati
 		return result, nil
 	}
 
-	// Get issuer's public key
-	publicKey, err := v.getInstancePublicKey(context.Background(), pr.Issuer)
-	if err != nil {
-		result.Error = fmt.Sprintf("failed to get issuer public key: %v", err)
+	// Check if issuer is trusted (and safe to fetch from)
+	result.IssuerTrusted = v.isInstanceTrusted(pr.Issuer)
+	if !result.IssuerTrusted {
+		result.Error = "issuer is not trusted"
 		return result, nil
 	}
 
@@ -280,6 +362,13 @@ func (v *Verifier) VerifyPortableReputation(pr *PortableReputation) (*Verificati
 	proofBytes, err := base64.StdEncoding.DecodeString(issuerProof)
 	if err != nil {
 		result.Error = "invalid issuer proof encoding"
+		return result, nil
+	}
+
+	// Get issuer's public key
+	publicKey, err := v.getInstancePublicKey(context.Background(), pr.Issuer)
+	if err != nil {
+		result.Error = fmt.Sprintf("failed to get issuer public key: %v", err)
 		return result, nil
 	}
 
@@ -300,9 +389,6 @@ func (v *Verifier) VerifyPortableReputation(pr *PortableReputation) (*Verificati
 		}
 	}
 
-	// Check if issuer is trusted
-	result.IssuerTrusted = v.isInstanceTrusted(pr.Issuer)
-
 	result.Valid = result.SignatureValid && result.NotExpired && result.IssuerTrusted
 
 	return result, nil
@@ -310,13 +396,29 @@ func (v *Verifier) VerifyPortableReputation(pr *PortableReputation) (*Verificati
 
 // getInstancePublicKey fetches the public key for an instance
 func (v *Verifier) getInstancePublicKey(ctx context.Context, instanceURL string) (ed25519.PublicKey, error) {
+	normalized, err := ssrf.ValidateURLString(strings.TrimSpace(instanceURL))
+	if err != nil {
+		return nil, fmt.Errorf("invalid instance URL: %w", err)
+	}
+
+	cacheKey := (&url.URL{
+		Scheme: strings.ToLower(strings.TrimSpace(normalized.Scheme)),
+		Host:   strings.ToLower(strings.TrimSpace(normalized.Host)),
+	}).String()
+
 	// Check cache
-	if key, ok := v.keyCache[instanceURL]; ok {
+	if key, ok := v.keyCache[cacheKey]; ok {
 		return key, nil
 	}
 
+	wellKnown := &url.URL{
+		Scheme: strings.ToLower(strings.TrimSpace(normalized.Scheme)),
+		Host:   strings.ToLower(strings.TrimSpace(normalized.Host)),
+		Path:   "/.well-known/reputation-keys",
+	}
+
 	// Create request with context
-	req, err := http.NewRequestWithContext(ctx, "GET", instanceURL+"/.well-known/reputation-keys", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, wellKnown.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -345,15 +447,14 @@ func (v *Verifier) getInstancePublicKey(ctx context.Context, instanceURL string)
 	}
 
 	publicKey := ed25519.PublicKey(keyBytes)
-	v.keyCache[instanceURL] = publicKey
+	v.keyCache[cacheKey] = publicKey
 
 	return publicKey, nil
 }
 
 // isInstanceTrusted checks if an instance is trusted
 func (v *Verifier) isInstanceTrusted(instanceURL string) bool {
-	// Extract domain from URL
-	parsedURL, err := url.Parse(instanceURL)
+	parsedURL, err := ssrf.ValidateURLString(strings.TrimSpace(instanceURL))
 	if err != nil {
 		v.logger.Error("failed to parse instance URL",
 			zap.String("url", instanceURL),
@@ -361,11 +462,7 @@ func (v *Verifier) isInstanceTrusted(instanceURL string) bool {
 		return false
 	}
 
-	domain := parsedURL.Host
-	// Remove port if present
-	if idx := strings.IndexByte(domain, ':'); idx != -1 {
-		domain = domain[:idx]
-	}
+	domain := strings.ToLower(strings.TrimSpace(parsedURL.Hostname()))
 
 	// Check if we have storage available
 	if v.storage == nil {
@@ -446,6 +543,10 @@ func canonicalizeJSON(v any) ([]byte, error) {
 
 // VerifyVouchSignature verifies a vouch's signature using the issuer's public key
 func (v *Verifier) VerifyVouchSignature(vouch *Vouch) (bool, error) {
+	if !v.isInstanceTrusted(vouch.InstanceURL) {
+		return false, fmt.Errorf("issuer is not trusted")
+	}
+
 	// Get the issuer's public key from the instance
 	publicKey, err := v.getInstancePublicKey(context.Background(), vouch.InstanceURL)
 	if err != nil {

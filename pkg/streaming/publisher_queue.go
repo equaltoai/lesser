@@ -98,17 +98,12 @@ func (p *queuePublisher) logQueueError(message string, err error, fields map[str
 	}
 
 	fieldCount := len(fields)
-	if fieldCount < 0 || fieldCount > maxLogQueueFields {
+	if fieldCount > maxLogQueueFields {
 		p.logger.Error("logQueueError: too many fields, possible malformed input", zap.Int("field_count", fieldCount), zap.Error(err))
 		return
 	}
 
-	safeCap := fieldCount + 1
-	if safeCap < 0 || safeCap > maxLogQueueFields+1 {
-		// Defensive: should never happen, but guard against integer overflow or corrupted input
-		safeCap = maxLogQueueFields + 1
-	}
-	zapFields := make([]zap.Field, 0, safeCap)
+	zapFields := make([]zap.Field, 0, fieldCount)
 	for k, v := range fields {
 		zapFields = append(zapFields, zap.Any(k, v))
 	}

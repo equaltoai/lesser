@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -557,6 +558,13 @@ func (r *ObjectRepository) GetUpdateHistory(_ context.Context, objectID string, 
 	history := r.updateHistory[objectID]
 	if len(history) == 0 {
 		return []*storage.UpdateHistory{}, nil
+	}
+
+	if err := common.ValidateQueryLimit(limit, 100, "update history"); err != nil {
+		limit = 10
+	}
+	if limit > len(history) {
+		limit = len(history)
 	}
 
 	// Return most recent first, limited

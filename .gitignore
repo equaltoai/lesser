@@ -98,6 +98,7 @@ reference/
 !cmd/
 !pkg/
 bootstrap*
+!bootstrap*.go
 .gocache/
 .gomodcache/
 /bootstrap_*/

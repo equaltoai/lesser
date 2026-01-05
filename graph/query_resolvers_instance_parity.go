@@ -108,7 +108,7 @@ func (r *queryResolver) InstanceActivity(ctx context.Context, limit *int) ([]*mo
 		}
 	}
 
-	activity := make([]*model.InstanceActivityEntry, 0, weeks)
+	activity := make([]*model.InstanceActivityEntry, 0, 52)
 
 	now := time.Now()
 	weekStart := now.Truncate(24 * time.Hour)
