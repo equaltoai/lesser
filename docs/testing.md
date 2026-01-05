@@ -41,6 +41,28 @@ Run it before opening a PR:
 ./lesser verify
 ```
 
+## What `./lesser verify ci` checks (GitHub Actions gate)
+
+GitHub Actions runs the CI gate via:
+
+```bash
+bash scripts/reproduce_ci_verify.sh
+```
+
+This is equivalent to:
+
+```bash
+bash scripts/install_ci_tools.sh
+go build -o lesser ./cmd/lesser
+./lesser build lambdas
+./lesser verify ci
+```
+
+Notes:
+
+- `./lesser verify ci` is stricter than `./lesser verify` (adds lint, security scans, supply chain verification, strict OpenAPI, and coverage gates).
+- Coverage gates are strict (for example, `89.999%` fails even if it rounds to `90.0%` in a 1-decimal summary). If debugging drift, run with `GOFLAGS=-count=1` to force fresh test runs.
+
 ## Test types in this repo
 
 ### 1) Go unit tests (most common)

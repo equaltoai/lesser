@@ -214,6 +214,73 @@ func TestLambdaMiddlewareFactories_ExerciseBranches(t *testing.T) {
 	})
 }
 
+func TestLambdaMiddlewareFactories_TracingLatencyAndRateLimit(t *testing.T) {
+	logger := zap.NewNop()
+	lambdaCtx := &common.LambdaContext{Logger: logger}
+
+	t.Run("tracing middleware passes through", func(t *testing.T) {
+		mw := createTracingMiddleware(lambdaCtx)
+
+		ctx := liftPkg.NewContext(context.Background(), liftPkg.NewRequest(nil))
+		nextCalled := false
+		handler := mw(liftPkg.HandlerFunc(func(*liftPkg.Context) error {
+			nextCalled = true
+			return nil
+		}))
+
+		require.NoError(t, handler.Handle(ctx))
+		require.True(t, nextCalled)
+	})
+
+	t.Run("latency tracking middleware returns underlying error", func(t *testing.T) {
+		mw := createLatencyTrackingMiddleware(lambdaCtx)
+
+		ctx := liftPkg.NewContext(context.Background(), liftPkg.NewRequest(nil))
+		handler := mw(liftPkg.HandlerFunc(func(*liftPkg.Context) error {
+			return stdErrors.New("boom")
+		}))
+
+		require.Error(t, handler.Handle(ctx))
+	})
+
+	t.Run("rate limit middleware passes through", func(t *testing.T) {
+		mw := createRateLimitMiddleware(lambdaCtx)
+
+		ctx := liftPkg.NewContext(context.Background(), liftPkg.NewRequest(nil))
+		nextCalled := false
+		handler := mw(liftPkg.HandlerFunc(func(*liftPkg.Context) error {
+			nextCalled = true
+			return nil
+		}))
+
+		require.NoError(t, handler.Handle(ctx))
+		require.True(t, nextCalled)
+	})
+}
+
+func TestPanicRecovery_GeneratesRequestIDWhenMissing(t *testing.T) {
+	mw := PanicRecovery(zap.NewNop())
+
+	req := liftPkg.NewRequest(nil)
+	req.Method = "GET"
+	req.Path = "/panic"
+	ctx := liftPkg.NewContext(context.Background(), req)
+
+	handler := mw(liftPkg.HandlerFunc(func(*liftPkg.Context) error {
+		panic("boom")
+	}))
+
+	require.NoError(t, handler.Handle(ctx))
+	require.NotNil(t, ctx.Response)
+	require.Equal(t, 500, ctx.Response.StatusCode)
+
+	body, ok := ctx.Response.Body.(map[string]interface{})
+	require.True(t, ok)
+	requestID, ok := body["request_id"].(string)
+	require.True(t, ok)
+	require.NotEmpty(t, requestID)
+}
+
 func TestCreateStandardizedLambdaHandler_SuccessAndMetricsBranches(t *testing.T) {
 	makeAPIEvent := func(method, path string, headers map[string]string) map[string]any {
 		eventHeaders := make(map[string]any, len(headers))

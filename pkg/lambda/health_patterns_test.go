@@ -129,6 +129,26 @@ func TestHealthCheckPattern_CreateHealthCheckMiddleware(t *testing.T) {
 	require.True(t, nextCalled)
 }
 
+func TestHealthCheckPattern_CreateHealthCheckMiddleware_NonHealthPath(t *testing.T) {
+	hcp := newHealthPattern(t, stdErrors.New("user not found"), "us-east-1", time.Now())
+
+	mw := hcp.CreateHealthCheckMiddleware()
+
+	req := liftPkg.NewRequest(nil)
+	req.Method = "GET"
+	req.Path = "/resource"
+	ctx := liftPkg.NewContext(context.Background(), req)
+
+	nextCalled := false
+	handler := mw(liftPkg.HandlerFunc(func(*liftPkg.Context) error {
+		nextCalled = true
+		return nil
+	}))
+
+	require.NoError(t, handler.Handle(ctx))
+	require.True(t, nextCalled)
+}
+
 func TestHealthCheckRoutes_NoPanic(t *testing.T) {
 	hcp := newHealthPattern(t, stdErrors.New("user not found"), "us-east-1", time.Now())
 

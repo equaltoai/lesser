@@ -210,7 +210,7 @@ func printHeader(cfg scoreboardConfig, totalPct float64, totalCovered, totalStat
 	if !cfg.ExcludeGenerated {
 		fmt.Printf("exclude-generated: false\n")
 	}
-	fmt.Printf("total:   %.1f%% (%d/%d statements)\n\n", totalPct, totalCovered, totalStatements)
+	fmt.Printf("total:   %.3f%% (%d/%d statements)\n\n", totalPct, totalCovered, totalStatements)
 }
 
 type generatedFileDetector struct {
