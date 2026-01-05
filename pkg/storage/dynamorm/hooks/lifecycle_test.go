@@ -13,13 +13,14 @@ import (
 	"go.uber.org/zap"
 )
 
-// contextKey is a custom type for context keys to avoid collisions
-type contextKey string
-
 const (
-	loggerKey    contextKey = "logger"
-	userIDKey    contextKey = "user_id"
-	requestIDKey contextKey = "request_id"
+	// These keys intentionally match the string keys used by this package's helpers
+	// (see getUserIDFromContext/getLoggerFromContext/etc).
+	loggerKey    = "logger"
+	userIDKey    = "user_id"
+	requestIDKey = "request_id"
+
+	notificationRepositoryKey = "notification_repository"
 )
 
 // Test model types

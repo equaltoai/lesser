@@ -6,7 +6,7 @@ type OAuthTokenRequest struct {
 	Code         string `json:"code,omitempty"`
 	RedirectURI  string `json:"redirect_uri,omitempty"`
 	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
+	ClientSecret string `json:"client_secret,omitempty"`
 	CodeVerifier string `json:"code_verifier,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
 	Scope        string `json:"scope,omitempty"`
@@ -35,4 +35,20 @@ type OAuthErrorResponse struct {
 	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description,omitempty"`
 	ErrorURI         string `json:"error_uri,omitempty"`
+}
+
+// OAuthAuthorizeResponse represents the response when returning the next_url redirect as JSON.
+type OAuthAuthorizeResponse struct {
+	NextURL string `json:"next_url"`
+}
+
+// OAuthConsentRequest represents the form body posted to /oauth/consent.
+type OAuthConsentRequest struct {
+	State  string `json:"state"`
+	Action string `json:"action"`
+}
+
+// OAuthConsentResponse represents the JSON response from /oauth/consent.
+type OAuthConsentResponse struct {
+	RedirectURI string `json:"redirect_uri"`
 }

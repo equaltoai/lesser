@@ -1,0 +1,51 @@
+package lift
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestLiftErrors_Round11(t *testing.T) {
+	require.NotNil(t, invalidActorIDFormat())
+	require.NotNil(t, unableToParseRequestBody())
+	require.NotNil(t, missingBoundaryInContentType())
+	require.NotNil(t, invalidContentType())
+	require.NotNil(t, unsupportedCollectionType())
+	require.NotNil(t, invalidAccountURL())
+	require.NotNil(t, helperUnauthorized())
+	require.NotNil(t, helperInsufficientScope())
+	require.NotNil(t, invalidAccountID())
+	require.NotNil(t, failedToInitializeAuthService())
+	require.NotNil(t, invalidImportType())
+	require.NotNil(t, invalidImportMode())
+	require.NotNil(t, unsupportedFileFormat())
+	require.NotNil(t, jobQueueServiceCreationFailed())
+	require.NotNil(t, unableToParseRequestBodyAsFormOrJSON())
+	require.NotNil(t, invalidRedirectURIFormat())
+	require.NotNil(t, failedToParseMultipartForm())
+	require.NotNil(t, failedToParseFormData())
+	require.NotNil(t, emptyRequestBody())
+	require.NotNil(t, noFileDataFoundInRequest())
+	require.NotNil(t, failedToExtractBoundary())
+	require.NotNil(t, searchFailed())
+	require.NotNil(t, privacyAwareSearchFailed())
+	require.NotNil(t, statusSearchFailed())
+	require.NotNil(t, privacyAwareStatusSearchFailed())
+	require.NotNil(t, failedToGenerateTokens())
+	require.NotNil(t, failedToValidateRefreshToken())
+	require.NotNil(t, failedToGenerateNewTokens())
+	require.NotNil(t, failedToStoreNewRefreshToken())
+	require.NotNil(t, failedToGenerateVAPIDPrivateKey())
+	require.NotNil(t, failedToConvertToECDHKey())
+	require.NotNil(t, failedToStoreVAPIDKeys())
+	require.NotNil(t, failedToCreateJobQueueService())
+	require.NotNil(t, invalidStartDate())
+	require.NotNil(t, invalidEndDate())
+	require.NotNil(t, failedToGetFollowerActor())
+	require.NotNil(t, failedToGetFollowedActor())
+	require.NotNil(t, invalidSourceLanguageCode())
+	require.NotNil(t, invalidTargetLanguageCode())
+	require.NotNil(t, failedToGetCostRecords())
+	require.NotNil(t, failedToDetermineDeliveryRecipients())
+}

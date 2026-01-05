@@ -3,69 +3,20 @@ package lift
 import (
 	"fmt"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
-// NodeInfoWellKnown represents the .well-known/nodeinfo response
-type NodeInfoWellKnown struct {
-	Links []NodeInfoLink `json:"links"`
-}
-
-// NodeInfoLink represents a link in the .well-known/nodeinfo response
-type NodeInfoLink struct {
-	Rel  string `json:"rel"`
-	Href string `json:"href"`
-}
-
-// NodeInfo represents a NodeInfo 2.0 response
-type NodeInfo struct {
-	Version           string           `json:"version"`
-	Software          NodeInfoSoftware `json:"software"`
-	Protocols         []string         `json:"protocols"`
-	Services          NodeInfoServices `json:"services"`
-	OpenRegistrations bool             `json:"openRegistrations"`
-	Usage             NodeInfoUsage    `json:"usage"`
-	Metadata          map[string]any   `json:"metadata"`
-}
-
-// NodeInfoSoftware represents software information
-type NodeInfoSoftware struct {
-	Name       string `json:"name"`
-	Version    string `json:"version"`
-	Repository string `json:"repository,omitempty"`
-	Homepage   string `json:"homepage,omitempty"`
-}
-
-// NodeInfoServices represents services information
-type NodeInfoServices struct {
-	Inbound  []string `json:"inbound"`
-	Outbound []string `json:"outbound"`
-}
-
-// NodeInfoUsage represents usage statistics
-type NodeInfoUsage struct {
-	Users         NodeInfoUsers `json:"users"`
-	LocalPosts    int           `json:"localPosts"`
-	LocalComments int           `json:"localComments"`
-}
-
-// NodeInfoUsers represents user statistics
-type NodeInfoUsers struct {
-	Total          int `json:"total"`
-	ActiveHalfyear int `json:"activeHalfyear"`
-	ActiveMonth    int `json:"activeMonth"`
-}
-
 // HandleNodeInfoWellKnownLift handles /.well-known/nodeinfo requests
 func (h *Handler) HandleNodeInfoWellKnownLift(ctx *lift.Context) error {
 	h.logger.Info("nodeinfo well-known request",
 		zap.String("user_agent", ctx.Header("User-Agent")))
 
-	response := NodeInfoWellKnown{
-		Links: []NodeInfoLink{
+	response := apimodels.NodeInfoWellKnown{
+		Links: []apimodels.NodeInfoLink{
 			{
 				Rel:  "http://nodeinfo.diaspora.software/ns/schema/2.0",
 				Href: fmt.Sprintf("%s/nodeinfo/2.0", h.cfg.BaseURL()),
@@ -118,9 +69,9 @@ func (h *Handler) HandleNodeInfoLift(ctx *lift.Context) error {
 		}
 	}
 
-	response := NodeInfo{
+	response := apimodels.NodeInfo{
 		Version: "2.0",
-		Software: NodeInfoSoftware{
+		Software: apimodels.NodeInfoSoftware{
 			Name:       "lesser",
 			Version:    instanceConfig.Version,
 			Repository: "https://github.com/equaltoai/lesser",
@@ -129,13 +80,13 @@ func (h *Handler) HandleNodeInfoLift(ctx *lift.Context) error {
 		Protocols: []string{
 			"activitypub",
 		},
-		Services: NodeInfoServices{
+		Services: apimodels.NodeInfoServices{
 			Inbound:  []string{},
 			Outbound: []string{},
 		},
 		OpenRegistrations: instanceConfig.RegistrationsOpen,
-		Usage: NodeInfoUsage{
-			Users: NodeInfoUsers{
+		Usage: apimodels.NodeInfoUsage{
+			Users: apimodels.NodeInfoUsers{
 				Total:          stats.TotalUsers,
 				ActiveHalfyear: stats.ActiveHalfyear,
 				ActiveMonth:    stats.ActiveMonth,

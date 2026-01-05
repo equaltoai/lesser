@@ -1,0 +1,60 @@
+# Scaling Patterns for Lesser
+# Version: 1.0.0
+# Purpose: Train AI on performance, scaling, and cost-aware design
+
+context:
+  description: "Performance and scaling patterns for a serverless ActivityPub + CMS system"
+  canonical_sources:
+    data_access: "pkg/storage/repositories/ + pkg/storage/models/"
+    batching: "graph/ (dataloaders and batching patterns where present)"
+    docs: "docs/VIEWER_ENGAGEMENT_BATCH_PATTERN.md (batch design example)"
+  principles:
+    - avoid_scans: "Prefer indexed access patterns (GSIs) over full table scans"
+    - batch_reads: "Use BatchGet and server-side batching where possible"
+    - async_side_effects: "Move fanout and heavy processing to SQS/streams"
+    - cost_visibility: "Track cost per operation; optimize hot paths first"
+
+dynamodb_patterns:
+
+  single_table_design:
+    purpose: "Scale read/write patterns without many tables"
+    guidance:
+      - "Model access patterns first, then shape PK/SK/GSI keys"
+      - "Use conditional writes for uniqueness constraints (e.g., slug indexes)"
+      - "Backfill indexes opportunistically to avoid disruptive migrations"
+
+  pagination:
+    purpose: "Stable pagination for timelines and CMS lists"
+    guidance:
+      - "Use SK/GSI SK as cursor where possible"
+      - "Avoid offset-based pagination"
+
+lambda_patterns:
+
+  timeouts_and_memory:
+    guidance:
+      - "Increase memory to reduce latency on CPU-bound handlers"
+      - "Prefer smaller handlers + async pipelines over long timeouts"
+
+  concurrency_controls:
+    guidance:
+      - "Use reserved concurrency sparingly for critical processors"
+      - "Protect downstream systems (remote inboxes, third-party APIs) with rate limiting + backoff"
+
+streaming_patterns:
+
+  websocket_and_sse:
+    purpose: "Deliver real-time updates efficiently"
+    guidance:
+      - "Use WebSockets for high-frequency streams; SSE as simpler fallback"
+      - "Push only deltas/events; avoid large payload fanout"
+
+observability_for_scaling:
+
+  metrics:
+    track:
+      - "Lambda duration, error rate, throttles"
+      - "DynamoDB consumed capacity + hot partitions"
+      - "Queue depth + age for async processors"
+      - "Cost per operation (where tracked)"
+

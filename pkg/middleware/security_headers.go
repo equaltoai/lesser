@@ -81,8 +81,8 @@ func DefaultSecurityHeadersConfig() *SecurityHeadersConfig {
 		EnableCSP: true,
 		CSPDirectives: map[string][]string{
 			"default-src":               {"'self'"},
-			"script-src":                {"'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"},
-			"style-src":                 {"'self'", "'unsafe-inline'", "https://fonts.googleapis.com"},
+			"script-src":                {"'self'", "https://cdn.jsdelivr.net"},
+			"style-src":                 {"'self'", "https://fonts.googleapis.com"},
 			"img-src":                   {"'self'", "data:", "https:", "blob:"},
 			"font-src":                  {"'self'", "data:", "https://fonts.gstatic.com"},
 			"connect-src":               {"'self'", "wss:", "https:"},
@@ -129,7 +129,8 @@ func DevelopmentSecurityHeadersConfig() *SecurityHeadersConfig {
 	config.DevelopmentMode = true
 
 	// Relax CSP for development
-	config.CSPDirectives["script-src"] = append(config.CSPDirectives["script-src"], "'unsafe-eval'")
+	config.CSPDirectives["script-src"] = append(config.CSPDirectives["script-src"], "'unsafe-inline'", "'unsafe-eval'")
+	config.CSPDirectives["style-src"] = append(config.CSPDirectives["style-src"], "'unsafe-inline'")
 	config.CSPDirectives["connect-src"] = append(config.CSPDirectives["connect-src"], "ws://localhost:*", "http://localhost:*")
 
 	// Disable HSTS in development
@@ -171,9 +172,9 @@ func (sh *EnhancedSecurityHeaders) setSecurityHeaders(ctx *lift.Context, nonce s
 	if sh.config.EnableCSP {
 		csp := sh.buildCSP(nonce)
 		if sh.config.CSPReportOnly {
-			ctx.Set("Content-Security-Policy-Report-Only", csp)
+			ctx.Response.Header("Content-Security-Policy-Report-Only", csp)
 		} else {
-			ctx.Set("Content-Security-Policy", csp)
+			ctx.Response.Header("Content-Security-Policy", csp)
 		}
 	}
 
@@ -186,51 +187,51 @@ func (sh *EnhancedSecurityHeaders) setSecurityHeaders(ctx *lift.Context, nonce s
 		if sh.config.HSTSPreload {
 			hsts += "; preload"
 		}
-		ctx.Set("Strict-Transport-Security", hsts)
+		ctx.Response.Header("Strict-Transport-Security", hsts)
 	}
 
 	// X-Frame-Options
 	if sh.config.XFrameOptions != "" {
-		ctx.Set("X-Frame-Options", sh.config.XFrameOptions)
+		ctx.Response.Header("X-Frame-Options", sh.config.XFrameOptions)
 	}
 
 	// X-Content-Type-Options
 	if sh.config.XContentTypeOptions != "" {
-		ctx.Set("X-Content-Type-Options", sh.config.XContentTypeOptions)
+		ctx.Response.Header("X-Content-Type-Options", sh.config.XContentTypeOptions)
 	}
 
 	// X-XSS-Protection (for older browsers)
 	if sh.config.XXSSProtection != "" {
-		ctx.Set("X-XSS-Protection", sh.config.XXSSProtection)
+		ctx.Response.Header("X-XSS-Protection", sh.config.XXSSProtection)
 	}
 
 	// Referrer Policy
 	if sh.config.ReferrerPolicy != "" {
-		ctx.Set("Referrer-Policy", sh.config.ReferrerPolicy)
+		ctx.Response.Header("Referrer-Policy", sh.config.ReferrerPolicy)
 	}
 
 	// Permissions Policy
 	if len(sh.config.PermissionsPolicy) > 0 {
 		pp := sh.buildPermissionsPolicy()
-		ctx.Set("Permissions-Policy", pp)
+		ctx.Response.Header("Permissions-Policy", pp)
 	}
 
 	// Cross-Origin Policies
 	if sh.config.CrossOriginOpenerPolicy != "" {
-		ctx.Set("Cross-Origin-Opener-Policy", sh.config.CrossOriginOpenerPolicy)
+		ctx.Response.Header("Cross-Origin-Opener-Policy", sh.config.CrossOriginOpenerPolicy)
 	}
 
 	if sh.config.CrossOriginEmbedderPolicy != "" {
-		ctx.Set("Cross-Origin-Embedder-Policy", sh.config.CrossOriginEmbedderPolicy)
+		ctx.Response.Header("Cross-Origin-Embedder-Policy", sh.config.CrossOriginEmbedderPolicy)
 	}
 
 	if sh.config.CrossOriginResourcePolicy != "" {
-		ctx.Set("Cross-Origin-Resource-Policy", sh.config.CrossOriginResourcePolicy)
+		ctx.Response.Header("Cross-Origin-Resource-Policy", sh.config.CrossOriginResourcePolicy)
 	}
 
 	// Custom headers
 	for key, value := range sh.config.CustomHeaders {
-		ctx.Set(key, value)
+		ctx.Response.Header(key, value)
 	}
 
 	// Remove potentially dangerous headers
@@ -241,7 +242,10 @@ func (sh *EnhancedSecurityHeaders) setSecurityHeaders(ctx *lift.Context, nonce s
 func (sh *EnhancedSecurityHeaders) buildCSP(nonce string) string {
 	var directives []string
 
-	for directive, sources := range sh.config.CSPDirectives {
+	for directive, configuredSources := range sh.config.CSPDirectives {
+		// Copy the configured sources so we never mutate the shared config when appending a nonce.
+		sources := append([]string(nil), configuredSources...)
+
 		// Add nonce to script-src and style-src if generated
 		if nonce != "" && (directive == "script-src" || directive == "style-src") {
 			sources = append(sources, fmt.Sprintf("'nonce-%s'", nonce))
@@ -290,10 +294,10 @@ func (sh *EnhancedSecurityHeaders) generateNonce() string {
 // removeUnsafeHeaders removes potentially dangerous headers
 func (sh *EnhancedSecurityHeaders) removeUnsafeHeaders(ctx *lift.Context) {
 	// Remove headers that might leak information
-	ctx.Set("X-Powered-By", "")
-	ctx.Set("Server", "")
-	ctx.Set("X-AspNet-Version", "")
-	ctx.Set("X-AspNetMvc-Version", "")
+	ctx.Response.Header("X-Powered-By", "")
+	ctx.Response.Header("Server", "")
+	ctx.Response.Header("X-AspNet-Version", "")
+	ctx.Response.Header("X-AspNetMvc-Version", "")
 }
 
 // CSPReportHandler handles CSP violation reports
@@ -301,7 +305,7 @@ func (sh *EnhancedSecurityHeaders) CSPReportHandler() lift.HandlerFunc {
 	return func(ctx *lift.Context) error {
 		// Parse CSP report
 		var report CSPReport
-		if err := ctx.JSON(&report); err != nil {
+		if err := ctx.ParseRequest(&report); err != nil {
 			sh.logger.Warn("failed to parse CSP report", zap.Error(err))
 			return ctx.Status(400).JSON(map[string]string{"error": "invalid report"})
 		}
@@ -417,8 +421,8 @@ func WebClientSecurityHeaders() *SecurityHeadersConfig {
 	// Stricter CSP for web clients
 	config.CSPDirectives = map[string][]string{
 		"default-src":     {"'self'"},
-		"script-src":      {"'self'", "'unsafe-inline'"},
-		"style-src":       {"'self'", "'unsafe-inline'"},
+		"script-src":      {"'self'"},
+		"style-src":       {"'self'"},
 		"img-src":         {"'self'", "data:", "https:"},
 		"connect-src":     {"'self'", "wss:", "https:"},
 		"font-src":        {"'self'", "data:"},

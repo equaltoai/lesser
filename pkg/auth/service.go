@@ -9,20 +9,42 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storageinterfaces "github.com/equaltoai/lesser/pkg/storage/interfaces"
 
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )
+
+type authAccountRepository interface {
+	GetUser(ctx context.Context, username string) (*storage.User, error)
+	UpdateUser(ctx context.Context, username string, updates map[string]any) error
+	GetActor(ctx context.Context, username string) (*activitypub.Actor, error)
+	GetDevice(ctx context.Context, deviceID string) (*storage.Device, error)
+	GetSession(ctx context.Context, sessionID string) (*storage.Session, error)
+	GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error)
+	MarkWalletChallengeSpent(ctx context.Context, challengeID string) error
+	GetWalletChallenge(ctx context.Context, challengeID string) (*storage.WalletChallenge, error)
+	StoreRecoveryToken(ctx context.Context, key string, data map[string]any) error
+}
+
+type oauthClientValidator interface {
+	ValidateClient(ctx context.Context, clientID, clientSecret string) error
+	ValidateRedirectURI(ctx context.Context, clientID, redirectURI string) error
+	GenerateAuthorizationCode() (string, error)
+}
 
 // AuthService provides comprehensive authentication functionality
 //
 //nolint:revive // Auth prefix clarifies this is the authentication service
 type AuthService struct {
 	repos           StorageProvider
-	oauthService    *OAuthService
+	accountRepo     authAccountRepository
+	activityRepo    storageinterfaces.ActivityRepository
+	oauthService    oauthClientValidator
 	sessionManager  *SessionManager
 	rateLimiter     *RateLimiter
 	webAuthnService *WebAuthnService
@@ -66,6 +88,8 @@ func NewAuthService(cfg *config.Config, repos StorageProvider) (*AuthService, er
 
 	return &AuthService{
 		repos:           repos,
+		accountRepo:     repos.Account(),
+		activityRepo:    repos.Activity(),
 		oauthService:    NewOAuthService(jwtSecret, cfg, repos, auditLogger),
 		sessionManager:  NewSessionManager(repos),
 		rateLimiter:     NewRateLimiter(repos),
@@ -78,118 +102,8 @@ func NewAuthService(cfg *config.Config, repos StorageProvider) (*AuthService, er
 }
 
 // AuthenticateWithPassword authenticates a user with username and password
-func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, password, deviceName, userAgent, ipAddress string) (*AuthResponse, error) {
-	// Check rate limits first
-	if err := as.rateLimiter.CheckRateLimit(ctx, username, ipAddress); err != nil {
-		// Log rate limited attempt
-		as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, false, "rate limited")
-		return nil, err
-	}
-
-	// Get user from storage
-	user, err := as.repos.Account().GetUser(ctx, username)
-	if err != nil {
-		// Record failed attempt
-		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
-		// Log failed login - user not found
-		as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, false, "user not found")
-		return nil, ErrInvalidCredentials
-	}
-
-	// Check if user is active
-	if user.Suspended {
-		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
-		// Log suspended account attempt
-		if err := as.auditLogger.LogEvent(ctx, &AuditEvent{
-			EventType:     AuditLoginSuspended,
-			Username:      username,
-			IPAddress:     ipAddress,
-			UserAgent:     userAgent,
-			DeviceName:    deviceName,
-			Success:       false,
-			FailureReason: "account suspended",
-		}); err != nil {
-			// Log audit error but continue
-			as.auditLogger.logger.Warn("Failed to log audit event", zap.Error(err))
-		}
-		return nil, ErrUserSuspended
-	}
-	if !user.Approved {
-		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
-		// Log unapproved account attempt
-		if err := as.auditLogger.LogEvent(ctx, &AuditEvent{
-			EventType:     AuditLoginNotApproved,
-			Username:      username,
-			IPAddress:     ipAddress,
-			UserAgent:     userAgent,
-			DeviceName:    deviceName,
-			Success:       false,
-			FailureReason: "account not approved",
-		}); err != nil {
-			// Log audit error but continue
-			as.auditLogger.logger.Warn("Failed to log audit event", zap.Error(err))
-		}
-		return nil, ErrUserNotApproved
-	}
-
-	// Verify password
-	if err := VerifyPassword(password, user.PasswordHash); err != nil {
-		// Record failed attempt
-		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
-		// Log failed login - wrong password
-		as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, false, "invalid password")
-
-		// Check if this might be a brute force attempt
-		if count, _ := as.rateLimiter.GetFailedAttempts(ctx, username); count >= 5 {
-			as.auditLogger.LogSecurityEvent(ctx, AuditBruteForceDetected, username, ipAddress, map[string]interface{}{
-				"failed_attempts": count,
-			})
-		}
-		return nil, ErrInvalidCredentials
-	}
-
-	// Record successful attempt
-	if err := as.rateLimiter.RecordAttempt(ctx, username, ipAddress, true); err != nil {
-		common.Logger().Error("failed to record successful login", zap.Error(err))
-	}
-
-	// Log successful login
-	as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, true, "")
-
-	// Get actor ID for activity recording
-	actor, err := as.repos.Account().GetActor(ctx, username)
-	if err != nil {
-		// Log but don't fail login
-		common.Logger().Warn("failed to get actor for activity recording", zap.Error(err))
-	} else {
-		// Record login activity for metrics
-		if err := as.repos.Activity().RecordActivity(ctx, "login", actor.ID, time.Now()); err != nil {
-			// Log the error but don't fail the login
-			common.Logger().Warn("failed to record login activity", zap.Error(err))
-		}
-	}
-
-	// Create session
-	session, err := as.sessionManager.CreateSession(ctx, username, deviceName, userAgent, ipAddress, "password")
-	if err != nil {
-		return nil, errors.Join(ErrSessionCreationFailed, err)
-	}
-
-	// Generate tokens with shorter access token duration
-	accessToken, err := as.generateShortLivedAccessToken(username, session.SessionID, session.DeviceID, DefaultScopes())
-	if err != nil {
-		return nil, errors.Join(ErrAccessTokenGenerationFailed, err)
-	}
-
-	return &AuthResponse{
-		AccessToken:  accessToken,
-		TokenType:    "Bearer",
-		ExpiresIn:    int(ShortAccessTokenDuration.Seconds()),
-		RefreshToken: session.RefreshToken,
-		Scope:        "read write",
-		CreatedAt:    time.Now().Unix(),
-		Me:           username,
-	}, nil
+func (as *AuthService) AuthenticateWithPassword(_ context.Context, _, _, _, _, _ string) (*AuthResponse, error) {
+	return nil, ErrPasswordAuthDisabled
 }
 
 // RefreshAccessToken exchanges a refresh token for a new access token
@@ -247,8 +161,13 @@ func (as *AuthService) GetUserDevices(ctx context.Context, username string) ([]*
 
 // TrustDevice marks a device as trusted
 func (as *AuthService) TrustDevice(ctx context.Context, username, deviceID string) error {
+	accountRepo := as.account()
+	if accountRepo == nil {
+		return ErrInvalidCredentials
+	}
+
 	// Verify the device belongs to the user
-	device, err := as.repos.Account().GetDevice(ctx, deviceID)
+	device, err := accountRepo.GetDevice(ctx, deviceID)
 	if err != nil {
 		return err
 	}
@@ -282,6 +201,8 @@ func (as *AuthService) generateShortLivedAccessToken(username, sessionID, device
 
 // ValidateAccessToken validates and parses an enhanced JWT access token
 func (as *AuthService) ValidateAccessToken(tokenString string) (*EnhancedClaims, error) {
+	accountRepo := as.account()
+
 	token, err := jwt.ParseWithClaims(tokenString, &EnhancedClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			common.Logger().Error("unexpected JWT signing method", zap.Any("method", token.Header["alg"]))
@@ -295,7 +216,10 @@ func (as *AuthService) ValidateAccessToken(tokenString string) (*EnhancedClaims,
 
 	if claims, ok := token.Claims.(*EnhancedClaims); ok && token.Valid {
 		// Verify session is still valid
-		session, err := as.repos.Account().GetSession(context.Background(), claims.SessionID)
+		if accountRepo == nil {
+			return nil, ErrInvalidToken
+		}
+		session, err := accountRepo.GetSession(context.Background(), claims.SessionID)
 		if err != nil || time.Now().After(session.ExpiresAt) {
 			return nil, ErrInvalidToken
 		}
@@ -307,38 +231,8 @@ func (as *AuthService) ValidateAccessToken(tokenString string) (*EnhancedClaims,
 }
 
 // ChangePassword changes a user's password
-func (as *AuthService) ChangePassword(ctx context.Context, username, oldPassword, newPassword string) error {
-	// Get user
-	user, err := as.repos.Account().GetUser(ctx, username)
-	if err != nil {
-		return ErrUserNotFound
-	}
-
-	// Verify old password
-	if err := VerifyPassword(oldPassword, user.PasswordHash); err != nil {
-		return ErrInvalidCredentials
-	}
-
-	// Hash new password
-	newHash, err := HashPassword(newPassword)
-	if err != nil {
-		return errors.Join(ErrPasswordHashingFailed, err)
-	}
-
-	// Update user
-	updates := map[string]any{
-		"password_hash": newHash,
-		"updated_at":    time.Now(),
-	}
-
-	if err := as.repos.Account().UpdateUser(ctx, username, updates); err != nil {
-		return errors.Join(ErrPasswordUpdateFailed, err)
-	}
-
-	// Revoke all sessions to force re-authentication
-	_ = as.sessionManager.RevokeAllUserSessions(ctx, username)
-
-	return nil
+func (as *AuthService) ChangePassword(_ context.Context, _, _, _ string) error {
+	return ErrPasswordAuthDisabled
 }
 
 // GetAccountStatus returns the rate limit status for an account
@@ -474,6 +368,11 @@ func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVer
 
 // LoginWithWallet logs in a user with a wallet (wallet must already be linked)
 func (as *AuthService) LoginWithWallet(ctx context.Context, req *WalletVerifyRequest, deviceName, userAgent, ipAddress string) (*AuthResponse, error) {
+	accountRepo := as.account()
+	if accountRepo == nil {
+		return nil, errors.Join(ErrWalletCheck, errors.New("account repository not configured"))
+	}
+
 	// Verify signature and get username
 	username, err := as.walletService.VerifySignature(ctx, req)
 	if err != nil {
@@ -485,7 +384,7 @@ func (as *AuthService) LoginWithWallet(ctx context.Context, req *WalletVerifyReq
 	}
 
 	// Check that this wallet address is linked to the requesting username
-	wallets, err := as.repos.Account().GetUserWalletCredentials(ctx, username)
+	wallets, err := accountRepo.GetUserWalletCredentials(ctx, username)
 	if err != nil {
 		return nil, errors.Join(ErrWalletCheck, err)
 	}
@@ -503,7 +402,7 @@ func (as *AuthService) LoginWithWallet(ctx context.Context, req *WalletVerifyReq
 	}
 
 	// Get user and verify account status
-	user, err := as.repos.Account().GetUser(ctx, username)
+	user, err := accountRepo.GetUser(ctx, username)
 	if err != nil {
 		return nil, errors.Join(ErrUserRetrievalFailed, err)
 	}
@@ -540,8 +439,13 @@ func (as *AuthService) LoginWithWallet(ctx context.Context, req *WalletVerifyReq
 // LoginWithWalletAfterLinking creates a session and access token for a wallet-linked user without re-verifying signature
 // Used after wallet linking during registration when signature was already verified
 func (as *AuthService) LoginWithWalletAfterLinking(ctx context.Context, username, deviceName, userAgent, ipAddress string) (*AuthResponse, error) {
+	accountRepo := as.account()
+	if accountRepo == nil {
+		return nil, errors.Join(ErrUserRetrievalFailed, errors.New("account repository not configured"))
+	}
+
 	// Get user and verify account status
-	user, err := as.repos.Account().GetUser(ctx, username)
+	user, err := accountRepo.GetUser(ctx, username)
 	if err != nil {
 		return nil, errors.Join(ErrUserRetrievalFailed, err)
 	}
@@ -582,12 +486,20 @@ func (as *AuthService) LinkWallet(ctx context.Context, username, address string,
 
 // MarkWalletChallengeSpent marks a wallet challenge as spent (second verification)
 func (as *AuthService) MarkWalletChallengeSpent(ctx context.Context, challengeID string) error {
-	return as.repos.Account().MarkWalletChallengeSpent(ctx, challengeID)
+	accountRepo := as.account()
+	if accountRepo == nil {
+		return ErrWalletCheck
+	}
+	return accountRepo.MarkWalletChallengeSpent(ctx, challengeID)
 }
 
 // GetWalletChallenge retrieves a wallet challenge by ID
 func (as *AuthService) GetWalletChallenge(ctx context.Context, challengeID string) (*storage.WalletChallenge, error) {
-	return as.repos.Account().GetWalletChallenge(ctx, challengeID)
+	accountRepo := as.account()
+	if accountRepo == nil {
+		return nil, ErrWalletCheck
+	}
+	return accountRepo.GetWalletChallenge(ctx, challengeID)
 }
 
 // UnlinkWallet removes a wallet link from a user account
@@ -618,6 +530,11 @@ func (as *AuthService) GetConfig() *ServiceConfig {
 
 // GenerateRecoveryToken generates a recovery token for WebAuthn/federation-based recovery
 func (as *AuthService) GenerateRecoveryToken(ctx context.Context, username string, recoveryMethod string) (string, error) {
+	accountRepo := as.account()
+	if accountRepo == nil {
+		return "", errors.New("account repository not configured")
+	}
+
 	// Generate a secure random token
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
@@ -635,11 +552,21 @@ func (as *AuthService) GenerateRecoveryToken(ctx context.Context, username strin
 	}
 
 	recoveryKey := fmt.Sprintf("RECOVERY#%s", token)
-	if err := as.repos.Account().StoreRecoveryToken(ctx, recoveryKey, recoveryData); err != nil {
+	if err := accountRepo.StoreRecoveryToken(ctx, recoveryKey, recoveryData); err != nil {
 		return "", errors.Join(ErrRecoveryTokenStorageFailed, err)
 	}
 
 	return token, nil
+}
+
+func (as *AuthService) account() authAccountRepository {
+	if as.accountRepo != nil {
+		return as.accountRepo
+	}
+	if as.repos != nil {
+		return as.repos.Account()
+	}
+	return nil
 }
 
 // ServiceConfig represents auth service configuration

@@ -3,10 +3,10 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqs_types "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -30,15 +31,48 @@ type SQSClient interface {
 	SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
 }
 
+// ComprehendClient defines the interface for AWS Comprehend operations needed by AIService
+type ComprehendClient interface {
+	DetectDominantLanguage(ctx context.Context, params *comprehend.DetectDominantLanguageInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectDominantLanguageOutput, error)
+	DetectSentiment(ctx context.Context, params *comprehend.DetectSentimentInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectSentimentOutput, error)
+	ClassifyDocument(ctx context.Context, params *comprehend.ClassifyDocumentInput, optFns ...func(*comprehend.Options)) (*comprehend.ClassifyDocumentOutput, error)
+	DetectPiiEntities(ctx context.Context, params *comprehend.DetectPiiEntitiesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectPiiEntitiesOutput, error)
+	DetectEntities(ctx context.Context, params *comprehend.DetectEntitiesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectEntitiesOutput, error)
+	DetectKeyPhrases(ctx context.Context, params *comprehend.DetectKeyPhrasesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectKeyPhrasesOutput, error)
+}
+
+// RekognitionClient defines the interface for AWS Rekognition operations needed by AIService
+type RekognitionClient interface {
+	DetectModerationLabels(ctx context.Context, params *rekognition.DetectModerationLabelsInput, optFns ...func(*rekognition.Options)) (*rekognition.DetectModerationLabelsOutput, error)
+	DetectText(ctx context.Context, params *rekognition.DetectTextInput, optFns ...func(*rekognition.Options)) (*rekognition.DetectTextOutput, error)
+	RecognizeCelebrities(ctx context.Context, params *rekognition.RecognizeCelebritiesInput, optFns ...func(*rekognition.Options)) (*rekognition.RecognizeCelebritiesOutput, error)
+}
+
+// BedrockRuntimeClient defines the interface for AWS Bedrock operations needed by AIService
+type BedrockRuntimeClient interface {
+	InvokeModel(ctx context.Context, params *bedrockruntime.InvokeModelInput, optFns ...func(*bedrockruntime.Options)) (*bedrockruntime.InvokeModelOutput, error)
+}
+
+// S3Client defines the interface for AWS S3 operations needed by AIService
+type S3Client interface {
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+}
+
+// HTTPClient defines the interface for HTTP operations needed by AIService
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 // AIService provides AI-powered content moderation and analysis
 //
 //nolint:revive // AI prefix clarifies this is AI-specific service
 type AIService struct {
-	comprehend  *comprehend.Client
-	rekognition *rekognition.Client
-	bedrock     *bedrockruntime.Client
-	s3Client    *s3.Client
+	comprehend  ComprehendClient
+	rekognition RekognitionClient
+	bedrock     BedrockRuntimeClient
+	s3Client    S3Client
 	sqsClient   SQSClient
+	httpClient  HTTPClient
 	logger      *zap.Logger
 	config      *AIConfig
 }
@@ -71,26 +105,30 @@ type AIConfig struct {
 
 // NewAIService creates a new AI service instance
 func NewAIService(cfg aws.Config, aiConfig *AIConfig) *AIService {
+	logger := zap.L().Named("ai")
 	return &AIService{
 		comprehend:  comprehend.NewFromConfig(cfg),
 		rekognition: rekognition.NewFromConfig(cfg),
 		bedrock:     bedrockruntime.NewFromConfig(cfg),
 		s3Client:    s3.NewFromConfig(cfg),
 		sqsClient:   sqs.NewFromConfig(cfg),
-		logger:      zap.L().Named("ai"),
+		httpClient:  newSSRFProtectedHTTPClient(logger),
+		logger:      logger,
 		config:      aiConfig,
 	}
 }
 
 // NewAIServiceWithSQS creates a new AI service instance with custom SQS client
 func NewAIServiceWithSQS(cfg aws.Config, aiConfig *AIConfig, sqsClient SQSClient) *AIService {
+	logger := zap.L().Named("ai")
 	return &AIService{
 		comprehend:  comprehend.NewFromConfig(cfg),
 		rekognition: rekognition.NewFromConfig(cfg),
 		bedrock:     bedrockruntime.NewFromConfig(cfg),
 		s3Client:    s3.NewFromConfig(cfg),
 		sqsClient:   sqsClient,
-		logger:      zap.L().Named("ai"),
+		httpClient:  newSSRFProtectedHTTPClient(logger),
+		logger:      logger,
 		config:      aiConfig,
 	}
 }
@@ -975,24 +1013,35 @@ func (s *AIService) uploadImageToS3(ctx context.Context, imageURL string) (strin
 	}
 
 	// Validate the URL for security
-	parsedURL, err := url.Parse(imageURL)
+	parsedURL, err := ssrf.ValidateURLString(imageURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid URL: %w", err)
-	}
-
-	// Only allow HTTP/HTTPS schemes
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return "", fmt.Errorf("%w: %s (only http/https allowed)", ErrInvalidURLScheme, parsedURL.Scheme)
-	}
-
-	// Prevent local network access
-	if parsedURL.Host == "localhost" || parsedURL.Host == "127.0.0.1" || strings.HasPrefix(parsedURL.Host, "10.") ||
-		strings.HasPrefix(parsedURL.Host, "192.168.") || strings.HasPrefix(parsedURL.Host, "172.") {
-		return "", ErrLocalNetworkAccess
+		switch {
+		case errors.Is(err, ssrf.ErrInvalidScheme):
+			scheme := ""
+			if parsedURL != nil {
+				scheme = parsedURL.Scheme
+			}
+			return "", fmt.Errorf("%w: %s (only http/https allowed)", ErrInvalidURLScheme, scheme)
+		case errors.Is(err, ssrf.ErrBlockedHostname):
+			return "", ErrLocalNetworkAccess
+		default:
+			return "", fmt.Errorf("invalid URL: %w", err)
+		}
 	}
 
 	// Download the image using the validated URL
-	resp, err := http.Get(parsedURL.String())
+	if s.httpClient == nil {
+		logger := s.logger
+		if logger == nil {
+			logger = zap.NewNop()
+		}
+		s.httpClient = newSSRFProtectedHTTPClient(logger)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create image download request: %w", err)
+	}
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download image: %w", err)
 	}

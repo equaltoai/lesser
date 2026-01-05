@@ -449,8 +449,8 @@ func CreateResponseHeadersPolicy(environment string) map[string]interface{} {
 				"override":               true,
 			},
 			"contentSecurityPolicy": map[string]interface{}{
-				"contentSecurityPolicy": "default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
-				"override":              true,
+				"contentSecurityPolicy": "default-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+				"override":              false,
 			},
 		},
 		"customHeadersConfig": map[string]interface{}{

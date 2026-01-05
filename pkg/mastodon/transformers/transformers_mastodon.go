@@ -102,6 +102,9 @@ func (t *MastodonTransformer) StorageAccountToMastodon(account *storage.Account)
 	if account == nil {
 		return nil, fmt.Errorf("account cannot be nil")
 	}
+	if account.User == nil {
+		return nil, fmt.Errorf("account user cannot be nil")
+	}
 
 	apiAccount := &models.Account{
 		ID:       account.User.Username, // Using username as ID
@@ -650,7 +653,11 @@ func (bp *BatchProcessor) ProcessStatusBatch(statuses []*storageModels.Status, v
 	for _, status := range statuses {
 		transformed, err := bp.transformer.StorageStatusToMastodon(status, viewerUsername)
 		if err != nil {
-			return nil, fmt.Errorf("failed to transform status %s: %w", status.StatusID, err)
+			var statusID string
+			if status != nil {
+				statusID = status.StatusID
+			}
+			return nil, fmt.Errorf("failed to transform status %s: %w", statusID, err)
 		}
 		results = append(results, transformed)
 	}
@@ -668,7 +675,11 @@ func (bp *BatchProcessor) ProcessAccountBatch(accounts []*storage.Account) ([]*m
 	for _, account := range accounts {
 		transformed, err := bp.transformer.StorageAccountToMastodon(account)
 		if err != nil {
-			return nil, fmt.Errorf("failed to transform account %s: %w", account.User.Username, err)
+			var username string
+			if account != nil && account.User != nil {
+				username = account.User.Username
+			}
+			return nil, fmt.Errorf("failed to transform account %s: %w", username, err)
 		}
 		results = append(results, transformed)
 	}

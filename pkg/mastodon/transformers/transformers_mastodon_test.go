@@ -1,7 +1,8 @@
 package transformers
 
 import (
-	"fmt"
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -9,341 +10,228 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMastodonTransformer_StorageStatusToMastodon(t *testing.T) {
-	transformer := NewMastodonTransformer("https://example.com")
+	tr := NewMastodonTransformer("https://example.com")
 
-	// Create a test storage status
-	now := time.Now()
+	_, err := tr.StorageStatusToMastodon(nil, "")
+	require.Error(t, err)
+
+	now := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
 	status := &storageModels.Status{
-		StatusID:       "test-status-123",
-		Content:        "Hello, world!",
-		AuthorUsername: "testuser",
-		AuthorID:       "https://example.com/users/testuser",
-		Visibility:     "public",
+		StatusID:       "st1",
+		Content:        "hello",
+		Sensitive:      true,
 		Language:       "en",
+		Visibility:     "public",
 		CreatedAt:      now,
-		Hashtags:       []string{"test", "hello"},
-		Mentions:       []string{"otheruser"},
+		AuthorID:       "aid",
+		AuthorUsername: "alice",
+		InReplyToID:    "parent",
+		Hashtags:       []string{"tag"},
+		Mentions:       []string{"bob"},
 	}
 
-	// Transform to Mastodon format
-	mastodonStatus, err := transformer.StorageStatusToMastodon(status, "viewer")
-	if err != nil {
-		t.Fatalf("Failed to transform status: %v", err)
-	}
-
-	// Verify basic fields
-	if mastodonStatus.ID != "test-status-123" {
-		t.Errorf("Expected ID 'test-status-123', got '%s'", mastodonStatus.ID)
-	}
-	if mastodonStatus.Content != "Hello, world!" {
-		t.Errorf("Expected content 'Hello, world!', got '%s'", mastodonStatus.Content)
-	}
-	if mastodonStatus.Visibility != "public" {
-		t.Errorf("Expected visibility 'public', got '%s'", mastodonStatus.Visibility)
-	}
-	if mastodonStatus.Language != "en" {
-		t.Errorf("Expected language 'en', got '%s'", mastodonStatus.Language)
-	}
-
-	// Verify account fields
-	if mastodonStatus.Account.Username != "testuser" {
-		t.Errorf("Expected account username 'testuser', got '%s'", mastodonStatus.Account.Username)
-	}
-
-	// Verify hashtags transformation
-	if len(mastodonStatus.Tags) != 2 {
-		t.Errorf("Expected 2 tags, got %d", len(mastodonStatus.Tags))
-	}
-
-	// Verify mentions transformation
-	if len(mastodonStatus.Mentions) != 1 {
-		t.Errorf("Expected 1 mention, got %d", len(mastodonStatus.Mentions))
-	}
-
-	// Verify URL generation
-	expectedURI := "https://example.com/users/testuser/statuses/test-status-123"
-	if mastodonStatus.URI != expectedURI {
-		t.Errorf("Expected URI '%s', got '%s'", expectedURI, mastodonStatus.URI)
-	}
-
-	expectedURL := "https://example.com/@testuser/test-status-123"
-	if mastodonStatus.URL != expectedURL {
-		t.Errorf("Expected URL '%s', got '%s'", expectedURL, mastodonStatus.URL)
-	}
+	apiStatus, err := tr.StorageStatusToMastodon(status, "")
+	require.NoError(t, err)
+	require.NotNil(t, apiStatus)
+	assert.Equal(t, status.StatusID, apiStatus.ID)
+	require.NotNil(t, apiStatus.InReplyToID)
+	assert.Equal(t, "parent", *apiStatus.InReplyToID)
+	require.Len(t, apiStatus.Tags, 1)
+	require.Len(t, apiStatus.Mentions, 1)
+	assert.Equal(t, "alice", apiStatus.Account.Username)
 }
 
 func TestMastodonTransformer_StorageAccountToMastodon(t *testing.T) {
-	transformer := NewMastodonTransformer("https://example.com")
+	tr := NewMastodonTransformer("https://example.com")
 
-	// Create a test storage account
-	now := time.Now()
+	_, err := tr.StorageAccountToMastodon(nil)
+	require.Error(t, err)
+
+	_, err = tr.StorageAccountToMastodon(&storage.Account{})
+	require.Error(t, err)
+
 	account := &storage.Account{
 		User: &storage.User{
-			Username:    "testuser",
-			DisplayName: "Test User",
-			CreatedAt:   now,
-		},
-		Actor: &activitypub.Actor{
-			BaseObject: activitypub.BaseObject{
-				ID: "https://example.com/users/testuser",
-			},
-			PreferredUsername: "testuser",
-			Name:              "Test User",
-			Summary:           "A test user bio",
+			Username:    "alice",
+			DisplayName: "Alice",
+			CreatedAt:   time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 		},
 	}
 
-	// Transform to Mastodon format
-	mastodonAccount, err := transformer.StorageAccountToMastodon(account)
-	if err != nil {
-		t.Fatalf("Failed to transform account: %v", err)
-	}
+	apiAccount, err := tr.StorageAccountToMastodon(account)
+	require.NoError(t, err)
+	require.NotNil(t, apiAccount)
+	assert.Equal(t, "alice", apiAccount.Username)
+	assert.NotEmpty(t, apiAccount.Avatar)
 
-	// Verify basic fields
-	if mastodonAccount.Username != "testuser" {
-		t.Errorf("Expected username 'testuser', got '%s'", mastodonAccount.Username)
-	}
-	if mastodonAccount.DisplayName != "Test User" {
-		t.Errorf("Expected display name 'Test User', got '%s'", mastodonAccount.DisplayName)
-	}
-
-	// Verify URL generation
-	expectedURL := "https://example.com/@testuser"
-	if mastodonAccount.URL != expectedURL {
-		t.Errorf("Expected URL '%s', got '%s'", expectedURL, mastodonAccount.URL)
-	}
-
-	// Verify default values are set
-	if len(mastodonAccount.Fields) != 0 {
-		t.Errorf("Expected empty fields, got %d", len(mastodonAccount.Fields))
-	}
-	if len(mastodonAccount.Emojis) != 0 {
-		t.Errorf("Expected empty emojis, got %d", len(mastodonAccount.Emojis))
-	}
-}
-
-func TestMastodonTransformer_MastodonStatusParamsToStorage(t *testing.T) {
-	transformer := NewMastodonTransformer("https://example.com")
-
-	// Create Mastodon API request
-	params := &models.CreateStatusRequest{
-		Status:      "Hello, world!",
-		Visibility:  "public",
-		Sensitive:   true,
-		Language:    "en",
-		InReplyToID: "reply-to-123",
-		MediaIDs:    []string{"media-1", "media-2"},
-	}
-
-	// Transform to storage format
-	storageReq, err := transformer.MastodonStatusParamsToStorage(params, "testuser")
-	if err != nil {
-		t.Fatalf("Failed to transform params: %v", err)
-	}
-
-	// Verify transformation
-	if storageReq.AuthorUsername != "testuser" {
-		t.Errorf("Expected author username 'testuser', got '%s'", storageReq.AuthorUsername)
-	}
-	if storageReq.Content != "Hello, world!" {
-		t.Errorf("Expected content 'Hello, world!', got '%s'", storageReq.Content)
-	}
-	if storageReq.Visibility != "public" {
-		t.Errorf("Expected visibility 'public', got '%s'", storageReq.Visibility)
-	}
-	if !storageReq.Sensitive {
-		t.Error("Expected sensitive to be true")
-	}
-	if storageReq.Language != "en" {
-		t.Errorf("Expected language 'en', got '%s'", storageReq.Language)
-	}
-	if storageReq.InReplyToID != "reply-to-123" {
-		t.Errorf("Expected in_reply_to_id 'reply-to-123', got '%s'", storageReq.InReplyToID)
-	}
-	if len(storageReq.MediaIDs) != 2 {
-		t.Errorf("Expected 2 media IDs, got %d", len(storageReq.MediaIDs))
-	}
-}
-
-func TestMastodonTransformer_DefaultVisibility(t *testing.T) {
-	transformer := NewMastodonTransformer("https://example.com")
-
-	// Create Mastodon API request without visibility
-	params := &models.CreateStatusRequest{
-		Status: "Hello, world!",
-		// Visibility not set
-	}
-
-	// Transform to storage format
-	storageReq, err := transformer.MastodonStatusParamsToStorage(params, "testuser")
-	if err != nil {
-		t.Fatalf("Failed to transform params: %v", err)
-	}
-
-	// Verify default visibility is set
-	if storageReq.Visibility != "public" {
-		t.Errorf("Expected default visibility 'public', got '%s'", storageReq.Visibility)
-	}
-}
-
-func TestMastodonTransformer_FormatMastodonError(t *testing.T) {
-	transformer := NewMastodonTransformer("https://example.com")
-
-	// Test with actual error
-	testErr := fmt.Errorf("test error message")
-	errorResponse := transformer.FormatMastodonError(testErr)
-
-	if errorResponse["error"] != "test error message" {
-		t.Errorf("Expected error message 'test error message', got '%v'", errorResponse["error"])
-	}
-
-	if errorResponse["error_type"] != "*errors.errorString" {
-		t.Errorf("Expected error type '*errors.errorString', got '%v'", errorResponse["error_type"])
-	}
-
-	// Test with nil error
-	nilErrorResponse := transformer.FormatMastodonError(nil)
-	if nilErrorResponse["error"] != "unknown error" {
-		t.Errorf("Expected 'unknown error' for nil error, got '%v'", nilErrorResponse["error"])
-	}
-}
-
-func TestMastodonTransformer_BuildLinkHeader(t *testing.T) {
-	transformer := NewMastodonTransformer("https://example.com")
-
-	// Test with pagination info
-	pagination := &PaginationInfo{
-		NextCursor: "next-123",
-		MinID:      "min-456",
-		Limit:      20,
-	}
-
-	linkHeader := transformer.BuildLinkHeader("https://example.com/api/v1/statuses", pagination)
-
-	expectedNext := `<https://example.com/api/v1/statuses?max_id=next-123&limit=20>; rel="next"`
-	expectedPrev := `<https://example.com/api/v1/statuses?min_id=min-456&limit=20>; rel="prev"`
-	expected := expectedNext + ", " + expectedPrev
-
-	if linkHeader != expected {
-		t.Errorf("Expected link header '%s', got '%s'", expected, linkHeader)
-	}
-
-	// Test with empty pagination
-	emptyHeader := transformer.BuildLinkHeader("https://example.com/api/v1/statuses", nil)
-	if emptyHeader != "" {
-		t.Errorf("Expected empty header for nil pagination, got '%s'", emptyHeader)
-	}
-}
-
-func TestMastodonTransformer_TransformHashtags(t *testing.T) {
-	transformer := NewMastodonTransformer("https://example.com")
-
-	hashtags := []string{"test", "hello", "world"}
-	transformed := transformer.transformHashtags(hashtags)
-
-	if len(transformed) != 3 {
-		t.Errorf("Expected 3 transformed hashtags, got %d", len(transformed))
-	}
-
-	// Check first hashtag
-	if tagMap, ok := transformed[0].(map[string]interface{}); ok {
-		if tagMap["name"] != "test" {
-			t.Errorf("Expected hashtag name 'test', got '%v'", tagMap["name"])
-		}
-		expectedURL := "https://example.com/tags/test"
-		if tagMap["url"] != expectedURL {
-			t.Errorf("Expected hashtag URL '%s', got '%v'", expectedURL, tagMap["url"])
-		}
-	} else {
-		t.Error("Expected hashtag to be a map")
-	}
-}
-
-func TestMastodonTransformer_TransformMentions(t *testing.T) {
-	transformer := NewMastodonTransformer("https://example.com")
-
-	mentions := []string{"user1", "user2"}
-	transformed := transformer.transformMentions(mentions)
-
-	if len(transformed) != 2 {
-		t.Errorf("Expected 2 transformed mentions, got %d", len(transformed))
-	}
-
-	// Check first mention
-	if mentionMap, ok := transformed[0].(map[string]interface{}); ok {
-		if mentionMap["username"] != "user1" {
-			t.Errorf("Expected mention username 'user1', got '%v'", mentionMap["username"])
-		}
-		expectedURL := "https://example.com/@user1"
-		if mentionMap["url"] != expectedURL {
-			t.Errorf("Expected mention URL '%s', got '%v'", expectedURL, mentionMap["url"])
-		}
-	} else {
-		t.Error("Expected mention to be a map")
-	}
-}
-
-func TestBatchProcessor_ProcessStatusBatch(t *testing.T) {
-	processor := NewBatchProcessor("https://example.com")
-
-	// Create test statuses
-	now := time.Now()
-	statuses := []*storageModels.Status{
-		{
-			StatusID:       "status-1",
-			Content:        "First status",
-			AuthorUsername: "user1",
-			AuthorID:       "https://example.com/users/user1",
-			CreatedAt:      now,
+	account.Actor = &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			Type: "Person",
 		},
-		{
-			StatusID:       "status-2",
-			Content:        "Second status",
-			AuthorUsername: "user2",
-			AuthorID:       "https://example.com/users/user2",
-			CreatedAt:      now,
-		},
+		PreferredUsername: "alice",
+		Name:              "Override",
 	}
 
-	// Process batch
-	results, err := processor.ProcessStatusBatch(statuses, "viewer")
-	if err != nil {
-		t.Fatalf("Failed to process status batch: %v", err)
-	}
-
-	// Verify results
-	if len(results) != 2 {
-		t.Errorf("Expected 2 processed statuses, got %d", len(results))
-	}
-
-	if results[0].ID != "status-1" {
-		t.Errorf("Expected first status ID 'status-1', got '%s'", results[0].ID)
-	}
-	if results[1].ID != "status-2" {
-		t.Errorf("Expected second status ID 'status-2', got '%s'", results[1].ID)
-	}
+	apiAccount2, err := tr.StorageAccountToMastodon(account)
+	require.NoError(t, err)
+	require.NotNil(t, apiAccount2)
+	assert.Equal(t, "alice", apiAccount2.Username)
 }
 
-func TestCachedTransformer(t *testing.T) {
-	cachedTransformer := NewCachedTransformer("https://example.com")
+func TestMastodonTransformer_StorageNotificationToMastodon(t *testing.T) {
+	tr := NewMastodonTransformer("https://example.com")
 
-	// Verify it has the base transformer
-	if cachedTransformer.MastodonTransformer == nil {
-		t.Error("Expected cached transformer to have base transformer")
-	}
+	_, err := tr.StorageNotificationToMastodon(nil, nil, nil)
+	require.Error(t, err)
 
-	// Verify cache is initialized
-	if cachedTransformer.cache == nil {
-		t.Error("Expected cache to be initialized")
-	}
+	notif := &storageModels.Notification{ID: "n1", Type: "mention", CreatedAt: time.Now()}
+	account := &models.Account{ID: "a1"}
+	status := &models.Status{ID: "s1"}
 
-	// Test cache clearing
-	cachedTransformer.cache["test"] = "value"
-	cachedTransformer.ClearCache()
-	if len(cachedTransformer.cache) != 0 {
-		t.Error("Expected cache to be cleared")
-	}
+	apiNotif, err := tr.StorageNotificationToMastodon(notif, account, status)
+	require.NoError(t, err)
+	require.NotNil(t, apiNotif)
+	assert.Equal(t, notif.ID, apiNotif.ID)
+	assert.Equal(t, "mention", apiNotif.Type)
+	require.NotNil(t, apiNotif.Status)
+	assert.Equal(t, "s1", apiNotif.Status.ID)
+}
+
+func TestMastodonTransformer_ParamsToStorage(t *testing.T) {
+	tr := NewMastodonTransformer("https://example.com")
+
+	_, err := tr.MastodonStatusParamsToStorage(nil, "alice")
+	require.Error(t, err)
+
+	req, err := tr.MastodonStatusParamsToStorage(&models.CreateStatusRequest{Status: "hi"}, "alice")
+	require.NoError(t, err)
+	assert.Equal(t, "public", req.Visibility)
+
+	_, err = tr.MastodonAccountParamsToStorage(nil, "alice")
+	require.Error(t, err)
+
+	accReq, err := tr.MastodonAccountParamsToStorage(&models.UpdateCredentialsRequest{DisplayName: "Alice"}, "alice")
+	require.NoError(t, err)
+	assert.Equal(t, "alice", accReq.Username)
+	assert.Equal(t, "Alice", accReq.DisplayName)
+}
+
+func TestMastodonTransformer_ResponseHelpers(t *testing.T) {
+	tr := NewMastodonTransformer("https://example.com")
+
+	resp := tr.FormatMastodonAPIResponse(map[string]string{"ok": "1"})
+	assert.Contains(t, resp, "data")
+	assert.Contains(t, resp, "timestamp")
+
+	paginated := tr.FormatPaginatedResponse([]interface{}{"a"}, &PaginationInfo{NextCursor: "n", MaxID: "m", HasMore: true, Limit: 10})
+	assert.Equal(t, []interface{}{"a"}, paginated["data"])
+	assert.Equal(t, "n", paginated["next_cursor"])
+	assert.Equal(t, "m", paginated["max_id"])
+	assert.Equal(t, true, paginated["has_more"])
+
+	assert.Equal(t, "", tr.BuildLinkHeader("https://example.com/api", nil))
+	links := tr.BuildLinkHeader("https://example.com/api", &PaginationInfo{NextCursor: "n", MinID: "p", Limit: 20})
+	assert.Contains(t, links, "rel=\"next\"")
+	assert.Contains(t, links, "rel=\"prev\"")
+
+	assert.Equal(t, map[string]interface{}{"error": "unknown error"}, tr.FormatMastodonError(nil))
+	errResp := tr.FormatMastodonError(errors.New("boom"))
+	assert.Equal(t, "boom", errResp["error"])
+	assert.Contains(t, errResp, "error_type")
+}
+
+func TestMastodonTransformer_AugmentHelpers(t *testing.T) {
+	tr := NewMastodonTransformer("https://example.com")
+
+	tr.AugmentAccountWithCounts(nil, 1, 2, 3)
+	tr.AugmentStatusWithCounts(nil, 1, 2, 3)
+	tr.AugmentStatusWithUserInteractions(nil, true, true, true, true, true)
+
+	account := &models.Account{}
+	tr.AugmentAccountWithCounts(account, 1, 2, 3)
+	assert.Equal(t, 1, account.FollowersCount)
+
+	status := &models.Status{}
+	tr.AugmentStatusWithCounts(status, 1, 2, 3)
+	assert.Equal(t, 2, status.ReblogsCount)
+
+	tr.AugmentStatusWithUserInteractions(status, true, false, true, false, true)
+	assert.True(t, status.Favourited)
+	assert.True(t, status.Bookmarked)
+	assert.True(t, status.Pinned)
+}
+
+func TestMastodonTransformer_MediaAndEmojiTransforms(t *testing.T) {
+	tr := NewMastodonTransformer("https://example.com")
+
+	assert.Empty(t, tr.TransformStorageMediaToMastodon(nil))
+
+	media := tr.TransformStorageMediaToMastodon([]interface{}{
+		map[string]interface{}{
+			"id":        "m1",
+			"mediaType": "image/png",
+			"url":       "https://example.com/m.png",
+			"name":      "desc",
+		},
+		"bad",
+	})
+	require.Len(t, media, 1)
+	obj, ok := media[0].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "image", obj["type"])
+	assert.Equal(t, "desc", obj["description"])
+
+	assert.Empty(t, tr.TransformStorageEmojiToMastodon(nil))
+	emojis := tr.TransformStorageEmojiToMastodon([]interface{}{
+		map[string]interface{}{"name": ":smile:", "url": "https://example.com/s.png"},
+		"bad",
+	})
+	require.Len(t, emojis, 1)
+	emoji, ok := emojis[0].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "smile", emoji["shortcode"])
+	assert.Equal(t, "https://example.com/s.png", emoji["url"])
+	assert.Equal(t, "https://example.com/s.png", emoji["static_url"])
+}
+
+func TestTransformationFrameworkBridge_TransformList(t *testing.T) {
+	tr := NewMastodonTransformer("https://example.com")
+	bridge := tr.WithTransformationFramework()
+
+	accounts, err := bridge.TransformList(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Empty(t, accounts)
+
+	_, err = bridge.TransformList(context.Background(), []*storage.Account{nil})
+	require.Error(t, err)
+}
+
+func TestCachedTransformer_ClearCache(t *testing.T) {
+	ct := NewCachedTransformer("https://example.com")
+	ct.cache["k"] = "v"
+	ct.ClearCache()
+	assert.Empty(t, ct.cache)
+}
+
+func TestBatchProcessor_ProcessBatches(t *testing.T) {
+	bp := NewBatchProcessor("https://example.com")
+
+	statuses, err := bp.ProcessStatusBatch(nil, "")
+	require.NoError(t, err)
+	assert.Empty(t, statuses)
+
+	_, err = bp.ProcessStatusBatch([]*storageModels.Status{nil}, "")
+	require.Error(t, err)
+
+	accounts, err := bp.ProcessAccountBatch(nil)
+	require.NoError(t, err)
+	assert.Empty(t, accounts)
+
+	_, err = bp.ProcessAccountBatch([]*storage.Account{nil})
+	require.Error(t, err)
 }

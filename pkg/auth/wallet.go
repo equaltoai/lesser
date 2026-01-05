@@ -5,10 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 
@@ -53,14 +55,30 @@ type WalletVerifyRequest struct {
 
 // WalletService handles wallet authentication
 type WalletService struct {
-	repos  StorageProvider
+	repo   walletRepository
 	logger *zap.Logger
+}
+
+type walletRepository interface {
+	StoreWalletChallenge(ctx context.Context, challenge *storage.WalletChallenge) error
+	GetWalletChallenge(ctx context.Context, challengeID string) (*storage.WalletChallenge, error)
+	DeleteWalletChallenge(ctx context.Context, challengeID string) error
+	MarkWalletChallengeUsed(ctx context.Context, challengeID string) error
+
+	GetWalletCredential(ctx context.Context, address string) (*storage.WalletCredential, error)
+	UpdateWalletLastUsed(ctx context.Context, username, address string) error
+	GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error)
+	StoreWalletCredential(ctx context.Context, credential *storage.WalletCredential) error
+	DeleteWalletCredential(ctx context.Context, username, address string) error
 }
 
 // NewWalletService creates a new wallet service
 func NewWalletService(repos StorageProvider) *WalletService {
+	if repos == nil || repos.Account() == nil {
+		return &WalletService{logger: common.Logger()}
+	}
 	return &WalletService{
-		repos:  repos,
+		repo:   repos.Account(),
 		logger: common.Logger(),
 	}
 }
@@ -86,7 +104,12 @@ func (s *WalletService) CreateChallenge(ctx context.Context, address string, cha
 	now := time.Now()
 	expiresAt := now.Add(5 * time.Minute)
 
-	message := buildAuthMessage(chainID, nonce, username, now.Format(time.RFC3339), expiresAt.Format(time.RFC3339))
+	instanceDomain := strings.TrimSpace(config.Get().Domain)
+	if instanceDomain == "" {
+		instanceDomain = "lesser.app"
+	}
+
+	message := buildAuthMessage(instanceDomain, address, chainID, nonce, username, now.Format(time.RFC3339), expiresAt.Format(time.RFC3339))
 
 	challenge := &storage.WalletChallenge{
 		ID:        uuid.New().String(),
@@ -100,7 +123,7 @@ func (s *WalletService) CreateChallenge(ctx context.Context, address string, cha
 	}
 
 	// Store challenge in DynamoDB
-	if err := s.repos.Account().StoreWalletChallenge(ctx, challenge); err != nil {
+	if err := s.repo.StoreWalletChallenge(ctx, challenge); err != nil {
 		s.logger.Error("failed to store wallet challenge", zap.Error(err), zap.String("challengeId", challenge.ID))
 		return nil, errors.Join(ErrChallengeStorage, err)
 	}
@@ -116,7 +139,7 @@ func (s *WalletService) CreateChallenge(ctx context.Context, address string, cha
 // VerifySignature verifies a wallet signature and returns user info
 func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRequest) (string, error) {
 	// Get challenge from DynamoDB
-	challenge, err := s.repos.Account().GetWalletChallenge(ctx, req.ChallengeID)
+	challenge, err := s.repo.GetWalletChallenge(ctx, req.ChallengeID)
 	if err != nil {
 		s.logger.Error("failed to retrieve wallet challenge", zap.Error(err), zap.String("challengeId", req.ChallengeID))
 		return "", errors.Join(ErrChallengeRetrieval, err)
@@ -125,7 +148,7 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 	// Check expiration
 	if time.Now().After(challenge.ExpiresAt) {
 		// Delete expired challenge
-		_ = s.repos.Account().DeleteWalletChallenge(ctx, req.ChallengeID)
+		_ = s.repo.DeleteWalletChallenge(ctx, req.ChallengeID)
 		return "", ErrChallengeExpired
 	}
 
@@ -171,7 +194,7 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 
 	// Mark challenge as used (first verification)
 	// The challenge can be used once more for wallet linking
-	if err := s.repos.Account().MarkWalletChallengeUsed(ctx, req.ChallengeID); err != nil {
+	if err := s.repo.MarkWalletChallengeUsed(ctx, req.ChallengeID); err != nil {
 		s.logger.Warn("failed to mark challenge as used", zap.Error(err))
 		// Non-fatal - continue
 	}
@@ -180,7 +203,7 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 	username := challenge.Username
 	if err := common.ValidateRequiredParam("username", username); err != nil {
 		// Try to find existing link
-		wallet, err := s.repos.Account().GetWalletCredential(ctx, req.Address)
+		wallet, err := s.repo.GetWalletCredential(ctx, req.Address)
 		if err == nil && wallet != nil {
 			username = wallet.Username
 		}
@@ -188,7 +211,7 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 
 	// Update last used time if wallet exists
 	if username != "" {
-		if err := s.repos.Account().UpdateWalletLastUsed(ctx, username, req.Address); err != nil {
+		if err := s.repo.UpdateWalletLastUsed(ctx, username, req.Address); err != nil {
 			s.logger.Error("failed to update wallet last used", zap.Error(err))
 		}
 	}
@@ -206,7 +229,7 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 	address = strings.ToLower(address)
 
 	// Check if this wallet is already linked to THIS user (prevent duplicate entries)
-	existingWallets, err := s.repos.Account().GetUserWalletCredentials(ctx, username)
+	existingWallets, err := s.repo.GetUserWalletCredentials(ctx, username)
 	if err != nil && !dynamorm.IsNotFound(err) {
 		s.logger.Error("failed to check user's existing wallets", zap.Error(err), zap.String("username", username))
 		return errors.Join(ErrWalletCheck, err)
@@ -233,7 +256,7 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 	}
 
 	// Store wallet credential
-	if err := s.repos.Account().StoreWalletCredential(ctx, wallet); err != nil {
+	if err := s.repo.StoreWalletCredential(ctx, wallet); err != nil {
 		s.logger.Error("failed to store wallet credential", zap.Error(err), zap.String("username", username), zap.String("address", address))
 		return errors.Join(ErrWalletStorage, err)
 	}
@@ -248,7 +271,7 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 
 // GetUserWallets returns all wallets linked to a user
 func (s *WalletService) GetUserWallets(ctx context.Context, username string) ([]*storage.WalletCredential, error) {
-	wallets, err := s.repos.Account().GetUserWalletCredentials(ctx, username)
+	wallets, err := s.repo.GetUserWalletCredentials(ctx, username)
 	if err != nil {
 		s.logger.Error("failed to get user wallet credentials", zap.Error(err), zap.String("username", username))
 		return nil, errors.Join(ErrWalletRetrieval, err)
@@ -267,7 +290,7 @@ func (s *WalletService) UnlinkWallet(ctx context.Context, username, address stri
 	address = strings.ToLower(address)
 
 	// Delete wallet credential
-	if err := s.repos.Account().DeleteWalletCredential(ctx, username, address); err != nil {
+	if err := s.repo.DeleteWalletCredential(ctx, username, address); err != nil {
 		s.logger.Error("failed to delete wallet credential", zap.Error(err), zap.String("username", username), zap.String("address", address))
 		return errors.Join(ErrWalletDeletion, err)
 	}
@@ -285,7 +308,10 @@ func (s *WalletService) verifyEthereumSignature(address, message, signature stri
 	// Decode signature
 	sig, err := hexutil.Decode(signature)
 	if err != nil {
-		s.logger.Error("failed to decode signature", zap.Error(err), zap.String("signature", signature))
+		s.logger.Error("failed to decode signature",
+			zap.Error(err),
+			zap.Int("signature_len", len(signature)),
+			zap.Bool("signature_has_0x_prefix", strings.HasPrefix(strings.ToLower(signature), "0x")))
 		return errors.Join(ErrInvalidSignatureFormat, err)
 	}
 
@@ -346,31 +372,22 @@ func generateNonce() (string, error) {
 }
 
 // buildAuthMessage creates the authentication message without fmt.Sprintf
-func buildAuthMessage(chainID int, nonce, username, issuedAt, expiresAt string) string {
+func buildAuthMessage(domain, address string, chainID int, nonce, username, issuedAt, expiresAt string) string {
 	var sb strings.Builder
+
+	address = strings.ToLower(strings.TrimSpace(address))
+
+	sb.WriteString(domain)
+	sb.WriteString(" wants you to sign in with your Ethereum account:\n")
+	sb.WriteString(address)
+	sb.WriteString("\n\n")
 	sb.WriteString("Sign this message to authenticate with Lesser as '")
 	sb.WriteString(username)
 	sb.WriteString("'\n\n")
-	sb.WriteString("URI: https://lesser.app\n")
-	sb.WriteString("Version: 1\n")
-	sb.WriteString("Chain ID: ")
-
-	// Convert chainID to string manually
-	if chainID == 0 {
-		sb.WriteString("0")
-	} else {
-		// Simple integer to string conversion for positive numbers
-		digits := make([]byte, 0, 10)
-		n := chainID
-		for n > 0 {
-			digits = append([]byte{byte('0' + n%10)}, digits...)
-			n /= 10
-		}
-		sb.Write(digits)
-	}
-
-	sb.WriteString("\nUsername: ")
-	sb.WriteString(username)
+	sb.WriteString("URI: https://")
+	sb.WriteString(domain)
+	sb.WriteString("\nVersion: 1\nChain ID: ")
+	sb.WriteString(strconv.Itoa(chainID))
 	sb.WriteString("\nNonce: ")
 	sb.WriteString(nonce)
 	sb.WriteString("\nIssued At: ")

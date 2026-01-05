@@ -84,6 +84,17 @@ var LambdaInventory = Inventory{
 			},
 		},
 		{
+			Name: "cms-scheduler",
+			Type: LambdaTypeProcessorScheduled,
+			Role: RoleClassBasic,
+			ScheduleTriggers: []ScheduleTrigger{
+				{Expression: "rate(1 minute)"},
+			},
+			Overrides: LambdaOverrides{
+				TimeoutSeconds: intPtr(300),
+			},
+		},
+		{
 			Name: "cost-aggregator",
 			Type: LambdaTypeProcessorStream, // stream-only per Spec04 (Q2) decision
 			Role: RoleClassBasic,
@@ -206,7 +217,8 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeAPIHTTP,
 			Role: RoleClassEncryption,
 			HTTPRoutes: []HTTPRoute{
-				{Method: "ANY", Path: "/inbox/{username}"},
+				{Method: "GET", Path: "/users/{username}/inbox"},
+				{Method: "POST", Path: "/users/{username}/inbox"},
 			},
 		},
 		{
@@ -318,7 +330,8 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeAPIHTTP, // HTTP-only
 			Role: RoleClassEncryption,
 			HTTPRoutes: []HTTPRoute{
-				{Method: "ANY", Path: "/users/{username}/outbox"},
+				{Method: "GET", Path: "/users/{username}/outbox"},
+				{Method: "POST", Path: "/users/{username}/outbox"},
 			},
 		},
 		{

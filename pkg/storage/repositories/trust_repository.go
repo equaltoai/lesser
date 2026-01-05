@@ -448,7 +448,7 @@ func (r *TrustRepository) GetUserTrustScore(ctx context.Context, userID string) 
 	// Get general trust score
 	score, err := r.GetTrustScore(ctx, userID, string(trust.TrustCategoryGeneral))
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			return 0.5, nil // Default neutral score
 		}
 		return 0.0, err

@@ -13,6 +13,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )
@@ -80,8 +81,13 @@ type Claims struct {
 type OAuthService struct {
 	jwtSecret   []byte
 	repos       StorageProvider
+	accountRepo oauthAccountRepository
 	auditLogger *AuditLogger
 	config      *config.Config
+}
+
+type oauthAccountRepository interface {
+	GetOAuthClient(ctx context.Context, clientID string) (*storage.OAuthClient, error)
 }
 
 // NewOAuthService creates a new OAuth service
@@ -89,9 +95,30 @@ func NewOAuthService(jwtSecret string, cfg *config.Config, repos StorageProvider
 	return &OAuthService{
 		jwtSecret:   []byte(jwtSecret),
 		repos:       repos,
+		accountRepo: getOAuthAccountRepo(repos),
 		auditLogger: auditLogger,
 		config:      cfg,
 	}
+}
+
+func getOAuthAccountRepo(repos StorageProvider) oauthAccountRepository {
+	if repos == nil {
+		return nil
+	}
+
+	accountRepo := repos.Account()
+	if accountRepo == nil {
+		return nil
+	}
+
+	return accountRepo
+}
+
+func (s *OAuthService) account() oauthAccountRepository {
+	if s.accountRepo != nil {
+		return s.accountRepo
+	}
+	return getOAuthAccountRepo(s.repos)
 }
 
 // ValidateClient validates client credentials according to Mastodon OAuth rules
@@ -100,15 +127,43 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 		return ErrInvalidRequest
 	}
 
-	client, err := s.repos.Account().GetOAuthClient(ctx, clientID)
+	accountRepo := s.account()
+	if accountRepo == nil {
+		return ErrInvalidClient
+	}
+
+	client, err := accountRepo.GetOAuthClient(ctx, clientID)
 	if err != nil {
 		// Return invalid_client for any client lookup error (not found, etc.)
 		return ErrInvalidClient
 	}
 
-	// For client authentication, secret is required and must match exactly
-	if err := common.ValidateRequiredParam("clientSecret", clientSecret); err != nil || client.ClientSecret != clientSecret {
+	// For client authentication, secret is required and must verify against the stored representation.
+	if err := common.ValidateRequiredParam("clientSecret", clientSecret); err != nil {
 		return ErrInvalidClient
+	}
+
+	storedSecret := client.ClientSecretHash
+	if storedSecret == "" {
+		// Backwards compatibility for stubs/older storage codepaths.
+		storedSecret = client.ClientSecret
+	}
+
+	ok, needsMigration, verifyErr := VerifyOAuthClientSecret(clientSecret, storedSecret)
+	if verifyErr != nil || !ok {
+		return ErrInvalidClient
+	}
+
+	if needsMigration {
+		// Best-effort lazy migration: convert legacy plaintext secrets to hashes on first successful use.
+		type secretUpdater interface {
+			UpdateOAuthClientSecretHash(ctx context.Context, clientID, clientSecretHash string) error
+		}
+		if updater, ok := accountRepo.(secretUpdater); ok {
+			if hashed, err := HashOAuthClientSecret(clientSecret); err == nil {
+				_ = updater.UpdateOAuthClientSecretHash(ctx, clientID, hashed)
+			}
+		}
 	}
 
 	return nil
@@ -121,7 +176,12 @@ func (s *OAuthService) ValidateRedirectURI(ctx context.Context, clientID, redire
 		return ErrInvalidRequest
 	}
 
-	client, err := s.repos.Account().GetOAuthClient(ctx, clientID)
+	accountRepo := s.account()
+	if accountRepo == nil {
+		return ErrInvalidClient
+	}
+
+	client, err := accountRepo.GetOAuthClient(ctx, clientID)
 	if err != nil {
 		// Return invalid_client for any client lookup error
 		return ErrInvalidClient
@@ -348,7 +408,12 @@ func ExtractBearerToken(authHeader string) (string, error) {
 // ValidateScopes validates scopes against client's registered scopes per Mastodon rules
 func (s *OAuthService) ValidateScopes(ctx context.Context, clientID string, requestedScopes []string) error {
 	// Get client to check registered scopes
-	client, err := s.repos.Account().GetOAuthClient(ctx, clientID)
+	accountRepo := s.account()
+	if accountRepo == nil {
+		return ErrInvalidClient
+	}
+
+	client, err := accountRepo.GetOAuthClient(ctx, clientID)
 	if err != nil {
 		return ErrInvalidClient
 	}

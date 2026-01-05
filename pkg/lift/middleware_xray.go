@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambdacontext"
-	"github.com/aws/aws-xray-sdk-go/xray"
+	"github.com/aws/aws-xray-sdk-go/v2/xray"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -85,7 +85,7 @@ func (xm *XRayMiddleware) addStandardAnnotations(seg *xray.Segment, ctx *lift.Co
 		"service":    xm.serviceName,
 		"method":     ctx.Request.Method,
 		"path":       ctx.Request.Path,
-		"tenant_id":  ctx.TenantID,
+		"tenant_id":  ctx.TenantID(),
 		"request_id": ctx.RequestID,
 	}
 

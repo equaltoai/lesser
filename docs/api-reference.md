@@ -1,501 +1,296 @@
 # API Reference
 
-Lesser provides three API interfaces: REST (Mastodon-compatible), GraphQL, and WebSocket streaming.
+<!-- AI Training: Canonical API usage patterns for Lesser (REST + GraphQL + streaming) -->
 
-## REST API (Mastodon v1 Compatible)
+Lesser exposes three primary API surfaces:
 
-Base URL: `https://yourdomain.com/api/v1`
+- Mastodon-compatible REST API (`/api/v1`, `/api/v2`)
+- GraphQL API (`/api/graphql`, `/graphql`) + GraphQL WebSocket subscriptions
+- Streaming (Mastodon-style SSE + a Mastodon-style WebSocket streaming API)
 
-### Authentication
+This doc focuses on “how do clients actually use this?” patterns (auth, pagination, common requests, streaming, and
+schema/contract consumption).
 
-Most endpoints require authentication via Bearer token:
+## Base URLs (stage-aware)
 
-```bash
-curl -H "Authorization: Bearer YOUR_TOKEN" \
-  https://yourdomain.com/api/v1/accounts/verify_credentials
-```
+For a deployment created with `./lesser up`:
 
-### Core Endpoints
+- dev: `https://dev.<base-domain>`
+- staging (optional): `https://staging.<base-domain>`
+- live: `https://<base-domain>`
 
-#### Accounts
-- `GET /api/v1/accounts/:id` - Get account
-- `GET /api/v1/accounts/verify_credentials` - Verify credentials
-- `PATCH /api/v1/accounts/update_credentials` - Update profile
-- `GET /api/v1/accounts/:id/statuses` - Get account statuses
-- `GET /api/v1/accounts/:id/followers` - Get followers
-- `GET /api/v1/accounts/:id/following` - Get following
+When this doc says `<stage-domain>`, substitute one of the above.
 
-#### Statuses
-- `POST /api/v1/statuses` - Create status
-- `GET /api/v1/statuses/:id` - Get status
-- `DELETE /api/v1/statuses/:id` - Delete status
-- `POST /api/v1/statuses/:id/reblog` - Boost status
-- `POST /api/v1/statuses/:id/unreblog` - Unboost status
-- `POST /api/v1/statuses/:id/favourite` - Favorite status
-- `POST /api/v1/statuses/:id/unfavourite` - Unfavorite status
+## Contracts and sources of truth
 
-#### Timelines
-- `GET /api/v1/timelines/home` - Home timeline
-- `GET /api/v1/timelines/public` - Public timeline
-- `GET /api/v1/timelines/tag/:hashtag` - Hashtag timeline
-- `GET /api/v1/timelines/list/:list_id` - List timeline
+Client-facing, file-only contracts (checked into the repo):
 
-#### Relationships
-- `POST /api/v1/accounts/:id/follow` - Follow account
-- `POST /api/v1/accounts/:id/unfollow` - Unfollow account
-- `POST /api/v1/accounts/:id/block` - Block account
-- `POST /api/v1/accounts/:id/unblock` - Unblock account
-- `POST /api/v1/accounts/:id/mute` - Mute account
-- `POST /api/v1/accounts/:id/unmute` - Unmute account
+- REST OpenAPI: `docs/contracts/openapi.yaml`
+- GraphQL published schema: `docs/contracts/graphql-schema.graphql`
 
-#### Lists
-- `GET /api/v1/lists` - Get lists
-- `POST /api/v1/lists` - Create list
-- `GET /api/v1/lists/:id` - Get list
-- `PUT /api/v1/lists/:id` - Update list
-- `DELETE /api/v1/lists/:id` - Delete list
-- `GET /api/v1/lists/:id/accounts` - Get list members
-- `POST /api/v1/lists/:id/accounts` - Add to list
-- `DELETE /api/v1/lists/:id/accounts` - Remove from list
+Sources of truth:
 
-#### Notifications
-- `GET /api/v1/notifications` - Get notifications
-- `GET /api/v1/notifications/:id` - Get notification
-- `POST /api/v1/notifications/clear` - Clear notifications
-- `POST /api/v1/notifications/:id/dismiss` - Dismiss notification
+- OpenAPI is generated from route code (`./tools/openapi`).
+- GraphQL schema is authored as modular files in `graph/*.graphql` and aggregated for client teams.
 
-#### Search
-- `GET /api/v2/search` - Search accounts, statuses, hashtags
-
-#### Media
-- `POST /api/v1/media` - Upload media attachment
-- `PUT /api/v1/media/:id` - Update media metadata
-
-### Request/Response Format
-
-#### Create Status Example
-
-Request:
-```json
-POST /api/v1/statuses
-{
-  "status": "Hello Fediverse!",
-  "visibility": "public",
-  "sensitive": false,
-  "spoiler_text": "",
-  "media_ids": [],
-  "poll": {
-    "options": ["Yes", "No"],
-    "expires_in": 86400,
-    "multiple": false
-  }
-}
-```
-
-Response:
-```json
-{
-  "id": "123456789",
-  "created_at": "2024-01-01T12:00:00Z",
-  "content": "<p>Hello Fediverse!</p>",
-  "visibility": "public",
-  "sensitive": false,
-  "spoiler_text": "",
-  "account": {
-    "id": "1",
-    "username": "alice",
-    "acct": "alice@yourdomain.com",
-    "display_name": "Alice",
-    "avatar": "https://cdn.yourdomain.com/avatars/alice.jpg"
-  },
-  "media_attachments": [],
-  "mentions": [],
-  "tags": [],
-  "reblogs_count": 0,
-  "favourites_count": 0,
-  "replies_count": 0
-}
-```
-
-## GraphQL API
-
-Endpoint: `https://yourdomain.com/graphql`
-
-### Schema Overview
-
-```graphql
-type Query {
-  # Account queries
-  account(id: ID!): Account
-  accounts(limit: Int, offset: Int): [Account!]!
-  currentUser: Account
-  
-  # Status queries
-  status(id: ID!): Status
-  timeline(type: TimelineType!, limit: Int): [Status!]!
-  
-  # Search
-  search(query: String!, type: SearchType): SearchResult!
-  
-  # Federation
-  instance: Instance!
-  instances: [Instance!]!
-}
-
-type Mutation {
-  # Account mutations
-  updateProfile(input: UpdateProfileInput!): Account!
-  
-  # Status mutations
-  createStatus(input: CreateStatusInput!): Status!
-  deleteStatus(id: ID!): Boolean!
-  reblogStatus(id: ID!): Status!
-  favoriteStatus(id: ID!): Status!
-  
-  # Relationship mutations
-  followAccount(id: ID!): Relationship!
-  unfollowAccount(id: ID!): Relationship!
-  blockAccount(id: ID!): Relationship!
-  muteAccount(id: ID!): Relationship!
-  
-  # List mutations
-  createList(input: CreateListInput!): List!
-  updateList(id: ID!, input: UpdateListInput!): List!
-  deleteList(id: ID!): Boolean!
-  addToList(listId: ID!, accountId: ID!): Boolean!
-  removeFromList(listId: ID!, accountId: ID!): Boolean!
-}
-
-type Subscription {
-  # Real-time updates
-  timelineUpdates(type: TimelineType!): Status!
-  notificationReceived: Notification!
-  statusUpdated(id: ID!): Status!
-}
-```
-
-### Example Queries
-
-#### Get Timeline
-```graphql
-query GetHomeTimeline {
-  timeline(type: HOME, limit: 20) {
-    id
-    content
-    createdAt
-    account {
-      username
-      displayName
-      avatar
-    }
-    mediaAttachments {
-      url
-      type
-    }
-    reblogsCount
-    favoritesCount
-  }
-}
-```
-
-#### Create Status
-```graphql
-mutation CreatePost {
-  createStatus(input: {
-    content: "Hello from GraphQL!"
-    visibility: PUBLIC
-    sensitive: false
-  }) {
-    id
-    content
-    createdAt
-    url
-  }
-}
-```
-
-#### Upload Media
-GraphQL uploads use the `Upload` scalar following the [`graphql-multipart-request-spec`](https://github.com/jaydenseric/graphql-multipart-request-spec).
-
-```graphql
-mutation UploadMedia($file: Upload!, $description: String, $spoiler: String) {
-  uploadMedia(
-    input: {
-      file: $file
-      description: $description
-      sensitive: true
-      spoilerText: $spoiler
-      mediaType: IMAGE
-    }
-  ) {
-    uploadId
-    warnings
-    media {
-      id
-      url
-      mimeType
-      size
-      sensitive
-      spoilerText
-      mediaCategory
-      createdAt
-    }
-  }
-}
-```
-
-Include optional moderation metadata (`sensitive`, `spoilerText`, `mediaType`) to keep uploads aligned with REST behavior. The response echoes the persisted values so clients can render content warnings immediately.
-
-Example `curl` request:
+Regenerate/verify:
 
 ```bash
-curl \
-  -H "Authorization: Bearer $TOKEN" \
-  -F operations='{"query":"mutation ($file: Upload!, $spoiler: String) { uploadMedia(input: { file: $file, mediaType: IMAGE, sensitive: true, spoilerText: $spoiler }) { uploadId media { id url mimeType sensitive mediaCategory spoilerText } } }","variables":{"file":null,"spoiler":"Content warning"}}' \
-  -F map='{ "0": ["variables.file"] }' \
-  -F 0=@/path/to/image.jpg \
-  https://yourdomain.com/graphql
+./lesser generate openapi
+./lesser verify openapi --strict
+
+./lesser schema
+./lesser verify schema
 ```
 
-#### Browse Media Library
+## Authentication (tokens and headers)
+
+### OAuth access tokens (normal API access)
+
+Most authenticated API calls use:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+Both REST and GraphQL accept this header.
+
+### Setup tokens (bootstrap / activation)
+
+Some `setup/*` endpoints use a separate bearer token (“setup session”) during initial activation.
+
+If you’re writing a client, treat setup tokens as high-privilege and short-lived.
+
+### Scopes
+
+The OpenAPI spec includes `x-oauth-scopes` metadata on operations. If you generate clients, you can surface scopes in
+developer UX (for example, warn when calling an endpoint that requires `admin:read`).
+
+## REST API (Mastodon-compatible)
+
+REST is served from the stage apex domain (`https://<stage-domain>`).
+
+### Pattern: register an OAuth app
+
+```bash
+curl -s -X POST "https://<stage-domain>/api/v1/apps" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "client_name": "my-client",
+    "redirect_uris": "https://my-client.example.com/callback",
+    "scopes": "read write follow",
+    "website": "https://my-client.example.com"
+  }' | jq .
+```
+
+### Pattern: exchange an authorization code for a token
+
+The `/oauth/token` endpoint uses `application/x-www-form-urlencoded`:
+
+```bash
+curl -s -X POST "https://<stage-domain>/oauth/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "client_id=<client_id>" \
+  --data-urlencode "client_secret=<client_secret>" \
+  --data-urlencode "grant_type=authorization_code" \
+  --data-urlencode "redirect_uri=https://my-client.example.com/callback" \
+  --data-urlencode "code=<code>" | jq .
+```
+
+### Pattern: call an authenticated endpoint
+
+```bash
+curl -s \
+  -H "Authorization: Bearer <access_token>" \
+  "https://<stage-domain>/api/v1/accounts/verify_credentials" | jq .
+```
+
+### Pattern: paginate list endpoints (Link header)
+
+Mastodon-compatible list endpoints return RFC 8288 `Link` headers.
+
+Example (public timeline):
+
+```bash
+curl -i -s "https://<stage-domain>/api/v1/timelines/public?limit=20" | sed -n '1,40p'
+```
+
+Follow the `rel="next"` URL (it typically includes `max_id=...`) to fetch the next page.
+
+### Pattern: paginate Lesser-native list endpoints (limit/offset/page)
+
+Some Lesser-native endpoints use `limit` + `offset` pagination, with an optional `page` parameter that is converted to
+an offset (`offset = (page-1)*limit`).
+
+When both are present, `offset` wins. Defaults are implementation-specific but typically `limit=20`.
+
+### Error and rate-limit handling
+
+Common responses:
+
+- `401 Unauthorized`: missing/invalid token
+- `403 Forbidden`: locked instance or insufficient privilege
+- `422 Unprocessable Entity`: validation error (common on write endpoints)
+- `429 Too Many Requests`: rate limiting (see `X-RateLimit-*` headers)
+
+## GraphQL
+
+GraphQL HTTP is served from:
+
+- `POST https://<stage-domain>/api/graphql` (recommended)
+- `POST https://<stage-domain>/graphql` (alias)
+
+### Pattern: call GraphQL with JSON + variables
+
+✅ CORRECT: use a JSON body with `query` + `variables`.
+
+```bash
+curl -s "https://<stage-domain>/api/graphql" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query Instance { instance { title } }"}' | jq .
+```
+
+### Pattern: authenticated GraphQL query
+
+```bash
+curl -s "https://<stage-domain>/api/graphql" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
+  -d '{"query":"query Me { viewer { id username displayName } }"}' | jq .
+```
+
+### Pattern: paginate a timeline (connections)
+
+The `timeline` query returns an `ObjectConnection` with `edges` + `pageInfo`.
 
 ```graphql
-query MediaLibrary($cursor: Cursor) {
-  mediaLibrary(first: 25, after: $cursor, filter: { mediaType: IMAGE }) {
+query Timeline($first: Int!, $after: Cursor) {
+  timeline(type: PUBLIC, first: $first, after: $after) {
     edges {
       cursor
       node {
         id
         url
-        mimeType
-        sensitive
-        spoilerText
-        mediaCategory
-        createdAt
       }
     }
     pageInfo {
       hasNextPage
       endCursor
     }
-    totalCount
   }
 }
 ```
 
-The `MediaFilterInput` supports `ownerUsername`, `ownerId`, `mediaType`, `mimeType`, `since`, and `until` to refine results while keeping pagination stable.
+First page:
 
-#### Subscribe to Timeline
+```bash
+curl -s "https://<stage-domain>/api/graphql" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query Timeline($first:Int!,$after:Cursor){timeline(type:PUBLIC,first:$first,after:$after){edges{cursor node{id url}} pageInfo{hasNextPage endCursor}}}","variables":{"first":20,"after":null}}' | jq .
+```
+
+Then pass `pageInfo.endCursor` back as `$after` to fetch the next page.
+
+### Pattern: create a post (mutation)
+
+The `createNote` mutation accepts a `CreateNoteInput` with `content` and `visibility`.
+
 ```graphql
-subscription TimelineUpdates {
-  timelineUpdates(type: HOME) {
-    id
-    content
-    account {
-      username
-    }
+mutation Create($input: CreateNoteInput!) {
+  createNote(input: $input) {
+    object { id url }
+    cost { operationCost }
   }
 }
 ```
 
-## WebSocket Streaming API
-
-Endpoint: `wss://yourdomain.com/streaming`
-
-### Connection
-
-```javascript
-const ws = new WebSocket('wss://yourdomain.com/streaming?access_token=YOUR_TOKEN');
-
-ws.onopen = () => {
-  // Subscribe to streams
-  ws.send(JSON.stringify({
-    type: 'subscribe',
-    stream: 'user'
-  }));
-};
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  console.log('Received:', data);
-};
-```
-
-### Available Streams
-
-- `user` - User's home timeline and notifications
-- `public` - Public timeline
-- `public:local` - Local public timeline
-- `hashtag` - Specific hashtag (requires `tag` parameter)
-- `list` - List timeline (requires `list` parameter)
-- `direct` - Direct messages
-
-### Event Types
-
-```javascript
-// Status update
-{
-  "event": "update",
-  "payload": { /* Status object */ }
-}
-
-// Status deleted
-{
-  "event": "delete",
-  "payload": "123456789"
-}
-
-// Notification
-{
-  "event": "notification",
-  "payload": { /* Notification object */ }
-}
-
-// Filters changed
-{
-  "event": "filters_changed",
-  "payload": null
-}
-```
-
-### Commands
-
-WebSocket clients can execute commands by sending `type: "command"` payloads. Media uploads are now handled without falling back to REST.
-
-```json
-{
-  "id": "upload-1",
-  "type": "upload_media",
-  "payload": {
-    "file_data": "BASE64_ENCODED_BYTES",
-    "file_name": "clip.mp4",
-    "mime_type": "video/mp4",
-    "description": "Launch teaser",
-    "sensitive": true,
-    "spoiler_text": "Spoilers ahead",
-    "media_type": "video"
-  }
-}
-```
-
-- `file_data` must contain base64-encoded binary data (data-URI prefixes are stripped automatically).
-- Optional metadata (`file_name`, `mime_type`, `description`, `focus`, `sensitive`, `spoiler_text`, `media_type`) mirrors the GraphQL mutation and feeds moderation workflows.
-
-Successful uploads return:
-
-```json
-{
-  "id": "upload-1",
-  "type": "command_result",
-  "success": true,
-  "data": {
-    "upload_id": "media123",
-    "media": {
-      "id": "media123",
-      "url": "https://cdn.yourdomain.com/media123",
-      "mime_type": "video/mp4",
-      "sensitive": true,
-      "spoiler_text": "Spoilers ahead",
-      "media_category": "video"
-    },
-    "warnings": []
-  }
-}
-```
-
-## Federation Endpoints
-
-### WebFinger
-```
-GET /.well-known/webfinger?resource=acct:alice@yourdomain.com
-```
-
-### NodeInfo
-```
-GET /.well-known/nodeinfo
-GET /nodeinfo/2.0
-```
-
-### Actor
-```
-GET /users/alice
-Accept: application/activity+json
-```
-
-### Inbox/Outbox
-```
-POST /users/alice/inbox
-GET /users/alice/outbox
-```
-
-## OAuth 2.0
-
-### Authorization Flow
-
-1. Register application:
 ```bash
-POST /api/v1/apps
-{
-  "client_name": "My App",
-  "redirect_uris": "https://myapp.com/callback",
-  "scopes": "read write follow push",
-  "website": "https://myapp.com"
-}
+curl -s "https://<stage-domain>/api/graphql" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
+  -d '{"query":"mutation Create($input:CreateNoteInput!){createNote(input:$input){object{id url} cost{operationCost}}}","variables":{"input":{"content":"Hello from GraphQL","visibility":"PUBLIC"}}}' | jq .
 ```
 
-2. Authorize:
-```
-GET /oauth/authorize?client_id=CLIENT_ID&redirect_uri=REDIRECT_URI&response_type=code&scope=read+write
-```
+### GraphQL error handling
 
-3. Get token:
+✅ CORRECT: handle `errors[]` even when `data` is present (partial successes are valid GraphQL behavior).
+
+## Streaming
+
+Lesser supports both Mastodon-style SSE streaming (HTTP) and a Mastodon-style WebSocket streaming API.
+
+### SSE (Mastodon streaming)
+
+SSE endpoints are served under `/api/v1/streaming/*` by the `sse` Lambda (`cmd/sse`).
+
 ```bash
-POST /oauth/token
-{
-  "grant_type": "authorization_code",
-  "code": "AUTH_CODE",
-  "client_id": "CLIENT_ID",
-  "client_secret": "CLIENT_SECRET",
-  "redirect_uri": "REDIRECT_URI"
-}
+curl -N \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Accept: text/event-stream" \
+  "https://<stage-domain>/api/v1/streaming/user"
 ```
 
-## Rate Limiting
+### WebSocket streaming API (Mastodon-style)
 
-Default limits per endpoint:
+The WebSocket streaming API is served from:
 
-| Endpoint | Limit | Window |
-|----------|-------|--------|
-| POST /api/v1/statuses | 30 | 1 hour |
-| POST /api/v1/media | 10 | 1 hour |
-| GET /api/v1/timelines/* | 300 | 5 minutes |
-| GET /api/v2/search | 60 | 1 minute |
-| Default | 300 | 5 minutes |
+- `wss://ws.<stage-domain>/stream`
 
-Rate limit headers:
-```
-X-RateLimit-Limit: 300
-X-RateLimit-Remaining: 299
-X-RateLimit-Reset: 1704124800
-```
+Auth can be provided as:
 
-## Error Responses
+- query: `?access_token=<access_token>` (recommended for browser clients)
+- header: `Authorization: Bearer <access_token>` (works for non-browser clients that can set headers)
 
-Standard error format:
+Client message format is JSON:
+
 ```json
-{
-  "error": "Record not found",
-  "error_description": "The requested status does not exist",
-  "error_code": "NOT_FOUND"
-}
+{ "type": "subscribe", "stream": "public" }
 ```
 
-Common error codes:
-- `400` - Bad Request
-- `401` - Unauthorized
-- `403` - Forbidden
-- `404` - Not Found
-- `422` - Unprocessable Entity
-- `429` - Too Many Requests
-- `500` - Internal Server Error
-- `503` - Service Unavailable
+Supported stream values include:
+
+- `public`, `public:local`, `public:remote`
+- `user`, `user:notification`
+- `direct`
+- `list:<id>`
+- `hashtag:<tag>`
+
+Example (browser/WebSocket):
+
+```js
+const ws = new WebSocket("wss://ws.dev.example.com/stream?access_token=" + encodeURIComponent(token));
+ws.onopen = () => ws.send(JSON.stringify({ type: "subscribe", stream: "public" }));
+ws.onmessage = (ev) => console.log(JSON.parse(ev.data));
+```
+
+### GraphQL subscriptions (WebSocket)
+
+GraphQL subscriptions are served from:
+
+- `wss://ws.<stage-domain>` (root of the WebSocket custom domain)
+
+✅ CORRECT: use a GraphQL WebSocket client that supports the `graphql-transport-ws` protocol (for example, the
+`graphql-ws` npm package).
+
+Browser clients typically pass auth via query string (WebSocket handshake can’t set custom headers reliably):
+
+```js
+import { createClient } from "graphql-ws";
+
+const url = new URL("wss://ws.dev.example.com");
+url.searchParams.set("access_token", token);
+
+const client = createClient({ url: url.toString() });
+client.subscribe(
+  { query: "subscription { timelineUpdates(type: HOME) { id url } }" },
+  { next: (data) => console.log(data), error: console.error, complete: () => {} },
+);
+```
+
+## Federation endpoints
+
+Federation (ActivityPub, WebFinger, NodeInfo) is covered in `docs/federation.md`.
+
+## Setup / activation flows
+
+Activation flows are REST-first (`/setup/*`) and are described in `docs/deployment.md`.

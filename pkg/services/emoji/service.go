@@ -9,6 +9,7 @@ package emoji
 
 import (
 	"context"
+	stdErrors "errors"
 	"strings"
 	"time"
 
@@ -22,19 +23,36 @@ import (
 
 // Service provides business logic for custom emoji operations
 type Service struct {
-	emojiRepo *repositories.EmojiRepository
+	emojiRepo emojiRepository
 	publisher streaming.Publisher
 	logger    *zap.Logger
 	domain    string
 }
 
+type emojiRepository interface {
+	GetCustomEmoji(ctx context.Context, shortcode string) (*storage.CustomEmoji, error)
+	GetCustomEmojis(ctx context.Context) ([]*storage.CustomEmoji, error)
+	CreateCustomEmoji(ctx context.Context, emoji *storage.CustomEmoji) error
+	UpdateCustomEmoji(ctx context.Context, emoji *storage.CustomEmoji) error
+	DeleteCustomEmoji(ctx context.Context, shortcode string) error
+	GetRemoteEmoji(ctx context.Context, shortcode, domain string) (*storage.CustomEmoji, error)
+	SearchEmojis(ctx context.Context, query string, limit int) ([]*storage.CustomEmoji, error)
+	GetPopularEmojis(ctx context.Context, domain string, limit int) ([]*storage.CustomEmoji, error)
+	IncrementEmojiUsage(ctx context.Context, shortcode string) error
+}
+
+var _ emojiRepository = (*repositories.EmojiRepository)(nil)
+
 // NewService creates a new emoji service
 func NewService(
-	emojiRepo *repositories.EmojiRepository,
+	emojiRepo emojiRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 	domain string,
 ) *Service {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &Service{
 		emojiRepo: emojiRepo,
 		publisher: publisher,
@@ -125,7 +143,7 @@ func (s *Service) GetEmoji(ctx context.Context, query *GetEmojiQuery) (*storage.
 
 	emoji, err := s.emojiRepo.GetCustomEmoji(ctx, query.Shortcode)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			return nil, errors.ErrEmojiNotFound
 		}
 		return nil, errors.ErrGetEmoji
@@ -207,7 +225,7 @@ func (s *Service) UpdateEmoji(ctx context.Context, cmd *UpdateEmojiCommand) (*Re
 	// Get existing emoji
 	emoji, err := s.emojiRepo.GetCustomEmoji(ctx, cmd.Shortcode)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			return nil, errors.ErrEmojiNotFound
 		}
 		return nil, errors.ErrGetEmoji
@@ -261,7 +279,7 @@ func (s *Service) DeleteEmoji(ctx context.Context, cmd *DeleteEmojiCommand) erro
 	// Get existing emoji to verify it exists
 	emoji, err := s.emojiRepo.GetCustomEmoji(ctx, cmd.Shortcode)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			return errors.ErrEmojiNotFound
 		}
 		return errors.ErrGetEmoji
@@ -292,7 +310,7 @@ func (s *Service) CopyRemoteEmoji(ctx context.Context, cmd *CopyEmojiCommand) (*
 	// Get the remote emoji
 	remoteEmoji, err := s.emojiRepo.GetRemoteEmoji(ctx, cmd.Shortcode, cmd.Domain)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			return nil, errors.ErrRemoteEmojiNotFound
 		}
 		return nil, errors.ErrGetRemoteEmoji
@@ -404,7 +422,7 @@ func (s *Service) IncrementUsage(ctx context.Context, cmd *IncrementUsageCommand
 	// Increment usage in repository
 	err := s.emojiRepo.IncrementEmojiUsage(ctx, cmd.Shortcode)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			// Don't treat missing emoji as error - might be from remote instance
 			s.logger.Debug("emoji not found for usage increment",
 				zap.String("shortcode", cmd.Shortcode))

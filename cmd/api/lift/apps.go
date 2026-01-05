@@ -72,13 +72,12 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 		}
 
 		resp := models.AppRegistrationResponse{
-			ID:           client.ClientID,
-			Name:         client.Name,
-			Website:      client.Website,
-			RedirectURI:  client.RedirectURIs[0], // Return first redirect URI for compatibility
-			ClientID:     client.ClientID,
-			ClientSecret: client.ClientSecret,
-			VapidKey:     vapidKey,
+			ID:          client.ClientID,
+			Name:        client.Name,
+			Website:     client.Website,
+			RedirectURI: client.RedirectURIs[0], // Return first redirect URI for compatibility
+			ClientID:    client.ClientID,
+			VapidKey:    vapidKey,
 		}
 
 		return ctx.JSON(resp)
@@ -99,8 +98,12 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 	clientSecret := parts[1]
 
 	// Verify client credentials
+	if err := oauthSvc.ValidateClient(ctx.Context, clientID, clientSecret); err != nil {
+		return common.RespondUnauthorized(ctx, "invalid credentials")
+	}
+
 	client, err := h.repos.Account().GetOAuthClient(ctx.Context, clientID)
-	if err != nil || client.ClientSecret != clientSecret {
+	if err != nil {
 		return common.RespondUnauthorized(ctx, "invalid credentials")
 	}
 
@@ -115,13 +118,12 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 	}
 
 	resp := models.AppRegistrationResponse{
-		ID:           client.ClientID,
-		Name:         client.Name,
-		Website:      client.Website,
-		RedirectURI:  client.RedirectURIs[0], // Return first redirect URI for compatibility
-		ClientID:     client.ClientID,
-		ClientSecret: client.ClientSecret,
-		VapidKey:     vapidKey,
+		ID:          client.ClientID,
+		Name:        client.Name,
+		Website:     client.Website,
+		RedirectURI: client.RedirectURIs[0], // Return first redirect URI for compatibility
+		ClientID:    client.ClientID,
+		VapidKey:    vapidKey,
 	}
 
 	return ctx.JSON(resp)
@@ -373,8 +375,7 @@ func (h *Handler) createOAuthClientAndRespond(ctx *lift.Context, req *models.App
 	}
 
 	h.logger.Info("returning app registration response",
-		zap.String("client_id", resp.ClientID),
-		zap.String("client_secret", resp.ClientSecret))
+		zap.String("client_id", resp.ClientID))
 
 	return ctx.JSON(resp)
 }

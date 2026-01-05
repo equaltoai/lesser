@@ -11,7 +11,7 @@ This is a **completely stateless** static web application that provides password
 1. **NO COOKIES**: This application NEVER sets cookies
 2. **NO SESSIONS**: This application NEVER creates or manages sessions
 3. **JWT-ONLY**: Authentication state is passed via JWTs from Lesser's backend
-4. **sessionStorage ONLY**: Used temporarily during OAuth flow, cleared immediately after use
+4. **sessionStorage ONLY**: Used temporarily during OAuth flow, cleared after completion
 5. **STATIC DEPLOYMENT**: Deployed to S3 + CloudFront as static HTML/JS/CSS
 
 ### How It Works
@@ -22,18 +22,17 @@ This is a **completely stateless** static web application that provides password
 2. User authenticates via WebAuthn or Wallet
 3. **Lesser's backend** returns a JWT
 4. JWT stored in `sessionStorage` (temporary, tab-scoped)
-5. Redirect to Lesser's `/oauth/authorize` with JWT in URL
-6. Lesser validates JWT (stateless) and continues OAuth flow
-7. JWT cleared from sessionStorage
+5. Auth UI calls `/oauth/authorize?mode=ui` with `Authorization: Bearer <jwt>`
+6. Lesser returns `{ next_url }` to either consent UI or the client callback
+7. JWT cleared from sessionStorage after flow completion
 
 #### Consent Flow
 
-1. Lesser redirects to `/consent` with JWT in URL
-2. Component extracts JWT from URL and stores in sessionStorage temporarily
-3. User approves/denies
-4. JWT sent to Lesser via Authorization header
-5. Lesser validates JWT (stateless) and completes OAuth flow
-6. JWT cleared from sessionStorage
+1. Lesser redirects to `/auth/consent` for user approval
+2. User approves/denies
+3. Auth UI POSTs `/oauth/consent` with `Authorization: Bearer <jwt>`
+4. Lesser returns `{ redirect_uri }` for the client callback
+5. JWT cleared from sessionStorage
 
 ### Technology Stack
 
@@ -51,6 +50,9 @@ pnpm install
 # Run dev server (port 4322)
 pnpm dev
 
+# (Optional) Point auth-ui at a different API origin in local dev
+PUBLIC_LESSER_API_ORIGIN=http://localhost:8080 pnpm dev
+
 # Build for production
 pnpm build
 ```
@@ -58,15 +60,15 @@ pnpm build
 ### Deployment
 
 Deployed as static files to:
-- **S3 Bucket**: `lesser-auth-ui-{domain}`
-- **CloudFront**: CDN distribution
-- **DNS**: `auth.{domain}` (e.g., `auth.dev.lesser.host`)
+- **S3 Bucket**: stage `auth-ui` bucket (see `lesser up` outputs)
+- **CloudFront**: stage distribution on the stage apex domain
+- **Path**: `https://<stage-domain>/auth/*`
 
 ### Important Notes
 
-- **Cross-Origin**: Auth UI runs on `auth.domain`, API runs on `domain`
-- **sessionStorage Scope**: Data doesn't persist across origins (by design)
-- **JWT in URL**: Temporary, validated once by Lesser, never logged or persisted
+- **Single-Origin**: Auth UI and API share the same origin (CloudFront routes by path)
+- **sessionStorage Scope**: Data doesn't persist across tabs (by design)
+- **No JWT-in-URL**: OAuth continues via UI-mode and Authorization headers
 - **No Backend**: This is pure static HTML/JS/CSS served from S3
 
 ### Security
@@ -74,7 +76,7 @@ Deployed as static files to:
 - JWTs are short-lived and validated by Lesser on every request
 - sessionStorage is tab-scoped and cleared after OAuth flow completes
 - No persistent state means no session hijacking, no cookie theft
-- Cross-origin isolation prevents JWT leakage between domains
+- No token-in-URL reduces accidental leakage via referrers/logs
 
 ### Files
 

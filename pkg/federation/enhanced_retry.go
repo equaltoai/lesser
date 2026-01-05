@@ -13,7 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
@@ -40,12 +39,16 @@ type EnhancedRetryMessage struct {
 type EnhancedRetryProcessor struct {
 	deliveryService *DeliveryService
 	logger          *zap.Logger
-	sqsClient       *sqs.Client
+	sqsClient       enhancedRetrySQSClient
 	queueURL        string
 }
 
+type enhancedRetrySQSClient interface {
+	SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
+}
+
 // NewEnhancedRetryProcessor creates a new enhanced retry processor
-func NewEnhancedRetryProcessor(deliveryService *DeliveryService, sqsClient *sqs.Client, queueURL string) *EnhancedRetryProcessor {
+func NewEnhancedRetryProcessor(deliveryService *DeliveryService, sqsClient enhancedRetrySQSClient, queueURL string) *EnhancedRetryProcessor {
 	return &EnhancedRetryProcessor{
 		deliveryService: deliveryService,
 		logger:          deliveryService.logger,
@@ -189,7 +192,7 @@ func (p *EnhancedRetryProcessor) ProcessEnhancedRetry(ctx context.Context, messa
 	}
 
 	// Check if all deliveries succeeded
-	if err := common.ValidateSliceNotEmpty("newFailures", newFailures); err != nil {
+	if len(newFailures) == 0 {
 		log.Info("All retry deliveries successful")
 		return p.recordFinalSuccess(ctx, message)
 	}

@@ -17,9 +17,9 @@ When activities arrive in a user's inbox, the processor handles:
 - **Accept**: Marks a follow as accepted, updating followers/following
 - **Reject**: Marks a follow as rejected and cleans up
 - **Create**: Stores the created object (Note, Article, etc.)
-- **Like**: Stores the like relationship (TODO: full implementation)
-- **Announce**: Stores the boost (TODO: implementation needed)
-- **Undo**: Reverses previous activities (TODO: implementation needed)
+- **Like**: Stores the like relationship
+- **Announce**: Stores the boost
+- **Undo**: Reverses previous activities (Follow, Like, Announce, Block, Create, Delete)
 
 ## Outbox Activity Processing
 
@@ -30,7 +30,7 @@ When local users create activities, the processor:
 3. Fetches recipient actor profiles to get inbox URLs
 4. Signs requests with HTTP signatures
 5. Delivers activities to remote inboxes
-6. Handles delivery failures (TODO: implement retry logic)
+6. Handles delivery failures with exponential backoff and retry logic
 
 ## HTTP Signature Implementation
 
@@ -57,10 +57,7 @@ Current test coverage: ~78.5%
 
 ## Future Improvements
 
-1. Implement retry logic for failed deliveries
-2. Add support for Undo activities
-3. Implement Announce (boost) processing
-4. Add collection resolution for followers/following
-5. Implement shared inbox delivery optimization
-6. Add metrics and monitoring
-7. Implement rate limiting for outgoing requests 
+1. Add collection resolution for followers/following
+2. Implement shared inbox delivery optimization
+3. Add metrics and monitoring
+4. Implement rate limiting for outgoing requests 

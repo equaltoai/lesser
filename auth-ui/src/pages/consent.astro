@@ -3,7 +3,7 @@
  * ⚠️ STATELESS STATIC APPLICATION - NO SESSIONS OR COOKIES PERMITTED ⚠️
  * 
  * This is a static Astro page with NO server-side logic.
- * JWT is passed via URL query params from Lesser and handled client-side.
+ * Consent uses a short-lived JWT stored in sessionStorage during the OAuth flow.
  */
 import AuthLayout from '../layouts/AuthLayout.astro';
 import OAuthConsentScreen from '../components/OAuthConsentScreen.svelte';
@@ -12,4 +12,3 @@ import OAuthConsentScreen from '../components/OAuthConsentScreen.svelte';
 <AuthLayout title="Authorize Application">
   <OAuthConsentScreen client:only="svelte" />
 </AuthLayout>
-

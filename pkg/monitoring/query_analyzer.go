@@ -9,9 +9,17 @@ import (
 	"go.uber.org/zap"
 )
 
+// MetricRecorder records performance metrics. Implemented by PerformanceMonitor.
+// This interface enables testing QueryAnalyzer without AWS dependencies.
+type MetricRecorder interface {
+	RecordLatency(ctx context.Context, operation string, latencyMs float64) error
+	RecordError(ctx context.Context, operation string, errorType string) error
+	RecordDynamoDBConsumedCapacity(ctx context.Context, tableName string, operation string, readCapacity, writeCapacity float64) error
+}
+
 // QueryAnalyzer tracks and analyzes query performance
 type QueryAnalyzer struct {
-	monitor      *PerformanceMonitor
+	monitor      MetricRecorder
 	slowQueryLog *SlowQueryLog
 	mu           sync.RWMutex
 	queryStats   map[string]*QueryStats
@@ -47,7 +55,7 @@ type SlowQuery struct {
 }
 
 // NewQueryAnalyzer creates a new query analyzer
-func NewQueryAnalyzer(monitor *PerformanceMonitor, slowQueryThreshold time.Duration) *QueryAnalyzer {
+func NewQueryAnalyzer(monitor MetricRecorder, slowQueryThreshold time.Duration) *QueryAnalyzer {
 	return &QueryAnalyzer{
 		monitor:    monitor,
 		queryStats: make(map[string]*QueryStats),

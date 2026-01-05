@@ -8,15 +8,15 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 )
 
 // ConnectionManager manages WebSocket connection lifecycle, health checks, and resource management
 type ConnectionManager struct {
-	connRepo          *repositories.StreamingConnectionRepository
+	connRepo          interfaces.StreamingConnectionRepository
 	apiClient         streamer.Client
 	logger            *zap.Logger
 	healthCheckTicker *time.Ticker
@@ -56,7 +56,7 @@ func DefaultConnectionManagerConfig() *ConnectionManagerConfig {
 
 // NewConnectionManager creates a new connection manager
 func NewConnectionManager(
-	connRepo *repositories.StreamingConnectionRepository,
+	connRepo interfaces.StreamingConnectionRepository,
 	apiClient streamer.Client,
 	logger *zap.Logger,
 	config *ConnectionManagerConfig,

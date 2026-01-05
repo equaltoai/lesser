@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -27,6 +28,9 @@ const (
 func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 	// Get static config
 	instanceConfig := config.GetInstanceConfig()
+
+	state, stateErr := h.repos.Instance().GetInstanceState(ctx.Context)
+	locked := stateErr != nil || state.Locked
 
 	// Get rules from storage
 	rules, err := h.repos.Instance().GetInstanceRules(ctx.Context)
@@ -110,31 +114,28 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 		}
 	}
 
-	// Build v1 response (flat structure)
-	resp := map[string]any{
-		"uri":               h.cfg.Domain,
-		"title":             instanceConfig.Title,
-		"short_description": instanceConfig.ShortDescription,
-		"description":       instanceConfig.Description,
-		"email":             instanceConfig.Email,
-		"version":           instanceConfig.Version,
-		"urls": map[string]any{
+	resp := apimodels.InstanceV1Response{
+		URI:              h.cfg.Domain,
+		Title:            instanceConfig.Title,
+		ShortDescription: instanceConfig.ShortDescription,
+		Description:      instanceConfig.Description,
+		Email:            instanceConfig.Email,
+		Version:          instanceConfig.Version,
+		URLs: map[string]any{
 			"streaming_api": h.cfg.BaseURL(),
 		},
-		"stats": map[string]any{
+		Stats: map[string]any{
 			"user_count":   userCount,
 			"status_count": statusCount,
 			"domain_count": domainCount,
 		},
-		"thumbnail":         h.cfg.BaseURL() + "/assets/thumbnail.png",
-		"languages":         instanceConfig.Languages,
-		"registrations":     instanceConfig.RegistrationsOpen,
-		"approval_required": instanceConfig.ApprovalRequired,
-		"invites_enabled":   instanceConfig.InvitesEnabled,
-		"contact_account":   contactAccount,
-
-		// Configuration
-		"configuration": map[string]any{
+		Thumbnail:        h.cfg.BaseURL() + "/assets/thumbnail.png",
+		Languages:        instanceConfig.Languages,
+		Registrations:    instanceConfig.RegistrationsOpen && !locked,
+		ApprovalRequired: instanceConfig.ApprovalRequired,
+		InvitesEnabled:   instanceConfig.InvitesEnabled,
+		ContactAccount:   contactAccount,
+		Configuration: map[string]any{
 			"statuses": map[string]any{
 				"max_characters":              instanceConfig.MaxStatusChars,
 				"max_media_attachments":       4,
@@ -159,11 +160,9 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 				"max_expiration":            2629746,
 			},
 		},
-
-		// Optional fields
-		"extended_description": extendedDescription,
-		"vapid_key":            vapidPublicKey,
-		"rules":                rules,
+		ExtendedDescription: extendedDescription,
+		VAPIDKey:            vapidPublicKey,
+		Rules:               rules,
 	}
 
 	ctx.Status(http.StatusOK)
@@ -210,7 +209,7 @@ func (h *Handler) HandleGetInstancePeersLift(ctx *lift.Context) error {
 // HandleGetInstanceActivityLift returns instance activity statistics
 func (h *Handler) HandleGetInstanceActivityLift(ctx *lift.Context) error {
 	// Generate weekly activity data for the past 12 weeks
-	activity := make([]map[string]any, 12)
+	activity := make([]apimodels.InstanceActivityEntry, 12)
 
 	now := time.Now()
 	// Start from Monday of the current week
@@ -241,11 +240,11 @@ func (h *Handler) HandleGetInstanceActivityLift(ctx *lift.Context) error {
 		}
 
 		// Format for API response (newest week first)
-		activity[i] = map[string]any{
-			"week":          fmt.Sprintf("%d", weekTimestamp),
-			"statuses":      fmt.Sprintf("%d", weekActivity.Statuses),
-			"logins":        fmt.Sprintf("%d", weekActivity.Logins),
-			"registrations": fmt.Sprintf("%d", weekActivity.Registrations),
+		activity[i] = apimodels.InstanceActivityEntry{
+			Week:          fmt.Sprintf("%d", weekTimestamp),
+			Statuses:      fmt.Sprintf("%d", weekActivity.Statuses),
+			Logins:        fmt.Sprintf("%d", weekActivity.Logins),
+			Registrations: fmt.Sprintf("%d", weekActivity.Registrations),
 		}
 	}
 
@@ -261,11 +260,11 @@ func (h *Handler) HandleGetInstanceDomainBlocksLift(ctx *lift.Context) error {
 		h.logger.Warn("failed to get domain blocks", zap.Error(err))
 		// Return empty array on error
 		ctx.Status(http.StatusOK)
-		return ctx.JSON([]map[string]any{})
+		return ctx.JSON([]apimodels.InstanceDomainBlock{})
 	}
 
 	// Convert to API format
-	blocks := make([]map[string]any, 0, len(domainBlocks))
+	blocks := make([]apimodels.InstanceDomainBlock, 0, len(domainBlocks))
 	for _, block := range domainBlocks {
 		// Only include public blocks (not obfuscated)
 		if !block.Obfuscate && block.PublicComment != "" {
@@ -273,11 +272,11 @@ func (h *Handler) HandleGetInstanceDomainBlocksLift(ctx *lift.Context) error {
 			hash := sha256.Sum256([]byte(block.Domain))
 			digest := hex.EncodeToString(hash[:])
 
-			blocks = append(blocks, map[string]any{
-				"domain":   block.Domain,
-				"digest":   digest,
-				"severity": block.Severity,
-				"comment":  block.PublicComment,
+			blocks = append(blocks, apimodels.InstanceDomainBlock{
+				Domain:   block.Domain,
+				Digest:   digest,
+				Severity: block.Severity,
+				Comment:  block.PublicComment,
 			})
 		}
 	}

@@ -33,7 +33,7 @@ func SecurityHeaders(next func(events.APIGatewayV2HTTPRequest) (*events.APIGatew
 		response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
 		// Content Security Policy
-		response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';"
+		response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self';"
 
 		// HSTS for HTTPS enforcement (only in production)
 		// Since Lambda/API Gateway handles TLS termination, always add this
@@ -54,7 +54,7 @@ func SecurityHeadersHTTP(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self';")
 		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 
 		// HSTS for HTTPS enforcement
@@ -83,7 +83,7 @@ var DefaultSecurityConfig = SecurityConfig{
 	FrameOptions:            "DENY",
 	XSSProtection:           "1; mode=block",
 	ReferrerPolicy:          "strict-origin-when-cross-origin",
-	ContentSecurityPolicy:   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';",
+	ContentSecurityPolicy:   "default-src 'self'; script-src 'self'; style-src 'self';",
 	StrictTransportSecurity: "max-age=31536000; includeSubDomains",
 	PermissionsPolicy:       "geolocation=(), microphone=(), camera=()",
 }

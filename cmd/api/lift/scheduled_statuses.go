@@ -70,7 +70,7 @@ func (h *Handler) HandleGetScheduledStatusesLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 	// Get ID from path parameter
 	id := ctx.Param("id")
-	if common.ValidateRequiredParam(id, "id") != nil {
+	if common.ValidateRequiredParam("id", id) != nil {
 		return common.RespondBadRequest(ctx, "ID required")
 	}
 
@@ -111,7 +111,7 @@ func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 	// Get ID from path parameter
 	id := ctx.Param("id")
-	if common.ValidateRequiredParam(id, "id") != nil {
+	if common.ValidateRequiredParam("id", id) != nil {
 		return common.RespondBadRequest(ctx, "ID required")
 	}
 
@@ -182,7 +182,7 @@ func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 	// Get ID from path parameter
 	id := ctx.Param("id")
-	if common.ValidateRequiredParam(id, "id") != nil {
+	if common.ValidateRequiredParam("id", id) != nil {
 		return common.RespondBadRequest(ctx, "ID required")
 	}
 
@@ -221,7 +221,7 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Return empty object
-	return ctx.JSON(map[string]interface{}{})
+	return ctx.JSON(apimodels.EmptyObject{})
 }
 
 // HandleCreateScheduledStatusLift handles POST /api/v1/statuses (with scheduled_at)
@@ -237,7 +237,7 @@ func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *
 	clientID := account.Claims.ClientID
 
 	// Parse scheduled time
-	if statusReq.ScheduledAt == nil || common.ValidateRequiredParam(*statusReq.ScheduledAt, "scheduledAt") != nil {
+	if statusReq.ScheduledAt == nil || common.ValidateRequiredParam("scheduledAt", *statusReq.ScheduledAt) != nil {
 		return nil, common.RespondUnprocessableEntity(ctx, "scheduled_at is required")
 	}
 	// Validate scheduled time format and constraints
@@ -313,7 +313,7 @@ func (h *Handler) parseScheduledStatusLimit(ctx *lift.Context) int {
 	limitStr := ctx.Query("limit")
 
 	// Fallback to direct query param access if ctx.Query doesn't work (test mode)
-	if common.ValidateRequiredParam(limitStr, "limitStr") != nil {
+	if common.ValidateRequiredParam("limitStr", limitStr) != nil {
 		limitStr = h.extractScheduledQueryParam(ctx, "limit")
 	}
 
@@ -331,7 +331,7 @@ func (h *Handler) parseScheduledStatusCursor(ctx *lift.Context) string {
 	minID := ctx.Query("min_id")
 
 	// Fallback to direct query param access if ctx.Query doesn't work (test mode)
-	if common.ValidateRequiredParam(maxID, "maxID") != nil && common.ValidateRequiredParam(minID, "minID") != nil {
+	if common.ValidateRequiredParam("maxID", maxID) != nil && common.ValidateRequiredParam("minID", minID) != nil {
 		maxID = h.extractScheduledQueryParam(ctx, "max_id")
 		minID = h.extractScheduledQueryParam(ctx, "min_id")
 	}
@@ -374,7 +374,7 @@ func (h *Handler) extractScheduledQueryParam(ctx *lift.Context, param string) st
 
 // setScheduledStatusPaginationHeader sets the Link header for pagination
 func (h *Handler) setScheduledStatusPaginationHeader(ctx *lift.Context, nextCursor string, limit int) {
-	if common.ValidateRequiredParam(nextCursor, "nextCursor") != nil {
+	if common.ValidateRequiredParam("nextCursor", nextCursor) != nil {
 		return
 	}
 
@@ -523,8 +523,13 @@ func (h *Handler) convertAPIPollToMap(poll *apimodels.Poll) map[string]any {
 		return nil
 	}
 
+	options := make([]interface{}, 0, len(poll.Options))
+	for _, opt := range poll.Options {
+		options = append(options, opt)
+	}
+
 	return map[string]any{
-		"options":     poll.Options,
+		"options":     options,
 		"expires_in":  poll.ExpiresIn,
 		"multiple":    poll.Multiple,
 		"hide_totals": poll.HideTotals,

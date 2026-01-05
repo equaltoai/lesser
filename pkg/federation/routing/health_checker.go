@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -16,10 +17,20 @@ import (
 
 // InstanceHealthChecker monitors instance health using DynamORM
 type InstanceHealthChecker struct {
-	healthRepo       *repositories.InstanceHealthRepository
+	healthRepo       instanceHealthRepository
 	logger           *zap.Logger
 	config           *types.RoutingConfig
-	federationClient *httpclient.FederationClient
+	federationClient federationHTTPClient
+}
+
+type instanceHealthRepository interface {
+	SaveHealthCheck(ctx context.Context, health *models.InstanceHealth) error
+	GetHealthHistory(ctx context.Context, domain string, since time.Time, limit int) ([]*models.InstanceHealth, error)
+	GetHealthSummary(ctx context.Context, domain string, window time.Duration) (*models.InstanceHealthSummary, error)
+}
+
+type federationHTTPClient interface {
+	Get(ctx context.Context, url string) (*http.Response, error)
 }
 
 // NewHealthChecker creates a new health checker using DynamORM
@@ -35,8 +46,13 @@ func NewHealthChecker(healthRepo *repositories.InstanceHealthRepository, logger 
 		DNSTimeout:           5 * time.Second,
 	}
 
+	var repo instanceHealthRepository
+	if healthRepo != nil {
+		repo = healthRepo
+	}
+
 	return &InstanceHealthChecker{
-		healthRepo:       healthRepo,
+		healthRepo:       repo,
 		logger:           logger,
 		config:           config,
 		federationClient: httpclient.NewFederationClient(federationConfig, logger),

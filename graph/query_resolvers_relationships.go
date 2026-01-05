@@ -3,11 +3,13 @@ package graph
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/trust"
@@ -79,6 +81,203 @@ func (r *queryResolver) Relationships(ctx context.Context, ids []string) ([]*mod
 	}
 
 	return rels, nil
+}
+
+// Blocks returns the accounts blocked by the current viewer.
+func (r *queryResolver) Blocks(ctx context.Context, first *int, after *model.Cursor) (*model.ActorListPage, error) {
+	service := r.Registry.Relationships()
+	if service == nil {
+		return nil, errors.New("relationships service is not available")
+	}
+
+	return r.resolveViewerActorListPage(ctx, first, after, "blocks", func(ctx context.Context, username string, limit int, cursor string) ([]*storage.Account, string, error) {
+		result, err := service.GetBlockedUsers(ctx, &relationships.GetBlockedUsersQuery{
+			UserID: username,
+			Limit:  limit,
+			Cursor: cursor,
+		})
+		if err != nil {
+			return nil, "", err
+		}
+		return result.BlockedUsers, result.NextCursor, nil
+	})
+}
+
+// Mutes returns the accounts muted by the current viewer.
+func (r *queryResolver) Mutes(ctx context.Context, first *int, after *model.Cursor) (*model.ActorListPage, error) {
+	service := r.Registry.Relationships()
+	if service == nil {
+		return nil, errors.New("relationships service is not available")
+	}
+
+	return r.resolveViewerActorListPage(ctx, first, after, "mutes", func(ctx context.Context, username string, limit int, cursor string) ([]*storage.Account, string, error) {
+		result, err := service.GetMutedUsers(ctx, &relationships.GetMutedUsersQuery{
+			UserID: username,
+			Limit:  limit,
+			Cursor: cursor,
+		})
+		if err != nil {
+			return nil, "", err
+		}
+		return result.MutedUsers, result.NextCursor, nil
+	})
+}
+
+type viewerActorListFetcher func(ctx context.Context, username string, limit int, cursor string) ([]*storage.Account, string, error)
+
+func (r *queryResolver) resolveViewerActorListPage(ctx context.Context, first *int, after *model.Cursor, label string, fetch viewerActorListFetcher) (*model.ActorListPage, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if fetch == nil {
+		return nil, errors.New("relationships service is not available")
+	}
+
+	limit := clampLimit(first)
+	cursor := cursorToString(after)
+
+	accounts, nextCursor, err := fetch(ctx, username, limit, cursor)
+	if err != nil {
+		r.Logger.Error("Failed to list viewer actors",
+			zap.String("type", label),
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, errors.Join(fmt.Errorf("failed to list %s", label), err)
+	}
+
+	actors := make([]*activitypub.Actor, 0, len(accounts))
+	for _, account := range accounts {
+		actor := r.convertAccountToActor(account)
+		if actor != nil {
+			actors = append(actors, actor)
+		}
+	}
+
+	return &model.ActorListPage{
+		Actors:     actors,
+		NextCursor: stringToCursor(nextCursor),
+		TotalCount: len(actors),
+	}, nil
+}
+
+// FollowRequests returns pending follow requests for the current viewer (locked accounts only).
+func (r *queryResolver) FollowRequests(ctx context.Context, first *int, after *model.Cursor) (*model.ActorListPage, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	service := r.Registry.Relationships()
+	if service == nil {
+		return nil, errors.New("relationships service is not available")
+	}
+
+	limit := 100
+	if first != nil && *first > 0 {
+		limit = *first
+		if limit > 200 {
+			limit = 200
+		}
+	}
+
+	cursor := cursorToString(after)
+
+	result, err := service.GetPendingFollowRequests(ctx, &relationships.GetFollowRequestsQuery{
+		UserID: username,
+		Limit:  limit,
+		Cursor: cursor,
+	})
+	if err != nil {
+		r.Logger.Error("Failed to list follow requests",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, errors.Join(errors.New("failed to list follow requests"), err)
+	}
+
+	repoStorage := r.Registry.GetStorage()
+	var actorRepo interface {
+		GetActor(context.Context, string) (*activitypub.Actor, error)
+	}
+	if repoStorage != nil && repoStorage.Actor() != nil {
+		actorRepo = repoStorage.Actor()
+	}
+
+	actors := make([]*activitypub.Actor, 0, len(result.FollowerIDs))
+	for _, followerID := range result.FollowerIDs {
+		if err := common.ValidateRequiredParam("follower_id", followerID); err != nil {
+			continue
+		}
+
+		account, err := r.Registry.Accounts().GetAccount(ctx, followerID)
+		if err != nil || account == nil {
+			// Fallback to actor repository (remote or partial data)
+			if actorRepo != nil {
+				actor, actorErr := actorRepo.GetActor(ctx, followerID)
+				if actorErr == nil && actor != nil {
+					actors = append(actors, actor)
+				}
+			}
+			continue
+		}
+
+		actor := r.convertAccountToActor(account)
+		if actor != nil {
+			actors = append(actors, actor)
+		}
+	}
+
+	return &model.ActorListPage{
+		Actors:     actors,
+		NextCursor: stringToCursor(result.NextCursor),
+		TotalCount: len(actors),
+	}, nil
+}
+
+// DomainBlocks returns the domains blocked by the current viewer.
+func (r *queryResolver) DomainBlocks(ctx context.Context, first *int, after *model.Cursor) (*model.DomainBlockPage, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	service := r.Registry.Relationships()
+	if service == nil {
+		return nil, errors.New("relationships service is not available")
+	}
+
+	limit := 100
+	if first != nil && *first > 0 {
+		limit = *first
+		if limit > 200 {
+			limit = 200
+		}
+	}
+
+	cursor := cursorToString(after)
+
+	result, err := service.GetDomainBlocks(ctx, &relationships.GetDomainBlocksQuery{
+		UserID: username,
+		Limit:  limit,
+		Cursor: cursor,
+	})
+	if err != nil {
+		r.Logger.Error("Failed to list domain blocks",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, errors.Join(errors.New("failed to list domain blocks"), err)
+	}
+
+	domains := result.Domains
+	if domains == nil {
+		domains = []string{}
+	}
+
+	return &model.DomainBlockPage{
+		Domains:    domains,
+		NextCursor: stringToCursor(result.NextCursor),
+		TotalCount: len(domains),
+	}, nil
 }
 
 // Followers is the resolver for the followers field.
@@ -213,14 +412,14 @@ func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category
 
 	// Get relationships where this actor is trusted (incoming trust)
 	incomingRels, _, err := trustRepo.GetTrustedByRelationships(ctx, actorID, 100, "")
-	if err != nil && err != storage.ErrNotFound {
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		r.Logger.Error("Failed to get incoming trust relationships", zap.Error(err))
 		return nil, errors.Join(errors.New("failed to fetch trust relationships"), err)
 	}
 
 	// Get relationships where this actor trusts others (outgoing trust)
 	outgoingRels, _, err := trustRepo.GetTrustRelationships(ctx, actorID, 100, "")
-	if err != nil && err != storage.ErrNotFound {
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		r.Logger.Error("Failed to get outgoing trust relationships", zap.Error(err))
 		return nil, errors.Join(errors.New("failed to fetch trust relationships"), err)
 	}

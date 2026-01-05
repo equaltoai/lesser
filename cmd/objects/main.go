@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -30,12 +32,23 @@ var (
 	repos     core.RepositoryStorage
 )
 
+var (
+	mustInitializeLambdaFn   = common.MustInitializeLambda
+	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	lambdaStartFn            = lambda.Start
+	newHandlerFn             = NewHandler
+)
+
 func init() {
 	if common.RunningUnitTests() {
 		return
 	}
+	initializeObjects()
+}
+
+func initializeObjects() {
 	// Standardized Lambda initialization with automatic service detection
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "objects",
 		LambdaType:  common.LambdaTypeAPI,
 	})
@@ -43,19 +56,40 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	storage, ok := lambdaCtx.Repos.(core.RepositoryStorage)
+	if !ok || storage == nil {
+		logger.Fatal("lambda context repository is not core.RepositoryStorage")
+	}
+	repos = storage
 
 	// Initialize with default options for API Lambda type
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
 	}
 }
 
 // Handler handles ActivityPub federation object requests
 type Handler struct {
-	objectRepo             *repositories.ObjectRepository
-	authorizedFetchService *federation.AuthorizedFetchService
+	objectRepo             objectGetter
+	authorizedFetchService authorizedFetchVerifier
+	instanceRepo           instanceStateGetter
+}
+
+type objectGetter interface {
+	GetObject(ctx context.Context, id string) (any, error)
+}
+
+type authorizedFetchVerifier interface {
+	IsAuthorizedFetchEnabled(ctx context.Context) bool
+	VerifyAuthorizedFetch(ctx context.Context, req *http.Request) (*activitypub.Actor, error)
+}
+
+type instanceStateGetter interface {
+	GetInstanceState(ctx context.Context) (*storageModels.InstanceState, error)
 }
 
 // NewHandler creates a new objects handler using standardized services
@@ -76,6 +110,7 @@ func NewHandler() *Handler {
 	return &Handler{
 		objectRepo:             objectRepo,
 		authorizedFetchService: authorizedFetchService,
+		instanceRepo:           repos.Instance(),
 	}
 }
 
@@ -85,6 +120,26 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 	objectID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		return lift.ValidationError("object ID is required")
+	}
+
+	// When the instance is locked, treat all objects as absent.
+	var state *storageModels.InstanceState
+	var stateErr error
+	if h.instanceRepo != nil {
+		state, stateErr = h.instanceRepo.GetInstanceState(ctx.Context)
+	} else {
+		stateErr = errors.New("missing instance repository")
+	}
+	if stateErr != nil {
+		logger.Warn("failed to get instance lock state; defaulting to locked",
+			zap.Error(stateErr),
+			zap.String("object_id", objectID),
+			zap.String("request_id", ctx.GetRequestID()),
+		)
+		return lift.NotFound(fmt.Sprintf("object %s not found", objectID))
+	}
+	if state.Locked {
+		return lift.NotFound(fmt.Sprintf("object %s not found", objectID))
 	}
 
 	// Check Accept header for content negotiation
@@ -146,8 +201,13 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 		zap.String("request_id", ctx.GetRequestID()),
 	)
 
+	lookupID := objectID
+	if !strings.HasPrefix(lookupID, "http://") && !strings.HasPrefix(lookupID, "https://") {
+		lookupID = fmt.Sprintf("%s/objects/%s", cfg.BaseURL(), objectID)
+	}
+
 	// Get the object from storage
-	objInterface, err := h.objectRepo.GetObject(ctx.Request.Context(), objectID)
+	objInterface, err := h.objectRepo.GetObject(ctx.Request.Context(), lookupID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			logger.Debug("object not found",
@@ -171,8 +231,11 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 			zap.String("request_id", ctx.GetRequestID()),
 		)
 		htmlContent := h.generateObjectHTML(objInterface)
+		if err := ctx.HTML(htmlContent); err != nil {
+			return err
+		}
 		ctx.Response.Header("Content-Type", "text/html; charset=utf-8")
-		return ctx.HTML(htmlContent)
+		return nil
 	}
 
 	// Return ActivityPub JSON (default)
@@ -180,8 +243,11 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 		zap.String("object_id", objectID),
 		zap.String("request_id", ctx.GetRequestID()),
 	)
+	if err := ctx.Status(http.StatusOK).JSON(objInterface); err != nil {
+		return err
+	}
 	ctx.Response.Header("Content-Type", "application/activity+json")
-	return ctx.Status(http.StatusOK).JSON(objInterface)
+	return nil
 }
 
 // generateObjectHTML creates HTML representation of an ActivityPub object
@@ -576,17 +642,21 @@ func (h *Handler) convertLiftRequest(ctx *lift.Context) (*http.Request, error) {
 }
 
 func main() {
+	runObjects()
+}
+
+func runObjects() {
 	// Initialize handler using standardized services
-	handler := NewHandler()
+	handler := newHandlerFn()
 
 	// Create Lift application
 	app := lift.New()
 
 	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	app.Use(middleware.PanicRecovery(logger))
 
 	// Apply federation security middleware
-	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, lambdaCtx.Logger)
+	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, logger)
 
 	// Add request ID middleware
 	app.Use(func(next lift.Handler) lift.Handler {
@@ -645,5 +715,5 @@ func main() {
 		return app.HandleRequest(ctx, event)
 	})
 
-	lambda.Start(standardHandler)
+	lambdaStartFn(standardHandler)
 }

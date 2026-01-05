@@ -12,92 +12,156 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
 // configFlags holds command-line configuration flags
 type configFlags struct {
-	setRules       *string
-	setDescription *string
-	generateVAPID  *bool
-	showConfig     *bool
+	setRules       string
+	setDescription string
+	generateVAPID  bool
+	showConfig     bool
+}
+
+type instanceRepository interface {
+	GetInstanceRules(ctx context.Context) ([]storage.InstanceRule, error)
+	SetInstanceRules(ctx context.Context, rules []storage.InstanceRule) error
+	GetExtendedDescription(ctx context.Context) (string, time.Time, error)
+	SetExtendedDescription(ctx context.Context, description string) error
+}
+
+type pushSubscriptionRepository interface {
+	GetVAPIDKeys(ctx context.Context) (*storage.VAPIDKeys, error)
+	SetVAPIDKeys(ctx context.Context, keys *storage.VAPIDKeys) error
+}
+
+type repositoriesProvider interface {
+	Instance() instanceRepository
+	PushSubscription() pushSubscriptionRepository
+}
+
+type repositoryFactoryAdapter struct {
+	repos *factory.RepositoryFactory
+}
+
+func (a repositoryFactoryAdapter) Instance() instanceRepository {
+	return a.repos.Instance()
+}
+
+func (a repositoryFactoryAdapter) PushSubscription() pushSubscriptionRepository {
+	return a.repos.PushSubscription()
 }
 
 // appContext holds application-wide context and dependencies
 type appContext struct {
 	ctx    context.Context
 	logger *zap.Logger
-	repos  *factory.RepositoryFactory
+	repos  repositoriesProvider
 }
 
-func main() {
-	flags := parseFlags()
+var (
+	mustInitializeLambdaFn = common.MustInitializeLambda
+	getDynamormClientFn    = dynamorm.GetClient
+	newRepositoryFactoryFn = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (repositoriesProvider, error) {
+		repos, err := factory.NewRepositoryFactory(db, tableName, logger)
+		if err != nil {
+			return nil, err
+		}
+		return repositoryFactoryAdapter{repos: repos}, nil
+	}
+	getConfigFn = config.Get
+	scanlnFn    = fmt.Scanln
+)
 
-	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+func main() {
+	if err := runConfigureInstance(context.Background(), os.Args[1:]); err != nil {
+		log.Printf("configure-instance failed: %v", err)
+		os.Exit(1)
+	}
+}
+
+func runConfigureInstance(ctx context.Context, args []string) error {
+	flags, flagSet, err := parseFlags(args)
+	if err != nil {
+		showUsage(flagSet)
+		return err
+	}
+
+	lambdaCtx := mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "configure-instance",
 		LambdaType:  common.LambdaTypeBasic,
 		Version:     "1.0.0",
 	})
 
-	// AWS config no longer needed - DynamORM handles configuration internally
-
 	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
+	db, err := getDynamormClientFn(ctx)
 	if err != nil {
-		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+		return err
 	}
 
-	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	repos, err := newRepositoryFactoryFn(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 	if err != nil {
-		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
+		return err
 	}
 
 	appCtx := &appContext{
-		ctx:    context.Background(),
+		ctx:    ctx,
 		logger: lambdaCtx.Logger,
 		repos:  repos,
 	}
 
 	// Handle different operation modes
-	if *flags.showConfig {
+	if flags.showConfig {
 		showCurrentConfiguration(appCtx)
-		return
+		return nil
 	}
 
-	if *flags.generateVAPID {
-		generateVAPIDKeys(appCtx)
+	if flags.generateVAPID {
+		if err := generateVAPIDKeys(appCtx); err != nil {
+			return err
+		}
 	}
 
-	if *flags.setRules != "" {
-		setInstanceRules(appCtx, *flags.setRules)
+	if flags.setRules != "" {
+		if err := setInstanceRules(appCtx, flags.setRules); err != nil {
+			return err
+		}
 	}
 
-	if *flags.setDescription != "" {
-		setExtendedDescription(appCtx, *flags.setDescription)
+	if flags.setDescription != "" {
+		if err := setExtendedDescription(appCtx, flags.setDescription); err != nil {
+			return err
+		}
 	}
 
 	// If no action specified, show usage
 	if !hasAnyAction(flags) {
-		showUsage()
+		showUsage(flagSet)
 	}
+
+	return nil
 }
 
 // parseFlags parses command-line flags
-func parseFlags() *configFlags {
-	flags := &configFlags{
-		setRules:       flag.String("set-rules", "", "Set instance rules (comma-separated)"),
-		setDescription: flag.String("set-description", "", "Set extended description (HTML)"),
-		generateVAPID:  flag.Bool("generate-vapid", false, "Generate new VAPID keys for push notifications"),
-		showConfig:     flag.Bool("show", false, "Show current configuration"),
-	}
-	flag.Parse()
-	return flags
+func parseFlags(args []string) (configFlags, *flag.FlagSet, error) {
+	flags := configFlags{}
+	fs := flag.NewFlagSet("configure-instance", flag.ContinueOnError)
+	fs.SetOutput(os.Stdout)
+	fs.StringVar(&flags.setRules, "set-rules", "", "Set instance rules (comma-separated)")
+	fs.StringVar(&flags.setDescription, "set-description", "", "Set extended description (HTML)")
+	fs.BoolVar(&flags.generateVAPID, "generate-vapid", false, "Generate new VAPID keys for push notifications")
+	fs.BoolVar(&flags.showConfig, "show", false, "Show current configuration")
+
+	err := fs.Parse(args)
+	return flags, fs, err
 }
 
 // showCurrentConfiguration displays the current instance configuration
@@ -148,12 +212,23 @@ func showVAPIDConfiguration(appCtx *appContext) {
 }
 
 // generateVAPIDKeys generates and saves VAPID keys for push notifications
-func generateVAPIDKeys(appCtx *appContext) {
+func generateVAPIDKeys(appCtx *appContext) error {
 	fmt.Println("Generating VAPID keys for web push notifications...")
 
-	privateKey := generateECDSAKey()
-	publicKeyBase64, privateKeyBase64 := encodeKeys(privateKey)
-	domain := getDomain()
+	privateKey, err := generateECDSAKey()
+	if err != nil {
+		return err
+	}
+
+	publicKeyBase64, privateKeyBase64, err := encodeKeys(privateKey)
+	if err != nil {
+		return err
+	}
+
+	domain, err := getDomain()
+	if err != nil {
+		return err
+	}
 
 	vapidKeys := &storage.VAPIDKeys{
 		PublicKey:  publicKeyBase64,
@@ -161,25 +236,28 @@ func generateVAPIDKeys(appCtx *appContext) {
 		Subject:    fmt.Sprintf("mailto:admin@%s", domain),
 	}
 
-	saveVAPIDKeys(appCtx, vapidKeys)
+	if err := saveVAPIDKeys(appCtx, vapidKeys); err != nil {
+		return err
+	}
 	displayVAPIDSuccess(publicKeyBase64)
+	return nil
 }
 
 // generateECDSAKey generates a P-256 ECDSA key pair
-func generateECDSAKey() *ecdsa.PrivateKey {
+func generateECDSAKey() (*ecdsa.PrivateKey, error) {
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		log.Fatalf("Failed to generate VAPID private key: %v", err)
+		return nil, err
 	}
-	return privateKey
+	return privateKey, nil
 }
 
 // encodeKeys encodes the public and private keys to base64
-func encodeKeys(privateKey *ecdsa.PrivateKey) (string, string) {
+func encodeKeys(privateKey *ecdsa.PrivateKey) (string, string, error) {
 	// Convert ECDSA key to ECDH and get public key bytes
 	ecdhKey, err := privateKey.ECDH()
 	if err != nil {
-		log.Fatalf("Failed to convert to ECDH key: %v", err)
+		return "", "", err
 	}
 	publicKeyBytes := ecdhKey.PublicKey().Bytes()
 	publicKeyBase64 := base64.RawURLEncoding.EncodeToString(publicKeyBytes)
@@ -193,27 +271,28 @@ func encodeKeys(privateKey *ecdsa.PrivateKey) (string, string) {
 	}
 	privateKeyBase64 := base64.RawURLEncoding.EncodeToString(privateKeyBytes)
 
-	return publicKeyBase64, privateKeyBase64
+	return publicKeyBase64, privateKeyBase64, nil
 }
 
 // getDomain gets the domain from centralized config or prompts the user
-func getDomain() string {
-	cfg := config.Get()
+func getDomain() (string, error) {
+	cfg := getConfigFn()
 	domain := cfg.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		fmt.Print("Enter your instance domain (e.g., example.com): ")
-		if _, err := fmt.Scanln(&domain); err != nil {
-			log.Fatalf("Failed to read domain input: %v", err)
+		if _, err := scanlnFn(&domain); err != nil {
+			return "", err
 		}
 	}
-	return domain
+	return domain, nil
 }
 
 // saveVAPIDKeys saves the VAPID keys to storage
-func saveVAPIDKeys(appCtx *appContext, vapidKeys *storage.VAPIDKeys) {
+func saveVAPIDKeys(appCtx *appContext, vapidKeys *storage.VAPIDKeys) error {
 	if err := appCtx.repos.PushSubscription().SetVAPIDKeys(appCtx.ctx, vapidKeys); err != nil {
-		log.Fatalf("Failed to save VAPID keys: %v", err)
+		return err
 	}
+	return nil
 }
 
 // displayVAPIDSuccess shows success message after VAPID key generation
@@ -225,13 +304,14 @@ func displayVAPIDSuccess(publicKeyBase64 string) {
 }
 
 // setInstanceRules sets the instance rules from comma-separated text
-func setInstanceRules(appCtx *appContext, rulesText string) {
+func setInstanceRules(appCtx *appContext, rulesText string) error {
 	rules := parseRules(rulesText)
 
 	if err := appCtx.repos.Instance().SetInstanceRules(appCtx.ctx, rules); err != nil {
-		log.Fatalf("Failed to set rules: %v", err)
+		return err
 	}
 	fmt.Printf("✓ Set %d rules\n", len(rules))
+	return nil
 }
 
 // parseRules parses comma-separated rules text into InstanceRule slice
@@ -248,23 +328,26 @@ func parseRules(rulesText string) []storage.InstanceRule {
 }
 
 // setExtendedDescription sets the extended description for the instance
-func setExtendedDescription(appCtx *appContext, description string) {
+func setExtendedDescription(appCtx *appContext, description string) error {
 	if err := appCtx.repos.Instance().SetExtendedDescription(appCtx.ctx, description); err != nil {
-		log.Fatalf("Failed to set extended description: %v", err)
+		return err
 	}
 	fmt.Println("✓ Set extended description")
+	return nil
 }
 
 // hasAnyAction checks if any action flag was provided
-func hasAnyAction(flags *configFlags) bool {
-	return *flags.showConfig || *flags.setRules != "" || *flags.setDescription != "" || *flags.generateVAPID
+func hasAnyAction(flags configFlags) bool {
+	return flags.showConfig || flags.setRules != "" || flags.setDescription != "" || flags.generateVAPID
 }
 
 // showUsage displays usage information
-func showUsage() {
+func showUsage(flagSet *flag.FlagSet) {
 	fmt.Println("Usage: configure-instance [options]")
 	fmt.Println("\nOptions:")
-	flag.PrintDefaults()
+	if flagSet != nil {
+		flagSet.PrintDefaults()
+	}
 	fmt.Println("\nExamples:")
 	fmt.Println("  # Show current configuration")
 	fmt.Println("  configure-instance -show")
@@ -277,5 +360,4 @@ func showUsage() {
 	fmt.Println("")
 	fmt.Println("  # Set extended description")
 	fmt.Println("  configure-instance -set-description \"<h1>Welcome!</h1><p>This is a personal instance.</p>\"")
-	os.Exit(0)
 }

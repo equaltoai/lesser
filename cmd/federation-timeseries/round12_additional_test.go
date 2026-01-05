@@ -1,0 +1,300 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/lift/pkg/lift"
+	"github.com/pay-theory/lift/pkg/lift/adapters"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+type fakeQuery struct {
+	db *fakeDynamoDB
+}
+
+func (f *fakeQuery) Where(string, string, any) dynamormCore.Query                     { return f }
+func (f *fakeQuery) Index(string) dynamormCore.Query                                  { return f }
+func (f *fakeQuery) Filter(string, string, any) dynamormCore.Query                    { return f }
+func (f *fakeQuery) OrFilter(string, string, any) dynamormCore.Query                  { return f }
+func (f *fakeQuery) FilterGroup(func(dynamormCore.Query)) dynamormCore.Query          { return f }
+func (f *fakeQuery) OrFilterGroup(func(dynamormCore.Query)) dynamormCore.Query        { return f }
+func (f *fakeQuery) IfNotExists() dynamormCore.Query                                  { return f }
+func (f *fakeQuery) IfExists() dynamormCore.Query                                     { return f }
+func (f *fakeQuery) WithCondition(string, string, any) dynamormCore.Query             { return f }
+func (f *fakeQuery) WithConditionExpression(string, map[string]any) dynamormCore.Query { return f }
+func (f *fakeQuery) OrderBy(string, string) dynamormCore.Query                        { return f }
+func (f *fakeQuery) Limit(int) dynamormCore.Query                                     { return f }
+func (f *fakeQuery) Offset(int) dynamormCore.Query                                    { return f }
+func (f *fakeQuery) Select(...string) dynamormCore.Query                              { return f }
+func (f *fakeQuery) ConsistentRead() dynamormCore.Query                               { return f }
+func (f *fakeQuery) WithRetry(int, time.Duration) dynamormCore.Query                  { return f }
+func (f *fakeQuery) First(any) error                                                  { return nil }
+func (f *fakeQuery) All(any) error                                                    { return nil }
+func (f *fakeQuery) AllPaginated(any) (*dynamormCore.PaginatedResult, error)          { return &dynamormCore.PaginatedResult{}, nil }
+func (f *fakeQuery) Count() (int64, error)                                            { return 0, nil }
+
+func (f *fakeQuery) Create() error {
+	f.db.createCalls++
+	if f.db.failCreatesAfterFirst && f.db.createCalls > 1 {
+		return errors.New("create failed")
+	}
+	return f.db.createErr
+}
+
+func (f *fakeQuery) CreateOrUpdate() error                                     { return nil }
+func (f *fakeQuery) Update(...string) error                                    { return nil }
+func (f *fakeQuery) UpdateBuilder() dynamormCore.UpdateBuilder                 { return nil }
+func (f *fakeQuery) Delete() error                                             { return nil }
+func (f *fakeQuery) Scan(any) error                                            { return nil }
+func (f *fakeQuery) ParallelScan(int32, int32) dynamormCore.Query              { return f }
+func (f *fakeQuery) ScanAllSegments(any, int32) error                          { return nil }
+func (f *fakeQuery) BatchGet([]any, any) error                                 { return nil }
+func (f *fakeQuery) BatchGetWithOptions([]any, any, *dynamormCore.BatchGetOptions) error {
+	return nil
+}
+func (f *fakeQuery) BatchGetBuilder() dynamormCore.BatchGetBuilder             { return nil }
+func (f *fakeQuery) BatchCreate(any) error                                     { return nil }
+func (f *fakeQuery) BatchDelete([]any) error                                   { return nil }
+func (f *fakeQuery) BatchWrite([]any, []any) error                             { return nil }
+func (f *fakeQuery) BatchUpdateWithOptions([]any, []string, ...any) error      { return nil }
+func (f *fakeQuery) Cursor(string) dynamormCore.Query                          { return f }
+func (f *fakeQuery) SetCursor(string) error                                    { return nil }
+func (f *fakeQuery) WithContext(context.Context) dynamormCore.Query            { return f }
+
+type fakeDynamoDB struct {
+	createCalls         int
+	createErr           error
+	failCreatesAfterFirst bool
+}
+
+func (f *fakeDynamoDB) Model(any) dynamormCore.Query                                     { return &fakeQuery{db: f} }
+func (f *fakeDynamoDB) Transaction(fn func(tx *dynamormCore.Tx) error) error            { return fn(&dynamormCore.Tx{}) }
+func (f *fakeDynamoDB) Migrate() error                                                  { return nil }
+func (f *fakeDynamoDB) AutoMigrate(...any) error                                        { return nil }
+func (f *fakeDynamoDB) Close() error                                                    { return nil }
+func (f *fakeDynamoDB) WithContext(context.Context) dynamormCore.DB                     { return f }
+
+func TestInitializeFederationTimeseries_WiresGlobals(t *testing.T) {
+	origMustInit := mustInitializeLambdaFn
+	origInitDefaults := initializeWithDefaultsFn
+	origGetClient := dynamormGetClientFn
+	t.Cleanup(func() {
+		mustInitializeLambdaFn = origMustInit
+		initializeWithDefaultsFn = origInitDefaults
+		dynamormGetClientFn = origGetClient
+	})
+
+	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
+		return &common.LambdaContext{
+			Config:  &config.Config{DynamoTableName: "table"},
+			Logger:  zap.NewNop(),
+			LambdaType: common.LambdaTypeProcessor,
+		}
+	}
+	initializeWithDefaultsFn = func(*common.LambdaContext) error { return errors.New("defaults failed") }
+
+	db := &fakeDynamoDB{}
+	dynamormGetClientFn = func(context.Context) (dynamormCore.DB, error) { return db, nil }
+
+	initializeFederationTimeseries()
+
+	require.NotNil(t, lambdaCtx)
+	require.NotNil(t, processor)
+	require.Equal(t, "table", processor.tableName)
+}
+
+func TestInitializeFederationTimeseries_UsesNopLoggerWhenNil(t *testing.T) {
+	origMustInit := mustInitializeLambdaFn
+	origInitDefaults := initializeWithDefaultsFn
+	origGetClient := dynamormGetClientFn
+	t.Cleanup(func() {
+		mustInitializeLambdaFn = origMustInit
+		initializeWithDefaultsFn = origInitDefaults
+		dynamormGetClientFn = origGetClient
+	})
+
+	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
+		return &common.LambdaContext{
+			Config:     &config.Config{DynamoTableName: "table"},
+			Logger:     nil,
+			LambdaType: common.LambdaTypeProcessor,
+			Repos:      "not a repository storage",
+		}
+	}
+	initializeWithDefaultsFn = func(*common.LambdaContext) error { return nil }
+	dynamormGetClientFn = func(context.Context) (dynamormCore.DB, error) { return &fakeDynamoDB{}, nil }
+
+	initializeFederationTimeseries()
+	require.NotNil(t, logger)
+	require.NotNil(t, processor)
+}
+
+func TestTimeseriesProcessor_StoreMetrics(t *testing.T) {
+	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{TriggerType: lift.TriggerEventBus}))
+	ctx.SetRequestID("req")
+
+	t.Run("returns error when base record store fails", func(t *testing.T) {
+		db := &fakeDynamoDB{createErr: errors.New("nope")}
+		tp := &TimeseriesProcessor{db: db, tableName: "table", logger: zap.NewNop()}
+		err := tp.storeMetrics(ctx, time.Unix(0, 0).UTC(), &FederationMetrics{
+			UniqueActors:    map[string]bool{},
+			UniqueInstances: map[string]bool{},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("logs and continues on per-instance store failures", func(t *testing.T) {
+		db := &fakeDynamoDB{failCreatesAfterFirst: true}
+		tp := &TimeseriesProcessor{db: db, tableName: "table", logger: zap.NewNop()}
+
+		metrics := &FederationMetrics{
+			FollowCount:     1,
+			LikeCount:       1,
+			AnnounceCount:   0,
+			ActivityCount:   0,
+			UniqueActors:    map[string]bool{"actor": true},
+			UniqueInstances: map[string]bool{"example.com": true, "remote.example": true},
+		}
+
+		require.NoError(t, tp.storeMetrics(ctx, time.Unix(0, 0).UTC(), metrics))
+		require.GreaterOrEqual(t, db.createCalls, 1)
+	})
+}
+
+func TestTimeseriesProcessor_GroupingAndAggregation_Branches(t *testing.T) {
+	tp := &TimeseriesProcessor{logger: zap.NewNop()}
+
+	mkRecord := func(pk, typ, createdAt, timestamp, updatedAt string) events.DynamoDBEventRecord {
+		image := map[string]events.DynamoDBAttributeValue{
+			"PK":   events.NewStringAttribute(pk),
+			"type": events.NewStringAttribute(typ),
+		}
+		if createdAt != "" {
+			image["created_at"] = events.NewStringAttribute(createdAt)
+		}
+		if timestamp != "" {
+			image["timestamp"] = events.NewStringAttribute(timestamp)
+		}
+		if updatedAt != "" {
+			image["updated_at"] = events.NewStringAttribute(updatedAt)
+		}
+		if strings.Contains(pk, "ACTIVITY#") {
+			image["actor_id"] = events.NewStringAttribute("https://remote.example/users/alice")
+		}
+		return events.DynamoDBEventRecord{
+			EventName: "INSERT",
+			Change:    events.DynamoDBStreamRecord{NewImage: image},
+		}
+	}
+
+	require.False(t, tp.isFederationRecord(events.DynamoDBEventRecord{EventName: "INSERT"}))
+	require.False(t, tp.isFederationRecord(events.DynamoDBEventRecord{
+		EventName: "UNKNOWN",
+		Change:    events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("ACTOR#1")}},
+	}))
+	require.True(t, tp.isFederationRecord(mkRecord("ACTOR#1", "Person", "2024-01-01T00:01:00Z", "", "")))
+	require.True(t, tp.isFederationRecord(mkRecord("OTHER#1", "Like", "2024-01-01T00:01:00Z", "", "")))
+
+	require.True(t, tp.extractTimestamp(mkRecord("ACTOR#1", "Person", "", "", "")).IsZero())
+	require.Equal(t,
+		time.Date(2024, 1, 1, 0, 1, 0, 0, time.UTC),
+		tp.extractTimestamp(mkRecord("ACTOR#1", "Person", "bad", "2024-01-01T00:01:00Z", "")),
+	)
+
+	records := []events.DynamoDBEventRecord{
+		mkRecord("OBJECT#1", "Note", "2024-01-01T00:01:00Z", "", ""), // non-federation
+		mkRecord("OTHER#2", "Follow", "", "", ""),                    // federation, but no timestamp
+		mkRecord("ACTIVITY#1", "Follow", "2024-01-01T00:01:00Z", "", ""),
+		mkRecord("ACTIVITY#2", "Announce", "2024-01-01T00:06:00Z", "", ""),
+	}
+
+	windows := tp.groupByTimeWindow(records)
+	require.Len(t, windows, 2)
+
+	metrics := tp.aggregateMetrics(records)
+	require.Equal(t, 2, metrics.FollowCount)
+	require.Equal(t, 0, metrics.LikeCount)
+	require.Equal(t, 1, metrics.AnnounceCount)
+	require.Equal(t, 1, metrics.ActivityCount)
+	require.GreaterOrEqual(t, len(metrics.UniqueInstances), 1)
+
+	require.Equal(t, "remote.example", tp.extractInstance("https://remote.example/users/alice"))
+	require.Equal(t, "", tp.extractInstance("http://remote.example/users/alice"))
+}
+
+func TestTimeseriesProcessor_HandleStream_LogsAndContinuesOnWindowErrors(t *testing.T) {
+	db := &fakeDynamoDB{createErr: errors.New("nope")}
+	tp := &TimeseriesProcessor{db: db, tableName: "table", logger: zap.NewNop()}
+
+	req := lift.NewRequest(&adapters.Request{TriggerType: lift.TriggerEventBus})
+	ctx := lift.NewContext(context.Background(), req)
+	ctx.SetRequestID("req")
+
+	record := events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK":         events.NewStringAttribute("ACTIVITY#1"),
+				"type":       events.NewStringAttribute("Follow"),
+				"actor_id":   events.NewStringAttribute("https://remote.example/users/alice"),
+				"created_at": events.NewStringAttribute("2024-01-01T00:01:00Z"),
+			},
+		},
+	}
+
+	require.NoError(t, tp.HandleStream(ctx, events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{record}}))
+}
+
+func TestHandleDynamoDBStream_DecodeAndDispatch(t *testing.T) {
+	origProcessor := processor
+	t.Cleanup(func() { processor = origProcessor })
+
+	db := &fakeDynamoDB{}
+	processor = &TimeseriesProcessor{db: db, tableName: "table", logger: zap.NewNop()}
+
+	record := events.DynamoDBEventRecord{
+			EventName: "INSERT",
+			Change: events.DynamoDBStreamRecord{
+				NewImage: map[string]events.DynamoDBAttributeValue{
+					"PK":         events.NewStringAttribute("ACTIVITY#1"),
+					"type":       events.NewStringAttribute("Follow"),
+					"actor_id":   events.NewStringAttribute("https://remote.example/users/alice"),
+					"created_at": events.NewStringAttribute("2024-01-01T00:01:00Z"),
+				},
+			},
+		}
+
+	req := lift.NewRequest(&adapters.Request{
+		TriggerType: lift.TriggerEventBus,
+		Records:     []any{record},
+	})
+	ctx := lift.NewContext(context.Background(), req)
+	ctx.SetRequestID("req")
+
+	require.NoError(t, handleDynamoDBStream(ctx))
+	require.GreaterOrEqual(t, db.createCalls, 1)
+
+	badReq := lift.NewRequest(&adapters.Request{TriggerType: lift.TriggerSQS})
+	badCtx := lift.NewContext(context.Background(), badReq)
+	require.Error(t, handleDynamoDBStream(badCtx))
+}
+
+func TestMain_InvokesLambdaStart(t *testing.T) {
+	origStart := lambdaStartFn
+	t.Cleanup(func() { lambdaStartFn = origStart })
+
+	var called bool
+	lambdaStartFn = func(_ interface{}) { called = true }
+
+	main()
+	require.True(t, called)
+}

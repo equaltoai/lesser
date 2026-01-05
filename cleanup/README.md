@@ -13,4 +13,4 @@ git filter-repo --paths-from-file cleanup/filter-repo-drop-paths.txt --invert-pa
 git filter-repo --replace-text cleanup/replace-secrets.txt --force
 ```
 
-Afterward re-run `git filter-repo --analyze`, rebuild (`make build-lambdas`), and run the tests before coordinating the force-push with the team.
+Afterward re-run `git filter-repo --analyze`, rebuild (`./lesser build lambdas`), and run the tests before coordinating the force-push with the team.

@@ -32,39 +32,29 @@ Lesser uses AWS CDK with the Lift framework for infrastructure:
 
 ### Prerequisites
 
-- AWS Account with credentials configured (`aws configure`)
+- AWS credentials configured (for example: `aws sso login --profile ...` or `aws configure`)
 - AWS CDK v2 installed (`npm install -g aws-cdk`)
 - Go 1.25 or later
-- Make installed for build automation
+- A public Route53 hosted zone that exactly matches your base domain (for example: `example.com`)
 
 ### Basic Deployment
 
 ```bash
-# Clone the repository
-git clone https://github.com/equaltoai/lesser.git
-cd lesser
+# Build the operator CLI
+go build -o lesser ./cmd/lesser
 
-# Build Lambda functions
-make build-lambdas
-
-# Deploy infrastructure
-cd infra/cdk
-cdk bootstrap  # First time only
-cdk deploy --all
+# Deploy dev + live (and optionally staging)
+./lesser up \
+  --app my-lesser \
+  --base-domain example.com \
+  --aws-profile Penny \
+  --out ~/.lesser/my-lesser/example.com/bootstrap.json
 ```
 
-### Production Deployment
-
-For production, you'll need a domain and SSL certificate:
-
-```bash
-# Deploy with custom domain and required production settings
-cdk deploy --all \
-  --context environment=production \
-  --context domain=yourdomain.com \
-  --context certificateArn=arn:aws:acm:us-east-1:xxx:certificate/xxx \
-  --context jwtSecret=your-secure-secret
-```
+Notes:
+- The **live** stage uses the apex domain (`example.com`), while **dev** uses `dev.example.com` (and **staging** uses `staging.example.com` if enabled).
+- On first deploy, `--out <path>` is required so you don’t lose the 24-word Ethereum mnemonic (the file is created with `0600` permissions).
+- A local deployment receipt is written to `~/.lesser/<app>/<base-domain>/state.json`.
 
 ## Project Structure
 
@@ -89,19 +79,17 @@ lesser/
 │   └── cdk/               # AWS CDK infrastructure
 │       ├── stacks/        # CDK stack definitions
 │       ├── constructs/    # Reusable CDK constructs
-│       └── config/        # Environment configurations
+│       └── config/        # Reference templates (not loaded by CDK app)
 └── graph/                  # GraphQL schema and resolvers
 ```
 
 ## Configuration
 
-Environment-specific settings are in `infra/cdk/config/`:
-
-- **development.yaml**: Development environment (512MB RAM, DEBUG logging)
-- **staging.yaml**: Staging environment (1GB RAM, INFO logging)
-- **production.yaml**: Production environment (3GB RAM, full monitoring)
+Infrastructure defaults (memory/timeouts, tables/buckets, CloudFront, etc.) live in `infra/cdk/stacks/` and `infra/cdk/inventory/`.
 
 ### Environment Variables
+
+Runtime configuration is managed in AWS for deployed stacks; see `docs/configuration.md` for the canonical reference.
 
 Key configuration options:
 
@@ -138,8 +126,9 @@ Built-in observability features:
 - **Custom Alarms**: Automatic alerting for errors and performance issues
 
 Access your dashboard at:
-```
-https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=lesser-{environment}
+
+```bash
+./lesser dashboard --app <app> --env live --region us-east-1
 ```
 
 ## API Documentation
@@ -155,10 +144,10 @@ Lesser provides three API interfaces:
 - 60+ operations for queries, mutations, and subscriptions
 - DataLoader for N+1 query prevention
 - Real-time subscriptions via WebSocket
-- **Published schema**: The canonical schema we ship to clients lives at `graph/schema.graphql`.
-  It is generated from the modular source files (`graph/core.graphql`, `graph/phase2.graphql`,
-  `graph/phase3.graphql`) by running `./scripts/generate_schema.sh`. Always rerun that script
-  before sharing or checking in schema changes so frontend teams see every type in one place.
+- **Published schema**: The canonical schema we ship to clients lives at `docs/contracts/graphql-schema.graphql`.
+  It is generated from the modular source files (`graph/core.graphql`, `graph/phase1.graphql`, `graph/phase2.graphql`, `graph/phase3.graphql`)
+  by running `./lesser schema` (or `./scripts/generate_schema.sh`). Always rerun it before sharing or checking in schema changes so frontend teams
+  see every type in one place.
 
 ### WebSocket Streaming
 - Real-time timeline updates
@@ -173,11 +162,14 @@ Lesser provides three API interfaces:
 # Install dependencies
 go mod download
 
+# Build the Lesser CLI
+go build -o lesser ./cmd/lesser
+
 # Run tests
-make test
+./lesser test
 
 # Build all Lambda functions
-make build-lambdas
+./lesser build lambdas
 
 # Run specific function locally
 cd cmd/api
@@ -188,23 +180,23 @@ go run main.go
 
 ```bash
 # Unit tests
-make test
+./lesser test
 
 # Short unit sweep used by verify
-make test-unit
+./lesser test unit
 
 # Unified verification (Spec 07 R6: lambda set, inventory, docs, unit tests)
-make verify
+./lesser verify
 
 # Enable optional smoke suites inside verify (non-destructive HTTP only)
-VERIFY_SMOKE=1 SMOKE_BASE_URL=https://lesser.host SMOKE_USERNAME=alice SMOKE_OBJECT_ID=123 SMOKE_TOKEN="Bearer xyz" make verify
+./lesser verify --smoke --smoke-base-url=https://lesser.host --smoke-token="Bearer xyz" --smoke-username=alice --smoke-object-id=123
 
 # Run smoke suites directly
-SMOKE_BASE_URL=https://lesser.host SMOKE_TOKEN="Bearer xyz" make smoke-core
-SMOKE_BASE_URL=https://lesser.host SMOKE_USERNAME=alice SMOKE_OBJECT_ID=123 make smoke-federation
+./lesser smoke core --base-url=https://lesser.host --token="Bearer xyz"
+./lesser smoke federation --base-url=https://lesser.host --username=alice --object-id=123
 
 # Enable optional CDK synth inside verify
-VERIFY_CDK=1 make verify
+./lesser verify --cdk --cdk-aws-profile=<profile> --cdk-region=us-east-1
 ```
 
 ## Federation

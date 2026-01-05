@@ -56,13 +56,13 @@ func (s *SimpleRepositoryStorage) GetLogger() *zap.Logger { return s.logger }
 // This is sufficient to test interface compliance and basic adapter functionality
 func (s *SimpleRepositoryStorage) Account() *repositories.AccountRepository             { return nil }
 func (s *SimpleRepositoryStorage) Bookmark() *repositories.BookmarkRepository           { return nil }
-func (s *SimpleRepositoryStorage) Actor() *repositories.ActorRepository                 { return nil }
-func (s *SimpleRepositoryStorage) Object() *repositories.ObjectRepository               { return nil }
-func (s *SimpleRepositoryStorage) Activity() *repositories.ActivityRepository           { return nil }
-func (s *SimpleRepositoryStorage) Timeline() *repositories.TimelineRepository           { return nil }
-func (s *SimpleRepositoryStorage) Notification() *repositories.NotificationRepository   { return nil }
+func (s *SimpleRepositoryStorage) Actor() interfaces.ActorRepository                    { return nil }
+func (s *SimpleRepositoryStorage) Object() interfaces.ObjectRepository                  { return nil }
+func (s *SimpleRepositoryStorage) Activity() interfaces.ActivityRepository              { return nil }
+func (s *SimpleRepositoryStorage) Timeline() interfaces.TimelineRepository              { return nil }
+func (s *SimpleRepositoryStorage) Notification() interfaces.NotificationRepository      { return nil }
 func (s *SimpleRepositoryStorage) Like() *repositories.LikeRepository                   { return nil }
-func (s *SimpleRepositoryStorage) Moderation() *repositories.ModerationRepository       { return nil }
+func (s *SimpleRepositoryStorage) Moderation() interfaces.ModerationRepository          { return nil }
 func (s *SimpleRepositoryStorage) List() *repositories.ListRepository                   { return nil }
 func (s *SimpleRepositoryStorage) Media() *repositories.MediaRepository                 { return nil }
 func (s *SimpleRepositoryStorage) MediaMetadata() *repositories.MediaMetadataRepository { return nil }
@@ -76,17 +76,17 @@ func (s *SimpleRepositoryStorage) ScheduledStatus() *repositories.ScheduledStatu
 }
 func (s *SimpleRepositoryStorage) Announcement() *repositories.AnnouncementRepository   { return nil }
 func (s *SimpleRepositoryStorage) DomainBlock() *repositories.DomainBlockRepository     { return nil }
-func (s *SimpleRepositoryStorage) Relationship() *repositories.RelationshipRepository   { return nil }
+func (s *SimpleRepositoryStorage) Relationship() interfaces.ConcreteRelationshipRepository { return nil }
 func (s *SimpleRepositoryStorage) Instance() *repositories.InstanceRepository           { return nil }
 func (s *SimpleRepositoryStorage) Federation() *repositories.FederationRepository       { return nil }
 func (s *SimpleRepositoryStorage) Recovery() *repositories.RecoveryRepository           { return nil }
 func (s *SimpleRepositoryStorage) Analytics() *repositories.TrendingRepository          { return nil }
 func (s *SimpleRepositoryStorage) Social() *repositories.SocialRepository               { return nil }
-func (s *SimpleRepositoryStorage) User() *repositories.UserRepository                   { return nil }
-func (s *SimpleRepositoryStorage) Status() *repositories.StatusRepository               { return nil }
+func (s *SimpleRepositoryStorage) User() interfaces.UserRepository                      { return nil }
+func (s *SimpleRepositoryStorage) Status() interfaces.StatusRepository                  { return nil }
 func (s *SimpleRepositoryStorage) Cost() *repositories.TrackingRepository               { return nil }
 func (s *SimpleRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepository { return nil }
-func (s *SimpleRepositoryStorage) Trust() *repositories.TrustRepository                 { return nil }
+func (s *SimpleRepositoryStorage) Trust() interfaces.TrustRepository                    { return nil }
 func (s *SimpleRepositoryStorage) Search() *repositories.SearchRepository               { return nil }
 func (s *SimpleRepositoryStorage) Relay() *repositories.RelayRepository                 { return nil }
 func (s *SimpleRepositoryStorage) CommunityNote() *repositories.CommunityNoteRepository { return nil }
@@ -114,23 +114,23 @@ func (s *SimpleRepositoryStorage) Thread() *repositories.ThreadRepository       
 func (s *SimpleRepositoryStorage) Severance() *repositories.SeveranceRepository       { return nil }
 func (s *SimpleRepositoryStorage) ModerationML() *repositories.ModerationMLRepository { return nil }
 func (s *SimpleRepositoryStorage) Quote() *repositories.QuoteRepository               { return nil }
-func (s *SimpleRepositoryStorage) MediaAnalytics() *repositories.MediaAnalyticsRepository {
+func (s *SimpleRepositoryStorage) MediaAnalytics() interfaces.MediaAnalyticsRepository {
 	return nil
 }
-func (s *SimpleRepositoryStorage) MediaPopularity() *repositories.MediaPopularityRepository {
+func (s *SimpleRepositoryStorage) MediaPopularity() interfaces.MediaPopularityRepository {
 	return nil
 }
-func (s *SimpleRepositoryStorage) MediaSession() *repositories.MediaSessionRepository { return nil }
-func (s *SimpleRepositoryStorage) StreamingConnection() *repositories.StreamingConnectionRepository {
+func (s *SimpleRepositoryStorage) MediaSession() interfaces.MediaSessionRepository       { return nil }
+func (s *SimpleRepositoryStorage) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return nil
 }
 
-func (s *SimpleRepositoryStorage) Article() *repositories.ArticleRepository         { return nil }
-func (s *SimpleRepositoryStorage) Draft() *repositories.DraftRepository             { return nil }
-func (s *SimpleRepositoryStorage) Revision() *repositories.RevisionRepository       { return nil }
-func (s *SimpleRepositoryStorage) Series() *repositories.SeriesRepository           { return nil }
-func (s *SimpleRepositoryStorage) Category() *repositories.CategoryRepository       { return nil }
-func (s *SimpleRepositoryStorage) Publication() *repositories.PublicationRepository { return nil }
-func (s *SimpleRepositoryStorage) PublicationMember() *repositories.PublicationMemberRepository {
+func (s *SimpleRepositoryStorage) Article() interfaces.ArticleRepository         { return nil }
+func (s *SimpleRepositoryStorage) Draft() interfaces.DraftRepository             { return nil }
+func (s *SimpleRepositoryStorage) Revision() interfaces.RevisionRepository       { return nil }
+func (s *SimpleRepositoryStorage) Series() interfaces.SeriesRepository           { return nil }
+func (s *SimpleRepositoryStorage) Category() interfaces.CategoryRepository       { return nil }
+func (s *SimpleRepositoryStorage) Publication() interfaces.PublicationRepository { return nil }
+func (s *SimpleRepositoryStorage) PublicationMember() interfaces.PublicationMemberRepository {
 	return nil
 }

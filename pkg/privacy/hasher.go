@@ -397,16 +397,16 @@ func (ph *Hasher) hashPIIPartial(pii string) (string, error) {
 	// For PII data, partial hashing is risky as it may expose sensitive information
 	// We preserve only basic structural information that's safe for analytics
 
-	// Check if it looks like a phone number (digits, spaces, dashes, parentheses)
-	if ph.looksLikePhoneNumber(pii) {
-		// For phone numbers, preserve length and format structure
-		return ph.hashPhoneNumberPartial(pii)
-	}
-
 	// Check if it looks like a social security number or similar ID
 	if ph.looksLikeSSN(pii) {
 		// For SSN-like data, use full hashing for maximum security
 		return ph.hashFull(pii, DataTypePII)
+	}
+
+	// Check if it looks like a phone number (digits, spaces, dashes, parentheses)
+	if ph.looksLikePhoneNumber(pii) {
+		// For phone numbers, preserve length and format structure
+		return ph.hashPhoneNumberPartial(pii)
 	}
 
 	// For other PII types, preserve only length information

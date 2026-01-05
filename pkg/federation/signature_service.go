@@ -14,21 +14,53 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/httpclient"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
 // SignatureService provides enhanced HTTP signature verification with caching and retry logic
 type SignatureService struct {
-	publicKeyCacheRepo *repositories.PublicKeyCacheRepository
+	publicKeyCacheRepo signaturePublicKeyCacheRepository
+	httpClient         httpDoer
 	logger             *zap.Logger
+	sleep              func(ctx context.Context, d time.Duration) error
+}
+
+type signaturePublicKeyCacheRepository interface {
+	GetByActorURL(ctx context.Context, actorURL string) (*models.PublicKeyCache, error)
+	InvalidateCache(ctx context.Context, actorURL string) error
+	Store(ctx context.Context, actorURL, keyID, publicKeyPEM, algorithm string) (*models.PublicKeyCache, error)
+	UpdateStats(ctx context.Context, actorURL string, success bool) error
 }
 
 // NewSignatureService creates a new signature service
 func NewSignatureService(publicKeyCacheRepo *repositories.PublicKeyCacheRepository, logger *zap.Logger) *SignatureService {
+	var repo signaturePublicKeyCacheRepository
+	if publicKeyCacheRepo != nil {
+		repo = publicKeyCacheRepo
+	}
+
 	return &SignatureService{
-		publicKeyCacheRepo: publicKeyCacheRepo,
-		logger:             logger,
+		publicKeyCacheRepo: repo,
+		httpClient: httpclient.NewSecureClient(
+			httpclient.WithTimeout(10*time.Second),
+			httpclient.WithLogger(logger),
+		),
+		logger: logger,
+		sleep:  defaultSignatureSleep,
+	}
+}
+
+func defaultSignatureSleep(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 
@@ -109,11 +141,8 @@ func (s *SignatureService) fetchPublicKeyWithRetry(ctx context.Context, actorURL
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				return nil, "", "", ctx.Err()
-			case <-time.After(retryDelays[attempt-1]):
-				// Continue with retry
+			if err := s.sleep(ctx, retryDelays[attempt-1]); err != nil {
+				return nil, "", "", err
 			}
 		}
 
@@ -153,12 +182,6 @@ func (s *SignatureService) fetchPublicKeyWithRetry(ctx context.Context, actorURL
 
 // fetchActorPublicKeyWithPEM fetches an actor's public key from their profile and returns the PEM data
 func (s *SignatureService) fetchActorPublicKeyWithPEM(ctx context.Context, actorURL string, log *zap.Logger) (crypto.PublicKey, string, string, string, error) {
-	// Create secure HTTP client with timeout
-	client := httpclient.NewSecureClient(
-		httpclient.WithTimeout(10*time.Second),
-		httpclient.WithLogger(log),
-	)
-
 	// Create request with ActivityPub Accept header
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, actorURL, nil)
 	if err != nil {
@@ -173,7 +196,7 @@ func (s *SignatureService) fetchActorPublicKeyWithPEM(ctx context.Context, actor
 	req.Header.Set("User-Agent", "Lesser/1.0")
 
 	// Make request
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		log.Error("HTTP request failed during actor fetch",
 			zap.String("actor_url", actorURL),

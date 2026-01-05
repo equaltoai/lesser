@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            infra/cdk/go.sum
+
+      - name: Install Go tools
+        run: bash scripts/install_ci_tools.sh
+
+      - name: Cache Lesser tool caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            tmp/go-cache
+            tmp/xdg-cache
+          key: ${{ runner.os }}-lesser-tmp-${{ hashFiles('go.mod', 'go.sum', 'infra/cdk/go.mod', 'infra/cdk/go.sum', '.golangci.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-lesser-tmp-
+
+      - name: Build lesser CLI
+        run: go build -o lesser ./cmd/lesser
+
+      - name: Build lambda artifacts
+        run: ./lesser build lambdas
+
+      - name: Verify (CI gate)
+        run: ./lesser verify ci
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: report/
+          if-no-files-found: ignore

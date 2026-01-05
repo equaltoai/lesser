@@ -306,12 +306,16 @@ var (
 	processor *TimeseriesProcessor
 )
 
-func init() {
-	if common.RunningUnitTests() {
-		return
-	}
+var (
+	mustInitializeLambdaFn    = common.MustInitializeLambda
+	initializeWithDefaultsFn  = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	dynamormGetClientFn       = dynamorm.GetClient
+	lambdaStartFn             = lambda.Start
+)
+
+func initializeFederationTimeseries() {
 	// Standardized Lambda initialization for federation-timeseries function
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "federation-timeseries",    // federation-timeseries
 		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
 	})
@@ -319,17 +323,23 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	if lambdaCtx.Repos != nil {
+		if repoStorage, ok := lambdaCtx.Repos.(core.RepositoryStorage); ok {
+			repos = repoStorage
+		}
+	}
 
 	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
 	// Function-specific initialization only
 	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
+	db, err := dynamormGetClientFn(context.Background())
 	if err != nil {
 		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
@@ -338,18 +348,27 @@ func init() {
 	processor = NewTimeseriesProcessor(db, cfg.DynamoTableName, logger)
 }
 
+func init() {
+	if common.RunningUnitTests() {
+		return
+	}
+	initializeFederationTimeseries()
+}
+
+func handleDynamoDBStream(ctx *lift.Context) error {
+	records, err := ctx.DynamoDBRecords()
+	if err != nil {
+		return err
+	}
+	return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+}
+
 func main() {
 	app := lift.New()
 	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
 	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
-	})
+	_ = app.DynamoDB("*", handleDynamoDBStream)
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }

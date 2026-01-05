@@ -71,8 +71,9 @@ func (p *PaginationOptions) Validate() error {
 	}
 
 	// Use centralized sort parameter validation
+	// Note: sortBy is validated against allowedFields, sortOrder expects 'asc'/'desc'
 	allowedSortOrders := []string{string(SearchSortRelevance), string(SearchSortTimeAsc), string(SearchSortTimeDesc)}
-	if err := common.ValidateSortParameters("", string(p.SortOrder), allowedSortOrders); err != nil {
+	if err := common.ValidateSortParameters(string(p.SortOrder), "", allowedSortOrders); err != nil {
 		return fmt.Errorf("%w: %w", ErrPaginationParametersInvalid, err)
 	}
 

@@ -47,8 +47,28 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 		"spoiler_text":   req.SpoilerText,
 		"language":       req.Language,
 		"in_reply_to_id": req.InReplyToID,
-		"media_ids":      req.MediaIDs,
-		"scheduled_at":   req.ScheduledAt,
+	}
+	if len(req.MediaIDs) > 0 {
+		mediaIDs := make([]interface{}, 0, len(req.MediaIDs))
+		for _, id := range req.MediaIDs {
+			mediaIDs = append(mediaIDs, id)
+		}
+		statusParams["media_ids"] = mediaIDs
+	}
+	if req.ScheduledAt != nil {
+		statusParams["scheduled_at"] = *req.ScheduledAt
+	}
+	if req.Poll != nil {
+		options := make([]interface{}, 0, len(req.Poll.Options))
+		for _, opt := range req.Poll.Options {
+			options = append(options, opt)
+		}
+		statusParams["poll"] = map[string]interface{}{
+			"options":     options,
+			"expires_in":  req.Poll.ExpiresIn,
+			"multiple":    req.Poll.Multiple,
+			"hide_totals": req.Poll.HideTotals,
+		}
 	}
 	if err := common.ValidateStatusParams(statusParams); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
@@ -156,26 +176,26 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 
 	// Authenticate and authorize user
 	_, actor, err := h.authenticateStatusUpdate(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Get and verify object ownership
 	objectID := h.normalizeStatusIDForUpdate(statusID)
 	object, err := h.getAndVerifyStatusOwnership(ctx, objectID, actor.ID)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Parse update request
 	req, err := h.parseUpdateStatusRequest(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Convert object to Note and verify ownership
 	note, err := h.convertObjectToNoteWithOwnershipCheck(ctx, object, actor.ID)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
@@ -183,12 +203,12 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 	h.applyStatusUpdates(note, req)
 
 	// Save updated note
-	if err := h.saveUpdatedStatus(ctx, note); err != nil {
+	if err := h.saveUpdatedStatus(ctx, note); err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Create and deliver update activity
-	if err := h.createStatusUpdateActivity(ctx, note, actor); err != nil {
+	if err := h.createStatusUpdateActivity(ctx, note, actor); err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
@@ -279,6 +299,23 @@ func (h *Handler) convertObjectToNoteWithOwnershipCheck(ctx *lift.Context, objec
 			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
 		}
 		return obj, nil
+
+	case *storageMods.Status:
+		if obj.AuthorID != "" && obj.AuthorID != actorID {
+			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
+		}
+		if obj.AuthorID == "" && obj.AuthorUsername != "" && transformations.ExtractUsernameFromActorID(actorID) != obj.AuthorUsername {
+			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
+		}
+		if obj.Note == nil || obj.Note.Get() == nil {
+			h.logger.Error("status missing ActivityPub note", zap.String("status_id", obj.StatusID))
+			return nil, common.RespondInternalServerError(ctx, "failed to load status")
+		}
+		note := obj.Note.Get()
+		if note.AttributedTo != "" && note.AttributedTo != actorID {
+			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
+		}
+		return note, nil
 
 	case map[string]any:
 		if attr, ok := obj["attributedTo"].(string); ok && attr != actorID {
@@ -521,8 +558,8 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon API format
-	timeline := make([]interface{}, len(result.Notes))
-	for i, status := range result.Notes {
+	timeline := make([]*models.Status, 0, len(result.Notes))
+	for _, status := range result.Notes {
 		apiStatus, err := h.convertStorageStatusToAPI(status, claims.Username)
 		if err != nil {
 			h.logger.Warn("failed to convert home timeline status",
@@ -530,7 +567,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 				zap.Error(err))
 			continue
 		}
-		timeline[i] = apiStatus
+		timeline = append(timeline, apiStatus)
 	}
 
 	return ctx.JSON(timeline)
@@ -576,8 +613,8 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon API format
-	timeline := make([]interface{}, len(result.Notes))
-	for i, status := range result.Notes {
+	timeline := make([]*models.Status, 0, len(result.Notes))
+	for _, status := range result.Notes {
 		apiStatus, err := h.convertStorageStatusToAPI(status, viewerUsername)
 		if err != nil {
 			h.logger.Warn("failed to convert public timeline status",
@@ -585,7 +622,7 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 				zap.Error(err))
 			continue
 		}
-		timeline[i] = apiStatus
+		timeline = append(timeline, apiStatus)
 	}
 
 	return ctx.JSON(timeline)
@@ -595,7 +632,7 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetStatusContextLift(ctx *lift.Context) error {
 	// Validate and normalize status ID
 	objectID, err := h.validateStatusIDForContext(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
@@ -702,6 +739,13 @@ func (h *Handler) extractInReplyTo(obj interface{}) string {
 	switch o := obj.(type) {
 	case *activitypub.Note:
 		return o.InReplyTo
+	case *storageMods.Status:
+		if o.Note != nil && o.Note.Note != nil {
+			return o.Note.InReplyTo
+		}
+		if o.InReplyToID != "" {
+			return fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), o.InReplyToID)
+		}
 	case map[string]any:
 		if reply, ok := o["inReplyTo"].(string); ok {
 			return reply
@@ -1282,7 +1326,21 @@ func (h *Handler) determineUpdateDeliveryRecipients(ctx context.Context, actor *
 		h.logger.Warn("failed to get followers for update delivery", zap.Error(err))
 	} else {
 		for _, follower := range followers {
-			recipients[follower] = true
+			if strings.HasPrefix(follower, "https://") || strings.HasPrefix(follower, "http://") {
+				recipients[follower] = true
+				continue
+			}
+
+			// Stored relationship IDs are typically usernames or federated handles; normalize to actor IDs.
+			if strings.Contains(follower, "@") {
+				parts := strings.SplitN(follower, "@", 2)
+				if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+					recipients[fmt.Sprintf("https://%s/users/%s", parts[1], parts[0])] = true
+					continue
+				}
+			}
+
+			recipients[h.cfg.ActorURL(follower)] = true
 		}
 	}
 

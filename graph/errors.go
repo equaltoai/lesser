@@ -10,9 +10,10 @@ import (
 // GraphQL resolver errors
 var (
 	// Authentication and authorization errors
-	ErrAuthenticationRequired  = errors.NewAuthError(errors.CodeUnauthorized, "authentication required")
-	ErrAccessDenied            = errors.AccessDeniedForResource("resource", "unknown")
-	ErrAdminPrivilegesRequired = errors.InsufficientPermissions("admin operation")
+	ErrAuthenticationRequired      = errors.NewAuthError(errors.CodeUnauthorized, "authentication required")
+	ErrAccessDenied                = errors.AccessDeniedForResource("resource", "unknown")
+	ErrAdminPrivilegesRequired     = errors.InsufficientPermissions("admin operation")
+	ErrModeratorPrivilegesRequired = errors.InsufficientPermissions("admin or moderator operation")
 
 	// Validation errors
 	ErrEitherIDOrUsernameRequired = errors.NewValidationError("identifier", "either id or username must be provided")

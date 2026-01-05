@@ -3,9 +3,13 @@ package graph
 
 // Content type constants
 const (
-	ContentTypeSpam = "spam"
-	ContentTypeNote = "note"
-	ContentType     = "content"
+	ContentTypeSpam    = "spam"
+	ContentTypeNote    = "note"
+	ContentType        = "content"
+	ContentTypeArticle = "article"
+	ContentTypeImage   = "image"
+	ContentTypeEvent   = "event"
+	ContentTypeVideo   = "video"
 )
 
 // Health status constants
@@ -22,6 +26,7 @@ const (
 	ServiceTypeTimeline      = "timeline"
 	ServiceTypeSearch        = "search"
 	ServiceTypeNotifications = "notifications"
+	ServiceTypeTrust         = "trust"
 )
 
 // Metric type constants
@@ -82,6 +87,20 @@ const (
 	ModerationActionApprove = "approve"
 )
 
+// Admin account action constants (Mastodon admin compatibility)
+const (
+	AdminAccountActionSensitive   = "sensitive"
+	AdminAccountActionUnsensitive = "unsensitive"
+	AdminAccountActionSilence     = "silence"
+	AdminAccountActionSuspend     = "suspend"
+)
+
+// Instance domain block severities
+const (
+	DomainBlockSeveritySilence = "silence"
+	DomainBlockSeveritySuspend = "suspend"
+)
+
 // Query type constants
 const (
 	QueryTypeActor = "actor"
@@ -92,6 +111,7 @@ const (
 const (
 	PatternTypeRegex   = "regex"
 	PatternTypeKeyword = "keyword"
+	PatternTypePhrase  = "phrase"
 )
 
 // Severity constants
@@ -115,7 +135,9 @@ const (
 const (
 	TimelineTypeHashtag = "hashtag"
 	TimelineTypeList    = "list"
+	TimelineTypeHome    = "home"
 	TimelineTypeDirect  = "direct"
+	TimelineTypeUser    = adminRoleUser
 	TimelineTypeStatus  = "status"
 )
 

@@ -17,7 +17,7 @@ type VAPIDKeyRecord struct {
 // UpdateKeys updates any GSI keys - VAPID doesn't use GSIs so this is no-op
 func (v *VAPIDKeyRecord) UpdateKeys() error {
 	// Set primary keys (static for VAPID keys)
-	v.PK = "INSTANCE#CONFIG"
+	v.PK = instanceConfigPK
 	v.SK = "VAPID_KEYS"
 
 	// VAPID keys don't use GSI keys, so no updates needed

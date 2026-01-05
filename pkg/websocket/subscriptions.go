@@ -10,10 +10,19 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/common"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 )
+
+type subscriptionRepository interface {
+	HandleConnect(ctx context.Context, connectionID, userID string) error
+	HandleDisconnect(ctx context.Context, connectionID string) error
+	CreateSubscription(ctx context.Context, connectionID, subscriptionType string, filter map[string]any) error
+	DeleteSubscription(ctx context.Context, connectionID, subscriptionType string) error
+	GetSubscriptionsForType(ctx context.Context, subscriptionType string) ([]storageModels.WebSocketEventSubscription, error)
+}
 
 // SubscriptionManager manages WebSocket subscriptions
 type SubscriptionManager interface {
@@ -121,7 +130,7 @@ type WebSocketMessage struct {
 
 // subscriptionManager implements SubscriptionManager
 type subscriptionManager struct {
-	repo          *repositories.WebSocketSubscriptionManagerRepository
+	repo          subscriptionRepository
 	apiGW         streamer.Client
 	endpoint      string
 	connections   map[string]*Connection

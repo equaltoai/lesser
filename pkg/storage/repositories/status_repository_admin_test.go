@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
@@ -15,7 +16,7 @@ import (
 func TestListStatusesForAdmin(t *testing.T) {
 	tests := []struct {
 		name           string
-		filter         *StatusFilter
+		filter         *interfaces.StatusFilter
 		mockSetup      func(*mocks.MockDB, *mocks.MockQuery)
 		expectedCount  int
 		expectedCursor string
@@ -23,7 +24,7 @@ func TestListStatusesForAdmin(t *testing.T) {
 	}{
 		{
 			name: "filter_by_local",
-			filter: &StatusFilter{
+			filter: &interfaces.StatusFilter{
 				Local: boolPtr(true),
 			},
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
@@ -44,7 +45,7 @@ func TestListStatusesForAdmin(t *testing.T) {
 		},
 		{
 			name: "filter_by_flagged",
-			filter: &StatusFilter{
+			filter: &interfaces.StatusFilter{
 				Flagged: boolPtr(true),
 			},
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
@@ -64,7 +65,7 @@ func TestListStatusesForAdmin(t *testing.T) {
 		},
 		{
 			name: "filter_by_visibility",
-			filter: &StatusFilter{
+			filter: &interfaces.StatusFilter{
 				Visibility: "public",
 			},
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
@@ -86,7 +87,7 @@ func TestListStatusesForAdmin(t *testing.T) {
 		},
 		{
 			name: "filter_by_date_range",
-			filter: &StatusFilter{
+			filter: &interfaces.StatusFilter{
 				MinDate: timePtr(time.Now().Add(-24 * time.Hour)),
 				MaxDate: timePtr(time.Now()),
 			},
@@ -110,7 +111,7 @@ func TestListStatusesForAdmin(t *testing.T) {
 		},
 		{
 			name: "filter_with_media",
-			filter: &StatusFilter{
+			filter: &interfaces.StatusFilter{
 				WithMedia: boolPtr(true),
 			},
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
@@ -163,14 +164,14 @@ func TestListStatusesForAdmin(t *testing.T) {
 func TestCountStatusesForAdmin(t *testing.T) {
 	tests := []struct {
 		name          string
-		filter        *StatusFilter
+		filter        *interfaces.StatusFilter
 		mockSetup     func(*mocks.MockDB, *mocks.MockQuery)
 		expectedCount int64
 		expectedError bool
 	}{
 		{
 			name:   "count_all_non_deleted",
-			filter: &StatusFilter{},
+			filter: &interfaces.StatusFilter{},
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
 				mockDB.On("WithContext", mock.Anything).Return(mockDB)
 				mockDB.On("Model", &models.Status{}).Return(mockQuery)
@@ -181,7 +182,7 @@ func TestCountStatusesForAdmin(t *testing.T) {
 		},
 		{
 			name: "count_flagged",
-			filter: &StatusFilter{
+			filter: &interfaces.StatusFilter{
 				Flagged: boolPtr(true),
 			},
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
@@ -195,7 +196,7 @@ func TestCountStatusesForAdmin(t *testing.T) {
 		},
 		{
 			name: "count_public_with_media",
-			filter: &StatusFilter{
+			filter: &interfaces.StatusFilter{
 				Visibility: "public",
 				WithMedia:  boolPtr(true),
 			},

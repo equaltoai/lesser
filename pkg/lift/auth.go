@@ -36,7 +36,7 @@ func (las *LiftAuthService) RequireAuth() lift.Middleware {
 			token := extractBearerToken(ctx)
 			if err := common.ValidateRequiredParam("token", token); err != nil {
 				// Log authentication failure
-				common.LogAuthFailure("missing authorization token", "", getClientIP(ctx), ctx.Header("User-Agent"))
+				common.LogAuthFailure("missing authorization token", "", getClientIP(ctx), ctx.Header("User-Agent"), ctx.GetRequestID())
 				return ctx.Unauthorized("Authentication required", nil)
 			}
 
@@ -44,7 +44,7 @@ func (las *LiftAuthService) RequireAuth() lift.Middleware {
 			claims, err := las.authService.ValidateAccessToken(token)
 			if err != nil {
 				// Log authentication failure
-				common.LogAuthFailure(err.Error(), "", getClientIP(ctx), ctx.Header("User-Agent"))
+				common.LogAuthFailure(err.Error(), "", getClientIP(ctx), ctx.Header("User-Agent"), ctx.GetRequestID())
 				return ctx.Unauthorized("Invalid token", err)
 			}
 

@@ -149,7 +149,12 @@ func (r *ReportTrustService) UpdateReporterTrustOnDecision(ctx context.Context, 
 // ReportTrustUpdater processes DynamoDB stream events for moderation decisions
 type ReportTrustUpdater struct {
 	logger       *zap.Logger
-	trustService *ReportTrustService
+	trustService reportTrustService
+}
+
+type reportTrustService interface {
+	GetModerationEvent(ctx context.Context, eventID string) (*storage.ModerationEvent, error)
+	UpdateReporterTrustOnDecision(ctx context.Context, reportID string, decision *moderation.ModerationDecision, reporterActorID string) error
 }
 
 // NewReportTrustUpdater creates a new report trust updater
@@ -393,8 +398,21 @@ func (rtu *ReportTrustUpdater) logTrustUpdateSuccess(reportID, actorID string, d
 }
 
 func main() {
+	runReportTrustUpdater()
+}
+
+var (
+	mustInitializeLambdaFn  = common.MustInitializeLambda
+	dynamormGetClientFn     = dynamorm.GetClient
+	lambdaStartFn           = lambda.Start
+	newReportTrustUpdaterFn = func(db core.DB, tableName string, logger *zap.Logger) *ReportTrustUpdater {
+		return NewReportTrustUpdater(db, tableName, logger)
+	}
+)
+
+func runReportTrustUpdater() {
 	// Use standardized Lambda initialization
-	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx := mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName:        "report-trust-updater",
 		LambdaType:         common.LambdaTypeProcessor,
 		Version:            "1.0.0",
@@ -405,7 +423,7 @@ func main() {
 	})
 
 	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
+	db, err := dynamormGetClientFn(context.Background())
 	if err != nil {
 		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
@@ -414,7 +432,7 @@ func main() {
 	lambdaCtx.DynamoDB = db
 
 	// Create report trust updater with minimal storage implementation
-	updater := NewReportTrustUpdater(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	updater := newReportTrustUpdaterFn(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
 	// Log initialization
 	lambdaCtx.Logger.Info("report trust updater initialized",
@@ -433,5 +451,5 @@ func main() {
 		return updater.HandleStream(ctx, events.DynamoDBEvent{Records: records})
 	})
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }

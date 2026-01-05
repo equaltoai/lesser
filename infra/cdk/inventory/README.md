@@ -32,6 +32,6 @@ Use environment-specific config to override as needed; per-Lambda overrides in `
 - **Spec 07 (Drift Prevention and Proof)**: Compare inventory against `Makefile LAMBDAS`, CDK outputs, and monitoring definitions to prove set equality.
 
 ## Usage Notes
-- Keep the inventory exhaustive and exact for the 36 product Lambdas defined in Spec 01.
+- Keep the inventory exhaustive and exact for the product Lambdas defined in Spec 01 (the `Makefile` `LAMBDAS` set).
 - Prefer explicit trigger declarations over implicit catch-alls to avoid routing and wiring drift.
 - Avoid CDK-specific types in the schema; this package stays pure-data so other tools (linting, validation, codegen) can consume it without AWS dependencies.

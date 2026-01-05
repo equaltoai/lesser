@@ -1,3 +1,4 @@
+// Package main provides a CLI to bootstrap the initial owner/admin artifacts.
 package main
 
 import (
@@ -12,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"os"
@@ -29,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 )
 
@@ -56,156 +59,306 @@ type jsonLog struct {
 	Fields  map[string]any `json:"fields,omitempty"`
 }
 
+type ownerBootstrapArgs struct {
+	environment      string
+	domain           string
+	tableName        string
+	kmsKeyID         string
+	walletSecretName string
+	oauthSecretName  string
+	username         string
+	chainID          int
+	force            bool
+}
+
+type dynamodbAPI interface {
+	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
+	TransactWriteItems(ctx context.Context, params *dynamodb.TransactWriteItemsInput, optFns ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error)
+}
+
+type secretsManagerAPI interface {
+	DescribeSecret(ctx context.Context, params *secretsmanager.DescribeSecretInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.DescribeSecretOutput, error)
+	CreateSecret(ctx context.Context, params *secretsmanager.CreateSecretInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.CreateSecretOutput, error)
+	DeleteSecret(ctx context.Context, params *secretsmanager.DeleteSecretInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.DeleteSecretOutput, error)
+}
+
+type kmsAPI interface {
+	Encrypt(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error)
+}
+
+var (
+	loadAWSConfigFn           = awsconfig.LoadDefaultConfig
+	newDynamoClientFn         = func(cfg aws.Config) dynamodbAPI { return dynamodb.NewFromConfig(cfg) }
+	newSecretsManagerClientFn = func(cfg aws.Config) secretsManagerAPI { return secretsmanager.NewFromConfig(cfg) }
+	newKMSClientFn            = func(cfg aws.Config) kmsAPI { return kms.NewFromConfig(cfg) }
+	exitFn                    = os.Exit
+
+	generateEthereumWalletFn    = generateEthereumWallet
+	generateRSAKeyPairPEMFn     = generateRSAKeyPairPEM
+	encryptWithKMSFn            = encryptWithKMS
+	generateOAuthClientIDFn     = generateOAuthClientID
+	generateOAuthClientSecretFn = generateOAuthClientSecret
+)
+
 func main() {
 	log.SetFlags(0)
 
-	var (
-		environment      string
-		domain           string
-		tableName        string
-		kmsKeyID         string
-		walletSecretName string
-		oauthSecretName  string
-		username         string
-		chainID          int
-		force            bool
-	)
-
-	flag.StringVar(&environment, "environment", "", "Environment name (development|staging|production)")
-	flag.StringVar(&environment, "env", "", "Alias for -environment")
-	flag.StringVar(&domain, "domain", "", "Instance domain (e.g., dev.lesser.host)")
-	flag.StringVar(&tableName, "table", "", "DynamoDB table name (default: lesser-<environment>)")
-	flag.StringVar(&kmsKeyID, "kms-key-id", "alias/lesser-encryption", "KMS key ID/ARN/alias for actor private key encryption")
-	flag.StringVar(&walletSecretName, "wallet-secret", "", "Secrets Manager name for admin wallet (default: lesser/<environment>/admin-wallet)")
-	flag.StringVar(&oauthSecretName, "oauth-secret", "", "Secrets Manager name for admin OAuth client (default: lesser/<environment>/admin-oauth)")
-	flag.StringVar(&username, "username", "admin", "Username to bootstrap (default: admin)")
-	flag.IntVar(&chainID, "chain-id", 1, "Wallet chain ID to store (default: 1)")
-	flag.BoolVar(&force, "force", false, "Force bootstrap even if admin exists (may fail if artifacts already exist)")
-	flag.Parse()
-
-	if environment == "" {
-		ownerBootstrapFatal("invalid_args", "environment is required", nil)
-	}
-	if domain == "" {
-		ownerBootstrapFatal("invalid_args", "domain is required", nil)
-	}
-	if username == "" {
-		ownerBootstrapFatal("invalid_args", "username is required", nil)
-	}
-	if tableName == "" {
-		tableName = fmt.Sprintf("lesser-%s", environment)
-	}
-	if walletSecretName == "" {
-		walletSecretName = fmt.Sprintf("lesser/%s/admin-wallet", environment)
-	}
-	if oauthSecretName == "" {
-		oauthSecretName = fmt.Sprintf("lesser/%s/admin-oauth", environment)
-	}
-
 	ctx := context.Background()
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	args, err := parseOwnerBootstrapArgs(os.Args[1:])
+	if err != nil {
+		ownerBootstrapFatal("invalid_args", err.Error(), nil)
+	}
+	args.applyDefaults()
+	if err := args.validate(); err != nil {
+		ownerBootstrapFatal("invalid_args", err.Error(), nil)
+	}
+
+	runOwnerBootstrap(ctx, args)
+}
+
+func parseOwnerBootstrapArgs(rawArgs []string) (ownerBootstrapArgs, error) {
+	var args ownerBootstrapArgs
+
+	fs := flag.NewFlagSet("owner-bootstrap", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	fs.StringVar(&args.environment, "environment", "", "Environment name (development|staging|production)")
+	fs.StringVar(&args.environment, "env", "", "Alias for -environment")
+	fs.StringVar(&args.domain, "domain", "", "Instance domain (e.g., dev.lesser.host)")
+	fs.StringVar(&args.tableName, "table", "", "DynamoDB table name (default: lesser-<environment>)")
+	fs.StringVar(&args.kmsKeyID, "kms-key-id", "alias/lesser-encryption", "KMS key ID/ARN/alias for actor private key encryption")
+	fs.StringVar(&args.walletSecretName, "wallet-secret", "", "Secrets Manager name for admin wallet (default: lesser/<environment>/admin-wallet)")
+	fs.StringVar(&args.oauthSecretName, "oauth-secret", "", "Secrets Manager name for admin OAuth client (default: lesser/<environment>/admin-oauth)")
+	fs.StringVar(&args.username, "username", "admin", "Username to bootstrap (default: admin)")
+	fs.IntVar(&args.chainID, "chain-id", 1, "Wallet chain ID to store (default: 1)")
+	fs.BoolVar(&args.force, "force", false, "Force bootstrap even if admin exists (may fail if artifacts already exist)")
+
+	if err := fs.Parse(rawArgs); err != nil {
+		return ownerBootstrapArgs{}, err
+	}
+
+	return args, nil
+}
+
+func (a *ownerBootstrapArgs) applyDefaults() {
+	if a.tableName == "" {
+		a.tableName = fmt.Sprintf("lesser-%s", a.environment)
+	}
+	if a.walletSecretName == "" {
+		a.walletSecretName = fmt.Sprintf("lesser/%s/admin-wallet", a.environment)
+	}
+	if a.oauthSecretName == "" {
+		a.oauthSecretName = fmt.Sprintf("lesser/%s/admin-oauth", a.environment)
+	}
+}
+
+func (a ownerBootstrapArgs) validate() error {
+	if a.environment == "" {
+		return fmt.Errorf("environment is required")
+	}
+	if a.domain == "" {
+		return fmt.Errorf("domain is required")
+	}
+	if a.username == "" {
+		return fmt.Errorf("username is required")
+	}
+	if a.kmsKeyID == "" {
+		return fmt.Errorf("kms-key-id is required")
+	}
+	if a.chainID <= 0 {
+		return fmt.Errorf("chain-id must be positive")
+	}
+	return nil
+}
+
+type bootstrapState struct {
+	userExists         bool
+	walletSecretExists bool
+	oauthSecretExists  bool
+}
+
+type bootstrapFailure struct {
+	event   string
+	message string
+	fields  map[string]any
+}
+
+func runOwnerBootstrap(ctx context.Context, args ownerBootstrapArgs) {
+	awsCfg, err := loadAWSConfigFn(ctx)
 	if err != nil {
 		ownerBootstrapFatal("aws_config_load_failed", "load AWS config", map[string]any{"error": err.Error()})
 	}
 
-	ddb := dynamodb.NewFromConfig(awsCfg)
-	sm := secretsmanager.NewFromConfig(awsCfg)
-	kmsClient := kms.NewFromConfig(awsCfg)
+	ddb := newDynamoClientFn(awsCfg)
+	sm := newSecretsManagerClientFn(awsCfg)
+	kmsClient := newKMSClientFn(awsCfg)
 
-	userPK := fmt.Sprintf("USER#%s", username)
+	userPK := fmt.Sprintf("USER#%s", args.username)
 
-	exists, err := dynamoItemExists(ctx, ddb, tableName, userPK, "METADATA")
+	state, err := checkBootstrapState(ctx, ddb, sm, args, userPK)
 	if err != nil {
-		ownerBootstrapFatal("dynamodb_check_failed", "check admin user existence", map[string]any{"error": err.Error(), "table": tableName})
+		ownerBootstrapFatal("bootstrap_check_failed", "check existing bootstrap state", map[string]any{"error": err.Error()})
 	}
 
-	if exists && !force {
-		ownerBootstrapInfo("already_bootstrapped", "admin user exists; skipping bootstrap", map[string]any{
-			"table":       tableName,
-			"username":    username,
-			"user_pk":     userPK,
-			"user_sk":     "METADATA",
-			"environment": environment,
-		})
+	skipFields, failure := validateBootstrapState(state, args, userPK)
+	if failure != nil {
+		ownerBootstrapFatal(failure.event, failure.message, failure.fields)
+	}
+	if skipFields != nil {
+		ownerBootstrapInfo("already_bootstrapped", "admin user exists; skipping bootstrap", skipFields)
 		return
 	}
 
-	walletSecretExists, err := secretExists(ctx, sm, walletSecretName)
-	if err != nil {
-		ownerBootstrapFatal("secrets_check_failed", "check wallet secret existence", map[string]any{"error": err.Error(), "secret": walletSecretName})
-	}
-	oauthSecretExists, err := secretExists(ctx, sm, oauthSecretName)
-	if err != nil {
-		ownerBootstrapFatal("secrets_check_failed", "check oauth secret existence", map[string]any{"error": err.Error(), "secret": oauthSecretName})
-	}
-
-	if !exists && (walletSecretExists || oauthSecretExists) {
-		ownerBootstrapFatal("partial_state", "admin user missing but secret already exists", map[string]any{
-			"username":          username,
-			"user_pk":           userPK,
-			"user_sk":           "METADATA",
-			"wallet_secret":     walletSecretName,
-			"wallet_secret_set": walletSecretExists,
-			"oauth_secret":      oauthSecretName,
-			"oauth_secret_set":  oauthSecretExists,
-		})
-	}
-
-	if exists && force {
-		ownerBootstrapFatal("force_not_supported", "force mode is not supported when USER#admin already exists (avoid accidental rotation)", map[string]any{
-			"username": username,
-			"user_pk":  userPK,
-			"user_sk":  "METADATA",
-		})
-	}
-
 	ownerBootstrapInfo("provisioning_start", "provisioning admin artifacts", map[string]any{
-		"environment": environment,
-		"domain":      domain,
-		"table":       tableName,
-		"username":    username,
+		"environment": args.environment,
+		"domain":      args.domain,
+		"table":       args.tableName,
+		"username":    args.username,
 	})
 
 	now := time.Now().UTC()
+	artifacts := generateBootstrapArtifacts(ctx, kmsClient, args, now)
+	persistResult := persistBootstrapArtifacts(ctx, ddb, sm, args, artifacts)
+
+	ownerBootstrapInfo("provisioning_complete", "bootstrap complete", map[string]any{
+		"environment": args.environment,
+		"domain":      args.domain,
+		"table":       args.tableName,
+		"username":    args.username,
+		"wallet": map[string]any{
+			"secret":  args.walletSecretName,
+			"address": artifacts.walletAddress,
+			"created": persistResult.walletCreated,
+		},
+		"oauth": map[string]any{
+			"secret":       args.oauthSecretName,
+			"client_id":    artifacts.clientID,
+			"created":      persistResult.oauthCreated,
+			"redirects":    artifacts.redirectURIs,
+			"owner_id":     args.username,
+			"confidential": true,
+		},
+	})
+}
+
+func checkBootstrapState(ctx context.Context, ddb dynamodbAPI, sm secretsManagerAPI, args ownerBootstrapArgs, userPK string) (bootstrapState, error) {
+	userExists, err := dynamoItemExists(ctx, ddb, args.tableName, userPK, "METADATA")
+	if err != nil {
+		return bootstrapState{}, fmt.Errorf("check admin user existence: %w", err)
+	}
+
+	walletSecretExists, err := secretExists(ctx, sm, args.walletSecretName)
+	if err != nil {
+		return bootstrapState{}, fmt.Errorf("check wallet secret existence: %w", err)
+	}
+	oauthSecretExists, err := secretExists(ctx, sm, args.oauthSecretName)
+	if err != nil {
+		return bootstrapState{}, fmt.Errorf("check oauth secret existence: %w", err)
+	}
+
+	return bootstrapState{
+		userExists:         userExists,
+		walletSecretExists: walletSecretExists,
+		oauthSecretExists:  oauthSecretExists,
+	}, nil
+}
+
+func validateBootstrapState(state bootstrapState, args ownerBootstrapArgs, userPK string) (skipFields map[string]any, failure *bootstrapFailure) {
+	if state.userExists && !args.force {
+		return map[string]any{
+			"table":       args.tableName,
+			"username":    args.username,
+			"user_pk":     userPK,
+			"user_sk":     "METADATA",
+			"environment": args.environment,
+		}, nil
+	}
+
+	if !state.userExists && (state.walletSecretExists || state.oauthSecretExists) {
+		return nil, &bootstrapFailure{
+			event:   "partial_state",
+			message: "admin user missing but secret already exists",
+			fields: map[string]any{
+				"username":          args.username,
+				"user_pk":           userPK,
+				"user_sk":           "METADATA",
+				"wallet_secret":     args.walletSecretName,
+				"wallet_secret_set": state.walletSecretExists,
+				"oauth_secret":      args.oauthSecretName,
+				"oauth_secret_set":  state.oauthSecretExists,
+			},
+		}
+	}
+
+	if state.userExists && args.force {
+		return nil, &bootstrapFailure{
+			event:   "force_not_supported",
+			message: "force mode is not supported when USER#admin already exists (avoid accidental rotation)",
+			fields: map[string]any{
+				"username": args.username,
+				"user_pk":  userPK,
+				"user_sk":  "METADATA",
+			},
+		}
+	}
+
+	return nil, nil
+}
+
+type bootstrapArtifacts struct {
+	items             []transactPut
+	walletSecretJSON  []byte
+	oauthSecretJSON   []byte
+	walletAddress     string
+	walletSecretName  string
+	oauthSecretName   string
+	clientID          string
+	redirectURIs      []string
+	createdAtISO      string
+	walletDescription string
+	oauthDescription  string
+}
+
+func generateBootstrapArtifacts(ctx context.Context, kmsClient kmsAPI, args ownerBootstrapArgs, now time.Time) bootstrapArtifacts {
 	createdAtISO := now.Format(time.RFC3339)
 
-	walletPrivKey, walletAddress, err := generateEthereumWallet()
+	walletPrivKey, walletAddress, err := generateEthereumWalletFn()
 	if err != nil {
 		ownerBootstrapFatal("wallet_generation_failed", "generate ethereum wallet", map[string]any{"error": err.Error()})
 	}
 	walletAddressLower := strings.ToLower(walletAddress)
 
-	actorPrivateKeyPEM, actorPublicKeyPEM, err := generateRSAKeyPairPEM(4096)
+	actorPrivateKeyPEM, actorPublicKeyPEM, err := generateRSAKeyPairPEMFn(4096)
 	if err != nil {
 		ownerBootstrapFatal("actor_key_generation_failed", "generate RSA keypair", map[string]any{"error": err.Error()})
 	}
 
-	encryptedActorPrivateKey, err := encryptWithKMS(ctx, kmsClient, kmsKeyID, []byte(actorPrivateKeyPEM))
+	encryptedActorPrivateKey, err := encryptWithKMSFn(ctx, kmsClient, args.kmsKeyID, []byte(actorPrivateKeyPEM))
 	if err != nil {
-		ownerBootstrapFatal("kms_encrypt_failed", "encrypt actor private key", map[string]any{"error": err.Error(), "kms_key_id": kmsKeyID})
+		ownerBootstrapFatal("kms_encrypt_failed", "encrypt actor private key", map[string]any{"error": err.Error(), "kms_key_id": args.kmsKeyID})
 	}
 	encryptedActorPrivateKeyB64 := base64.StdEncoding.EncodeToString(encryptedActorPrivateKey)
 
-	clientID, err := generateOAuthClientID()
+	clientID, err := generateOAuthClientIDFn()
 	if err != nil {
 		ownerBootstrapFatal("oauth_client_id_generation_failed", "generate oauth client id", map[string]any{"error": err.Error()})
 	}
-	clientSecret, err := generateOAuthClientSecret()
+	clientSecret, err := generateOAuthClientSecretFn()
 	if err != nil {
 		ownerBootstrapFatal("oauth_client_secret_generation_failed", "generate oauth client secret", map[string]any{"error": err.Error()})
 	}
 
 	redirectURIs := []string{
-		fmt.Sprintf("https://%s/auth/callback", domain),
+		fmt.Sprintf("https://%s/auth/callback", args.domain),
 		"urn:ietf:wg:oauth:2.0:oob",
 	}
 
 	walletSecretJSON, err := json.Marshal(walletSecretPayload{
 		Address:    walletAddress,
 		PrivateKey: walletPrivKey,
-		ChainID:    chainID,
+		ChainID:    args.chainID,
 		WalletType: "ethereum",
-		Username:   username,
+		Username:   args.username,
 		CreatedAt:  createdAtISO,
 	})
 	if err != nil {
@@ -217,80 +370,85 @@ func main() {
 		ClientSecret: clientSecret,
 		RedirectURIs: redirectURIs,
 		Name:         "Owner Console",
-		Username:     username,
+		Username:     args.username,
 		CreatedAt:    createdAtISO,
 	})
 	if err != nil {
 		ownerBootstrapFatal("json_marshal_failed", "marshal oauth secret", map[string]any{"error": err.Error()})
 	}
 
-	actorItem, err := buildActorItem(username, domain, actorPublicKeyPEM, encryptedActorPrivateKeyB64, now)
+	actorItem, err := buildActorItem(args.username, args.domain, actorPublicKeyPEM, encryptedActorPrivateKeyB64, now)
 	if err != nil {
 		ownerBootstrapFatal("item_build_failed", "build actor item", map[string]any{"error": err.Error()})
 	}
-	userItem, err := buildUserItem(username, now)
+	userItem, err := buildUserItem(args.username, now)
 	if err != nil {
 		ownerBootstrapFatal("item_build_failed", "build user item", map[string]any{"error": err.Error()})
 	}
 
-	walletCredentialItem, err := buildWalletCredentialItem(username, walletAddressLower, chainID, now)
+	walletCredentialItem, err := buildWalletCredentialItem(args.username, walletAddressLower, args.chainID, now)
 	if err != nil {
 		ownerBootstrapFatal("item_build_failed", "build wallet credential item", map[string]any{"error": err.Error()})
 	}
-	walletIndexItem, err := buildWalletIndexItem(username, walletAddressLower)
+	walletIndexItem, err := buildWalletIndexItem(args.username, walletAddressLower)
 	if err != nil {
 		ownerBootstrapFatal("item_build_failed", "build wallet index item", map[string]any{"error": err.Error()})
 	}
 
-	oauthClientItem, err := buildOAuthClientItem(username, clientID, clientSecret, redirectURIs, now)
+	oauthClientItem, err := buildOAuthClientItem(args.username, clientID, clientSecret, redirectURIs, now)
 	if err != nil {
 		ownerBootstrapFatal("item_build_failed", "build oauth client item", map[string]any{"error": err.Error()})
 	}
 
+	userPK := fmt.Sprintf("USER#%s", args.username)
 	items := []transactPut{
 		{item: userItem, pk: userPK, sk: "METADATA"},
-		{item: actorItem, pk: fmt.Sprintf("ACTOR#%s", username), sk: "PROFILE"},
-		{item: walletCredentialItem, pk: fmt.Sprintf("USER#%s", username), sk: fmt.Sprintf("WALLET#%s", walletAddressLower)},
-		{item: walletIndexItem, pk: fmt.Sprintf("WALLET#ethereum#%s", walletAddressLower), sk: fmt.Sprintf("USER#%s", username)},
+		{item: actorItem, pk: fmt.Sprintf("ACTOR#%s", args.username), sk: "PROFILE"},
+		{item: walletCredentialItem, pk: fmt.Sprintf("USER#%s", args.username), sk: fmt.Sprintf("WALLET#%s", walletAddressLower)},
+		{item: walletIndexItem, pk: fmt.Sprintf("WALLET#ethereum#%s", walletAddressLower), sk: fmt.Sprintf("USER#%s", args.username)},
 		{item: oauthClientItem, pk: fmt.Sprintf("OAUTH_CLIENT#%s", clientID), sk: "CLIENT"},
 	}
 
-	if err := transactWriteAll(ctx, ddb, tableName, items); err != nil {
-		ownerBootstrapFatal("dynamodb_transact_failed", "write admin artifacts to DynamoDB", map[string]any{"error": err.Error(), "table": tableName})
+	return bootstrapArtifacts{
+		items:             items,
+		walletSecretJSON:  walletSecretJSON,
+		oauthSecretJSON:   oauthSecretJSON,
+		walletAddress:     walletAddress,
+		walletSecretName:  args.walletSecretName,
+		oauthSecretName:   args.oauthSecretName,
+		clientID:          clientID,
+		redirectURIs:      redirectURIs,
+		createdAtISO:      createdAtISO,
+		walletDescription: fmt.Sprintf("Admin wallet for %s", args.environment),
+		oauthDescription:  fmt.Sprintf("Admin OAuth client for %s", args.environment),
+	}
+}
+
+type bootstrapPersistResult struct {
+	walletCreated bool
+	oauthCreated  bool
+}
+
+func persistBootstrapArtifacts(ctx context.Context, ddb dynamodbAPI, sm secretsManagerAPI, args ownerBootstrapArgs, artifacts bootstrapArtifacts) bootstrapPersistResult {
+	if err := transactWriteAll(ctx, ddb, args.tableName, artifacts.items); err != nil {
+		ownerBootstrapFatal("dynamodb_transact_failed", "write admin artifacts to DynamoDB", map[string]any{"error": err.Error(), "table": args.tableName})
 	}
 
-	walletCreated, oauthCreated := false, false
-	if err := createSecret(ctx, sm, walletSecretName, string(walletSecretJSON), fmt.Sprintf("Admin wallet for %s", environment)); err != nil {
-		rollbackSecretsAndDynamo(ctx, ddb, sm, tableName, nil, items)
-		ownerBootstrapFatal("secret_create_failed", "create wallet secret", map[string]any{"error": err.Error(), "secret": walletSecretName})
-	}
-	walletCreated = true
+	var result bootstrapPersistResult
 
-	if err := createSecret(ctx, sm, oauthSecretName, string(oauthSecretJSON), fmt.Sprintf("Admin OAuth client for %s", environment)); err != nil {
-		rollbackSecretsAndDynamo(ctx, ddb, sm, tableName, []string{walletSecretName}, items)
-		ownerBootstrapFatal("secret_create_failed", "create oauth secret", map[string]any{"error": err.Error(), "secret": oauthSecretName})
+	if err := createSecret(ctx, sm, args.walletSecretName, string(artifacts.walletSecretJSON), artifacts.walletDescription); err != nil {
+		rollbackSecretsAndDynamo(ctx, ddb, sm, args.tableName, nil, artifacts.items)
+		ownerBootstrapFatal("secret_create_failed", "create wallet secret", map[string]any{"error": err.Error(), "secret": args.walletSecretName})
 	}
-	oauthCreated = true
+	result.walletCreated = true
 
-	ownerBootstrapInfo("provisioning_complete", "bootstrap complete", map[string]any{
-		"environment": environment,
-		"domain":      domain,
-		"table":       tableName,
-		"username":    username,
-		"wallet": map[string]any{
-			"secret":  walletSecretName,
-			"address": walletAddress,
-			"created": walletCreated,
-		},
-		"oauth": map[string]any{
-			"secret":       oauthSecretName,
-			"client_id":    clientID,
-			"created":      oauthCreated,
-			"redirects":    redirectURIs,
-			"owner_id":     username,
-			"confidential": true,
-		},
-	})
+	if err := createSecret(ctx, sm, args.oauthSecretName, string(artifacts.oauthSecretJSON), artifacts.oauthDescription); err != nil {
+		rollbackSecretsAndDynamo(ctx, ddb, sm, args.tableName, []string{args.walletSecretName}, artifacts.items)
+		ownerBootstrapFatal("secret_create_failed", "create oauth secret", map[string]any{"error": err.Error(), "secret": args.oauthSecretName})
+	}
+	result.oauthCreated = true
+
+	return result
 }
 
 func ownerBootstrapInfo(event, message string, fields map[string]any) {
@@ -303,10 +461,10 @@ func ownerBootstrapFatal(event, message string, fields map[string]any) {
 	entry := jsonLog{Event: event, Message: message, Fields: fields}
 	out, _ := json.Marshal(entry)
 	_, _ = fmt.Fprintf(os.Stderr, "[owner-bootstrap] %s\n", string(out))
-	os.Exit(1)
+	exitFn(1)
 }
 
-func dynamoItemExists(ctx context.Context, ddb *dynamodb.Client, table, pk, sk string) (bool, error) {
+func dynamoItemExists(ctx context.Context, ddb dynamodbAPI, table, pk, sk string) (bool, error) {
 	resp, err := ddb.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName:      aws.String(table),
 		ConsistentRead: aws.Bool(true),
@@ -322,7 +480,7 @@ func dynamoItemExists(ctx context.Context, ddb *dynamodb.Client, table, pk, sk s
 	return len(resp.Item) > 0, nil
 }
 
-func secretExists(ctx context.Context, sm *secretsmanager.Client, secretName string) (bool, error) {
+func secretExists(ctx context.Context, sm secretsManagerAPI, secretName string) (bool, error) {
 	_, err := sm.DescribeSecret(ctx, &secretsmanager.DescribeSecretInput{SecretId: aws.String(secretName)})
 	if err == nil {
 		return true, nil
@@ -334,7 +492,7 @@ func secretExists(ctx context.Context, sm *secretsmanager.Client, secretName str
 	return false, err
 }
 
-func createSecret(ctx context.Context, sm *secretsmanager.Client, secretName, secretValue, description string) error {
+func createSecret(ctx context.Context, sm secretsManagerAPI, secretName, secretValue, description string) error {
 	_, err := sm.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
 		Name:         aws.String(secretName),
 		SecretString: aws.String(secretValue),
@@ -343,7 +501,7 @@ func createSecret(ctx context.Context, sm *secretsmanager.Client, secretName, se
 	return err
 }
 
-func deleteSecretImmediate(ctx context.Context, sm *secretsmanager.Client, secretName string) error {
+func deleteSecretImmediate(ctx context.Context, sm secretsManagerAPI, secretName string) error {
 	_, err := sm.DeleteSecret(ctx, &secretsmanager.DeleteSecretInput{
 		SecretId:                   aws.String(secretName),
 		ForceDeleteWithoutRecovery: aws.Bool(true),
@@ -386,7 +544,7 @@ func generateRSAKeyPairPEM(bits int) (privateKeyPEM string, publicKeyPEM string,
 	return string(privPEM), string(pubPEM), nil
 }
 
-func encryptWithKMS(ctx context.Context, kmsClient *kms.Client, keyID string, plaintext []byte) ([]byte, error) {
+func encryptWithKMS(ctx context.Context, kmsClient kmsAPI, keyID string, plaintext []byte) ([]byte, error) {
 	out, err := kmsClient.Encrypt(ctx, &kms.EncryptInput{
 		KeyId:     aws.String(keyID),
 		Plaintext: plaintext,
@@ -569,6 +727,11 @@ func buildWalletIndexItem(username, addressLower string) (map[string]dynamotypes
 }
 
 func buildOAuthClientItem(ownerID, clientID, clientSecret string, redirectURIs []string, now time.Time) (map[string]dynamotypes.AttributeValue, error) {
+	storedSecret, err := common.HashOAuthClientSecret(clientSecret)
+	if err != nil {
+		return nil, err
+	}
+
 	descTs := encodeDescendingTimestamp(now)
 	item := map[string]any{
 		"PK": "OAUTH_CLIENT#" + clientID,
@@ -581,7 +744,7 @@ func buildOAuthClientItem(ownerID, clientID, clientSecret string, redirectURIs [
 		"oauthClientsSK": fmt.Sprintf("CREATED_AT#%019d#CLIENT#%s", descTs, clientID),
 
 		"clientID":     clientID,
-		"clientSecret": clientSecret,
+		"clientSecret": storedSecret,
 		"name":         "Owner Console",
 		"redirectURIs": redirectURIs,
 		"grantTypes":   []string{"authorization_code", "refresh_token"},
@@ -607,7 +770,7 @@ type transactPut struct {
 	sk   string
 }
 
-func transactWriteAll(ctx context.Context, ddb *dynamodb.Client, table string, puts []transactPut) error {
+func transactWriteAll(ctx context.Context, ddb dynamodbAPI, table string, puts []transactPut) error {
 	tx := make([]dynamotypes.TransactWriteItem, 0, len(puts))
 	for _, p := range puts {
 		tx = append(tx, dynamotypes.TransactWriteItem{
@@ -622,7 +785,7 @@ func transactWriteAll(ctx context.Context, ddb *dynamodb.Client, table string, p
 	return err
 }
 
-func rollbackSecretsAndDynamo(ctx context.Context, ddb *dynamodb.Client, sm *secretsmanager.Client, table string, secrets []string, puts []transactPut) {
+func rollbackSecretsAndDynamo(ctx context.Context, ddb dynamodbAPI, sm secretsManagerAPI, table string, secrets []string, puts []transactPut) {
 	if len(secrets) > 0 {
 		for _, s := range secrets {
 			if err := deleteSecretImmediate(ctx, sm, s); err != nil {

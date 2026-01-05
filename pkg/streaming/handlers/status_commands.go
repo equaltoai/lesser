@@ -13,8 +13,23 @@ import (
 // StatusCommandHandlerV2 handles WebSocket commands related to statuses/notes with reduced duplication
 type StatusCommandHandlerV2 struct {
 	*streaming.BaseCommandHandler
-	notesService *notes.Service
+	notesService notesAPI
 	executors    map[string]CommandExecutor
+}
+
+type notesAPI interface {
+	CreateNote(ctx context.Context, cmd *notes.CreateNoteCommand) (*notes.NoteResult, error)
+	DeleteNote(ctx context.Context, cmd *notes.DeleteNoteCommand) error
+	LikeNote(ctx context.Context, cmd *notes.LikeNoteCommand) (*notes.LikeResult, error)
+	UnlikeNote(ctx context.Context, cmd *notes.UnlikeNoteCommand) (*notes.LikeResult, error)
+	ReblogNote(ctx context.Context, cmd *notes.ReblogNoteCommand) (*notes.LikeResult, error)
+	UnreblogNote(ctx context.Context, cmd *notes.UnreblogNoteCommand) (*notes.LikeResult, error)
+	BookmarkNote(ctx context.Context, cmd *notes.BookmarkNoteCommand) (*notes.BookmarkResult, error)
+	UnbookmarkNote(ctx context.Context, cmd *notes.UnbookmarkNoteCommand) (*notes.BookmarkResult, error)
+	MuteNote(ctx context.Context, cmd *notes.MuteNoteCommand) (*notes.LikeResult, error)
+	UnmuteNote(ctx context.Context, cmd *notes.UnmuteNoteCommand) (*notes.LikeResult, error)
+	PinNote(ctx context.Context, cmd *notes.PinNoteCommand) (*notes.LikeResult, error)
+	UnpinNote(ctx context.Context, cmd *notes.UnpinNoteCommand) (*notes.LikeResult, error)
 }
 
 // NewStatusCommandHandlerV2 creates a new status command handler with reduced duplication

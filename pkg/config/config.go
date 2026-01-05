@@ -11,8 +11,26 @@ import (
 	"sync"
 	"time"
 
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+)
+
+type secretsManagerValueGetter interface {
+	GetSecretValue(ctx context.Context, params *secretsmanager.GetSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
+}
+
+var newSecretsManagerValueGetter = func(cfg aws.Config) secretsManagerValueGetter {
+	return secretsmanager.NewFromConfig(cfg)
+}
+
+// InstanceMode controls which product surface is enabled for an instance.
+type InstanceMode string
+
+// Supported instance modes.
+const (
+	InstanceModeSocial InstanceMode = "social"
+	InstanceModeCMS    InstanceMode = "cms"
+	InstanceModeHybrid InstanceMode = "hybrid"
 )
 
 // Config holds the application configuration
@@ -20,6 +38,7 @@ type Config struct {
 	// Instance configuration
 	Domain       string // e.g., "example.com"
 	InstanceName string // e.g., "My ActivityPub Server"
+	InstanceMode InstanceMode
 
 	// AWS configuration
 	Region                  string
@@ -75,18 +94,32 @@ type Config struct {
 	PageSize          int   // Default pagination size
 	AllowRegistration bool  // Whether new users can register
 
+	// CMS Configuration
+	CMSLongFormPublishingEnabled  bool // Enable Article creation and CMS reads
+	CMSDraftSystemEnabled         bool // Enable draft storage and editing workflows
+	CMSRevisionHistoryEnabled     bool // Enable revision history and restores
+	CMSScheduledPublishingEnabled bool // Enable scheduled publishing worker behavior
+	CMSSeriesEnabled              bool // Enable series organization
+	CMSCategoriesEnabled          bool // Enable categories organization
+	CMSMaxRevisionsPerObject      int  // Maximum revisions retained per CMS object (0 = unlimited)
+
 	// Moderation Features
 	DisableAWSModeration bool // Master switch to disable all AWS moderation services
 	DisableComprehend    bool // Disable AWS Comprehend text analysis
 	DisableRekognition   bool // Disable AWS Rekognition image/video analysis
 
 	// Development & Debug Features
-	DisableMetrics                bool   // Disable metrics collection
-	DisableCostTracking           bool   // Disable cost tracking
-	DisableRateLimiting           bool   // Disable rate limiting
-	DisableFederationRateLimiting bool   // Disable federation-specific rate limiting
-	DisableAI                     bool   // Disable AI features
-	EnablePlayground              bool   // Enable GraphQL playground
+	DisableMetrics                bool // Disable metrics collection
+	DisableCostTracking           bool // Disable cost tracking
+	DisableRateLimiting           bool // Disable rate limiting
+	DisableFederationRateLimiting bool // Disable federation-specific rate limiting
+	DisableAI                     bool // Disable AI features
+	EnablePlayground              bool // Enable GraphQL playground
+	GraphQLAllowIntrospection     bool // Allow GraphQL introspection (non-debug deployments should keep this off)
+	GraphQLMaxDepth               int  // Maximum GraphQL query depth (0 disables)
+	GraphQLMaxComplexity          int  // Maximum GraphQL query complexity (0 disables)
+	GraphQLParserTokenLimit       int  // Maximum GraphQL parser tokens (0 disables)
+	GraphQLRequestTimeout         time.Duration
 	TranslationEnabled            bool   // Enable translation features
 	XRayTracingEnabled            bool   // Enable X-Ray tracing
 	DebugMode                     bool   // Enable debug mode
@@ -124,6 +157,7 @@ type Config struct {
 	// Alerting & Monitoring
 	AlertSNSTopicArn          string // SNS topic ARN for alerts
 	AlertWebhookURL           string // Webhook URL for alerts
+	AlertWebhookVerifySSL     bool   // Verify TLS certificates for alert webhooks (default true)
 	AlertEmail                string // Email address for alerts
 	WebSocketEndpoint         string // WebSocket endpoint for real-time updates
 	NotificationRetryQueueURL string // Notification retry queue URL
@@ -210,6 +244,19 @@ func Get() *Config {
 	return config
 }
 
+// ResetForTests clears cached configuration so tests can vary environment variables
+// safely within a single package test run.
+//
+// This should only be used in tests.
+func ResetForTests() {
+	config = nil
+	jwtSecretLoader = struct {
+		once  sync.Once
+		value string
+		err   error
+	}{}
+}
+
 // loadConfig loads configuration from environment variables
 func loadConfig() *Config {
 	envCanonical, _, stageRaw := resolveEnvironmentAndStage()
@@ -227,9 +274,13 @@ func loadConfig() *Config {
 	federationQueue := resolveQueueURL("FEDERATION_DELIVERY_QUEUE_URL", "FEDERATION_QUEUE_URL")
 	pushQueue := resolveQueueURL("PUSH_NOTIFICATION_QUEUE_URL", "PUSH_QUEUE_URL")
 
+	instanceMode := parseInstanceMode(getEnvOrDefault("INSTANCE_MODE", string(InstanceModeHybrid)))
+	cmsEnabledByMode := instanceMode == InstanceModeCMS || instanceMode == InstanceModeHybrid
+
 	cfg := &Config{
 		Domain:       domainName,
 		InstanceName: getEnvOrDefault("INSTANCE_NAME", "Lesser ActivityPub Server"),
+		InstanceMode: instanceMode,
 
 		Region:                  getEnvOrDefault("AWS_REGION", "us-east-1"),
 		DynamoTableName:         dynamoTable,
@@ -276,6 +327,15 @@ func loadConfig() *Config {
 		PageSize:          getEnvAsIntOrDefault("PAGE_SIZE", 20),
 		AllowRegistration: getEnvAsBoolOrDefault("ALLOW_REGISTRATION", false),
 
+		// CMS Configuration
+		CMSLongFormPublishingEnabled:  getEnvAsBoolOrDefault("CMS_LONG_FORM_PUBLISHING_ENABLED", cmsEnabledByMode),
+		CMSDraftSystemEnabled:         getEnvAsBoolOrDefault("CMS_DRAFT_SYSTEM_ENABLED", cmsEnabledByMode),
+		CMSRevisionHistoryEnabled:     getEnvAsBoolOrDefault("CMS_REVISION_HISTORY_ENABLED", cmsEnabledByMode),
+		CMSScheduledPublishingEnabled: getEnvAsBoolOrDefault("CMS_SCHEDULED_PUBLISHING_ENABLED", cmsEnabledByMode),
+		CMSSeriesEnabled:              getEnvAsBoolOrDefault("CMS_SERIES_ENABLED", cmsEnabledByMode),
+		CMSCategoriesEnabled:          getEnvAsBoolOrDefault("CMS_CATEGORIES_ENABLED", cmsEnabledByMode),
+		CMSMaxRevisionsPerObject:      getEnvAsIntOrDefault("CMS_MAX_REVISIONS_PER_OBJECT", 0),
+
 		// Moderation flags - default to false (AWS enabled by default)
 		DisableAWSModeration: getEnvAsBoolOrDefault("DISABLE_AWS_MODERATION", false),
 		DisableComprehend:    getEnvAsBoolOrDefault("DISABLE_COMPREHEND", false),
@@ -288,6 +348,11 @@ func loadConfig() *Config {
 		DisableFederationRateLimiting: getEnvAsBoolOrDefault("DISABLE_FEDERATION_RATE_LIMITING", false),
 		DisableAI:                     getEnvAsBoolOrDefault("DISABLE_AI", false),
 		EnablePlayground:              getEnvAsBoolOrDefault("ENABLE_PLAYGROUND", false),
+		GraphQLAllowIntrospection:     getEnvAsBoolOrDefault("GRAPHQL_ALLOW_INTROSPECTION", false),
+		GraphQLMaxDepth:               getEnvAsIntOrDefault("GRAPHQL_MAX_DEPTH", 12),
+		GraphQLMaxComplexity:          getEnvAsIntOrDefault("GRAPHQL_MAX_COMPLEXITY", 500),
+		GraphQLParserTokenLimit:       getEnvAsIntOrDefault("GRAPHQL_PARSER_TOKEN_LIMIT", 15000),
+		GraphQLRequestTimeout:         getEnvAsDurationOrDefault("GRAPHQL_REQUEST_TIMEOUT", 25*time.Second),
 		TranslationEnabled:            getEnvAsBoolOrDefault("TRANSLATION_ENABLED", false),
 		XRayTracingEnabled:            getEnvAsBoolOrDefault("XRAY_TRACING_ENABLED", true),
 		DebugMode:                     getEnvAsBoolOrDefault("DEBUG", false),
@@ -304,6 +369,7 @@ func loadConfig() *Config {
 		// Alerting & Monitoring
 		AlertSNSTopicArn:          getEnvOrDefault("ALERT_SNS_TOPIC_ARN", ""),
 		AlertWebhookURL:           getEnvOrDefault("ALERT_WEBHOOK_URL", ""),
+		AlertWebhookVerifySSL:     getEnvAsBoolOrDefault("ALERT_WEBHOOK_VERIFY_SSL", true),
 		AlertEmail:                getEnvOrDefault("ALERT_EMAIL", ""),
 		WebSocketEndpoint:         resolveWebsocketEndpoint(),
 		NotificationRetryQueueURL: getEnvOrDefault("NOTIFICATION_RETRY_QUEUE_URL", ""),
@@ -422,6 +488,50 @@ func (c *Config) ObjectURL(objectType, id string) string {
 	return fmt.Sprintf("%s/%s/%s", c.BaseURL(), objectType, id)
 }
 
+// EffectiveInstanceMode returns the normalized instance mode (defaults to `hybrid`).
+func (c *Config) EffectiveInstanceMode() InstanceMode {
+	if c == nil {
+		return InstanceModeHybrid
+	}
+	return parseInstanceMode(string(c.InstanceMode))
+}
+
+// CMSEnabled reports whether the CMS surface is enabled for this instance mode.
+func (c *Config) CMSEnabled() bool {
+	mode := c.EffectiveInstanceMode()
+	return mode == InstanceModeCMS || mode == InstanceModeHybrid
+}
+
+// CMSLongFormEnabled reports whether long-form publishing (Articles) is enabled.
+func (c *Config) CMSLongFormEnabled() bool {
+	return c != nil && c.CMSEnabled() && c.CMSLongFormPublishingEnabled
+}
+
+// CMSDraftsEnabled reports whether the draft system is enabled.
+func (c *Config) CMSDraftsEnabled() bool {
+	return c != nil && c.CMSEnabled() && c.CMSDraftSystemEnabled
+}
+
+// CMSRevisionsEnabled reports whether revision history is enabled.
+func (c *Config) CMSRevisionsEnabled() bool {
+	return c != nil && c.CMSEnabled() && c.CMSRevisionHistoryEnabled
+}
+
+// CMSSchedulingEnabled reports whether scheduled publishing is enabled.
+func (c *Config) CMSSchedulingEnabled() bool {
+	return c != nil && c.CMSEnabled() && c.CMSScheduledPublishingEnabled
+}
+
+// CMSSeriesAllowed reports whether series organization is enabled.
+func (c *Config) CMSSeriesAllowed() bool {
+	return c != nil && c.CMSEnabled() && c.CMSSeriesEnabled
+}
+
+// CMSCategoriesAllowed reports whether category organization is enabled.
+func (c *Config) CMSCategoriesAllowed() bool {
+	return c != nil && c.CMSEnabled() && c.CMSCategoriesEnabled
+}
+
 // Helper functions
 
 func getEnvOrDefault(key, defaultValue string) string {
@@ -441,6 +551,10 @@ func mustGetJWTSecret() string {
 	// Check for plain text secret (not recommended for production)
 	if secret := os.Getenv("JWT_SECRET"); secret != "" {
 		return secret
+	}
+	if isRunningTests() {
+		// Avoid reaching out to AWS Secrets Manager during unit tests.
+		return "dummy"
 	}
 
 	// Get ARN from environment
@@ -464,12 +578,12 @@ func mustGetJWTSecret() string {
 
 func fetchSecretValue(arn string) (string, error) {
 	ctx := context.Background()
-	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	cfg, err := loadDefaultAWSConfig(ctx)
 	if err != nil {
 		return "", fmt.Errorf("load AWS config: %w", err)
 	}
 
-	sm := secretsmanager.NewFromConfig(cfg)
+	sm := newSecretsManagerValueGetter(cfg)
 	output, err := sm.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: &arn})
 	if err != nil {
 		return "", fmt.Errorf("get secret value: %w", err)
@@ -607,6 +721,34 @@ func resolveEnvironmentAndStage() (env string, envRaw string, stage string) {
 	return env, envRaw, stage
 }
 
+func parseInstanceMode(value string) InstanceMode {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case string(InstanceModeSocial):
+		return InstanceModeSocial
+	case string(InstanceModeCMS):
+		return InstanceModeCMS
+	case string(InstanceModeHybrid), "":
+		return InstanceModeHybrid
+	default:
+		return InstanceModeHybrid
+	}
+}
+
+func isRunningTests() bool {
+	// Common patterns:
+	// - os.Args[0] ends with ".test" for test binaries
+	// - go test passes flags prefixed with "-test."
+	if strings.HasSuffix(os.Args[0], ".test") {
+		return true
+	}
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(arg, "-test.") {
+			return true
+		}
+	}
+	return false
+}
+
 func resolveDynamoTableName() string {
 	table := resolveEnvFirst("DYNAMODB_TABLE", "DYNAMO_TABLE_NAME")
 	if table != "" {
@@ -616,6 +758,9 @@ func resolveDynamoTableName() string {
 	env, envRaw, stage := resolveEnvironmentAndStage()
 	derived := firstNonEmpty(env, envRaw, stage)
 	if derived == "" {
+		if isRunningTests() {
+			return "test-table"
+		}
 		panic("DYNAMODB_TABLE or DYNAMO_TABLE_NAME or ENVIRONMENT/STAGE must be set to determine the DynamoDB table name")
 	}
 	return fmt.Sprintf("lesser-%s", strings.ToLower(derived))

@@ -6,7 +6,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/moderation"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
@@ -21,7 +21,7 @@ type SubscriptionManager struct {
 
 // NewSubscriptionManager creates a new subscription manager with DynamoDB-backed persistence
 func NewSubscriptionManager(
-	connRepo *repositories.StreamingConnectionRepository,
+	connRepo interfaces.StreamingConnectionRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 ) *SubscriptionManager {
@@ -196,6 +196,11 @@ func (sm *SubscriptionManager) SubscribeToThreatIntelligence(ctx context.Context
 // SubscribeToInfrastructureEvents creates a channel for infrastructure event updates using event bus
 func (sm *SubscriptionManager) SubscribeToInfrastructureEvents(ctx context.Context, username string) (<-chan *model.InfrastructureEvent, error) {
 	return sm.manager.SubscribeToInfrastructureEvents(ctx, username)
+}
+
+// SubscribeToModerationQueueUpdate creates a channel for moderation queue updates using event bus
+func (sm *SubscriptionManager) SubscribeToModerationQueueUpdate(ctx context.Context, username string, priority *model.Priority) (<-chan *model.ModerationItem, error) {
+	return sm.manager.SubscribeToModerationQueueUpdate(ctx, username, priority)
 }
 
 // GetStats returns statistics about active subscriptions

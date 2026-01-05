@@ -13,10 +13,17 @@
   --lesser-primary-800: #6b21a8;
   --lesser-primary-900: #581c87;
   
-  /* Override Greater tokens with Lesser brand */
+  /* Override Greater primary scale with Lesser brand */
+  --gr-color-primary-50: var(--lesser-primary-50);
+  --gr-color-primary-100: var(--lesser-primary-100);
+  --gr-color-primary-200: var(--lesser-primary-200);
+  --gr-color-primary-300: var(--lesser-primary-300);
+  --gr-color-primary-400: var(--lesser-primary-400);
   --gr-color-primary-500: var(--lesser-primary-500);
   --gr-color-primary-600: var(--lesser-primary-600);
   --gr-color-primary-700: var(--lesser-primary-700);
+  --gr-color-primary-800: var(--lesser-primary-800);
+  --gr-color-primary-900: var(--lesser-primary-900);
   
   /* Dark theme (default) */
   --bg-primary: #0f0f23;
@@ -86,6 +93,20 @@ body {
   border-radius: var(--radius-xl);
   padding: var(--spacing-2xl);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.auth-card--wide {
+  max-width: 720px;
+}
+
+@media (max-width: 640px) {
+  .auth-container {
+    padding: var(--spacing-md);
+  }
+
+  .auth-card {
+    padding: var(--spacing-xl);
+  }
 }
 
 .auth-header {
@@ -329,4 +350,3 @@ body {
 .mt-2 { margin-top: var(--spacing-md); }
 .mt-3 { margin-top: var(--spacing-lg); }
 .mt-4 { margin-top: var(--spacing-xl); }
-

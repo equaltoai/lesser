@@ -16,18 +16,149 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 )
+
+type userRepository interface {
+	GetReputation(ctx context.Context, actorID string) (*storage.Reputation, error)
+	StoreReputation(ctx context.Context, actorID string, reputation *storage.Reputation) error
+}
+
+type actorRepository interface {
+	GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error)
+}
+
+type statusRepository interface {
+	CountStatusesByAuthor(ctx context.Context, username string) (int, error)
+	GetUserTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error)
+}
+
+type activityRepository interface {
+	GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error)
+}
+
+type relationshipRepository interface {
+	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+}
+
+type trustRepository interface {
+	GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
+	GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
+}
+
+type moderationRepository interface {
+	GetModerationEventsByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*storage.ModerationEvent, string, error)
+	GetReportsByTarget(ctx context.Context, targetAccountID string, limit int, cursor string) ([]*storage.Report, string, error)
+}
+
+type communityNoteRepository interface {
+	GetCommunityNotesByAuthor(ctx context.Context, authorID string, limit int, cursor string) ([]*storage.CommunityNote, string, error)
+	GetCommunityNoteVotes(ctx context.Context, noteID string) ([]*storage.CommunityNoteVote, error)
+}
+
+type reputationCalculator interface {
+	Calculate(ctx context.Context, input *CalculationInput) (*Reputation, error)
+}
+
+type reputationSigner interface {
+	SignReputation(rep *Reputation) error
+	SignPortableReputation(pr *PortableReputation) error
+	GetPublicKeyBase64() string
+}
+
+type vouchSignatureVerifier interface {
+	VerifyVouchSignature(vouch *Vouch) (bool, error)
+}
+
+type reputationVerifier interface {
+	VerifyPortableReputation(pr *PortableReputation) (*VerificationResult, error)
+	VerifyVouchSignature(vouch *Vouch) (bool, error)
+}
+
+type reputationVouchManager interface {
+	GetVouchesForActor(ctx context.Context, actorID string) ([]Vouch, error)
+	GetVouchesFromActor(ctx context.Context, actorID string) ([]Vouch, error)
+	ImportVouches(ctx context.Context, vouches []Vouch, verifier vouchSignatureVerifier) (int, error)
+	CreateVouch(ctx context.Context, input *CreateVouchInput) (*Vouch, error)
+	RevokeVouch(ctx context.Context, vouchID, actorID string) error
+}
+
+type reputationCacheDB interface {
+	WithContext(ctx context.Context) reputationCacheDB
+	Model(model any) reputationCacheQuery
+}
+
+type reputationCacheQuery interface {
+	Where(field string, op string, value any) reputationCacheQuery
+	First(dest any) error
+	Create() error
+}
+
+type dynamormReputationCacheDB struct {
+	db dynamormCore.DB
+}
+
+func (d dynamormReputationCacheDB) WithContext(ctx context.Context) reputationCacheDB {
+	if d.db == nil {
+		return d
+	}
+	return dynamormReputationCacheDB{db: d.db.WithContext(ctx)}
+}
+
+func (d dynamormReputationCacheDB) Model(model any) reputationCacheQuery {
+	if d.db == nil {
+		return &dynamormReputationCacheQuery{}
+	}
+	return &dynamormReputationCacheQuery{q: d.db.Model(model)}
+}
+
+type dynamormReputationCacheQuery struct {
+	q dynamormCore.Query
+}
+
+func (q *dynamormReputationCacheQuery) Where(field string, op string, value any) reputationCacheQuery {
+	if q.q == nil {
+		return q
+	}
+	q.q = q.q.Where(field, op, value)
+	return q
+}
+
+func (q *dynamormReputationCacheQuery) First(dest any) error {
+	if q.q == nil {
+		return fmt.Errorf("cache disabled")
+	}
+	return q.q.First(dest)
+}
+
+func (q *dynamormReputationCacheQuery) Create() error {
+	if q.q == nil {
+		return fmt.Errorf("cache disabled")
+	}
+	return q.q.Create()
+}
 
 // Service provides reputation management functionality
 type Service struct {
-	storage      core.RepositoryStorage
-	calculator   *Calculator
-	signer       *Signer
-	verifier     *Verifier
-	vouchManager *VouchManager
-	logger       *zap.Logger
-	costTracker  *cost.Tracker
-	instanceURL  string
+	userRepo          userRepository
+	actorRepo         actorRepository
+	statusRepo        statusRepository
+	activityRepo      activityRepository
+	relationshipRepo  relationshipRepository
+	trustRepo         trustRepository
+	moderationRepo    moderationRepository
+	communityNoteRepo communityNoteRepository
+	cache             reputationCacheDB
+
+	calculator   reputationCalculator
+	signer       reputationSigner
+	verifier     reputationVerifier
+	vouchManager reputationVouchManager
+
+	logger      *zap.Logger
+	costTracker *cost.Tracker
+	instanceURL string
 }
 
 // Config contains configuration for the reputation service
@@ -45,6 +176,9 @@ func NewService(cfg *Config) (*Service, error) {
 	if cfg.Storage == nil {
 		return nil, fmt.Errorf("storage is required")
 	}
+	if cfg.Logger == nil {
+		cfg.Logger = zap.NewNop()
+	}
 
 	// Create signer
 	signer, err := NewSigner(cfg.PrivateKey, cfg.InstanceURL, cfg.Logger)
@@ -54,11 +188,20 @@ func NewService(cfg *Config) (*Service, error) {
 
 	// Create components using storage interface
 	calculator := NewCalculator(cfg.Storage, cfg.InstanceURL, cfg.Logger)
-	verifier := NewVerifier(cfg.InstanceURL, cfg.Logger, cfg.Storage)
+	verifier := NewVerifier(cfg.InstanceURL, cfg.Logger, cfg.Storage.DomainBlock())
 	vouchManager := NewVouchManager(cfg.Storage, signer, cfg.InstanceURL, cfg.Logger)
 
 	return &Service{
-		storage:      cfg.Storage,
+		userRepo:          cfg.Storage.User(),
+		actorRepo:         cfg.Storage.Actor(),
+		statusRepo:        cfg.Storage.Status(),
+		activityRepo:      cfg.Storage.Activity(),
+		relationshipRepo:  cfg.Storage.Relationship(),
+		trustRepo:         cfg.Storage.Trust(),
+		moderationRepo:    cfg.Storage.Moderation(),
+		communityNoteRepo: cfg.Storage.CommunityNote(),
+		cache:             dynamormReputationCacheDB{db: cfg.Storage.GetDB()},
+
 		calculator:   calculator,
 		signer:       signer,
 		verifier:     verifier,
@@ -72,7 +215,7 @@ func NewService(cfg *Config) (*Service, error) {
 // GetReputation retrieves the current reputation for an actor
 func (s *Service) GetReputation(ctx context.Context, actorID string) (*Reputation, error) {
 	// Get reputation from storage
-	storedRep, err := s.storage.User().GetReputation(ctx, actorID)
+	storedRep, err := s.userRepo.GetReputation(ctx, actorID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get reputation: %w", err)
 	}
@@ -203,7 +346,7 @@ func (s *Service) extractUsername(actorID string) string {
 
 // getActorData retrieves actor data from storage
 func (s *Service) getActorData(ctx context.Context, actorID, username string) (*activitypub.Actor, error) {
-	actor, err := s.storage.Actor().GetActorByUsername(ctx, username)
+	actor, err := s.actorRepo.GetActorByUsername(ctx, username)
 	if err != nil {
 		s.logger.Error("Failed to get actor",
 			zap.String("actorID", actorID),
@@ -245,7 +388,7 @@ func (s *Service) getPostCount(ctx context.Context, actorID string) int {
 		return cached
 	}
 
-	count, err := s.storage.Status().CountStatusesByAuthor(ctx, username)
+	count, err := s.statusRepo.CountStatusesByAuthor(ctx, username)
 	if err != nil {
 		s.logger.Warn("Failed to get post count",
 			zap.String("actorID", actorID),
@@ -297,7 +440,7 @@ func (s *Service) getLastActivityTime(ctx context.Context, actorID string) time.
 func (s *Service) getLastStatusTime(ctx context.Context, username string) time.Time {
 	// Get the most recent status using GetUserTimeline (limit to 1)
 	opts := interfaces.PaginationOptions{Limit: 1}
-	result, err := s.storage.Status().GetUserTimeline(ctx, username, opts)
+	result, err := s.statusRepo.GetUserTimeline(ctx, username, opts)
 	if err != nil {
 		s.logger.Warn("Failed to get recent statuses for last activity",
 			zap.String("username", username),
@@ -321,7 +464,7 @@ func (s *Service) getLastStatusTime(ctx context.Context, username string) time.T
 // getLastOutboxActivityTime gets the timestamp of the most recent outbox activity
 func (s *Service) getLastOutboxActivityTime(ctx context.Context, username string) time.Time {
 	// Get the most recent outbox activity (limit to 1)
-	activities, _, err := s.storage.Activity().GetOutboxActivities(ctx, username, 1, "")
+	activities, _, err := s.activityRepo.GetOutboxActivities(ctx, username, 1, "")
 	if err != nil {
 		s.logger.Warn("Failed to get recent outbox activities for last activity",
 			zap.String("username", username),
@@ -343,7 +486,7 @@ func (s *Service) getLastOutboxActivityTime(ctx context.Context, username string
 
 // getFollowerCount retrieves the follower count for an actor
 func (s *Service) getFollowerCount(ctx context.Context, actorID string) int {
-	followers, _, err := s.storage.Relationship().GetFollowers(ctx, actorID, 1000, "")
+	followers, _, err := s.relationshipRepo.GetFollowers(ctx, actorID, 1000, "")
 	if err != nil {
 		s.logger.Warn("Failed to get followers", zap.Error(err))
 		return 0
@@ -366,7 +509,7 @@ func (s *Service) gatherTrustRelationships(ctx context.Context, actorID string) 
 
 // addOutgoingTrust adds relationships where this actor trusts others
 func (s *Service) addOutgoingTrust(ctx context.Context, actorID string, relationships *[]TrustRelationship) {
-	trusting, _, err := s.storage.Trust().GetTrustRelationships(ctx, actorID, 100, "")
+	trusting, _, err := s.trustRepo.GetTrustRelationships(ctx, actorID, 100, "")
 	if err != nil {
 		s.logger.Warn("Failed to get trusting relationships", zap.Error(err))
 		return
@@ -379,7 +522,7 @@ func (s *Service) addOutgoingTrust(ctx context.Context, actorID string, relation
 
 // addIncomingTrust adds relationships where others trust this actor
 func (s *Service) addIncomingTrust(ctx context.Context, actorID string, relationships *[]TrustRelationship) {
-	trustedBy, _, err := s.storage.Trust().GetTrustedByRelationships(ctx, actorID, 100, "")
+	trustedBy, _, err := s.trustRepo.GetTrustedByRelationships(ctx, actorID, 100, "")
 	if err != nil {
 		s.logger.Warn("Failed to get trusted-by relationships", zap.Error(err))
 		return
@@ -428,7 +571,7 @@ func (s *Service) gatherModerationHistory(ctx context.Context, actorID string) [
 
 // addModerationEvents adds moderation events to history
 func (s *Service) addModerationEvents(ctx context.Context, actorID string, history *[]ModerationEvent) {
-	events, _, err := s.storage.Moderation().GetModerationEventsByActor(ctx, actorID, 100, "")
+	events, _, err := s.moderationRepo.GetModerationEventsByActor(ctx, actorID, 100, "")
 	if err != nil {
 		s.logger.Warn("Failed to get moderation events", zap.Error(err))
 		return
@@ -472,7 +615,7 @@ func (s *Service) parseSeverity(severity string) int {
 
 // addReportEvents adds report events to moderation history
 func (s *Service) addReportEvents(ctx context.Context, actorID string, history *[]ModerationEvent) {
-	reports, _, err := s.storage.Moderation().GetReportsByTarget(ctx, actorID, 100, "")
+	reports, _, err := s.moderationRepo.GetReportsByTarget(ctx, actorID, 100, "")
 	if err != nil {
 		s.logger.Warn("Failed to get reports", zap.Error(err))
 		return
@@ -520,7 +663,7 @@ func (s *Service) gatherCommunityContributions(ctx context.Context, input *Calcu
 
 // getCommunityNotes retrieves community notes for an actor
 func (s *Service) getCommunityNotes(ctx context.Context, actorID string) []*storage.CommunityNote {
-	communityNotes, _, err := s.storage.CommunityNote().GetCommunityNotesByAuthor(ctx, actorID, 1000, "")
+	communityNotes, _, err := s.communityNoteRepo.GetCommunityNotesByAuthor(ctx, actorID, 1000, "")
 	if err != nil {
 		s.logger.Warn("Failed to get community notes", zap.Error(err))
 		return []*storage.CommunityNote{}
@@ -539,7 +682,7 @@ func (s *Service) countHelpfulVotes(ctx context.Context, notes []*storage.Commun
 
 // countNoteHelpfulVotes counts helpful votes for a single note
 func (s *Service) countNoteHelpfulVotes(ctx context.Context, noteID string) int {
-	votes, err := s.storage.CommunityNote().GetCommunityNoteVotes(ctx, noteID)
+	votes, err := s.communityNoteRepo.GetCommunityNoteVotes(ctx, noteID)
 	if err != nil {
 		s.logger.Warn("Failed to get votes for note",
 			zap.String("note_id", noteID),
@@ -582,7 +725,7 @@ func (s *Service) storeReputation(ctx context.Context, rep *Reputation) error {
 		PublicKey:         rep.PublicKey,
 	}
 
-	return s.storage.User().StoreReputation(ctx, rep.ActorID, storedRep)
+	return s.userRepo.StoreReputation(ctx, rep.ActorID, storedRep)
 }
 
 // ExportReputation exports a portable reputation document
@@ -741,7 +884,10 @@ func (s *Service) getCachedMetric(ctx context.Context, key string, maxAge time.D
 	}
 
 	var cached CachedMetric
-	err := s.storage.GetDB().WithContext(ctx).Model(&CachedMetric{}).
+	if s.cache == nil {
+		return -1
+	}
+	err := s.cache.WithContext(ctx).Model(&CachedMetric{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&cached)
@@ -781,7 +927,10 @@ func (s *Service) setCachedMetric(ctx context.Context, key string, value int) {
 		TTL:      ttl,
 	}
 
-	err := s.storage.GetDB().WithContext(ctx).Model(cached).Create()
+	if s.cache == nil {
+		return
+	}
+	err := s.cache.WithContext(ctx).Model(cached).Create()
 	if err != nil {
 		s.logger.Debug("Failed to cache metric",
 			zap.String("key", key),
@@ -803,7 +952,10 @@ func (s *Service) getCachedTimestamp(ctx context.Context, key string, maxAge tim
 	}
 
 	var cached CachedTimestamp
-	err := s.storage.GetDB().WithContext(ctx).Model(&CachedTimestamp{}).
+	if s.cache == nil {
+		return time.Time{}
+	}
+	err := s.cache.WithContext(ctx).Model(&CachedTimestamp{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&cached)
@@ -843,7 +995,10 @@ func (s *Service) setCachedTimestamp(ctx context.Context, key string, value time
 		TTL:      ttl,
 	}
 
-	err := s.storage.GetDB().WithContext(ctx).Model(cached).Create()
+	if s.cache == nil {
+		return
+	}
+	err := s.cache.WithContext(ctx).Model(cached).Create()
 	if err != nil {
 		s.logger.Debug("Failed to cache timestamp",
 			zap.String("key", key),

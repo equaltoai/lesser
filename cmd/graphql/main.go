@@ -23,8 +23,10 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/handler/apollotracing"
 	"github.com/99designs/gqlgen/graphql/handler/extension"
@@ -37,6 +39,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	gqllimits "github.com/equaltoai/lesser/pkg/graphql/limits"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/observability"
@@ -48,6 +52,7 @@ import (
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
 )
 
@@ -60,17 +65,36 @@ const (
 	contextKeyLoaders     contextKey = "loaders"
 )
 
+type lambdaInvocationTracker interface {
+	TrackLambdaInvocation(ctx context.Context, operation cost.LambdaOperation) error
+}
+
 var (
 	lambdaCtx *common.LambdaContext
 	cfg       *config.Config
 	repos     core.RepositoryStorage
 	//nolint:gochecknoglobals // These are initialized once at startup
 	logger              *zap.Logger
-	graphQLHandler      *handler.Server
-	emfMetricsService   interface{}           // *observability.EMFMetricsService interface
-	costTracker         *cost.Tracker         // Legacy tracker for resolver compatibility
-	costTrackingService *cost.TrackingService // Centralized service
+	graphQLHandler      http.Handler
+	emfMetricsService   interface{}   // *observability.EMFMetricsService interface
+	costTracker         *cost.Tracker // Legacy tracker for resolver compatibility
+	costTrackingService lambdaInvocationTracker
 	initTime            time.Time
+)
+
+var (
+	runningUnitTestsFn       = common.RunningUnitTests
+	mustInitializeLambdaFn   = common.MustInitializeLambda
+	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+
+	extractStandardizedServicesFn       = extractStandardizedServices
+	initializeManualServicesFn          = initializeManualServices
+	initializeGraphQLSpecificServicesFn = initializeGraphQLSpecificServices
+	lambdaStartFn                       = lambda.Start
+	newLambdaOptimizedClientFn          = dynamorm.NewLambdaOptimizedClient
+	newRepositoryFactoryFn              = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
+		return factory.NewRepositoryFactory(db, tableName, logger)
+	}
 )
 
 type oauthMiddlewareAdapter struct {
@@ -90,30 +114,38 @@ func (a *oauthMiddlewareAdapter) ValidateAccessToken(token string) (common.Claim
 }
 
 func init() {
-	if common.RunningUnitTests() {
+	initializeGraphQLOnStart()
+}
+
+func initializeGraphQLOnStart() {
+	if runningUnitTestsFn() {
 		return
 	}
+
+	initializeGraphQL()
+}
+
+func initializeGraphQL() {
 	initTime = time.Now()
 
 	// Standardized Lambda initialization with automatic service detection
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName:    "graphql",
 		LambdaType:     common.LambdaTypeAPI,
 		RequestTimeout: 30 * time.Second,
 	})
 
 	// Initialize with default options for API Lambda type
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		// Fallback to manual initialization for services requiring it
-		initializeManualServices()
+		initializeManualServicesFn()
 	} else {
 		// Extract standardized services
-		extractStandardizedServices()
+		extractStandardizedServicesFn()
 	}
 
 	// Initialize GraphQL-specific services
-	initializeGraphQLSpecificServices()
+	initializeGraphQLSpecificServicesFn()
 }
 
 // extractStandardizedServices extracts services from standardized initialization
@@ -161,13 +193,13 @@ func initializeManualServices() {
 	}
 
 	// Initialize DynamORM client optimized for Lambda cold starts
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	db, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
 	if err != nil {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
 	// Initialize repository factory to provide core storage interfaces
-	repoFactory, err := factory.NewRepositoryFactory(db, tableName, logger)
+	repoFactory, err := newRepositoryFactoryFn(db, tableName, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
@@ -202,7 +234,7 @@ func resolveStreamQueue() streaming.StreamQueueService {
 	}
 
 	if coreDB == nil {
-		client, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+		client, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
 		if err != nil {
 			logger.Error("failed to initialize dynamo client for stream queue",
 				zap.String("region", cfg.Region),
@@ -297,25 +329,41 @@ func initializeGraphQLSpecificServices() {
 	})
 
 	// Create GraphQL handler
-	graphQLHandler = handler.NewDefaultServer(schema)
+	server := handler.New(schema)
+	server.SetErrorPresenter(graphQLErrorPresenter)
 
 	// Configure GraphQL handler
-	graphQLHandler.AddTransport(transport.Websocket{})
-	graphQLHandler.AddTransport(transport.Options{})
-	graphQLHandler.AddTransport(transport.GET{})
-	graphQLHandler.AddTransport(transport.POST{})
-	graphQLHandler.AddTransport(transport.MultipartForm{
+	server.AddTransport(transport.Websocket{})
+	server.AddTransport(transport.Options{})
+	server.AddTransport(transport.GET{})
+	server.AddTransport(transport.POST{})
+	server.AddTransport(transport.MultipartForm{
 		MaxUploadSize: cfg.MaxUploadSize,
 		MaxMemory:     cfg.MaxUploadSize,
 	})
 
-	// Add extensions
-	graphQLHandler.Use(extension.Introspection{})
+	// Harden request parsing and execution limits (abuse-resilience).
+	if cfg.GraphQLParserTokenLimit > 0 {
+		server.SetParserTokenLimit(cfg.GraphQLParserTokenLimit)
+	}
+	if cfg.GraphQLMaxDepth > 0 {
+		server.Use(gqllimits.FixedDepthLimit(cfg.GraphQLMaxDepth))
+	}
+	if cfg.GraphQLMaxComplexity > 0 {
+		server.Use(extension.FixedComplexityLimit(cfg.GraphQLMaxComplexity))
+	}
+
+	// Introspection is disabled by default; enable it explicitly for debug/playground workflows.
+	if cfg.DebugMode || cfg.EnablePlayground || cfg.GraphQLAllowIntrospection {
+		server.Use(extension.Introspection{})
+	}
 
 	// Add Apollo tracing in development
 	if cfg.DebugMode {
-		graphQLHandler.Use(apollotracing.Tracer{})
+		server.Use(apollotracing.Tracer{})
 	}
+
+	graphQLHandler = server
 
 	logger.Info("GraphQL service initialized successfully",
 		zap.String("version", "lift-dynamorm"),
@@ -323,10 +371,30 @@ func initializeGraphQLSpecificServices() {
 		zap.String("status", "ready"))
 }
 
+func graphQLErrorPresenter(ctx context.Context, err error) *gqlerror.Error {
+	gqlErr := graphql.DefaultErrorPresenter(ctx, err)
+	if appErr, ok := apperrors.AsAppError(err); ok {
+		if gqlErr.Extensions == nil {
+			gqlErr.Extensions = map[string]any{}
+		}
+		gqlErr.Extensions["code"] = string(appErr.Code)
+		gqlErr.Extensions["http_status"] = appErr.HTTPStatusCode
+		gqlErr.Message = appErr.Message
+	}
+	return gqlErr
+}
+
 // handleGraphQL processes GraphQL requests with proper context and DataLoader
 func handleGraphQL(ctx *lift.Context) error {
+	requestCtx := ctx.Request.Context()
+	if cfg != nil && cfg.GraphQLRequestTimeout > 0 {
+		var cancel context.CancelFunc
+		requestCtx, cancel = context.WithTimeout(requestCtx, cfg.GraphQLRequestTimeout)
+		defer cancel()
+	}
+
 	// Create request context with user information
-	requestCtx := context.WithValue(ctx.Request.Context(), contextKeyUser, ctx.Get("user"))
+	requestCtx = context.WithValue(requestCtx, contextKeyUser, ctx.Get("user"))
 
 	authHeader := common.ExtractAuthHeader(ctx)
 	logger.Info("GraphQL request auth header check",
@@ -614,6 +682,24 @@ func main() {
 	// Apply strict security middleware for web clients
 	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeAPI, logger)
 
+	// Block GraphQL POST requests until instance activation completes to prevent mutations.
+	app.Use(func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			if strings.EqualFold(ctx.Request.Method, http.MethodPost) {
+				state, err := repos.Instance().GetInstanceState(ctx.Context)
+				if err != nil || state.Locked {
+					ctx.Response.StatusCode = http.StatusForbidden
+					return ctx.JSON(map[string]any{
+						"errors": []map[string]any{
+							{"message": "instance is locked"},
+						},
+					})
+				}
+			}
+			return next.Handle(ctx)
+		})
+	})
+
 	// Timeout middleware
 	app.Use(liftMiddleware.TimeoutMiddleware(liftMiddleware.TimeoutConfig{
 		DefaultTimeout: 30 * time.Second,
@@ -740,5 +826,5 @@ func main() {
 		return app.HandleRequest(ctx, event)
 	})
 
-	lambda.Start(standardHandler)
+	lambdaStartFn(standardHandler)
 }

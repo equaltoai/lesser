@@ -296,7 +296,11 @@ func WrapWithContext(err error, context string) *AppError {
 	}
 
 	if appErr, ok := AsAppError(err); ok {
-		return appErr.WithInternalMessage(context + ": " + appErr.InternalMessage)
+		clone := appErr.Clone()
+		if clone.InternalMessage != "" {
+			return clone.WithInternalMessage(context + ": " + clone.InternalMessage)
+		}
+		return clone.WithInternalMessage(context)
 	}
 
 	return InternalWithCause(err, context)
@@ -305,7 +309,7 @@ func WrapWithContext(err error, context string) *AppError {
 // WrapWithOperation wraps an error with operation metadata.
 func WrapWithOperation(err error, operation string) *AppError {
 	if appErr, ok := AsAppError(err); ok {
-		return appErr.WithMetadata("operation", operation)
+		return appErr.Clone().WithMetadata("operation", operation)
 	}
 	return WrapWithContext(err, operation)
 }
@@ -313,7 +317,7 @@ func WrapWithOperation(err error, operation string) *AppError {
 // WrapWithResource wraps an error with resource metadata.
 func WrapWithResource(err error, resourceType, resourceID string) *AppError {
 	if appErr, ok := AsAppError(err); ok {
-		return appErr.WithMetadata("resource_type", resourceType).
+		return appErr.Clone().WithMetadata("resource_type", resourceType).
 			WithMetadata("resource_id", resourceID)
 	}
 	return WrapWithContext(err, resourceType+":"+resourceID)

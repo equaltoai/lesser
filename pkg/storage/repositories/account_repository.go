@@ -33,6 +33,7 @@ type AccountRepository struct {
 	logger    *zap.Logger
 	tableName string
 	domain    string
+	encryptor marshalers.Encryptor
 
 	// Dependencies for cross-repository operations
 	// Note: storage.Storage dependency removed in Phase 5.6
@@ -105,6 +106,12 @@ func (r *AccountRepository) SetStatusRepository(statusRepo interfaces.StatusRepo
 // SetBookmarkRepository wires the bookmark repository for dual-write operations
 func (r *AccountRepository) SetBookmarkRepository(bookmarkRepo *BookmarkRepository) {
 	r.bookmarkRepo = bookmarkRepo
+}
+
+// SetEncryptor overrides the encryptor used for actor private keys.
+// When unset, the repository uses KMS based on runtime configuration.
+func (r *AccountRepository) SetEncryptor(encryptor marshalers.Encryptor) {
+	r.encryptor = encryptor
 }
 
 func (r *AccountRepository) getBookmarkRepository() *BookmarkRepository {
@@ -298,10 +305,9 @@ func (r *AccountRepository) GetUser(ctx context.Context, username string) (*stor
 
 	err := r.Get(ctx, pk, models.SKMetadata, user)
 	if err != nil {
-		if dynamormErrors.IsNotFound(err) {
-			return nil, ErrorHandler.HandleGetError(errors.New("not found"), EntityUser, username)
+		if !dynamormErrors.IsNotFound(err) {
+			r.logger.Error("failed to get user", zap.Error(err), zap.String("username", username))
 		}
-		r.logger.Error("failed to get user", zap.Error(err), zap.String("username", username))
 		return nil, ErrorHandler.HandleGetError(err, EntityUser, username)
 	}
 
@@ -322,9 +328,6 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, username string, upd
 	pk := fmt.Sprintf("USER#%s", username)
 	err := r.Get(ctx, pk, models.SKMetadata, user)
 	if err != nil {
-		if dynamormErrors.IsNotFound(err) {
-			return ErrorHandler.HandleGetError(errors.New("not found"), EntityUser, username)
-		}
 		return ErrorHandler.HandleGetError(err, EntityUser, username)
 	}
 
@@ -942,6 +945,10 @@ func (r *AccountRepository) applyUserUpdates(user *models.User, updates map[stri
 
 // getEncryptor returns an encryptor for actor private keys using KMS
 func (r *AccountRepository) getEncryptor() (marshalers.Encryptor, error) {
+	if r != nil && r.encryptor != nil {
+		return r.encryptor, nil
+	}
+
 	cfg := config.Get()
 
 	kmsKeyID := cfg.KMSKeyID
@@ -1242,9 +1249,6 @@ func (r *AccountRepository) GetAccountByURL(ctx context.Context, actorURL string
 		First(&actorModel)
 
 	if err != nil {
-		if isAccountNotFound(err) {
-			return nil, ErrorHandler.HandleGetError(errors.New("not found"), EntityUser, actorURL)
-		}
 		return nil, ErrorHandler.HandleGetError(err, EntityUser, actorURL)
 	}
 
@@ -1254,25 +1258,8 @@ func (r *AccountRepository) GetAccountByURL(ctx context.Context, actorURL string
 
 // GetAccountByEmail retrieves an account by email address (updated to match interface)
 func (r *AccountRepository) GetAccountByEmail(ctx context.Context, email string) (*storage.Account, error) {
-	// Get user by email
-	user, err := r.GetUserByEmail(ctx, email)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get actor data
-	actor, err := r.GetActor(ctx, user.Username)
-	if err != nil && !isAccountNotFound(err) {
-		return nil, ErrorHandler.HandleGetError(err, EntityActor, user.Username)
-	}
-
-	// Combine into account
-	account := &storage.Account{
-		User:  user,
-		Actor: actor,
-	}
-
-	return account, nil
+	_, err := r.GetUserByEmail(ctx, email)
+	return nil, err
 }
 
 // UpdateAccount updates account data (updated to match interface)
@@ -2050,9 +2037,6 @@ func (r *AccountRepository) GetPasswordReset(ctx context.Context, token string) 
 func (r *AccountRepository) UsePasswordReset(ctx context.Context, token string) error {
 	// Get the reset record first
 	resetModel := &models.PasswordReset{}
-	if err := resetModel.UpdateKeys(); err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityPasswordReset, "model keys")
-	}
 	resetModel.Token = token
 
 	err := r.db.WithContext(ctx).Model(resetModel).

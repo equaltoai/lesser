@@ -41,62 +41,78 @@ func MapError(err error) error {
 		return nil
 	}
 
-	// Check for DynamORM specific errors first
-	if isDynamORMNotFoundError(err) {
-		return storage.ErrNotFound
+	// Preserve canonical AppErrors (including wrapped AppErrors) without remapping
+	// them into other error shapes.
+	if errors.IsAppError(err) {
+		return err
 	}
 
-	// Check for common error messages
-	errMsg := err.Error()
+	// Check for DynamORM specific errors first
+	if isDynamORMNotFoundError(err) {
+		return errors.NotFound("item").
+			WithInternalError(stdErrors.Join(err, storage.ErrNotFound))
+	}
+
+	// Check for common error messages (case-insensitive)
+	errMsg := strings.ToLower(err.Error())
+
+	// Resource not found errors (table/index missing) should map to service unavailable,
+	// not a 404 for an item.
+	if strings.Contains(errMsg, "resource not found") || strings.Contains(errMsg, "table not found") {
+		return errors.DatabaseUnavailable(stdErrors.Join(err, ErrResourceNotFound)).
+			AsRetryable()
+	}
 
 	// Not found errors
 	if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "item not found") ||
 		strings.Contains(errMsg, "record not found") {
-		return storage.ErrNotFound
+		return errors.NotFound("item").
+			WithInternalError(stdErrors.Join(err, storage.ErrNotFound))
 	}
 
 	// Validation errors
 	if strings.Contains(errMsg, "validation failed") || strings.Contains(errMsg, "validation error") {
-		return storage.ErrInvalidInput
+		return errors.ValidationFailedWithField("invalid input").
+			WithInternalError(stdErrors.Join(err, storage.ErrInvalidInput))
 	}
 
 	// Conditional check errors
 	if strings.Contains(errMsg, "conditional check failed") ||
 		strings.Contains(errMsg, "condition failed") {
-		return ErrConditionalCheckFailed
+		return errors.DynamoDBConditionalCheckFailed("").
+			WithInternalError(stdErrors.Join(err, ErrConditionalCheckFailed))
 	}
 
 	// Transaction errors
 	if strings.Contains(errMsg, "transaction canceled") ||
 		strings.Contains(errMsg, "transaction failed") {
-		return ErrTransactionCanceled
+		return errors.TransactionFailed(stdErrors.Join(err, ErrTransactionCanceled))
 	}
 
 	// Key errors
 	if strings.Contains(errMsg, "missing key") || strings.Contains(errMsg, "invalid key") ||
 		strings.Contains(errMsg, "key required") {
-		return ErrInvalidKey
+		return errors.InvalidFormat("key", "valid key format").
+			WithInternalError(stdErrors.Join(err, ErrInvalidKey))
 	}
 
 	// Throttling errors
 	if strings.Contains(errMsg, "throttl") || strings.Contains(errMsg, "rate limit") ||
 		strings.Contains(errMsg, "capacity exceed") {
-		return ErrThrottling
-	}
-
-	// Resource not found errors
-	if strings.Contains(errMsg, "resource not found") || strings.Contains(errMsg, "table not found") {
-		return ErrResourceNotFound
+		return errors.DynamoDBProvisionedThroughputExceeded().
+			WithInternalError(stdErrors.Join(err, ErrThrottling))
 	}
 
 	// Batch operation errors
 	if strings.Contains(errMsg, "batch") && strings.Contains(errMsg, "failed") {
-		return ErrBatchOperationFailed
+		return errors.BatchOperationFailed("batch operation", stdErrors.Join(err, ErrBatchOperationFailed)).
+			AsRetryable()
 	}
 
 	// General validation errors
 	if strings.Contains(errMsg, "validation") || strings.Contains(errMsg, "invalid") {
-		return ErrValidation
+		return errors.NewValidationError("", "validation failed").
+			WithInternalError(stdErrors.Join(err, ErrValidation))
 	}
 
 	// Default to internal error with original error message
@@ -135,8 +151,8 @@ func MapErrorWithContext(err error, context string) error {
 
 	mappedErr := MapError(err)
 	// If mapped error is already an AppError, add context as metadata
-	if appErr, ok := mappedErr.(*errors.AppError); ok {
-		return appErr.WithMetadata("context", context)
+	if appErr, ok := errors.AsAppError(mappedErr); ok {
+		return appErr.Clone().WithMetadata("context", context)
 	}
 
 	return errors.NewStorageInternalError(errors.CodeInternal, context, mappedErr)

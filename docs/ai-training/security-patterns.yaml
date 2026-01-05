@@ -1,0 +1,66 @@
+# Security Patterns for Lesser
+# Version: 1.0.0
+# Purpose: Train AI on security boundaries, secrets handling, and auth schemes
+
+context:
+  description: "Security patterns for Lesser deployments and API usage (secrets, keys, auth, and safe defaults)"
+  canonical_sources:
+    config: "pkg/config/"
+    auth_handlers: "cmd/api (Mastodon-compatible) + cmd/graphql (GraphQL)"
+    infra: "infra/cdk/ (CDK stacks, IAM, parameter store usage)"
+  principles:
+    - least_privilege: "IAM roles should be minimal per Lambda"
+    - never_leak_secrets: "Secrets must not be printed by default or committed to git"
+    - deterministic_naming: "Resources are derived from (app, base-domain, AWS profile) with account/region in global names"
+    - print_once_outputs: "Bootstrap secrets are written only when --out is explicitly provided"
+
+secrets_and_keys:
+
+  storage:
+    parameter_store:
+      purpose: "Shared registry + configuration where read access is required"
+      guidance:
+        - "Use SSM Parameter Store for non-secret configuration and shared identifiers"
+        - "Use encrypted parameters for secrets that must exist in AWS"
+    local_state:
+      purpose: "Per-user deployment outputs and one-time secrets"
+      recommended_path: "~/.lesser/<app>/<base-domain>/"
+      guidance:
+        - "Require explicit --out to write secret material to disk"
+        - "Never persist bootstrap admin private key material in AWS"
+
+  admin_bootstrap_wallet:
+    requirement: "Bootstrap admin uses an Ethereum wallet (no email/password) and is temporary"
+    key_handling:
+      - "Generate a new keypair + mnemonic once during deployment/bootstrap"
+      - "Write to --out only (print-once); user is responsible for securing it"
+      - "Bootstrap admin can only create a real admin; it should be deleted after activation"
+    recovery_model:
+      - "If bootstrap material is lost, teardown/redeploy may be required"
+
+auth_schemes:
+
+  api_auth:
+    schemes:
+      - bearer_jwt: "Session/bearer tokens for API requests where applicable"
+      - oauth_tokens: "OAuth app flows are upcoming (OIDC planned); treat as non-GraphQL-covered surface"
+    notes:
+      - "Protocol endpoints (/.well-known/*, /nodeinfo/*, ActivityPub) are exempt from GraphQL coverage requirements"
+      - "Wallet + WebAuthn + setup wizard flows are not required to be GraphQL-covered"
+
+  passkeys_webauthn:
+    purpose: "Strong phishing-resistant auth for admin users"
+    guidance:
+      - "Encourage admins to register both a wallet and a passkey"
+      - "Passkey bindings should be per-stage (dev/staging/live)"
+      - "Do not attempt to automate passkey creation; require user presence"
+
+hardening_checklist:
+  deployment_time:
+    - "Hosted zone must exist; fail fast if not found"
+    - "Certificates should be validated via Route53 in-account (no cross-account DNS validation)"
+    - "Ensure CloudFront/S3 do not expose private config outputs"
+  runtime:
+    - "Reject unsigned/invalid federation writes"
+    - "Return empty lists when locked (reachable-but-not-live) and 404 for missing content"
+

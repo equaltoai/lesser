@@ -1,0 +1,294 @@
+/**
+ * Greater Components Animation Utilities
+ * Centralized animation keyframes and utility classes
+ */
+
+/* ============================================
+   KEYFRAME DEFINITIONS
+   ============================================ */
+
+/* Fade In - Simple opacity transition */
+@keyframes gr-fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+/* Fade Up - Opacity with upward motion */
+@keyframes gr-fade-up {
+	from {
+		opacity: 0;
+		transform: translateY(1rem);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* Fade Down - Opacity with downward motion */
+@keyframes gr-fade-down {
+	from {
+		opacity: 0;
+		transform: translateY(-1rem);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* Slide In Right - Horizontal slide from right */
+@keyframes gr-slide-in-right {
+	from {
+		opacity: 0;
+		transform: translateX(1rem);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+/* Slide In Left - Horizontal slide from left */
+@keyframes gr-slide-in-left {
+	from {
+		opacity: 0;
+		transform: translateX(-1rem);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+/* Scale In - Scale from center */
+@keyframes gr-scale-in {
+	from {
+		opacity: 0;
+		transform: scale(0.95);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+/* Spin - Continuous rotation */
+@keyframes gr-spin {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* Pulse - Subtle scale pulse */
+@keyframes gr-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.5;
+	}
+}
+
+/* Bounce - Elastic bounce effect */
+@keyframes gr-bounce {
+	0%,
+	100% {
+		transform: translateY(0);
+	}
+	50% {
+		transform: translateY(-0.5rem);
+	}
+}
+
+/* ============================================
+   ANIMATION UTILITY CLASSES
+   ============================================ */
+
+/* Base animation utilities */
+.gr-animate-fade-in {
+	animation: gr-fade-in var(--gr-motion-duration-base, 250ms)
+		var(--gr-motion-easing-decelerate, cubic-bezier(0, 0, 0.2, 1)) both;
+}
+
+.gr-animate-fade-up {
+	animation: gr-fade-up var(--gr-motion-duration-base, 250ms)
+		var(--gr-motion-easing-decelerate, cubic-bezier(0, 0, 0.2, 1)) both;
+}
+
+.gr-animate-fade-down {
+	animation: gr-fade-down var(--gr-motion-duration-base, 250ms)
+		var(--gr-motion-easing-decelerate, cubic-bezier(0, 0, 0.2, 1)) both;
+}
+
+.gr-animate-slide-in-right {
+	animation: gr-slide-in-right var(--gr-motion-duration-base, 250ms)
+		var(--gr-motion-easing-decelerate, cubic-bezier(0, 0, 0.2, 1)) both;
+}
+
+.gr-animate-slide-in-left {
+	animation: gr-slide-in-left var(--gr-motion-duration-base, 250ms)
+		var(--gr-motion-easing-decelerate, cubic-bezier(0, 0, 0.2, 1)) both;
+}
+
+.gr-animate-scale-in {
+	animation: gr-scale-in var(--gr-motion-duration-base, 250ms)
+		var(--gr-motion-easing-decelerate, cubic-bezier(0, 0, 0.2, 1)) both;
+}
+
+.gr-animate-spin {
+	animation: gr-spin 1s var(--gr-motion-easing-linear, linear) infinite;
+}
+
+.gr-animate-pulse {
+	animation: gr-pulse 1.5s var(--gr-motion-easing-inOut, cubic-bezier(0.4, 0, 0.2, 1)) infinite;
+}
+
+.gr-animate-bounce {
+	animation: gr-bounce 1s var(--gr-motion-easing-inOut, cubic-bezier(0.4, 0, 0.2, 1)) infinite;
+}
+
+/* ============================================
+   ANIMATION DELAY UTILITIES
+   ============================================ */
+
+.gr-delay-0 {
+	animation-delay: 0ms;
+}
+
+.gr-delay-75 {
+	animation-delay: 75ms;
+}
+
+.gr-delay-100 {
+	animation-delay: 100ms;
+}
+
+.gr-delay-150 {
+	animation-delay: 150ms;
+}
+
+.gr-delay-200 {
+	animation-delay: 200ms;
+}
+
+.gr-delay-300 {
+	animation-delay: 300ms;
+}
+
+.gr-delay-400 {
+	animation-delay: 400ms;
+}
+
+.gr-delay-500 {
+	animation-delay: 500ms;
+}
+
+.gr-delay-600 {
+	animation-delay: 600ms;
+}
+
+.gr-delay-700 {
+	animation-delay: 700ms;
+}
+
+.gr-delay-800 {
+	animation-delay: 800ms;
+}
+
+.gr-delay-900 {
+	animation-delay: 900ms;
+}
+
+.gr-delay-1000 {
+	animation-delay: 1000ms;
+}
+
+/* ============================================
+   ANIMATION DURATION UTILITIES
+   ============================================ */
+
+.gr-duration-fast {
+	animation-duration: var(--gr-motion-duration-fast, 150ms);
+}
+
+.gr-duration-base {
+	animation-duration: var(--gr-motion-duration-base, 250ms);
+}
+
+.gr-duration-slow {
+	animation-duration: var(--gr-motion-duration-slow, 400ms);
+}
+
+.gr-duration-slower {
+	animation-duration: var(--gr-motion-duration-slower, 600ms);
+}
+
+/* ============================================
+   ANIMATION EASING UTILITIES
+   ============================================ */
+
+.gr-ease-linear {
+	animation-timing-function: var(--gr-motion-easing-linear, linear);
+}
+
+.gr-ease-in {
+	animation-timing-function: var(--gr-motion-easing-in, cubic-bezier(0.4, 0, 1, 1));
+}
+
+.gr-ease-out {
+	animation-timing-function: var(--gr-motion-easing-out, cubic-bezier(0, 0, 0.2, 1));
+}
+
+.gr-ease-in-out {
+	animation-timing-function: var(--gr-motion-easing-inOut, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.gr-ease-decelerate {
+	animation-timing-function: var(--gr-motion-easing-decelerate, cubic-bezier(0, 0, 0.2, 1));
+}
+
+.gr-ease-accelerate {
+	animation-timing-function: var(--gr-motion-easing-accelerate, cubic-bezier(0.4, 0, 1, 1));
+}
+
+.gr-ease-standard {
+	animation-timing-function: var(--gr-motion-easing-standard, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+/* ============================================
+   REDUCED MOTION SUPPORT
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+	.gr-animate-fade-in,
+	.gr-animate-fade-up,
+	.gr-animate-fade-down,
+	.gr-animate-slide-in-right,
+	.gr-animate-slide-in-left,
+	.gr-animate-scale-in,
+	.gr-animate-spin,
+	.gr-animate-pulse,
+	.gr-animate-bounce {
+		animation: none;
+	}
+
+	/* Instant transitions for reduced motion */
+	.gr-animate-fade-in,
+	.gr-animate-fade-up,
+	.gr-animate-fade-down,
+	.gr-animate-slide-in-right,
+	.gr-animate-slide-in-left,
+	.gr-animate-scale-in {
+		opacity: 1;
+		transform: none;
+	}
+}

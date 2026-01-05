@@ -41,13 +41,21 @@ type HealthResponse struct {
 // HealthChecker manages health checks for various components
 type HealthChecker struct {
 	logger       *zap.Logger
-	dynamoClient *dynamodb.Client
-	sqsClient    *sqs.Client
+	dynamoClient dynamodbDescribeTableAPI
+	sqsClient    sqsGetQueueAttributesAPI
 	service      string
 	version      string
 	mu           sync.RWMutex
 	lastChecks   map[string]HealthCheck
 	config       *HealthConfig
+}
+
+type dynamodbDescribeTableAPI interface {
+	DescribeTable(ctx context.Context, params *dynamodb.DescribeTableInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DescribeTableOutput, error)
+}
+
+type sqsGetQueueAttributesAPI interface {
+	GetQueueAttributes(ctx context.Context, params *sqs.GetQueueAttributesInput, optFns ...func(*sqs.Options)) (*sqs.GetQueueAttributesOutput, error)
 }
 
 // HealthConfig contains configuration for health checks

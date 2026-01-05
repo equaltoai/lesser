@@ -2,7 +2,6 @@ package constructs
 
 import (
 	"cdk/inventory"
-	"cdk/naming"
 	"fmt"
 	"strings"
 
@@ -15,17 +14,18 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53targets"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
 )
 
 type APIGatewayProps struct {
-	Environment            string
-	Domain                 string
-	Certificate            awscertificatemanager.ICertificate
-	GraphQLWSCertificate   awscertificatemanager.ICertificate
-	StreamingWSCertificate awscertificatemanager.ICertificate
-	Functions              *LambdaFunctions
-	HostedZone             awsroute53.IHostedZone
+	AppName              string
+	Environment          string
+	Domain               string
+	Certificate          awscertificatemanager.ICertificate
+	WebSocketCertificate awscertificatemanager.ICertificate
+	Functions            *LambdaFunctions
+	HostedZone           awsroute53.IHostedZone
 }
 
 type APIGateway struct {
@@ -37,17 +37,21 @@ type APIGateway struct {
 func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGateway {
 	gateway := &APIGateway{}
 	apiStage := naming.StageForEnvironment(props.Environment)
+	appName := strings.TrimSpace(props.AppName)
+	if appName == "" {
+		appName = naming.DefaultAppName
+	}
 
 	// Create access log group
 	logGroup := awslogs.NewLogGroup(scope, jsii.String("ApiLogGroup"), &awslogs.LogGroupProps{
-		LogGroupName:  jsii.String(fmt.Sprintf("/aws/apigateway/%s", naming.ResourceName("api", props.Environment))),
+		LogGroupName:  jsii.String(fmt.Sprintf("/aws/apigateway/%s", naming.ResourceNameWithApp(appName, "api", props.Environment))),
 		Retention:     awslogs.RetentionDays_ONE_WEEK,
 		RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
 	})
 
 	streamTimeoutSeconds := 15 * 60
 
-	apiName := naming.ResourceName("api", props.Environment)
+	apiName := naming.ResourceNameWithApp(appName, "api", props.Environment)
 	restProps := &liftcdk.LiftRestAPIProps{
 		APICommonProps: liftcdk.APICommonProps{
 			Name:                jsii.String(apiName),
@@ -63,15 +67,19 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	}
 
 	// Add custom domain if certificate is provided
-	if props.Certificate != nil && props.Domain != "" {
-		restProps.DomainName = jsii.String(props.Domain)
+	apiDomain := ""
+	if props.Domain != "" {
+		apiDomain = fmt.Sprintf("api.%s", props.Domain)
+	}
+	if props.Certificate != nil && apiDomain != "" {
+		restProps.DomainName = jsii.String(apiDomain)
 		restProps.Certificate = props.Certificate
 	}
 
 	gateway.RestApi = liftcdk.NewLiftRestAPI(scope, jsii.String("RestApi"), restProps)
 
-	if props.HostedZone != nil && props.Domain != "" && gateway.RestApi.RestAPI.DomainName() != nil {
-		recordName := relativeRecordName(props.Domain, props.HostedZone)
+	if props.HostedZone != nil && apiDomain != "" && gateway.RestApi.RestAPI.DomainName() != nil {
+		recordName := relativeRecordName(apiDomain, props.HostedZone)
 		target := awsroute53targets.NewApiGatewayDomain(gateway.RestApi.RestAPI.DomainName())
 
 		awsroute53.NewARecord(scope, jsii.String("ApiAliasARecord"), &awsroute53.ARecordProps{
@@ -90,11 +98,36 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	// Add routes
 	addRestRoutes(gateway.RestApi, props.Functions, streamTimeoutSeconds)
 
-	// Create WebSocket API
-	gateway.WebSocketApi = createWebSocketApi(scope, props)
+	// Shared custom domain for all WebSocket APIs.
+	var wsDomainName awsapigatewayv2.DomainName
+	if props.WebSocketCertificate != nil && props.Domain != "" {
+		wsDomain := fmt.Sprintf("ws.%s", props.Domain)
+		wsDomainName = awsapigatewayv2.NewDomainName(scope, jsii.String("WebSocketDomain"), &awsapigatewayv2.DomainNameProps{
+			DomainName:  jsii.String(wsDomain),
+			Certificate: props.WebSocketCertificate,
+		})
 
-	// Create GraphQL WebSocket API
-	gateway.GraphQLWebSocketApi = createGraphQLWebSocketApi(scope, props)
+		if props.HostedZone != nil {
+			recordName := relativeRecordName(wsDomain, props.HostedZone)
+			target := awsroute53targets.NewApiGatewayv2DomainProperties(wsDomainName.RegionalDomainName(), wsDomainName.RegionalHostedZoneId())
+
+			awsroute53.NewARecord(scope, jsii.String("WebSocketAliasARecord"), &awsroute53.ARecordProps{
+				Zone:       props.HostedZone,
+				RecordName: recordName,
+				Target:     awsroute53.RecordTarget_FromAlias(target),
+			})
+
+			awsroute53.NewAaaaRecord(scope, jsii.String("WebSocketAliasAAAARecord"), &awsroute53.AaaaRecordProps{
+				Zone:       props.HostedZone,
+				RecordName: recordName,
+				Target:     awsroute53.RecordTarget_FromAlias(target),
+			})
+		}
+	}
+
+	// Create WebSocket APIs (path-mapped behind ws.<domain>).
+	gateway.WebSocketApi = createWebSocketApi(scope, props, wsDomainName)
+	gateway.GraphQLWebSocketApi = createGraphQLWebSocketApi(scope, props, wsDomainName)
 
 	return gateway
 }
@@ -105,27 +138,21 @@ func addRestRoutes(api *liftcdk.LiftRestAPI, functions *LambdaFunctions, streamT
 	sseFn := functions.Must("sse")
 	healthFn := apiFn
 
-	timeout := streamTimeoutSeconds
-	streamOpts := &liftcdk.IntegrationOptions{
-		EnableStreaming:         jsii.Bool(true),
-		StreamingTimeoutSeconds: &timeout,
-	}
-
 	// Mastodon streaming (SSE) routes.
-	// Buffered endpoints (non-streaming integration):
+	// NOTE: Response-streaming integrations are currently disabled for REST APIs to avoid
+	// CloudFormation/API Gateway provisioning issues. These endpoints still exist but use
+	// standard Lambda proxy integrations.
 	api.AddLambdaIntegration(jsii.String("/api/v1/streaming"), jsii.String("GET"), sseFn)
 	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/health"), jsii.String("GET"), sseFn)
-
-	// Streaming endpoints (response streaming integration enabled per-method):
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/user"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/user/notification"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/public"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/public/local"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/public/remote"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/hashtag"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/hashtag/local"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/list"), jsii.String("GET"), sseFn, streamOpts)
-	api.AddLambdaIntegrationWithOptions(jsii.String("/api/v1/streaming/direct"), jsii.String("GET"), sseFn, streamOpts)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/user"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/user/notification"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public/local"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public/remote"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/hashtag"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/hashtag/local"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/list"), jsii.String("GET"), sseFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/direct"), jsii.String("GET"), sseFn)
 
 	// Mastodon API routes (Lift handles internal routing).
 	api.AddLambdaIntegration(jsii.String("/api/v1/{proxy+}"), jsii.String("ANY"), apiFn)
@@ -165,13 +192,17 @@ func addInventoryRestRoutes(api *liftcdk.LiftRestAPI, functions *LambdaFunctions
 	}
 }
 
-func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsapigatewayv2.WebSocketApi {
+func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps, domainName awsapigatewayv2.DomainName) awsapigatewayv2.WebSocketApi {
 	streamingFn := props.Functions.Must("streaming")
 	apiStage := naming.StageForEnvironment(props.Environment)
+	appName := strings.TrimSpace(props.AppName)
+	if appName == "" {
+		appName = naming.DefaultAppName
+	}
 
 	// Create WebSocket API for streaming
 	wsApi := awsapigatewayv2.NewWebSocketApi(scope, jsii.String("WebSocketApi"), &awsapigatewayv2.WebSocketApiProps{
-		ApiName:     jsii.String(naming.ResourceName("streaming-ws-v2", props.Environment)),
+		ApiName:     jsii.String(naming.ResourceNameWithApp(appName, "streaming-ws-v2", props.Environment)),
 		Description: jsii.String("Lesser WebSocket API for streaming"),
 		ConnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
@@ -203,48 +234,29 @@ func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsa
 		AutoDeploy:   jsii.Bool(true),
 	})
 
-	// Attach custom domain if certificate is provided
-	if props.StreamingWSCertificate != nil && props.Domain != "" {
-		streamDomain := fmt.Sprintf("stream.%s", props.Domain)
-
-		domainName := awsapigatewayv2.NewDomainName(scope, jsii.String("StreamingWebSocketDomain"), &awsapigatewayv2.DomainNameProps{
-			DomainName:  jsii.String(streamDomain),
-			Certificate: props.StreamingWSCertificate,
-		})
-
+	// Map streaming WebSocket under ws.<domain>/stream
+	if domainName != nil {
 		awsapigatewayv2.NewApiMapping(scope, jsii.String("StreamingWebSocketApiMapping"), &awsapigatewayv2.ApiMappingProps{
-			Api:        wsApi,
-			DomainName: domainName,
-			Stage:      stage,
+			Api:           wsApi,
+			DomainName:    domainName,
+			Stage:         stage,
+			ApiMappingKey: jsii.String("stream"),
 		})
-
-		if props.HostedZone != nil {
-			recordName := relativeRecordName(streamDomain, props.HostedZone)
-			target := awsroute53targets.NewApiGatewayv2DomainProperties(domainName.RegionalDomainName(), domainName.RegionalHostedZoneId())
-
-			awsroute53.NewARecord(scope, jsii.String("StreamingWebSocketAliasARecord"), &awsroute53.ARecordProps{
-				Zone:       props.HostedZone,
-				RecordName: recordName,
-				Target:     awsroute53.RecordTarget_FromAlias(target),
-			})
-
-			awsroute53.NewAaaaRecord(scope, jsii.String("StreamingWebSocketAliasAAAARecord"), &awsroute53.AaaaRecordProps{
-				Zone:       props.HostedZone,
-				RecordName: recordName,
-				Target:     awsroute53.RecordTarget_FromAlias(target),
-			})
-		}
 	}
 
 	return wsApi
 }
 
-func createGraphQLWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsapigatewayv2.WebSocketApi {
+func createGraphQLWebSocketApi(scope constructs.Construct, props *APIGatewayProps, domainName awsapigatewayv2.DomainName) awsapigatewayv2.WebSocketApi {
 	graphqlWSFn := props.Functions.Must("graphql-ws")
 	apiStage := naming.StageForEnvironment(props.Environment)
+	appName := strings.TrimSpace(props.AppName)
+	if appName == "" {
+		appName = naming.DefaultAppName
+	}
 
 	wsApi := awsapigatewayv2.NewWebSocketApi(scope, jsii.String("GraphQLWebSocketApi"), &awsapigatewayv2.WebSocketApiProps{
-		ApiName:     jsii.String(naming.ResourceName("graphql-ws", props.Environment)),
+		ApiName:     jsii.String(naming.ResourceNameWithApp(appName, "graphql-ws", props.Environment)),
 		Description: jsii.String("GraphQL WebSocket API for subscriptions"),
 		ConnectRouteOptions: &awsapigatewayv2.WebSocketRouteOptions{
 			Integration: awsapigatewayv2integrations.NewWebSocketLambdaIntegration(
@@ -275,36 +287,13 @@ func createGraphQLWebSocketApi(scope constructs.Construct, props *APIGatewayProp
 		AutoDeploy:   jsii.Bool(true),
 	})
 
-	if props.GraphQLWSCertificate != nil && props.Domain != "" {
-		graphqlWsDomain := fmt.Sprintf("graphql-ws.%s", props.Domain)
-
-		domainName := awsapigatewayv2.NewDomainName(scope, jsii.String("GraphQLWebSocketDomain"), &awsapigatewayv2.DomainNameProps{
-			DomainName:  jsii.String(graphqlWsDomain),
-			Certificate: props.GraphQLWSCertificate,
-		})
-
+	// Map GraphQL WebSocket at the root of ws.<domain>
+	if domainName != nil {
 		awsapigatewayv2.NewApiMapping(scope, jsii.String("GraphQLWebSocketApiMapping"), &awsapigatewayv2.ApiMappingProps{
 			Api:        wsApi,
 			DomainName: domainName,
 			Stage:      stage,
 		})
-
-		if props.HostedZone != nil {
-			recordName := relativeRecordName(graphqlWsDomain, props.HostedZone)
-			target := awsroute53targets.NewApiGatewayv2DomainProperties(domainName.RegionalDomainName(), domainName.RegionalHostedZoneId())
-
-			awsroute53.NewARecord(scope, jsii.String("GraphQLWebSocketAliasARecord"), &awsroute53.ARecordProps{
-				Zone:       props.HostedZone,
-				RecordName: recordName,
-				Target:     awsroute53.RecordTarget_FromAlias(target),
-			})
-
-			awsroute53.NewAaaaRecord(scope, jsii.String("GraphQLWebSocketAliasAAAARecord"), &awsroute53.AaaaRecordProps{
-				Zone:       props.HostedZone,
-				RecordName: recordName,
-				Target:     awsroute53.RecordTarget_FromAlias(target),
-			})
-		}
 	}
 
 	return wsApi

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
@@ -682,7 +683,7 @@ func TestGetTimelineEntriesWithFilters_AllFilters(t *testing.T) {
 	logger := zap.NewNop()
 	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
-	filters := TimelineFilters{
+	filters := interfaces.TimelineFilters{
 		OnlyMedia:      true,
 		ExcludeReplies: true,
 		ExcludeBoosts:  true,
@@ -719,7 +720,7 @@ func TestGetTimelineEntriesWithFilters_NoFilters(t *testing.T) {
 	logger := zap.NewNop()
 	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
-	filters := TimelineFilters{} // Empty filters
+	filters := interfaces.TimelineFilters{} // Empty filters
 
 	// Set up expectations - no filter calls when filters are empty
 	mockQuery.On("Where", "PK", "=", "TIMELINE#HOME#bob").Return(mockQuery)
@@ -737,7 +738,7 @@ func TestGetTimelineEntriesWithFilters_NoFilters(t *testing.T) {
 }
 
 func TestTimelineFilters_Struct(t *testing.T) {
-	filters := TimelineFilters{
+	filters := interfaces.TimelineFilters{
 		OnlyMedia:      true,
 		ExcludeReplies: false,
 		ExcludeBoosts:  true,

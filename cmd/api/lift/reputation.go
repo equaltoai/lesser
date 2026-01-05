@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/reputation"
@@ -58,15 +59,30 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 		h.logger.Error("Failed to get reputation", zap.Error(err), zap.String("actor", actorID))
 
 		// Check if it's an actor not found error
-		if strings.Contains(err.Error(), "actor not found") {
+		if errorChainContains(err, "actor not found") {
 			return common.RespondActorNotFound(ctx)
 		}
 
 		return common.RespondInternalServerError(ctx)
 	}
 
-	// Convert to API response
-	response := convertReputationToAPI(rep)
+	response := apimodels.ReputationResponse{
+		ID:              rep.ActorID,
+		Instance:        rep.InstanceURL,
+		TotalScore:      rep.TotalScore,
+		TrustScore:      rep.TrustScore,
+		ActivityScore:   rep.ActivityScore,
+		ModerationScore: rep.ModerationScore,
+		CommunityScore:  rep.CommunityScore,
+		CalculatedAt:    rep.CalculatedAt,
+		Version:         rep.Version,
+		Evidence: apimodels.ReputationEvidence{
+			TotalPosts:     rep.TotalPosts,
+			TotalFollowers: rep.TotalFollowers,
+			AccountAge:     rep.AccountAge,
+			VouchCount:     rep.VouchCount,
+		},
+	}
 
 	return ctx.Status(http.StatusOK).JSON(response)
 }
@@ -113,10 +129,14 @@ func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	// Set JSON-LD content type
-	ctx.Response.Header("Content-Type", "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"")
+	ctx.Status(http.StatusOK)
+	if err := ctx.JSON(portableRep); err != nil {
+		return err
+	}
 
-	return ctx.Status(http.StatusOK).JSON(portableRep)
+	// Set JSON-LD content type (Lift's JSON helper defaults to application/json).
+	ctx.Response.Header("Content-Type", "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"")
+	return nil
 }
 
 // HandleImportReputationLift handles POST /api/v1/reputation/import
@@ -140,9 +160,7 @@ func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
 	}
 
 	// Parse request body
-	var importReq struct {
-		Document string `json:"document"`
-	}
+	var importReq apimodels.ReputationDocumentRequest
 	if err := ctx.ParseRequest(&importReq); err != nil {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
@@ -197,11 +215,7 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 	username = claims.Username
 
 	// Parse request body
-	var vouchReq struct {
-		To         string  `json:"to"`
-		Confidence float64 `json:"confidence"`
-		Context    string  `json:"context"`
-	}
+	var vouchReq apimodels.CreateVouchRequest
 	if err := ctx.ParseRequest(&vouchReq); err != nil {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
@@ -235,17 +249,28 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 	vouch, err := repService.CreateVouch(ctx.Context, fromActorID, vouchReq.To, vouchReq.Confidence, vouchReq.Context)
 	if err != nil {
 		h.logger.Error("Failed to create vouch", zap.Error(err))
-		if strings.Contains(err.Error(), "insufficient reputation") {
+		if errorChainContains(err, "insufficient reputation") {
 			return common.RespondBadRequest(ctx, "insufficient reputation to vouch")
 		}
-		if strings.Contains(err.Error(), "monthly vouch limit") {
+		if errorChainContains(err, "monthly vouch limit") {
 			return common.RespondBadRequest(ctx, "monthly vouch limit reached")
 		}
 		return common.RespondInternalServerError(ctx)
 	}
 
-	// Convert to API response
-	response := convertVouchToAPI(vouch)
+	response := apimodels.VouchResponse{
+		ID:                vouch.ID,
+		From:              vouch.From,
+		To:                vouch.To,
+		Confidence:        vouch.Confidence,
+		Context:           vouch.Context,
+		CreatedAt:         vouch.CreatedAt,
+		ExpiresAt:         vouch.ExpiresAt,
+		VoucherReputation: vouch.VoucherReputation,
+		Active:            vouch.Active,
+		Revoked:           vouch.Revoked,
+		RevokedAt:         vouch.RevokedAt,
+	}
 
 	return ctx.Status(http.StatusCreated).JSON(response)
 }
@@ -295,7 +320,7 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 		h.logger.Error("Failed to get vouches", zap.Error(err), zap.String("actor", actorID))
 
 		// Check if it's an actor not found error
-		if strings.Contains(err.Error(), "actor not found") {
+		if errorChainContains(err, "actor not found") {
 			return common.RespondActorNotFound(ctx)
 		}
 
@@ -303,9 +328,21 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 	}
 
 	// Convert to API response
-	apiVouches := make([]map[string]any, len(vouches))
-	for i, v := range vouches {
-		apiVouches[i] = convertVouchToAPI(&v)
+	apiVouches := make([]apimodels.VouchResponse, len(vouches))
+	for i := range vouches {
+		apiVouches[i] = apimodels.VouchResponse{
+			ID:                vouches[i].ID,
+			From:              vouches[i].From,
+			To:                vouches[i].To,
+			Confidence:        vouches[i].Confidence,
+			Context:           vouches[i].Context,
+			CreatedAt:         vouches[i].CreatedAt,
+			ExpiresAt:         vouches[i].ExpiresAt,
+			VoucherReputation: vouches[i].VoucherReputation,
+			Active:            vouches[i].Active,
+			Revoked:           vouches[i].Revoked,
+			RevokedAt:         vouches[i].RevokedAt,
+		}
 	}
 
 	return ctx.Status(http.StatusOK).JSON(apiVouches)
@@ -356,21 +393,20 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 	err = repService.RevokeVouch(ctx.Context, vouchID, actorID)
 	if err != nil {
 		h.logger.Error("Failed to revoke vouch", zap.Error(err))
-		if strings.Contains(err.Error(), "only the voucher can revoke") {
+		if errorChainContains(err, "only the voucher can revoke") {
 			return common.RespondForbidden(ctx, "only the voucher can revoke their vouch")
 		}
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return ctx.Status(http.StatusNoContent).JSON(nil)
+	ctx.Status(http.StatusNoContent)
+	return nil
 }
 
 // HandleVerifyReputationLift handles POST /api/v1/reputation/verify
 func (h *Handler) HandleVerifyReputationLift(ctx *lift.Context) error {
 	// Parse request body
-	var verifyReq struct {
-		Document string `json:"document"`
-	}
+	var verifyReq apimodels.ReputationDocumentRequest
 	if err := ctx.ParseRequest(&verifyReq); err != nil {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
@@ -410,11 +446,7 @@ func (h *Handler) HandleGetReputationKeysLift(ctx *lift.Context) error {
 	// Get public key
 	publicKey := repService.GetPublicKey()
 
-	response := map[string]string{
-		"publicKey": publicKey,
-	}
-
-	return ctx.Status(http.StatusOK).JSON(response)
+	return ctx.Status(http.StatusOK).JSON(apimodels.ReputationKeysResponse{PublicKey: publicKey})
 }
 
 // Helper functions
@@ -431,43 +463,31 @@ func (h *Handler) getReputationService() (*reputation.Service, error) {
 	return reputation.NewService(cfg)
 }
 
-func convertReputationToAPI(rep *reputation.Reputation) map[string]any {
-	return map[string]any{
-		"id":               rep.ActorID,
-		"instance":         rep.InstanceURL,
-		"total_score":      rep.TotalScore,
-		"trust_score":      rep.TrustScore,
-		"activity_score":   rep.ActivityScore,
-		"moderation_score": rep.ModerationScore,
-		"community_score":  rep.CommunityScore,
-		"calculated_at":    rep.CalculatedAt,
-		"version":          rep.Version,
-		"evidence": map[string]any{
-			"total_posts":     rep.TotalPosts,
-			"total_followers": rep.TotalFollowers,
-			"account_age":     rep.AccountAge,
-			"vouch_count":     rep.VouchCount,
-		},
+func errorChainContains(err error, substring string) bool {
+	if err == nil {
+		return false
 	}
-}
-
-func convertVouchToAPI(vouch *reputation.Vouch) map[string]any {
-	result := map[string]any{
-		"id":                 vouch.ID,
-		"from":               vouch.From,
-		"to":                 vouch.To,
-		"confidence":         vouch.Confidence,
-		"context":            vouch.Context,
-		"created_at":         vouch.CreatedAt,
-		"expires_at":         vouch.ExpiresAt,
-		"voucher_reputation": vouch.VoucherReputation,
-		"active":             vouch.Active,
-		"revoked":            vouch.Revoked,
+	if strings.Contains(err.Error(), substring) {
+		return true
 	}
 
-	if vouch.RevokedAt != nil {
-		result["revoked_at"] = vouch.RevokedAt
+	type multiUnwrapper interface {
+		Unwrap() []error
+	}
+	if u, ok := err.(multiUnwrapper); ok {
+		for _, nested := range u.Unwrap() {
+			if errorChainContains(nested, substring) {
+				return true
+			}
+		}
 	}
 
-	return result
+	type unwrapper interface {
+		Unwrap() error
+	}
+	if u, ok := err.(unwrapper); ok {
+		return errorChainContains(u.Unwrap(), substring)
+	}
+
+	return false
 }

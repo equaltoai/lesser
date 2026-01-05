@@ -18,12 +18,17 @@ import (
 //
 //nolint:revive // Routing prefix clarifies this is routing-specific metrics
 type RoutingMetrics struct {
-	db        *dynamodb.Client
+	db        dynamoDBClient
 	tableName string
 	logger    *zap.Logger
 
 	// Local aggregation (synchronous)
 	aggregator *metricsAggregator
+}
+
+type dynamoDBClient interface {
+	Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
+	BatchWriteItem(ctx context.Context, params *dynamodb.BatchWriteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error)
 }
 
 type metricEvent struct {
@@ -113,8 +118,13 @@ type aggregatedGlobalMetrics struct {
 
 // NewRoutingMetrics creates a new metrics tracker
 func NewRoutingMetrics(db *dynamodb.Client, tableName string, logger *zap.Logger) *RoutingMetrics {
+	var client dynamoDBClient
+	if db != nil {
+		client = db
+	}
+
 	rm := &RoutingMetrics{
-		db:        db,
+		db:        client,
 		tableName: tableName,
 		logger:    logger,
 		aggregator: &metricsAggregator{

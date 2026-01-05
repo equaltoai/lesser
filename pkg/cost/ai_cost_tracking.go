@@ -11,17 +11,25 @@ import (
 	"go.uber.org/zap"
 )
 
+type aiService interface {
+	GenerateEmbedding(ctx context.Context, text string) ([]float32, error)
+	AnalyzeContent(ctx context.Context, content *ai.Content) (*ai.AIAnalysis, error)
+}
+
 // AIServiceWithCostTracking wraps AIService with comprehensive cost tracking
 type AIServiceWithCostTracking struct {
-	*ai.AIService
+	aiService   aiService
 	costTracker *Tracker
 	logger      *zap.Logger
 }
 
 // NewAIServiceWithCostTracking creates a cost-tracking wrapper for AI service
-func NewAIServiceWithCostTracking(aiService *ai.AIService, costTracker *Tracker, logger *zap.Logger) *AIServiceWithCostTracking {
+func NewAIServiceWithCostTracking(aiService aiService, costTracker *Tracker, logger *zap.Logger) *AIServiceWithCostTracking {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &AIServiceWithCostTracking{
-		AIService:   aiService,
+		aiService:   aiService,
 		costTracker: costTracker,
 		logger:      logger,
 	}
@@ -54,7 +62,10 @@ func (s *AIServiceWithCostTracking) GenerateEmbeddingWithCostTracking(ctx contex
 	}
 
 	// Generate embedding
-	embedding, err := s.GenerateEmbedding(ctx, text)
+	if s.aiService == nil {
+		return nil, costData, fmt.Errorf("AIService is nil")
+	}
+	embedding, err := s.aiService.GenerateEmbedding(ctx, text)
 
 	// Complete cost tracking
 	responseTime := time.Since(startTime)
@@ -214,7 +225,10 @@ func (s *AIServiceWithCostTracking) AnalyzeContentWithCostTracking(ctx context.C
 	}
 
 	// Perform the actual analysis
-	analysis, err := s.AnalyzeContent(ctx, content)
+	if s.aiService == nil {
+		return nil, costData, fmt.Errorf("AIService is nil")
+	}
+	analysis, err := s.aiService.AnalyzeContent(ctx, content)
 
 	// Complete cost tracking
 	responseTime := time.Since(startTime)
@@ -247,7 +261,7 @@ func (s *AIServiceWithCostTracking) AnalyzeContentWithCostTracking(ctx context.C
 func (s *AIServiceWithCostTracking) estimateTokenCount(text string) int {
 	// Simple token estimation: roughly 4 characters per token
 	// This is a rough approximation - in practice, you'd use a proper tokenizer
-	if err := common.ValidateSliceNotEmpty("text", text); err != nil {
+	if err := common.ValidateRequiredParam("text", text); err != nil {
 		return 0
 	}
 	return (len(text) / 4) + 1
@@ -323,7 +337,10 @@ func (s *AIServiceWithCostTracking) BulkEmbeddingGenerationWithCostTracking(ctx 
 
 		batch := texts[i:end]
 		for _, text := range batch {
-			embedding, err := s.GenerateEmbedding(ctx, text)
+			if s.aiService == nil {
+				return nil, costData, fmt.Errorf("AIService is nil")
+			}
+			embedding, err := s.aiService.GenerateEmbedding(ctx, text)
 			if err != nil {
 				s.logger.Warn("failed to generate embedding in bulk",
 					zap.String("user_id", userID),

@@ -12,6 +12,8 @@ build/
 /streaming
 /api
 /graphql
+/lesser
+/lesser.exe
 **/main
 **/*.test
 **/*.bin
@@ -58,6 +60,8 @@ node_modules/
 *.out
 coverage.txt
 coverage.html
+coverage_pkg.html
+coverage_overall.html
 results.csv
 
 # Temporary files
@@ -94,6 +98,7 @@ reference/
 !cmd/
 !pkg/
 bootstrap*
+!bootstrap*.go
 .gocache/
 .gomodcache/
 /bootstrap_*/
@@ -105,3 +110,7 @@ lint-report.json
 /*/dist/
 
 /docs/github
+
+# Generated status reports
+INCOMPLETE_IMPLEMENTATIONS.md
+.implementation_status_last

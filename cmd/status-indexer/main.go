@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -33,14 +34,23 @@ type StatusIndexer struct {
 	tableName    string
 	domain       string
 	logger       *zap.Logger
-	aiService    *ai.AIService
-	likeRepo     *repositories.LikeRepository
+	aiService    embeddingGenerator
+	likeRepo     likeCounter
 	hashtagsRepo *repositories.HashtagRepository
 	objectRepo   *repositories.ObjectRepository
 }
 
+type embeddingGenerator interface {
+	GenerateEmbedding(ctx context.Context, text string) ([]float32, error)
+}
+
+type likeCounter interface {
+	GetLikeCount(ctx context.Context, statusID string) (int64, error)
+	GetBoostCount(ctx context.Context, statusID string) (int64, error)
+}
+
 // NewStatusIndexer creates a new status indexer
-func NewStatusIndexer(db dynamormCore.DB, tableName, domain string, aiService *ai.AIService, logger *zap.Logger) *StatusIndexer {
+func NewStatusIndexer(db dynamormCore.DB, tableName, domain string, aiService embeddingGenerator, logger *zap.Logger) *StatusIndexer {
 	return &StatusIndexer{
 		db:           db,
 		tableName:    tableName,
@@ -55,7 +65,24 @@ func NewStatusIndexer(db dynamormCore.DB, tableName, domain string, aiService *a
 
 var (
 	processor *StatusIndexer
+	mustInitializeLambdaFn = common.MustInitializeLambda
+	loadAWSConfigFn        = awsconfig.LoadDefaultConfig
+	newAIServiceFn         = func(cfg aws.Config, aiConfig *ai.AIConfig) embeddingGenerator { return ai.NewAIService(cfg, aiConfig) }
+	newStatusIndexerFn     = NewStatusIndexer
+	lambdaStartFn          = lambda.Start
 )
+
+func handleStatusIndexerStream(ctx *lift.Context) error {
+	if processor == nil {
+		return lift.NewLiftError("MISSING_PROCESSOR", "status indexer processor not initialized", 500)
+	}
+
+	records, err := ctx.DynamoDBRecords()
+	if err != nil {
+		return err
+	}
+	return processor.HandleStream(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
+}
 
 // HandleStream processes DynamoDB stream events with Lift-style patterns
 func (si *StatusIndexer) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
@@ -660,6 +687,14 @@ func (si *StatusIndexer) getDomain() string {
 
 // getRequestID extracts request ID from context
 func getRequestID(ctx context.Context) string {
+	if ctx == nil {
+		return "unknown"
+	}
+	if requestID := ctx.Value(requestIDKey); requestID != nil {
+		if id, ok := requestID.(string); ok {
+			return id
+		}
+	}
 	if requestID := ctx.Value("request_id"); requestID != nil {
 		if id, ok := requestID.(string); ok {
 			return id
@@ -669,7 +704,7 @@ func getRequestID(ctx context.Context) string {
 }
 
 func main() {
-	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx := mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "status-indexer",
 		LambdaType:  common.LambdaTypeProcessor,
 	})
@@ -678,7 +713,7 @@ func main() {
 	logger := lambdaCtx.Logger
 
 	// Initialize AWS config for AI service
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+	awsCfg, err := loadAWSConfigFn(context.Background(),
 		awsconfig.WithRegion(cfg.Region),
 	)
 	if err != nil {
@@ -697,7 +732,7 @@ func main() {
 		BedrockModelID:      "anthropic.claude-3-haiku-20240307-v1:0",
 		S3Bucket:            cfg.S3BucketName,
 	}
-	aiService := ai.NewAIService(awsCfg, aiConfig)
+	aiService := newAIServiceFn(awsCfg, aiConfig)
 
 	// Get DynamORM DB instance
 	var db dynamormCore.DB
@@ -712,19 +747,13 @@ func main() {
 	}
 
 	// Initialize processor
-	processor = NewStatusIndexer(db, cfg.DynamoTableName, cfg.Domain, aiService, logger)
+	processor = newStatusIndexerFn(db, cfg.DynamoTableName, cfg.Domain, aiService, logger)
 
 	app := lift.New()
 	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
 	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return processor.HandleStream(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
-	})
+	_ = app.DynamoDB("*", handleStatusIndexerStream)
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }

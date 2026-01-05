@@ -7,10 +7,11 @@ import (
 	"strconv"
 	"strings"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/media"
-	"github.com/equaltoai/lesser/pkg/storage/models"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -83,14 +84,14 @@ func (h *Handler) HandleUploadMediaLift(ctx *lift.Context) error {
 		Focus:         mediaData.Focus,
 		Sensitive:     mediaData.Sensitive,
 		SpoilerText:   strings.TrimSpace(mediaData.SpoilerText),
-		MediaCategory: models.MediaCategory(strings.TrimSpace(mediaData.MediaType)),
+		MediaCategory: storageModels.MediaCategory(strings.TrimSpace(mediaData.MediaType)),
 	})
 	if err != nil {
 		h.logger.Error("failed to upload media", zap.String("user", claims.Username), zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to upload media")
 	}
 
-	return ctx.JSON(result.Media)
+	return ctx.JSON(h.convertMediaToAPI(result.Media))
 }
 
 // HandleGetMediaLift handles GET /api/v1/media/:id (Lift version)
@@ -117,7 +118,7 @@ func (h *Handler) HandleGetMediaLift(ctx *lift.Context) error {
 		return common.RespondNotFound(ctx, "media")
 	}
 
-	return ctx.JSON(mediaResult)
+	return ctx.JSON(h.convertMediaToAPI(mediaResult))
 }
 
 // HandleUpdateMediaLift handles PUT /api/v1/media/:id (Lift version)
@@ -135,10 +136,7 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 	}
 
 	// Parse update request
-	var req struct {
-		Description string `json:"description"`
-		Focus       string `json:"focus"`
-	}
+	var req apimodels.UpdateMediaRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		return common.RespondBadRequest(ctx, "invalid request body")
 	}
@@ -169,7 +167,7 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to update media")
 	}
 
-	return ctx.JSON(result.Media)
+	return ctx.JSON(h.convertMediaToAPI(result.Media))
 }
 
 // parseMediaUpload parses multipart form data for media uploads

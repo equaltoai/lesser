@@ -1,7 +1,6 @@
 package constructs
 
 import (
-	"cdk/naming"
 	"fmt"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
@@ -12,6 +11,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 )
 
 // CloudFrontConfig defines CloudFront distribution configuration for caching
@@ -327,8 +327,8 @@ func createResponseHeadersPolicy(scope constructs.Construct, environment string)
 				Override:            jsii.Bool(true),
 			},
 			ContentSecurityPolicy: &awscloudfront.ResponseHeadersContentSecurityPolicy{
-				ContentSecurityPolicy: jsii.String("default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' wss: https:"),
-				Override:              jsii.Bool(true),
+				ContentSecurityPolicy: jsii.String("default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: https:; font-src 'self' data: https:; style-src 'self'; script-src 'self'; connect-src 'self' wss: https:"),
+				Override:              jsii.Bool(false),
 			},
 		},
 

@@ -2,11 +2,13 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -49,8 +51,11 @@ func (r *MediaPopularityRepository) UpsertPopularity(ctx context.Context, popula
 	getErr := r.Get(ctx, popularity.PK, popularity.SK, &existing)
 
 	if getErr != nil {
+		var appErr *apperrors.AppError
+		isNotFound := dynamormErrors.IsNotFound(getErr) || (stdErrors.As(getErr, &appErr) && appErr.Code == apperrors.CodeNotFound)
+
 		// Distinguish between "not found" and "real error"
-		if !dynamormErrors.IsNotFound(getErr) {
+		if !isNotFound {
 			// Real error (permissions, throttling, network, etc.)
 			r.logger.Error("Failed to check existing popularity record",
 				zap.String("media_id", popularity.MediaID),
@@ -181,7 +186,8 @@ func (r *MediaPopularityRepository) GetPopularityForMedia(ctx context.Context, m
 	err := r.Get(ctx, pk, sk, &popularity)
 
 	if err != nil {
-		if dynamormErrors.IsNotFound(err) {
+		var appErr *apperrors.AppError
+		if dynamormErrors.IsNotFound(err) || (stdErrors.As(err, &appErr) && appErr.Code == apperrors.CodeNotFound) {
 			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityMedia, fmt.Sprintf("popularity %s#%s", mediaID, period))
 		}
 		return nil, ErrorHandler.HandleQueryError(err, EntityMedia, "media popularity")

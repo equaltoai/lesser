@@ -123,7 +123,7 @@ linters-settings:
     
   staticcheck:
     # Go version
-    go: "1.21"
+    go: "1.25"
     # Checks to run
     checks: ["all"]
   
@@ -252,6 +252,12 @@ issues:
     # Common package name is part of public API; suppress revive var-naming warnings there
     - path: "(^|.*/)pkg/common/.*\\.go$"
       text: "var-naming: avoid meaningless package names"
+      linters:
+        - revive
+
+    # interfaces package name is part of public API; suppress revive package-name warnings there
+    - path: "pkg/storage/interfaces"
+      text: "avoid meaningless package names"
       linters:
         - revive
     

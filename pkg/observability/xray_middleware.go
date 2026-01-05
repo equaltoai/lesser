@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-xray-sdk-go/xray"
+	"github.com/aws/aws-xray-sdk-go/v2/xray"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"

@@ -247,7 +247,7 @@ func (h *EmailFreeRecoveryHandler) HandleUseRecoveryCodeLift(ctx *lift.Context) 
 		return ctx.JSON(map[string]any{"error": "invalid recovery code"})
 	}
 
-	// Generate recovery token for password reset
+	// Generate recovery token for completing account recovery (e.g., adding a new passkey/wallet).
 	token, err := h.authService.GenerateRecoveryToken(ctx.Context, req.Username, "recovery_code")
 	if err != nil {
 		h.logger.Error("failed to generate recovery token", zap.Error(err))
@@ -262,7 +262,7 @@ func (h *EmailFreeRecoveryHandler) HandleUseRecoveryCodeLift(ctx *lift.Context) 
 	return ctx.JSON(map[string]any{
 		"recovery_token":  token,
 		"remaining_codes": remainingCodes,
-		"message":         "Recovery code accepted. Use the token to set a new password or add authentication methods.",
+		"message":         "Recovery code accepted. Use the token to add authentication methods (passkey/wallet).",
 	})
 }
 

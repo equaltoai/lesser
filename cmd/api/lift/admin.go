@@ -2,6 +2,7 @@ package lift
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,10 +14,9 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
-	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -47,6 +47,10 @@ const (
 )
 
 // requireAdminLift is already defined in admin_federation.go
+
+func isNotFoundError(err error) bool {
+	return errors.Is(err, storage.ErrNotFound) || apperrors.HasCode(err, apperrors.CodeNotFound)
+}
 
 // processUserSessions processes user sessions to extract IP history and most recent IP
 func processUserSessions(sessions []*storage.Session) (lastIP *string, ipHistory []models.AdminIP) {
@@ -253,7 +257,7 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 				"cursor": []string{nextCursor},
 			}.Encode(),
 		}
-		ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL.String())
+		ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL.String()))
 	}
 
 	ctx.Status(http.StatusOK)
@@ -277,7 +281,7 @@ func (h *Handler) HandleAdminGetAccountLift(ctx *lift.Context) error {
 	// Get user from storage
 	user, err := h.repos.Account().GetUser(ctx.Context, username)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "account not found"})
 		}
@@ -622,6 +626,66 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 	return ctx.JSON(apiReports)
 }
 
+func (h *Handler) buildAdminReport(ctx context.Context, reportID string) (models.AdminReport, error) {
+	report, err := h.repos.Moderation().GetReport(ctx, reportID)
+	if err != nil {
+		return models.AdminReport{}, err
+	}
+
+	reporterActor, err := h.repos.Actor().GetActor(ctx, report.ReporterID)
+	if err != nil {
+		return models.AdminReport{}, err
+	}
+
+	targetActor, err := h.repos.Actor().GetActor(ctx, report.TargetAccountID)
+	if err != nil {
+		return models.AdminReport{}, err
+	}
+
+	var assignedAccount *models.Account
+	if report.AssignedTo != "" {
+		assignedActor, err := h.repos.Actor().GetActor(ctx, report.AssignedTo)
+		if err == nil {
+			acc := h.convertActorToAccountWithCounts(ctx, assignedActor)
+			assignedAccount = &acc
+		} else {
+			h.logger.Warn("failed to get assigned actor",
+				zap.String("username", report.AssignedTo),
+				zap.Error(err))
+		}
+	}
+
+	var actionTakenByAccount *models.Account
+	if report.ModeratorID != "" {
+		moderatorActor, err := h.repos.Actor().GetActor(ctx, report.ModeratorID)
+		if err == nil {
+			acc := h.convertActorToAccountWithCounts(ctx, moderatorActor)
+			actionTakenByAccount = &acc
+		} else {
+			h.logger.Warn("failed to get moderator actor",
+				zap.String("username", report.ModeratorID),
+				zap.Error(err))
+		}
+	}
+
+	return models.AdminReport{
+		ID:                   report.ID,
+		ActionTaken:          report.ActionTaken != "",
+		ActionTakenAt:        report.ActionTakenAt,
+		Category:             report.Category,
+		Comment:              report.Comment,
+		Forwarded:            report.Forwarded,
+		CreatedAt:            report.CreatedAt,
+		UpdatedAt:            report.UpdatedAt,
+		Account:              h.convertActorToAccountWithCounts(ctx, reporterActor),
+		TargetAccount:        h.convertActorToAccountWithCounts(ctx, targetActor),
+		AssignedAccount:      assignedAccount,
+		ActionTakenByAccount: actionTakenByAccount,
+		Statuses:             h.loadReportedStatuses(ctx, report.ID),
+		Rules:                h.loadViolatedRules(ctx, report.Category),
+	}, nil
+}
+
 // HandleAdminGetReportLift handles GET /api/v1/admin/reports/:id
 func (h *Handler) HandleAdminGetReportLift(ctx *lift.Context) error {
 	// Check admin access
@@ -633,77 +697,15 @@ func (h *Handler) HandleAdminGetReportLift(ctx *lift.Context) error {
 
 	reportID := ctx.Param("id")
 
-	// Get report from storage
-	report, err := h.repos.Moderation().GetReport(ctx.Context, reportID)
+	apiReport, err := h.buildAdminReport(ctx.Context, reportID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
-		h.logger.Error("failed to get report", zap.Error(err))
+		h.logger.Error("failed to build admin report", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	// Get reporter account info
-	reporterActor, err := h.repos.Actor().GetActor(ctx.Context, report.ReporterID)
-	if err != nil {
-		h.logger.Error("failed to get reporter actor", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	// Get target account info
-	targetActor, err := h.repos.Actor().GetActor(ctx.Context, report.TargetAccountID)
-	if err != nil {
-		h.logger.Error("failed to get target actor", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	// Get assigned account if any
-	var assignedAccount *models.Account
-	if report.AssignedTo != "" {
-		assignedActor, err := h.repos.Actor().GetActor(ctx.Context, report.AssignedTo)
-		if err == nil {
-			acc := h.convertActorToAccountWithCounts(ctx.Context, assignedActor)
-			assignedAccount = &acc
-		} else {
-			h.logger.Warn("failed to get assigned actor",
-				zap.String("username", report.AssignedTo),
-				zap.Error(err))
-		}
-	}
-
-	// Get moderator account if action was taken
-	var actionTakenByAccount *models.Account
-	if report.ModeratorID != "" {
-		moderatorActor, err := h.repos.Actor().GetActor(ctx.Context, report.ModeratorID)
-		if err == nil {
-			acc := h.convertActorToAccountWithCounts(ctx.Context, moderatorActor)
-			actionTakenByAccount = &acc
-		} else {
-			h.logger.Warn("failed to get moderator actor",
-				zap.String("username", report.ModeratorID),
-				zap.Error(err))
-		}
-	}
-
-	apiReport := models.AdminReport{
-		ID:                   report.ID,
-		ActionTaken:          report.ActionTaken != "",
-		ActionTakenAt:        report.ActionTakenAt,
-		Category:             report.Category,
-		Comment:              report.Comment,
-		Forwarded:            report.Forwarded,
-		CreatedAt:            report.CreatedAt,
-		UpdatedAt:            report.UpdatedAt,
-		Account:              h.convertActorToAccountWithCounts(ctx.Context, reporterActor),
-		TargetAccount:        h.convertActorToAccountWithCounts(ctx.Context, targetActor),
-		AssignedAccount:      assignedAccount,
-		ActionTakenByAccount: actionTakenByAccount,
-		Statuses:             h.loadReportedStatuses(ctx.Context, report.ID),
-		Rules:                h.loadViolatedRules(ctx.Context, report.Category),
+		return ctx.JSON(map[string]string{"error": "failed to get report"})
 	}
 
 	ctx.Status(http.StatusOK)
@@ -724,7 +726,7 @@ func (h *Handler) HandleAdminResolveReportLift(ctx *lift.Context) error {
 	// Update report status
 	err = h.repos.Moderation().UpdateReportStatus(ctx.Context, reportID, storage.ReportStatusResolved, "Resolved by admin", adminClaims.Username)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
@@ -767,7 +769,7 @@ func (h *Handler) HandleAdminReopenReportLift(ctx *lift.Context) error {
 	// Update report status
 	err = h.repos.Moderation().UpdateReportStatus(ctx.Context, reportID, storage.ReportStatusOpen, "Reopened by admin", adminClaims.Username)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
@@ -781,8 +783,19 @@ func (h *Handler) HandleAdminReopenReportLift(ctx *lift.Context) error {
 		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("report_id", reportID))
 
-	// Return updated report
-	return h.HandleAdminGetReportLift(ctx)
+	apiReport, err := h.buildAdminReport(ctx.Context, reportID)
+	if err != nil {
+		if isNotFoundError(err) {
+			ctx.Status(http.StatusNotFound)
+			return ctx.JSON(map[string]string{"error": "report not found"})
+		}
+		h.logger.Error("failed to build admin report after reopen", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to get report"})
+	}
+
+	ctx.Status(http.StatusOK)
+	return ctx.JSON(apiReport)
 }
 
 // HandleAdminAssignReportLift handles POST /api/v1/admin/reports/:id/assign_to_self
@@ -799,7 +812,7 @@ func (h *Handler) HandleAdminAssignReportLift(ctx *lift.Context) error {
 	// Verify report exists
 	_, err = h.repos.Moderation().GetReport(ctx.Context, reportID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
@@ -820,8 +833,19 @@ func (h *Handler) HandleAdminAssignReportLift(ctx *lift.Context) error {
 		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("report_id", reportID))
 
-	// Return updated report
-	return h.HandleAdminGetReportLift(ctx)
+	apiReport, err := h.buildAdminReport(ctx.Context, reportID)
+	if err != nil {
+		if isNotFoundError(err) {
+			ctx.Status(http.StatusNotFound)
+			return ctx.JSON(map[string]string{"error": "report not found"})
+		}
+		h.logger.Error("failed to build admin report after assignment", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to get report"})
+	}
+
+	ctx.Status(http.StatusOK)
+	return ctx.JSON(apiReport)
 }
 
 // HandleAdminUnassignReportLift handles POST /api/v1/admin/reports/:id/unassign
@@ -838,7 +862,7 @@ func (h *Handler) HandleAdminUnassignReportLift(ctx *lift.Context) error {
 	// Verify report exists
 	_, err = h.repos.Moderation().GetReport(ctx.Context, reportID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "report not found"})
 		}
@@ -859,8 +883,19 @@ func (h *Handler) HandleAdminUnassignReportLift(ctx *lift.Context) error {
 		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("report_id", reportID))
 
-	// Return updated report
-	return h.HandleAdminGetReportLift(ctx)
+	apiReport, err := h.buildAdminReport(ctx.Context, reportID)
+	if err != nil {
+		if isNotFoundError(err) {
+			ctx.Status(http.StatusNotFound)
+			return ctx.JSON(map[string]string{"error": "report not found"})
+		}
+		h.logger.Error("failed to build admin report after unassignment", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to get report"})
+	}
+
+	ctx.Status(http.StatusOK)
+	return ctx.JSON(apiReport)
 }
 
 // HandleAdminModerationOverviewLift handles GET /api/v1/admin/moderation/overview
@@ -896,12 +931,12 @@ func (h *Handler) HandleAdminModerationOverviewLift(ctx *lift.Context) error {
 		}
 	}
 
-	overview := map[string]any{
-		"pending_reviews":    queueCount,
-		"open_reports":       openReportCount,
-		"active_moderators":  h.getActiveModeratorsCount(ctx.Context),
-		"recent_decisions":   h.getRecentConsensusDecisions(ctx.Context),
-		"trust_graph_health": h.getTrustGraphHealth(ctx.Context),
+	overview := models.AdminModerationOverviewResponse{
+		PendingReviews:   queueCount,
+		OpenReports:      openReportCount,
+		ActiveModerators: h.getActiveModeratorsCount(ctx.Context),
+		RecentDecisions:  h.getRecentConsensusDecisions(ctx.Context),
+		TrustGraphHealth: h.getTrustGraphHealth(ctx.Context),
 	}
 
 	ctx.Status(http.StatusOK)
@@ -958,20 +993,20 @@ func (h *Handler) HandleAdminGetModerationEventsLift(ctx *lift.Context) error {
 	}
 
 	// Convert to response format
-	response := make([]map[string]any, 0, len(events))
+	response := make([]models.AdminModerationEvent, 0, len(events))
 	for _, event := range events {
-		response = append(response, map[string]any{
-			"id":               event.ID,
-			"event_type":       event.EventType,
-			"actor_id":         event.ActorID,
-			"object_id":        event.ObjectID,
-			"object_type":      event.ObjectType,
-			"category":         event.Category,
-			"severity":         event.Severity,
-			"reason":           event.Reason,
-			"evidence":         event.Evidence,
-			"confidence_score": event.ConfidenceScore,
-			"created_at":       event.Created,
+		response = append(response, models.AdminModerationEvent{
+			ID:              event.ID,
+			EventType:       event.EventType,
+			ActorID:         event.ActorID,
+			ObjectID:        event.ObjectID,
+			ObjectType:      event.ObjectType,
+			Category:        event.Category,
+			Severity:        event.Severity,
+			Reason:          event.Reason,
+			Evidence:        event.Evidence,
+			ConfidenceScore: event.ConfidenceScore,
+			CreatedAt:       event.Created,
 		})
 	}
 
@@ -997,10 +1032,7 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 	eventID := ctx.Param("id")
 
 	// Parse request body
-	var req struct {
-		Decision string `json:"decision"` // actionApprove or actionReject
-		Reason   string `json:"reason"`
-	}
+	var req models.AdminModerationEventOverrideRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -1015,7 +1047,7 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 	// Get the moderation event
 	event, err := h.repos.Moderation().GetModerationEvent(ctx.Context, eventID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "moderation event not found"})
 		}
@@ -1059,13 +1091,13 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 
 	// Return success
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{
-		"event_id": eventID,
-		"decision": req.Decision,
-		"action":   string(action),
-		"override": true,
-		"admin":    adminClaims.Username,
-		"reason":   req.Reason,
+	return ctx.JSON(models.AdminModerationEventOverrideResponse{
+		EventID:  eventID,
+		Decision: req.Decision,
+		Action:   string(action),
+		Override: true,
+		Admin:    adminClaims.Username,
+		Reason:   req.Reason,
 	})
 }
 
@@ -1097,48 +1129,48 @@ func (h *Handler) HandleAdminGetTrustGraphLift(ctx *lift.Context) error {
 	}
 
 	// Build graph structure
-	nodes := make(map[string]any)
-	edges := make([]map[string]any, 0)
+	nodes := make(map[string]models.AdminTrustGraphNode)
+	edges := make([]models.AdminTrustGraphEdge, 0, len(trustRelationships))
 
 	for _, rel := range trustRelationships {
 		// Add nodes
 		if _, exists := nodes[rel.TrusterID]; !exists {
-			nodes[rel.TrusterID] = map[string]any{
-				"id":   rel.TrusterID,
-				"type": "actor",
+			nodes[rel.TrusterID] = models.AdminTrustGraphNode{
+				ID:   rel.TrusterID,
+				Type: "actor",
 			}
 		}
 		if _, exists := nodes[rel.TrusteeID]; !exists {
-			nodes[rel.TrusteeID] = map[string]any{
-				"id":   rel.TrusteeID,
-				"type": "actor",
+			nodes[rel.TrusteeID] = models.AdminTrustGraphNode{
+				ID:   rel.TrusteeID,
+				Type: "actor",
 			}
 		}
 
 		// Add edge
-		edges = append(edges, map[string]any{
-			"from":       rel.TrusterID,
-			"to":         rel.TrusteeID,
-			"trust":      rel.Score,
-			"created_at": rel.Created,
-			"updated_at": rel.Updated,
+		edges = append(edges, models.AdminTrustGraphEdge{
+			From:      rel.TrusterID,
+			To:        rel.TrusteeID,
+			Trust:     rel.Score,
+			CreatedAt: rel.Created,
+			UpdatedAt: rel.Updated,
 		})
 	}
 
 	// Convert nodes map to array
-	nodeArray := make([]any, 0, len(nodes))
+	nodeArray := make([]models.AdminTrustGraphNode, 0, len(nodes))
 	for _, node := range nodes {
 		nodeArray = append(nodeArray, node)
 	}
 
 	// Return graph data
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{
-		"nodes": nodeArray,
-		"edges": edges,
-		"stats": map[string]any{
-			"total_nodes": len(nodes),
-			"total_edges": len(edges),
+	return ctx.JSON(models.AdminTrustGraphResponse{
+		Nodes: nodeArray,
+		Edges: edges,
+		Stats: models.AdminTrustGraphStats{
+			TotalNodes: len(nodes),
+			TotalEdges: len(edges),
 		},
 	})
 }
@@ -1156,11 +1188,7 @@ func (h *Handler) HandleAdminUpdateTrustLift(ctx *lift.Context) error {
 	toActorID := ctx.Param("to")
 
 	// Parse request body
-	var req struct {
-		Trust    float64 `json:"trust"`
-		Category string  `json:"category,omitempty"` // Optional category, defaults to "general"
-		Reason   string  `json:"reason"`
-	}
+	var req models.AdminUpdateTrustRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": err.Error()})
@@ -1179,13 +1207,14 @@ func (h *Handler) HandleAdminUpdateTrustLift(ctx *lift.Context) error {
 	}
 
 	// Update trust relationship - using correct field names from trust.TrustRelationship
+	updatedAt := time.Now()
 	trustRel := &storage.TrustRelationship{
 		TrusterID:  fromActorID,
 		TrusteeID:  toActorID,
 		Category:   storage.TrustCategory(category),
 		Score:      req.Trust,
 		Confidence: 1.0, // Admin updates have full confidence
-		Updated:    time.Now(),
+		Updated:    updatedAt,
 	}
 
 	if err := h.repos.Trust().UpdateTrustRelationship(ctx.Context, trustRel); err != nil {
@@ -1205,14 +1234,14 @@ func (h *Handler) HandleAdminUpdateTrustLift(ctx *lift.Context) error {
 
 	// Return updated relationship
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{
-		"from_actor_id": fromActorID,
-		"to_actor_id":   toActorID,
-		"trust":         req.Trust,
-		"category":      category,
-		"updated_by":    adminClaims.Username,
-		"reason":        req.Reason,
-		"updated_at":    time.Now(),
+	return ctx.JSON(models.AdminUpdateTrustResponse{
+		FromActorID: fromActorID,
+		ToActorID:   toActorID,
+		Trust:       req.Trust,
+		Category:    category,
+		UpdatedBy:   adminClaims.Username,
+		Reason:      req.Reason,
+		UpdatedAt:   updatedAt,
 	})
 }
 
@@ -1244,7 +1273,7 @@ func (h *Handler) HandleAdminGetReviewersLift(ctx *lift.Context) error {
 	// Combine both lists
 	users := append(moderatorUsers, adminUsers...)
 
-	reviewers := make([]map[string]any, 0)
+	reviewers := make([]models.AdminReviewer, 0)
 	for _, user := range users {
 		if user.Role == roleModerator || user.Role == roleAdmin {
 			// Get review stats for this user
@@ -1256,22 +1285,22 @@ func (h *Handler) HandleAdminGetReviewersLift(ctx *lift.Context) error {
 				stats = &storage.ReviewerStats{} // Use empty stats
 			}
 
-			reviewers = append(reviewers, map[string]any{
-				"id":               fmt.Sprintf("user-%s", user.Username),
-				"username":         user.Username,
-				"role":             user.Role,
-				"total_reviews":    stats.TotalReviews,
-				"accurate_reviews": stats.AccurateReviews,
-				"accuracy_rate":    stats.AccuracyRate,
-				"last_review_at":   stats.LastReviewAt,
+			reviewers = append(reviewers, models.AdminReviewer{
+				ID:              fmt.Sprintf("user-%s", user.Username),
+				Username:        user.Username,
+				Role:            user.Role,
+				TotalReviews:    stats.TotalReviews,
+				AccurateReviews: stats.AccurateReviews,
+				AccuracyRate:    stats.AccuracyRate,
+				LastReviewAt:    stats.LastReviewAt,
 			})
 		}
 	}
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{
-		"reviewers": reviewers,
-		"total":     len(reviewers),
+	return ctx.JSON(models.AdminModerationReviewersResponse{
+		Reviewers: reviewers,
+		Total:     len(reviewers),
 	})
 }
 
@@ -1307,11 +1336,11 @@ func (h *Handler) HandleAdminPromoteModeratorLift(ctx *lift.Context) error {
 		zap.String("target", username))
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{
-		"user_id":     userID,
-		"username":    username,
-		"new_role":    roleModerator,
-		"promoted_by": adminClaims.Username,
+	return ctx.JSON(models.AdminPromoteModeratorResponse{
+		UserID:     userID,
+		Username:   username,
+		NewRole:    roleModerator,
+		PromotedBy: adminClaims.Username,
 	})
 }
 
@@ -1332,7 +1361,7 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
 	// Don't allow demoting admins
 	user, err := h.repos.Account().GetUser(ctx.Context, username)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "user not found"})
 		}
@@ -1364,11 +1393,11 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
 		zap.String("target", username))
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{
-		"user_id":    userID,
-		"username":   username,
-		"new_role":   "user",
-		"demoted_by": adminClaims.Username,
+	return ctx.JSON(models.AdminDemoteModeratorResponse{
+		UserID:    userID,
+		Username:  username,
+		NewRole:   "user",
+		DemotedBy: adminClaims.Username,
 	})
 }
 
@@ -1464,25 +1493,25 @@ func (h *Handler) getActiveModeratorsCount(ctx context.Context) int {
 }
 
 // getRecentConsensusDecisions returns recent consensus-based moderation decisions
-func (h *Handler) getRecentConsensusDecisions(ctx context.Context) []any {
+func (h *Handler) getRecentConsensusDecisions(ctx context.Context) []models.AdminModerationDecision {
 	// Get recent moderation events that were resolved through consensus
 	events, _, err := h.repos.Moderation().GetModerationEvents(ctx, &storage.ModerationEventFilter{
 		MinSeverity: func() *int { s := 2; return &s }(), // 2 = medium severity
 	}, 10, "")
 	if err != nil {
 		h.logger.Warn("failed to get recent consensus decisions", zap.Error(err))
-		return []any{}
+		return []models.AdminModerationDecision{}
 	}
 
-	decisions := make([]any, 0, len(events))
+	decisions := make([]models.AdminModerationDecision, 0, len(events))
 	for _, event := range events {
-		decisions = append(decisions, map[string]any{
-			"id":         event.ID,
-			"event_type": event.EventType,
-			"actor_id":   event.ActorID,
-			"severity":   event.Severity,
-			"confidence": event.ConfidenceScore,
-			"created_at": event.Created,
+		decisions = append(decisions, models.AdminModerationDecision{
+			ID:         event.ID,
+			EventType:  event.EventType,
+			ActorID:    event.ActorID,
+			Severity:   event.Severity,
+			Confidence: event.ConfidenceScore,
+			CreatedAt:  event.Created,
 		})
 	}
 
@@ -1490,16 +1519,12 @@ func (h *Handler) getRecentConsensusDecisions(ctx context.Context) []any {
 }
 
 // getTrustGraphHealth returns trust graph health metrics
-func (h *Handler) getTrustGraphHealth(ctx context.Context) map[string]any {
+func (h *Handler) getTrustGraphHealth(ctx context.Context) models.AdminTrustGraphHealth {
 	// Get all trust relationships
 	relationships, err := h.repos.Trust().GetAllTrustRelationships(ctx, 10000)
 	if err != nil {
 		h.logger.Warn("failed to get trust relationships", zap.Error(err))
-		return map[string]any{
-			"total_relationships": 0,
-			"average_trust_score": 0.0,
-			"isolated_users":      0,
-		}
+		return models.AdminTrustGraphHealth{}
 	}
 
 	// Calculate metrics
@@ -1529,10 +1554,10 @@ func (h *Handler) getTrustGraphHealth(ctx context.Context) map[string]any {
 		}
 	}
 
-	return map[string]any{
-		"total_relationships": totalRelationships,
-		"average_trust_score": averageTrust,
-		"isolated_users":      isolatedUsers,
+	return models.AdminTrustGraphHealth{
+		TotalRelationships: totalRelationships,
+		AverageTrustScore:  averageTrust,
+		IsolatedUsers:      isolatedUsers,
 	}
 }
 
@@ -1544,29 +1569,48 @@ func (h *Handler) loadReportedStatuses(ctx context.Context, reportID string) []m
 		return []models.Status{}
 	}
 
-	// Convert storage statuses to API models
+	// Convert reported status IDs to API models.
+	// ModerationRepository currently returns status IDs (as strings) for the report, not full status objects.
 	result := make([]models.Status, 0, len(statuses))
 	for _, statusInterface := range statuses {
-		// Handle any type - in practice these would be map[string]any or struct types
-		statusMap, ok := statusInterface.(map[string]any)
-		if !ok {
+		switch v := statusInterface.(type) {
+		case string:
+			if err := common.ValidateEntityID(v, "status"); err != nil {
+				continue
+			}
+			storageStatus, err := h.repos.Status().GetStatus(ctx, v)
+			if err != nil {
+				h.logger.Warn("failed to load reported status", zap.String("report_id", reportID), zap.String("status_id", v), zap.Error(err))
+				continue
+			}
+			createdAt := ""
+			if !storageStatus.PublishedAt.IsZero() {
+				createdAt = storageStatus.PublishedAt.Format(time.RFC3339)
+			} else if !storageStatus.CreatedAt.IsZero() {
+				createdAt = storageStatus.CreatedAt.Format(time.RFC3339)
+			}
+			result = append(result, models.Status{
+				ID:        storageStatus.StatusID,
+				Content:   storageStatus.Content,
+				Sensitive: storageStatus.Sensitive,
+				CreatedAt: createdAt,
+			})
+		case map[string]any:
+			// Best-effort support if a future repo implementation returns full objects.
+			statusID := getStringFromMap(v, "id", getStringFromMap(v, "ID", ""))
+			content := getStringFromMap(v, "content", getStringFromMap(v, "Content", ""))
+			createdAt := getStringFromMap(v, "published", getStringFromMap(v, "CreatedAt", ""))
+			if err := common.ValidateEntityID(statusID, "status"); err != nil {
+				continue
+			}
+			result = append(result, models.Status{
+				ID:        statusID,
+				Content:   content,
+				CreatedAt: createdAt,
+			})
+		default:
 			continue
 		}
-
-		// Convert status using transformation framework - ELIMINATES 6+ LINES OF DUPLICATE CODE
-		transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
-		transformCtx := context.WithValue(ctx, baseURLContextKey, h.cfg.BaseURL())
-
-		apiStatus, err := transformer.Transform(transformCtx, statusMap)
-		if err != nil {
-			// Fallback for failed transformations
-			apiStatus = models.Status{
-				ID:        getStringFromMap(statusMap, "ID", ""),
-				Content:   getStringFromMap(statusMap, "Content", ""),
-				CreatedAt: getStringFromMap(statusMap, "CreatedAt", ""),
-			}
-		}
-		result = append(result, apiStatus)
 	}
 
 	return result
@@ -1693,8 +1737,6 @@ func (h *Handler) HandleAdminGetStatusesLift(ctx *lift.Context) error {
 	}
 
 	// Convert to []any for JSON response
-	statusesAny := h.convertStatusesToAny(storageStatuses)
-
 	// Add optional count header
 	h.addCountHeaderIfRequested(ctx, filter)
 
@@ -1702,7 +1744,7 @@ func (h *Handler) HandleAdminGetStatusesLift(ctx *lift.Context) error {
 	h.addPaginationHeader(ctx, nextCursor, pagination)
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(statusesAny)
+	return ctx.JSON(storageStatuses)
 }
 
 // AdminStatusPagination holds pagination parameters for admin status queries
@@ -1726,7 +1768,7 @@ func (h *Handler) parseAdminStatusPagination(ctx *lift.Context) AdminStatusPagin
 }
 
 // parseAdminStatusFilter parses filter parameters from request
-func (h *Handler) parseAdminStatusFilter(ctx *lift.Context) *repositories.StatusFilter {
+func (h *Handler) parseAdminStatusFilter(ctx *lift.Context) *interfaces.StatusFilter {
 	local := ctx.Query("local") == boolTrue
 	remote := ctx.Query("remote") == boolTrue
 	flagged := ctx.Query("flagged") == boolTrue
@@ -1734,7 +1776,7 @@ func (h *Handler) parseAdminStatusFilter(ctx *lift.Context) *repositories.Status
 	withMedia := ctx.Query("media") == boolTrue
 	sensitive := ctx.Query("sensitive") == boolTrue
 
-	filter := &repositories.StatusFilter{
+	filter := &interfaces.StatusFilter{
 		ByDomain:   ctx.Query("by_domain"),
 		Visibility: ctx.Query("visibility"),
 		MinDate:    h.parseDate(ctx.Query("min_date")),
@@ -1775,20 +1817,15 @@ func (h *Handler) parseDate(dateStr string) *time.Time {
 	return nil
 }
 
-// convertStatusesToAny converts status slice to []any for JSON response
-func (h *Handler) convertStatusesToAny(storageStatuses []*storageModels.Status) []any {
-	statusesAny := make([]any, len(storageStatuses))
-	for i, status := range storageStatuses {
-		statusesAny[i] = status
-	}
-	return statusesAny
-}
-
 // addCountHeaderIfRequested adds total count header if requested
-func (h *Handler) addCountHeaderIfRequested(ctx *lift.Context, filter *repositories.StatusFilter) {
+func (h *Handler) addCountHeaderIfRequested(ctx *lift.Context, filter *interfaces.StatusFilter) {
 	if ctx.Query("include_count") == boolTrue {
-		if totalCount, countErr := h.repos.Status().CountStatusesForAdmin(ctx.Context, filter); countErr == nil {
-			ctx.Response.Headers["X-Total-Count"] = strconv.FormatInt(totalCount, 10)
+		if statusRepo, ok := h.repos.Status().(interface {
+			CountStatusesForAdmin(context.Context, *interfaces.StatusFilter) (int64, error)
+		}); ok {
+			if totalCount, countErr := statusRepo.CountStatusesForAdmin(ctx.Context, filter); countErr == nil {
+				ctx.Response.Headers["X-Total-Count"] = strconv.FormatInt(totalCount, 10)
+			}
 		}
 	}
 }
@@ -1843,7 +1880,7 @@ func (h *Handler) HandleAdminGetStatusLift(ctx *lift.Context) error {
 	// Get status
 	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "status not found"})
 		}
@@ -1870,7 +1907,7 @@ func (h *Handler) HandleAdminDeleteStatusLift(ctx *lift.Context) error {
 	// Get the status first to validate it exists
 	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "status not found"})
 		}
@@ -1927,7 +1964,7 @@ func (h *Handler) adminStatusSensitiveAction(ctx *lift.Context, sensitive bool, 
 	// Get the existing status first
 	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "status not found"})
 		}
@@ -1942,7 +1979,7 @@ func (h *Handler) adminStatusSensitiveAction(ctx *lift.Context, sensitive bool, 
 
 	err = h.repos.Status().UpdateStatus(ctx.Context, status)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if isNotFoundError(err) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "status not found"})
 		}

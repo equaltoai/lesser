@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -113,6 +114,12 @@ func convertAttributeValue(attr events.DynamoDBAttributeValue) (any, error) {
 		return attr.Number(), nil
 	case events.DataTypeBoolean:
 		return attr.Boolean(), nil
+	case events.DataTypeStringSet:
+		return attr.StringSet(), nil
+	case events.DataTypeNumberSet:
+		return attr.NumberSet(), nil
+	case events.DataTypeBinarySet:
+		return attr.BinarySet(), nil
 	case events.DataTypeMap:
 		m := make(map[string]any)
 		for k, v := range attr.Map() {
@@ -230,34 +237,60 @@ func (sp *Processor) processRecordsParallel(
 	handler func(ctx context.Context, record events.DynamoDBEventRecord) error,
 	processedCount, failedCount *int,
 ) error {
-	semaphore := make(chan struct{}, sp.config.MaxConcurrentRecords)
-	errChan := make(chan error, len(records))
-
-	for _, record := range records {
-		go func(r events.DynamoDBEventRecord) {
-			semaphore <- struct{}{}        // Acquire
-			defer func() { <-semaphore }() // Release
-
-			if err := sp.processRecordWithRetry(ctx, r, handler); err != nil {
-				errChan <- err
-				*failedCount++
-			} else {
-				*processedCount++
-			}
-		}(record)
+	maxConcurrent := sp.config.MaxConcurrentRecords
+	if maxConcurrent <= 0 {
+		maxConcurrent = 1
 	}
 
-	// Wait for all goroutines and collect errors
-	var errors []error
-	for i := 0; i < len(records); i++ {
-		select {
-		case err := <-errChan:
-			if err != nil {
-				errors = append(errors, err)
+	semaphore := make(chan struct{}, maxConcurrent)
+	errChan := make(chan error, len(records))
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for _, record := range records {
+		wg.Add(1)
+
+		r := record
+		go func() {
+			defer wg.Done()
+
+			select {
+			case semaphore <- struct{}{}:
+			case <-ctx.Done():
+				errChan <- ctx.Err()
+				return
 			}
-		case <-ctx.Done():
-			return ctx.Err()
+			defer func() { <-semaphore }()
+
+			if err := sp.processRecordWithRetry(ctx, r, handler); err != nil {
+				mu.Lock()
+				*failedCount++
+				mu.Unlock()
+				errChan <- err
+				return
+			}
+
+			mu.Lock()
+			*processedCount++
+			mu.Unlock()
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(errChan)
+	}()
+
+	var errors []error
+	for err := range errChan {
+		if err != nil {
+			errors = append(errors, err)
 		}
+	}
+
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	if len(errors) > 0 {
@@ -428,21 +461,47 @@ func unmarshalWithDynamORMCompat(item map[string]any, out any) error {
 
 // getFieldName extracts field name from struct tags (dynamorm, json) or uses field name
 func getFieldName(field reflect.StructField) string {
-	// Check for DynamORM tag first
+	// Prefer DynamORM tags when present.
 	if tag, ok := field.Tag.Lookup("dynamorm"); ok {
-		// Skip special DynamORM tags like "pk", "sk", etc.
-		if tag != "pk" && tag != "sk" && !contains(tag, "index:") && tag != "ttl" && tag != "version" {
-			return tag
+		parts := strings.Split(tag, ",")
+
+		// Newer DynamORM tags encode the attribute name explicitly, e.g. "pk,attr:PK" or "attr:objectID".
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if strings.HasPrefix(part, "attr:") {
+				attr := strings.TrimPrefix(part, "attr:")
+				if attr != "" {
+					return attr
+				}
+			}
 		}
+
+		// Older DynamORM tags may be a single attribute name (e.g. "id", "version", "description").
+		if len(parts) == 1 {
+			switch tag {
+			case "pk", "sk", "ttl", "version":
+				return field.Name
+			default:
+				if strings.HasPrefix(tag, "index:") || strings.HasPrefix(tag, "naming:") {
+					return field.Name
+				}
+				return tag
+			}
+		}
+
+		// If no attribute name is specified, fall back to the struct field name.
+		return field.Name
 	}
 
-	// Check for JSON tag
+	// Fall back to JSON tag when no DynamORM tag is present.
 	if tag, ok := field.Tag.Lookup("json"); ok {
-		// Extract the actual field name before any options like "omitempty"
+		name := tag
 		if idx := strings.Index(tag, ","); idx != -1 {
-			return tag[:idx]
+			name = tag[:idx]
 		}
-		return tag
+		if name != "" && name != "-" {
+			return name
+		}
 	}
 
 	// Use struct field name as fallback
@@ -462,6 +521,14 @@ func setFieldValueEnhanced(field reflect.Value, value any, structField reflect.S
 
 	// Handle type conversions with enhanced support
 	switch field.Kind() {
+	case reflect.Interface:
+		// Most commonly used for map[string]any / interface{} fields.
+		val := reflect.ValueOf(value)
+		if !val.IsValid() || !val.Type().AssignableTo(field.Type()) {
+			return fmt.Errorf("cannot assign %T to %v", value, field.Type())
+		}
+		field.Set(val)
+		return nil
 	case reflect.String:
 		return setStringFieldEnhanced(field, value)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:

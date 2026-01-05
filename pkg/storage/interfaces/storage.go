@@ -642,113 +642,203 @@ type StorageFactory interface {
 // These are the repositories that are referenced in the Storage interface
 // but don't have definitions in the existing repositories.go file
 
-// ActorRepository provides methods for actor data management.
-type ActorRepository interface{}
+// NOTE: ObjectRepository is now defined in object.go with full method signatures
 
-// ObjectRepository provides methods for object data management.
-type ObjectRepository interface{}
+// NOTE: ActivityRepository is now defined in activity.go with full method signatures
 
-// ActivityRepository provides methods for activity data management.
-type ActivityRepository interface{}
+// NOTE: ModerationRepository is now defined in moderation.go with full method signatures
 
-// TimelineRepository provides methods for timeline data management.
-type TimelineRepository interface{}
+// NOTE: MediaMetadataRepository is now defined in media_metadata.go with full method signatures
 
-// ModerationRepository provides methods for moderation data management.
-type ModerationRepository interface{}
+// NOTE: PollRepository is now defined in poll.go with full method signatures
 
-// MediaMetadataRepository provides methods for media metadata management.
-type MediaMetadataRepository interface{}
+// NOTE: PushSubscriptionRepository is now defined in push_subscription.go with full method signatures
 
-// PollRepository provides methods for poll data management.
-type PollRepository interface{}
+// NOTE: HashtagRepository is now defined in hashtag.go with full method signatures
 
-// PushSubscriptionRepository provides methods for push subscription management.
-type PushSubscriptionRepository interface{}
+// NOTE: ScheduledStatusRepository is now defined in scheduled_status.go with full method signatures
 
-// HashtagRepository provides methods for hashtag data management.
-type HashtagRepository interface{}
+// NOTE: AnnouncementRepository is now defined in announcement.go with full method signatures
 
-// ScheduledStatusRepository provides methods for scheduled status management.
-type ScheduledStatusRepository interface{}
+// NOTE: DomainBlockRepository is now defined in domain_block.go with full method signatures
 
-// AnnouncementRepository provides methods for announcement management.
-type AnnouncementRepository interface{}
+// NOTE: InstanceRepository is now defined in instance.go with full method signatures
 
-// DomainBlockRepository provides methods for domain blocking management.
-type DomainBlockRepository interface{}
+// NOTE: FederationRepository is now defined in federation.go with full method signatures
 
-// InstanceRepository provides methods for instance data management.
-type InstanceRepository interface{}
+// NOTE: RecoveryRepository is now defined in recovery.go with full method signatures
 
-// FederationRepository provides methods for federation data management.
-type FederationRepository interface{}
-
-// RecoveryRepository provides methods for recovery data management.
-type RecoveryRepository interface{}
-
-// TrendingRepository provides methods for trending analytics data management.
-type TrendingRepository interface{}
+// NOTE: TrendingRepository is now defined in trending.go with full method signatures
 
 // UserRepository provides methods for user data management.
-type UserRepository interface{}
+// This interface mirrors the public methods of repositories.UserRepository,
+// enabling mock implementations for unit testing.
+type UserRepository interface {
+	// Core CRUD operations
+	CreateUser(ctx context.Context, user *storage.User) error
+	GetUser(ctx context.Context, username string) (*storage.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*storage.User, error)
+	UpdateUser(ctx context.Context, username string, updates map[string]any) error
+	DeleteUser(ctx context.Context, username string) error
 
-// TrackingRepository provides methods for tracking data management.
-type TrackingRepository interface{}
+	ListUsers(ctx context.Context, limit int32, cursor string) ([]*storage.User, string, error)
+	ListUsersByRole(ctx context.Context, role string) ([]*storage.User, error)
 
-// WebSocketCostRepository provides methods for WebSocket cost tracking.
-type WebSocketCostRepository interface{}
+	// Count operations
+	GetActiveUserCount(ctx context.Context, days int) (int64, error)
+	GetTotalUserCount(ctx context.Context) (int64, error)
+
+	// OAuth provider operations
+	GetUserByProviderID(ctx context.Context, provider, providerID string) (*storage.User, error)
+	LinkProviderAccount(ctx context.Context, username, provider, providerID string) error
+	UnlinkProviderAccount(ctx context.Context, username, provider string) error
+	GetLinkedProviders(ctx context.Context, username string) ([]string, error)
+
+	// Account pins (endorsed accounts)
+	CreateAccountPin(ctx context.Context, pin *storage.AccountPin) error
+	DeleteAccountPin(ctx context.Context, username, pinnedActorID string) error
+	GetAccountPins(ctx context.Context, username string) ([]*storage.AccountPin, error)
+	IsAccountPinned(ctx context.Context, username, actorID string) (bool, error)
+
+	// Account notes
+	CreateAccountNote(ctx context.Context, note *storage.AccountNote) error
+	GetAccountNote(ctx context.Context, username, targetActorID string) (*storage.AccountNote, error)
+	UpdateAccountNote(ctx context.Context, note *storage.AccountNote) error
+	DeleteAccountNote(ctx context.Context, username, targetActorID string) error
+
+	// Reputation operations
+	StoreReputation(ctx context.Context, actorID string, reputation *storage.Reputation) error
+	GetReputation(ctx context.Context, actorID string) (*storage.Reputation, error)
+	GetReputationHistory(ctx context.Context, actorID string, limit int) ([]*storage.Reputation, error)
+	GetUserTrustScore(ctx context.Context, userID string) (float64, error)
+
+	// Vouch operations
+	CreateVouch(ctx context.Context, vouch *storage.Vouch) error
+	GetVouch(ctx context.Context, vouchID string) (*storage.Vouch, error)
+	GetVouchesByActor(ctx context.Context, actorID string, activeOnly bool) ([]*storage.Vouch, error)
+	GetVouchesForActor(ctx context.Context, actorID string, activeOnly bool) ([]*storage.Vouch, error)
+	UpdateVouchStatus(ctx context.Context, vouchID string, active bool, revokedAt *time.Time) error
+	GetMonthlyVouchCount(ctx context.Context, actorID string, year int, month time.Month) (int, error)
+
+	// Trust relationship operations
+	CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error
+	GetTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) (*storage.TrustRelationship, error)
+	UpdateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error
+	DeleteTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) error
+	GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
+	GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
+	GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error)
+
+	// Trust score operations
+	GetTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error)
+	UpdateTrustScore(ctx context.Context, score *storage.TrustScore) error
+	RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error
+
+	// User preferences operations
+	GetUserLanguagePreference(ctx context.Context, username string) (string, error)
+	SetUserLanguagePreference(ctx context.Context, username string, language string) error
+	GetUserPreferences(ctx context.Context, username string) (*storage.UserPreferences, error)
+	UpdateUserPreferences(ctx context.Context, username string, preferences *storage.UserPreferences) error
+	SetPreference(ctx context.Context, username, key string, value any) error
+	GetPreference(ctx context.Context, username, key string) (any, error)
+	GetAllPreferences(ctx context.Context, username string) (map[string]any, error)
+	UpdatePreferences(ctx context.Context, username string, preferences map[string]any) error
+
+	// Follow operations
+	AcceptFollow(ctx context.Context, followerUsername, followedUsername string) error
+	RejectFollow(ctx context.Context, followerUsername, followedUsername string) error
+	GetFollowRequestState(ctx context.Context, followerID, targetID string) (string, error)
+	GetPendingFollowRequests(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	RemoveFromFollowers(ctx context.Context, username, followerUsername string) error
+
+	// Conversation mute operations
+	CreateConversationMute(ctx context.Context, mute *storage.ConversationMute) error
+	DeleteConversationMute(ctx context.Context, username, conversationID string) error
+	IsConversationMuted(ctx context.Context, username, conversationID string) (bool, error)
+	GetMutedConversations(ctx context.Context, username string) ([]string, error)
+
+	// Notification operations
+	IsNotificationMuted(ctx context.Context, userID, targetID string) (bool, error)
+
+	// Remote actor caching
+	CacheRemoteActor(ctx context.Context, handle string, actor *activitypub.Actor, ttl time.Duration) error
+
+	// Bookmark operations
+	CreateBookmark(ctx context.Context, username, objectID string) error
+	RemoveBookmark(ctx context.Context, username, objectID string) error
+	GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	IsBookmarked(ctx context.Context, username, objectID string) (bool, error)
+
+	// Timeline operations
+	DeleteFromTimeline(ctx context.Context, timelineType, timelineID, entryID string) error
+	DeleteExpiredTimelineEntries(ctx context.Context, before time.Time) error
+	GetDirectTimeline(ctx context.Context, username string, limit int, cursor string) ([]*storage.TimelineEntry, string, error)
+	GetHashtagTimeline(ctx context.Context, hashtag string, local bool, limit int, cursor string) ([]*storage.TimelineEntry, string, error)
+	GetListTimeline(ctx context.Context, listID string, limit int, cursor string) ([]*storage.TimelineEntry, string, error)
+
+	// Fan-out operations
+	FanOutPost(ctx context.Context, activity *activitypub.Activity) error
+}
+
+// NOTE: TrackingRepository is now defined in tracking.go with full method signatures
+
+// NOTE: WebSocketCostRepository is now defined in websocket_cost.go with full method signatures
 
 // TrustRepository provides methods for trust relationship management.
-type TrustRepository interface{}
+// This handles trust relationships between actors, trust scores, and trust updates.
+type TrustRepository interface {
+	// ===== Trust Relationship Operations =====
 
-// SearchRepository provides methods for search data management.
-type SearchRepository interface{}
+	// CreateTrustRelationship creates or updates a trust relationship between two actors
+	CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error
 
-// RelayRepository provides methods for relay management.
-type RelayRepository interface{}
+	// GetTrustRelationship retrieves a specific trust relationship
+	GetTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) (*storage.TrustRelationship, error)
 
-// CommunityNoteRepository provides methods for community note management.
-type CommunityNoteRepository interface{}
+	// UpdateTrustRelationship updates an existing trust relationship
+	UpdateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error
 
-// EmojiRepository provides methods for emoji data management.
-type EmojiRepository interface{}
+	// DeleteTrustRelationship removes a trust relationship
+	DeleteTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) error
 
-// RateLimitRepository provides methods for rate limiting management.
-type RateLimitRepository interface{}
+	// GetTrustRelationships retrieves all trust relationships for a truster with pagination
+	GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
 
-// MarkerRepository provides methods for marker data management.
-type MarkerRepository interface{}
+	// GetTrustedByRelationships retrieves all relationships where the actor is trusted with pagination
+	GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
 
-// FeaturedTagRepository provides methods for featured tag management.
-type FeaturedTagRepository interface{}
+	// GetAllTrustRelationships retrieves all trust relationships for admin visualization
+	GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error)
 
-// AIRepository provides methods for AI service integration.
-type AIRepository interface{}
+	// ===== Trust Score Operations =====
 
-// ExportRepository provides methods for data export management.
-type ExportRepository interface{}
+	// GetTrustScore retrieves a cached trust score or calculates it
+	GetTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error)
 
-// ImportRepository provides methods for data import management.
-type ImportRepository interface{}
+	// UpdateTrustScore updates a cached trust score
+	UpdateTrustScore(ctx context.Context, score *storage.TrustScore) error
 
-// DLQRepository provides methods for dead letter queue management.
-type DLQRepository interface{}
+	// GetUserTrustScore retrieves the trust score for a user
+	GetUserTrustScore(ctx context.Context, userID string) (float64, error)
 
-// MetricRecordRepository provides methods for metric record management.
-type MetricRecordRepository interface{}
+	// ===== Trust Update Operations =====
 
-// CloudWatchMetricsRepository provides methods for CloudWatch metrics management.
-type CloudWatchMetricsRepository interface{}
+	// RecordTrustUpdate records a trust score update event
+	RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error
+}
 
-// StreamingCloudWatchRepository provides methods for streaming CloudWatch data.
-type StreamingCloudWatchRepository interface{}
-
-// AuditRepository provides methods for audit log management.
-type AuditRepository interface{}
-
-// OAuthRepository provides methods for OAuth token management.
-type OAuthRepository interface{}
-
-// DNSCacheRepository provides methods for DNS cache management.
-type DNSCacheRepository interface{}
+// NOTE: The following repository interfaces are defined in their own files:
+// - FeaturedTagRepository (featured_tag.go)
+// - AIRepository (ai.go)
+// - ExportRepository (export.go)
+// - ImportRepository (import.go)
+// - DLQRepository (dlq.go)
+// - MetricRecordRepository (metric_record.go)
+// - CloudWatchMetricsRepository (cloudwatch_metrics.go)
+// - StreamingCloudWatchRepository (streaming_cloudwatch.go)
+// - AuditRepository (audit.go)
+// - OAuthRepository (oauth.go)
+// - DNSCacheRepository (dns_cache.go)
+// - ThreadRepository (thread.go)
+// - SeveranceRepository (severance.go)
+// - ModerationMLRepository (moderation_ml.go)

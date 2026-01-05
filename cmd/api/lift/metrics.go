@@ -11,6 +11,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const bytesPerGB = 1024 * 1024 * 1024
+
 // HandleGetInstanceMetricsLift returns current instance metrics
 func (h *Handler) HandleGetInstanceMetricsLift(ctx *lift.Context) error {
 	h.logger.Info("HandleGetInstanceMetricsLift called")
@@ -258,6 +260,29 @@ func (h *Handler) calculateRequestRateLift(ctx context.Context) float64 {
 	return 0.0
 }
 
+func anyToFloat64(value any) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case uint:
+		return float64(v), true
+	case uint64:
+		return float64(v), true
+	case uint32:
+		return float64(v), true
+	default:
+		return 0, false
+	}
+}
+
 // calculateStorageProjectionLift projects storage usage for the given number of days
 func (h *Handler) calculateStorageProjectionLift(ctx context.Context, days int) float64 {
 	// Get current storage usage
@@ -269,13 +294,31 @@ func (h *Handler) calculateStorageProjectionLift(ctx context.Context, days int) 
 		activeUsers, _ := h.repos.Analytics().GetActiveUserCount(ctx, 30)
 		currentStorageGB = float64(activeUsers) * 0.5 // 500MB per active user estimate
 	} else {
-		// Convert any to float64
-		if storageFloat, ok := storageResult.(float64); ok {
-			currentStorageGB = storageFloat
-		} else if storageInt, ok := storageResult.(int64); ok {
-			currentStorageGB = float64(storageInt)
-		} else {
-			// Fallback if type assertion fails
+		// InstanceRepository.GetStorageUsage returns bytes in a map; also accept historical numeric formats.
+		switch v := storageResult.(type) {
+		case map[string]any:
+			switch {
+			case v["UsageGB"] != nil:
+				if usageGB, ok := anyToFloat64(v["UsageGB"]); ok {
+					currentStorageGB = usageGB
+				}
+			case v["total_bytes"] != nil:
+				if totalBytes, ok := anyToFloat64(v["total_bytes"]); ok {
+					currentStorageGB = totalBytes / bytesPerGB
+				}
+			case v["total_gb"] != nil:
+				if totalGB, ok := anyToFloat64(v["total_gb"]); ok {
+					currentStorageGB = totalGB
+				}
+			}
+		default:
+			if usageGB, ok := anyToFloat64(storageResult); ok {
+				currentStorageGB = usageGB
+			}
+		}
+
+		if currentStorageGB <= 0 {
+			// Fallback if type assertion fails or storage is unknown
 			activeUsers, _ := h.repos.Analytics().GetActiveUserCount(ctx, 30)
 			currentStorageGB = float64(activeUsers) * 0.5
 		}
@@ -308,15 +351,29 @@ func (h *Handler) calculateStorageGrowthRateLift(ctx context.Context) float64 {
 
 	// Safe type assertion for first usage
 	if firstMap, ok := storageHistory[0].(map[string]any); ok {
-		if usage, ok := firstMap["UsageGB"].(float64); ok {
-			firstUsage = usage
+		switch {
+		case firstMap["UsageGB"] != nil:
+			if usageGB, ok := anyToFloat64(firstMap["UsageGB"]); ok {
+				firstUsage = usageGB
+			}
+		case firstMap["total_bytes"] != nil:
+			if totalBytes, ok := anyToFloat64(firstMap["total_bytes"]); ok {
+				firstUsage = totalBytes / bytesPerGB
+			}
 		}
 	}
 
 	// Safe type assertion for last usage
 	if lastMap, ok := storageHistory[len(storageHistory)-1].(map[string]any); ok {
-		if usage, ok := lastMap["UsageGB"].(float64); ok {
-			lastUsage = usage
+		switch {
+		case lastMap["UsageGB"] != nil:
+			if usageGB, ok := anyToFloat64(lastMap["UsageGB"]); ok {
+				lastUsage = usageGB
+			}
+		case lastMap["total_bytes"] != nil:
+			if totalBytes, ok := anyToFloat64(lastMap["total_bytes"]); ok {
+				lastUsage = totalBytes / bytesPerGB
+			}
 		}
 	}
 
@@ -373,10 +430,15 @@ func (h *Handler) calculateUserGrowthRateLift(ctx context.Context) float64 {
 	totalNewUsers := 0
 	for _, dailyInterface := range userHistory {
 		if dailyMap, ok := dailyInterface.(map[string]any); ok {
-			if newRegs, ok := dailyMap["NewRegistrations"].(float64); ok {
-				totalNewUsers += int(newRegs)
-			} else if newRegs, ok := dailyMap["NewRegistrations"].(int); ok {
-				totalNewUsers += newRegs
+			switch {
+			case dailyMap["new_users"] != nil:
+				if newUsers, ok := anyToFloat64(dailyMap["new_users"]); ok {
+					totalNewUsers += int(newUsers)
+				}
+			case dailyMap["NewRegistrations"] != nil:
+				if newRegs, ok := anyToFloat64(dailyMap["NewRegistrations"]); ok {
+					totalNewUsers += int(newRegs)
+				}
 			}
 		}
 	}

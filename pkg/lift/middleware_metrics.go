@@ -45,7 +45,9 @@ func DefaultMetricsConfig() MetricsConfig {
 // MetricsMiddleware collects comprehensive performance metrics for Lift handlers
 type MetricsMiddleware struct {
 	config     MetricsConfig
-	cloudwatch *cloudwatch.Client
+	cloudwatch interface {
+		PutMetricData(ctx context.Context, params *cloudwatch.PutMetricDataInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.PutMetricDataOutput, error)
+	}
 	logger     *zap.Logger
 	buffer     *MetricBuffer
 	initTime   time.Time

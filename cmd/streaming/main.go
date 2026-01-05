@@ -57,16 +57,35 @@ type StreamEvent struct {
 	Stream  []string        `json:"stream"` // streams this event should go to
 }
 
+type streamingConnectionRepository interface {
+	WriteConnection(ctx context.Context, connectionID, userID, username string, streams []string) (*models.WebSocketConnection, error)
+	DeleteConnection(ctx context.Context, connectionID string) error
+	DeleteAllSubscriptions(ctx context.Context, connectionID string) error
+	GetConnection(ctx context.Context, connectionID string) (*models.WebSocketConnection, error)
+	UpdateConnection(ctx context.Context, connection *models.WebSocketConnection) error
+	WriteSubscription(ctx context.Context, connectionID, userID, stream string) error
+	DeleteSubscription(ctx context.Context, connectionID, stream string) error
+}
+
+type websocketCostTracker interface {
+	TrackWebSocketOperation(ctx context.Context, opCtx *repositories.WebSocketOperationContext, result *repositories.WebSocketOperationResult) error
+}
+
+type streamingCommandRouter interface {
+	RegisterHandler(handler streaming.CommandHandler)
+	HandleCommand(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error)
+}
+
 // StreamingHandler handles WebSocket streaming connections using DynamORM and Lift
 type StreamingHandler struct {
 	userRepo        *repositories.UserRepository
-	connectionRepo  *repositories.StreamingConnectionRepository
-	costTracker     *repositories.WebSocketCostTracker
+	connectionRepo  streamingConnectionRepository
+	costTracker     websocketCostTracker
 	logger          *zap.Logger
 	cfg             *config.Config
 	awsConfig       aws.Config
 	wsClient        streamer.Client
-	commandRouter   *streaming.CommandRouter
+	commandRouter   streamingCommandRouter
 	serviceRegistry *services.Registry
 	storageFactory  core.RepositoryStorage
 }
@@ -80,12 +99,73 @@ var (
 	handler   *StreamingHandler
 )
 
+var (
+	runningUnitTestsFn = common.RunningUnitTests
+
+	mustInitializeLambdaFn      = common.MustInitializeLambda
+	initializeWithDefaultsFn    = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	ensureRepositoryFactoryFn   = ensureRepositoryFactory
+	resolveDynamoClientFn       = resolveDynamoClient
+	newUserRepositoryFn         = repositories.NewUserRepository
+	newMockPublisherFn          = streaming.NewMockPublisher
+	newCommandRouterFn          = func(logger *zap.Logger) streamingCommandRouter { return streaming.NewCommandRouter(logger) }
+	registerCommandHandlersFn   = registerCommandHandlers
+	newStatusCommandHandlerFn   = func(registry *services.Registry, logger *zap.Logger) streaming.CommandHandler { return handlers.NewStatusCommandHandlerV2(registry.Notes(), logger) }
+	newAccountCommandHandlerFn  = func(registry *services.Registry, logger *zap.Logger) streaming.CommandHandler { return handlers.NewAccountCommandHandler(registry.Accounts(), logger) }
+	newRelationshipCommandHandlerFn = func(registry *services.Registry, logger *zap.Logger) streaming.CommandHandler {
+		return handlers.NewRelationshipCommandHandler(registry.Relationships(), registry.Accounts(), logger)
+	}
+	newSystemCommandHandlerFn = func(registry *services.Registry, logger *zap.Logger) streaming.CommandHandler {
+		return handlers.NewSystemCommandHandler(
+			registry.Notes(),
+			registry.Lists(),
+			registry.Media(),
+			registry.Notifications(),
+			logger,
+		)
+	}
+	newStreamerClientFn         = func(ctx context.Context, cfg streamer.ClientConfig) (streamer.Client, error) { return streamer.NewClient(ctx, cfg) }
+	runAsyncFn                  = func(fn func()) { go fn() }
+	lambdaStartFn               = lambda.Start
+	newLiftAppFn                = func(opts ...lift.AppOption) *lift.App { return lift.New(opts...) }
+	newStreamingConnectionRepoFn = func(db dynamormCore.DB, connectionsTable string, subscriptionDB dynamormCore.DB, subscriptionsTable string, logger *zap.Logger) streamingConnectionRepository {
+		return repositories.NewStreamingConnectionRepository(db, connectionsTable, subscriptionDB, subscriptionsTable, logger, nil)
+	}
+	newWebSocketCostTrackerFn = func(db dynamormCore.DB, tableName string, logger *zap.Logger) websocketCostTracker {
+		costRepo := repositories.NewWebSocketCostRepository(db, tableName, logger, nil)
+		return repositories.NewWebSocketCostTracker(costRepo, logger)
+	}
+	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	newRepositoryFactoryFn     = factory.NewRepositoryFactory
+	newServiceRegistryFn = func(repos core.RepositoryStorage, publisher streaming.Publisher, logger *zap.Logger, serviceConfig *services.ServiceConfig) (*services.Registry, error) {
+		return services.NewRegistry(
+			services.WithStorage(repos),
+			services.WithPublisher(publisher),
+			services.WithLogger(logger),
+			services.WithConfig(serviceConfig),
+		)
+	}
+)
+
 func init() {
-	if common.RunningUnitTests() {
+	initializeStreamingOnStart()
+}
+
+func initializeStreamingOnStart() {
+	if runningUnitTestsFn() {
 		return
 	}
+	if err := initializeStreaming(); err != nil {
+		if logger == nil {
+			logger = zap.NewNop()
+		}
+		logger.Fatal("failed to initialize streaming lambda", zap.Error(err))
+	}
+}
+
+func initializeStreaming() error {
 	// Standardized Lambda initialization for streaming API
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "streaming",
 		LambdaType:  common.LambdaTypeAPI, // WebSocket/HTTP streaming endpoints
 	})
@@ -98,20 +178,22 @@ func init() {
 	}
 
 	// Initialize with API-specific defaults
-	if err := lambdaCtx.InitializeWithDefaults(); err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
-	ensureRepositoryFactory()
+	if err := ensureRepositoryFactoryFn(); err != nil {
+		return err
+	}
 
-	db := resolveDynamoClient()
+	db := resolveDynamoClientFn()
 	if db == nil {
-		logger.Fatal("streaming lambda missing dynamo client after initialization")
+		return fmt.Errorf("streaming lambda missing dynamo client after initialization")
 	}
 
 	tableName := strings.TrimSpace(cfg.DynamoTableName)
 	if tableName == "" {
-		logger.Fatal("DYNAMODB_TABLE environment variable is required for streaming lambda")
+		return fmt.Errorf("DYNAMODB_TABLE environment variable is required for streaming lambda")
 	}
 
 	connectionsTable := tableName
@@ -124,54 +206,27 @@ func init() {
 		subscriptionsTable = override
 	}
 
-	userRepo := repositories.NewUserRepository(db, tableName, logger)
-	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, logger, nil)
+	userRepo := newUserRepositoryFn(db, tableName, logger)
+	connectionRepo := newStreamingConnectionRepoFn(db, connectionsTable, db, subscriptionsTable, logger)
 
-	// Initialize WebSocket cost tracking
-	costRepo := repositories.NewWebSocketCostRepository(db, tableName, logger, nil)
-	costTracker := repositories.NewWebSocketCostTracker(costRepo, logger)
+	costTracker := newWebSocketCostTrackerFn(db, tableName, logger)
 
-	// Initialize service registry
-	publisher := streaming.NewMockPublisher() // Use mock publisher for Lambda
+	publisher := newMockPublisherFn() // Use mock publisher for Lambda
 
-	// Convert config to ServiceConfig
 	serviceConfig := &services.ServiceConfig{
 		BaseURL:   cfg.Domain,
 		JWTSecret: cfg.JWTSecret,
 		Config:    cfg,
 	}
 
-	serviceRegistry, err := services.NewRegistry(
-		services.WithStorage(repos),
-		services.WithPublisher(publisher),
-		services.WithLogger(logger),
-		services.WithConfig(serviceConfig),
-	)
+	serviceRegistry, err := newServiceRegistryFn(repos, publisher, logger, serviceConfig)
 	if err != nil {
-		logger.Fatal("failed to create service registry", zap.Error(err))
+		return fmt.Errorf("failed to create service registry: %w", err)
 	}
 
-	// Initialize command router and register handlers
-	commandRouter := streaming.NewCommandRouter(logger)
+	commandRouter := newCommandRouterFn(logger)
+	registerCommandHandlersFn(commandRouter, serviceRegistry, logger)
 
-	// Register command handlers
-	statusHandler := handlers.NewStatusCommandHandlerV2(serviceRegistry.Notes(), logger)
-	accountHandler := handlers.NewAccountCommandHandler(serviceRegistry.Accounts(), logger)
-	relationshipHandler := handlers.NewRelationshipCommandHandler(serviceRegistry.Relationships(), serviceRegistry.Accounts(), logger)
-	systemHandler := handlers.NewSystemCommandHandler(
-		serviceRegistry.Notes(),
-		serviceRegistry.Lists(),
-		serviceRegistry.Media(),
-		serviceRegistry.Notifications(),
-		logger,
-	)
-
-	commandRouter.RegisterHandler(statusHandler)
-	commandRouter.RegisterHandler(accountHandler)
-	commandRouter.RegisterHandler(relationshipHandler)
-	commandRouter.RegisterHandler(systemHandler)
-
-	// Create handler instance
 	handler = &StreamingHandler{
 		userRepo:        userRepo,
 		connectionRepo:  connectionRepo,
@@ -183,6 +238,24 @@ func init() {
 		serviceRegistry: serviceRegistry,
 		storageFactory:  repos,
 	}
+
+	return nil
+}
+
+func registerCommandHandlers(router streamingCommandRouter, serviceRegistry *services.Registry, logger *zap.Logger) {
+	if router == nil || serviceRegistry == nil {
+		return
+	}
+
+	statusHandler := newStatusCommandHandlerFn(serviceRegistry, logger)
+	accountHandler := newAccountCommandHandlerFn(serviceRegistry, logger)
+	relationshipHandler := newRelationshipCommandHandlerFn(serviceRegistry, logger)
+	systemHandler := newSystemCommandHandlerFn(serviceRegistry, logger)
+
+	router.RegisterHandler(statusHandler)
+	router.RegisterHandler(accountHandler)
+	router.RegisterHandler(relationshipHandler)
+	router.RegisterHandler(systemHandler)
 }
 
 // HandleWebSocketEvent handles WebSocket events using Lift patterns (connect, disconnect, message)
@@ -229,7 +302,7 @@ func (sh *StreamingHandler) HandleWebSocketEvent(ctx *lift.Context) error {
 		)
 	}
 
-	wsClient, err := streamer.NewClient(ctx, streamer.ClientConfig{
+	wsClient, err := newStreamerClientFn(ctx, streamer.ClientConfig{
 		AWSConfig: &sh.awsConfig,
 		Endpoint:  managementAPIEndpoint,
 	})
@@ -316,7 +389,7 @@ func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIG
 	)
 
 	// Track connection establishment cost
-	go func() {
+	runAsyncFn(func() {
 		trackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -341,7 +414,7 @@ func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIG
 				zap.String("connection_id", event.RequestContext.ConnectionID),
 				zap.Error(err))
 		}
-	}()
+	})
 
 	return nil
 }
@@ -426,7 +499,7 @@ func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIG
 	}
 
 	// Track message processing cost
-	go func() {
+	runAsyncFn(func() {
 		trackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -453,7 +526,7 @@ func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIG
 				zap.String("connection_id", event.RequestContext.ConnectionID),
 				zap.Error(trackErr))
 		}
-	}()
+	})
 
 	return err
 }
@@ -772,21 +845,24 @@ func getAuthMethodFromEvent(event events.APIGatewayWebsocketProxyRequest, token 
 }
 
 func main() {
-	app := lift.New(lift.WithWebSocketSupport())
+	app := newLiftAppFn(lift.WithWebSocketSupport())
 	if cfg != nil && cfg.DebugMode {
-		app = lift.New(lift.WithWebSocketSupport(), lift.WithDebug())
+		app = newLiftAppFn(lift.WithWebSocketSupport(), lift.WithDebug())
 	}
 
 	app.WebSocket("$connect", handler.HandleWebSocketEvent)
 	app.WebSocket("$disconnect", handler.HandleWebSocketEvent)
 	app.WebSocket("$default", handler.HandleWebSocketEvent)
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }
 
-func ensureRepositoryFactory() {
+func ensureRepositoryFactory() error {
 	if lambdaCtx == nil {
-		return
+		return nil
+	}
+	if logger == nil {
+		logger = zap.NewNop()
 	}
 
 	if repos == nil && lambdaCtx.Repos != nil {
@@ -798,10 +874,10 @@ func ensureRepositoryFactory() {
 	}
 
 	if repos != nil {
-		return
+		return nil
 	}
 
-	initializeManualRepositories()
+	return initializeManualRepositories()
 }
 
 func resolveDynamoClient() dynamormCore.DB {
@@ -823,7 +899,7 @@ func resolveDynamoClient() dynamormCore.DB {
 	return nil
 }
 
-func initializeManualRepositories() {
+func initializeManualRepositories() error {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -852,24 +928,27 @@ func initializeManualRepositories() {
 
 	tableName := strings.TrimSpace(cfg.DynamoTableName)
 	if tableName == "" {
-		logger.Fatal("DYNAMODB_TABLE environment variable is required for streaming lambda")
+		return fmt.Errorf("DYNAMODB_TABLE environment variable is required for streaming lambda")
 	}
 
 	logger.Info("falling back to manual repository initialization for streaming lambda",
 		zap.String("region", region),
 		zap.String("table_name", tableName))
 
-	client, err := dynamorm.NewLambdaOptimizedClient(context.Background(), region)
+	client, err := newLambdaOptimizedClientFn(context.Background(), region)
 	if err != nil {
-		logger.Fatal("failed to initialize dynamo client for streaming lambda", zap.Error(err))
+		return fmt.Errorf("failed to initialize dynamo client for streaming lambda: %w", err)
 	}
 
-	repoFactory, err := factory.NewRepositoryFactory(client, tableName, logger)
+	repoFactory, err := newRepositoryFactoryFn(client, tableName, logger)
 	if err != nil {
-		logger.Fatal("failed to create repository factory for streaming lambda", zap.Error(err))
+		return fmt.Errorf("failed to create repository factory for streaming lambda: %w", err)
 	}
 
 	repos = repoFactory
-	lambdaCtx.Repos = repoFactory
-	lambdaCtx.DynamoDB = client
+	if lambdaCtx != nil {
+		lambdaCtx.Repos = repoFactory
+		lambdaCtx.DynamoDB = client
+	}
+	return nil
 }

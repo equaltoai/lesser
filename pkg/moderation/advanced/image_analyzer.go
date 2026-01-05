@@ -3,6 +3,9 @@ package advanced
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -10,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition/types"
+	"github.com/equaltoai/lesser/pkg/httpclient"
 	"go.uber.org/zap"
 )
 
@@ -24,12 +28,18 @@ const (
 	labelViolence = "Violence"
 )
 
+const (
+	maxRekognitionImageBytes = 5 * 1024 * 1024 // AWS Rekognition Bytes input limit is 5MB
+)
+
 // ImageAnalyzer handles image content analysis using AWS Rekognition
 type ImageAnalyzer struct {
 	client      *rekognition.Client
 	logger      *zap.Logger
 	config      *ModerationConfig
 	costTracker CostTracker
+
+	fetchImageBytes func(ctx context.Context, imageURL string) ([]byte, error)
 
 	// Cache for results
 	resultCache sync.Map
@@ -75,19 +85,9 @@ func (ia *ImageAnalyzer) AnalyzeImage(ctx context.Context, imageURL string, _ Co
 		AnalyzedAt: time.Now(),
 	}
 
-	// Create image input
-	imageInput := &types.Image{
-		S3Object: &types.S3Object{
-			Bucket: aws.String(ia.config.S3Bucket),
-			Name:   aws.String(extractS3Key(imageURL)),
-		},
-	}
-
-	// If not S3, try to use URL directly (requires setup)
-	if !isS3URL(imageURL) {
-		// For non-S3 URLs, you'd need to download and upload to S3 first
-		// or use DetectModerationLabels with Bytes input
-		return nil, fmt.Errorf("non-S3 URLs not yet supported")
+	imageInput, err := ia.buildImageInput(ctx, imageURL)
+	if err != nil {
+		return nil, err
 	}
 
 	// Run analyses in parallel
@@ -202,6 +202,63 @@ func (ia *ImageAnalyzer) AnalyzeImage(ctx context.Context, imageURL string, _ Co
 	})
 
 	return analysis, nil
+}
+
+func (ia *ImageAnalyzer) buildImageInput(ctx context.Context, imageURL string) (*types.Image, error) {
+	if isS3URL(imageURL) {
+		return &types.Image{
+			S3Object: &types.S3Object{
+				Bucket: aws.String(ia.config.S3Bucket),
+				Name:   aws.String(extractS3Key(imageURL)),
+			},
+		}, nil
+	}
+
+	fetch := ia.fetchImageBytes
+	if fetch == nil {
+		fetch = ia.fetchImageBytesDefault
+	}
+
+	bytes, err := fetch(ctx, imageURL)
+	if err != nil {
+		return nil, err
+	}
+
+	return &types.Image{Bytes: bytes}, nil
+}
+
+func (ia *ImageAnalyzer) fetchImageBytesDefault(ctx context.Context, imageURL string) ([]byte, error) {
+	client := httpclient.NewSecureClient(
+		httpclient.WithTimeout(30*time.Second),
+		httpclient.WithLogger(ia.logger),
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build image request: %w", err)
+	}
+	req.Header.Set("Accept", "image/*,*/*")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("download image: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download image: unexpected status %d", resp.StatusCode)
+	}
+
+	limited := io.LimitReader(resp.Body, maxRekognitionImageBytes+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, fmt.Errorf("read image bytes: %w", err)
+	}
+	if len(data) > maxRekognitionImageBytes {
+		return nil, fmt.Errorf("download image: image exceeds %d bytes", maxRekognitionImageBytes)
+	}
+
+	return data, nil
 }
 
 // detectModerationLabels detects inappropriate content
@@ -553,16 +610,18 @@ type CombinedAnalysis struct {
 	RiskLevel     string
 }
 
-func extractS3Key(url string) string {
-	// Extract S3 key from URL
-	// This is a simplified version - in production, use proper URL parsing
-	if idx := strings.Index(url, ".amazonaws.com/"); idx > 0 {
-		return url[idx+15:]
+func extractS3Key(urlStr string) string {
+	parsed, err := url.Parse(urlStr)
+	if err == nil && parsed.Path != "" {
+		return strings.TrimPrefix(parsed.Path, "/")
 	}
-	return url
+	return urlStr
 }
 
 func isS3URL(url string) bool {
+	if strings.HasPrefix(url, "s3://") {
+		return true
+	}
 	return strings.Contains(url, ".s3.") && strings.Contains(url, ".amazonaws.com")
 }
 

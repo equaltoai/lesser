@@ -6,16 +6,20 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
@@ -42,6 +46,7 @@ type WebhookConfig struct {
 type WebhookDeliveryService struct {
 	logger         *zap.Logger
 	httpClient     *http.Client
+	insecureClient *http.Client
 	webhookRepo    *StandaloneWebhookRepository
 	alertRepo      *StandaloneAlertRepository
 	deadLetterRepo *StandaloneDeadLetterRepository
@@ -65,8 +70,107 @@ type WebhookDeliveryConfig struct {
 	Enabled              bool
 }
 
+const webhookMaxRedirects = 10
+
+func webhookCheckRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= webhookMaxRedirects {
+		return fmt.Errorf("too many redirects: %d", len(via))
+	}
+	if err := ssrf.ValidateURL(req.URL); err != nil {
+		return fmt.Errorf("redirect URL blocked: %w", err)
+	}
+	return nil
+}
+
+func newSSRFProtectedTransport(dialer *net.Dialer) *http.Transport {
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		base = &http.Transport{}
+	}
+	transport := base.Clone()
+	transport.Proxy = nil
+	transport.TLSClientConfig = &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		return dialWithSSRFProtection(ctx, dialer, network, address)
+	}
+
+	return transport
+}
+
+func newSSRFProtectedInsecureTransport(dialer *net.Dialer) *http.Transport {
+	transport := newSSRFProtectedTransport(dialer)
+	transport.TLSClientConfig = &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		// #nosec G402 -- explicitly guarded by LESSER_ALLOW_INSECURE_TLS; intended for debug-only scenarios.
+		InsecureSkipVerify: true,
+	}
+	return transport
+}
+
+func dialWithSSRFProtection(ctx context.Context, dialer *net.Dialer, network, address string) (net.Conn, error) {
+	return dialWithSSRFProtectionWithLookup(ctx, dialer, network, address, net.LookupIP)
+}
+
+func dialWithSSRFProtectionWithLookup(ctx context.Context, dialer *net.Dialer, network, address string, lookupIP func(string) ([]net.IP, error)) (net.Conn, error) {
+	if dialer == nil {
+		dialer = &net.Dialer{}
+	}
+
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid dial address: %w", err)
+	}
+
+	// Avoid DNS lookups when the host is already an IP literal.
+	if ip := net.ParseIP(host); ip != nil {
+		if ssrf.IsBlockedIP(ip) {
+			return nil, fmt.Errorf("blocked dial to private IP: %s", ip.String())
+		}
+		return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+	}
+
+	if ssrf.IsBlockedHostname(host) {
+		return nil, fmt.Errorf("blocked dial to internal hostname: %s", host)
+	}
+
+	ips, err := lookupIP(host)
+	if err != nil {
+		return nil, fmt.Errorf("DNS resolution failed: %w", err)
+	}
+
+	for _, ip := range ips {
+		if ssrf.IsBlockedIP(ip) {
+			return nil, fmt.Errorf("blocked dial to private IP: %s", ip.String())
+		}
+	}
+
+	// Dial a resolved public IP to avoid TOCTOU/DNS-rebinding between validation and connect.
+	var lastErr error
+	for _, ip := range ips {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("DNS resolution returned no IPs for %s", host)
+}
+
 // NewWebhookDeliveryService creates a new webhook delivery service
 func NewWebhookDeliveryService(config *WebhookDeliveryConfig) *WebhookDeliveryService {
+	if config.Logger == nil {
+		config.Logger = zap.NewNop()
+	}
 	if config.HTTPTimeout == 0 {
 		config.HTTPTimeout = 30 * time.Second
 	}
@@ -78,17 +182,21 @@ func NewWebhookDeliveryService(config *WebhookDeliveryConfig) *WebhookDeliverySe
 	}
 
 	httpClient := &http.Client{
-		Timeout: config.HTTPTimeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     90 * time.Second,
-		},
+		Timeout:       config.HTTPTimeout,
+		Transport:     newSSRFProtectedTransport(&net.Dialer{}),
+		CheckRedirect: webhookCheckRedirect,
+	}
+
+	insecureClient := &http.Client{
+		Timeout:       config.HTTPTimeout,
+		Transport:     newSSRFProtectedInsecureTransport(&net.Dialer{}),
+		CheckRedirect: webhookCheckRedirect,
 	}
 
 	return &WebhookDeliveryService{
 		logger:               config.Logger,
 		httpClient:           httpClient,
+		insecureClient:       insecureClient,
 		webhookRepo:          config.WebhookRepository,
 		alertRepo:            config.AlertRepository,
 		deadLetterRepo:       config.DeadLetterRepository,
@@ -257,6 +365,11 @@ func (w *WebhookDeliveryService) getMatchingWebhooks(_ context.Context, alert *m
 
 	// Add default webhook from environment if configured
 	if webhookURL := w.getWebhookURLFromEnv(); webhookURL != "" {
+		verifySSL := true
+		if cfg := config.Get(); cfg != nil {
+			verifySSL = cfg.AlertWebhookVerifySSL
+		}
+
 		webhook := &WebhookConfig{
 			ID:             "default",
 			URL:            webhookURL,
@@ -264,7 +377,7 @@ func (w *WebhookDeliveryService) getMatchingWebhooks(_ context.Context, alert *m
 			Timeout:        w.defaultTimeout,
 			MaxAttempts:    w.defaultMaxAttempts,
 			RetryInterval:  w.defaultRetryInterval,
-			VerifySSL:      true,
+			VerifySSL:      verifySSL,
 			Enabled:        true,
 			AlertTypes:     []string{}, // Accept all types
 			SeverityLevels: []string{}, // Accept all severities
@@ -323,21 +436,38 @@ func (w *WebhookDeliveryService) matchesWebhookFilters(alert *models.Alert, webh
 func (w *WebhookDeliveryService) createDelivery(alert *models.Alert, webhook *WebhookConfig) *models.WebhookDelivery {
 	now := time.Now()
 
+	insecureSkipTLSVerify := false
+	if webhook != nil && !webhook.VerifySSL {
+		if common.InsecureTLSOverrideEnabled() {
+			insecureSkipTLSVerify = true
+			w.logger.Warn("webhook TLS verification disabled (insecure TLS enabled)",
+				zap.String("webhook_id", webhook.ID),
+				zap.String("url", webhook.URL),
+				zap.String("override_env", common.InsecureTLSOverrideEnvVar))
+		} else {
+			w.logger.Warn("webhook TLS verification disable requested but blocked (override env not set)",
+				zap.String("webhook_id", webhook.ID),
+				zap.String("url", webhook.URL),
+				zap.String("override_env", common.InsecureTLSOverrideEnvVar))
+		}
+	}
+
 	delivery := &models.WebhookDelivery{
-		DeliveryID:    uuid.New().String(),
-		AlertID:       alert.AlertID,
-		WebhookID:     webhook.ID,
-		URL:           webhook.URL,
-		Headers:       webhook.Headers,
-		SecretToken:   webhook.SecretToken,
-		Timeout:       int(webhook.Timeout.Seconds()),
-		Status:        "pending",
-		AttemptNumber: 1,
-		MaxAttempts:   webhook.MaxAttempts,
-		ScheduledAt:   now,
-		RetryInterval: int(webhook.RetryInterval.Seconds()),
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		DeliveryID:            uuid.New().String(),
+		AlertID:               alert.AlertID,
+		WebhookID:             webhook.ID,
+		URL:                   webhook.URL,
+		Headers:               webhook.Headers,
+		SecretToken:           webhook.SecretToken,
+		InsecureSkipTLSVerify: insecureSkipTLSVerify,
+		Timeout:               int(webhook.Timeout.Seconds()),
+		Status:                "pending",
+		AttemptNumber:         1,
+		MaxAttempts:           webhook.MaxAttempts,
+		ScheduledAt:           now,
+		RetryInterval:         int(webhook.RetryInterval.Seconds()),
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}
 
 	return delivery
@@ -379,7 +509,25 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 	}
 
 	// Send request
-	resp, err := w.httpClient.Do(req)
+	client := w.httpClient
+	if delivery.InsecureSkipTLSVerify {
+		if common.InsecureTLSOverrideEnabled() && w.insecureClient != nil {
+			client = w.insecureClient
+		} else {
+			w.logger.Warn("webhook delivery stored insecure TLS setting but override env is not enabled; using TLS verification",
+				zap.String("delivery_id", delivery.DeliveryID),
+				zap.String("webhook_id", delivery.WebhookID),
+				zap.String("override_env", common.InsecureTLSOverrideEnvVar))
+		}
+	}
+	if client == nil {
+		duration := time.Since(startTime)
+		err := fmt.Errorf("http client not configured")
+		delivery.MarkFailed(err.Error(), "request_failed", 0, "", duration)
+		return err
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		duration := time.Since(startTime)
 		errorType := w.categorizeError(err)
@@ -391,12 +539,13 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 	}()
 
 	// Read response
-	responseBody, err := io.ReadAll(resp.Body)
+	responseBodyBytes, responseBodyTruncated, err := common.ReadUntrustedHTTPResponseBody(resp.Body, common.MaxUntrustedHTTPResponseBodyBytes)
 	if err != nil {
 		duration := time.Since(startTime)
 		delivery.MarkFailed(err.Error(), "response_read", resp.StatusCode, "", duration)
 		return fmt.Errorf("failed to read response: %w", err)
 	}
+	responseBody := common.FormatUntrustedHTTPBodySnippet(responseBodyBytes, responseBodyTruncated)
 
 	duration := time.Since(startTime)
 
@@ -407,7 +556,7 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 			fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Status),
 			errorType,
 			resp.StatusCode,
-			string(responseBody),
+			responseBody,
 			duration,
 		)
 		return fmt.Errorf("webhook returned status %d", resp.StatusCode)
@@ -421,7 +570,7 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 		}
 	}
 
-	delivery.MarkSuccess(resp.StatusCode, string(responseBody), responseHeaders, duration)
+	delivery.MarkSuccess(resp.StatusCode, responseBody, responseHeaders, duration)
 	return nil
 }
 
@@ -533,17 +682,18 @@ func ValidateWebhookURL(webhookURL string) error {
 		return fmt.Errorf("webhook URL cannot be empty")
 	}
 
-	parsedURL, err := url.Parse(webhookURL)
+	_, err := ssrf.ValidateURLString(webhookURL)
 	if err != nil {
-		return fmt.Errorf("invalid webhook URL: %w", err)
-	}
-
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("webhook URL must use http or https scheme")
-	}
-
-	if parsedURL.Host == "" {
-		return fmt.Errorf("webhook URL must have a host")
+		switch {
+		case errors.Is(err, ssrf.ErrInvalidScheme):
+			return fmt.Errorf("webhook URL must use http or https scheme")
+		case errors.Is(err, ssrf.ErrEmptyHostname):
+			return fmt.Errorf("webhook URL must have a host")
+		case errors.Is(err, ssrf.ErrBlockedHostname):
+			return fmt.Errorf("webhook URL host is blocked")
+		default:
+			return fmt.Errorf("invalid webhook URL: %w", err)
+		}
 	}
 
 	return nil

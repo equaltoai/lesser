@@ -17,8 +17,7 @@ import (
 // TestUser is a test model
 type TestUser struct {
 	StandardModel
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Name string `json:"name"`
 }
 
 func TestTransaction_Execute(t *testing.T) {
@@ -102,8 +101,7 @@ func TestTransaction_Operations(t *testing.T) {
 			PK: "user#123",
 			SK: "user#123",
 		},
-		Name:  "John Doe",
-		Email: "john@example.com",
+		Name: "John Doe",
 	}
 
 	// No need to set expectations on MockTx since it's not a testify mock
@@ -149,8 +147,7 @@ func TestTransaction_OperationsWithoutTransaction(t *testing.T) {
 			PK: "user#123",
 			SK: "user#123",
 		},
-		Name:  "John Doe",
-		Email: "john@example.com",
+		Name: "John Doe",
 	}
 
 	// Test Put
@@ -178,20 +175,6 @@ func TestTransaction_OperationsWithoutTransaction(t *testing.T) {
 	assert.Contains(t, err.Error(), "transaction not started")
 }
 
-// Skip the global function tests since we can't easily mock them
-func TestExecuteTransaction_Basic(t *testing.T) {
-	// Just verify the function exists and has the right signature
-	// We can't easily test the implementation without being able to mock GetClient
-	_ = ExecuteTransaction
-}
-
-// Skip the global function tests since we can't easily mock them
-func TestExecuteLambdaTransaction_Basic(t *testing.T) {
-	// Just verify the function exists and has the right signature
-	// We can't easily test the implementation without being able to mock GetLambdaClient
-	_ = ExecuteLambdaTransaction
-}
-
 // Tests for the new TransactionManager
 
 func TestTransactionManager_ExecuteWrite_Success(t *testing.T) {
@@ -200,7 +183,12 @@ func TestTransactionManager_ExecuteWrite_Success(t *testing.T) {
 	logger := zap.NewNop()
 
 	// Setup successful transaction
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(nil)
+	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).
+		Run(func(args mock.Arguments) {
+			txFunc := args.Get(0).(func(*core.Tx) error)
+			assert.NoError(t, txFunc(&core.Tx{}))
+		}).
+		Return(nil)
 
 	// Create transaction manager
 	manager := NewTransactionManager(mockDB, logger)
@@ -211,13 +199,15 @@ func TestTransactionManager_ExecuteWrite_Success(t *testing.T) {
 			PK: "user#123",
 			SK: "user#123",
 		},
-		Name:  "John Doe",
-		Email: "john@example.com",
+		Name: "John Doe",
 	}
 
 	// Create operations
 	operations := []TransactionOperation{
 		{Type: OperationPut, Item: user},
+		{Type: OperationUpdate, Item: user, UpdateExpression: "SET #name = :name", Values: []any{"John"}},
+		{Type: OperationDelete, TableName: "users", Key: map[string]any{"PK": "user#123", "SK": "user#123"}},
+		{Type: OperationConditionCheck, TableName: "users", Key: map[string]any{"PK": "user#123"}, Condition: "attribute_exists(PK)"},
 	}
 
 	// Execute transaction
@@ -238,6 +228,10 @@ func TestTransactionManager_ExecuteWrite_WithRetry(t *testing.T) {
 	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).
 		Return(retryableErr).Once()
 	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).
+		Run(func(args mock.Arguments) {
+			txFunc := args.Get(0).(func(*core.Tx) error)
+			assert.NoError(t, txFunc(&core.Tx{}))
+		}).
 		Return(nil).Once()
 
 	// Create transaction manager
@@ -249,8 +243,7 @@ func TestTransactionManager_ExecuteWrite_WithRetry(t *testing.T) {
 			PK: "user#123",
 			SK: "user#123",
 		},
-		Name:  "John Doe",
-		Email: "john@example.com",
+		Name: "John Doe",
 	}
 
 	// Create operations
@@ -285,8 +278,7 @@ func TestTransactionManager_ExecuteWrite_NonRetryableError(t *testing.T) {
 			PK: "user#123",
 			SK: "user#123",
 		},
-		Name:  "John Doe",
-		Email: "john@example.com",
+		Name: "John Doe",
 	}
 
 	// Create operations
@@ -322,8 +314,7 @@ func TestTransactionManager_ExecuteWrite_MaxRetriesExceeded(t *testing.T) {
 			PK: "user#123",
 			SK: "user#123",
 		},
-		Name:  "John Doe",
-		Email: "john@example.com",
+		Name: "John Doe",
 	}
 
 	// Create operations
@@ -355,7 +346,12 @@ func TestTransactionManager_ExecuteWrite_WithCostTracking(t *testing.T) {
 	tracker := cost.New()
 
 	// Setup successful transaction
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(nil)
+	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).
+		Run(func(args mock.Arguments) {
+			txFunc := args.Get(0).(func(*core.Tx) error)
+			assert.NoError(t, txFunc(&core.Tx{}))
+		}).
+		Return(nil)
 
 	// Create transaction manager with tracker
 	manager := NewTransactionManagerWithTracker(mockDB, logger, tracker)
@@ -366,8 +362,7 @@ func TestTransactionManager_ExecuteWrite_WithCostTracking(t *testing.T) {
 			PK: "user#123",
 			SK: "user#123",
 		},
-		Name:  "John Doe",
-		Email: "john@example.com",
+		Name: "John Doe",
 	}
 
 	// Create operations

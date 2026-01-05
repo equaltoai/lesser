@@ -23,7 +23,6 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/media"
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/monitoring"
@@ -84,12 +83,12 @@ const (
 type MediaProcessor struct {
 	db                   core.DB
 	repos                storageCore.RepositoryStorage
-	mediaRepo            *repositories.MediaRepository
-	mediaAnalyticsRepo   *repositories.MediaAnalyticsRepository
-	mediaMetadataRepo    *repositories.MediaMetadataRepository
-	s3Client             *s3.Client
-	mediaConvertClient   *mediaconvert.Client
-	unifiedTracker       *cost.UnifiedTracker
+	mediaRepo            mediaRepository
+	mediaAnalyticsRepo   mediaAnalyticsRepository
+	mediaMetadataRepo    mediaMetadataRepository
+	s3Client             s3Client
+	mediaConvertClient   mediaConvertClient
+	unifiedTracker       unifiedCostTracker
 	tableName            string
 	bucketName           string
 	cdnDomain            string
@@ -100,6 +99,42 @@ type MediaProcessor struct {
 	alertManager         *monitoring.AlertManager
 	startTime            time.Time
 	logger               *zap.Logger
+}
+
+type s3Client interface {
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+}
+
+type mediaConvertClient interface {
+	CreateJob(ctx context.Context, params *mediaconvert.CreateJobInput, optFns ...func(*mediaconvert.Options)) (*mediaconvert.CreateJobOutput, error)
+}
+
+type mediaRepository interface {
+	GetMediaJob(ctx context.Context, jobID string) (*models.MediaJob, error)
+	UpdateMediaJob(ctx context.Context, job *models.MediaJob) error
+	GetMedia(ctx context.Context, mediaID string) (*models.Media, error)
+	UpdateMedia(ctx context.Context, media *models.Media) error
+	GetUserMediaConfig(ctx context.Context, userID string) (*models.UserMediaConfig, error)
+	CreateUserMediaConfig(ctx context.Context, config *models.UserMediaConfig) error
+	GetMediaSpending(ctx context.Context, userID, period string) (*models.MediaSpending, error)
+	UpdateUserMediaConfig(ctx context.Context, config *models.UserMediaConfig) error
+	GetUserMediaConfigByUsername(ctx context.Context, username string) (*models.UserMediaConfig, error)
+	AddSpendingTransaction(ctx context.Context, transaction *models.MediaSpendingTransaction) error
+}
+
+type mediaMetadataRepository interface {
+	MarkProcessingStarted(ctx context.Context, mediaID string) error
+	MarkProcessingFailed(ctx context.Context, mediaID, reason string) error
+	MarkProcessingComplete(ctx context.Context, mediaID string, results repositories.ProcessingResult) error
+}
+
+type mediaAnalyticsRepository interface {
+	RecordMediaAnalytics(ctx context.Context, analytics *models.MediaAnalytics) error
+}
+
+type unifiedCostTracker interface {
+	TrackS3Put(ctx context.Context, bucket string, bytes int64) error
 }
 
 // MediaJobCostTracker handles detailed cost tracking for media jobs
@@ -117,7 +152,7 @@ type MediaJobCostTracker struct {
 	BudgetMicros       int64            `json:"budget_micros"`      // Budget limit in micros
 	WarningThresholds  []float64        `json:"warning_thresholds"` // Warning at 50%, 75%, 90% of budget
 	WarningsSent       []bool           `json:"warnings_sent"`      // Track which warnings have been sent
-	mediaRepo          *repositories.MediaRepository
+	mediaRepo          mediaRepository
 	logger             *zap.Logger
 }
 
@@ -270,6 +305,15 @@ var (
 	processor *MediaProcessor
 )
 
+var (
+	startLambda                     = lambda.Start
+	loadAWSConfig                   = awsconfig.LoadDefaultConfig
+	newS3ClientFromConfig           = func(awsCfg aws.Config) s3Client { return s3.NewFromConfig(awsCfg) }
+	newMediaConvertClientFromConfig = func(awsCfg aws.Config) mediaConvertClient {
+		return mediaconvert.NewFromConfig(awsCfg)
+	}
+)
+
 func init() {
 	// Standardized Lambda initialization for processor functions
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
@@ -299,12 +343,42 @@ func NewMediaProcessor(lambdaCtx *common.LambdaContext) *MediaProcessor {
 	if lambdaCtx == nil || lambdaCtx.DynamoDB == nil || lambdaCtx.Repos == nil {
 		return &MediaProcessor{}
 	}
+
+	repoStorage, ok := lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	if !ok {
+		return &MediaProcessor{}
+	}
+
+	db, ok := lambdaCtx.DynamoDB.(core.DB)
+	if !ok {
+		return &MediaProcessor{}
+	}
+
+	bucketName := lambdaCtx.Config.MediaBucketName
+	if bucketName == "" {
+		bucketName = lambdaCtx.Config.S3MediaBucket
+	}
+
+	emfMetrics, _ := lambdaCtx.EMFMetrics.(*observability.EMFMetrics)
+	alertManager, _ := lambdaCtx.AlertManager.(*monitoring.AlertManager)
+
 	// Initialize simplified processor with essential components
 	return &MediaProcessor{
-		db:        lambdaCtx.DynamoDB.(core.DB),
-		repos:     lambdaCtx.Repos.(storageCore.RepositoryStorage),
-		tableName: lambdaCtx.Config.DynamoTableName,
-		logger:    lambdaCtx.Logger,
+		db:                   db,
+		repos:                repoStorage,
+		mediaRepo:            repoStorage.Media(),
+		mediaAnalyticsRepo:   repoStorage.MediaAnalytics(),
+		mediaMetadataRepo:    repoStorage.MediaMetadata(),
+		tableName:            lambdaCtx.Config.DynamoTableName,
+		bucketName:           bucketName,
+		cdnDomain:            lambdaCtx.Config.CloudFrontDomain,
+		mediaConvertEndpoint: lambdaCtx.Config.MediaConvertEndpoint,
+		mediaConvertRole:     lambdaCtx.Config.MediaConvertRoleArn,
+		mediaConvertQueue:    lambdaCtx.Config.MediaProcessorQueueURL,
+		emfMetrics:           emfMetrics,
+		alertManager:         alertManager,
+		startTime:            lambdaCtx.StartTime,
+		logger:               lambdaCtx.Logger,
 	}
 }
 
@@ -312,7 +386,7 @@ func main() {
 	// Configure and start Lambda
 	app := setupLiftApp()
 	lambdaHandler := createLambdaHandler(app)
-	lambda.Start(lambdaHandler)
+	startLambda(lambdaHandler)
 }
 
 // liftApp interface defines the methods we need from the Lift app
@@ -564,16 +638,16 @@ func (mp *MediaProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) er
 
 func (mp *MediaProcessor) initializeAWSClients(ctx context.Context) error {
 	// Load AWS configuration
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	awsCfg, err := loadAWSConfig(ctx)
 	if err != nil {
 		return AWSConfigLoadFailed(err)
 	}
 
 	// Initialize S3 client
-	mp.s3Client = s3.NewFromConfig(awsCfg)
+	mp.s3Client = newS3ClientFromConfig(awsCfg)
 
 	// Initialize MediaConvert client
-	mp.mediaConvertClient = mediaconvert.NewFromConfig(awsCfg)
+	mp.mediaConvertClient = newMediaConvertClientFromConfig(awsCfg)
 	if mp.mediaConvertEndpoint != "" {
 		// Custom endpoint configuration would go here if needed
 		mp.logger.Info("using custom MediaConvert endpoint", zap.String("endpoint", mp.mediaConvertEndpoint))
@@ -2017,7 +2091,7 @@ func (mp *MediaProcessor) handleJobFailure(ctx context.Context, job *models.Medi
 		if retryCount > 10 { // Cap at 1024 seconds (~17 minutes)
 			retryCount = 10
 		}
-		job.ScheduleRetry(time.Second * time.Duration(1<<uint(retryCount))) //nolint:gosec // Bounded to 0-10, safe conversion
+		job.ScheduleRetry(time.Second * time.Duration(1<<uint(retryCount))) // #nosec G115 -- retryCount is clamped to 0-10 above
 		job.Status = models.MediaStatusPending                              // Will be retried
 		mp.logger.Info("Scheduling job retry",
 			zap.String("job_id", job.JobID),
@@ -2066,7 +2140,7 @@ func (mp *MediaProcessor) handleProcessingError(ctx context.Context, job *models
 			if retryCount > 10 { // Cap at 1024 seconds (~17 minutes)
 				retryCount = 10
 			}
-			job.ScheduleRetry(time.Second * time.Duration(1<<uint(retryCount))) //nolint:gosec // Bounded to 0-10, safe conversion
+			job.ScheduleRetry(time.Second * time.Duration(1<<uint(retryCount))) // #nosec G115 -- retryCount is clamped to 0-10 above
 			job.Status = models.MediaStatusPending
 		} else {
 			job.Status = models.MediaStatusFailed

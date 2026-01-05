@@ -17,6 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/marshalers"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
@@ -872,12 +873,6 @@ func (r *ActorRepository) shouldIncludeDiscoverable(actor *activitypub.Actor, su
 	return true
 }
 
-// MigrationInfo represents account migration information
-type MigrationInfo struct {
-	AlsoKnownAs []string `json:"also_known_as"`
-	MovedTo     string   `json:"moved_to,omitempty"`
-}
-
 // UpdateAlsoKnownAs updates the AlsoKnownAs field for an actor
 func (r *ActorRepository) UpdateAlsoKnownAs(ctx context.Context, username string, alsoKnownAs []string) error {
 	log := r.logger.With(
@@ -1002,7 +997,7 @@ func (r *ActorRepository) CheckAlsoKnownAs(ctx context.Context, username string,
 }
 
 // GetActorMigrationInfo returns migration information for an actor
-func (r *ActorRepository) GetActorMigrationInfo(ctx context.Context, username string) (*MigrationInfo, error) {
+func (r *ActorRepository) GetActorMigrationInfo(ctx context.Context, username string) (*interfaces.MigrationInfo, error) {
 	log := r.logger.With(
 		zap.String("method", "GetActorMigrationInfo"),
 		zap.String("username", username),
@@ -1033,7 +1028,7 @@ func (r *ActorRepository) GetActorMigrationInfo(ctx context.Context, username st
 	}
 
 	// Create and return migration info
-	migrationInfo := &MigrationInfo{
+	migrationInfo := &interfaces.MigrationInfo{
 		AlsoKnownAs: actorModel.Actor.AlsoKnownAs,
 		MovedTo:     actorModel.Actor.MovedTo,
 	}

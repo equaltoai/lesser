@@ -6,9 +6,9 @@
    * 
    * This is a static UI component that:
    * - Calls Lesser's authentication APIs to obtain JWTs
-   * - Uses sessionStorage ONLY for temporary OAuth flow state (cleared after use)
+   * - Uses sessionStorage for temporary OAuth flow state (cleared after completion)
    * - NEVER sets cookies or creates sessions
-   * - Passes JWTs to Lesser via query params for stateless validation
+   * - Continues OAuth via /oauth/authorize UI-mode using Authorization headers
    * 
    * Authentication methods:
    * 1. WebAuthn (passkeys, biometrics, security keys)
@@ -19,8 +19,14 @@
    */
   
   import { onMount } from 'svelte';
-  import { Button, TextField } from '@equaltoai/greater-components/primitives';
-  import { KeyIcon, CreditCardIcon } from '@equaltoai/greater-components/icons';
+  import Button from 'src/lib/greater/primitives/components/Button.svelte';
+  import CopyButton from 'src/lib/greater/primitives/components/CopyButton.svelte';
+  import DefinitionItem from 'src/lib/greater/primitives/components/DefinitionItem.svelte';
+  import DefinitionList from 'src/lib/greater/primitives/components/DefinitionList.svelte';
+  import TextField from 'src/lib/greater/primitives/components/TextField.svelte';
+  import KeyIcon from 'src/lib/greater/icons/icons/key.svelte';
+  import WalletIcon from 'src/lib/greater/icons/icons/wallet.svelte';
+  import { truncateMiddle } from 'src/lib/greater/utils';
   
   interface Props {
     /** OAuth session ID for flow continuation */
@@ -64,9 +70,13 @@
     isRegistration = false 
   }: Props = $props();
   
-  // API base URL - auth UI is on auth.domain but API is on domain
-  const API_BASE = window.location.hostname.replace('auth.', '');
-  const API_URL = `https://${API_BASE}`;
+  // API base URL - single-domain CloudFront routes API + UI by path.
+  // For local dev, optionally set PUBLIC_LESSER_API_ORIGIN (e.g., http://localhost:8080).
+  const API_URL = import.meta.env.PUBLIC_LESSER_API_ORIGIN || window.location.origin;
+
+  const UI_BASE_PATH = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+  const loginHref = `${UI_BASE_PATH}/login`;
+  const registerHref = `${UI_BASE_PATH}/register`;
   
   // State
   let username = $state('');
@@ -453,7 +463,7 @@
         console.error('Link response missing access_token:', linkData);
         
         setTimeout(() => {
-          const loginUrl = new URL('/login', window.location.origin);
+          const loginUrl = new URL(loginHref, window.location.origin);
           window.location.href = loginUrl.toString();
         }, 2000);
       }
@@ -522,62 +532,79 @@
       redirectPath = '/oauth/authorize';
     }
     
-    // Build full URL pointing to API domain (not auth subdomain)
-    // returnTo is the API domain's OAuth endpoint (e.g., /oauth/authorize)
-    const redirectUrl = `${API_URL}${redirectPath}`;
+    const authorizeURL = new URL(`${API_URL}${redirectPath}`);
     
     // Build query string with OAuth params
-    let queryString = '';
+    let params: URLSearchParams;
     if (effectiveAuthRequest) {
       // authRequest already contains all OAuth params including PKCE:
       // client_id, redirect_uri, state, scope, response_type, code_challenge, code_challenge_method
       // Validate that authRequest contains required params before using it
-      const params = new URLSearchParams(effectiveAuthRequest);
+      params = new URLSearchParams(effectiveAuthRequest);
       if (!params.get('client_id') || !params.get('redirect_uri') || !params.get('state')) {
         error = 'Invalid OAuth parameters. Please restart the authorization flow.';
         return;
       }
-      queryString = effectiveAuthRequest;
     } else if (sessionId) {
       // Fallback to session_id if no authRequest (legacy flow)
-      queryString = `session_id=${encodeURIComponent(sessionId)}`;
+      params = new URLSearchParams({ session_id: sessionId });
     } else {
       error = 'Missing OAuth parameters. Please restart the authorization flow.';
       return;
     }
     
-    // Pass JWT to Lesser via query param (for cross-domain auth flow)
-    // Lesser's /oauth/authorize expects access_token in query params (line 96-107)
-    // This is a one-time use during redirect from auth domain to API domain
-    const params = new URLSearchParams(queryString);
-    const encodedToken = encodeURIComponent(jwt);
-    params.set('access_token', encodedToken);
-    const finalUrlWithToken = `${redirectUrl}?${params.toString()}`;
+    // UI-mode: server returns { next_url } instead of issuing 302 redirects.
+    params.set('mode', 'ui');
+    authorizeURL.search = params.toString();
     
-    // Validate URL before redirecting
     try {
-      new URL(finalUrlWithToken);
-    } catch (e) {
-      error = 'Invalid redirect URL. Please try again or contact support.';
-      console.error('Invalid redirect URL:', finalUrlWithToken, e);
-      return;
+      const response = await fetch(authorizeURL.toString(), {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${jwt}`,
+        },
+      });
+      
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        error = data.error_description || data.error || 'Authorization failed';
+        return;
+      }
+      
+      const nextURL = data.next_url;
+      if (!nextURL || typeof nextURL !== 'string') {
+        error = 'Unexpected response from server';
+        return;
+      }
+      
+      // Clear OAuth params now that the server has progressed the flow.
+      sessionStorage.removeItem('lesser_oauth_auth_request');
+      sessionStorage.removeItem('lesser_oauth_return_to');
+      
+      let parsedNextURL: URL;
+      try {
+        parsedNextURL = new URL(nextURL, window.location.origin);
+      } catch (e) {
+        error = 'Invalid redirect URL. Please try again or contact support.';
+        console.error('Invalid next_url:', nextURL, e);
+        return;
+      }
+      
+      const isSameOrigin = parsedNextURL.origin === window.location.origin;
+      const consentPath = `${UI_BASE_PATH}/consent`;
+      const isAuthConsent = isSameOrigin && (parsedNextURL.pathname === consentPath || parsedNextURL.pathname === `${consentPath}/`);
+      
+      // Keep the JWT only while navigating within the auth UI (e.g., to consent).
+      if (!isAuthConsent) {
+        sessionStorage.removeItem('lesser_auth_jwt');
+      }
+      
+      window.location.href = parsedNextURL.toString();
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Authorization failed';
+      console.error('continueOAuthFlow error:', err);
     }
-    
-    // Debug: log final redirect URL (without access_token for security)
-    const debugParams = new URLSearchParams(params);
-    debugParams.delete('access_token');
-    console.log('PasswordlessLogin - Redirecting to:', `${redirectUrl}?${debugParams.toString()}`);
-    console.log('PasswordlessLogin - Has authRequest:', !!effectiveAuthRequest);
-    console.log('PasswordlessLogin - Has sessionId:', !!sessionId);
-    
-    // Clear JWT and OAuth params before redirect (they're in URL now)
-    sessionStorage.removeItem('lesser_auth_jwt');
-    sessionStorage.removeItem('lesser_oauth_auth_request');
-    sessionStorage.removeItem('lesser_oauth_return_to');
-    
-    // Direct redirect - Lesser will validate the token and continue OAuth flow
-    // If there's an error, Lesser will redirect back to login with error params
-    window.location.href = finalUrlWithToken;
   }
   
   // Helper functions for WebAuthn
@@ -609,7 +636,7 @@
         <h3>Error</h3>
         <p>{error}</p>
         <div class="error-actions">
-          <a href="/login" class="btn btn-primary">Try Again</a>
+          <a href={loginHref} class="btn btn-primary">Try Again</a>
         </div>
       </div>
     {/if}
@@ -657,16 +684,23 @@
             <span class="spinner"></span>
             Connecting Wallet...
           {:else}
-            <CreditCardIcon class="btn-icon" />
+            <WalletIcon class="btn-icon" />
             {isRegistration ? 'Register Wallet' : 'Wallet Login'}
           {/if}
         </Button>
       </div>
       
       {#if connectedAddress}
-        <p class="text-center mt-2" style="font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-family-mono);">
-          {connectedAddress.slice(0, 6)}...{connectedAddress.slice(-4)}
-        </p>
+        <div class="wallet-details">
+          <DefinitionList density="sm" dividers>
+            <DefinitionItem label="Connected Wallet" monospace wrap={false}>
+              {truncateMiddle(connectedAddress, { head: 10, tail: 8 })}
+              {#snippet actions()}
+                <CopyButton text={connectedAddress} />
+              {/snippet}
+            </DefinitionItem>
+          </DefinitionList>
+        </div>
       {/if}
       
       <!-- Info -->
@@ -679,7 +713,7 @@
       
       {#if !hideRegisterLink}
         <div class="text-center mt-4" style="font-size: 0.875rem; color: var(--text-muted);">
-          Don't have an account? <a href="/register" style="color: var(--lesser-primary-500); text-decoration: none;">Register</a>
+          Don't have an account? <a href={registerHref} style="color: var(--lesser-primary-500); text-decoration: none;">Register</a>
         </div>
       {/if}
   </div>
@@ -730,6 +764,10 @@
     display: block;
     width: 100%;
     height: 100%;
+  }
+
+  .wallet-details {
+    margin-top: var(--spacing-sm);
   }
   
   @media (max-width: 640px) {

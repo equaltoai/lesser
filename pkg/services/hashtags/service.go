@@ -10,7 +10,6 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
@@ -40,7 +39,7 @@ type HashtagRepository interface {
 type Service struct {
 	hashtagRepo HashtagRepository
 	accountRepo interfaces.AccountRepository
-	objectRepo  *repositories.ObjectRepository
+	objectRepo  interfaces.ObjectRepository
 	publisher   streaming.Publisher
 	logger      *zap.Logger
 }
@@ -75,7 +74,7 @@ type ActivityEvent struct {
 func NewService(
 	hashtagRepo HashtagRepository,
 	accountRepo interfaces.AccountRepository,
-	objectRepo *repositories.ObjectRepository,
+	objectRepo interfaces.ObjectRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 ) *Service {
@@ -594,7 +593,9 @@ func extractHashtagsFromContent(content string) []string {
 
 // normalizeHashtagName lowercases and trims a hashtag identifier.
 func normalizeHashtagName(name string) string {
-	return strings.TrimSpace(strings.TrimPrefix(strings.ToLower(name), "#"))
+	name = strings.TrimSpace(strings.ToLower(name))
+	name = strings.TrimLeft(name, "#")
+	return strings.TrimSpace(name)
 }
 
 // uniqueNormalizedHashtags removes duplicates while normalizing each hashtag.

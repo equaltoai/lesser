@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -28,11 +27,15 @@ import (
 // DeliveryService handles sending activities to remote instances
 type DeliveryService struct {
 	store      FederationStorage
-	httpClient *httpclient.SecureClient
-	logger     *zap.Logger
-	sqsClient  *sqs.Client
-	queueURL   string
-	cfg        *appConfig.Config
+	httpClient interface {
+		Do(req *http.Request) (*http.Response, error)
+	}
+	logger    *zap.Logger
+	sqsClient interface {
+		SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
+	}
+	queueURL string
+	cfg      *appConfig.Config
 }
 
 // NewDeliveryService creates a new delivery service
@@ -202,8 +205,11 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Read the response body for logging
-	respBody, _ := io.ReadAll(resp.Body)
+	respBodyBytes, respBodyTruncated, readErr := common.ReadUntrustedHTTPResponseBody(resp.Body, common.MaxUntrustedHTTPResponseBodyBytes)
+	if readErr != nil {
+		log.Warn("failed to read response body", zap.Error(readErr))
+	}
+	respBody := common.FormatUntrustedHTTPBodySnippet(respBodyBytes, respBodyTruncated)
 
 	// Record response time
 	federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
@@ -212,7 +218,8 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		log.Info("activity delivered successfully",
 			zap.Int("status_code", resp.StatusCode),
-			zap.String("response", string(respBody)))
+			zap.Bool("response_truncated", respBodyTruncated),
+			zap.String("response", respBody))
 
 		federationActivity.Success = true
 		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
@@ -221,17 +228,19 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 
 	log.Warn("activity delivery failed",
 		zap.Int("status_code", resp.StatusCode),
-		zap.String("response", string(respBody)))
+		zap.Bool("response_truncated", respBodyTruncated),
+		zap.String("response", respBody))
 
 	// Record failure
 	federationActivity.Success = false
-	federationActivity.ErrorMessage = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBody))
+	federationActivity.ErrorMessage = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, respBody)
 	go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
 
 	// Return error for non-2xx status codes
 	log.Error("delivery failed with non-2xx status",
 		zap.Int("status_code", resp.StatusCode),
-		zap.String("response_body", string(respBody)))
+		zap.Bool("response_truncated", respBodyTruncated),
+		zap.String("response_body", respBody))
 	return ErrDeliveryHTTPStatusFailed
 }
 
@@ -478,11 +487,16 @@ func (d *DeliveryService) fetchRemoteActor(ctx context.Context, actorID string) 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		bodyBytes, bodyTruncated, readErr := common.ReadUntrustedHTTPResponseBody(resp.Body, common.MaxUntrustedHTTPResponseBodyBytes)
+		if readErr != nil {
+			d.logger.Error("failed to read actor fetch response body", zap.String("actor_id", actorID), zap.Error(readErr))
+		}
+		body := common.FormatUntrustedHTTPBodySnippet(bodyBytes, bodyTruncated)
 		d.logger.Error("failed to fetch actor with non-2xx status",
 			zap.String("actor_id", actorID),
 			zap.Int("status_code", resp.StatusCode),
-			zap.String("response_body", string(body)))
+			zap.Bool("response_truncated", bodyTruncated),
+			zap.String("response_body", body))
 		return nil, ErrFetchActorHTTPStatusFailed
 	}
 
@@ -629,7 +643,9 @@ func (d *DeliveryService) QueueDelivery(ctx context.Context, activity *activityp
 }
 
 // getSQSClient returns the SQS client if configured
-func (d *DeliveryService) getSQSClient() *sqs.Client {
+func (d *DeliveryService) getSQSClient() interface {
+	SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
+} {
 	// This would be initialized in NewDeliveryService if SQS is configured
 	// For now, return nil to indicate SQS is not configured
 	return d.sqsClient
@@ -687,7 +703,7 @@ func (d *DeliveryService) DeliverDirectMessage(ctx context.Context, activity *ac
 	addressingValidator := activitypub.NewAddressingValidator()
 	targets := addressingValidator.DetermineDeliveryRecipients(activity)
 
-	if err := common.ValidateSliceNotEmpty("direct_recipients", targets.DirectRecipients); err != nil {
+	if len(targets.DirectRecipients) == 0 {
 		log.Info("no remote recipients for direct message")
 		return nil
 	}

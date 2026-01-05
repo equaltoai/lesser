@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -417,7 +418,7 @@ func (s *ServerlessHealthMonitor) CreateHealthCheckSummary(ctx context.Context, 
 		Where("PK = ? AND SK = ?", summary.PK, summary.SK).
 		First(summary)
 
-	if err != nil && err != storage.ErrNotFound {
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		return fmt.Errorf("failed to query existing summary: %w", err)
 	}
 
@@ -427,7 +428,7 @@ func (s *ServerlessHealthMonitor) CreateHealthCheckSummary(ctx context.Context, 
 	}
 
 	// Save summary
-	if err == storage.ErrNotFound {
+	if errors.Is(err, storage.ErrNotFound) {
 		return s.db.WithContext(ctx).Model(summary).Create()
 	}
 	// Update existing summary

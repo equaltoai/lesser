@@ -19,9 +19,9 @@ func AuthFailed(reason string) *AppError {
 		WithMetadata("reason", reason)
 }
 
-// InvalidCredentials creates an error indicating invalid username or password.
+// InvalidCredentials creates an error indicating invalid credentials.
 func InvalidCredentials() *AppError {
-	return NewAuthError(CodeAuthFailed, "Invalid username or password")
+	return NewAuthError(CodeAuthFailed, "Invalid credentials")
 }
 
 // UserNotFound creates an error indicating the specified user was not found.

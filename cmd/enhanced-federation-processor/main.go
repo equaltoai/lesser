@@ -20,28 +20,44 @@ import (
 
 // Handler processes SQS messages for enhanced federation retry
 type Handler struct {
-	retryProcessor *federation.EnhancedRetryProcessor
+	retryProcessor enhancedRetryProcessor
 	logger         *zap.Logger
 }
+
+type enhancedRetryProcessor interface {
+	ProcessEnhancedRetry(ctx context.Context, msg *federation.EnhancedRetryMessage) error
+}
+
+var (
+	newLambdaOptimizedClientFn      = dynamorm.NewLambdaOptimizedClient
+	newSQSClientFn                  = sqs.NewFromConfig
+	newFederationStorageFn          = federation.NewDynamORMFederationStorage
+	newDeliveryServiceFn            = federation.NewDeliveryService
+	newEnhancedRetryProcessorFn     = func(deliveryService *federation.DeliveryService, sqsClient *sqs.Client, queueURL string) enhancedRetryProcessor {
+		return federation.NewEnhancedRetryProcessor(deliveryService, sqsClient, queueURL)
+	}
+	mustInitializeLambdaFn          = common.MustInitializeLambda
+	lambdaStartFn                   = lambda.Start
+)
 
 // NewHandler creates a new enhanced federation processor handler
 func NewHandler(lambdaCtx *common.LambdaContext) (*Handler, error) {
 	// Initialize DynamORM with Lambda optimizations
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
+	db, err := newLambdaOptimizedClientFn(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
 		return nil, pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to initialize DynamORM")
 	}
 
 	// Create SQS client
-	sqsClient := sqs.NewFromConfig(lambdaCtx.AWSServices.Config)
+	sqsClient := newSQSClientFn(lambdaCtx.AWSServices.Config)
 	queueURL := lambdaCtx.Config.EnhancedRetryQueueURL
 
 	// Create federation storage and delivery service
-	federationStorage := federation.NewDynamORMFederationStorage(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
-	deliveryService := federation.NewDeliveryService(federationStorage, lambdaCtx.Config)
+	federationStorage := newFederationStorageFn(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	deliveryService := newDeliveryServiceFn(federationStorage, lambdaCtx.Config)
 
 	// Create enhanced retry processor
-	retryProcessor := federation.NewEnhancedRetryProcessor(deliveryService, sqsClient, queueURL)
+	retryProcessor := newEnhancedRetryProcessorFn(deliveryService, sqsClient, queueURL)
 
 	return &Handler{
 		retryProcessor: retryProcessor,
@@ -110,8 +126,14 @@ func init() {
 	if common.RunningUnitTests() {
 		return
 	}
+	if err := initializeEnhancedFederationProcessor(); err != nil {
+		lambdaCtx.Logger.Fatal("Failed to create handler", zap.Error(err))
+	}
+}
+
+func initializeEnhancedFederationProcessor() error {
 	// Initialize Lambda with federation processing configuration
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName:        "enhanced-federation-processor",
 		LambdaType:         common.LambdaTypeFederation,
 		Version:            "1.0.0",
@@ -123,25 +145,24 @@ func init() {
 		RetryMaxAttempts:   3,
 	})
 
-	// Initialize handler
 	var err error
 	handler, err = NewHandler(lambdaCtx)
-	if err != nil {
-		lambdaCtx.Logger.Fatal("Failed to create handler", zap.Error(err))
-	}
+	return err
+}
+
+func handleEnhancedFederationSQSEvent(ctx context.Context, event events.SQSEvent) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			lambdaCtx.Logger.Error("panic in enhanced federation processor handler",
+				zap.Any("panic", r),
+				zap.Stack("stack"))
+			err = fmt.Errorf("panic recovered in enhanced-federation-processor: %v", r)
+		}
+	}()
+
+	return handler.HandleSQSEvent(ctx, event)
 }
 
 func main() {
-	lambda.Start(func(ctx context.Context, event events.SQSEvent) (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				lambdaCtx.Logger.Error("panic in enhanced federation processor handler",
-					zap.Any("panic", r),
-					zap.Stack("stack"))
-				err = fmt.Errorf("panic recovered in enhanced-federation-processor: %v", r)
-			}
-		}()
-
-		return handler.HandleSQSEvent(ctx, event)
-	})
+	lambdaStartFn(handleEnhancedFederationSQSEvent)
 }

@@ -14,16 +14,20 @@ Each YAML file follows a consistent schema optimized for AI comprehension:
 
 ## Files
 
-- `deployment-patterns.yaml` - Deployment procedures and patterns
+- `PAY_THEORY_DOCUMENTATION_GUIDE.md` - Canonical documentation standard used by Lesser AI tooling
+- `REPOSITORY_TESTING_GUIDE.md` - Techniques for high/complete coverage in `pkg/storage/repositories`
+- `ERROR_HANDLING_CONTRACT.md` - Contract for consistent domain errors and response mapping (HTTP/GraphQL/Lambda)
+- `CONSISTENT_RESPONSE_HANDLING_ROADMAP.md` - Roadmap for consistent HTTP/GraphQL/Lambda response handling
 - `architecture-patterns.yaml` - System design and component interactions
-- `enhancement-patterns.yaml` - Common enhancement and feature addition patterns
-- `monitoring-patterns.yaml` - Observability and monitoring procedures
-- `troubleshooting-patterns.yaml` - Common issues and resolutions
+- `deployment-patterns.yaml` - Deployment procedures and patterns
 - `api-patterns.yaml` - API implementation and integration patterns
-- `cost-optimization-patterns.yaml` - Cost reduction strategies
 - `federation-patterns.yaml` - ActivityPub federation patterns
 - `security-patterns.yaml` - Security implementation patterns
 - `scaling-patterns.yaml` - Performance and scaling strategies
+- `monitoring-patterns.yaml` - Observability and monitoring procedures
+- `troubleshooting-patterns.yaml` - Common issues and resolutions
+- `enhancement-patterns.yaml` - Common enhancement and feature addition patterns
+- `cost-optimization-patterns.yaml` - Cost reduction strategies
 
 ## Usage
 
@@ -36,4 +40,4 @@ These documents are designed to be:
 ## Schema Version
 
 Current schema version: 1.0.0
-Last updated: 2024
+Last updated: 2025

@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -77,6 +79,127 @@ func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 
 			return err
 		})
+	}
+}
+
+// createInstanceLockMiddleware blocks publishing and signups until the instance is activated.
+func createInstanceLockMiddleware(repos core.RepositoryStorage, logger *zap.Logger) lift.Middleware {
+	return func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			method := ctx.Request.Method
+			path := ctx.Request.Path
+
+			if method == http.MethodOptions {
+				return next.Handle(ctx)
+			}
+			if method == http.MethodGet || method == http.MethodHead {
+				return handleLockedReadRequest(ctx, repos, logger, path, method, next)
+			}
+			return handleLockedWriteRequest(ctx, repos, logger, path, method, next)
+		})
+	}
+}
+
+func handleLockedReadRequest(ctx *lift.Context, repos core.RepositoryStorage, logger *zap.Logger, path string, method string, next lift.Handler) error {
+	if !shouldSuppressContentReadWhileLocked(path) {
+		return next.Handle(ctx)
+	}
+
+	locked, err := instanceLocked(ctx, repos)
+	if err != nil {
+		logger.Warn("failed to get instance lock state; defaulting to locked",
+			zap.Error(err),
+			zap.String("method", method),
+			zap.String("path", path))
+	}
+	if !locked {
+		return next.Handle(ctx)
+	}
+
+	return respondLockedContentRead(ctx, path)
+}
+
+func handleLockedWriteRequest(ctx *lift.Context, repos core.RepositoryStorage, logger *zap.Logger, path string, method string, next lift.Handler) error {
+	locked, err := instanceLocked(ctx, repos)
+	if err != nil {
+		logger.Warn("failed to get instance lock state; defaulting to locked",
+			zap.Error(err),
+			zap.String("method", method),
+			zap.String("path", path))
+		return common.RespondForbidden(ctx, "instance is locked")
+	}
+	if !locked {
+		return next.Handle(ctx)
+	}
+	if isWriteAllowedWhileLocked(path) {
+		return next.Handle(ctx)
+	}
+	return common.RespondForbidden(ctx, "instance is locked")
+}
+
+func instanceLocked(ctx *lift.Context, repos core.RepositoryStorage) (bool, error) {
+	state, err := repos.Instance().GetInstanceState(ctx.Context)
+	if err != nil {
+		return true, err
+	}
+	return state.Locked, nil
+}
+
+func isWriteAllowedWhileLocked(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	return strings.HasPrefix(path, "/setup/") ||
+		strings.HasPrefix(path, "/auth/") ||
+		strings.HasPrefix(path, "/oauth/") ||
+		strings.HasPrefix(path, "/api/v1/auth/") ||
+		path == "/api/v1/apps"
+}
+
+func shouldSuppressContentReadWhileLocked(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+
+	// Mastodon content surfaces (read-only).
+	if strings.HasPrefix(path, "/api/v1/timelines/") ||
+		strings.HasPrefix(path, "/api/v1/statuses/") ||
+		strings.HasPrefix(path, "/api/v1/trends") ||
+		strings.HasPrefix(path, "/api/v1/bookmarks") ||
+		strings.HasPrefix(path, "/api/v1/favourites") ||
+		strings.HasPrefix(path, "/api/v2/search") ||
+		strings.HasPrefix(path, "/api/v1/search/statuses") ||
+		strings.HasPrefix(path, "/api/oembed") {
+		return true
+	}
+
+	// Account status listings (e.g. /api/v1/accounts/{id}/statuses).
+	if strings.HasPrefix(path, "/api/v1/accounts/") && strings.Contains(path, "/statuses") {
+		return true
+	}
+
+	return false
+}
+
+func respondLockedContentRead(ctx *lift.Context, path string) error {
+	// For locked instances, lists become empty and individual objects are 404.
+	switch {
+	case strings.HasPrefix(path, "/api/v1/statuses/"):
+		return common.RespondNotFound(ctx, "status not found")
+	case strings.HasPrefix(path, "/api/oembed"):
+		return common.RespondNotFound(ctx, "resource not found")
+	case strings.HasPrefix(path, "/api/v2/search"):
+		ctx.Status(http.StatusOK)
+		return ctx.JSON(map[string]any{
+			"accounts": []any{},
+			"statuses": []any{},
+			"hashtags": []any{},
+		})
+	default:
+		ctx.Status(http.StatusOK)
+		return ctx.JSON([]any{})
 	}
 }
 

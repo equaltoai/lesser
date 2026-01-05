@@ -14,14 +14,27 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/middleware"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
+type trendingRepository interface {
+	GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error)
+	GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error)
+	GetRecentLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error)
+	StoreHashtagTrend(ctx context.Context, trend any) error
+	StoreStatusTrend(ctx context.Context, trend any) error
+	StoreLinkTrend(ctx context.Context, trend any) error
+	DeleteOldHashtagTrends(ctx context.Context, before time.Time) error
+	DeleteOldStatusTrends(ctx context.Context, before time.Time) error
+	DeleteOldLinkTrends(ctx context.Context, before time.Time) error
+}
+
 // TrendAggregatorHandler runs scheduled trend aggregation.
 type TrendAggregatorHandler struct {
 	db           core.DB
-	trendingRepo *repositories.TrendingRepository
+	trendingRepo trendingRepository
 	logger       *zap.Logger
 }
 
@@ -214,7 +227,7 @@ func (h *TrendAggregatorHandler) aggregateStatusTrends(ctx context.Context, sinc
 
 		// 3. Calculate trend scores based on engagement velocity
 		age := time.Since(status.CreatedAt).Hours()
-		if age == 0 {
+		if age <= 0 {
 			age = 0.1 // Prevent division by zero
 		}
 
@@ -434,12 +447,22 @@ var (
 	db        core.DB
 )
 
+var (
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	lambdaStartFn              = lambda.Start
+)
+
 func init() {
 	if common.RunningUnitTests() {
 		return
 	}
+	initializeTrendAggregator()
+}
+
+func initializeTrendAggregator() {
 	// Initialize Lambda with basic configuration for trend aggregation
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName:        "trend-aggregator",
 		LambdaType:         common.LambdaTypeBasic,
 		Version:            "1.0.0",
@@ -453,7 +476,7 @@ func init() {
 
 	// Initialize DynamORM with Lambda optimizations
 	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
+	db, err = newLambdaOptimizedClientFn(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
 		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
@@ -462,21 +485,25 @@ func init() {
 	handler = NewTrendAggregatorHandler(db, lambdaCtx.Logger)
 }
 
-func main() {
+func runTrendAggregator() {
 	app := lift.New()
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
-	app.Use(func(next lift.Handler) lift.Handler {
+	app.Use(lift.MarkGlobalMiddleware(middleware.PanicRecovery(lambdaCtx.Logger)))
+	app.Use(lift.MarkGlobalMiddleware(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			if ctx.GetRequestID() == "" {
 				ctx.SetRequestID(fmt.Sprintf("trend-aggregator-%d", time.Now().UnixNano()))
 			}
 			return next.Handle(ctx)
 		})
-	})
+	}))
 
 	_ = app.EventBridge("lesser-trend-aggregator-schedule-*", func(ctx *lift.Context) error {
 		return handler.HandleScheduledEvent(ctx)
 	})
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
+}
+
+func main() {
+	runTrendAggregator()
 }

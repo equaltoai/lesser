@@ -18,14 +18,44 @@ import (
 
 // QuoteService provides quote posts functionality
 type QuoteService struct {
-	storage core.RepositoryStorage
+	storage quoteStorage
 	logger  *zap.Logger
 }
+
+type quoteStatusRepository interface {
+	CreateStatus(ctx context.Context, status *models.Status) error
+	GetStatus(ctx context.Context, statusID string) (*models.Status, error)
+	UpdateStatus(ctx context.Context, status *models.Status) error
+}
+
+type quoteRepository interface {
+	CreateQuoteRelationship(ctx context.Context, relationship *models.QuoteRelationship) error
+	GetQuoteRelationship(ctx context.Context, quoteStatusID, targetStatusID string) (*models.QuoteRelationship, error)
+	UpdateQuoteRelationship(ctx context.Context, relationship *models.QuoteRelationship) error
+	GetQuotesForStatus(ctx context.Context, statusID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.QuoteRelationship], error)
+	WithdrawQuotes(ctx context.Context, noteID, userID string) (int, error)
+
+	CreateQuotePermissions(ctx context.Context, permissions *models.QuotePermissions) error
+	GetQuotePermissions(ctx context.Context, username string) (*models.QuotePermissions, error)
+	UpdateQuotePermissions(ctx context.Context, permissions *models.QuotePermissions) error
+}
+
+type quoteStorage interface {
+	Status() quoteStatusRepository
+	Quote() quoteRepository
+}
+
+type quoteRepositoryStorageWrapper struct {
+	storage core.RepositoryStorage
+}
+
+func (w quoteRepositoryStorageWrapper) Status() quoteStatusRepository { return w.storage.Status() }
+func (w quoteRepositoryStorageWrapper) Quote() quoteRepository        { return w.storage.Quote() }
 
 // NewQuoteService creates a new quote service
 func NewQuoteService(storage core.RepositoryStorage, logger *zap.Logger) *QuoteService {
 	return &QuoteService{
-		storage: storage,
+		storage: quoteRepositoryStorageWrapper{storage: storage},
 		logger:  logger,
 	}
 }
@@ -318,8 +348,11 @@ func (qs *QuoteService) UpdateQuotePermissions(ctx context.Context, permissions 
 	// Try to get existing permissions first
 	existing, err := qs.storage.Quote().GetQuotePermissions(ctx, permissions.Username)
 	if err != nil {
-		qs.logger.Error("failed to check existing permissions", zap.String("username", permissions.Username), zap.Error(err))
-		return ErrCheckExistingPermissions(err)
+		// If error is something other than "not found", return it
+		if !stdErrors.Is(err, storage.ErrNotFound) && !apperrors.HasCode(err, apperrors.CodeNotFound) {
+			return err
+		}
+		existing = nil
 	}
 
 	if existing == nil {

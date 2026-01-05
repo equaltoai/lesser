@@ -1,6 +1,6 @@
 SHELL := bash
 
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials owner-bootstrap seed-and-validate clear-data generate-inventory verify-inventory verify-lambda-set verify-docs verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify schema export-schema gqlgen
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials owner-bootstrap seed-and-validate clear-data generate-inventory generate-graphql-coverage generate-openapi verify-inventory verify-lambda-set verify-docs verify-ai-training verify-schema verify-graphql-coverage verify-openapi verify-openapi-strict verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify schema export-schema gqlgen
 
 # =============================================================================
 # CONFIGURATION
@@ -36,6 +36,7 @@ LAMBDAS := \
 	api \
 	sse \
 	collections \
+	cms-scheduler \
 	cost-aggregator \
 	dlq-processor \
 	enhanced-federation-processor \
@@ -78,6 +79,7 @@ ENV_MAP_production = production
 CDK_ENV = $(ENV_MAP_$(ENV))
 CDN_ENV_FILE = tmp/cdn-$(ENV).env
 VAPID_ENV_FILE = tmp/vapid-$(ENV).env
+HOSTED_ZONE_ENV_FILE = tmp/hosted-zone.env
 
 # =============================================================================
 # BUILD TARGETS
@@ -180,6 +182,17 @@ generate-inventory:
 	@mkdir -p tmp/go-cache
 	@cd infra/cdk && GOCACHE=$(CURDIR)/tmp/go-cache go run ./cmd/generate-inventory
 
+## Generate docs/specs/graphql_coverage.yaml from cmd/api route configuration
+generate-graphql-coverage:
+	@mkdir -p tmp/go-cache
+	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/graphql_coverage --write
+
+## Generate docs/contracts/openapi.yaml from cmd/api route configuration
+generate-openapi:
+	@mkdir -p docs/contracts
+	@mkdir -p tmp/go-cache
+	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/openapi --write
+
 ## Verify Makefile LAMBDAS == inventory.LambdaInventory and Spec 01 is fresh
 verify-inventory:
 	@mkdir -p tmp/go-cache
@@ -192,6 +205,29 @@ verify-lambda-set:
 ## Verify docs (Spec 07 R7: Pulumi ban + Lambda count claims)
 verify-docs:
 	@bash scripts/verify_docs.sh
+
+## Verify AI training docs are complete and current
+verify-ai-training:
+	@bash scripts/verify_ai_training.sh
+
+## Verify published GraphQL schema is up to date
+verify-schema:
+	@bash scripts/verify_schema.sh
+
+## Verify GraphQL coverage inventory is in sync with configured routes + schema
+verify-graphql-coverage:
+	@mkdir -p tmp/go-cache
+	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/graphql_coverage --check --strict
+
+## Verify OpenAPI spec is in sync with configured routes
+verify-openapi:
+	@mkdir -p tmp/go-cache
+	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/openapi --check
+
+## Verify OpenAPI spec is in sync and strictly typed (no placeholders)
+verify-openapi-strict:
+	@mkdir -p tmp/go-cache
+	@GOCACHE=$(CURDIR)/tmp/go-cache go run ./tools/openapi --check --strict
 
 ## Verify unit tests (Spec 07 R6)
 verify-unit:
@@ -219,10 +255,10 @@ smoke-federation:
 	@bash scripts/smoke_federation.sh
 
 ## Combined verification wrapper
-verify: verify-lambda-set verify-inventory verify-docs verify-unit
+verify: verify-lambda-set verify-inventory verify-docs verify-ai-training verify-schema verify-graphql-coverage verify-openapi verify-unit
 	@if [ "$${VERIFY_SMOKE:-0}" = "1" ]; then $(MAKE) verify-smoke; fi
 	@if [ "$${VERIFY_CDK:-0}" = "1" ]; then $(MAKE) verify-cdk; fi
-	@echo "✓ verify complete (lambda set, inventory, docs, unit tests)"
+	@echo "✓ verify complete (lambda set, inventory, docs, ai-training docs, graphql coverage, unit tests)"
 
 # =============================================================================
 # CDK DEPLOYMENT TARGETS
@@ -281,10 +317,14 @@ cdk-list:
 # =============================================================================
 
 ## Deploy shared resources (KMS, Secrets) - ONCE for all environments
-deploy-shared:
+deploy-shared: ensure-hosted-zone
 	@echo "Deploying shared resources (used by ALL environments)..."
-	@cd infra/cdk && cdk deploy LesserSharedStack \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	cd infra/cdk && cdk deploy LesserSharedStack \
 		--context environment=development \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--require-approval never
 	@echo "✓ Shared resources deployed"
 	@echo ""
@@ -311,6 +351,17 @@ check-shared:
 # ENVIRONMENT-SPECIFIC DEPLOYMENT
 # =============================================================================
 
+ensure-hosted-zone:
+	@mkdir -p tmp
+	@INPUT="$(ROOT_DOMAIN)"; \
+		if [ -z "$$INPUT" ]; then INPUT="$(DOMAIN)"; fi; \
+		if [ -z "$$INPUT" ]; then \
+			echo "Error: ROOT_DOMAIN or DOMAIN is required to resolve Route53 hosted zone"; \
+			echo "Example: AWS_PROFILE=... make deploy-shared ROOT_DOMAIN=example.com"; \
+			exit 1; \
+		fi; \
+		AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) scripts/resolve_hosted_zone.sh "$$INPUT" > $(HOSTED_ZONE_ENV_FILE)
+
 ensure-cdn-credentials:
 	@mkdir -p tmp
 	@echo "Ensuring CDN credentials for $(ENV)..."
@@ -323,17 +374,28 @@ ensure-vapid-credentials:
 
 ## Deploy to development environment
 deploy-dev: ENV=dev
-deploy-dev: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-cdn-credentials ensure-vapid-credentials
+deploy-dev: DOMAIN=dev.lesser.host
+deploy-dev: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-hosted-zone ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to DEVELOPMENT environment..."
 	@echo "Step 1/4: Deploying monitoring stack..."
-	@cd infra/cdk && cdk deploy LesserMonitoringStack-development \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	cd infra/cdk && cdk deploy LesserMonitoringStack-development \
 		--context environment=development \
+		--context domain=$(DOMAIN) \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--require-approval never
 	@echo "Step 2/4: Deploying application stack..."
-	@. $(CDN_ENV_FILE); \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	. $(CDN_ENV_FILE); \
 	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-development \
 		--context environment=development \
+		--context domain=$(DOMAIN) \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--context cdnPrivateKeySecret=$$CLOUDFRONT_PRIVATE_KEY_PATH \
 		--context cdnKeyPairId=$$CLOUDFRONT_KEY_PAIR_ID \
 		--context vapidSecretArn=$$VAPID_SECRET_ARN \
@@ -341,14 +403,14 @@ deploy-dev: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ens
 		--context vapidSubject=$$VAPID_SUBJECT \
 		--require-approval never
 	@echo "Step 3/4: Deploying auth UI..."
-	@$(MAKE) deploy-auth-ui DOMAIN=dev.lesser.host AWS_PROFILE=$(AWS_PROFILE)
+	@$(MAKE) deploy-auth-ui DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
 	@echo "Step 4/4: Bootstrapping owner account..."
-	@$(MAKE) owner-bootstrap OWNER_ENV=development OWNER_DOMAIN=dev.lesser.host AWS_PROFILE=$(AWS_PROFILE)
+	@$(MAKE) owner-bootstrap OWNER_ENV=development OWNER_DOMAIN=$(DOMAIN) AWS_PROFILE=$(AWS_PROFILE)
 	@echo "✓ Development deployment complete"
 
 ## Deploy to test/staging environment
 deploy-test: ENV=test
-deploy-test: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-cdn-credentials ensure-vapid-credentials
+deploy-test: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-hosted-zone ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to TEST/STAGING environment..."
 	@if [ -z "$(DOMAIN)" ]; then \
 		echo "Error: DOMAIN is required for staging"; \
@@ -356,16 +418,24 @@ deploy-test: build-lambdas build-cloudfront-keygen build-auth-ui check-shared en
 		exit 1; \
 	fi
 	@echo "Step 1/4: Deploying monitoring stack..."
-	@cd infra/cdk && cdk deploy LesserMonitoringStack-staging \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	cd infra/cdk && cdk deploy LesserMonitoringStack-staging \
 		--context environment=staging \
 		--context domain=$(DOMAIN) \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--require-approval broadening
 	@echo "Step 2/4: Deploying application stack..."
-	@. $(CDN_ENV_FILE); \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	. $(CDN_ENV_FILE); \
 	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-staging \
 		--context environment=staging \
 		--context domain=$(DOMAIN) \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--context cdnPrivateKeySecret=$$CLOUDFRONT_PRIVATE_KEY_PATH \
 		--context cdnKeyPairId=$$CLOUDFRONT_KEY_PAIR_ID \
 		--context vapidSecretArn=$$VAPID_SECRET_ARN \
@@ -380,7 +450,7 @@ deploy-test: build-lambdas build-cloudfront-keygen build-auth-ui check-shared en
 
 ## Deploy to live/production environment
 deploy-live: ENV=live
-deploy-live: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-cdn-credentials ensure-vapid-credentials
+deploy-live: build-lambdas build-cloudfront-keygen build-auth-ui check-shared ensure-hosted-zone ensure-cdn-credentials ensure-vapid-credentials
 	@echo "Deploying to LIVE/PRODUCTION environment..."
 	@if [ -z "$(DOMAIN)" ]; then \
 		echo "Error: DOMAIN is required for production"; \
@@ -388,16 +458,24 @@ deploy-live: build-lambdas build-cloudfront-keygen build-auth-ui check-shared en
 		exit 1; \
 	fi
 	@echo "Step 1/4: Deploying monitoring stack..."
-	@cd infra/cdk && cdk deploy LesserMonitoringStack-production \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	cd infra/cdk && cdk deploy LesserMonitoringStack-production \
 		--context environment=production \
 		--context domain=$(DOMAIN) \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--require-approval broadening
 	@echo "Step 2/4: Deploying application stack..."
-	@. $(CDN_ENV_FILE); \
+	@. $(HOSTED_ZONE_ENV_FILE); \
+	. $(CDN_ENV_FILE); \
 	. $(VAPID_ENV_FILE); \
 	cd infra/cdk && cdk deploy LesserApiStack-production \
 		--context environment=production \
 		--context domain=$(DOMAIN) \
+		--context rootDomain=$$HOSTED_ZONE_NAME \
+		--context hostedZoneName=$$HOSTED_ZONE_NAME \
+		--context hostedZoneId=$$HOSTED_ZONE_ID \
 		--context cdnPrivateKeySecret=$$CLOUDFRONT_PRIVATE_KEY_PATH \
 		--context cdnKeyPairId=$$CLOUDFRONT_KEY_PAIR_ID \
 		--context vapidSecretArn=$$VAPID_SECRET_ARN \
@@ -789,14 +867,14 @@ local-dynamodb:
 gqlgen:
 	@echo "Generating GraphQL code..."
 	@mkdir -p tmp/go-cache
-	@GOCACHE=$(CURDIR)/tmp/go-cache go run github.com/99designs/gqlgen generate
+	@GOCACHE=$(CURDIR)/tmp/go-cache go run github.com/99designs/gqlgen@v0.17.78 generate
 
 ## Export combined GraphQL schema for web clients
 export-schema:
 	@echo "Exporting combined GraphQL schema..."
 	@$(MAKE) schema
-	@cp graph/schema.graphql schema.graphql
-	@echo "✓ Schema exported to schema.graphql (source: graph/schema.graphql)"
+	@cp docs/contracts/graphql-schema.graphql schema.graphql
+	@echo "✓ Schema exported to schema.graphql (source: docs/contracts/graphql-schema.graphql)"
 	@wc -l schema.graphql | awk '{print "  Total lines: " $$1}'
 
 ## Build auth UI (passwordless OAuth pages)
@@ -807,28 +885,10 @@ build-auth-ui:
 
 ## Deploy auth UI to S3 + CloudFront
 deploy-auth-ui:
-	@echo "Deploying auth UI..."
-	@if [ -z "$(DOMAIN)" ]; then \
-		echo "ERROR: DOMAIN is required (e.g., DOMAIN=dev.lesser.host)"; \
-		exit 1; \
-	fi
-	@echo "Building auth UI..."
-	@$(MAKE) build-auth-ui
-	@echo "Uploading to S3..."
-	@AWS_PROFILE=$(AWS_PROFILE) aws s3 sync auth-ui/dist/ s3://lesser-auth-ui-$(DOMAIN)/ --delete
-	@echo "Invalidating CloudFront cache..."
-	@DISTRIBUTION_ID=$$(AWS_PROFILE=$(AWS_PROFILE) aws cloudfront list-distributions \
-		--query "DistributionList.Items[?contains(Origins.Items[0].DomainName, 'lesser-auth-ui-$(DOMAIN)')].Id" \
-		--output text); \
-	if [ -n "$$DISTRIBUTION_ID" ]; then \
-		AWS_PROFILE=$(AWS_PROFILE) aws cloudfront create-invalidation \
-			--distribution-id $$DISTRIBUTION_ID \
-			--paths "/*"; \
-		echo "✓ CloudFront cache invalidated (Distribution: $$DISTRIBUTION_ID)"; \
-	else \
-		echo "⚠ No CloudFront distribution found for auth UI"; \
-	fi
-	@echo "✓ Auth UI deployed to https://auth.$(DOMAIN)"
+	@echo "deploy-auth-ui is deprecated."
+	@echo "Auth UI is deployed via 'lesser up' to https://<stage-domain>/auth/*."
+	@echo "Run: go run ./cmd/lesser up --app <app> --base-domain <base-domain> --aws-profile <profile> [--with-staging]"
+	@exit 1
 
 ## Tidy Go modules
 tidy:
@@ -988,7 +1048,7 @@ help:
 	@echo "  gqlgen              Generate GraphQL code"
 	@echo "  export-schema       Export combined GraphQL schema for web clients"
 	@echo "  build-auth-ui       Build passwordless OAuth UI (WebAuthn + Wallet)"
-	@echo "  deploy-auth-ui      Deploy auth UI to S3 + CloudFront (requires DOMAIN=...)"
+	@echo "  deploy-auth-ui      (deprecated) use lesser up to deploy /auth"
 	@echo "  tidy                Tidy Go modules"
 	@echo "  install-tools       Install development tools"
 	@echo ""
@@ -998,24 +1058,17 @@ help:
 	@echo "  help                Show this help message"
 	@echo ""
 	@echo "EXAMPLES:"
-	@echo "  # AWS SSO Users (First Time Setup):"
+	@echo "  # Deploy (recommended):"
+	@echo "  go build -o lesser ./cmd/lesser"
+	@echo "  ./lesser up --app my-lesser --base-domain example.com --aws-profile my-profile [--with-staging]"
+	@echo ""
+	@echo "  # AWS SSO login:"
 	@echo "  aws sso login --profile my-profile"
-	@echo "  make cdk-bootstrap AWS_PROFILE=my-profile"
-	@echo "  AWS_PROFILE=my-profile make deploy-shared      # Deploy once for all envs"
-	@echo "  AWS_PROFILE=my-profile make deploy-dev         # Deploy dev environment"
 	@echo ""
-	@echo "  # Standard AWS Credentials:"
-	@echo "  make cdk-bootstrap AWS_ACCOUNT=123456789012"
-	@echo "  make deploy-dev"
-	@echo ""
-	@echo "  # Other examples:"
-	@echo "  make build-lambdas                    # Build functions (incremental)"
-	@echo "  make rebuild-lambdas                  # Force rebuild all functions"
-	@echo "  make deploy-test DOMAIN=test.app.com  # Deploy to staging"
-	@echo "  make deploy-live DOMAIN=app.com       # Deploy to prod (JWT auto-generated)"
-	@echo "  make status-live                      # Check production status"
-	@echo "  make logs FUNCTION=api ENV=dev        # Tail API logs in dev"
-	@echo "  make destroy-dev                      # Tear down dev environment"
+	@echo "  # Other:"
+	@echo "  make build-lambdas       # Build functions (incremental)"
+	@echo "  make test                # Run tests"
+	@echo "  make lint                # Run linter"
 	@echo ""
 	@echo "Available Lambda Functions ($(words $(LAMBDAS)) total):"
 	@for lambda in $(LAMBDAS); do echo "  - $$lambda"; done

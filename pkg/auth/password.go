@@ -33,6 +33,39 @@ var DefaultPolicy = PasswordPolicy{
 	PreventCommonPasswords: true,
 }
 
+// PasswordStrengthConfig controls how PasswordStrength scores passwords.
+type PasswordStrengthConfig struct {
+	// MinLength is the minimum length to score above 0.
+	MinLength int
+
+	// LongLength is the length threshold for the long password bonus.
+	LongLength int
+	// LongBonus is the bonus applied when the long password condition is met.
+	LongBonus int
+	// RequireAllCharacterTypesForLongBonus requires upper/lower/number/special for the long bonus.
+	RequireAllCharacterTypesForLongBonus bool
+
+	// SequentialPenalty is subtracted when sequential patterns are detected.
+	SequentialPenalty int
+	// SequentialPatternMinRun is the minimum length of an ascending/descending run
+	// (for letters or digits) before it is considered sequential.
+	SequentialPatternMinRun int
+	// RepeatedPenalty is subtracted when repeated characters are detected.
+	RepeatedPenalty int
+}
+
+// DefaultPasswordStrengthConfig matches the built-in strength scoring used by PasswordStrength.
+var DefaultPasswordStrengthConfig = PasswordStrengthConfig{
+	MinLength:  8,
+	LongLength: 16,
+	LongBonus:  1,
+
+	RequireAllCharacterTypesForLongBonus: true,
+	SequentialPenalty:                    2,
+	SequentialPatternMinRun:              4,
+	RepeatedPenalty:                      1,
+}
+
 // Note: Common passwords are now defined in common_passwords.go
 
 // HashPassword hashes a password using bcrypt
@@ -152,76 +185,63 @@ func hasRepeatedPattern(password string) bool {
 	return false
 }
 
-// PasswordStrength calculates password strength score (0-5)
+// PasswordStrength calculates password strength score (0-5).
+//
+// The score is based on how many character classes are present (lower/upper/number/special),
+// plus a long-password bonus (default: length >= 16 and all classes), with penalties for
+// sequential or repeated-character patterns.
 func PasswordStrength(password string) int {
-	// Adjust the function to match the expected test values
+	return PasswordStrengthWithConfig(password, DefaultPasswordStrengthConfig)
+}
 
-	// Special cases for test values
-	lowerPass := strings.ToLower(password)
-
-	// Test case: "weakpassword" - expected score: 1
-	if lowerPass == "weakpassword" {
-		return 1
+// PasswordStrengthWithConfig calculates password strength score (0-5) using the provided config.
+func PasswordStrengthWithConfig(password string, cfg PasswordStrengthConfig) int {
+	if cfg.MinLength <= 0 {
+		cfg.MinLength = DefaultPasswordStrengthConfig.MinLength
+	}
+	if cfg.LongLength <= 0 {
+		cfg.LongLength = DefaultPasswordStrengthConfig.LongLength
+	}
+	if cfg.SequentialPatternMinRun <= 0 {
+		cfg.SequentialPatternMinRun = DefaultPasswordStrengthConfig.SequentialPatternMinRun
 	}
 
-	// Test case: "password123!" - expected score: 4
-	if lowerPass == "password123!" {
-		return 4
+	if len(password) < cfg.MinLength {
+		return 0
 	}
 
-	// Test case: "pass123456!" - expected score: 2
-	if lowerPass == "pass123456!" {
-		return 2
-	}
+	hasLower, hasUpper, hasNumber, hasSpecial := passwordCharacterClasses(password)
 
-	// Test case: "passsss123!" - expected score: 3
-	if lowerPass == "passsss123!" {
-		return 3
-	}
-
-	// Standard calculation for other passwords
 	score := 0
-
-	// Length bonus
-	if len(password) >= 8 {
+	if hasLower {
 		score++
 	}
-	if len(password) >= 12 {
+	if hasUpper {
 		score++
 	}
-	if len(password) >= 16 {
+	if hasNumber {
 		score++
 	}
-
-	// Complexity bonus
-	if regexp.MustCompile(`[a-z]`).MatchString(password) {
-		score++
-	}
-	if regexp.MustCompile(`[A-Z]`).MatchString(password) {
-		score++
-	}
-	if regexp.MustCompile(`[0-9]`).MatchString(password) {
-		score++
-	}
-	if regexp.MustCompile(`[^a-zA-Z0-9]`).MatchString(password) {
+	if hasSpecial {
 		score++
 	}
 
-	// Diversity bonus - check character set variety
-	uniqueChars := make(map[rune]bool)
-	for _, char := range password {
-		uniqueChars[char] = true
-	}
-	if len(uniqueChars) >= len(password)*3/4 {
-		score++
+	if cfg.LongBonus > 0 && len(password) >= cfg.LongLength {
+		longBonusAllowed := true
+		if cfg.RequireAllCharacterTypesForLongBonus {
+			longBonusAllowed = hasLower && hasUpper && hasNumber && hasSpecial
+		}
+		if longBonusAllowed {
+			score += cfg.LongBonus
+		}
 	}
 
 	// Penalty for patterns
-	if hasSequentialPattern(password) {
-		score -= 2
+	if cfg.SequentialPenalty > 0 && hasSequentialRun(password, cfg.SequentialPatternMinRun) {
+		score -= cfg.SequentialPenalty
 	}
-	if hasRepeatedPattern(password) {
-		score--
+	if cfg.RepeatedPenalty > 0 && hasRepeatedPattern(password) {
+		score -= cfg.RepeatedPenalty
 	}
 
 	// Normalize score
@@ -233,6 +253,78 @@ func PasswordStrength(password string) int {
 	}
 
 	return score
+}
+
+func passwordCharacterClasses(password string) (hasLower, hasUpper, hasNumber, hasSpecial bool) {
+	for _, char := range password {
+		switch {
+		case unicode.IsLower(char):
+			hasLower = true
+		case unicode.IsUpper(char):
+			hasUpper = true
+		case unicode.IsNumber(char):
+			hasNumber = true
+		case unicode.IsPunct(char) || unicode.IsSymbol(char):
+			hasSpecial = true
+		}
+	}
+	return hasLower, hasUpper, hasNumber, hasSpecial
+}
+
+func hasSequentialRun(password string, minRun int) bool {
+	if minRun <= 1 {
+		return true
+	}
+
+	lower := strings.ToLower(password)
+	b := []byte(lower)
+
+	runLength := 1
+	runDir := 0 // 1 ascending, -1 descending, 0 none
+
+	for i := 1; i < len(b); i++ {
+		prev, cur := b[i-1], b[i]
+
+		if !isASCIIAlphaNum(prev) || !isASCIIAlphaNum(cur) || !sameASCIIGroup(prev, cur) {
+			runLength = 1
+			runDir = 0
+			continue
+		}
+
+		diff := int(cur) - int(prev)
+		if diff != 1 && diff != -1 {
+			runLength = 1
+			runDir = 0
+			continue
+		}
+
+		if runDir == 0 || runDir == diff {
+			runDir = diff
+			if runLength == 1 {
+				runLength = 2
+			} else {
+				runLength++
+			}
+		} else {
+			runDir = diff
+			runLength = 2
+		}
+
+		if runLength >= minRun {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isASCIIAlphaNum(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9')
+}
+
+func sameASCIIGroup(a, b byte) bool {
+	return (a >= 'a' && a <= 'z' && b >= 'a' && b <= 'z') ||
+		(a >= '0' && a <= '9' && b >= '0' && b <= '9')
 }
 
 // PasswordStrengthLabel returns a human-readable strength label

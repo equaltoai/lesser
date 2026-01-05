@@ -93,14 +93,14 @@ func (h *Handler) HandleGetMarkersLift(ctx *lift.Context) error {
 // Saves timeline positions
 func (h *Handler) HandleSaveMarkersLift(ctx *lift.Context) error {
 	// Authenticate user
-	username, err := h.authenticateMarkersRequest(ctx, auth.ScopeWrite)
-	if err != nil {
+	username, handled, err := h.authenticateMarkersRequest(ctx, auth.ScopeWrite)
+	if err != nil || handled {
 		return err
 	}
 
 	// Parse and validate request
-	req, err := h.parseMarkersRequest(ctx)
-	if err != nil {
+	req, handled, err := h.parseMarkersRequest(ctx)
+	if err != nil || handled {
 		return err
 	}
 
@@ -117,12 +117,12 @@ func (h *Handler) HandleSaveMarkersLift(ctx *lift.Context) error {
 }
 
 // authenticateMarkersRequest authenticates the markers request
-func (h *Handler) authenticateMarkersRequest(ctx *lift.Context, requiredScope string) (string, error) {
+func (h *Handler) authenticateMarkersRequest(ctx *lift.Context, requiredScope string) (string, bool, error) {
 	// Check for test mode
 	testUsername := h.getMarkersTestUsername(ctx)
 	if testUsername != "" {
 		h.logger.Debug("test mode: using provided username", zap.String("username", testUsername))
-		return testUsername, nil
+		return testUsername, false, nil
 	}
 
 	// Normal authentication flow
@@ -130,43 +130,51 @@ func (h *Handler) authenticateMarkersRequest(ctx *lift.Context, requiredScope st
 }
 
 // getMarkersTestUsername extracts test username from headers
-func (h *Handler) getMarkersTestUsername(_ *lift.Context) string {
-	// For testing, always return this user
-	return "testuser_with_markers"
+func (h *Handler) getMarkersTestUsername(ctx *lift.Context) string {
+	if !common.RunningUnitTests() {
+		return ""
+	}
+
+	username := ctx.Header("X-Test-Username")
+	if username == "" {
+		username = ctx.Header("x-test-username")
+	}
+
+	return username
 }
 
 // authenticateMarkersWithScope authenticates and checks for the required scope
-func (h *Handler) authenticateMarkersWithScope(ctx *lift.Context, requiredScope string) (string, error) {
+func (h *Handler) authenticateMarkersWithScope(ctx *lift.Context, requiredScope string) (string, bool, error) {
 	// Extract token from Authorization header
 	authHeader := ctx.Header("Authorization")
 	if err := common.ValidateRequiredParam("authorization_header", authHeader); err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		return "", true, common.RespondUnauthorized(ctx)
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		return "", true, common.RespondUnauthorized(ctx)
 	}
 
 	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		return "", true, common.RespondUnauthorized(ctx)
 	}
 
 	// Check required scope
 	if !claims.HasScope(requiredScope) {
-		return "", common.RespondInsufficientScope(ctx)
+		return "", true, common.RespondInsufficientScope(ctx)
 	}
 
-	return claims.Username, nil
+	return claims.Username, false, nil
 }
 
 // parseMarkersRequest parses the markers request body
 func (h *Handler) parseMarkersRequest(ctx *lift.Context) (map[string]struct {
 	LastReadID string `json:"last_read_id"`
-}, error) {
+}, bool, error) {
 	var req map[string]struct {
 		LastReadID string `json:"last_read_id"`
 	}
@@ -176,13 +184,13 @@ func (h *Handler) parseMarkersRequest(ctx *lift.Context) (map[string]struct {
 		return h.parseMarkersRequestFallback(ctx, err)
 	}
 
-	return req, nil
+	return req, false, nil
 }
 
 // parseMarkersRequestFallback handles fallback parsing for test environments
 func (h *Handler) parseMarkersRequestFallback(ctx *lift.Context, originalErr error) (map[string]struct {
 	LastReadID string `json:"last_read_id"`
-}, error) {
+}, bool, error) {
 	if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 		var req map[string]struct {
 			LastReadID string `json:"last_read_id"`
@@ -191,11 +199,11 @@ func (h *Handler) parseMarkersRequestFallback(ctx *lift.Context, originalErr err
 			h.logger.Debug("invalid markers request",
 				zap.Error(originalErr),
 				zap.Error(jsonErr))
-			return nil, common.RespondBadRequest(ctx, "invalid request body")
+			return nil, true, common.RespondBadRequest(ctx, "invalid request body")
 		}
-		return req, nil
+		return req, false, nil
 	}
-	return nil, common.RespondBadRequest(ctx, "invalid request body")
+	return nil, true, common.RespondBadRequest(ctx, "invalid request body")
 }
 
 // validateMarkers validates the markers request
@@ -203,7 +211,7 @@ func (h *Handler) validateMarkers(req map[string]struct {
 	LastReadID string `json:"last_read_id"`
 }) error {
 	// Check that at least one timeline is provided
-	if err := common.ValidateSliceNotEmpty("req", req); err != nil {
+	if len(req) == 0 {
 		return &markerValidationError{message: "no markers provided"}
 	}
 
@@ -236,10 +244,13 @@ func (h *Handler) saveMarkers(ctx *lift.Context, username string, req map[string
 	LastReadID string `json:"last_read_id"`
 }) {
 	// Get current markers to determine versions
-	result, _ := h.registry.Accounts().GetMarkers(ctx.Context, &accounts.GetMarkersQuery{
+	result, err := h.registry.Accounts().GetMarkers(ctx.Context, &accounts.GetMarkersQuery{
 		Username: username,
 	})
-	currentMarkers := result.Markers
+	currentMarkers := map[string]*storage.Marker{}
+	if err == nil && result != nil && result.Markers != nil {
+		currentMarkers = result.Markers
+	}
 
 	// Save each marker
 	for timeline, markerData := range req {

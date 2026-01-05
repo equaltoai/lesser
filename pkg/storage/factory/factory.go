@@ -17,6 +17,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var loadDefaultAWSConfig = awsconfig.LoadDefaultConfig
+
 // RepositoryFactory manages all repository instances and their dependencies
 // and implements the RepositoryStorage interface
 type RepositoryFactory struct {
@@ -161,7 +163,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	}
 
 	if vapidSecretARN != "" {
-		if awsCfg, err := awsconfig.LoadDefaultConfig(context.Background()); err != nil {
+		if awsCfg, err := loadDefaultAWSConfig(context.Background()); err != nil {
 			if f.logger != nil {
 				f.logger.Warn("repository factory: failed to initialize secrets manager client for VAPID keys", zap.Error(err))
 			}
@@ -319,27 +321,27 @@ func (f *RepositoryFactory) Bookmark() *repositories.BookmarkRepository {
 }
 
 // Actor returns the Actor repository instance
-func (f *RepositoryFactory) Actor() *repositories.ActorRepository {
+func (f *RepositoryFactory) Actor() interfaces.ActorRepository {
 	return f.actorRepo
 }
 
 // Object returns the Object repository instance
-func (f *RepositoryFactory) Object() *repositories.ObjectRepository {
+func (f *RepositoryFactory) Object() interfaces.ObjectRepository {
 	return f.objectRepo
 }
 
-// Activity returns the Activity repository instance
-func (f *RepositoryFactory) Activity() *repositories.ActivityRepository {
+// Activity returns the Activity repository instance (interface type for mockability).
+func (f *RepositoryFactory) Activity() interfaces.ActivityRepository {
 	return f.activityRepo
 }
 
 // User returns the User repository instance
-func (f *RepositoryFactory) User() *repositories.UserRepository {
+func (f *RepositoryFactory) User() interfaces.UserRepository {
 	return f.userRepo
 }
 
-// Trust returns the Trust repository instance
-func (f *RepositoryFactory) Trust() *repositories.TrustRepository {
+// Trust returns the Trust repository instance (interface type for mockability).
+func (f *RepositoryFactory) Trust() interfaces.TrustRepository {
 	return f.trustRepo
 }
 
@@ -348,13 +350,13 @@ func (f *RepositoryFactory) Conversation() *repositories.ConversationRepository 
 	return f.conversationRepo
 }
 
-// Timeline returns the Timeline repository instance
-func (f *RepositoryFactory) Timeline() *repositories.TimelineRepository {
+// Timeline returns the Timeline repository instance (interface type for mockability).
+func (f *RepositoryFactory) Timeline() interfaces.TimelineRepository {
 	return f.timelineRepo
 }
 
-// Notification returns the Notification repository instance
-func (f *RepositoryFactory) Notification() *repositories.NotificationRepository {
+// Notification returns the Notification repository instance (interface type for mockability).
+func (f *RepositoryFactory) Notification() interfaces.NotificationRepository {
 	return f.notificationRepo
 }
 
@@ -364,12 +366,12 @@ func (f *RepositoryFactory) Like() *repositories.LikeRepository {
 }
 
 // Moderation returns the Moderation repository instance
-func (f *RepositoryFactory) Moderation() *repositories.ModerationRepository {
+func (f *RepositoryFactory) Moderation() interfaces.ModerationRepository {
 	return f.moderationRepo
 }
 
 // Relationship returns the Relationship repository instance
-func (f *RepositoryFactory) Relationship() *repositories.RelationshipRepository {
+func (f *RepositoryFactory) Relationship() interfaces.ConcreteRelationshipRepository {
 	return f.relationshipRepo
 }
 
@@ -449,7 +451,7 @@ func (f *RepositoryFactory) Social() *repositories.SocialRepository {
 }
 
 // Status returns the Status repository instance
-func (f *RepositoryFactory) Status() *repositories.StatusRepository {
+func (f *RepositoryFactory) Status() interfaces.StatusRepository {
 	return f.statusRepo
 }
 
@@ -574,59 +576,59 @@ func (f *RepositoryFactory) Quote() *repositories.QuoteRepository {
 }
 
 // MediaAnalytics returns the MediaAnalytics repository instance
-func (f *RepositoryFactory) MediaAnalytics() *repositories.MediaAnalyticsRepository {
+func (f *RepositoryFactory) MediaAnalytics() interfaces.MediaAnalyticsRepository {
 	return f.mediaAnalyticsRepo
 }
 
 // MediaPopularity returns the MediaPopularity repository instance
-func (f *RepositoryFactory) MediaPopularity() *repositories.MediaPopularityRepository {
+func (f *RepositoryFactory) MediaPopularity() interfaces.MediaPopularityRepository {
 	return f.mediaPopularityRepo
 }
 
 // MediaSession returns the MediaSession repository instance
-func (f *RepositoryFactory) MediaSession() *repositories.MediaSessionRepository {
+func (f *RepositoryFactory) MediaSession() interfaces.MediaSessionRepository {
 	return f.mediaSessionRepo
 }
 
 // StreamingConnection returns the StreamingConnection repository instance
-func (f *RepositoryFactory) StreamingConnection() *repositories.StreamingConnectionRepository {
+func (f *RepositoryFactory) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return f.streamingConnectionRepo
 }
 
-// CMS Repository Getters
+// CMS Repository Getters (interface types for mockability)
 
 // Article returns the Article repository instance
-func (f *RepositoryFactory) Article() *repositories.ArticleRepository {
+func (f *RepositoryFactory) Article() interfaces.ArticleRepository {
 	return f.articleRepo
 }
 
 // Draft returns the Draft repository instance
-func (f *RepositoryFactory) Draft() *repositories.DraftRepository {
+func (f *RepositoryFactory) Draft() interfaces.DraftRepository {
 	return f.draftRepo
 }
 
 // Revision returns the Revision repository instance
-func (f *RepositoryFactory) Revision() *repositories.RevisionRepository {
+func (f *RepositoryFactory) Revision() interfaces.RevisionRepository {
 	return f.revisionRepo
 }
 
 // Series returns the Series repository instance
-func (f *RepositoryFactory) Series() *repositories.SeriesRepository {
+func (f *RepositoryFactory) Series() interfaces.SeriesRepository {
 	return f.seriesRepo
 }
 
 // Category returns the Category repository instance
-func (f *RepositoryFactory) Category() *repositories.CategoryRepository {
+func (f *RepositoryFactory) Category() interfaces.CategoryRepository {
 	return f.categoryRepo
 }
 
 // Publication returns the Publication repository instance
-func (f *RepositoryFactory) Publication() *repositories.PublicationRepository {
+func (f *RepositoryFactory) Publication() interfaces.PublicationRepository {
 	return f.publicationRepo
 }
 
 // PublicationMember returns the PublicationMember repository instance
-func (f *RepositoryFactory) PublicationMember() *repositories.PublicationMemberRepository {
+func (f *RepositoryFactory) PublicationMember() interfaces.PublicationMemberRepository {
 	return f.publicationMemberRepo
 }
 

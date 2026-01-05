@@ -19,13 +19,19 @@ import (
 
 // Service provides AWS MediaConvert transcoding operations
 type Service struct {
-	client            *mediaconvert.Client
+	client            mediaConvertAPI
 	logger            *zap.Logger
 	endpoint          string
 	role              string
 	destinationBucket string
 	destinationPrefix string
 	queue             string
+}
+
+type mediaConvertAPI interface {
+	CreateJob(ctx context.Context, params *mediaconvert.CreateJobInput, optFns ...func(*mediaconvert.Options)) (*mediaconvert.CreateJobOutput, error)
+	GetJob(ctx context.Context, params *mediaconvert.GetJobInput, optFns ...func(*mediaconvert.Options)) (*mediaconvert.GetJobOutput, error)
+	CancelJob(ctx context.Context, params *mediaconvert.CancelJobInput, optFns ...func(*mediaconvert.Options)) (*mediaconvert.CancelJobOutput, error)
 }
 
 // Config holds configuration for the transcoding service
@@ -106,7 +112,7 @@ func NewService(awsConfig aws.Config, config Config, logger *zap.Logger) (*Servi
 	}
 
 	// Create MediaConvert client with custom endpoint if provided
-	var client *mediaconvert.Client
+	var client mediaConvertAPI
 	if config.Endpoint != "" {
 		// nolint:staticcheck // Using deprecated Endpoint for backward compatibility
 		client = mediaconvert.NewFromConfig(awsConfig, func(o *mediaconvert.Options) {
@@ -553,7 +559,7 @@ func safeInt32(i int) *int32 {
 	if i < -2147483648 {
 		i = -2147483648
 	}
-	val := int32(i) //nolint:gosec
+	val := int32(i) // #nosec G115 -- bounds checked above
 	return aws.Int32(val)
 }
 

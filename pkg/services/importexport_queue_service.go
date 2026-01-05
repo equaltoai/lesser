@@ -14,19 +14,27 @@ import (
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/importexport"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
+
+type exportRepository interface {
+	GetExport(ctx context.Context, exportID string) (*models.Export, error)
+}
+
+type importRepository interface {
+	GetImport(ctx context.Context, importID string) (*models.Import, error)
+}
 
 // ImportExportQueueService adapts the canonical per-job queues (Spec 05) to the importexport.QueueService interface.
 //
 // It loads the persisted import/export records and emits the SQS message shapes expected by
 // cmd/import-processor and cmd/export-generator (services.ImportJobMessage / services.ExportJobMessage).
 type ImportExportQueueService struct {
-	sqsClient  *sqs.Client
+	sqsClient  sqsAPI
 	cfg        *pkgconfig.Config
-	exportRepo *repositories.ExportRepository
-	importRepo *repositories.ImportRepository
+	exportRepo exportRepository
+	importRepo importRepository
 	logger     *zap.Logger
 }
 
@@ -37,8 +45,8 @@ var _ importexport.QueueService = (*ImportExportQueueService)(nil)
 func NewImportExportQueueService(
 	ctx context.Context,
 	cfg *pkgconfig.Config,
-	exportRepo *repositories.ExportRepository,
-	importRepo *repositories.ImportRepository,
+	exportRepo exportRepository,
+	importRepo importRepository,
 	logger *zap.Logger,
 ) (*ImportExportQueueService, error) {
 	if ctx == nil {

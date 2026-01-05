@@ -12,8 +12,13 @@ import (
 
 // KMSEncryptor implements encryption using AWS KMS
 type KMSEncryptor struct {
-	client *kms.Client
+	client kmsAPI
 	keyID  string
+}
+
+type kmsAPI interface {
+	Encrypt(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error)
+	Decrypt(ctx context.Context, params *kms.DecryptInput, optFns ...func(*kms.Options)) (*kms.DecryptOutput, error)
 }
 
 // NewKMSEncryptor creates a new KMS encryptor

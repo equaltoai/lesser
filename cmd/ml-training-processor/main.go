@@ -12,10 +12,8 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock/types"
-	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -47,9 +45,9 @@ type MLTrainingProcessor struct {
 	db               core.DB
 	tableName        string
 	logger           *zap.Logger
-	bedrockClient    *bedrock.Client
-	s3Client         *s3.Client
-	moderationMLRepo *repositories.ModerationMLRepository
+	bedrockClient    bedrockJobGetter
+	s3Client         s3ObjectGetter
+	moderationMLRepo moderationMLRepository
 }
 
 // Global variables for standardized Lambda initialization
@@ -58,28 +56,73 @@ var (
 	processor *MLTrainingProcessor
 )
 
+type bedrockJobGetter interface {
+	GetModelCustomizationJob(ctx context.Context, params *bedrock.GetModelCustomizationJobInput, optFns ...func(*bedrock.Options)) (*bedrock.GetModelCustomizationJobOutput, error)
+}
+
+type s3ObjectGetter interface {
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+}
+
+type moderationMLRepository interface {
+	CreatePollRequest(ctx context.Context, pollReq *models.MLPollRequest) error
+	GetTrainingJob(ctx context.Context, jobARN string) (*models.ModelTrainingJob, error)
+	UpdateTrainingJob(ctx context.Context, job *models.ModelTrainingJob) error
+	CreateModelVersion(ctx context.Context, version *models.ModerationModelVersion) error
+	GetActiveModelVersion(ctx context.Context) (*models.ModerationModelVersion, error)
+	UpdateModelVersion(ctx context.Context, version *models.ModerationModelVersion) error
+}
+
+var (
+	runningUnitTestsFn       = common.RunningUnitTests
+	mustInitializeLambdaFn   = common.MustInitializeLambda
+	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	newMLTrainingProcessorFn = NewMLTrainingProcessor
+	lambdaStartFn            = lambda.Start
+	newBedrockClientFn       = func(cfg aws.Config) bedrockJobGetter { return bedrock.NewFromConfig(cfg) }
+	newS3ClientFn            = func(cfg aws.Config) s3ObjectGetter { return s3.NewFromConfig(cfg) }
+	newModerationMLRepoFn    = func(db core.DB, tableName string, logger *zap.Logger) moderationMLRepository {
+		return repositories.NewModerationMLRepository(db, tableName, logger)
+	}
+	writeStreamingEventFn = func(ctx context.Context, db core.DB, event *models.StreamingEvent) error {
+		return db.WithContext(ctx).Model(event).Create()
+	}
+)
+
 func init() {
-	if common.RunningUnitTests() {
+	initializeMLTrainingOnStart()
+}
+
+func initializeMLTrainingOnStart() {
+	if runningUnitTestsFn() {
 		return
 	}
+
+	if err := initializeMLTraining(); err != nil {
+		lambdaCtx.Logger.Fatal("failed to create ML training processor", zap.Error(err))
+	}
+}
+
+func initializeMLTraining() error {
 	// Standardized Lambda initialization for background processors
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "ml-training-processor",
 		LambdaType:  common.LambdaTypeProcessor,
 	})
 
 	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		lambdaCtx.Logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
 	// Initialize processor
 	var initErr error
-	processor, initErr = NewMLTrainingProcessor()
+	processor, initErr = newMLTrainingProcessorFn()
 	if initErr != nil {
-		lambdaCtx.Logger.Fatal("failed to create ML training processor", zap.Error(initErr))
+		return initErr
 	}
+
+	return nil
 }
 
 // NewMLTrainingProcessor creates a new ML training processor
@@ -92,13 +135,13 @@ func NewMLTrainingProcessor() (*MLTrainingProcessor, error) {
 	tableName := lambdaCtx.Config.DynamoTableName
 
 	// Initialize Bedrock client
-	bedrockClient := bedrock.NewFromConfig(globalCfg)
+	bedrockClient := newBedrockClientFn(globalCfg)
 
 	// Initialize S3 client for metrics parsing
-	s3Client := s3.NewFromConfig(globalCfg)
+	s3Client := newS3ClientFn(globalCfg)
 
 	// Initialize repositories
-	moderationMLRepo := repositories.NewModerationMLRepository(db, tableName, lambdaCtx.Logger)
+	moderationMLRepo := newModerationMLRepoFn(db, tableName, lambdaCtx.Logger)
 
 	return &MLTrainingProcessor{
 		db:               db,
@@ -162,11 +205,11 @@ func (p *MLTrainingProcessor) processRecord(ctx *lift.Context, record events.Dyn
 
 	// Route to appropriate handler based on entity type
 	switch entityType {
-	case "ML_TRAINING_JOB":
+	case "MLJOB", "ML_TRAINING_JOB":
 		if record.EventName == eventNameModify {
 			return p.processJobStatusChange(ctx, record)
 		}
-	case "ML_POLL_REQUEST":
+	case "MLPOLL", "ML_POLL_REQUEST":
 		if record.EventName == eventNameInsert {
 			return p.processPollRequest(ctx, record)
 		}
@@ -293,29 +336,9 @@ func (p *MLTrainingProcessor) scheduleNextPoll(currentPoll models.MLPollRequest,
 
 // processJobStatusChange handles training job status updates
 func (p *MLTrainingProcessor) processJobStatusChange(ctx *lift.Context, record events.DynamoDBEventRecord) error {
-	// Convert from events.DynamoDBAttributeValue to SDK v2 types
-	newImage := make(map[string]dynamodbtypes.AttributeValue)
-	for k, v := range record.Change.NewImage {
-		newImage[k] = convertEventAttributeValue(v)
-	}
-
-	oldImage := make(map[string]dynamodbtypes.AttributeValue)
-	for k, v := range record.Change.OldImage {
-		oldImage[k] = convertEventAttributeValue(v)
-	}
-
 	// Extract status from new and old images
-	var oldStatus, newStatus string
-	if oldAttr, ok := oldImage["Status"]; ok {
-		if s, ok := oldAttr.(*dynamodbtypes.AttributeValueMemberS); ok {
-			oldStatus = s.Value
-		}
-	}
-	if newAttr, ok := newImage["Status"]; ok {
-		if s, ok := newAttr.(*dynamodbtypes.AttributeValueMemberS); ok {
-			newStatus = s.Value
-		}
-	}
+	oldStatus := getStatusFromStreamImage(record.Change.OldImage)
+	newStatus := getStatusFromStreamImage(record.Change.NewImage)
 
 	// Only process if status actually changed
 	if oldStatus == newStatus {
@@ -324,7 +347,7 @@ func (p *MLTrainingProcessor) processJobStatusChange(ctx *lift.Context, record e
 
 	// Unmarshal the full job
 	var job models.ModelTrainingJob
-	if err := attributevalue.UnmarshalMap(newImage, &job); err != nil {
+	if err := stream.UnmarshalItem(record, &job); err != nil {
 		p.logger.Error("failed to unmarshal training job",
 			zap.String("request_id", ctx.GetRequestID()),
 			zap.Error(err))
@@ -348,6 +371,15 @@ func (p *MLTrainingProcessor) processJobStatusChange(ctx *lift.Context, record e
 		// Other status changes don't require action
 		return nil
 	}
+}
+
+func getStatusFromStreamImage(image map[string]events.DynamoDBAttributeValue) string {
+	for _, key := range []string{"status", "Status"} {
+		if attr, ok := image[key]; ok && attr.DataType() == events.DataTypeString {
+			return attr.String()
+		}
+	}
+	return ""
 }
 
 // updateJobStatus updates the training job status in DynamoDB
@@ -595,42 +627,6 @@ func (p *MLTrainingProcessor) markJobAsTimeout(ctx context.Context, jobARN strin
 	}
 }
 
-// convertEventAttributeValue converts from events.DynamoDBAttributeValue to SDK v2 types.AttributeValue
-func convertEventAttributeValue(attr events.DynamoDBAttributeValue) dynamodbtypes.AttributeValue {
-	switch attr.DataType() {
-	case events.DataTypeString:
-		return &dynamodbtypes.AttributeValueMemberS{Value: attr.String()}
-	case events.DataTypeNumber:
-		return &dynamodbtypes.AttributeValueMemberN{Value: attr.Number()}
-	case events.DataTypeBinary:
-		return &dynamodbtypes.AttributeValueMemberB{Value: attr.Binary()}
-	case events.DataTypeBoolean:
-		return &dynamodbtypes.AttributeValueMemberBOOL{Value: attr.Boolean()}
-	case events.DataTypeNull:
-		return &dynamodbtypes.AttributeValueMemberNULL{Value: true}
-	case events.DataTypeList:
-		list := make([]dynamodbtypes.AttributeValue, 0, len(attr.List()))
-		for _, item := range attr.List() {
-			list = append(list, convertEventAttributeValue(item))
-		}
-		return &dynamodbtypes.AttributeValueMemberL{Value: list}
-	case events.DataTypeMap:
-		m := make(map[string]dynamodbtypes.AttributeValue)
-		for k, v := range attr.Map() {
-			m[k] = convertEventAttributeValue(v)
-		}
-		return &dynamodbtypes.AttributeValueMemberM{Value: m}
-	case events.DataTypeStringSet:
-		return &dynamodbtypes.AttributeValueMemberSS{Value: attr.StringSet()}
-	case events.DataTypeNumberSet:
-		return &dynamodbtypes.AttributeValueMemberNS{Value: attr.NumberSet()}
-	case events.DataTypeBinarySet:
-		return &dynamodbtypes.AttributeValueMemberBS{Value: attr.BinarySet()}
-	default:
-		return nil
-	}
-}
-
 // parseMetricsFromS3 downloads and parses training metrics from S3 output
 func (p *MLTrainingProcessor) parseMetricsFromS3(ctx context.Context, s3URI string) (*models.TrainingMetrics, error) {
 	// Parse S3 URI (format: s3://bucket/key/path/)
@@ -872,10 +868,17 @@ func parseBedrockMetricsJSON(jsonContent string) (*models.TrainingMetrics, error
 // extractVersionFromARN extracts version identifier from model ARN
 func extractVersionFromARN(arn string) string {
 	// Example ARN: arn:aws:bedrock:us-east-1:123456789012:custom-model/anthropic.claude-v2:1:12k/abcd1234
-	parts := strings.Split(arn, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
+	arn = strings.TrimSpace(arn)
+	if arn == "" {
+		return fmt.Sprintf("v%d", time.Now().Unix())
 	}
+
+	parts := strings.Split(arn, "/")
+	last := parts[len(parts)-1]
+	if last != "" {
+		return last
+	}
+
 	return fmt.Sprintf("v%d", time.Now().Unix())
 }
 
@@ -895,7 +898,7 @@ func (p *MLTrainingProcessor) emitTrainingEvent(ctx context.Context, jobID, even
 	event.UpdateKeys()
 
 	// Write to DynamoDB - stream processors will pick it up
-	if err := p.db.WithContext(ctx).Model(event).Create(); err != nil {
+	if err := writeStreamingEventFn(ctx, p.db, event); err != nil {
 		return fmt.Errorf("failed to write event: %w", err)
 	}
 
@@ -919,5 +922,5 @@ func main() {
 		return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
 	})
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }

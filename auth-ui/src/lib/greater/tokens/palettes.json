@@ -1,0 +1,82 @@
+{
+  "slate": {
+    "description": "Cool gray with blue undertones",
+    "gray": {
+      "50": { "value": "#f8fafc" },
+      "100": { "value": "#f1f5f9" },
+      "200": { "value": "#e2e8f0" },
+      "300": { "value": "#cbd5e1" },
+      "400": { "value": "#94a3b8" },
+      "500": { "value": "#64748b" },
+      "600": { "value": "#475569" },
+      "700": { "value": "#334155" },
+      "800": { "value": "#1e293b" },
+      "900": { "value": "#0f172a" },
+      "950": { "value": "#020617" }
+    }
+  },
+  "stone": {
+    "description": "Warm gray with brown/beige undertones",
+    "gray": {
+      "50": { "value": "#fafaf9" },
+      "100": { "value": "#f5f5f4" },
+      "200": { "value": "#e7e5e4" },
+      "300": { "value": "#d6d3d1" },
+      "400": { "value": "#a8a29e" },
+      "500": { "value": "#78716c" },
+      "600": { "value": "#57534e" },
+      "700": { "value": "#44403c" },
+      "800": { "value": "#292524" },
+      "900": { "value": "#1c1917" },
+      "950": { "value": "#0c0a09" }
+    }
+  },
+  "neutral": {
+    "description": "True neutral gray without undertones",
+    "gray": {
+      "50": { "value": "#fafafa" },
+      "100": { "value": "#f5f5f5" },
+      "200": { "value": "#e5e5e5" },
+      "300": { "value": "#d4d4d4" },
+      "400": { "value": "#a3a3a3" },
+      "500": { "value": "#737373" },
+      "600": { "value": "#525252" },
+      "700": { "value": "#404040" },
+      "800": { "value": "#262626" },
+      "900": { "value": "#171717" },
+      "950": { "value": "#0a0a0a" }
+    }
+  },
+  "zinc": {
+    "description": "Cool gray with subtle blue-gray undertones",
+    "gray": {
+      "50": { "value": "#fafafa" },
+      "100": { "value": "#f4f4f5" },
+      "200": { "value": "#e4e4e7" },
+      "300": { "value": "#d4d4d8" },
+      "400": { "value": "#a1a1aa" },
+      "500": { "value": "#71717a" },
+      "600": { "value": "#52525b" },
+      "700": { "value": "#3f3f46" },
+      "800": { "value": "#27272a" },
+      "900": { "value": "#18181b" },
+      "950": { "value": "#09090b" }
+    }
+  },
+  "gray": {
+    "description": "Standard gray (matches current tokens.json default)",
+    "gray": {
+      "50": { "value": "#f9fafb" },
+      "100": { "value": "#f3f4f6" },
+      "200": { "value": "#e5e7eb" },
+      "300": { "value": "#d1d5db" },
+      "400": { "value": "#9ca3af" },
+      "500": { "value": "#6b7280" },
+      "600": { "value": "#4b5563" },
+      "700": { "value": "#374151" },
+      "800": { "value": "#1f2937" },
+      "900": { "value": "#111827" },
+      "950": { "value": "#030712" }
+    }
+  }
+}

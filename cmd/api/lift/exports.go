@@ -6,10 +6,11 @@ import (
 	"net/http"
 	"time"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services"
-	"github.com/equaltoai/lesser/pkg/storage/models"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -24,73 +25,44 @@ const (
 	ExportTypeFollowing   = "following"
 )
 
-// ExportRequest represents a data export request
-type ExportRequest struct {
-	Type         string         `json:"type"`          // archive, followers, following, blocks, mutes, lists, bookmarks
-	Format       string         `json:"format"`        // activitypub, mastodon, csv
-	IncludeMedia bool           `json:"include_media"` // Include media attachments
-	DateRange    *DateRange     `json:"date_range"`    // Optional date filtering
-	Options      map[string]any `json:"options"`       // Additional format-specific options
-}
-
-// DateRange for filtering exports
-type DateRange struct {
-	Start string `json:"start"` // ISO date
-	End   string `json:"end"`   // ISO date
-}
-
-// ExportJob represents an export job status
-type ExportJob struct {
-	ID          string  `json:"id"`
-	Status      string  `json:"status"` // pending, processing, completed, failed
-	Type        string  `json:"type"`
-	Format      string  `json:"format"`
-	CreatedAt   string  `json:"created_at"`
-	DownloadURL *string `json:"download_url"`
-	ExpiresAt   *string `json:"expires_at"`
-	FileSize    *int64  `json:"file_size"`
-	RecordCount *int    `json:"record_count"`
-	Error       *string `json:"error"`
-}
-
 // HandleCreateExportLift handles POST /api/v1/exports
 func (h *Handler) HandleCreateExportLift(ctx *lift.Context) error {
 	// Authenticate request
-	username, err := h.authenticateExportRequest(ctx)
-	if err != nil {
+	username, handled, err := h.authenticateExportRequest(ctx)
+	if err != nil || handled {
 		return err
 	}
 
 	// Parse and validate request
-	req, err := h.parseExportRequest(ctx)
-	if err != nil {
+	req, handled, err := h.parseExportRequest(ctx)
+	if err != nil || handled {
 		return err
 	}
 
 	// Validate export parameters
-	if err := h.validateExportParams(ctx, req); err != nil {
+	if handled, err := h.validateExportParams(ctx, req); err != nil || handled {
 		return err
 	}
 
 	// Check for existing exports
-	if err := h.checkExistingExports(ctx, username, req.Type); err != nil {
+	if handled, err := h.checkExistingExports(ctx, username, req.Type); err != nil || handled {
 		return err
 	}
 
 	// Check rate limits
-	if err := h.checkExportRateLimit(ctx, username, req.Type); err != nil {
+	if handled, err := h.checkExportRateLimit(ctx, username, req.Type); err != nil || handled {
 		return err
 	}
 
 	// Check budget limits before creating export
-	if err := h.checkExportBudgetLimits(ctx, username, req); err != nil {
+	if handled, err := h.checkExportBudgetLimits(ctx, username, req); err != nil || handled {
 		return err
 	}
 
 	// Create export job
 	exportID := uuid.New().String()
-	export, err := h.createExportJob(ctx, exportID, username, req)
-	if err != nil {
+	export, handled, err := h.createExportJob(ctx, exportID, username, req)
+	if err != nil || handled {
 		return err
 	}
 
@@ -101,7 +73,7 @@ func (h *Handler) HandleCreateExportLift(ctx *lift.Context) error {
 	}
 
 	// Return job status
-	job := ExportJob{
+	job := apimodels.ExportJob{
 		ID:        exportID,
 		Status:    "pending",
 		Type:      req.Type,
@@ -113,7 +85,7 @@ func (h *Handler) HandleCreateExportLift(ctx *lift.Context) error {
 }
 
 // authenticateExportRequest handles authentication for export requests
-func (h *Handler) authenticateExportRequest(ctx *lift.Context) (string, error) {
+func (h *Handler) authenticateExportRequest(ctx *lift.Context) (string, bool, error) {
 	// Check for test username
 	// Extract auth header
 	authHeader := h.extractExportAuthHeader(ctx)
@@ -121,7 +93,8 @@ func (h *Handler) authenticateExportRequest(ctx *lift.Context) (string, error) {
 	// Extract and validate token
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		_ = common.RespondUnauthorized(ctx)
+		return "", true, nil
 	}
 
 	// Validate token and check scope
@@ -146,35 +119,40 @@ func (h *Handler) extractExportAuthHeader(ctx *lift.Context) string {
 }
 
 // validateExportToken validates the token and checks scope using centralized validation
-func (h *Handler) validateExportToken(ctx *lift.Context, token string) (string, error) {
+func (h *Handler) validateExportToken(ctx *lift.Context, token string) (string, bool, error) {
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		_ = common.RespondUnauthorized(ctx)
+		return "", true, nil
 	}
 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		_ = common.RespondUnauthorized(ctx)
+		return "", true, nil
 	}
 
 	if !claims.HasScope(auth.ScopeRead) {
-		return "", common.RespondInsufficientScope(ctx)
+		_ = common.RespondInsufficientScope(ctx)
+		return "", true, nil
 	}
 
-	return claims.Username, nil
+	return claims.Username, false, nil
 }
 
 // parseExportRequest parses the export request body
-func (h *Handler) parseExportRequest(ctx *lift.Context) (*ExportRequest, error) {
-	var req ExportRequest
+func (h *Handler) parseExportRequest(ctx *lift.Context) (*apimodels.ExportRequest, bool, error) {
+	var req apimodels.ExportRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if err := common.ParseRequestBody(ctx.Request.Body, &req); err != nil {
-				return nil, common.RespondBadRequest(ctx, "invalid request body")
+				_ = common.RespondBadRequest(ctx, "invalid request body")
+				return nil, true, nil
 			}
 		} else {
-			return nil, common.RespondBadRequest(ctx, "invalid request body")
+			_ = common.RespondBadRequest(ctx, "invalid request body")
+			return nil, true, nil
 		}
 	}
 
@@ -186,35 +164,40 @@ func (h *Handler) parseExportRequest(ctx *lift.Context) (*ExportRequest, error) 
 		req.Format = "activitypub"
 	}
 
-	return &req, nil
+	return &req, false, nil
 }
 
 // validateExportParams validates export type and format using centralized validation
-func (h *Handler) validateExportParams(ctx *lift.Context, req *ExportRequest) error {
+func (h *Handler) validateExportParams(ctx *lift.Context, req *apimodels.ExportRequest) (bool, error) {
 	// Validate required parameters first
 	if err := common.ValidateRequiredParam("type", req.Type); err != nil {
-		return common.RespondBadRequest(ctx, err.Error())
+		_ = common.RespondBadRequest(ctx, err.Error())
+		return true, nil
 	}
 	if err := common.ValidateRequiredParam("format", req.Format); err != nil {
-		return common.RespondBadRequest(ctx, err.Error())
+		_ = common.RespondBadRequest(ctx, err.Error())
+		return true, nil
 	}
 
 	// Validate export type
 	if !h.isValidExportType(req.Type) {
-		return common.RespondBadRequest(ctx, fmt.Sprintf("invalid export type: %s", req.Type))
+		_ = common.RespondBadRequest(ctx, fmt.Sprintf("invalid export type: %s", req.Type))
+		return true, nil
 	}
 
 	// Validate format
 	if !h.isValidExportFormat(req.Format) {
-		return common.RespondBadRequest(ctx, fmt.Sprintf("invalid export format: %s", req.Format))
+		_ = common.RespondBadRequest(ctx, fmt.Sprintf("invalid export format: %s", req.Format))
+		return true, nil
 	}
 
 	// CSV format is only valid for certain types
 	if req.Format == "csv" && req.Type == "archive" {
-		return common.RespondBadRequest(ctx, "CSV format not available for archive exports")
+		_ = common.RespondBadRequest(ctx, "CSV format not available for archive exports")
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }
 
 // isValidExportType checks if the export type is valid
@@ -242,33 +225,34 @@ func (h *Handler) isValidExportFormat(format string) bool {
 }
 
 // checkExistingExports checks for existing pending/processing exports
-func (h *Handler) checkExistingExports(ctx *lift.Context, username, exportType string) error {
+func (h *Handler) checkExistingExports(ctx *lift.Context, username, exportType string) (bool, error) {
 	existingJobs, err := h.repos.Export().GetUserExportsByStatus(ctx.Context, username, []string{"pending", "processing"})
 	if err != nil {
 		h.logger.Error("failed to check existing jobs", zap.Error(err))
-		return nil // Don't fail on check error
+		return false, nil // Don't fail on check error
 	}
 
 	for _, job := range existingJobs {
 		if job.Type == exportType {
-			return common.RespondConflict(ctx, "export already in progress for this type")
+			_ = common.RespondConflict(ctx, "export already in progress for this type")
+			return true, nil
 		}
 	}
 
-	return nil
+	return false, nil
 }
 
 // createExportJob creates the export record
-func (h *Handler) createExportJob(ctx *lift.Context, exportID, username string, req *ExportRequest) (*models.Export, error) {
+func (h *Handler) createExportJob(ctx *lift.Context, exportID, username string, req *apimodels.ExportRequest) (*storageModels.Export, bool, error) {
 	now := time.Now()
 
 	// Convert date range if provided
-	dateRange, err := h.processExportDateRange(ctx, req.DateRange)
-	if err != nil {
-		return nil, err
+	dateRange, handled, err := h.processExportDateRange(ctx, req.DateRange)
+	if err != nil || handled {
+		return nil, handled, err
 	}
 
-	export := &models.Export{
+	export := &storageModels.Export{
 		ID:           exportID,
 		Username:     username,
 		Type:         req.Type,
@@ -283,28 +267,30 @@ func (h *Handler) createExportJob(ctx *lift.Context, exportID, username string, 
 
 	if err := h.repos.Export().CreateExport(ctx.Context, export); err != nil {
 		h.logger.Error("failed to create export job", zap.Error(err))
-		return nil, common.RespondInternalServerError(ctx, "failed to create export job")
+		_ = common.RespondInternalServerError(ctx, "failed to create export job")
+		return nil, true, nil
 	}
 
-	return export, nil
+	return export, false, nil
 }
 
 // processExportDateRange processes the date range for exports
-func (h *Handler) processExportDateRange(ctx *lift.Context, dateRange *DateRange) (*models.ExportDateRange, error) {
+func (h *Handler) processExportDateRange(ctx *lift.Context, dateRange *apimodels.ExportDateRange) (*storageModels.ExportDateRange, bool, error) {
 	if dateRange == nil {
-		return nil, nil
+		return nil, false, nil
 	}
 
-	exportDateRange, err := models.NewExportDateRangeFromStrings(dateRange.Start, dateRange.End)
+	exportDateRange, err := storageModels.NewExportDateRangeFromStrings(dateRange.Start, dateRange.End)
 	if err != nil {
-		return nil, common.RespondBadRequest(ctx, fmt.Sprintf("invalid date range: %v", err))
+		_ = common.RespondBadRequest(ctx, fmt.Sprintf("invalid date range: %v", err))
+		return nil, true, nil
 	}
 
-	return exportDateRange, nil
+	return exportDateRange, false, nil
 }
 
 // queueExportJobSQS queues the export job using SQS
-func (h *Handler) queueExportJobSQS(ctx *lift.Context, exportID, username string, req *ExportRequest) error {
+func (h *Handler) queueExportJobSQS(ctx *lift.Context, exportID, username string, req *apimodels.ExportRequest) error {
 	// Create job queue service with config
 	jobQueue, err := services.NewJobQueueService(h.cfg, h.logger)
 	if err != nil {
@@ -347,8 +333,8 @@ func (h *Handler) queueExportJobSQS(ctx *lift.Context, exportID, username string
 // HandleGetExportStatusLift handles GET /api/v1/exports/:id
 func (h *Handler) HandleGetExportStatusLift(ctx *lift.Context) error {
 	// Authenticate request using consolidated pattern
-	username, err := h.authenticateExportStatusRequest(ctx)
-	if err != nil {
+	username, handled, err := h.authenticateExportStatusRequest(ctx)
+	if err != nil || handled {
 		return err
 	}
 
@@ -370,7 +356,7 @@ func (h *Handler) HandleGetExportStatusLift(ctx *lift.Context) error {
 	}
 
 	// Build response
-	job := ExportJob{
+	job := apimodels.ExportJob{
 		ID:        export.ID,
 		Status:    export.Status,
 		Type:      export.Type,
@@ -409,14 +395,14 @@ func (h *Handler) HandleGetExportStatusLift(ctx *lift.Context) error {
 // HandleListExportsLift handles GET /api/v1/exports
 func (h *Handler) HandleListExportsLift(ctx *lift.Context) error {
 	// Authenticate user
-	username, err := h.authenticateListExportsRequest(ctx)
-	if err != nil {
+	username, handled, err := h.authenticateListExportsRequest(ctx)
+	if err != nil || handled {
 		return err
 	}
 
 	// Get user's export jobs
-	exportModels, err := h.getUserExports(ctx, username)
-	if err != nil {
+	exportModels, handled, err := h.getUserExports(ctx, username)
+	if err != nil || handled {
 		return err
 	}
 
@@ -427,11 +413,11 @@ func (h *Handler) HandleListExportsLift(ctx *lift.Context) error {
 }
 
 // authenticateListExportsRequest authenticates the list exports request
-func (h *Handler) authenticateListExportsRequest(ctx *lift.Context) (string, error) {
+func (h *Handler) authenticateListExportsRequest(ctx *lift.Context) (string, bool, error) {
 	// Check for test username
 	testUsername := h.getListExportsTestUsername(ctx)
 	if testUsername != "" {
-		return testUsername, nil
+		return testUsername, false, nil
 	}
 
 	// Normal authentication flow
@@ -439,30 +425,40 @@ func (h *Handler) authenticateListExportsRequest(ctx *lift.Context) (string, err
 }
 
 // getListExportsTestUsername extracts test username from headers
-func (h *Handler) getListExportsTestUsername(_ *lift.Context) string {
-	// For testing purposes, return a known username with export data
-	return "testuser_with_exports"
+func (h *Handler) getListExportsTestUsername(ctx *lift.Context) string {
+	if !common.RunningUnitTests() {
+		return ""
+	}
+
+	username := ctx.Header("X-Test-Username")
+	if username == "" {
+		username = ctx.Header("x-test-username")
+	}
+
+	return username
 }
 
 // authenticateListExportsWithToken authenticates using bearer token
-func (h *Handler) authenticateListExportsWithToken(ctx *lift.Context) (string, error) {
+func (h *Handler) authenticateListExportsWithToken(ctx *lift.Context) (string, bool, error) {
 	// Extract auth header
 	authHeader := h.extractListExportsAuthHeader(ctx)
 
 	// Extract and validate token
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		_ = common.RespondUnauthorized(ctx)
+		return "", true, nil
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		_ = common.RespondUnauthorized(ctx)
+		return "", true, nil
 	}
 
-	return claims.Username, nil
+	return claims.Username, false, nil
 }
 
 // extractListExportsAuthHeader extracts authorization header
@@ -484,18 +480,19 @@ func (h *Handler) extractListExportsAuthHeader(ctx *lift.Context) string {
 }
 
 // getUserExports retrieves the user's export jobs
-func (h *Handler) getUserExports(ctx *lift.Context, username string) ([]*models.Export, error) {
+func (h *Handler) getUserExports(ctx *lift.Context, username string) ([]*storageModels.Export, bool, error) {
 	exportModels, err := h.repos.Export().GetUserExportsByStatus(ctx.Context, username, nil)
 	if err != nil {
 		h.logger.Error("failed to get export jobs", zap.Error(err))
-		return nil, common.RespondInternalServerError(ctx, "failed to retrieve exports")
+		_ = common.RespondInternalServerError(ctx, "failed to retrieve exports")
+		return nil, true, nil
 	}
-	return exportModels, nil
+	return exportModels, false, nil
 }
 
 // convertExportsToResponse converts export models to API response format
-func (h *Handler) convertExportsToResponse(exportModels []*models.Export) []ExportJob {
-	exports := make([]ExportJob, 0, len(exportModels))
+func (h *Handler) convertExportsToResponse(exportModels []*storageModels.Export) []apimodels.ExportJob {
+	exports := make([]apimodels.ExportJob, 0, len(exportModels))
 	for _, export := range exportModels {
 		job := h.convertSingleExportToResponse(export)
 		exports = append(exports, job)
@@ -504,8 +501,8 @@ func (h *Handler) convertExportsToResponse(exportModels []*models.Export) []Expo
 }
 
 // convertSingleExportToResponse converts a single export to response format
-func (h *Handler) convertSingleExportToResponse(export *models.Export) ExportJob {
-	job := ExportJob{
+func (h *Handler) convertSingleExportToResponse(export *storageModels.Export) apimodels.ExportJob {
+	job := apimodels.ExportJob{
 		ID:        export.ID,
 		Status:    export.Status,
 		Type:      export.Type,
@@ -520,7 +517,7 @@ func (h *Handler) convertSingleExportToResponse(export *models.Export) ExportJob
 }
 
 // addExportStatusFields adds status-specific fields to the export job
-func (h *Handler) addExportStatusFields(job *ExportJob, export *models.Export) {
+func (h *Handler) addExportStatusFields(job *apimodels.ExportJob, export *storageModels.Export) {
 	switch export.Status {
 	case ExportStatusCompleted:
 		h.addCompletedExportFields(job, export)
@@ -530,7 +527,7 @@ func (h *Handler) addExportStatusFields(job *ExportJob, export *models.Export) {
 }
 
 // addCompletedExportFields adds fields for completed exports
-func (h *Handler) addCompletedExportFields(job *ExportJob, export *models.Export) {
+func (h *Handler) addCompletedExportFields(job *apimodels.ExportJob, export *storageModels.Export) {
 	if export.DownloadURL != "" {
 		job.DownloadURL = &export.DownloadURL
 	}
@@ -548,7 +545,7 @@ func (h *Handler) addCompletedExportFields(job *ExportJob, export *models.Export
 }
 
 // addFailedExportFields adds fields for failed exports
-func (h *Handler) addFailedExportFields(job *ExportJob, export *models.Export) {
+func (h *Handler) addFailedExportFields(job *apimodels.ExportJob, export *storageModels.Export) {
 	if export.Error != "" {
 		job.Error = &export.Error
 	}
@@ -557,8 +554,8 @@ func (h *Handler) addFailedExportFields(job *ExportJob, export *models.Export) {
 // HandleDownloadExportLift handles GET /api/v1/exports/:id/download
 func (h *Handler) HandleDownloadExportLift(ctx *lift.Context) error {
 	// Authenticate request using consolidated pattern
-	username, err := h.authenticateExportStatusRequest(ctx)
-	if err != nil {
+	username, handled, err := h.authenticateExportStatusRequest(ctx)
+	if err != nil || handled {
 		return err
 	}
 
@@ -595,14 +592,21 @@ func (h *Handler) HandleDownloadExportLift(ctx *lift.Context) error {
 
 	// Redirect to the pre-signed S3 URL
 	ctx.Set("Location", export.DownloadURL)
-	return ctx.Status(http.StatusFound).JSON(map[string]any{
-		"download_url": export.DownloadURL,
-		"expires_at":   export.ExpiresAt.Format(time.RFC3339),
+
+	var expiresAt *string
+	if export.ExpiresAt != nil {
+		v := export.ExpiresAt.Format(time.RFC3339)
+		expiresAt = &v
+	}
+
+	return ctx.Status(http.StatusFound).JSON(apimodels.ExportDownloadResponse{
+		DownloadURL: export.DownloadURL,
+		ExpiresAt:   expiresAt,
 	})
 }
 
 // checkExportBudgetLimits validates that the user has not exceeded their export budget limits
-func (h *Handler) checkExportBudgetLimits(ctx *lift.Context, username string, req *ExportRequest) error {
+func (h *Handler) checkExportBudgetLimits(ctx *lift.Context, username string, req *apimodels.ExportRequest) (bool, error) {
 	// Get import repository to access budget methods
 	importRepo := h.repos.Import()
 
@@ -613,7 +617,7 @@ func (h *Handler) checkExportBudgetLimits(ctx *lift.Context, username string, re
 	budget, withinLimits, err := importRepo.CheckBudgetLimits(ctx.Context, username, 0, estimatedCost)
 	if err != nil {
 		h.logger.Warn("failed to check budget limits, allowing export", zap.Error(err))
-		return nil // Don't block on budget check errors
+		return false, nil // Don't block on budget check errors
 	}
 
 	if !withinLimits {
@@ -628,20 +632,21 @@ func (h *Handler) checkExportBudgetLimits(ctx *lift.Context, username string, re
 			remaining = budget.GetRemainingCombinedBudget()
 		}
 
-		return ctx.Status(http.StatusPaymentRequired).JSON(map[string]any{
+		_ = ctx.Status(http.StatusPaymentRequired).JSON(map[string]any{
 			"error":            fmt.Sprintf("%s budget limit exceeded", limitType),
 			"estimated_cost":   float64(estimatedCost) / 1_000_000.0, // Convert to dollars
 			"remaining_budget": float64(remaining) / 1_000_000.0,     // Convert to dollars
 			"budget_period":    budget.Period,
 			"budget_resets_at": budget.NextResetAt.Format(time.RFC3339),
 		})
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }
 
 // estimateExportCost provides a rough cost estimate for an export operation
-func (h *Handler) estimateExportCost(req *ExportRequest) int64 {
+func (h *Handler) estimateExportCost(req *apimodels.ExportRequest) int64 {
 	baseCost := int64(50000) // $0.05 base cost in microcents
 
 	// Adjust cost based on export type
@@ -668,7 +673,7 @@ func (h *Handler) estimateExportCost(req *ExportRequest) int64 {
 
 // authenticateExportStatusRequest handles authentication for export status/download requests
 // This consolidates the duplicate authentication logic from HandleGetExportStatusLift and HandleDownloadExportLift
-func (h *Handler) authenticateExportStatusRequest(ctx *lift.Context) (string, error) {
+func (h *Handler) authenticateExportStatusRequest(ctx *lift.Context) (string, bool, error) {
 	// Check for test username
 	// Extract auth header
 	authHeader := h.extractExportAuthHeader(ctx)
@@ -676,26 +681,28 @@ func (h *Handler) authenticateExportStatusRequest(ctx *lift.Context) (string, er
 	// Extract and validate token
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		_ = common.RespondUnauthorized(ctx)
+		return "", true, nil
 	}
 
 	// Validate token (no scope check needed for read operations)
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		_ = common.RespondUnauthorized(ctx)
+		return "", true, nil
 	}
 
-	return claims.Username, nil
+	return claims.Username, false, nil
 }
 
 // checkExportRateLimit validates rate limits for export operations
-func (h *Handler) checkExportRateLimit(ctx *lift.Context, username string, exportType string) error {
+func (h *Handler) checkExportRateLimit(ctx *lift.Context, username string, exportType string) (bool, error) {
 	// Basic rate limiting - check for existing pending exports
 	existingJobs, err := h.repos.Export().GetUserExportsByStatus(ctx.Context, username, []string{"pending", "processing"})
 	if err != nil {
 		h.logger.Warn("failed to check existing jobs for rate limiting", zap.Error(err))
-		return nil // Don't block on check error
+		return false, nil // Don't block on check error
 	}
 
 	// Count exports of the same type in the last hour
@@ -709,13 +716,14 @@ func (h *Handler) checkExportRateLimit(ctx *lift.Context, username string, expor
 
 	// Allow 1 export per hour per type for regular users
 	if recentCount >= 1 {
-		return ctx.Status(http.StatusTooManyRequests).JSON(map[string]any{
+		_ = ctx.Status(http.StatusTooManyRequests).JSON(map[string]any{
 			"error":          "rate limit exceeded",
 			"limit":          1,
 			"window_seconds": 3600,
 			"retry_after":    3600,
 		})
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }

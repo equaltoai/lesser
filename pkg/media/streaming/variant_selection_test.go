@@ -8,6 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
@@ -54,37 +55,38 @@ func (m *MockStorage) GetKeyframeData(mediaID string, quality Quality) ([]byte, 
 // MockAnalytics implements a minimal core.RepositoryStorage for testing
 type MockAnalytics struct {
 	mock.Mock
+	analyticsRepo *repositories.TrendingRepository
 }
 
 // Implement all required methods returning nil (only Analytics is used in tests)
 func (m *MockAnalytics) Account() *repositories.AccountRepository                         { return nil }
 func (m *MockAnalytics) Bookmark() *repositories.BookmarkRepository                       { return nil }
-func (m *MockAnalytics) Actor() *repositories.ActorRepository                             { return nil }
-func (m *MockAnalytics) Object() *repositories.ObjectRepository                           { return nil }
-func (m *MockAnalytics) Activity() *repositories.ActivityRepository                       { return nil }
-func (m *MockAnalytics) Timeline() *repositories.TimelineRepository                       { return nil }
+func (m *MockAnalytics) Actor() interfaces.ActorRepository                                { return nil }
+func (m *MockAnalytics) Object() interfaces.ObjectRepository                              { return nil }
+func (m *MockAnalytics) Activity() interfaces.ActivityRepository                          { return nil }
+func (m *MockAnalytics) Timeline() interfaces.TimelineRepository                          { return nil }
 func (m *MockAnalytics) Like() *repositories.LikeRepository                               { return nil }
 func (m *MockAnalytics) PushSubscription() *repositories.PushSubscriptionRepository       { return nil }
 func (m *MockAnalytics) Hashtag() *repositories.HashtagRepository                         { return nil }
 func (m *MockAnalytics) ScheduledStatus() *repositories.ScheduledStatusRepository         { return nil }
 func (m *MockAnalytics) DomainBlock() *repositories.DomainBlockRepository                 { return nil }
 func (m *MockAnalytics) Media() *repositories.MediaRepository                             { return nil }
-func (m *MockAnalytics) Notification() *repositories.NotificationRepository               { return nil }
+func (m *MockAnalytics) Notification() interfaces.NotificationRepository                  { return nil }
 func (m *MockAnalytics) Poll() *repositories.PollRepository                               { return nil }
 func (m *MockAnalytics) List() *repositories.ListRepository                               { return nil }
-func (m *MockAnalytics) Moderation() *repositories.ModerationRepository                   { return nil }
+func (m *MockAnalytics) Moderation() interfaces.ModerationRepository                      { return nil }
 func (m *MockAnalytics) Announcement() *repositories.AnnouncementRepository               { return nil }
-func (m *MockAnalytics) Relationship() *repositories.RelationshipRepository               { return nil }
+func (m *MockAnalytics) Relationship() interfaces.ConcreteRelationshipRepository          { return nil }
 func (m *MockAnalytics) Instance() *repositories.InstanceRepository                       { return nil }
 func (m *MockAnalytics) Federation() *repositories.FederationRepository                   { return nil }
 func (m *MockAnalytics) Recovery() *repositories.RecoveryRepository                       { return nil }
-func (m *MockAnalytics) Analytics() *repositories.TrendingRepository                      { return nil } // Not used in tests
+func (m *MockAnalytics) Analytics() *repositories.TrendingRepository                      { return m.analyticsRepo }
 func (m *MockAnalytics) Social() *repositories.SocialRepository                           { return nil }
-func (m *MockAnalytics) User() *repositories.UserRepository                               { return nil }
-func (m *MockAnalytics) Status() *repositories.StatusRepository                           { return nil }
+func (m *MockAnalytics) User() interfaces.UserRepository                                  { return nil }
+func (m *MockAnalytics) Status() interfaces.StatusRepository                           { return nil }
 func (m *MockAnalytics) Cost() *repositories.TrackingRepository                           { return nil }
 func (m *MockAnalytics) WebSocketCost() *repositories.WebSocketCostRepository             { return nil }
-func (m *MockAnalytics) Trust() *repositories.TrustRepository                             { return nil }
+func (m *MockAnalytics) Trust() interfaces.TrustRepository                                { return nil }
 func (m *MockAnalytics) Search() *repositories.SearchRepository                           { return nil }
 func (m *MockAnalytics) Relay() *repositories.RelayRepository                             { return nil }
 func (m *MockAnalytics) CommunityNote() *repositories.CommunityNoteRepository             { return nil }
@@ -109,17 +111,17 @@ func (m *MockAnalytics) Thread() *repositories.ThreadRepository                 
 func (m *MockAnalytics) Severance() *repositories.SeveranceRepository                     { return nil }
 func (m *MockAnalytics) ModerationML() *repositories.ModerationMLRepository               { return nil }
 func (m *MockAnalytics) Quote() *repositories.QuoteRepository                             { return nil }
-func (m *MockAnalytics) MediaAnalytics() *repositories.MediaAnalyticsRepository           { return nil }
-func (m *MockAnalytics) MediaPopularity() *repositories.MediaPopularityRepository         { return nil }
-func (m *MockAnalytics) MediaSession() *repositories.MediaSessionRepository               { return nil }
-func (m *MockAnalytics) StreamingConnection() *repositories.StreamingConnectionRepository { return nil }
-func (m *MockAnalytics) Article() *repositories.ArticleRepository                         { return nil }
-func (m *MockAnalytics) Draft() *repositories.DraftRepository                             { return nil }
-func (m *MockAnalytics) Revision() *repositories.RevisionRepository                       { return nil }
-func (m *MockAnalytics) Series() *repositories.SeriesRepository                           { return nil }
-func (m *MockAnalytics) Category() *repositories.CategoryRepository                       { return nil }
-func (m *MockAnalytics) Publication() *repositories.PublicationRepository                 { return nil }
-func (m *MockAnalytics) PublicationMember() *repositories.PublicationMemberRepository     { return nil }
+func (m *MockAnalytics) MediaAnalytics() interfaces.MediaAnalyticsRepository           { return nil }
+func (m *MockAnalytics) MediaPopularity() interfaces.MediaPopularityRepository         { return nil }
+func (m *MockAnalytics) MediaSession() interfaces.MediaSessionRepository               { return nil }
+func (m *MockAnalytics) StreamingConnection() interfaces.StreamingConnectionRepository { return nil }
+func (m *MockAnalytics) Article() interfaces.ArticleRepository                         { return nil }
+func (m *MockAnalytics) Draft() interfaces.DraftRepository                             { return nil }
+func (m *MockAnalytics) Revision() interfaces.RevisionRepository                       { return nil }
+func (m *MockAnalytics) Series() interfaces.SeriesRepository                           { return nil }
+func (m *MockAnalytics) Category() interfaces.CategoryRepository                       { return nil }
+func (m *MockAnalytics) Publication() interfaces.PublicationRepository                 { return nil }
+func (m *MockAnalytics) PublicationMember() interfaces.PublicationMemberRepository     { return nil }
 func (m *MockAnalytics) GetDB() dynamormCore.DB                                           { return nil }
 func (m *MockAnalytics) GetTableName() string                                             { return "test-table" }
 func (m *MockAnalytics) GetLogger() *zap.Logger                                           { return zap.NewNop() }

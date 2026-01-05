@@ -30,12 +30,12 @@ const (
 
 // Service provides ML moderation operations
 type Service struct {
-	repo             *repositories.ModerationMLRepository
-	statusRepo       *repositories.StatusRepository
+	repo             moderationMLRepository
+	statusRepo       statusRepository
 	db               core.DB
-	bedrockClient    *bedrock.Client
-	bedrockRuntime   *bedrockruntime.Client
-	s3Client         *s3.Client
+	bedrockClient    bedrockAPI
+	bedrockRuntime   bedrockRuntimeAPI
+	s3Client         s3API
 	logger           *zap.Logger
 	trainingBucket   string
 	trainingRegion   string
@@ -44,6 +44,42 @@ type Service struct {
 	guardrailVersion string
 	roleARN          string
 }
+
+type moderationMLRepository interface {
+	CreateSample(ctx context.Context, sample *models.ModerationSample) error
+	GetSample(ctx context.Context, sampleID string) (*models.ModerationSample, error)
+	GetActiveModelVersion(ctx context.Context) (*models.ModerationModelVersion, error)
+	CreatePrediction(ctx context.Context, prediction *models.MLPrediction) error
+	GetEffectivenessMetric(ctx context.Context, patternID, period string, startTime time.Time) (*models.ModerationEffectivenessMetric, error)
+	GetPredictionsByModelVersion(ctx context.Context, modelVersion string, startTime, endTime time.Time, limit int) ([]*models.MLPrediction, error)
+	CreateEffectivenessMetric(ctx context.Context, metric *models.ModerationEffectivenessMetric) error
+	CreateTrainingJob(ctx context.Context, job *models.ModelTrainingJob) error
+	CreatePollRequest(ctx context.Context, request *models.MLPollRequest) error
+}
+
+type statusRepository interface {
+	GetStatus(ctx context.Context, statusID string) (*models.Status, error)
+}
+
+type bedrockAPI interface {
+	CreateModelCustomizationJob(ctx context.Context, params *bedrock.CreateModelCustomizationJobInput, optFns ...func(*bedrock.Options)) (*bedrock.CreateModelCustomizationJobOutput, error)
+}
+
+type bedrockRuntimeAPI interface {
+	InvokeModel(ctx context.Context, params *bedrockruntime.InvokeModelInput, optFns ...func(*bedrockruntime.Options)) (*bedrockruntime.InvokeModelOutput, error)
+}
+
+type s3API interface {
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+}
+
+var (
+	_ moderationMLRepository = (*repositories.ModerationMLRepository)(nil)
+	_ statusRepository       = (*repositories.StatusRepository)(nil)
+	_ bedrockAPI             = (*bedrock.Client)(nil)
+	_ bedrockRuntimeAPI      = (*bedrockruntime.Client)(nil)
+	_ s3API                  = (*s3.Client)(nil)
+)
 
 // Config holds configuration for the ML moderation service
 type Config struct {
@@ -57,11 +93,15 @@ type Config struct {
 
 // NewService creates a new moderation ML service
 func NewService(
-	repo *repositories.ModerationMLRepository,
+	repo moderationMLRepository,
 	awsCfg aws.Config,
 	config Config,
 	logger *zap.Logger,
 ) *Service {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	return &Service{
 		repo:             repo,
 		bedrockClient:    bedrock.NewFromConfig(awsCfg),
@@ -83,7 +123,7 @@ func (s *Service) SetDB(db core.DB) {
 }
 
 // SetStatusRepository sets the status repository for content fetching
-func (s *Service) SetStatusRepository(repo *repositories.StatusRepository) {
+func (s *Service) SetStatusRepository(repo statusRepository) {
 	s.statusRepo = repo
 }
 

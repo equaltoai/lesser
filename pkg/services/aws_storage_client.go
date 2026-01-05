@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -228,21 +229,21 @@ func (s *AWSS3StorageClient) GetFile(ctx context.Context, key string) ([]byte, e
 
 // getContentType returns the appropriate content type based on file extension
 func (s *AWSS3StorageClient) getContentType(key string) string {
-	// Simple content type mapping for common import/export formats
-	if len(key) > 5 {
-		switch key[len(key)-4:] {
-		case ".zip":
-			return "application/zip"
-		case ".tar":
-			return "application/x-tar"
-		case ".csv":
-			return "text/csv"
-		case ".json":
-			return "application/json"
-		}
-	}
-	if len(key) > 7 && key[len(key)-7:] == ".tar.gz" {
+	lower := strings.ToLower(key)
+	if strings.HasSuffix(lower, ".tar.gz") {
 		return "application/gzip"
+	}
+	if strings.HasSuffix(lower, ".zip") {
+		return "application/zip"
+	}
+	if strings.HasSuffix(lower, ".tar") {
+		return "application/x-tar"
+	}
+	if strings.HasSuffix(lower, ".csv") {
+		return "text/csv"
+	}
+	if strings.HasSuffix(lower, ".json") {
+		return "application/json"
 	}
 	// Default to binary for unknown file types
 	return "application/octet-stream"

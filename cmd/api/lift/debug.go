@@ -475,7 +475,8 @@ func (h *Handler) authenticateDebugRequest(ctx *lift.Context, _ string) (*auth.C
 func (h *Handler) validateRequiredParam(ctx *lift.Context, paramName, paramValue, errorMessage string) error {
 	if err := common.ValidateRequiredParam(paramName, paramValue); err != nil {
 		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": errorMessage})
+		_ = ctx.JSON(map[string]string{"error": errorMessage})
+		return fmt.Errorf("missing required param %s", paramName)
 	}
 	return nil
 }

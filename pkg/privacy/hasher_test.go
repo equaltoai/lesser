@@ -453,6 +453,12 @@ func createTestHasher(t *testing.T) *Hasher {
 		config.MasterKey[i] = byte(i % 256)
 	}
 
+	// Use much faster parameters for unit tests; security properties are validated
+	// separately from performance characteristics.
+	config.Argon2Memory = 1024
+	config.Argon2Time = 1
+	config.Argon2Threads = 1
+
 	hasher, err := NewHasher(config)
 	if err != nil {
 		t.Fatalf("Failed to create test hasher: %v", err)

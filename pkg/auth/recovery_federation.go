@@ -32,6 +32,11 @@ type RecoveryFederationService struct {
 	domain         string
 	secretsManager SecretsManager
 	config         *config.Config
+	socialRecovery socialRecoveryConfirmer
+}
+
+type socialRecoveryConfirmer interface {
+	ConfirmRecovery(ctx context.Context, requestID, trusteeActorID string) error
 }
 
 // NewRecoveryFederationService creates a new recovery federation service
@@ -49,7 +54,7 @@ func NewRecoveryFederationService(cfg *config.Config, repos StorageProvider, fed
 			zap.String("fallback", "system actor creation will be disabled"))
 	}
 
-	return &RecoveryFederationService{
+	service := &RecoveryFederationService{
 		repos:          repos,
 		fedService:     fedService,
 		domain:         domain,
@@ -57,6 +62,10 @@ func NewRecoveryFederationService(cfg *config.Config, repos StorageProvider, fed
 		secretsManager: secretsManager,
 		config:         cfg,
 	}
+
+	service.socialRecovery = NewSocialRecoveryService(repos, logger)
+
+	return service
 }
 
 // SendTrusteeInvitation sends an ActivityPub notification to a trustee
@@ -218,8 +227,11 @@ func (s *RecoveryFederationService) HandleTrusteeConfirmation(ctx context.Contex
 	trusteeActorID := activity.Actor
 
 	// Process the confirmation
-	socialRecovery := NewSocialRecoveryService(s.repos, s.logger)
-	if err := socialRecovery.ConfirmRecovery(ctx, requestID, trusteeActorID); err != nil {
+	confirmer := s.socialRecovery
+	if confirmer == nil {
+		confirmer = NewSocialRecoveryService(s.repos, s.logger)
+	}
+	if err := confirmer.ConfirmRecovery(ctx, requestID, trusteeActorID); err != nil {
 		s.logger.Error("failed to process recovery confirmation",
 			zap.Error(err),
 			zap.String("request_id", requestID),

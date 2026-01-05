@@ -108,7 +108,7 @@ type streamingService struct {
 	keyPairID          string
 	privateKey         []byte
 	cloudFront         *cloudfront.Client
-	cloudWatch         *cloudwatch.Client
+	cloudWatch         cloudWatchAPI
 	mediaStorage       streaming.MediaStorage
 	cloudWatchEnhanced *CloudWatchEnhancedStreamingService
 	storage            core.RepositoryStorage
@@ -142,7 +142,7 @@ func NewStreamingServiceWithStorage(ctx context.Context, distributionDomain, key
 
 	// Create CloudWatch enhanced service with proper logger
 	logger := storage.GetLogger()
-	cloudWatchEnhanced := NewCloudWatchEnhancedStreamingService(cfg, storage, logger)
+	cloudWatchEnhanced := NewCloudWatchEnhancedStreamingService(cfg, storage.StreamingCloudWatch(), logger)
 
 	return &streamingService{
 		distributionDomain: distributionDomain,
@@ -161,7 +161,7 @@ func (s *streamingService) SetStorage(storage core.RepositoryStorage) {
 	s.storage = storage
 	if storage != nil {
 		cfg, _ := config.LoadDefaultConfig(context.Background())
-		s.cloudWatchEnhanced = NewCloudWatchEnhancedStreamingService(cfg, storage, storage.GetLogger())
+		s.cloudWatchEnhanced = NewCloudWatchEnhancedStreamingService(cfg, storage.StreamingCloudWatch(), storage.GetLogger())
 	}
 }
 

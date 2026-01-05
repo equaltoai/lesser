@@ -5,25 +5,24 @@
    * ⚠️ STATELESS STATIC APPLICATION - NO SESSIONS OR COOKIES PERMITTED ⚠️
    * 
    * This is a static UI component that:
-   * - Receives JWT from URL query params (passed by Lesser)
-   * - Uses sessionStorage ONLY to hold JWT during consent approval
+   * - Reads JWT from sessionStorage (set after login)
    * - NEVER sets cookies or creates sessions
    * - Passes JWT back to Lesser via Authorization header for stateless validation
    * 
    * Flow:
-   * 1. Lesser redirects here with access_token in URL
-   * 2. Component extracts JWT from URL and stores in sessionStorage temporarily
+   * 1. User logs in → JWT stored in sessionStorage
+   * 2. Lesser redirects here for consent
    * 3. User approves/denies → sends JWT to Lesser
    * 4. Lesser validates JWT (stateless) and continues OAuth flow
    * 5. JWT is cleared from sessionStorage after use
    */
   
-  import { Button } from '@equaltoai/greater-components/primitives';
+  import Button from 'src/lib/greater/primitives/components/Button.svelte';
   import { onMount } from 'svelte';
   
-  // API base URL - auth UI is on auth.domain but API is on domain
-  const API_BASE = window.location.hostname.replace('auth.', '');
-  const API_URL = `https://${API_BASE}`;
+  // API base URL - single-domain CloudFront routes API + UI by path.
+  // For local dev, optionally set PUBLIC_LESSER_API_ORIGIN (e.g., http://localhost:8080).
+  const API_URL = import.meta.env.PUBLIC_LESSER_API_ORIGIN || window.location.origin;
   
   interface Props {
     // Props are optional - component reads from URL directly
@@ -55,14 +54,8 @@
     const scopesParam = urlParams.get('scopes') || 'read write';
     scopes = scopesParam.split(' ').filter(s => s.trim());
     
-    // Get access_token from URL (passed from Lesser for stateless auth)
-    const accessToken = urlParams.get('access_token');
-    if (accessToken) {
-      // Store JWT in sessionStorage for consent submission
-      sessionStorage.setItem('lesser_auth_jwt', accessToken);
-      console.log('OAuthConsentScreen - JWT received from URL and stored');
-    } else {
-      console.error('OAuthConsentScreen - No access_token in URL!', window.location.href);
+    const jwt = sessionStorage.getItem('lesser_auth_jwt') || '';
+    if (!jwt) {
       error = 'Not authenticated. Please log in again.';
     }
     
@@ -91,17 +84,7 @@
     isApproving = true;
     error = '';
     
-    // Get JWT from sessionStorage (should have been stored by onMount from URL)
-    let jwt = sessionStorage.getItem('lesser_auth_jwt');
-    
-    // Fallback: check URL params again in case onMount hasn't run yet
-    if (!jwt) {
-      const urlParams = new URLSearchParams(window.location.search);
-      jwt = urlParams.get('access_token') || '';
-      if (jwt) {
-        sessionStorage.setItem('lesser_auth_jwt', jwt);
-      }
-    }
+    const jwt = sessionStorage.getItem('lesser_auth_jwt') || '';
     
     if (!jwt) {
       error = 'Not authenticated. Please log in again.';
@@ -155,17 +138,7 @@
     isDenying = true;
     error = '';
     
-    // Get JWT from sessionStorage (should have been stored by onMount from URL)
-    let jwt = sessionStorage.getItem('lesser_auth_jwt');
-    
-    // Fallback: check URL params again in case onMount hasn't run yet
-    if (!jwt) {
-      const urlParams = new URLSearchParams(window.location.search);
-      jwt = urlParams.get('access_token') || '';
-      if (jwt) {
-        sessionStorage.setItem('lesser_auth_jwt', jwt);
-      }
-    }
+    const jwt = sessionStorage.getItem('lesser_auth_jwt') || '';
     
     if (!jwt) {
       error = 'Not authenticated. Please log in again.';

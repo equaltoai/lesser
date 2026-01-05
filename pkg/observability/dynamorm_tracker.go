@@ -183,8 +183,8 @@ func (t *DynamORMTracker) TrackBatch(ctx context.Context, operation string, tabl
 
 // GetLatencyContext extracts latency tracking information from context
 func GetLatencyContext(ctx context.Context) (operation string, startTime time.Time, ok bool) {
-	if op, opOk := ctx.Value("latency_operation").(string); opOk {
-		if start, startOk := ctx.Value("latency_start").(time.Time); startOk {
+	if op, opOk := ctx.Value(latencyOperationKey).(string); opOk {
+		if start, startOk := ctx.Value(latencyStartKey).(time.Time); startOk {
 			return op, start, true
 		}
 	}

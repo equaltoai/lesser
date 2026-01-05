@@ -51,7 +51,7 @@ func (h *Handler) HandleUnbookmarkLift(ctx *lift.Context) error {
 	// Authenticate user
 	username, err := h.authenticateUser(ctx, []string{auth.ScopeWrite})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondUnauthorized(ctx)
@@ -92,7 +92,7 @@ func (h *Handler) HandleGetBookmarksLift(ctx *lift.Context) error {
 	// Authenticate user
 	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondUnauthorized(ctx)

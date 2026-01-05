@@ -50,6 +50,26 @@ func TestConvertAttributeValue(t *testing.T) {
 			expected: nil,
 		},
 		{
+			name:     "binary attribute",
+			attr:     events.NewBinaryAttribute([]byte("hello")),
+			expected: []byte("hello"),
+		},
+		{
+			name:     "string set attribute",
+			attr:     events.NewStringSetAttribute([]string{"a", "b"}),
+			expected: []string{"a", "b"},
+		},
+		{
+			name:     "number set attribute",
+			attr:     events.NewNumberSetAttribute([]string{"1", "2"}),
+			expected: []string{"1", "2"},
+		},
+		{
+			name:     "binary set attribute",
+			attr:     events.NewBinarySetAttribute([][]byte{[]byte("a"), []byte("b")}),
+			expected: [][]byte{[]byte("a"), []byte("b")},
+		},
+		{
 			name: "map attribute",
 			attr: events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
 				"key1": events.NewStringAttribute("value1"),

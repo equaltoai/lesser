@@ -393,14 +393,14 @@ func (h *Handler) authenticateDirectTimeline(ctx *lift.Context) (string, error) 
 // extractDirectTimelineAuthHeader extracts authorization header from request
 func (h *Handler) extractDirectTimelineAuthHeader(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
 	// Try direct access to headers if ctx.Header doesn't work
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}

@@ -87,7 +87,7 @@ func (m *Middleware) RequireAuth(_ context.Context, request events.APIGatewayV2H
 		}
 		userAgent := request.Headers["User-Agent"]
 
-		common.LogAuthFailure(err.Error(), "", ip, userAgent)
+		common.LogAuthFailure(err.Error(), "", ip, userAgent, request.RequestContext.RequestID)
 		return nil, err
 	}
 

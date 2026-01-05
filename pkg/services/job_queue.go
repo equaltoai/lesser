@@ -31,9 +31,15 @@ type JobQueueServiceInterface interface {
 	QueueDelayedJob(ctx context.Context, queueName string, messageBody interface{}, delaySeconds int32) error
 }
 
+type sqsAPI interface {
+	SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
+	SendMessageBatch(ctx context.Context, params *sqs.SendMessageBatchInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageBatchOutput, error)
+	GetQueueAttributes(ctx context.Context, params *sqs.GetQueueAttributesInput, optFns ...func(*sqs.Options)) (*sqs.GetQueueAttributesOutput, error)
+}
+
 // JobQueueService handles job queueing via SQS
 type JobQueueService struct {
-	sqsClient *sqs.Client
+	sqsClient sqsAPI
 	queueUrls map[string]string
 	logger    *zap.Logger
 }

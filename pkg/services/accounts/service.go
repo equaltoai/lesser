@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -1940,8 +1941,21 @@ func (s *Service) initialPostingVisibility(requested string) string {
 	return models.VisibilityPublic
 }
 
+func isNilInterface(value any) bool {
+	if value == nil {
+		return true
+	}
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Interface, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan:
+		return rv.IsNil()
+	default:
+		return false
+	}
+}
+
 func (s *Service) ensureQuotePermissionsForNewUser(ctx context.Context, repo quotePermissionsCreator, username, visibility string) error {
-	if repo == nil {
+	if isNilInterface(repo) {
 		return ErrQuoteRepositoryNotAvailable
 	}
 
@@ -1958,7 +1972,7 @@ func (s *Service) ensureQuotePermissionsForNewUser(ctx context.Context, repo quo
 }
 
 func (s *Service) persistDefaultPostingVisibility(ctx context.Context, repo accountRegistrationRepository, username, visibility string) error {
-	if repo == nil {
+	if isNilInterface(repo) {
 		return ErrAccountRepositoryNotAvailable
 	}
 
@@ -1974,7 +1988,7 @@ func (s *Service) persistDefaultPostingVisibility(ctx context.Context, repo acco
 }
 
 func (s *Service) rollbackAccountCreation(ctx context.Context, repo accountRegistrationRepository, username string, cause error) {
-	if repo == nil {
+	if isNilInterface(repo) {
 		s.logger.Error("unable to rollback account creation; account repository unavailable",
 			zap.String("username", username),
 			zap.NamedError("cause", cause))
@@ -2605,7 +2619,7 @@ func (s *Service) GetAccountNote(ctx context.Context, currentUsername, targetAct
 }
 
 // checkBlocking checks if one user has blocked another user
-func (s *Service) checkBlocking(ctx context.Context, relationshipRepo *repositories.RelationshipRepository, blockerID, blockedID string) bool {
+func (s *Service) checkBlocking(ctx context.Context, relationshipRepo interfaces.ConcreteRelationshipRepository, blockerID, blockedID string) bool {
 	if relationshipRepo == nil {
 		return false
 	}
@@ -2699,7 +2713,7 @@ func (s *Service) buildRelationshipData(ctx context.Context, username, targetAcc
 }
 
 // checkFollowingStatus checks if one user follows another
-func (s *Service) checkFollowingStatus(ctx context.Context, repo *repositories.RelationshipRepository, follower, followee string) bool {
+func (s *Service) checkFollowingStatus(ctx context.Context, repo interfaces.ConcreteRelationshipRepository, follower, followee string) bool {
 	following, err := repo.IsFollowing(ctx, follower, followee)
 	if err != nil {
 		s.logger.Warn("failed to check following status",
@@ -2712,7 +2726,7 @@ func (s *Service) checkFollowingStatus(ctx context.Context, repo *repositories.R
 }
 
 // checkMutingStatus checks if one user has muted another
-func (s *Service) checkMutingStatus(ctx context.Context, repo *repositories.RelationshipRepository, muter, muted string) bool {
+func (s *Service) checkMutingStatus(ctx context.Context, repo interfaces.ConcreteRelationshipRepository, muter, muted string) bool {
 	muting, err := repo.IsMuted(ctx, muter, muted)
 	if err != nil {
 		s.logger.Warn("failed to check muting status",
@@ -2725,7 +2739,7 @@ func (s *Service) checkMutingStatus(ctx context.Context, repo *repositories.Rela
 }
 
 // checkMutingNotifications checks if notifications are muted for a muted user
-func (s *Service) checkMutingNotifications(ctx context.Context, repo *repositories.RelationshipRepository, username, targetAccount string, isMuting bool) bool {
+func (s *Service) checkMutingNotifications(ctx context.Context, repo interfaces.ConcreteRelationshipRepository, username, targetAccount string, isMuting bool) bool {
 	if !isMuting {
 		return false
 	}
@@ -2739,7 +2753,7 @@ func (s *Service) checkMutingNotifications(ctx context.Context, repo *repositori
 }
 
 // checkFollowRequest checks if there's a pending follow request
-func (s *Service) checkFollowRequest(ctx context.Context, repo *repositories.RelationshipRepository, requester, target string) bool {
+func (s *Service) checkFollowRequest(ctx context.Context, repo interfaces.ConcreteRelationshipRepository, requester, target string) bool {
 	requested, err := repo.HasFollowRequest(ctx, requester, target)
 	if err != nil {
 		return false

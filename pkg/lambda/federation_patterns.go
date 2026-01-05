@@ -5,22 +5,42 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	liftPkg "github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
+var (
+	federationTimeNow   = time.Now
+	federationTimeSince = time.Since
+	federationTimeSleep = time.Sleep
+)
+
+type federationDeliveryService interface {
+	DeliverActivity(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor) error
+	DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error
+	DeliverToRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error
+}
+
+type federationCostCalculator interface {
+	CalculateFederationCosts(params *federation.CostCalculationParams) *models.FederationCostTracking
+}
+
 // FederationDeliveryPattern provides standardized federation delivery logic
 type FederationDeliveryPattern struct {
 	lambdaCtx                    *common.LambdaContext
-	federationService            *federation.DeliveryService
-	costCalculator               *federation.CostCalculator
+	federationService            federationDeliveryService
+	costCalculator               federationCostCalculator
 	federationActivityRepository interface{} // *repositories.FederationActivityRepository
 	federationCostRepository     interface{} // *repositories.FederationCostRepository
 	logger                       *zap.Logger
@@ -28,10 +48,20 @@ type FederationDeliveryPattern struct {
 
 // NewFederationDeliveryPattern creates a new standardized federation delivery pattern
 func NewFederationDeliveryPattern(lambdaCtx *common.LambdaContext) *FederationDeliveryPattern {
+	svc, ok := lambdaCtx.DeliveryService.(federationDeliveryService)
+	if !ok {
+		panic("lambdaCtx.DeliveryService does not implement federationDeliveryService")
+	}
+
+	calculator, ok := lambdaCtx.CostCalculator.(federationCostCalculator)
+	if !ok {
+		panic("lambdaCtx.CostCalculator does not implement federationCostCalculator")
+	}
+
 	return &FederationDeliveryPattern{
 		lambdaCtx:         lambdaCtx,
-		federationService: lambdaCtx.DeliveryService.(*federation.DeliveryService),
-		costCalculator:    lambdaCtx.CostCalculator.(*federation.CostCalculator),
+		federationService: svc,
+		costCalculator:    calculator,
 		logger:            lambdaCtx.Logger,
 		// Note: repositories would be extracted from lambdaCtx in real implementation
 	}
@@ -87,7 +117,7 @@ func DefaultRetryConfig() RetryConfig {
 func (fdp *FederationDeliveryPattern) ProcessSQSEvent(ctx *liftPkg.Context, event events.SQSEvent) error {
 	requestID := ctx.GetRequestID()
 	if requestID == "" {
-		requestID = fmt.Sprintf("federation-%d", time.Now().UnixNano())
+		requestID = fmt.Sprintf("federation-%d", federationTimeNow().UnixNano())
 	}
 
 	fdp.logger.Info("processing federation delivery batch",
@@ -160,7 +190,7 @@ func (fdp *FederationDeliveryPattern) processMessagesWithConcurrency(ctx *liftPk
 
 // processMessage processes a single SQS federation message
 func (fdp *FederationDeliveryPattern) processMessage(ctx *liftPkg.Context, msg events.SQSMessage) DeliveryResult {
-	start := time.Now()
+	start := federationTimeNow()
 
 	// Parse the delivery message
 	var deliveryMsg ActivityDeliveryMessage
@@ -194,7 +224,7 @@ func (fdp *FederationDeliveryPattern) processMessage(ctx *liftPkg.Context, msg e
 	result := fdp.deliverActivityWithRetry(ctx.Request.Context(), deliveryMsg)
 
 	// Record comprehensive metrics and costs
-	fdp.recordDeliveryMetrics(deliveryMsg, result, time.Since(start))
+	fdp.recordDeliveryMetrics(deliveryMsg, result, federationTimeSince(start))
 
 	return result
 }
@@ -219,7 +249,7 @@ func (fdp *FederationDeliveryPattern) deliverActivityWithRetry(ctx context.Conte
 	var lastResult DeliveryResult
 
 	for attempt := 1; attempt <= retryConfig.MaxAttempts; attempt++ {
-		start := time.Now()
+		start := federationTimeNow()
 
 		// Calculate delay for this attempt (skip delay on first attempt)
 		if attempt > 1 {
@@ -230,23 +260,22 @@ func (fdp *FederationDeliveryPattern) deliverActivityWithRetry(ctx context.Conte
 				zap.Int("attempt", attempt),
 				zap.Duration("delay", delay),
 			)
-			time.Sleep(delay)
+			federationTimeSleep(delay)
 		}
 
 		// Attempt delivery
-		err := fdp.federationService.DeliverActivity(ctx, msg.Activity, msg.TargetInbox, msg.Actor)
+		statusCode, err := fdp.performDeliveryAttempt(ctx, msg)
 
 		lastResult = DeliveryResult{
 			TargetInbox: msg.TargetInbox,
 			Success:     err == nil,
-			Duration:    time.Since(start),
+			Duration:    federationTimeSince(start),
 			Attempt:     attempt,
+			StatusCode:  statusCode,
+			Error:       err,
 		}
 
 		if err != nil {
-			lastResult.Error = err
-			lastResult.StatusCode = 500 // Default to server error
-
 			fdp.logger.Warn("delivery attempt failed",
 				zap.String("activity_id", msg.Activity.ID),
 				zap.String("target_inbox", msg.TargetInbox),
@@ -255,21 +284,17 @@ func (fdp *FederationDeliveryPattern) deliverActivityWithRetry(ctx context.Conte
 			)
 
 			// Check if this is a permanent error
-			if fdp.isPermanentError(lastResult.StatusCode, retryConfig) {
+			if fdp.isPermanentError(statusCode, retryConfig) {
 				fdp.logger.Info("permanent error detected, not retrying",
 					zap.String("activity_id", msg.Activity.ID),
-					zap.Int("status_code", lastResult.StatusCode),
+					zap.Int("status_code", statusCode),
 				)
 				break
 			}
-
 			continue
 		}
 
 		// Success
-		lastResult.Success = true
-		lastResult.StatusCode = 200
-
 		fdp.logger.Info("activity delivered successfully",
 			zap.String("activity_id", msg.Activity.ID),
 			zap.String("target_inbox", msg.TargetInbox),
@@ -280,6 +305,46 @@ func (fdp *FederationDeliveryPattern) deliverActivityWithRetry(ctx context.Conte
 	}
 
 	return lastResult
+}
+
+func (fdp *FederationDeliveryPattern) performDeliveryAttempt(ctx context.Context, msg ActivityDeliveryMessage) (int, error) {
+	err := fdp.federationService.DeliverActivity(ctx, msg.Activity, msg.TargetInbox, msg.Actor)
+	statusCode := 200
+	if err != nil {
+		statusCode = fdp.extractStatusCode(err)
+	}
+	return statusCode, err
+}
+
+func (fdp *FederationDeliveryPattern) extractStatusCode(err error) int {
+	statusCode := 500
+	if appErr, ok := apperrors.AsAppError(err); ok {
+		if raw, exists := appErr.Metadata["status_code"]; exists {
+			switch value := raw.(type) {
+			case int:
+				if value > 0 {
+					statusCode = value
+				}
+			case int32:
+				if value > 0 {
+					statusCode = int(value)
+				}
+			case int64:
+				if value > 0 {
+					statusCode = int(value)
+				}
+			case float64:
+				if value > 0 {
+					statusCode = int(value)
+				}
+			case string:
+				if parsed, parseErr := strconv.Atoi(value); parseErr == nil && parsed > 0 {
+					statusCode = parsed
+				}
+			}
+		}
+	}
+	return statusCode
 }
 
 // calculateBackoffDelay calculates the delay for exponential backoff
@@ -318,7 +383,7 @@ func (fdp *FederationDeliveryPattern) recordDeliveryMetrics(msg ActivityDelivery
 		ActivityType:       msg.Activity.Type,
 		Direction:          "outbound",
 		OperationType:      "federation_delivery",
-		Timestamp:          time.Now(),
+		Timestamp:          federationTimeNow(),
 		PayloadSize:        payloadSize,
 		Success:            result.Success,
 		ResponseTimeMs:     totalDuration.Milliseconds(),
@@ -377,31 +442,16 @@ func extractDomainFromURL(urlStr string) string {
 		return ""
 	}
 
-	// Handle https:// URLs
-	if strings.HasPrefix(urlStr, "https://") {
-		parts := urlStr[8:]
-		if idx := strings.IndexByte(parts, '/'); idx > 0 {
-			return parts[:idx]
-		}
-		if idx := strings.IndexByte(parts, ':'); idx > 0 {
-			return parts[:idx]
-		}
-		return parts
+	parsedURLStr := urlStr
+	if !strings.HasPrefix(urlStr, "http://") && !strings.HasPrefix(urlStr, "https://") {
+		parsedURLStr = "https://" + urlStr
 	}
 
-	// Handle http:// URLs
-	if strings.HasPrefix(urlStr, "http://") {
-		parts := urlStr[7:]
-		if idx := strings.IndexByte(parts, '/'); idx > 0 {
-			return parts[:idx]
-		}
-		if idx := strings.IndexByte(parts, ':'); idx > 0 {
-			return parts[:idx]
-		}
-		return parts
+	parsed, err := url.Parse(parsedURLStr)
+	if err != nil {
+		return ""
 	}
-
-	return urlStr
+	return parsed.Hostname()
 }
 
 // TriggerFederationDelivery provides standardized logic for triggering federation delivery

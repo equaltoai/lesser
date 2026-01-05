@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -35,18 +36,18 @@ const (
 
 // Service provides notes/status operations
 type Service struct {
-	noteRepo          *repositories.StatusRepository
+	noteRepo          interfaces.StatusRepository
 	accountRepo       interfaces.AccountRepository
 	bookmarkRepo      *repositories.BookmarkRepository
-	relationshipRepo  *repositories.RelationshipRepository
+	relationshipRepo  interfaces.ConcreteRelationshipRepository
 	mediaRepo         interfaces.MediaRepository
 	likeRepo          *repositories.LikeRepository
 	socialRepo        interfaces.SocialRepository
 	conversationRepo  interfaces.ConversationRepository
-	objectRepo        *repositories.ObjectRepository
+	objectRepo        interfaces.ObjectRepository
 	searchRepo        *repositories.SearchRepository
 	communityNoteRepo *repositories.CommunityNoteRepository
-	userRepo          *repositories.UserRepository
+	userRepo          interfaces.UserRepository
 	pollRepo          *repositories.PollRepository
 	scheduledRepo     ScheduledStatusRepository
 	publisher         streaming.Publisher
@@ -153,18 +154,18 @@ func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common
 
 // NewService creates a new Notes Service with the required dependencies
 func NewService(
-	noteRepo *repositories.StatusRepository,
+	noteRepo interfaces.StatusRepository,
 	accountRepo interfaces.AccountRepository,
 	bookmarkRepo *repositories.BookmarkRepository,
-	relationshipRepo *repositories.RelationshipRepository,
+	relationshipRepo interfaces.ConcreteRelationshipRepository,
 	mediaRepo interfaces.MediaRepository,
 	likeRepo *repositories.LikeRepository,
 	socialRepo interfaces.SocialRepository,
 	conversationRepo interfaces.ConversationRepository,
-	objectRepo *repositories.ObjectRepository,
+	objectRepo interfaces.ObjectRepository,
 	searchRepo *repositories.SearchRepository,
 	communityNoteRepo *repositories.CommunityNoteRepository,
-	userRepo *repositories.UserRepository,
+	userRepo interfaces.UserRepository,
 	pollRepo *repositories.PollRepository,
 	publisher streaming.Publisher,
 	analytics AnalyticsService,
@@ -531,6 +532,7 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 	if status.Note != nil && status.Note.Get() != nil {
 		status.Note.Get().Content = cmd.Content
 		status.Note.Get().Sensitive = cmd.Sensitive
+		status.Note.Get().Summary = cmd.SpoilerText
 		now := time.Now()
 		status.Note.Get().Updated = &now
 	}
@@ -992,6 +994,10 @@ func (s *Service) buildNotesResult(filteredNotes []*models.Status, result *inter
 // Private helper methods
 
 func (s *Service) validateCreateCommand(ctx context.Context, cmd *CreateNoteCommand) error {
+	if cmd == nil {
+		return ErrNotesValidationFailed
+	}
+
 	// Use centralized business logic validation
 	rules := common.ValidationRules{
 		Required: []string{"author_id", "content"},
@@ -2473,8 +2479,9 @@ func (s *Service) UnpinNote(ctx context.Context, cmd *UnpinNoteCommand) (*LikeRe
 
 // MuteNoteCommand represents a request to mute a status
 type MuteNoteCommand struct {
-	StatusID string `json:"status_id" validate:"required"`
-	MuterID  string `json:"muter_id" validate:"required"`
+	StatusID        string `json:"status_id" validate:"required"`
+	MuterID         string `json:"muter_id" validate:"required"`
+	DurationSeconds int    `json:"duration_seconds"`
 }
 
 // UnmuteNoteCommand represents a request to unmute a status
@@ -2492,7 +2499,7 @@ func (s *Service) MuteNote(ctx context.Context, cmd *MuteNoteCommand) (*LikeResu
 	}
 
 	// Mute the status through repository interface
-	if err := s.muteStatus(ctx, cmd.MuterID, cmd.StatusID); err != nil {
+	if err := s.muteStatus(ctx, cmd.MuterID, cmd.StatusID, cmd.DurationSeconds); err != nil {
 		return nil, ErrMuteStatus
 	}
 
@@ -2901,7 +2908,7 @@ func (s *Service) unpinStatus(ctx context.Context, userID, statusID string) erro
 	return nil
 }
 
-func (s *Service) muteStatus(ctx context.Context, userID, statusID string) error {
+func (s *Service) muteStatus(ctx context.Context, userID, statusID string, durationSeconds int) error {
 	// Muting a status actually mutes its conversation
 	// First normalize the status ID to get the conversation ID
 	conversationID := statusID
@@ -2914,6 +2921,10 @@ func (s *Service) muteStatus(ctx context.Context, userID, statusID string) error
 		Username:       userID,
 		ConversationID: conversationID,
 		CreatedAt:      time.Now(),
+	}
+
+	if durationSeconds > 0 {
+		mute.ExpiresAt = time.Now().Add(time.Duration(durationSeconds) * time.Second)
 	}
 
 	// Store the mute
@@ -3007,12 +3018,23 @@ func (s *Service) getListTimeline(_ context.Context, query *ListNotesQuery) (*Re
 		zap.String("viewer_id", query.ViewerID))
 
 	// Sort by published date (newest first)
-	for i := 0; i < len(allStatuses)-1; i++ {
-		for j := i + 1; j < len(allStatuses); j++ {
-			if allStatuses[i].PublishedAt.Before(allStatuses[j].PublishedAt) {
-				allStatuses[i], allStatuses[j] = allStatuses[j], allStatuses[i]
+	if len(allStatuses) > 1 {
+		slices.SortStableFunc(allStatuses, func(a, b *models.Status) int {
+			switch {
+			case a == nil && b == nil:
+				return 0
+			case a == nil:
+				return 1
+			case b == nil:
+				return -1
+			case a.PublishedAt.After(b.PublishedAt):
+				return -1
+			case a.PublishedAt.Before(b.PublishedAt):
+				return 1
+			default:
+				return 0
 			}
-		}
+		})
 	}
 
 	// Apply pagination limits

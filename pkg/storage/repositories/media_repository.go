@@ -13,6 +13,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -49,6 +50,16 @@ func NewMediaRepository(db core.DB, tableName string, logger *zap.Logger, costSe
 // SetDependencies sets repository dependencies for cross-repo operations
 func (r *MediaRepository) SetDependencies(deps map[string]interface{}) {
 	r.deps = deps
+}
+
+func (r *MediaRepository) isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if dynamormerrors.IsNotFound(err) {
+		return true
+	}
+	return apperrors.HasCode(err, apperrors.CodeNotFound)
 }
 
 // CreateMediaJob creates a new media processing job
@@ -190,8 +201,8 @@ func (r *MediaRepository) GetMedia(ctx context.Context, mediaID string) (*models
 
 	err := r.Get(ctx, pk, sk, &media)
 	if err != nil {
-		if dynamormerrors.IsNotFound(err) {
-			return nil, ErrorHandler.HandleGetError(err, EntityMedia, mediaID)
+		if r.isNotFoundError(err) {
+			return nil, err
 		}
 		return nil, ErrorHandler.HandleGetError(err, EntityMedia, mediaID)
 	}
@@ -1249,7 +1260,7 @@ func (r *MediaRepository) GetMediaByIDs(ctx context.Context, mediaIDs []string) 
 	for _, mediaID := range mediaIDs {
 		media, err := r.GetMedia(ctx, mediaID)
 		if err != nil {
-			if dynamormerrors.IsNotFound(err) {
+			if r.isNotFoundError(err) {
 				// Skip not found items
 				continue
 			}

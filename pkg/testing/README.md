@@ -134,36 +134,32 @@ The benchmarks (`benchmarks/`) provide performance testing for:
 - **Memory usage**: Allocation and garbage collection
 - **Concurrent access**: Thread safety and scalability
 
-## Make Targets
+## CLI Commands
 
-### Basic Testing
+The repo standard is to use the `lesser` CLI for test workflows.
+
+### Basic testing
 ```bash
-make test                    # Run all unit tests
-make test-unit              # Run unit tests only (short)
-make test-integration       # Run integration tests
-make test-benchmark         # Run benchmark tests
+./lesser test
+./lesser test unit
+./lesser test integration
 ```
 
-### Coverage Testing
+### Coverage / race
 ```bash
-make test-coverage          # Run tests with coverage report
-make test-coverage-enforce  # Enforce minimum 70% coverage
-make test-coverage-detail   # Detailed coverage by package
+./lesser test coverage
+./lesser test race
 ```
 
-### Advanced Testing
+### Benchmarks / package-only
+Use `go test` directly:
 ```bash
-make test-race             # Run with race detection
-make test-package PKG=path # Test specific package
-make test-watch           # Run tests in watch mode
+go test ./pkg/storage/...
+go test -bench=. ./...
 ```
 
-### Load Testing
-```bash
-make test-load            # Run k6 load tests
-make k6-auth              # Test authentication endpoints
-make k6-timeline          # Test timeline performance
-```
+### Load testing
+See `tests/README.md` (k6 scripts under `tests/load/` and `tests/k6/`).
 
 ## Configuration
 
@@ -214,7 +210,7 @@ storage.SetErrorRate(0.01) // 1% error rate
 
 ### Coverage
 
-1. **Aim for 70%+ coverage**: Use `make test-coverage-enforce`
+1. **Aim for meaningful coverage**: Use `./lesser test coverage` and review `coverage.out` / `coverage.html`
 2. **Focus on critical paths**: Ensure high coverage for important functionality
 3. **Don't chase 100%**: Focus on meaningful tests over coverage percentage
 4. **Review regularly**: Use detailed coverage reports to identify gaps
@@ -232,7 +228,7 @@ When adding new test infrastructure:
 1. **Follow existing patterns**: Use the established structure and naming
 2. **Add documentation**: Include clear documentation and examples
 3. **Test your tests**: Ensure test utilities work correctly
-4. **Update Make targets**: Add new test categories to Makefile
+4. **Update the `lesser` CLI**: Keep test workflows user-facing and consistent
 5. **Benchmark critical paths**: Add benchmarks for performance-sensitive code
 
 ## Environment Variables
@@ -240,7 +236,6 @@ When adding new test infrastructure:
 - `CI`: Set to enable CI-specific behavior
 - `INTEGRATION_TEST`: Set to enable integration tests
 - `TEST_ENV`: Set to `integration` for integration test mode
-- `PKG`: Package path for `make test-package`
 
 ## Dependencies
 
@@ -248,7 +243,7 @@ When adding new test infrastructure:
 - `zap`: Logging (with zaptest for testing)
 - `lift`: Web framework for API testing
 - `dynamorm`: ORM for DynamoDB testing
-- `entr`: File watching for `make test-watch` (optional)
+- `entr`: File watching (optional; use with `go test` in a local loop)
 - `k6`: Load testing tool (optional)
 
 This testing infrastructure provides a solid foundation for maintaining code quality and performance in the Lesser project.
@@ -584,7 +579,7 @@ ENABLE_SEARCH=true
 
 ```bash
 # Run all tests
-make test
+./lesser test
 
 # Run specific package tests
 go test ./pkg/storage/...
@@ -593,7 +588,7 @@ go test ./pkg/storage/...
 go test -cover ./...
 
 # Run integration tests
-make test-integration
+./lesser test integration
 
 # Run benchmarks
 go test -bench=. ./...

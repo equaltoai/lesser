@@ -218,6 +218,17 @@ func (h *Handler) searchStatusByContent(ctx *lift.Context, params *SearchParams,
 // convertObjectToStatusResult converts object to status search result
 func (h *Handler) convertObjectToStatusResult(obj interface{}) *storage.StatusSearchResult {
 	switch v := obj.(type) {
+	case *activitypub.Note:
+		result := &storage.StatusSearchResult{
+			StatusID: v.ID,
+			URL:      v.ID,
+			Content:  v.Content,
+			AuthorID: v.AttributedTo,
+		}
+		if v.Published != nil {
+			result.Published = *v.Published
+		}
+		return result
 	case *storagemodels.Object:
 		return &storage.StatusSearchResult{
 			StatusID:  v.ID,
@@ -264,7 +275,7 @@ func (h *Handler) convertStatusResultToAPI(ctx *lift.Context, sr *storage.Status
 	transformCtx := context.WithValue(ctx.Context, baseURLContextKey, h.cfg.BaseURL())
 
 	status, err := transformer.Transform(transformCtx, statusMap)
-	if err != nil {
+	if err != nil || status.ID == "" {
 		// Fallback to minimal status if transformation fails
 		status = models.Status{
 			ID:        sr.StatusID,
@@ -303,20 +314,12 @@ func (h *Handler) convertHashtagToTag(ctx *lift.Context, hashtag storage.Hashtag
 	history, _ := h.repos.Hashtag().GetHashtagUsageHistory(ctx.Context, hashtag.Name, 7)
 
 	// Convert history to API format
-	apiHistory := make([]struct {
-		Day      string `json:"day"`
-		Uses     string `json:"uses"`
-		Accounts string `json:"accounts"`
-	}, 0)
+	apiHistory := make([]models.TagHistory, 0, min(len(history), 7))
 
 	// Create history entries (most recent first)
 	for i := 0; i < len(history) && i < 7; i++ {
 		day := time.Now().AddDate(0, 0, -i).Format(common.DateFormat)
-		apiHistory = append(apiHistory, struct {
-			Day      string `json:"day"`
-			Uses     string `json:"uses"`
-			Accounts string `json:"accounts"`
-		}{
+		apiHistory = append(apiHistory, models.TagHistory{
 			Day:      day,
 			Uses:     fmt.Sprintf("%d", history[i]),
 			Accounts: h.getUniqueAccountsForDay(ctx, day),
@@ -340,17 +343,11 @@ func (h *Handler) addPlaceholderHashtag(query string, result *models.SearchResul
 	tag := models.Tag{
 		Name: tagName,
 		URL:  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
-		History: []struct {
-			Day      string `json:"day"`
-			Uses     string `json:"uses"`
-			Accounts string `json:"accounts"`
-		}{
-			{
-				Day:      time.Now().Format(common.DateFormat),
-				Uses:     "0",
-				Accounts: "0",
-			},
-		},
+		History: []models.TagHistory{{
+			Day:      time.Now().Format(common.DateFormat),
+			Uses:     "0",
+			Accounts: "0",
+		}},
 	}
 	result.Hashtags = append(result.Hashtags, tag)
 }
@@ -368,7 +365,7 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 	// Authenticate user with read:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -607,6 +604,8 @@ func (h *Handler) setNotificationPaginationHeader(ctx *lift.Context, cursor stri
 func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 	// Get static config
 	instanceConfig := config.GetInstanceConfig()
+	state, stateErr := h.repos.Instance().GetInstanceState(ctx.Context)
+	locked := stateErr != nil || state.Locked
 
 	// Log configuration values
 	h.logger.Info("HandleGetInstanceV2Lift called",
@@ -650,31 +649,28 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 	}
 
 	// Convert rules for API response
-	apiRules := make([]map[string]any, len(rules))
+	apiRules := make([]models.Rule, len(rules))
 	for i, rule := range rules {
-		apiRules[i] = map[string]any{
-			"id":   rule.ID,
-			"text": rule.Text,
-		}
+		apiRules[i] = models.Rule{ID: rule.ID, Text: rule.Text}
 	}
 
-	resp := map[string]any{
-		"domain":      h.cfg.Domain,
-		"title":       instanceConfig.Title,
-		"version":     instanceConfig.Version,
-		"source_url":  "https://github.com/equaltoai/lesser",
-		"description": instanceConfig.Description,
-		"usage": map[string]any{
+	resp := models.InstanceV2Response{
+		Domain:      h.cfg.Domain,
+		Title:       instanceConfig.Title,
+		Version:     instanceConfig.Version,
+		SourceURL:   "https://github.com/equaltoai/lesser",
+		Description: instanceConfig.Description,
+		Usage: map[string]any{
 			"users": map[string]any{
 				"active_month": h.getActiveMonthlyUsers(ctx),
 			},
 		},
-		"thumbnail": map[string]any{
+		Thumbnail: map[string]any{
 			"url": h.cfg.BaseURL() + "/assets/thumbnail.png",
 		},
-		"icon":      []any{},
-		"languages": instanceConfig.Languages,
-		"configuration": map[string]any{
+		Icon:      []any{},
+		Languages: instanceConfig.Languages,
+		Configuration: map[string]any{
 			"urls": map[string]any{
 				"streaming":        h.cfg.BaseURL(),
 				"about":            h.cfg.BaseURL() + "/about",
@@ -720,29 +716,28 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 			},
 			"limited_federation": false,
 		},
-		"registrations": map[string]any{
-			"enabled":           instanceConfig.RegistrationsOpen,
+		Registrations: map[string]any{
+			"enabled":           instanceConfig.RegistrationsOpen && !locked,
 			"approval_required": instanceConfig.ApprovalRequired,
 			"message":           nil,
 			"min_age":           nil,
 			"reason_required":   false,
 		},
-		"api_versions": map[string]any{
+		APIVersions: map[string]any{
 			"mastodon": 1,
 		},
-		"contact": map[string]any{
+		Contact: map[string]any{
 			"email":   instanceConfig.Email,
 			"account": h.getAdminAccount(ctx),
 		},
-		"rules": apiRules,
+		Rules: apiRules,
 	}
 
 	// Log the response to debug
 	h.logger.Info("HandleGetInstanceV2Lift response",
-		zap.Any("domain", resp["domain"]),
-		zap.Any("title", resp["title"]),
-		zap.Any("version", resp["version"]),
-		zap.Any("full_response_keys", getMapKeys(resp)),
+		zap.String("domain", resp.Domain),
+		zap.String("title", resp.Title),
+		zap.String("version", resp.Version),
 	)
 
 	return ctx.JSON(resp)
@@ -758,7 +753,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 	// Authenticate user with read:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -821,7 +816,7 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 	// Authenticate user with write:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -860,7 +855,7 @@ func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
 	// Authenticate user with write:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -1165,14 +1160,6 @@ func (h *Handler) formatLastStatusTime(lastStatusAt *time.Time) *string {
 }
 
 // getMapKeys returns keys from a map for logging
-func getMapKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
 // generateAndStoreVAPIDKeys generates new VAPID keys and stores them in the database
 func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPIDKeys, error) {
 	h.logger.Info("generating new VAPID keys for push notifications")
@@ -1234,7 +1221,7 @@ func (h *Handler) HandleGetGroupedNotificationsLift(ctx *lift.Context) error {
 	// Authenticate user with read:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -1344,55 +1331,55 @@ func (h *Handler) parseGroupingOptions(ctx *lift.Context) *notifications.Groupin
 func (h *Handler) convertGroupedNotificationsToAPI(
 	ctx *lift.Context,
 	groupedNotifications []*notifications.GroupedNotification,
-) []map[string]interface{} {
-	apiResponse := make([]map[string]interface{}, 0, len(groupedNotifications))
+) []models.GroupedNotificationGroup {
+	apiResponse := make([]models.GroupedNotificationGroup, 0, len(groupedNotifications))
 
 	for _, group := range groupedNotifications {
-		groupResponse := map[string]interface{}{
-			"id":                  group.ID,
-			"type":                group.Type,
-			"group_key":           group.GroupKey,
-			"count":               group.Count,
-			"latest_created_at":   group.LatestCreatedAt.Format(time.RFC3339),
-			"earliest_created_at": group.EarliestCreatedAt.Format(time.RFC3339),
-			"read":                group.IsRead,
-			"sample_accounts":     h.convertNotificationAccountsToAPI(group.SampleAccounts),
-			"summary":             h.generateGroupSummary(group),
+		groupResponse := models.GroupedNotificationGroup{
+			ID:                group.ID,
+			Type:              group.Type,
+			GroupKey:          group.GroupKey,
+			Count:             group.Count,
+			LatestCreatedAt:   group.LatestCreatedAt.Format(time.RFC3339),
+			EarliestCreatedAt: group.EarliestCreatedAt.Format(time.RFC3339),
+			Read:              group.IsRead,
+			SampleAccounts:    h.convertNotificationAccountsToAPI(group.SampleAccounts),
+			Summary:           h.generateGroupSummary(group),
 		}
 
 		// Add target status if available
 		if group.TargetStatus != nil {
-			groupResponse["status"] = map[string]interface{}{
-				"id":         group.TargetStatus.ID,
-				"content":    group.TargetStatus.Content,
-				"created_at": group.TargetStatus.CreatedAt.Format(time.RFC3339),
-				"url":        group.TargetStatus.URL,
-				"visibility": group.TargetStatus.Visibility,
+			groupResponse.Status = &models.GroupedNotificationStatus{
+				ID:         group.TargetStatus.ID,
+				Content:    group.TargetStatus.Content,
+				CreatedAt:  group.TargetStatus.CreatedAt.Format(time.RFC3339),
+				URL:        group.TargetStatus.URL,
+				Visibility: group.TargetStatus.Visibility,
 			}
 		}
 
 		// Add most recent notification details
 		if group.MostRecentNotif != nil {
-			groupResponse["most_recent"] = map[string]interface{}{
-				"id":         group.MostRecentNotif.ID,
-				"created_at": group.MostRecentNotif.CreatedAt.Format(time.RFC3339),
-				"actor_id":   group.MostRecentNotif.ActorID,
+			groupResponse.MostRecent = &models.GroupedNotificationMostRecent{
+				ID:        group.MostRecentNotif.ID,
+				CreatedAt: group.MostRecentNotif.CreatedAt.Format(time.RFC3339),
+				ActorID:   group.MostRecentNotif.ActorID,
 			}
 		}
 
 		// Optionally include all notifications if requested
 		if func() bool { result, _ := common.ParseAndValidateBoolean(ctx.Query("include_all")); return result }() && len(group.AllNotifications) > 0 {
-			allNotifs := make([]map[string]interface{}, 0, len(group.AllNotifications))
+			allNotifs := make([]models.GroupedNotificationEntry, 0, len(group.AllNotifications))
 			for _, notif := range group.AllNotifications {
-				allNotifs = append(allNotifs, map[string]interface{}{
-					"id":         notif.ID,
-					"created_at": notif.CreatedAt.Format(time.RFC3339),
-					"actor_id":   notif.ActorID,
-					"target_id":  notif.TargetID,
-					"read":       notif.IsRead,
+				allNotifs = append(allNotifs, models.GroupedNotificationEntry{
+					ID:        notif.ID,
+					CreatedAt: notif.CreatedAt.Format(time.RFC3339),
+					ActorID:   notif.ActorID,
+					TargetID:  notif.TargetID,
+					Read:      notif.IsRead,
 				})
 			}
-			groupResponse["all_notifications"] = allNotifs
+			groupResponse.AllNotifications = allNotifs
 		}
 
 		apiResponse = append(apiResponse, groupResponse)
@@ -1404,17 +1391,17 @@ func (h *Handler) convertGroupedNotificationsToAPI(
 // convertNotificationAccountsToAPI converts notification accounts to API format
 func (h *Handler) convertNotificationAccountsToAPI(
 	accounts []notifications.NotificationAccount,
-) []map[string]interface{} {
-	apiAccounts := make([]map[string]interface{}, 0, len(accounts))
+) []models.GroupedNotificationAccount {
+	apiAccounts := make([]models.GroupedNotificationAccount, 0, len(accounts))
 
 	for _, account := range accounts {
-		apiAccount := map[string]interface{}{
-			"id":           account.ID,
-			"username":     account.Username,
-			"display_name": account.DisplayName,
-			"avatar":       account.Avatar,
-			"bot":          account.IsBot,
-			"created_at":   account.CreatedAt.Format(time.RFC3339),
+		apiAccount := models.GroupedNotificationAccount{
+			ID:          account.ID,
+			Username:    account.Username,
+			DisplayName: account.DisplayName,
+			Avatar:      account.Avatar,
+			Bot:         account.IsBot,
+			CreatedAt:   account.CreatedAt.Format(time.RFC3339),
 		}
 		apiAccounts = append(apiAccounts, apiAccount)
 	}
@@ -1439,7 +1426,7 @@ func (h *Handler) HandleMarkGroupAsReadLift(ctx *lift.Context) error {
 	// Authenticate user with write:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"write:notifications"})
 	if err != nil {
-		if err.Error() == ErrInsufficientScope {
+		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -1470,5 +1457,5 @@ func (h *Handler) HandleMarkGroupAsReadLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to mark group as read")
 	}
 
-	return ctx.Status(200).JSON(map[string]string{"message": "group marked as read"})
+	return ctx.Status(200).JSON(models.MessageResponse{Message: "group marked as read"})
 }

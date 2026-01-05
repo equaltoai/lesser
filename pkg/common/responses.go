@@ -7,13 +7,47 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/pay-theory/lift/pkg/lift"
 )
+
+func errorCodeForHTTPStatus(status int) string {
+	switch status {
+	case 400:
+		return string(errors.CodeBadRequest)
+	case 401:
+		return string(errors.CodeUnauthorized)
+	case 403:
+		return string(errors.CodeForbidden)
+	case 404:
+		return string(errors.CodeNotFound)
+	case 405:
+		return string(errors.CodeMethodNotAllowed)
+	case 409:
+		return string(errors.CodeConflict)
+	case 410:
+		return string(errors.CodeGone)
+	case 422:
+		return string(errors.CodeUnprocessableEntity)
+	case 429:
+		return string(errors.CodeRateLimited)
+	case 503:
+		return string(errors.CodeExternalServiceUnavailable)
+	default:
+		if status >= 400 && status < 500 {
+			return string(errors.CodeBadRequest)
+		}
+		return string(errors.CodeInternal)
+	}
+}
 
 // SendError is a convenience function for sending standardized error responses with Lift
 // This consolidates the pattern: return ctx.Status(code).JSON(map[string]string{"error": message})
 func SendError(ctx *lift.Context, code int, message string) error {
-	return ctx.Status(code).JSON(StandardErrorResponse{Error: message})
+	return ctx.Status(code).JSON(StandardErrorResponse{
+		Error: message,
+		Code:  errorCodeForHTTPStatus(code),
+	})
 }
 
 // SendJSON is a convenience function for sending successful JSON responses with Lift
@@ -26,7 +60,8 @@ func SendJSON(ctx *lift.Context, code int, data interface{}) error {
 // Mastodon clients expect a specific error format for proper error handling
 func SendMastodonError(ctx *lift.Context, code int, errorMsg string) error {
 	mastodonError := map[string]interface{}{
-		"error": errorMsg,
+		"error":      errorMsg,
+		"error_code": errorCodeForHTTPStatus(code),
 	}
 
 	// Add additional fields for specific error codes

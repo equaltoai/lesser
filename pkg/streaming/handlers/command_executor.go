@@ -80,7 +80,7 @@ func (e *SimpleStatusExecutor) FormatResponse(result interface{}) (map[string]in
 		if data, ok := result.(map[string]interface{}); ok {
 			return data, nil
 		}
-		return nil, fmt.Errorf("invalid response format")
+		return map[string]interface{}{"result": result}, nil
 	}
 
 	// Otherwise, extract the specified field from the result

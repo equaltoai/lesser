@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services"
+	severanceService "github.com/equaltoai/lesser/pkg/services/severance"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -26,6 +27,11 @@ var (
 	repos     storageCore.RepositoryStorage
 	registry  *services.Registry
 	processor *SeveranceProcessor
+
+	mustInitializeLambdaFn   = common.MustInitializeLambda
+	initializeWithDefaultsFn = (*common.LambdaContext).InitializeWithDefaults
+	newRegistryFn            = services.NewRegistry
+	lambdaStartFn            = lambda.Start
 )
 
 func init() {
@@ -33,8 +39,14 @@ func init() {
 		return
 	}
 
+	if err := initializeSeveranceProcessor(); err != nil {
+		logger.Fatal("failed to initialize severance processor", zap.Error(err))
+	}
+}
+
+func initializeSeveranceProcessor() error {
 	// Standardized Lambda initialization for processor functions
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "severance-processor",
 		LambdaType:  common.LambdaTypeProcessor,
 	})
@@ -47,14 +59,13 @@ func init() {
 	}
 
 	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
 	// Create service registry
 	var regErr error
-	registry, regErr = services.NewRegistry(
+	registry, regErr = newRegistryFn(
 		services.WithStorage(repos),
 		services.WithLogger(logger),
 		services.WithConfig(&services.ServiceConfig{
@@ -62,20 +73,43 @@ func init() {
 		}),
 	)
 	if regErr != nil {
-		logger.Fatal("failed to create service registry", zap.Error(regErr))
+		return regErr
 	}
 
 	// Initialize processor
 	processor = &SeveranceProcessor{
-		registry: registry,
+		registry: servicesRegistryAdapter{Registry: registry},
 		logger:   logger,
 	}
+
+	return nil
 }
 
 // SeveranceProcessor handles severance detection from DynamoDB streams
 type SeveranceProcessor struct {
-	registry *services.Registry
+	registry severanceRegistry
 	logger   *zap.Logger
+}
+
+type severanceRegistry interface {
+	Severance() severanceDetector
+	GetStorage() storageCore.RepositoryStorage
+}
+
+type servicesRegistryAdapter struct {
+	*services.Registry
+}
+
+func (s servicesRegistryAdapter) Severance() severanceDetector {
+	return s.Registry.Severance()
+}
+
+func (s servicesRegistryAdapter) GetStorage() storageCore.RepositoryStorage {
+	return s.Registry.GetStorage()
+}
+
+type severanceDetector interface {
+	DetectSeverance(ctx context.Context, remoteInstance string, reason models.SeveranceReason, affectedFollowers, affectedFollowing int, details string) (*severanceService.SeveredRelationship, error)
 }
 
 // HandleDynamoDBStreamEvent processes DynamoDB stream events for severance detection
@@ -363,5 +397,5 @@ func main() {
 		return handler.HandleDynamoDBStreamEvent(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
 	})
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }

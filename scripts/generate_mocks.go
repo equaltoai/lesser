@@ -65,7 +65,7 @@ type Result struct {
 }
 
 func parseInterface(filename string) ([]Method, error) {
-	src, err := os.ReadFile(filename) //nolint:gosec // Controlled input in development tool
+	src, err := os.ReadFile(filename) // #nosec G304 -- controlled input in development tool
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func parseMethodResults(funcType *ast.FuncType, m *Method) {
 }
 
 func parseMockMethods(filename string) (map[string]bool, error) {
-	src, err := os.ReadFile(filename) //nolint:gosec // Controlled input in development tool
+	src, err := os.ReadFile(filename) // #nosec G304 -- controlled input in development tool
 	if err != nil {
 		return nil, err
 	}

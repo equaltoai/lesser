@@ -1,0 +1,247 @@
+// Package inmemory provides thread-safe in-memory implementations of repository interfaces.
+package inmemory
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+)
+
+const draftStatusDraft = "draft"
+
+// DraftRepository is a thread-safe in-memory implementation of interfaces.DraftRepository.
+type DraftRepository struct {
+	mu sync.RWMutex
+
+	// Drafts by composite key: authorID:draftID -> draft
+	drafts map[string]*models.Draft
+
+	// Drafts by author: authorID -> []draftKey
+	draftsByAuthor map[string][]string
+
+	// Scheduled drafts: status -> []draftKey
+	draftsByStatus map[string][]string
+}
+
+// NewDraftRepository creates a new in-memory draft repository
+func NewDraftRepository() *DraftRepository {
+	return &DraftRepository{
+		drafts:         make(map[string]*models.Draft),
+		draftsByAuthor: make(map[string][]string),
+		draftsByStatus: make(map[string][]string),
+	}
+}
+
+// draftKey creates a composite key for a draft
+func draftKey(authorID, draftID string) string {
+	return fmt.Sprintf("%s:%s", authorID, draftID)
+}
+
+// CreateDraft creates a new draft
+func (r *DraftRepository) CreateDraft(_ context.Context, draft *models.Draft) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if draft == nil || draft.AuthorID == "" || draft.ID == "" {
+		return storage.ErrInvalidInput
+	}
+
+	key := draftKey(draft.AuthorID, draft.ID)
+	if _, exists := r.drafts[key]; exists {
+		return storage.ErrAlreadyExists
+	}
+
+	// Store draft
+	r.drafts[key] = draft
+
+	// Index by author
+	r.draftsByAuthor[draft.AuthorID] = append(r.draftsByAuthor[draft.AuthorID], key)
+
+	// Index by status
+	status := strings.ToLower(strings.TrimSpace(draft.Status))
+	if status == "" {
+		status = draftStatusDraft
+	}
+	r.draftsByStatus[status] = append(r.draftsByStatus[status], key)
+
+	return nil
+}
+
+// GetDraft retrieves a draft by author ID and draft ID
+func (r *DraftRepository) GetDraft(_ context.Context, authorID, draftID string) (*models.Draft, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	key := draftKey(authorID, draftID)
+	draft, exists := r.drafts[key]
+	if !exists {
+		return nil, storage.ErrNotFound
+	}
+
+	return draft, nil
+}
+
+// UpdateDraft updates an existing draft
+func (r *DraftRepository) UpdateDraft(_ context.Context, draft *models.Draft) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if draft == nil || draft.AuthorID == "" || draft.ID == "" {
+		return storage.ErrInvalidInput
+	}
+
+	key := draftKey(draft.AuthorID, draft.ID)
+	oldDraft, exists := r.drafts[key]
+	if !exists {
+		return storage.ErrNotFound
+	}
+
+	// Update status index if status changed
+	oldStatus := strings.ToLower(strings.TrimSpace(oldDraft.Status))
+	if oldStatus == "" {
+		oldStatus = draftStatusDraft
+	}
+	newStatus := strings.ToLower(strings.TrimSpace(draft.Status))
+	if newStatus == "" {
+		newStatus = draftStatusDraft
+	}
+
+	if oldStatus != newStatus {
+		r.draftsByStatus[oldStatus] = draftRemoveFromSlice(r.draftsByStatus[oldStatus], key)
+		r.draftsByStatus[newStatus] = append(r.draftsByStatus[newStatus], key)
+	}
+
+	r.drafts[key] = draft
+	return nil
+}
+
+// DeleteDraft deletes a draft
+func (r *DraftRepository) DeleteDraft(_ context.Context, authorID, draftID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	key := draftKey(authorID, draftID)
+	draft, exists := r.drafts[key]
+	if !exists {
+		return storage.ErrNotFound
+	}
+
+	// Remove from author index
+	r.draftsByAuthor[authorID] = draftRemoveFromSlice(r.draftsByAuthor[authorID], key)
+
+	// Remove from status index
+	status := strings.ToLower(strings.TrimSpace(draft.Status))
+	if status == "" {
+		status = draftStatusDraft
+	}
+	r.draftsByStatus[status] = draftRemoveFromSlice(r.draftsByStatus[status], key)
+
+	delete(r.drafts, key)
+	return nil
+}
+
+// ListDraftsByAuthor lists drafts for an author
+func (r *DraftRepository) ListDraftsByAuthor(ctx context.Context, authorID string, limit int) ([]*models.Draft, error) {
+	drafts, _, err := r.ListDraftsByAuthorPaginated(ctx, authorID, limit, "")
+	return drafts, err
+}
+
+// ListDraftsByAuthorPaginated lists drafts for an author with cursor pagination
+func (r *DraftRepository) ListDraftsByAuthorPaginated(_ context.Context, authorID string, limit int, cursor string) ([]*models.Draft, string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return listByAuthorPaginated(authorID, limit, cursor, r.draftsByAuthor, func(key string) (*models.Draft, bool) {
+		draft, exists := r.drafts[key]
+		return draft, exists
+	}, func(d *models.Draft) string {
+		return d.SK
+	})
+}
+
+// ListScheduledDraftsDuePaginated lists drafts scheduled to publish at or before the provided time
+func (r *DraftRepository) ListScheduledDraftsDuePaginated(_ context.Context, dueBefore time.Time, limit int, cursor string) ([]*models.Draft, string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if dueBefore.IsZero() {
+		dueBefore = time.Now()
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+
+	// Get scheduled drafts
+	keys := r.draftsByStatus["scheduled"]
+	drafts := make([]*models.Draft, 0, len(keys))
+	for _, key := range keys {
+		if draft, exists := r.drafts[key]; exists {
+			// Filter by scheduled time
+			if draft.ScheduledAt != nil && !draft.ScheduledAt.After(dueBefore) {
+				drafts = append(drafts, draft)
+			}
+		}
+	}
+
+	// Sort by GSI4SK ascending
+	sort.Slice(drafts, func(i, j int) bool {
+		return drafts[i].GSI4SK < drafts[j].GSI4SK
+	})
+
+	// Apply cursor
+	startIdx := 0
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" {
+		for i, draft := range drafts {
+			if draft.GSI4SK > cursor {
+				startIdx = i
+				break
+			}
+		}
+	}
+
+	// Apply limit
+	endIdx := startIdx + limit
+	if endIdx > len(drafts) {
+		endIdx = len(drafts)
+	}
+
+	result := drafts[startIdx:endIdx]
+	nextCursor := ""
+	if endIdx < len(drafts) && len(result) > 0 {
+		nextCursor = result[len(result)-1].GSI4SK
+	}
+
+	return result, nextCursor, nil
+}
+
+// Clear clears all data (test helper)
+func (r *DraftRepository) Clear() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.drafts = make(map[string]*models.Draft)
+	r.draftsByAuthor = make(map[string][]string)
+	r.draftsByStatus = make(map[string][]string)
+}
+
+// draftRemoveFromSlice removes an element from a slice
+func draftRemoveFromSlice(slice []string, element string) []string {
+	result := make([]string, 0, len(slice))
+	for _, s := range slice {
+		if s != element {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+// Ensure DraftRepository implements interfaces.DraftRepository
+var _ interfaces.DraftRepository = (*DraftRepository)(nil)

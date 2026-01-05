@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -31,21 +30,22 @@ type Manager struct {
 	// Repository dependencies
 	instanceRepo       FederationInstanceRepository
 	instanceHealthRepo interface{} // repositories.InstanceHealthRepository
+	healthRepo         instanceHealthReader
 	circuitBreakerRepo *repositories.CircuitBreakerRepository
 	routeOptimRepo     *repositories.RouteOptimizerRepository
 	routingMetricsRepo *repositories.RoutingMetricsRepository
-	costTrackingRepo   *repositories.FederationCostRepository
+	costTrackingRepo   federationCostRecorder
 
 	// Components
 	registry         *InstanceRegistry
-	optimizer        *SmartRouteOptimizer
-	circuitBreaker   *DistributedCircuitBreaker
-	healthChecker    *InstanceHealthChecker
+	optimizer        routeOptimizerEngine
+	circuitBreaker   routeCircuitBreakerEngine
+	healthChecker    HealthChecker
 	loadBalancer     *AdaptiveLoadBalancer
 	thresholdManager *RouteThresholdManager
 
 	// HTTP client for federation delivery
-	httpClient *httpclient.SecureClient
+	httpClient httpDoer
 
 	// Federation storage for actor keys
 	federationStore federation.FederationStorage
@@ -67,6 +67,86 @@ type ManagerConfig struct {
 	CircuitBreakerConfig *models.CircuitBreakerConfig
 	CacheTTL             time.Duration
 	FederationStore      federation.FederationStorage
+}
+
+type httpDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+type federationCostRecorder interface {
+	RecordFederationCost(ctx context.Context, tracker *models.FederationCostTracking) error
+}
+
+type instanceHealthReader interface {
+	GetLatestHealthCheck(ctx context.Context, domain string) (*models.InstanceHealth, error)
+	GetUnhealthyInstances(ctx context.Context, threshold float64) ([]string, error)
+}
+
+type noopHealthChecker struct{}
+
+func (noopHealthChecker) CheckHealth(_ *types.Instance) (*types.HealthStatus, error) {
+	return &types.HealthStatus{
+		Timestamp:    time.Now(),
+		Reachable:    false,
+		ErrorMessage: "health checker not configured",
+	}, nil
+}
+
+func (noopHealthChecker) StartMonitoring(_ *types.Instance) error { return nil }
+func (noopHealthChecker) StopMonitoring(_ string) error           { return nil }
+func (noopHealthChecker) GetHealthHistory(_ string, _ time.Duration) ([]*types.HealthStatus, error) {
+	return []*types.HealthStatus{}, nil
+}
+
+type noopRouteOptimizer struct{}
+
+func (noopRouteOptimizer) OptimizeRoutes(_ context.Context, routes []*types.Route, _ int64) ([]*types.Route, error) {
+	return routes, nil
+}
+
+func (noopRouteOptimizer) GetRouteMetrics(_ context.Context, _ string) (*types.RouteMetrics, error) {
+	return nil, errors.New("route metrics not available")
+}
+
+func (noopRouteOptimizer) RecordDeliveryResult(_ context.Context, _ *types.DeliveryResult) error {
+	return nil
+}
+
+type noopCircuitBreaker struct{}
+
+func (noopCircuitBreaker) AssessRouteHealthAndAdjustCircuit(_ context.Context, _ string, _ *types.RouteMetrics) error {
+	return nil
+}
+
+func (noopCircuitBreaker) CanAttempt(_ string) bool { return true }
+func (noopCircuitBreaker) Close(_ string) error     { return nil }
+
+func (noopCircuitBreaker) GetBackpressureRules() map[MessagePriority]BackpressureRule {
+	return make(map[MessagePriority]BackpressureRule)
+}
+
+func (noopCircuitBreaker) GetStatus(_ string) types.CircuitStatus { return types.CircuitClosed }
+func (noopCircuitBreaker) Open(_, _ string) error                 { return nil }
+func (noopCircuitBreaker) RecordFailure(_ string, _ error) error  { return nil }
+func (noopCircuitBreaker) RecordSuccess(_ string) error           { return nil }
+func (noopCircuitBreaker) ShouldEnterEmergencyMode(_, _ int) bool { return false }
+
+type routeOptimizerEngine interface {
+	OptimizeRoutes(ctx context.Context, routes []*types.Route, messageSize int64) ([]*types.Route, error)
+	GetRouteMetrics(ctx context.Context, routeID string) (*types.RouteMetrics, error)
+	RecordDeliveryResult(ctx context.Context, result *types.DeliveryResult) error
+}
+
+type routeCircuitBreakerEngine interface {
+	AssessRouteHealthAndAdjustCircuit(ctx context.Context, routeID string, metrics *types.RouteMetrics) error
+	CanAttempt(instanceID string) bool
+	Close(instanceID string) error
+	GetBackpressureRules() map[MessagePriority]BackpressureRule
+	GetStatus(instanceID string) types.CircuitStatus
+	Open(instanceID string, reason string) error
+	RecordFailure(instanceID string, err error) error
+	RecordSuccess(instanceID string) error
+	ShouldEnterEmergencyMode(healthyRoutes, totalRoutes int) bool
 }
 
 // NewManager creates a new route manager with dependency injection
@@ -121,7 +201,7 @@ func NewManager(
 	thresholdManager := NewRouteThresholdManager(logger, DefaultThresholdConfig())
 
 	// Create SmartRouteOptimizer with repository
-	var optimizer *SmartRouteOptimizer
+	var optimizer routeOptimizerEngine = noopRouteOptimizer{}
 	if routeOptimRepo != nil {
 		optimizer = NewSmartRouteOptimizer(routeOptimRepo, logger, config.OptimizerConfig)
 		logger.Info("route optimization repository configured successfully")
@@ -130,7 +210,7 @@ func NewManager(
 	}
 
 	// Create circuit breaker with threshold manager
-	var circuitBreaker *DistributedCircuitBreaker
+	var circuitBreaker routeCircuitBreakerEngine = noopCircuitBreaker{}
 	if circuitBreakerRepo != nil {
 		circuitBreaker = NewDistributedCircuitBreaker(circuitBreakerRepo, thresholdManager, logger, config.CircuitBreakerConfig)
 		logger.Info("circuit breaker configured successfully")
@@ -139,19 +219,19 @@ func NewManager(
 	}
 
 	// Create health checker with repository-backed storage and circuit breaker integration
-	var healthChecker *InstanceHealthChecker
+	var healthRepo instanceHealthReader
+	var healthChecker HealthChecker = noopHealthChecker{}
 	if instanceHealthRepo != nil {
-		healthRepo, ok := instanceHealthRepo.(*repositories.InstanceHealthRepository)
+		repo, ok := instanceHealthRepo.(*repositories.InstanceHealthRepository)
 		if ok {
-			healthChecker = NewHealthChecker(healthRepo, logger, config.RoutingConfig)
+			healthRepo = repo
+			healthChecker = NewHealthChecker(repo, logger, config.RoutingConfig)
 			logger.Info("health checker configured successfully with repository")
 		} else {
 			logger.Warn("invalid instance health repository type - health checker disabled")
-			healthChecker = &InstanceHealthChecker{}
 		}
 	} else {
 		logger.Warn("instance health repository not provided - health checker disabled")
-		healthChecker = &InstanceHealthChecker{}
 	}
 	loadBalancer := NewAdaptiveLoadBalancer(logger)
 
@@ -163,8 +243,11 @@ func NewManager(
 	)
 
 	// Create routing metrics
-	metrics := &RoutingMetrics{
-		logger: logger,
+	metrics := NewRoutingMetrics(nil, "", logger)
+
+	var costRecorder federationCostRecorder
+	if costTrackingRepo != nil {
+		costRecorder = costTrackingRepo
 	}
 
 	return &Manager{
@@ -172,10 +255,11 @@ func NewManager(
 		config:             config.RoutingConfig,
 		instanceRepo:       instanceRepo,
 		instanceHealthRepo: instanceHealthRepo,
+		healthRepo:         healthRepo,
 		circuitBreakerRepo: circuitBreakerRepo,
 		routeOptimRepo:     routeOptimRepo,
 		routingMetricsRepo: routingMetricsRepo,
-		costTrackingRepo:   costTrackingRepo,
+		costTrackingRepo:   costRecorder,
 		registry:           registry,
 		optimizer:          optimizer,
 		circuitBreaker:     circuitBreaker,
@@ -672,12 +756,12 @@ func (m *Manager) MonitorInstanceHealth() error {
 
 // DetectUnhealthyInstances identifies instances that should be removed from rotation
 func (m *Manager) DetectUnhealthyInstances() ([]string, error) {
-	if m.healthChecker.healthRepo == nil {
+	if m.healthRepo == nil {
 		return nil, ErrHealthRepositoryNotAvailable
 	}
 
 	// Get unhealthy instances with 40% health score threshold
-	unhealthy, err := m.healthChecker.healthRepo.GetUnhealthyInstances(context.Background(), 40.0)
+	unhealthy, err := m.healthRepo.GetUnhealthyInstances(context.Background(), 40.0)
 	if err != nil {
 		return nil, errors.Join(ErrGetUnhealthyInstancesFailed, err)
 	}
@@ -768,8 +852,8 @@ func (m *Manager) GetHealthSummary() (*HealthSummary, error) {
 		}
 
 		// Get latest health check if available
-		if m.healthChecker.healthRepo != nil {
-			health, healthErr := m.healthChecker.healthRepo.GetLatestHealthCheck(context.Background(), instance.Domain)
+		if m.healthRepo != nil {
+			health, healthErr := m.healthRepo.GetLatestHealthCheck(context.Background(), instance.Domain)
 			if healthErr == nil {
 				detail.LastChecked = health.Timestamp
 				detail.HealthScore = health.GetHealthScore()
@@ -874,7 +958,7 @@ func (m *Manager) DeliverMessage(ctx context.Context, message *types.FederationM
 		routeMap[target] = route
 	}
 
-	if err := common.ValidateSliceNotEmpty("routeMap", routeMap); err != nil {
+	if len(routeMap) == 0 {
 		return nil, ErrNoRoutesAvailable
 	}
 
@@ -1434,15 +1518,19 @@ func (m *Manager) performHTTPDelivery(ctx context.Context, activity *activitypub
 	// Update result with status code
 	result.StatusCode = resp.StatusCode
 
-	// Read the response body for logging
-	respBody, _ := io.ReadAll(resp.Body)
+	respBodyBytes, respBodyTruncated, readErr := common.ReadUntrustedHTTPResponseBody(resp.Body, common.MaxUntrustedHTTPResponseBodyBytes)
+	if readErr != nil {
+		m.logger.Warn("failed to read response body", zap.String("targetInbox", targetInbox), zap.Error(readErr))
+	}
+	respBody := common.FormatUntrustedHTTPBodySnippet(respBodyBytes, respBodyTruncated)
 
 	// Check the response
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		m.logger.Debug("HTTP delivery successful",
 			zap.String("targetInbox", targetInbox),
 			zap.Int("statusCode", resp.StatusCode),
-			zap.String("response", string(respBody)))
+			zap.Bool("response_truncated", respBodyTruncated),
+			zap.String("response", respBody))
 		return nil
 	}
 
@@ -1450,12 +1538,14 @@ func (m *Manager) performHTTPDelivery(ctx context.Context, activity *activitypub
 	m.logger.Warn("HTTP delivery failed",
 		zap.String("targetInbox", targetInbox),
 		zap.Int("statusCode", resp.StatusCode),
-		zap.String("response", string(respBody)))
+		zap.Bool("response_truncated", respBodyTruncated),
+		zap.String("response", respBody))
 
 	m.logger.Error("HTTP delivery failed",
 		zap.String("targetInbox", targetInbox),
 		zap.Int("statusCode", resp.StatusCode),
-		zap.String("responseBody", string(respBody)))
+		zap.Bool("response_truncated", respBodyTruncated),
+		zap.String("responseBody", respBody))
 	return ErrHTTPDeliveryFailed
 }
 

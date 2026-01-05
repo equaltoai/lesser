@@ -197,7 +197,7 @@ go test ./pkg/services/hashtags/...
 - **Storage Models**: `pkg/storage/models/hashtag*.go`
 - **Repository**: `pkg/storage/repositories/hashtag_repository.go`
 - **GraphQL Resolvers**: `graph/schema.resolvers.go` (hashtag section)
-- **GraphQL Schema**: `graph/schema.graphql` (hashtag types)
+- **GraphQL Schema**: `graph/*.graphql` (sources) / `docs/contracts/graphql-schema.graphql` (published)
 
 ## Dependencies
 
@@ -220,4 +220,3 @@ When adding new features:
 ## License
 
 Part of the Lesser ActivityPub server project.
-

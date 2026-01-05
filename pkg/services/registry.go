@@ -491,27 +491,46 @@ func (r *Registry) Threads() *threads.Service {
 // Severance returns the severance service, initializing it if necessary
 func (r *Registry) Severance() *severance.Service {
 	r.mu.Lock()
+	if r.severanceService != nil {
+		service := r.severanceService
+		r.mu.Unlock()
+		return service
+	}
+
+	severanceRepo := r.storage.Severance()
+	if severanceRepo == nil {
+		if r.logger != nil {
+			r.logger.Warn("failed to initialize Severance service: required repository not available")
+		}
+		r.mu.Unlock()
+		return nil
+	}
+
+	domain := r.getDomainName()
+	logger := r.logger
+	publisherAdapter := r.createSeveranceEventPublisherAdapter()
+
+	// Release registry lock before calling methods that acquire it (Federation / Notification).
+	r.mu.Unlock()
+
+	federationAdapter := r.createSeveranceFederationAdapter()
+	notificationAdapter := r.createSeveranceNotificationAdapter()
+
+	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Double-check in case another goroutine initialized it while we were unlocked.
 	if r.severanceService == nil {
-		severanceRepo := r.storage.Severance()
-
-		if severanceRepo != nil {
-			domain := r.getDomainName()
-
-			r.severanceService = severance.NewService(
-				severanceRepo,
-				r.createSeveranceFederationAdapter(),
-				r.createSeveranceNotificationAdapter(),
-				r.createSeveranceEventPublisherAdapter(),
-				r.logger,
-				domain,
-			)
-			if r.initialized != nil {
-				r.initialized["Severance"] = true
-			}
-		} else if r.logger != nil {
-			r.logger.Warn("failed to initialize Severance service: required repository not available")
+		r.severanceService = severance.NewService(
+			severanceRepo,
+			federationAdapter,
+			notificationAdapter,
+			publisherAdapter,
+			logger,
+			domain,
+		)
+		if r.initialized != nil {
+			r.initialized["Severance"] = true
 		}
 	}
 
@@ -743,10 +762,118 @@ func (r *Registry) getDomainName() string {
 	return domainName
 }
 
+func (r *Registry) getCMSDomainName() string {
+	if r.config != nil && r.config.Config != nil {
+		if domain := strings.TrimSpace(r.config.Config.Domain); domain != "" {
+			return domain
+		}
+	}
+	return strings.TrimSpace(r.getDomainName())
+}
+
+func (r *Registry) getCMSMaxRevisionsPerObject() int {
+	if r.config != nil && r.config.Config != nil {
+		if maxRevisions := r.config.Config.CMSMaxRevisionsPerObject; maxRevisions > 0 {
+			return maxRevisions
+		}
+	}
+	return 0
+}
+
+func (r *Registry) cmsLongFormEnabled() bool {
+	if r.config == nil || r.config.Config == nil {
+		return true
+	}
+	return r.config.Config.CMSLongFormEnabled()
+}
+
+func (r *Registry) cmsDraftsEnabled() bool {
+	if r.config == nil || r.config.Config == nil {
+		return true
+	}
+	return r.config.Config.CMSDraftsEnabled()
+}
+
+func (r *Registry) cmsRevisionsEnabled() bool {
+	if r.config == nil || r.config.Config == nil {
+		return true
+	}
+	return r.config.Config.CMSRevisionsEnabled()
+}
+
+func (r *Registry) cmsSchedulingEnabled() bool {
+	if r.config == nil || r.config.Config == nil {
+		return true
+	}
+	return r.config.Config.CMSSchedulingEnabled()
+}
+
+func (r *Registry) cmsSeriesEnabled() bool {
+	if r.config == nil || r.config.Config == nil {
+		return true
+	}
+	return r.config.Config.CMSSeriesAllowed()
+}
+
+func (r *Registry) cmsCategoriesEnabled() bool {
+	if r.config == nil || r.config.Config == nil {
+		return true
+	}
+	return r.config.Config.CMSCategoriesAllowed()
+}
+
+func (r *Registry) ensureCMSArticleServiceLocked() {
+	if !r.cmsLongFormEnabled() {
+		return
+	}
+	if r.articleService != nil || r.storage == nil {
+		return
+	}
+
+	if r.revisionService == nil && r.cmsRevisionsEnabled() {
+		revisionRepo := r.storage.Revision()
+		articleRepo := r.storage.Article()
+		if revisionRepo != nil && articleRepo != nil {
+			r.revisionService = cms.NewRevisionService(revisionRepo, articleRepo, r.storage.Series(), r.storage.Category(), r.getCMSMaxRevisionsPerObject(), r.logger)
+			r.initialized["Revisions"] = true
+		}
+	}
+
+	articleRepo := r.storage.Article()
+	if articleRepo == nil {
+		return
+	}
+
+	if r.federation == nil {
+		deps := &ServiceDependencies{
+			Repos:  r.storage,
+			Config: r.config,
+			Logger: r.logger,
+		}
+		r.federation = NewFederationService(deps)
+		r.initialized["Federation"] = true
+	}
+
+	r.articleService = cms.NewArticleService(
+		articleRepo,
+		r.storage.Actor(),
+		r.storage.Series(),
+		r.storage.Category(),
+		r.revisionService,
+		r.federation,
+		r.logger,
+	)
+	r.initialized["Articles"] = true
+}
+
 // Revisions returns the revision service, initializing it if necessary
 func (r *Registry) Revisions() *cms.RevisionService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if !r.cmsLongFormEnabled() || !r.cmsRevisionsEnabled() {
+		return nil
+	}
 
 	if r.revisionService == nil && r.storage != nil {
 		revisionRepo := r.storage.Revision()
@@ -756,6 +883,9 @@ func (r *Registry) Revisions() *cms.RevisionService {
 			r.revisionService = cms.NewRevisionService(
 				revisionRepo,
 				articleRepo,
+				r.storage.Series(),
+				r.storage.Category(),
+				r.getCMSMaxRevisionsPerObject(),
 				r.logger,
 			)
 			r.initialized["Revisions"] = true
@@ -774,6 +904,10 @@ func (r *Registry) Articles() *cms.ArticleService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if !r.cmsLongFormEnabled() {
+		return nil
+	}
+
 	if r.articleService == nil && r.storage != nil {
 		articleRepo := r.storage.Article()
 
@@ -789,16 +923,16 @@ func (r *Registry) Articles() *cms.ArticleService {
 
 		// We can call r.ensureRevisionsLocked() if we extract it.
 		// Or just instantiate it here if nil.
-		if r.revisionService == nil {
+		if r.revisionService == nil && r.cmsRevisionsEnabled() {
 			revisionRepo := r.storage.Revision()
 			articleRepo := r.storage.Article()
 			if revisionRepo != nil && articleRepo != nil {
-				r.revisionService = cms.NewRevisionService(revisionRepo, articleRepo, r.logger)
+				r.revisionService = cms.NewRevisionService(revisionRepo, articleRepo, r.storage.Series(), r.storage.Category(), r.getCMSMaxRevisionsPerObject(), r.logger)
 				r.initialized["Revisions"] = true
 			}
 		}
 
-		if articleRepo != nil && r.revisionService != nil {
+		if articleRepo != nil {
 			// Ensure FederationService is initialized
 			if r.federation == nil {
 				deps := &ServiceDependencies{
@@ -813,6 +947,8 @@ func (r *Registry) Articles() *cms.ArticleService {
 			r.articleService = cms.NewArticleService(
 				articleRepo,
 				r.storage.Actor(), // Inject ActorRepository
+				r.storage.Series(),
+				r.storage.Category(),
 				r.revisionService,
 				r.federation, // Inject FederationService
 				r.logger,
@@ -833,61 +969,38 @@ func (r *Registry) Drafts() *cms.DraftService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.draftService == nil && r.storage != nil {
-		draftRepo := r.storage.Draft()
-
-		// Ensure ArticleService is initialized
-		if r.articleService == nil {
-			// We need to initialize ArticleService first.
-			// This duplicates logic from Articles(), but since we are locked, we can't call Articles().
-			// We need to initialize RevisionService first too.
-
-			if r.revisionService == nil {
-				revisionRepo := r.storage.Revision()
-				articleRepo := r.storage.Article()
-				if revisionRepo != nil && articleRepo != nil {
-					r.revisionService = cms.NewRevisionService(revisionRepo, articleRepo, r.logger)
-					r.initialized["Revisions"] = true
-				}
-			}
-
-			articleRepo := r.storage.Article()
-			if articleRepo != nil && r.revisionService != nil {
-				// Ensure FederationService is initialized
-				if r.federation == nil {
-					deps := &ServiceDependencies{
-						Repos:  r.storage,
-						Config: r.config,
-						Logger: r.logger,
-					}
-					r.federation = NewFederationService(deps)
-					r.initialized["Federation"] = true
-				}
-
-				r.articleService = cms.NewArticleService(
-					articleRepo,
-					r.storage.Actor(),
-					r.revisionService,
-					r.federation,
-					r.logger,
-				)
-				r.initialized["Articles"] = true
-			}
-		}
-
-		if draftRepo != nil && r.articleService != nil {
-			r.draftService = cms.NewDraftService(
-				draftRepo,
-				r.articleService,
-				r.logger,
-			)
-			r.initialized["Drafts"] = true
-		} else {
-			if r.logger != nil {
-				r.logger.Warn("failed to initialize Draft service: required repositories or dependencies not available")
-			}
-		}
+	if !r.cmsLongFormEnabled() || !r.cmsDraftsEnabled() {
+		return nil
 	}
+
+	if r.draftService != nil || r.storage == nil {
+		return r.draftService
+	}
+
+	draftRepo := r.storage.Draft()
+	if draftRepo == nil {
+		if r.logger != nil {
+			r.logger.Warn("failed to initialize Draft service: required repositories or dependencies not available")
+		}
+		return nil
+	}
+
+	r.ensureCMSArticleServiceLocked()
+	if r.articleService == nil {
+		if r.logger != nil {
+			r.logger.Warn("failed to initialize Draft service: article service is not available")
+		}
+		return nil
+	}
+
+	r.draftService = cms.NewDraftService(
+		draftRepo,
+		r.articleService,
+		r.getCMSDomainName(),
+		r.cmsSchedulingEnabled(),
+		r.logger,
+	)
+	r.initialized["Drafts"] = true
 
 	return r.draftService
 }
@@ -896,6 +1009,10 @@ func (r *Registry) Drafts() *cms.DraftService {
 func (r *Registry) Series() *cms.SeriesService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if !r.cmsLongFormEnabled() || !r.cmsSeriesEnabled() {
+		return nil
+	}
 
 	if r.seriesService == nil && r.storage != nil {
 		// Assuming SeriesRepository is available in storage interface
@@ -925,6 +1042,10 @@ func (r *Registry) Categories() *cms.CategoryService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if !r.cmsLongFormEnabled() || !r.cmsCategoriesEnabled() {
+		return nil
+	}
+
 	if r.categoryService == nil && r.storage != nil {
 		categoryRepo := r.storage.Category()
 
@@ -948,6 +1069,10 @@ func (r *Registry) Categories() *cms.CategoryService {
 func (r *Registry) Publications() *cms.PublicationService {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if !r.cmsLongFormEnabled() {
+		return nil
+	}
 
 	if r.publicationService == nil && r.storage != nil {
 		pubRepo := r.storage.Publication()
@@ -1847,19 +1972,33 @@ func (r *Registry) initializeImportExportService() bool {
 	// Extract domain name from configuration
 	domainName := r.extractDomainName()
 
-	// Initialize AWS services for import/export
-	ctx := context.Background()
-	queueService, queueErr := NewImportExportQueueService(ctx, r.config.Config, repos.exportRepo, repos.importRepo, r.logger)
-	storageClient, storageErr := NewAWSS3StorageClient(ctx, r.logger)
+	var (
+		queueService  importexport.QueueService
+		storageClient importexport.StorageClient
+	)
 
-	// Log errors but don't fail initialization - services can work without AWS integration
-	if queueErr != nil {
-		r.logger.Warn("failed to initialize AWS queue service, import/export will work without async processing",
-			zap.Error(queueErr))
-	}
-	if storageErr != nil {
-		r.logger.Warn("failed to initialize AWS storage client, import/export will work with limited file support",
-			zap.Error(storageErr))
+	// Initialize AWS services for import/export.
+	//
+	// Unit tests and local harnesses don't need (and often can't support) live AWS clients.
+	// When IntegrationTestMode is enabled, keep initialization local and fast by skipping
+	// AWS wiring entirely.
+	if r.config != nil && r.config.Config != nil && !r.config.Config.IntegrationTestMode {
+		ctx := context.Background()
+		queue, queueErr := NewImportExportQueueService(ctx, r.config.Config, repos.exportRepo, repos.importRepo, r.logger)
+		storage, storageErr := NewAWSS3StorageClient(ctx, r.logger)
+
+		queueService = queue
+		storageClient = storage
+
+		// Log errors but don't fail initialization - services can work without AWS integration
+		if queueErr != nil {
+			r.logger.Warn("failed to initialize AWS queue service, import/export will work without async processing",
+				zap.Error(queueErr))
+		}
+		if storageErr != nil {
+			r.logger.Warn("failed to initialize AWS storage client, import/export will work with limited file support",
+				zap.Error(storageErr))
+		}
 	}
 
 	// Create the ImportExport service
@@ -1884,7 +2023,7 @@ func (r *Registry) initializeImportExportService() bool {
 type importExportRepositories struct {
 	exportRepo  *repositories.ExportRepository
 	importRepo  *repositories.ImportRepository
-	statusRepo  *repositories.StatusRepository
+	statusRepo  interfaces.StatusRepository
 	accountRepo interfaces.AccountRepository
 	mediaRepo   *repositories.MediaRepository
 	socialRepo  interfaces.SocialRepository
@@ -1934,57 +2073,75 @@ func (r *Registry) extractDomainName() string {
 // Bulk returns the Bulk service, initializing it if necessary
 func (r *Registry) Bulk() *bulk.Service {
 	r.mu.Lock()
+	if r.bulkService != nil || r.storage == nil {
+		service := r.bulkService
+		r.mu.Unlock()
+		return service
+	}
+
+	// Initialize the Bulk service with repository interfaces
+	statusRepo := r.storage.Status()
+	accountRepo := r.storage.Account()
+	socialRepo := r.storage.Social()
+	listRepo := r.storage.List()
+	relationshipRepo := r.storage.Relationship()
+
+	// Check if repositories are available
+	if statusRepo == nil || accountRepo == nil || socialRepo == nil || listRepo == nil || relationshipRepo == nil {
+		if r.logger != nil {
+			r.logger.Warn("failed to initialize Bulk service: required repositories not available")
+		}
+		r.mu.Unlock()
+		return nil
+	}
+
+	domainName := DefaultLocalhost
+	if r.config != nil && r.config.BaseURL != "" {
+		// Extract domain from base URL
+		if strings.HasPrefix(r.config.BaseURL, "https://") {
+			domainName = strings.TrimPrefix(r.config.BaseURL, "https://")
+		} else if strings.HasPrefix(r.config.BaseURL, "http://") {
+			domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
+		}
+	}
+
+	publisher := r.publisher
+	logger := r.logger
+	r.mu.Unlock()
+
+	// Initialize federation service (may be nil during testing)
+	federationService := r.Federation()
+
+	// Create adapter for federation service interface
+	var bulkFederation bulk.FederationService
+	if federationService != nil {
+		jobQueue := r.getJobQueue()
+		bulkFederation = &federationServiceAdapter{
+			federation: federationService,
+			jobQueue:   jobQueue,
+		}
+	}
+
+	service := bulk.NewService(
+		statusRepo,
+		accountRepo,
+		socialRepo,
+		listRepo,
+		relationshipRepo,
+		publisher,
+		bulkFederation,
+		logger,
+		domainName,
+	)
+
+	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.bulkService == nil && r.storage != nil {
-		// Initialize the Bulk service with repository interfaces
-		statusRepo := r.storage.Status()
-		accountRepo := r.storage.Account()
-		socialRepo := r.storage.Social()
-		listRepo := r.storage.List()
-		relationshipRepo := r.storage.Relationship()
-
-		// Check if repositories are available
-		if statusRepo != nil && accountRepo != nil && socialRepo != nil && listRepo != nil && relationshipRepo != nil {
-			domainName := DefaultLocalhost
-			if r.config != nil && r.config.BaseURL != "" {
-				// Extract domain from base URL
-				if strings.HasPrefix(r.config.BaseURL, "https://") {
-					domainName = strings.TrimPrefix(r.config.BaseURL, "https://")
-				} else if strings.HasPrefix(r.config.BaseURL, "http://") {
-					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
-				}
-			}
-
-			// Initialize federation service (may be nil during testing)
-			federationService := r.Federation()
-
-			// Create adapter for federation service interface
-			var bulkFederation bulk.FederationService
-			if federationService != nil {
-				jobQueue := r.getJobQueue()
-				bulkFederation = &federationServiceAdapter{
-					federation: federationService,
-					jobQueue:   jobQueue,
-				}
-			}
-
-			r.bulkService = bulk.NewService(
-				statusRepo,
-				accountRepo,
-				socialRepo,
-				listRepo,
-				relationshipRepo,
-				r.publisher,
-				bulkFederation,
-				r.logger,
-				domainName,
-			)
+	// Double-check in case another goroutine initialized it while we were unlocked.
+	if r.bulkService == nil {
+		r.bulkService = service
+		if r.initialized != nil {
 			r.initialized["Bulk"] = true
-		} else {
-			if r.logger != nil {
-				r.logger.Warn("failed to initialize Bulk service: required repositories not available")
-			}
 		}
 	}
 
@@ -2085,7 +2242,7 @@ func (r *Registry) createSeveranceEventPublisherAdapter() severance.EventPublish
 }
 
 // StreamingConnectionRepository returns the streaming connection repository for WebSocket subscriptions
-func (r *Registry) StreamingConnectionRepository() *repositories.StreamingConnectionRepository {
+func (r *Registry) StreamingConnectionRepository() interfaces.StreamingConnectionRepository {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

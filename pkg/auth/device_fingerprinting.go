@@ -16,9 +16,16 @@ import (
 
 // DeviceFingerprintManager handles device identification and tracking
 type DeviceFingerprintManager struct {
-	repos  StorageProvider
+	repo   deviceFingerprintRepository
 	logger *zap.Logger
 	config *DeviceFingerprintConfig
+}
+
+type deviceFingerprintRepository interface {
+	GetUserDevices(ctx context.Context, username string) ([]*storage.Device, error)
+	CreateDevice(ctx context.Context, device *storage.Device) error
+	GetDevice(ctx context.Context, deviceID string) (*storage.Device, error)
+	UpdateDevice(ctx context.Context, device *storage.Device) error
 }
 
 // DeviceFingerprintConfig holds device fingerprinting configuration
@@ -106,13 +113,13 @@ type DeviceValidationResult struct {
 }
 
 // NewDeviceFingerprintManager creates a new device fingerprint manager
-func NewDeviceFingerprintManager(repos StorageProvider, logger *zap.Logger, config *DeviceFingerprintConfig) *DeviceFingerprintManager {
+func NewDeviceFingerprintManager(repo deviceFingerprintRepository, logger *zap.Logger, config *DeviceFingerprintConfig) *DeviceFingerprintManager {
 	if config == nil {
 		config = DefaultDeviceFingerprintConfig()
 	}
 
 	return &DeviceFingerprintManager{
-		repos:  repos,
+		repo:   repo,
 		logger: logger,
 		config: config,
 	}
@@ -165,7 +172,7 @@ func (dfm *DeviceFingerprintManager) ValidateDevice(ctx context.Context, usernam
 	}
 
 	// Get user's known devices
-	devices, err := dfm.repos.Account().GetUserDevices(ctx, username)
+	devices, err := dfm.repo.GetUserDevices(ctx, username)
 	if err != nil {
 		dfm.logger.Error("failed to retrieve user devices",
 			zap.String("username", username),
@@ -252,7 +259,7 @@ func (dfm *DeviceFingerprintManager) RegisterNewDevice(ctx context.Context, user
 		TrustLevel:    trustLevel,
 	}
 
-	err := dfm.repos.Account().CreateDevice(ctx, device)
+	err := dfm.repo.CreateDevice(ctx, device)
 	if err != nil {
 		dfm.logger.Error("failed to create device record",
 			zap.String("username", username),
@@ -288,7 +295,7 @@ func (dfm *DeviceFingerprintManager) RegisterNewDevice(ctx context.Context, user
 
 // UpdateDeviceFingerprint updates a device's fingerprint after validation
 func (dfm *DeviceFingerprintManager) UpdateDeviceFingerprint(ctx context.Context, deviceID string, fingerprint *EnhancedDeviceFingerprint) error {
-	device, err := dfm.repos.Account().GetDevice(ctx, deviceID)
+	device, err := dfm.repo.GetDevice(ctx, deviceID)
 	if err != nil {
 		return err
 	}
@@ -306,7 +313,7 @@ func (dfm *DeviceFingerprintManager) UpdateDeviceFingerprint(ctx context.Context
 			zap.String("newTrustLevel", "trusted"))
 	}
 
-	return dfm.repos.Account().UpdateDevice(ctx, device)
+	return dfm.repo.UpdateDevice(ctx, device)
 }
 
 // Helper methods
@@ -358,16 +365,16 @@ func (dfm *DeviceFingerprintManager) calculateDeviceMatchConfidence(device *stor
 
 	// User agent matching (most important)
 	if device.LastUserAgent == fingerprint.UserAgent {
-		confidence += 0.4
+		confidence += 0.6
 	} else if dfm.isUserAgentSimilar(device.LastUserAgent, fingerprint.UserAgent) {
-		confidence += 0.2
+		confidence += 0.3
 	}
 
 	// IP address matching
 	if device.LastIPAddress == fingerprint.IPAddress {
-		confidence += 0.3
+		confidence += 0.4
 	} else if dfm.isIPInSameNetwork(device.LastIPAddress, fingerprint.IPAddress) {
-		confidence += 0.1
+		confidence += 0.2
 	}
 
 	// Additional factors would be compared here if stored
@@ -578,7 +585,7 @@ func (dfm *DeviceFingerprintManager) isLikelyVPN(_ string) bool {
 }
 
 func (dfm *DeviceFingerprintManager) enforceDeviceLimits(ctx context.Context, username string) error {
-	devices, err := dfm.repos.Account().GetUserDevices(ctx, username)
+	devices, err := dfm.repo.GetUserDevices(ctx, username)
 	if err != nil {
 		return err
 	}

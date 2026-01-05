@@ -15,6 +15,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	serviceerrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -25,10 +26,10 @@ import (
 
 // Service provides business logic for import/export operations
 type Service struct {
-	exportRepo    *repositories.ExportRepository
-	importRepo    *repositories.ImportRepository
-	statusRepo    *repositories.StatusRepository
-	accountRepo   interfaces.AccountRepository
+	exportRepo    exportRepository
+	importRepo    importRepository
+	statusRepo    interfaces.StatusRepository
+	accountRepo   accountRepository
 	mediaRepo     *repositories.MediaRepository
 	socialRepo    interfaces.SocialRepository
 	publisher     streaming.Publisher
@@ -37,6 +38,29 @@ type Service struct {
 	logger        *zap.Logger
 	domain        string
 }
+
+type exportRepository interface {
+	CreateExport(ctx context.Context, export *models.Export) error
+	GetExport(ctx context.Context, exportID string) (*models.Export, error)
+	GetExportsForUser(ctx context.Context, username string, limit int, cursor string) ([]*models.Export, string, error)
+	UpdateExportStatus(ctx context.Context, exportID, status string, completionData map[string]any, errorMsg string) error
+}
+
+type importRepository interface {
+	CreateImport(ctx context.Context, importRecord *models.Import) error
+	GetImport(ctx context.Context, importID string) (*models.Import, error)
+	GetImportsForUser(ctx context.Context, username string, limit int, cursor string) ([]*models.Import, string, error)
+}
+
+type accountRepository interface {
+	GetAccount(ctx context.Context, username string) (*storage.Account, error)
+}
+
+var (
+	_ exportRepository  = (*repositories.ExportRepository)(nil)
+	_ importRepository  = (*repositories.ImportRepository)(nil)
+	_ accountRepository = (interfaces.AccountRepository)(nil)
+)
 
 // QueueService defines the interface for queuing async operations
 type QueueService interface {
@@ -53,10 +77,10 @@ type StorageClient interface {
 
 // NewService creates a new import/export service
 func NewService(
-	exportRepo *repositories.ExportRepository,
-	importRepo *repositories.ImportRepository,
-	statusRepo *repositories.StatusRepository,
-	accountRepo interfaces.AccountRepository,
+	exportRepo exportRepository,
+	importRepo importRepository,
+	statusRepo interfaces.StatusRepository,
+	accountRepo accountRepository,
 	mediaRepo *repositories.MediaRepository,
 	socialRepo interfaces.SocialRepository,
 	publisher streaming.Publisher,
@@ -127,7 +151,7 @@ type CancelExportCommand struct {
 // CreateImportCommand contains data needed to create an import request
 type CreateImportCommand struct {
 	Username      string            `json:"username" validate:"required"`
-	Type          string            `json:"type" validate:"required,oneof=archive followers following lists bookmarks"`
+	Type          string            `json:"type" validate:"required,oneof=archive followers following lists bookmarks mutes blocks"`
 	Format        string            `json:"format" validate:"required,oneof=activitypub mastodon csv"`
 	FileURL       string            `json:"file_url" validate:"required,url"`
 	Options       map[string]string `json:"options"`

@@ -15,8 +15,23 @@ import (
 // RelationshipCommandHandler handles WebSocket commands related to relationships
 type RelationshipCommandHandler struct {
 	*streaming.BaseCommandHandler
-	relationshipsService *relationships.Service
-	accountsService      *accounts.Service
+	relationshipsService relationshipsAPI
+	accountsService      accountsRelationshipAPI
+}
+
+type relationshipsAPI interface {
+	AcceptFollowRequest(ctx context.Context, cmd *relationships.AcceptFollowRequestCommand) (*relationships.RelationshipResult, error)
+	RejectFollowRequest(ctx context.Context, cmd *relationships.RejectFollowRequestCommand) (*relationships.RelationshipResult, error)
+	Follow(ctx context.Context, cmd *relationships.FollowCommand) (*relationships.FollowResult, error)
+	Unfollow(ctx context.Context, cmd *relationships.UnfollowCommand) (*relationships.RelationshipResult, error)
+	Block(ctx context.Context, cmd *relationships.BlockCommand) (*relationships.RelationshipResult, error)
+	Unblock(ctx context.Context, cmd *relationships.UnblockCommand) (*relationships.RelationshipResult, error)
+	Mute(ctx context.Context, cmd *relationships.MuteCommand) (*relationships.RelationshipResult, error)
+	Unmute(ctx context.Context, cmd *relationships.UnmuteCommand) (*relationships.RelationshipResult, error)
+}
+
+type accountsRelationshipAPI interface {
+	RemoveFollower(ctx context.Context, cmd *accounts.RemoveFollowerCommand) (*accounts.RelationshipResult, error)
 }
 
 // NewRelationshipCommandHandler creates a new relationship command handler

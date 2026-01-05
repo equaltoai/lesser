@@ -50,15 +50,20 @@ const (
 )
 
 var (
-	lambdaCtx        *common.LambdaContext
-	db               core.DB
-	consensusEngine  *moderation.ConsensusEngine
-	advancedEngine   *advanced.Engine
-	moderationRepo   *repositories.ModerationRepository
-	userRepo         *repositories.UserRepository
-	notificationRepo *repositories.NotificationRepository
-	objectRepo       *repositories.ObjectRepository
-	patternRepo      *repositories.PatternRepository
+	runningUnitTests         = common.RunningUnitTests
+	lambdaStart              = lambda.Start
+	mustInitializeLambda     = common.MustInitializeLambda
+	newLambdaOptimizedClient = dynamorm.NewLambdaOptimizedClient
+	initializeWithDefaults   = (*common.LambdaContext).InitializeWithDefaults
+	lambdaCtx                *common.LambdaContext
+	db                       core.DB
+	consensusEngine          *moderation.ConsensusEngine
+	advancedEngine           *advanced.Engine
+	moderationRepo           *repositories.ModerationRepository
+	userRepo                 *repositories.UserRepository
+	notificationRepo         *repositories.NotificationRepository
+	objectRepo               *repositories.ObjectRepository
+	patternRepo              *repositories.PatternRepository
 )
 
 const (
@@ -403,11 +408,15 @@ var (
 )
 
 func init() {
-	if common.RunningUnitTests() {
+	initialize()
+}
+
+func initialize() {
+	if runningUnitTests() {
 		return
 	}
 	// Standardized Lambda initialization for processor functions
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambda(common.LambdaConfig{
 		ServiceName: "moderation-processor",
 		LambdaType:  common.LambdaTypeProcessor,
 	})
@@ -420,13 +429,13 @@ func init() {
 	}
 
 	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
+	err := initializeWithDefaults(lambdaCtx)
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
 	// Initialize DynamORM with Lambda optimizations
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
+	db, err = newLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
 		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
@@ -468,7 +477,7 @@ func init() {
 
 // initAdvancedModerationEngine initializes the advanced moderation engine with or without AWS
 func initAdvancedModerationEngine() {
-	if common.RunningUnitTests() {
+	if runningUnitTests() {
 		return
 	}
 	// Determine moderation mode based on configuration
@@ -523,9 +532,7 @@ func initAdvancedModerationEngine() {
 	costTracker := cost.NewDynamORMCostTracker(db, lambdaCtx.Logger)
 
 	// Create a pattern repository adapter for the advanced moderation engine
-	patternRepoAdapter := &patternRepositoryAdapter{
-		repo: patternRepo,
-	}
+	patternRepoAdapter := advanced.NewPatternRepositoryAdapter(patternRepo)
 
 	// Create the advanced moderation engine
 	advancedEngine = advanced.NewEngineWithMode(advanced.EngineOptions{
@@ -1640,6 +1647,13 @@ func (mp *ModerationProcessor) filterFromTimelines(ctx context.Context, username
 
 // updateSearchVisibility updates user/content visibility in search indexes
 func (mp *ModerationProcessor) updateSearchVisibility(_ context.Context, username, visibility string) error {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("visibility", visibility); err != nil {
+		return err
+	}
+
 	mp.logger.Debug("Updating search visibility",
 		zap.String("username", username),
 		zap.String("visibility", visibility))
@@ -1658,6 +1672,13 @@ func (mp *ModerationProcessor) updateSearchVisibility(_ context.Context, usernam
 
 // applyFederationConstraints applies moderation constraints to federation
 func (mp *ModerationProcessor) applyFederationConstraints(_ context.Context, username, constraint string) error {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("constraint", constraint); err != nil {
+		return err
+	}
+
 	mp.logger.Debug("Applying federation constraints",
 		zap.String("username", username),
 		zap.String("constraint", constraint))
@@ -1677,6 +1698,10 @@ func (mp *ModerationProcessor) applyFederationConstraints(_ context.Context, use
 
 // removeFromTimelines removes specific content from timelines
 func (mp *ModerationProcessor) removeFromTimelines(_ context.Context, objectID string) error {
+	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
+		return err
+	}
+
 	mp.logger.Debug("Removing content from timelines",
 		zap.String("object_id", objectID))
 
@@ -1694,6 +1719,10 @@ func (mp *ModerationProcessor) removeFromTimelines(_ context.Context, objectID s
 
 // removeFromSearch removes content from search indexes
 func (mp *ModerationProcessor) removeFromSearch(_ context.Context, objectID string) error {
+	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
+		return err
+	}
+
 	mp.logger.Debug("Removing content from search",
 		zap.String("object_id", objectID))
 
@@ -1755,6 +1784,13 @@ func (mp *ModerationProcessor) sendFederationDeletion(ctx context.Context, objec
 
 // sendTimelineUpdateEvent sends real-time updates to connected WebSocket clients
 func (mp *ModerationProcessor) sendTimelineUpdateEvent(_ context.Context, username, action string) error {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("action", action); err != nil {
+		return err
+	}
+
 	// Create timeline update event for WebSocket streaming
 	updateEvent := map[string]interface{}{
 		"event":     "moderation.timeline_update",
@@ -2136,148 +2172,5 @@ func main() {
 		return nil
 	})
 
-	lambda.Start(app.HandleRequest)
-}
-
-// patternRepositoryAdapter adapts repositories.PatternRepository to advanced.PatternRepository interface
-type patternRepositoryAdapter struct {
-	repo *repositories.PatternRepository
-}
-
-// CreatePattern creates a new moderation pattern
-func (a *patternRepositoryAdapter) CreatePattern(ctx context.Context, pattern *advanced.ModerationPattern) error {
-	// Convert from advanced.ModerationPattern to models.ModerationPattern
-	modelPattern := &models.ModerationPattern{
-		PatternID:   pattern.ID,
-		Pattern:     pattern.Pattern,
-		Type:        pattern.Type,
-		Category:    pattern.Category,
-		Name:        pattern.Name,
-		Severity:    pattern.Severity,
-		Description: pattern.Description,
-		Active:      pattern.Active,
-		Flags:       pattern.Flags,
-		CreatedAt:   pattern.CreatedAt,
-		UpdatedAt:   pattern.UpdatedAt,
-		HitCount:    pattern.HitCount,
-		LastHit:     pattern.LastHit,
-	}
-	return a.repo.CreatePattern(ctx, modelPattern)
-}
-
-// UpdatePattern updates an existing moderation pattern
-func (a *patternRepositoryAdapter) UpdatePattern(ctx context.Context, patternID string, pattern *advanced.ModerationPattern) error {
-	// Convert from advanced.ModerationPattern to models.ModerationPattern
-	modelPattern := &models.ModerationPattern{
-		PatternID:   pattern.ID,
-		Pattern:     pattern.Pattern,
-		Type:        pattern.Type,
-		Category:    pattern.Category,
-		Name:        pattern.Name,
-		Severity:    pattern.Severity,
-		Description: pattern.Description,
-		Active:      pattern.Active,
-		Flags:       pattern.Flags,
-	}
-	return a.repo.UpdatePattern(ctx, patternID, modelPattern)
-}
-
-// DeletePattern deletes a moderation pattern
-func (a *patternRepositoryAdapter) DeletePattern(ctx context.Context, patternID string) error {
-	return a.repo.DeletePattern(ctx, patternID)
-}
-
-// GetPattern retrieves a moderation pattern by ID
-func (a *patternRepositoryAdapter) GetPattern(ctx context.Context, patternID string) (*advanced.ModerationPattern, error) {
-	modelPattern, err := a.repo.GetPattern(ctx, patternID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert from models.ModerationPattern to advanced.ModerationPattern
-	return &advanced.ModerationPattern{
-		ID:          modelPattern.PatternID,
-		Pattern:     modelPattern.Pattern,
-		Type:        modelPattern.Type,
-		Category:    modelPattern.Category,
-		Name:        modelPattern.Name,
-		Severity:    modelPattern.Severity,
-		Description: modelPattern.Description,
-		Active:      modelPattern.Active,
-		Flags:       modelPattern.Flags,
-		CreatedAt:   modelPattern.CreatedAt,
-		UpdatedAt:   modelPattern.UpdatedAt,
-		HitCount:    modelPattern.HitCount,
-		LastHit:     modelPattern.LastHit,
-	}, nil
-}
-
-// GetPatterns retrieves patterns based on filter criteria
-func (a *patternRepositoryAdapter) GetPatterns(ctx context.Context, filter advanced.PatternFilter) ([]*advanced.ModerationPattern, error) {
-	// Get patterns from repository (simplified - using category and active from filter)
-	activeOnly := false
-	if filter.Active != nil {
-		activeOnly = *filter.Active
-	}
-	modelPatterns, err := a.repo.GetPatterns(ctx, filter.Category, activeOnly)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert from models.ModerationPattern to advanced.ModerationPattern
-	var patterns []*advanced.ModerationPattern
-	for _, mp := range modelPatterns {
-		patterns = append(patterns, &advanced.ModerationPattern{
-			ID:          mp.PatternID,
-			Pattern:     mp.Pattern,
-			Type:        mp.Type,
-			Category:    mp.Category,
-			Name:        mp.Name,
-			Severity:    mp.Severity,
-			Description: mp.Description,
-			Active:      mp.Active,
-			Flags:       mp.Flags,
-			CreatedAt:   mp.CreatedAt,
-			UpdatedAt:   mp.UpdatedAt,
-			HitCount:    mp.HitCount,
-			LastHit:     mp.LastHit,
-		})
-	}
-
-	return patterns, nil
-}
-
-// IncrementHitCount increments the hit count for a pattern
-func (a *patternRepositoryAdapter) IncrementHitCount(ctx context.Context, patternID string) error {
-	return a.repo.IncrementHitCount(ctx, patternID)
-}
-
-// LoadActivePatterns loads all active patterns
-func (a *patternRepositoryAdapter) LoadActivePatterns(ctx context.Context) ([]*advanced.ModerationPattern, error) {
-	modelPatterns, err := a.repo.LoadActivePatterns(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert from models.ModerationPattern to advanced.ModerationPattern
-	var patterns []*advanced.ModerationPattern
-	for _, mp := range modelPatterns {
-		patterns = append(patterns, &advanced.ModerationPattern{
-			ID:          mp.PatternID,
-			Pattern:     mp.Pattern,
-			Type:        mp.Type,
-			Category:    mp.Category,
-			Name:        mp.Name,
-			Severity:    mp.Severity,
-			Description: mp.Description,
-			Active:      mp.Active,
-			Flags:       mp.Flags,
-			CreatedAt:   mp.CreatedAt,
-			UpdatedAt:   mp.UpdatedAt,
-			HitCount:    mp.HitCount,
-			LastHit:     mp.LastHit,
-		})
-	}
-
-	return patterns, nil
+	lambdaStart(app.HandleRequest)
 }

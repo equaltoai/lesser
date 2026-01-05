@@ -293,7 +293,7 @@ func (slm *SessionLifecycleManager) CleanupExpiredSessions(_ context.Context) er
 
 // enforceConcurrentSessionLimits ensures a user doesn't exceed session limits
 func (slm *SessionLifecycleManager) enforceConcurrentSessionLimits(ctx context.Context, username string) error {
-	sessions, err := slm.sessionManager.repos.Account().GetUserSessions(ctx, username)
+	sessions, err := slm.sessionManager.repo.GetUserSessions(ctx, username)
 	if err != nil {
 		slm.logger.Error("failed to get user sessions", zap.String("username", username), zap.Error(err))
 		return errors.Join(ErrUserSessionsRetrieval, err)
@@ -344,7 +344,7 @@ func (slm *SessionLifecycleManager) removeOldestSession(ctx context.Context, use
 // updateSessionInStorage updates a session in storage
 func (slm *SessionLifecycleManager) updateSessionInStorage(ctx context.Context, session *Session) error {
 	// Update session using the session manager
-	return slm.sessionManager.repos.Account().UpdateSession(
+	return slm.sessionManager.repo.UpdateSession(
 		ctx,
 		session.SessionID,
 		session.RefreshToken,
@@ -356,7 +356,7 @@ func (slm *SessionLifecycleManager) updateSessionInStorage(ctx context.Context, 
 
 // GetSessionHealth returns health information about a session
 func (slm *SessionLifecycleManager) GetSessionHealth(ctx context.Context, sessionID string) (*SessionHealth, error) {
-	session, err := slm.sessionManager.repos.Account().GetSession(ctx, sessionID)
+	session, err := slm.sessionManager.repo.GetSession(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +413,7 @@ func (slm *SessionLifecycleManager) ScheduleCleanup(ctx context.Context) {
 
 // RevokeAllUserSessionsWithReason revokes all sessions for a user with a specific reason
 func (slm *SessionLifecycleManager) RevokeAllUserSessionsWithReason(ctx context.Context, username, reason string) error {
-	sessions, err := slm.sessionManager.repos.Account().GetUserSessions(ctx, username)
+	sessions, err := slm.sessionManager.repo.GetUserSessions(ctx, username)
 	if err != nil {
 		return err
 	}

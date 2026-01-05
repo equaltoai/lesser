@@ -277,9 +277,7 @@ func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
 	}
 
 	// Parse request (only data field for updates)
-	var req struct {
-		Data models.PushSubscriptionAlerts `json:"data"`
-	}
+	var req models.PushSubscriptionRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {

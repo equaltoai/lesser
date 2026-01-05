@@ -2,6 +2,7 @@ package lift
 
 import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/mock"
@@ -37,48 +38,48 @@ func (m *MockRepositoryStorage) Bookmark() *repositories.BookmarkRepository {
 }
 
 // Actor returns a mock actor repository for testing
-func (m *MockRepositoryStorage) Actor() *repositories.ActorRepository {
+func (m *MockRepositoryStorage) Actor() interfaces.ActorRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.ActorRepository)
+	return args.Get(0).(interfaces.ActorRepository)
 }
 
-// Object returns a mock object repository for testing
-func (m *MockRepositoryStorage) Object() *repositories.ObjectRepository {
+// Object returns a mock object repository for testing (interface type for mockability).
+func (m *MockRepositoryStorage) Object() interfaces.ObjectRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.ObjectRepository)
+	return args.Get(0).(interfaces.ObjectRepository)
 }
 
-// Activity returns a mock activity repository for testing
-func (m *MockRepositoryStorage) Activity() *repositories.ActivityRepository {
+// Activity returns a mock activity repository for testing (interface type for mockability).
+func (m *MockRepositoryStorage) Activity() interfaces.ActivityRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.ActivityRepository)
+	return args.Get(0).(interfaces.ActivityRepository)
 }
 
-// Timeline returns a mock timeline repository for testing
-func (m *MockRepositoryStorage) Timeline() *repositories.TimelineRepository {
+// Timeline returns a mock timeline repository for testing (interface type for mockability).
+func (m *MockRepositoryStorage) Timeline() interfaces.TimelineRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.TimelineRepository)
+	return args.Get(0).(interfaces.TimelineRepository)
 }
 
-// Notification returns a mock notification repository for testing
-func (m *MockRepositoryStorage) Notification() *repositories.NotificationRepository {
+// Notification returns a mock notification repository for testing (interface type for mockability).
+func (m *MockRepositoryStorage) Notification() interfaces.NotificationRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.NotificationRepository)
+	return args.Get(0).(interfaces.NotificationRepository)
 }
 
 // Like returns a mock like repository for testing
@@ -91,12 +92,12 @@ func (m *MockRepositoryStorage) Like() *repositories.LikeRepository {
 }
 
 // Moderation returns a mock moderation repository for testing
-func (m *MockRepositoryStorage) Moderation() *repositories.ModerationRepository {
+func (m *MockRepositoryStorage) Moderation() interfaces.ModerationRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.ModerationRepository)
+	return args.Get(0).(interfaces.ModerationRepository)
 }
 
 // List returns a mock list repository for testing
@@ -181,12 +182,12 @@ func (m *MockRepositoryStorage) DomainBlock() *repositories.DomainBlockRepositor
 }
 
 // Relationship returns a mock relationship repository for testing
-func (m *MockRepositoryStorage) Relationship() *repositories.RelationshipRepository {
+func (m *MockRepositoryStorage) Relationship() interfaces.ConcreteRelationshipRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.RelationshipRepository)
+	return args.Get(0).(interfaces.ConcreteRelationshipRepository)
 }
 
 // Instance returns a mock instance repository for testing
@@ -235,21 +236,21 @@ func (m *MockRepositoryStorage) Social() *repositories.SocialRepository {
 }
 
 // User returns a mock user repository for testing
-func (m *MockRepositoryStorage) User() *repositories.UserRepository {
+func (m *MockRepositoryStorage) User() interfaces.UserRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.UserRepository)
+	return args.Get(0).(interfaces.UserRepository)
 }
 
 // Status returns a mock status repository for testing
-func (m *MockRepositoryStorage) Status() *repositories.StatusRepository {
+func (m *MockRepositoryStorage) Status() interfaces.StatusRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.StatusRepository)
+	return args.Get(0).(interfaces.StatusRepository)
 }
 
 // Cost returns a mock cost repository for testing
@@ -271,12 +272,12 @@ func (m *MockRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepos
 }
 
 // Trust returns a mock trust repository for testing
-func (m *MockRepositoryStorage) Trust() *repositories.TrustRepository {
+func (m *MockRepositoryStorage) Trust() interfaces.TrustRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.TrustRepository)
+	return args.Get(0).(interfaces.TrustRepository)
 }
 
 // Search returns a mock search repository for testing
@@ -479,59 +480,59 @@ func (m *MockRepositoryStorage) Quote() *repositories.QuoteRepository {
 }
 
 // MediaAnalytics returns a mock media analytics repository for testing
-func (m *MockRepositoryStorage) MediaAnalytics() *repositories.MediaAnalyticsRepository {
+func (m *MockRepositoryStorage) MediaAnalytics() interfaces.MediaAnalyticsRepository {
 	return nil
 }
 
 // MediaPopularity returns a mock media popularity repository for testing
-func (m *MockRepositoryStorage) MediaPopularity() *repositories.MediaPopularityRepository {
+func (m *MockRepositoryStorage) MediaPopularity() interfaces.MediaPopularityRepository {
 	return nil
 }
 
 // MediaSession returns a mock media session repository for testing
-func (m *MockRepositoryStorage) MediaSession() *repositories.MediaSessionRepository {
+func (m *MockRepositoryStorage) MediaSession() interfaces.MediaSessionRepository {
 	return nil
 }
 
 // StreamingConnection returns a mock streaming connection repository for testing
-func (m *MockRepositoryStorage) StreamingConnection() *repositories.StreamingConnectionRepository {
+func (m *MockRepositoryStorage) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return nil
 }
 
 // CMS Repository Mocks
 
 // Article returns a mock article repository for testing
-func (m *MockRepositoryStorage) Article() *repositories.ArticleRepository {
+func (m *MockRepositoryStorage) Article() interfaces.ArticleRepository {
 	return nil
 }
 
 // Draft returns a mock draft repository for testing
-func (m *MockRepositoryStorage) Draft() *repositories.DraftRepository {
+func (m *MockRepositoryStorage) Draft() interfaces.DraftRepository {
 	return nil
 }
 
 // Revision returns a mock revision repository for testing
-func (m *MockRepositoryStorage) Revision() *repositories.RevisionRepository {
+func (m *MockRepositoryStorage) Revision() interfaces.RevisionRepository {
 	return nil
 }
 
 // Series returns a mock series repository for testing
-func (m *MockRepositoryStorage) Series() *repositories.SeriesRepository {
+func (m *MockRepositoryStorage) Series() interfaces.SeriesRepository {
 	return nil
 }
 
 // Category returns a mock category repository for testing
-func (m *MockRepositoryStorage) Category() *repositories.CategoryRepository {
+func (m *MockRepositoryStorage) Category() interfaces.CategoryRepository {
 	return nil
 }
 
 // Publication returns a mock publication repository for testing
-func (m *MockRepositoryStorage) Publication() *repositories.PublicationRepository {
+func (m *MockRepositoryStorage) Publication() interfaces.PublicationRepository {
 	return nil
 }
 
 // PublicationMember returns a mock publication member repository for testing
-func (m *MockRepositoryStorage) PublicationMember() *repositories.PublicationMemberRepository {
+func (m *MockRepositoryStorage) PublicationMember() interfaces.PublicationMemberRepository {
 	return nil
 }
 

@@ -26,12 +26,15 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/core"
+	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 )
 
 // Push notification delivery status constants
@@ -44,12 +47,53 @@ const (
 
 // PushDeliveryProcessor handles push notification delivery via SQS
 type PushDeliveryProcessor struct {
-	repos       core.RepositoryStorage
+	repos       pushDeliveryRepositories
 	logger      *zap.Logger
 	cfg         *config.Config
 	rateLimiter *RateLimiter
 	httpClient  *http.Client
 }
+
+type pushSubscriptionRepository interface {
+	GetUserPushSubscriptions(ctx context.Context, username string) ([]*storage.PushSubscription, error)
+	GetVAPIDKeys(ctx context.Context) (*storage.VAPIDKeys, error)
+	DeletePushSubscription(ctx context.Context, username, subscriptionID string) error
+}
+
+type activityRepository interface {
+	RecordActivity(ctx context.Context, activityType string, actorID string, timestamp time.Time) error
+}
+
+type pushDeliveryRepositories interface {
+	PushSubscription() pushSubscriptionRepository
+	Activity() activityRepository
+}
+
+type repositoryStorageAdapter struct {
+	storage storagecore.RepositoryStorage
+}
+
+func (a repositoryStorageAdapter) PushSubscription() pushSubscriptionRepository {
+	return a.storage.PushSubscription()
+}
+
+func (a repositoryStorageAdapter) Activity() activityRepository {
+	return a.storage.Activity()
+}
+
+var (
+	mustInitializeLambdaFn = common.MustInitializeLambda
+	getDynamoClientFn      = dynamorm.GetClient
+	newRepositoryFactoryFn = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (storagecore.RepositoryStorage, error) {
+		return factory.NewRepositoryFactory(db, tableName, logger)
+	}
+
+	lambdaStartFn              = lambda.Start
+	newPushDeliveryProcessorFn = NewPushDeliveryProcessor
+	handleSQSEventFn           = func(processor *PushDeliveryProcessor, ctx *lift.Context, event events.SQSEvent) error {
+		return processor.HandleSQSBatch(ctx, event)
+	}
+)
 
 // PushMessage represents a message from the SQS queue
 type PushMessage struct {
@@ -112,7 +156,7 @@ func (rl *RateLimiter) Allow(userID string) bool {
 // NewPushDeliveryProcessor creates a new push delivery processor
 func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 	// Use standardized Lambda initialization
-	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx := mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName:        "push-delivery",
 		LambdaType:         common.LambdaTypeProcessor,
 		Version:            "1.0.0",
@@ -123,7 +167,7 @@ func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 	})
 
 	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
+	db, err := getDynamoClientFn(context.Background())
 	if err != nil {
 		return nil, ErrDynamoDBInit(err)
 	}
@@ -133,7 +177,7 @@ func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}
-	repos, err := factory.NewRepositoryFactory(db, tableName, lambdaCtx.Logger)
+	repos, err := newRepositoryFactoryFn(db, tableName, lambdaCtx.Logger)
 	if err != nil {
 		return nil, ErrRepositoryFactory(err)
 	}
@@ -143,15 +187,17 @@ func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 	lambdaCtx.Repos = repos
 
 	return &PushDeliveryProcessor{
-		repos:  repos,
+		repos:  repositoryStorageAdapter{storage: repos},
 		logger: lambdaCtx.Logger,
 		cfg:    lambdaCtx.Config,
 		rateLimiter: &RateLimiter{
 			limits: make(map[string]*userLimit),
 		},
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		httpClient: httpclient.NewSecureHTTPClient(
+			httpclient.WithTimeout(30*time.Second),
+			httpclient.WithLogger(lambdaCtx.Logger),
+			httpclient.WithMaxRedirects(10),
+		),
 	}, nil
 }
 
@@ -661,7 +707,7 @@ func (pdp *PushDeliveryProcessor) encryptPayload(payload []byte, p256dhBase64, a
 	paddedPayload := append([]byte{0, 0}, payload...)
 
 	// Encrypt
-	ciphertext := gcm.Seal(nil, nonce, paddedPayload, nil)
+	ciphertext := gcm.Seal(nil, nonce, paddedPayload, nil) // #nosec G407 -- nonce is randomly generated above (rand.Read)
 
 	// Encode results
 	saltBase64 := base64.RawURLEncoding.EncodeToString(salt)
@@ -699,12 +745,12 @@ func buildInfo(typ string, clientPublicKey, serverPublicKey []byte) []byte {
 }
 
 func main() {
-	processor, err := NewPushDeliveryProcessor()
+	processor, err := newPushDeliveryProcessorFn()
 	if err != nil {
 		panic(ErrProcessorInitialization(err))
 	}
 
-	lambda.Start(func(baseCtx context.Context, event events.SQSEvent) (err error) {
+	lambdaStartFn(func(baseCtx context.Context, event events.SQSEvent) (err error) {
 		requestID := fmt.Sprintf("push-%d", time.Now().UnixNano())
 		liftCtx := lift.NewContext(baseCtx, nil)
 		liftCtx.RequestID = requestID
@@ -728,6 +774,6 @@ func main() {
 			return nil
 		}
 
-		return processor.HandleSQSBatch(liftCtx, event)
+		return handleSQSEventFn(processor, liftCtx, event)
 	})
 }

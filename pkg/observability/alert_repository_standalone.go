@@ -19,11 +19,15 @@ type StandaloneAlertRepository struct {
 	db          core.DB
 	tableName   string
 	logger      *zap.Logger
-	costService *cost.TrackingService
+	costService dynamoCostTracker
+}
+
+type dynamoCostTracker interface {
+	TrackDynamoOperation(ctx context.Context, operation cost.DynamoOperation) error
 }
 
 // NewStandaloneAlertRepository creates a new standalone alert repository
-func NewStandaloneAlertRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *StandaloneAlertRepository {
+func NewStandaloneAlertRepository(db core.DB, tableName string, logger *zap.Logger, costService dynamoCostTracker) *StandaloneAlertRepository {
 	return &StandaloneAlertRepository{
 		db:          db,
 		tableName:   tableName,

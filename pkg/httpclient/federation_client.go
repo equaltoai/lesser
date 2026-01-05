@@ -10,8 +10,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"go.uber.org/zap"
 )
+
+var lookupIP = net.LookupIP
+
+var dialerDialContext = func(dialer *net.Dialer, ctx context.Context, network, address string) (net.Conn, error) {
+	return dialer.DialContext(ctx, network, address)
+}
 
 // FederationClient provides a secure HTTP client for ActivityPub federation
 type FederationClient struct {
@@ -48,6 +56,21 @@ func NewFederationClient(config *FederationClientConfig, logger *zap.Logger) *Fe
 	if config == nil {
 		config = DefaultFederationClientConfig()
 	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	allowInsecureTLS := false
+	if config.AllowInsecureTLS {
+		if common.InsecureTLSOverrideEnabled() {
+			allowInsecureTLS = true
+			logger.Warn("insecure TLS enabled for federation client (certificate verification disabled)",
+				zap.String("override_env", common.InsecureTLSOverrideEnvVar))
+		} else {
+			logger.Warn("insecure TLS requested for federation client but blocked (override env not enabled)",
+				zap.String("override_env", common.InsecureTLSOverrideEnvVar))
+		}
+	}
 
 	// Create custom dialer with DNS validation
 	dialer := &net.Dialer{
@@ -68,7 +91,7 @@ func NewFederationClient(config *FederationClientConfig, logger *zap.Logger) *Fe
 	}
 
 	// Configure TLS
-	if config.AllowInsecureTLS {
+	if allowInsecureTLS {
 		transport.TLSClientConfig = &tls.Config{
 			MinVersion:         tls.VersionTLS12,
 			InsecureSkipVerify: true, // #nosec G402 - a temporary measure for federation compatibility
@@ -110,8 +133,12 @@ func secureDialContext(ctx context.Context, dialer *net.Dialer, network, address
 		return nil, fmt.Errorf("invalid address format: %w", err)
 	}
 
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	// Resolve hostname to IPs
-	ips, err := net.LookupIP(host)
+	ips, err := lookupIP(host)
 	if err != nil {
 		return nil, fmt.Errorf("DNS resolution failed: %w", err)
 	}
@@ -128,91 +155,34 @@ func secureDialContext(ctx context.Context, dialer *net.Dialer, network, address
 		}
 	}
 
-	// Use the original dialer to establish connection
-	return dialer.DialContext(ctx, network, net.JoinHostPort(host, port))
+	// Dial a resolved IP address (not the hostname) to avoid TOCTOU/DNS-rebinding between validation and connect.
+	var lastErr error
+	for _, ip := range ips {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		conn, err := dialerDialContext(dialer, ctx, network, net.JoinHostPort(ip.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("DNS resolution returned no IPs for %s", host)
 }
 
 // isBlockedIP checks if an IP address should be blocked for SSRF protection
 func isBlockedIP(ip net.IP) bool {
-	// Loopback addresses (127.0.0.0/8, ::1/128)
-	if ip.IsLoopback() {
-		return true
-	}
-
-	// Link-local addresses
-	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-		return true
-	}
-
-	// Private IPv4 ranges
-	privateIPv4Ranges := []string{
-		"10.0.0.0/8",
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-		"169.254.0.0/16", // Link-local
-	}
-
-	for _, cidr := range privateIPv4Ranges {
-		_, network, err := net.ParseCIDR(cidr)
-		if err != nil {
-			continue
-		}
-		if network.Contains(ip) {
-			return true
-		}
-	}
-
-	// Private IPv6 ranges
-	if ip.To4() == nil { // IPv6
-		// Unique local addresses (fc00::/7)
-		if len(ip) >= 1 && (ip[0]&0xfe) == 0xfc {
-			return true
-		}
-		// Site-local addresses (fec0::/10) - deprecated but still blocked
-		if len(ip) >= 2 && ip[0] == 0xfe && (ip[1]&0xc0) == 0xc0 {
-			return true
-		}
-	}
-
-	// Block certain cloud metadata endpoints
-	metadataIPs := []string{
-		"169.254.169.254", // AWS, Azure, GCP metadata
-		"169.254.170.2",   // AWS ECS metadata
-		"100.100.100.200", // Alibaba Cloud metadata
-	}
-
-	for _, metadataIP := range metadataIPs {
-		if ip.Equal(net.ParseIP(metadataIP)) {
-			return true
-		}
-	}
-
-	return false
+	return ssrf.IsBlockedIP(ip)
 }
 
 // validateFederationURL validates a URL for SSRF protection
 func validateFederationURL(rawURL string, _ *FederationClientConfig, _ *zap.Logger) error {
-	if strings.Contains(rawURL, "127.0.0.1") ||
-		strings.Contains(rawURL, "localhost") ||
-		strings.Contains(rawURL, "::1") {
-		return fmt.Errorf("localhost URLs not allowed")
-	}
-
-	// Block common internal hostnames
-	internalHostnames := []string{
-		"metadata.google.internal",
-		"instance-data",
-		"consul",
-		"vault",
-	}
-
-	for _, hostname := range internalHostnames {
-		if strings.Contains(rawURL, hostname) {
-			return fmt.Errorf("internal hostname not allowed: %s", hostname)
-		}
-	}
-
-	return nil
+	_, err := ssrf.ValidateURLString(rawURL)
+	return err
 }
 
 // Get performs a GET request with ActivityPub headers

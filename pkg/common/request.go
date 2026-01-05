@@ -67,20 +67,23 @@ func ReadRequestBodyString(body io.Reader, maxSize int64) (string, error) {
 //	  ...
 //	}
 func ParseRequestWithFallback(ctx *lift.Context, target interface{}) error {
-	// First try the standard ParseRequest
-	if err := ctx.ParseRequest(target); err == nil {
-		return nil
+	// First try the standard ParseRequest when Lift's underlying request adapter is available.
+	// Some test helpers construct partial contexts where ctx.Request.Request is nil.
+	if ctx != nil && ctx.Request != nil && ctx.Request.Request != nil {
+		if err := ctx.ParseRequest(target); err == nil {
+			return nil
+		}
 	}
 
 	// Fallback for test environments - try parsing from ctx.Request.Body
-	if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
+	if ctx != nil && ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 		if err := json.Unmarshal(ctx.Request.Body, target); err == nil {
 			return nil
 		}
 	}
 
 	// Alternative fallback - try parsing from ctx.Request.Request.Body if available
-	if ctx.Request != nil && ctx.Request.Request != nil && ctx.Request.Request.Body != nil {
+	if ctx != nil && ctx.Request != nil && ctx.Request.Request != nil && ctx.Request.Request.Body != nil {
 		if err := json.Unmarshal(ctx.Request.Request.Body, target); err == nil {
 			return nil
 		}
@@ -147,12 +150,14 @@ type FilterParams struct {
 // ParseRequestWithComplexFallback handles the complex fallback pattern found in quotes.go and other files
 func ParseRequestWithComplexFallback(ctx *lift.Context, target interface{}) error {
 	// First attempt: standard parsing
-	if err := ctx.ParseRequest(target); err == nil {
-		return nil
+	if ctx != nil && ctx.Request != nil && ctx.Request.Request != nil {
+		if err := ctx.ParseRequest(target); err == nil {
+			return nil
+		}
 	}
 
 	// Second attempt: fallback with ValidateSliceNotEmpty pattern
-	if ctx.Request != nil {
+	if ctx != nil && ctx.Request != nil {
 		bodyBytes := ctx.Request.Body
 		if err := ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil &&
 			ctx.Request.Request != nil {

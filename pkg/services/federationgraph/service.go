@@ -13,19 +13,32 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
+type federationGraphRepository interface {
+	GetFederationNodes(ctx context.Context, depth int) ([]*storage.FederationNode, error)
+	GetAllFederationEdges(ctx context.Context, limit int) ([]*storage.FederationEdge, error)
+	GetFederationClusters(ctx context.Context, limit int) ([]*storage.InstanceCluster, error)
+	GetInstanceConnections(ctx context.Context, domain string, connectionType string) ([]*storage.InstanceConnection, error)
+	GetFederationEdges(ctx context.Context, domains []string) ([]*storage.FederationEdge, error)
+	GetFederationActivitiesByTimeRange(ctx context.Context, start, end time.Time, limit int) ([]*models.FederationCostActivity, error)
+	GetFederationCosts(ctx context.Context, start, end time.Time, limit int, cursor string) ([]*storage.FederationCost, string, error)
+}
+
+var _ federationGraphRepository = (*repositories.FederationRepository)(nil)
+
 // Service provides federation graph visualization functionality
 type Service struct {
-	federationRepo *repositories.FederationRepository
+	federationRepo federationGraphRepository
 	logger         *zap.Logger
 	localDomain    string
 }
 
 // NewService creates a new federation graph service
-func NewService(federationRepo *repositories.FederationRepository, logger *zap.Logger, localDomain string) *Service {
+func NewService(federationRepo federationGraphRepository, logger *zap.Logger, localDomain string) *Service {
 	return &Service{
 		federationRepo: federationRepo,
 		logger:         logger,

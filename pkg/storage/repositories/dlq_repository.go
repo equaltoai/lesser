@@ -177,7 +177,7 @@ func (r *DLQRepository) GetDLQMessagesByServiceDateRange(ctx context.Context, se
 		return allMessages[i].FirstSeenAt.After(allMessages[j].FirstSeenAt)
 	})
 
-	if err := common.ValidateSliceLength("allMessages", allMessages, limit); err == nil {
+	if len(allMessages) > limit {
 		allMessages = allMessages[:limit]
 	}
 

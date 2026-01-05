@@ -34,9 +34,22 @@ type Session = storage.Session
 // Device is a type alias for storage.Device
 type Device = storage.Device
 
+type sessionRepository interface {
+	CreateSession(ctx context.Context, username, ipAddress, userAgent string) (*Session, error)
+	GetSessionByRefreshToken(ctx context.Context, refreshToken string) (*Session, error)
+	GetSession(ctx context.Context, sessionID string) (*Session, error)
+	UpdateSession(ctx context.Context, sessionID, refreshToken, ipAddress string, lastActivity, expiresAt time.Time) error
+	DeleteSession(ctx context.Context, sessionID string) error
+	GetUserSessions(ctx context.Context, username string) ([]*Session, error)
+	GetUserDevices(ctx context.Context, username string) ([]*Device, error)
+	GetDevice(ctx context.Context, deviceID string) (*Device, error)
+	CreateDevice(ctx context.Context, device *Device) error
+	UpdateDevice(ctx context.Context, device *Device) error
+}
+
 // SessionManager handles session operations with enhanced security
 type SessionManager struct {
-	repos         StorageProvider
+	repo          sessionRepository
 	tokenVersions map[string]int // Track token versions per user
 	mu            sync.RWMutex   // Protect token versions map
 }
@@ -52,10 +65,14 @@ type SessionSecurityConfig struct {
 
 // NewSessionManager creates a new session manager with enhanced security
 func NewSessionManager(repos StorageProvider) *SessionManager {
-	return &SessionManager{
-		repos:         repos,
-		tokenVersions: make(map[string]int),
+	if repos == nil || repos.Account() == nil {
+		return newSessionManager(nil)
 	}
+	return newSessionManager(repos.Account())
+}
+
+func newSessionManager(repo sessionRepository) *SessionManager {
+	return &SessionManager{repo: repo, tokenVersions: make(map[string]int)}
 }
 
 // CreateSession creates a new session for a user with enhanced security
@@ -63,18 +80,6 @@ func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceNam
 	// Check session limits
 	if err := sm.enforceSessionLimits(ctx, username); err != nil {
 		return nil, err
-	}
-
-	// Generate session ID
-	sessionID, err := generateSecureToken()
-	if err != nil {
-		return nil, errors.Join(ErrSessionIDGeneration, err)
-	}
-
-	// Generate refresh token
-	refreshToken, err := generateSecureToken()
-	if err != nil {
-		return nil, errors.Join(ErrRefreshTokenGeneration, err)
 	}
 
 	// Generate device ID if new device
@@ -86,26 +91,18 @@ func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceNam
 	// Token version tracking (for future use)
 	_ = sm.incrementTokenVersion(username)
 
-	now := time.Now()
-	session := &Session{
-		SessionID:    sessionID,
-		Username:     username,
-		RefreshToken: refreshToken,
-		DeviceID:     deviceID,
-		DeviceName:   deviceName,
-		UserAgent:    userAgent,
-		IPAddress:    ipAddress,
-		AuthMethod:   authMethod,
-		CreatedAt:    now,
-		LastActivity: now,
-		ExpiresAt:    now.Add(SessionDuration),
-	}
-
-	// Store session
-	_, err = sm.repos.Account().CreateSession(ctx, session.Username, session.IPAddress, session.UserAgent)
+	// Store session (source of truth for session ID)
+	session, err := sm.repo.CreateSession(ctx, username, ipAddress, userAgent)
 	if err != nil {
 		return nil, errors.Join(ErrSessionStorage, err)
 	}
+
+	// Attach metadata not persisted by the repository (used for JWT claims / UX).
+	session.DeviceID = deviceID
+	session.DeviceName = deviceName
+	session.UserAgent = userAgent
+	session.IPAddress = ipAddress
+	session.AuthMethod = authMethod
 
 	// Update device record
 	if err := sm.updateDeviceRecord(ctx, deviceID, username, deviceName, userAgent, ipAddress); err != nil {
@@ -119,7 +116,7 @@ func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceNam
 // ValidateRefreshToken validates a refresh token and returns the session
 func (sm *SessionManager) ValidateRefreshToken(ctx context.Context, refreshToken string) (*Session, error) {
 	// Get session by refresh token
-	session, err := sm.repos.Account().GetSessionByRefreshToken(ctx, refreshToken)
+	session, err := sm.repo.GetSessionByRefreshToken(ctx, refreshToken)
 	if err != nil {
 		return nil, ErrInvalidRefreshToken
 	}
@@ -160,7 +157,7 @@ func (sm *SessionManager) RotateRefreshToken(ctx context.Context, session *Sessi
 	}
 
 	// Update in storage
-	if err := sm.repos.Account().UpdateSession(ctx, session.SessionID, session.RefreshToken, session.IPAddress, session.LastActivity, session.ExpiresAt); err != nil {
+	if err := sm.repo.UpdateSession(ctx, session.SessionID, session.RefreshToken, session.IPAddress, session.LastActivity, session.ExpiresAt); err != nil {
 		return "", errors.Join(ErrSessionUpdate, err)
 	}
 
@@ -169,7 +166,7 @@ func (sm *SessionManager) RotateRefreshToken(ctx context.Context, session *Sessi
 
 // UpdateSessionActivity updates the last activity timestamp
 func (sm *SessionManager) UpdateSessionActivity(ctx context.Context, sessionID, ipAddress string) error {
-	session, err := sm.repos.Account().GetSession(ctx, sessionID)
+	session, err := sm.repo.GetSession(ctx, sessionID)
 	if err != nil {
 		return err
 	}
@@ -182,23 +179,23 @@ func (sm *SessionManager) UpdateSessionActivity(ctx context.Context, sessionID, 
 		session.ExpiresAt = time.Now().Add(SessionDuration)
 	}
 
-	return sm.repos.Account().UpdateSession(ctx, session.SessionID, session.RefreshToken, session.IPAddress, session.LastActivity, session.ExpiresAt)
+	return sm.repo.UpdateSession(ctx, session.SessionID, session.RefreshToken, session.IPAddress, session.LastActivity, session.ExpiresAt)
 }
 
 // RevokeSession revokes a specific session
 func (sm *SessionManager) RevokeSession(ctx context.Context, sessionID string) error {
-	return sm.repos.Account().DeleteSession(ctx, sessionID)
+	return sm.repo.DeleteSession(ctx, sessionID)
 }
 
 // RevokeAllUserSessions revokes all sessions for a user
 func (sm *SessionManager) RevokeAllUserSessions(ctx context.Context, username string) error {
-	sessions, err := sm.repos.Account().GetUserSessions(ctx, username)
+	sessions, err := sm.repo.GetUserSessions(ctx, username)
 	if err != nil {
 		return err
 	}
 
 	for _, session := range sessions {
-		if err := sm.repos.Account().DeleteSession(ctx, session.SessionID); err != nil {
+		if err := sm.repo.DeleteSession(ctx, session.SessionID); err != nil {
 			// Log error but continue
 			zap.L().Error("failed to delete session",
 				zap.String("session_id", session.SessionID),
@@ -211,18 +208,18 @@ func (sm *SessionManager) RevokeAllUserSessions(ctx context.Context, username st
 
 // GetUserDevices returns all devices for a user
 func (sm *SessionManager) GetUserDevices(ctx context.Context, username string) ([]*Device, error) {
-	return sm.repos.Account().GetUserDevices(ctx, username)
+	return sm.repo.GetUserDevices(ctx, username)
 }
 
 // TrustDevice marks a device as trusted
 func (sm *SessionManager) TrustDevice(ctx context.Context, deviceID string) error {
-	device, err := sm.repos.Account().GetDevice(ctx, deviceID)
+	device, err := sm.repo.GetDevice(ctx, deviceID)
 	if err != nil {
 		return err
 	}
 
 	device.TrustLevel = TrustLevelTrusted
-	return sm.repos.Account().UpdateDevice(ctx, device)
+	return sm.repo.UpdateDevice(ctx, device)
 }
 
 // Helper functions
@@ -261,7 +258,7 @@ func contains(s, substr string) bool {
 
 // enforceSessionLimits checks and enforces session limits per user
 func (sm *SessionManager) enforceSessionLimits(ctx context.Context, username string) error {
-	sessions, err := sm.repos.Account().GetUserSessions(ctx, username)
+	sessions, err := sm.repo.GetUserSessions(ctx, username)
 	if err != nil {
 		return errors.Join(ErrUserSessionsRetrieval, err)
 	}
@@ -299,13 +296,13 @@ func (sm *SessionManager) removeOldestSession(ctx context.Context, _ string, ses
 		}
 	}
 
-	return sm.repos.Account().DeleteSession(ctx, oldest.SessionID)
+	return sm.repo.DeleteSession(ctx, oldest.SessionID)
 }
 
 // getOrCreateDeviceID gets existing device ID or creates new one
 func (sm *SessionManager) getOrCreateDeviceID(ctx context.Context, username, userAgent, _ string) (string, error) {
 	// Try to find existing device by fingerprint
-	devices, err := sm.repos.Account().GetUserDevices(ctx, username)
+	devices, err := sm.repo.GetUserDevices(ctx, username)
 	if err != nil {
 		return "", err
 	}
@@ -372,7 +369,7 @@ func (sm *SessionManager) updateDeviceRecord(ctx context.Context, deviceID, user
 	now := time.Now()
 
 	// Try to get existing device
-	existingDevice, err := sm.repos.Account().GetDevice(ctx, deviceID)
+	existingDevice, err := sm.repo.GetDevice(ctx, deviceID)
 	if err != nil {
 		// Create new device
 		device := &Device{
@@ -386,7 +383,7 @@ func (sm *SessionManager) updateDeviceRecord(ctx context.Context, deviceID, user
 			LastSeenAt:    now,
 			TrustLevel:    TrustLevelUntrusted,
 		}
-		return sm.repos.Account().CreateDevice(ctx, device)
+		return sm.repo.CreateDevice(ctx, device)
 	}
 
 	// Update existing device
@@ -399,7 +396,7 @@ func (sm *SessionManager) updateDeviceRecord(ctx context.Context, deviceID, user
 		existingDevice.TrustLevel = TrustLevelTrusted
 	}
 
-	return sm.repos.Account().UpdateDevice(ctx, existingDevice)
+	return sm.repo.UpdateDevice(ctx, existingDevice)
 }
 
 // CleanupInactiveSessions removes sessions that have been inactive too long

@@ -27,8 +27,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
 // Constants for common strings
@@ -60,17 +60,26 @@ type ActivityProcessor struct {
 	db               core.DB
 	tableName        string
 	logger           *zap.Logger
-	timelineRepo     *repositories.TimelineRepository
-	actorRepo        *repositories.ActorRepository
-	userRepo         *repositories.UserRepository
-	relationshipRepo *repositories.RelationshipRepository
-	objectRepo       *repositories.ObjectRepository
+	timelineRepo     interfaces.TimelineRepository
+	actorRepo        interfaces.ActorRepository
+	userRepo         interfaces.UserRepository
+	relationshipRepo interfaces.ConcreteRelationshipRepository
+	objectRepo       interfaces.ObjectRepository
 	fetchService     *federation.AuthorizedFetchService
 	storageAdapter   storageCore.RepositoryStorage
 	baseURL          string
 	retryAttempts    int
 	retryDelay       time.Duration
 }
+
+var fetchAuthorizedObjectFn = func(ctx context.Context, fetchService *federation.AuthorizedFetchService, objectURL string, signingActor *activitypub.Actor) (any, error) {
+	if fetchService == nil {
+		return nil, fmt.Errorf("authorized fetch service is nil")
+	}
+	return fetchService.FetchObject(ctx, objectURL, signingActor)
+}
+
+var lambdaStartFn = lambda.Start
 
 // NewActivityProcessor creates a new activity processor instance with the given
 // lambda context
@@ -1514,7 +1523,7 @@ func main() {
 		return processor.HandleStream(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
 	})
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }
 
 // storeRemoteObject stores a fetched remote object locally
@@ -1579,7 +1588,7 @@ func (ap *ActivityProcessor) fetchRemoteObjectWithRetry(ctx context.Context, obj
 			zap.Int("max_attempts", ap.retryAttempts))
 
 		// Try to fetch the object
-		obj, err := ap.fetchService.FetchObject(ctx, objectURL, signingActor)
+		obj, err := fetchAuthorizedObjectFn(ctx, ap.fetchService, objectURL, signingActor)
 		if err == nil {
 			// Success - validate and return the object
 			validatedObj, valErr := ap.validateAndProcessRemoteObject(obj, objectURL)

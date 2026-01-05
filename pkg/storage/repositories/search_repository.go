@@ -1233,7 +1233,7 @@ func (r *SearchRepository) CreateSearchSuggestion(ctx context.Context, suggestio
 
 // UpdateSearchSuggestion updates an existing search suggestion
 func (r *SearchRepository) UpdateSearchSuggestion(ctx context.Context, suggestionType, term string, updates map[string]interface{}) error {
-	if err := common.ValidateSliceNotEmpty("updates", updates); err != nil {
+	if len(updates) == 0 {
 		return nil
 	}
 
@@ -1694,7 +1694,8 @@ func (r *SearchRepository) isPersonalQuery(query string) bool {
 // hashQuery creates a privacy-safe hash of the query
 func (r *SearchRepository) hashQuery(query string) string {
 	// Simple hash for analytics while preserving some structure
-	if err := common.ValidateSliceNotEmpty("query", query); err != nil {
+	query = strings.TrimSpace(query)
+	if err := common.ValidateRequiredParam("query", query); err != nil {
 		return "[empty]"
 	}
 
@@ -1906,7 +1907,7 @@ func (r *SearchRepository) logSearchStart(queryEmbedding []float32, threshold fl
 }
 
 // buildBaseQuery constructs the base database query with cursor constraints
-func (r *SearchRepository) buildBaseQuery(ctx context.Context, cursorData *CursorData) interface{} {
+func (r *SearchRepository) buildBaseQuery(ctx context.Context, cursorData *CursorData) core.Query {
 	baseQuery := r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
 		OrderBy("CreatedAt", "DESC")
 
@@ -1921,7 +1922,7 @@ func (r *SearchRepository) buildBaseQuery(ctx context.Context, cursorData *Curso
 }
 
 // searchInBatches processes embeddings in batches to find similar results
-func (r *SearchRepository) searchInBatches(_ context.Context, baseQuery interface{}, queryEmbedding []float32, threshold float64, options *PaginationOptions) ([]*models.SearchEmbedding, int) {
+func (r *SearchRepository) searchInBatches(_ context.Context, baseQuery core.Query, queryEmbedding []float32, threshold float64, options *PaginationOptions) ([]*models.SearchEmbedding, int) {
 	var allResults []*models.SearchEmbedding
 	maxScan := 500
 	batchSize := 100
@@ -1955,21 +1956,15 @@ func (r *SearchRepository) searchInBatches(_ context.Context, baseQuery interfac
 }
 
 // processBatch handles fetching a single batch of embeddings
-func (r *SearchRepository) processBatch(baseQuery interface{}, currentBatch, batchSize int) ([]models.SearchEmbedding, bool, error) {
+func (r *SearchRepository) processBatch(baseQuery core.Query, currentBatch, batchSize int) ([]models.SearchEmbedding, bool, error) {
 	var embeddings []models.SearchEmbedding
 
-	// Type assert to get the actual query
-	query := baseQuery.(interface {
-		Limit(int) interface{}
-		Offset(int) interface{}
-		All(interface{}) error
-	})
-	batchQuery := query.Limit(batchSize)
+	batchQuery := baseQuery.Limit(batchSize)
 	if currentBatch > 0 {
-		batchQuery = batchQuery.(interface{ Offset(int) interface{} }).Offset(currentBatch * batchSize)
+		batchQuery = batchQuery.Offset(currentBatch * batchSize)
 	}
 
-	err := batchQuery.(interface{ All(interface{}) error }).All(&embeddings)
+	err := batchQuery.All(&embeddings)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, true, nil

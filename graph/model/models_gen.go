@@ -80,6 +80,14 @@ type AccessLog struct {
 	Cost      int    `json:"cost"`
 }
 
+type AccountQuotePermissions struct {
+	Username       string   `json:"username"`
+	AllowPublic    bool     `json:"allowPublic"`
+	AllowFollowers bool     `json:"allowFollowers"`
+	AllowMentioned bool     `json:"allowMentioned"`
+	BlockList      []string `json:"blockList"`
+}
+
 type AccountSuggestion struct {
 	Account *activitypub.Actor `json:"account"`
 	Source  SuggestionSource   `json:"source"`
@@ -98,6 +106,301 @@ type ActorListPage struct {
 	TotalCount int                  `json:"totalCount"`
 }
 
+type AddFilterKeywordInput struct {
+	Keyword   string `json:"keyword"`
+	WholeWord *bool  `json:"wholeWord,omitempty"`
+}
+
+type AdminAccount struct {
+	ID                   string             `json:"id"`
+	Username             string             `json:"username"`
+	CreatedAt            Time               `json:"createdAt"`
+	Locale               string             `json:"locale"`
+	IP                   *string            `json:"ip,omitempty"`
+	Ips                  []*AdminIP         `json:"ips"`
+	Role                 *AdminRole         `json:"role"`
+	Confirmed            bool               `json:"confirmed"`
+	Approved             bool               `json:"approved"`
+	Disabled             bool               `json:"disabled"`
+	Silenced             bool               `json:"silenced"`
+	Suspended            bool               `json:"suspended"`
+	Actor                *activitypub.Actor `json:"actor,omitempty"`
+	ReportsCount         int                `json:"reportsCount"`
+	ResolvedReportsCount int                `json:"resolvedReportsCount"`
+}
+
+type AdminAccountActionInput struct {
+	ID   string  `json:"id"`
+	Type string  `json:"type"`
+	Text *string `json:"text,omitempty"`
+}
+
+type AdminAccountConnection struct {
+	Accounts   []*AdminAccount `json:"accounts"`
+	NextCursor *Cursor         `json:"nextCursor,omitempty"`
+}
+
+type AdminCreateAnnouncementInput struct {
+	Text     string `json:"text"`
+	AllDay   *bool  `json:"allDay,omitempty"`
+	StartsAt *Time  `json:"startsAt,omitempty"`
+	EndsAt   *Time  `json:"endsAt,omitempty"`
+}
+
+type AdminCreateUserInput struct {
+	Username string  `json:"username"`
+	Email    *string `json:"email,omitempty"`
+	// Deprecated: Lesser is passwordless; this field is ignored if provided.
+	Password    *string `json:"password,omitempty"`
+	DisplayName *string `json:"displayName,omitempty"`
+	Role        *string `json:"role,omitempty"`
+}
+
+type AdminDomainAllow struct {
+	ID        string `json:"id"`
+	Domain    string `json:"domain"`
+	CreatedAt Time   `json:"createdAt"`
+}
+
+type AdminDomainAllowConnection struct {
+	Allows     []*AdminDomainAllow `json:"allows"`
+	NextCursor *Cursor             `json:"nextCursor,omitempty"`
+}
+
+type AdminDomainBlock struct {
+	ID             string  `json:"id"`
+	Domain         string  `json:"domain"`
+	Severity       string  `json:"severity"`
+	RejectMedia    bool    `json:"rejectMedia"`
+	RejectReports  bool    `json:"rejectReports"`
+	PrivateComment *string `json:"privateComment,omitempty"`
+	PublicComment  *string `json:"publicComment,omitempty"`
+	Obfuscate      bool    `json:"obfuscate"`
+	CreatedAt      Time    `json:"createdAt"`
+	UpdatedAt      Time    `json:"updatedAt"`
+}
+
+type AdminDomainBlockConnection struct {
+	Blocks     []*AdminDomainBlock `json:"blocks"`
+	NextCursor *Cursor             `json:"nextCursor,omitempty"`
+}
+
+type AdminDomainBlockCreateInput struct {
+	Domain         string  `json:"domain"`
+	Severity       *string `json:"severity,omitempty"`
+	RejectMedia    *bool   `json:"rejectMedia,omitempty"`
+	RejectReports  *bool   `json:"rejectReports,omitempty"`
+	PrivateComment *string `json:"privateComment,omitempty"`
+	PublicComment  *string `json:"publicComment,omitempty"`
+	Obfuscate      *bool   `json:"obfuscate,omitempty"`
+}
+
+type AdminDomainBlockUpdateInput struct {
+	Severity       *string `json:"severity,omitempty"`
+	RejectMedia    *bool   `json:"rejectMedia,omitempty"`
+	RejectReports  *bool   `json:"rejectReports,omitempty"`
+	PrivateComment *string `json:"privateComment,omitempty"`
+	PublicComment  *string `json:"publicComment,omitempty"`
+	Obfuscate      *bool   `json:"obfuscate,omitempty"`
+}
+
+type AdminEmailDomainBlock struct {
+	ID        string `json:"id"`
+	Domain    string `json:"domain"`
+	CreatedAt Time   `json:"createdAt"`
+}
+
+type AdminEmailDomainBlockConnection struct {
+	Blocks     []*AdminEmailDomainBlock `json:"blocks"`
+	NextCursor *Cursor                  `json:"nextCursor,omitempty"`
+}
+
+type AdminFederationInstance struct {
+	Instance    *AdminFederationInstanceInfo `json:"instance"`
+	DetailsJSON *string                      `json:"detailsJSON,omitempty"`
+}
+
+type AdminFederationInstanceConnection struct {
+	Instances  []*AdminFederationInstanceInfo `json:"instances"`
+	NextCursor *Cursor                        `json:"nextCursor,omitempty"`
+}
+
+type AdminFederationInstanceInfo struct {
+	Domain        string  `json:"domain"`
+	Software      *string `json:"software,omitempty"`
+	Version       *string `json:"version,omitempty"`
+	ActiveUsers   int     `json:"activeUsers"`
+	TotalMessages int     `json:"totalMessages"`
+	TrustScore    float64 `json:"trustScore"`
+	FirstSeen     Time    `json:"firstSeen"`
+	LastSeen      Time    `json:"lastSeen"`
+	IsSilenced    bool    `json:"isSilenced"`
+	IsSuspended   bool    `json:"isSuspended"`
+}
+
+type AdminFederationStatistics struct {
+	ActiveInstances int                                 `json:"activeInstances"`
+	TotalMessages   int                                 `json:"totalMessages"`
+	TotalUsers      int                                 `json:"totalUsers"`
+	TimeRange       *AdminFederationStatisticsTimeRange `json:"timeRange"`
+}
+
+type AdminFederationStatisticsTimeRange struct {
+	Start Time `json:"start"`
+	End   Time `json:"end"`
+}
+
+type AdminIP struct {
+	IP     string `json:"ip"`
+	UsedAt Time   `json:"usedAt"`
+}
+
+type AdminModerationEvent struct {
+	ID              string  `json:"id"`
+	EventType       string  `json:"eventType"`
+	ActorID         string  `json:"actorId"`
+	ObjectID        string  `json:"objectId"`
+	ObjectType      string  `json:"objectType"`
+	Category        string  `json:"category"`
+	Severity        string  `json:"severity"`
+	Reason          *string `json:"reason,omitempty"`
+	EvidenceJSON    *string `json:"evidenceJSON,omitempty"`
+	ConfidenceScore float64 `json:"confidenceScore"`
+	CreatedAt       Time    `json:"createdAt"`
+}
+
+type AdminModerationEventConnection struct {
+	Events     []*AdminModerationEvent `json:"events"`
+	NextCursor *Cursor                 `json:"nextCursor,omitempty"`
+}
+
+type AdminModerationEventFilter struct {
+	EventType   *string `json:"eventType,omitempty"`
+	Category    *string `json:"category,omitempty"`
+	MinSeverity *int    `json:"minSeverity,omitempty"`
+	ActorID     *string `json:"actorId,omitempty"`
+	ObjectID    *string `json:"objectId,omitempty"`
+}
+
+type AdminModerationEventOverrideInput struct {
+	EventID  string  `json:"eventId"`
+	Decision string  `json:"decision"`
+	Reason   *string `json:"reason,omitempty"`
+}
+
+type AdminModerationEventOverrideResult struct {
+	EventID  string  `json:"eventId"`
+	Decision string  `json:"decision"`
+	Action   string  `json:"action"`
+	Override bool    `json:"override"`
+	Admin    string  `json:"admin"`
+	Reason   *string `json:"reason,omitempty"`
+}
+
+type AdminReport struct {
+	ID              string             `json:"id"`
+	ActionTaken     bool               `json:"actionTaken"`
+	ActionTakenAt   *Time              `json:"actionTakenAt,omitempty"`
+	Category        string             `json:"category"`
+	Comment         *string            `json:"comment,omitempty"`
+	Forwarded       bool               `json:"forwarded"`
+	CreatedAt       Time               `json:"createdAt"`
+	UpdatedAt       Time               `json:"updatedAt"`
+	Reporter        *activitypub.Actor `json:"reporter"`
+	Target          *activitypub.Actor `json:"target"`
+	AssignedAccount *activitypub.Actor `json:"assignedAccount,omitempty"`
+	ActionTakenBy   *activitypub.Actor `json:"actionTakenBy,omitempty"`
+	Statuses        []*Object          `json:"statuses"`
+}
+
+type AdminReportConnection struct {
+	Reports    []*AdminReport `json:"reports"`
+	NextCursor *Cursor        `json:"nextCursor,omitempty"`
+}
+
+type AdminReviewer struct {
+	ID              string  `json:"id"`
+	Username        string  `json:"username"`
+	Role            string  `json:"role"`
+	TotalReviews    int     `json:"totalReviews"`
+	AccurateReviews int     `json:"accurateReviews"`
+	AccuracyRate    float64 `json:"accuracyRate"`
+	LastReviewAt    *Time   `json:"lastReviewAt,omitempty"`
+}
+
+type AdminReviewerRoleResult struct {
+	UserID    string `json:"userId"`
+	Username  string `json:"username"`
+	NewRole   string `json:"newRole"`
+	UpdatedBy string `json:"updatedBy"`
+}
+
+type AdminRole struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Permissions int    `json:"permissions"`
+}
+
+type AdminStatusConnection struct {
+	Statuses   []*Object `json:"statuses"`
+	NextCursor *Cursor   `json:"nextCursor,omitempty"`
+}
+
+type AdminStatusFilter struct {
+	Local      *bool   `json:"local,omitempty"`
+	Remote     *bool   `json:"remote,omitempty"`
+	ByDomain   *string `json:"byDomain,omitempty"`
+	Visibility *string `json:"visibility,omitempty"`
+	Flagged    *bool   `json:"flagged,omitempty"`
+	Reported   *bool   `json:"reported,omitempty"`
+	Media      *bool   `json:"media,omitempty"`
+	Sensitive  *bool   `json:"sensitive,omitempty"`
+	MinDate    *Time   `json:"minDate,omitempty"`
+	MaxDate    *Time   `json:"maxDate,omitempty"`
+}
+
+type AdminTrustGraph struct {
+	Nodes []*AdminTrustGraphNode `json:"nodes"`
+	Edges []*AdminTrustGraphEdge `json:"edges"`
+	Stats *AdminTrustGraphStats  `json:"stats"`
+}
+
+type AdminTrustGraphEdge struct {
+	From      string  `json:"from"`
+	To        string  `json:"to"`
+	Trust     float64 `json:"trust"`
+	CreatedAt Time    `json:"createdAt"`
+	UpdatedAt Time    `json:"updatedAt"`
+}
+
+type AdminTrustGraphNode struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
+type AdminTrustGraphStats struct {
+	TotalNodes int `json:"totalNodes"`
+	TotalEdges int `json:"totalEdges"`
+}
+
+type AdminUpdateTrustInput struct {
+	FromActorID string  `json:"fromActorId"`
+	ToActorID   string  `json:"toActorId"`
+	Trust       float64 `json:"trust"`
+	Category    *string `json:"category,omitempty"`
+	Reason      *string `json:"reason,omitempty"`
+}
+
+type AdminUpdateTrustResult struct {
+	FromActorID string  `json:"fromActorId"`
+	ToActorID   string  `json:"toActorId"`
+	Trust       float64 `json:"trust"`
+	Category    string  `json:"category"`
+	UpdatedBy   string  `json:"updatedBy"`
+	Reason      *string `json:"reason,omitempty"`
+	UpdatedAt   Time    `json:"updatedAt"`
+}
+
 type AffectedRelationship struct {
 	Actor            *activitypub.Actor `json:"actor"`
 	RelationshipType string             `json:"relationshipType"`
@@ -114,6 +417,27 @@ type AffectedRelationshipConnection struct {
 type AffectedRelationshipEdge struct {
 	Node   *AffectedRelationship `json:"node"`
 	Cursor Cursor                `json:"cursor"`
+}
+
+type Announcement struct {
+	ID          string                  `json:"id"`
+	Content     string                  `json:"content"`
+	Text        string                  `json:"text"`
+	PublishedAt Time                    `json:"publishedAt"`
+	UpdatedAt   Time                    `json:"updatedAt"`
+	AllDay      bool                    `json:"allDay"`
+	StartsAt    *Time                   `json:"startsAt,omitempty"`
+	EndsAt      *Time                   `json:"endsAt,omitempty"`
+	Read        bool                    `json:"read"`
+	Reactions   []*AnnouncementReaction `json:"reactions"`
+}
+
+type AnnouncementReaction struct {
+	Name      string  `json:"name"`
+	Count     int     `json:"count"`
+	Me        bool    `json:"me"`
+	URL       *string `json:"url,omitempty"`
+	StaticURL *string `json:"staticUrl,omitempty"`
 }
 
 type BandwidthReport struct {
@@ -172,6 +496,17 @@ type CommunityNote struct {
 	Helpful    int                `json:"helpful"`
 	NotHelpful int                `json:"notHelpful"`
 	CreatedAt  Time               `json:"createdAt"`
+}
+
+type CommunityNoteConnection struct {
+	Edges      []*CommunityNoteEdge `json:"edges"`
+	PageInfo   *PageInfo            `json:"pageInfo"`
+	TotalCount int                  `json:"totalCount"`
+}
+
+type CommunityNoteEdge struct {
+	Node   *CommunityNote `json:"node"`
+	Cursor Cursor         `json:"cursor"`
 }
 
 type CommunityNoteInput struct {
@@ -262,6 +597,33 @@ type CreateEmojiInput struct {
 	VisibleInPicker *bool   `json:"visibleInPicker,omitempty"`
 }
 
+type CreateExportInput struct {
+	Type         ExportType      `json:"type"`
+	Format       ExportFormat    `json:"format"`
+	IncludeMedia *bool           `json:"includeMedia,omitempty"`
+	DateRange    *DateRangeInput `json:"dateRange,omitempty"`
+}
+
+type CreateFilterInput struct {
+	Title            string                      `json:"title"`
+	Context          []string                    `json:"context"`
+	FilterAction     *FilterAction               `json:"filterAction,omitempty"`
+	ExpiresInSeconds *int                        `json:"expiresInSeconds,omitempty"`
+	Keywords         []*CreateFilterKeywordInput `json:"keywords,omitempty"`
+}
+
+type CreateFilterKeywordInput struct {
+	Keyword   string `json:"keyword"`
+	WholeWord *bool  `json:"wholeWord,omitempty"`
+}
+
+type CreateImportInput struct {
+	Type     ImportType     `json:"type"`
+	Mode     *ImportMode    `json:"mode,omitempty"`
+	File     graphql.Upload `json:"file"`
+	Filename *string        `json:"filename,omitempty"`
+}
+
 type CreateListInput struct {
 	Title         string         `json:"title"`
 	RepliesPolicy *RepliesPolicy `json:"repliesPolicy,omitempty"`
@@ -299,6 +661,21 @@ type CreateQuoteNoteInput struct {
 	MediaIds    []string    `json:"mediaIds,omitempty"`
 }
 
+type CreateReportInput struct {
+	AccountID string   `json:"accountId"`
+	StatusIds []string `json:"statusIds,omitempty"`
+	Comment   *string  `json:"comment,omitempty"`
+	Category  *string  `json:"category,omitempty"`
+	Forward   *bool    `json:"forward,omitempty"`
+	RuleIds   []int    `json:"ruleIds,omitempty"`
+}
+
+type CreateVouchInput struct {
+	To         string  `json:"to"`
+	Confidence float64 `json:"confidence"`
+	Context    *string `json:"context,omitempty"`
+}
+
 type CustomEmoji struct {
 	ID              string  `json:"id"`
 	Shortcode       string  `json:"shortcode"`
@@ -320,6 +697,11 @@ type DatabaseStatus struct {
 	Throughput  float64      `json:"throughput"`
 }
 
+type DateRangeInput struct {
+	Start Time `json:"start"`
+	End   Time `json:"end"`
+}
+
 type DirectoryFiltersInput struct {
 	Local  *bool           `json:"local,omitempty"`
 	Remote *bool           `json:"remote,omitempty"`
@@ -333,10 +715,40 @@ type DiscoveryPreferences struct {
 	PersonalizedSearchEnabled bool `json:"personalizedSearchEnabled"`
 }
 
+type DomainBlockPage struct {
+	Domains    []string `json:"domains"`
+	NextCursor *Cursor  `json:"nextCursor,omitempty"`
+	TotalCount int      `json:"totalCount"`
+}
+
 type Entity struct {
 	Type  string  `json:"type"`
 	Text  string  `json:"text"`
 	Score float64 `json:"score"`
+}
+
+type ExportJob struct {
+	ID          string       `json:"id"`
+	Status      string       `json:"status"`
+	Type        ExportType   `json:"type"`
+	Format      ExportFormat `json:"format"`
+	CreatedAt   Time         `json:"createdAt"`
+	DownloadURL *string      `json:"downloadUrl,omitempty"`
+	ExpiresAt   *Time        `json:"expiresAt,omitempty"`
+	FileSize    *int         `json:"fileSize,omitempty"`
+	RecordCount *int         `json:"recordCount,omitempty"`
+	Error       *string      `json:"error,omitempty"`
+}
+
+type ExportJobConnection struct {
+	Edges      []*ExportJobEdge `json:"edges"`
+	PageInfo   *PageInfo        `json:"pageInfo"`
+	TotalCount int              `json:"totalCount"`
+}
+
+type ExportJobEdge struct {
+	Node   *ExportJob `json:"node"`
+	Cursor Cursor     `json:"cursor"`
 }
 
 type FederationCost struct {
@@ -456,6 +868,27 @@ type Field struct {
 	VerifiedAt *Time  `json:"verifiedAt,omitempty"`
 }
 
+type FilterTestInput struct {
+	Content string   `json:"content"`
+	Context []string `json:"context"`
+}
+
+type FilterTestPayload struct {
+	Content      string              `json:"content"`
+	TotalFilters int                 `json:"totalFilters"`
+	MatchedCount int                 `json:"matchedCount"`
+	Results      []*FilterTestResult `json:"results"`
+}
+
+type FilterTestResult struct {
+	Action       string   `json:"action"`
+	Severity     string   `json:"severity"`
+	MatchScore   float64  `json:"matchScore"`
+	MatchedRules []string `json:"matchedRules"`
+	FilterID     string   `json:"filterId"`
+	FilterTitle  string   `json:"filterTitle"`
+}
+
 type FlagInput struct {
 	ObjectID string   `json:"objectId"`
 	Reason   string   `json:"reason"`
@@ -478,6 +911,40 @@ type FlowNode struct {
 type FocusInput struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
+}
+
+type GroupedNotificationGroup struct {
+	ID                       string               `json:"id"`
+	Type                     string               `json:"type"`
+	GroupKey                 string               `json:"groupKey"`
+	Count                    int                  `json:"count"`
+	LatestCreatedAt          Time                 `json:"latestCreatedAt"`
+	EarliestCreatedAt        Time                 `json:"earliestCreatedAt"`
+	Read                     bool                 `json:"read"`
+	Summary                  string               `json:"summary"`
+	SampleActors             []*activitypub.Actor `json:"sampleActors"`
+	SampleActorIds           []string             `json:"sampleActorIds"`
+	TargetStatusID           *string              `json:"targetStatusId,omitempty"`
+	MostRecentNotificationID *string              `json:"mostRecentNotificationId,omitempty"`
+	AllNotificationIds       []string             `json:"allNotificationIds"`
+}
+
+type GroupedNotificationsInput struct {
+	Types        []string               `json:"types,omitempty"`
+	ExcludeTypes []string               `json:"excludeTypes,omitempty"`
+	First        *int                   `json:"first,omitempty"`
+	After        *Cursor                `json:"after,omitempty"`
+	IncludeAll   *bool                  `json:"includeAll,omitempty"`
+	Options      *GroupingStrategyInput `json:"options,omitempty"`
+}
+
+type GroupingStrategyInput struct {
+	TimeWindowHours *int  `json:"timeWindowHours,omitempty"`
+	MaxGroupSize    *int  `json:"maxGroupSize,omitempty"`
+	MinGroupSize    *int  `json:"minGroupSize,omitempty"`
+	SampleSize      *int  `json:"sampleSize,omitempty"`
+	GroupByType     *bool `json:"groupByType,omitempty"`
+	GroupByTarget   *bool `json:"groupByTarget,omitempty"`
 }
 
 type Hashtag struct {
@@ -576,6 +1043,34 @@ type ImageAnalysisCapabilities struct {
 	DeepfakeDetection    bool `json:"deepfakeDetection"`
 }
 
+type ImportJob struct {
+	ID        string         `json:"id"`
+	Status    string         `json:"status"`
+	Type      ImportType     `json:"type"`
+	CreatedAt Time           `json:"createdAt"`
+	Processed int            `json:"processed"`
+	Total     *int           `json:"total,omitempty"`
+	Errors    []string       `json:"errors"`
+	Results   *ImportResults `json:"results,omitempty"`
+}
+
+type ImportJobConnection struct {
+	Edges      []*ImportJobEdge `json:"edges"`
+	PageInfo   *PageInfo        `json:"pageInfo"`
+	TotalCount int              `json:"totalCount"`
+}
+
+type ImportJobEdge struct {
+	Node   *ImportJob `json:"node"`
+	Cursor Cursor     `json:"cursor"`
+}
+
+type ImportResults struct {
+	Success int `json:"success"`
+	Skipped int `json:"skipped"`
+	Failed  int `json:"failed"`
+}
+
 type InfrastructureAlert struct {
 	ID        string        `json:"id"`
 	Service   string        `json:"service"`
@@ -600,6 +1095,13 @@ type InfrastructureStatus struct {
 	Databases []*DatabaseStatus      `json:"databases"`
 	Queues    []*QueueStatus         `json:"queues"`
 	Alerts    []*InfrastructureAlert `json:"alerts"`
+}
+
+type InstanceActivityEntry struct {
+	Week          string `json:"week"`
+	Statuses      int    `json:"statuses"`
+	Logins        int    `json:"logins"`
+	Registrations int    `json:"registrations"`
 }
 
 type InstanceBudget struct {
@@ -640,6 +1142,13 @@ type InstanceCost struct {
 	Breakdown  *CostBreakdown `json:"breakdown"`
 }
 
+type InstanceDomainBlock struct {
+	Domain   string `json:"domain"`
+	Digest   string `json:"digest"`
+	Severity string `json:"severity"`
+	Comment  string `json:"comment"`
+}
+
 type InstanceHealthMetrics struct {
 	ResponseTime    float64 `json:"responseTime"`
 	ErrorRate       float64 `json:"errorRate"`
@@ -655,6 +1164,27 @@ type InstanceHealthReport struct {
 	Issues          []*HealthIssue         `json:"issues"`
 	Recommendations []string               `json:"recommendations"`
 	LastChecked     Time                   `json:"lastChecked"`
+}
+
+type InstanceInfo struct {
+	Domain            string             `json:"domain"`
+	Title             string             `json:"title"`
+	ShortDescription  *string            `json:"shortDescription,omitempty"`
+	Description       string             `json:"description"`
+	Email             *string            `json:"email,omitempty"`
+	Version           string             `json:"version"`
+	SourceURL         *string            `json:"sourceUrl,omitempty"`
+	StreamingURL      *string            `json:"streamingUrl,omitempty"`
+	ThumbnailURL      *string            `json:"thumbnailUrl,omitempty"`
+	Languages         []string           `json:"languages"`
+	RegistrationsOpen bool               `json:"registrationsOpen"`
+	ApprovalRequired  bool               `json:"approvalRequired"`
+	InvitesEnabled    bool               `json:"invitesEnabled"`
+	UserCount         int                `json:"userCount"`
+	StatusCount       int                `json:"statusCount"`
+	DomainCount       int                `json:"domainCount"`
+	ContactAccount    *activitypub.Actor `json:"contactAccount,omitempty"`
+	Rules             []*InstanceRule    `json:"rules"`
 }
 
 type InstanceMetadata struct {
@@ -699,6 +1229,11 @@ type InstanceRelations struct {
 	Recommendations     []*FederationRecommendation `json:"recommendations"`
 }
 
+type InstanceRule struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
 type List struct {
 	ID            string               `json:"id"`
 	Title         string               `json:"title"`
@@ -715,6 +1250,17 @@ type ListUpdate struct {
 	List      *List              `json:"list"`
 	Account   *activitypub.Actor `json:"account,omitempty"`
 	Timestamp Time               `json:"timestamp"`
+}
+
+type Marker struct {
+	LastReadID string `json:"lastReadId"`
+	UpdatedAt  Time   `json:"updatedAt"`
+	Version    int    `json:"version"`
+}
+
+type MarkerSet struct {
+	Home          *Marker `json:"home,omitempty"`
+	Notifications *Marker `json:"notifications,omitempty"`
 }
 
 type Media struct {
@@ -824,6 +1370,28 @@ type ModerationAlert struct {
 	Handled         bool                          `json:"handled"`
 }
 
+type ModerationConsensusResult struct {
+	EventID         string                       `json:"eventId"`
+	ObjectID        string                       `json:"objectId"`
+	Category        string                       `json:"category"`
+	Severity        int                          `json:"severity"`
+	ConfidenceScore float64                      `json:"confidenceScore"`
+	Reviews         []*ModerationConsensusReview `json:"reviews"`
+	ReviewerCount   int                          `json:"reviewerCount"`
+	ConsensusScore  *float64                     `json:"consensusScore,omitempty"`
+	Decision        *string                      `json:"decision,omitempty"`
+	DecidedAt       *Time                        `json:"decidedAt,omitempty"`
+}
+
+type ModerationConsensusReview struct {
+	ReviewerID     string  `json:"reviewerId"`
+	ReviewerDomain *string `json:"reviewerDomain,omitempty"`
+	Action         string  `json:"action"`
+	Confidence     float64 `json:"confidence"`
+	TrustWeight    float64 `json:"trustWeight"`
+	ReviewedAt     Time    `json:"reviewedAt"`
+}
+
 type ModerationDashboard struct {
 	PendingReviews      int                              `json:"pendingReviews"`
 	RecentDecisions     []*moderation.ModerationDecision `json:"recentDecisions"`
@@ -844,6 +1412,47 @@ type ModerationEffectiveness struct {
 	F1Score        float64 `json:"f1Score"`
 }
 
+type ModerationHistoryDecision struct {
+	ID               string  `json:"id"`
+	EventID          string  `json:"eventId"`
+	ObjectID         string  `json:"objectId"`
+	Action           string  `json:"action"`
+	ConsensusScore   float64 `json:"consensusScore"`
+	ReviewerCount    int     `json:"reviewerCount"`
+	TrustWeightTotal float64 `json:"trustWeightTotal"`
+	DecidedAt        Time    `json:"decidedAt"`
+}
+
+type ModerationHistoryEvent struct {
+	ID              string  `json:"id"`
+	EventType       string  `json:"eventType"`
+	ObjectID        string  `json:"objectId"`
+	ObjectType      string  `json:"objectType"`
+	ActorID         string  `json:"actorId"`
+	Category        string  `json:"category"`
+	Severity        int     `json:"severity"`
+	ConfidenceScore float64 `json:"confidenceScore"`
+	Reason          *string `json:"reason,omitempty"`
+	CreatedAt       Time    `json:"createdAt"`
+	UpdatedAt       Time    `json:"updatedAt"`
+}
+
+type ModerationHistoryResult struct {
+	ObjectID      string                            `json:"objectId"`
+	Events        []*ModerationHistoryEvent         `json:"events"`
+	Decisions     []*ModerationHistoryDecision      `json:"decisions"`
+	Timeline      []*ModerationHistoryTimelineEntry `json:"timeline"`
+	CurrentStatus string                            `json:"currentStatus"`
+	LastUpdated   Time                              `json:"lastUpdated"`
+}
+
+type ModerationHistoryTimelineEntry struct {
+	Timestamp Time                       `json:"timestamp"`
+	Type      string                     `json:"type"`
+	Event     *ModerationHistoryEvent    `json:"event,omitempty"`
+	Decision  *ModerationHistoryDecision `json:"decision,omitempty"`
+}
+
 type ModerationItem struct {
 	ID          string             `json:"id"`
 	Content     *Object            `json:"content"`
@@ -861,11 +1470,35 @@ type ModerationPatternInput struct {
 	Active   *bool              `json:"active,omitempty"`
 }
 
+type ModerationReviewInput struct {
+	EventID    string  `json:"eventId"`
+	Action     string  `json:"action"`
+	Severity   int     `json:"severity"`
+	Confidence float64 `json:"confidence"`
+	Notes      *string `json:"notes,omitempty"`
+}
+
+type ModerationReviewResult struct {
+	ReviewID   string `json:"reviewId"`
+	EventID    string `json:"eventId"`
+	Action     string `json:"action"`
+	ReviewedAt Time   `json:"reviewedAt"`
+}
+
 type ModerationSampleInput struct {
 	ObjectID   string  `json:"objectId"`
 	ObjectType string  `json:"objectType"`
 	Label      string  `json:"label"`
 	Confidence float64 `json:"confidence"`
+}
+
+type ModerationTrustScore struct {
+	ActorID      string                `json:"actorId"`
+	ActorDomain  *string               `json:"actorDomain,omitempty"`
+	OverallScore float64               `json:"overallScore"`
+	Scores       []*TrustCategoryScore `json:"scores"`
+	TrusterCount int                   `json:"trusterCount"`
+	CalculatedAt Time                  `json:"calculatedAt"`
 }
 
 type ModeratorStats struct {
@@ -1220,6 +1853,19 @@ type ReconnectionPayload struct {
 	Errors              []string             `json:"errors,omitempty"`
 }
 
+type RegisterAccountInput struct {
+	Username                 string      `json:"username"`
+	Locale                   *string     `json:"locale,omitempty"`
+	Agreement                bool        `json:"agreement"`
+	Reason                   *string     `json:"reason,omitempty"`
+	DefaultPostingVisibility *Visibility `json:"defaultPostingVisibility,omitempty"`
+}
+
+type RegisterAccountPayload struct {
+	Actor   *activitypub.Actor `json:"actor"`
+	Created bool               `json:"created"`
+}
+
 type RegisterPushSubscriptionInput struct {
 	Endpoint string                       `json:"endpoint"`
 	Keys     *PushSubscriptionKeysInput   `json:"keys"`
@@ -1247,6 +1893,19 @@ type RelationshipUpdate struct {
 	Relationship *Relationship      `json:"relationship"`
 	Actor        *activitypub.Actor `json:"actor"`
 	Timestamp    Time               `json:"timestamp"`
+}
+
+type Report struct {
+	ID            string             `json:"id"`
+	ActionTaken   bool               `json:"actionTaken"`
+	ActionTakenAt *Time              `json:"actionTakenAt,omitempty"`
+	Category      string             `json:"category"`
+	Comment       *string            `json:"comment,omitempty"`
+	Forwarded     bool               `json:"forwarded"`
+	CreatedAt     Time               `json:"createdAt"`
+	StatusIds     []string           `json:"statusIds"`
+	RuleIds       []int              `json:"ruleIds"`
+	TargetAccount *activitypub.Actor `json:"targetAccount,omitempty"`
 }
 
 type Reputation struct {
@@ -1292,6 +1951,11 @@ type ReputationVerificationResult struct {
 	NotExpired     bool    `json:"notExpired"`
 	IssuerTrusted  bool    `json:"issuerTrusted"`
 	Error          *string `json:"error,omitempty"`
+}
+
+type SaveMarkerInput struct {
+	Timeline   MarkerTimeline `json:"timeline"`
+	LastReadID string         `json:"lastReadId"`
 }
 
 type ScheduleStatusInput struct {
@@ -1381,6 +2045,14 @@ type SpamIndicator struct {
 	Type        string  `json:"type"`
 	Description string  `json:"description"`
 	Severity    float64 `json:"severity"`
+}
+
+type StatusEdit struct {
+	Content     string             `json:"content"`
+	SpoilerText *string            `json:"spoilerText,omitempty"`
+	Sensitive   bool               `json:"sensitive"`
+	CreatedAt   Time               `json:"createdAt"`
+	Account     *activitypub.Actor `json:"account"`
 }
 
 type StatusParams struct {
@@ -1522,6 +2194,57 @@ type TrainingResult struct {
 	Improvements []string `json:"improvements"`
 }
 
+type TranslationLanguage struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
+type TranslationResult struct {
+	Content          string  `json:"content"`
+	SpoilerText      *string `json:"spoilerText,omitempty"`
+	DetectedLanguage string  `json:"detectedLanguage"`
+	Provider         string  `json:"provider"`
+}
+
+type TrendingItem struct {
+	Type    TrendingItemType `json:"type"`
+	Hashtag *TrendingTag     `json:"hashtag,omitempty"`
+	Status  *TrendingStatus  `json:"status,omitempty"`
+	Link    *TrendingLink    `json:"link,omitempty"`
+}
+
+type TrendingLink struct {
+	URL         string `json:"url"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	AuthorName  string `json:"authorName"`
+	Image       string `json:"image"`
+	Shares      int    `json:"shares"`
+}
+
+type TrendingStatus struct {
+	ID          string `json:"id"`
+	URL         string `json:"url"`
+	AuthorID    string `json:"authorId"`
+	Content     string `json:"content"`
+	Engagements int    `json:"engagements"`
+	PublishedAt Time   `json:"publishedAt"`
+}
+
+type TrendingTag struct {
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	History  []int  `json:"history"`
+	Uses     int    `json:"uses"`
+	Accounts int    `json:"accounts"`
+}
+
+type TrustCategoryScore struct {
+	Category string  `json:"category"`
+	Score    float64 `json:"score"`
+}
+
 type TrustInput struct {
 	TargetActorID string               `json:"targetActorId"`
 	Category      models.TrustCategory `json:"category"`
@@ -1533,9 +2256,23 @@ type UnfollowHashtagPayload struct {
 	Hashtag *Hashtag `json:"hashtag"`
 }
 
+type UpdateAccountQuotePermissionsInput struct {
+	AllowPublic    *bool    `json:"allowPublic,omitempty"`
+	AllowFollowers *bool    `json:"allowFollowers,omitempty"`
+	AllowMentioned *bool    `json:"allowMentioned,omitempty"`
+	BlockList      []string `json:"blockList,omitempty"`
+}
+
 type UpdateEmojiInput struct {
 	Category        *string `json:"category,omitempty"`
 	VisibleInPicker *bool   `json:"visibleInPicker,omitempty"`
+}
+
+type UpdateFilterInput struct {
+	Title            *string       `json:"title,omitempty"`
+	Context          []string      `json:"context,omitempty"`
+	FilterAction     *FilterAction `json:"filterAction,omitempty"`
+	ExpiresInSeconds *int          `json:"expiresInSeconds,omitempty"`
 }
 
 type UpdateHashtagNotificationsPayload struct {
@@ -1588,6 +2325,14 @@ type UpdateRelationshipInput struct {
 
 type UpdateScheduledStatusInput struct {
 	ScheduledAt Time `json:"scheduledAt"`
+}
+
+type UpdateStatusInput struct {
+	Content       string   `json:"content"`
+	Sensitive     *bool    `json:"sensitive,omitempty"`
+	SpoilerText   *string  `json:"spoilerText,omitempty"`
+	Language      *string  `json:"language,omitempty"`
+	AttachmentIds []string `json:"attachmentIds,omitempty"`
 }
 
 type UpdateUserPreferencesInput struct {
@@ -1779,6 +2524,122 @@ func (e *ActorType) UnmarshalJSON(b []byte) error {
 }
 
 func (e ActorType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type AdminReportAction string
+
+const (
+	AdminReportActionAssignToSelf AdminReportAction = "ASSIGN_TO_SELF"
+	AdminReportActionUnassign     AdminReportAction = "UNASSIGN"
+	AdminReportActionResolve      AdminReportAction = "RESOLVE"
+	AdminReportActionReopen       AdminReportAction = "REOPEN"
+)
+
+var AllAdminReportAction = []AdminReportAction{
+	AdminReportActionAssignToSelf,
+	AdminReportActionUnassign,
+	AdminReportActionResolve,
+	AdminReportActionReopen,
+}
+
+func (e AdminReportAction) IsValid() bool {
+	switch e {
+	case AdminReportActionAssignToSelf, AdminReportActionUnassign, AdminReportActionResolve, AdminReportActionReopen:
+		return true
+	}
+	return false
+}
+
+func (e AdminReportAction) String() string {
+	return string(e)
+}
+
+func (e *AdminReportAction) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = AdminReportAction(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid AdminReportAction", str)
+	}
+	return nil
+}
+
+func (e AdminReportAction) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *AdminReportAction) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e AdminReportAction) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type AdminReportStatus string
+
+const (
+	AdminReportStatusOpen     AdminReportStatus = "OPEN"
+	AdminReportStatusResolved AdminReportStatus = "RESOLVED"
+	AdminReportStatusRejected AdminReportStatus = "REJECTED"
+)
+
+var AllAdminReportStatus = []AdminReportStatus{
+	AdminReportStatusOpen,
+	AdminReportStatusResolved,
+	AdminReportStatusRejected,
+}
+
+func (e AdminReportStatus) IsValid() bool {
+	switch e {
+	case AdminReportStatusOpen, AdminReportStatusResolved, AdminReportStatusRejected:
+		return true
+	}
+	return false
+}
+
+func (e AdminReportStatus) String() string {
+	return string(e)
+}
+
+func (e *AdminReportStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = AdminReportStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid AdminReportStatus", str)
+	}
+	return nil
+}
+
+func (e AdminReportStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *AdminReportStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e AdminReportStatus) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
@@ -2195,6 +3056,128 @@ func (e ExpandMediaPreference) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type ExportFormat string
+
+const (
+	ExportFormatActivitypub ExportFormat = "ACTIVITYPUB"
+	ExportFormatMastodon    ExportFormat = "MASTODON"
+	ExportFormatCSV         ExportFormat = "CSV"
+)
+
+var AllExportFormat = []ExportFormat{
+	ExportFormatActivitypub,
+	ExportFormatMastodon,
+	ExportFormatCSV,
+}
+
+func (e ExportFormat) IsValid() bool {
+	switch e {
+	case ExportFormatActivitypub, ExportFormatMastodon, ExportFormatCSV:
+		return true
+	}
+	return false
+}
+
+func (e ExportFormat) String() string {
+	return string(e)
+}
+
+func (e *ExportFormat) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ExportFormat(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ExportFormat", str)
+	}
+	return nil
+}
+
+func (e ExportFormat) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ExportFormat) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ExportFormat) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ExportType string
+
+const (
+	ExportTypeArchive   ExportType = "ARCHIVE"
+	ExportTypeFollowers ExportType = "FOLLOWERS"
+	ExportTypeFollowing ExportType = "FOLLOWING"
+	ExportTypeBlocks    ExportType = "BLOCKS"
+	ExportTypeMutes     ExportType = "MUTES"
+	ExportTypeLists     ExportType = "LISTS"
+	ExportTypeBookmarks ExportType = "BOOKMARKS"
+)
+
+var AllExportType = []ExportType{
+	ExportTypeArchive,
+	ExportTypeFollowers,
+	ExportTypeFollowing,
+	ExportTypeBlocks,
+	ExportTypeMutes,
+	ExportTypeLists,
+	ExportTypeBookmarks,
+}
+
+func (e ExportType) IsValid() bool {
+	switch e {
+	case ExportTypeArchive, ExportTypeFollowers, ExportTypeFollowing, ExportTypeBlocks, ExportTypeMutes, ExportTypeLists, ExportTypeBookmarks:
+		return true
+	}
+	return false
+}
+
+func (e ExportType) String() string {
+	return string(e)
+}
+
+func (e *ExportType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ExportType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ExportType", str)
+	}
+	return nil
+}
+
+func (e ExportType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ExportType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ExportType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type FederationState string
 
 const (
@@ -2251,6 +3234,63 @@ func (e *FederationState) UnmarshalJSON(b []byte) error {
 }
 
 func (e FederationState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type FilterAction string
+
+const (
+	FilterActionWarn FilterAction = "WARN"
+	FilterActionHide FilterAction = "HIDE"
+	FilterActionBlur FilterAction = "BLUR"
+)
+
+var AllFilterAction = []FilterAction{
+	FilterActionWarn,
+	FilterActionHide,
+	FilterActionBlur,
+}
+
+func (e FilterAction) IsValid() bool {
+	switch e {
+	case FilterActionWarn, FilterActionHide, FilterActionBlur:
+		return true
+	}
+	return false
+}
+
+func (e FilterAction) String() string {
+	return string(e)
+}
+
+func (e *FilterAction) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = FilterAction(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid FilterAction", str)
+	}
+	return nil
+}
+
+func (e FilterAction) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *FilterAction) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e FilterAction) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
@@ -2365,6 +3405,124 @@ func (e *HealthStatus) UnmarshalJSON(b []byte) error {
 }
 
 func (e HealthStatus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ImportMode string
+
+const (
+	ImportModeMerge     ImportMode = "MERGE"
+	ImportModeOverwrite ImportMode = "OVERWRITE"
+)
+
+var AllImportMode = []ImportMode{
+	ImportModeMerge,
+	ImportModeOverwrite,
+}
+
+func (e ImportMode) IsValid() bool {
+	switch e {
+	case ImportModeMerge, ImportModeOverwrite:
+		return true
+	}
+	return false
+}
+
+func (e ImportMode) String() string {
+	return string(e)
+}
+
+func (e *ImportMode) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ImportMode(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ImportMode", str)
+	}
+	return nil
+}
+
+func (e ImportMode) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ImportMode) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ImportMode) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ImportType string
+
+const (
+	ImportTypeFollowers ImportType = "FOLLOWERS"
+	ImportTypeFollowing ImportType = "FOLLOWING"
+	ImportTypeBlocks    ImportType = "BLOCKS"
+	ImportTypeMutes     ImportType = "MUTES"
+	ImportTypeLists     ImportType = "LISTS"
+	ImportTypeBookmarks ImportType = "BOOKMARKS"
+)
+
+var AllImportType = []ImportType{
+	ImportTypeFollowers,
+	ImportTypeFollowing,
+	ImportTypeBlocks,
+	ImportTypeMutes,
+	ImportTypeLists,
+	ImportTypeBookmarks,
+}
+
+func (e ImportType) IsValid() bool {
+	switch e {
+	case ImportTypeFollowers, ImportTypeFollowing, ImportTypeBlocks, ImportTypeMutes, ImportTypeLists, ImportTypeBookmarks:
+		return true
+	}
+	return false
+}
+
+func (e ImportType) String() string {
+	return string(e)
+}
+
+func (e *ImportType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ImportType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ImportType", str)
+	}
+	return nil
+}
+
+func (e ImportType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ImportType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ImportType) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
@@ -2546,6 +3704,61 @@ func (e *IssueSeverity) UnmarshalJSON(b []byte) error {
 }
 
 func (e IssueSeverity) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type MarkerTimeline string
+
+const (
+	MarkerTimelineHome          MarkerTimeline = "HOME"
+	MarkerTimelineNotifications MarkerTimeline = "NOTIFICATIONS"
+)
+
+var AllMarkerTimeline = []MarkerTimeline{
+	MarkerTimelineHome,
+	MarkerTimelineNotifications,
+}
+
+func (e MarkerTimeline) IsValid() bool {
+	switch e {
+	case MarkerTimelineHome, MarkerTimelineNotifications:
+		return true
+	}
+	return false
+}
+
+func (e MarkerTimeline) String() string {
+	return string(e)
+}
+
+func (e *MarkerTimeline) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = MarkerTimeline(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid MarkerTimeline", str)
+	}
+	return nil
+}
+
+func (e MarkerTimeline) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *MarkerTimeline) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e MarkerTimeline) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
@@ -4041,6 +5254,63 @@ func (e *Trend) UnmarshalJSON(b []byte) error {
 }
 
 func (e Trend) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type TrendingItemType string
+
+const (
+	TrendingItemTypeHashtag TrendingItemType = "HASHTAG"
+	TrendingItemTypeStatus  TrendingItemType = "STATUS"
+	TrendingItemTypeLink    TrendingItemType = "LINK"
+)
+
+var AllTrendingItemType = []TrendingItemType{
+	TrendingItemTypeHashtag,
+	TrendingItemTypeStatus,
+	TrendingItemTypeLink,
+}
+
+func (e TrendingItemType) IsValid() bool {
+	switch e {
+	case TrendingItemTypeHashtag, TrendingItemTypeStatus, TrendingItemTypeLink:
+		return true
+	}
+	return false
+}
+
+func (e TrendingItemType) String() string {
+	return string(e)
+}
+
+func (e *TrendingItemType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = TrendingItemType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid TrendingItemType", str)
+	}
+	return nil
+}
+
+func (e TrendingItemType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *TrendingItemType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e TrendingItemType) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

@@ -4,9 +4,11 @@ package common
 
 import (
 	"context"
+	"os"
+	"strings"
 
 	"github.com/aws/aws-lambda-go/lambdacontext"
-	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/logging"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -17,9 +19,11 @@ func init() {
 	// Initialize logger with Lambda-optimized configuration
 	zapCfg := zap.NewProductionConfig()
 
-	// Set log level from centralized config
-	appCfg := config.Get()
-	logLevel := appCfg.LogLevel
+	// Configure log level without pulling in full app config (keeps CLI/tools usable without Dynamo env vars).
+	logLevel := strings.ToLower(strings.TrimSpace(os.Getenv("LOG_LEVEL")))
+	if logLevel == "" {
+		logLevel = "info"
+	}
 	switch logLevel {
 	case "debug":
 		zapCfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
@@ -40,7 +44,9 @@ func init() {
 	zapCfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 
 	var err error
-	logger, err = zapCfg.Build()
+	logger, err = zapCfg.Build(zap.WrapCore(func(core zapcore.Core) zapcore.Core {
+		return logging.NewScrubbingCore(core, logging.GetGlobalScrubber())
+	}))
 	if err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}

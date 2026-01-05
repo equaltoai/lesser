@@ -123,14 +123,16 @@ func PaginatedWithTotal(ctx *lift.Context, data interface{}, nextCursor, prevCur
 
 // ActivityPubResponse sets the correct content type and returns JSON
 func ActivityPubResponse(ctx *lift.Context, data interface{}) error {
+	err := ctx.JSON(data)
 	ctx.Response.Header("Content-Type", "application/activity+json")
-	return ctx.JSON(data)
+	return err
 }
 
 // WebFingerResponse sets the correct content type for WebFinger
 func WebFingerResponse(ctx *lift.Context, data interface{}) error {
+	err := ctx.JSON(data)
 	ctx.Response.Header("Content-Type", "application/jrd+json")
-	return ctx.JSON(data)
+	return err
 }
 
 // NodeInfoResponse sets the correct content type for NodeInfo

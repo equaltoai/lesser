@@ -17,6 +17,25 @@ import (
 	"go.uber.org/zap"
 )
 
+type dynamodbClient interface {
+	DescribeTable(ctx context.Context, params *dynamodb.DescribeTableInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DescribeTableOutput, error)
+}
+
+type s3Client interface {
+	HeadBucket(ctx context.Context, params *s3.HeadBucketInput, optFns ...func(*s3.Options)) (*s3.HeadBucketOutput, error)
+}
+
+type secretsManagerClient interface {
+	DescribeSecret(ctx context.Context, params *secretsmanager.DescribeSecretInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.DescribeSecretOutput, error)
+}
+
+var (
+	loadDefaultAWSConfig    = awsconfig.LoadDefaultConfig
+	newDynamoDBClient       = func(cfg aws.Config) dynamodbClient { return dynamodb.NewFromConfig(cfg) }
+	newS3Client             = func(cfg aws.Config) s3Client { return s3.NewFromConfig(cfg) }
+	newSecretsManagerClient = func(cfg aws.Config) secretsManagerClient { return secretsmanager.NewFromConfig(cfg) }
+)
+
 // ValidationResult represents the result of configuration validation
 type ValidationResult struct {
 	Valid     bool                `json:"valid"`
@@ -97,7 +116,7 @@ func NewProductionConfigValidator(logger *zap.Logger) (*ProductionConfigValidato
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	awsConfig, err := awsconfig.LoadDefaultConfig(ctx)
+	awsConfig, err := loadDefaultAWSConfig(ctx)
 	if err != nil {
 		logger.Warn("failed to load AWS config for validation", zap.Error(err))
 		// Continue without AWS validation
@@ -440,7 +459,7 @@ func (v *ProductionConfigValidator) validateDynamoDB(ctx context.Context) Resour
 		}
 	}
 
-	client := dynamodb.NewFromConfig(v.awsConfig)
+	client := newDynamoDBClient(v.awsConfig)
 	_, err := client.DescribeTable(ctx, &dynamodb.DescribeTableInput{
 		TableName: aws.String(tableName),
 	})
@@ -471,7 +490,7 @@ func (v *ProductionConfigValidator) validateS3(ctx context.Context) ResourceStat
 		}
 	}
 
-	client := s3.NewFromConfig(v.awsConfig)
+	client := newS3Client(v.awsConfig)
 	_, err := client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(bucketName),
 	})
@@ -499,7 +518,7 @@ func (v *ProductionConfigValidator) validateSecretsManager(ctx context.Context) 
 		}
 	}
 
-	client := secretsmanager.NewFromConfig(v.awsConfig)
+	client := newSecretsManagerClient(v.awsConfig)
 	_, err := client.DescribeSecret(ctx, &secretsmanager.DescribeSecretInput{
 		SecretId: aws.String(secretName),
 	})

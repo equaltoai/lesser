@@ -124,11 +124,6 @@ func SanitizeActivityPubObjectDefault(obj map[string]any) {
 
 // ValidateAndSanitizeMediaType validates and sanitizes media MIME types
 func ValidateAndSanitizeMediaType(mediaType string) (string, error) {
-	// Remove any path traversal attempts
-	mediaType = strings.ReplaceAll(mediaType, "..", "")
-	mediaType = strings.ReplaceAll(mediaType, "/", "")
-	mediaType = strings.ReplaceAll(mediaType, "\\", "")
-
 	// Whitelist of allowed media types
 	allowedTypes := map[string]bool{
 		"image/jpeg":      true,
@@ -145,9 +140,17 @@ func ValidateAndSanitizeMediaType(mediaType string) (string, error) {
 		"application/pdf": true,
 	}
 
-	if !allowedTypes[strings.ToLower(mediaType)] {
+	// Normalize to lowercase for comparison
+	normalizedType := strings.ToLower(mediaType)
+
+	// Check against whitelist first (before any sanitization)
+	if !allowedTypes[normalizedType] {
 		return "", ValidationError{Field: "mediaType", Message: "unsupported media type"}
 	}
 
-	return mediaType, nil
+	// Remove any path traversal attempts from the original input
+	sanitized := strings.ReplaceAll(mediaType, "..", "")
+	sanitized = strings.ReplaceAll(sanitized, "\\", "")
+
+	return sanitized, nil
 }

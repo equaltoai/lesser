@@ -70,7 +70,7 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 	// Extract and validate status ID
 	statusID, err := h.extractStatusIDForHistory(ctx)
 	if err != nil {
-		return err
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Perform optional authentication
@@ -80,7 +80,7 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 	objectID := h.normalizeStatusIDForHistory(statusID)
 	currentObject, err := h.fetchObjectForHistory(ctx, objectID)
 	if err != nil {
-		return err
+		return common.RespondNotFound(ctx, "status not found")
 	}
 
 	// Get the author actor
@@ -99,7 +99,7 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 func (h *Handler) extractStatusIDForHistory(ctx *lift.Context) (string, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
-		return "", common.RespondValidationError(ctx, err)
+		return "", err
 	}
 	return statusID, nil
 }
@@ -148,7 +148,7 @@ func (h *Handler) fetchObjectForHistory(ctx *lift.Context, objectID string) (any
 	// Get the note using Notes service
 	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
-		return nil, common.RespondNotFound(ctx, "status not found")
+		return nil, err
 	}
 	return result.Note, nil
 }

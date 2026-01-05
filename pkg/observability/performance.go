@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -103,7 +102,7 @@ func (po *PerformanceOptimization) LogPerformanceSummary() {
 	po.mu.RLock()
 	defer po.mu.RUnlock()
 
-	if err := common.ValidateSliceNotEmpty("po.metrics", po.metrics); err != nil {
+	if len(po.metrics) == 0 {
 		return
 	}
 

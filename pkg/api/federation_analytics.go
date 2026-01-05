@@ -2,7 +2,10 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -11,20 +14,41 @@ import (
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/gorilla/mux"
 )
 
+type federationAnalyticsRepository interface {
+	GetFederationNodes(ctx context.Context, depth int) ([]*storage.FederationNode, error)
+	GetFederationNodesByHealth(ctx context.Context, healthStatus string, limit int) ([]*storage.FederationNode, error)
+	GetFederationEdges(ctx context.Context, domains []string) ([]*storage.FederationEdge, error)
+	GetStrongestConnectionsByType(ctx context.Context, connectionType string, limit int) ([]*storage.FederationEdge, error)
+	CalculateFederationClusters(ctx context.Context) ([]*storage.InstanceCluster, error)
+	GetInstanceMetadata(ctx context.Context, domain string) (*storage.InstanceMetadata, error)
+	GetInstanceConnections(ctx context.Context, domain string, connectionType string) ([]*storage.InstanceConnection, error)
+	GetDetailedFederationMetrics(ctx context.Context, domain, period string, startTime, endTime time.Time) ([]*storageModels.FederationAnalyticsTimeSeries, error)
+}
+
+type federationAnalyticsHooks interface {
+	GetRelationshipAnalysis(ctx context.Context, sourceDomain, targetDomain string) (*federation.RelationshipAnalysis, error)
+	GetFederationRecommendations(ctx context.Context, domain string) ([]*federation.FederationRecommendation, error)
+}
+
 // FederationAnalyticsHandler handles federation analytics API endpoints
 type FederationAnalyticsHandler struct {
-	storage core.RepositoryStorage
-	hooks   *federation.FederationHooks
+	repo  federationAnalyticsRepository
+	hooks federationAnalyticsHooks
 }
 
 // NewFederationAnalyticsHandler creates a new federation analytics handler
 func NewFederationAnalyticsHandler(store core.RepositoryStorage, hooks *federation.FederationHooks) *FederationAnalyticsHandler {
+	var repo federationAnalyticsRepository
+	if store != nil {
+		repo = store.Federation()
+	}
 	return &FederationAnalyticsHandler{
-		storage: store,
-		hooks:   hooks,
+		repo:  repo,
+		hooks: hooks,
 	}
 }
 
@@ -56,9 +80,9 @@ func (fah *FederationAnalyticsHandler) GetFederationNodes(w http.ResponseWriter,
 
 	if healthFilter != "" {
 		// Use the dedicated method for health-filtered queries
-		nodes, err = fah.storage.Federation().GetFederationNodesByHealth(r.Context(), healthFilter, 100)
+		nodes, err = fah.repo.GetFederationNodesByHealth(r.Context(), healthFilter, 100)
 	} else {
-		nodes, err = fah.storage.Federation().GetFederationNodes(r.Context(), depth)
+		nodes, err = fah.repo.GetFederationNodes(r.Context(), depth)
 	}
 
 	if err != nil {
@@ -66,8 +90,7 @@ func (fah *FederationAnalyticsHandler) GetFederationNodes(w http.ResponseWriter,
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{
+	if err := writeJSON(w, http.StatusOK, map[string]any{
 		"nodes": nodes,
 		"count": len(nodes),
 	}); err != nil {
@@ -87,16 +110,16 @@ func (fah *FederationAnalyticsHandler) GetFederationEdges(w http.ResponseWriter,
 
 	if connectionType != "" && limitStr != "" {
 		if limit, parseErr := common.ParseFederationLimit(limitStr); parseErr == nil {
-			edges, err = fah.storage.Federation().GetStrongestConnectionsByType(r.Context(), connectionType, limit)
+			edges, err = fah.repo.GetStrongestConnectionsByType(r.Context(), connectionType, limit)
 		} else {
 			http.Error(w, fmt.Sprintf("Invalid limit parameter: %v", parseErr), http.StatusBadRequest)
 			return
 		}
 	} else if len(domains) > 0 {
-		edges, err = fah.storage.Federation().GetFederationEdges(r.Context(), domains)
+		edges, err = fah.repo.GetFederationEdges(r.Context(), domains)
 	} else {
 		// Get strongest connections overall
-		edges, err = fah.storage.Federation().GetStrongestConnectionsByType(r.Context(), "all", 100)
+		edges, err = fah.repo.GetStrongestConnectionsByType(r.Context(), "all", 100)
 	}
 
 	if err != nil {
@@ -104,8 +127,7 @@ func (fah *FederationAnalyticsHandler) GetFederationEdges(w http.ResponseWriter,
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{
+	if err := writeJSON(w, http.StatusOK, map[string]any{
 		"edges": edges,
 		"count": len(edges),
 	}); err != nil {
@@ -116,14 +138,13 @@ func (fah *FederationAnalyticsHandler) GetFederationEdges(w http.ResponseWriter,
 
 // GetFederationClusters returns federation clusters
 func (fah *FederationAnalyticsHandler) GetFederationClusters(w http.ResponseWriter, r *http.Request) {
-	clusters, err := fah.storage.Federation().CalculateFederationClusters(r.Context())
+	clusters, err := fah.repo.CalculateFederationClusters(r.Context())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to get federation clusters: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{
+	if err := writeJSON(w, http.StatusOK, map[string]any{
 		"clusters": clusters,
 		"count":    len(clusters),
 	}); err != nil {
@@ -153,8 +174,10 @@ func (fah *FederationAnalyticsHandler) GetRelationshipAnalysis(w http.ResponseWr
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(analysis)
+	if err := writeJSON(w, http.StatusOK, analysis); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
 
 // GetRecommendations returns federation recommendations for a domain
@@ -173,13 +196,15 @@ func (fah *FederationAnalyticsHandler) GetRecommendations(w http.ResponseWriter,
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	if err := writeJSON(w, http.StatusOK, map[string]any{
 		"recommendations": recommendations,
 		"count":           len(recommendations),
 		"domain":          domain,
 		"generated_at":    time.Now(),
-	})
+	}); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
 
 // GetInstanceMetadata returns detailed metadata for an instance
@@ -192,9 +217,9 @@ func (fah *FederationAnalyticsHandler) GetInstanceMetadata(w http.ResponseWriter
 		return
 	}
 
-	metadata, err := fah.storage.Federation().GetInstanceMetadata(r.Context(), domain)
+	metadata, err := fah.repo.GetInstanceMetadata(r.Context(), domain)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			http.Error(w, "Instance not found", http.StatusNotFound)
 			return
 		}
@@ -203,18 +228,20 @@ func (fah *FederationAnalyticsHandler) GetInstanceMetadata(w http.ResponseWriter
 	}
 
 	// Also get connection information
-	connections, err := fah.storage.Federation().GetInstanceConnections(r.Context(), domain, "")
+	connections, err := fah.repo.GetInstanceConnections(r.Context(), domain, "")
 	if err != nil {
 		// Don't fail if connections can't be retrieved
 		connections = []*storage.InstanceConnection{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	if err := writeJSON(w, http.StatusOK, map[string]any{
 		"metadata":     metadata,
 		"connections":  connections,
 		"retrieved_at": time.Now(),
-	})
+	}); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
 
 // GetTimeSeries returns time-series data for federation metrics
@@ -261,7 +288,7 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 	}
 
 	// Get detailed time series data from federation repository
-	timeSeries, err := fah.storage.Federation().GetDetailedFederationMetrics(r.Context(), domain, period, startTime, endTime)
+	timeSeries, err := fah.repo.GetDetailedFederationMetrics(r.Context(), domain, period, startTime, endTime)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to get time series data: %v", err), http.StatusInternalServerError)
 		return
@@ -347,9 +374,20 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 		"generated_at": time.Now(),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
 		return
 	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(buf.Bytes())
+	return nil
 }

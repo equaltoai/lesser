@@ -4,6 +4,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -52,12 +53,18 @@ type ImportExportService interface {
 	ListImports(ctx context.Context, query *importexport.ListImportsQuery) (*importexport.ImportListResult, error)
 }
 
+// RelationshipsService defines the interface for relationship operations needed by async handlers.
+type RelationshipsService interface {
+	Unfollow(ctx context.Context, cmd *relationships.UnfollowCommand) (*relationships.RelationshipResult, error)
+	Unmute(ctx context.Context, cmd *relationships.UnmuteCommand) (*relationships.RelationshipResult, error)
+}
+
 // AsyncCommandHandler handles WebSocket commands for async operations (bulk ops, import/export)
 type AsyncCommandHandler struct {
 	*streaming.BaseCommandHandler
 	bulkService          BulkService
 	importExportService  ImportExportService
-	relationshipsService *relationships.Service
+	relationshipsService RelationshipsService
 	publisher            streaming.Publisher
 	logger               *zap.Logger
 }
@@ -66,10 +73,16 @@ type AsyncCommandHandler struct {
 func NewAsyncCommandHandler(
 	bulkService BulkService,
 	importExportService ImportExportService,
-	relationshipsService *relationships.Service,
+	relationshipsService RelationshipsService,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 ) *AsyncCommandHandler {
+	if relationshipsService != nil {
+		relValue := reflect.ValueOf(relationshipsService)
+		if relValue.Kind() == reflect.Ptr && relValue.IsNil() {
+			relationshipsService = nil
+		}
+	}
 	return &AsyncCommandHandler{
 		BaseCommandHandler:   streaming.NewBaseCommandHandler(logger),
 		bulkService:          bulkService,

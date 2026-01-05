@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { LessThanIcon } from '@equaltoai/greater-components/icons';
+  import LessThanIcon from 'src/lib/greater/icons/icons/less-than.svelte';
 </script>
 
 <LessThanIcon />
-

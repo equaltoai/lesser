@@ -557,7 +557,7 @@ func (r *FederationInstanceRepository) batchCreateInstancesInChunks(ctx context.
 
 // BatchUpdateInstancesHealth updates health status for multiple instances efficiently
 func (r *FederationInstanceRepository) BatchUpdateInstancesHealth(ctx context.Context, healthUpdates map[string]*types.HealthStatus) error {
-	if common.ValidateSliceNotEmpty("healthUpdates", healthUpdates) != nil {
+	if len(healthUpdates) == 0 {
 		return nil
 	}
 
@@ -656,7 +656,7 @@ func (r *FederationInstanceRepository) batchUpdateHealthInChunks(ctx context.Con
 
 // BatchUpdateInstancesUsage updates usage counters for multiple instances efficiently
 func (r *FederationInstanceRepository) BatchUpdateInstancesUsage(ctx context.Context, usageUpdates map[string]int64) error {
-	if common.ValidateSliceNotEmpty("usageUpdates", usageUpdates) != nil {
+	if len(usageUpdates) == 0 {
 		return nil
 	}
 

@@ -19,16 +19,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// CreateReportRequest represents the request body for creating a report
-type CreateReportRequest struct {
-	AccountID string   `json:"account_id"`
-	StatusIDs []string `json:"status_ids"`
-	Comment   string   `json:"comment"`
-	Forward   bool     `json:"forward"`
-	Category  string   `json:"category"`
-	RuleIDs   []int    `json:"rule_ids"`
-}
-
 // HandleCreateReportLift handles POST /api/v1/reports
 func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	var username string
@@ -60,58 +50,16 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	username = claims.Username
 
 	// Parse request body
-	var req CreateReportRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environment - try parsing directly from request body
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
-				h.logger.Debug("invalid report request",
-					zap.Error(err),
-					zap.Error(jsonErr))
-				return h.respondBadRequest(ctx, "invalid request")
-			}
-		} else {
-			h.logger.Debug("invalid report request", zap.Error(err))
-			return h.respondBadRequest(ctx, "invalid request")
-		}
+	req, err := h.parseReportRequest(ctx)
+	if err != nil {
+		// Log handled in parseReportRequest
+		return h.respondBadRequest(ctx, "invalid request")
 	}
 
 	// Validate report parameters
-	params := map[string]interface{}{
-		"account_id": req.AccountID,
-		"status_ids": req.StatusIDs,
-		"comment":    req.Comment,
-		"category":   req.Category,
-		"forward":    req.Forward,
-	}
-	if err := common.ValidateReportParams(params); err != nil {
+	if err := h.validateReport(&req); err != nil {
 		h.logger.Info("report validation failed", zap.Error(err))
 		return h.respondBadRequest(ctx, err.Error())
-	}
-
-	// Validate required fields
-	if err := common.ValidateRequiredParam("accountID", req.AccountID); err != nil {
-		return h.respondBadRequest(ctx, err.Error())
-	}
-
-	// Validate category using common validation function
-	if err := common.ValidateReportCategory(req.Category); err != nil {
-		// Default to "other" if validation fails
-		req.Category = "other"
-	}
-
-	// Validate comment if provided
-	if req.Comment != "" {
-		if err := common.ValidateReportComment(req.Comment); err != nil {
-			return h.respondBadRequest(ctx, err.Error())
-		}
-	}
-
-	// Validate status IDs if provided
-	if len(req.StatusIDs) > 0 {
-		if err := common.ValidateReportStatusIDs(req.StatusIDs); err != nil {
-			return h.respondBadRequest(ctx, err.Error())
-		}
 	}
 
 	// Create the report
@@ -132,35 +80,8 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 		return h.respondInternalError(ctx, "failed to create report")
 	}
 
-	// Get reporter's actor ID for trust integration
-	reporterActor, err := h.repos.Actor().GetActor(ctx.Context, username)
-	if err != nil {
-		h.logger.Warn("failed to get reporter actor", zap.Error(err))
-		// Continue with report creation even if actor lookup fails
-	}
-
-	reporterActorID := username
-	if reporterActor != nil {
-		reporterActorID = reporterActor.ID
-	}
-
-	// Create enhanced moderation event with trust weighting
-	enhancedService := reports.NewEnhancedReportService(h.repos, h.logger)
-	moderationEvent, err := enhancedService.CreateEnhancedModerationEvent(ctx.Context, report, reporterActorID)
-	if err != nil {
-		h.logger.Error("failed to create enhanced moderation event", zap.Error(err))
-		// Don't fail the report creation - fall back to basic moderation event
-		h.createBasicModerationEventLift(ctx.Context, report, reporterActorID)
-	} else {
-		// Update the report with the moderation event ID
-		report.ModerationEventID = moderationEvent.ID
-		_ = h.repos.Moderation().UpdateReportStatus(ctx.Context, report.ID, storage.ReportStatus(report.Status), "", "")
-
-		h.logger.Info("created report with enhanced moderation",
-			zap.String("report_id", report.ID),
-			zap.String("moderation_event_id", moderationEvent.ID),
-			zap.Float64("confidence_score", moderationEvent.ConfidenceScore))
-	}
+	// Handle moderation event creation
+	h.handleModerationEvent(ctx.Context, report, username)
 
 	// Convert to Mastodon API format
 	response := &models.Report{
@@ -177,6 +98,108 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	}
 
 	return ctx.JSON(response)
+}
+
+func (h *Handler) parseReportRequest(ctx *lift.Context) (models.CreateReportRequest, error) {
+	var req models.CreateReportRequest
+	if err := ctx.ParseRequest(&req); err != nil {
+		// Fallback for test environment - try parsing directly from request body
+		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
+			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
+				h.logger.Debug("invalid report request",
+					zap.Error(err),
+					zap.Error(jsonErr))
+				return req, err
+			}
+		} else {
+			h.logger.Debug("invalid report request", zap.Error(err))
+			return req, err
+		}
+	}
+	return req, nil
+}
+
+func (h *Handler) validateReport(req *models.CreateReportRequest) error {
+	// Validate report parameters using map for common validation
+	params := map[string]interface{}{
+		"account_id": req.AccountID,
+		"comment":    req.Comment,
+		"category":   req.Category,
+		"forward":    req.Forward,
+	}
+	if len(req.StatusIDs) > 0 {
+		statusIDs := make([]interface{}, len(req.StatusIDs))
+		for i, id := range req.StatusIDs {
+			statusIDs[i] = id
+		}
+		params["status_ids"] = statusIDs
+	}
+	if err := common.ValidateReportParams(params); err != nil {
+		return err
+	}
+
+	// Validate required fields
+	if err := common.ValidateRequiredParam("accountID", req.AccountID); err != nil {
+		return err
+	}
+
+	// Validate category using common validation function
+	if err := common.ValidateReportCategory(req.Category); err != nil {
+		// Default to "other" if validation fails
+		req.Category = "other"
+	}
+
+	// Validate comment if provided
+	if req.Comment != "" {
+		if err := common.ValidateReportComment(req.Comment); err != nil {
+			return err
+		}
+	}
+
+	// Validate status IDs if provided
+	if len(req.StatusIDs) > 0 {
+		statusIDs := make([]interface{}, len(req.StatusIDs))
+		for i, id := range req.StatusIDs {
+			statusIDs[i] = id
+		}
+		if err := common.ValidateReportStatusIDs(statusIDs); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (h *Handler) handleModerationEvent(ctx context.Context, report *storage.Report, username string) {
+	// Get reporter's actor ID for trust integration
+	reporterActor, err := h.repos.Actor().GetActor(ctx, username)
+	if err != nil {
+		h.logger.Warn("failed to get reporter actor", zap.Error(err))
+		// Continue with report creation even if actor lookup fails
+	}
+
+	reporterActorID := username
+	if reporterActor != nil {
+		reporterActorID = reporterActor.ID
+	}
+
+	// Create enhanced moderation event with trust weighting
+	enhancedService := reports.NewEnhancedReportService(h.repos, h.logger)
+	moderationEvent, err := enhancedService.CreateEnhancedModerationEvent(ctx, report, reporterActorID)
+	if err != nil {
+		h.logger.Error("failed to create enhanced moderation event", zap.Error(err))
+		// Don't fail the report creation - fall back to basic moderation event
+		h.createBasicModerationEventLift(ctx, report, reporterActorID)
+	} else {
+		// Update the report with the moderation event ID
+		report.ModerationEventID = moderationEvent.ID
+		_ = h.repos.Moderation().UpdateReportStatus(ctx, report.ID, storage.ReportStatus(report.Status), "", "")
+
+		h.logger.Info("created report with enhanced moderation",
+			zap.String("report_id", report.ID),
+			zap.String("moderation_event_id", moderationEvent.ID),
+			zap.Float64("confidence_score", moderationEvent.ConfidenceScore))
+	}
 }
 
 // createBasicModerationEventLift creates a basic moderation event as fallback

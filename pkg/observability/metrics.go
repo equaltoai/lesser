@@ -27,12 +27,16 @@ import (
 
 // MetricsCollector aggregates and publishes custom metrics
 type MetricsCollector struct {
-	client     *cloudwatch.Client
+	client     cloudWatchPutMetricDataAPI
 	namespace  string
 	dimensions []types.Dimension
 	metrics    map[string]*MetricBuffer
 	logger     *zap.Logger
 	mu         sync.RWMutex
+}
+
+type cloudWatchPutMetricDataAPI interface {
+	PutMetricData(ctx context.Context, params *cloudwatch.PutMetricDataInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.PutMetricDataOutput, error)
 }
 
 // MetricBuffer represents a buffer for metrics collection
@@ -55,7 +59,7 @@ type PerformanceMetrics struct {
 }
 
 // NewMetricsCollector creates a new metrics collector
-func NewMetricsCollector(client *cloudwatch.Client, namespace string, logger *zap.Logger) *MetricsCollector {
+func NewMetricsCollector(client cloudWatchPutMetricDataAPI, namespace string, logger *zap.Logger) *MetricsCollector {
 	return &MetricsCollector{
 		client:    client,
 		namespace: namespace,
@@ -225,7 +229,7 @@ func (mc *MetricsCollector) flushMetrics() {
 	mc.metrics = make(map[string]*MetricBuffer) // Reset
 	mc.mu.Unlock()
 
-	if err := common.ValidateSliceNotEmpty("metricsToFlush", metricsToFlush); err != nil {
+	if len(metricsToFlush) == 0 {
 		return
 	}
 

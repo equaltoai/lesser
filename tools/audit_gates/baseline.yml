@@ -1,0 +1,30 @@
+version: 1
+
+# This file intentionally tracks known gaps that are being actively removed.
+# The audit gates fail if:
+# - a new occurrence is introduced, or
+# - an existing occurrence changes without updating this baseline.
+#
+# Update this file as part of the PR that removes the underlying issue.
+
+# Allowed disabled Go files. No new *.go.disabled files should be added.
+disabledGoFiles:
+  - graph/dataloader_test.go.disabled
+  - pkg/auth/refresh_tokens_test.go.disabled
+  - pkg/moderation/advanced/pattern_repository_bridge.go.disabled
+
+# Exact occurrences of `io.ReadAll(resp.Body)` in non-test Go code (tracked by count per file).
+goReadAllRespBody:
+  {}
+
+# Exact occurrences of `InsecureSkipVerify: true` in non-test Go code (tracked by count per file).
+goInsecureSkipVerify:
+  pkg/httpclient/federation_client.go: 1
+  pkg/observability/webhook_delivery.go: 1
+
+# Exact occurrences of unsafe CSP directives in CloudFront/CDK code (tracked by count per file).
+infraCdkCspUnsafeInline:
+  {}
+
+infraCdkCspUnsafeEval:
+  {}

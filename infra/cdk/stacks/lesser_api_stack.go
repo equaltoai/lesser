@@ -3,11 +3,11 @@ package stacks
 import (
 	localconstructs "cdk/constructs"
 	"cdk/inventory"
-	"cdk/naming"
 	"fmt"
 	"strings"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsssm"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
 )
 
@@ -29,7 +30,9 @@ type LesserApiStackProps struct {
 	HostedZoneDomain string
 	HostedZoneId     string
 	CloudFrontDomain string
-	AppName          string // For SSM parameter lookup
+	AppName          string // Used for SSM lookup + deterministic resource naming
+	AccountID        string // Used for globally-unique names (e.g. S3)
+	Region           string // Used for globally-unique names (e.g. S3)
 }
 
 type LesserApiStack struct {
@@ -41,6 +44,9 @@ type LesserApiStack struct {
 	StreamingBucket        awss3.Bucket
 	TrainingBucket         awss3.Bucket
 	MediaDistribution      awscloudfront.Distribution
+	FrontendDistribution   awscloudfront.Distribution
+	ClientBucket           awss3.Bucket
+	AuthUIBucket           awss3.Bucket
 	Queues                 map[string]localconstructs.QueuePair
 	PrivateKey             awssecretsmanager.ISecret
 	JwtSecret              awssecretsmanager.ISecret
@@ -54,13 +60,15 @@ type LesserApiStack struct {
 	CloudFrontDomain       string
 	APICertificate         awscertificatemanager.ICertificate
 	CDNCertificate         awscertificatemanager.ICertificate
-	GraphQLWSCertificate   awscertificatemanager.ICertificate
-	StreamingWSCertificate awscertificatemanager.ICertificate
-	AuthCertificate        awscertificatemanager.ICertificate
+	WebSocketCertificate   awscertificatemanager.ICertificate
 	CloudFrontKeyPairID    string
 	CloudFrontKeyGroupID   string
 	LambdaEncryptionRole   awsiam.IRole
 	LambdaBasicRole        awsiam.IRole
+	AppName                string
+	Domain                 string
+	AccountID              string
+	Region                 string
 }
 
 func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiStackProps) *LesserApiStack {
@@ -71,6 +79,10 @@ func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiSt
 		Environment:      props.Environment,
 		Configuration:    props.Config,
 		CloudFrontDomain: props.CloudFrontDomain,
+		AppName:          props.AppName,
+		Domain:           props.Domain,
+		AccountID:        props.AccountID,
+		Region:           props.Region,
 	}
 
 	// Import shared resources from SSM Parameter Store
@@ -87,14 +99,14 @@ func NewLesserApiStack(scope constructs.Construct, id string, props *LesserApiSt
 
 	apiStack.initHostedZone(props.HostedZoneDomain, props.HostedZoneId)
 
+	apiStack.createStageCertificates(props.Domain)
+	apiStack.createClientInfrastructure(props.Domain)
+
 	// Create shared resources
 	apiStack.createSharedResources()
 
 	// Create S3 and CloudFront (Phase 6.6)
 	apiStack.createMediaInfrastructure(props.Domain)
-
-	// Create Auth UI infrastructure (passwordless OAuth)
-	apiStack.createAuthUIInfrastructure(props.Domain, apiStack.AuthCertificate)
 
 	// Create media streaming and ML infrastructure (Phase 2.2/2.3)
 	apiStack.createStreamingAndMLInfrastructure()
@@ -173,62 +185,6 @@ func (s *LesserApiStack) loadSharedResourcesFromSSM(appName string) {
 		jsii.String("ImportedActorPrivateKey"),
 		actorKeyArnParam.StringValue(),
 	)
-
-	// Import certificates by ARN
-	apiCertArnParam := awsssm.StringParameter_FromStringParameterName(
-		s.Stack,
-		jsii.String("APICertArnParamLookup"),
-		jsii.String(fmt.Sprintf("%s/certificates/api-cert-arn", paramPrefix)),
-	)
-	s.APICertificate = awscertificatemanager.Certificate_FromCertificateArn(
-		s.Stack,
-		jsii.String("ImportedAPICert"),
-		apiCertArnParam.StringValue(),
-	)
-
-	cdnCertArnParam := awsssm.StringParameter_FromStringParameterName(
-		s.Stack,
-		jsii.String("CDNCertArnParamLookup"),
-		jsii.String(fmt.Sprintf("%s/certificates/cdn-cert-arn", paramPrefix)),
-	)
-	s.CDNCertificate = awscertificatemanager.Certificate_FromCertificateArn(
-		s.Stack,
-		jsii.String("ImportedCDNCert"),
-		cdnCertArnParam.StringValue(),
-	)
-
-	graphqlWSCertArnParam := awsssm.StringParameter_FromStringParameterName(
-		s.Stack,
-		jsii.String("GraphQLWSCertArnParamLookup"),
-		jsii.String(fmt.Sprintf("%s/certificates/graphql-ws-cert-arn", paramPrefix)),
-	)
-	s.GraphQLWSCertificate = awscertificatemanager.Certificate_FromCertificateArn(
-		s.Stack,
-		jsii.String("ImportedGraphQLWSCert"),
-		graphqlWSCertArnParam.StringValue(),
-	)
-
-	streamingWSCertArnParam := awsssm.StringParameter_FromStringParameterName(
-		s.Stack,
-		jsii.String("StreamingWSCertArnParamLookup"),
-		jsii.String(fmt.Sprintf("%s/certificates/streaming-ws-cert-arn", paramPrefix)),
-	)
-	s.StreamingWSCertificate = awscertificatemanager.Certificate_FromCertificateArn(
-		s.Stack,
-		jsii.String("ImportedStreamingWSCert"),
-		streamingWSCertArnParam.StringValue(),
-	)
-
-	authCertArnParam := awsssm.StringParameter_FromStringParameterName(
-		s.Stack,
-		jsii.String("AuthCertArnParamLookup"),
-		jsii.String(fmt.Sprintf("%s/certificates/auth-cert-arn", paramPrefix)),
-	)
-	s.AuthCertificate = awscertificatemanager.Certificate_FromCertificateArn(
-		s.Stack,
-		jsii.String("ImportedAuthCert"),
-		authCertArnParam.StringValue(),
-	)
 }
 
 func (s *LesserApiStack) initHostedZone(domain string, zoneId string) {
@@ -249,11 +205,76 @@ func (s *LesserApiStack) initHostedZone(domain string, zoneId string) {
 	})
 }
 
+func (s *LesserApiStack) createStageCertificates(stageDomain string) {
+	if stageDomain == "" || s.HostedZone == nil {
+		return
+	}
+
+	wildcard := fmt.Sprintf("*.%s", stageDomain)
+	validation := awscertificatemanager.CertificateValidation_FromDns(s.HostedZone)
+
+	regionalCert := awscertificatemanager.NewCertificate(s.Stack, jsii.String("RegionalStageCertificate"), &awscertificatemanager.CertificateProps{
+		DomainName:              jsii.String(stageDomain),
+		SubjectAlternativeNames: &[]*string{jsii.String(wildcard)},
+		Validation:              validation,
+	})
+
+	// CloudFront certificates must be provisioned in us-east-1.
+	//nolint:staticcheck // Required for CloudFront cross-region support.
+	cloudFrontCert := awscertificatemanager.NewDnsValidatedCertificate(s.Stack, jsii.String("CloudFrontStageCertificate"), &awscertificatemanager.DnsValidatedCertificateProps{
+		DomainName:              jsii.String(stageDomain),
+		HostedZone:              s.HostedZone,
+		Region:                  jsii.String("us-east-1"),
+		SubjectAlternativeNames: &[]*string{jsii.String(wildcard)},
+	})
+
+	s.APICertificate = regionalCert
+	s.WebSocketCertificate = regionalCert
+	s.CDNCertificate = cloudFrontCert
+}
+
+func (s *LesserApiStack) createClientInfrastructure(domain string) {
+	if domain == "" || s.HostedZone == nil || s.CDNCertificate == nil {
+		return
+	}
+
+	isProd := naming.IsLiveEnvironment(s.Environment)
+	stage := naming.StageForEnvironment(s.Environment)
+
+	apiOrigin := fmt.Sprintf("api.%s", domain)
+	clientBucket := naming.S3BucketName(s.AppName, stage, "client", s.AccountID, s.Region)
+	authBucket := naming.S3BucketName(s.AppName, stage, "auth-ui", s.AccountID, s.Region)
+
+	frontend := liftcdk.NewPathRoutedFrontendDistribution(s.Stack, jsii.String("ClientFrontend"), &liftcdk.PathRoutedFrontendDistributionProps{
+		HostedZone:          s.HostedZone,
+		Certificate:         s.CDNCertificate,
+		DomainName:          jsii.String(domain),
+		ApiOriginDomainName: jsii.String(apiOrigin),
+		AppName:             jsii.String(s.AppName),
+		Stage:               jsii.String(string(stage)),
+		ClientBucketName:    jsii.String(clientBucket),
+		AuthBucketName:      jsii.String(authBucket),
+		StaticResponseHeadersPolicy: localconstructs.NewFrontendStaticResponseHeadersPolicy(
+			s.Stack,
+			jsii.String(domain),
+		),
+		AuthSinglePageApp:   jsii.Bool(false),
+		RemovalPolicy:       getRemovalPolicy(isProd),
+		AutoDeleteObjects:   jsii.Bool(!isProd),
+		PriceClass:          awscloudfront.PriceClass_PRICE_CLASS_100,
+		HttpVersion:         awscloudfront.HttpVersion_HTTP2,
+	})
+
+	s.FrontendDistribution = frontend.Distribution
+	s.ClientBucket = frontend.ClientBucket
+	s.AuthUIBucket = frontend.AuthBucket
+}
+
 func (s *LesserApiStack) createSharedResources() {
 	isProd := naming.IsLiveEnvironment(s.Environment)
 
 	// Create main DynamoDB table with streams
-	mainTableName := naming.ResourceName("main-table", s.Environment)
+	mainTableName := naming.ResourceNameWithApp(s.AppName, "main-table", s.Environment)
 	mainTable := liftcdk.NewLiftTable(s.Stack, jsii.String("LesserTable"), &liftcdk.LiftTableProps{
 		TableName:                 jsii.String(mainTableName),
 		PartitionKeyName:          jsii.String("PK"),
@@ -270,7 +291,7 @@ func (s *LesserApiStack) createSharedResources() {
 	// Stream event log table for Mastodon-compatible SSE endpoints.
 	// This table is polled by the SSE Lambda during response streaming invocations.
 	streamEventsTable := liftcdk.NewLiftTable(s.Stack, jsii.String("StreamEventsTable"), &liftcdk.LiftTableProps{
-		TableName:                 jsii.String(naming.ResourceName("stream-events-table", s.Environment)),
+		TableName:                 jsii.String(naming.ResourceNameWithApp(s.AppName, "stream-events-table", s.Environment)),
 		PartitionKeyName:          jsii.String("PK"),
 		SortKeyName:               jsii.String("SK"),
 		TimeToLiveAttribute:       jsii.String("ttl"),
@@ -283,7 +304,7 @@ func (s *LesserApiStack) createSharedResources() {
 	// Create rate limit table for Lift's limited library
 	// The limited library uses its own table structure for rate limiting
 	rateLimitTable := liftcdk.NewLiftTable(s.Stack, jsii.String("RateLimitTable"), &liftcdk.LiftTableProps{
-		TableName:                 jsii.String(naming.ResourceName("rate-limits-table", s.Environment)),
+		TableName:                 jsii.String(naming.ResourceNameWithApp(s.AppName, "rate-limits-table", s.Environment)),
 		PartitionKeyName:          jsii.String("PK"),
 		SortKeyName:               jsii.String("SK"),
 		TimeToLiveAttribute:       jsii.String("ExpiresAt"),
@@ -332,6 +353,7 @@ func (s *LesserApiStack) createSharedResources() {
 
 func (s *LesserApiStack) createMediaInfrastructure(domain string) {
 	isProd := naming.IsLiveEnvironment(s.Environment)
+	stage := naming.StageForEnvironment(s.Environment)
 
 	mediaDomain := s.CloudFrontDomain
 	if mediaDomain == "" {
@@ -346,7 +368,9 @@ func (s *LesserApiStack) createMediaInfrastructure(domain string) {
 		HostedZone:        s.HostedZone,
 		Certificate:       s.CDNCertificate,
 		DomainName:        jsii.String(mediaDomain),
-		BucketName:        jsii.String(fmt.Sprintf("lesser-media-%s", s.Environment)),
+		AppName:           jsii.String(s.AppName),
+		Stage:             jsii.String(string(stage)),
+		BucketName:        jsii.String(naming.S3BucketName(s.AppName, stage, "media", s.AccountID, s.Region)),
 		RemovalPolicy:     getRemovalPolicy(isProd),
 		AutoDeleteObjects: jsii.Bool(!isProd),
 		PriceClass:        awscloudfront.PriceClass_PRICE_CLASS_100, // US and Europe only for cost optimization
@@ -379,26 +403,13 @@ func (s *LesserApiStack) createMediaInfrastructure(domain string) {
 	})
 }
 
-// createAuthUIInfrastructure creates S3 + CloudFront for the passwordless OAuth UI
-func (s *LesserApiStack) createAuthUIInfrastructure(domain string, certificate awscertificatemanager.ICertificate) {
-	if s.HostedZone == nil || certificate == nil || domain == "" {
-		return
-	}
-
-	_ = localconstructs.NewAuthUI(s.Stack, jsii.String("AuthUI"), &localconstructs.AuthUIProps{
-		Environment: s.Environment,
-		Domain:      domain,
-		HostedZone:  s.HostedZone,
-		Certificate: certificate,
-	})
-}
-
 func (s *LesserApiStack) createStreamingAndMLInfrastructure() {
 	isProd := naming.IsLiveEnvironment(s.Environment)
+	stage := naming.StageForEnvironment(s.Environment)
 
 	// Create S3 bucket for transcoded streaming outputs (HLS/DASH segments + manifests)
 	s.StreamingBucket = awss3.NewBucket(s.Stack, jsii.String("StreamingBucket"), &awss3.BucketProps{
-		BucketName:        jsii.String(fmt.Sprintf("lesser-streaming-%s", s.Environment)),
+		BucketName:        jsii.String(naming.S3BucketName(s.AppName, stage, "streaming", s.AccountID, s.Region)),
 		Encryption:        awss3.BucketEncryption_S3_MANAGED,
 		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
 		RemovalPolicy:     getRemovalPolicy(isProd),
@@ -416,7 +427,7 @@ func (s *LesserApiStack) createStreamingAndMLInfrastructure() {
 
 	// Create S3 bucket for ML training datasets
 	s.TrainingBucket = awss3.NewBucket(s.Stack, jsii.String("TrainingBucket"), &awss3.BucketProps{
-		BucketName:        jsii.String(fmt.Sprintf("lesser-training-%s", s.Environment)),
+		BucketName:        jsii.String(naming.S3BucketName(s.AppName, stage, "training", s.AccountID, s.Region)),
 		Encryption:        awss3.BucketEncryption_S3_MANAGED,
 		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
 		RemovalPolicy:     getRemovalPolicy(isProd),
@@ -473,39 +484,34 @@ func (s *LesserApiStack) createStreamingAndMLInfrastructure() {
 		},
 	})
 
-	s.ModelMetadataTableName = naming.ResourceName("main-table", s.Environment)
+	s.ModelMetadataTableName = naming.ResourceNameWithApp(s.AppName, "main-table", s.Environment)
 
 	// Create outputs for integration
 	awscdk.NewCfnOutput(s.Stack, jsii.String("StreamingBucketName"), &awscdk.CfnOutputProps{
 		Value:       s.StreamingBucket.BucketName(),
 		Description: jsii.String("S3 bucket for streaming outputs"),
-		ExportName:  jsii.String(naming.ResourceName("streaming-bucket", s.Environment)),
 	})
 
 	awscdk.NewCfnOutput(s.Stack, jsii.String("TrainingBucketName"), &awscdk.CfnOutputProps{
 		Value:       s.TrainingBucket.BucketName(),
 		Description: jsii.String("S3 bucket for ML training datasets"),
-		ExportName:  jsii.String(naming.ResourceName("training-bucket", s.Environment)),
 	})
 
 	awscdk.NewCfnOutput(s.Stack, jsii.String("MediaConvertRoleArn"), &awscdk.CfnOutputProps{
 		Value:       s.MediaConvertRole.RoleArn(),
 		Description: jsii.String("IAM role ARN for MediaConvert"),
-		ExportName:  jsii.String(naming.ResourceName("mediaconvert-role", s.Environment)),
 	})
 
 	if s.CloudFrontKeyGroupID != "" {
 		awscdk.NewCfnOutput(s.Stack, jsii.String("CloudFrontKeyGroupId"), &awscdk.CfnOutputProps{
 			Value:       jsii.String(s.CloudFrontKeyGroupID),
 			Description: jsii.String("CloudFront key group ID managed by CDK"),
-			ExportName:  jsii.String(naming.ResourceName("cloudfront-keygroup-id", s.Environment)),
 		})
 	}
 
 	awscdk.NewCfnOutput(s.Stack, jsii.String("ModelMetadataTable"), &awscdk.CfnOutputProps{
 		Value:       jsii.String(s.ModelMetadataTableName),
 		Description: jsii.String("DynamoDB table for model metadata (using gsi9)"),
-		ExportName:  jsii.String(naming.ResourceName("model-metadata-table", s.Environment)),
 	})
 }
 
@@ -537,13 +543,13 @@ func (s *LesserApiStack) createSQSQueues() map[string]localconstructs.QueuePair 
 			}
 
 			logical := trigger.Queue
-			primaryName := naming.ResourceName(logical, s.Environment)
+			primaryName := naming.ResourceNameWithApp(s.AppName, logical, s.Environment)
 
 			dlqLogical := trigger.DeadLetterQueue
 			if dlqLogical == "" {
 				dlqLogical = fmt.Sprintf("%s-dlq", logical)
 			}
-			dlqName := naming.ResourceName(dlqLogical, s.Environment)
+			dlqName := naming.ResourceNameWithApp(s.AppName, dlqLogical, s.Environment)
 
 			anchorName := primaryConsumerByQueue[logical]
 			if anchorName == "" {
@@ -579,11 +585,11 @@ func (s *LesserApiStack) createSQSQueues() map[string]localconstructs.QueuePair 
 			liftQueue := liftcdk.NewLiftSQSQueue(s.Stack, jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueId(logical))), queueProps)
 
 			if liftQueue.Queue != nil {
-				awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("app"), jsii.String("lesser"), nil)
+				awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("app"), jsii.String(s.AppName), nil)
 				awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("stage"), jsii.String(string(naming.StageForEnvironment(s.Environment))), nil)
 			}
 			if liftQueue.DeadLetterQueue != nil {
-				awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("app"), jsii.String("lesser"), nil)
+				awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("app"), jsii.String(s.AppName), nil)
 				awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("stage"), jsii.String(string(naming.StageForEnvironment(s.Environment))), nil)
 			}
 
@@ -595,9 +601,9 @@ func (s *LesserApiStack) createSQSQueues() map[string]localconstructs.QueuePair 
 	// currently wired as an event source mapping (inventory has no scheduled queue consumer).
 	if _, exists := queuePairs["scheduled-queue"]; !exists {
 		logical := "scheduled-queue"
-		primaryName := naming.ResourceName(logical, s.Environment)
+		primaryName := naming.ResourceNameWithApp(s.AppName, logical, s.Environment)
 		dlqLogical := fmt.Sprintf("%s-dlq", logical)
-		dlqName := naming.ResourceName(dlqLogical, s.Environment)
+		dlqName := naming.ResourceNameWithApp(s.AppName, dlqLogical, s.Environment)
 
 		anchor := s.Functions.Must("api")
 		liftQueue := liftcdk.NewLiftSQSQueue(s.Stack, jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueId(logical))), &liftcdk.LiftSQSQueueProps{
@@ -617,11 +623,11 @@ func (s *LesserApiStack) createSQSQueues() map[string]localconstructs.QueuePair 
 		})
 
 		if liftQueue.Queue != nil {
-			awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("app"), jsii.String("lesser"), nil)
+			awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("app"), jsii.String(s.AppName), nil)
 			awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
 		}
 		if liftQueue.DeadLetterQueue != nil {
-			awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("app"), jsii.String("lesser"), nil)
+			awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("app"), jsii.String(s.AppName), nil)
 			awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
 		}
 
@@ -654,14 +660,16 @@ func (s *LesserApiStack) createLambdaFunctions() {
 	// Use secrets passed from SharedStack (no lookup needed)
 	// If not passed via props, fall back to lookup by name for backwards compatibility
 	if s.PrivateKey == nil {
-		s.PrivateKey = awssecretsmanager.Secret_FromSecretNameV2(s.Stack, jsii.String("PrivateKeySecret"), jsii.String("lesser/actor-private-key"))
+		s.PrivateKey = awssecretsmanager.Secret_FromSecretNameV2(s.Stack, jsii.String("PrivateKeySecret"), jsii.String(fmt.Sprintf("%s/actor-private-key", s.AppName)))
 	}
 	if s.JwtSecret == nil {
-		s.JwtSecret = awssecretsmanager.Secret_FromSecretNameV2(s.Stack, jsii.String("JwtSecret"), jsii.String("lesser/jwt-secret"))
+		s.JwtSecret = awssecretsmanager.Secret_FromSecretNameV2(s.Stack, jsii.String("JwtSecret"), jsii.String(fmt.Sprintf("%s/jwt-secret", s.AppName)))
 	}
 
 	s.Functions = localconstructs.CreateLambdaFunctions(s.Stack, &localconstructs.LambdaFunctionsProps{
+		AppName:             s.AppName,
 		Environment:         s.Environment,
+		Domain:              s.Domain,
 		Table:               s.MainTable,
 		RateLimitTable:      s.RateLimitTable,
 		StreamEventsTable:   s.StreamEventsTable,
@@ -681,14 +689,26 @@ func (s *LesserApiStack) createLambdaFunctions() {
 
 func (s *LesserApiStack) createAPIGateway(domain string) {
 	s.API = localconstructs.CreateAPIGateway(s.Stack, &localconstructs.APIGatewayProps{
-		Environment:            s.Environment,
-		Domain:                 domain,
-		Certificate:            s.APICertificate,
-		GraphQLWSCertificate:   s.GraphQLWSCertificate,
-		StreamingWSCertificate: s.StreamingWSCertificate,
-		Functions:              s.Functions,
-		HostedZone:             s.HostedZone,
+		AppName:              s.AppName,
+		Environment:          s.Environment,
+		Domain:               domain,
+		Certificate:          s.APICertificate,
+		WebSocketCertificate: s.WebSocketCertificate,
+		Functions:            s.Functions,
+		HostedZone:           s.HostedZone,
 	})
+
+	apis := []awsapigatewayv2.WebSocketApi{s.API.WebSocketApi}
+	if s.API.GraphQLWebSocketApi != nil {
+		apis = append(apis, s.API.GraphQLWebSocketApi)
+	}
+	attachWebSocketManageConnectionsPolicy(
+		s.Stack,
+		s.AppName,
+		s.Environment,
+		[]awsiam.IRole{s.LambdaBasicRole, s.LambdaEncryptionRole},
+		apis,
+	)
 
 	// Output API URLs
 	awscdk.NewCfnOutput(s.Stack, jsii.String("RestApiUrl"), &awscdk.CfnOutputProps{
@@ -712,7 +732,6 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 		awscdk.NewCfnOutput(s.Stack, jsii.String("CloudFrontKeyPairId"), &awscdk.CfnOutputProps{
 			Value:       jsii.String(s.CloudFrontKeyPairID),
 			Description: jsii.String("CloudFront public key ID used for signed URLs"),
-			ExportName:  jsii.String(naming.ResourceName("cloudfront-keypair-id", s.Environment)),
 		})
 	}
 }
@@ -781,11 +800,36 @@ func (s *LesserApiStack) createOutputs() {
 		Value:       jsii.String(s.Environment),
 		Description: jsii.String("Deployment environment"),
 	})
+
+	if s.FrontendDistribution != nil {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("FrontendDistributionId"), &awscdk.CfnOutputProps{
+			Value:       s.FrontendDistribution.DistributionId(),
+			Description: jsii.String("Stage CloudFront distribution ID for single-domain routing"),
+		})
+		awscdk.NewCfnOutput(s.Stack, jsii.String("FrontendDistributionDomain"), &awscdk.CfnOutputProps{
+			Value:       s.FrontendDistribution.DistributionDomainName(),
+			Description: jsii.String("Stage CloudFront distribution domain name"),
+		})
+	}
+
+	if s.ClientBucket != nil {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("ClientBucketName"), &awscdk.CfnOutputProps{
+			Value:       s.ClientBucket.BucketName(),
+			Description: jsii.String("S3 bucket for the client UI (served under /l/*)"),
+		})
+	}
+
+	if s.AuthUIBucket != nil {
+		awscdk.NewCfnOutput(s.Stack, jsii.String("AuthUIBucketName"), &awscdk.CfnOutputProps{
+			Value:       s.AuthUIBucket.BucketName(),
+			Description: jsii.String("S3 bucket for the auth UI (served under /auth/*)"),
+		})
+	}
 }
 
 func loadEnvironmentConfig(environment string) map[string]interface{} {
-	// Default configuration used when environment YAML config isn't loaded.
-	// Prefer `infra/cdk/config/*.yaml` for canonical environment settings.
+	// Default environment tuning used by the CDK app.
+	// Note: `infra/cdk/config/` contains reference templates and is not loaded at deploy time.
 	config := map[string]interface{}{
 		"logLevel":   "INFO",
 		"memorySize": 3008.0, // ARM64 Lambda optimized default

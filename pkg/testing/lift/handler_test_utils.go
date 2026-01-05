@@ -2,6 +2,7 @@
 package lift
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -416,14 +417,14 @@ func NewStreamTestHelpers() *StreamTestHelpers {
 // CreateSSEReader creates a reader for Server-Sent Events
 func (s *StreamTestHelpers) CreateSSEReader(body string) *SSEReader {
 	return &SSEReader{
-		reader: strings.NewReader(body),
+		reader: bufio.NewReader(strings.NewReader(body)),
 		buffer: new(bytes.Buffer),
 	}
 }
 
 // SSEReader reads Server-Sent Events
 type SSEReader struct {
-	reader io.Reader
+	reader *bufio.Reader
 	buffer *bytes.Buffer
 }
 
@@ -464,9 +465,8 @@ func (r *SSEReader) readLine() (string, error) {
 	r.buffer.Reset()
 
 	for {
-		b := make([]byte, 1)
-		n, err := r.reader.Read(b)
-		if n == 0 || err == io.EOF {
+		b, err := r.reader.ReadByte()
+		if err == io.EOF {
 			if r.buffer.Len() > 0 {
 				return r.buffer.String(), nil
 			}
@@ -476,11 +476,11 @@ func (r *SSEReader) readLine() (string, error) {
 			return "", err
 		}
 
-		if b[0] == '\n' {
+		if b == '\n' {
 			return r.buffer.String(), nil
 		}
-		if b[0] != '\r' {
-			r.buffer.WriteByte(b[0])
+		if b != '\r' {
+			r.buffer.WriteByte(b)
 		}
 	}
 }

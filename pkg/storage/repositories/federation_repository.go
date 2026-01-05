@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"strconv"
@@ -1356,9 +1355,12 @@ func (r *FederationRepository) verifyNodeInfo(ctx context.Context, domain string
 		} `json:"links"`
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, truncated, err := common.ReadUntrustedHTTPResponseBody(resp.Body, common.MaxUntrustedHTTPResponseBodyBytes)
 	if err != nil {
 		return ErrorHandler.HandleQueryError(err, "nodeinfo verification", "response reading")
+	}
+	if truncated {
+		return ErrorHandler.HandleQueryError(fmt.Errorf("nodeinfo response too large"), EntityNodeInfo, "response reading")
 	}
 
 	err = json.Unmarshal(body, &nodeInfo)

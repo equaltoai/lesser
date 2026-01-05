@@ -16,8 +16,15 @@ import (
 
 // DynamORMStorage handles persistence of cost data using DynamORM
 type DynamORMStorage struct {
-	repo   *repositories.TrackingRepository
+	repo   trackingRepository
 	logger *zap.Logger
+}
+
+type trackingRepository interface {
+	Create(ctx context.Context, record *models.DynamoDBCostRecord) error
+	GetAggregatedCostsByPeriod(ctx context.Context, period string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error)
+	GetCostsByOperationType(ctx context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error)
+	GetCostsByService(ctx context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error)
 }
 
 // NewDynamORMStorage creates a new DynamORM-based cost storage instance
@@ -68,6 +75,87 @@ func (s *DynamORMStorage) SaveOperationCost(ctx context.Context, opCost *cost.Op
 	return s.repo.Create(ctx, record)
 }
 
+func uniqueUsersFromTableBreakdown(breakdown map[string]*models.DynamoDBTableCostStats) int64 {
+	if breakdown == nil {
+		return 0
+	}
+
+	var uniqueUsers int64
+	for _, tableStats := range breakdown {
+		uniqueUsers += tableStats.UniqueUsers
+	}
+
+	return uniqueUsers
+}
+
+func dataTransferBytesFromServiceBreakdownDaily(breakdown map[string]*models.DynamoDBServiceCostStats) int64 {
+	if breakdown == nil {
+		return 0
+	}
+
+	var dataTransferBytes int64
+	if s3Stats, ok := breakdown["s3"]; ok {
+		dataTransferBytes = s3Stats.DataTransferBytes
+	}
+	if cfStats, ok := breakdown["cloudfront"]; ok {
+		dataTransferBytes += cfStats.DataTransferBytes
+	}
+
+	return dataTransferBytes
+}
+
+func dataTransferBytesFromServiceBreakdownAll(breakdown map[string]*models.DynamoDBServiceCostStats) int64 {
+	if breakdown == nil {
+		return 0
+	}
+
+	var dataTransferBytes int64
+	for _, serviceStats := range breakdown {
+		dataTransferBytes += serviceStats.DataTransferBytes
+	}
+
+	return dataTransferBytes
+}
+
+func dailyAggregateFromModel(agg *models.DynamoDBCostAggregation) cost.DailyCostAggregate {
+	uniqueUsers := uniqueUsersFromTableBreakdown(agg.TableBreakdown)
+	dataTransferBytes := dataTransferBytesFromServiceBreakdownDaily(agg.ServiceBreakdown)
+
+	return cost.DailyCostAggregate{
+		Date:                agg.WindowStart.Format(common.DateFormat),
+		TotalCostMicrocents: agg.TotalCostMicroCents,
+		RequestCount:        agg.TotalOperations,
+		UniqueUsers:         uniqueUsers,
+		DynamoDBReads:       int64(agg.TotalReadCapacityUnits),
+		DynamoDBWrites:      int64(agg.TotalWriteCapacityUnits),
+		LambdaInvocations:   agg.TotalOperations,
+		LambdaDurationMs:    int64(agg.AverageDuration * float64(agg.TotalOperations)),
+		DataTransferBytes:   dataTransferBytes,
+	}
+}
+
+func monthlyAggregateFromModel(agg *models.DynamoDBCostAggregation) cost.MonthlyCostAggregate {
+	uniqueUsers := uniqueUsersFromTableBreakdown(agg.TableBreakdown)
+	dataTransferBytes := dataTransferBytesFromServiceBreakdownAll(agg.ServiceBreakdown)
+
+	// Convert bytes to GB.
+	dataTransferGB := float64(dataTransferBytes) / (1024 * 1024 * 1024)
+
+	return cost.MonthlyCostAggregate{
+		Year:                    agg.WindowStart.Year(),
+		Month:                   int(agg.WindowStart.Month()),
+		TotalCostMicrocents:     agg.TotalCostMicroCents,
+		ProjectedCostMicrocents: int64(agg.TotalCostDollars * 1_000_000), // Convert dollars to microcents
+		RequestCount:            agg.TotalOperations,
+		UniqueUsers:             uniqueUsers,
+		DynamoDBReads:           int64(agg.TotalReadCapacityUnits),
+		DynamoDBWrites:          int64(agg.TotalWriteCapacityUnits),
+		LambdaInvocations:       agg.TotalOperations,
+		LambdaDurationMs:        int64(agg.AverageDuration * float64(agg.TotalOperations)),
+		DataTransferGB:          dataTransferGB,
+	}
+}
+
 // GetDailyCosts retrieves daily cost aggregates for a date range
 func (s *DynamORMStorage) GetDailyCosts(ctx context.Context, startDate, endDate time.Time) ([]cost.DailyCostAggregate, error) {
 	// Query aggregated data by day
@@ -79,44 +167,7 @@ func (s *DynamORMStorage) GetDailyCosts(ctx context.Context, startDate, endDate 
 	// Convert to cost.DailyCostAggregate format
 	results := make([]cost.DailyCostAggregate, 0, len(aggregates))
 	for _, agg := range aggregates {
-		// Extract unique users count from table breakdown
-		var uniqueUsers int64
-		if agg.TableBreakdown != nil {
-			userSet := make(map[string]bool)
-			for tableName, tableStats := range agg.TableBreakdown {
-				// Aggregate unique users across all tables
-				if tableStats.UniqueUsers > 0 {
-					for i := 0; i < int(tableStats.UniqueUsers); i++ {
-						userSet[fmt.Sprintf("%s_%d", tableName, i)] = true
-					}
-				}
-			}
-			uniqueUsers = int64(len(userSet))
-		}
-
-		// Extract data transfer bytes from service breakdown
-		var dataTransferBytes int64
-		if agg.ServiceBreakdown != nil {
-			if s3Stats, ok := agg.ServiceBreakdown["s3"]; ok {
-				// S3 data transfer is often the main contributor
-				dataTransferBytes = s3Stats.DataTransferBytes
-			}
-			if cfStats, ok := agg.ServiceBreakdown["cloudfront"]; ok {
-				dataTransferBytes += cfStats.DataTransferBytes
-			}
-		}
-
-		results = append(results, cost.DailyCostAggregate{
-			Date:                agg.WindowStart.Format(common.DateFormat),
-			TotalCostMicrocents: agg.TotalCostMicroCents,
-			RequestCount:        agg.TotalOperations,
-			UniqueUsers:         uniqueUsers,
-			DynamoDBReads:       int64(agg.TotalReadCapacityUnits),
-			DynamoDBWrites:      int64(agg.TotalWriteCapacityUnits),
-			LambdaInvocations:   agg.TotalOperations,
-			LambdaDurationMs:    int64(agg.AverageDuration * float64(agg.TotalOperations)),
-			DataTransferBytes:   dataTransferBytes,
-		})
+		results = append(results, dailyAggregateFromModel(agg))
 	}
 
 	return results, nil
@@ -146,44 +197,8 @@ func (s *DynamORMStorage) GetMonthlyCost(ctx context.Context, year int, month ti
 
 	// Convert the first (and should be only) aggregate
 	agg := aggregates[0]
-	// Extract unique users and data transfer
-	var uniqueUsers int64
-	var dataTransferBytes int64
-
-	if agg.TableBreakdown != nil {
-		userSet := make(map[string]bool)
-		for tableName, tableStats := range agg.TableBreakdown {
-			if tableStats.UniqueUsers > 0 {
-				for i := 0; i < int(tableStats.UniqueUsers); i++ {
-					userSet[fmt.Sprintf("%s_%d", tableName, i)] = true
-				}
-			}
-		}
-		uniqueUsers = int64(len(userSet))
-	}
-
-	if agg.ServiceBreakdown != nil {
-		for _, serviceStats := range agg.ServiceBreakdown {
-			dataTransferBytes += serviceStats.DataTransferBytes
-		}
-	}
-
-	// Convert bytes to GB
-	dataTransferGB := float64(dataTransferBytes) / (1024 * 1024 * 1024)
-
-	return &cost.MonthlyCostAggregate{
-		Year:                    agg.WindowStart.Year(),
-		Month:                   int(agg.WindowStart.Month()),
-		TotalCostMicrocents:     agg.TotalCostMicroCents,
-		ProjectedCostMicrocents: int64(agg.TotalCostDollars * 1000000), // Convert dollars to microcents
-		RequestCount:            agg.TotalOperations,
-		UniqueUsers:             uniqueUsers,
-		DynamoDBReads:           int64(agg.TotalReadCapacityUnits),
-		DynamoDBWrites:          int64(agg.TotalWriteCapacityUnits),
-		LambdaInvocations:       agg.TotalOperations,
-		LambdaDurationMs:        int64(agg.AverageDuration * float64(agg.TotalOperations)),
-		DataTransferGB:          dataTransferGB,
-	}, nil
+	monthly := monthlyAggregateFromModel(agg)
+	return &monthly, nil
 }
 
 // GetMonthlyCosts retrieves monthly cost aggregates
@@ -200,44 +215,7 @@ func (s *DynamORMStorage) GetMonthlyCosts(ctx context.Context, months int) ([]co
 	// Convert to cost.MonthlyCostAggregate format
 	results := make([]cost.MonthlyCostAggregate, 0, len(aggregates))
 	for _, agg := range aggregates {
-		// Extract unique users from table breakdown
-		var uniqueUsers int64
-		if agg.TableBreakdown != nil {
-			userSet := make(map[string]bool)
-			for tableName, tableStats := range agg.TableBreakdown {
-				if tableStats.UniqueUsers > 0 {
-					for i := 0; i < int(tableStats.UniqueUsers); i++ {
-						userSet[fmt.Sprintf("%s_%d", tableName, i)] = true
-					}
-				}
-			}
-			uniqueUsers = int64(len(userSet))
-		}
-
-		// Extract data transfer bytes from service breakdown
-		var dataTransferBytes int64
-		if agg.ServiceBreakdown != nil {
-			for _, serviceStats := range agg.ServiceBreakdown {
-				dataTransferBytes += serviceStats.DataTransferBytes
-			}
-		}
-
-		// Convert bytes to GB
-		dataTransferGB := float64(dataTransferBytes) / (1024 * 1024 * 1024)
-
-		results = append(results, cost.MonthlyCostAggregate{
-			Year:                    agg.WindowStart.Year(),
-			Month:                   int(agg.WindowStart.Month()),
-			TotalCostMicrocents:     agg.TotalCostMicroCents,
-			ProjectedCostMicrocents: int64(agg.TotalCostDollars * 1000000), // Convert dollars to microcents
-			RequestCount:            agg.TotalOperations,
-			UniqueUsers:             uniqueUsers,
-			DynamoDBReads:           int64(agg.TotalReadCapacityUnits),
-			DynamoDBWrites:          int64(agg.TotalWriteCapacityUnits),
-			LambdaInvocations:       agg.TotalOperations, // Approximation
-			LambdaDurationMs:        int64(agg.AverageDuration * float64(agg.TotalOperations)),
-			DataTransferGB:          dataTransferGB,
-		})
+		results = append(results, monthlyAggregateFromModel(agg))
 	}
 
 	return results, nil

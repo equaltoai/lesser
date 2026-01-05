@@ -7,15 +7,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"go.uber.org/zap"
 )
 
 // WebSocketRateLimiter provides rate limiting for WebSocket connections and commands
 type WebSocketRateLimiter struct {
 	logger *zap.Logger
-	repo   *repositories.RateLimitRepository
+	repo   interfaces.RateLimitRepository
 
 	// Connection-level rate limiting
 	connectionLimits map[string]*ConnectionRateLimit
@@ -186,7 +185,7 @@ func (sw *SlidingWindow) cleanup(now time.Time) {
 }
 
 // NewWebSocketRateLimiter creates a new WebSocket rate limiter
-func NewWebSocketRateLimiter(config *WebSocketRateLimitConfig, repo *repositories.RateLimitRepository, logger *zap.Logger) *WebSocketRateLimiter {
+func NewWebSocketRateLimiter(config *WebSocketRateLimitConfig, repo interfaces.RateLimitRepository, logger *zap.Logger) *WebSocketRateLimiter {
 	if config == nil {
 		config = DefaultWebSocketRateLimitConfig()
 	}
@@ -503,7 +502,7 @@ func (wrl *WebSocketRateLimiter) updateGlobalConnection(identifier, connectionID
 		delete(globalLimit.activeConnections, connectionID)
 
 		// Cleanup if no active connections
-		if err := common.ValidateSliceNotEmpty("globalLimit.activeConnections", globalLimit.activeConnections); err != nil {
+		if len(globalLimit.activeConnections) == 0 {
 			wrl.globalMu.Lock()
 			delete(wrl.globalLimits, identifier)
 			wrl.globalMu.Unlock()

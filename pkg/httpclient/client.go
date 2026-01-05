@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
@@ -34,23 +34,6 @@ var (
 
 	// ErrDNSRebindingDetected indicates a DNS rebinding attack was detected
 	ErrDNSRebindingDetected = errors.New("DNS rebinding attack detected")
-
-	// Private IP ranges to block (RFC 1918 and others)
-	privateIPBlocks = []net.IPNet{
-		// IPv4 private ranges
-		{IP: net.IPv4(10, 0, 0, 0), Mask: net.CIDRMask(8, 32)},     // 10.0.0.0/8
-		{IP: net.IPv4(172, 16, 0, 0), Mask: net.CIDRMask(12, 32)},  // 172.16.0.0/12
-		{IP: net.IPv4(192, 168, 0, 0), Mask: net.CIDRMask(16, 32)}, // 192.168.0.0/16
-		{IP: net.IPv4(127, 0, 0, 0), Mask: net.CIDRMask(8, 32)},    // 127.0.0.0/8 (loopback)
-		{IP: net.IPv4(169, 254, 0, 0), Mask: net.CIDRMask(16, 32)}, // 169.254.0.0/16 (link-local)
-		{IP: net.IPv4(0, 0, 0, 0), Mask: net.CIDRMask(8, 32)},      // 0.0.0.0/8
-
-		// IPv6 private ranges
-		{IP: net.ParseIP("::1"), Mask: net.CIDRMask(128, 128)},   // ::1/128 (loopback)
-		{IP: net.ParseIP("fc00::"), Mask: net.CIDRMask(7, 128)},  // fc00::/7 (unique local)
-		{IP: net.ParseIP("fe80::"), Mask: net.CIDRMask(10, 128)}, // fe80::/10 (link-local)
-		{IP: net.ParseIP("::"), Mask: net.CIDRMask(128, 128)},    // ::/128 (unspecified)
-	}
 
 	// Blocked schemes
 	blockedSchemes = map[string]bool{
@@ -132,13 +115,28 @@ func NewSecureClient(opts ...Option) *SecureClient {
 		local:  make(map[string]*storage.DNSCacheEntry),
 	}
 
-	// Configure transport with security checks
-	c.client.Transport = &secureTransport{
-		base:     http.DefaultTransport,
+	// Configure transport with security checks.
+	//
+	// Clone the default transport so we can override dialing behavior without
+	// mutating the global http.DefaultTransport.
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		base = &http.Transport{}
+	}
+	transport := base.Clone()
+	// Disable ProxyFromEnvironment for SSRF-hardened clients. If a proxy is used,
+	// the proxy (not the validated destination IP) becomes the dial target and
+	// can reintroduce DNS rebinding / TOCTOU gaps at the proxy layer.
+	transport.Proxy = nil
+
+	secure := &secureTransport{
+		base:     transport,
 		logger:   c.logger,
 		dnsCache: c.dnsCache,
 		lookupIP: net.LookupIP,
 	}
+	transport.DialContext = secure.dialContext
+	c.client.Transport = secure
 
 	// Configure redirect policy
 	c.client.CheckRedirect = c.checkRedirect
@@ -158,17 +156,15 @@ type dnsCacheManager struct {
 func (d *dnsCacheManager) getCachedIPs(ctx context.Context, hostname string) ([]net.IP, bool) {
 	// Check local cache first
 	d.mu.RLock()
-	if entry, ok := d.local[hostname]; ok {
-		d.mu.RUnlock()
-		if time.Since(entry.ResolvedAt) < dnsCacheTTL {
-			ips := make([]net.IP, len(entry.IPs))
-			for i, ipStr := range entry.IPs {
-				ips[i] = net.ParseIP(ipStr)
-			}
-			return ips, true
-		}
-	}
+	entry, ok := d.local[hostname]
 	d.mu.RUnlock()
+	if ok && time.Since(entry.ResolvedAt) < dnsCacheTTL {
+		ips := make([]net.IP, len(entry.IPs))
+		for i, ipStr := range entry.IPs {
+			ips[i] = net.ParseIP(ipStr)
+		}
+		return ips, true
+	}
 
 	// Check DynamoDB if we have a store
 	if d.store != nil {
@@ -227,6 +223,85 @@ type secureTransport struct {
 	logger   *zap.Logger
 	dnsCache *dnsCacheManager
 	lookupIP func(string) ([]net.IP, error)
+	dial     func(ctx context.Context, network, addr string) (net.Conn, error)
+}
+
+func (t *secureTransport) dialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid dial address: %w", err)
+	}
+
+	// Avoid DNS lookups when the host is already an IP literal.
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateIP(ip) {
+			return nil, fmt.Errorf("request blocked: %w", ErrPrivateIPAddress)
+		}
+		return t.dialIP(ctx, network, net.JoinHostPort(ip.String(), port))
+	}
+
+	// Prefer cached resolutions so we dial the same (pre-validated) IPs used by RoundTrip.
+	var ips []net.IP
+	var fromCache bool
+	if t.dnsCache != nil {
+		ips, fromCache = t.dnsCache.getCachedIPs(ctx, host)
+	}
+
+	// If not in cache, resolve hostname and cache the result.
+	if !fromCache {
+		lookup := t.lookupIP
+		if lookup == nil {
+			lookup = net.LookupIP
+		}
+		ips, err = lookup(host)
+		if err != nil {
+			return nil, fmt.Errorf("DNS lookup failed: %w", err)
+		}
+		if t.dnsCache != nil {
+			t.dnsCache.setCachedIPs(ctx, host, ips)
+		}
+	}
+
+	// Validate each resolved IP (defense-in-depth; RoundTrip already enforces this).
+	for _, ip := range ips {
+		if isPrivateIP(ip) {
+			logger := t.logger
+			if logger == nil {
+				logger = zap.NewNop()
+			}
+			logger.Warn("blocked dial to private IP",
+				zap.String("host", host),
+				zap.String("ip", ip.String()),
+				zap.Bool("from_cache", fromCache))
+			return nil, fmt.Errorf("request blocked: %w", ErrPrivateIPAddress)
+		}
+	}
+
+	// Dial a resolved public IP to avoid TOCTOU/DNS-rebinding between validation and connect.
+	var lastErr error
+	for _, ip := range ips {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		conn, err := t.dialIP(ctx, network, net.JoinHostPort(ip.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("DNS lookup returned no IPs for %s", host)
+}
+
+func (t *secureTransport) dialIP(ctx context.Context, network, address string) (net.Conn, error) {
+	dial := t.dial
+	if dial == nil {
+		dial = (&net.Dialer{}).DialContext
+	}
+	return dial(ctx, network, address)
 }
 
 // RoundTrip implements http.RoundTripper with security checks
@@ -288,8 +363,7 @@ func (t *secureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	// Verify the connection actually went to one of our resolved IPs
-	// This prevents TOCTOU attacks where DNS changes between check and use
+	// Defensive check: ensure a misbehaving RoundTripper didn't mutate the request host.
 	if resp.Request.URL.Hostname() != hostname {
 		if err := resp.Body.Close(); err != nil {
 			t.logger.Warn("failed to close response body after hostname change", zap.Error(err))
@@ -321,24 +395,25 @@ func (c *SecureClient) checkRedirect(req *http.Request, via []*http.Request) err
 
 // validateURL checks if a URL is safe to request
 func validateURL(u *url.URL, _ *zap.Logger) error {
-	// Check scheme
-	scheme := strings.ToLower(u.Scheme)
-	if err := common.ValidateHTTPScheme(scheme); err != nil {
-		if blockedSchemes[scheme] {
-			return fmt.Errorf("%w: %s", ErrInvalidScheme, scheme)
+	if u == nil {
+		return errors.New("nil URL")
+	}
+
+	scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
+	if err := ssrf.ValidateURL(u); err != nil {
+		switch {
+		case errors.Is(err, ssrf.ErrInvalidScheme):
+			if blockedSchemes[scheme] {
+				return fmt.Errorf("%w: %s", ErrInvalidScheme, scheme)
+			}
+			return fmt.Errorf("%w: only http/https allowed, got %s", ErrInvalidScheme, scheme)
+		case errors.Is(err, ssrf.ErrEmptyHostname):
+			return errors.New("empty hostname")
+		case errors.Is(err, ssrf.ErrBlockedHostname):
+			return errors.New("hostname is blocked")
+		default:
+			return err
 		}
-		return fmt.Errorf("%w: only http/https allowed, got %s", ErrInvalidScheme, scheme)
-	}
-
-	// Get hostname
-	hostname := u.Hostname()
-	if err := common.ValidateRequiredParam("hostname", hostname); err != nil {
-		return errors.New("empty hostname")
-	}
-
-	// Check for metadata endpoints (AWS, GCP, Azure)
-	if isMetadataEndpoint(hostname) {
-		return errors.New("metadata endpoints are blocked")
 	}
 
 	return nil
@@ -346,38 +421,7 @@ func validateURL(u *url.URL, _ *zap.Logger) error {
 
 // isPrivateIP checks if an IP address is in a private range
 func isPrivateIP(ip net.IP) bool {
-	// Check against all private IP blocks
-	for _, block := range privateIPBlocks {
-		if block.Contains(ip) {
-			return true
-		}
-	}
-
-	// Additional checks for special addresses
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-		return true
-	}
-
-	return false
-}
-
-// isMetadataEndpoint checks for known cloud metadata endpoints
-func isMetadataEndpoint(hostname string) bool {
-	metadataEndpoints := []string{
-		"169.254.169.254",          // AWS
-		"metadata.google.internal", // GCP
-		"metadata.azure.com",       // Azure
-		"metadata",                 // Generic
-	}
-
-	hostname = strings.ToLower(hostname)
-	for _, endpoint := range metadataEndpoints {
-		if hostname == endpoint || strings.HasSuffix(hostname, "."+endpoint) {
-			return true
-		}
-	}
-
-	return false
+	return ssrf.IsBlockedIP(ip)
 }
 
 // Do performs an HTTP request with security checks
@@ -435,4 +479,11 @@ func (c *SecureClient) PostWithContext(ctx context.Context, url string, contentT
 // DefaultClient returns a pre-configured secure client with sensible defaults
 func DefaultClient() *SecureClient {
 	return NewSecureClient()
+}
+
+// NewSecureHTTPClient returns an *http.Client configured with the same SSRF
+// protections as NewSecureClient. Prefer NewSecureClient when you don't
+// specifically need an *http.Client.
+func NewSecureHTTPClient(opts ...Option) *http.Client {
+	return NewSecureClient(opts...).client
 }

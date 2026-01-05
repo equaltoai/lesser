@@ -61,34 +61,34 @@ const (
 	AuditPasswordChangeFailed AuditEventType = "auth.password.change_failed"
 
 	// AuditOAuthAuthorizeStarted represents the start of OAuth authorization
-	AuditOAuthAuthorizeStarted AuditEventType = "auth.oauth.authorize_started" //nolint:gosec // false positive - audit event type
+	AuditOAuthAuthorizeStarted AuditEventType = "auth.oauth.authorize_started" // #nosec G101 -- audit event type, not a credential
 	// AuditOAuthAuthorizeCompleted represents completed OAuth authorization
-	AuditOAuthAuthorizeCompleted AuditEventType = "auth.oauth.authorize_completed" //nolint:gosec // false positive - audit event type
+	AuditOAuthAuthorizeCompleted AuditEventType = "auth.oauth.authorize_completed" // #nosec G101 -- audit event type, not a credential
 	// AuditOAuthAuthorizeFailed represents a failed OAuth authorization
-	AuditOAuthAuthorizeFailed AuditEventType = "auth.oauth.authorize_failed" //nolint:gosec // false positive - audit event type
+	AuditOAuthAuthorizeFailed AuditEventType = "auth.oauth.authorize_failed" // #nosec G101 -- audit event type, not a credential
 	// AuditOAuthTokenIssued represents an OAuth token being issued
-	AuditOAuthTokenIssued AuditEventType = "auth.oauth.token_issued" //nolint:gosec // false positive - audit event type
+	AuditOAuthTokenIssued AuditEventType = "auth.oauth.token_issued" // #nosec G101 -- audit event type, not a credential
 	// AuditOAuthTokenRefreshed represents an OAuth token being refreshed
-	AuditOAuthTokenRefreshed AuditEventType = "auth.oauth.token_refreshed" //nolint:gosec // false positive - audit event type
+	AuditOAuthTokenRefreshed AuditEventType = "auth.oauth.token_refreshed" // #nosec G101 -- audit event type, not a credential
 	// AuditOAuthTokenRevoked represents an OAuth token being revoked
-	AuditOAuthTokenRevoked AuditEventType = "auth.oauth.token_revoked" //nolint:gosec // false positive - audit event type
+	AuditOAuthTokenRevoked AuditEventType = "auth.oauth.token_revoked" // #nosec G101 -- audit event type, not a credential
 	// AuditOAuthTokenFailed represents a failed OAuth token operation
-	AuditOAuthTokenFailed AuditEventType = "auth.oauth.token_failed" //nolint:gosec // false positive - audit event type
+	AuditOAuthTokenFailed AuditEventType = "auth.oauth.token_failed" // #nosec G101 -- audit event type, not a credential
 
 	// AuditWebAuthnRegistrationStarted represents the start of WebAuthn credential registration
-	AuditWebAuthnRegistrationStarted AuditEventType = "auth.webauthn.registration_started" //nolint:gosec // false positive - audit event type
+	AuditWebAuthnRegistrationStarted AuditEventType = "auth.webauthn.registration_started" // #nosec G101 -- audit event type, not a credential
 	// AuditWebAuthnRegistrationCompleted represents the completion of WebAuthn credential registration
-	AuditWebAuthnRegistrationCompleted AuditEventType = "auth.webauthn.registration_completed" //nolint:gosec // false positive - audit event type
+	AuditWebAuthnRegistrationCompleted AuditEventType = "auth.webauthn.registration_completed" // #nosec G101 -- audit event type, not a credential
 	// AuditWebAuthnRegistrationFailed represents a failed WebAuthn credential registration
-	AuditWebAuthnRegistrationFailed AuditEventType = "auth.webauthn.registration_failed" //nolint:gosec // false positive - audit event type
+	AuditWebAuthnRegistrationFailed AuditEventType = "auth.webauthn.registration_failed" // #nosec G101 -- audit event type, not a credential
 	// AuditWebAuthnLoginStarted represents the start of a WebAuthn login attempt
-	AuditWebAuthnLoginStarted AuditEventType = "auth.webauthn.login_started" //nolint:gosec // false positive - audit event type
+	AuditWebAuthnLoginStarted AuditEventType = "auth.webauthn.login_started" // #nosec G101 -- audit event type, not a credential
 	// AuditWebAuthnLoginCompleted represents a successful WebAuthn login
-	AuditWebAuthnLoginCompleted AuditEventType = "auth.webauthn.login_completed" //nolint:gosec // false positive - audit event type
+	AuditWebAuthnLoginCompleted AuditEventType = "auth.webauthn.login_completed" // #nosec G101 -- audit event type, not a credential
 	// AuditWebAuthnLoginFailed represents a failed WebAuthn login attempt
-	AuditWebAuthnLoginFailed AuditEventType = "auth.webauthn.login_failed" //nolint:gosec // false positive - audit event type
+	AuditWebAuthnLoginFailed AuditEventType = "auth.webauthn.login_failed" // #nosec G101 -- audit event type, not a credential
 	// AuditWebAuthnCredentialRemoved represents a WebAuthn credential being removed
-	AuditWebAuthnCredentialRemoved AuditEventType = "auth.webauthn.credential_removed" //nolint:gosec // false positive - audit event type
+	AuditWebAuthnCredentialRemoved AuditEventType = "auth.webauthn.credential_removed" // #nosec G101 -- audit event type, not a credential
 
 	// AuditWalletConnected represents a successful wallet connection
 	AuditWalletConnected AuditEventType = "auth.wallet.connected"
@@ -130,13 +130,13 @@ const (
 	AuditDeviceNotRecognized AuditEventType = "auth.security.device_not_recognized"
 
 	// AuditAPIKeyCreated represents API key creation event
-	AuditAPIKeyCreated AuditEventType = "auth.api_key.created" //nolint:gosec // false positive - audit event type
+	AuditAPIKeyCreated AuditEventType = "auth.api_key.created" // #nosec G101 -- audit event type, not a credential
 	// AuditAPIKeyRevoked represents an API key being revoked
-	AuditAPIKeyRevoked AuditEventType = "auth.api_key.revoked" //nolint:gosec // false positive - audit event type
+	AuditAPIKeyRevoked AuditEventType = "auth.api_key.revoked" // #nosec G101 -- audit event type, not a credential
 	// AuditAPIKeyUsed represents an API key being used for authentication
-	AuditAPIKeyUsed AuditEventType = "auth.api_key.used" //nolint:gosec // false positive - audit event type
+	AuditAPIKeyUsed AuditEventType = "auth.api_key.used" // #nosec G101 -- audit event type, not a credential
 	// AuditAPIKeyFailed represents a failed API key authentication attempt
-	AuditAPIKeyFailed AuditEventType = "auth.api_key.failed" //nolint:gosec // false positive - audit event type
+	AuditAPIKeyFailed AuditEventType = "auth.api_key.failed" // #nosec G101 -- audit event type, not a credential
 
 	// AuditTwoFactorEnabled represents two-factor authentication being enabled
 	AuditTwoFactorEnabled AuditEventType = "auth.2fa.enabled"
@@ -199,10 +199,23 @@ type AuditEvent struct {
 
 // AuditLogger handles authentication audit logging
 type AuditLogger struct {
-	repos         StorageProvider
+	auditRepo     auditRepository
 	logger        *zap.Logger
 	config        *AuditConfig
 	privacyHasher *privacy.Hasher
+	httpClient    httpDoer
+}
+
+type httpDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+type auditRepository interface {
+	StoreAuditEvent(ctx context.Context, eventType, severity, username, userID, ipAddress, userAgent, deviceName, sessionID, requestID string, success bool, failureReason string, metadata map[string]interface{}) error
+	GetUserAuditLogs(ctx context.Context, username string, limit int, startTime, endTime time.Time) ([]*models.AuthAuditLog, error)
+	GetIPAuditLogs(ctx context.Context, ipAddress string, limit int, startTime, endTime time.Time) ([]*models.AuthAuditLog, error)
+	GetSessionAuditLogs(ctx context.Context, sessionID string) ([]*models.AuthAuditLog, error)
+	GetSecurityEvents(ctx context.Context, severity string, startTime, endTime time.Time, limit int, cursor string) ([]*models.AuthAuditLog, string, error)
 }
 
 // AuditConfig defines audit logging configuration
@@ -261,11 +274,22 @@ func NewAuditLogger(repos StorageProvider, logger *zap.Logger, config *AuditConf
 	}
 
 	return &AuditLogger{
-		repos:         repos,
+		auditRepo:     getAuditRepo(repos),
 		logger:        logger,
 		config:        config,
 		privacyHasher: privacyHasher,
 	}
+}
+
+func getAuditRepo(repos StorageProvider) auditRepository {
+	if repos == nil {
+		return nil
+	}
+	auditRepo := repos.Audit()
+	if auditRepo == nil {
+		return nil
+	}
+	return auditRepo
 }
 
 // DefaultAuditConfig returns default audit configuration
@@ -384,7 +408,7 @@ func (al *AuditLogger) LogLogin(ctx context.Context, username, ipAddress, userAg
 		},
 	}
 
-	_ = al.LogEvent(ctx, event)
+	al.logEventBestEffort(ctx, event)
 }
 
 // LogOAuthToken logs OAuth token operations
@@ -406,7 +430,7 @@ func (al *AuditLogger) LogOAuthToken(ctx context.Context, clientID, username, ip
 		},
 	}
 
-	_ = al.LogEvent(ctx, event)
+	al.logEventBestEffort(ctx, event)
 }
 
 // LogWebAuthn logs WebAuthn operations
@@ -429,7 +453,7 @@ func (al *AuditLogger) LogWebAuthn(ctx context.Context, username, ipAddress, use
 		},
 	}
 
-	_ = al.LogEvent(ctx, event)
+	al.logEventBestEffort(ctx, event)
 }
 
 // LogSession logs session operations
@@ -445,7 +469,7 @@ func (al *AuditLogger) LogSession(ctx context.Context, username, sessionID, ipAd
 		},
 	}
 
-	_ = al.LogEvent(ctx, event)
+	al.logEventBestEffort(ctx, event)
 }
 
 // LogSecurityEvent logs security-related events
@@ -464,7 +488,16 @@ func (al *AuditLogger) LogSecurityEvent(ctx context.Context, eventType AuditEven
 		event.Severity = SeverityCritical
 	}
 
-	_ = al.LogEvent(ctx, event)
+	al.logEventBestEffort(ctx, event)
+}
+
+func (al *AuditLogger) logEventBestEffort(ctx context.Context, event *AuditEvent) {
+	if err := al.LogEvent(ctx, event); err != nil {
+		al.logger.Debug("audit logging returned error (best effort)",
+			zap.String("event_id", event.ID),
+			zap.String("event_type", string(event.EventType)),
+			zap.Error(err))
+	}
 }
 
 // storeToDB stores the audit event to the database
@@ -481,8 +514,8 @@ func (al *AuditLogger) storeToDB(ctx context.Context, event *AuditEvent) error {
 	}
 
 	// Use the audit repository if available
-	if auditRepo := al.repos.Audit(); auditRepo != nil {
-		return auditRepo.StoreAuditEvent(
+	if al.auditRepo != nil {
+		return al.auditRepo.StoreAuditEvent(
 			ctx,
 			string(event.EventType),
 			string(event.Severity),
@@ -568,15 +601,17 @@ func (al *AuditLogger) sendToSIEM(event *AuditEvent) error {
 		req.Header.Set("Authorization", "Bearer "+al.config.SIEMAPIKey)
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := al.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return errors.Join(ErrSIEMTransmission, err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			// Log but don't return error - this is cleanup
-			_ = err
+			al.logger.Debug("failed to close SIEM response body", zap.Error(err))
 		}
 	}()
 
@@ -874,8 +909,8 @@ func (al *AuditLogger) getRecentFailureCount(_ context.Context, _ string) int {
 
 // GetUserAuditLogs retrieves audit logs for a specific user
 func (al *AuditLogger) GetUserAuditLogs(ctx context.Context, username string, limit int) ([]*AuditEvent, error) {
-	if auditRepo := al.repos.Audit(); auditRepo != nil {
-		logs, err := auditRepo.GetUserAuditLogs(ctx, username, limit, time.Time{}, time.Time{})
+	if al.auditRepo != nil {
+		logs, err := al.auditRepo.GetUserAuditLogs(ctx, username, limit, time.Time{}, time.Time{})
 		if err != nil {
 			return nil, err
 		}
@@ -886,8 +921,8 @@ func (al *AuditLogger) GetUserAuditLogs(ctx context.Context, username string, li
 
 // GetIPAuditLogs retrieves audit logs for a specific IP address
 func (al *AuditLogger) GetIPAuditLogs(ctx context.Context, ipAddress string, limit int) ([]*AuditEvent, error) {
-	if auditRepo := al.repos.Audit(); auditRepo != nil {
-		logs, err := auditRepo.GetIPAuditLogs(ctx, ipAddress, limit, time.Time{}, time.Time{})
+	if al.auditRepo != nil {
+		logs, err := al.auditRepo.GetIPAuditLogs(ctx, ipAddress, limit, time.Time{}, time.Time{})
 		if err != nil {
 			return nil, err
 		}
@@ -898,8 +933,8 @@ func (al *AuditLogger) GetIPAuditLogs(ctx context.Context, ipAddress string, lim
 
 // GetSessionAuditLogs retrieves audit logs for a specific session
 func (al *AuditLogger) GetSessionAuditLogs(ctx context.Context, sessionID string) ([]*AuditEvent, error) {
-	if auditRepo := al.repos.Audit(); auditRepo != nil {
-		logs, err := auditRepo.GetSessionAuditLogs(ctx, sessionID)
+	if al.auditRepo != nil {
+		logs, err := al.auditRepo.GetSessionAuditLogs(ctx, sessionID)
 		if err != nil {
 			return nil, err
 		}
@@ -910,10 +945,10 @@ func (al *AuditLogger) GetSessionAuditLogs(ctx context.Context, sessionID string
 
 // GetSecurityEvents retrieves security events within a time range
 func (al *AuditLogger) GetSecurityEvents(ctx context.Context, startTime, endTime time.Time, severityFilter []AuditSeverity) ([]*AuditEvent, error) {
-	if auditRepo := al.repos.Audit(); auditRepo != nil {
+	if al.auditRepo != nil {
 		var events []*AuditEvent
 		for _, severity := range severityFilter {
-			logs, _, err := auditRepo.GetSecurityEvents(ctx, string(severity), startTime, endTime, 100, "")
+			logs, _, err := al.auditRepo.GetSecurityEvents(ctx, string(severity), startTime, endTime, 100, "")
 			if err != nil {
 				return nil, err
 			}

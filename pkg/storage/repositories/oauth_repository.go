@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
@@ -105,10 +106,16 @@ func (r *OAuthRepository) CreateOAuthClient(ctx context.Context, client *storage
 		client.ClientSecret = secret
 	}
 
+	storedSecret, err := common.HashOAuthClientSecret(client.ClientSecret)
+	if err != nil {
+		return ErrorHandler.HandleCreateError(err, EntityOAuthClient, "client_secret_hashing")
+	}
+	client.ClientSecretHash = storedSecret
+
 	// Convert storage model to DynamORM model
 	model := &models.OAuthClient{
 		ClientID:     client.ClientID,
-		ClientSecret: client.ClientSecret,
+		ClientSecret: storedSecret,
 		Name:         client.Name,
 		Description:  client.Description,
 		RedirectURIs: client.RedirectURIs,
@@ -143,18 +150,18 @@ func (r *OAuthRepository) GetOAuthClient(ctx context.Context, clientID string) (
 
 	// Convert DynamORM model to storage model
 	return &storage.OAuthClient{
-		ClientID:     model.ClientID,
-		ClientSecret: model.ClientSecret,
-		Name:         model.Name,
-		Description:  model.Description,
-		RedirectURIs: model.RedirectURIs,
-		GrantTypes:   model.GrantTypes,
-		Scopes:       model.Scopes,
-		Website:      model.Website,
-		OwnerID:      model.OwnerID,
-		Confidential: model.Confidential,
-		CreatedAt:    model.CreatedAt,
-		UpdatedAt:    model.UpdatedAt,
+		ClientID:         model.ClientID,
+		ClientSecretHash: model.ClientSecret,
+		Name:             model.Name,
+		Description:      model.Description,
+		RedirectURIs:     model.RedirectURIs,
+		GrantTypes:       model.GrantTypes,
+		Scopes:           model.Scopes,
+		Website:          model.Website,
+		OwnerID:          model.OwnerID,
+		Confidential:     model.Confidential,
+		CreatedAt:        model.CreatedAt,
+		UpdatedAt:        model.UpdatedAt,
 	}, nil
 }
 
@@ -225,7 +232,7 @@ func (r *OAuthRepository) UpdateOAuthClient(ctx context.Context, clientID string
 	// Convert to DynamORM model
 	model := &models.OAuthClient{
 		ClientID:     existing.ClientID,
-		ClientSecret: existing.ClientSecret,
+		ClientSecret: existing.ClientSecretHash,
 		Name:         existing.Name,
 		Description:  existing.Description,
 		RedirectURIs: existing.RedirectURIs,

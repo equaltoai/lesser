@@ -10,15 +10,15 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/streamer"
 	"go.uber.org/zap"
 )
 
 // ShutdownManager manages graceful shutdown of WebSocket connections and backpressure control
 type ShutdownManager struct {
-	connRepo  *repositories.StreamingConnectionRepository
+	connRepo  interfaces.StreamingConnectionRepository
 	apiClient streamer.Client
 	logger    *zap.Logger
 
@@ -92,7 +92,7 @@ func DefaultShutdownManagerConfig() *ShutdownManagerConfig {
 
 // NewShutdownManager creates a new shutdown manager
 func NewShutdownManager(
-	connRepo *repositories.StreamingConnectionRepository,
+	connRepo interfaces.StreamingConnectionRepository,
 	apiClient streamer.Client,
 	logger *zap.Logger,
 	config *ShutdownManagerConfig,

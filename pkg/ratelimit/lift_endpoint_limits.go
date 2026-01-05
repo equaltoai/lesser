@@ -136,7 +136,7 @@ func getCachedRateLimiter(cacheKey, region, tableName string, cfg endpointRateLi
 	}
 
 	// Create new rate limiter using Limited library
-	limiter, err := liftMiddleware.LimitedRateLimit(liftMiddleware.LimitedConfig{
+	limiter, err := limitedRateLimitFunc(liftMiddleware.LimitedConfig{
 		Region:    region,
 		TableName: tableName,
 		Window:    cfg.window,

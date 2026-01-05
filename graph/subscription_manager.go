@@ -10,8 +10,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
@@ -34,7 +34,7 @@ const (
 //nolint:revive // Named this way for clarity in a codebase with multiple subscription types
 type GraphQLSubscriptionManager struct {
 	logger           *zap.Logger
-	connRepo         *repositories.StreamingConnectionRepository
+	connRepo         interfaces.StreamingConnectionRepository
 	publisher        streaming.Publisher
 	converter        *EventConverter
 	subscriptions    map[string]*GraphQLSubscription
@@ -62,7 +62,7 @@ type GraphQLSubscription struct {
 
 // NewGraphQLSubscriptionManager creates a new GraphQL subscription manager with DynamoDB backing
 func NewGraphQLSubscriptionManager(
-	connRepo *repositories.StreamingConnectionRepository,
+	connRepo interfaces.StreamingConnectionRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 ) *GraphQLSubscriptionManager {
@@ -306,7 +306,7 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 	// Create channel based on type - we'll use interface{} and let caller cast
 	var ch interface{}
 	switch subscriptionType {
-	case "timeline":
+	case ServiceTypeTimeline:
 		ch = make(chan *model.Object, channelBuffer)
 	case "notification":
 		ch = make(chan *model.Notification, channelBuffer)
@@ -314,7 +314,7 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 		ch = make(chan *model.CostUpdate, channelBuffer)
 	case "moderation":
 		ch = make(chan *moderation.ModerationDecision, channelBuffer)
-	case "trust":
+	case ServiceTypeTrust:
 		ch = make(chan *trust.TrustEdge, channelBuffer)
 	case "ai":
 		ch = make(chan *model.AIAnalysis, channelBuffer)
@@ -336,6 +336,8 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 		ch = make(chan *model.BudgetAlert, channelBuffer)
 	case "moderation_alerts":
 		ch = make(chan *model.ModerationAlert, channelBuffer)
+	case "moderation_queue":
+		ch = make(chan *model.ModerationItem, channelBuffer)
 	case "cost_alerts":
 		ch = make(chan *model.CostAlert, channelBuffer)
 	case "performance":
@@ -408,7 +410,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, u
 	}
 
 	streams := []string{streamName}
-	ch, _, err := sm.createGenericSubscription(ctx, "timeline", username, streams, 100, nil)
+	ch, _, err := sm.createGenericSubscription(ctx, ServiceTypeTimeline, username, streams, 100, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -480,7 +482,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTrustUpdates(ctx context.Contex
 	}
 
 	streams := []string{fmt.Sprintf("trust:%s", actorID)}
-	ch, _, err := sm.createGenericSubscription(ctx, "trust", actorID, streams, 20, nil)
+	ch, _, err := sm.createGenericSubscription(ctx, ServiceTypeTrust, actorID, streams, 20, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -910,6 +912,38 @@ func (sm *GraphQLSubscriptionManager) SubscribeToInfrastructureEvents(ctx contex
 	}
 
 	return ch.(chan *model.InfrastructureEvent), nil
+}
+
+// SubscribeToModerationQueueUpdate subscribes to moderation queue updates via DynamoDB-backed subscriptions
+func (sm *GraphQLSubscriptionManager) SubscribeToModerationQueueUpdate(ctx context.Context, username string, priority *model.Priority) (<-chan *model.ModerationItem, error) {
+	if !sm.IsRunning() {
+		return nil, ErrSubscriptionManagerNotRunning
+	}
+
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, ErrUsernameCannotBeEmpty
+	}
+
+	// Construct stream names
+	// Subscribe to general queue and optionally specific priority
+	streams := []string{"moderation:queue"}
+	if priority != nil {
+		streams = append(streams, fmt.Sprintf("moderation:queue:%s", *priority))
+	}
+
+	var subscriptionParams map[string]interface{}
+	if priority != nil {
+		subscriptionParams = map[string]interface{}{
+			"priority": *priority,
+		}
+	}
+
+	ch, _, err := sm.createGenericSubscription(ctx, "moderation_queue", username, streams, 100, subscriptionParams)
+	if err != nil {
+		return nil, err
+	}
+
+	return ch.(chan *model.ModerationItem), nil
 }
 
 // GetStats returns statistics about active subscriptions

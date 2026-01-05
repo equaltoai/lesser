@@ -1,365 +1,223 @@
 # Configuration Reference
 
-Lesser configuration is managed through environment variables, CDK context, and YAML configuration files.
+Lesser runtime configuration is primarily managed through environment variables (loaded via `pkg/config`).
 
-## Environment Variables
+- **Deployed stacks**: `lesser up` deploys CDK stacks that inject required environment variables into Lambda.
+- **Local development**: run `./lesser dev init` to create `.env`, then `./lesser dev`.
 
-### Instance Configuration
+## Deployment Inputs (Operators)
+
+`./lesser up` requires:
+
+- `--app <slug>`
+- `--base-domain <example.com>` (must exist as a public Route53 hosted zone)
+- `--aws-profile <profile>`
+
+If a bootstrap mnemonic is generated on first deploy, `--out <path>` is required to persist it locally.
+
+## Runtime Environment Variables
+
+### Baseline (set by CDK in deployed stacks)
+
+These are injected by infrastructure. You typically only set them manually for local development/testing.
+
+- `ENVIRONMENT` (canonical: `development|staging|production`)
+- `STAGE` (canonical: `dev|staging|live`)
+- `APP_NAME`
+- `DOMAIN_NAME` (alias: `DOMAIN`)
+- `DYNAMODB_TABLE` (alias: `DYNAMO_TABLE_NAME`)
+- `S3_BUCKET_NAME` (aliases: `S3_BUCKET`, `S3_MEDIA_BUCKET`, `MEDIA_BUCKET_NAME`)
+- `PRIVATE_KEY_SECRET` (alias: `PRIVATE_KEY_SECRET_ARN`)
+- `JWT_SECRET_ARN` (or `JWT_SECRET` for local dev)
+- `WEBSOCKET_ENDPOINT` (alias: `WEBSOCKET_API_URL`)
+- Queue URLs:
+  - `IMPORT_QUEUE_URL` (alias: `IMPORT_PROCESSOR_QUEUE_URL`)
+  - `EXPORT_QUEUE_URL` (alias: `EXPORT_PROCESSOR_QUEUE_URL`)
+  - `MEDIA_QUEUE_URL` (alias: `MEDIA_PROCESSOR_QUEUE_URL`)
+  - `SCHEDULED_QUEUE_URL`
+  - `FEDERATION_DELIVERY_QUEUE_URL` (alias: `FEDERATION_QUEUE_URL`)
+  - `PUSH_NOTIFICATION_QUEUE_URL` (alias: `PUSH_QUEUE_URL`)
+- Optional:
+  - `STREAM_EVENTS_TABLE_NAME` (SSE stream event log table, if deployed)
+
+### Core (local development)
+
+`./lesser dev init` writes a default `.env` with:
 
 ```bash
-# Basic Instance Settings
-INSTANCE_TITLE="My Lesser Instance"
-INSTANCE_SHORT_DESC="A federated social network"
-INSTANCE_DESCRIPTION="Detailed description of your instance"
-INSTANCE_ADMIN_EMAIL="admin@yourdomain.com"
-INSTANCE_LANGUAGES="en,es,fr"  # Comma-separated language codes
+DOMAIN=localhost
+INSTANCE_NAME="Lesser Dev"
+AWS_REGION=us-east-1
+DYNAMO_TABLE_NAME=lesser-dev
+S3_BUCKET_NAME=lesser-dev-media
+JWT_SECRET=... # random base64
+```
 
-# Feature Flags
-FEDERATION_ENABLED=true
+Additional common local settings:
+
+```bash
+# Local DynamoDB (when using `./lesser dev dynamodb`)
+DYNAMODB_ENDPOINT=http://localhost:8000
+```
+
+### Instance Metadata + Feature Flags
+
+These control instance “about” metadata and basic product switches.
+
+```bash
+# Instance metadata
+INSTANCE_NAME="Lesser ActivityPub Server"
+INSTANCE_TITLE="Lesser Instance"
+INSTANCE_SHORT_DESC="A personal ActivityPub server"
+INSTANCE_DESCRIPTION="A lightweight, serverless ActivityPub implementation"
+INSTANCE_ADMIN_EMAIL="admin@example.com"
+INSTANCE_LANGUAGES="en" # comma-separated
+
+# Instance mode
+INSTANCE_MODE=hybrid # social|cms|hybrid
+
+# Registration + federation switches
+ALLOW_REGISTRATION=false
 REGISTRATIONS_OPEN=false
 APPROVAL_REQUIRED=true
 INVITES_ENABLED=false
+FEDERATION_ENABLED=true
 
 # Limits
 MAX_STATUS_CHARS=5000
-MAX_MEDIA_SIZE=10485760      # 10MB in bytes
-MAX_VIDEO_SIZE=41943040      # 40MB in bytes
-MAX_POLL_OPTIONS=4
-MAX_POLL_OPTION_CHARS=50
-
-# Security
-REQUIRE_EMAIL_VERIFICATION=false  # Lesser is email-free by default
-ENABLE_RATE_LIMITING=true
-ENABLE_CONTENT_FILTERING=true
+MAX_MEDIA_SIZE=10485760  # bytes
+MAX_VIDEO_SIZE=41943040  # bytes
+MAX_UPLOAD_SIZE=10485760 # bytes
+PAGE_SIZE=20
 ```
 
-### AWS Configuration
+### Operational Toggles
 
 ```bash
-# AWS Settings (usually auto-detected)
-AWS_REGION=us-east-1
-AWS_ACCOUNT_ID=123456789012
+# Logging / debugging
+LOG_LEVEL=info # debug|info|warn|error
+DEBUG=false
 
-# Optional AWS Overrides
-DYNAMODB_TABLE_NAME=lesser-main
-S3_MEDIA_BUCKET=lesser-media
-SQS_FEDERATION_QUEUE=lesser-federation
+# Disable switches (true disables the feature)
+DISABLE_METRICS=false
+DISABLE_COST_TRACKING=false
+DISABLE_RATE_LIMITING=false
+DISABLE_FEDERATION_RATE_LIMITING=false
+DISABLE_AI=false
+
+# Observability
+MONITORING_ENABLED=true
+EMF_METRICS_ENABLED=true
+XRAY_TRACING_ENABLED=false
+ENABLE_PLAYGROUND=false
+TRANSLATION_ENABLED=false
+
+# GraphQL abuse-resilience (limits + gating)
+# Introspection is disabled by default; it is enabled when DEBUG=true, ENABLE_PLAYGROUND=true,
+# or GRAPHQL_ALLOW_INTROSPECTION=true.
+GRAPHQL_ALLOW_INTROSPECTION=false
+GRAPHQL_MAX_DEPTH=12
+GRAPHQL_MAX_COMPLEXITY=500
+GRAPHQL_PARSER_TOKEN_LIMIT=15000
+GRAPHQL_REQUEST_TIMEOUT=25s
 ```
 
-### Feature Configuration
+### Moderation + ML
 
 ```bash
-# AI Features (Optional)
-ENABLE_AI_SEARCH=false
-BEDROCK_MODEL_ID=anthropic.claude-v2
-AI_MODERATION_THRESHOLD=0.8
+# AWS moderation
+DISABLE_AWS_MODERATION=false
+DISABLE_COMPREHEND=false
+DISABLE_REKOGNITION=false
+MODERATION_MODE="" # optional
 
-# Cost Management
-ENABLE_COST_TRACKING=true
-MONTHLY_BUDGET_USD=100
-BUDGET_ALERT_THRESHOLD=0.8
-COST_PER_USER_TARGET=0.10
-
-# Monitoring
-ENABLE_DETAILED_METRICS=true
-ENABLE_XRAY_TRACING=false
-LOG_LEVEL=INFO  # DEBUG, INFO, WARN, ERROR
+# Bedrock + ML moderation
+BEDROCK_MODEL_ID="anthropic.claude-3-haiku-20240307-v1:0"
+BEDROCK_TRAINING_REGION=us-east-1
+BEDROCK_INFERENCE_MODEL_ID=""
+BEDROCK_GUARDRAIL_ID=""
+BEDROCK_GUARDRAIL_VERSION="DRAFT"
+BEDROCK_CUSTOMIZATION_ROLE_ARN=""
+MODERATION_ML_ENABLED=false
+MODERATION_ML_TENANTS="tenant-a,tenant-b" # comma-separated allow list
+MODERATION_TRAINING_BUCKET_NAME=""
+MODERATION_MODEL_METADATA_TABLE=""
 ```
 
-## CDK Configuration Files
-
-### Environment Configs
-
-Located in `infra/cdk/config/`:
-
-#### development.yaml
-```yaml
-environment: development
-appName: lesser
-domain: dev.lesser.host
-memorySize: 512
-timeout: 30
-logLevel: DEBUG
-features:
-  enableMultiTenant: false
-  enableRateLimiting: true
-  enableMonitoring: true
-  enableDeletionProtection: false
-aws:
-  region: us-east-1
-  architecture: arm64
-  runtime: provided.al2023
-```
-
-#### staging.yaml
-```yaml
-environment: staging
-appName: lesser
-domain: staging.lesser.host
-memorySize: 1024
-timeout: 30
-logLevel: INFO
-features:
-  enableMultiTenant: false
-  enableRateLimiting: true
-  enableMonitoring: true
-  enableDeletionProtection: true
-aws:
-  region: us-east-1
-  architecture: arm64
-  runtime: provided.al2023
-```
-
-#### production.yaml
-```yaml
-environment: production
-appName: lesser
-domain: live.lesser.host
-memorySize: 3008
-timeout: 30
-logLevel: INFO
-features:
-  enableMultiTenant: false
-  enableRateLimiting: true
-  enableMonitoring: true
-  enableDeletionProtection: true
-  enablePointInTimeRecovery: true
-aws:
-  region: us-east-1
-  architecture: arm64
-  runtime: provided.al2023
-```
-
-For the full set of keys (DNS, monitoring thresholds, media/CloudFront, ML/Bedrock), see:
-- `infra/cdk/config/development.yaml`
-- `infra/cdk/config/staging.yaml`
-- `infra/cdk/config/production.yaml`
-
-## CDK Context Variables
-
-### Deployment Context
+### Media Streaming + CloudFront
 
 ```bash
-# Required for production
-cdk deploy --context environment=production \
-           --context domain=yourdomain.com \
-           --context certificateArn=arn:aws:acm:... \
-           --context jwtSecret=your-secret
-
-# Optional context
---context region=us-west-2
---context alertEmail=ops@yourdomain.com
---context enableWAF=true
---context enableBackups=true
+MEDIA_SOURCE_BUCKET_NAME=""
+MEDIA_STREAMING_BUCKET_NAME=""
+MEDIA_CONVERT_ENDPOINT=""
+MEDIA_CONVERT_ROLE_ARN=""
+CLOUDFRONT_DOMAIN=""
+CLOUDFRONT_KEY_PAIR_ID=""
+CLOUDFRONT_PRIVATE_KEY_PATH=""
+MANIFEST_TTL_HOURS=24
 ```
 
-### Available Context Keys
-
-| Key | Description | Required | Default |
-|-----|-------------|----------|---------|
-| environment | Deployment environment | Yes | development |
-| domain | Instance domain | Prod: Yes | - |
-| certificateArn | ACM certificate ARN | Prod: Yes | - |
-| jwtSecret | JWT signing secret | Prod: Yes | - |
-| region | AWS region | No | us-east-1 |
-| alertEmail | CloudWatch alert email | No | - |
-| enableWAF | Enable AWS WAF | No | false |
-| enableBackups | Enable automated backups | No | false |
-
-## Multi-Tenant Configuration
-
-### Tenant Resolution
+### Notifications + DLQ
 
 ```bash
-# Tenant resolution order (first match wins)
-TENANT_RESOLUTION_HEADER=X-Tenant-ID     # HTTP header
-TENANT_RESOLUTION_SUBDOMAIN=true         # Extract from subdomain
-TENANT_RESOLUTION_PATH=true              # Extract from URL path
-TENANT_RESOLUTION_JWT=true               # Extract from JWT claims
+PUSH_NOTIFICATION_TOPIC_ARN=""
+NOTIFICATION_RETRY_QUEUE_URL=""
+NOTIFICATION_DLQ_URL=""
+
+DLQ_ENABLED=false
+DLQ_MAX_RETRIES=3
+DLQ_RETRY_DELAY=60
+DLQ_FAIL_FAST=false
+DLQ_PERMANENT_ERRORS=""
+DLQ_TRANSIENT_ERRORS=""
 ```
 
-### Per-Tenant Settings
+### Privacy Hashing
+
+```bash
+ENABLE_PRIVACY_HASHING=false
+PRIVACY_MASTER_KEY="" # required when privacy hashing is enabled
+
+IP_PRIVACY_LEVEL=partial       # none|partial|full
+EMAIL_PRIVACY_LEVEL=partial    # none|partial|full
+USERNAME_PRIVACY_LEVEL=full    # none|partial|full
+PII_PRIVACY_LEVEL=full         # none|partial|full
+GENERIC_PRIVACY_LEVEL=full     # none|partial|full
+
+KEY_ROTATION_ENABLED=false
+KEY_ROTATION_INTERVAL=24h
+
+ARGON2_MEMORY=65536
+ARGON2_TIME=3
+ARGON2_THREADS=4
+ARGON2_KEY_LENGTH=32
+```
+
+## Secrets Manager Payloads
+
+`JWT_SECRET_ARN` is expected to point at a Secrets Manager secret with JSON payload:
 
 ```json
-{
-  "tenant1": {
-    "domain": "tenant1.lesser.app",
-    "features": {
-      "federationEnabled": true,
-      "registrationsOpen": false
-    },
-    "limits": {
-      "maxUsers": 1000,
-      "maxStorageGB": 100
-    }
-  }
-}
+{ "secret": "..." }
 ```
 
-## Federation Configuration
+## CDK Context Variables (Infra Contributors)
 
-### Instance Policies
+If you run CDK directly (not recommended for operators), the CDK app reads:
 
-```bash
-# Federation Modes
-FEDERATION_MODE=open          # open, allowlist, blocklist, closed
+- `app` (default: `lesser`)
+- `baseDomain` (required for stage stacks)
+- `hostedZoneId` (recommended; otherwise CDK will do a hosted zone lookup)
+- `stage` (optional): `shared|dev|staging|live|all`
+- `withStaging` (optional): `true` to include staging when deploying all stages
 
-# Federation Limits
-MAX_FEDERATION_RETRY_COUNT=5
-FEDERATION_TIMEOUT_SECONDS=30
-FEDERATION_USER_AGENT="Lesser/1.0"
-
-# Instance Blocks (comma-separated)
-BLOCKED_INSTANCES="spam.instance,bad.actor"
-ALLOWED_INSTANCES="trusted.friend,good.neighbor"
-```
-
-### Relay Configuration
+Example:
 
 ```bash
-# Optional Relay Support
-RELAY_ENABLED=false
-RELAY_INBOX_URL="https://relay.example.com/inbox"
-RELAY_FOLLOW_BACK=true
-```
-
-## Rate Limiting
-
-### API Rate Limits
-
-```bash
-# Requests per minute by endpoint
-RATE_LIMIT_STATUSES_CREATE=30
-RATE_LIMIT_MEDIA_UPLOAD=10
-RATE_LIMIT_SEARCH=60
-RATE_LIMIT_DEFAULT=300
-
-# Federation rate limits
-RATE_LIMIT_FEDERATION_INCOMING=100
-RATE_LIMIT_FEDERATION_OUTGOING=50
-```
-
-### WAF Configuration
-
-```bash
-# AWS WAF settings
-WAF_ENABLED=true
-WAF_BLOCK_THRESHOLD=2000  # Requests per 5 minutes
-WAF_RATE_BASED_RULE=true
-WAF_GEO_BLOCKING=""        # Comma-separated country codes
-```
-
-## Storage Configuration
-
-### DynamoDB Settings
-
-```bash
-# Billing mode
-DYNAMODB_BILLING_MODE=PAY_PER_REQUEST  # or PROVISIONED
-
-# If PROVISIONED:
-DYNAMODB_READ_CAPACITY=5
-DYNAMODB_WRITE_CAPACITY=5
-DYNAMODB_AUTOSCALING_ENABLED=true
-DYNAMODB_AUTOSCALING_TARGET=70  # Target utilization %
-```
-
-### S3 Configuration
-
-```bash
-# Media storage
-S3_MEDIA_PREFIX="media/"
-S3_MEDIA_MAX_SIZE_MB=40
-S3_MEDIA_ALLOWED_TYPES="image/jpeg,image/png,image/gif,video/mp4"
-
-# Lifecycle policies
-S3_LIFECYCLE_ENABLED=true
-S3_LIFECYCLE_ARCHIVE_DAYS=90
-S3_LIFECYCLE_DELETE_DAYS=365
-```
-
-## Monitoring Configuration
-
-### CloudWatch Settings
-
-```bash
-# Metrics
-METRICS_NAMESPACE="Lesser"
-METRICS_DETAILED=true
-METRICS_CUSTOM_DIMENSIONS="Environment,Tenant"
-
-# Alarms
-ALARM_ERROR_THRESHOLD=10        # Errors per 5 minutes
-ALARM_LATENCY_THRESHOLD=2000    # Milliseconds
-ALARM_THROTTLE_THRESHOLD=5      # Throttles per minute
-```
-
-### Logging
-
-```bash
-# Log retention
-LOG_RETENTION_DAYS=7   # Development
-LOG_RETENTION_DAYS=30  # Production
-
-# Log sampling
-LOG_SAMPLING_RATE=0.1  # Sample 10% of requests
-```
-
-## Security Configuration
-
-### Authentication
-
-```bash
-# JWT Settings
-JWT_ALGORITHM=RS256
-JWT_EXPIRY_HOURS=24
-JWT_REFRESH_EXPIRY_DAYS=30
-
-# OAuth Settings
-OAUTH_ENABLED=true
-OAUTH_PROVIDERS="github,google"
-OAUTH_CALLBACK_URL="https://yourdomain.com/oauth/callback"
-
-# WebAuthn
-WEBAUTHN_ENABLED=true
-WEBAUTHN_RP_NAME="Lesser Instance"
-WEBAUTHN_RP_ID="yourdomain.com"
-```
-
-### Encryption
-
-```bash
-# KMS Settings
-KMS_KEY_ALIAS="alias/lesser"
-ENCRYPT_SENSITIVE_DATA=true
-ENCRYPT_BACKUPS=true
-```
-
-## Performance Tuning
-
-### Lambda Configuration
-
-```bash
-# Memory allocation (MB)
-LAMBDA_MEMORY_API=512
-LAMBDA_MEMORY_FEDERATION=256
-LAMBDA_MEMORY_MEDIA=1024
-LAMBDA_MEMORY_AI=2048
-
-# Provisioned concurrency
-LAMBDA_PROVISIONED_API=5
-LAMBDA_PROVISIONED_FEDERATION=2
-```
-
-### Caching
-
-```bash
-# CloudFront caching
-CDN_CACHE_DEFAULT_TTL=3600      # 1 hour
-CDN_CACHE_MAX_TTL=86400         # 1 day
-CDN_CACHE_MEDIA_TTL=31536000    # 1 year
-
-# Application caching
-CACHE_USER_PROFILES=true
-CACHE_TTL_SECONDS=300
+cd infra/cdk
+AWS_PROFILE=Penny cdk deploy --all \
+  --require-approval never \
+  --context app=my-lesser \
+  --context baseDomain=example.com \
+  --context hostedZoneId=Z1234567890
 ```

@@ -7,7 +7,20 @@ echo "Date: $(date)"
 echo
 
 # Report file for detailed results
-DETAIL_FILE="INCOMPLETE_IMPLEMENTATIONS.md"
+DETAIL_FILE="report/incomplete_implementations.md"
+STATUS_FILE="report/.implementation_status_last"
+mkdir -p "$(dirname "$DETAIL_FILE")"
+
+# Keep the report signal high by excluding transient caches and generated artifacts.
+EXCLUDE_DIR_FLAGS=(
+    "--exclude-dir=.git"
+    "--exclude-dir=vendor"
+    "--exclude-dir=tmp"
+    "--exclude-dir=bin"
+    "--exclude-dir=report"
+    "--exclude-dir=node_modules"
+    "--exclude-dir=mocks"
+)
 
 # Truncate report file and write header
 {
@@ -19,7 +32,7 @@ DETAIL_FILE="INCOMPLETE_IMPLEMENTATIONS.md"
 
 # Check for "not implemented" errors
 echo "1. Checking for 'not implemented' errors..."
-mapfile -t NOT_IMPL_LIST < <(grep -r -n "not implemented" --include="*.go" . 2>/dev/null | grep -v "_test.go" | grep -v "vendor" || true)
+mapfile -t NOT_IMPL_LIST < <(grep -r -n "${EXCLUDE_DIR_FLAGS[@]}" --include="*.go" -e "not implemented" . 2>/dev/null | grep -v "_test.go" || true)
 NOT_IMPL_COUNT=${#NOT_IMPL_LIST[@]}
 echo "   Found: $NOT_IMPL_COUNT instances"
 echo
@@ -35,7 +48,7 @@ echo
 
 # Check for TODO comments
 echo "2. Checking for TODO comments..."
-mapfile -t TODO_LIST < <(grep -r -n "TODO" --include="*.go" . 2>/dev/null | grep -v "_test.go" | grep -v "vendor" || true)
+mapfile -t TODO_LIST < <(grep -r -n -E "${EXCLUDE_DIR_FLAGS[@]}" --include="*.go" -e '(^|[[:space:]])(//|/\\*)[[:space:]]*TODO([[:space:]]|:|\\(|$)' . 2>/dev/null | grep -v "_test.go" || true)
 TODO_COUNT=${#TODO_LIST[@]}
 echo "   Found: $TODO_COUNT instances"
 echo
@@ -51,7 +64,7 @@ echo
 
 # Check for context.TODO()
 echo "3. Checking for context.TODO() usage..."
-mapfile -t CONTEXT_TODO_LIST < <(grep -r -n "context.TODO()" --include="*.go" . 2>/dev/null | grep -v "_test.go" | grep -v "vendor" || true)
+mapfile -t CONTEXT_TODO_LIST < <(grep -r -n "${EXCLUDE_DIR_FLAGS[@]}" --include="*.go" -e "context.TODO()" . 2>/dev/null | grep -v "_test.go" || true)
 CONTEXT_TODO_COUNT=${#CONTEXT_TODO_LIST[@]}
 echo "   Found: $CONTEXT_TODO_COUNT instances"
 echo
@@ -88,7 +101,7 @@ echo
 
 # Check for cursor pagination TODOs
 echo "5. Checking for pagination TODOs..."
-mapfile -t PAGINATION_LIST < <(grep -r -n "cursor-based pagination" --include="*.go" pkg/storage/repositories/ 2>/dev/null || true)
+mapfile -t PAGINATION_LIST < <(grep -r -n -E "${EXCLUDE_DIR_FLAGS[@]}" --include="*.go" -e 'TODO.*(cursor|pagination)|\\b(cursor|pagination)\\b.*TODO' pkg/storage/repositories/ 2>/dev/null || true)
 PAGINATION_TODO=${#PAGINATION_LIST[@]}
 echo "   Found: $PAGINATION_TODO instances"
 echo
@@ -158,8 +171,8 @@ echo "- Context: $CONTEXT_TODO_COUNT context.TODO() to fix"
 echo
 
 # Check if getting better or worse
-if [ -f .implementation_status_last ]; then
-    LAST_TOTAL=$(cat .implementation_status_last)
+if [ -f "$STATUS_FILE" ]; then
+    LAST_TOTAL=$(cat "$STATUS_FILE")
     if [ $TOTAL_ISSUES -lt $LAST_TOTAL ]; then
         echo "✅ Progress! Reduced from $LAST_TOTAL to $TOTAL_ISSUES issues"
     elif [ $TOTAL_ISSUES -gt $LAST_TOTAL ]; then
@@ -170,7 +183,7 @@ if [ -f .implementation_status_last ]; then
 fi
 
 # Save current status
-echo $TOTAL_ISSUES > .implementation_status_last
+echo $TOTAL_ISSUES > "$STATUS_FILE"
 
 echo
-echo "For detailed list, see INCOMPLETE_IMPLEMENTATIONS.md"
+echo "For detailed list, see $DETAIL_FILE"

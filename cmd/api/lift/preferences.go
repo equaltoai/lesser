@@ -76,13 +76,13 @@ func (h *Handler) HandleGetPreferencesLift(ctx *lift.Context) error {
 func (h *Handler) HandleUpdatePreferencesLift(ctx *lift.Context) error {
 	// Authenticate user
 	username, err := h.authenticatePreferencesRequest(ctx, auth.ScopeWrite)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
 	// Parse update request
 	updateReq, err := h.parsePreferencesUpdateRequest(ctx)
-	if err != nil {
+	if err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 
@@ -93,7 +93,7 @@ func (h *Handler) HandleUpdatePreferencesLift(ctx *lift.Context) error {
 	h.applyPreferenceUpdates(prefs, updateReq)
 
 	// Save updated preferences
-	if err := h.saveUserPreferences(ctx, username, prefs); err != nil {
+	if err := h.saveUserPreferences(ctx, username, prefs); err != nil || ctx.Response.IsWritten() {
 		return err
 	}
 

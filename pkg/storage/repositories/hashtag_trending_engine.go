@@ -730,9 +730,8 @@ func (tc *TrendingCache) getTrendingResult(key string) *CachedTrendingResult {
 		return nil
 	}
 
-	// Check expiration
+	// Check expiration - don't delete under RLock; cleanup happens lazily in setTrendingResult
 	if time.Since(result.GeneratedAt) > tc.expiration {
-		delete(tc.results, key)
 		return nil
 	}
 
@@ -758,9 +757,8 @@ func (tc *TrendingCache) getHashtagMetrics(hashtag string) *CachedHashtagMetrics
 		return nil
 	}
 
-	// Check expiration
+	// Check expiration - don't delete under RLock; cleanup happens lazily in setHashtagMetrics
 	if time.Now().After(metrics.ValidUntil) {
-		delete(tc.metrics, hashtag)
 		return nil
 	}
 

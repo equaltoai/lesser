@@ -12,6 +12,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -81,14 +83,275 @@ type StorageAdapter interface {
 	GetTableName() string
 }
 
+var (
+	databaseHealthDegradedThreshold   = 5 * time.Second
+	databaseHealthDownThreshold       = 10 * time.Second
+	serviceHealthDownLatencyThreshold = 30 * time.Second
+)
+
+type scheduledStatusRepository interface {
+	CreateScheduledStatus(ctx context.Context, scheduled *storage.ScheduledStatus) error
+	GetScheduledStatus(ctx context.Context, id string) (*storage.ScheduledStatus, error)
+	GetScheduledStatuses(ctx context.Context, username string, limit int, cursor string) ([]*storage.ScheduledStatus, string, error)
+	UpdateScheduledStatus(ctx context.Context, scheduled *storage.ScheduledStatus) error
+	DeleteScheduledStatus(ctx context.Context, id string) error
+	GetDueScheduledStatuses(ctx context.Context, before time.Time, limit int) ([]*storage.ScheduledStatus, error)
+	MarkScheduledStatusPublished(ctx context.Context, id string) error
+}
+
+type actorRepository interface {
+	GetActor(ctx context.Context, username string) (*activitypub.Actor, error)
+}
+
+type objectRepository interface {
+	CreateObject(ctx context.Context, object interface{}) error
+	GetObject(ctx context.Context, objectID string) (interface{}, error)
+	TombstoneObject(ctx context.Context, objectID, actorID string) error
+	IncrementReplyCount(ctx context.Context, objectID string) error
+}
+
+type activityRepository interface {
+	CreateActivity(ctx context.Context, activity *activitypub.Activity) error
+}
+
+type relationshipRepository interface {
+	CreateRelationship(ctx context.Context, followerUsername, followingID, activityID string) error
+	DeleteRelationship(ctx context.Context, followerUsername, followingID string) error
+	GetRelationship(ctx context.Context, followerUsername, followingID string) (*models.RelationshipRecord, error)
+	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+}
+
+type likeRepository interface {
+	CreateLike(ctx context.Context, actor, object, statusAuthorID string) (*models.Like, error)
+	DeleteLike(ctx context.Context, actor, object string) error
+	HasLiked(ctx context.Context, actor, object string) (bool, error)
+}
+
+type analyticsRepository interface {
+	RecordInstanceMetric(ctx context.Context, date, metricType string, value int64) error
+	RecordHashtagUsage(ctx context.Context, hashtag, objectID, actorID string) error
+	RecordLinkShare(ctx context.Context, url, statusID, authorID string) error
+	RecordStatusEngagement(ctx context.Context, objectID, engagementType, actorID string) error
+	GetTotalUserCount(ctx context.Context) (int, error)
+	GetActiveUserCount(ctx context.Context, days int) (int, error)
+}
+
+type userRepository interface {
+	FanOutPost(ctx context.Context, activity *activitypub.Activity) error
+}
+
+type timelineRepository interface {
+	RemoveFromTimelines(ctx context.Context, objectID string) error
+}
+
+type notificationRepository interface {
+	CreateNotification(ctx context.Context, notification *models.Notification) error
+	DeleteNotificationsByObject(ctx context.Context, objectID string) error
+}
+
+type instanceRepository interface {
+	GetInstanceRules(ctx context.Context) ([]storage.InstanceRule, error)
+}
+
+type dlqRepository interface {
+	GetDLQMessagesForReprocessing(ctx context.Context, service string, status string, limit int, cursor string) ([]*models.DLQMessage, string, error)
+}
+
+type cloudWatchMetricsRepository interface {
+	GetServiceMetrics(ctx context.Context, serviceName string, period time.Duration) (*repositories.ServiceMetrics, error)
+}
+
+type costRepository interface {
+	GetMonthlyAggregate(ctx context.Context, year, month int) (*repositories.MonthlyAggregate, error)
+	GetCostProjections(ctx context.Context, period string) (*storage.CostProjection, error)
+}
+
+type domainBlockRepository interface {
+	IsInstanceDomainBlocked(ctx context.Context, domain string) (bool, *storage.InstanceDomainBlock, error)
+}
+
+type federationRepository interface {
+	GetDomainHealthScore(ctx context.Context, domain string) (float64, error)
+}
+
+type dynamormDB interface {
+	WithContext(ctx context.Context) dynamormDB
+	Model(model any) dynamormQuery
+}
+
+type dynamormQuery interface {
+	Where(field string, op string, value any) dynamormQuery
+	Limit(limit int) dynamormQuery
+	First(dest any) error
+}
+
+type dynamormDBWrapper struct {
+	db dynamormcore.DB
+}
+
+func (w dynamormDBWrapper) WithContext(ctx context.Context) dynamormDB {
+	if w.db == nil {
+		return nil
+	}
+	return dynamormDBWrapper{db: w.db.WithContext(ctx)}
+}
+
+func (w dynamormDBWrapper) Model(model any) dynamormQuery {
+	if w.db == nil {
+		return dynamormQueryWrapper{}
+	}
+	return dynamormQueryWrapper{query: w.db.Model(model)}
+}
+
+type dynamormQueryWrapper struct {
+	query dynamormcore.Query
+}
+
+func (w dynamormQueryWrapper) Where(field string, op string, value any) dynamormQuery {
+	if w.query == nil {
+		return w
+	}
+	return dynamormQueryWrapper{query: w.query.Where(field, op, value)}
+}
+
+func (w dynamormQueryWrapper) Limit(limit int) dynamormQuery {
+	if w.query == nil {
+		return w
+	}
+	return dynamormQueryWrapper{query: w.query.Limit(limit)}
+}
+
+func (w dynamormQueryWrapper) First(dest any) error {
+	if w.query == nil {
+		return errors.New("database query not available")
+	}
+	return w.query.First(dest)
+}
+
+type storageAdapterRepositoryStorage interface {
+	Actor() actorRepository
+	Object() objectRepository
+	Activity() activityRepository
+	Relationship() relationshipRepository
+	Like() likeRepository
+	Analytics() analyticsRepository
+	User() userRepository
+	Timeline() timelineRepository
+	Notification() notificationRepository
+	ScheduledStatus() scheduledStatusRepository
+	Instance() instanceRepository
+	DLQ() dlqRepository
+	CloudWatchMetrics() cloudWatchMetricsRepository
+	Cost() costRepository
+	DomainBlock() domainBlockRepository
+	Federation() federationRepository
+
+	DB() dynamormDB
+	GetDB() interface{}
+	GetTableName() string
+	GetLogger() *zap.Logger
+}
+
+type repositoryStorageWrapper struct {
+	repos core.RepositoryStorage
+}
+
+func (w repositoryStorageWrapper) Actor() actorRepository { return w.repos.Actor() }
+func (w repositoryStorageWrapper) Object() objectRepository {
+	return w.repos.Object()
+}
+func (w repositoryStorageWrapper) Activity() activityRepository { return w.repos.Activity() }
+func (w repositoryStorageWrapper) Relationship() relationshipRepository {
+	return w.repos.Relationship()
+}
+func (w repositoryStorageWrapper) Like() likeRepository {
+	repo := w.repos.Like()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+func (w repositoryStorageWrapper) Analytics() analyticsRepository {
+	repo := w.repos.Analytics()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+func (w repositoryStorageWrapper) User() userRepository         { return w.repos.User() }
+func (w repositoryStorageWrapper) Timeline() timelineRepository { return w.repos.Timeline() }
+func (w repositoryStorageWrapper) Notification() notificationRepository {
+	return w.repos.Notification()
+}
+func (w repositoryStorageWrapper) ScheduledStatus() scheduledStatusRepository {
+	repo := w.repos.ScheduledStatus()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+func (w repositoryStorageWrapper) Instance() instanceRepository {
+	repo := w.repos.Instance()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+func (w repositoryStorageWrapper) DLQ() dlqRepository {
+	repo := w.repos.DLQ()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+func (w repositoryStorageWrapper) CloudWatchMetrics() cloudWatchMetricsRepository {
+	repo := w.repos.CloudWatchMetrics()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+func (w repositoryStorageWrapper) Cost() costRepository {
+	repo := w.repos.Cost()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+func (w repositoryStorageWrapper) DomainBlock() domainBlockRepository {
+	repo := w.repos.DomainBlock()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+func (w repositoryStorageWrapper) Federation() federationRepository {
+	repo := w.repos.Federation()
+	if repo == nil {
+		return nil
+	}
+	return repo
+}
+
+func (w repositoryStorageWrapper) DB() dynamormDB {
+	db := w.repos.GetDB()
+	if db == nil {
+		return nil
+	}
+	return dynamormDBWrapper{db: db}
+}
+func (w repositoryStorageWrapper) GetDB() interface{}     { return w.repos.GetDB() }
+func (w repositoryStorageWrapper) GetTableName() string   { return w.repos.GetTableName() }
+func (w repositoryStorageWrapper) GetLogger() *zap.Logger { return w.repos.GetLogger() }
+
 // repositoryStorageAdapter adapts core.RepositoryStorage to StorageAdapter
 type repositoryStorageAdapter struct {
-	repos core.RepositoryStorage
+	repos storageAdapterRepositoryStorage
 }
 
 // NewRepositoryStorageAdapter creates an adapter for core.RepositoryStorage
 func NewRepositoryStorageAdapter(repos core.RepositoryStorage) StorageAdapter {
-	return &repositoryStorageAdapter{repos: repos}
+	return &repositoryStorageAdapter{repos: repositoryStorageWrapper{repos: repos}}
 }
 
 // Implement StorageAdapter interface
@@ -227,7 +490,7 @@ func (r *repositoryStorageAdapter) GetTableName() string {
 // checkDatabaseHealth performs real DynamoDB health checks using DynamORM
 func (r *repositoryStorageAdapter) checkDatabaseHealth(ctx context.Context) ([]*model.DatabaseStatus, bool) {
 	tableName := r.repos.GetTableName()
-	db := r.repos.GetDB()
+	db := r.repos.DB()
 
 	status := &model.DatabaseStatus{
 		Name:        tableName,
@@ -245,8 +508,13 @@ func (r *repositoryStorageAdapter) checkDatabaseHealth(ctx context.Context) ([]*
 		SK string `dynamorm:"sk"`
 	}
 
+	if db == nil {
+		status.Status = model.HealthStatusDown
+		return []*model.DatabaseStatus{status}, false
+	}
+
 	// Try a minimal query to test database connectivity
-	err := db.Model(&healthCheck).
+	err := db.WithContext(ctx).Model(&healthCheck).
 		Where("PK", "=", "HEALTH_CHECK").
 		Where("SK", "=", "HEALTH_CHECK").
 		Limit(1).
@@ -262,11 +530,12 @@ func (r *repositoryStorageAdapter) checkDatabaseHealth(ctx context.Context) ([]*
 		return []*model.DatabaseStatus{status}, false
 	}
 
-	if latency > 5*time.Second {
-		status.Status = model.HealthStatusDegraded
-	} else if latency > 10*time.Second {
+	if latency > databaseHealthDownThreshold {
 		status.Status = model.HealthStatusDown
 		return []*model.DatabaseStatus{status}, false
+	}
+	if latency > databaseHealthDegradedThreshold {
+		status.Status = model.HealthStatusDegraded
 	}
 
 	// Get cost tracking data to estimate throughput
@@ -291,18 +560,22 @@ func (r *repositoryStorageAdapter) checkServiceHealth(ctx context.Context) ([]*m
 	}
 
 	// Test repository operations to verify API health
-	start := time.Now()
-	_, err := r.repos.Instance().GetInstanceRules(ctx)
-	latency := time.Since(start)
+	if instanceRepo := r.repos.Instance(); instanceRepo == nil {
+		apiStatus.Status = model.HealthStatusDegraded
+	} else {
+		start := time.Now()
+		_, err := instanceRepo.GetInstanceRules(ctx)
+		latency := time.Since(start)
 
-	if err != nil && !IsNotFoundError(err) {
-		apiStatus.Status = model.HealthStatusDown
-		apiStatus.ErrorRate = 1.0
-	}
+		if err != nil && !IsNotFoundError(err) {
+			apiStatus.Status = model.HealthStatusDown
+			apiStatus.ErrorRate = 1.0
+		}
 
-	if latency > 30*time.Second {
-		// Lambda timeout approaching
-		apiStatus.Status = model.HealthStatusDown
+		if latency > serviceHealthDownLatencyThreshold {
+			// Lambda timeout approaching
+			apiStatus.Status = model.HealthStatusDown
+		}
 	}
 
 	// Check database service status
@@ -352,20 +625,22 @@ func (r *repositoryStorageAdapter) checkQueueHealth(ctx context.Context) ([]*mod
 	}
 
 	// Get recent DLQ messages to assess queue health
-	recentMessages, _, err := r.repos.DLQ().GetDLQMessagesForReprocessing(ctx, "health-check", "PENDING", 100, "")
-	if err == nil {
-		dlqStatus.Depth = len(recentMessages)
-		dlqStatus.DlqCount = len(recentMessages)
+	if dlqRepo := r.repos.DLQ(); dlqRepo != nil {
+		recentMessages, _, err := dlqRepo.GetDLQMessagesForReprocessing(ctx, "health-check", "PENDING", 100, "")
+		if err == nil {
+			dlqStatus.Depth = len(recentMessages)
+			dlqStatus.DlqCount = len(recentMessages)
 
-		if err := common.ValidateSliceNotEmpty("recent_messages", recentMessages); err == nil {
-			// Find oldest message
-			oldestTime := recentMessages[0].FirstSeenAt
-			for _, msg := range recentMessages {
-				if msg.FirstSeenAt.Before(oldestTime) {
-					oldestTime = msg.FirstSeenAt
+			if err := common.ValidateSliceNotEmpty("recent_messages", recentMessages); err == nil {
+				// Find oldest message
+				oldestTime := recentMessages[0].FirstSeenAt
+				for _, msg := range recentMessages {
+					if msg.FirstSeenAt.Before(oldestTime) {
+						oldestTime = msg.FirstSeenAt
+					}
 				}
+				dlqStatus.OldestMessage = (*model.Time)(&oldestTime)
 			}
-			dlqStatus.OldestMessage = (*model.Time)(&oldestTime)
 		}
 	}
 
@@ -662,10 +937,15 @@ func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, 
 
 	if domain != "localhost" {
 		// Query federation health tracking
-		err = r.repos.GetDB().WithContext(ctx).Model(&models.FederationInstanceHealthTracking{}).
-			Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
-			Where("SK", "=", "HEALTH").
-			First(&federationHealth)
+		db := r.repos.DB()
+		if db == nil {
+			err = errors.New("database not available")
+		} else {
+			err = db.WithContext(ctx).Model(&models.FederationInstanceHealthTracking{}).
+				Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
+				Where("SK", "=", "HEALTH").
+				First(&federationHealth)
+		}
 		if err != nil {
 			// If no federation health data, create a basic assessment
 			responseTime = 1000.0   // Default 1s response time
@@ -834,10 +1114,15 @@ func (r *repositoryStorageAdapter) GetInstanceRelationships(ctx context.Context,
 
 	// Get instance health data to identify indirect connections and issues
 	var federationHealth *models.FederationInstanceHealthTracking
-	err = r.repos.GetDB().WithContext(ctx).Model(&models.FederationInstanceHealthTracking{}).
-		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
-		Where("SK", "=", "HEALTH").
-		First(&federationHealth)
+	db := r.repos.DB()
+	if db == nil {
+		err = errors.New("database not available")
+	} else {
+		err = db.WithContext(ctx).Model(&models.FederationInstanceHealthTracking{}).
+			Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
+			Where("SK", "=", "HEALTH").
+			First(&federationHealth)
+	}
 
 	if err == nil && federationHealth != nil {
 		// Use health data to determine blocking status and recommendations

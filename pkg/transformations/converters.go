@@ -4,10 +4,8 @@ package transformations
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
@@ -503,10 +501,6 @@ func generateNumericID(input string) string {
 	if hash < 0 {
 		hash = -hash
 	}
-
-	// Add some randomization to make IDs more realistic
-	randomness, _ := rand.Int(rand.Reader, big.NewInt(1000))
-	hash += randomness.Int64()
 
 	// Convert to string and ensure it's a valid numeric ID
 	return fmt.Sprintf("%d", hash)

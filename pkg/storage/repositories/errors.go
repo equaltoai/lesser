@@ -20,8 +20,21 @@ func NewErrorUtils() *ErrorUtils {
 
 // HandleNotFound converts DynamORM not found errors to domain-specific errors
 func (e *ErrorUtils) HandleNotFound(err error, entityType, identifier string) error {
+	if err == nil {
+		return nil
+	}
+
+	// Preserve expected (4xx) errors without re-wrapping them.
+	if errors.IsClientError(err) {
+		return err
+	}
+
 	if dynamormErrors.IsNotFound(err) {
-		return errors.ItemNotFoundWithID(entityType, identifier)
+		// Preserve the original DynamORM not-found sentinel in the unwrap chain so
+		// downstream guards like dynamormErrors.IsNotFound continue to work even
+		// after mapping to our domain AppError.
+		return errors.ItemNotFoundWithID(entityType, identifier).
+			WithInternalError(stdErrors.Join(err, storage.ErrNotFound))
 	}
 	return err
 }
@@ -32,8 +45,16 @@ func (e *ErrorUtils) HandleGetError(err error, entityType, identifier string) er
 		return nil
 	}
 
+	// Preserve expected (4xx) errors without re-wrapping them.
+	if errors.IsClientError(err) {
+		return err
+	}
+
 	if dynamormErrors.IsNotFound(err) {
-		return errors.ItemNotFoundWithID(entityType, identifier)
+		// Preserve the original DynamORM not-found sentinel and legacy storage not-found
+		// sentinel in the unwrap chain.
+		return errors.ItemNotFoundWithID(entityType, identifier).
+			WithInternalError(stdErrors.Join(err, storage.ErrNotFound))
 	}
 
 	return errors.FailedToGet(entityType, err)
@@ -45,8 +66,16 @@ func (e *ErrorUtils) HandleCreateError(err error, entityType, identifier string)
 		return nil
 	}
 
+	// Preserve expected (4xx) errors without re-wrapping them.
+	if errors.IsClientError(err) {
+		return err
+	}
+
 	if dynamormErrors.IsConditionFailed(err) {
-		return errors.ItemAlreadyExistsWithID(entityType, identifier)
+		// Preserve the original DynamORM condition-failed sentinel and legacy storage already-exists
+		// sentinel in the unwrap chain.
+		return errors.ItemAlreadyExistsWithID(entityType, identifier).
+			WithInternalError(stdErrors.Join(err, storage.ErrAlreadyExists))
 	}
 
 	return errors.FailedToCreate(entityType, err)
@@ -58,8 +87,16 @@ func (e *ErrorUtils) HandleUpdateError(err error, entityType, identifier string)
 		return nil
 	}
 
+	// Preserve expected (4xx) errors without re-wrapping them.
+	if errors.IsClientError(err) {
+		return err
+	}
+
 	if dynamormErrors.IsNotFound(err) {
-		return errors.ItemNotFoundWithID(entityType, identifier)
+		// Preserve the original DynamORM not-found sentinel and legacy storage not-found
+		// sentinel in the unwrap chain.
+		return errors.ItemNotFoundWithID(entityType, identifier).
+			WithInternalError(stdErrors.Join(err, storage.ErrNotFound))
 	}
 
 	return errors.FailedToUpdate(entityType, err)
@@ -72,8 +109,16 @@ func (e *ErrorUtils) HandleDeleteError(err error, entityType, _ string) error {
 	}
 
 	// For deletes, we typically don't treat "not found" as an error
+	if errors.HasCode(err, errors.CodeNotFound) {
+		return nil
+	}
 	if dynamormErrors.IsNotFound(err) {
 		return nil
+	}
+
+	// Preserve expected (4xx) errors without re-wrapping them.
+	if errors.IsClientError(err) {
+		return err
 	}
 
 	return errors.FailedToDelete(entityType, err)
@@ -83,6 +128,11 @@ func (e *ErrorUtils) HandleDeleteError(err error, entityType, _ string) error {
 func (e *ErrorUtils) HandleQueryError(err error, entityType, queryType string) error {
 	if err == nil {
 		return nil
+	}
+
+	// Preserve expected (4xx) errors without re-wrapping them.
+	if errors.IsClientError(err) {
+		return err
 	}
 
 	return errors.FailedToQuery(entityType+" ("+queryType+")", err)
@@ -116,9 +166,9 @@ const (
 	EntityRefreshToken             = "refresh token"
 	EntityOAuthClient              = "OAuth client"
 	EntityOAuthConsent             = "OAuth consent"
-	EntityWebAuthnCredential       = "WebAuthn credential" //nolint:gosec // This is just an entity name string, not a credential
+	EntityWebAuthnCredential       = "WebAuthn credential" // #nosec G101 -- entity name string, not a credential
 	EntityWebAuthnChallenge        = "WebAuthn challenge"
-	EntityWalletCredential         = "wallet credential" //nolint:gosec // This is just an entity name string, not a credential
+	EntityWalletCredential         = "wallet credential" // #nosec G101 -- entity name string, not a credential
 	EntityWalletChallenge          = "wallet challenge"
 	EntitySession                  = "session"
 	EntityPasswordReset            = "password reset"
@@ -1012,13 +1062,21 @@ func MapDynamoDBError(err error) error {
 		return nil
 	}
 
+	// Preserve canonical AppErrors (including wrapped AppErrors) without remapping
+	// them to internal server errors.
+	if errors.IsAppError(err) {
+		return err
+	}
+
 	// Check for DynamORM error types first
 	if dynamormErrors.IsNotFound(err) {
-		return storage.ErrNotFound
+		return errors.NotFound("item").
+			WithInternalError(stdErrors.Join(err, storage.ErrNotFound))
 	}
 
 	if dynamormErrors.IsConditionFailed(err) {
-		return storage.ErrAlreadyExists
+		return errors.AlreadyExists("item").
+			WithInternalError(stdErrors.Join(err, storage.ErrAlreadyExists))
 	}
 
 	// Use centralized error system for other errors
@@ -1026,22 +1084,24 @@ func MapDynamoDBError(err error) error {
 
 	// Validation errors
 	if containsAny(errStr, "validation failed", "invalid") {
-		return storage.ErrInvalidInput
+		return errors.ValidationFailedWithField("invalid input").
+			WithInternalError(stdErrors.Join(err, storage.ErrInvalidInput))
 	}
 
 	// Authorization errors
 	if containsAny(errStr, "unauthorized", "forbidden") {
-		return storage.ErrUnauthorized
+		return errors.AccessDenied("").
+			WithInternalError(stdErrors.Join(err, storage.ErrUnauthorized))
 	}
 
 	// DynamoDB throttling
 	if containsAny(errStr, "ProvisionedThroughputExceededException", "throttling") {
-		return errors.DynamoDBProvisionedThroughputExceeded()
+		return errors.DynamoDBProvisionedThroughputExceeded().WithInternalError(err)
 	}
 
 	// DynamoDB item size limit
 	if containsAny(errStr, "Item size", "ValidationException") {
-		return errors.DynamoDBItemTooLarge()
+		return errors.DynamoDBItemTooLarge().WithInternalError(err)
 	}
 
 	// Default to database operation error with internal details
@@ -1054,11 +1114,7 @@ func MapErrorWithContext(err error, context string) error {
 		return nil
 	}
 
-	mappedErr := MapDynamoDBError(err)
-	if appErr, ok := errors.AsAppError(mappedErr); ok {
-		return appErr.WithInternalMessage(context + ": " + appErr.InternalMessage)
-	}
-	return errors.WrapWithContext(mappedErr, context)
+	return errors.WrapWithContext(MapDynamoDBError(err), context)
 }
 
 // Helper function to check if string contains any of the provided substrings

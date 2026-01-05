@@ -23,13 +23,21 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
+type searchCostRecorder interface {
+	RecordSearchCost(ctx context.Context, costData *models.SearchCostTracking) error
+}
+
+type unifiedCostTracker interface {
+	TrackDynamoWrite(ctx context.Context, tableName string, units int64) error
+}
+
 // SearchIndexer handles search index operations for content
 type SearchIndexer struct {
 	db             core.DB
 	tableName      string
 	logger         *zap.Logger
-	costRepo       *repositories.SearchCostRepository
-	unifiedTracker *cost.UnifiedTracker
+	costRepo       searchCostRecorder
+	unifiedTracker unifiedCostTracker
 }
 
 // NewSearchIndexer creates a new search indexer instance
@@ -123,7 +131,7 @@ func (si *SearchIndexer) isIndexableRecord(record events.DynamoDBEventRecord) bo
 		Content string `json:"content"`
 	}
 
-	if err := stream.UnmarshalItem(record, &item); err != nil {
+	if err := unmarshalItemFn(record, &item); err != nil {
 		return false
 	}
 
@@ -217,7 +225,7 @@ func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventReco
 		PublishedAt string   `json:"published_at"`
 	}
 
-	if err := stream.UnmarshalItem(record, &item); err != nil {
+	if err := unmarshalItemFn(record, &item); err != nil {
 		return nil, pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to unmarshal stream image")
 	}
 
@@ -413,7 +421,7 @@ func (si *SearchIndexer) recordIndexingCost(ctx *lift.Context, costData *models.
 	}
 
 	// Record cost asynchronously to not impact indexing performance
-	go func() {
+	runAsyncFn(func() {
 		bgCtx := context.Background()
 		if err := si.costRepo.RecordSearchCost(bgCtx, costData); err != nil {
 			si.logger.Error("failed to record indexing cost",
@@ -421,7 +429,7 @@ func (si *SearchIndexer) recordIndexingCost(ctx *lift.Context, costData *models.
 				zap.String("content_id", costData.Query),
 				zap.Error(err))
 		}
-	}()
+	})
 
 	si.logger.Debug("indexing_cost_tracked",
 		zap.String("user_id", costData.UserID),
@@ -450,12 +458,28 @@ var (
 	db        core.DB
 )
 
+var (
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	lambdaStartFn              = lambda.Start
+	unmarshalItemFn            = stream.UnmarshalItem
+	runAsyncFn                 = func(fn func()) { go fn() }
+)
+
 func init() {
 	if common.RunningUnitTests() {
 		return
 	}
+	initializeSearchIndexer()
+}
+
+func main() {
+	runSearchIndexer()
+}
+
+func initializeSearchIndexer() {
 	// Initialize Lambda with processor configuration for search indexing
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName:        "search-indexer",
 		LambdaType:         common.LambdaTypeProcessor,
 		Version:            "1.0.0",
@@ -469,7 +493,7 @@ func init() {
 
 	// Initialize DynamORM with Lambda optimizations
 	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
+	db, err = newLambdaOptimizedClientFn(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
 		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
@@ -478,7 +502,7 @@ func init() {
 	processor = NewSearchIndexer(db, lambdaCtx.Config.DynamoTableName)
 }
 
-func main() {
+func runSearchIndexer() {
 	app := lift.New()
 	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
 	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
@@ -491,5 +515,5 @@ func main() {
 		return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
 	})
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }

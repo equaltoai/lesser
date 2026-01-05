@@ -1,13 +1,116 @@
 package reputation
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func jsonResponse(t *testing.T, status int, payload any) *http.Response {
+	t.Helper()
+
+	data, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	return &http.Response{
+		StatusCode: status,
+		Body:       io.NopCloser(bytes.NewReader(data)),
+		Header: http.Header{
+			"Content-Type": []string{"application/json"},
+		},
+	}
+}
+
+func textResponse(status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header: http.Header{
+			"Content-Type": []string{"text/plain"},
+		},
+	}
+}
+
+type staticDomainTrustRepository struct {
+	allows             []string
+	blocked            map[string]*storage.InstanceDomainBlock
+	isDomainBlockedErr error
+	getDomainAllowsErr error
+}
+
+type domainTrustWithNilAllow struct{}
+
+func (domainTrustWithNilAllow) IsDomainBlocked(_ context.Context, _ string) (bool, *storage.InstanceDomainBlock, error) {
+	return false, nil, nil
+}
+
+func (domainTrustWithNilAllow) GetDomainAllows(_ context.Context, _ int, _ string) ([]*storage.DomainAllow, string, error) {
+	return []*storage.DomainAllow{nil, {Domain: "issuer.example.com"}}, "", nil
+}
+
+func (r *staticDomainTrustRepository) IsDomainBlocked(_ context.Context, domain string) (bool, *storage.InstanceDomainBlock, error) {
+	if r == nil {
+		return false, nil, nil
+	}
+	if r.isDomainBlockedErr != nil {
+		return false, nil, r.isDomainBlockedErr
+	}
+	if len(r.blocked) == 0 {
+		return false, nil, nil
+	}
+	block, ok := r.blocked[strings.ToLower(strings.TrimSpace(domain))]
+	if !ok {
+		return false, nil, nil
+	}
+	return true, block, nil
+}
+
+func (r *staticDomainTrustRepository) GetDomainAllows(_ context.Context, limit int, _ string) ([]*storage.DomainAllow, string, error) {
+	if r == nil {
+		return nil, "", nil
+	}
+	if r.getDomainAllowsErr != nil {
+		return nil, "", r.getDomainAllowsErr
+	}
+	if len(r.allows) == 0 {
+		return nil, "", nil
+	}
+
+	if limit <= 0 || limit > len(r.allows) {
+		limit = len(r.allows)
+	}
+
+	allows := make([]*storage.DomainAllow, 0, limit)
+	for i := 0; i < limit; i++ {
+		allows = append(allows, &storage.DomainAllow{Domain: r.allows[i]})
+	}
+
+	return allows, "", nil
+}
+
+func newVerifierWithAllows(logger *zap.Logger, allowedHosts ...string) *Verifier {
+	return NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+		allows: allowedHosts,
+	})
+}
 
 func TestCanonicalizationCompatibility(t *testing.T) {
 	// Create a logger for testing
@@ -184,4 +287,888 @@ func TestCanonicalizationPerformance(t *testing.T) {
 
 	// Ensure it's reasonably fast (should be well under 1ms per operation)
 	assert.Less(t, avgDuration, time.Millisecond, "canonicalization should be fast")
+}
+
+// =============================================================================
+// Tests for VerifyPortableReputation
+// Requirements: 3.1, 3.2, 3.3, 3.4
+// =============================================================================
+
+func TestVerifyPortableReputation_ExpiredDocument(t *testing.T) {
+	// Requirements: 3.1 - WHEN VerifyPortableReputation is called with expired document
+	// THEN the Verifier SHALL return invalid with NotExpired=false
+	logger := zap.NewNop()
+
+	// Create a signer to sign the document
+	signer, err := NewSigner("", "https://issuer.example.com", logger)
+	require.NoError(t, err)
+
+	// Create a portable reputation - we'll manually set expiration after signing
+	pr := &PortableReputation{
+		Context: []string{"https://w3id.org/security/v1"},
+		Type:    "ReputationAssertion",
+		Actor:   "https://test.example.com/users/alice",
+		Reputation: &Reputation{
+			ActorID:      "https://test.example.com/users/alice",
+			InstanceURL:  "https://test.example.com",
+			TotalScore:   500,
+			CalculatedAt: time.Now().Add(-60 * 24 * time.Hour),
+			Version:      "1.0",
+		},
+	}
+
+	// Sign the document (this sets IssuedAt and ExpiresAt to valid values)
+	err = signer.SignPortableReputation(pr)
+	require.NoError(t, err)
+
+	// Now manually set the expiration to the past to simulate an expired document
+	pr.ExpiresAt = time.Now().Add(-30 * 24 * time.Hour) // Expired 30 days ago
+
+	// Create verifier (nil storage defaults to trusting all domains)
+	verifier := NewVerifier("https://test.example.com", logger, nil)
+
+	// Verify - should fail due to expiration (checked before fetching public key)
+	result, err := verifier.VerifyPortableReputation(pr)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	assert.False(t, result.NotExpired, "NotExpired should be false for expired document")
+	assert.False(t, result.Valid, "Valid should be false for expired document")
+	assert.Contains(t, result.Error, "expired")
+}
+
+func TestVerifyPortableReputation_InvalidIssuerProof(t *testing.T) {
+	// Requirements: 3.2 - WHEN VerifyPortableReputation is called with invalid issuer proof
+	// THEN the Verifier SHALL return invalid with SignatureValid=false
+	logger := zap.NewNop()
+
+	// Create a signer
+	signer, err := NewSigner("", "https://issuer.example.com", logger)
+	require.NoError(t, err)
+
+	// Create a test server that returns a DIFFERENT public key than what was used to sign
+	differentSigner, err := NewSigner("", "https://different.example.com", logger)
+	require.NoError(t, err)
+
+	// Create a portable reputation
+	pr := &PortableReputation{
+		Context:   []string{"https://w3id.org/security/v1"},
+		Type:      "ReputationAssertion",
+		Actor:     "https://test.example.com/users/alice",
+		IssuedAt:  time.Now(),
+		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		Reputation: &Reputation{
+			ActorID:      "https://test.example.com/users/alice",
+			InstanceURL:  "https://test.example.com",
+			TotalScore:   500,
+			CalculatedAt: time.Now(),
+			Version:      "1.0",
+		},
+	}
+
+	// Sign the document with original signer
+	err = signer.SignPortableReputation(pr)
+	require.NoError(t, err)
+
+	// Create verifier (nil storage defaults to trusting all domains)
+	verifier := newVerifierWithAllows(logger, "issuer.example.com")
+	verifier.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Host == "issuer.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
+				return jsonResponse(t, http.StatusOK, map[string]string{
+					"public_key": differentSigner.GetPublicKeyBase64(),
+				}), nil
+			}
+			return textResponse(http.StatusNotFound, ""), nil
+		}),
+	}
+
+	// Verify - should fail due to invalid signature (different key returned by server)
+	result, err := verifier.VerifyPortableReputation(pr)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	assert.True(t, result.NotExpired, "NotExpired should be true")
+	assert.False(t, result.SignatureValid, "SignatureValid should be false for invalid proof")
+	assert.False(t, result.Valid, "Valid should be false")
+}
+
+func TestVerifyPortableReputation_ValidDocument(t *testing.T) {
+	// Requirements: 3.4 - WHEN VerifyPortableReputation is called with valid document
+	// THEN the Verifier SHALL return valid=true
+	logger := zap.NewNop()
+
+	issuerURL := "https://issuer.example.com"
+	signer, err := NewSigner("", issuerURL, logger)
+	require.NoError(t, err)
+
+	// Create a portable reputation
+	pr := &PortableReputation{
+		Context: []string{"https://w3id.org/security/v1"},
+		Type:    "ReputationAssertion",
+		Actor:   "https://test.example.com/users/alice",
+		Reputation: &Reputation{
+			ActorID:      "https://test.example.com/users/alice",
+			InstanceURL:  "https://test.example.com",
+			TotalScore:   500,
+			CalculatedAt: time.Now(),
+			Version:      "1.0",
+		},
+	}
+
+	// Sign the document - this will set Issuer to issuerURL
+	err = signer.SignPortableReputation(pr)
+	require.NoError(t, err)
+
+	// Verify the issuer was set correctly
+	assert.Equal(t, issuerURL, pr.Issuer)
+
+	// Create verifier (nil storage defaults to trusting all domains)
+	verifier := newVerifierWithAllows(logger, "issuer.example.com")
+	verifier.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Host == "issuer.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
+				return jsonResponse(t, http.StatusOK, map[string]string{
+					"public_key": signer.GetPublicKeyBase64(),
+				}), nil
+			}
+			return textResponse(http.StatusNotFound, ""), nil
+		}),
+	}
+
+	// Verify - should succeed
+	result, err := verifier.VerifyPortableReputation(pr)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	assert.True(t, result.NotExpired, "NotExpired should be true")
+	assert.True(t, result.SignatureValid, "SignatureValid should be true")
+	assert.True(t, result.IssuerTrusted, "IssuerTrusted should be true (nil storage defaults to trust)")
+	assert.True(t, result.Valid, "Valid should be true for valid document")
+}
+
+// =============================================================================
+// Tests for getInstancePublicKey
+// Requirements: 3.5, 3.6
+// =============================================================================
+
+func TestGetInstancePublicKey_CachedKey(t *testing.T) {
+	// Requirements: 3.5 - WHEN getInstancePublicKey is called with cached key
+	// THEN the Verifier SHALL return the cached key
+	logger := zap.NewNop()
+
+	// Create a signer to get a valid public key
+	signer, err := NewSigner("", "https://cached.example.com", logger)
+	require.NoError(t, err)
+
+	instanceURL := "https://cached.example.com"
+
+	// Create an HTTP client that should NOT be called (key is cached)
+	serverCalled := false
+
+	// Create verifier
+	verifier := NewVerifier("https://test.example.com", logger, nil)
+	verifier.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			serverCalled = true
+			return textResponse(http.StatusNotFound, ""), nil
+		}),
+	}
+
+	// Pre-populate the cache with a key
+	// We need to decode the base64 public key to get the raw bytes
+	pubKeyBytes, err := base64.StdEncoding.DecodeString(signer.GetPublicKeyBase64())
+	require.NoError(t, err)
+	verifier.keyCache[instanceURL] = pubKeyBytes
+
+	// Call getInstancePublicKey - should return cached key without calling server
+	key, err := verifier.getInstancePublicKey(context.Background(), instanceURL)
+	require.NoError(t, err)
+	require.NotNil(t, key)
+
+	// Verify server was NOT called
+	assert.False(t, serverCalled, "Server should not be called when key is cached")
+
+	// Verify the returned key matches what we cached
+	assert.Equal(t, pubKeyBytes, []byte(key))
+}
+
+func TestGetInstancePublicKey_FetchFromWellKnown(t *testing.T) {
+	// Requirements: 3.6 - WHEN getInstancePublicKey is called with uncached key
+	// THEN the Verifier SHALL fetch from .well-known endpoint
+	logger := zap.NewNop()
+
+	// Create a signer to get a valid public key
+	signer, err := NewSigner("", "https://fetch.example.com", logger)
+	require.NoError(t, err)
+
+	instanceURL := "https://fetch.example.com"
+
+	// Create an HTTP client that returns the public key
+	serverCalled := false
+
+	// Create verifier with empty cache
+	verifier := NewVerifier("https://test.example.com", logger, nil)
+	verifier.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			serverCalled = true
+			if req.URL.Host == "fetch.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
+				return jsonResponse(t, http.StatusOK, map[string]string{
+					"public_key": signer.GetPublicKeyBase64(),
+				}), nil
+			}
+			return textResponse(http.StatusNotFound, ""), nil
+		}),
+	}
+
+	// Call getInstancePublicKey - should fetch from server
+	key, err := verifier.getInstancePublicKey(context.Background(), instanceURL)
+	require.NoError(t, err)
+	require.NotNil(t, key)
+
+	// Verify server WAS called
+	assert.True(t, serverCalled, "Server should be called when key is not cached")
+
+	// Verify the key was cached for future use
+	cachedKey, exists := verifier.keyCache[instanceURL]
+	assert.True(t, exists, "Key should be cached after fetch")
+	assert.Equal(t, key, cachedKey)
+}
+
+func TestGetInstancePublicKey_HTTPError(t *testing.T) {
+	// Requirements: 3.6 - Test HTTP error handling
+	logger := zap.NewNop()
+
+	instanceURL := "https://error.example.com"
+
+	// Create verifier
+	verifier := NewVerifier("https://test.example.com", logger, nil)
+	verifier.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			return textResponse(http.StatusInternalServerError, ""), nil
+		}),
+	}
+
+	// Call getInstancePublicKey - should fail due to HTTP error
+	key, err := verifier.getInstancePublicKey(context.Background(), instanceURL)
+	require.Error(t, err)
+	require.Nil(t, key)
+	assert.Contains(t, err.Error(), "unexpected status code")
+}
+
+func TestGetInstancePublicKey_InvalidResponse(t *testing.T) {
+	// Requirements: 3.6 - Test invalid response handling
+	logger := zap.NewNop()
+	instanceURL := "https://invalid.example.com"
+
+	t.Run("invalid JSON response", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, nil)
+		verifier.httpClient = &http.Client{
+			Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Host == "invalid.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
+					return textResponse(http.StatusOK, "not valid json"), nil
+				}
+				return textResponse(http.StatusNotFound, ""), nil
+			}),
+		}
+
+		key, err := verifier.getInstancePublicKey(context.Background(), instanceURL)
+		require.Error(t, err)
+		require.Nil(t, key)
+		assert.Contains(t, err.Error(), "failed to decode")
+	})
+
+	t.Run("invalid base64 public key", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, nil)
+		verifier.httpClient = &http.Client{
+			Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Host == "invalid.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
+					return jsonResponse(t, http.StatusOK, map[string]string{
+						"public_key": "not-valid-base64!!!",
+					}), nil
+				}
+				return textResponse(http.StatusNotFound, ""), nil
+			}),
+		}
+
+		key, err := verifier.getInstancePublicKey(context.Background(), instanceURL)
+		require.Error(t, err)
+		require.Nil(t, key)
+		assert.Contains(t, err.Error(), "invalid public key encoding")
+	})
+}
+
+// =============================================================================
+// Tests for isInstanceTrusted (tested indirectly through VerifyPortableReputation)
+// Requirements: 3.7, 3.8, 3.9
+// =============================================================================
+
+func TestIsInstanceTrusted_NilStorageDefaultsToTrue(t *testing.T) {
+	// Requirements: 3.9 - WHEN isInstanceTrusted is called with nil storage
+	// THEN the Verifier SHALL return false (default to rejecting)
+	logger := zap.NewNop()
+
+	issuerURL := "https://issuer.example.com"
+	signer, err := NewSigner("", issuerURL, logger)
+	require.NoError(t, err)
+
+	// Create a portable reputation
+	pr := &PortableReputation{
+		Context: []string{"https://w3id.org/security/v1"},
+		Type:    "ReputationAssertion",
+		Actor:   "https://test.example.com/users/alice",
+		Reputation: &Reputation{
+			ActorID:      "https://test.example.com/users/alice",
+			InstanceURL:  "https://test.example.com",
+			TotalScore:   500,
+			CalculatedAt: time.Now(),
+			Version:      "1.0",
+		},
+	}
+
+	// Sign the document
+	err = signer.SignPortableReputation(pr)
+	require.NoError(t, err)
+
+	serverCalled := false
+
+	// Create verifier with no allow list configured (should reject by default)
+	verifier := NewVerifier("https://test.example.com", logger, nil)
+	verifier.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			serverCalled = true
+			if req.URL.Host == "issuer.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
+				return jsonResponse(t, http.StatusOK, map[string]string{
+					"public_key": signer.GetPublicKeyBase64(),
+				}), nil
+			}
+			return textResponse(http.StatusNotFound, ""), nil
+		}),
+	}
+
+	// Verify - IssuerTrusted should be false because no allow list is configured
+	result, err := verifier.VerifyPortableReputation(pr)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	assert.False(t, serverCalled, "Server should not be called when issuer is not trusted")
+	assert.False(t, result.IssuerTrusted, "IssuerTrusted should be false without allow list")
+}
+
+func TestIsInstanceTrusted_URLParsingError(t *testing.T) {
+	// Requirements: 3.9 - Test URL parsing error handling
+	// When URL parsing fails, isInstanceTrusted should return false
+	logger := zap.NewNop()
+
+	// Create a signer
+	signer, err := NewSigner("", "https://test.example.com", logger)
+	require.NoError(t, err)
+
+	// Create a portable reputation with an invalid issuer URL
+	pr := &PortableReputation{
+		Context:   []string{"https://w3id.org/security/v1"},
+		Type:      "ReputationAssertion",
+		Actor:     "https://test.example.com/users/alice",
+		Issuer:    "://invalid-url", // Invalid URL that will fail parsing
+		IssuedAt:  time.Now(),
+		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		Reputation: &Reputation{
+			ActorID:      "https://test.example.com/users/alice",
+			InstanceURL:  "https://test.example.com",
+			TotalScore:   500,
+			CalculatedAt: time.Now(),
+			Version:      "1.0",
+		},
+	}
+
+	// Sign the reputation component only (we'll manually set the issuer proof)
+	err = signer.SignReputation(pr.Reputation)
+	require.NoError(t, err)
+
+	// Set a dummy issuer proof (it won't be verified because key fetch will fail first)
+	pr.IssuerProof = "dummy-proof"
+
+	// Create verifier with nil storage
+	verifier := NewVerifier("https://test.example.com", logger, nil)
+
+	// Verify - should fail because the issuer URL is invalid/untrusted
+	result, err := verifier.VerifyPortableReputation(pr)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// The verification should fail at the trust check stage
+	assert.False(t, result.Valid, "Valid should be false for invalid issuer URL")
+	assert.Contains(t, result.Error, "issuer is not trusted")
+}
+
+func TestTrustedInstanceURLForKeyFetch(t *testing.T) {
+	logger := zap.NewNop()
+
+	t.Run("rejects when allow list empty", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.False(t, ok)
+		assert.Empty(t, trustedURL)
+	})
+
+	t.Run("rejects when domain block check errors", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows:             []string{"issuer.example.com"},
+			isDomainBlockedErr: assert.AnError,
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.False(t, ok)
+		assert.Empty(t, trustedURL)
+	})
+
+	t.Run("rejects when domain is blocked", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows: []string{"issuer.example.com"},
+			blocked: map[string]*storage.InstanceDomainBlock{
+				"issuer.example.com": {Severity: "high"},
+			},
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.False(t, ok)
+		assert.Empty(t, trustedURL)
+	})
+
+	t.Run("rejects when domain is blocked without block record", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows: []string{"issuer.example.com"},
+			blocked: map[string]*storage.InstanceDomainBlock{
+				"issuer.example.com": nil,
+			},
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.False(t, ok)
+		assert.Empty(t, trustedURL)
+	})
+
+	t.Run("rejects when allow list fetch errors", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows:             []string{"issuer.example.com"},
+			getDomainAllowsErr: assert.AnError,
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.False(t, ok)
+		assert.Empty(t, trustedURL)
+	})
+
+	t.Run("rejects when domain not in allow list", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows: []string{"allowed.example.com"},
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.False(t, ok)
+		assert.Empty(t, trustedURL)
+	})
+
+	t.Run("allows domain and preserves non-default port", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows: []string{"issuer.example.com:8443"},
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com:8443")
+		assert.True(t, ok)
+		assert.Equal(t, "https://issuer.example.com:8443", trustedURL)
+	})
+
+	t.Run("allows ipv6 host with port", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows: []string{"[2001:db8::1]:8443"},
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://[2001:db8::1]:8443")
+		assert.True(t, ok)
+		assert.Equal(t, "https://[2001:db8::1]:8443", trustedURL)
+	})
+
+	t.Run("treats explicit default https port as no-port", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows: []string{"issuer.example.com"},
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com:443")
+		assert.True(t, ok)
+		assert.Equal(t, "https://issuer.example.com", trustedURL)
+	})
+
+	t.Run("skips nil allow entries", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, domainTrustWithNilAllow{})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.True(t, ok)
+		assert.Equal(t, "https://issuer.example.com", trustedURL)
+	})
+}
+
+func TestVerifierCheckRedirect(t *testing.T) {
+	t.Run("allows safe redirects", func(t *testing.T) {
+		req := &http.Request{URL: mustParseURL(t, "https://example.com")}
+		require.NoError(t, verifierCheckRedirect(req, nil))
+	})
+
+	t.Run("blocks unsafe redirects", func(t *testing.T) {
+		req := &http.Request{URL: mustParseURL(t, "http://localhost")}
+		require.Error(t, verifierCheckRedirect(req, nil))
+	})
+
+	t.Run("limits redirect count", func(t *testing.T) {
+		req := &http.Request{URL: mustParseURL(t, "https://example.com")}
+		via := make([]*http.Request, verifierMaxRedirects)
+		require.Error(t, verifierCheckRedirect(req, via))
+	})
+}
+
+func TestNewSSRFProtectedHTTPClient_DialContext(t *testing.T) {
+	client := newSSRFProtectedHTTPClient(zap.NewNop())
+	transport, ok := client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.NotNil(t, transport.DialContext)
+
+	t.Run("rejects invalid address", func(t *testing.T) {
+		_, err := transport.DialContext(context.Background(), "tcp", "not-a-hostport")
+		require.Error(t, err)
+	})
+
+	t.Run("rejects blocked ip", func(t *testing.T) {
+		_, err := transport.DialContext(context.Background(), "tcp", "127.0.0.1:80")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "blocked dial")
+	})
+
+	t.Run("rejects blocked hostname", func(t *testing.T) {
+		_, err := transport.DialContext(context.Background(), "tcp", "localhost:80")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "blocked dial")
+	})
+
+	t.Run("attempts dial for unblocked public ip", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+
+		_, err := transport.DialContext(ctx, "tcp", "203.0.113.1:81")
+		require.Error(t, err)
+	})
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+	return u
+}
+
+func TestIsInstanceTrusted_DomainWithPort(t *testing.T) {
+	// Test that domain extraction correctly handles ports
+	logger := zap.NewNop()
+
+	issuerURL := "https://issuer.example.com:8443"
+	signer, err := NewSigner("", issuerURL, logger)
+	require.NoError(t, err)
+
+	// Create a portable reputation
+	pr := &PortableReputation{
+		Context: []string{"https://w3id.org/security/v1"},
+		Type:    "ReputationAssertion",
+		Actor:   "https://test.example.com/users/alice",
+		Reputation: &Reputation{
+			ActorID:      "https://test.example.com/users/alice",
+			InstanceURL:  "https://test.example.com",
+			TotalScore:   500,
+			CalculatedAt: time.Now(),
+			Version:      "1.0",
+		},
+	}
+
+	// Sign the document
+	err = signer.SignPortableReputation(pr)
+	require.NoError(t, err)
+
+	// Create verifier with nil storage
+	verifier := newVerifierWithAllows(logger, "issuer.example.com:8443")
+	verifier.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Host == "issuer.example.com:8443" && req.URL.Path == "/.well-known/reputation-keys" {
+				return jsonResponse(t, http.StatusOK, map[string]string{
+					"public_key": signer.GetPublicKeyBase64(),
+				}), nil
+			}
+			return textResponse(http.StatusNotFound, ""), nil
+		}),
+	}
+
+	// Verify - should succeed even with port in URL
+	result, err := verifier.VerifyPortableReputation(pr)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	assert.True(t, result.Valid, "Valid should be true even with port in issuer URL")
+}
+
+// =============================================================================
+// Tests for VerifyVouchSignature
+// Requirements: 3.10, 3.11
+// =============================================================================
+
+func TestVerifyVouchSignature_ValidSignature(t *testing.T) {
+	// Requirements: 3.10 - WHEN VerifyVouchSignature is called with valid signature
+	// THEN the Verifier SHALL return true
+	logger := zap.NewNop()
+
+	issuerURL := "https://issuer.example.com"
+	signer, err := NewSigner("", issuerURL, logger)
+	require.NoError(t, err)
+
+	// Create and sign a vouch
+	vouch := &Vouch{
+		ID:          "https://test.example.com/vouches/1",
+		From:        "https://test.example.com/users/alice",
+		To:          "https://test.example.com/users/bob",
+		InstanceURL: issuerURL,
+		CreatedAt:   time.Now(),
+		ExpiresAt:   time.Now().Add(180 * 24 * time.Hour),
+		Confidence:  0.9,
+		Context:     "colleague",
+		Active:      true,
+	}
+
+	err = signer.SignVouch(vouch)
+	require.NoError(t, err)
+	require.NotEmpty(t, vouch.Signature)
+
+	// Create verifier
+	verifier := newVerifierWithAllows(logger, "issuer.example.com")
+	verifier.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Host == "issuer.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
+				return jsonResponse(t, http.StatusOK, map[string]string{
+					"public_key": signer.GetPublicKeyBase64(),
+				}), nil
+			}
+			return textResponse(http.StatusNotFound, ""), nil
+		}),
+	}
+
+	// Verify the signature
+	valid, err := verifier.VerifyVouchSignature(vouch)
+	require.NoError(t, err)
+	assert.True(t, valid, "Valid signature should return true")
+}
+
+func TestVerifyVouchSignature_InvalidSignature(t *testing.T) {
+	// Requirements: 3.11 - WHEN VerifyVouchSignature is called with invalid signature
+	// THEN the Verifier SHALL return false
+	logger := zap.NewNop()
+
+	// Create a signer for signing
+	signer, err := NewSigner("", "https://signer.example.com", logger)
+	require.NoError(t, err)
+
+	// Create a different signer whose key will be returned by the server
+	differentSigner, err := NewSigner("", "https://different.example.com", logger)
+	require.NoError(t, err)
+
+	// Create and sign a vouch with the original signer
+	issuerURL := "https://issuer.example.com"
+	vouch := &Vouch{
+		ID:          "https://test.example.com/vouches/1",
+		From:        "https://test.example.com/users/alice",
+		To:          "https://test.example.com/users/bob",
+		InstanceURL: issuerURL, // Points to server returning different key
+		CreatedAt:   time.Now(),
+		ExpiresAt:   time.Now().Add(180 * 24 * time.Hour),
+		Confidence:  0.9,
+		Context:     "colleague",
+		Active:      true,
+	}
+
+	err = signer.SignVouch(vouch)
+	require.NoError(t, err)
+
+	// Create verifier
+	verifier := newVerifierWithAllows(logger, "issuer.example.com")
+	verifier.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Host == "issuer.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
+				return jsonResponse(t, http.StatusOK, map[string]string{
+					"public_key": differentSigner.GetPublicKeyBase64(),
+				}), nil
+			}
+			return textResponse(http.StatusNotFound, ""), nil
+		}),
+	}
+
+	// Verify the signature - should fail because server returns different key
+	valid, err := verifier.VerifyVouchSignature(vouch)
+	require.NoError(t, err)
+	assert.False(t, valid, "Invalid signature should return false")
+}
+
+func TestVerifyVouchSignature_KeyFetchError(t *testing.T) {
+	// Requirements: 3.11 - Test key fetch error handling
+	logger := zap.NewNop()
+
+	// Create a signer
+	signer, err := NewSigner("", "https://test.example.com", logger)
+	require.NoError(t, err)
+
+	// Create and sign a vouch
+	issuerURL := "https://issuer.example.com"
+	vouch := &Vouch{
+		ID:          "https://test.example.com/vouches/1",
+		From:        "https://test.example.com/users/alice",
+		To:          "https://test.example.com/users/bob",
+		InstanceURL: issuerURL, // Points to server that returns error
+		CreatedAt:   time.Now(),
+		ExpiresAt:   time.Now().Add(180 * 24 * time.Hour),
+		Confidence:  0.9,
+		Context:     "colleague",
+		Active:      true,
+	}
+
+	err = signer.SignVouch(vouch)
+	require.NoError(t, err)
+
+	// Create verifier
+	verifier := newVerifierWithAllows(logger, "issuer.example.com")
+	verifier.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			return textResponse(http.StatusInternalServerError, ""), nil
+		}),
+	}
+
+	// Verify the signature - should fail due to key fetch error
+	valid, err := verifier.VerifyVouchSignature(vouch)
+	require.Error(t, err)
+	assert.False(t, valid, "Should return false when key fetch fails")
+	assert.Contains(t, err.Error(), "failed to get issuer public key")
+}
+
+func TestVerifyVouchSignature_InvalidSignatureEncoding(t *testing.T) {
+	// Test invalid signature encoding
+	logger := zap.NewNop()
+
+	// Create a signer
+	signer, err := NewSigner("", "https://test.example.com", logger)
+	require.NoError(t, err)
+
+	// Create a vouch with invalid signature encoding
+	issuerURL := "https://issuer.example.com"
+	vouch := &Vouch{
+		ID:          "https://test.example.com/vouches/1",
+		From:        "https://test.example.com/users/alice",
+		To:          "https://test.example.com/users/bob",
+		InstanceURL: issuerURL,
+		CreatedAt:   time.Now(),
+		ExpiresAt:   time.Now().Add(180 * 24 * time.Hour),
+		Confidence:  0.9,
+		Context:     "colleague",
+		Active:      true,
+		Signature:   "not-valid-base64!!!",
+	}
+
+	// Create verifier
+	verifier := newVerifierWithAllows(logger, "issuer.example.com")
+	verifier.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Host == "issuer.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
+				return jsonResponse(t, http.StatusOK, map[string]string{
+					"public_key": signer.GetPublicKeyBase64(),
+				}), nil
+			}
+			return textResponse(http.StatusNotFound, ""), nil
+		}),
+	}
+
+	// Verify the signature - should fail due to invalid encoding
+	valid, err := verifier.VerifyVouchSignature(vouch)
+	require.Error(t, err)
+	assert.False(t, valid, "Should return false for invalid signature encoding")
+	assert.Contains(t, err.Error(), "invalid signature encoding")
+}
+
+// =============================================================================
+// Tests for GetPublicKeyBase64 on Signer
+// Requirements: 3.12
+// =============================================================================
+
+func TestGetPublicKeyBase64(t *testing.T) {
+	// Requirements: 3.12 - WHEN GetPublicKeyBase64 is called on Signer
+	// THEN the Signer SHALL return the base64-encoded public key
+	logger := zap.NewNop()
+
+	t.Run("returns valid base64 encoded key", func(t *testing.T) {
+		signer, err := NewSigner("", "https://test.example.com", logger)
+		require.NoError(t, err)
+
+		pubKeyBase64 := signer.GetPublicKeyBase64()
+
+		// Verify it's not empty
+		assert.NotEmpty(t, pubKeyBase64, "Public key should not be empty")
+
+		// Verify it's valid base64
+		decoded, err := base64.StdEncoding.DecodeString(pubKeyBase64)
+		require.NoError(t, err, "Public key should be valid base64")
+
+		// Verify the decoded key has the correct length for Ed25519 (32 bytes)
+		assert.Equal(t, 32, len(decoded), "Ed25519 public key should be 32 bytes")
+	})
+
+	t.Run("returns consistent key", func(t *testing.T) {
+		signer, err := NewSigner("", "https://test.example.com", logger)
+		require.NoError(t, err)
+
+		// Call multiple times - should return the same key
+		key1 := signer.GetPublicKeyBase64()
+		key2 := signer.GetPublicKeyBase64()
+		key3 := signer.GetPublicKeyBase64()
+
+		assert.Equal(t, key1, key2, "Public key should be consistent")
+		assert.Equal(t, key2, key3, "Public key should be consistent")
+	})
+
+	t.Run("different signers have different keys", func(t *testing.T) {
+		signer1, err := NewSigner("", "https://test1.example.com", logger)
+		require.NoError(t, err)
+
+		signer2, err := NewSigner("", "https://test2.example.com", logger)
+		require.NoError(t, err)
+
+		key1 := signer1.GetPublicKeyBase64()
+		key2 := signer2.GetPublicKeyBase64()
+
+		assert.NotEqual(t, key1, key2, "Different signers should have different keys")
+	})
+
+	t.Run("key from PEM matches GetPublicKeyBase64", func(t *testing.T) {
+		// Create a signer with a generated key
+		signer, err := NewSigner("", "https://test.example.com", logger)
+		require.NoError(t, err)
+
+		pubKeyBase64 := signer.GetPublicKeyBase64()
+
+		// The public key should be usable for verification
+		// Create a reputation and sign it
+		rep := &Reputation{
+			ActorID:      "https://test.example.com/users/alice",
+			InstanceURL:  "https://test.example.com",
+			TotalScore:   500,
+			CalculatedAt: time.Now(),
+			Version:      "1.0",
+		}
+
+		err = signer.SignReputation(rep)
+		require.NoError(t, err)
+
+		// The reputation's public key should match GetPublicKeyBase64
+		assert.Equal(t, pubKeyBase64, rep.PublicKey, "Reputation public key should match GetPublicKeyBase64")
+	})
 }

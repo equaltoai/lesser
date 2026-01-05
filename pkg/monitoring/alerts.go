@@ -78,7 +78,7 @@ type WebhookConfig struct {
 // AlertManager handles production alerting
 type AlertManager struct {
 	logger        *zap.Logger
-	snsClient     *sns.Client
+	snsClient     snsAPI
 	snsTopicArn   string
 	webhookConfig *WebhookConfig
 	httpClient    *http.Client
@@ -89,7 +89,7 @@ type AlertManager struct {
 // AlertManagerConfig contains configuration for the alert manager
 type AlertManagerConfig struct {
 	Logger         *zap.Logger
-	SNSClient      *sns.Client
+	SNSClient      snsAPI
 	SNSTopicArn    string
 	WebhookURL     string
 	WebhookHeaders map[string]string

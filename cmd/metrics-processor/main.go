@@ -65,10 +65,18 @@ type Handler struct {
 	logger    *zap.Logger
 }
 
+type metricRecordWriter interface {
+	CreateMetricRecord(ctx context.Context, record *models.MetricRecord) error
+}
+
+type dlqMessageWriter interface {
+	CreateDLQMessage(ctx context.Context, message *models.DLQMessage) error
+}
+
 // MetricsStreamProcessor transforms operational data into reporting metrics
 type MetricsStreamProcessor struct {
 	repos          core.RepositoryStorage
-	reportingRepo  *repositories.MetricRecordRepository
+	reportingRepo  metricRecordWriter
 	costCalculator *CostCalculator
 	dlqHandler     *DLQHandler
 	logger         *zap.Logger
@@ -86,7 +94,7 @@ type CostCalculator struct {
 
 // DLQHandler handles dead letter queue operations for failed processing
 type DLQHandler struct {
-	dlqRepo *repositories.DLQRepository
+	dlqRepo dlqMessageWriter
 	logger  *zap.Logger
 }
 
@@ -746,10 +754,10 @@ func (h *DLQHandler) HandleStreamFailure(ctx context.Context, record *events.Dyn
 
 // generateValidatedUUID creates a UUID and validates it using common validation
 func generateValidatedUUID() string {
-	requestID := uuid.New().String()
+	requestID := newUUIDFn()
 
 	// Validate the generated UUID
-	if err := common.ValidateUUID("uuid", requestID); err != nil {
+	if err := validateUUIDFn("uuid", requestID); err != nil {
 		// Fall back to a simple timestamp-based ID if validation fails
 		return fmt.Sprintf("id_%d", time.Now().UnixNano())
 	}
@@ -766,12 +774,17 @@ var (
 	handler   *Handler
 )
 
-func init() {
-	if common.RunningUnitTests() {
-		return
-	}
-	// Standardized Lambda initialization for metrics-processor function
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+var (
+	mustInitializeLambdaFn   = common.MustInitializeLambda
+	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	lambdaStartFn            = lambda.Start
+	newUUIDFn                = func() string { return uuid.New().String() }
+	validateUUIDFn           = common.ValidateUUID
+	runningUnitTestsFn       = common.RunningUnitTests
+)
+
+func initializeMetricsProcessor() error {
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "metrics-processor",        // metrics-processor
 		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
 	})
@@ -779,16 +792,23 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	var ok bool
+	repos, ok = lambdaCtx.Repos.(core.RepositoryStorage)
+	if !ok || repos == nil {
+		return fmt.Errorf("metrics-processor invalid repository storage")
+	}
 
 	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
+	err := initializeWithDefaultsFn(lambdaCtx)
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
 	// Function-specific initialization only
-	// Initialize metrics stream processor
 	processor := NewMetricsStreamProcessor(repos, logger)
 
 	// Create handler instance
@@ -797,9 +817,28 @@ func init() {
 		repos:     repos,
 		logger:    logger,
 	}
+
+	return nil
+}
+
+func initializeMetricsProcessorOnStart() {
+	if runningUnitTestsFn() {
+		return
+	}
+	if err := initializeMetricsProcessor(); err != nil {
+		panic(err)
+	}
+}
+
+func init() {
+	initializeMetricsProcessorOnStart()
 }
 
 func main() {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	defer func() {
 		if err := logger.Sync(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to sync logger: %v\n", err)
@@ -822,5 +861,5 @@ func main() {
 		return handler.HandleDynamoDBStreamEvent(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
 	})
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }

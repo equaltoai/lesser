@@ -9,65 +9,13 @@ import (
 	"strings"
 	"time"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
-
-// AdminDomainBlockRequest represents a request to block a domain at the instance level
-type AdminDomainBlockRequest struct {
-	Domain         string `json:"domain"`
-	Severity       string `json:"severity"`        // "silence" or "suspend"
-	RejectMedia    bool   `json:"reject_media"`    // Reject media files from this domain
-	RejectReports  bool   `json:"reject_reports"`  // Reject reports from this domain
-	PrivateComment string `json:"private_comment"` // Admin-only notes
-	PublicComment  string `json:"public_comment"`  // Public reason
-	Obfuscate      bool   `json:"obfuscate"`       // Whether to obfuscate domain in public lists
-}
-
-// AdminDomainBlockResponse represents a domain block in API responses
-type AdminDomainBlockResponse struct {
-	ID             string    `json:"id"`
-	Domain         string    `json:"domain"`
-	Severity       string    `json:"severity"`
-	RejectMedia    bool      `json:"reject_media"`
-	RejectReports  bool      `json:"reject_reports"`
-	PrivateComment string    `json:"private_comment,omitempty"`
-	PublicComment  string    `json:"public_comment,omitempty"`
-	Obfuscate      bool      `json:"obfuscate"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-}
-
-// AdminDomainAllowResponse represents a domain allow in API responses
-type AdminDomainAllowResponse struct {
-	ID        string    `json:"id"`
-	Domain    string    `json:"domain"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// InstanceInfoResponse represents instance information in API responses
-type InstanceInfoResponse struct {
-	Domain        string    `json:"domain"`
-	Software      string    `json:"software,omitempty"`
-	Version       string    `json:"version,omitempty"`
-	ActiveUsers   int       `json:"active_users"`
-	TotalMessages int64     `json:"total_messages"`
-	TrustScore    float64   `json:"trust_score"`
-	FirstSeen     time.Time `json:"first_seen"`
-	LastSeen      time.Time `json:"last_seen"`
-	IsSilenced    bool      `json:"is_silenced"`
-	IsSuspended   bool      `json:"is_suspended"`
-}
-
-// EmailDomainBlockResponse represents an email domain block in API responses
-type EmailDomainBlockResponse struct {
-	ID        string    `json:"id"`
-	Domain    string    `json:"domain"`
-	CreatedAt time.Time `json:"created_at"`
-}
 
 // requireAdminLift validates admin authentication for Lift handlers
 func (h *Handler) requireAdminLift(ctx *lift.Context) (*auth.Claims, error) {
@@ -118,9 +66,9 @@ func (h *Handler) HandleGetAdminDomainBlocksLift(ctx *lift.Context) error {
 	}
 
 	// Convert to response format
-	responses := make([]AdminDomainBlockResponse, 0, len(blocks))
+	responses := make([]apimodels.AdminDomainBlockResponse, 0, len(blocks))
 	for _, block := range blocks {
-		resp := AdminDomainBlockResponse{
+		resp := apimodels.AdminDomainBlockResponse{
 			ID:             block.ID,
 			Domain:         block.Domain,
 			Severity:       block.Severity,
@@ -165,7 +113,7 @@ func (h *Handler) HandleGetAdminDomainBlockLift(ctx *lift.Context) error {
 	// Get domain block from storage
 	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context, blockID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "domain block not found"})
 		}
@@ -175,7 +123,7 @@ func (h *Handler) HandleGetAdminDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Convert to response format
-	resp := AdminDomainBlockResponse{
+	resp := apimodels.AdminDomainBlockResponse{
 		ID:             block.ID,
 		Domain:         block.Domain,
 		Severity:       block.Severity,
@@ -202,7 +150,7 @@ func (h *Handler) HandleCreateAdminDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Parse request body
-	var req AdminDomainBlockRequest
+	var req apimodels.AdminDomainBlockRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		h.logger.Debug("invalid domain block request", zap.Error(err))
 		ctx.Status(http.StatusBadRequest)
@@ -265,7 +213,7 @@ func (h *Handler) HandleCreateAdminDomainBlockLift(ctx *lift.Context) error {
 		zap.String("admin", adminClaims.Username))
 
 	// Convert to response format
-	resp := AdminDomainBlockResponse{
+	resp := apimodels.AdminDomainBlockResponse{
 		ID:             block.ID,
 		Domain:         block.Domain,
 		Severity:       block.Severity,
@@ -299,7 +247,7 @@ func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Parse request body
-	var req AdminDomainBlockRequest
+	var req apimodels.AdminDomainBlockRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		h.logger.Debug("invalid domain block update request", zap.Error(err))
 		ctx.Status(http.StatusBadRequest)
@@ -323,7 +271,7 @@ func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *lift.Context) error {
 
 	// Update domain block
 	if err := h.repos.DomainBlock().UpdateDomainBlock(ctx.Context, blockID, updates); err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "domain block not found"})
 		}
@@ -349,7 +297,7 @@ func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *lift.Context) error {
 		zap.String("admin", adminClaims.Username))
 
 	// Convert to response format
-	resp := AdminDomainBlockResponse{
+	resp := apimodels.AdminDomainBlockResponse{
 		ID:             block.ID,
 		Domain:         block.Domain,
 		Severity:       block.Severity,
@@ -385,7 +333,7 @@ func (h *Handler) HandleDeleteAdminDomainBlockLift(ctx *lift.Context) error {
 	// Get block before deletion for logging
 	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context, blockID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "domain block not found"})
 		}
@@ -411,7 +359,7 @@ func (h *Handler) HandleDeleteAdminDomainBlockLift(ctx *lift.Context) error {
 
 	// Return empty object (Mastodon compatibility)
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{})
+	return ctx.JSON(apimodels.EmptyObject{})
 }
 
 // HandleGetAdminDomainAllowsLift handles GET /api/v1/admin/domain_allows
@@ -441,9 +389,9 @@ func (h *Handler) HandleGetAdminDomainAllowsLift(ctx *lift.Context) error {
 	}
 
 	// Convert to response format
-	responses := make([]AdminDomainAllowResponse, 0, len(allows))
+	responses := make([]apimodels.AdminDomainAllowResponse, 0, len(allows))
 	for _, allow := range allows {
-		resp := AdminDomainAllowResponse{
+		resp := apimodels.AdminDomainAllowResponse{
 			ID:        allow.ID,
 			Domain:    allow.Domain,
 			CreatedAt: allow.CreatedAt,
@@ -472,9 +420,7 @@ func (h *Handler) HandleCreateAdminDomainAllowLift(ctx *lift.Context) error {
 	}
 
 	// Parse request body
-	var req struct {
-		Domain string `json:"domain"`
-	}
+	var req apimodels.AdminDomainAllowRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		h.logger.Debug("invalid domain allow request", zap.Error(err))
 		ctx.Status(http.StatusBadRequest)
@@ -521,7 +467,7 @@ func (h *Handler) HandleCreateAdminDomainAllowLift(ctx *lift.Context) error {
 		zap.String("admin", adminClaims.Username))
 
 	// Convert to response format
-	resp := AdminDomainAllowResponse{
+	resp := apimodels.AdminDomainAllowResponse{
 		ID:        allow.ID,
 		Domain:    allow.Domain,
 		CreatedAt: allow.CreatedAt,
@@ -566,7 +512,7 @@ func (h *Handler) HandleGetFederationInstancesLift(ctx *lift.Context) error {
 	}
 
 	// Convert to response format
-	responses := make([]InstanceInfoResponse, 0, len(instances))
+	responses := make([]apimodels.InstanceInfoResponse, 0, len(instances))
 	for _, instance := range instances {
 		// Check if domain is blocked
 		isBlocked, block, err := h.repos.DomainBlock().IsDomainBlocked(ctx.Context, instance.Domain)
@@ -576,7 +522,7 @@ func (h *Handler) HandleGetFederationInstancesLift(ctx *lift.Context) error {
 				zap.Error(err))
 		}
 
-		resp := InstanceInfoResponse{
+		resp := apimodels.InstanceInfoResponse{
 			Domain:        instance.Domain,
 			Software:      instance.Software,
 			Version:       instance.Version,
@@ -596,11 +542,11 @@ func (h *Handler) HandleGetFederationInstancesLift(ctx *lift.Context) error {
 	}
 
 	// Create response with pagination cursor
-	result := map[string]any{
-		"instances": responses,
+	result := apimodels.FederationInstancesResponse{
+		Instances: responses,
 	}
 	if nextCursor != "" {
-		result["next_cursor"] = nextCursor
+		result.NextCursor = &nextCursor
 	}
 
 	ctx.Status(http.StatusOK)
@@ -629,7 +575,7 @@ func (h *Handler) HandleGetFederationInstanceLift(ctx *lift.Context) error {
 	// Get instance info from storage
 	instance, err := h.repos.Federation().GetInstanceInfo(ctx.Context, domain)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "instance not found"})
 		}
@@ -646,7 +592,7 @@ func (h *Handler) HandleGetFederationInstanceLift(ctx *lift.Context) error {
 			zap.Error(err))
 	}
 
-	resp := InstanceInfoResponse{
+	resp := apimodels.InstanceInfoResponse{
 		Domain:        instance.Domain,
 		Software:      instance.Software,
 		Version:       instance.Version,
@@ -666,9 +612,9 @@ func (h *Handler) HandleGetFederationInstanceLift(ctx *lift.Context) error {
 	details := h.getFederationDetails(ctx.Context, domain)
 
 	// Create response with instance info and details
-	responseData := map[string]any{
-		"instance": resp,
-		"details":  details,
+	responseData := apimodels.FederationInstanceResponse{
+		Instance: resp,
+		Details:  details,
 	}
 
 	ctx.Status(http.StatusOK)
@@ -708,13 +654,13 @@ func (h *Handler) HandleGetFederationStatisticsLift(ctx *lift.Context) error {
 	}
 
 	// Build response
-	resp := map[string]any{
-		"active_instances": stats.ActiveInstances,
-		"total_messages":   stats.TotalMessages,
-		"total_users":      stats.TotalUsers,
-		"time_range": map[string]any{
-			"start": startTime.Format(time.RFC3339),
-			"end":   endTime.Format(time.RFC3339),
+	resp := apimodels.FederationStatisticsResponse{
+		ActiveInstances: stats.ActiveInstances,
+		TotalMessages:   stats.TotalMessages,
+		TotalUsers:      stats.TotalUsers,
+		TimeRange: apimodels.FederationStatisticsTimeRange{
+			Start: startTime.Format(time.RFC3339),
+			End:   endTime.Format(time.RFC3339),
 		},
 	}
 
@@ -749,9 +695,9 @@ func (h *Handler) HandleGetEmailDomainBlocksLift(ctx *lift.Context) error {
 	}
 
 	// Convert to response format
-	responses := make([]EmailDomainBlockResponse, 0, len(blocks))
+	responses := make([]apimodels.EmailDomainBlockResponse, 0, len(blocks))
 	for _, block := range blocks {
-		resp := EmailDomainBlockResponse{
+		resp := apimodels.EmailDomainBlockResponse{
 			ID:        block.ID,
 			Domain:    block.Domain,
 			CreatedAt: block.CreatedAt,
@@ -760,11 +706,11 @@ func (h *Handler) HandleGetEmailDomainBlocksLift(ctx *lift.Context) error {
 	}
 
 	// Create response with cursor for pagination
-	result := map[string]any{
-		"blocks": responses,
+	result := apimodels.EmailDomainBlocksResponse{
+		Blocks: responses,
 	}
 	if nextCursor != "" {
-		result["next_cursor"] = nextCursor
+		result.NextCursor = &nextCursor
 	}
 
 	ctx.Status(http.StatusOK)
@@ -781,9 +727,7 @@ func (h *Handler) HandleCreateEmailDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Parse request body
-	var req struct {
-		Domain string `json:"domain"`
-	}
+	var req apimodels.EmailDomainBlockRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		h.logger.Debug("invalid email domain block request", zap.Error(err))
 		ctx.Status(http.StatusBadRequest)
@@ -825,7 +769,7 @@ func (h *Handler) HandleCreateEmailDomainBlockLift(ctx *lift.Context) error {
 		zap.String("admin", adminClaims.Username))
 
 	// Convert to response format
-	resp := EmailDomainBlockResponse{
+	resp := apimodels.EmailDomainBlockResponse{
 		ID:        block.ID,
 		Domain:    block.Domain,
 		CreatedAt: block.CreatedAt,
@@ -861,7 +805,7 @@ func (h *Handler) adminDomainDeleteAction(ctx *lift.Context, itemType, validatio
 
 	// Delete the item
 	if err := deleteFn(itemID); err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": notFoundError})
 		}
@@ -880,7 +824,7 @@ func (h *Handler) adminDomainDeleteAction(ctx *lift.Context, itemType, validatio
 
 	// Return empty object (Mastodon compatibility)
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{})
+	return ctx.JSON(apimodels.EmptyObject{})
 }
 
 // cleanDomain removes protocol, path, and trailing slashes from a domain

@@ -137,6 +137,48 @@ func (r *BaseRepository[T]) Create(ctx context.Context, item T) error {
 	return nil
 }
 
+// CreateIfNotExists stores a new item in the database only if its primary key does not already exist.
+func (r *BaseRepository[T]) CreateIfNotExists(ctx context.Context, item T) error {
+	// Update keys before saving
+	if err := item.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleCreateError(err, "base entity keys", item.GetPK())
+	}
+
+	// Track cost if cost service is available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "PutItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  0,
+			ConsumedWriteUnits: 1, // Estimated 1 WU for item creation attempt
+			ItemCount:          1,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("%s_create_if_not_exists_%d", r.repoName, time.Now().UnixNano()),
+		}
+
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB create operation cost",
+					zap.String("repository", r.repoName),
+					zap.String("pk", item.GetPK()),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	// Create the item with a conditional check
+	err := r.db.WithContext(ctx).Model(item).IfNotExists().Create()
+	if err != nil {
+		r.logger.Error("failed to create item",
+			zap.Error(err),
+			zap.String("pk", item.GetPK()),
+			zap.String("sk", item.GetSK()))
+		return ErrorHandler.HandleCreateError(err, "base entity", item.GetPK())
+	}
+
+	return nil
+}
+
 // BatchGetItems retrieves multiple items by their keys in a single batch operation
 func (r *BaseRepository[T]) BatchGetItems(ctx context.Context, keys []map[string]interface{}) ([]T, error) {
 	if len(keys) == 0 {

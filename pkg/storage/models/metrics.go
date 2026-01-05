@@ -261,7 +261,7 @@ func (am *AggregatedMetrics) BeforeCreate() error {
 
 	// Set TTL (keep aggregated data longer)
 	ttlDays := 90
-	if am.Period == "month" {
+	if am.Period == PeriodMonth {
 		ttlDays = 365 // Keep monthly data for a year
 	}
 	am.ExpiresAt = now.Add(time.Duration(ttlDays) * 24 * time.Hour).Unix()
@@ -378,7 +378,7 @@ func isValidPeriod(period string) bool {
 		"hour":   true,
 		"day":    true,
 		"week":   true,
-		"month":  true,
+		PeriodMonth:  true,
 	}
 	return validPeriods[strings.ToLower(period)]
 }

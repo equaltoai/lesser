@@ -8,14 +8,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
 // StateSynchronizer manages connection state synchronization across multiple instances
 type StateSynchronizer struct {
-	connRepo   *repositories.StreamingConnectionRepository
+	connRepo   interfaces.StreamingConnectionRepository
 	logger     *zap.Logger
 	instanceID string
 
@@ -91,7 +91,7 @@ func generateInstanceID() string {
 
 // NewStateSynchronizer creates a new state synchronizer
 func NewStateSynchronizer(
-	connRepo *repositories.StreamingConnectionRepository,
+	connRepo interfaces.StreamingConnectionRepository,
 	logger *zap.Logger,
 	config *StateSynchronizerConfig,
 ) *StateSynchronizer {

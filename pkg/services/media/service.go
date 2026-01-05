@@ -27,17 +27,37 @@ import (
 // Service provides media operations
 type Service struct {
 	mediaRepo         interfaces.MediaRepository
-	accountRepo       interfaces.AccountRepository
+	accountRepo       accountPreferencesRepository
 	publisher         streaming.Publisher
 	jobQueue          JobQueueService
 	logger            *zap.Logger
 	s3Bucket          string
 	cdnDomain         string
 	maxFileSize       int64 // Maximum file size in bytes
-	transcoder        *transcoding.Service
-	manifestService   *transcoding.ManifestService
-	cloudfrontService *transcoding.CloudFrontService
+	transcoder        transcoderService
+	manifestService   manifestService
+	cloudfrontService cloudfrontService
 }
+
+type transcoderService interface {
+	SubmitJob(ctx context.Context, req *transcoding.TranscodeRequest) (*transcoding.TranscodeResult, error)
+	ConvertToTranscodingJob(req *transcoding.TranscodeRequest, result *transcoding.TranscodeResult) *models.TranscodingJob
+}
+
+type manifestService interface {
+	GetManifestInfo(ctx context.Context, mediaID string, outputPrefix string) (*transcoding.ManifestInfo, error)
+	PreloadManifests(ctx context.Context, mediaIDs []string) error
+}
+
+type cloudfrontService interface {
+	SignStreamingURL(mediaID, format string, quality *string, ttl time.Duration) (string, error)
+}
+
+var (
+	_ transcoderService = (*transcoding.Service)(nil)
+	_ manifestService   = (*transcoding.ManifestService)(nil)
+	_ cloudfrontService = (*transcoding.CloudFrontService)(nil)
+)
 
 // S3Service defines the interface for S3 operations (for abstraction/mocking)
 type S3Service interface {
@@ -49,6 +69,10 @@ type S3Service interface {
 // ProcessingQueue defines the interface for async media processing
 type ProcessingQueue interface {
 	QueueMediaProcessing(ctx context.Context, mediaID string, processingType string) error
+}
+
+type accountPreferencesRepository interface {
+	GetAccountPreferences(ctx context.Context, username string) (map[string]interface{}, error)
 }
 
 // JobQueueService defines the interface for job queue operations
@@ -67,7 +91,7 @@ type JobMessage struct {
 // NewService creates a new Media Service with the required dependencies
 func NewService(
 	mediaRepo interfaces.MediaRepository,
-	accountRepo interfaces.AccountRepository,
+	accountRepo accountPreferencesRepository,
 	publisher streaming.Publisher,
 	jobQueue JobQueueService,
 	logger *zap.Logger,
@@ -91,17 +115,17 @@ func NewService(
 }
 
 // SetTranscodingService sets the transcoding service (optional)
-func (s *Service) SetTranscodingService(transcoder *transcoding.Service) {
+func (s *Service) SetTranscodingService(transcoder transcoderService) {
 	s.transcoder = transcoder
 }
 
 // SetManifestService sets the manifest service (optional)
-func (s *Service) SetManifestService(manifestService *transcoding.ManifestService) {
+func (s *Service) SetManifestService(manifestService manifestService) {
 	s.manifestService = manifestService
 }
 
 // SetCloudFrontService sets the CloudFront service (optional)
-func (s *Service) SetCloudFrontService(cloudfrontService *transcoding.CloudFrontService) {
+func (s *Service) SetCloudFrontService(cloudfrontService cloudfrontService) {
 	s.cloudfrontService = cloudfrontService
 }
 
@@ -605,6 +629,10 @@ func (s *Service) checkMediaAccess(ctx context.Context, media *models.Media, vie
 func (s *Service) emitMediaUploadedEvents(ctx context.Context, media *models.Media) []*streaming.Event {
 	var events []*streaming.Event
 
+	if s.publisher == nil {
+		return events
+	}
+
 	// Create base event
 	event := &streaming.Event{
 		Type:      "media.uploaded",
@@ -628,6 +656,10 @@ func (s *Service) emitMediaUploadedEvents(ctx context.Context, media *models.Med
 
 func (s *Service) emitMediaUpdatedEvents(ctx context.Context, media *models.Media) []*streaming.Event {
 	var events []*streaming.Event
+
+	if s.publisher == nil {
+		return events
+	}
 
 	// Create base event
 	event := &streaming.Event{
@@ -653,6 +685,10 @@ func (s *Service) emitMediaUpdatedEvents(ctx context.Context, media *models.Medi
 func (s *Service) emitMediaProcessedEvents(ctx context.Context, media *models.Media) []*streaming.Event {
 	var events []*streaming.Event
 
+	if s.publisher == nil {
+		return events
+	}
+
 	// Create base event
 	event := &streaming.Event{
 		Type:      "media.processed",
@@ -676,6 +712,10 @@ func (s *Service) emitMediaProcessedEvents(ctx context.Context, media *models.Me
 
 func (s *Service) emitMediaFailedEvents(ctx context.Context, media *models.Media, errorMsg string) []*streaming.Event {
 	var events []*streaming.Event
+
+	if s.publisher == nil {
+		return events
+	}
 
 	// Create base event
 	event := &streaming.Event{

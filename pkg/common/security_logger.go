@@ -1,8 +1,12 @@
 package common // nolint:revive // "common" package name is acceptable for shared utilities
 
 import (
+	"fmt"
+	"net"
+	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/logging"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -46,7 +50,14 @@ func InitSecurityLogger() {
 	config.EncoderConfig.MessageKey = "message"
 	config.EncoderConfig.StacktraceKey = "stacktrace"
 
-	SecurityLogger, _ = config.Build()
+	logger, err := config.Build(zap.WrapCore(func(core zapcore.Core) zapcore.Core {
+		return logging.NewScrubbingCore(core, logging.GetGlobalScrubber())
+	}))
+	if err != nil {
+		SecurityLogger = zap.NewNop()
+		return
+	}
+	SecurityLogger = logger
 }
 
 // LogSecurityEvent logs a security-relevant event
@@ -72,42 +83,86 @@ func LogSecurityEvent(event string, fields ...zap.Field) {
 	}
 }
 
+func normalizeIPPrefix(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	// X-Forwarded-For style lists.
+	if idx := strings.IndexByte(raw, ','); idx >= 0 {
+		raw = strings.TrimSpace(raw[:idx])
+	}
+
+	host := raw
+	if h, _, err := net.SplitHostPort(raw); err == nil {
+		host = h
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return raw
+	}
+
+	if v4 := ip.To4(); v4 != nil {
+		return fmt.Sprintf("%d.%d.%d.0/24", v4[0], v4[1], v4[2])
+	}
+
+	v6 := ip.To16()
+	if v6 == nil {
+		return raw
+	}
+
+	// /64 prefix
+	prefix := make(net.IP, len(v6))
+	copy(prefix, v6)
+	for i := 8; i < 16; i++ {
+		prefix[i] = 0
+	}
+	return prefix.String() + "/64"
+}
+
 // LogAuthFailure logs authentication failures
-func LogAuthFailure(reason string, username string, ip string, userAgent string) {
+func LogAuthFailure(reason string, username string, ip string, userAgent string, requestID string) {
 	LogSecurityEvent(EventAuthFailure,
 		zap.String("reason", reason),
 		zap.String("username", username),
-		zap.String("ip", ip),
+		zap.String("ip", normalizeIPPrefix(ip)),
 		zap.String("user_agent", userAgent),
+		zap.String("request_id", requestID),
 	)
 }
 
 // LogCSRFFailure logs CSRF validation failures
-func LogCSRFFailure(reason string, userID string, ip string, path string) {
+func LogCSRFFailure(reason string, username string, ip string, path string, userAgent string, requestID string) {
 	LogSecurityEvent(EventCSRFFailure,
 		zap.String("reason", reason),
-		zap.String("user_id", userID),
-		zap.String("ip", ip),
+		zap.String("username", username),
+		zap.String("ip", normalizeIPPrefix(ip)),
 		zap.String("path", path),
+		zap.String("user_agent", userAgent),
+		zap.String("request_id", requestID),
 	)
 }
 
 // LogRateLimit logs rate limit exceeded events
-func LogRateLimit(userID string, ip string, endpoint string, limit int) {
+func LogRateLimit(userID string, ip string, endpoint string, limit int, requestID string) {
 	LogSecurityEvent(EventRateLimitExceed,
 		zap.String("user_id", userID),
-		zap.String("ip", ip),
+		zap.String("ip", normalizeIPPrefix(ip)),
 		zap.String("endpoint", endpoint),
 		zap.Int("limit", limit),
+		zap.String("request_id", requestID),
 	)
 }
 
 // LogSuspiciousActivity logs general suspicious activity
-func LogSuspiciousActivity(activity string, userID string, ip string, details map[string]any) {
+func LogSuspiciousActivity(activity string, userID string, ip string, details map[string]any, requestID string) {
 	fields := []zap.Field{
 		zap.String("activity", activity),
 		zap.String("user_id", userID),
-		zap.String("ip", ip),
+		zap.String("ip", normalizeIPPrefix(ip)),
+		zap.String("request_id", requestID),
 	}
 
 	// Add details as fields
@@ -140,8 +195,8 @@ type SecurityContext struct {
 func WithSecurityContext(logger *zap.Logger, ctx SecurityContext) *zap.Logger {
 	return logger.With(
 		zap.String("user_id", ctx.UserID),
-		zap.String("session_id", ctx.SessionID),
-		zap.String("ip", ctx.IP),
+		zap.String("session_id", MaskSensitiveData(ctx.SessionID)),
+		zap.String("ip", normalizeIPPrefix(ctx.IP)),
 		zap.String("user_agent", ctx.UserAgent),
 		zap.String("request_id", ctx.RequestID),
 	)

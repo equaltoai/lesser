@@ -3,10 +3,13 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -49,22 +52,58 @@ func (r *SeriesRepository) GetSeries(ctx context.Context, authorID, seriesID str
 
 // ListSeriesByAuthor lists series for an author
 func (r *SeriesRepository) ListSeriesByAuthor(ctx context.Context, authorID string, limit int) ([]*models.Series, error) {
-	var seriesList []models.Series
+	items, _, err := r.ListSeriesByAuthorPaginated(ctx, authorID, limit, "")
+	return items, err
+}
+
+// ListSeriesByAuthorPaginated lists series for an author with cursor pagination.
+// Cursor values are either full SK values (ID#...) or raw series IDs.
+func (r *SeriesRepository) ListSeriesByAuthorPaginated(ctx context.Context, authorID string, limit int, cursor string) ([]*models.Series, string, error) {
+	authorID = strings.TrimSpace(authorID)
+	if err := common.ValidateRequiredParam("authorID", authorID); err != nil {
+		return nil, "", err
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+
 	pk := fmt.Sprintf("AUTHOR#%s#SERIES", authorID)
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" && !strings.HasPrefix(cursor, "ID#") {
+		cursor = "ID#" + cursor
+	}
 
-	err := r.db.WithContext(ctx).Model(&models.Series{}).
+	return listByPKSKPrefixPaginated[*models.Series](ctx, r.db, &models.Series{}, pk, "ID#", limit, cursor)
+}
+
+// UpdateArticleCount atomically increments/decrements a series's ArticleCount.
+// Missing series are treated as a no-op to avoid breaking writes when legacy/stale IDs exist.
+func (r *SeriesRepository) UpdateArticleCount(ctx context.Context, authorID string, seriesID string, delta int) error {
+	authorID = strings.TrimSpace(authorID)
+	seriesID = strings.TrimSpace(seriesID)
+	if authorID == "" || seriesID == "" || delta == 0 {
+		return nil
+	}
+
+	pk := fmt.Sprintf("AUTHOR#%s#SERIES", authorID)
+	sk := fmt.Sprintf("ID#%s", seriesID)
+
+	err := r.GetDB().WithContext(ctx).Model(&models.Series{}).
 		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", "ID#").
-		Limit(limit).
-		All(&seriesList)
-
+		Where("SK", "=", sk).
+		UpdateBuilder().
+		Add("ArticleCount", delta).
+		Condition("ArticleCount", ">=", -delta).
+		Execute()
 	if err != nil {
-		return nil, err
+		if errors.IsNotFound(err) {
+			r.logger.Warn("series not found for article count update",
+				zap.String("author_id", authorID),
+				zap.String("series_id", seriesID))
+			return nil
+		}
+		return err
 	}
 
-	result := make([]*models.Series, len(seriesList))
-	for i := range seriesList {
-		result[i] = &seriesList[i]
-	}
-	return result, nil
+	return nil
 }

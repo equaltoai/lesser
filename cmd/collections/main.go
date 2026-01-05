@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -16,7 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -28,12 +29,23 @@ var (
 	repos     core.RepositoryStorage
 )
 
+var (
+	mustInitializeLambdaFn   = common.MustInitializeLambda
+	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	lambdaStartFn            = lambda.Start
+	newCollectionsHandlerFn  = NewCollectionsHandler
+)
+
 func init() {
 	if common.RunningUnitTests() {
 		return
 	}
+	initializeCollections()
+}
+
+func initializeCollections() {
 	// Standardized Lambda initialization with automatic service detection
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "collections",
 		LambdaType:  common.LambdaTypeAPI,
 	})
@@ -41,11 +53,18 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	storage, ok := lambdaCtx.Repos.(core.RepositoryStorage)
+	if !ok || storage == nil {
+		logger.Fatal("lambda context repository is not core.RepositoryStorage")
+	}
+	repos = storage
 
 	// Initialize with default options for API Lambda type
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
 	}
 }
@@ -65,9 +84,30 @@ const (
 
 // CollectionsHandler handles ActivityPub federation collections using Lift
 type CollectionsHandler struct {
-	actorRepo        *repositories.ActorRepository
-	relationshipRepo *repositories.RelationshipRepository
-	likeRepo         *repositories.LikeRepository
+	actorRepo        collectionsActorRepo
+	relationshipRepo collectionsRelationshipRepo
+	likeRepo         collectionsLikeRepo
+	instanceRepo     instanceStateGetter
+}
+
+type collectionsActorRepo interface {
+	GetActor(ctx context.Context, username string) (*activitypub.Actor, error)
+}
+
+type collectionsRelationshipRepo interface {
+	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
+	CountFollowers(ctx context.Context, username string) (int, error)
+	CountFollowing(ctx context.Context, username string) (int, error)
+}
+
+type collectionsLikeRepo interface {
+	GetActorLikes(ctx context.Context, actorID string, limit int, cursor string) ([]*storageModels.Like, string, error)
+	CountActorLikes(ctx context.Context, actorID string) (int64, error)
+}
+
+type instanceStateGetter interface {
+	GetInstanceState(ctx context.Context) (*storageModels.InstanceState, error)
 }
 
 // NewCollectionsHandler creates a new collections handler with standardized initialization
@@ -76,6 +116,7 @@ func NewCollectionsHandler() *CollectionsHandler {
 		actorRepo:        repos.Actor(),
 		relationshipRepo: repos.Relationship(),
 		likeRepo:         repos.Like(),
+		instanceRepo:     repos.Instance(),
 	}
 }
 
@@ -108,6 +149,11 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 	username := ctx.Param("username")
 	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return lift.ValidationError("missing username")
+	}
+
+	locked, err := ch.checkInstanceState(ctx, username)
+	if err != nil {
+		return err
 	}
 
 	// Get request ID from context
@@ -151,6 +197,11 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 		}
 	}
 
+	// While locked, collections should be reachable but empty for content-bearing collections.
+	if locked && collectionType == collectionTypeLiked {
+		return ch.handleLockedCollection(ctx, actor, collectionType, isPage)
+	}
+
 	// If not requesting a page, return the collection metadata
 	if !isPage {
 		return ch.returnCollection(ctx, actor, collectionType)
@@ -161,10 +212,82 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 		return ch.handleReverseDirection(ctx, actor, collectionType, username, cursor, limit)
 	}
 
-	// Get relationships based on type
+	usernames, likes, nextCursor, err := ch.fetchCollectionItems(ctx, collectionType, username, actor.ID, limit, cursor)
+	if err != nil {
+		logger.Error("failed to get relationships",
+			zap.String("type", collectionType),
+			zap.Error(err))
+		return lift.NewLiftError("DATABASE_ERROR", "failed to retrieve collection data", 500)
+	}
+
+	// Build and return page
+	return ch.returnCollectionPage(ctx, actor, collectionType, usernames, likes, cursor, nextCursor, limit)
+}
+
+func (ch *CollectionsHandler) checkInstanceState(ctx *lift.Context, username string) (bool, error) {
+	var state *storageModels.InstanceState
+	var stateErr error
+	if ch.instanceRepo != nil {
+		state, stateErr = ch.instanceRepo.GetInstanceState(ctx.Context)
+	} else {
+		stateErr = errors.New("missing instance repository")
+	}
+	bootstrapUsername := storageModels.DefaultBootstrapUsername
+	if stateErr == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
+		bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
+	}
+	locked := stateErr != nil || state.Locked
+	if locked && strings.EqualFold(username, bootstrapUsername) {
+		return false, lift.NewLiftError("FORBIDDEN", "bootstrap actor is not available while instance is locked", 403)
+	}
+	return locked, nil
+}
+
+func (ch *CollectionsHandler) handleLockedCollection(ctx *lift.Context, actor *activitypub.Actor, collectionType string, isPage bool) error {
+	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
+	if !isPage {
+		if err := ctx.JSON(&activitypub.OrderedCollection{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      collectionID,
+					Type:    activitypub.OrderedCollectionType,
+				},
+				TotalItems: 0,
+			},
+		}); err != nil {
+			return err
+		}
+		ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+		ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
+		return nil
+	}
+
+	if err := ctx.JSON(&activitypub.OrderedCollectionPage{
+		CollectionPage: activitypub.CollectionPage{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      fmt.Sprintf("%s?page=1", collectionID),
+					Type:    activitypub.OrderedCollectionPageType,
+				},
+				OrderedItems: []any{},
+			},
+			PartOf: collectionID,
+		},
+	}); err != nil {
+		return err
+	}
+	ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+	ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
+	return nil
+}
+
+func (ch *CollectionsHandler) fetchCollectionItems(ctx *lift.Context, collectionType, username, actorID string, limit int, cursor string) ([]string, []*storage.Like, string, error) {
 	var usernames []string
 	var likes []*storage.Like
 	var nextCursor string
+	var err error
 
 	switch collectionType {
 	case collectionTypeFollowers:
@@ -173,9 +296,9 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 		usernames, nextCursor, err = ch.relationshipRepo.GetFollowing(ctx.Context, username, limit, cursor)
 	case collectionTypeLiked:
 		// For liked collection, we get Like objects and convert to storage.Like
-		modelLikes, likesNextCursor, err := ch.likeRepo.GetActorLikes(ctx.Context, actor.ID, limit, cursor)
+		var modelLikes []*storageModels.Like
+		modelLikes, nextCursor, err = ch.likeRepo.GetActorLikes(ctx.Context, actorID, limit, cursor)
 		if err == nil {
-			nextCursor = likesNextCursor
 			// Convert models.Like to storage.Like
 			likes = make([]*storage.Like, len(modelLikes))
 			for i, modelLike := range modelLikes {
@@ -188,16 +311,7 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 			}
 		}
 	}
-
-	if err != nil {
-		logger.Error("failed to get relationships",
-			zap.String("type", collectionType),
-			zap.Error(err))
-		return lift.NewLiftError("DATABASE_ERROR", "failed to retrieve collection data", 500)
-	}
-
-	// Build and return page
-	return ch.returnCollectionPage(ctx, actor, collectionType, usernames, likes, cursor, nextCursor, limit)
+	return usernames, likes, nextCursor, err
 }
 
 // returnCollection returns the collection metadata (not a page)
@@ -254,9 +368,12 @@ func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activit
 	}
 
 	// Set ActivityPub content type and caching headers
+	if err := ctx.JSON(collection); err != nil {
+		return err
+	}
 	ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
 	ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
-	return ctx.JSON(collection)
+	return nil
 }
 
 // returnCollectionPage returns a page of the collection
@@ -329,9 +446,12 @@ func (ch *CollectionsHandler) returnCollectionPage(ctx *lift.Context, actor *act
 	}
 
 	// Set ActivityPub content type and caching headers
+	if err := ctx.JSON(page); err != nil {
+		return err
+	}
 	ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
 	ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
-	return ctx.JSON(page)
+	return nil
 }
 
 // generatePreviousCursor generates a cursor for reverse pagination
@@ -514,20 +634,27 @@ func (ch *CollectionsHandler) returnCollectionPageReverse(ctx *lift.Context, act
 	}
 
 	// Set ActivityPub content type and caching headers
+	if err := ctx.JSON(page); err != nil {
+		return err
+	}
 	ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
 	ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
-	return ctx.JSON(page)
+	return nil
 }
 
 func main() {
+	runCollections()
+}
+
+func runCollections() {
 	// Create the handler with standardized services
-	handler := NewCollectionsHandler()
+	handler := newCollectionsHandlerFn()
 
 	// Create new Lift app
 	app := lift.New()
 
 	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	app.Use(middleware.PanicRecovery(logger))
 
 	// Add request ID middleware (first - generates request ID)
 	app.Use(func(next lift.Handler) lift.Handler {
@@ -605,5 +732,5 @@ func main() {
 		return app.HandleRequest(ctx, event)
 	})
 
-	lambda.Start(standardHandler)
+	lambdaStartFn(standardHandler)
 }

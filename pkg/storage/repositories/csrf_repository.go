@@ -2,13 +2,15 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -94,7 +96,12 @@ func (r *CSRFRepository) Get(ctx context.Context, token string) (string, string,
 	// Use Enhanced BaseRepository.Get() for security validation
 	err := r.EnhancedBaseRepository.Get(ctx, pk, "TOKEN", &csrfToken)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		var appErr *apperrors.AppError
+		if stdErrors.As(err, &appErr) && appErr.Code == apperrors.CodeNotFound {
+			// Return values that indicate invalid token (matches legacy)
+			return "", "", time.Time{}, false, nil
+		}
+		if dynamormerrors.IsNotFound(err) {
 			// Return values that indicate invalid token (matches legacy)
 			return "", "", time.Time{}, false, nil
 		}
@@ -170,7 +177,11 @@ func (r *CSRFRepository) ValidateAndConsume(ctx context.Context, token string, u
 	// Get the current token record using BaseRepository
 	err = r.BaseRepository.Get(ctx, pk, "TOKEN", &csrfToken)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		var appErr *apperrors.AppError
+		if stdErrors.As(err, &appErr) && appErr.Code == apperrors.CodeNotFound {
+			return ErrorHandler.HandleGetError(ErrCSRFTokenInvalid, "csrf protection", token)
+		}
+		if dynamormerrors.IsNotFound(err) {
 			return ErrorHandler.HandleGetError(ErrCSRFTokenInvalid, "csrf protection", token)
 		}
 		r.logger.Error("failed to validate and consume CSRF token",

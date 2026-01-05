@@ -3,13 +3,15 @@
 ## Summary
 Lesser’s “all 9’s” work requires eliminating drift between:
 - `cmd/*` (what exists in code)
-- `Makefile LAMBDAS` (what is packaged to `bin/*.zip`)
+- the repo’s Lambda packaging set (what is packaged to `bin/*.zip`)
 - CDK (what is deployed and wired)
 - monitoring (what is observed)
 
-A lightweight verifier (`scripts/verify_lambda_set.sh`) checks Makefile `LAMBDAS` against `cmd/*` and any built `bin/<name>.zip` artifacts to flag set drift early.
+A lightweight verifier (`scripts/verify_lambda_set.sh`) checks the packaging set against `cmd/*` and any built
+`bin/<name>.zip` artifacts to flag set drift early.
 
-Run `make verify-inventory` to assert Makefile `LAMBDAS` == `infra/cdk/inventory/LambdaInventory` and to ensure this doc is regenerated from the inventory generator.
+Run `./lesser verify inventory` to assert the packaging set matches `infra/cdk/inventory/LambdaInventory` and to ensure
+this doc is regenerated from the inventory generator.
 
 This spec defines a single, canonical **Lambda inventory matrix** that becomes the source of truth for Specs 02–07.
 
@@ -22,12 +24,17 @@ This spec defines a single, canonical **Lambda inventory matrix** that becomes t
 - Removing Lambdas or “core-only” deployment modes (entire product is required).
 - Redesigning domain behavior beyond wiring/contract alignment.
 
-## Canonical Product Set (Must Match `Makefile LAMBDAS`)
-The inventory set is exactly the Lambdas in `Makefile` `LAMBDAS`:
+## Canonical Product Set (Must Match the Repo Lambda Set)
+The inventory set is enforced by:
+
+```bash
+./lesser verify lambda-set
+./lesser verify inventory
+```
 
 <!-- INVENTORY_TABLE_START -->
 
-> This table is generated from `infra/cdk/inventory/LambdaInventory` via `cd infra/cdk && go run ./cmd/generate-inventory`. Do not edit the table manually; update the inventory and re-run the generator.
+> This table is generated from `infra/cdk/inventory/LambdaInventory` via `./lesser generate inventory`. Do not edit the table manually; update the inventory and re-run the generator.
 
 | Name | Type | Triggers | Required Env Vars | Role | Operational Defaults |
 | --- | --- | --- | --- | --- | --- |
@@ -35,6 +42,7 @@ The inventory set is exactly the Lambdas in `Makefile` `LAMBDAS`:
 | actor | api-http | HTTP: GET /users/{username} | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | ai-processor | processor-stream | Stream: table=main-table; start=TRIM_HORIZON; batch=25; window=5s; parallel=2; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=300s; logs=7d |
 | api | api-http | HTTP: ANY /api/v1/{proxy+}<br>HTTP: ANY /api/v2/{proxy+}<br>HTTP: GET /.well-known/nodeinfo | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| cms-scheduler | processor-scheduled | Schedule: expression=rate(1 minute) | — | basic | memory=512MB; timeout=300s; logs=7d |
 | collections | api-http | HTTP: GET /users/{username}/followers<br>HTTP: GET /users/{username}/following<br>HTTP: GET /users/{username}/liked | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | cost-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=10; window=2s; parallel=1; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | dlq-processor | hybrid | SQS: queue=enhanced-federation-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=export-processor-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=federation-aggregator-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=federation-delivery-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=import-processor-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=media-processor-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=notification-processor-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=push-delivery-queue; consume=dlq; batch=10; window=1s<br>Schedule: expression=rate(15 minutes) | — | basic | memory=512MB; timeout=30s; logs=7d |
@@ -47,7 +55,7 @@ The inventory set is exactly the Lambdas in `Makefile` `LAMBDAS`:
 | graphql | api-http | HTTP: GET /api/graphql<br>HTTP: POST /api/graphql | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | graphql-ws | api-ws | — | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | import-processor | processor-sqs | SQS: queue=import-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
-| inbox | api-http | HTTP: ANY /inbox/{username} | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| inbox | api-http | HTTP: GET /users/{username}/inbox<br>HTTP: POST /users/{username}/inbox | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | media-processor | processor-sqs | SQS: queue=media-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
 | metrics-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | metrics-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
@@ -56,7 +64,7 @@ The inventory set is exactly the Lambdas in `Makefile` `LAMBDAS`:
 | note-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | notification-processor | processor-sqs | SQS: queue=notification-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
 | objects | api-http | HTTP: GET /objects/{id} | — | encryption | memory=512MB; timeout=30s; logs=7d |
-| outbox | api-http | HTTP: ANY /users/{username}/outbox | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| outbox | api-http | HTTP: GET /users/{username}/outbox<br>HTTP: POST /users/{username}/outbox | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | push-delivery | processor-sqs | SQS: queue=push-delivery-queue | VAPID_PUBLIC_KEY<br>VAPID_SUBJECT<br>VAPID_SECRET_ARN | basic | memory=512MB; timeout=30s; logs=7d |
 | report-trust-updater | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | search-indexer | processor-stream | Stream: table=main-table; start=LATEST; batch=100; window=30s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |

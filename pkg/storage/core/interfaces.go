@@ -2,6 +2,7 @@
 package core
 
 import (
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -13,13 +14,13 @@ type RepositoryStorage interface {
 	// Repository access methods - only expose the core repositories that are actually used
 	Account() *repositories.AccountRepository
 	Bookmark() *repositories.BookmarkRepository
-	Actor() *repositories.ActorRepository
-	Object() *repositories.ObjectRepository
-	Activity() *repositories.ActivityRepository
-	Timeline() *repositories.TimelineRepository
-	Notification() *repositories.NotificationRepository
+	Actor() interfaces.ActorRepository    // Returns interface type for mockability
+	Object() interfaces.ObjectRepository  // Returns interface type for mockability
+	Activity() interfaces.ActivityRepository // Returns interface type for mockability
+	Timeline() interfaces.TimelineRepository       // Returns interface type for mockability
+	Notification() interfaces.NotificationRepository // Returns interface type for mockability
 	Like() *repositories.LikeRepository
-	Moderation() *repositories.ModerationRepository
+	Moderation() interfaces.ModerationRepository // Returns interface type for mockability
 	List() *repositories.ListRepository
 	Media() *repositories.MediaRepository
 	MediaMetadata() *repositories.MediaMetadataRepository
@@ -29,17 +30,17 @@ type RepositoryStorage interface {
 	ScheduledStatus() *repositories.ScheduledStatusRepository
 	Announcement() *repositories.AnnouncementRepository
 	DomainBlock() *repositories.DomainBlockRepository
-	Relationship() *repositories.RelationshipRepository
+	Relationship() interfaces.ConcreteRelationshipRepository // Returns interface type for mockability
 	Instance() *repositories.InstanceRepository
 	Federation() *repositories.FederationRepository
 	Recovery() *repositories.RecoveryRepository
 	Analytics() *repositories.TrendingRepository // Analytics/Trending repository
 	Social() *repositories.SocialRepository
-	User() *repositories.UserRepository
-	Status() *repositories.StatusRepository
+	User() interfaces.UserRepository   // Returns interface type for mockability
+	Status() interfaces.StatusRepository // Returns interface type for mockability
 	Cost() *repositories.TrackingRepository
 	WebSocketCost() *repositories.WebSocketCostRepository
-	Trust() *repositories.TrustRepository
+	Trust() interfaces.TrustRepository
 	Search() *repositories.SearchRepository
 	Relay() *repositories.RelayRepository
 	CommunityNote() *repositories.CommunityNoteRepository
@@ -63,19 +64,19 @@ type RepositoryStorage interface {
 	Severance() *repositories.SeveranceRepository
 	ModerationML() *repositories.ModerationMLRepository
 	Quote() *repositories.QuoteRepository
-	MediaAnalytics() *repositories.MediaAnalyticsRepository
-	MediaPopularity() *repositories.MediaPopularityRepository
-	MediaSession() *repositories.MediaSessionRepository
-	StreamingConnection() *repositories.StreamingConnectionRepository
+	MediaAnalytics() interfaces.MediaAnalyticsRepository
+	MediaPopularity() interfaces.MediaPopularityRepository
+	MediaSession() interfaces.MediaSessionRepository
+	StreamingConnection() interfaces.StreamingConnectionRepository
 
-	// CMS Repositories
-	Article() *repositories.ArticleRepository
-	Draft() *repositories.DraftRepository
-	Revision() *repositories.RevisionRepository
-	Series() *repositories.SeriesRepository
-	Category() *repositories.CategoryRepository
-	Publication() *repositories.PublicationRepository
-	PublicationMember() *repositories.PublicationMemberRepository
+	// CMS Repositories (interface types for mockability)
+	Article() interfaces.ArticleRepository
+	Draft() interfaces.DraftRepository
+	Revision() interfaces.RevisionRepository
+	Series() interfaces.SeriesRepository
+	Category() interfaces.CategoryRepository
+	Publication() interfaces.PublicationRepository
+	PublicationMember() interfaces.PublicationMemberRepository
 
 	// Utility methods
 	GetDB() dynamormCore.DB

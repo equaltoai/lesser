@@ -39,25 +39,59 @@ var (
 	cfg         *config.Config
 	logger      *zap.Logger
 	repos       core.RepositoryStorage
-	authService *auth.AuthService
-	eventLog    *streaming.StreamEventLog
+	authService accessTokenValidator
+	eventLog    streamEventLog
+)
+
+type accessTokenValidator interface {
+	ValidateAccessToken(tokenString string) (*auth.EnhancedClaims, error)
+}
+
+type streamEventLog interface {
+	Enabled() bool
+	Query(ctx context.Context, streamName, afterID string, limit int32) ([]streaming.StreamEventLogItem, error)
+}
+
+var (
+	mustInitializeLambdaFn      = common.MustInitializeLambda
+	initializeWithDefaultsFn    = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	newLambdaOptimizedClientFn  = dynamorm.NewLambdaOptimizedClient
+	newRepositoryFactoryFn      = factory.NewRepositoryFactory
+	newAuthServiceFn            = func(cfg *config.Config, repos core.RepositoryStorage) (accessTokenValidator, error) {
+		return auth.NewAuthService(cfg, repos)
+	}
+	newStreamEventLogFn         = func(db dynamormCore.DB, ttl time.Duration) streamEventLog {
+		return streaming.NewStreamEventLog(db, ttl)
+	}
+	lambdaStartFn               = lambda.Start
+	timeAfterFn                 = time.After
 )
 
 func init() {
 	if common.RunningUnitTests() {
 		return
 	}
+	initializeSSE()
+}
 
-	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+func main() {
+	runSSE()
+}
+
+func initializeSSE() {
+	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName:    "sse",
 		LambdaType:     common.LambdaTypeAPI,
 		RequestTimeout: 15 * time.Minute,
 	})
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 
 	// Best-effort standardized init (currently uses placeholders; SSE relies on manual wiring below).
-	if err := lambdaCtx.InitializeWithDefaults(); err != nil {
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		logger.Debug("standardized initialization unavailable; using manual wiring", zap.Error(err))
 	}
 
@@ -74,7 +108,7 @@ func init() {
 		}
 	}
 	if db == nil {
-		manualDB, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+		manualDB, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
 		if err != nil {
 			logger.Fatal("failed to initialize DynamoDB client", zap.Error(err))
 		}
@@ -82,12 +116,12 @@ func init() {
 	}
 
 	var err error
-	repos, err = factory.NewRepositoryFactory(db, tableName, logger)
+	repos, err = newRepositoryFactoryFn(db, tableName, logger)
 	if err != nil {
 		logger.Fatal("failed to create repository factory", zap.Error(err))
 	}
 
-	authService, err = auth.NewAuthService(cfg, repos)
+	authService, err = newAuthServiceFn(cfg, repos)
 	if err != nil {
 		logger.Fatal("failed to initialize auth service", zap.Error(err))
 	}
@@ -95,10 +129,10 @@ func init() {
 	if cfg.StreamEventsTable == "" {
 		logger.Fatal("STREAM_EVENTS_TABLE_NAME environment variable is required")
 	}
-	eventLog = streaming.NewStreamEventLog(db, 30*time.Minute)
+	eventLog = newStreamEventLogFn(db, 30*time.Minute)
 }
 
-func main() {
+func runSSE() {
 	app := lift.New()
 	if cfg.DebugMode {
 		app = lift.New(lift.WithDebug())
@@ -121,7 +155,7 @@ func main() {
 	_ = app.GET("/api/v1/streaming/list", handleListStream)
 	_ = app.GET("/api/v1/streaming/direct", handleDirectStream)
 
-	lambda.Start(app.HandleRequest)
+	lambdaStartFn(app.HandleRequest)
 }
 
 func handleStreamingRoot(ctx *lift.Context) error {
@@ -275,7 +309,7 @@ func waitForSSEPoll(ctx context.Context, eventCh chan<- lift.SSEEvent, heartbeat
 	case <-heartbeat.C:
 		eventCh <- lift.SSEEvent{Event: "keepalive", Data: "thump"}
 		return false
-	case <-time.After(streamIdlePollDelay):
+	case <-timeAfterFn(streamIdlePollDelay):
 		return false
 	}
 }
@@ -283,19 +317,19 @@ func waitForSSEPoll(ctx context.Context, eventCh chan<- lift.SSEEvent, heartbeat
 func requireClaims(ctx *lift.Context) (*auth.EnhancedClaims, error) {
 	token := strings.TrimSpace(ctx.Header("Authorization"))
 	if token == "" {
-		return nil, ctx.Unauthorized("Authentication required", nil)
+		return nil, lift.Unauthorized("Authentication required")
 	}
 
 	token = strings.TrimPrefix(token, "Bearer ")
 	token = strings.TrimPrefix(token, "bearer ")
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return nil, ctx.Unauthorized("Authentication required", nil)
+		return nil, lift.Unauthorized("Authentication required")
 	}
 
 	claims, err := authService.ValidateAccessToken(token)
 	if err != nil {
-		return nil, ctx.Unauthorized("Invalid token", err)
+		return nil, lift.Unauthorized("Invalid token").WithCause(err)
 	}
 
 	return claims, nil

@@ -55,7 +55,7 @@ func TestIntegrationHarnessExample(t *testing.T) {
 	harness.StartServer(mux)
 
 	// Create test data using factories
-	testActor := harness.CreateTestActor("testuser")
+	_ = harness.CreateTestActor("testuser") // Create actor to be retrieved later
 
 	// Make API requests using the harness client
 	resp := harness.MakeRequest("GET", "/health", nil, nil)
@@ -68,7 +68,7 @@ func TestIntegrationHarnessExample(t *testing.T) {
 	// Test with assertions helper
 	assertions := NewTestAssertions(t)
 
-	var actor map[string]interface{}
+	var _ map[string]interface{} // Placeholder for future response body parsing
 	assertions.AssertStatusCode(&APIResponse{
 		StatusCode: resp.StatusCode,
 		Headers:    resp.Header,
@@ -81,14 +81,21 @@ func TestIntegrationHarnessExample(t *testing.T) {
 	timelineData := timelineFactory.CreateTimelineScenario("timelineuser", factories.SimpleTimeline)
 
 	// Store timeline data in harness storage
-	for _, actor := range timelineData.Following {
-		err := harness.Storage().CreateActor(harness.Context(), actor, "test-key")
-		require.NoError(t, err)
-	}
-
+	// First, create the user who will see the timeline
 	err := harness.Storage().CreateActor(harness.Context(), timelineData.User, "test-key")
 	require.NoError(t, err)
 
+	// Then create the followed actors and establish follow relationships
+	for _, actor := range timelineData.Following {
+		err := harness.Storage().CreateActor(harness.Context(), actor, "test-key")
+		require.NoError(t, err)
+
+		// Establish follow relationship so activities appear in timeline
+		err = harness.Storage().FollowActor(harness.Context(), timelineData.User.PreferredUsername, actor.PreferredUsername)
+		require.NoError(t, err)
+	}
+
+	// Now store activities - they will propagate to timelineuser's timeline
 	for _, activity := range timelineData.Activities {
 		err := harness.Storage().StoreActivity(harness.Context(), activity)
 		require.NoError(t, err)

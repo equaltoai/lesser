@@ -162,6 +162,25 @@ func TestSignURL(t *testing.T) {
 	assert.Contains(t, signedURL, "Key-Pair-Id=APKAXXXXXXX")
 }
 
+func TestSignURLWithDefaultTTL(t *testing.T) {
+	config := CloudFrontConfig{
+		Domain:        "d123.cloudfront.net",
+		KeyPairID:     "APKAXXXXXXX",
+		PrivateKeyPEM: testPrivateKeyPEM,
+		DefaultTTL:    1 * time.Hour,
+	}
+
+	service, err := NewCloudFrontService(config, nil)
+	require.NoError(t, err)
+
+	signedURL, err := service.SignURLWithDefaultTTL("media/test123/hls/master.m3u8")
+	require.NoError(t, err)
+	assert.NotEmpty(t, signedURL)
+	assert.Contains(t, signedURL, "media/test123/hls/master.m3u8")
+	assert.Contains(t, signedURL, "Policy=")
+	assert.Contains(t, signedURL, "Signature=")
+}
+
 func TestSignStreamingURL(t *testing.T) {
 	config := CloudFrontConfig{
 		Domain:        "d123.cloudfront.net",
