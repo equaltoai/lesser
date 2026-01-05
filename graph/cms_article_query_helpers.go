@@ -72,7 +72,7 @@ func (r *queryResolver) cmsCollectArticleEdges(
 
 	fetchLimit := limit
 
-	edges := make([]*model.ArticleEdge, 0, limit)
+	edges := make([]*model.ArticleEdge, 0, maxCMSPageSize)
 	nextCursor := cursor
 	hasMore := false
 

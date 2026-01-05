@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -3017,12 +3018,23 @@ func (s *Service) getListTimeline(_ context.Context, query *ListNotesQuery) (*Re
 		zap.String("viewer_id", query.ViewerID))
 
 	// Sort by published date (newest first)
-	for i := 0; i < len(allStatuses)-1; i++ {
-		for j := i + 1; j < len(allStatuses); j++ {
-			if allStatuses[i].PublishedAt.Before(allStatuses[j].PublishedAt) {
-				allStatuses[i], allStatuses[j] = allStatuses[j], allStatuses[i]
+	if len(allStatuses) > 1 {
+		slices.SortStableFunc(allStatuses, func(a, b *models.Status) int {
+			switch {
+			case a == nil && b == nil:
+				return 0
+			case a == nil:
+				return 1
+			case b == nil:
+				return -1
+			case a.PublishedAt.After(b.PublishedAt):
+				return -1
+			case a.PublishedAt.Before(b.PublishedAt):
+				return 1
+			default:
+				return 0
 			}
-		}
+		})
 	}
 
 	// Apply pagination limits

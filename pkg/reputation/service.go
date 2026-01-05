@@ -188,7 +188,7 @@ func NewService(cfg *Config) (*Service, error) {
 
 	// Create components using storage interface
 	calculator := NewCalculator(cfg.Storage, cfg.InstanceURL, cfg.Logger)
-	verifier := NewVerifier(cfg.InstanceURL, cfg.Logger, cfg.Storage)
+	verifier := NewVerifier(cfg.InstanceURL, cfg.Logger, cfg.Storage.DomainBlock())
 	vouchManager := NewVouchManager(cfg.Storage, signer, cfg.InstanceURL, cfg.Logger)
 
 	return &Service{

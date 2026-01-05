@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -45,6 +47,69 @@ func textResponse(status int, body string) *http.Response {
 			"Content-Type": []string{"text/plain"},
 		},
 	}
+}
+
+type staticDomainTrustRepository struct {
+	allows             []string
+	blocked            map[string]*storage.InstanceDomainBlock
+	isDomainBlockedErr error
+	getDomainAllowsErr error
+}
+
+type domainTrustWithNilAllow struct{}
+
+func (domainTrustWithNilAllow) IsDomainBlocked(_ context.Context, _ string) (bool, *storage.InstanceDomainBlock, error) {
+	return false, nil, nil
+}
+
+func (domainTrustWithNilAllow) GetDomainAllows(_ context.Context, _ int, _ string) ([]*storage.DomainAllow, string, error) {
+	return []*storage.DomainAllow{nil, {Domain: "issuer.example.com"}}, "", nil
+}
+
+func (r *staticDomainTrustRepository) IsDomainBlocked(_ context.Context, domain string) (bool, *storage.InstanceDomainBlock, error) {
+	if r == nil {
+		return false, nil, nil
+	}
+	if r.isDomainBlockedErr != nil {
+		return false, nil, r.isDomainBlockedErr
+	}
+	if len(r.blocked) == 0 {
+		return false, nil, nil
+	}
+	block, ok := r.blocked[strings.ToLower(strings.TrimSpace(domain))]
+	if !ok {
+		return false, nil, nil
+	}
+	return true, block, nil
+}
+
+func (r *staticDomainTrustRepository) GetDomainAllows(_ context.Context, limit int, _ string) ([]*storage.DomainAllow, string, error) {
+	if r == nil {
+		return nil, "", nil
+	}
+	if r.getDomainAllowsErr != nil {
+		return nil, "", r.getDomainAllowsErr
+	}
+	if len(r.allows) == 0 {
+		return nil, "", nil
+	}
+
+	if limit <= 0 || limit > len(r.allows) {
+		limit = len(r.allows)
+	}
+
+	allows := make([]*storage.DomainAllow, 0, limit)
+	for i := 0; i < limit; i++ {
+		allows = append(allows, &storage.DomainAllow{Domain: r.allows[i]})
+	}
+
+	return allows, "", nil
+}
+
+func newVerifierWithAllows(logger *zap.Logger, allowedHosts ...string) *Verifier {
+	return NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+		allows: allowedHosts,
+	})
 }
 
 func TestCanonicalizationCompatibility(t *testing.T) {
@@ -306,7 +371,7 @@ func TestVerifyPortableReputation_InvalidIssuerProof(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create verifier (nil storage defaults to trusting all domains)
-	verifier := NewVerifier("https://test.example.com", logger, nil)
+	verifier := newVerifierWithAllows(logger, "issuer.example.com")
 	verifier.httpClient = &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Host == "issuer.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
@@ -359,7 +424,7 @@ func TestVerifyPortableReputation_ValidDocument(t *testing.T) {
 	assert.Equal(t, issuerURL, pr.Issuer)
 
 	// Create verifier (nil storage defaults to trusting all domains)
-	verifier := NewVerifier("https://test.example.com", logger, nil)
+	verifier := newVerifierWithAllows(logger, "issuer.example.com")
 	verifier.httpClient = &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Host == "issuer.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
@@ -540,7 +605,7 @@ func TestGetInstancePublicKey_InvalidResponse(t *testing.T) {
 
 func TestIsInstanceTrusted_NilStorageDefaultsToTrue(t *testing.T) {
 	// Requirements: 3.9 - WHEN isInstanceTrusted is called with nil storage
-	// THEN the Verifier SHALL return true (default to trusting)
+	// THEN the Verifier SHALL return false (default to rejecting)
 	logger := zap.NewNop()
 
 	issuerURL := "https://issuer.example.com"
@@ -565,10 +630,13 @@ func TestIsInstanceTrusted_NilStorageDefaultsToTrue(t *testing.T) {
 	err = signer.SignPortableReputation(pr)
 	require.NoError(t, err)
 
-	// Create verifier with nil storage (should default to trusting all domains)
+	serverCalled := false
+
+	// Create verifier with no allow list configured (should reject by default)
 	verifier := NewVerifier("https://test.example.com", logger, nil)
 	verifier.httpClient = &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			serverCalled = true
 			if req.URL.Host == "issuer.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
 				return jsonResponse(t, http.StatusOK, map[string]string{
 					"public_key": signer.GetPublicKeyBase64(),
@@ -578,12 +646,13 @@ func TestIsInstanceTrusted_NilStorageDefaultsToTrue(t *testing.T) {
 		}),
 	}
 
-	// Verify - IssuerTrusted should be true because nil storage defaults to trust
+	// Verify - IssuerTrusted should be false because no allow list is configured
 	result, err := verifier.VerifyPortableReputation(pr)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	assert.True(t, result.IssuerTrusted, "IssuerTrusted should be true when storage is nil")
+	assert.False(t, serverCalled, "Server should not be called when issuer is not trusted")
+	assert.False(t, result.IssuerTrusted, "IssuerTrusted should be false without allow list")
 }
 
 func TestIsInstanceTrusted_URLParsingError(t *testing.T) {
@@ -632,6 +701,171 @@ func TestIsInstanceTrusted_URLParsingError(t *testing.T) {
 	assert.Contains(t, result.Error, "issuer is not trusted")
 }
 
+func TestTrustedInstanceURLForKeyFetch(t *testing.T) {
+	logger := zap.NewNop()
+
+	t.Run("rejects when allow list empty", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.False(t, ok)
+		assert.Empty(t, trustedURL)
+	})
+
+	t.Run("rejects when domain block check errors", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows:             []string{"issuer.example.com"},
+			isDomainBlockedErr: assert.AnError,
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.False(t, ok)
+		assert.Empty(t, trustedURL)
+	})
+
+	t.Run("rejects when domain is blocked", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows: []string{"issuer.example.com"},
+			blocked: map[string]*storage.InstanceDomainBlock{
+				"issuer.example.com": {Severity: "high"},
+			},
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.False(t, ok)
+		assert.Empty(t, trustedURL)
+	})
+
+	t.Run("rejects when domain is blocked without block record", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows: []string{"issuer.example.com"},
+			blocked: map[string]*storage.InstanceDomainBlock{
+				"issuer.example.com": nil,
+			},
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.False(t, ok)
+		assert.Empty(t, trustedURL)
+	})
+
+	t.Run("rejects when allow list fetch errors", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows:             []string{"issuer.example.com"},
+			getDomainAllowsErr: assert.AnError,
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.False(t, ok)
+		assert.Empty(t, trustedURL)
+	})
+
+	t.Run("rejects when domain not in allow list", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows: []string{"allowed.example.com"},
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.False(t, ok)
+		assert.Empty(t, trustedURL)
+	})
+
+	t.Run("allows domain and preserves non-default port", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows: []string{"issuer.example.com:8443"},
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com:8443")
+		assert.True(t, ok)
+		assert.Equal(t, "https://issuer.example.com:8443", trustedURL)
+	})
+
+	t.Run("allows ipv6 host with port", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows: []string{"[2001:db8::1]:8443"},
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://[2001:db8::1]:8443")
+		assert.True(t, ok)
+		assert.Equal(t, "https://[2001:db8::1]:8443", trustedURL)
+	})
+
+	t.Run("treats explicit default https port as no-port", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, &staticDomainTrustRepository{
+			allows: []string{"issuer.example.com"},
+		})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com:443")
+		assert.True(t, ok)
+		assert.Equal(t, "https://issuer.example.com", trustedURL)
+	})
+
+	t.Run("skips nil allow entries", func(t *testing.T) {
+		verifier := NewVerifier("https://test.example.com", logger, domainTrustWithNilAllow{})
+
+		trustedURL, ok := verifier.trustedInstanceURLForKeyFetch("https://issuer.example.com")
+		assert.True(t, ok)
+		assert.Equal(t, "https://issuer.example.com", trustedURL)
+	})
+}
+
+func TestVerifierCheckRedirect(t *testing.T) {
+	t.Run("allows safe redirects", func(t *testing.T) {
+		req := &http.Request{URL: mustParseURL(t, "https://example.com")}
+		require.NoError(t, verifierCheckRedirect(req, nil))
+	})
+
+	t.Run("blocks unsafe redirects", func(t *testing.T) {
+		req := &http.Request{URL: mustParseURL(t, "http://localhost")}
+		require.Error(t, verifierCheckRedirect(req, nil))
+	})
+
+	t.Run("limits redirect count", func(t *testing.T) {
+		req := &http.Request{URL: mustParseURL(t, "https://example.com")}
+		via := make([]*http.Request, verifierMaxRedirects)
+		require.Error(t, verifierCheckRedirect(req, via))
+	})
+}
+
+func TestNewSSRFProtectedHTTPClient_DialContext(t *testing.T) {
+	client := newSSRFProtectedHTTPClient(zap.NewNop())
+	transport, ok := client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.NotNil(t, transport.DialContext)
+
+	t.Run("rejects invalid address", func(t *testing.T) {
+		_, err := transport.DialContext(context.Background(), "tcp", "not-a-hostport")
+		require.Error(t, err)
+	})
+
+	t.Run("rejects blocked ip", func(t *testing.T) {
+		_, err := transport.DialContext(context.Background(), "tcp", "127.0.0.1:80")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "blocked dial")
+	})
+
+	t.Run("rejects blocked hostname", func(t *testing.T) {
+		_, err := transport.DialContext(context.Background(), "tcp", "localhost:80")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "blocked dial")
+	})
+
+	t.Run("attempts dial for unblocked public ip", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+
+		_, err := transport.DialContext(ctx, "tcp", "203.0.113.1:81")
+		require.Error(t, err)
+	})
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+	return u
+}
+
 func TestIsInstanceTrusted_DomainWithPort(t *testing.T) {
 	// Test that domain extraction correctly handles ports
 	logger := zap.NewNop()
@@ -659,7 +893,7 @@ func TestIsInstanceTrusted_DomainWithPort(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create verifier with nil storage
-	verifier := NewVerifier("https://test.example.com", logger, nil)
+	verifier := newVerifierWithAllows(logger, "issuer.example.com:8443")
 	verifier.httpClient = &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Host == "issuer.example.com:8443" && req.URL.Path == "/.well-known/reputation-keys" {
@@ -711,7 +945,7 @@ func TestVerifyVouchSignature_ValidSignature(t *testing.T) {
 	require.NotEmpty(t, vouch.Signature)
 
 	// Create verifier
-	verifier := NewVerifier("https://test.example.com", logger, nil)
+	verifier := newVerifierWithAllows(logger, "issuer.example.com")
 	verifier.httpClient = &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Host == "issuer.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
@@ -760,7 +994,7 @@ func TestVerifyVouchSignature_InvalidSignature(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create verifier
-	verifier := NewVerifier("https://test.example.com", logger, nil)
+	verifier := newVerifierWithAllows(logger, "issuer.example.com")
 	verifier.httpClient = &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Host == "issuer.example.com" && req.URL.Path == "/.well-known/reputation-keys" {
@@ -804,7 +1038,7 @@ func TestVerifyVouchSignature_KeyFetchError(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create verifier
-	verifier := NewVerifier("https://test.example.com", logger, nil)
+	verifier := newVerifierWithAllows(logger, "issuer.example.com")
 	verifier.httpClient = &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			return textResponse(http.StatusInternalServerError, ""), nil
@@ -842,7 +1076,7 @@ func TestVerifyVouchSignature_InvalidSignatureEncoding(t *testing.T) {
 	}
 
 	// Create verifier
-	verifier := NewVerifier("https://test.example.com", logger, nil)
+	verifier := newVerifierWithAllows(logger, "issuer.example.com")
 	verifier.httpClient = &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Host == "issuer.example.com" && req.URL.Path == "/.well-known/reputation-keys" {

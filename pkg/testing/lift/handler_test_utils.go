@@ -463,9 +463,9 @@ func (r *SSEReader) ReadEvent() (map[string]string, error) {
 func (r *SSEReader) readLine() (string, error) {
 	r.buffer.Reset()
 
+	var b [1]byte
 	for {
-		b := make([]byte, 1)
-		n, err := r.reader.Read(b)
+		n, err := r.reader.Read(b[:])
 		if n == 0 || err == io.EOF {
 			if r.buffer.Len() > 0 {
 				return r.buffer.String(), nil

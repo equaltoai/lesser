@@ -568,7 +568,11 @@ func (r *ObjectRepository) GetUpdateHistory(_ context.Context, objectID string, 
 	}
 
 	// Return most recent first, limited
-	result := make([]*storage.UpdateHistory, 0, limit)
+	resultCap := len(history)
+	if resultCap > 100 {
+		resultCap = 100
+	}
+	result := make([]*storage.UpdateHistory, 0, resultCap)
 	for i := len(history) - 1; i >= 0 && len(result) < limit; i-- {
 		result = append(result, history[i])
 	}

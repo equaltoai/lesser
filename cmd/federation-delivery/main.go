@@ -377,8 +377,9 @@ func (p *FederationDeliveryProcessor) processDeliveryMessage(ctx context.Context
 			nextRetry := time.Now().Add(time.Duration(delayMinutes) * time.Minute)
 
 			// Update message for delayed retry
+			now := time.Now()
 			msg.RetryCount++
-			msg.LastAttemptAt = &[]time.Time{time.Now()}[0]
+			msg.LastAttemptAt = &now
 			msg.NextRetryAfter = &nextRetry
 			msg.FailureReason = fmt.Sprintf("Health assessment failed: %s", healthReason)
 

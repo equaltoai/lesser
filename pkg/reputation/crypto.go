@@ -18,7 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/jsonld"
 	"github.com/equaltoai/lesser/pkg/ssrf"
-	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
 
@@ -196,7 +196,7 @@ type Verifier struct {
 	instanceURL string
 	logger      *zap.Logger
 	httpClient  *http.Client
-	storage     core.RepositoryStorage
+	domainTrust domainTrustRepository
 	// Cache of known instance public keys
 	keyCache map[string]ed25519.PublicKey
 }
@@ -283,13 +283,22 @@ func newSSRFProtectedHTTPClient(logger *zap.Logger) *http.Client {
 	}
 }
 
+type domainTrustRepository interface {
+	IsDomainBlocked(ctx context.Context, domain string) (bool, *storage.InstanceDomainBlock, error)
+	GetDomainAllows(ctx context.Context, limit int, cursor string) ([]*storage.DomainAllow, string, error)
+}
+
 // NewVerifier creates a new reputation verifier
-func NewVerifier(instanceURL string, logger *zap.Logger, storage core.RepositoryStorage) *Verifier {
+func NewVerifier(instanceURL string, logger *zap.Logger, domainTrust domainTrustRepository) *Verifier {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	return &Verifier{
 		instanceURL: instanceURL,
 		logger:      logger,
 		httpClient:  newSSRFProtectedHTTPClient(logger),
-		storage:     storage,
+		domainTrust: domainTrust,
 		keyCache:    make(map[string]ed25519.PublicKey),
 	}
 }
@@ -348,8 +357,9 @@ func (v *Verifier) VerifyPortableReputation(pr *PortableReputation) (*Verificati
 	}
 
 	// Check if issuer is trusted (and safe to fetch from)
-	result.IssuerTrusted = v.isInstanceTrusted(pr.Issuer)
-	if !result.IssuerTrusted {
+	trustedIssuerURL, ok := v.trustedInstanceURLForKeyFetch(pr.Issuer)
+	result.IssuerTrusted = ok
+	if !ok {
 		result.Error = "issuer is not trusted"
 		return result, nil
 	}
@@ -366,7 +376,7 @@ func (v *Verifier) VerifyPortableReputation(pr *PortableReputation) (*Verificati
 	}
 
 	// Get issuer's public key
-	publicKey, err := v.getInstancePublicKey(context.Background(), pr.Issuer)
+	publicKey, err := v.getInstancePublicKey(context.Background(), trustedIssuerURL)
 	if err != nil {
 		result.Error = fmt.Sprintf("failed to get issuer public key: %v", err)
 		return result, nil
@@ -452,81 +462,94 @@ func (v *Verifier) getInstancePublicKey(ctx context.Context, instanceURL string)
 	return publicKey, nil
 }
 
-// isInstanceTrusted checks if an instance is trusted
-func (v *Verifier) isInstanceTrusted(instanceURL string) bool {
+func (v *Verifier) trustedInstanceURLForKeyFetch(instanceURL string) (string, bool) {
 	parsedURL, err := ssrf.ValidateURLString(strings.TrimSpace(instanceURL))
 	if err != nil {
 		v.logger.Error("failed to parse instance URL",
 			zap.String("url", instanceURL),
 			zap.Error(err))
-		return false
+		return "", false
 	}
 
 	domain := strings.ToLower(strings.TrimSpace(parsedURL.Hostname()))
+	if domain == "" {
+		return "", false
+	}
 
-	// Check if we have storage available
-	if v.storage == nil {
-		v.logger.Warn("no storage configured for trust checking, allowing by default")
-		return true
+	if v.domainTrust == nil {
+		v.logger.Warn("no domain trust repository configured, rejecting by default",
+			zap.String("domain", domain))
+		return "", false
+	}
+
+	hostForAllow := domain
+	port := strings.TrimSpace(parsedURL.Port())
+	scheme := strings.ToLower(strings.TrimSpace(parsedURL.Scheme))
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		port = ""
+	}
+	if port != "" {
+		if strings.Contains(domain, ":") {
+			hostForAllow = "[" + domain + "]:" + port
+		} else {
+			hostForAllow = domain + ":" + port
+		}
 	}
 
 	ctx := context.Background()
 
 	// First, check if domain is blocked
-	isBlocked, block, err := v.storage.DomainBlock().IsDomainBlocked(ctx, domain)
+	isBlocked, block, err := v.domainTrust.IsDomainBlocked(ctx, domain)
 	if err != nil {
 		v.logger.Error("failed to check domain block",
 			zap.String("domain", domain),
 			zap.Error(err))
 		// On error, default to not trusting
-		return false
+		return "", false
 	}
 
 	if isBlocked {
-		v.logger.Info("domain is blocked",
-			zap.String("domain", domain),
-			zap.String("severity", block.Severity))
-		return false
+		if block != nil {
+			v.logger.Info("domain is blocked",
+				zap.String("domain", domain),
+				zap.String("severity", block.Severity))
+		} else {
+			v.logger.Info("domain is blocked",
+				zap.String("domain", domain))
+		}
+		return "", false
 	}
 
-	// Check if we have any domain allows configured (allow-list mode)
-	domainAllows, _, err := v.storage.DomainBlock().GetDomainAllows(ctx, 1, "")
+	// For reputation key fetches, require explicit allow list entries.
+	domainAllows, _, err := v.domainTrust.GetDomainAllows(ctx, 1000, "")
 	if err != nil {
 		v.logger.Error("failed to check domain allows",
 			zap.String("domain", domain),
 			zap.Error(err))
-		// On error checking allows, assume open federation
-		return true
+		return "", false
 	}
 
-	// If we have domain allows configured, we're in allow-list mode
-	if len(domainAllows) > 0 {
-		// In allow-list mode, check if this specific domain is allowed
-		// We need to check all allows, not just the first one
-		allAllows, _, err := v.storage.DomainBlock().GetDomainAllows(ctx, 1000, "")
-		if err != nil {
-			v.logger.Error("failed to get all domain allows",
-				zap.String("domain", domain),
-				zap.Error(err))
-			return false
-		}
-
-		// Check if domain is in the allow list
-		for _, allow := range allAllows {
-			if allow.Domain == domain {
-				v.logger.Debug("domain is in allow list",
-					zap.String("domain", domain))
-				return true
-			}
-		}
-
-		v.logger.Info("domain not in allow list",
+	if len(domainAllows) == 0 {
+		v.logger.Info("no domain allows configured; rejecting instance for key fetch",
 			zap.String("domain", domain))
-		return false
+		return "", false
 	}
 
-	// If not blocked and not in allow-list mode, it's trusted
-	return true
+	for _, allow := range domainAllows {
+		if allow == nil {
+			continue
+		}
+		allowed := strings.ToLower(strings.TrimSpace(allow.Domain))
+		if allowed == hostForAllow {
+			v.logger.Debug("domain is in allow list",
+				zap.String("domain", domain))
+			return (&url.URL{Scheme: "https", Host: allowed}).String(), true
+		}
+	}
+
+	v.logger.Info("domain not in allow list",
+		zap.String("domain", domain))
+	return "", false
 }
 
 // canonicalizeJSON creates a canonical JSON representation using proper JSON-LD canonicalization
@@ -543,12 +566,13 @@ func canonicalizeJSON(v any) ([]byte, error) {
 
 // VerifyVouchSignature verifies a vouch's signature using the issuer's public key
 func (v *Verifier) VerifyVouchSignature(vouch *Vouch) (bool, error) {
-	if !v.isInstanceTrusted(vouch.InstanceURL) {
+	trustedInstanceURL, ok := v.trustedInstanceURLForKeyFetch(vouch.InstanceURL)
+	if !ok {
 		return false, fmt.Errorf("issuer is not trusted")
 	}
 
 	// Get the issuer's public key from the instance
-	publicKey, err := v.getInstancePublicKey(context.Background(), vouch.InstanceURL)
+	publicKey, err := v.getInstancePublicKey(context.Background(), trustedInstanceURL)
 	if err != nil {
 		// If we can't get the public key from the instance, check if we have it embedded in the vouch
 		// This would need to be added to the Vouch struct if not already there
