@@ -84,7 +84,7 @@ func TestRunVerifyAll_WiresSubcommands(t *testing.T) {
 	require.NotEmpty(t, calls)
 }
 
-func TestRunVerifyCI_RunsLintSecurityAndVerifyAll(t *testing.T) {
+func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 	previousRunCommand := runCommandFn
 	previousEnsureTool := ensureToolAvailableFn
 	previousRepoRoot := findRepoRootFn
@@ -102,11 +102,9 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifyAll(t *testing.T) {
 	findRepoRootFn = func() (string, error) { return repoRoot, nil }
 
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n\ngo 1.25\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, ".golangci.yml"), []byte("version: \"2\"\n"), 0o644))
 
 	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, _ string, args ...string) (string, error) {
-		if len(args) >= 2 && args[0] == "list" && args[1] == "./pkg/..." {
-			return "github.com/equaltoai/lesser/pkg/common\n", nil
-		}
 		if len(args) >= 2 && args[0] == "list" && args[1] == "./..." {
 			return strings.Join([]string{
 				"github.com/equaltoai/lesser/cmd/lesser",
@@ -120,13 +118,10 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifyAll(t *testing.T) {
 
 	var calls []string
 	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
-		if name == "go" && firstArgOrEmpty(args) == "run" {
+		if name == "golangci-lint" {
 			calls = append(calls, name+" "+strings.Join(args, " "))
-		} else if name == "go" && firstArgOrEmpty(args) == "test" && strings.Contains(strings.Join(args, " "), "-coverprofile=coverage_pkg.out") {
+		} else if name == "go" && firstArgOrEmpty(args) == "run" {
 			calls = append(calls, name+" "+strings.Join(args, " "))
-			coveragePath := filepath.Join(repoRoot, "coverage_pkg.out")
-			coverageData := "mode: set\n" + "github.com/equaltoai/lesser/pkg/common/errors.go:1.1,1.2 1 1\n"
-			return os.WriteFile(coveragePath, []byte(coverageData), 0o644)
 		} else if name == "go" && firstArgOrEmpty(args) == "test" && strings.Contains(strings.Join(args, " "), "-coverprofile=coverage_overall.out") {
 			calls = append(calls, name+" "+strings.Join(args, " "))
 			coveragePath := filepath.Join(repoRoot, "coverage_overall.out")
@@ -139,15 +134,20 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifyAll(t *testing.T) {
 	}
 
 	require.NoError(t, runVerify([]string{"ci"}))
-	require.Contains(t, calls, "golangci-lint run")
+	require.Contains(t, calls, "golangci-lint run --config .golangci.yml --disable gosec")
 	require.Contains(t, calls, "go run ./tools/audit_gates --check")
-	require.Contains(t, calls, "gosec -exclude-generated")
+	require.Contains(t, calls, "gosec -quiet")
 	require.Contains(t, calls, "govulncheck ./...")
 	require.Contains(t, calls, "bash scripts/verify_supply_chain.sh")
+	require.Contains(t, calls, "bash scripts/verify_lambda_set.sh")
+	require.Contains(t, calls, "bash scripts/verify_inventory.sh")
 	require.Contains(t, calls, "bash scripts/verify_docs.sh")
+	require.Contains(t, calls, "bash scripts/verify_ai_training.sh")
+	require.Contains(t, calls, "bash scripts/verify_schema.sh")
+	require.Contains(t, calls, "go run ./tools/graphql_coverage --check --strict")
 	require.Contains(t, calls, "go run ./tools/openapi --check --strict")
-	require.Contains(t, calls, "go run ./tools/coverage_scoreboard --mode package --top 10 --min 0 --sort-uncovered=true --exclude-generated=true --min-total 90 --profile coverage_pkg.out")
 	require.Contains(t, calls, "go run ./tools/coverage_scoreboard --mode package --top 10 --min 0 --sort-uncovered=true --exclude-generated=true --min-total 85 --profile coverage_overall.out")
+	require.Contains(t, calls, "go run ./tools/coverage_scoreboard --mode package --top 10 --min 0 --sort-uncovered=true --exclude-generated=true --min-total 90 --profile coverage_overall.out --package github.com/equaltoai/lesser/pkg")
 	require.Contains(t, calls, "go run ./tools/coverage_scoreboard --mode package --top 10 --min 0 --sort-uncovered=true --exclude-generated=true --min-total 90 --profile coverage_overall.out --package github.com/equaltoai/lesser/cmd")
 }
 

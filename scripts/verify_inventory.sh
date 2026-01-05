@@ -10,7 +10,7 @@ fi
 mkdir -p "$GOCACHE"
 
 if [[ -z "${GOMODCACHE:-}" ]]; then
-  export GOMODCACHE="$ROOT_DIR/tmp/go-mod-cache"
+  export GOMODCACHE="$(go env GOMODCACHE)"
 fi
 mkdir -p "$GOMODCACHE"
 

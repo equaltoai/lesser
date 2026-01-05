@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,15 +14,22 @@ func TestRunFmtAndLint(t *testing.T) {
 	previousRepoRoot := findRepoRootFn
 	previousRunCommand := runCommandFn
 	previousEnsureTool := ensureToolAvailableFn
+	previousCapture := captureCommandOutputFn
 	t.Cleanup(func() {
 		findRepoRootFn = previousRepoRoot
 		runCommandFn = previousRunCommand
 		ensureToolAvailableFn = previousEnsureTool
+		captureCommandOutputFn = previousCapture
 	})
 
 	repoRoot := t.TempDir()
 	findRepoRootFn = func() (string, error) { return repoRoot, nil }
 	ensureToolAvailableFn = func(string) error { return nil }
+	captureCommandOutputFn = func(context.Context, string, map[string]string, string, ...string) (string, error) {
+		return "golangci-lint has version 2.5.0\n", nil
+	}
+
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, ".golangci.yml"), []byte("version: \"2\"\n"), 0o644))
 
 	var gotName string
 	runCommandFn = func(_ context.Context, name string, _ []string, _ execOptions) error {
@@ -39,10 +48,12 @@ func TestRunFmtAndLint_ErrorBranches(t *testing.T) {
 	previousRepoRoot := findRepoRootFn
 	previousRunCommand := runCommandFn
 	previousEnsureTool := ensureToolAvailableFn
+	previousCapture := captureCommandOutputFn
 	t.Cleanup(func() {
 		findRepoRootFn = previousRepoRoot
 		runCommandFn = previousRunCommand
 		ensureToolAvailableFn = previousEnsureTool
+		captureCommandOutputFn = previousCapture
 	})
 
 	findRepoRootFn = func() (string, error) { return "", errSentinel }
@@ -50,6 +61,10 @@ func TestRunFmtAndLint_ErrorBranches(t *testing.T) {
 
 	repoRoot := t.TempDir()
 	findRepoRootFn = func() (string, error) { return repoRoot, nil }
+	captureCommandOutputFn = func(context.Context, string, map[string]string, string, ...string) (string, error) {
+		return "golangci-lint has version 2.5.0\n", nil
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, ".golangci.yml"), []byte("version: \"2\"\n"), 0o644))
 
 	ensureToolAvailableFn = func(name string) error {
 		if name == "go" {

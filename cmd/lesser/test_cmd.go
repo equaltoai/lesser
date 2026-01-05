@@ -116,8 +116,14 @@ func runTestCoverage(argv []string) error {
 	fs.StringVar(&args.Stage, "stage", "test", "value for STAGE (default: test)")
 	var scope string
 	fs.StringVar(&scope, "scope", "all", "coverage scope: all|overall|pkg (default: all)")
+	var short bool
+	fs.BoolVar(&short, "short", false, "pass -short to go test (default: false)")
+	var verbose bool
+	fs.BoolVar(&verbose, "verbose", true, "pass -v to go test (default: true)")
 	var excludeGenerated bool
 	fs.BoolVar(&excludeGenerated, "exclude-generated", true, "exclude generated files (\"Code generated... DO NOT EDIT\") from coverage profiles (default: true)")
+	var generateHTML bool
+	fs.BoolVar(&generateHTML, "html", true, "generate HTML coverage report (go tool cover -html) (default: true)")
 	var includeTesting bool
 	fs.BoolVar(&includeTesting, "include-testing", false, "include pkg/testing/* in pkg and overall scopes (default: false)")
 	var includeTools bool
@@ -179,7 +185,17 @@ func runTestCoverage(argv []string) error {
 		return fmt.Errorf("unknown coverage scope %q (want all|overall|pkg)", scope)
 	}
 
-	if err := runGoTests(args, append([]string{"test", "-v", "-coverprofile=" + profileName}, pkgPaths...), nil); err != nil {
+	goArgs := []string{"test"}
+	if short {
+		goArgs = append(goArgs, "-short")
+	}
+	if verbose {
+		goArgs = append(goArgs, "-v")
+	}
+	goArgs = append(goArgs, "-coverprofile="+profileName)
+	goArgs = append(goArgs, pkgPaths...)
+
+	if err := runGoTests(args, goArgs, nil); err != nil {
 		return err
 	}
 
@@ -188,6 +204,9 @@ func runTestCoverage(argv []string) error {
 		if err := filterGeneratedFilesFromCoverProfile(repoRoot, coveragePath); err != nil {
 			return err
 		}
+	}
+	if !generateHTML {
+		return nil
 	}
 	return runCommandFn(context.Background(), "go", []string{"tool", "cover", "-html=" + coveragePath, "-o", htmlName}, execOptions{
 		Dir: repoRoot,

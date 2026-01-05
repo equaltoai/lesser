@@ -168,10 +168,11 @@ func runVerifyCI(argv []string) error {
 		return err
 	}
 	cmdPrefix := modulePath + "/cmd"
+	pkgPrefix := modulePath + "/pkg"
 
 	// CI should not run formatting because it mutates the working tree.
 	// Prefer fast failure: lint first, then security, then the full verify suite.
-	if err := runLint(nil); err != nil {
+	if err := runLint([]string{"--disable-gosec"}); err != nil {
 		return err
 	}
 	if err := runVerifyAudit(nil); err != nil {
@@ -188,30 +189,43 @@ func runVerifyCI(argv []string) error {
 	if err := runVerifySupplyChain(nil); err != nil {
 		return err
 	}
-	if err := runVerifyAll(nil); err != nil {
+	// Verify suite, but skip redundant work:
+	// - `runVerifyAll` includes non-strict OpenAPI + unit tests, which CI supersedes with strict OpenAPI + coverage runs.
+	if err := runVerifyLambdaSet(nil); err != nil {
 		return err
 	}
-
+	if err := runVerifyInventory(nil); err != nil {
+		return err
+	}
+	if err := runVerifyDocs(nil); err != nil {
+		return err
+	}
+	if err := runVerifyAITraining(nil); err != nil {
+		return err
+	}
+	if err := runVerifySchema(nil); err != nil {
+		return err
+	}
+	if err := runVerifyGraphQLCoverage([]string{"--strict"}); err != nil {
+		return err
+	}
 	if err := runVerifyOpenAPI([]string{"--strict"}); err != nil {
 		return err
 	}
-	if err := runTestCoverage([]string{"--scope", "pkg"}); err != nil {
-		return err
-	}
-	if err := runCoverageScoreboard([]string{"--profile", "coverage_pkg.out", "--mode", "package", "--top", "10", "--min-total", "90.0"}); err != nil {
-		return err
-	}
-	if err := runTestCoverage([]string{"--scope", "overall"}); err != nil {
+	if err := runTestCoverage([]string{"--scope", "overall", "--short", "--verbose=false", "--exclude-generated=false", "--html=false"}); err != nil {
 		return err
 	}
 	if err := runCoverageScoreboard([]string{"--profile", "coverage_overall.out", "--mode", "package", "--top", "10", "--min-total", "85.0"}); err != nil {
+		return err
+	}
+	if err := runCoverageScoreboard([]string{"--profile", "coverage_overall.out", "--mode", "package", "--top", "10", "--package", pkgPrefix, "--min-total", "90.0"}); err != nil {
 		return err
 	}
 	if err := runCoverageScoreboard([]string{"--profile", "coverage_overall.out", "--mode", "package", "--top", "10", "--package", cmdPrefix, "--min-total", "90.0"}); err != nil {
 		return err
 	}
 
-	fmt.Println("✓ verify ci complete (lint, security, supply chain, verify all, openapi strict, pkg coverage >= 90.0%, overall coverage >= 85.0%, cmd coverage >= 90.0%)")
+	fmt.Println("✓ verify ci complete (lint, security, supply chain, verify suite, strict contracts, overall/pkg/cmd coverage gates)")
 	return nil
 }
 

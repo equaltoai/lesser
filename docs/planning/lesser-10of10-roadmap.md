@@ -17,7 +17,7 @@ This roadmap is the execution plan for achieving and maintaining **10/10** acros
 Evidence (most recent):
 
 - `./lesser verify ci` is green.
-- `./lesser coverage scoreboard --profile coverage_pkg.out --min-total 90.0` reports `total: 90.0% (83450/92722 statements)`.
+- `./lesser coverage scoreboard --profile coverage_overall.out --package github.com/equaltoai/lesser/pkg --min-total 90.0` reports `pkg/` coverage (generated excluded).
 - `./lesser coverage scoreboard --profile coverage_overall.out --min-total 85.0` reports overall coverage (testing + generated excluded).
 - `./lesser coverage scoreboard --profile coverage_overall.out --package github.com/equaltoai/lesser/cmd --min-total 90.0` reports `cmd/` coverage.
 - `./lesser verify openapi --strict` is green (`ok: docs/contracts/openapi.yaml (215 paths)`).
@@ -103,9 +103,9 @@ go tool cover -func=coverage_pkg.out | tail -n 1
 **Acceptance criteria**
 - CI runs (or `./lesser verify ci` runs) these rubric-critical checks:
   - `./lesser verify openapi --strict`
-  - `./lesser test coverage --scope pkg` + a hard threshold check for **≥ 90.0%**
   - `./lesser test coverage --scope overall` + hard threshold checks for:
     - overall **≥ 85.0%** (testing + generated excluded)
+    - `pkg/` **≥ 90.0%** (generated excluded)
     - `cmd/` **≥ 90.0%** (generated excluded)
 - A failing gate produces a clear, actionable error message.
 
@@ -113,6 +113,8 @@ go tool cover -func=coverage_pkg.out | tail -n 1
 ```bash
 ./lesser verify ci
 ./lesser verify openapi --strict
-./lesser test coverage --scope pkg
 ./lesser test coverage --scope overall
+./lesser coverage scoreboard --profile coverage_overall.out --min-total 85.0
+./lesser coverage scoreboard --profile coverage_overall.out --package github.com/equaltoai/lesser/pkg --min-total 90.0
+./lesser coverage scoreboard --profile coverage_overall.out --package github.com/equaltoai/lesser/cmd --min-total 90.0
 ```

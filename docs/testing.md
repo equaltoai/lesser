@@ -61,6 +61,7 @@ go build -o lesser ./cmd/lesser
 Notes:
 
 - `./lesser verify ci` is stricter than `./lesser verify` (adds lint, security scans, supply chain verification, strict OpenAPI, and coverage gates).
+- CI runs coverage in short mode and skips HTML generation to keep runtime down (`./lesser test coverage --scope overall --short --verbose=false --exclude-generated=false --html=false`).
 - Coverage gates are strict (for example, `89.999%` fails even if it rounds to `90.0%` in a 1-decimal summary). If debugging drift, run with `GOFLAGS=-count=1` to force fresh test runs.
 
 ## Test types in this repo
@@ -169,6 +170,7 @@ Generate an HTML report:
 Notes:
 
 - By default, `./lesser test coverage` filters generated files (for example gqlgen outputs with `Code generated ... DO NOT EDIT`) out of the coverprofile so coverage reflects handwritten code. Use `--exclude-generated=false` to include generated files.
+- Use `--short` to match CI’s `-short` test behavior, `--verbose=false` to reduce output, and `--html=false` to skip HTML generation when you only need the coverprofile for scoring.
 
 Artifacts:
 

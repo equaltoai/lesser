@@ -16,6 +16,7 @@ func runSecScan(_ []string) error {
 	}
 
 	if err := runCommandFn(context.Background(), "gosec", []string{
+		"-quiet",
 		"-exclude-generated",
 		"-exclude-dir=tmp",
 		"-exclude-dir=infra",
@@ -29,6 +30,7 @@ func runSecScan(_ []string) error {
 	infraCDKDir := filepath.Join(repoRoot, "infra", "cdk")
 	if _, err := os.Stat(filepath.Join(infraCDKDir, "go.mod")); err == nil {
 		return runCommandFn(context.Background(), "gosec", []string{
+			"-quiet",
 			"-exclude-generated",
 			"-exclude-dir=cdk.out",
 			"./...",
