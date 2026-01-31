@@ -5,20 +5,23 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/services"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -26,7 +29,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -44,13 +47,13 @@ type ImportProcessor struct {
 }
 
 var processor *ImportProcessor
-var startSQSLambda = patterns.StartSQSLambda
 var loadAWSConfig = func(ctx context.Context) (aws.Config, error) {
 	return awsconfig.LoadDefaultConfig(ctx)
 }
 var newS3Client = func(cfg aws.Config) s3API {
 	return s3.NewFromConfig(cfg)
 }
+var lambdaStartFn = lambda.Start
 
 type s3API interface {
 	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
@@ -267,70 +270,96 @@ func init() {
 }
 
 func main() {
-	// Use the standard Lift SQS pattern
-	startSQSLambda("import-processing", processor, processor.logger)
+	app := apptheory.New()
+
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	queueName := naming.ResourceNameWithApp(appName, "import-processor-queue", stage)
+
+	app.SQS(queueName, func(ctx *apptheory.EventContext, msg events.SQSMessage) error {
+		if processor == nil {
+			return fmt.Errorf("import processor not initialized")
+		}
+		return processor.HandleSQSMessage(ctx, msg)
+	})
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }
 
-// HandleSQS implements the SQS handler interface for Lift
-func (p *ImportProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) error {
-	// Initialize AWS clients
-	if err := p.initializeAWSClients(ctx.Request.Context()); err != nil {
-		p.logger.Error("failed to initialize AWS clients", zap.Error(err))
-		return lift.NewLiftError("AWS_INIT_FAILED", "failed to initialize AWS clients", 500).WithCause(err)
+func (p *ImportProcessor) HandleSQSMessage(ctx *apptheory.EventContext, message events.SQSMessage) error {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
 	}
 
-	p.logger.Info("processing import batch",
-		zap.String("request_id", ctx.GetRequestID()),
-		zap.Int("message_count", len(event.Records)))
-
-	// Process each message
-	for _, message := range event.Records {
-		// Try parsing as services.ImportJobMessage first (new format)
-		var importMsg services.ImportJobMessage
-		if err := common.ParseRequestBody([]byte(message.Body), &importMsg); err == nil {
-			// Convert to legacy format for processing
-			importEvent := ImportProcessorEvent{
-				ImportID: importMsg.ImportID,
-				Username: importMsg.Username,
-				Type:     importMsg.Type,
-				Mode:     importMsg.Mode,
-				S3Key:    importMsg.S3Key,
-			}
-			if err := p.processImportJob(ctx.Request.Context(), importEvent); err != nil {
-				p.logger.Error("failed to process import job",
-					zap.String("import_id", importEvent.ImportID),
-					zap.String("username", importEvent.Username),
-					zap.Error(err))
-				// Update job status as failed
-				if updateErr := p.importRepo.UpdateImportStatus(ctx.Request.Context(), importEvent.ImportID, "failed", nil, err.Error()); updateErr != nil {
-					p.logger.Error("failed to update import status to failed",
-						zap.String("import_id", importEvent.ImportID),
-						zap.Error(updateErr))
-				}
-			}
-			continue
+	// Initialize AWS clients
+	if p.s3Client == nil {
+		if err := p.initializeAWSClients(runCtx); err != nil {
+			p.logger.Error("failed to initialize AWS clients",
+				zap.String("request_id", requestID),
+				zap.Error(err),
+			)
+			return err
 		}
+	}
 
-		// Fallback to legacy format
-		var importEvent ImportProcessorEvent
-		if err := common.ParseRequestBody([]byte(message.Body), &importEvent); err != nil {
-			p.logger.Error("failed to unmarshal event",
-				zap.String("message_id", message.MessageId),
-				zap.Error(err))
-			continue
+	// Try parsing as services.ImportJobMessage first (new format)
+	var importMsg services.ImportJobMessage
+	if err := common.ParseRequestBody([]byte(message.Body), &importMsg); err == nil {
+		// Convert to legacy format for processing
+		importEvent := ImportProcessorEvent{
+			ImportID: importMsg.ImportID,
+			Username: importMsg.Username,
+			Type:     importMsg.Type,
+			Mode:     importMsg.Mode,
+			S3Key:    importMsg.S3Key,
 		}
-
-		if err := p.processImportJob(ctx.Request.Context(), importEvent); err != nil {
+		if err := p.processImportJob(runCtx, importEvent); err != nil {
 			p.logger.Error("failed to process import job",
 				zap.String("import_id", importEvent.ImportID),
 				zap.String("username", importEvent.Username),
-				zap.Error(err))
+				zap.String("request_id", requestID),
+				zap.Error(err),
+			)
 			// Update job status as failed
-			if updateErr := p.importRepo.UpdateImportStatus(ctx.Request.Context(), importEvent.ImportID, "failed", nil, err.Error()); updateErr != nil {
+			if updateErr := p.importRepo.UpdateImportStatus(runCtx, importEvent.ImportID, "failed", nil, err.Error()); updateErr != nil {
 				p.logger.Error("failed to update import status to failed",
 					zap.String("import_id", importEvent.ImportID),
-					zap.Error(updateErr))
+					zap.Error(updateErr),
+				)
 			}
+		}
+		return nil
+	}
+
+	// Fallback to legacy format
+	var importEvent ImportProcessorEvent
+	if err := common.ParseRequestBody([]byte(message.Body), &importEvent); err != nil {
+		p.logger.Error("failed to unmarshal event",
+			zap.String("message_id", message.MessageId),
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return nil
+	}
+
+	if err := p.processImportJob(runCtx, importEvent); err != nil {
+		p.logger.Error("failed to process import job",
+			zap.String("import_id", importEvent.ImportID),
+			zap.String("username", importEvent.Username),
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		// Update job status as failed
+		if updateErr := p.importRepo.UpdateImportStatus(runCtx, importEvent.ImportID, "failed", nil, err.Error()); updateErr != nil {
+			p.logger.Error("failed to update import status to failed",
+				zap.String("import_id", importEvent.ImportID),
+				zap.Error(updateErr),
+			)
 		}
 	}
 
