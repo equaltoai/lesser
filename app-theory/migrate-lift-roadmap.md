@@ -155,6 +155,13 @@ the GovTheory pack (do not guess; do not use placeholders).
 ### M1 — Introduce AppTheory structure (no behavior change)
 **Goal:** add a clear landing zone for AppTheory migration work without changing production behavior.
 
+**Implemented (this branch)**
+- Landing package boundary: `pkg/apptheory/` (AppTheory + TableTheory wiring namespace; no production use yet).
+- Destination deps pinned in `go.mod`:
+  - `github.com/theory-cloud/apptheory@v0.5.0`
+  - `github.com/theory-cloud/tabletheory@v1.3.0`
+- First migration slice selected: API health endpoints (see Step 3).
+
 **Steps**
 1. Decide the target architectural boundaries for AppTheory in this repo.
    - Recommended approach for *lesser* (serverless, many Lambdas):
@@ -167,11 +174,31 @@ the GovTheory pack (do not guess; do not use placeholders).
      - `*lift.App` creation (`lift.NewHTTPApp(...)` in `pkg/lift/app.go` and `createStandardizedLiftApp(...)` in `pkg/lambda/main_framework.go`)
      - Middleware stack order (`pkg/lambda/main_framework.go`, `cmd/api/middleware.go`, `pkg/lift/app.go`)
      - Handler signatures and context usage (`cmd/api/lift/*.go` use Lift `*lift.Context` heavily)
+   - Mapping notes for Lesser (AppTheory runtime import: `github.com/theory-cloud/apptheory/runtime`):
+     - App container:
+       - Lift: `lift.New(...)` / `lift.New(lift.WithDebug())`
+       - AppTheory: `apptheory.New(...)` (Tier defaults to P2; can set `apptheory.WithTier(...)`)
+     - Routes:
+       - Lift: `app.GET/POST/PUT/PATCH/DELETE(...)` and `app.Handle(...)`
+       - AppTheory: `app.Get/Post/Put/Patch/Delete(...)` and `app.Handle(...)`
+       - Route patterns: Lift-style `:param` segments are accepted by AppTheory (canonicalized to `{param}`); verify any wildcard/proxy usage via the Lift route manifest snapshot.
+     - Handlers:
+       - Lift handler signature: `func(*lift.Context) error`
+       - AppTheory handler signature: `func(*apptheory.Context) (*apptheory.Response, error)`
+       - Lift response pattern: `ctx.Status(code).JSON(value)` / `ctx.Text(...)` / `ctx.Bytes(...)`
+       - AppTheory response helpers: `apptheory.JSON(code, value)` / `apptheory.Text(...)` / `apptheory.Binary(...)`
+     - Middleware:
+       - Lift: `app.Use(lift.Middleware)` (custom ordering is fully controlled by registration order)
+       - AppTheory: `app.Use(apptheory.Middleware)`; portable built-ins run in a contract-defined order in P1/P2 (request-id → recovery → logging → CORS → auth → handler), and user middleware wraps the final handler stage.
+       - Context value bag: Lift `ctx.Set/Get` maps to AppTheory `ctx.Set/Get` for request-scoped state sharing.
+     - AWS entrypoints:
+       - Lift: `app.HandleRequest(ctx, event)` (event type is inferred at runtime)
+       - AppTheory: prefer explicit entrypoints per Lambda trigger (e.g. API Gateway v2 HTTP API), or use `app.HandleLambda(ctx, json.RawMessage)` when keeping Lift’s “single entrypoint router” posture.
 3. Select one low-risk vertical slice to migrate first.
    - Recommended first slice for this repo:
      - A minimal endpoint group with clear request/response behavior and strong tests, such as the health endpoints:
-       - `cmd/api/lift/health.go`
-       - Routes in `cmd/api/routes_lift.go` that map to health handlers
+       - `cmd/api/main.go` (`configureHealthRoutes`)
+       - Health endpoints (all `GET`): `/health`, `/health/live`, `/health/ready`, `/health/detailed`
    - Alternative low-risk slice:
      - A background Lambda with narrow event shape (if AppTheory supports it cleanly), but avoid stream processors first because they also depend on DynamORM.
 
@@ -192,11 +219,10 @@ That means you should plan slices so you don’t accidentally migrate “everyth
 **Steps**
 1. Slice 1 (recommended): API health endpoints
    - Files likely in-scope:
-     - `cmd/api/routes_lift.go` (route registration for health endpoints)
-     - `cmd/api/lift/health.go`
+     - `cmd/api/main.go` (`configureHealthRoutes`)
      - Any shared middleware referenced by these handlers:
-       - `cmd/api/middleware.go`
-       - `pkg/middleware/*` (if used)
+      - `cmd/api/middleware.go`
+      - `pkg/middleware/*` (if used)
    - Acceptance test focus:
      - Status codes, headers (especially CORS), and response JSON.
 2. Slice 2: “Auth bootstrap” and OAuth-adjacent endpoints
