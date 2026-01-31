@@ -1,345 +1,451 @@
-# lesser: Lift → AppTheory Migration Roadmap
+# lesser: Lift + DynamORM Sunset → AppTheory + TableTheory Replacement Plan
 
 Generated: 2026-01-31
 
-This document is a repo-specific migration plan from Lift (`github.com/pay-theory/lift`) to AppTheory. If DynamORM
-(`github.com/pay-theory/dynamorm`) is detected in this repo, it also includes a DynamORM → TableTheory plan.
+This document defines the complete, codebase-wide replacement of:
+
+- Lift (`github.com/pay-theory/lift`) → AppTheory (`github.com/theory-cloud/apptheory/runtime`)
+- DynamORM **and** all direct AWS DynamoDB SDK usage → TableTheory (`github.com/theory-cloud/tabletheory`)
+
+Lift and DynamORM are being sunsetted and must be removed from this repository. AppTheory and TableTheory are permanent
+replacements. This migration is **not incremental**: there are no shims, no dual-running, no compatibility wrappers that
+preserve Lift/DynamORM call sites, and no “slice” sequencing driven by production risk. The outcome is a repo that builds
+and tests cleanly with Lift/DynamORM absent.
 
 ## Scope
-- In scope: inventory Lift usage, plan an incremental migration to AppTheory, and define acceptance criteria per milestone.
-- Optional: inventory DynamORM usage and plan a migration to TableTheory only when DynamORM is present.
-- Out of scope: unrelated refactors or feature changes.
+- In scope:
+  - Replace **all** Lift runtime usage (HTTP, WebSockets, DynamoDB streams, SQS, EventBridge, and any Lift-derived helpers).
+  - Replace **all** DynamORM usage.
+  - Replace **all** direct DynamoDB AWS SDK usage in repo code with TableTheory.
+  - Replace Lift CDK constructs usage in `infra/cdk` (AppTheory CDK + native AWS CDK constructs).
+  - Rename/remove first-party packages/directories that encode the legacy frameworks (`pkg/lift`, `pkg/storage/dynamorm`, etc.).
+- Out of scope: feature refactors unrelated to removing Lift/DynamORM and direct DynamoDB SDK usage.
 
-## Destination (pinned): AppTheory + TableTheory
+## Non-negotiable end state (definition of done)
+- No `github.com/pay-theory/lift` dependency in:
+  - `go.mod`
+  - `infra/cdk/go.mod`
+- No `github.com/pay-theory/dynamorm` dependency in:
+  - `go.mod`
+- No Go imports of Lift or DynamORM:
+  - `rg -n "github.com/pay-theory/lift" --glob '*.go' -S .` returns 0 results
+  - `rg -n "github.com/pay-theory/dynamorm" --glob '*.go' -S .` returns 0 results
+- No direct DynamoDB SDK client usage in repo code (TableTheory only):
+  - `rg -n "aws-sdk-go-v2/service/dynamodb" --glob '*.go' -S .` returns 0 results
+- No first-party legacy framework namespaces:
+  - `cmd/api/lift/`, `pkg/lift/`, `pkg/storage/dynamorm/`, `pkg/testing/lift/`, `pkg/testing/dynamorm/` do not exist in
+    the final tree (move/rename/delete; do not keep compatibility copies).
+- Repo compiles and tests:
+  - `go test ./...` passes
+  - `./lesser test` passes
+  - `make verify` passes
 
-This section defines the **pinned destination frameworks** for this migration. These values are **constants** provided by
-the GovTheory pack (do not guess; do not use placeholders).
+## Destination (pinned)
+
+These are the pinned destination frameworks for this repo. Keep these versions pinned until an intentional upgrade.
 
 ### AppTheory (pinned)
 - Go module: `github.com/theory-cloud/apptheory@v0.5.0`
 - Go runtime import: `github.com/theory-cloud/apptheory/runtime`
-- Docs entrypoints (for tag `v0.5.0`):
+- Docs entrypoints:
   - `docs/getting-started.md`
   - `docs/migration/from-lift.md`
-- Copy/paste dependency command:
+- Copy/paste:
   - `go get github.com/theory-cloud/apptheory@v0.5.0`
-- Recommended pinned docs links:
+- Pinned docs:
   - `https://github.com/theory-cloud/AppTheory/blob/v0.5.0/docs/getting-started.md`
   - `https://github.com/theory-cloud/AppTheory/blob/v0.5.0/docs/migration/from-lift.md`
 
 ### TableTheory (pinned)
 - Go module: `github.com/theory-cloud/tabletheory@v1.3.0`
-- Docs entrypoints (for tag `v1.3.0`):
+- Docs entrypoints:
   - `docs/getting-started.md`
   - `docs/api-reference.md`
   - `docs/migration-guide.md`
-- Copy/paste dependency command:
+  - `docs/struct-definition-guide.md` (tag rules)
+- Copy/paste:
   - `go get github.com/theory-cloud/tabletheory@v1.3.0`
-- Recommended pinned docs links:
+- Pinned docs:
   - `https://github.com/theory-cloud/TableTheory/blob/v1.3.0/docs/getting-started.md`
   - `https://github.com/theory-cloud/TableTheory/blob/v1.3.0/docs/api-reference.md`
   - `https://github.com/theory-cloud/TableTheory/blob/v1.3.0/docs/migration-guide.md`
+  - `https://github.com/theory-cloud/TableTheory/blob/v1.3.0/docs/struct-definition-guide.md`
 
-## Repo inventory (fill from repo scan)
+## Repo inventory (current, not optional)
 
-### Lift usage
-- Lift detected: YES
-- Evidence:
-  - `go.mod`:
-    - `github.com/pay-theory/lift v1.0.82`
-  - `infra/cdk/go.mod`:
-    - `github.com/pay-theory/lift v1.0.82`
-  - Imports/usages (representative examples; repo contains many more):
-    - API routing and handler wiring:
-      - `cmd/api/main.go` (imports `github.com/pay-theory/lift/pkg/lift`, `github.com/pay-theory/lift/pkg/middleware`)
-      - `cmd/api/routes_lift.go` (configures HTTP routes on `*lift.App`)
-      - `cmd/api/lift_handlers.go` + `cmd/api/lift/*.go` (Lift handler implementations; directory is explicitly named `lift/`)
-    - Shared Lift bootstrapping abstractions:
-      - `pkg/lambda/main_framework.go` (creates `*lift.App`, adds middleware, calls `app.HandleRequest`)
-      - `pkg/lift/*.go` (local wrapper package that builds/configures Lift apps and middleware)
-    - Other Lambda entrypoints using Lift directly:
-      - `cmd/activity-processor/main.go` (imports `github.com/pay-theory/lift/pkg/lift`, `github.com/pay-theory/lift/pkg/middleware`)
-      - Many other `cmd/*/main.go` files import Lift for standardized middleware and request handling.
+### Lift usage (must be fully removed)
+- Dependency evidence:
+  - `go.mod`: `github.com/pay-theory/lift v1.0.82`
+  - `infra/cdk/go.mod`: `github.com/pay-theory/lift v1.0.82`
 
-- Primary impacted entrypoints / services (highest-value/most central):
-  - Public API Lambda:
-    - `cmd/api/main.go`
-    - `cmd/api/routes_lift.go`
-    - `cmd/api/lift_handlers.go`
-    - `cmd/api/lift/` (all route handlers)
-  - Shared Lambda framework used across many services:
-    - `pkg/lambda/main_framework.go`
-  - Local Lift abstraction layer (likely becomes the AppTheory landing zone or gets replaced):
-    - `pkg/lift/`
-  - Infrastructure code that depends on Lift (likely only for types/helpers; verify):
-    - `infra/cdk/go.mod` and any `infra/cdk/**/*.go` imports that reference Lift.
+- Lift app creation sites (`lift.New(...)`) that must become `apptheory.New(...)`:
+  - `cmd/api/main.go`
+  - `cmd/graphql/main.go`
+  - `cmd/sse/main.go`
+  - `cmd/graphql-ws/main.go` (uses `lift.WithWebSocketSupport()`)
+  - `cmd/streaming/main.go` (uses `lift.WithWebSocketSupport()`)
+  - `cmd/activity-processor/main.go` (DynamoDB stream)
+  - `cmd/ai-processor/main.go` (DynamoDB stream)
+  - `cmd/cost-aggregator/main.go` (DynamoDB stream)
+  - `cmd/dlq-processor/main.go` (SQS + EventBridge)
+  - `cmd/federation-aggregator/main.go` (SQS + EventBridge)
+  - `cmd/federation-delivery/main.go` (SQS)
+  - `cmd/federation-timeseries/main.go` (DynamoDB stream)
+  - `cmd/federation-tracker/main.go` (DynamoDB stream)
+  - `cmd/media-processor/main.go` (SQS)
+  - `cmd/metrics-aggregator/main.go` (DynamoDB stream)
+  - `cmd/metrics-processor/main.go` (DynamoDB stream)
+  - `cmd/ml-training-processor/main.go` (DynamoDB stream)
+  - `cmd/moderation-processor/main.go` (DynamoDB stream)
+  - `cmd/note-processor/main.go` (DynamoDB stream)
+  - `cmd/notification-processor/main.go` (SQS)
+  - `cmd/objects/main.go` (HTTP routes)
+  - `cmd/outbox/main.go` (HTTP routes + SQS)
+  - `cmd/report-trust-updater/main.go` (DynamoDB stream)
+  - `cmd/search-indexer/main.go` (DynamoDB stream)
+  - `cmd/severance-processor/main.go` (DynamoDB stream)
+  - `cmd/status-indexer/main.go` (DynamoDB stream)
+  - `cmd/stream-router/main.go` (DynamoDB stream)
+  - `cmd/trend-aggregator/main.go` (EventBridge schedule)
+  - `cmd/websocket-cost-aggregator/main.go` (EventBridge schedule)
 
-- Notes / risks:
-  - The API Lambda explicitly states “All routing is handled by the Lift framework” (`cmd/api/main.go` header comment). Any framework migration risks breaking Mastodon-compatible path matching and middleware behavior.
-  - Route surface area is large: `cmd/api/routes_lift.go` configures many endpoints; most handlers live in `cmd/api/lift/*.go`. This increases the need for slice-by-slice migration plus strong regression tests.
-  - There is a shared “standardized Lambda main” abstraction in `pkg/lambda/main_framework.go` that is Lift-based. Migrating it affects many Lambdas at once; do it deliberately (or keep it as a compatibility shim during early slices).
+- Lift event-source registrations that must become AppTheory registrations:
+  - DynamoDB streams (`app.DynamoDB(...)`):
+    - `cmd/activity-processor/main.go`
+    - `cmd/ai-processor/main.go`
+    - `cmd/cost-aggregator/main.go`
+    - `cmd/federation-timeseries/main.go`
+    - `cmd/federation-tracker/main.go`
+    - `cmd/metrics-aggregator/main.go`
+    - `cmd/metrics-processor/main.go`
+    - `cmd/ml-training-processor/main.go`
+    - `cmd/moderation-processor/main.go`
+    - `cmd/note-processor/main.go`
+    - `cmd/report-trust-updater/main.go`
+    - `cmd/search-indexer/main.go`
+    - `cmd/severance-processor/main.go`
+    - `cmd/status-indexer/main.go`
+    - `cmd/stream-router/main.go`
+  - SQS (`app.SQS(...)`):
+    - `cmd/dlq-processor/main.go`
+    - `cmd/federation-aggregator/main.go`
+    - `cmd/federation-delivery/main.go`
+    - `cmd/media-processor/main.go`
+    - `cmd/notification-processor/main.go`
+    - `cmd/outbox/main.go`
+  - EventBridge (`app.EventBridge(...)`):
+    - `cmd/websocket-cost-aggregator/main.go`
+    - `cmd/cms-scheduler/main.go`
+    - `cmd/dlq-processor/main.go`
+    - `cmd/federation-aggregator/main.go`
+    - `cmd/trend-aggregator/main.go`
+  - WebSockets (`app.WebSocket(...)`):
+    - `cmd/graphql-ws/main.go`
+    - `cmd/streaming/main.go`
+  - SSE:
+    - `cmd/sse/main.go` uses `lift.SSEResponse(...)`
 
-### DynamORM usage (optional)
-- DynamORM detected: YES
-- Evidence:
-  - `go.mod`:
-    - `github.com/pay-theory/dynamorm v1.0.39`
-  - Imports/usages (representative examples; repo contains many more):
-    - Direct DB core import (DynamORM core):
-      - `cmd/api/main.go` imports `dynamormCore "github.com/pay-theory/dynamorm/pkg/core"`
-      - `cmd/activity-processor/main.go` imports `github.com/pay-theory/dynamorm/pkg/core`
-    - DynamORM storage layer and adapter patterns:
-      - `pkg/storage/dynamorm/adapter.go` (explicitly described as a “critical StorageAdapter bridge”)
-      - `pkg/storage/dynamorm/base.go`, `pkg/storage/dynamorm/client.go`, `pkg/storage/dynamorm/lambda_init.go`
-      - `pkg/storage/dynamorm/repositories/*`
-    - Lambda-optimized client construction:
-      - `cmd/api/main.go` references `dynamorm.NewLambdaOptimizedClient` (via `newLambdaOptimizedClient` var)
+- Lift-first helper packages that must be removed or rewritten on AppTheory types:
+  - `pkg/lift/` (all files)
+  - `pkg/testing/lift/`
+  - `pkg/testing/mocks/lift_mock.go`
+  - `pkg/deploy/naming/naming.go` imports `github.com/pay-theory/lift/pkg/naming` (must be removed)
+  - `cmd/api/lift/` (directory name encodes Lift)
+  - `cmd/api/routes_lift.go` (file name encodes Lift)
+  - `cmd/api/lift_handlers.go` (Lift handler signatures)
+  - `tools/openapi/*` references `cmd/api/lift` as a package path
+  - `scripts/add-panic-recovery.sh` checks for `lift.New()` and injects Lift middleware
 
-- Tables/models involved (repo-specific, from scan and code organization):
-  - Primary DynamoDB table name is environment/config driven:
-    - `cfg.DynamoTableName` (e.g., in `cmd/api/main.go`, `cmd/activity-processor/main.go`)
-    - A fallback default string appears in `cmd/api/main.go` manual init path: `lesser-main`
-  - Domain model packages driving table items:
-    - `pkg/storage/models` (shared model definitions)
-    - `pkg/storage/interfaces` (repository interfaces)
-    - `pkg/storage/dynamorm/repositories/*` (per-entity repositories)
-  - Key schema and access patterns are critical and documented in-code:
-    - `pkg/storage/dynamorm/adapter.go` comment block lists preserved PK/SK patterns (Users, Actors, Objects, DNS Cache) and mentions GSIs/TTL.
+### DynamORM usage (must be fully removed)
+- Dependency evidence:
+  - `go.mod`: `github.com/pay-theory/dynamorm v1.0.39`
 
-- Notes / risks:
-  - This repo heavily centralizes business state in a single DynamoDB table with multiple entity types and key patterns. Any TableTheory migration must preserve PK/SK composition, GSIs, and TTL semantics.
-  - Multiple Lambdas construct DB clients and repository factories; shifting the data layer will be highly cross-cutting.
+- Primary implementation namespaces that must not exist in the final tree:
+  - `pkg/storage/dynamorm/`
+  - `pkg/testing/dynamorm/`
 
-## Migration principles
-- Prefer incremental change: introduce adapters/shims first, then migrate call sites.
-- Keep behavior stable: add regression tests at boundaries before swapping implementations.
-- Remove legacy dependencies only after all call sites are migrated and verified.
+- Model tags to eliminate:
+  - `rg -n "dynamorm:\\\"" -S pkg cmd graph` returns many results across:
+    - `pkg/storage/models/*`
+    - `pkg/storage/dynamorm/*`
+    - other supporting packages (monitoring, services, streaming examples)
 
-## Roadmap (sequenced milestones)
+- Construction points that must become TableTheory:
+  - `cmd/api/main.go` (lambda-optimized DB init)
+  - `cmd/activity-processor/main.go` (DB init + repositories)
+  - `pkg/storage/dynamorm/*` (all DB init / adapters / repositories)
+  - `graph/query_resolvers_cms.go`, `graph/mutation_resolvers_cms.go` (imports DynamORM types/errors)
 
-### M0 — Baseline + guardrails
-**Goal:** create an accurate inventory and reduce migration risk.
+### Native DynamoDB AWS SDK usage (must be fully removed)
 
-**Steps**
-1. Lock in a “current behavior” baseline for the API Lambda routing surface:
-   - Identify which files define the canonical route list:
-     - `cmd/api/routes_lift.go`
-     - `cmd/api/lift_handlers.go`
-   - Use existing verification tooling to ensure route configuration/spec artifacts are current:
-     - `make verify-openapi-strict`
-     - `make verify-graphql-coverage`
-2. Complete the “Repo inventory” section above with anything still missing after deeper scans:
-   - Run repo-wide searches and save counts/output into an internal engineering note (not required in this doc):
-     - `rg "github.com/pay-theory/lift" -n`
-     - `rg "github.com/pay-theory/dynamorm" -n`
-3. Identify the highest-risk behaviors that must not change:
-   - HTTP path matching (Mastodon endpoints) and middleware order in:
-     - `cmd/api/main.go`
-     - `cmd/api/middleware.go`
-     - `pkg/lift/app.go` (local Lift middleware builder)
-   - Lambda handler wiring / event shapes (API Gateway vs stream processors):
-     - `cmd/api/main.go`
-     - `cmd/activity-processor/main.go`
-4. Add/expand regression tests around the highest-risk workflows (do this before swapping frameworks):
-   - Candidate test locations already present and likely to extend:
-     - `cmd/api/routes_lift_test.go` (route behavior)
-     - `cmd/api/routes_lift_manifest_test.go` + `cmd/api/testdata/routes_lift_manifest.txt` (route manifest snapshot; regenerate with `UPDATE_ROUTE_MANIFEST=1 go test ./cmd/api -run TestConfigureLiftRoutes_RouteManifestMatchesSnapshot`)
-     - `cmd/api/lift/*_test.go` (handler-level tests)
-     - `pkg/lambda/main_framework_test.go` (framework-level behavior)
+TableTheory is the only DynamoDB access layer in this repo. Any `.go` file importing
+`github.com/aws/aws-sdk-go-v2/service/dynamodb` must be rewritten to use TableTheory instead.
 
-**Acceptance criteria**
-- Inventory has concrete file paths (not generic statements).
-- A minimal test safety net exists for the highest-risk workflows.
-- Current verification loop is documented (see “Suggested verification commands”).
+Known current import sites:
+- `cmd/lesser/bootstrap.go`
+- `cmd/lesser/up.go`
+- `cmd/owner-bootstrap/main.go`
+- `graph/resolver.go`
+- `pkg/aws/initialization.go`
+- `pkg/config/validator.go`
+- `pkg/cost/dynamodb_wrapper.go`
+- `pkg/cost/middleware.go`
+- `pkg/cost/storage.go`
+- `pkg/federation/routing/metrics.go`
+- `pkg/monitoring/*` (health/integration helpers)
+- `pkg/observability/health.go`
+- `pkg/translation/aws_translate.go`
+- plus tests for the above files
 
-### M1 — Introduce AppTheory structure (no behavior change)
-**Goal:** add a clear landing zone for AppTheory migration work without changing production behavior.
+## Execution steps (single branch / single PR)
 
-**Implemented (this branch)**
-- Landing package boundary: `pkg/apptheory/` (AppTheory + TableTheory wiring namespace; no production use yet).
-- Destination deps pinned in `go.mod`:
-  - `github.com/theory-cloud/apptheory@v0.5.0`
-  - `github.com/theory-cloud/tabletheory@v1.3.0`
-- First migration slice selected: API health endpoints (see Step 3).
+### 0) Pre-flight
+1. Create a branch dedicated to the replacement.
+2. Capture a baseline of current test state (even if failing) so you can see progress:
+   - `go test ./...`
+   - `./lesser test`
+   - `make verify`
 
-**Steps**
-1. Decide the target architectural boundaries for AppTheory in this repo.
-   - Recommended approach for *lesser* (serverless, many Lambdas):
-     - Introduce a new package namespace for AppTheory wiring (example names only; choose one and standardize):
-       - `pkg/apptheory/` (AppTheory runtime + app construction + middleware)
-       - or `pkg/runtime/` (if you want to treat AppTheory as “the runtime”)
-   - Keep the existing Lift-based packages (`pkg/lift`, `pkg/lambda`) intact until a slice is migrated.
-2. Define an explicit mapping plan from Lift concepts used here to AppTheory concepts.
-   - Lift touchpoints to map (repo-specific):
-     - `*lift.App` creation (`lift.NewHTTPApp(...)` in `pkg/lift/app.go` and `createStandardizedLiftApp(...)` in `pkg/lambda/main_framework.go`)
-     - Middleware stack order (`pkg/lambda/main_framework.go`, `cmd/api/middleware.go`, `pkg/lift/app.go`)
-     - Handler signatures and context usage (`cmd/api/lift/*.go` use Lift `*lift.Context` heavily)
-   - Mapping notes for Lesser (AppTheory runtime import: `github.com/theory-cloud/apptheory/runtime`):
-     - App container:
-       - Lift: `lift.New(...)` / `lift.New(lift.WithDebug())`
-       - AppTheory: `apptheory.New(...)` (Tier defaults to P2; can set `apptheory.WithTier(...)`)
-     - Routes:
-       - Lift: `app.GET/POST/PUT/PATCH/DELETE(...)` and `app.Handle(...)`
-       - AppTheory: `app.Get/Post/Put/Patch/Delete(...)` and `app.Handle(...)`
-       - Route patterns: Lift-style `:param` segments are accepted by AppTheory (canonicalized to `{param}`); verify any wildcard/proxy usage via the Lift route manifest snapshot.
-     - Handlers:
-       - Lift handler signature: `func(*lift.Context) error`
-       - AppTheory handler signature: `func(*apptheory.Context) (*apptheory.Response, error)`
-       - Lift response pattern: `ctx.Status(code).JSON(value)` / `ctx.Text(...)` / `ctx.Bytes(...)`
-       - AppTheory response helpers: `apptheory.JSON(code, value)` / `apptheory.Text(...)` / `apptheory.Binary(...)`
-     - Middleware:
-       - Lift: `app.Use(lift.Middleware)` (custom ordering is fully controlled by registration order)
-       - AppTheory: `app.Use(apptheory.Middleware)`; portable built-ins run in a contract-defined order in P1/P2 (request-id → recovery → logging → CORS → auth → handler), and user middleware wraps the final handler stage.
-       - Context value bag: Lift `ctx.Set/Get` maps to AppTheory `ctx.Set/Get` for request-scoped state sharing.
-     - AWS entrypoints:
-       - Lift: `app.HandleRequest(ctx, event)` (event type is inferred at runtime)
-       - AppTheory: prefer explicit entrypoints per Lambda trigger (e.g. API Gateway v2 HTTP API), or use `app.HandleLambda(ctx, json.RawMessage)` when keeping Lift’s “single entrypoint router” posture.
-3. Select one low-risk vertical slice to migrate first.
-   - Recommended first slice for this repo:
-     - A minimal endpoint group with clear request/response behavior and strong tests, such as the health endpoints:
-       - `cmd/api/main.go` (`configureHealthRoutes`)
-       - Health endpoints (all `GET`): `/health`, `/health/live`, `/health/ready`, `/health/detailed`
-   - Alternative low-risk slice:
-     - A background Lambda with narrow event shape (if AppTheory supports it cleanly), but avoid stream processors first because they also depend on DynamORM.
+### 1) Remove Lift/DynamORM from module dependencies
+1. In the root module:
+   - Remove `github.com/pay-theory/lift` from `go.mod`.
+   - Remove `github.com/pay-theory/dynamorm` from `go.mod`.
+   - Ensure pinned destination deps exist:
+     - `github.com/theory-cloud/apptheory v0.5.0`
+     - `github.com/theory-cloud/tabletheory v1.3.0`
+   - Run: `go mod tidy`
+2. In the CDK module:
+   - Remove `github.com/pay-theory/lift` from `infra/cdk/go.mod`.
+   - Add `github.com/theory-cloud/apptheory v0.5.0` to `infra/cdk/go.mod` (for `cdk-go/apptheorycdk`).
+   - Run:
+     - `cd infra/cdk && go mod tidy`
+     - `cd ../..`
 
-**Acceptance criteria**
-- Target package boundaries are documented with repo-specific paths.
-- A first migration slice is selected with explicit files and scope.
-- No production behavior change yet (planning-only milestone).
+### 2) Replace Lift CDK constructs with AppTheory CDK + native AWS CDK
+This step removes all `liftcdk` imports from `infra/cdk`.
 
-### M2 — Migrate Lift call sites in slices
-**Goal:** move Lift usage to AppTheory incrementally.
+1. Replace the import root:
+   - Lift: `liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"`
+   - AppTheory: `apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"`
+2. Replace constructs used by `infra/cdk`:
+   - `liftcdk.LiftRestAPI` → `apptheorycdk.AppTheoryRestApi`
+   - `liftcdk.NewLiftRestAPI(...)` → `apptheorycdk.NewAppTheoryRestApi(...)`
+   - `liftcdk.NewLiftFunction(...)` → `apptheorycdk.NewAppTheoryFunction(...)` (use `.Fn()` to get `awslambda.Function`)
+   - `liftcdk.NewEventBridgeHandler(...)` → `apptheorycdk.NewAppTheoryEventBridgeHandler(...)`
+   - `liftcdk.NewLiftEventSourceMapping(...)` → `apptheorycdk.NewAppTheoryDynamoDBStreamMapping(...)`
+   - `liftcdk.NewLiftTable(...)` → `apptheorycdk.NewAppTheoryDynamoTable(...)` (use `.Table()`)
+   - `liftcdk.NewLiftSQSQueue(...)` → `apptheorycdk.NewAppTheoryQueueProcessor(...)` + explicit DLQ and grants using `awssqs.QueueProps`
+3. Replace Lift-only constructs that have no AppTheory equivalent using AWS CDK directly:
+   - `liftcdk.NewLiftKMSKey(...)` → `awskms.NewKey(...)` + `awskms.NewAlias(...)` if needed
+   - `liftcdk.NewLiftLambdaRole(...)` → `awsiam.NewRole(...)` + explicit managed policies/inline policies
+   - `liftcdk.NewPathRoutedFrontendDistribution(...)` → implement an equivalent construct inside `infra/cdk/constructs/` using `awscloudfront`, `awscloudfrontorigins`, `awss3`, and the existing `localconstructs.NewFrontendStaticResponseHeadersPolicy(...)`
+   - `liftcdk.NewMediaCDN(...)` → implement an equivalent construct inside `infra/cdk/constructs/` using `awscloudfront`, `awss3`, and ACM certs already provisioned in `lesser_api_stack.go`
 
-**Important repo-specific note:** Lift is used both directly and indirectly:
-- Directly by service entrypoints (many `cmd/*/main.go` import Lift types).
-- Indirectly through shared wrappers (`pkg/lambda`, `pkg/lift`).
+### 3) Replace Lift runtime usage with AppTheory runtime
 
-That means you should plan slices so you don’t accidentally migrate “everything” by changing the shared wrapper too early.
+#### 3.1) Rename/remove legacy framework namespaces
+Do these renames/removals up front so new code does not keep the old names:
+1. Rename `cmd/api/lift/` → `cmd/api/handlers/` and update all imports accordingly.
+2. Rename `cmd/api/routes_lift.go` → `cmd/api/routes.go` and update references/tests accordingly.
+3. Rename `cmd/api/lift_handlers.go` → `cmd/api/handlers.go` and update references/tests accordingly.
+4. Rename API tests to remove `lift` from filenames:
+   - `cmd/api/routes_lift_test.go` → `cmd/api/routes_test.go`
+   - `cmd/api/routes_lift_manifest_test.go` → `cmd/api/routes_manifest_test.go`
+   - `cmd/api/lift_handlers_test.go` → `cmd/api/handlers_test.go`
+   - `cmd/api/lift_handlers_round12_test.go` → `cmd/api/handlers_round12_test.go`
+5. Delete the following legacy packages after their replacements exist:
+   - `pkg/lift/`
+   - `pkg/testing/lift/`
+   - `pkg/testing/mocks/lift_mock.go`
+6. Remove the Lift naming dependency:
+   - Update `pkg/deploy/naming/naming.go` to remove `github.com/pay-theory/lift/pkg/naming`.
+   - Replace `liftnaming.SanitizeS3BucketName(...)` with a local S3-bucket sanitization implementation.
 
-**Steps**
-1. Slice 1 (recommended): API health endpoints
-   - Files likely in-scope:
-     - `cmd/api/main.go` (`configureHealthRoutes`)
-     - Any shared middleware referenced by these handlers:
-      - `cmd/api/middleware.go`
-      - `pkg/middleware/*` (if used)
-   - Acceptance test focus:
-     - Status codes, headers (especially CORS), and response JSON.
-2. Slice 2: “Auth bootstrap” and OAuth-adjacent endpoints
-   - Files likely in-scope:
-     - `cmd/api/routes_lift.go` routes for:
-       - `/oauth/*`
-       - `/setup/*`
-       - `/auth/wallet/*`
-       - `/api/v1/auth/webauthn/*`
-     - Handler implementations in:
-       - `cmd/api/lift/oauth.go`
-       - `cmd/api/lift/oauth_consent.go`
-       - `cmd/api/lift/setup.go`
-       - `cmd/api/lift/webauthn.go`
-       - `cmd/api/lift/apps.go`
-   - Risks:
-     - Rate limiting and middleware order (`ratelimit.ApplyRateLimit` wrappers in `cmd/api/routes_lift.go`).
-3. Slice 3+: migrate remaining API route groups
-   - Group by API domain to keep PRs reviewable:
-     - Accounts: `cmd/api/lift/accounts*.go`
-     - Statuses/timelines: `cmd/api/lift/status*.go`, `cmd/api/lift/timelines.go`
-     - Moderation/admin: `cmd/api/lift/admin*.go`, `cmd/api/lift/moderation.go`
-     - Media: `cmd/api/lift/media.go`
-     - Federation discovery: `cmd/api/lift/nodeinfo.go`, `cmd/api/lift/webfinger.go`, `cmd/api/lift/discovery.go`
-4. After the API Lambda is migrated, evaluate shared wrapper migration:
-   - If `pkg/lambda/main_framework.go` is used broadly for non-API Lambdas, migrating it may migrate many services at once.
-   - Consider keeping `pkg/lambda` as a Lift compatibility layer until you have migrated a representative set of Lambdas.
-5. Update dependency management:
-   - Remove `github.com/pay-theory/lift` from **both** module files only after code search confirms no remaining imports/usages:
-     - Root `go.mod`
-     - `infra/cdk/go.mod`
+#### 3.2) Replace Lift app creation and Lambda entrypoint wiring everywhere
+For every Lift-based Lambda entrypoint (see the list under “Lift app creation sites”):
+1. Replace imports:
+   - `github.com/pay-theory/lift/pkg/lift` → `apptheory "github.com/theory-cloud/apptheory/runtime"`
+   - Any Lift middleware imports → remove or replace with AppTheory equivalents (AppTheory includes request-id + recovery in-tier).
+2. Replace app construction:
+   - Lift: `app := lift.New(...)`
+   - AppTheory: `app := apptheory.New(apptheory.WithTier(apptheory.TierP2))`
+   - If WebSockets are used: add `apptheory.WithWebSocketSupport()`
+3. Replace Lambda startup:
+   - Lift: `lambda.Start(app.HandleRequest)`
+   - AppTheory: `lambda.Start(app.HandleLambda)`
 
-**Acceptance criteria**
-- Each slice has:
-  - Explicit file list.
-  - Verification commands and required checks.
-  - Rollback plan (revert slice PR; keep Lift-based path available until slice verified).
-- `rg "github.com/pay-theory/lift" -n` returns no results before removing Lift from `go.mod`.
-- `go test ./...` and `make verify` remain green.
+#### 3.3) Replace HTTP route handlers (Lift Context → AppTheory Context)
+1. Replace handler signatures:
+   - Lift: `func(ctx *lift.Context) error`
+   - AppTheory: `func(ctx *apptheory.Context) (*apptheory.Response, error)`
+2. Replace responses:
+   - JSON: `return apptheory.JSON(status, value), nil`
+   - Text: `return apptheory.Text(status, "text"), nil`
+   - Binary: `return apptheory.Binary(status, bytes, contentType), nil`
+3. Replace request parsing:
+   - JSON body: `v, err := ctx.JSONValue()` then `json.Unmarshal(...)`
+   - Params: `ctx.Param("name")` is available in AppTheory
+   - Request-scoped state: `ctx.Set(key, value)` / `ctx.Get(key)`
 
-### M3 — (Optional) DynamORM → TableTheory migration
-**Goal:** migrate DynamoDB access layer only when DynamORM is present.
+#### 3.4) Replace DynamoDB stream handlers (Lift batch extraction → AppTheory per-record handler)
+Lift’s common pattern in this repo:
 
-DynamORM detected = YES, so this section applies.
+```go
+_ = app.DynamoDB("*", func(ctx *lift.Context) error {
+	records, err := ctx.DynamoDBRecords()
+	...
+	return processor.HandleStream(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
+})
+```
 
-**Repo-specific warning:** This repo already contains a substantial “adapter bridge” layer (`pkg/storage/dynamorm/adapter.go`) and many repositories under `pkg/storage/dynamorm/repositories/*`. Treat the migration as a data-access rewrite with strict behavioral compatibility requirements.
+AppTheory’s contract surface is per-record:
+- Register: `app.DynamoDB(tableName, handler)`
+- Handler signature: `func(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error`
+- Entrypoint: `app.ServeDynamoDBStream(ctx, events.DynamoDBEvent)` (or `app.HandleLambda`)
 
-**Steps (when applicable)**
-1. Inventory DynamORM usage at the “construction points” (where clients/factories are created), because those are the best slice boundaries.
-   - Representative construction points to audit first:
-     - API Lambda:
-       - `cmd/api/main.go` (uses `dynamorm.NewLambdaOptimizedClient` via `newLambdaOptimizedClient`)
-     - Stream processor:
-       - `cmd/activity-processor/main.go` (calls `dynamorm.GetClient(...)` and `factory.NewRepositoryFactory(...)`)
-     - Shared data layer:
-       - `pkg/storage/dynamorm/client.go`
-       - `pkg/storage/dynamorm/lambda_init.go`
-2. Define a TableTheory mapping at the repository boundary.
-   - Current boundary interfaces:
-     - `pkg/storage/interfaces/*` (repository interfaces)
-     - `pkg/storage/core/*` (factory/storage abstractions)
-   - Current DynamORM implementation:
-     - `pkg/storage/dynamorm/repositories/*`
-     - `pkg/storage/dynamorm/adapter.go` (bridge)
-   - Migration decision to make:
-     - Either:
-       1) Re-implement repositories using TableTheory while keeping interfaces stable, or
-       2) Introduce a new TableTheory-native repository interface layer and adapt callers.
-     - For *lesser*, option (1) is usually lower-risk because it avoids touching all service logic at once.
-3. Migrate in slices (table/model oriented, but executed via repositories).
-   - Suggested first slice (lowest blast radius):
-     - Choose a read-mostly, low-write entity (example only; decide based on usage in code): DNS cache patterns referenced in `pkg/storage/dynamorm/adapter.go` comments.
-   - Next slices:
-     - Users/Profiles
-     - Actors
-     - Objects
-     - Timeline + notification fanout (higher risk)
-4. Validate data-layer behavior before removing DynamORM.
-   - Add or strengthen integration tests where feasible.
-   - For local validation, consider a DynamoDB Local test harness if already present; otherwise, define one.
-5. Remove DynamORM dependency from `go.mod` only after all call sites migrated:
-   - `rg "github.com/pay-theory/dynamorm" -n` returns no results.
+Required refactor:
+1. Refactor each stream processor to a record-level entrypoint:
+   - Create `HandleRecord(ctx context.Context, record events.DynamoDBEventRecord) error` and move record processing logic there.
+2. Register the AppTheory handler by **exact** table name:
+   - AppTheory routes by the table name extracted from `record.EventSourceArn` and matches by string equality.
+   - AppTheory does not support `"*"` / glob / prefix matching for DynamoDB Streams.
+   - In this repo, the stream processors are wired to the main table stream; register `cfg.DynamoTableName` (env `DYNAMODB_TABLE`).
+   - `app.DynamoDB(cfg.DynamoTableName, func(ev *apptheory.EventContext, rec events.DynamoDBEventRecord) error { return processor.HandleRecord(ev.Context(), rec) })`
 
-**Acceptance criteria**
-- A repository-by-repository migration plan exists with explicit file lists.
-- Data-layer behavior is validated (unit tests + targeted integration checks) before removing DynamORM.
-- No remaining DynamORM imports/usages before removing `github.com/pay-theory/dynamorm` from `go.mod`.
+#### 3.5) Replace SQS handlers (Lift batch extraction → AppTheory per-message handler)
+AppTheory SQS surface:
+- Register: `app.SQS(queueName, handler)`
+- Handler signature: `func(ctx *apptheory.EventContext, msg events.SQSMessage) error`
+- Entrypoint: `app.ServeSQS(ctx, events.SQSEvent)` (or `app.HandleLambda`)
 
-### M4 — Cleanup + verification hardening
-**Goal:** ensure the migration is complete, and future drift is prevented.
+Required refactor:
+1. Convert each Lift handler that expects an `events.SQSEvent` batch into a per-message handler.
+2. Remove any usage of Lift context record extraction (`ctx.SQSRecords()` patterns).
+3. Register the AppTheory handler by **exact** queue name:
+   - AppTheory routes by the queue name extracted from `record.EventSourceARN` and matches by string equality.
+   - AppTheory does not support `"*"` / glob / prefix matching for SQS queue routing.
+   - For each SQS-triggered Lambda, compute and register the **deployed queue name**:
+     - Queue name = `naming.ResourceNameWithApp(os.Getenv("APP_NAME"), "<logical-queue>", os.Getenv("ENVIRONMENT"))`
+     - Canonical logical queue names are the values in `infra/cdk/inventory/lambdas.go` under `SQSTriggers`.
+   - For DLQ consumption (`dlq-processor`), register the DLQ queue names (this repo’s CDK defaults to `"<logical>-dlq"`):
+     - `enhanced-federation-queue-dlq`
+     - `export-processor-queue-dlq`
+     - `federation-aggregator-queue-dlq`
+     - `federation-delivery-queue-dlq`
+     - `import-processor-queue-dlq`
+     - `media-processor-queue-dlq`
+     - `notification-processor-queue-dlq`
+     - `push-delivery-queue-dlq`
 
-**Steps**
-1. Confirm no remaining Lift/DynamORM references via repo-wide search:
-   - `rg "github.com/pay-theory/lift" -n` => 0 results
-   - `rg "github.com/pay-theory/dynamorm" -n` => 0 results
-2. Strengthen CI verification around migrated surfaces:
-   - Ensure `make verify` remains the canonical gate (already aggregates many checks).
-   - Ensure the OpenAPI/GraphQL coverage generators remain consistent post-migration:
-     - `make verify-openapi-strict`
-     - `make verify-graphql-coverage`
-3. Document follow-on work:
-   - Performance tuning after framework swap.
-   - Observability alignment (logging/tracing/metrics) if AppTheory defaults differ from Lift.
+#### 3.6) Replace EventBridge handlers
+AppTheory EventBridge surface:
+- Register by rule: `app.EventBridge(apptheory.EventBridgeRule(ruleName), handler)`
+- Register by pattern: `app.EventBridge(apptheory.EventBridgePattern(source, detailType), handler)`
+- Entrypoint: `app.ServeEventBridge(ctx, events.EventBridgeEvent)` (or `app.HandleLambda`)
 
-**Acceptance criteria**
-- Repo-wide search shows zero Lift/DynamORM imports/usages.
-- CI checks remain green and cover the migrated pathways.
+Required refactor:
+1. Replace Lift `app.EventBridge("...*", func(ctx *lift.Context) error { ... })` style handlers with AppTheory selectors.
+2. Register by **exact** rule name for scheduled Lambdas:
+   - AppTheory matches by exact rule name derived from `event.Resources[*]` ARNs (string equality).
+   - AppTheory does not support `"*"` / glob / prefix matching for rule names.
+   - In this repo, schedule rule names are deterministic and are built as:
+     - `naming.ResourceNameWithApp(os.Getenv("APP_NAME"), "<lambda-name>-schedule-0", os.Getenv("ENVIRONMENT"))`
+   - Scheduled Lambdas to update:
+     - `cms-scheduler` → rule `cms-scheduler-schedule-0`
+     - `dlq-processor` → rule `dlq-processor-schedule-0`
+     - `federation-aggregator` → rule `federation-aggregator-schedule-0`
+     - `trend-aggregator` → rule `trend-aggregator-schedule-0`
+     - `websocket-cost-aggregator` → rule `websocket-cost-aggregator-schedule-0`
 
-## Suggested verification commands (fill from repo tooling)
-- Build:
-  - `go build ./...`
-  - (full deployment build) `make build`
-- Unit tests:
+#### 3.7) Replace WebSocket handlers
+AppTheory WebSocket surface:
+- Register routes: `app.WebSocket("$connect", handler)` etc.
+- Handler signature: `func(ctx *apptheory.Context) (*apptheory.Response, error)`
+- Entrypoint: `app.ServeWebSocket(ctx, events.APIGatewayWebsocketProxyRequest)` (or `app.HandleLambda`)
+
+Inside handlers:
+- `ws := ctx.AsWebSocket()`
+- `ws.SendMessage(...)` / `ws.SendJSONMessage(...)`
+
+#### 3.8) Replace SSE responses
+Replace:
+- Lift: `lift.SSEResponse(ctx, eventCh)`
+- AppTheory: `return apptheory.SSEStreamResponse(ctx.Context(), 200, eventCh)`
+
+### 4) Replace DynamORM + direct DynamoDB SDK usage with TableTheory
+
+#### 4.1) Replace TableTheory model tags
+For every struct tag currently using `dynamorm:"..."`, replace with TableTheory’s `theorydb:"..."`.
+
+Mechanical mapping rules (do not change key/index names):
+- `dynamorm:"pk"` → `theorydb:"pk"`
+- `dynamorm:"sk"` → `theorydb:"sk"`
+- `dynamorm:"ttl"` → `theorydb:"ttl"`
+- `dynamorm:"version"` → `theorydb:"version"`
+- `dynamorm:"attr:<name>"` → `theorydb:"attr:<name>"`
+- `dynamorm:"index:<index>,pk"` → `theorydb:"index:<index>,pk"`
+- `dynamorm:"index:<index>,sk"` → `theorydb:"index:<index>,sk"`
+- `dynamorm:"naming:camelCase"` → `theorydb:"naming:camelCase"`
+
+Reference: TableTheory tag spec is documented in `docs/struct-definition-guide.md` (pinned above).
+
+#### 4.2) Replace DB initialization
+1. Remove all DynamORM client construction:
+   - `dynamorm.GetClient(...)`
+   - `dynamorm.NewLambdaOptimizedClient(...)`
+   - `dynamormCore.DB` usage
+2. Replace with TableTheory initialization:
+   - Lambda: `db, err := tabletheory.NewLambdaOptimized()`
+   - Non-Lambda/local: `db, err := tabletheory.New(session.Config{Region: ..., Endpoint: ...})`
+3. Update all call sites to use `tabletheory.DB` / `*tabletheory.LambdaDB` instead of DynamORM’s DB interface.
+
+#### 4.3) Replace DynamORM errors with TableTheory errors
+1. Replace imports:
+   - `github.com/pay-theory/dynamorm/pkg/errors` → `github.com/theory-cloud/tabletheory/pkg/errors`
+2. Replace helpers:
+   - `dynamormerrors.IsNotFound(err)` → `tabletheoryerrors.IsNotFound(err)`
+   - `dynamormerrors.IsConditionFailed(err)` → `tabletheoryerrors.IsConditionFailed(err)`
+3. Update any sentinel comparisons to use `errors.Is(err, tabletheoryerrors.ErrItemNotFound)` etc.
+
+#### 4.4) Replace DynamORM repositories and adapters
+1. Delete the DynamORM implementation tree after porting:
+   - `pkg/storage/dynamorm/` (adapter, client, repositories, migrations, patterns)
+2. Create `pkg/storage/tabletheory/` as the TableTheory-only storage implementation namespace:
+   - Move/port the necessary client init, adapters, and shared helpers from `pkg/storage/dynamorm/` into `pkg/storage/tabletheory/`.
+   - Update any imports that referenced `pkg/storage/dynamorm/...` to `pkg/storage/tabletheory/...`.
+3. Update repository factories:
+   - `pkg/storage/factory/*` must construct repositories over TableTheory DB.
+
+#### 4.5) Replace raw DynamoDB AWS SDK usage with TableTheory
+For every `.go` file importing `github.com/aws/aws-sdk-go-v2/service/dynamodb`:
+1. Remove the DynamoDB client.
+2. Replace the operation with TableTheory’s equivalents:
+   - CRUD/query/update: `db.Model(...).Where(...).First/All/Create/Update/Delete`
+   - Schema/table checks: `db.EnsureTable(model)` / `db.AutoMigrate(models...)` / `db.CreateTable(model)`
+   - Stream image unmarshal: `tabletheory.UnmarshalStreamImage(...)`
+
+#### 4.6) Replace DynamORM mocks in tests with TableTheory mocks
+1. Replace `dynamormmocks.*` usage with `github.com/theory-cloud/tabletheory/pkg/mocks`.
+2. Update test harnesses in:
+   - `graph/round12_test_harness_test.go`
+   - any `pkg/testing/dynamorm/*` helpers
+
+### 5) Tooling + docs cleanup (complete removal)
+1. Replace `tools/openapi/*` assumptions about `cmd/api/lift` package path; point it at the renamed handler package.
+2. Remove or rewrite `tools/migrate_lift_storage_to_repos.go` (it encodes Lift+DynamORM concepts and must not remain in a Lift-free repo).
+3. Remove or rewrite `scripts/add-panic-recovery.sh` to target AppTheory (`apptheory.New(...)`) and AppTheory middleware patterns.
+4. Update repository documentation that instructs using Lift CDK or Lift runtime:
+   - `docs/guides/CLIENT_APP_GUIDE.md` (Lift CDK references)
+
+## Final verification commands (required)
+- Dependency hygiene:
+  - `go mod tidy`
+  - `cd infra/cdk && go mod tidy && cd ../..`
+- No legacy imports:
+  - `rg -n "github.com/pay-theory/lift" --glob '*.go' -S .`
+  - `rg -n "github.com/pay-theory/dynamorm" --glob '*.go' -S .`
+  - `rg -n "aws-sdk-go-v2/service/dynamodb" --glob '*.go' -S .`
+- Tests:
   - `go test ./...`
-  - (short unit suite) `make verify-unit`
-- Integration tests (if present / networked smoke tests):
-  - `make verify-smoke` (runs `smoke-core` + `smoke-federation`)
-- Lint/format / repo gates:
-  - `make verify` (lambda set, inventory, docs, ai-training docs, schema, graphql coverage, openapi, unit tests)
-  - Optional: `make verify-cdk` (requires CDK toolchain)
+  - `./lesser test`
+  - `make verify`
