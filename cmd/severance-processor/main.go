@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -11,12 +12,12 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/services"
 	severanceService "github.com/equaltoai/lesser/pkg/services/severance"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -112,18 +113,26 @@ type severanceDetector interface {
 	DetectSeverance(ctx context.Context, remoteInstance string, reason models.SeveranceReason, affectedFollowers, affectedFollowing int, details string) (*severanceService.SeveredRelationship, error)
 }
 
-// HandleDynamoDBStreamEvent processes DynamoDB stream events for severance detection
-func (p *SeveranceProcessor) HandleDynamoDBStreamEvent(ctx context.Context, event events.DynamoDBEvent) error {
-	p.logger.Info("processing severance detection event",
-		zap.Int("record_count", len(event.Records)))
+func (p *SeveranceProcessor) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if p == nil {
+		return fmt.Errorf("severance processor is nil")
+	}
+	if p.logger == nil {
+		p.logger = zap.NewNop()
+	}
 
-	for _, record := range event.Records {
-		if err := p.processRecord(ctx, record); err != nil {
-			p.logger.Error("failed to process record",
-				zap.String("event_id", record.EventID),
-				zap.Error(err))
-			// Continue processing other records
-		}
+	runCtx := context.Background()
+	if ctx != nil {
+		runCtx = ctx.Context()
+	}
+
+	if err := p.processRecord(runCtx, record); err != nil {
+		p.logger.Error("failed to process record",
+			zap.String("event_id", record.EventID),
+			zap.Error(err),
+		)
+		// Match previous Lift behavior: log and continue; do not fail the batch.
+		return nil
 	}
 
 	return nil
@@ -359,17 +368,18 @@ func (p *SeveranceProcessor) countAffectedRelationships(ctx context.Context, dom
 	return followerCount, followingCount
 }
 
-// Handler wraps the processor for Lambda
-type Handler struct {
-	processor *SeveranceProcessor
-}
-
-// HandleDynamoDBStreamEvent handles the Lambda event
-func (h *Handler) HandleDynamoDBStreamEvent(ctx context.Context, event events.DynamoDBEvent) error {
-	return h.processor.HandleDynamoDBStreamEvent(ctx, event)
+func handleSeveranceProcessorStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if processor == nil {
+		return fmt.Errorf("severance processor not initialized")
+	}
+	return processor.HandleDynamoDBRecord(ctx, record)
 }
 
 func main() {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	defer func() {
 		if err := logger.Sync(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to sync logger: %v\n", err)
@@ -380,22 +390,15 @@ func main() {
 		zap.String("service", "severance-processor"),
 		zap.String("lambda_type", "processor"))
 
-	// Create handler
-	handler := &Handler{
-		processor: processor,
-	}
+	app := apptheory.New()
 
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	tableName := naming.ResourceNameWithApp(appName, "main-table", stage)
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return handler.HandleDynamoDBStreamEvent(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
+	app.DynamoDB(tableName, handleSeveranceProcessorStreamRecord)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
-
-	lambdaStartFn(app.HandleRequest)
 }
