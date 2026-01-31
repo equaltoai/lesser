@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -27,13 +29,13 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sns/types"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -175,9 +177,16 @@ func init() {
 }
 
 // HandleScheduledEvent handles CloudWatch Events (EventBridge) scheduled events
-func (h *WebSocketCostAggregatorHandler) HandleScheduledEvent(ctx *lift.Context, event events.CloudWatchEvent) error {
+func (h *WebSocketCostAggregatorHandler) HandleScheduledEvent(ctx *apptheory.EventContext, event events.EventBridgeEvent) (any, error) {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
+
 	h.logger.Info("processing WebSocket cost aggregation",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("source", event.Source),
 		zap.Time("event_time", event.Time),
 	)
@@ -186,7 +195,7 @@ func (h *WebSocketCostAggregatorHandler) HandleScheduledEvent(ctx *lift.Context,
 	operations := []string{"idle_tracking", "cost_aggregation", "budget_updates"}
 
 	// Check if specific operations are requested via detail
-	if event.Detail != nil {
+	if len(event.Detail) > 0 {
 		var detail map[string]interface{}
 		if err := json.Unmarshal(event.Detail, &detail); err == nil {
 			if ops, ok := detail["operations"].([]interface{}); ok {
@@ -204,30 +213,30 @@ func (h *WebSocketCostAggregatorHandler) HandleScheduledEvent(ctx *lift.Context,
 	for _, operation := range operations {
 		switch operation {
 		case "idle_tracking":
-			if err := h.trackIdleConnections(ctx.Request.Context()); err != nil {
+			if err := h.trackIdleConnections(runCtx); err != nil {
 				h.logger.Error("failed to track idle connections",
-					zap.String("request_id", ctx.GetRequestID()),
+					zap.String("request_id", requestID),
 					zap.Error(err))
 			}
 
 		case "cost_aggregation":
-			if err := h.performCostAggregation(ctx.Request.Context()); err != nil {
+			if err := h.performCostAggregation(runCtx); err != nil {
 				h.logger.Error("failed to perform cost aggregation",
-					zap.String("request_id", ctx.GetRequestID()),
+					zap.String("request_id", requestID),
 					zap.Error(err))
 			}
 
 		case "budget_updates":
-			if err := h.updateBudgetAlerts(ctx.Request.Context()); err != nil {
+			if err := h.updateBudgetAlerts(runCtx); err != nil {
 				h.logger.Error("failed to update budget alerts",
-					zap.String("request_id", ctx.GetRequestID()),
+					zap.String("request_id", requestID),
 					zap.Error(err))
 			}
 
 		case "cleanup":
-			if err := h.cleanupStaleConnections(ctx.Request.Context()); err != nil {
+			if err := h.cleanupStaleConnections(runCtx); err != nil {
 				h.logger.Error("failed to cleanup stale connections",
-					zap.String("request_id", ctx.GetRequestID()),
+					zap.String("request_id", requestID),
 					zap.Error(err))
 			}
 
@@ -238,10 +247,10 @@ func (h *WebSocketCostAggregatorHandler) HandleScheduledEvent(ctx *lift.Context,
 	}
 
 	h.logger.Info("completed WebSocket cost aggregation",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.Strings("operations", operations))
 
-	return nil
+	return nil, nil
 }
 
 // trackIdleConnections tracks costs for connections that have been idle
@@ -831,81 +840,15 @@ func getStaleTimeoutHours() int {
 }
 
 func main() {
-	// Create a new Lift application
-	app := lift.New()
+	app := apptheory.New()
 
-	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	ruleName := naming.ResourceNameWithApp(appName, "websocket-cost-aggregator-schedule-0", stage)
 
-	// Add standard middleware
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			requestID := fmt.Sprintf("ws-cost-agg-%d", time.Now().UnixNano())
-			ctx.SetRequestID(requestID)
-			ctx.Set("requestID", requestID)
-			return next.Handle(ctx)
-		})
+	app.EventBridge(apptheory.EventBridgeRule(ruleName), handler.HandleScheduledEvent)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
-
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			start := time.Now()
-			requestID := ctx.Get("requestID")
-
-			lambdaCtx.Logger.Info("processing WebSocket cost aggregation",
-				zap.Any("request_id", requestID))
-
-			err := next.Handle(ctx)
-			duration := time.Since(start)
-
-			if err != nil {
-				lambdaCtx.Logger.Error("failed to process WebSocket cost aggregation",
-					zap.Any("request_id", requestID),
-					zap.Error(err),
-					zap.Duration("duration", duration))
-			} else {
-				lambdaCtx.Logger.Info("successfully processed WebSocket cost aggregation",
-					zap.Any("request_id", requestID),
-					zap.Duration("duration", duration))
-			}
-
-			return err
-		})
-	})
-
-	// Add recovery middleware
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			defer func() {
-				if r := recover(); r != nil {
-					requestID := ctx.Get("requestID")
-					lambdaCtx.Logger.Error("panic recovered in WebSocket cost aggregator",
-						zap.Any("request_id", requestID),
-						zap.Any("panic", r))
-				}
-			}()
-			return next.Handle(ctx)
-		})
-	})
-
-	_ = app.EventBridge("lesser-websocket-cost-aggregator-schedule-*", func(ctx *lift.Context) error {
-		if ctx.Request.RawEvent == nil {
-			return lift.NewLiftError("MISSING_EVENT", "no EventBridge event in request", 400)
-		}
-
-		eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-		if err != nil {
-			return lift.NewLiftError("EVENT_MARSHAL_ERROR", "failed to marshal raw event", 500).WithCause(err)
-		}
-
-		var event events.CloudWatchEvent
-		if err := json.Unmarshal(eventBytes, &event); err != nil {
-			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse EventBridge event", 500).WithCause(err)
-		}
-
-		return handler.HandleScheduledEvent(ctx, event)
-	})
-
-	// Start the Lambda handler with Lift
-	lambdaStartFn(app.HandleRequest)
 }
