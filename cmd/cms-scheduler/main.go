@@ -14,9 +14,8 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/cms"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
@@ -25,7 +24,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -74,16 +73,21 @@ func NewCMSSchedulerProcessor(registry cmsSchedulerRegistry, cfg *config.Config,
 	}
 }
 
-func (p *CMSSchedulerProcessor) HandleEvent(ctx *lift.Context, event events.CloudWatchEvent) error {
-	runCtx := ctx.Request.Context()
+func (p *CMSSchedulerProcessor) HandleScheduledEvent(ctx *apptheory.EventContext, event events.EventBridgeEvent) (any, error) {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
 	now := time.Now().UTC()
 
-	if !p.isSchedulerEnabled(ctx) {
-		return nil
+	if !p.isSchedulerEnabled(requestID) {
+		return nil, nil
 	}
 
 	p.logger.Info("cms scheduler run starting",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("source", event.Source),
 		zap.String("detail_type", event.DetailType),
 		zap.Time("now", now),
@@ -91,33 +95,33 @@ func (p *CMSSchedulerProcessor) HandleEvent(ctx *lift.Context, event events.Clou
 		zap.Int("max_drafts", p.maxDraftsPerRun),
 	)
 
-	draftRepo, draftSvc, err := p.resolveDependencies(ctx)
+	draftRepo, draftSvc, err := p.resolveDependencies(runCtx, requestID)
 	if err != nil {
-		return nil // logged inside resolveDependencies
+		return nil, nil // logged inside resolveDependencies
 	}
 
 	attempted, published, err := p.processDrafts(runCtx, draftRepo, draftSvc, now)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	p.logger.Info("cms scheduler run complete",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.Int("attempted", attempted),
 		zap.Int("published", published),
 	)
 
-	return nil
+	return nil, nil
 }
 
-func (p *CMSSchedulerProcessor) isSchedulerEnabled(ctx *lift.Context) bool {
+func (p *CMSSchedulerProcessor) isSchedulerEnabled(requestID string) bool {
 	if p.cfg == nil || !p.cfg.CMSLongFormEnabled() || !p.cfg.CMSDraftsEnabled() || !p.cfg.CMSSchedulingEnabled() {
 		instanceMode := ""
 		if p.cfg != nil {
 			instanceMode = string(p.cfg.EffectiveInstanceMode())
 		}
 		p.logger.Info("cms scheduler disabled by configuration",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("instance_mode", instanceMode),
 		)
 		return false
@@ -125,10 +129,10 @@ func (p *CMSSchedulerProcessor) isSchedulerEnabled(ctx *lift.Context) bool {
 	return true
 }
 
-func (p *CMSSchedulerProcessor) resolveDependencies(ctx *lift.Context) (interfaces.DraftRepository, draftPublisher, error) {
+func (p *CMSSchedulerProcessor) resolveDependencies(runCtx context.Context, requestID string) (interfaces.DraftRepository, draftPublisher, error) {
 	if p.registry == nil {
 		p.logger.Warn("cms scheduler registry not available; skipping run",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 		)
 		return nil, nil, fmt.Errorf("registry missing")
 	}
@@ -140,7 +144,7 @@ func (p *CMSSchedulerProcessor) resolveDependencies(ctx *lift.Context) (interfac
 	}
 	if storage == nil || draftRepo == nil {
 		p.logger.Warn("cms scheduler storage not available; skipping run",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 		)
 		return nil, nil, fmt.Errorf("storage missing")
 	}
@@ -153,22 +157,22 @@ func (p *CMSSchedulerProcessor) resolveDependencies(ctx *lift.Context) (interfac
 	}
 	if stateRepo == nil {
 		p.logger.Warn("cms scheduler instance repository not available; skipping run",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 		)
 		return nil, nil, fmt.Errorf("instance repo missing")
 	}
 
-	state, err := stateRepo.GetInstanceState(ctx.Request.Context())
+	state, err := stateRepo.GetInstanceState(runCtx)
 	if err != nil {
 		p.logger.Warn("failed to get instance state; defaulting to locked and skipping cms scheduler run",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.Error(err),
 		)
 		return nil, nil, err
 	}
 	if state.Locked {
 		p.logger.Info("instance is locked; skipping cms scheduler run",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 		)
 		return nil, nil, fmt.Errorf("instance locked")
 	}
@@ -181,7 +185,7 @@ func (p *CMSSchedulerProcessor) resolveDependencies(ctx *lift.Context) (interfac
 	}
 	if draftSvc == nil {
 		p.logger.Warn("draft service not available; skipping cms scheduler run",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 		)
 		return nil, nil, fmt.Errorf("draft service missing")
 	}
@@ -388,37 +392,21 @@ func initializeCMSScheduler() {
 	processor = newProcessorFn(registry, cfg, logger)
 }
 
-func handleCMSSchedulerEventBridge(ctx *lift.Context) error {
-	if processor == nil {
-		return lift.NewLiftError("MISSING_PROCESSOR", "cms scheduler processor not initialized", 500)
-	}
-
-	if ctx.Request.RawEvent == nil {
-		return lift.NewLiftError("MISSING_EVENT", "no EventBridge event in request", 400)
-	}
-
-	eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-	if err != nil {
-		return lift.NewLiftError("EVENT_MARSHAL_ERROR", "failed to marshal raw event", 500).WithCause(err)
-	}
-
-	var event events.CloudWatchEvent
-	if err := json.Unmarshal(eventBytes, &event); err != nil {
-		return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse EventBridge event", 500).WithCause(err)
-	}
-
-	return processor.HandleEvent(ctx, event)
-}
-
 func main() {
-	app := lift.New()
+	app := apptheory.New()
 
-	app.Use(middleware.PanicRecovery(logger))
-	app.Use(patterns.RequestIDMiddleware("cms-scheduler"))
-	app.Use(patterns.LoggingMiddleware(logger))
-	app.Use(patterns.RecoveryMiddleware(logger))
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	ruleName := naming.ResourceNameWithApp(appName, "cms-scheduler-schedule-0", stage)
 
-	_ = app.EventBridge("*-cms-scheduler-schedule-0", handleCMSSchedulerEventBridge)
+	app.EventBridge(apptheory.EventBridgeRule(ruleName), func(ctx *apptheory.EventContext, event events.EventBridgeEvent) (any, error) {
+		if processor == nil {
+			return nil, fmt.Errorf("cms scheduler processor not initialized")
+		}
+		return processor.HandleScheduledEvent(ctx, event)
+	})
 
-	lambdaStartFn(app.HandleRequest)
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }

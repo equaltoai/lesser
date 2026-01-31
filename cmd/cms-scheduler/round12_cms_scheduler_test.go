@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -18,9 +19,8 @@ import (
 	lessertesting "github.com/equaltoai/lesser/pkg/testing"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -30,7 +30,7 @@ type fakeSchedulerRegistry struct {
 }
 
 func (f *fakeSchedulerRegistry) GetStorage() storageCore.RepositoryStorage { return f.storage }
-func (f *fakeSchedulerRegistry) Drafts() *cms.DraftService                { return f.drafts }
+func (f *fakeSchedulerRegistry) Drafts() *cms.DraftService                 { return f.drafts }
 
 type fakeInstanceStateRepo struct {
 	state *models.InstanceState
@@ -188,12 +188,12 @@ func TestCMSSchedulerProcessor_publishScheduledDraft_Round12(t *testing.T) {
 		repo := &fakeDraftRepo{
 			getFn: func(context.Context, string, string) (*models.Draft, error) {
 				return &models.Draft{
-					ID:          "draft-1",
-					AuthorID:     "author-1",
-					Status:       "scheduled",
-					ScheduledAt:  &scheduledAt,
-					UpdatedAt:    time.Now().Add(-time.Hour).UTC(),
-					LastSavedAt:  time.Now().Add(-2 * time.Hour).UTC(),
+					ID:              "draft-1",
+					AuthorID:        "author-1",
+					Status:          "scheduled",
+					ScheduledAt:     &scheduledAt,
+					UpdatedAt:       time.Now().Add(-time.Hour).UTC(),
+					LastSavedAt:     time.Now().Add(-2 * time.Hour).UTC(),
 					AutosaveVersion: 0,
 				}, nil
 			},
@@ -246,9 +246,8 @@ func TestCMSSchedulerProcessor_markScheduledDraftFailed_Round12(t *testing.T) {
 	})
 }
 
-func TestCMSSchedulerProcessor_HandleEvent_Round12(t *testing.T) {
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	ctx.Set("request_id", "req")
+func TestCMSSchedulerProcessor_HandleScheduledEvent_Round12(t *testing.T) {
+	ctx := &apptheory.EventContext{RequestID: "req"}
 
 	enabledCfg := &config.Config{
 		InstanceMode:                  config.InstanceModeCMS,
@@ -263,16 +262,18 @@ func TestCMSSchedulerProcessor_HandleEvent_Round12(t *testing.T) {
 			cfg:      &config.Config{InstanceMode: config.InstanceModeSocial},
 			logger:   zap.NewNop(),
 		}
-		require.NoError(t, p.HandleEvent(ctx, events.CloudWatchEvent{Source: "aws.events"}))
+		_, err := p.HandleScheduledEvent(ctx, events.EventBridgeEvent{Source: "aws.events"})
+		require.NoError(t, err)
 	})
 
 	t.Run("nil registry returns early", func(t *testing.T) {
 		p := &CMSSchedulerProcessor{
 			registry: nil,
-			cfg:    enabledCfg,
-			logger: zap.NewNop(),
+			cfg:      enabledCfg,
+			logger:   zap.NewNop(),
 		}
-		require.NoError(t, p.HandleEvent(ctx, events.CloudWatchEvent{Source: "aws.events"}))
+		_, err := p.HandleScheduledEvent(ctx, events.EventBridgeEvent{Source: "aws.events"})
+		require.NoError(t, err)
 	})
 
 	t.Run("nil storage returns early", func(t *testing.T) {
@@ -281,20 +282,22 @@ func TestCMSSchedulerProcessor_HandleEvent_Round12(t *testing.T) {
 			cfg:      enabledCfg,
 			logger:   zap.NewNop(),
 		}
-		require.NoError(t, p.HandleEvent(ctx, events.CloudWatchEvent{Source: "aws.events"}))
+		_, err := p.HandleScheduledEvent(ctx, events.EventBridgeEvent{Source: "aws.events"})
+		require.NoError(t, err)
 	})
 
 	t.Run("missing draft repository returns early", func(t *testing.T) {
 		storage := lessertesting.NewMockRepositoryStorage(lessertesting.WithDraftRepository(nil))
 		p := &CMSSchedulerProcessor{
 			registry: &fakeSchedulerRegistry{storage: storage},
-			cfg:    enabledCfg,
-			logger: zap.NewNop(),
+			cfg:      enabledCfg,
+			logger:   zap.NewNop(),
 		}
 		p.instanceRepo = &fakeInstanceStateRepo{state: &models.InstanceState{Locked: false}}
 		p.draftSvc = &fakeDraftPublisher{}
 
-		require.NoError(t, p.HandleEvent(ctx, events.CloudWatchEvent{Source: "aws.events"}))
+		_, err := p.HandleScheduledEvent(ctx, events.EventBridgeEvent{Source: "aws.events"})
+		require.NoError(t, err)
 	})
 
 	t.Run("missing instance repository returns early", func(t *testing.T) {
@@ -308,7 +311,8 @@ func TestCMSSchedulerProcessor_HandleEvent_Round12(t *testing.T) {
 			pageSize:        1,
 			maxDraftsPerRun: 1,
 		}
-		require.NoError(t, p.HandleEvent(ctx, events.CloudWatchEvent{Source: "aws.events"}))
+		_, err := p.HandleScheduledEvent(ctx, events.EventBridgeEvent{Source: "aws.events"})
+		require.NoError(t, err)
 		require.Equal(t, 0, draftRepo.listCalls)
 	})
 
@@ -324,7 +328,8 @@ func TestCMSSchedulerProcessor_HandleEvent_Round12(t *testing.T) {
 			maxDraftsPerRun: 1,
 		}
 		p.instanceRepo = &fakeInstanceStateRepo{err: errors.New("boom")}
-		require.NoError(t, p.HandleEvent(ctx, events.CloudWatchEvent{Source: "aws.events"}))
+		_, err := p.HandleScheduledEvent(ctx, events.EventBridgeEvent{Source: "aws.events"})
+		require.NoError(t, err)
 		require.Equal(t, 0, draftRepo.listCalls)
 	})
 
@@ -332,16 +337,17 @@ func TestCMSSchedulerProcessor_HandleEvent_Round12(t *testing.T) {
 		draftRepo := &fakeDraftRepo{}
 		storage := lessertesting.NewMockRepositoryStorage(lessertesting.WithDraftRepository(draftRepo))
 		p := &CMSSchedulerProcessor{
-			registry: &fakeSchedulerRegistry{storage: storage},
-			cfg:    enabledCfg,
-			logger: zap.NewNop(),
+			registry:        &fakeSchedulerRegistry{storage: storage},
+			cfg:             enabledCfg,
+			logger:          zap.NewNop(),
 			pageSize:        1,
 			maxDraftsPerRun: 1,
 		}
 		p.instanceRepo = &fakeInstanceStateRepo{state: &models.InstanceState{Locked: true}}
 		p.draftSvc = &fakeDraftPublisher{}
 
-		require.NoError(t, p.HandleEvent(ctx, events.CloudWatchEvent{Source: "aws.events"}))
+		_, err := p.HandleScheduledEvent(ctx, events.EventBridgeEvent{Source: "aws.events"})
+		require.NoError(t, err)
 		require.Equal(t, 0, draftRepo.listCalls)
 	})
 
@@ -358,7 +364,8 @@ func TestCMSSchedulerProcessor_HandleEvent_Round12(t *testing.T) {
 		}
 		p.instanceRepo = &fakeInstanceStateRepo{state: &models.InstanceState{Locked: false}}
 
-		require.NoError(t, p.HandleEvent(ctx, events.CloudWatchEvent{Source: "aws.events"}))
+		_, err := p.HandleScheduledEvent(ctx, events.EventBridgeEvent{Source: "aws.events"})
+		require.NoError(t, err)
 		require.Equal(t, 0, draftRepo.listCalls)
 	})
 
@@ -371,16 +378,17 @@ func TestCMSSchedulerProcessor_HandleEvent_Round12(t *testing.T) {
 		storage := lessertesting.NewMockRepositoryStorage(lessertesting.WithDraftRepository(draftRepo))
 
 		p := &CMSSchedulerProcessor{
-			registry: &fakeSchedulerRegistry{storage: storage},
-			cfg:    enabledCfg,
-			logger: zap.NewNop(),
+			registry:        &fakeSchedulerRegistry{storage: storage},
+			cfg:             enabledCfg,
+			logger:          zap.NewNop(),
 			pageSize:        1,
 			maxDraftsPerRun: 1,
 		}
 		p.instanceRepo = &fakeInstanceStateRepo{state: &models.InstanceState{Locked: false}}
 		p.draftSvc = &fakeDraftPublisher{}
 
-		require.Error(t, p.HandleEvent(ctx, events.CloudWatchEvent{Source: "aws.events"}))
+		_, err := p.HandleScheduledEvent(ctx, events.EventBridgeEvent{Source: "aws.events"})
+		require.Error(t, err)
 		require.Equal(t, 1, draftRepo.listCalls)
 	})
 
@@ -403,7 +411,8 @@ func TestCMSSchedulerProcessor_HandleEvent_Round12(t *testing.T) {
 		p.instanceRepo = &fakeInstanceStateRepo{state: &models.InstanceState{Locked: false}}
 		p.draftSvc = pub
 
-		require.NoError(t, p.HandleEvent(ctx, events.CloudWatchEvent{Source: "aws.events"}))
+		_, err := p.HandleScheduledEvent(ctx, events.EventBridgeEvent{Source: "aws.events"})
+		require.NoError(t, err)
 		require.Equal(t, 0, pub.calls)
 		require.Equal(t, 1, draftRepo.listCalls)
 	})
@@ -420,16 +429,17 @@ func TestCMSSchedulerProcessor_HandleEvent_Round12(t *testing.T) {
 
 		pub := &fakeDraftPublisher{}
 		p := &CMSSchedulerProcessor{
-			registry: &fakeSchedulerRegistry{storage: storage},
-			cfg:    enabledCfg,
-			logger: zap.NewNop(),
+			registry:        &fakeSchedulerRegistry{storage: storage},
+			cfg:             enabledCfg,
+			logger:          zap.NewNop(),
 			pageSize:        1,
 			maxDraftsPerRun: 1,
 		}
 		p.instanceRepo = &fakeInstanceStateRepo{state: &models.InstanceState{Locked: false}}
 		p.draftSvc = pub
 
-		require.NoError(t, p.HandleEvent(ctx, events.CloudWatchEvent{Source: "aws.events"}))
+		_, err := p.HandleScheduledEvent(ctx, events.EventBridgeEvent{Source: "aws.events"})
+		require.NoError(t, err)
 		require.Equal(t, 1, pub.calls)
 		require.Equal(t, 1, draftRepo.listCalls)
 	})
@@ -461,37 +471,56 @@ func TestCMSSchedulerProcessor_HandleEvent_Round12(t *testing.T) {
 		p.instanceRepo = &fakeInstanceStateRepo{state: &models.InstanceState{Locked: false}}
 		p.draftSvc = pub
 
-		require.NoError(t, p.HandleEvent(ctx, events.CloudWatchEvent{Source: "aws.events"}))
+		_, err := p.HandleScheduledEvent(ctx, events.EventBridgeEvent{Source: "aws.events"})
+		require.NoError(t, err)
 		require.Equal(t, 1, pub.calls)
 		require.Equal(t, 1, draftRepo.listCalls)
 	})
 }
 
-func TestHandleCMSSchedulerEventBridge_Round12(t *testing.T) {
+func TestMain_RoutesEventBridge_Round12(t *testing.T) {
+	origStart := lambdaStartFn
 	origProcessor := processor
-	t.Cleanup(func() { processor = origProcessor })
+	t.Cleanup(func() {
+		lambdaStartFn = origStart
+		processor = origProcessor
+	})
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
-	processor = nil
-	ctx.Request.RawEvent = map[string]any{}
-	require.Error(t, handleCMSSchedulerEventBridge(ctx))
+	called := false
+	lambdaStartFn = func(handler any) {
+		called = true
 
-	processor = &CMSSchedulerProcessor{logger: zap.NewNop()}
-	ctx.Request.RawEvent = nil
-	require.Error(t, handleCMSSchedulerEventBridge(ctx))
+		fn, ok := handler.(func(context.Context, json.RawMessage) (any, error))
+		require.True(t, ok)
 
-	ctx.Request.RawEvent = make(chan int)
-	require.Error(t, handleCMSSchedulerEventBridge(ctx))
+		event := map[string]any{
+			"id":          "evt",
+			"source":      "aws.events",
+			"detail-type": "Scheduled Event",
+			"detail":      map[string]any{},
+			"time":        time.Now().UTC().Format(time.RFC3339),
+			"resources": []any{
+				"arn:aws:events:us-east-1:123456789012:rule/lesser-dev-cms-scheduler-schedule-0",
+			},
+		}
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
 
-	ctx.Request.RawEvent = "not an eventbridge payload"
-	require.Error(t, handleCMSSchedulerEventBridge(ctx))
+		processor = nil
+		_, err = fn(context.Background(), raw)
+		require.Error(t, err)
 
-	ctx.Request.RawEvent = map[string]any{
-		"source":      "aws.events",
-		"detail-type": "Scheduled Event",
+		processor = &CMSSchedulerProcessor{cfg: &config.Config{}, logger: zap.NewNop()}
+		_, err = fn(context.Background(), raw)
+		require.NoError(t, err)
 	}
-	require.NoError(t, handleCMSSchedulerEventBridge(ctx))
+
+	main()
+	require.True(t, called)
 }
 
 func TestInitializeCMSScheduler_Round12(t *testing.T) {
@@ -513,13 +542,13 @@ func TestInitializeCMSScheduler_Round12(t *testing.T) {
 	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
 		return &common.LambdaContext{
 			Config: &config.Config{
-				Domain:                      "example.com",
-				Region:                      "us-east-1",
-				DynamoTableName:             "test-table",
-				JWTSecret:                   "secret",
-				InstanceMode:                config.InstanceModeCMS,
-				CMSLongFormPublishingEnabled: true,
-				CMSDraftSystemEnabled:        true,
+				Domain:                        "example.com",
+				Region:                        "us-east-1",
+				DynamoTableName:               "test-table",
+				JWTSecret:                     "secret",
+				InstanceMode:                  config.InstanceModeCMS,
+				CMSLongFormPublishingEnabled:  true,
+				CMSDraftSystemEnabled:         true,
 				CMSScheduledPublishingEnabled: true,
 			},
 			Logger: zap.NewNop(),
