@@ -5,19 +5,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -48,52 +50,55 @@ func NewMetricsAggregator(db core.DB, tableName string, logger *zap.Logger) *Met
 	}
 }
 
-// HandleStreamWithContext implements the DynamoDBStreamHandler interface for Lift
-func (ma *MetricsAggregator) HandleStreamWithContext(ctx context.Context, liftCtx *lift.Context, event events.DynamoDBEvent) error {
-	ma.logger.Info("processing metrics stream batch",
-		zap.String("request_id", liftCtx.GetRequestID()),
-		zap.Int("record_count", len(event.Records)),
-	)
+func (ma *MetricsAggregator) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) (err error) {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
 
-	// Process records for real-time metrics aggregation
-	metrics := make([]*models.Metrics, 0, len(event.Records))
+	if ma.logger == nil {
+		ma.logger = zap.NewNop()
+	}
 
-	for _, record := range event.Records {
-		// Only process INSERT events that represent new metrics
-		if record.EventName != "INSERT" {
-			continue
-		}
-
-		// Check if this is a metrics record
-		pk, pkExists := record.Change.NewImage["PK"]
-		if !pkExists || pk.DataType() != events.DataTypeString {
-			continue
-		}
-
-		pkStr := pk.String()
-		if !ma.isMetricsRecord(pkStr) {
-			continue
-		}
-
-		// Extract metric data using DynamORM stream utilities
-		metric, err := ma.extractMetricFromRecord(record)
-		if err != nil {
-			ma.logger.Warn("failed to extract metric from record",
-				zap.String("request_id", liftCtx.GetRequestID()),
+	defer func() {
+		if r := recover(); r != nil {
+			ma.logger.Error("panic processing metrics stream record",
+				zap.String("request_id", requestID),
 				zap.String("event_id", record.EventID),
-				zap.Error(err))
-			continue
+				zap.Any("panic", r),
+			)
+			err = fmt.Errorf("panic recovered: %v", r)
 		}
+	}()
 
-		metrics = append(metrics, metric)
+	// Only process INSERT events that represent new metrics.
+	if record.EventName != "INSERT" {
+		return nil
 	}
 
-	// Process real-time metrics if any found
-	if err := common.ValidateSliceNotEmpty("metrics", metrics); err == nil {
-		return ma.processRealtimeMetricsWithContext(ctx, liftCtx, metrics)
+	// Check if this is a metrics record.
+	pk, pkExists := record.Change.NewImage["PK"]
+	if !pkExists || pk.DataType() != events.DataTypeString {
+		return nil
+	}
+	pkStr := pk.String()
+	if !ma.isMetricsRecord(pkStr) {
+		return nil
 	}
 
-	return nil
+	metric, extractErr := ma.extractMetricFromRecord(record)
+	if extractErr != nil {
+		ma.logger.Warn("failed to extract metric from record",
+			zap.String("request_id", requestID),
+			zap.String("event_id", record.EventID),
+			zap.Error(extractErr),
+		)
+		return nil
+	}
+
+	return ma.processRealtimeMetrics(runCtx, requestID, []*models.Metrics{metric})
 }
 
 var (
@@ -136,19 +141,24 @@ func runMetricsAggregator() {
 	// Initialize processor
 	processor = NewMetricsAggregator(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+	app := apptheory.New()
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return processor.HandleStreamWithContext(ctx.Request.Context(), ctx, events.DynamoDBEvent{Records: records})
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	tableName := naming.ResourceNameWithApp(appName, "main-table", stage)
+
+	app.DynamoDB(tableName, handleMetricsAggregatorStreamRecord)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
+}
 
-	lambdaStartFn(app.HandleRequest)
+func handleMetricsAggregatorStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if processor == nil {
+		return fmt.Errorf("metrics aggregator not initialized")
+	}
+	return processor.HandleDynamoDBRecord(ctx, record)
 }
 
 // Additional methods for handling scheduled aggregation events
@@ -254,7 +264,7 @@ func (ma *MetricsAggregator) aggregateMetrics(ctx context.Context, service, metr
 	return nil
 }
 
-func (ma *MetricsAggregator) processRealtimeMetricsWithContext(ctx context.Context, liftCtx *lift.Context, metrics []*models.Metrics) error {
+func (ma *MetricsAggregator) processRealtimeMetrics(ctx context.Context, requestID string, metrics []*models.Metrics) error {
 	// Group metrics by service and type for efficient aggregation
 	grouped := make(map[string][]*models.Metrics)
 
@@ -310,7 +320,7 @@ func (ma *MetricsAggregator) processRealtimeMetricsWithContext(ctx context.Conte
 		// Store or update the aggregation
 		if err := ma.metricsRepository.CreateAggregated(ctx, aggregated); err != nil {
 			ma.logger.Error("failed to create real-time aggregation",
-				zap.String("request_id", liftCtx.GetRequestID()),
+				zap.String("request_id", requestID),
 				zap.String("service", service),
 				zap.String("type", metricType),
 				zap.Error(err))
