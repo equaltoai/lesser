@@ -6,6 +6,7 @@ import (
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -21,7 +22,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/pay-theory/dynamorm"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -355,7 +355,7 @@ func TestProcessMessage_Branches(t *testing.T) {
 		httpClient:  &http.Client{Transport: roundTripperFunc(func(_ *http.Request) (*http.Response, error) { return nil, errors.New("network") })},
 	}
 
-	ctx := lift.NewContext(context.Background(), nil)
+	ctx := context.Background()
 
 	require.Error(t, pdp.processMessage(ctx, events.SQSMessage{Body: "not-json"}))
 
@@ -394,29 +394,16 @@ func TestProcessMessage_Branches(t *testing.T) {
 	require.NoError(t, pdp.processMessage(ctx, events.SQSMessage{Body: body, MessageId: "m5"}))
 }
 
-func TestHandleSQSBatch_SuccessAndPartialFailure(t *testing.T) {
-	vapid := mustGenerateVAPIDKeys(t)
-	pushRepo := &fakePushSubscriptionRepo{vapidKeys: vapid}
-	repos := &fakeRepos{pushRepo: pushRepo, activityRepo: &fakeActivityRepo{}}
+func TestHandleSQSMessage_ReturnsErrorOnInvalidMessage(t *testing.T) {
+	pdp := &PushDeliveryProcessor{logger: zap.NewNop()}
+	require.Error(t, pdp.HandleSQSMessage(nil, events.SQSMessage{MessageId: "m1", Body: "not-json"}))
+}
 
-	pdp := &PushDeliveryProcessor{
-		repos:       repos,
-		logger:      zap.NewNop(),
-		cfg:         &config.Config{Domain: "example.com"},
-		rateLimiter: &RateLimiter{limits: make(map[string]*userLimit)},
-		httpClient:  &http.Client{Transport: roundTripperFunc(func(_ *http.Request) (*http.Response, error) { return nil, errors.New("network") })},
-	}
-
-	liftCtx := lift.NewContext(context.Background(), nil)
-
-	require.NoError(t, pdp.HandleSQSBatch(liftCtx, events.SQSEvent{}))
-	requestID, _ := liftCtx.Get("requestID").(string)
-	require.NotEmpty(t, requestID)
-
-	err := pdp.HandleSQSBatch(liftCtx, events.SQSEvent{
-		Records: []events.SQSMessage{{MessageId: "m1", Body: "not-json"}},
-	})
-	require.Error(t, err)
+func TestHandleSQSMessage_RecoversPanic(t *testing.T) {
+	pdp := &PushDeliveryProcessor{logger: zap.NewNop()}
+	// nil rateLimiter forces a panic in processMessage after JSON is parsed.
+	body := `{"username":"admin","notification_type":"mention","title":"t","body":"b","notification_id":"n1","access_token":"tok"}`
+	require.Error(t, pdp.HandleSQSMessage(nil, events.SQSMessage{MessageId: "m1", Body: body}))
 }
 
 func TestNewPushDeliveryProcessor_MainAndRecover(t *testing.T) {
@@ -425,14 +412,12 @@ func TestNewPushDeliveryProcessor_MainAndRecover(t *testing.T) {
 	originalNewRepositoryFactoryFn := newRepositoryFactoryFn
 	originalLambdaStartFn := lambdaStartFn
 	originalNewProcessorFn := newPushDeliveryProcessorFn
-	originalHandleFn := handleSQSEventFn
 	t.Cleanup(func() {
 		mustInitializeLambdaFn = originalMustInitializeLambdaFn
 		getDynamoClientFn = originalGetDynamoClientFn
 		newRepositoryFactoryFn = originalNewRepositoryFactoryFn
 		lambdaStartFn = originalLambdaStartFn
 		newPushDeliveryProcessorFn = originalNewProcessorFn
-		handleSQSEventFn = originalHandleFn
 	})
 
 	ctx := &common.LambdaContext{
@@ -464,23 +449,55 @@ func TestNewPushDeliveryProcessor_MainAndRecover(t *testing.T) {
 	_, err = NewPushDeliveryProcessor()
 	require.Error(t, err)
 
-	testProcessor := &PushDeliveryProcessor{logger: zap.NewNop()}
+	pushRepo := &fakePushSubscriptionRepo{}
+	repos := &fakeRepos{pushRepo: pushRepo, activityRepo: &fakeActivityRepo{}}
+
+	testProcessor := &PushDeliveryProcessor{
+		repos:       repos,
+		logger:      zap.NewNop(),
+		rateLimiter: &RateLimiter{limits: make(map[string]*userLimit)},
+	}
 	newPushDeliveryProcessorFn = func() (*PushDeliveryProcessor, error) { return testProcessor, nil }
 
 	var startHandler any
 	lambdaStartFn = func(h any) { startHandler = h }
 
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
+
 	main()
 	require.NotNil(t, startHandler)
 
-	handlerFn, ok := startHandler.(func(context.Context, events.SQSEvent) error)
+	handlerFn, ok := startHandler.(func(context.Context, json.RawMessage) (any, error))
 	require.True(t, ok)
 
-	handleSQSEventFn = func(_ *PushDeliveryProcessor, _ *lift.Context, _ events.SQSEvent) error { return nil }
-	require.NoError(t, handlerFn(context.Background(), events.SQSEvent{}))
+	event := events.SQSEvent{
+		Records: []events.SQSMessage{
+			{
+				MessageId:      "m1",
+				Body:           `{"username":"admin","notification_type":"mention","title":"t","body":"b","notification_id":"n1","access_token":"tok"}`,
+				EventSourceARN: "arn:aws:sqs:us-east-1:123456789012:lesser-dev-push-delivery-queue",
+				EventSource:    "aws:sqs",
+			},
+		},
+	}
+	raw, err := json.Marshal(event)
+	require.NoError(t, err)
 
-	handleSQSEventFn = func(_ *PushDeliveryProcessor, _ *lift.Context, _ events.SQSEvent) error { panic("boom") }
-	require.Error(t, handlerFn(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{Body: "{}", MessageId: "m"}}}))
+	respAny, err := handlerFn(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok := respAny.(events.SQSEventResponse)
+	require.True(t, ok)
+	require.Empty(t, resp.BatchItemFailures)
+
+	testProcessor.rateLimiter = nil
+	respAny, err = handlerFn(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok = respAny.(events.SQSEventResponse)
+	require.True(t, ok)
+	require.Len(t, resp.BatchItemFailures, 1)
+	require.Equal(t, "m1", resp.BatchItemFailures[0].ItemIdentifier)
 
 	newPushDeliveryProcessorFn = func() (*PushDeliveryProcessor, error) { return nil, errors.New("boom") }
 	require.Panics(t, func() { main() })
