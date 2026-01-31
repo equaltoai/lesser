@@ -13,7 +13,9 @@ path with prefix to match Mastodon API specifications.
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -34,6 +36,7 @@ import (
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -70,11 +73,11 @@ var (
 	lambdaStart = lambda.Start
 
 	newLambdaOptimizedClient = dynamorm.NewLambdaOptimizedClient
-	newRepositoryFactory = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
+	newRepositoryFactory     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
 		return factory.NewRepositoryFactory(db, tableName, logger)
 	}
-	newAuthService           = auth.NewAuthService
-	newStreamQueue           = streaming.NewDynamoStreamQueue
+	newAuthService = auth.NewAuthService
+	newStreamQueue = streaming.NewDynamoStreamQueue
 
 	createAPIAuthMiddlewareFromAuthService = auth.CreateAPIAuthMiddlewareFromAuthService
 	newLiftHandler                         = liftHandlers.NewHandler
@@ -364,9 +367,11 @@ func main() {
 	// Configure native Lift routes
 	configureLiftRoutesFn(app)
 
-	// Configure health check routes if available
+	// Configure health check routes (AppTheory slice 1) if available
+	var healthApp *apptheory.App
 	if healthChecker != nil {
-		configureHealthRoutes(app)
+		healthApp = apptheory.New(apptheory.WithTier(apptheory.TierP0))
+		configureHealthRoutesAppTheory(healthApp)
 	}
 
 	// Start the Lambda handler with observability
@@ -381,7 +386,7 @@ func main() {
 		}
 
 		// Process the request
-		result, err := app.HandleRequest(ctx, event)
+		result, err := handleAPIRequest(ctx, app, healthApp, event)
 
 		// Record request metrics
 		requestDuration := time.Since(requestStart)
@@ -403,6 +408,127 @@ func main() {
 	}
 
 	lambdaStart(lambdaHandler)
+}
+
+func handleAPIRequest(ctx context.Context, liftApp *lift.App, healthApp *apptheory.App, event interface{}) (interface{}, error) {
+	if healthApp != nil {
+		method, path, ok := extractHTTPMethodAndPath(event)
+		if ok && shouldRouteToHealthAppTheory(method, path) {
+			raw, err := marshalLambdaEvent(event)
+			if err == nil {
+				out, handleErr := healthApp.HandleLambda(ctx, raw)
+				if handleErr == nil {
+					return out, nil
+				}
+			}
+		}
+	}
+
+	return liftApp.HandleRequest(ctx, event)
+}
+
+func shouldRouteToHealthAppTheory(method, path string) bool {
+	if strings.TrimSpace(method) != "GET" {
+		return false
+	}
+
+	switch strings.TrimSpace(path) {
+	case "/health", "/health/live", "/health/ready", "/health/detailed":
+		return true
+	default:
+		return false
+	}
+}
+
+func marshalLambdaEvent(event interface{}) (json.RawMessage, error) {
+	switch v := event.(type) {
+	case json.RawMessage:
+		return v, nil
+	case []byte:
+		return json.RawMessage(v), nil
+	default:
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+		return json.RawMessage(encoded), nil
+	}
+}
+
+func extractHTTPMethodAndPath(event interface{}) (method string, path string, ok bool) {
+	switch v := event.(type) {
+	case map[string]any:
+		return extractHTTPMethodAndPathFromMap(v)
+	default:
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			return "", "", false
+		}
+		var probe map[string]any
+		if err := json.Unmarshal(encoded, &probe); err != nil {
+			return "", "", false
+		}
+		return extractHTTPMethodAndPathFromMap(probe)
+	}
+}
+
+func extractHTTPMethodAndPathFromMap(event map[string]any) (method string, path string, ok bool) {
+	rawPath := extractStringField(event, "rawPath")
+
+	requestContext, _ := extractMapField(event, "requestContext")
+	httpContext, _ := extractMapField(requestContext, "http")
+
+	method = extractStringField(httpContext, "method")
+	if method == "" {
+		method = extractStringField(event, "httpMethod")
+	}
+
+	path = rawPath
+	if path == "" {
+		path = extractStringField(httpContext, "path")
+	}
+	if path == "" {
+		path = extractStringField(event, "path")
+	}
+
+	return method, path, method != "" && path != ""
+}
+
+func extractStringField(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	v, ok := m[key]
+	if !ok || v == nil {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
+}
+
+func extractMapField(m map[string]any, key string) (map[string]any, bool) {
+	if m == nil {
+		return nil, false
+	}
+	v, ok := m[key]
+	if !ok || v == nil {
+		return nil, false
+	}
+	if mv, ok := v.(map[string]any); ok {
+		return mv, true
+	}
+	m2, ok := v.(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	out := map[string]any{}
+	for k, v := range m2 {
+		out[k] = v
+	}
+	return out, true
 }
 
 // requestInfo holds extracted request information
@@ -803,6 +929,159 @@ func configureHealthRoutes(app *lift.App) {
 
 		return ctx.Status(statusCode).JSON(response)
 	})
+}
+
+func configureHealthRoutesAppTheory(app *apptheory.App) {
+	// Liveness endpoint
+	app.Get("/health/live", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		response := map[string]interface{}{
+			"status":    observability.HealthStatusHealthy,
+			"timestamp": time.Now(),
+			"service":   "api",
+			"version":   cfg.Version,
+		}
+		return apptheoryJSON(200, response)
+	})
+
+	// Legacy health endpoint (infra + backwards compatibility)
+	app.Get("/health", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		response := map[string]interface{}{
+			"status":    observability.HealthStatusHealthy,
+			"timestamp": time.Now(),
+			"service":   "api",
+			"version":   cfg.Version,
+		}
+		return apptheoryJSON(200, response)
+	})
+
+	// Readiness endpoint
+	app.Get("/health/ready", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		// Basic readiness check - can we access our dependencies?
+		status := observability.HealthStatusHealthy
+		checks := []map[string]interface{}{}
+
+		// Check DynamoDB connectivity
+		checkCtx, cancel := context.WithTimeout(ctx.Context(), 5*time.Second)
+		defer cancel()
+
+		start := time.Now()
+		_, err := repos.Account().GetUser(checkCtx, "health-check-user")
+		duration := time.Since(start)
+
+		dbCheck := map[string]interface{}{
+			"name":     "dynamodb",
+			"status":   observability.HealthStatusHealthy,
+			"duration": duration.Milliseconds(),
+		}
+
+		if err != nil && err.Error() != "user not found" { // "not found" is expected
+			dbCheck["status"] = observability.HealthStatusCritical
+			dbCheck["message"] = "Database connectivity issue"
+			status = observability.HealthStatusCritical
+		}
+
+		checks = append(checks, dbCheck)
+
+		response := map[string]interface{}{
+			"status":    status,
+			"timestamp": time.Now(),
+			"service":   "api",
+			"version":   cfg.Version,
+			"checks":    checks,
+		}
+
+		statusCode := 200
+		if status == observability.HealthStatusCritical {
+			statusCode = 503
+		}
+
+		return apptheoryJSON(statusCode, response)
+	})
+
+	// Detailed health endpoint
+	app.Get("/health/detailed", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		// Comprehensive health check with all components
+		status := observability.HealthStatusHealthy
+		checks := []map[string]interface{}{}
+		summary := map[string]interface{}{
+			"total_checks":    0,
+			"healthy_checks":  0,
+			"warning_checks":  0,
+			"critical_checks": 0,
+		}
+
+		// Runtime check
+		runtimeCheck := map[string]interface{}{
+			"name":      "runtime",
+			"status":    observability.HealthStatusHealthy,
+			"message":   "Service runtime is healthy",
+			"uptime_ms": time.Since(startTime).Milliseconds(),
+			"service":   "api",
+			"version":   cfg.Version,
+		}
+		checks = append(checks, runtimeCheck)
+		summary["healthy_checks"] = summary["healthy_checks"].(int) + 1
+
+		// Database detailed check
+		checkCtx, cancel := context.WithTimeout(ctx.Context(), 10*time.Second)
+		defer cancel()
+
+		start := time.Now()
+		_, err := repos.Account().GetUser(checkCtx, "health-check-user")
+		duration := time.Since(start)
+
+		dbCheck := map[string]interface{}{
+			"name":       "dynamodb_detailed",
+			"status":     observability.HealthStatusHealthy,
+			"duration":   duration.Milliseconds(),
+			"table_name": cfg.DynamoTableName,
+		}
+
+		if err != nil && err.Error() != "user not found" {
+			dbCheck["status"] = observability.HealthStatusCritical
+			dbCheck["message"] = fmt.Sprintf("Database error: %v", err)
+			status = observability.HealthStatusCritical
+			summary["critical_checks"] = summary["critical_checks"].(int) + 1
+		} else {
+			summary["healthy_checks"] = summary["healthy_checks"].(int) + 1
+		}
+
+		checks = append(checks, dbCheck)
+		summary["total_checks"] = len(checks)
+
+		response := map[string]interface{}{
+			"status":    status,
+			"timestamp": time.Now(),
+			"service":   "api",
+			"version":   cfg.Version,
+			"region":    cfg.Region,
+			"checks":    checks,
+			"summary":   summary,
+		}
+
+		statusCode := 200
+		if status == observability.HealthStatusCritical {
+			statusCode = 503
+		}
+
+		return apptheoryJSON(statusCode, response)
+	})
+}
+
+func apptheoryJSON(status int, value any) (*apptheory.Response, error) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+
+	return &apptheory.Response{
+		Status: status,
+		Headers: map[string][]string{
+			"content-type": {"application/json"},
+		},
+		Body:     body,
+		IsBase64: false,
+	}, nil
 }
 
 // createTracingMiddleware creates middleware for distributed tracing

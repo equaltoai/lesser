@@ -223,8 +223,16 @@ That means you should plan slices so you don’t accidentally migrate “everyth
      - Any shared middleware referenced by these handlers:
       - `cmd/api/middleware.go`
       - `pkg/middleware/*` (if used)
+   - Implementation status (2026-01-31):
+     - AppTheory now serves the health endpoints via explicit dispatch in `cmd/api/main.go` (`handleAPIRequest`).
+     - Added regression test: `cmd/api/main_round12_test.go` (`TestMain_HealthEndpointsUseAppTheoryRound12`).
    - Acceptance test focus:
      - Status codes, headers (especially CORS), and response JSON.
+   - Verification commands:
+     - `go test ./cmd/api -run TestMain_HealthEndpointsUseAppTheoryRound12`
+     - `make verify-unit`
+   - Rollback plan:
+     - Revert the slice commit (or temporarily route `/health*` back to Lift by restoring the Lift route registration and removing AppTheory dispatch).
 2. Slice 2: “Auth bootstrap” and OAuth-adjacent endpoints
    - Files likely in-scope:
      - `cmd/api/routes_lift.go` routes for:
