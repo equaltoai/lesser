@@ -10,4 +10,5 @@ func configureAPIRoutesAppTheory(app *apptheory.App) {
 	configureStatusesRoutesAppTheory(app)
 	configureModerationRoutesAppTheory(app)
 	configureMediaRoutesAppTheory(app)
+	configureFederationDiscoveryRoutesAppTheory(app)
 }

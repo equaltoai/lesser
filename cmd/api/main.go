@@ -719,6 +719,11 @@ var apiAppTheoryRoutes = []apptheoryRoute{
 	{method: "POST", pattern: "/api/v1/media"},
 	{method: "GET", pattern: "/api/v1/media/{id}"},
 	{method: "PUT", pattern: "/api/v1/media/{id}"},
+
+	// Federation discovery.
+	{method: "GET", pattern: "/.well-known/nodeinfo"},
+	{method: "GET", pattern: "/nodeinfo/2.0"},
+	{method: "GET", pattern: "/.well-known/reputation-keys"},
 }
 
 func matchBracedPathPattern(pattern, path string) bool {
