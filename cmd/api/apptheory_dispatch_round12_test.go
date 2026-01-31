@@ -31,9 +31,6 @@ func TestShouldRouteToAPIAppTheoryRound12(t *testing.T) {
 	require.True(t, shouldRouteToAPIAppTheory("HEAD", "/"))
 	require.True(t, shouldRouteToAPIAppTheory("GET", "/api/oembed"))
 	require.True(t, shouldRouteToAPIAppTheory("GET", "/api/v1/media/med123"))
-	require.True(t, shouldRouteToAPIAppTheory("GET", "/.well-known/nodeinfo"))
-	require.True(t, shouldRouteToAPIAppTheory("GET", "/nodeinfo/2.0"))
-	require.True(t, shouldRouteToAPIAppTheory("GET", "/.well-known/reputation-keys"))
 
 	require.False(t, shouldRouteToAPIAppTheory("OPTIONS", "/oauth/authorize"))
 	require.False(t, shouldRouteToAPIAppTheory("POST", "/setup/status"))

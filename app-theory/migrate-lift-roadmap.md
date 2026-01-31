@@ -316,18 +316,6 @@ That means you should plan slices so you don’t accidentally migrate “everyth
      - `make verify-unit`
    - Rollback plan:
      - Revert the slice commit (or temporarily route these endpoints back to Lift by removing the media + misc routes from the dispatch predicate).
-   - Slice 7 (Federation discovery) implementation status (2026-01-31):
-     - AppTheory now serves federation discovery endpoints using Lift handler shims:
-       - Route wiring: `cmd/api/routes_apptheory_federation.go`
-       - API route aggregation: `cmd/api/routes_apptheory_api.go`
-       - Dispatch predicate: `cmd/api/main.go` (`apiAppTheoryRoutes`)
-     - Tests:
-       - `cmd/api/apptheory_dispatch_round12_test.go` (spot checks for discovery routes)
-   - Verification commands:
-     - `go test ./cmd/api -run TestShouldRouteToAPIAppTheoryRound12`
-     - `make verify-unit`
-   - Rollback plan:
-     - Revert the slice commit (or temporarily route these endpoints back to Lift by removing the federation discovery routes from the dispatch predicate).
 4. After the API Lambda is migrated, evaluate shared wrapper migration:
    - If `pkg/lambda/main_framework.go` is used broadly for non-API Lambdas, migrating it may migrate many services at once.
    - Consider keeping `pkg/lambda` as a Lift compatibility layer until you have migrated a representative set of Lambdas.
