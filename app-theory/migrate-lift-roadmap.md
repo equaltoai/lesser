@@ -149,11 +149,11 @@ These are the pinned destination frameworks for this repo. Keep these versions p
   - `pkg/lift/` (all files)
   - `pkg/testing/lift/`
   - `pkg/testing/mocks/lift_mock.go`
-  - `pkg/deploy/naming/naming.go` imports `github.com/pay-theory/lift/pkg/naming` (must be removed)
-  - `cmd/api/lift/` (directory name encodes Lift)
-  - `cmd/api/routes_lift.go` (file name encodes Lift)
-  - `cmd/api/lift_handlers.go` (Lift handler signatures)
-  - `tools/openapi/*` references `cmd/api/lift` as a package path
+  - `pkg/deploy/naming/naming.go` must not import `github.com/pay-theory/lift/pkg/naming` (removed; keep it removed)
+  - `cmd/api/handlers/` (renamed from `cmd/api/lift/`; still uses Lift types until runtime migration)
+  - `cmd/api/routes.go` (renamed from `cmd/api/routes_lift.go`)
+  - `cmd/api/handlers.go` (renamed from `cmd/api/lift_handlers.go`)
+  - `tools/openapi/*` references `cmd/api/handlers` as the handler package path
   - `scripts/add-panic-recovery.sh` checks for `lift.New()` and injects Lift middleware
 
 ### DynamORM usage (must be fully removed)
@@ -431,7 +431,7 @@ For every `.go` file importing `github.com/aws/aws-sdk-go-v2/service/dynamodb`:
    - any `pkg/testing/dynamorm/*` helpers
 
 ### 5) Tooling + docs cleanup (complete removal)
-1. Replace `tools/openapi/*` assumptions about `cmd/api/lift` package path; point it at the renamed handler package.
+1. Replace `tools/openapi/*` assumptions about `cmd/api/handlers` package path; keep it aligned as directories move during the migration.
 2. Remove or rewrite `tools/migrate_lift_storage_to_repos.go` (it encodes Lift+DynamORM concepts and must not remain in a Lift-free repo).
 3. Remove or rewrite `scripts/add-panic-recovery.sh` to target AppTheory (`apptheory.New(...)`) and AppTheory middleware patterns.
 4. Update repository documentation that instructs using Lift CDK or Lift runtime:

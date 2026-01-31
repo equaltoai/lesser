@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	liftapi "github.com/equaltoai/lesser/cmd/api/lift"
+	liftapi "github.com/equaltoai/lesser/cmd/api/handlers"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/storage/models"

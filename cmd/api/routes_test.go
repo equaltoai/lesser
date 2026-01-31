@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	liftHandlers "github.com/equaltoai/lesser/cmd/api/lift"
+	liftHandlers "github.com/equaltoai/lesser/cmd/api/handlers"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap/zaptest"
 )

@@ -9,7 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
-	liftapi "github.com/equaltoai/lesser/cmd/api/lift"
+	liftapi "github.com/equaltoai/lesser/cmd/api/handlers"
 	"github.com/equaltoai/lesser/pkg/auth"
 	awsinit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/config"

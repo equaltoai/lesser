@@ -18,7 +18,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
-	liftHandlers "github.com/equaltoai/lesser/cmd/api/lift"
+	liftHandlers "github.com/equaltoai/lesser/cmd/api/handlers"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"

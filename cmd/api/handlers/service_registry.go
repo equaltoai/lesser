@@ -20,7 +20,7 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 )
 
-// ServiceRegistry is a thin abstraction over pkg/services.Registry to make cmd/api/lift unit-testable
+// ServiceRegistry is a thin abstraction over pkg/services.Registry to make cmd/api/handlers unit-testable
 // without requiring DynamoDB/AWS/network side-effects.
 type ServiceRegistry interface {
 	Accounts() AccountsService

@@ -21,7 +21,7 @@ func TestConfigureLiftRoutes_RouteManifestMatchesSnapshot(t *testing.T) {
 	_, testFile, _, ok := runtime.Caller(0)
 	require.True(t, ok)
 	dir := filepath.Dir(testFile)
-	snapshotPath := filepath.Join(dir, "testdata", "routes_lift_manifest.txt")
+	snapshotPath := filepath.Join(dir, "testdata", "routes_manifest.txt")
 
 	if os.Getenv("UPDATE_ROUTE_MANIFEST") == "1" {
 		require.NoError(t, os.MkdirAll(filepath.Dir(snapshotPath), 0o755))
@@ -40,7 +40,7 @@ func TestConfigureLiftRoutes_RouteManifestMatchesSnapshot(t *testing.T) {
 	if !equalStringSlices(expected, actual) {
 		missing, extra := diffSets(expected, actual)
 		t.Fatalf(
-			"routes_lift manifest mismatch\nmissing (%d): %s\nextra (%d): %s\nregenerate with UPDATE_ROUTE_MANIFEST=1",
+			"routes manifest mismatch\nmissing (%d): %s\nextra (%d): %s\nregenerate with UPDATE_ROUTE_MANIFEST=1",
 			len(missing),
 			strings.Join(missing, ", "),
 			len(extra),
@@ -55,7 +55,7 @@ func extractLiftRouteManifest(t *testing.T) []string {
 	_, testFile, _, ok := runtime.Caller(0)
 	require.True(t, ok)
 	dir := filepath.Dir(testFile)
-	routeFile := filepath.Join(dir, "routes_lift.go")
+	routeFile := filepath.Join(dir, "routes.go")
 
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, routeFile, nil, 0)
@@ -72,7 +72,7 @@ func extractLiftRouteManifest(t *testing.T) []string {
 			break
 		}
 	}
-	require.NotNil(t, target, "configureLiftRoutes not found in routes_lift.go")
+	require.NotNil(t, target, "configureLiftRoutes not found in routes.go")
 	require.NotNil(t, target.Body, "configureLiftRoutes body missing")
 
 	var routes []string
@@ -199,4 +199,3 @@ func diffSets(expected, actual []string) (missing []string, extra []string) {
 	}
 	return missing, extra
 }
-

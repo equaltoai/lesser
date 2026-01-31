@@ -18,9 +18,9 @@ The `transformers` package consolidates transformation logic that was previously
 ### Eliminates Code Duplication
 
 Before this consolidation, similar transformation patterns were scattered across:
-- `cmd/api/lift/helpers.go` - `convertStorageStatusToAPI` (489 lines)
-- `cmd/api/lift/accounts_full.go` - Account conversion patterns
-- `cmd/api/lift/statuses.go` - Multiple status transformation calls
+- `cmd/api/handlers/helpers.go` - `convertStorageStatusToAPI` (489 lines)
+- `cmd/api/handlers/accounts_full.go` - Account conversion patterns
+- `cmd/api/handlers/statuses.go` - Multiple status transformation calls
 - Many other API layer files with `transformations.` calls
 
 ### Performance Optimized

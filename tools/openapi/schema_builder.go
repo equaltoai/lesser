@@ -49,7 +49,7 @@ func ensureGeneratedSchemas(spec *openAPISpec, repoRoot string) (*schemaBuilder,
 		return nil, nil
 	}
 
-	pkgs, err := loadPackages(repoRoot, "./cmd/api/models", "./pkg/auth", "./pkg/mastodon", "./pkg/reputation", "./pkg/storage", "./pkg/storage/models", "./cmd/api/lift")
+	pkgs, err := loadPackages(repoRoot, "./cmd/api/models", "./pkg/auth", "./pkg/mastodon", "./pkg/reputation", "./pkg/storage", "./pkg/storage/models", "./cmd/api/handlers")
 	if err != nil {
 		return nil, err
 	}
