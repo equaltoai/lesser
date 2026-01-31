@@ -9,7 +9,6 @@ import (
 	"math"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -20,14 +19,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/streamer"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
 	awsInit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/middleware"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -220,52 +219,42 @@ func NewNotificationProcessor(lambdaCtx *common.LambdaContext) *NotificationProc
 
 // initializeAWSClients is no longer needed as AWS clients are pre-initialized by Lambda framework
 
-// HandleSQS implements the SQS handler interface for Lift
-func (np *NotificationProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) error {
-	// AWS clients are pre-initialized by Lambda framework
+func (np *NotificationProcessor) HandleSQSMessage(ctx *apptheory.EventContext, msg events.SQSMessage) (err error) {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
 
-	np.logger.Info("processing notification delivery batch",
-		zap.String("request_id", ctx.GetRequestID()),
-		zap.Int("message_count", len(event.Records)),
+	if np.logger == nil {
+		np.logger = zap.NewNop()
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			np.logger.Error("panic processing notification message",
+				zap.String("request_id", requestID),
+				zap.String("message_id", msg.MessageId),
+				zap.Any("panic", r),
+			)
+			err = fmt.Errorf("panic recovered: %v", r)
+		}
+	}()
+
+	np.logger.Info("processing notification delivery message",
+		zap.String("request_id", requestID),
+		zap.String("message_id", msg.MessageId),
 	)
 
-	// Process messages in parallel with error collection (preserving existing pattern)
-	var errors []error
-	var errorMutex sync.Mutex
-
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 5) // Limit concurrency to 5
-
-	for _, record := range event.Records {
-		wg.Add(1)
-		sem <- struct{}{}
-
-		go func(record events.SQSMessage) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			if err := np.processMessage(ctx.Request.Context(), record); err != nil {
-				errorMutex.Lock()
-				errors = append(errors, err)
-				errorMutex.Unlock()
-
-				np.logger.Error("failed to process message",
-					zap.String("message_id", record.MessageId),
-					zap.Error(err),
-				)
-			}
-		}(record)
+	if err := np.processMessage(runCtx, msg); err != nil {
+		np.logger.Error("failed to process notification message",
+			zap.String("request_id", requestID),
+			zap.String("message_id", msg.MessageId),
+			zap.Error(err),
+		)
+		return err
 	}
-
-	wg.Wait()
-
-	if len(errors) > 0 {
-		np.logger.Error("partial batch failure",
-			zap.Int("failed_count", len(errors)),
-			zap.Int("total_count", len(event.Records)))
-		return ErrPartialBatchFailure()
-	}
-
 	return nil
 }
 
@@ -859,97 +848,23 @@ func initializeNotificationProcessor() error {
 	return nil
 }
 
-func buildApp() *lift.App {
-	app := lift.New()
-
-	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(lift.MarkGlobalMiddleware(middleware.PanicRecovery(lambdaCtx.Logger)))
-
-	// Add request ID middleware
-	app.Use(lift.MarkGlobalMiddleware(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			requestID := fmt.Sprintf("notification-%d", time.Now().UnixNano())
-			ctx.Set("requestID", requestID)
-			return next.Handle(ctx)
-		})
-	}))
-
-	// Add logging middleware
-	app.Use(lift.MarkGlobalMiddleware(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			start := time.Now()
-			requestID := ctx.Get("requestID").(string)
-
-			processor.logger.Info("processing SQS batch",
-				zap.String("request_id", requestID),
-			)
-
-			err := next.Handle(ctx)
-
-			duration := time.Since(start)
-			if err != nil {
-				processor.logger.Error("failed to process SQS batch",
-					zap.String("request_id", requestID),
-					zap.Error(err),
-					zap.Duration("duration", duration),
-				)
-			} else {
-				processor.logger.Info("successfully processed SQS batch",
-					zap.String("request_id", requestID),
-					zap.Duration("duration", duration),
-				)
-			}
-
-			return err
-		})
-	}))
-
-	// Add error handling middleware
-	app.Use(lift.MarkGlobalMiddleware(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			err := next.Handle(ctx)
-			if err != nil {
-				processor.logger.Error("handler error",
-					zap.String("request_id", ctx.Get("requestID").(string)),
-					zap.Error(err),
-				)
-			}
-			return err
-		})
-	}))
-
-	_ = app.SQS("notification-delivery", handleNotificationDeliverySQS)
-
-	return app
-}
-
-func handleNotificationDeliverySQS(ctx *lift.Context) error {
-	// Extract SQS event from Lift context
-	if ctx.Request.RawEvent == nil {
-		return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
-	}
-
-	// Parse the raw event as SQS event
-	var event events.SQSEvent
-	if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
-		event = sqsEvent
-	} else {
-		// Try to parse from interface if it's a map
-		eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-		if err != nil {
-			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
-		}
-
-		if err := json.Unmarshal(eventBytes, &event); err != nil {
-			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
-		}
-	}
-
-	return processor.HandleSQS(ctx, event)
-}
-
 func main() {
-	lambdaStartFn(buildApp().HandleRequest)
+	app := apptheory.New()
+
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	queueName := naming.ResourceNameWithApp(appName, "notification-processor-queue", stage)
+
+	app.SQS(queueName, func(ctx *apptheory.EventContext, msg events.SQSMessage) error {
+		if processor == nil {
+			return fmt.Errorf("notification processor not initialized")
+		}
+		return processor.HandleSQSMessage(ctx, msg)
+	})
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }
 
 // storeCostTracking stores the notification cost tracking record

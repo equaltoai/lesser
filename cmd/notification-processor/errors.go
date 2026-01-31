@@ -119,10 +119,3 @@ func ErrMarshalRetryRequest(err error) error {
 func ErrScheduleRetry(err error) error {
 	return errors.NewLambdaInternalError(errors.CodeInternal, "failed to schedule retry", err)
 }
-
-// Batch processing errors
-
-// ErrPartialBatchFailure returns an error indicating partial batch failure.
-func ErrPartialBatchFailure() error {
-	return errors.NewLambdaError(errors.CodeSQSProcessingFailed, "partial batch failure")
-}
