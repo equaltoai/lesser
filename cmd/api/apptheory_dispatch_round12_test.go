@@ -25,6 +25,8 @@ func TestShouldRouteToAPIAppTheoryRound12(t *testing.T) {
 	require.True(t, shouldRouteToAPIAppTheory("GET", "/api/v1/statuses/status123"))
 	require.True(t, shouldRouteToAPIAppTheory("POST", "/api/v1/statuses/status123/favourite"))
 	require.True(t, shouldRouteToAPIAppTheory("GET", "/api/v2/filters/filter123"))
+	require.True(t, shouldRouteToAPIAppTheory("GET", "/api/v1/moderation/queue"))
+	require.True(t, shouldRouteToAPIAppTheory("POST", "/api/v1/admin/reports/r123/resolve"))
 
 	require.False(t, shouldRouteToAPIAppTheory("OPTIONS", "/oauth/authorize"))
 	require.False(t, shouldRouteToAPIAppTheory("POST", "/setup/status"))
