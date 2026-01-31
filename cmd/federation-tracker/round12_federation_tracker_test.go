@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -12,7 +13,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -88,11 +88,12 @@ func TestFederationTracker_ProcessRecord_ActivityAndActor_Round12(t *testing.T) 
 		federationActivityRepository: repo,
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
+	runCtx := context.Background()
+	requestID := "req"
 
 	t.Run("ignores non insert/modify", func(t *testing.T) {
 		record := events.DynamoDBEventRecord{EventName: "REMOVE"}
-		require.NoError(t, ft.processRecord(ctx, record))
+		require.NoError(t, ft.processRecord(runCtx, requestID, record))
 	})
 
 	t.Run("tracks remote activity", func(t *testing.T) {
@@ -119,7 +120,7 @@ func TestFederationTracker_ProcessRecord_ActivityAndActor_Round12(t *testing.T) 
 			},
 		}
 
-		require.NoError(t, ft.processRecord(ctx, record))
+		require.NoError(t, ft.processRecord(runCtx, requestID, record))
 		require.Equal(t, 1, repo.createCalls)
 		require.Equal(t, 1, repo.updateCalls)
 	})
@@ -146,16 +147,16 @@ func TestFederationTracker_ProcessRecord_ActivityAndActor_Round12(t *testing.T) 
 					"PK":    events.NewStringAttribute("ACTOR#1"),
 					"Actor": actorMap,
 				},
-			},
-		}
+		},
+	}
 
-		require.NoError(t, ft.processRecord(ctx, record))
+		require.NoError(t, ft.processRecord(runCtx, requestID, record))
 		require.Equal(t, 1, repo.createCalls)
 		require.Equal(t, 1, repo.updateCalls)
 	})
 }
 
-func TestFederationTracker_HandleStream_ContinuesOnErrors_Round12(t *testing.T) {
+func TestFederationTracker_HandleDynamoDBRecord_ContinuesOnErrors_Round12(t *testing.T) {
 	repo := &fakeFederationActivityRepo{createErr: errors.New("boom")}
 	ft := &FederationTracker{
 		logger:                       zap.NewNop(),
@@ -169,23 +170,16 @@ func TestFederationTracker_HandleStream_ContinuesOnErrors_Round12(t *testing.T) 
 		"object": events.NewStringAttribute("https://remote.example/objects/1"),
 	})
 
-	event := events.DynamoDBEvent{
-		Records: []events.DynamoDBEventRecord{
-			{
-				EventName: "INSERT",
-				Change: events.DynamoDBStreamRecord{
-					NewImage: map[string]events.DynamoDBAttributeValue{
-						"PK":       events.NewStringAttribute("ACTIVITY#1"),
-						"Activity": activityMap,
-					},
-				},
+	require.NoError(t, ft.HandleDynamoDBRecord(nil, events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK":       events.NewStringAttribute("ACTIVITY#1"),
+				"Activity": activityMap,
 			},
-			{EventName: "REMOVE"},
 		},
-	}
-
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	require.NoError(t, ft.HandleStream(ctx, event))
+	}))
+	require.NoError(t, ft.HandleDynamoDBRecord(nil, events.DynamoDBEventRecord{EventName: "REMOVE"}))
 	require.Equal(t, 1, repo.createCalls)
 }
 
@@ -199,43 +193,50 @@ func TestRunFederationTracker_Round12(t *testing.T) {
 	cfg = &config.Config{Domain: "local.example"}
 	lambdaCtx = &common.LambdaContext{Logger: logger, Config: cfg}
 
-	called := false
-	lambdaStartFn = func(handler any) {
-		called = true
-		fn, ok := handler.(func(context.Context, any) (any, error))
-		require.True(t, ok)
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
-		event := map[string]any{
-			"Records": []any{
-				map[string]any{
-					"eventID":     "1",
-					"eventName":   "INSERT",
-					"eventSource": "aws:dynamodb",
-					"dynamodb": map[string]any{
-						"Keys": map[string]any{
-							"SK": map[string]any{"S": "EVENT"},
-						},
-						"NewImage": map[string]any{
-							"PK": map[string]any{"S": "ACTIVITY#1"},
-							"Activity": map[string]any{
-								"M": map[string]any{
-									"actor":  map[string]any{"S": "https://remote.example/users/alice"},
-									"type":   map[string]any{"S": "Create"},
-									"object": map[string]any{"S": "https://remote.example/objects/1"},
-								},
-							},
-						},
-					},
-				},
-			},
-		}
-
-		_, err := fn(context.Background(), event)
-		require.NoError(t, err)
-	}
+	var startHandler any
+	lambdaStartFn = func(handler any) { startHandler = handler }
 
 	main()
-	require.True(t, called)
+	require.NotNil(t, startHandler)
+
+	fn, ok := startHandler.(func(context.Context, json.RawMessage) (any, error))
+	require.True(t, ok)
+
+	activityMap := events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
+		"actor":  events.NewStringAttribute("https://remote.example/users/alice"),
+		"type":   events.NewStringAttribute("Create"),
+		"object": events.NewStringAttribute("https://remote.example/objects/1"),
+	})
+
+	event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{
+		{
+			EventID:        "1",
+			EventName:      "INSERT",
+			EventSource:    "aws:dynamodb",
+			EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/lesser-dev-main-table/stream/2024-01-01T00:00:00.000",
+			Change: events.DynamoDBStreamRecord{
+				NewImage: map[string]events.DynamoDBAttributeValue{
+					"PK":       events.NewStringAttribute("ACTIVITY#1"),
+					"Activity": activityMap,
+				},
+				Keys: map[string]events.DynamoDBAttributeValue{
+					"SK": events.NewStringAttribute("EVENT"),
+				},
+			},
+		},
+	}}
+	raw, err := json.Marshal(event)
+	require.NoError(t, err)
+
+	respAny, err := fn(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok := respAny.(events.DynamoDBEventResponse)
+	require.True(t, ok)
+	require.Empty(t, resp.BatchItemFailures)
 
 	// Allow for best-effort UpdateInstanceInfo warnings (repo calls are still recorded).
 	require.GreaterOrEqual(t, repo.createCalls, 1)
@@ -249,7 +250,8 @@ func TestFederationTracker_ExtractDomain_AndIgnoredPaths_Round12(t *testing.T) {
 		federationActivityRepository: repo,
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
+	runCtx := context.Background()
+	requestID := "req"
 	record := events.DynamoDBEventRecord{
 		EventName: "INSERT",
 		Change: events.DynamoDBStreamRecord{
@@ -259,13 +261,13 @@ func TestFederationTracker_ExtractDomain_AndIgnoredPaths_Round12(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, ft.processRecord(ctx, record))
+	require.NoError(t, ft.processRecord(runCtx, requestID, record))
 	require.Equal(t, 0, repo.createCalls)
 
 	record.Change.NewImage = map[string]events.DynamoDBAttributeValue{
 		"PK": events.NewStringAttribute("ACTOR#1"),
 	}
-	require.NoError(t, ft.processRecord(ctx, record))
+	require.NoError(t, ft.processRecord(runCtx, requestID, record))
 	require.Equal(t, 0, repo.createCalls)
 
 	record.Change.NewImage = map[string]events.DynamoDBAttributeValue{
@@ -274,7 +276,7 @@ func TestFederationTracker_ExtractDomain_AndIgnoredPaths_Round12(t *testing.T) {
 			"actor": events.NewStringAttribute("https://local.example/users/alice"),
 		}),
 	}
-	require.NoError(t, ft.processRecord(ctx, record))
+	require.NoError(t, ft.processRecord(runCtx, requestID, record))
 	require.Equal(t, 0, repo.createCalls)
 
 	record.Change.NewImage = map[string]events.DynamoDBAttributeValue{
@@ -283,7 +285,7 @@ func TestFederationTracker_ExtractDomain_AndIgnoredPaths_Round12(t *testing.T) {
 			"actor": events.NewStringAttribute("not a url"),
 		}),
 	}
-	require.NoError(t, ft.processRecord(ctx, record))
+	require.NoError(t, ft.processRecord(runCtx, requestID, record))
 	require.Equal(t, 0, repo.createCalls)
 
 	record.Change.NewImage = map[string]events.DynamoDBAttributeValue{
@@ -293,7 +295,7 @@ func TestFederationTracker_ExtractDomain_AndIgnoredPaths_Round12(t *testing.T) {
 			"object": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{}),
 		}),
 	}
-	require.NoError(t, ft.processRecord(ctx, record))
+	require.NoError(t, ft.processRecord(runCtx, requestID, record))
 }
 
 func TestFederationTracker_HandleStream_Empty_Round12(t *testing.T) {
@@ -302,8 +304,7 @@ func TestFederationTracker_HandleStream_Empty_Round12(t *testing.T) {
 		cfg:                          &common.LambdaContext{Config: &config.Config{Domain: "local.example"}},
 		federationActivityRepository: &fakeFederationActivityRepo{},
 	}
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	require.NoError(t, ft.HandleStream(ctx, events.DynamoDBEvent{}))
+	require.NoError(t, ft.HandleDynamoDBRecord(nil, events.DynamoDBEventRecord{}))
 }
 
 func TestFederationTracker_TrackActor_UpdateInstanceInfoError_Round12(t *testing.T) {
@@ -314,7 +315,6 @@ func TestFederationTracker_TrackActor_UpdateInstanceInfoError_Round12(t *testing
 		federationActivityRepository: repo,
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
 	record := events.DynamoDBEventRecord{
 		EventName: "INSERT",
 		Change: events.DynamoDBStreamRecord{
@@ -326,7 +326,7 @@ func TestFederationTracker_TrackActor_UpdateInstanceInfoError_Round12(t *testing
 			},
 		},
 	}
-	require.NoError(t, ft.processRecord(ctx, record))
+	require.NoError(t, ft.processRecord(context.Background(), "req", record))
 	require.Equal(t, 1, repo.createCalls)
 	require.Equal(t, 1, repo.updateCalls)
 }
@@ -338,8 +338,6 @@ func TestFederationTracker_TrackActivity_UpdateInstanceInfoError_Round12(t *test
 		cfg:                          &common.LambdaContext{Config: &config.Config{Domain: "local.example"}},
 		federationActivityRepository: repo,
 	}
-
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
 	record := events.DynamoDBEventRecord{
 		EventName: "INSERT",
 		Change: events.DynamoDBStreamRecord{
@@ -354,7 +352,7 @@ func TestFederationTracker_TrackActivity_UpdateInstanceInfoError_Round12(t *test
 		},
 	}
 
-	require.NoError(t, ft.processRecord(ctx, record))
+	require.NoError(t, ft.processRecord(context.Background(), "req", record))
 	require.Equal(t, 1, repo.createCalls)
 	require.Equal(t, 1, repo.updateCalls)
 }
@@ -367,7 +365,6 @@ func TestFederationTracker_TrackActor_SkipsWhenActorFieldMissing_Round12(t *test
 		federationActivityRepository: repo,
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
 	record := events.DynamoDBEventRecord{
 		EventName: "INSERT",
 		Change: events.DynamoDBStreamRecord{
@@ -376,7 +373,7 @@ func TestFederationTracker_TrackActor_SkipsWhenActorFieldMissing_Round12(t *test
 			},
 		},
 	}
-	require.NoError(t, ft.processRecord(ctx, record))
+	require.NoError(t, ft.processRecord(context.Background(), "req", record))
 	require.Equal(t, 0, repo.createCalls)
 }
 
@@ -388,7 +385,6 @@ func TestFederationTracker_TrackActivity_ObjectMapBranch_Round12(t *testing.T) {
 		federationActivityRepository: repo,
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
 	record := events.DynamoDBEventRecord{
 		EventName: "INSERT",
 		Change: events.DynamoDBStreamRecord{
@@ -405,7 +401,7 @@ func TestFederationTracker_TrackActivity_ObjectMapBranch_Round12(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, ft.processRecord(ctx, record))
+	require.NoError(t, ft.processRecord(context.Background(), "req", record))
 	require.Equal(t, 1, repo.createCalls)
 }
 
@@ -417,7 +413,6 @@ func TestFederationTracker_TrackActivity_SkipsWhenActorMissing_Round12(t *testin
 		federationActivityRepository: repo,
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
 	record := events.DynamoDBEventRecord{
 		EventName: "INSERT",
 		Change: events.DynamoDBStreamRecord{
@@ -429,7 +424,7 @@ func TestFederationTracker_TrackActivity_SkipsWhenActorMissing_Round12(t *testin
 			},
 		},
 	}
-	require.NoError(t, ft.processRecord(ctx, record))
+	require.NoError(t, ft.processRecord(context.Background(), "req", record))
 	require.Equal(t, 0, repo.createCalls)
 }
 
@@ -441,7 +436,6 @@ func TestFederationTracker_TrackActor_SkipsWhenLocalDomain_Round12(t *testing.T)
 		federationActivityRepository: repo,
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
 	record := events.DynamoDBEventRecord{
 		EventName: "INSERT",
 		Change: events.DynamoDBStreamRecord{
@@ -453,20 +447,17 @@ func TestFederationTracker_TrackActor_SkipsWhenLocalDomain_Round12(t *testing.T)
 			},
 		},
 	}
-	require.NoError(t, ft.processRecord(ctx, record))
+	require.NoError(t, ft.processRecord(context.Background(), "req", record))
 	require.Equal(t, 0, repo.createCalls)
 }
 
-func TestFederationTracker_ProcessRecord_UsesRequestIDFromContext_Round12(t *testing.T) {
+func TestFederationTracker_ProcessRecord_UsesRequestIDArgument_Round12(t *testing.T) {
 	repo := &fakeFederationActivityRepo{}
 	ft := &FederationTracker{
 		logger:                       zap.NewNop(),
 		cfg:                          &common.LambdaContext{Config: &config.Config{Domain: "local.example"}},
 		federationActivityRepository: repo,
 	}
-
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	ctx.SetRequestID("req")
 
 	record := events.DynamoDBEventRecord{
 		EventName: "INSERT",
@@ -480,11 +471,11 @@ func TestFederationTracker_ProcessRecord_UsesRequestIDFromContext_Round12(t *tes
 		},
 	}
 
-	require.NoError(t, ft.processRecord(ctx, record))
+	require.NoError(t, ft.processRecord(context.Background(), "req", record))
 	require.Equal(t, 1, repo.createCalls)
 }
 
-func TestFederationTracker_HandleStream_UsesContextDeadline_Round12(t *testing.T) {
+func TestFederationTracker_ProcessRecord_UsesContextDeadline_Round12(t *testing.T) {
 	repo := &fakeFederationActivityRepo{}
 	ft := &FederationTracker{
 		logger:                       zap.NewNop(),
@@ -495,6 +486,5 @@ func TestFederationTracker_HandleStream_UsesContextDeadline_Round12(t *testing.T
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	liftCtx := lift.NewContext(ctx, lift.NewRequest(nil))
-	require.NoError(t, ft.HandleStream(liftCtx, events.DynamoDBEvent{}))
+	require.NoError(t, ft.processRecord(ctx, "req", events.DynamoDBEventRecord{EventName: "REMOVE"}))
 }

@@ -3,7 +3,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -11,13 +14,13 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -102,43 +105,55 @@ func runFederationTracker() {
 		federationActivityRepository: federationActivityRepository,
 	}
 
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+	app := apptheory.New()
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return handler.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	tableName := naming.ResourceNameWithApp(appName, "main-table", stage)
+
+	app.DynamoDB(tableName, handler.HandleDynamoDBRecord)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
-
-	lambdaStartFn(app.HandleRequest)
 }
 
-// HandleStream implements the DynamoDBStreamHandler interface
-func (ft *FederationTracker) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
-	ft.logger.Info("Processing DynamoDB stream event",
-		zap.String("request_id", ctx.GetRequestID()),
-		zap.Int("records", len(event.Records)),
-	)
-
-	// Process each record in the stream
-	for _, record := range event.Records {
-		if err := ft.processRecord(ctx, record); err != nil {
-			ft.logger.Error("failed to process record",
-				zap.String("request_id", ctx.GetRequestID()),
-				zap.String("eventID", record.EventID),
-				zap.Error(err))
-			// Continue processing other records
-		}
+func (ft *FederationTracker) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) (err error) {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
 	}
 
+	if ft.logger == nil {
+		ft.logger = zap.NewNop()
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			ft.logger.Error("panic processing federation stream record",
+				zap.String("request_id", requestID),
+				zap.String("event_id", record.EventID),
+				zap.Any("panic", r),
+			)
+			err = fmt.Errorf("panic recovered: %v", r)
+		}
+	}()
+
+	if err := ft.processRecord(runCtx, requestID, record); err != nil {
+		ft.logger.Error("failed to process record",
+			zap.String("request_id", requestID),
+			zap.String("event_id", record.EventID),
+			zap.Error(err),
+		)
+		// Preserve prior Lift behavior: log and continue.
+		return nil
+	}
 	return nil
 }
 
-func (ft *FederationTracker) processRecord(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (ft *FederationTracker) processRecord(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	// We're interested in INSERT and MODIFY events that indicate federation activity
 	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
 		return nil
@@ -167,7 +182,7 @@ func (ft *FederationTracker) processRecord(ctx *lift.Context, record events.Dyna
 	}
 
 	ft.logger.Debug("Processing record",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("pk", pkStr),
 		zap.String("sk", sk),
 		zap.String("event_name", record.EventName),
@@ -177,17 +192,17 @@ func (ft *FederationTracker) processRecord(ctx *lift.Context, record events.Dyna
 	switch {
 	case strings.HasPrefix(pkStr, "ACTIVITY#"):
 		// New activity from remote actors
-		return ft.trackActivityFromInstance(ctx, record)
+		return ft.trackActivityFromInstance(ctx, requestID, record)
 
 	case strings.HasPrefix(pkStr, "ACTOR#"):
 		// New remote actor
-		return ft.trackActorFromInstance(ctx, record)
+		return ft.trackActorFromInstance(ctx, requestID, record)
 	}
 
 	return nil
 }
 
-func (ft *FederationTracker) trackActivityFromInstance(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (ft *FederationTracker) trackActivityFromInstance(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	// Extract the activity data
 	activityData, ok := record.Change.NewImage["Activity"]
 	if !ok || activityData.DataType() != events.DataTypeMap {
@@ -261,9 +276,9 @@ func (ft *FederationTracker) trackActivityFromInstance(ctx *lift.Context, record
 	activity.InstanceInfo = instanceInfo
 
 	// Save the activity record
-	if err := ft.federationActivityRepository.Create(context.Background(), activity); err != nil {
+	if err := ft.federationActivityRepository.Create(ctx, activity); err != nil {
 		ft.logger.Error("failed to create federation activity",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("domain", domain),
 			zap.String("actor_id", actorID),
 			zap.Error(err))
@@ -271,15 +286,15 @@ func (ft *FederationTracker) trackActivityFromInstance(ctx *lift.Context, record
 	}
 
 	// Update instance information
-	if err := ft.federationActivityRepository.UpdateInstanceInfo(context.Background(), instanceInfo); err != nil {
+	if err := ft.federationActivityRepository.UpdateInstanceInfo(ctx, instanceInfo); err != nil {
 		ft.logger.Warn("failed to update instance info",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("domain", domain),
 			zap.Error(err))
 	}
 
 	ft.logger.Debug("tracked activity from instance",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("domain", domain),
 		zap.String("actor_id", actorID),
 		zap.String("activity_type", activityType))
@@ -287,7 +302,7 @@ func (ft *FederationTracker) trackActivityFromInstance(ctx *lift.Context, record
 	return nil
 }
 
-func (ft *FederationTracker) trackActorFromInstance(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (ft *FederationTracker) trackActorFromInstance(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	// Extract the actor data
 	actorData, ok := record.Change.NewImage["Actor"]
 	if !ok || actorData.DataType() != events.DataTypeMap {
@@ -352,9 +367,9 @@ func (ft *FederationTracker) trackActorFromInstance(ctx *lift.Context, record ev
 		Build()
 
 	// Save the activity record
-	if err := ft.federationActivityRepository.Create(context.Background(), activity); err != nil {
+	if err := ft.federationActivityRepository.Create(ctx, activity); err != nil {
 		ft.logger.Error("failed to create federation activity for actor",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("domain", domain),
 			zap.String("actor_id", actorID),
 			zap.Error(err))
@@ -362,15 +377,15 @@ func (ft *FederationTracker) trackActorFromInstance(ctx *lift.Context, record ev
 	}
 
 	// Update instance information
-	if err := ft.federationActivityRepository.UpdateInstanceInfo(context.Background(), instanceInfo); err != nil {
+	if err := ft.federationActivityRepository.UpdateInstanceInfo(ctx, instanceInfo); err != nil {
 		ft.logger.Warn("failed to update instance info from actor",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("domain", domain),
 			zap.Error(err))
 	}
 
 	ft.logger.Debug("tracked actor from instance",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("domain", domain),
 		zap.String("actor_id", actorID))
 
