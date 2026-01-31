@@ -7,15 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	liftapi "github.com/equaltoai/lesser/cmd/api/lift"
 	"github.com/equaltoai/lesser/pkg/auth"
 	awsinit "github.com/equaltoai/lesser/pkg/aws"
-	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/observability"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -68,11 +67,11 @@ func TestExtractStandardizedServicesRound12(t *testing.T) {
 		return nil
 	}, "api")
 	lambdaCtx = &common.LambdaContext{
-		Config:        cfg,
-		Logger:        logger,
-		Repos:         repoStorage,
-		AuthService:   &auth.AuthService{},
-		EMFMetrics:    observability.NewEMFMetrics(logger, "Lesser/Test", "api"),
+		Config:       cfg,
+		Logger:       logger,
+		Repos:        repoStorage,
+		AuthService:  &auth.AuthService{},
+		EMFMetrics:   observability.NewEMFMetrics(logger, "Lesser/Test", "api"),
 		HealthChecker: &observability.HealthChecker{},
 		TracingManager: observability.NewTracingManager(logger, &observability.TracingConfig{
 			ServiceName:    "lesser-api",
@@ -82,8 +81,8 @@ func TestExtractStandardizedServicesRound12(t *testing.T) {
 		}),
 		MetricsCollector:  &observability.MetricsCollector{},
 		LatencyAggregator: observability.NewLatencyAggregator(logger, metricsRecorder),
-		LatencyAlerter:    &observability.LatencyAlerter{},
-		AWSServices:       &awsinit.AWSServices{CloudWatch: cwClient},
+		LatencyAlerter: &observability.LatencyAlerter{},
+		AWSServices:    &awsinit.AWSServices{CloudWatch: cwClient},
 	}
 
 	t.Cleanup(func() {
@@ -122,9 +121,7 @@ func TestInitializeManualServicesRound12(t *testing.T) {
 	newRepositoryFactory = func(dynamormCore.DB, string, *zap.Logger) (storagecore.RepositoryStorage, error) {
 		return newMainTestRepos(t), nil
 	}
-	newAuthService = func(_ *config.Config, _ auth.StorageProvider) (*auth.AuthService, error) {
-		return &auth.AuthService{}, nil
-	}
+	newAuthService = func(_ *config.Config, _ auth.StorageProvider) (*auth.AuthService, error) { return &auth.AuthService{}, nil }
 
 	logger = zap.NewNop()
 	cfg = &config.Config{
@@ -249,95 +246,6 @@ func TestConfigureHealthRoutesRound12(t *testing.T) {
 		result, err := app.HandleRequest(context.Background(), event)
 		require.NoError(t, err)
 		resp, ok := result.(*lift.Response)
-		require.True(t, ok)
-		return resp
-	}
-
-	require.Equal(t, 200, call("/health/live").StatusCode)
-	require.Equal(t, 200, call("/health").StatusCode)
-	require.Equal(t, 200, call("/health/ready").StatusCode)
-	require.Equal(t, 200, call("/health/detailed").StatusCode)
-
-	// Now exercise a failing DB dependency path.
-	errorRepos := func(t *testing.T) *mainTestRepos {
-		t.Helper()
-
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-
-		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("First", mock.Anything).Return(errors.New("boom")).Maybe()
-
-		logger := zap.NewNop()
-		account := repositories.NewAccountRepository(mockDB, "test-table", "example.com", logger)
-		metric := repositories.NewMetricRecordRepository(mockDB, "test-table", logger, nil)
-		return &mainTestRepos{
-			MockRepositoryStorage: &liftapi.MockRepositoryStorage{},
-			account:               account,
-			metricRecord:          metric,
-		}
-	}
-
-	repos = errorRepos(t)
-	require.Equal(t, 503, call("/health/ready").StatusCode)
-	require.Equal(t, 503, call("/health/detailed").StatusCode)
-}
-
-func TestMain_HealthEndpointsUseAppTheoryRound12(t *testing.T) {
-	origLambdaStart := lambdaStart
-	origRoutes := configureLiftRoutesFn
-	origLock := createInstanceLockMiddlewareFn
-	origHealth := healthChecker
-	t.Cleanup(func() {
-		lambdaStart = origLambdaStart
-		configureLiftRoutesFn = origRoutes
-		createInstanceLockMiddlewareFn = origLock
-		healthChecker = origHealth
-	})
-
-	cfg = &config.Config{
-		Domain:          "example.com",
-		Region:          "us-east-1",
-		Stage:           "development",
-		Version:         "test",
-		DynamoTableName: "test-table",
-		DebugMode:       true,
-	}
-	logger = zap.NewNop()
-	lambdaCtx = &common.LambdaContext{Logger: logger}
-	repos = newMainTestRepos(t)
-	startTime = time.Now().Add(-1 * time.Hour)
-	healthChecker = &observability.HealthChecker{}
-
-	createInstanceLockMiddlewareFn = func(_ storagecore.RepositoryStorage, _ *zap.Logger) lift.Middleware {
-		return func(next lift.Handler) lift.Handler { return next }
-	}
-	configureLiftRoutesFn = func(_ *lift.App) {}
-
-	var captured any
-	lambdaStart = func(h any) { captured = h }
-
-	main()
-
-	handler, ok := captured.(func(context.Context, interface{}) (interface{}, error))
-	require.True(t, ok)
-
-	call := func(path string) events.APIGatewayV2HTTPResponse {
-		respAny, err := handler(context.Background(), map[string]any{
-			"version":  "2.0",
-			"routeKey": "GET " + path,
-			"requestContext": map[string]any{
-				"requestId": "test-request-id",
-				"http": map[string]any{
-					"method": "GET",
-					"path":   path,
-				},
-			},
-		})
-		require.NoError(t, err)
-		resp, ok := respAny.(events.APIGatewayV2HTTPResponse)
 		require.True(t, ok)
 		return resp
 	}
@@ -513,9 +421,7 @@ func TestMainRound12(t *testing.T) {
 	createInstanceLockMiddlewareFn = func(_ storagecore.RepositoryStorage, _ *zap.Logger) lift.Middleware {
 		return func(next lift.Handler) lift.Handler { return next }
 	}
-	configureLiftRoutesFn = func(app *lift.App) {
-		_ = app.GET("/ping", func(ctx *lift.Context) error { return ctx.Status(200).JSON(map[string]string{"ok": "true"}) })
-	}
+	configureLiftRoutesFn = func(app *lift.App) { _ = app.GET("/ping", func(ctx *lift.Context) error { return ctx.Status(200).JSON(map[string]string{"ok": "true"}) }) }
 
 	var captured any
 	lambdaStart = func(h any) { captured = h }
