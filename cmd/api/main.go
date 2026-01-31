@@ -84,7 +84,6 @@ var (
 
 	createInstanceLockMiddlewareFn = createInstanceLockMiddleware
 	configureLiftRoutesFn          = configureLiftRoutes
-	configureAuthRoutesAppTheoryFn = configureAuthRoutesAppTheory
 
 	trackLambdaInvocation = func(ctx context.Context, service *cost.TrackingService, operation cost.LambdaOperation) error {
 		return service.TrackLambdaInvocation(ctx, operation)
@@ -368,10 +367,6 @@ func main() {
 	// Configure native Lift routes
 	configureLiftRoutesFn(app)
 
-	// Configure auth bootstrap routes (AppTheory slice 2)
-	authApp := apptheory.New(apptheory.WithTier(apptheory.TierP0))
-	configureAuthRoutesAppTheoryFn(authApp)
-
 	// Configure health check routes (AppTheory slice 1) if available
 	var healthApp *apptheory.App
 	if healthChecker != nil {
@@ -391,7 +386,7 @@ func main() {
 		}
 
 		// Process the request
-		result, err := handleAPIRequest(ctx, app, healthApp, authApp, event)
+		result, err := handleAPIRequest(ctx, app, healthApp, event)
 
 		// Record request metrics
 		requestDuration := time.Since(requestStart)
@@ -415,28 +410,17 @@ func main() {
 	lambdaStart(lambdaHandler)
 }
 
-func handleAPIRequest(ctx context.Context, liftApp *lift.App, healthApp *apptheory.App, authApp *apptheory.App, event interface{}) (interface{}, error) {
-	method, path, ok := extractHTTPMethodAndPath(event)
-	if !ok {
-		return liftApp.HandleRequest(ctx, event)
-	}
-
-	raw, err := marshalLambdaEvent(event)
-	if err != nil {
-		return liftApp.HandleRequest(ctx, event)
-	}
-
-	if healthApp != nil && shouldRouteToHealthAppTheory(method, path) {
-		out, handleErr := healthApp.HandleLambda(ctx, raw)
-		if handleErr == nil {
-			return out, nil
-		}
-	}
-
-	if authApp != nil && shouldRouteToAuthAppTheory(method, path) {
-		out, handleErr := authApp.HandleLambda(ctx, raw)
-		if handleErr == nil {
-			return out, nil
+func handleAPIRequest(ctx context.Context, liftApp *lift.App, healthApp *apptheory.App, event interface{}) (interface{}, error) {
+	if healthApp != nil {
+		method, path, ok := extractHTTPMethodAndPath(event)
+		if ok && shouldRouteToHealthAppTheory(method, path) {
+			raw, err := marshalLambdaEvent(event)
+			if err == nil {
+				out, handleErr := healthApp.HandleLambda(ctx, raw)
+				if handleErr == nil {
+					return out, nil
+				}
+			}
 		}
 	}
 
@@ -454,89 +438,6 @@ func shouldRouteToHealthAppTheory(method, path string) bool {
 	default:
 		return false
 	}
-}
-
-func shouldRouteToAuthAppTheory(method, path string) bool {
-	method = strings.ToUpper(strings.TrimSpace(method))
-	if method == "OPTIONS" || method == "" {
-		return false
-	}
-	if strings.TrimSpace(path) == "" {
-		return false
-	}
-
-	for _, route := range authAppTheoryRoutes {
-		if route.method != method {
-			continue
-		}
-		if matchBracedPathPattern(route.pattern, path) {
-			return true
-		}
-	}
-
-	return false
-}
-
-type apptheoryRoute struct {
-	method  string
-	pattern string
-}
-
-var authAppTheoryRoutes = []apptheoryRoute{
-	{method: "POST", pattern: "/api/v1/apps"},
-	{method: "POST", pattern: "/auth/wallet/challenge"},
-	{method: "POST", pattern: "/auth/wallet/verify"},
-	{method: "POST", pattern: "/auth/wallet/login"},
-	{method: "POST", pattern: "/auth/wallet/link"},
-	{method: "DELETE", pattern: "/auth/wallet/unlink/{address}"},
-	{method: "GET", pattern: "/auth/wallet/list"},
-	{method: "POST", pattern: "/api/v1/auth/webauthn/register/begin"},
-	{method: "POST", pattern: "/api/v1/auth/webauthn/register/finish"},
-	{method: "POST", pattern: "/api/v1/auth/webauthn/login/begin"},
-	{method: "POST", pattern: "/api/v1/auth/webauthn/login/finish"},
-	{method: "GET", pattern: "/api/v1/auth/webauthn/credentials"},
-	{method: "DELETE", pattern: "/api/v1/auth/webauthn/credentials/{credentialId}"},
-	{method: "PUT", pattern: "/api/v1/auth/webauthn/credentials/{credentialId}"},
-	{method: "GET", pattern: "/oauth/authorize"},
-	{method: "POST", pattern: "/oauth/consent"},
-	{method: "POST", pattern: "/oauth/token"},
-	{method: "GET", pattern: "/setup/status"},
-	{method: "POST", pattern: "/setup/bootstrap/challenge"},
-	{method: "POST", pattern: "/setup/bootstrap/verify"},
-	{method: "POST", pattern: "/setup/admin"},
-	{method: "POST", pattern: "/setup/finalize"},
-}
-
-func matchBracedPathPattern(pattern, path string) bool {
-	pattern = strings.TrimSpace(pattern)
-	path = strings.TrimSpace(path)
-	if pattern == "" || path == "" {
-		return false
-	}
-	if pattern == path {
-		return true
-	}
-
-	patternParts := strings.Split(pattern, "/")
-	pathParts := strings.Split(path, "/")
-	if len(patternParts) != len(pathParts) {
-		return false
-	}
-
-	for i := range patternParts {
-		want := patternParts[i]
-		got := pathParts[i]
-
-		if want == got {
-			continue
-		}
-		if strings.HasPrefix(want, "{") && strings.HasSuffix(want, "}") && len(want) > 2 {
-			continue
-		}
-		return false
-	}
-
-	return true
 }
 
 func marshalLambdaEvent(event interface{}) (json.RawMessage, error) {
@@ -576,7 +477,6 @@ func extractHTTPMethodAndPathFromMap(event map[string]any) (method string, path 
 
 	requestContext, _ := extractMapField(event, "requestContext")
 	httpContext, _ := extractMapField(requestContext, "http")
-	stage := extractStringField(requestContext, "stage")
 
 	method = extractStringField(httpContext, "method")
 	if method == "" {
@@ -590,24 +490,8 @@ func extractHTTPMethodAndPathFromMap(event map[string]any) (method string, path 
 	if path == "" {
 		path = extractStringField(event, "path")
 	}
-	path = stripStagePrefix(path, stage)
 
 	return method, path, method != "" && path != ""
-}
-
-func stripStagePrefix(path, stage string) string {
-	if stage == "" || stage == "$default" || path == "" {
-		return path
-	}
-
-	stagePrefix := "/" + stage
-	if path == stagePrefix {
-		return "/"
-	}
-	if strings.HasPrefix(path, stagePrefix+"/") {
-		return strings.TrimPrefix(path, stagePrefix)
-	}
-	return path
 }
 
 func extractStringField(m map[string]any, key string) string {
