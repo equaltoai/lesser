@@ -27,6 +27,7 @@ import (
 	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -289,11 +290,13 @@ func TestMain_HealthEndpointsUseAppTheoryRound12(t *testing.T) {
 	origLambdaStart := lambdaStart
 	origRoutes := configureLiftRoutesFn
 	origLock := createInstanceLockMiddlewareFn
+	origAuthRoutes := configureAuthRoutesAppTheoryFn
 	origHealth := healthChecker
 	t.Cleanup(func() {
 		lambdaStart = origLambdaStart
 		configureLiftRoutesFn = origRoutes
 		createInstanceLockMiddlewareFn = origLock
+		configureAuthRoutesAppTheoryFn = origAuthRoutes
 		healthChecker = origHealth
 	})
 
@@ -315,6 +318,7 @@ func TestMain_HealthEndpointsUseAppTheoryRound12(t *testing.T) {
 		return func(next lift.Handler) lift.Handler { return next }
 	}
 	configureLiftRoutesFn = func(_ *lift.App) {}
+	configureAuthRoutesAppTheoryFn = func(_ *apptheory.App) {}
 
 	var captured any
 	lambdaStart = func(h any) { captured = h }
@@ -490,10 +494,12 @@ func TestMainRound12(t *testing.T) {
 	origLambdaStart := lambdaStart
 	origRoutes := configureLiftRoutesFn
 	origLock := createInstanceLockMiddlewareFn
+	origAuthRoutes := configureAuthRoutesAppTheoryFn
 	t.Cleanup(func() {
 		lambdaStart = origLambdaStart
 		configureLiftRoutesFn = origRoutes
 		createInstanceLockMiddlewareFn = origLock
+		configureAuthRoutesAppTheoryFn = origAuthRoutes
 	})
 
 	cfg = &config.Config{
@@ -516,6 +522,7 @@ func TestMainRound12(t *testing.T) {
 	configureLiftRoutesFn = func(app *lift.App) {
 		_ = app.GET("/ping", func(ctx *lift.Context) error { return ctx.Status(200).JSON(map[string]string{"ok": "true"}) })
 	}
+	configureAuthRoutesAppTheoryFn = func(_ *apptheory.App) {}
 
 	var captured any
 	lambdaStart = func(h any) { captured = h }
