@@ -9,5 +9,4 @@ func configureAPIRoutesAppTheory(app *apptheory.App) {
 	configureAccountsRoutesAppTheory(app)
 	configureStatusesRoutesAppTheory(app)
 	configureModerationRoutesAppTheory(app)
-	configureMediaRoutesAppTheory(app)
 }
