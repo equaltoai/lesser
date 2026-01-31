@@ -19,8 +19,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/mediaconvert"
 	mctypes "github.com/aws/aws-sdk-go-v2/service/mediaconvert/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
@@ -31,29 +29,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
-
-type fakeLiftApp struct {
-	useFns        []func(lift.Handler) lift.Handler
-	sqsHandler    interface{}
-	handleRequest func(context.Context, interface{}) (interface{}, error)
-}
-
-func (a *fakeLiftApp) Use(mw func(lift.Handler) lift.Handler) *lift.App {
-	a.useFns = append(a.useFns, mw)
-	return nil
-}
-
-func (a *fakeLiftApp) SQS(_ string, handler interface{}) error {
-	a.sqsHandler = handler
-	return nil
-}
-
-func (a *fakeLiftApp) HandleRequest(ctx context.Context, event interface{}) (interface{}, error) {
-	if a.handleRequest == nil {
-		return nil, nil
-	}
-	return a.handleRequest(ctx, event)
-}
 
 type fakeS3Client struct {
 	objects map[string][]byte
@@ -344,54 +319,6 @@ func testMP3Header(t *testing.T) []byte {
 	data := append([]byte("ID3"), bytes.Repeat([]byte{0x00}, 64)...)
 	require.Equal(t, "audio/mpeg", http.DetectContentType(data))
 	return data
-}
-
-func TestCreateLambdaHandler_RecordsMetricsAndReturns(t *testing.T) {
-	prevProcessor := processor
-	t.Cleanup(func() { processor = prevProcessor })
-
-	processor = &MediaProcessor{
-		startTime:  time.Now(),
-		logger:     zaptest.NewLogger(t),
-		emfMetrics: observability.NewEMFMetrics(zaptest.NewLogger(t), "test", "media-processor"),
-	}
-
-	app := &fakeLiftApp{
-		handleRequest: func(_ context.Context, _ interface{}) (interface{}, error) {
-			return map[string]any{"ok": true}, nil
-		},
-	}
-	h := createLambdaHandler(app)
-	res, err := h(context.Background(), map[string]any{"Records": []any{}})
-	require.NoError(t, err)
-	require.NotNil(t, res)
-
-	app.handleRequest = func(_ context.Context, _ interface{}) (interface{}, error) {
-		return nil, stdErrors.New("boom")
-	}
-	_, err = h(context.Background(), map[string]any{"Records": []any{}})
-	require.Error(t, err)
-}
-
-func TestExtractSQSEvent_ParsesOrErrors(t *testing.T) {
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-
-	_, err := extractSQSEvent(ctx)
-	require.Error(t, err)
-
-	ctx.Request.RawEvent = make(chan int)
-	_, err = extractSQSEvent(ctx)
-	require.Error(t, err)
-
-	ctx.Request.RawEvent = map[string]any{"Records": "not-a-list"}
-	_, err = extractSQSEvent(ctx)
-	require.Error(t, err)
-
-	want := events.SQSEvent{Records: []events.SQSMessage{{Body: `{"job_id":"j","media_id":"m","username":"u"}`}}}
-	ctx.Request.RawEvent = want
-	got, err := extractSQSEvent(ctx)
-	require.NoError(t, err)
-	require.Equal(t, want.Records[0].Body, got.Records[0].Body)
 }
 
 func TestMediaProcessor_initializeAWSClients(t *testing.T) {
@@ -764,7 +691,7 @@ func TestMediaJobCostTracker_WarningsBudgetExceededAndFinish(t *testing.T) {
 	require.NotEmpty(t, repo.transactions)
 }
 
-func TestMediaProcessor_HandleSQS_AWSInitError(t *testing.T) {
+func TestMediaProcessor_HandleSQSMessage_AWSInitError(t *testing.T) {
 	prevLoad := loadAWSConfig
 	t.Cleanup(func() { loadAWSConfig = prevLoad })
 
@@ -773,12 +700,11 @@ func TestMediaProcessor_HandleSQS_AWSInitError(t *testing.T) {
 	}
 
 	mp := &MediaProcessor{logger: zaptest.NewLogger(t)}
-	lctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{RawEvent: map[string]any{}}))
-	err := mp.HandleSQS(lctx, events.SQSEvent{})
+	err := mp.HandleSQSMessage(nil, events.SQSMessage{MessageId: "m1", Body: `{}`})
 	require.Error(t, err)
 }
 
-func TestMediaProcessor_HandleSQS_ParsesMessagesAndRetriesOnFailure(t *testing.T) {
+func TestMediaProcessor_HandleSQSMessage_ParsesMessagesAndRetriesOnFailure(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	prevLoad := loadAWSConfig
@@ -839,8 +765,9 @@ func TestMediaProcessor_HandleSQS_ParsesMessagesAndRetriesOnFailure(t *testing.T
 		},
 	}
 
-	lctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{RawEvent: map[string]any{}}))
-	require.NoError(t, mp.HandleSQS(lctx, event))
+	for _, msg := range event.Records {
+		require.NoError(t, mp.HandleSQSMessage(nil, msg))
+	}
 }
 
 func TestErrorsFile_Constructors(t *testing.T) {
@@ -925,86 +852,53 @@ func TestMediaProcessor_handleProcessingError_ClassifiesPermanence(t *testing.T)
 	require.False(t, mp.isPermanentError(stdErrors.New("transient network timeout")))
 }
 
-func TestMediaProcessor_MiddlewareAndMainWiring(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-
-	prevLambdaCtx := lambdaCtx
+func TestMediaProcessor_Main_RegistersSQSHandlerAndStartsLambda(t *testing.T) {
 	prevProcessor := processor
 	prevStart := startLambda
 	t.Cleanup(func() {
-		lambdaCtx = prevLambdaCtx
 		processor = prevProcessor
 		startLambda = prevStart
 	})
 
-	lambdaCtx = &common.LambdaContext{Logger: logger}
-	processor = &MediaProcessor{
-		logger:     logger,
-		emfMetrics: observability.NewEMFMetrics(logger, "test", "media-processor"),
-		startTime:  time.Now(),
-	}
-
-	var started bool
+	startCalls := 0
 	startLambda = func(handler interface{}) {
-		started = true
-		require.NotNil(t, handler)
-	}
-	main()
-	require.True(t, started)
-
-	app := &fakeLiftApp{}
-	addRequestIDMiddleware(app)
-	addLoggingMetricsMiddleware(app)
-	addErrorHandlingMiddleware(app)
-	addSQSHandler(app)
-	require.NotEmpty(t, app.useFns)
-	require.NotNil(t, app.sqsHandler)
-
-	// Exercise request ID middleware.
-	reqIDMW := app.useFns[0]
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	next := lift.HandlerFunc(func(ctx *lift.Context) error {
-		v := ctx.Get("requestID")
-		_, ok := v.(string)
+		startCalls++
+		h, ok := handler.(func(context.Context, json.RawMessage) (any, error))
 		require.True(t, ok)
-		require.NotEmpty(t, v.(string))
-		return nil
-	})
-	require.NoError(t, reqIDMW(next).Handle(ctx))
 
-	// Exercise logging/metrics middleware success and failure paths.
-	logMW := app.useFns[1]
-	ctx.Set("requestID", "rid-1")
-	require.NoError(t, logMW(lift.HandlerFunc(func(_ *lift.Context) error { return nil })).Handle(ctx))
-	require.Error(t, logMW(lift.HandlerFunc(func(_ *lift.Context) error { return stdErrors.New("boom") })).Handle(ctx))
+		event := events.SQSEvent{
+			Records: []events.SQSMessage{
+				{
+					MessageId:      "1",
+					Body:           "{bad json",
+					EventSourceARN: "arn:aws:sqs:us-east-1:123456789012:lesser-dev-media-processor-queue",
+					EventSource:    "aws:sqs",
+				},
+			},
+		}
 
-	// Error-handling middleware should log on error but always return the error from next.
-	errMW := app.useFns[2]
-	require.NoError(t, errMW(lift.HandlerFunc(func(_ *lift.Context) error { return nil })).Handle(ctx))
-	require.Error(t, errMW(lift.HandlerFunc(func(_ *lift.Context) error { return stdErrors.New("fail") })).Handle(ctx))
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
 
-	// Exercise SQS handler registration: missing raw event returns parse error.
-	sqsHandler, ok := app.sqsHandler.(func(*lift.Context) error)
-	require.True(t, ok)
-	ctx.Request.RawEvent = nil
-	require.Error(t, sqsHandler(ctx))
+		respAny, err := h(context.Background(), raw)
+		require.NoError(t, err)
+		resp, ok := respAny.(events.SQSEventResponse)
+		require.True(t, ok)
+		require.Empty(t, resp.BatchItemFailures)
+	}
 
-	// Success path: empty SQS event calls processor.HandleSQS and returns nil.
-	prevLoad := loadAWSConfig
-	prevNewS3 := newS3ClientFromConfig
-	prevNewMC := newMediaConvertClientFromConfig
-	t.Cleanup(func() {
-		loadAWSConfig = prevLoad
-		newS3ClientFromConfig = prevNewS3
-		newMediaConvertClientFromConfig = prevNewMC
-	})
-	loadAWSConfig = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) { return aws.Config{}, nil }
-	newS3ClientFromConfig = func(_ aws.Config) s3Client { return &fakeS3Client{} }
-	newMediaConvertClientFromConfig = func(_ aws.Config) mediaConvertClient { return &fakeMediaConvertClient{jobID: "mc"} }
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
-	ctx.Request.RawEvent = events.SQSEvent{}
-	processor.bucketName = "bucket"
-	require.NoError(t, sqsHandler(ctx))
+	processor = &MediaProcessor{
+		logger:             zaptest.NewLogger(t),
+		s3Client:           &fakeS3Client{},
+		mediaConvertClient: &fakeMediaConvertClient{jobID: "mc"},
+	}
+
+	main()
+	require.Equal(t, 1, startCalls)
 }
 
 func TestMediaProcessor_ConfigAndValidationBranches(t *testing.T) {
