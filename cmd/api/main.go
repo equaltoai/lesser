@@ -710,6 +710,15 @@ var apiAppTheoryRoutes = []apptheoryRoute{
 	{method: "GET", pattern: "/api/v1/admin/moderation/reviewers"},
 	{method: "POST", pattern: "/api/v1/admin/moderation/reviewers/{id}/promote"},
 	{method: "POST", pattern: "/api/v1/admin/moderation/reviewers/{id}/demote"},
+
+	// Media + misc.
+	{method: "GET", pattern: "/"},
+	{method: "HEAD", pattern: "/"},
+	{method: "GET", pattern: "/api/oembed"},
+	{method: "GET", pattern: "/embed/{id}"},
+	{method: "POST", pattern: "/api/v1/media"},
+	{method: "GET", pattern: "/api/v1/media/{id}"},
+	{method: "PUT", pattern: "/api/v1/media/{id}"},
 }
 
 func matchBracedPathPattern(pattern, path string) bool {
