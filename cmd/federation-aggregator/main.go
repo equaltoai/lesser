@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -16,15 +18,14 @@ import (
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -111,15 +112,24 @@ func NewFederationAggregatorProcessor(db dynamormCore.DB, tableName string, lamb
 	}
 }
 
-// HandleEvent implements the EventBridge handler interface for CloudWatch events
-func (p *FederationAggregatorProcessor) HandleEvent(ctx *lift.Context, event events.CloudWatchEvent) error {
-	// Initialize AWS clients
-	if err := p.initializeAWSClients(ctx.Request.Context()); err != nil {
-		p.logger.Error("failed to initialize AWS clients", zap.Error(err))
-		return lift.NewLiftError("AWS_INIT_FAILED", "failed to initialize AWS clients", 500).WithCause(err)
+func (p *FederationAggregatorProcessor) HandleScheduledEvent(ctx *apptheory.EventContext, event events.EventBridgeEvent) (any, error) {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
 	}
 
-	return p.handleCloudWatchEvent(ctx.Request.Context(), event)
+	// Initialize AWS clients
+	if err := p.initializeAWSClients(runCtx); err != nil {
+		p.logger.Error("failed to initialize AWS clients",
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	return nil, p.handleEventBridgeEvent(runCtx, event)
 }
 
 // initializeAWSClients initializes AWS service clients
@@ -133,30 +143,31 @@ func (p *FederationAggregatorProcessor) initializeAWSClients(_ context.Context) 
 	return nil
 }
 
-// HandleSQS implements the SQS handler interface for Lift
-func (p *FederationAggregatorProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) error {
+func (p *FederationAggregatorProcessor) HandleSQSMessage(ctx *apptheory.EventContext, record events.SQSMessage) error {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
+
 	// Initialize AWS clients
-	if err := p.initializeAWSClients(ctx.Request.Context()); err != nil {
-		p.logger.Error("failed to initialize AWS clients", zap.Error(err))
-		return lift.NewLiftError("AWS_INIT_FAILED", "failed to initialize AWS clients", 500).WithCause(err)
+	if err := p.initializeAWSClients(runCtx); err != nil {
+		p.logger.Error("failed to initialize AWS clients",
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return err
 	}
 
-	p.logger.Info("processing federation aggregation SQS batch",
-		zap.String("request_id", ctx.GetRequestID()),
-		zap.Int("message_count", len(event.Records)),
-	)
-
-	// Process each SQS message
-	for _, record := range event.Records {
-		if err := p.processSQSMessage(ctx.Request.Context(), record); err != nil {
-			p.logger.Error("failed to process SQS message",
-				zap.String("message_id", record.MessageId),
-				zap.Error(err),
-			)
-			return lift.NewLiftError("MESSAGE_PROCESSING_FAILED", "failed to process SQS message", 500).WithCause(err)
-		}
+	if err := p.processSQSMessage(runCtx, record); err != nil {
+		p.logger.Error("failed to process SQS message",
+			zap.String("message_id", record.MessageId),
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return err
 	}
-
 	return nil
 }
 
@@ -229,77 +240,35 @@ func initializeFederationAggregator() error {
 	return nil
 }
 
-func handleFederationAggregatorSQS(ctx *lift.Context) error {
-	if processor == nil {
-		return lift.NewLiftError("MISSING_PROCESSOR", "federation aggregator processor not initialized", 500)
-	}
-
-	// Extract SQS event from Lift context
-	if ctx.Request.RawEvent == nil {
-		return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
-	}
-
-	// Try direct cast first
-	if event, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
-		return processor.HandleSQS(ctx, event)
-	}
-
-	// Fall back to JSON marshaling
-	eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-	if err != nil {
-		return lift.NewLiftError("EVENT_MARSHAL_ERROR", "failed to marshal raw event", 500).WithCause(err)
-	}
-
-	var event events.SQSEvent
-	if err := json.Unmarshal(eventBytes, &event); err != nil {
-		return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
-	}
-
-	return processor.HandleSQS(ctx, event)
-}
-
-func handleFederationAggregatorEventBridge(ctx *lift.Context) error {
-	if processor == nil {
-		return lift.NewLiftError("MISSING_PROCESSOR", "federation aggregator processor not initialized", 500)
-	}
-	if ctx.Request.RawEvent == nil {
-		return lift.NewLiftError("MISSING_EVENT", "no EventBridge event in request", 400)
-	}
-
-	eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-	if err != nil {
-		return lift.NewLiftError("EVENT_MARSHAL_ERROR", "failed to marshal raw event", 500).WithCause(err)
-	}
-
-	var event events.CloudWatchEvent
-	if err := json.Unmarshal(eventBytes, &event); err != nil {
-		return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse EventBridge event", 500).WithCause(err)
-	}
-
-	return processor.HandleEvent(ctx, event)
-}
-
 func main() {
-	// Create Lift app
-	app := lift.New()
+	app := apptheory.New()
 
-	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	queueName := naming.ResourceNameWithApp(appName, "federation-aggregator-queue", stage)
+	ruleName := naming.ResourceNameWithApp(appName, "federation-aggregator-schedule-0", stage)
 
-	// Add standard middleware
-	app.Use(patterns.RequestIDMiddleware("federation-aggregator"))
-	app.Use(patterns.LoggingMiddleware(logger))
-	app.Use(patterns.RecoveryMiddleware(logger))
+	app.SQS(queueName, func(ctx *apptheory.EventContext, msg events.SQSMessage) error {
+		if processor == nil {
+			return fmt.Errorf("federation aggregator processor not initialized")
+		}
+		return processor.HandleSQSMessage(ctx, msg)
+	})
 
-	// Handle SQS events for custom aggregation requests
-	_ = app.SQS("federation-aggregator", handleFederationAggregatorSQS)
-	_ = app.EventBridge("lesser-federation-aggregator-schedule-*", handleFederationAggregatorEventBridge)
+	app.EventBridge(apptheory.EventBridgeRule(ruleName), func(ctx *apptheory.EventContext, event events.EventBridgeEvent) (any, error) {
+		if processor == nil {
+			return nil, fmt.Errorf("federation aggregator processor not initialized")
+		}
+		return processor.HandleScheduledEvent(ctx, event)
+	})
 
-	lambdaStartFn(app.HandleRequest)
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }
 
 // handleCloudWatchEvent processes CloudWatch scheduled events
-func (p *FederationAggregatorProcessor) handleCloudWatchEvent(ctx context.Context, event events.CloudWatchEvent) error {
+func (p *FederationAggregatorProcessor) handleEventBridgeEvent(ctx context.Context, event events.EventBridgeEvent) error {
 	// Initialize AWS clients
 	if err := p.initializeAWSClients(ctx); err != nil {
 		p.logger.Error("failed to initialize AWS clients", zap.Error(err))

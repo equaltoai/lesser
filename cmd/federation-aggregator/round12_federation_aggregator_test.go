@@ -18,8 +18,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -153,80 +151,70 @@ func TestInitializeFederationAggregator_Error_Round12(t *testing.T) {
 	require.Error(t, initializeFederationAggregator())
 }
 
-func TestMain_WiresLambdaStart_Round12(t *testing.T) {
+func TestMain_WiresAppTheoryStart_Round12(t *testing.T) {
 	origStart := lambdaStartFn
-	origLambdaCtx := lambdaCtx
-	origLogger := logger
+	origProcessor := processor
 	t.Cleanup(func() {
 		lambdaStartFn = origStart
-		lambdaCtx = origLambdaCtx
-		logger = origLogger
+		processor = origProcessor
 	})
 
-	lambdaCtx = &common.LambdaContext{Logger: zap.NewNop()}
-	logger = zap.NewNop()
+	startCalls := 0
+	lambdaStartFn = func(handler any) {
+		startCalls++
+		h, ok := handler.(func(context.Context, json.RawMessage) (any, error))
+		require.True(t, ok)
 
-	called := false
-	lambdaStartFn = func(any) { called = true }
-	main()
-	require.True(t, called)
-}
+		body, err := json.Marshal(AggregationEvent{
+			Type:      "daily",
+			StartTime: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			EndTime:   time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+		})
+		require.NoError(t, err)
 
-func TestHandleFederationAggregatorSQS_Branches_Round12(t *testing.T) {
-	origProcessor := processor
-	t.Cleanup(func() { processor = origProcessor })
+		event := events.SQSEvent{
+			Records: []events.SQSMessage{
+				{
+					MessageId:      "m1",
+					Body:           string(body),
+					EventSourceARN: "arn:aws:sqs:us-east-1:123456789012:lesser-dev-federation-aggregator-queue",
+					EventSource:    "aws:sqs",
+				},
+			},
+		}
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
+		respAny, err := h(context.Background(), raw)
+		require.NoError(t, err)
 
-	processor = nil
-	require.Error(t, handleFederationAggregatorSQS(ctx))
-
-	processor = &FederationAggregatorProcessor{logger: zap.NewNop(), lambdaCtx: &common.LambdaContext{AWSServices: &awsInit.AWSServices{Config: aws.Config{Region: "us-east-1"}}}}
-	ctx.Request.RawEvent = nil
-	require.Error(t, handleFederationAggregatorSQS(ctx))
-
-	ctx.Request.RawEvent = make(chan int)
-	require.Error(t, handleFederationAggregatorSQS(ctx))
-
-	ctx.Request.RawEvent = "not-an-object"
-	require.Error(t, handleFederationAggregatorSQS(ctx))
-
-	ctx.Request.RawEvent = events.SQSEvent{}
-	require.NoError(t, handleFederationAggregatorSQS(ctx))
-}
-
-func TestHandleFederationAggregatorEventBridge_Branches_Round12(t *testing.T) {
-	origProcessor := processor
-	t.Cleanup(func() { processor = origProcessor })
-
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	processor = nil
-	require.Error(t, handleFederationAggregatorEventBridge(ctx))
-
-	processor = &FederationAggregatorProcessor{
-		logger:                       zap.NewNop(),
-		lambdaCtx:                    &common.LambdaContext{AWSServices: &awsInit.AWSServices{Config: aws.Config{Region: "us-east-1"}}},
-		federationActivityRepository: &fakeFederationActivityRepo{},
+		resp, ok := respAny.(events.SQSEventResponse)
+		require.True(t, ok)
+		require.Empty(t, resp.BatchItemFailures)
 	}
 
-	ctx.Request.RawEvent = nil
-	require.Error(t, handleFederationAggregatorEventBridge(ctx))
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
-	ctx.Request.RawEvent = make(chan int)
-	require.Error(t, handleFederationAggregatorEventBridge(ctx))
+	db := new(dynamormmocks.MockDB)
+	query := new(dynamormmocks.MockQuery)
+	db.On("Model", mock.Anything).Return(query)
+	query.On("Create").Return(nil)
 
-	ctx.Request.RawEvent = "not-an-object"
-	require.Error(t, handleFederationAggregatorEventBridge(ctx))
+	processor = &FederationAggregatorProcessor{
+		db:                           db,
+		logger:                       zap.NewNop(),
+		federationActivityRepository: &fakeFederationActivityRepo{},
+		lambdaCtx: &common.LambdaContext{
+			Config:      &config.Config{Region: "us-east-1", AWSAccountID: "123"},
+			Logger:      zap.NewNop(),
+			AWSServices: &awsInit.AWSServices{Config: aws.Config{Region: "us-east-1"}},
+		},
+	}
 
-	detail, err := json.Marshal(AggregationEvent{
-		Type:      "daily",
-		StartTime: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		EndTime:   time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
-	})
-	require.NoError(t, err)
-
-	ctx.Request.RawEvent = events.CloudWatchEvent{Detail: detail}
-	require.NoError(t, handleFederationAggregatorEventBridge(ctx))
+	main()
+	require.Equal(t, 1, startCalls)
 }
 
 func TestNewFederationAggregatorProcessor_Round12(t *testing.T) {
@@ -238,7 +226,13 @@ func TestNewFederationAggregatorProcessor_Round12(t *testing.T) {
 }
 
 func TestProcessSQSMessage_Round12(t *testing.T) {
+	db := new(dynamormmocks.MockDB)
+	query := new(dynamormmocks.MockQuery)
+	db.On("Model", mock.Anything).Return(query)
+	query.On("Create").Return(nil)
+
 	p := &FederationAggregatorProcessor{
+		db:                           db,
 		logger:                       zap.NewNop(),
 		federationActivityRepository: &fakeFederationActivityRepo{},
 	}
@@ -251,15 +245,24 @@ func TestProcessSQSMessage_Round12(t *testing.T) {
 }
 
 func TestHandleSQS_AndHandleEvent_Round12(t *testing.T) {
+	db := new(dynamormmocks.MockDB)
+	query := new(dynamormmocks.MockQuery)
+	db.On("Model", mock.Anything).Return(query)
+	query.On("Create").Return(nil)
+
 	repo := &fakeFederationActivityRepo{}
 	p := &FederationAggregatorProcessor{
+		db:                           db,
 		logger:                       zap.NewNop(),
 		federationActivityRepository: repo,
-		lambdaCtx:                    &common.LambdaContext{AWSServices: &awsInit.AWSServices{Config: aws.Config{Region: "us-east-1"}}},
+		lambdaCtx: &common.LambdaContext{
+			Config:      &config.Config{Region: "us-east-1", AWSAccountID: "123"},
+			Logger:      zap.NewNop(),
+			AWSServices: &awsInit.AWSServices{Config: aws.Config{Region: "us-east-1"}},
+		},
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	require.Error(t, p.HandleSQS(ctx, events.SQSEvent{Records: []events.SQSMessage{{Body: `{"bad"`}}}))
+	require.Error(t, p.HandleSQSMessage(nil, events.SQSMessage{MessageId: "m1", Body: `{"bad"`}))
 
 	validDetail, err := json.Marshal(AggregationEvent{
 		Type:      "daily",
@@ -267,21 +270,32 @@ func TestHandleSQS_AndHandleEvent_Round12(t *testing.T) {
 		EndTime:   time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
 	})
 	require.NoError(t, err)
-	require.NoError(t, p.HandleEvent(ctx, events.CloudWatchEvent{Detail: validDetail}))
+	_, err = p.HandleScheduledEvent(nil, events.EventBridgeEvent{Detail: validDetail})
+	require.NoError(t, err)
 }
 
-func TestHandleCloudWatchEvent_DefaultsHourly_Round12(t *testing.T) {
+func TestHandleEventBridgeEvent_DefaultsHourly_Round12(t *testing.T) {
+	db := new(dynamormmocks.MockDB)
+	query := new(dynamormmocks.MockQuery)
+	db.On("Model", mock.Anything).Return(query)
+	query.On("Create").Return(nil)
+
 	p := &FederationAggregatorProcessor{
+		db:                           db,
 		logger:                       zap.NewNop(),
 		federationActivityRepository: &fakeFederationActivityRepo{},
-		lambdaCtx:                    &common.LambdaContext{AWSServices: &awsInit.AWSServices{Config: aws.Config{Region: "us-east-1"}}},
+		lambdaCtx: &common.LambdaContext{
+			Config:      &config.Config{Region: "us-east-1", AWSAccountID: "123"},
+			Logger:      zap.NewNop(),
+			AWSServices: &awsInit.AWSServices{Config: aws.Config{Region: "us-east-1"}},
+		},
 	}
 
-	event := events.CloudWatchEvent{
+	event := events.EventBridgeEvent{
 		Time:   time.Date(2024, 1, 1, 12, 34, 0, 0, time.UTC),
 		Detail: []byte("{not-json"),
 	}
-	require.NoError(t, p.handleCloudWatchEvent(context.Background(), event))
+	require.NoError(t, p.handleEventBridgeEvent(context.Background(), event))
 }
 
 func TestHandleAggregationEvent_FullPath_Round12(t *testing.T) {
