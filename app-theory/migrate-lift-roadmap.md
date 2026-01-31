@@ -143,6 +143,7 @@ the GovTheory pack (do not guess; do not use placeholders).
 4. Add/expand regression tests around the highest-risk workflows (do this before swapping frameworks):
    - Candidate test locations already present and likely to extend:
      - `cmd/api/routes_lift_test.go` (route behavior)
+     - `cmd/api/routes_lift_manifest_test.go` + `cmd/api/testdata/routes_lift_manifest.txt` (route manifest snapshot; regenerate with `UPDATE_ROUTE_MANIFEST=1 go test ./cmd/api -run TestConfigureLiftRoutes_RouteManifestMatchesSnapshot`)
      - `cmd/api/lift/*_test.go` (handler-level tests)
      - `pkg/lambda/main_framework_test.go` (framework-level behavior)
 
