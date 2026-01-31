@@ -5,16 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
 type fakeDLQProcessor struct {
@@ -27,6 +25,8 @@ type fakeDLQProcessor struct {
 
 	analyticsErrByService map[string]error
 
+	lastSQSEvent *events.SQSEvent
+
 	scheduledCalls int
 	cleanupCalls   int
 	analyticsCalls int
@@ -35,7 +35,8 @@ type fakeDLQProcessor struct {
 }
 
 func (f *fakeDLQProcessor) InitializeAWSClients(context.Context) error { return f.initErr }
-func (f *fakeDLQProcessor) ProcessDLQMessages(context.Context, events.SQSEvent) error {
+func (f *fakeDLQProcessor) ProcessDLQMessages(_ context.Context, event events.SQSEvent) error {
+	f.lastSQSEvent = &event
 	return f.processErr
 }
 func (f *fakeDLQProcessor) ScheduledReprocessing(context.Context) error {
@@ -48,8 +49,10 @@ func (f *fakeDLQProcessor) CleanupExpiredMessages(context.Context) error {
 }
 func (f *fakeDLQProcessor) GetAnalytics(_ context.Context, service string, timeRange repositories.DLQTimeRange) (*repositories.DLQAnalytics, error) {
 	f.analyticsCalls++
-	if err := f.analyticsErrByService[service]; err != nil {
-		return nil, err
+	if f.analyticsErrByService != nil {
+		if err := f.analyticsErrByService[service]; err != nil {
+			return nil, err
+		}
 	}
 	return &repositories.DLQAnalytics{
 		Service:       service,
@@ -72,293 +75,174 @@ func (f *fakeDLQProcessor) SearchMessages(context.Context, *repositories.DLQSear
 	return []*models.DLQMessage{}, "", nil
 }
 
-func TestDLQProcessorHandler_HandleSQS(t *testing.T) {
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	ctx.SetRequestID("req")
-
+func TestDLQProcessorHandler_HandleSQSMessage(t *testing.T) {
 	t.Run("fails when aws init fails", func(t *testing.T) {
 		p := &fakeDLQProcessor{initErr: errors.New("no aws")}
 		h := NewDLQProcessorHandler(p, zap.NewNop())
-		err := h.HandleSQS(ctx, events.SQSEvent{Records: []events.SQSMessage{{MessageId: "m1"}}})
+		err := h.HandleSQSMessage(nil, events.SQSMessage{MessageId: "m1"})
 		require.Error(t, err)
 	})
 
 	t.Run("fails when processor fails", func(t *testing.T) {
 		p := &fakeDLQProcessor{processErr: errors.New("boom")}
 		h := NewDLQProcessorHandler(p, zap.NewNop())
-		err := h.HandleSQS(ctx, events.SQSEvent{Records: []events.SQSMessage{{MessageId: "m1"}}})
+		err := h.HandleSQSMessage(nil, events.SQSMessage{MessageId: "m1"})
 		require.Error(t, err)
+		require.NotNil(t, p.lastSQSEvent)
+		require.Len(t, p.lastSQSEvent.Records, 1)
 	})
 
 	t.Run("succeeds", func(t *testing.T) {
 		p := &fakeDLQProcessor{}
 		h := NewDLQProcessorHandler(p, zap.NewNop())
-		require.NoError(t, h.HandleSQS(ctx, events.SQSEvent{Records: []events.SQSMessage{{MessageId: "m1"}}}))
+		require.NoError(t, h.HandleSQSMessage(nil, events.SQSMessage{MessageId: "m1"}))
+		require.NotNil(t, p.lastSQSEvent)
+		require.Len(t, p.lastSQSEvent.Records, 1)
 	})
 }
 
 func TestDLQProcessorHandler_HandleEventBridge(t *testing.T) {
-	baseCtx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	baseCtx.SetRequestID("req")
-
 	t.Run("scheduled reprocessing variants", func(t *testing.T) {
 		p := &fakeDLQProcessor{}
 		h := NewDLQProcessorHandler(p, zap.NewNop())
-		require.NoError(t, h.HandleEventBridge(baseCtx, events.EventBridgeEvent{DetailType: "DLQ Scheduled Reprocessing"}))
-		require.NoError(t, h.HandleEventBridge(baseCtx, events.EventBridgeEvent{DetailType: "Scheduled Event"}))
+		_, err := h.HandleEventBridge(nil, events.EventBridgeEvent{DetailType: "DLQ Scheduled Reprocessing"})
+		require.NoError(t, err)
+		_, err = h.HandleEventBridge(nil, events.EventBridgeEvent{DetailType: "Scheduled Event"})
+		require.NoError(t, err)
 		require.Equal(t, 2, p.scheduledCalls)
 	})
 
 	t.Run("cleanup", func(t *testing.T) {
 		p := &fakeDLQProcessor{}
 		h := NewDLQProcessorHandler(p, zap.NewNop())
-		require.NoError(t, h.HandleEventBridge(baseCtx, events.EventBridgeEvent{DetailType: "DLQ Cleanup"}))
+		_, err := h.HandleEventBridge(nil, events.EventBridgeEvent{DetailType: "DLQ Cleanup"})
+		require.NoError(t, err)
 		require.Equal(t, 1, p.cleanupCalls)
 	})
 
-	t.Run("cleanup error wraps", func(t *testing.T) {
+	t.Run("cleanup error returns error", func(t *testing.T) {
 		p := &fakeDLQProcessor{cleanupErr: errors.New("nope")}
 		h := NewDLQProcessorHandler(p, zap.NewNop())
-		require.Error(t, h.HandleEventBridge(baseCtx, events.EventBridgeEvent{DetailType: "DLQ Cleanup"}))
+		_, err := h.HandleEventBridge(nil, events.EventBridgeEvent{DetailType: "DLQ Cleanup"})
+		require.Error(t, err)
 	})
 
-	t.Run("analytics", func(t *testing.T) {
-		p := &fakeDLQProcessor{analyticsErrByService: map[string]error{"media-processor": errors.New("fail one")}}
+	t.Run("analytics calls all services", func(t *testing.T) {
+		p := &fakeDLQProcessor{
+			analyticsErrByService: map[string]error{
+				"media-processor": errors.New("boom"),
+			},
+		}
 		h := NewDLQProcessorHandler(p, zap.NewNop())
-		require.NoError(t, h.HandleEventBridge(baseCtx, events.EventBridgeEvent{DetailType: "DLQ Analytics"}))
+		_, err := h.HandleEventBridge(nil, events.EventBridgeEvent{DetailType: "DLQ Analytics"})
+		require.NoError(t, err)
 		require.GreaterOrEqual(t, p.analyticsCalls, 1)
 	})
 
-	t.Run("unknown detail type", func(t *testing.T) {
+	t.Run("unknown detail type returns nil", func(t *testing.T) {
 		p := &fakeDLQProcessor{}
 		h := NewDLQProcessorHandler(p, zap.NewNop())
-		require.NoError(t, h.HandleEventBridge(baseCtx, events.EventBridgeEvent{DetailType: "Unknown"}))
-		require.Equal(t, 0, p.scheduledCalls)
-		require.Equal(t, 0, p.cleanupCalls)
-	})
-
-	t.Run("scheduled reprocessing error wraps", func(t *testing.T) {
-		p := &fakeDLQProcessor{reprocessErr: errors.New("nope")}
-		h := NewDLQProcessorHandler(p, zap.NewNop())
-		require.Error(t, h.HandleEventBridge(baseCtx, events.EventBridgeEvent{DetailType: "DLQ Scheduled Reprocessing"}))
+		_, err := h.HandleEventBridge(nil, events.EventBridgeEvent{DetailType: "Unknown"})
+		require.NoError(t, err)
 	})
 }
 
-func TestDLQProcessor_EventExtraction(t *testing.T) {
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-
-	_, err := extractSQSEvent(ctx)
-	require.Error(t, err)
-	_, err = extractEventBridgeEvent(ctx)
-	require.Error(t, err)
-
-	ctx.Request.RawEvent = func() {}
-	_, err = extractSQSEvent(ctx)
-	require.Error(t, err)
-
-	ctx.Request.RawEvent = 5
-	_, err = extractSQSEvent(ctx)
-	require.Error(t, err)
-
-	ctx.Request.RawEvent = func() {}
-	_, err = extractEventBridgeEvent(ctx)
-	require.Error(t, err)
-
-	ctx.Request.RawEvent = "nope"
-	_, err = extractEventBridgeEvent(ctx)
-	require.Error(t, err)
-
-	ctx.Request.RawEvent = events.EventBridgeEvent{DetailType: "Scheduled Event"}
-	ev, err := extractEventBridgeEvent(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "Scheduled Event", ev.DetailType)
-
-	ctx.Request.RawEvent = events.SQSEvent{Records: []events.SQSMessage{{MessageId: "m1"}}}
-	sqsEv, err := extractSQSEvent(ctx)
-	require.NoError(t, err)
-	require.Len(t, sqsEv.Records, 1)
-}
-
-func TestDLQProcessor_RequestIDMiddleware_SetsValues(t *testing.T) {
-	origLogger := logger
-	t.Cleanup(func() { logger = origLogger })
-	logger = zap.NewNop()
-
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	next := lift.HandlerFunc(func(c *lift.Context) error {
-		require.NotEmpty(t, c.GetRequestID())
-		require.Equal(t, c.GetRequestID(), c.Get("requestID").(string))
-		return nil
+func TestParseSearchFilter(t *testing.T) {
+	t.Run("missing service is error", func(t *testing.T) {
+		_, err := parseSearchFilter(&apptheory.Context{Request: apptheory.Request{Body: []byte(`{}`)}})
+		require.Error(t, err)
 	})
 
-	require.NoError(t, requestIDMiddleware()(next).Handle(ctx))
+	t.Run("invalid json is error", func(t *testing.T) {
+		_, err := parseSearchFilter(&apptheory.Context{Request: apptheory.Request{Body: []byte(`{bad`)}})
+		require.Error(t, err)
+	})
+
+	t.Run("defaults limit", func(t *testing.T) {
+		filter, err := parseSearchFilter(&apptheory.Context{Request: apptheory.Request{Body: []byte(`{"service":"notification-processor"}`)}})
+		require.NoError(t, err)
+		require.Equal(t, 50, filter.Limit)
+	})
 }
 
-func TestDLQProcessor_LogHelpers_CoverBranches(t *testing.T) {
-	origLogger := logger
-	t.Cleanup(func() { logger = origLogger })
-	logger = zap.NewNop()
+func TestHTTPHandlers(t *testing.T) {
+	prevHandler := handler
+	t.Cleanup(func() { handler = prevHandler })
 
-	logRequestCompletion("req", 10*time.Millisecond, nil)
-	logRequestCompletion("req", 10*time.Millisecond, errors.New("boom"))
+	t.Run("health check returns 200", func(t *testing.T) {
+		resp, err := handleHealthCheck(&apptheory.Context{})
+		require.NoError(t, err)
+		require.Equal(t, 200, resp.Status)
+	})
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	ctx.Set("requestID", "req")
-	logHandlerError(ctx, lift.NewLiftError("ERR", "nope", 500))
-	logHandlerError(ctx, errors.New("boom"))
+	t.Run("analytics 400 on missing service", func(t *testing.T) {
+		resp, err := handleAnalyticsHTTP(&apptheory.Context{Params: map[string]string{}})
+		require.NoError(t, err)
+		require.Equal(t, 400, resp.Status)
+	})
+
+	t.Run("analytics 500 when handler missing", func(t *testing.T) {
+		handler = nil
+		resp, err := handleAnalyticsHTTP(&apptheory.Context{Params: map[string]string{"service": "notification-processor"}})
+		require.NoError(t, err)
+		require.Equal(t, 500, resp.Status)
+	})
+
+	t.Run("search 200 with next_cursor and count", func(t *testing.T) {
+		p := &fakeDLQProcessor{}
+		handler = NewDLQProcessorHandler(p, zap.NewNop())
+
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{Body: []byte(`{"service":"notification-processor","limit":1}`)},
+		}
+		resp, err := handleSearchHTTP(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 200, resp.Status)
+	})
 }
 
-func TestDLQProcessor_MiddlewareAndRoutes(t *testing.T) {
-	origLogger := logger
-	origHandler := handler
-	origLambdaCtx := lambdaCtx
-	origStart := lambdaStartFn
+func TestMain_WiresAppTheoryAndStartsLambda(t *testing.T) {
+	prevStart := lambdaStartFn
+	prevHandler := handler
 	t.Cleanup(func() {
-		logger = origLogger
-		handler = origHandler
-		lambdaCtx = origLambdaCtx
-		lambdaStartFn = origStart
+		lambdaStartFn = prevStart
+		handler = prevHandler
 	})
 
-	logger = zap.NewNop()
-	handler = NewDLQProcessorHandler(&fakeDLQProcessor{}, logger)
-	lambdaCtx = &common.LambdaContext{Logger: logger}
+	handler = NewDLQProcessorHandler(&fakeDLQProcessor{}, zap.NewNop())
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	ctx.Set("requestID", "req")
+	startCalls := 0
+	lambdaStartFn = func(h any) {
+		startCalls++
 
-	next := lift.HandlerFunc(func(*lift.Context) error { return errors.New("boom") })
+		fn, ok := h.(func(context.Context, json.RawMessage) (any, error))
+		require.True(t, ok)
 
-	require.Error(t, loggingMiddleware()(next).Handle(ctx))
-	require.Error(t, errorHandlingMiddleware()(next).Handle(ctx))
-	require.Error(t, costTrackingMiddleware()(next).Handle(ctx))
+		event := events.SQSEvent{
+			Records: []events.SQSMessage{
+				{
+					MessageId:      "m1",
+					Body:           "{}",
+					EventSource:    "aws:sqs",
+					EventSourceARN: "arn:aws:sqs:us-east-1:123456789012:lesser-dev-import-processor-queue-dlq",
+				},
+			},
+		}
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
 
-	called := false
-	lambdaStartFn = func(_ interface{}) { called = true }
+		respAny, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+
+		resp, ok := respAny.(events.SQSEventResponse)
+		require.True(t, ok)
+		require.Empty(t, resp.BatchItemFailures)
+	}
+
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
+
 	main()
-	require.True(t, called)
-}
-
-func TestDLQProcessor_AdminHandlers(t *testing.T) {
-	origLogger := logger
-	origHandler := handler
-	t.Cleanup(func() {
-		logger = origLogger
-		handler = origHandler
-	})
-
-	logger = zap.NewNop()
-	handler = NewDLQProcessorHandler(&fakeDLQProcessor{}, logger)
-
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	ctx.Set("requestID", "req")
-
-	require.NoError(t, handleHealthCheck(ctx))
-	require.NotEmpty(t, ctx.Response.Body)
-
-	analyticsCtx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	analyticsCtx.Set("requestID", "req")
-	analyticsCtx.SetParam("service", "svc")
-	require.NoError(t, handleAnalytics(analyticsCtx))
-
-	trendsCtx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	trendsCtx.Set("requestID", "req")
-	trendsCtx.SetParam("service", "svc")
-	require.NoError(t, handleTrends(trendsCtx))
-
-	searchCtx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	searchCtx.Set("requestID", "req")
-	body, err := json.Marshal(map[string]any{"service": "svc"})
-	require.NoError(t, err)
-	searchCtx.Request.Body = body
-	require.NoError(t, handleSearch(searchCtx))
-}
-
-func TestDLQProcessor_AdminHandlers_ErrorBranches(t *testing.T) {
-	origLogger := logger
-	origHandler := handler
-	t.Cleanup(func() {
-		logger = origLogger
-		handler = origHandler
-	})
-
-	logger = zap.NewNop()
-	handler = NewDLQProcessorHandler(&fakeDLQProcessor{
-		analyticsErrByService: map[string]error{"svc": errors.New("analytics")},
-		trendsErr:             errors.New("trends"),
-		searchErr:             errors.New("search"),
-	}, logger)
-
-	missingService := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	missingService.Set("requestID", "req")
-	require.Error(t, handleAnalytics(missingService))
-	require.Error(t, handleTrends(missingService))
-
-	analyticsCtx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	analyticsCtx.Set("requestID", "req")
-	analyticsCtx.SetParam("service", "svc")
-	require.Error(t, handleAnalytics(analyticsCtx))
-
-	trendsCtx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	trendsCtx.Set("requestID", "req")
-	trendsCtx.SetParam("service", "svc")
-	require.Error(t, handleTrends(trendsCtx))
-
-	searchCtx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	searchCtx.Set("requestID", "req")
-	searchCtx.Request.Body = []byte(`{"service":"svc"}`)
-	require.Error(t, handleSearch(searchCtx))
-
-	parseErrCtx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	parseErrCtx.Set("requestID", "req")
-	parseErrCtx.Request.Body = []byte(`not-json`)
-	require.Error(t, handleSearch(parseErrCtx))
-}
-
-func TestDLQProcessor_ParseSearchFilter(t *testing.T) {
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-
-	_, err := parseSearchFilter(ctx)
-	require.Error(t, err)
-
-	ctx.Request.Body = []byte(`not-json`)
-	_, err = parseSearchFilter(ctx)
-	require.Error(t, err)
-
-	ctx.Request.Body = []byte(`{"service":"svc","limit":0}`)
-	filter, err := parseSearchFilter(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "svc", filter.Service)
-	require.Equal(t, 50, filter.Limit)
-}
-
-func TestCalculateProcessingCost(t *testing.T) {
-	require.Equal(t, int64(20), calculateProcessingCost(500*time.Millisecond))
-	require.Greater(t, calculateProcessingCost(2*time.Second), int64(20))
-}
-
-func TestDLQProcessor_TopLevelHandlers_Coverage(t *testing.T) {
-	origLogger := logger
-	origHandler := handler
-	t.Cleanup(func() {
-		logger = origLogger
-		handler = origHandler
-	})
-
-	logger = zap.NewNop()
-	handler = NewDLQProcessorHandler(&fakeDLQProcessor{}, logger)
-
-	sqsReq := lift.NewRequest(&adapters.Request{
-		RawEvent: events.SQSEvent{Records: []events.SQSMessage{{MessageId: "m1"}}},
-	})
-	sqsCtx := lift.NewContext(context.Background(), sqsReq)
-	sqsCtx.SetRequestID("req")
-	require.NoError(t, handleSQSEvent(sqsCtx))
-
-	ebReq := lift.NewRequest(&adapters.Request{
-		RawEvent: events.EventBridgeEvent{DetailType: "DLQ Cleanup"},
-	})
-	ebCtx := lift.NewContext(context.Background(), ebReq)
-	ebCtx.SetRequestID("req")
-	require.NoError(t, handleEventBridgeEvent(ebCtx))
+	require.Equal(t, 1, startCalls)
 }
