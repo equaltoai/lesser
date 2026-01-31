@@ -7,7 +7,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -15,13 +18,13 @@ import (
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -63,29 +66,42 @@ type contentStreamItem struct {
 	Attachment []contentStreamAttachment `json:"attachment"`
 }
 
-// HandleStreamWithContext processes DynamoDB stream events with explicit context
-func (ap *AIProcessor) HandleStreamWithContext(ctx context.Context, liftCtx *lift.Context, event events.DynamoDBEvent) error {
-	requestID := liftCtx.GetRequestID()
+func (ap *AIProcessor) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) (err error) {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
 
-	ap.logger.Info("processing AI analysis stream batch",
-		zap.String("request_id", requestID),
-		zap.Int("record_count", len(event.Records)),
-	)
+	if ap.logger == nil {
+		ap.logger = zap.NewNop()
+	}
 
-	for _, record := range event.Records {
-		if err := ap.processRecord(ctx, liftCtx, record); err != nil {
-			ap.logger.Error("error processing record",
+	defer func() {
+		if r := recover(); r != nil {
+			ap.logger.Error("panic processing AI stream record",
 				zap.String("request_id", requestID),
 				zap.String("event_id", record.EventID),
-				zap.Error(err),
+				zap.Any("panic", r),
 			)
-			// Continue processing other records
+			err = fmt.Errorf("panic recovered: %v", r)
 		}
+	}()
+
+	if err := ap.processRecord(runCtx, requestID, record); err != nil {
+		ap.logger.Error("error processing record",
+			zap.String("request_id", requestID),
+			zap.String("event_id", record.EventID),
+			zap.Error(err),
+		)
+		// Preserve prior Lift behavior: log and continue without failing the batch.
+		return nil
 	}
 	return nil
 }
 
-func (ap *AIProcessor) processRecord(ctx context.Context, liftCtx *lift.Context, record events.DynamoDBEventRecord) error {
+func (ap *AIProcessor) processRecord(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
 		return nil
 	}
@@ -119,8 +135,7 @@ func (ap *AIProcessor) processRecord(ctx context.Context, liftCtx *lift.Context,
 
 	// Handle moderation action if needed
 	if analysis.ModerationAction != ai.ActionNone {
-		if err := ap.handleModerationAction(ctx, liftCtx, analysis); err != nil {
-			requestID := liftCtx.GetRequestID()
+		if err := ap.handleModerationAction(ctx, analysis); err != nil {
 			ap.logger.Error("failed to handle moderation action",
 				zap.String("request_id", requestID),
 				zap.String("analysis_id", analysis.ID),
@@ -210,7 +225,7 @@ func (ap *AIProcessor) isAnalyzableType(objectType string) bool {
 
 // storeAnalysis is no longer needed - the service layer handles storage
 
-func (ap *AIProcessor) handleModerationAction(ctx context.Context, _ *lift.Context, analysis *ai.AIAnalysis) error {
+func (ap *AIProcessor) handleModerationAction(ctx context.Context, analysis *ai.AIAnalysis) error {
 	// Create moderation event model for DynamORM
 	moderationEvent := struct {
 		PK              string  `dynamorm:"pk"`
@@ -322,20 +337,23 @@ func NewSimplifiedAIProcessor(lambdaCtx *common.LambdaContext) *AIProcessor {
 	}
 }
 
-func handleAIProcessorStream(ctx *lift.Context) error {
-	records, err := ctx.DynamoDBRecords()
-	if err != nil {
-		return err
-	}
-	return processor.HandleStreamWithContext(ctx.Request.Context(), ctx, events.DynamoDBEvent{Records: records})
+func main() {
+	app := apptheory.New()
+
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	tableName := naming.ResourceNameWithApp(appName, "main-table", stage)
+
+	app.DynamoDB(tableName, handleAIProcessorStreamRecord)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }
 
-func main() {
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
-
-	_ = app.DynamoDB("*", handleAIProcessorStream)
-
-	lambdaStartFn(app.HandleRequest)
+func handleAIProcessorStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if processor == nil {
+		return fmt.Errorf("AI processor not initialized")
+	}
+	return processor.HandleDynamoDBRecord(ctx, record)
 }
