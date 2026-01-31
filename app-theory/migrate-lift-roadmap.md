@@ -267,6 +267,19 @@ That means you should plan slices so you don’t accidentally migrate “everyth
      - Moderation/admin: `cmd/api/lift/admin*.go`, `cmd/api/lift/moderation.go`
      - Media: `cmd/api/lift/media.go`
      - Federation discovery: `cmd/api/lift/nodeinfo.go`, `cmd/api/lift/webfinger.go`, `cmd/api/lift/discovery.go`
+   - Slice 3 (Accounts) implementation status (2026-01-31):
+     - AppTheory now serves account + user-level endpoints using Lift handler shims:
+       - Route wiring: `cmd/api/routes_apptheory_accounts.go`
+       - API route aggregation: `cmd/api/routes_apptheory_api.go`
+       - Dispatch + stage-prefix normalization: `cmd/api/main.go` (`shouldRouteToAPIAppTheory`, `normalizeLambdaEventForAppTheory`)
+     - Tests:
+       - `cmd/api/apptheory_dispatch_round12_test.go` (accounts routes + stage-prefix normalization regression)
+   - Verification commands:
+     - `go test ./cmd/api -run TestShouldRouteToAPIAppTheoryRound12`
+     - `go test ./cmd/api -run TestHandleAPIRequest_StripsStagePrefixForAppTheoryRound12`
+     - `make verify-unit`
+   - Rollback plan:
+     - Revert the slice commit (or temporarily route these endpoints back to Lift by removing the accounts routes from the dispatch predicate).
 4. After the API Lambda is migrated, evaluate shared wrapper migration:
    - If `pkg/lambda/main_framework.go` is used broadly for non-API Lambdas, migrating it may migrate many services at once.
    - Consider keeping `pkg/lambda` as a Lift compatibility layer until you have migrated a representative set of Lambdas.

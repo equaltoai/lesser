@@ -290,13 +290,13 @@ func TestMain_HealthEndpointsUseAppTheoryRound12(t *testing.T) {
 	origLambdaStart := lambdaStart
 	origRoutes := configureLiftRoutesFn
 	origLock := createInstanceLockMiddlewareFn
-	origAuthRoutes := configureAuthRoutesAppTheoryFn
+	origAuthRoutes := configureAPIRoutesAppTheoryFn
 	origHealth := healthChecker
 	t.Cleanup(func() {
 		lambdaStart = origLambdaStart
 		configureLiftRoutesFn = origRoutes
 		createInstanceLockMiddlewareFn = origLock
-		configureAuthRoutesAppTheoryFn = origAuthRoutes
+		configureAPIRoutesAppTheoryFn = origAuthRoutes
 		healthChecker = origHealth
 	})
 
@@ -318,7 +318,7 @@ func TestMain_HealthEndpointsUseAppTheoryRound12(t *testing.T) {
 		return func(next lift.Handler) lift.Handler { return next }
 	}
 	configureLiftRoutesFn = func(_ *lift.App) {}
-	configureAuthRoutesAppTheoryFn = func(_ *apptheory.App) {}
+	configureAPIRoutesAppTheoryFn = func(_ *apptheory.App) {}
 
 	var captured any
 	lambdaStart = func(h any) { captured = h }
@@ -494,12 +494,12 @@ func TestMainRound12(t *testing.T) {
 	origLambdaStart := lambdaStart
 	origRoutes := configureLiftRoutesFn
 	origLock := createInstanceLockMiddlewareFn
-	origAuthRoutes := configureAuthRoutesAppTheoryFn
+	origAuthRoutes := configureAPIRoutesAppTheoryFn
 	t.Cleanup(func() {
 		lambdaStart = origLambdaStart
 		configureLiftRoutesFn = origRoutes
 		createInstanceLockMiddlewareFn = origLock
-		configureAuthRoutesAppTheoryFn = origAuthRoutes
+		configureAPIRoutesAppTheoryFn = origAuthRoutes
 	})
 
 	cfg = &config.Config{
@@ -522,7 +522,7 @@ func TestMainRound12(t *testing.T) {
 	configureLiftRoutesFn = func(app *lift.App) {
 		_ = app.GET("/ping", func(ctx *lift.Context) error { return ctx.Status(200).JSON(map[string]string{"ok": "true"}) })
 	}
-	configureAuthRoutesAppTheoryFn = func(_ *apptheory.App) {}
+	configureAPIRoutesAppTheoryFn = func(_ *apptheory.App) {}
 
 	var captured any
 	lambdaStart = func(h any) { captured = h }

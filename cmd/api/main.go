@@ -84,7 +84,7 @@ var (
 
 	createInstanceLockMiddlewareFn = createInstanceLockMiddleware
 	configureLiftRoutesFn          = configureLiftRoutes
-	configureAuthRoutesAppTheoryFn = configureAuthRoutesAppTheory
+	configureAPIRoutesAppTheoryFn  = configureAPIRoutesAppTheory
 
 	trackLambdaInvocation = func(ctx context.Context, service *cost.TrackingService, operation cost.LambdaOperation) error {
 		return service.TrackLambdaInvocation(ctx, operation)
@@ -368,9 +368,10 @@ func main() {
 	// Configure native Lift routes
 	configureLiftRoutesFn(app)
 
-	// Configure auth bootstrap routes (AppTheory slice 2)
-	authApp := apptheory.New(apptheory.WithTier(apptheory.TierP0))
-	configureAuthRoutesAppTheoryFn(authApp)
+		// Configure API routes (AppTheory slices 2+)
+		apiApp := apptheory.New(apptheory.WithTier(apptheory.TierP0))
+		applyWebClientCORSAppTheory(apiApp)
+		configureAPIRoutesAppTheoryFn(apiApp)
 
 	// Configure health check routes (AppTheory slice 1) if available
 	var healthApp *apptheory.App
@@ -391,7 +392,7 @@ func main() {
 		}
 
 		// Process the request
-		result, err := handleAPIRequest(ctx, app, healthApp, authApp, event)
+			result, err := handleAPIRequest(ctx, app, healthApp, apiApp, event)
 
 		// Record request metrics
 		requestDuration := time.Since(requestStart)
@@ -415,7 +416,7 @@ func main() {
 	lambdaStart(lambdaHandler)
 }
 
-func handleAPIRequest(ctx context.Context, liftApp *lift.App, healthApp *apptheory.App, authApp *apptheory.App, event interface{}) (interface{}, error) {
+func handleAPIRequest(ctx context.Context, liftApp *lift.App, healthApp *apptheory.App, apiApp *apptheory.App, event interface{}) (interface{}, error) {
 	method, path, ok := extractHTTPMethodAndPath(event)
 	if !ok {
 		return liftApp.HandleRequest(ctx, event)
@@ -425,6 +426,7 @@ func handleAPIRequest(ctx context.Context, liftApp *lift.App, healthApp *apptheo
 	if err != nil {
 		return liftApp.HandleRequest(ctx, event)
 	}
+	raw = normalizeLambdaEventForAppTheory(raw)
 
 	if healthApp != nil && shouldRouteToHealthAppTheory(method, path) {
 		out, handleErr := healthApp.HandleLambda(ctx, raw)
@@ -433,8 +435,8 @@ func handleAPIRequest(ctx context.Context, liftApp *lift.App, healthApp *apptheo
 		}
 	}
 
-	if authApp != nil && shouldRouteToAuthAppTheory(method, path) {
-		out, handleErr := authApp.HandleLambda(ctx, raw)
+	if apiApp != nil && shouldRouteToAPIAppTheory(method, path) {
+		out, handleErr := apiApp.HandleLambda(ctx, raw)
 		if handleErr == nil {
 			return out, nil
 		}
@@ -456,7 +458,7 @@ func shouldRouteToHealthAppTheory(method, path string) bool {
 	}
 }
 
-func shouldRouteToAuthAppTheory(method, path string) bool {
+func shouldRouteToAPIAppTheory(method, path string) bool {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	if method == "OPTIONS" || method == "" {
 		return false
@@ -465,7 +467,7 @@ func shouldRouteToAuthAppTheory(method, path string) bool {
 		return false
 	}
 
-	for _, route := range authAppTheoryRoutes {
+	for _, route := range apiAppTheoryRoutes {
 		if route.method != method {
 			continue
 		}
@@ -482,7 +484,7 @@ type apptheoryRoute struct {
 	pattern string
 }
 
-var authAppTheoryRoutes = []apptheoryRoute{
+var apiAppTheoryRoutes = []apptheoryRoute{
 	{method: "POST", pattern: "/api/v1/apps"},
 	{method: "POST", pattern: "/auth/wallet/challenge"},
 	{method: "POST", pattern: "/auth/wallet/verify"},
@@ -505,6 +507,40 @@ var authAppTheoryRoutes = []apptheoryRoute{
 	{method: "POST", pattern: "/setup/bootstrap/verify"},
 	{method: "POST", pattern: "/setup/admin"},
 	{method: "POST", pattern: "/setup/finalize"},
+
+	// Accounts + user-level endpoints.
+	{method: "GET", pattern: "/api/v1/accounts/verify_credentials"},
+	{method: "PATCH", pattern: "/api/v1/accounts/update_credentials"},
+	{method: "POST", pattern: "/api/v1/accounts"},
+	{method: "GET", pattern: "/api/v1/accounts/relationships"},
+	{method: "GET", pattern: "/api/v1/accounts/{id}/notes"},
+	{method: "GET", pattern: "/api/v1/accounts/{id}/statuses"},
+	{method: "GET", pattern: "/api/v1/accounts/search"},
+	{method: "GET", pattern: "/api/v1/accounts/search/suggestions"},
+	{method: "POST", pattern: "/api/v1/accounts/{id}/follow"},
+	{method: "POST", pattern: "/api/v1/accounts/{id}/unfollow"},
+	{method: "POST", pattern: "/api/v1/accounts/{id}/block"},
+	{method: "POST", pattern: "/api/v1/accounts/{id}/unblock"},
+	{method: "POST", pattern: "/api/v1/accounts/{id}/mute"},
+	{method: "POST", pattern: "/api/v1/accounts/{id}/unmute"},
+	{method: "GET", pattern: "/api/v1/blocks"},
+	{method: "GET", pattern: "/api/v1/mutes"},
+	{method: "GET", pattern: "/api/v1/follow_requests"},
+	{method: "POST", pattern: "/api/v1/follow_requests/{account_id}/authorize"},
+	{method: "POST", pattern: "/api/v1/follow_requests/{account_id}/reject"},
+	{method: "GET", pattern: "/api/v1/domain_blocks"},
+	{method: "POST", pattern: "/api/v1/domain_blocks"},
+	{method: "DELETE", pattern: "/api/v1/domain_blocks"},
+	{method: "POST", pattern: "/api/v1/exports"},
+	{method: "GET", pattern: "/api/v1/exports/{id}"},
+	{method: "GET", pattern: "/api/v1/exports/{id}/download"},
+	{method: "GET", pattern: "/api/v1/exports"},
+	{method: "POST", pattern: "/api/v1/imports"},
+	{method: "GET", pattern: "/api/v1/imports/{id}"},
+	{method: "DELETE", pattern: "/api/v1/imports/{id}"},
+	{method: "GET", pattern: "/api/v1/imports"},
+	{method: "GET", pattern: "/api/v1/accounts/{id}/quote_permissions"},
+	{method: "PUT", pattern: "/api/v1/accounts/quote_permissions"},
 }
 
 func matchBracedPathPattern(pattern, path string) bool {
@@ -552,6 +588,49 @@ func marshalLambdaEvent(event interface{}) (json.RawMessage, error) {
 		}
 		return json.RawMessage(encoded), nil
 	}
+}
+
+func normalizeLambdaEventForAppTheory(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return raw
+	}
+
+	var event map[string]any
+	if err := json.Unmarshal(raw, &event); err != nil {
+		return raw
+	}
+
+	requestContext, ok := extractMapField(event, "requestContext")
+	if !ok {
+		return raw
+	}
+
+	stage := extractStringField(requestContext, "stage")
+	if stage == "" || stage == "$default" {
+		return raw
+	}
+
+	if rawPath := extractStringField(event, "rawPath"); rawPath != "" {
+		event["rawPath"] = stripStagePrefix(rawPath, stage)
+	}
+	if path := extractStringField(event, "path"); path != "" {
+		event["path"] = stripStagePrefix(path, stage)
+	}
+
+	httpContext, ok := extractMapField(requestContext, "http")
+	if ok {
+		if httpPath := extractStringField(httpContext, "path"); httpPath != "" {
+			httpContext["path"] = stripStagePrefix(httpPath, stage)
+			requestContext["http"] = httpContext
+			event["requestContext"] = requestContext
+		}
+	}
+
+	normalized, err := json.Marshal(event)
+	if err != nil {
+		return raw
+	}
+	return normalized
 }
 
 func extractHTTPMethodAndPath(event interface{}) (method string, path string, ok bool) {

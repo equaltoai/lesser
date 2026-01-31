@@ -3,17 +3,13 @@ package main
 import (
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/pay-theory/lift/pkg/lift"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func configureAuthRoutesAppTheory(app *apptheory.App) {
-	baseMiddleware := []lift.Middleware{
-		createLoggingMiddleware(logger),
-		common.CreateAPIErrorMiddleware(logger),
-	}
+	baseMiddleware := standardLiftMiddlewaresForAppTheory()
 
 	// OAuth app registration (public, no auth required)
 	app.Post("/api/v1/apps", liftHandlerToAppTheory(
