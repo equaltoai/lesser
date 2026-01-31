@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -32,13 +33,13 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -229,102 +230,42 @@ func initializeFederationDelivery() error {
 	return nil
 }
 
-func buildApp() *lift.App {
-	app := lift.New()
-
-	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(lift.MarkGlobalMiddleware(middleware.PanicRecovery(lambdaCtx.Logger)))
-
-	// Add request ID middleware
-	app.Use(lift.MarkGlobalMiddleware(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			requestID := fmt.Sprintf("federation-delivery-%d", time.Now().UnixNano())
-			ctx.Set("requestID", requestID)
-			return next.Handle(ctx)
-		})
-	}))
-
-	// Add logging middleware
-	app.Use(lift.MarkGlobalMiddleware(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			start := time.Now()
-			requestID := ctx.Get("requestID").(string)
-			processor.logger.Info("processing SQS batch",
-				zap.String("request_id", requestID),
-				zap.Time("start_time", start))
-
-			err := next.Handle(ctx)
-
-			processor.logger.Info("completed SQS batch",
-				zap.String("request_id", requestID),
-				zap.Duration("duration", time.Since(start)),
-				zap.Error(err))
-
-			return err
-		})
-	}))
-
-	_ = app.SQS("federation-delivery", handleFederationDeliverySQS)
-
-	return app
-}
-
 func main() {
-	lambdaStartFn(buildApp().HandleRequest)
+	app := apptheory.New()
+
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	queueName := naming.ResourceNameWithApp(appName, "federation-delivery-queue", stage)
+
+	app.SQS(queueName, func(ctx *apptheory.EventContext, msg events.SQSMessage) error {
+		if processor == nil {
+			return fmt.Errorf("federation delivery processor not initialized")
+		}
+		return processor.HandleSQSMessage(ctx, msg)
+	})
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }
 
-func handleFederationDeliverySQS(ctx *lift.Context) error {
-	if ctx.Request.RawEvent == nil {
-		return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
+func (p *FederationDeliveryProcessor) HandleSQSMessage(ctx *apptheory.EventContext, message events.SQSMessage) error {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
 	}
-
-	// Parse the raw event as SQS event
-	var event events.SQSEvent
-	if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
-		event = sqsEvent
-	} else {
-		// Try to parse from interface if it's a map
-		eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-		if err != nil {
-			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
-		}
-
-		if err := json.Unmarshal(eventBytes, &event); err != nil {
-			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
-		}
-	}
-
-	return processor.HandleSQS(ctx, event)
+	return p.handleDeliveryMessage(runCtx, requestID, message)
 }
 
-// HandleSQS implements the SQS handler interface for Lift
-func (p *FederationDeliveryProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) error {
-	p.logger.Info("processing federation delivery batch",
-		zap.String("request_id", ctx.GetRequestID()),
-		zap.Int("message_count", len(event.Records)))
-
-	// Process messages sequentially (federation delivery should be reliable)
-	for _, record := range event.Records {
-		if err := p.handleDeliveryMessage(ctx, record); err != nil {
-			p.logger.Error("failed to process delivery message",
-				zap.String("message_id", record.MessageId),
-				zap.String("request_id", ctx.GetRequestID()),
-				zap.Error(err))
-			// Return error to let SQS handle retry
-			return err
-		}
-	}
-
-	return nil
-}
-
-// handleDeliveryMessage processes a single SQS message with Lift context
-func (p *FederationDeliveryProcessor) handleDeliveryMessage(ctx *lift.Context, message events.SQSMessage) error {
+func (p *FederationDeliveryProcessor) handleDeliveryMessage(ctx context.Context, requestID string, message events.SQSMessage) error {
 	// Parse the message
 	var msg FederationDeliveryMessage
 	if err := common.ParseRequestBody([]byte(message.Body), &msg); err != nil {
 		p.logger.Error("failed to parse message body",
 			zap.String("message_id", message.MessageId),
+			zap.String("request_id", requestID),
 			zap.Error(err))
 		return pkgErrors.WrapError(err, pkgErrors.CodeBadRequest, pkgErrors.CategoryLambda, "Invalid message body format")
 	}
@@ -333,10 +274,10 @@ func (p *FederationDeliveryProcessor) handleDeliveryMessage(ctx *lift.Context, m
 		zap.String("delivery_id", msg.DeliveryID),
 		zap.String("target_inbox", msg.TargetInbox),
 		zap.Int("retry_count", msg.RetryCount),
-		zap.String("request_id", ctx.GetRequestID()))
+		zap.String("request_id", requestID))
 
 	// Process the delivery message using standard context
-	return p.processDeliveryMessage(ctx.Request.Context(), p.logger, msg)
+	return p.processDeliveryMessage(ctx, p.logger, msg)
 }
 
 // processDeliveryMessage handles the actual delivery logic

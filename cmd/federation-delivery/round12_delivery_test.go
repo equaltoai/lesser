@@ -21,8 +21,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	storagefactory "github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -292,13 +292,9 @@ func TestProcessDeliveryMessage_Branches_Round12(t *testing.T) {
 
 func TestHandleDeliveryMessage_ParseError_Round12(t *testing.T) {
 	p := &FederationDeliveryProcessor{logger: zap.NewNop()}
-	liftReq := lift.NewRequest(nil)
-	liftReq.TriggerType = lift.TriggerSQS
-	liftReq.RawEvent = events.SQSEvent{}
-	ctx := lift.NewContext(context.Background(), liftReq)
-	ctx.SetRequestID("req")
+	ctx := &apptheory.EventContext{RequestID: "req"}
 
-	err := p.handleDeliveryMessage(ctx, events.SQSMessage{
+	err := p.HandleSQSMessage(ctx, events.SQSMessage{
 		MessageId: "m1",
 		Body:      "not-json",
 	})
@@ -310,11 +306,7 @@ func TestHandleDeliveryMessage_ParseError_Round12(t *testing.T) {
 
 func TestHandleDeliveryMessage_Success_Round12(t *testing.T) {
 	p := &FederationDeliveryProcessor{logger: zap.NewNop()}
-	liftReq := lift.NewRequest(nil)
-	liftReq.TriggerType = lift.TriggerSQS
-	liftReq.RawEvent = events.SQSEvent{}
-	ctx := lift.NewContext(context.Background(), liftReq)
-	ctx.SetRequestID("req")
+	ctx := &apptheory.EventContext{RequestID: "req"}
 
 	next := time.Now().Add(time.Hour)
 	msg := FederationDeliveryMessage{
@@ -327,54 +319,10 @@ func TestHandleDeliveryMessage_Success_Round12(t *testing.T) {
 	body, err := json.Marshal(msg)
 	require.NoError(t, err)
 
-	require.NoError(t, p.handleDeliveryMessage(ctx, events.SQSMessage{
+	require.NoError(t, p.HandleSQSMessage(ctx, events.SQSMessage{
 		MessageId: "m1",
 		Body:      string(body),
 	}))
-}
-
-func TestHandleFederationDeliverySQS_ErrorBranches_Round12(t *testing.T) {
-	originalProcessor := processor
-	t.Cleanup(func() { processor = originalProcessor })
-	processor = &FederationDeliveryProcessor{logger: zap.NewNop()}
-
-	t.Run("missing_event", func(t *testing.T) {
-		req := lift.NewRequest(nil)
-		req.TriggerType = lift.TriggerSQS
-		ctx := lift.NewContext(context.Background(), req)
-
-		err := handleFederationDeliverySQS(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, "MISSING_EVENT", liftErr.Code)
-	})
-
-	t.Run("marshal_error", func(t *testing.T) {
-		req := lift.NewRequest(nil)
-		req.TriggerType = lift.TriggerSQS
-		req.RawEvent = map[string]any{"bad": func() {}}
-		ctx := lift.NewContext(context.Background(), req)
-
-		err := handleFederationDeliverySQS(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, "EVENT_PARSE_ERROR", liftErr.Code)
-	})
-
-	t.Run("unmarshal_error", func(t *testing.T) {
-		req := lift.NewRequest(nil)
-		req.TriggerType = lift.TriggerSQS
-		req.RawEvent = map[string]any{"Records": "nope"}
-		ctx := lift.NewContext(context.Background(), req)
-
-		err := handleFederationDeliverySQS(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, "EVENT_PARSE_ERROR", liftErr.Code)
-	})
 }
 
 func TestCalculateRetryBackoff_Cases_Round12(t *testing.T) {
@@ -458,13 +406,10 @@ func TestClassifyDeliveryError_NilAndPatterns_Round12(t *testing.T) {
 	require.Equal(t, errorTypeTemporary, p.classifyDeliveryError(errors.New("timeout")))
 }
 
-func TestHandleSQS_ReturnsErrorOnMessageFailure_Round12(t *testing.T) {
-	p := &FederationDeliveryProcessor{logger: zap.NewNop()}
+func TestHandleSQSMessage_ReturnsErrorOnFailure_Round12(t *testing.T) {
+	ctx := &apptheory.EventContext{RequestID: "req"}
 
-	ctxReq := lift.NewRequest(nil)
-	ctxReq.TriggerType = lift.TriggerSQS
-	ctx := lift.NewContext(context.Background(), ctxReq)
-	ctx.SetRequestID("req")
+	p := &FederationDeliveryProcessor{logger: zap.NewNop()}
 
 	next := time.Now().Add(time.Hour)
 	msg := FederationDeliveryMessage{
@@ -477,42 +422,13 @@ func TestHandleSQS_ReturnsErrorOnMessageFailure_Round12(t *testing.T) {
 	body, err := json.Marshal(msg)
 	require.NoError(t, err)
 
-	err = p.HandleSQS(ctx, events.SQSEvent{
-		Records: []events.SQSMessage{
-			{MessageId: "m1", Body: string(body)},
-			{MessageId: "m2", Body: "not-json"},
-		},
-	})
+	require.NoError(t, p.HandleSQSMessage(ctx, events.SQSMessage{MessageId: "m1", Body: string(body)}))
+
+	err = p.HandleSQSMessage(ctx, events.SQSMessage{MessageId: "m2", Body: "not-json"})
 	require.Error(t, err)
 	appErr, ok := pkgErrors.AsAppError(err)
 	require.True(t, ok)
 	require.Equal(t, pkgErrors.CodeBadRequest, appErr.Code)
-}
-
-func TestHandleFederationDeliverySQS_TypedEvent_Round12(t *testing.T) {
-	originalProcessor := processor
-	t.Cleanup(func() { processor = originalProcessor })
-	processor = &FederationDeliveryProcessor{logger: zap.NewNop()}
-
-	next := time.Now().Add(time.Hour)
-	msg := FederationDeliveryMessage{
-		DeliveryID:     "d1",
-		RetryCount:     0,
-		MaxRetries:     3,
-		CreatedAt:      time.Now(),
-		NextRetryAfter: &next,
-	}
-	body, err := json.Marshal(msg)
-	require.NoError(t, err)
-
-	req := lift.NewRequest(nil)
-	req.TriggerType = lift.TriggerSQS
-	req.RawEvent = events.SQSEvent{
-		Records: []events.SQSMessage{{MessageId: "m1", Body: string(body)}},
-	}
-	ctx := lift.NewContext(context.Background(), req)
-	ctx.SetRequestID("req")
-	require.NoError(t, handleFederationDeliverySQS(ctx))
 }
 
 func TestProcessDeliveryMessage_AdditionalBranches_Round12(t *testing.T) {
@@ -647,27 +563,24 @@ func TestInitializeFederationDelivery_SuccessAndErrors_Round12(t *testing.T) {
 	require.Error(t, initializeFederationDelivery())
 }
 
-func TestBuildApp_AndMain_WiresHandler_Round12(t *testing.T) {
+func TestMain_WiresHandler_Round12(t *testing.T) {
 	originalLambdaStart := lambdaStartFn
 	originalProcessor := processor
-	originalLambdaCtx := lambdaCtx
 	t.Cleanup(func() {
 		lambdaStartFn = originalLambdaStart
 		processor = originalProcessor
-		lambdaCtx = originalLambdaCtx
 	})
 
-	lambdaCtx = &common.LambdaContext{Logger: zap.NewNop()}
-	processor = &FederationDeliveryProcessor{
-		logger: zap.NewNop(),
-	}
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
 	var gotHandler any
 	lambdaStartFn = func(h any) { gotHandler = h }
 	main()
 	require.NotNil(t, gotHandler)
 
-	handlerFn, ok := gotHandler.(func(context.Context, any) (any, error))
+	handlerFn, ok := gotHandler.(func(context.Context, json.RawMessage) (any, error))
 	require.True(t, ok)
 
 	next := time.Now().Add(time.Hour)
@@ -681,17 +594,34 @@ func TestBuildApp_AndMain_WiresHandler_Round12(t *testing.T) {
 	body, err := json.Marshal(msg)
 	require.NoError(t, err)
 
-	_, err = handlerFn(context.Background(), map[string]any{
-		"Records": []any{
-			map[string]any{
-				"eventSource":       "aws:sqs",
-				"eventSourceARN":    "arn:aws:sqs:us-east-1:123456789012:federation-delivery",
-				"messageId":         "m1",
-				"receiptHandle":     "rh",
-				"body":              string(body),
-				"messageAttributes": map[string]any{},
+	event := events.SQSEvent{
+		Records: []events.SQSMessage{
+			{
+				MessageId:      "m1",
+				ReceiptHandle:  "rh",
+				Body:           string(body),
+				EventSourceARN: "arn:aws:sqs:us-east-1:123456789012:lesser-dev-federation-delivery-queue",
+				EventSource:    "aws:sqs",
 			},
 		},
-	})
+	}
+	raw, err := json.Marshal(event)
 	require.NoError(t, err)
+
+	processor = nil
+	respAny, err := handlerFn(context.Background(), raw)
+	require.NoError(t, err)
+
+	resp, ok := respAny.(events.SQSEventResponse)
+	require.True(t, ok)
+	require.Len(t, resp.BatchItemFailures, 1)
+	require.Equal(t, "m1", resp.BatchItemFailures[0].ItemIdentifier)
+
+	processor = &FederationDeliveryProcessor{logger: zap.NewNop()}
+	respAny, err = handlerFn(context.Background(), raw)
+	require.NoError(t, err)
+
+	resp, ok = respAny.(events.SQSEventResponse)
+	require.True(t, ok)
+	require.Empty(t, resp.BatchItemFailures)
 }
