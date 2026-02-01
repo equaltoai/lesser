@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-xray-sdk-go/v2/xray"
@@ -25,9 +25,8 @@ func TestXRayTracer_Disabled(t *testing.T) {
 
 	cfg := tracer.InstrumentAWSConfig(aws.Config{})
 	assert.Empty(t, cfg.APIOptions)
+	assert.Empty(t, tracer.AWSConfigLoadOptions())
 
-	base := &dynamodb.Client{}
-	assert.Same(t, base, tracer.InstrumentDynamoDBClient(base))
 	s3Client := &s3.Client{}
 	assert.Same(t, s3Client, tracer.InstrumentS3Client(s3Client))
 	sqsClient := &sqs.Client{}
@@ -67,9 +66,9 @@ func TestXRayTracer_Enabled(t *testing.T) {
 
 	cfg := tracer.InstrumentAWSConfig(aws.Config{})
 	assert.NotEmpty(t, cfg.APIOptions)
+	assert.NotEmpty(t, tracer.AWSConfigLoadOptions())
 
 	// Instrumented AWS SDK clients (success path).
-	require.NotNil(t, tracer.InstrumentDynamoDBClient(dynamodb.NewFromConfig(aws.Config{Region: "us-east-1"})))
 	require.NotNil(t, tracer.InstrumentS3Client(s3.NewFromConfig(aws.Config{Region: "us-east-1"})))
 	require.NotNil(t, tracer.InstrumentSQSClient(sqs.NewFromConfig(aws.Config{Region: "us-east-1"})))
 
@@ -149,7 +148,15 @@ func TestXRayTracer_InstrumentClient_ConfigErrorFallsBack(t *testing.T) {
 	tracer := NewXRayTracer("svc", "test", logger)
 	require.True(t, tracer.IsEnabled())
 
-	dynamo := dynamodb.NewFromConfig(aws.Config{Region: "us-east-1"})
-	out := tracer.InstrumentDynamoDBClient(dynamo)
-	require.NotNil(t, out)
+	orig := loadDefaultAWSConfigFn
+	t.Cleanup(func() { loadDefaultAWSConfigFn = orig })
+	loadDefaultAWSConfigFn = func(context.Context, ...func(*config.LoadOptions) error) (aws.Config, error) {
+		return aws.Config{}, errors.New("load failed")
+	}
+
+	s3Client := s3.NewFromConfig(aws.Config{Region: "us-east-1"})
+	require.Same(t, s3Client, tracer.InstrumentS3Client(s3Client))
+
+	sqsClient := sqs.NewFromConfig(aws.Config{Region: "us-east-1"})
+	require.Same(t, sqsClient, tracer.InstrumentSQSClient(sqsClient))
 }
