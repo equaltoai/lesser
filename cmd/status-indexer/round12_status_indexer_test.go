@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -15,10 +16,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -29,8 +29,12 @@ type fakeLikeCounter struct {
 	boostsErr error
 }
 
-func (f *fakeLikeCounter) GetLikeCount(context.Context, string) (int64, error)  { return f.likes, f.likesErr }
-func (f *fakeLikeCounter) GetBoostCount(context.Context, string) (int64, error) { return f.boosts, f.boostsErr }
+func (f *fakeLikeCounter) GetLikeCount(context.Context, string) (int64, error) {
+	return f.likes, f.likesErr
+}
+func (f *fakeLikeCounter) GetBoostCount(context.Context, string) (int64, error) {
+	return f.boosts, f.boostsErr
+}
 
 type fakeEmbeddingGenerator struct {
 	embedding []float32
@@ -175,8 +179,8 @@ func TestStatusIndexer_calculateEngagementAndReplies_Round12(t *testing.T) {
 	}).Return(nil)
 
 	si := &StatusIndexer{
-		db:      db,
-		logger:  zap.NewNop(),
+		db:       db,
+		logger:   zap.NewNop(),
 		likeRepo: &fakeLikeCounter{likes: 2, boosts: 1},
 	}
 
@@ -238,11 +242,11 @@ func TestStatusIndexer_processStatusEvent_Round12(t *testing.T) {
 
 		embed := &fakeEmbeddingGenerator{embedding: []float32{0.1, 0.2}}
 		si := &StatusIndexer{
-			db:       db,
-			logger:   zap.NewNop(),
-			domain:   "example.com",
+			db:        db,
+			logger:    zap.NewNop(),
+			domain:    "example.com",
 			aiService: embed,
-			likeRepo: &fakeLikeCounter{likes: 11, boosts: 0},
+			likeRepo:  &fakeLikeCounter{likes: 11, boosts: 0},
 		}
 
 		ctx := context.WithValue(context.Background(), requestIDKey, "req")
@@ -263,11 +267,11 @@ func TestStatusIndexer_processStatusEvent_Round12(t *testing.T) {
 
 		embed := &fakeEmbeddingGenerator{err: errors.New("boom")}
 		si := &StatusIndexer{
-			db:       db,
-			logger:   zap.NewNop(),
-			domain:   "example.com",
+			db:        db,
+			logger:    zap.NewNop(),
+			domain:    "example.com",
 			aiService: embed,
-			likeRepo: &fakeLikeCounter{likesErr: errors.New("boom"), boostsErr: errors.New("boom")},
+			likeRepo:  &fakeLikeCounter{likesErr: errors.New("boom"), boostsErr: errors.New("boom")},
 		}
 
 		ctx := context.WithValue(context.Background(), requestIDKey, "req")
@@ -317,22 +321,15 @@ func TestStatusIndexer_processRecord_Round12(t *testing.T) {
 	require.NoError(t, si.processRecord(context.Background(), record))
 }
 
-func TestHandleStatusIndexerStream_Round12(t *testing.T) {
+func TestHandleStatusIndexerStreamRecord_Round12(t *testing.T) {
 	origProcessor := processor
 	t.Cleanup(func() { processor = origProcessor })
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-
 	processor = nil
-	require.Error(t, handleStatusIndexerStream(ctx))
+	require.Error(t, handleStatusIndexerStreamRecord(nil, events.DynamoDBEventRecord{}))
 
 	processor = &StatusIndexer{logger: zap.NewNop(), likeRepo: &fakeLikeCounter{}}
-	ctx.Request.TriggerType = lift.TriggerEventBus
-	ctx.Request.Records = []any{"bad-record"}
-	require.Error(t, handleStatusIndexerStream(ctx))
-
-	ctx.Request.Records = []any{}
-	require.NoError(t, handleStatusIndexerStream(ctx))
+	require.NoError(t, handleStatusIndexerStreamRecord(&apptheory.EventContext{RequestID: "req"}, events.DynamoDBEventRecord{EventName: "REMOVE"}))
 }
 
 func TestStatusIndexer_Main_WiresLambdaStart_Round12(t *testing.T) {
@@ -359,7 +356,7 @@ func TestStatusIndexer_Main_WiresLambdaStart_Round12(t *testing.T) {
 				Region:          "us-east-1",
 				DynamoTableName: "test-table",
 			},
-			Logger:  zap.NewNop(),
+			Logger:   zap.NewNop(),
 			DynamoDB: mockDB,
 		}
 	}
@@ -372,7 +369,29 @@ func TestStatusIndexer_Main_WiresLambdaStart_Round12(t *testing.T) {
 	}
 
 	called := false
-	lambdaStartFn = func(any) { called = true }
+	lambdaStartFn = func(h any) {
+		called = true
+		fn, ok := h.(func(context.Context, json.RawMessage) (any, error))
+		require.True(t, ok)
+
+		event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{
+			{
+				EventID:        "1",
+				EventName:      "REMOVE",
+				EventSource:    "aws:dynamodb",
+				EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/test-table/stream/2024-01-01T00:00:00.000",
+				Change:         events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{}},
+			},
+		}}
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
+
+		respAny, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+		resp, ok := respAny.(events.DynamoDBEventResponse)
+		require.True(t, ok)
+		require.Empty(t, resp.BatchItemFailures)
+	}
 
 	main()
 	require.True(t, called)

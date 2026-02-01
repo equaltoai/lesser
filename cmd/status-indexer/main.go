@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -18,8 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/google/uuid"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -64,7 +64,7 @@ func NewStatusIndexer(db dynamormCore.DB, tableName, domain string, aiService em
 }
 
 var (
-	processor *StatusIndexer
+	processor              *StatusIndexer
 	mustInitializeLambdaFn = common.MustInitializeLambda
 	loadAWSConfigFn        = awsconfig.LoadDefaultConfig
 	newAIServiceFn         = func(cfg aws.Config, aiConfig *ai.AIConfig) embeddingGenerator { return ai.NewAIService(cfg, aiConfig) }
@@ -72,49 +72,32 @@ var (
 	lambdaStartFn          = lambda.Start
 )
 
-func handleStatusIndexerStream(ctx *lift.Context) error {
+func handleStatusIndexerStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
 	if processor == nil {
-		return lift.NewLiftError("MISSING_PROCESSOR", "status indexer processor not initialized", 500)
+		return fmt.Errorf("status indexer processor not initialized")
 	}
-
-	records, err := ctx.DynamoDBRecords()
-	if err != nil {
-		return err
-	}
-	return processor.HandleStream(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
+	return processor.HandleDynamoDBRecord(ctx, record)
 }
 
-// HandleStream processes DynamoDB stream events with Lift-style patterns
-func (si *StatusIndexer) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
-	// Generate request ID for tracking (Lift pattern)
+func (si *StatusIndexer) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
 	requestID := uuid.New().String()
-
-	// Add request ID to context for downstream use
-	ctx = context.WithValue(ctx, requestIDKey, requestID)
-
-	si.logger.Info("processing status indexer stream batch",
-		zap.String("request_id", requestID),
-		zap.Int("record_count", len(event.Records)),
-	)
-
-	// Process records with error collection
-	var errors []error
-	for _, record := range event.Records {
-		if err := si.processRecord(ctx, record); err != nil {
-			si.logger.Error("failed to process record",
-				zap.String("request_id", requestID),
-				zap.String("event_id", record.EventID),
-				zap.Error(err))
-			errors = append(errors, err)
+	runCtx := context.Background()
+	if ctx != nil {
+		if strings.TrimSpace(ctx.RequestID) != "" {
+			requestID = ctx.RequestID
 		}
+		runCtx = ctx.Context()
 	}
 
-	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
-		si.logger.Error("partial batch processing failure",
+	runCtx = context.WithValue(runCtx, requestIDKey, requestID)
+
+	if err := si.processRecord(runCtx, record); err != nil {
+		si.logger.Error("failed to process record",
 			zap.String("request_id", requestID),
-			zap.Int("failed_records", len(errors)),
-			zap.Int("total_records", len(event.Records)))
-		return pkgErrors.StatusIndexerPartialBatchFailure()
+			zap.String("event_id", record.EventID),
+			zap.Error(err),
+		)
+		return err
 	}
 
 	return nil
@@ -749,11 +732,9 @@ func main() {
 	// Initialize processor
 	processor = newStatusIndexerFn(db, cfg.DynamoTableName, cfg.Domain, aiService, logger)
 
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
-
-	_ = app.DynamoDB("*", handleStatusIndexerStream)
-
-	lambdaStartFn(app.HandleRequest)
+	app := apptheory.New()
+	app.DynamoDB(cfg.DynamoTableName, handleStatusIndexerStreamRecord)
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }
