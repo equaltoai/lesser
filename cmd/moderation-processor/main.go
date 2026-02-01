@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,8 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -30,11 +30,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
-
-// contextKey is a custom type for context keys to avoid collisions
-type contextKey string
-
-const requestIDKey contextKey = "request_id"
 
 // Severity string constants
 const (
@@ -95,6 +90,30 @@ func NewModerationProcessor() *ModerationProcessor {
 		consensusEngine:  consensusEngine,
 		advancedEngine:   advancedEngine,
 	}
+}
+
+func (mp *ModerationProcessor) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = strings.TrimSpace(ctx.RequestID)
+		runCtx = ctx.Context()
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		requestID = "unknown"
+	}
+
+	if err := mp.processRecord(runCtx, record); err != nil {
+		mp.logger.Error("failed to process moderation stream record",
+			zap.String("request_id", requestID),
+			zap.String("event_id", record.EventID),
+			zap.Error(err),
+		)
+		return err
+	}
+
+	return nil
 }
 
 // storageAdapter adapts repositories to moderation.StorageInterface
@@ -2110,67 +2129,10 @@ func main() {
 	// Create moderation processor
 	processor := NewModerationProcessor()
 
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+	app := apptheory.New()
+	app.DynamoDB(lambdaCtx.Config.DynamoTableName, processor.HandleDynamoDBRecord)
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		start := time.Now()
-		requestID := ctx.GetRequestID()
-		if requestID == "" {
-			requestID = fmt.Sprintf("moderation-processor-%d", time.Now().UnixNano())
-			ctx.SetRequestID(requestID)
-		}
-
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-
-		event := events.DynamoDBEvent{Records: records}
-		processorCtx := context.WithValue(ctx.Request.Context(), requestIDKey, requestID)
-
-		lambdaCtx.Logger.Info("processing moderation stream batch",
-			zap.String("request_id", requestID),
-			zap.Int("record_count", len(event.Records)),
-		)
-
-		var errs []error
-		for _, record := range event.Records {
-			if err := processor.processRecord(processorCtx, record); err != nil {
-				lambdaCtx.Logger.Error("Failed to process record",
-					zap.String("request_id", requestID),
-					zap.String("event_id", record.EventID),
-					zap.Error(err),
-				)
-				errs = append(errs, err)
-			}
-		}
-
-		duration := time.Since(start)
-		if err := common.ValidateSliceNotEmpty("errors", errs); err == nil {
-			lambdaCtx.Logger.Error("failed to process records",
-				zap.Int("failed_records", len(errs)),
-				zap.Int("total_records", len(event.Records)))
-
-			processingErr := ErrFailedToProcessRecords(fmt.Errorf("batch processing failed: %d records processed with errors", len(event.Records)))
-			lambdaCtx.Logger.Error("DynamoDB stream processing failed",
-				zap.String("request_id", requestID),
-				zap.Error(processingErr),
-				zap.Duration("duration", duration),
-				zap.Int("record_count", len(event.Records)),
-			)
-			return processingErr
-		}
-
-		lambdaCtx.Logger.Info("DynamoDB stream processing completed",
-			zap.String("request_id", requestID),
-			zap.Duration("duration", duration),
-			zap.Int("record_count", len(event.Records)),
-		)
-
-		return nil
+	lambdaStart(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
-
-	lambdaStart(app.HandleRequest)
 }
