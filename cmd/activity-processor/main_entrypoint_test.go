@@ -33,7 +33,17 @@ func TestActivityProcessor_NewActivityProcessor_Constructs(t *testing.T) {
 
 func TestActivityProcessor_Main_UsesLambdaStartSeam(t *testing.T) {
 	orig := lambdaStartFn
+	origLambdaCtx := lambdaCtx
+	origProcessor := processor
 	t.Cleanup(func() { lambdaStartFn = orig })
+	t.Cleanup(func() { lambdaCtx = origLambdaCtx })
+	t.Cleanup(func() { processor = origProcessor })
+
+	lambdaCtx = &common.LambdaContext{
+		Config: &config.Config{DynamoTableName: "test-table"},
+		Logger: zap.NewNop(),
+	}
+	processor = &ActivityProcessor{logger: zap.NewNop()}
 
 	var called bool
 	lambdaStartFn = func(_ interface{}) { called = true }

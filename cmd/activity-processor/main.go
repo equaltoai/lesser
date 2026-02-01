@@ -8,15 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/google/uuid"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -48,11 +45,6 @@ const (
 	UnknownTypeMsg  = "processing unknown object type"
 	UnknownErrorMsg = "Default to not retrying unknown errors"
 )
-
-// contextKey is a custom type for context keys to avoid collisions
-type contextKey string
-
-const requestIDKey contextKey = "request_id"
 
 // ActivityProcessor handles ActivityPub activities from DynamoDB streams,
 // processing them to update timelines, notifications, and other related data.
@@ -124,130 +116,45 @@ func NewActivityProcessor(lambdaCtx *common.LambdaContext) *ActivityProcessor {
 	}
 }
 
-// HandleStream processes DynamoDB stream events with Lift-style patterns
-func (ap *ActivityProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
-	// Generate request ID for tracking (Lift pattern)
-	requestID := uuid.New().String()
-
-	// Validate the generated UUID
-	if err := common.ValidateUUID("requestID", requestID); err != nil {
-		ap.logger.Error("failed to generate valid request ID", zap.Error(err))
-		// Fall back to a simple timestamp-based ID
-		requestID = fmt.Sprintf("req_%d", time.Now().UnixNano())
+func (ap *ActivityProcessor) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = strings.TrimSpace(ctx.RequestID)
+		runCtx = ctx.Context()
+	}
+	if requestID == "" {
+		requestID = UnknownValue
 	}
 
-	// Add request ID to context for downstream use
-	ctx = context.WithValue(ctx, requestIDKey, requestID)
-
-	ap.logger.Info("processing activity stream batch",
-		zap.String("request_id", requestID),
-		zap.Int("record_count", len(event.Records)),
-	)
-
-	// Process records in parallel with error collection
-	var errorList []error
-	var errorMutex sync.Mutex
-	var deadLetterRecords []events.DynamoDBEventRecord
-
-	// Track batch processing metrics
-	batchStartTime := time.Now()
-	defer func() {
-		batchDuration := time.Since(batchStartTime)
-
-		// Record batch processing metrics
-		batchMetric := struct {
-			PK        string `dynamorm:"pk"`
-			SK        string `dynamorm:"sk"`
-			Type      string `json:"type"`
-			RequestID string `json:"request_id"`
-			Records   int    `json:"record_count"`
-			Errors    int    `json:"error_count"`
-			Duration  int64  `json:"duration_ms"`
-			Timestamp string `json:"timestamp"`
-			TTL       int64  `dynamorm:"ttl"`
-		}{
-			PK:        "BATCH#METRICS",
-			SK:        fmt.Sprintf("BATCH#%d#%s", batchStartTime.Unix(), requestID),
-			Type:      "BatchProcessingMetric",
-			RequestID: requestID,
-			Records:   len(event.Records),
-			Errors:    len(errorList),
-			Duration:  batchDuration.Milliseconds(),
-			Timestamp: batchStartTime.Format(time.RFC3339),
-			TTL:       batchStartTime.Add(24 * time.Hour).Unix(),
+	if err := ap.processRecord(runCtx, record); err != nil {
+		// Retryable errors are returned so AppTheory can return a partial batch failure response.
+		if ap.isRetryableStreamError(err) {
+			ap.logger.Warn("retryable error processing record",
+				zap.String("request_id", requestID),
+				zap.String("event_id", record.EventID),
+				zap.Error(err),
+			)
+			return err
 		}
 
-		if err := ap.db.WithContext(ctx).Model(&batchMetric).Create(); err != nil {
-			ap.logger.Debug("failed to record batch metric", zap.Error(err))
-		}
-	}()
-
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 10) // Limit concurrency to 10
-
-	for _, record := range event.Records {
-		wg.Add(1)
-		sem <- struct{}{}
-
-		go func(record events.DynamoDBEventRecord) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			if err := ap.processRecord(ctx, record); err != nil {
-				errorMutex.Lock()
-				errorList = append(errorList, err)
-
-				// Check if this is a retryable error
-				if ap.isRetryableStreamError(err) {
-					ap.logger.Warn("retryable error processing record",
-						zap.String("event_id", record.EventID),
-						zap.Error(err),
-					)
-				} else {
-					// Send to dead letter queue for non-retryable errors
-					deadLetterRecords = append(deadLetterRecords, record)
-					ap.logger.Error("non-retryable error, sending to DLQ",
-						zap.String("event_id", record.EventID),
-						zap.Error(err),
-					)
-				}
-				errorMutex.Unlock()
-			}
-		}(record)
-	}
-
-	wg.Wait()
-
-	// Process dead letter records
-	if err := common.ValidateSliceNotEmpty("dead_letter_records", deadLetterRecords); err == nil {
-		ap.logger.Info("sending records to dead letter queue",
-			zap.Int("dlq_record_count", len(deadLetterRecords)),
+		// Non-retryable errors are sent to the DLQ and do not fail the record.
+		ap.logger.Error("non-retryable error, sending to DLQ",
+			zap.String("request_id", requestID),
+			zap.String("event_id", record.EventID),
+			zap.Error(err),
 		)
 
-		for _, record := range deadLetterRecords {
-			if err := ap.sendToDeadLetterQueue(ctx, record, "processing_failed"); err != nil {
-				ap.logger.Error("failed to send record to DLQ",
-					zap.String("event_id", record.EventID),
-					zap.Error(err),
-				)
-			}
+		if dlqErr := ap.sendToDeadLetterQueue(runCtx, record, "processing_failed"); dlqErr != nil {
+			ap.logger.Error("failed to send record to DLQ",
+				zap.String("request_id", requestID),
+				zap.String("event_id", record.EventID),
+				zap.Error(dlqErr),
+			)
 		}
-	}
 
-	// Return error if there are retryable errors (this will cause Lambda to retry)
-	retryableErrors := len(errorList) - len(deadLetterRecords)
-	if retryableErrors > 0 {
-		ap.logger.Error("batch has retryable errors",
-			zap.Int("retryable_errors", retryableErrors),
-			zap.Int("total_records", len(event.Records)))
-		return batchRetryableErrors(retryableErrors)
+		return nil
 	}
-
-	ap.logger.Info("batch processing completed successfully",
-		zap.Int("total_records", len(event.Records)),
-		zap.Int("dead_letter_records", len(deadLetterRecords)),
-		zap.Int("successful_records", len(event.Records)-len(errorList)),
-	)
 
 	return nil
 }
@@ -1511,19 +1418,19 @@ func init() {
 }
 
 func main() {
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+	app := apptheory.New()
+	app.DynamoDB(lambdaCtx.Config.DynamoTableName, handleActivityProcessorStreamRecord)
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return processor.HandleStream(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
+}
 
-	lambdaStartFn(app.HandleRequest)
+func handleActivityProcessorStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if processor == nil {
+		return fmt.Errorf("activity processor not initialized")
+	}
+	return processor.HandleDynamoDBRecord(ctx, record)
 }
 
 // storeRemoteObject stores a fetched remote object locally

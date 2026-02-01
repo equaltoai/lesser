@@ -102,15 +102,10 @@ func TestActivityProcessor_StreamProcessingPaths(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// HandleStream should report retryable errors when record processing fails.
-	err = ap.HandleStream(ctx, events.DynamoDBEvent{
-		Records: []events.DynamoDBEventRecord{
-			{EventID: "evt-missing-image", EventName: activityInsert},
-		},
-	})
+	// Retryable errors should be returned for partial batch failures.
+	err = ap.HandleDynamoDBRecord(nil, events.DynamoDBEventRecord{EventID: "evt-missing-image", EventName: activityInsert})
 	require.Error(t, err)
 
 	mockQuery.AssertExpectations(t)
 	mockDB.AssertExpectations(t)
 }
-
