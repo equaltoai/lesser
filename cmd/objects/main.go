@@ -17,11 +17,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -115,90 +114,98 @@ func NewHandler() *Handler {
 }
 
 // HandleGetObject handles GET requests for ActivityPub objects
-func (h *Handler) HandleGetObject(ctx *lift.Context) error {
+func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract object ID from path parameters
-	objectID := ctx.Param("id")
+	objectID := ""
+	if ctx != nil {
+		objectID = ctx.Param("id")
+	}
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
-		return lift.ValidationError("object ID is required")
+		return objectsJSONError(http.StatusUnprocessableEntity, "missing object id"), nil
+	}
+
+	requestID := objectsContextRequestID(ctx)
+
+	runCtx := context.Background()
+	if ctx != nil {
+		runCtx = ctx.Context()
 	}
 
 	// When the instance is locked, treat all objects as absent.
 	var state *storageModels.InstanceState
 	var stateErr error
 	if h.instanceRepo != nil {
-		state, stateErr = h.instanceRepo.GetInstanceState(ctx.Context)
+		state, stateErr = h.instanceRepo.GetInstanceState(runCtx)
 	} else {
 		stateErr = errors.New("missing instance repository")
 	}
-	if stateErr != nil {
-		logger.Warn("failed to get instance lock state; defaulting to locked",
-			zap.Error(stateErr),
-			zap.String("object_id", objectID),
-			zap.String("request_id", ctx.GetRequestID()),
-		)
-		return lift.NotFound(fmt.Sprintf("object %s not found", objectID))
-	}
-	if state.Locked {
-		return lift.NotFound(fmt.Sprintf("object %s not found", objectID))
+
+	locked := stateErr != nil || state == nil || state.Locked
+	if locked {
+		if stateErr != nil {
+			logger.Warn("failed to get instance lock state; defaulting to locked",
+				zap.Error(stateErr),
+				zap.String("object_id", objectID),
+				zap.String("request_id", requestID),
+			)
+		}
+		return objectsJSONError(http.StatusNotFound, fmt.Sprintf("object %s not found", objectID)), nil
 	}
 
 	// Check Accept header for content negotiation
-	acceptHeader := ctx.Header("Accept")
-	if err := common.ValidateRequiredParam("acceptHeader", acceptHeader); err != nil {
-		acceptHeader = ctx.Header("accept")
-	}
+	acceptHeader := objectsHeaderValue(ctx, "accept")
 
 	// Only enforce authorized fetch for ActivityPub JSON requests
 	if strings.Contains(acceptHeader, "application/activity+json") ||
 		strings.Contains(acceptHeader, "application/ld+json") ||
 		strings.Contains(acceptHeader, "application/json") {
 		// Check if authorized fetch is enabled
-		if h.authorizedFetchService.IsAuthorizedFetchEnabled(ctx.Request.Context()) {
+		if h.authorizedFetchService != nil && h.authorizedFetchService.IsAuthorizedFetchEnabled(runCtx) {
 			logger.Debug("authorized fetch enabled, verifying request",
 				zap.String("object_id", objectID),
-				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("request_id", requestID),
 			)
 
-			// Convert lift.Context to http.Request for signature verification
-			httpReq, err := h.convertLiftRequest(ctx)
+			// Convert AppTheory request to http.Request for signature verification.
+			httpReq, err := h.convertAppTheoryRequest(ctx)
 			if err != nil {
 				logger.Error("failed to convert request for authorized fetch",
 					zap.String("object_id", objectID),
-					zap.String("request_id", ctx.GetRequestID()),
+					zap.String("request_id", requestID),
 					zap.Error(err),
 				)
-				return lift.NewLiftError("REQUEST_CONVERSION_ERROR", "malformed request", 400).WithCause(err)
+				return objectsJSONError(http.StatusBadRequest, "malformed request"), nil
 			}
 
 			// Verify authorized fetch
-			_, err = h.authorizedFetchService.VerifyAuthorizedFetch(ctx.Request.Context(), httpReq)
+			_, err = h.authorizedFetchService.VerifyAuthorizedFetch(runCtx, httpReq)
 			if err != nil {
 				// Check if signature is missing vs invalid
 				if strings.Contains(err.Error(), "missing signature") {
 					logger.Debug("unauthorized request - missing signature",
 						zap.String("object_id", objectID),
-						zap.String("request_id", ctx.GetRequestID()),
+						zap.String("request_id", requestID),
 					)
-					return lift.NewLiftError("UNAUTHORIZED", "signature required for authorized fetch", 401)
+					return objectsJSONError(http.StatusUnauthorized, "signature required for authorized fetch"), nil
 				}
 				logger.Debug("authorized fetch verification failed",
 					zap.String("object_id", objectID),
-					zap.String("request_id", ctx.GetRequestID()),
+					zap.String("request_id", requestID),
 					zap.Error(err),
 				)
-				return lift.NewLiftError("FORBIDDEN", "signature verification failed", 403).WithCause(err)
+				return objectsJSONError(http.StatusForbidden, "signature verification failed"), nil
 			}
 
 			logger.Debug("authorized fetch verification successful",
 				zap.String("object_id", objectID),
-				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("request_id", requestID),
 			)
 		}
 	}
 
 	logger.Info("fetching object",
 		zap.String("object_id", objectID),
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 	)
 
 	lookupID := objectID
@@ -207,47 +214,45 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 	}
 
 	// Get the object from storage
-	objInterface, err := h.objectRepo.GetObject(ctx.Request.Context(), lookupID)
+	objInterface, err := h.objectRepo.GetObject(runCtx, lookupID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			logger.Debug("object not found",
 				zap.String("object_id", objectID),
-				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("request_id", requestID),
 			)
-			return lift.NotFound(fmt.Sprintf("object %s not found", objectID))
+			return objectsJSONError(http.StatusNotFound, fmt.Sprintf("object %s not found", objectID)), nil
 		}
 		logger.Error("failed to get object",
 			zap.String("object_id", objectID),
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.Error(err),
 		)
-		return lift.NewLiftError("OBJECT_FETCH_ERROR", "failed to fetch object", 500).WithCause(err)
+		return objectsJSONError(http.StatusInternalServerError, "failed to fetch object"), nil
 	}
 
 	// Return HTML for browsers
 	if strings.Contains(acceptHeader, "text/html") {
 		logger.Debug("returning HTML representation",
 			zap.String("object_id", objectID),
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 		)
 		htmlContent := h.generateObjectHTML(objInterface)
-		if err := ctx.HTML(htmlContent); err != nil {
-			return err
-		}
-		ctx.Response.Header("Content-Type", "text/html; charset=utf-8")
-		return nil
+		return &apptheory.Response{
+			Status: http.StatusOK,
+			Headers: map[string][]string{
+				"content-type": {"text/html; charset=utf-8"},
+			},
+			Body: []byte(htmlContent),
+		}, nil
 	}
 
 	// Return ActivityPub JSON (default)
 	logger.Debug("returning ActivityPub JSON representation",
 		zap.String("object_id", objectID),
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 	)
-	if err := ctx.Status(http.StatusOK).JSON(objInterface); err != nil {
-		return err
-	}
-	ctx.Response.Header("Content-Type", "application/activity+json")
-	return nil
+	return objectsActivityJSON(http.StatusOK, objInterface)
 }
 
 // generateObjectHTML creates HTML representation of an ActivityPub object
@@ -606,36 +611,46 @@ func (h *Handler) extractUsernameFromURL(url string) string {
 	return url
 }
 
-// convertLiftRequest converts a Lift request to an http.Request for signature verification
-func (h *Handler) convertLiftRequest(ctx *lift.Context) (*http.Request, error) {
+// convertAppTheoryRequest converts an AppTheory request to an http.Request for signature verification.
+func (h *Handler) convertAppTheoryRequest(ctx *apptheory.Context) (*http.Request, error) {
+	if ctx == nil {
+		return nil, errors.New("nil context")
+	}
+
 	// Build URL
 	u := &url.URL{
 		Scheme: "https",
-		Host:   ctx.Header("Host"),
+		Host:   objectsHeaderValue(ctx, "host"),
 		Path:   ctx.Request.Path,
 	}
-	if ctx.Request.QueryParams != nil {
-		q := u.Query()
-		for k, v := range ctx.Request.QueryParams {
-			q.Set(k, v)
+
+	q := u.Query()
+	for key, values := range ctx.Request.Query {
+		for _, value := range values {
+			q.Add(key, value)
 		}
-		u.RawQuery = q.Encode()
 	}
+	u.RawQuery = q.Encode()
 
 	// Create request with context (no body for GET requests)
-	req, err := http.NewRequestWithContext(ctx.Request.Context(), ctx.Request.Method, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx.Context(), ctx.Request.Method, u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 
 	// Copy headers
 	for k, v := range ctx.Request.Headers {
-		req.Header.Set(k, v)
+		if len(v) == 0 {
+			continue
+		}
+		for _, value := range v {
+			req.Header.Add(k, value)
+		}
 	}
 
 	// Set host header if not present
-	if err := common.ValidateRequiredParam("host", req.Header.Get("Host")); err != nil && ctx.Header("Host") != "" {
-		req.Host = ctx.Header("Host")
+	if err := common.ValidateRequiredParam("host", req.Host); err != nil && objectsHeaderValue(ctx, "host") != "" {
+		req.Host = objectsHeaderValue(ctx, "host")
 	}
 
 	return req, nil
@@ -646,74 +661,194 @@ func main() {
 }
 
 func runObjects() {
-	// Initialize handler using standardized services
+	// Initialize handler using standardized services.
 	handler := newHandlerFn()
 
-	// Create Lift application
-	app := lift.New()
+	app := buildApp(handler, logger)
 
-	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(logger))
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
+}
 
-	// Apply federation security middleware
-	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, logger)
+func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.App {
+	app := apptheory.New(
+		apptheory.WithCORS(apptheory.CORSConfig{
+			AllowedOrigins:   []string{"*"},
+			AllowCredentials: false,
+			AllowHeaders: []string{
+				"Accept",
+				"Content-Type",
+				"Date",
+				"Digest",
+				"Host",
+				"Signature",
+				"User-Agent",
+				"X-Forwarded-For",
+				"X-Forwarded-Proto",
+			},
+		}),
+		apptheory.WithLimits(apptheory.Limits{
+			MaxRequestBytes:  1024 * 1024,
+			MaxResponseBytes: 0,
+		}),
+	)
 
-	// Add request ID middleware
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			requestID := fmt.Sprintf("objects-%d", time.Now().UnixNano())
-			ctx.Set("requestID", requestID)
-			return next.Handle(ctx)
-		})
+	// Panic recovery middleware (MUST be first to catch all panics).
+	app.Use(objectsPanicRecovery(lambdaLogger))
+
+	// Request ID middleware.
+	app.Use(func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			if ctx != nil {
+				ctx.Set("requestID", objectsRequestID(ctx, "objects"))
+			}
+			return next(ctx)
+		}
 	})
 
-	// Add logging middleware (second - logs with request ID)
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+	// Security headers middleware (federation-friendly).
+	app.Use(objectsActivityPubSecurityHeaders())
+
+	// Logging middleware.
+	app.Use(func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			start := time.Now()
-			err := next.Handle(ctx)
+			resp, err := next(ctx)
+
+			requestID := objectsContextRequestID(ctx)
+			hasError := err != nil
+			if !hasError && resp != nil && resp.Status >= 400 {
+				hasError = true
+			}
+
+			method := ""
+			path := ""
+			if ctx != nil {
+				method = ctx.Request.Method
+				path = ctx.Request.Path
+			}
 
 			logger.Info("objects request completed",
-				zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+				zap.String("request_id", requestID),
+				zap.String("method", method),
+				zap.String("path", path),
 				zap.Duration("duration", time.Since(start)),
-				zap.Bool("has_error", err != nil),
+				zap.Bool("has_error", hasError),
 			)
 
-			if err != nil {
+			if hasError {
 				logger.Error("objects handler error",
-					zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+					zap.String("request_id", requestID),
 					zap.Error(err),
 				)
 			}
-			return err
-		})
+
+			return resp, err
+		}
 	})
 
-	// Add recovery middleware (third - catches panics)
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+	// ActivityPub federation endpoint.
+	app.Get("/objects/:id", handler.HandleGetObject)
+
+	return app
+}
+
+func objectsPanicRecovery(logger *zap.Logger) apptheory.Middleware {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (resp *apptheory.Response, err error) {
 			defer func() {
 				if r := recover(); r != nil {
-					logger.Error("panic recovered in objects handler",
-						zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+					logger.Error("panic recovered",
+						zap.String("request_id", objectsContextRequestID(ctx)),
 						zap.Any("panic", r),
 					)
+					resp = objectsJSONError(http.StatusInternalServerError, "internal server error")
+					err = nil
 				}
 			}()
-			return next.Handle(ctx)
-		})
-	})
+			return next(ctx)
+		}
+	}
+}
 
-	// Note: Federation rate limiting removed - using Limited library approach in API service only
-	// Federation endpoints rely on ActivityPub HTTP signatures for authentication
+func objectsActivityPubSecurityHeaders() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			resp, err := next(ctx)
+			if resp == nil {
+				return resp, err
+			}
+			if resp.Headers == nil {
+				resp.Headers = map[string][]string{}
+			}
+			resp.Headers["x-content-type-options"] = []string{"nosniff"}
+			resp.Headers["x-frame-options"] = []string{"SAMEORIGIN"}
+			resp.Headers["referrer-policy"] = []string{"strict-origin-when-cross-origin"}
+			resp.Headers["cross-origin-resource-policy"] = []string{"cross-origin"}
+			resp.Headers["x-robots-tag"] = []string{"noindex, nofollow"}
+			return resp, err
+		}
+	}
+}
 
-	// ActivityPub federation endpoint
-	_ = app.GET("/objects/:id", handler.HandleGetObject)
+func objectsHeaderValue(ctx *apptheory.Context, key string) string {
+	if ctx == nil {
+		return ""
+	}
+	key = strings.ToLower(strings.TrimSpace(key))
+	values := ctx.Request.Headers[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
 
-	// Use standardized Lambda handler with observability
-	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
-		return app.HandleRequest(ctx, event)
-	})
+func objectsRequestID(ctx *apptheory.Context, prefix string) string {
+	if ctx != nil && strings.TrimSpace(ctx.RequestID) != "" {
+		return ctx.RequestID
+	}
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = "objects"
+	}
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+}
 
-	lambdaStartFn(standardHandler)
+func objectsContextRequestID(ctx *apptheory.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if rid, ok := ctx.Get("requestID").(string); ok && strings.TrimSpace(rid) != "" {
+		return strings.TrimSpace(rid)
+	}
+	if strings.TrimSpace(ctx.RequestID) != "" {
+		return ctx.RequestID
+	}
+	return ""
+}
+
+func objectsJSONError(status int, message string) *apptheory.Response {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "internal server error"
+	}
+	return apptheory.MustJSON(status, map[string]string{"error": message})
+}
+
+func objectsActivityJSON(status int, value any) (*apptheory.Response, error) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return &apptheory.Response{
+		Status: status,
+		Headers: map[string][]string{
+			"content-type": {"application/activity+json"},
+		},
+		Body: body,
+	}, nil
 }

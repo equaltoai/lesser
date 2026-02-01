@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -16,9 +18,8 @@ import (
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	dynamormMocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	pkgtypes "github.com/pay-theory/dynamorm/pkg/types"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -72,49 +73,47 @@ func TestHandleGetObject_Round12(t *testing.T) {
 
 	t.Run("missing object id", func(t *testing.T) {
 		h := &Handler{}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:     http.MethodGet,
-			Path:       "/objects/",
-		}))
-		err := h.HandleGetObject(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 422, liftErr.StatusCode)
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{Method: http.MethodGet, Path: "/objects/"},
+			Params:  map[string]string{},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 422, resp.Status)
 	})
 
 	t.Run("locked when instance state lookup fails", func(t *testing.T) {
 		h := &Handler{
 			instanceRepo: &fakeInstanceRepo{err: errors.New("db down")},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:     http.MethodGet,
-			Path:       "/objects/123",
-			Headers:    map[string]string{"Accept": "text/html"},
-		}))
-		ctx.SetParam("id", "123")
-		err := h.HandleGetObject(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 404, liftErr.StatusCode)
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/objects/123",
+				Headers: map[string][]string{"accept": {"text/html"}},
+			},
+			Params: map[string]string{"id": "123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 404, resp.Status)
 	})
 
 	t.Run("locked when instance is locked", func(t *testing.T) {
 		h := &Handler{
 			instanceRepo: &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: true}},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:     http.MethodGet,
-			Path:       "/objects/123",
-			Headers:    map[string]string{"Accept": "text/html"},
-		}))
-		ctx.SetParam("id", "123")
-		err := h.HandleGetObject(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 404, liftErr.StatusCode)
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/objects/123",
+				Headers: map[string][]string{"accept": {"text/html"}},
+			},
+			Params: map[string]string{"id": "123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 404, resp.Status)
 	})
 
 	t.Run("authorized fetch conversion failure returns 400", func(t *testing.T) {
@@ -122,18 +121,20 @@ func TestHandleGetObject_Round12(t *testing.T) {
 			instanceRepo:           &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: true},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:     "bad method",
-			Path:       "/objects/123",
-			Headers:    map[string]string{"Accept": "application/activity+json", "Host": "example.com"},
-		}))
-		ctx.SetParam("id", "123")
-		err := h.HandleGetObject(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 400, liftErr.StatusCode)
-		require.Equal(t, "REQUEST_CONVERSION_ERROR", liftErr.Code)
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: "bad method",
+				Path:   "/objects/123",
+				Headers: map[string][]string{
+					"accept": {"application/activity+json"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{"id": "123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 400, resp.Status)
 	})
 
 	t.Run("authorized fetch missing signature returns 401", func(t *testing.T) {
@@ -141,18 +142,20 @@ func TestHandleGetObject_Round12(t *testing.T) {
 			instanceRepo:           &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: true, verifyErr: errors.New("missing signature")},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:     http.MethodGet,
-			Path:       "/objects/123",
-			Headers:    map[string]string{"Accept": "application/activity+json", "Host": "example.com"},
-		}))
-		ctx.SetParam("id", "123")
-		err := h.HandleGetObject(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 401, liftErr.StatusCode)
-		require.Equal(t, "UNAUTHORIZED", liftErr.Code)
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/objects/123",
+				Headers: map[string][]string{
+					"accept": {"application/activity+json"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{"id": "123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 401, resp.Status)
 	})
 
 	t.Run("authorized fetch invalid signature returns 403", func(t *testing.T) {
@@ -160,18 +163,21 @@ func TestHandleGetObject_Round12(t *testing.T) {
 			instanceRepo:           &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: true, verifyErr: errors.New("bad signature")},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:     http.MethodGet,
-			Path:       "/objects/123",
-			Headers:    map[string]string{"Accept": "application/activity+json", "Host": "example.com", "Signature": "sig"},
-		}))
-		ctx.SetParam("id", "123")
-		err := h.HandleGetObject(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 403, liftErr.StatusCode)
-		require.Equal(t, "FORBIDDEN", liftErr.Code)
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/objects/123",
+				Headers: map[string][]string{
+					"accept":    {"application/activity+json"},
+					"host":      {"example.com"},
+					"signature": {"sig"},
+				},
+			},
+			Params: map[string]string{"id": "123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 403, resp.Status)
 	})
 }
 
@@ -195,17 +201,17 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 			objectRepo:             objRepo,
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:     http.MethodGet,
-			Path:       "/objects/123",
-			Headers:    map[string]string{"Accept": "application/activity+json"},
-		}))
-		ctx.SetParam("id", "123")
-		err := h.HandleGetObject(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 404, liftErr.StatusCode)
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/objects/123",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"id": "123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 404, resp.Status)
 		require.Contains(t, objRepo.gotID, "https://example.com/objects/123")
 	})
 
@@ -215,30 +221,29 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 			objectRepo:             &fakeObjectRepo{err: errors.New("boom")},
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:     http.MethodGet,
-			Path:       "/objects/https://example.com/objects/123",
-			Headers:    map[string]string{"accept": "application/activity+json"},
-		}))
-		ctx.SetParam("id", "https://example.com/objects/123")
-		err := h.HandleGetObject(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 500, liftErr.StatusCode)
-		require.Equal(t, "OBJECT_FETCH_ERROR", liftErr.Code)
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/objects/https://example.com/objects/123",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"id": "https://example.com/objects/123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 500, resp.Status)
 	})
 
 	t.Run("html response for browsers", func(t *testing.T) {
 		now := time.Now().UTC()
 		note := &activitypub.Note{
 			BaseObject: activitypub.BaseObject{
-				ID:           "https://example.com/objects/123",
-				Type:         "Note",
-				Summary:      "cw",
-				Sensitive:    true,
-				Published:    &now,
-				Updated:      &now,
+				ID:        "https://example.com/objects/123",
+				Type:      "Note",
+				Summary:   "cw",
+				Sensitive: true,
+				Published: &now,
+				Updated:   &now,
 			},
 			Content:      "Hello <b>world</b>",
 			AttributedTo: "https://example.com/users/alice",
@@ -255,17 +260,19 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 			objectRepo:             &fakeObjectRepo{obj: note},
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:     http.MethodGet,
-			Path:       "/objects/123",
-			Headers:    map[string]string{"Accept": "text/html"},
-		}))
-		ctx.SetParam("id", "123")
-		require.NoError(t, h.HandleGetObject(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.Equal(t, "text/html; charset=utf-8", ctx.Response.Headers["Content-Type"])
-		body, ok := ctx.Response.Body.(string)
-		require.True(t, ok)
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/objects/123",
+				Headers: map[string][]string{"accept": {"text/html"}},
+			},
+			Params: map[string]string{"id": "123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 200, resp.Status)
+		require.Equal(t, []string{"text/html; charset=utf-8"}, resp.Headers["content-type"])
+		body := string(resp.Body)
 		require.Contains(t, body, "<!DOCTYPE html>")
 		require.Contains(t, body, "Content Warning")
 		require.Contains(t, body, "@alice")
@@ -278,15 +285,18 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 			objectRepo:             objRepo,
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:     http.MethodGet,
-			Path:       "/objects/123",
-			Headers:    map[string]string{"Accept": "application/activity+json"},
-		}))
-		ctx.SetParam("id", "123")
-		require.NoError(t, h.HandleGetObject(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.Equal(t, "application/activity+json", ctx.Response.Headers["Content-Type"])
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/objects/123",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"id": "123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 200, resp.Status)
+		require.Equal(t, []string{"application/activity+json"}, resp.Headers["content-type"])
 	})
 }
 
@@ -405,9 +415,9 @@ func TestNewHandler_MainAndInit_Round12(t *testing.T) {
 	t.Run("initializeObjects + main register routes", func(t *testing.T) {
 		mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
 			return &common.LambdaContext{
-				Config:   cfg,
-				Logger:   nil,
-				Repos:    repos,
+				Config:    cfg,
+				Logger:    nil,
+				Repos:     repos,
 				StartTime: time.Now(),
 			}
 		}
@@ -429,31 +439,31 @@ func TestNewHandler_MainAndInit_Round12(t *testing.T) {
 		called := false
 		lambdaStartFn = func(handler any) {
 			called = true
-			fn, ok := handler.(func(context.Context, interface{}) (interface{}, error))
+			fn, ok := handler.(func(context.Context, json.RawMessage) (any, error))
 			require.True(t, ok)
 
-			event := map[string]any{
-				"version":  "2.0",
-				"routeKey": "GET /objects/123",
-				"rawPath":  "/objects/123",
-				"headers": map[string]any{
-					"accept": "application/activity+json",
-				},
-				"requestContext": map[string]any{
-					"requestId": "req",
-					"http": map[string]any{
-						"method": "GET",
-						"path":   "/objects/123",
+			event := events.APIGatewayV2HTTPRequest{
+				Version:  "2.0",
+				RouteKey: "GET /objects/123",
+				RawPath:  "/objects/123",
+				Headers:  map[string]string{"accept": "application/activity+json"},
+				RequestContext: events.APIGatewayV2HTTPRequestContext{
+					RequestID: "req",
+					HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+						Method: "GET",
+						Path:   "/objects/123",
 					},
 				},
 			}
 
-			resp, err := fn(context.Background(), event)
+			raw, err := json.Marshal(event)
 			require.NoError(t, err)
-			liftResp, ok := resp.(*lift.Response)
+			resp, err := fn(context.Background(), raw)
+			require.NoError(t, err)
+			lambdaResp, ok := resp.(events.APIGatewayV2HTTPResponse)
 			require.True(t, ok)
-			require.Equal(t, 200, liftResp.StatusCode)
-			require.Equal(t, "application/activity+json", liftResp.Headers["Content-Type"])
+			require.Equal(t, 200, lambdaResp.StatusCode)
+			require.Equal(t, "application/activity+json", lambdaResp.Headers["content-type"])
 		}
 
 		main()
@@ -469,14 +479,18 @@ func TestObjectHelpers_UncoveredBranches_Round12(t *testing.T) {
 	require.Equal(t, "", h.generateWarningHTML(false, "cw"))
 	require.Equal(t, "", h.generateUpdatedHTML(time.Time{}))
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:      http.MethodGet,
-		Path:        "/objects/123",
-		Headers:     map[string]string{"Some": "Header"},
-		QueryParams: map[string]string{"q": "1"},
-	}))
-	ctx.Request.Headers["Host"] = "example.com"
-	req, err := h.convertLiftRequest(ctx)
+	ctx := &apptheory.Context{
+		Request: apptheory.Request{
+			Method: http.MethodGet,
+			Path:   "/objects/123",
+			Headers: map[string][]string{
+				"host": {"example.com"},
+				"some": {"Header"},
+			},
+			Query: map[string][]string{"q": {"1"}},
+		},
+	}
+	req, err := h.convertAppTheoryRequest(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/objects/123?q=1", req.URL.String())
 }
