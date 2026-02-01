@@ -6,12 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -246,55 +245,38 @@ func TestCalculateOperationCosts(t *testing.T) {
 func TestGetClientIP(t *testing.T) {
 	tests := []struct {
 		name     string
-		event    events.APIGatewayWebsocketProxyRequest
+		headers  map[string][]string
 		expected string
 	}{
 		{
-			name: "source IP from identity",
-			event: events.APIGatewayWebsocketProxyRequest{
-				RequestContext: events.APIGatewayWebsocketProxyRequestContext{
-					Identity: events.APIGatewayRequestIdentity{
-						SourceIP: "192.168.1.1",
-					},
-				},
-			},
-			expected: "192.168.1.1",
-		},
-		{
 			name: "x-forwarded-for header single IP",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"x-forwarded-for": "10.0.0.1",
-				},
+			headers: map[string][]string{
+				"x-forwarded-for": {"10.0.0.1"},
 			},
 			expected: "10.0.0.1",
 		},
 		{
 			name: "x-forwarded-for header multiple IPs",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"x-forwarded-for": "10.0.0.1, 10.0.0.2, 10.0.0.3",
-				},
+			headers: map[string][]string{
+				"x-forwarded-for": {"10.0.0.1, 10.0.0.2, 10.0.0.3"},
 			},
 			expected: "10.0.0.1",
 		},
 		{
-			name: "no IP available returns unknown",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{},
-			},
+			name:     "no IP available returns unknown",
+			headers:  map[string][]string{},
 			expected: StatusUnknown,
 		},
 		{
 			name:     "nil headers returns unknown",
-			event:    events.APIGatewayWebsocketProxyRequest{},
+			headers:  nil,
 			expected: StatusUnknown,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := getClientIP(tt.event)
+			result := getClientIP(tt.headers)
 			require.Equal(t, tt.expected, result)
 		})
 	}
@@ -304,44 +286,31 @@ func TestGetClientIP(t *testing.T) {
 func TestGetUserAgent(t *testing.T) {
 	tests := []struct {
 		name     string
-		event    events.APIGatewayWebsocketProxyRequest
+		headers  map[string][]string
 		expected string
 	}{
 		{
 			name: "lowercase user-agent header",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"user-agent": "Mozilla/5.0 Test Browser",
-				},
+			headers: map[string][]string{
+				"user-agent": {"Mozilla/5.0 Test Browser"},
 			},
 			expected: "Mozilla/5.0 Test Browser",
 		},
 		{
-			name: "capitalized User-Agent header",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"User-Agent": "Custom Agent/1.0",
-				},
-			},
-			expected: "Custom Agent/1.0",
-		},
-		{
-			name: "no user agent returns unknown",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{},
-			},
+			name:     "no user agent returns unknown",
+			headers:  map[string][]string{},
 			expected: StatusUnknown,
 		},
 		{
 			name:     "nil headers returns unknown",
-			event:    events.APIGatewayWebsocketProxyRequest{},
+			headers:  nil,
 			expected: StatusUnknown,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := getUserAgent(tt.event)
+			result := getUserAgent(tt.headers)
 			require.Equal(t, tt.expected, result)
 		})
 	}
@@ -350,83 +319,55 @@ func TestGetUserAgent(t *testing.T) {
 // TestDetermineConnectionSource tests connection source determination from user agent
 func TestDetermineConnectionSource(t *testing.T) {
 	tests := []struct {
-		name     string
-		event    events.APIGatewayWebsocketProxyRequest
-		expected string
+		name      string
+		userAgent string
+		expected  string
 	}{
 		{
-			name: "mobile user agent with Mobile keyword",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"user-agent": "Mozilla/5.0 Mobile Safari",
-				},
-			},
-			expected: "mobile",
+			name:      "mobile user agent with Mobile keyword",
+			userAgent: "Mozilla/5.0 Mobile Safari",
+			expected:  "mobile",
 		},
 		{
-			name: "mobile user agent with Android keyword",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"user-agent": "Mozilla/5.0 Android 10",
-				},
-			},
-			expected: "mobile",
+			name:      "mobile user agent with Android keyword",
+			userAgent: "Mozilla/5.0 Android 10",
+			expected:  "mobile",
 		},
 		{
-			name: "mobile user agent with iPhone keyword",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"user-agent": "Mozilla/5.0 iPhone iOS",
-				},
-			},
-			expected: "mobile",
+			name:      "mobile user agent with iPhone keyword",
+			userAgent: "Mozilla/5.0 iPhone iOS",
+			expected:  "mobile",
 		},
 		{
-			name: "api user agent with postman",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"user-agent": "PostmanRuntime/7.28.0",
-				},
-			},
-			expected: "api",
+			name:      "api user agent with postman",
+			userAgent: "PostmanRuntime/7.28.0",
+			expected:  "api",
 		},
 		{
-			name: "api user agent with curl",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"user-agent": "curl/7.79.1",
-				},
-			},
-			expected: "api",
+			name:      "api user agent with curl",
+			userAgent: "curl/7.79.1",
+			expected:  "api",
 		},
 		{
-			name: "api user agent with wget",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"user-agent": "Wget/1.21",
-				},
-			},
-			expected: "api",
+			name:      "api user agent with wget",
+			userAgent: "Wget/1.21",
+			expected:  "api",
 		},
 		{
-			name: "web user agent default",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"user-agent": "Mozilla/5.0 Windows Chrome",
-				},
-			},
-			expected: "web",
+			name:      "web user agent default",
+			userAgent: "Mozilla/5.0 Windows Chrome",
+			expected:  "web",
 		},
 		{
-			name:     "no user agent defaults to web",
-			event:    events.APIGatewayWebsocketProxyRequest{},
-			expected: "web",
+			name:      "no user agent defaults to web",
+			userAgent: "",
+			expected:  "web",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := determineConnectionSource(tt.event)
+			result := determineConnectionSource(tt.userAgent)
 			require.Equal(t, tt.expected, result)
 		})
 	}
@@ -436,71 +377,50 @@ func TestDetermineConnectionSource(t *testing.T) {
 func TestDetermineAuthMethod(t *testing.T) {
 	tests := []struct {
 		name     string
-		event    events.APIGatewayWebsocketProxyRequest
+		query    map[string][]string
+		headers  map[string][]string
 		expected string
 	}{
 		{
-			name: "oauth via query parameter",
-			event: events.APIGatewayWebsocketProxyRequest{
-				QueryStringParameters: map[string]string{
-					"access_token": "some-token",
-				},
-			},
+			name:     "oauth via query parameter",
+			query:    map[string][]string{"access_token": {"some-token"}},
 			expected: "oauth",
 		},
 		{
-			name: "bearer token via Authorization header",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"Authorization": "Bearer some-jwt-token",
-				},
-			},
+			name:     "bearer token via Authorization header",
+			headers:  map[string][]string{"authorization": {"Bearer some-jwt-token"}},
 			expected: "bearer",
 		},
 		{
-			name: "basic auth via Authorization header",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"Authorization": "Basic dXNlcjpwYXNz",
-				},
-			},
+			name:     "basic auth via Authorization header",
+			headers:  map[string][]string{"authorization": {"Basic dXNlcjpwYXNz"}},
 			expected: "basic",
 		},
 		{
-			name: "bearer token via lowercase authorization header",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"authorization": "Bearer another-token",
-				},
-			},
+			name:     "bearer token via lowercase authorization header",
+			headers:  map[string][]string{"authorization": {"Bearer another-token"}},
 			expected: "bearer",
 		},
 		{
-			name: "anonymous when no auth provided",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{},
-			},
+			name:     "anonymous when no auth provided",
+			headers:  map[string][]string{},
 			expected: "anonymous",
 		},
 		{
 			name:     "anonymous when headers nil",
-			event:    events.APIGatewayWebsocketProxyRequest{},
+			headers:  nil,
 			expected: "anonymous",
 		},
 		{
-			name: "anonymous when Authorization header has unknown format",
-			event: events.APIGatewayWebsocketProxyRequest{
-				Headers: map[string]string{
-					"Authorization": "Custom scheme-value",
-				},
-			},
+			name:     "anonymous when Authorization header has unknown format",
+			headers:  map[string][]string{"authorization": {"Custom scheme-value"}},
 			expected: "anonymous",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := determineAuthMethod(tt.event)
+			result := determineAuthMethod(tt.query, tt.headers)
 			require.Equal(t, tt.expected, result)
 		})
 	}
@@ -661,7 +581,7 @@ func TestDetermineOperationType(t *testing.T) {
 		{
 			name:     "connect route",
 			routeKey: "$connect",
-			expected: "connect",
+			expected: WSEventConnect,
 		},
 		{
 			name:     "disconnect route",
@@ -687,12 +607,7 @@ func TestDetermineOperationType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			event := events.APIGatewayWebsocketProxyRequest{
-				RequestContext: events.APIGatewayWebsocketProxyRequestContext{
-					RouteKey: tt.routeKey,
-				},
-			}
-			result := determineOperationType(event)
+			result := determineOperationType(tt.routeKey)
 			require.Equal(t, tt.expected, result)
 		})
 	}
@@ -748,10 +663,6 @@ func TestTrackWebSocketOperation_ProcessingTimeCalculation(t *testing.T) {
 	require.Greater(t, result.ProcessingTimeMs, int64(0))
 }
 
-// Note: TestExtractWebSocketEvent is not included because it requires internal
-// access to lift.Request structures that cannot be easily constructed in tests.
-// The function is covered through integration testing.
-
 // TestCheckBudgetIfRequired tests budget checking for specific operation types
 func TestCheckBudgetIfRequired(t *testing.T) {
 	logger := zap.NewNop()
@@ -794,26 +705,20 @@ func TestCheckBudgetIfRequired(t *testing.T) {
 	}
 
 	t.Run("disconnect operation skips budget check", func(t *testing.T) {
-		ctx := &lift.Context{
-			Request: &lift.Request{},
-		}
 		opCtx := &WebSocketOperationContext{
 			UserID: "user-123",
 		}
 
-		err := checkBudgetIfRequired(tracker, ctx, WSEventDisconnect, opCtx)
+		err := checkBudgetIfRequired(tracker, context.Background(), WSEventDisconnect, opCtx)
 		require.NoError(t, err)
 	})
 
 	t.Run("empty user skips budget check", func(t *testing.T) {
-		ctx := &lift.Context{
-			Request: &lift.Request{},
-		}
 		opCtx := &WebSocketOperationContext{
 			UserID: "",
 		}
 
-		err := checkBudgetIfRequired(tracker, ctx, "connect", opCtx)
+		err := checkBudgetIfRequired(tracker, context.Background(), "connect", opCtx)
 		require.NoError(t, err)
 	})
 }
@@ -821,19 +726,20 @@ func TestCheckBudgetIfRequired(t *testing.T) {
 // TestExecuteAndMeasure tests handler execution and measurement
 func TestExecuteAndMeasure(t *testing.T) {
 	t.Run("successful handler execution", func(t *testing.T) {
-		handler := lift.HandlerFunc(func(ctx *lift.Context) error {
-			return nil
-		})
+		handler := func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.Text(200, ""), nil
+		}
 
-		ctx := &lift.Context{
-			Request: &lift.Request{
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{
 				Body: []byte("test message"),
 			},
 		}
 
-		result, err := executeAndMeasure(handler, ctx, WSEventMessageIn)
+		result, resp, err := executeAndMeasure(handler, ctx, WSEventMessageIn)
 
 		require.NoError(t, err)
+		require.NotNil(t, resp)
 		require.True(t, result.Success)
 		require.GreaterOrEqual(t, result.ProcessingTimeMs, int64(0))
 		require.Equal(t, int64(12), result.MessageSizeBytes) // "test message" = 12 bytes
@@ -843,35 +749,37 @@ func TestExecuteAndMeasure(t *testing.T) {
 
 	t.Run("failed handler execution", func(t *testing.T) {
 		expectedErr := errors.New("handler failed")
-		handler := lift.HandlerFunc(func(ctx *lift.Context) error {
-			return expectedErr
-		})
-
-		ctx := &lift.Context{
-			Request: &lift.Request{},
+		handler := func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return nil, expectedErr
 		}
 
-		result, err := executeAndMeasure(handler, ctx, "connect")
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{},
+		}
+
+		result, resp, err := executeAndMeasure(handler, ctx, "connect")
 
 		require.Error(t, err)
+		require.Nil(t, resp)
 		require.False(t, result.Success)
 		require.Equal(t, expectedErr, result.Error)
 	})
 
 	t.Run("non-message operation does not set message details", func(t *testing.T) {
-		handler := lift.HandlerFunc(func(ctx *lift.Context) error {
-			return nil
-		})
+		handler := func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.Text(200, ""), nil
+		}
 
-		ctx := &lift.Context{
-			Request: &lift.Request{
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{
 				Body: []byte("not a message"),
 			},
 		}
 
-		result, err := executeAndMeasure(handler, ctx, "connect")
+		result, resp, err := executeAndMeasure(handler, ctx, "connect")
 
 		require.NoError(t, err)
+		require.NotNil(t, resp)
 		require.Equal(t, 0, result.MessageCount)
 		require.Equal(t, int64(0), result.MessageSizeBytes)
 	})
