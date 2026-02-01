@@ -17,6 +17,7 @@ Features:
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,16 +43,13 @@ import (
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	gqllimits "github.com/equaltoai/lesser/pkg/graphql/limits"
 	"github.com/equaltoai/lesser/pkg/mastodon"
-	"github.com/equaltoai/lesser/pkg/middleware"
-	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
 )
@@ -366,7 +364,7 @@ func initializeGraphQLSpecificServices() {
 	graphQLHandler = server
 
 	logger.Info("GraphQL service initialized successfully",
-		zap.String("version", "lift-dynamorm"),
+		zap.String("version", "apptheory-dynamorm"),
 		zap.Bool("enabled", true),
 		zap.String("status", "ready"))
 }
@@ -385,106 +383,133 @@ func graphQLErrorPresenter(ctx context.Context, err error) *gqlerror.Error {
 }
 
 // handleGraphQL processes GraphQL requests with proper context and DataLoader
-func handleGraphQL(ctx *lift.Context) error {
-	requestCtx := ctx.Request.Context()
-	if cfg != nil && cfg.GraphQLRequestTimeout > 0 {
-		var cancel context.CancelFunc
-		requestCtx, cancel = context.WithTimeout(requestCtx, cfg.GraphQLRequestTimeout)
-		defer cancel()
+func handleGraphQL(ctx *apptheory.Context) (*apptheory.Response, error) {
+	requestCtx := context.Background()
+	if ctx != nil {
+		requestCtx = ctx.Context()
 	}
 
-	// Create request context with user information
-	requestCtx = context.WithValue(requestCtx, contextKeyUser, ctx.Get("user"))
+	timeout := 30 * time.Second
+	if cfg != nil && cfg.GraphQLRequestTimeout > 0 {
+		timeout = cfg.GraphQLRequestTimeout
+	}
+	var cancel context.CancelFunc
+	requestCtx, cancel = context.WithTimeout(requestCtx, timeout)
+	defer cancel()
 
-	authHeader := common.ExtractAuthHeader(ctx)
+	// Create request context with user information.
+	if ctx != nil {
+		requestCtx = context.WithValue(requestCtx, contextKeyUser, ctx.Get("user"))
+	}
+
+	authHeader := graphqlExtractAuthHeader(ctx)
 	logger.Info("GraphQL request auth header check",
-		zap.String("path", ctx.Request.Path),
+		zap.String("path", graphqlPath(ctx)),
 		zap.Bool("has_header", authHeader != ""),
 	)
 
-	if claimsVal := ctx.Get("claims"); claimsVal != nil {
-		logger.Info("GraphQL authentication context detected",
-			zap.String("path", ctx.Request.Path),
-			zap.String("claims_type", fmt.Sprintf("%T", claimsVal)),
-		)
-	} else {
-		logger.Info("GraphQL request without authentication context",
-			zap.String("path", ctx.Request.Path))
-	}
-
-	// Propagate authenticated username if available
-	if username, ok := ctx.Get("username").(string); ok && username != "" {
-		requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
-	}
-
-	// Propagate claims for resolvers that require authentication
-	claimsVal := ctx.Get("claims")
-	if claimsVal != nil {
-		logger.Info("GraphQL claims found in context",
-			zap.String("claims_type", fmt.Sprintf("%T", claimsVal)),
-			zap.Bool("is_common_claims", claimsVal != nil),
-		)
-		if claims, ok := claimsVal.(common.Claims); ok && claims != nil {
-			logger.Info("GraphQL claims type assertion successful",
-				zap.String("username", claims.GetUsername()),
+	if ctx != nil {
+		if claimsVal := ctx.Get("claims"); claimsVal != nil {
+			logger.Info("GraphQL authentication context detected",
+				zap.String("path", ctx.Request.Path),
+				zap.String("claims_type", fmt.Sprintf("%T", claimsVal)),
 			)
-			requestCtx = context.WithValue(requestCtx, common.ContextKeyClaims, claims)
-			// Ensure contextKeyUser is set even if username wasn't populated separately
-			if username := claims.GetUsername(); username != "" {
-				requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
+		} else {
+			logger.Info("GraphQL request without authentication context",
+				zap.String("path", ctx.Request.Path))
+		}
+
+		// Propagate authenticated username if available.
+		if username, ok := ctx.Get("username").(string); ok && username != "" {
+			requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
+		}
+
+		// Propagate claims for resolvers that require authentication.
+		claimsVal := ctx.Get("claims")
+		if claimsVal != nil {
+			logger.Info("GraphQL claims found in context",
+				zap.String("claims_type", fmt.Sprintf("%T", claimsVal)),
+				zap.Bool("is_common_claims", claimsVal != nil),
+			)
+			if claims, ok := claimsVal.(common.Claims); ok && claims != nil {
+				logger.Info("GraphQL claims type assertion successful",
+					zap.String("username", claims.GetUsername()),
+				)
+				requestCtx = context.WithValue(requestCtx, common.ContextKeyClaims, claims)
+				// Ensure contextKeyUser is set even if username wasn't populated separately.
+				if username := claims.GetUsername(); username != "" {
+					requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
+				} else {
+					logger.Warn("GraphQL claims have empty username",
+						zap.String("claims_type", fmt.Sprintf("%T", claims)),
+					)
+				}
 			} else {
-				logger.Warn("GraphQL claims have empty username",
-					zap.String("claims_type", fmt.Sprintf("%T", claims)),
+				logger.Warn("GraphQL claims type assertion failed",
+					zap.String("actual_type", fmt.Sprintf("%T", claimsVal)),
 				)
 			}
-		} else {
-			logger.Warn("GraphQL claims type assertion failed",
-				zap.String("actual_type", fmt.Sprintf("%T", claimsVal)),
-			)
+		}
+
+		requestCtx = context.WithValue(requestCtx, contextKeyCostTracker, ctx.Get("cost_tracker"))
+
+		// Attach DataLoaders to request context so resolvers can batch fetches safely.
+		if loadersVal := ctx.Get("loaders"); loadersVal != nil {
+			if loaders, ok := loadersVal.(*graph.Loaders); ok {
+				requestCtx = graph.WithLoaders(requestCtx, loaders)
+				requestCtx = context.WithValue(requestCtx, contextKeyLoaders, loaders)
+			} else {
+				logger.Warn("GraphQL loaders type assertion failed",
+					zap.String("actual_type", fmt.Sprintf("%T", loadersVal)))
+				requestCtx = context.WithValue(requestCtx, contextKeyLoaders, loadersVal)
+			}
 		}
 	}
 
-	requestCtx = context.WithValue(requestCtx, contextKeyCostTracker, ctx.Get("cost_tracker"))
-
-	// Attach DataLoaders to request context so resolvers can batch fetches safely
-	if loadersVal := ctx.Get("loaders"); loadersVal != nil {
-		if loaders, ok := loadersVal.(*graph.Loaders); ok {
-			requestCtx = graph.WithLoaders(requestCtx, loaders)
-			requestCtx = context.WithValue(requestCtx, contextKeyLoaders, loaders)
-		} else {
-			logger.Warn("GraphQL loaders type assertion failed",
-				zap.String("actual_type", fmt.Sprintf("%T", loadersVal)))
-			requestCtx = context.WithValue(requestCtx, contextKeyLoaders, loadersVal)
-		}
+	// Create HTTP request wrapper for GraphQL handler.
+	method := ""
+	path := ""
+	body := []byte(nil)
+	headers := map[string][]string(nil)
+	query := map[string][]string(nil)
+	if ctx != nil {
+		method = ctx.Request.Method
+		path = ctx.Request.Path
+		body = ctx.Request.Body
+		headers = ctx.Request.Headers
+		query = ctx.Request.Query
 	}
 
-	// Create HTTP request wrapper for GraphQL handler
-	liftURL := ctx.Request.URL()
-	parsedURL, _ := url.Parse(liftURL.Path)
+	u := &url.URL{Path: path}
+	q := u.Query()
+	for key, values := range query {
+		for _, value := range values {
+			q.Add(key, value)
+		}
+	}
+	u.RawQuery = q.Encode()
+
 	httpReq := &http.Request{
-		Method: ctx.Request.Method,
-		URL:    parsedURL,
+		Method: method,
+		URL:    u,
 		Header: make(http.Header),
-		Body:   &bytesReader{data: ctx.Request.Body},
+		Body:   &bytesReader{data: body},
 	}
 	httpReq = httpReq.WithContext(requestCtx)
 
-	// Copy headers
-	for k, v := range ctx.Request.Headers {
-		httpReq.Header.Set(k, v)
+	// Copy headers.
+	for k, values := range headers {
+		for _, value := range values {
+			httpReq.Header.Add(k, value)
+		}
 	}
 
-	// Create response writer
-	responseWriter := &graphQLResponseWriter{
-		liftCtx: ctx,
-		header:  make(http.Header),
-	}
-
-	// Process GraphQL request
+	// Process GraphQL request.
+	responseWriter := newGraphQLResponseWriter()
 	handlerStart := time.Now()
 	logger.Info("GraphQL handler invocation started",
-		zap.String("path", ctx.Request.Path),
-		zap.String("method", ctx.Request.Method))
+		zap.String("path", path),
+		zap.String("method", method))
 	graphQLHandler.ServeHTTP(responseWriter, httpReq)
 	if hits, misses := graph.QuoteLoaderMetrics(requestCtx); hits > 0 || misses > 0 {
 		logger.Info("quote target loader usage",
@@ -492,56 +517,71 @@ func handleGraphQL(ctx *lift.Context) error {
 			zap.Int64("misses", misses))
 	}
 	logger.Info("GraphQL handler invocation completed",
-		zap.String("path", ctx.Request.Path),
-		zap.String("method", ctx.Request.Method),
+		zap.String("path", path),
+		zap.String("method", method),
 		zap.Duration("duration", time.Since(handlerStart)))
 
-	return nil
+	return responseWriter.Response(), nil
 }
 
 // handlePlayground serves the GraphQL playground for development
-func handlePlayground(ctx *lift.Context) error {
-	if !cfg.EnablePlayground {
-		return lift.NotFound("Playground not enabled")
+func handlePlayground(ctx *apptheory.Context) (*apptheory.Response, error) {
+	if cfg == nil || !cfg.EnablePlayground {
+		return apptheory.Text(http.StatusNotFound, "Playground not enabled"), nil
+	}
+
+	method := ""
+	path := ""
+	headers := map[string][]string(nil)
+	query := map[string][]string(nil)
+	reqCtx := context.Background()
+	if ctx != nil {
+		method = ctx.Request.Method
+		path = ctx.Request.Path
+		headers = ctx.Request.Headers
+		query = ctx.Request.Query
+		reqCtx = ctx.Context()
 	}
 
 	logger.Info("GraphQL playground request received",
-		zap.String("method", ctx.Request.Method),
-		zap.String("path", ctx.Request.Path))
+		zap.String("method", method),
+		zap.String("path", path))
 
-	// Create HTTP request wrapper
-	liftURL := ctx.Request.URL()
-	parsedURL, _ := url.Parse(liftURL.Path)
+	u := &url.URL{Path: path}
+	q := u.Query()
+	for key, values := range query {
+		for _, value := range values {
+			q.Add(key, value)
+		}
+	}
+	u.RawQuery = q.Encode()
+
 	httpReq := &http.Request{
-		Method: ctx.Request.Method,
-		URL:    parsedURL,
+		Method: method,
+		URL:    u,
 		Header: make(http.Header),
 	}
-	httpReq = httpReq.WithContext(ctx.Request.Context())
+	httpReq = httpReq.WithContext(reqCtx)
 
-	// Copy headers
-	for k, v := range ctx.Request.Headers {
-		httpReq.Header.Set(k, v)
+	for k, values := range headers {
+		for _, value := range values {
+			httpReq.Header.Add(k, value)
+		}
 	}
 
-	// Create response writer
-	responseWriter := &graphQLResponseWriter{
-		liftCtx: ctx,
-		header:  make(http.Header),
-	}
+	responseWriter := newGraphQLResponseWriter()
 
-	// Serve GraphQL playground
 	playgroundHandler := playground.Handler("GraphQL Playground", "/graphql")
 	playgroundHandler.ServeHTTP(responseWriter, httpReq)
 
-	return nil
+	return responseWriter.Response(), nil
 }
 
 // graphQLResponseWriter implements http.ResponseWriter for GraphQL handlers
 type graphQLResponseWriter struct {
-	liftCtx    *lift.Context
 	header     http.Header
 	statusCode int
+	body       []byte
 }
 
 func (w *graphQLResponseWriter) Header() http.Header {
@@ -549,26 +589,42 @@ func (w *graphQLResponseWriter) Header() http.Header {
 }
 
 func (w *graphQLResponseWriter) Write(data []byte) (int, error) {
-	// Copy headers to lift context
-	for k, v := range w.header {
-		if len(v) > 0 {
-			w.liftCtx.Response.Headers[k] = v[0]
-		}
+	if w.statusCode == 0 {
+		w.statusCode = http.StatusOK
 	}
-
-	// Set status code if not already set
-	if w.statusCode != 0 {
-		w.liftCtx.Response.StatusCode = w.statusCode
-	}
-
-	// Write response body
-	w.liftCtx.Response.Body = string(data)
-
+	w.body = append(w.body, data...)
 	return len(data), nil
 }
 
 func (w *graphQLResponseWriter) WriteHeader(statusCode int) {
 	w.statusCode = statusCode
+}
+
+func newGraphQLResponseWriter() *graphQLResponseWriter {
+	return &graphQLResponseWriter{
+		header: make(http.Header),
+	}
+}
+
+func (w *graphQLResponseWriter) Response() *apptheory.Response {
+	status := w.statusCode
+	if status == 0 {
+		status = http.StatusOK
+	}
+
+	headers := map[string][]string{}
+	for key, values := range w.header {
+		if len(values) == 0 {
+			continue
+		}
+		headers[strings.ToLower(key)] = append([]string(nil), values...)
+	}
+
+	return &apptheory.Response{
+		Status:  status,
+		Headers: headers,
+		Body:    append([]byte(nil), w.body...),
+	}
 }
 
 // bytesReader implements io.ReadCloser for request body
@@ -593,33 +649,33 @@ func (r *bytesReader) Close() error {
 // extractBearerToken is now handled by unified auth middleware
 
 // createDataLoaderMiddleware creates DataLoader middleware for N+1 query prevention
-func createDataLoaderMiddleware() lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// Create DataLoaders for this request
-			loaders := graph.NewLoaders(repos, logger)
-			ctx.Set("loaders", loaders)
-			return next.Handle(ctx)
-		})
+func createDataLoaderMiddleware() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			if ctx != nil {
+				// Create DataLoaders for this request.
+				loaders := graph.NewLoaders(repos, logger)
+				ctx.Set("loaders", loaders)
+			}
+			return next(ctx)
+		}
 	}
 }
 
 // createCostTrackingMiddleware creates cost tracking middleware with centralized service integration
-func createCostTrackingMiddleware() lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// Add legacy cost tracker to context for resolver compatibility
-			ctx.Set("cost_tracker", costTracker)
+func createCostTrackingMiddleware() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			if ctx != nil {
+				// Add legacy cost tracker to context for resolver compatibility.
+				ctx.Set("cost_tracker", costTracker)
+			}
 
-			// Track request start
 			start := time.Now()
-
-			err := next.Handle(ctx)
-
-			// Track costs with centralized service
+			resp, err := next(ctx)
 			duration := time.Since(start)
 
-			// Track with centralized cost tracking service
+			// Track with centralized cost tracking service.
 			if costTrackingService != nil {
 				go func() {
 					memoryMB := int64(128) // Default Lambda memory
@@ -629,7 +685,6 @@ func createCostTrackingMiddleware() lift.Middleware {
 						}
 					}
 
-					// Track Lambda execution
 					lambdaOp := cost.LambdaOperation{
 						FunctionName: "graphql",
 						Duration:     duration,
@@ -639,25 +694,28 @@ func createCostTrackingMiddleware() lift.Middleware {
 					if trackErr := costTrackingService.TrackLambdaInvocation(context.Background(), lambdaOp); trackErr != nil {
 						logger.Warn("failed to track GraphQL Lambda cost", zap.Error(trackErr))
 					}
-
-					// Note: DynamoDB costs are tracked at the resolver level via the unified tracker
-					// This middleware focuses on Lambda execution costs
 				}()
 			}
 
-			// Log cost information
+			method := ""
+			path := ""
+			if ctx != nil {
+				method = ctx.Request.Method
+				path = ctx.Request.Path
+			}
+
 			logger.Info("GraphQL request completed",
 				zap.Duration("duration", duration),
-				zap.String("path", ctx.Request.Path),
-				zap.String("method", ctx.Request.Method))
+				zap.String("path", path),
+				zap.String("method", method))
 
-			return err
-		})
+			return resp, err
+		}
 	}
 }
 
 // createAuthMiddleware creates authentication middleware using unified patterns
-func createAuthMiddleware() lift.Middleware {
+func createAuthMiddleware() apptheory.Middleware {
 	// Create OAuth service matching REST authentication semantics
 	if cfg.JWTSecret == "" {
 		logger.Fatal("JWT secret is not configured; cannot initialize GraphQL auth middleware")
@@ -665,135 +723,157 @@ func createAuthMiddleware() lift.Middleware {
 
 	auditLogger := auth.NewAuditLogger(repos, logger, auth.DefaultAuditConfig())
 	oauthService := auth.NewOAuthService(cfg.JWTSecret, cfg, repos, auditLogger)
-	return auth.CreateGraphQLAuthMiddleware(&oauthMiddlewareAdapter{service: oauthService}, logger)
+	adapter := &oauthMiddlewareAdapter{service: oauthService}
+
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			if ctx != nil {
+				authHeader := graphqlHeaderValue(ctx, "authorization")
+				token := strings.TrimSpace(authHeader)
+				if token != "" {
+					token = strings.TrimPrefix(token, "Bearer ")
+					token = strings.TrimPrefix(token, "bearer ")
+					token = strings.TrimSpace(token)
+				}
+
+				if token == "" {
+					ctx.Set("is_authenticated", false)
+				} else {
+					claims, err := adapter.ValidateAccessToken(token)
+					if err != nil || claims == nil {
+						ctx.Set("is_authenticated", false)
+						logger.Warn("optional authentication failed - header present but validation failed",
+							zap.String("service", "graphql"),
+							zap.String("path", ctx.Request.Path),
+							zap.Bool("has_auth_header", true),
+						)
+					} else {
+						ctx.Set("claims", claims)
+						ctx.Set("username", claims.GetUsername())
+						ctx.Set("is_authenticated", true)
+					}
+				}
+			}
+
+			return next(ctx)
+		}
+	}
 }
 
 func main() {
-	// Create a new Lift application
-	app := lift.New()
-	if cfg.DebugMode {
-		app = lift.New(lift.WithDebug())
-	}
+	app := buildApp(logger)
 
-	// Add global middleware in correct order
-	// 1. Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
+}
 
-	// Apply strict security middleware for web clients
-	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeAPI, logger)
+func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
+	app := apptheory.New(
+		apptheory.WithCORS(apptheory.CORSConfig{
+			AllowedOrigins:   []string{"*"},
+			AllowCredentials: false,
+			AllowHeaders: []string{
+				"Accept",
+				"Authorization",
+				"Content-Type",
+				"User-Agent",
+				"X-Forwarded-For",
+				"X-Forwarded-Proto",
+			},
+		}),
+		apptheory.WithLimits(apptheory.Limits{
+			MaxRequestBytes:  1024 * 1024,
+			MaxResponseBytes: 0,
+		}),
+	)
+
+	// Panic recovery middleware (MUST be first to catch all panics).
+	app.Use(graphqlPanicRecovery(lambdaLogger))
 
 	// Block GraphQL POST requests until instance activation completes to prevent mutations.
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			if strings.EqualFold(ctx.Request.Method, http.MethodPost) {
-				state, err := repos.Instance().GetInstanceState(ctx.Context)
-				if err != nil || state.Locked {
-					ctx.Response.StatusCode = http.StatusForbidden
-					return ctx.JSON(map[string]any{
-						"errors": []map[string]any{
-							{"message": "instance is locked"},
-						},
-					})
-				}
+	app.Use(graphqlInstanceLockMiddleware())
+
+	// Request ID middleware.
+	app.Use(func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			if ctx != nil {
+				ctx.Set("requestID", graphqlRequestID(ctx, "graphql"))
 			}
-			return next.Handle(ctx)
-		})
+			return next(ctx)
+		}
 	})
 
-	// Timeout middleware
-	app.Use(liftMiddleware.TimeoutMiddleware(liftMiddleware.TimeoutConfig{
-		DefaultTimeout: 30 * time.Second,
-	}))
+	// Security headers middleware (web-friendly).
+	app.Use(graphqlSecurityHeaders())
 
-	// Request ID middleware
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			requestID := fmt.Sprintf("graphql-%d", time.Now().UnixNano())
-			ctx.Set("requestID", requestID)
-			return next.Handle(ctx)
-		})
-	})
+	// Authentication middleware.
+	app.Use(createAuthMiddleware())
 
-	// Logging middleware
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+	// Cost tracking middleware.
+	app.Use(createCostTrackingMiddleware())
+
+	// DataLoader middleware.
+	app.Use(createDataLoaderMiddleware())
+
+	// Logging middleware.
+	app.Use(func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			start := time.Now()
-			path := ctx.Request.Path
-			method := ctx.Request.Method
-			err := next.Handle(ctx)
+			resp, err := next(ctx)
+
+			requestID := graphqlContextRequestID(ctx)
+			hasError := err != nil
+			if !hasError && resp != nil && resp.Status >= 400 {
+				hasError = true
+			}
+
+			method := ""
+			path := ""
+			status := 0
+			if ctx != nil {
+				method = ctx.Request.Method
+				path = ctx.Request.Path
+			}
+			if resp != nil {
+				status = resp.Status
+			}
+
 			logger.Info("GraphQL request completed",
-				zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+				zap.String("request_id", requestID),
 				zap.String("method", method),
 				zap.String("path", path),
 				zap.Duration("duration", time.Since(start)),
-				zap.Int("status", ctx.Response.StatusCode))
-			return err
-		})
-	})
+				zap.Int("status", status),
+				zap.Bool("has_error", hasError),
+			)
 
-	// Recovery middleware
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Error("Panic recovered", zap.Any("panic", r))
-					ctx.Response.StatusCode = 500
-					_ = ctx.JSON(map[string]interface{}{
-						"errors": []map[string]interface{}{
-							{"message": "Internal server error"},
-						},
-					})
-				}
-			}()
-			return next.Handle(ctx)
-		})
-	})
-
-	// Unified error handling middleware
-	app.Use(common.CreateGraphQLErrorMiddleware(logger))
-
-	// Authentication middleware
-	app.Use(createAuthMiddleware())
-
-	// Cost tracking middleware
-	app.Use(createCostTrackingMiddleware())
-
-	// DataLoader middleware
-	app.Use(createDataLoaderMiddleware())
-
-	// EMF performance monitoring middleware
-	if emfMetricsService != nil {
-		if emfService, ok := emfMetricsService.(*observability.EMFMetricsService); ok {
-			app.Use(observability.CreateEMFPerformanceMonitoringMiddleware(emfService))
+			return resp, err
 		}
+	})
+
+	app.Post("/graphql", handleGraphQL)
+	app.Get("/graphql", handleGraphQL)
+	app.Post("/api/graphql", handleGraphQL)
+	app.Get("/api/graphql", handleGraphQL)
+
+	optionsHandler := func(*apptheory.Context) (*apptheory.Response, error) {
+		return &apptheory.Response{Status: http.StatusNoContent}, nil
 	}
+	app.Options("/graphql", optionsHandler)
+	app.Options("/api/graphql", optionsHandler)
 
-	// Configure GraphQL routes
-	_ = app.POST("/graphql", handleGraphQL)
-	_ = app.GET("/graphql", handleGraphQL)
-	_ = app.POST("/api/graphql", handleGraphQL)
-	_ = app.GET("/api/graphql", handleGraphQL)
+	// GraphQL playground (development only).
+	app.Get("/playground", handlePlayground)
 
-	// OPTIONS handlers for CORS preflight (CORS headers set by middleware)
-	optionsHandler := func(ctx *lift.Context) error {
-		// CORS headers are already set by middleware, just return 204 No Content
-		return ctx.Status(204).Text("")
-	}
-	_ = app.Handle("OPTIONS", "/graphql", optionsHandler)
-	_ = app.Handle("OPTIONS", "/api/graphql", optionsHandler)
+	// WebSocket endpoint for subscriptions (HTTP route; actual WebSockets handled by the dedicated `graphql-ws` Lambda).
+	app.Get("/subscriptions", handleGraphQL)
 
-	// GraphQL playground (development only)
-	_ = app.GET("/playground", handlePlayground)
-
-	// WebSocket endpoint for subscriptions
-	_ = app.GET("/subscriptions", handleGraphQL) // GraphQL handler supports WebSocket
-
-	// Health check endpoint
-	_ = app.GET("/health", func(ctx *lift.Context) error {
-		return ctx.JSON(map[string]interface{}{
+	app.Get("/health", func(*apptheory.Context) (*apptheory.Response, error) {
+		return apptheory.JSON(http.StatusOK, map[string]interface{}{
 			"status":      "healthy",
 			"service":     "graphql",
-			"version":     "lift-dynamorm",
+			"version":     "apptheory-dynamorm",
 			"uptime":      time.Since(initTime).String(),
 			"environment": cfg.Stage,
 			"features": map[string]bool{
@@ -806,25 +886,145 @@ func main() {
 		})
 	})
 
-	// Ready endpoint for load balancers
-	_ = app.GET("/ready", func(ctx *lift.Context) error {
-		return ctx.JSON(map[string]interface{}{
+	app.Get("/ready", func(*apptheory.Context) (*apptheory.Response, error) {
+		return apptheory.JSON(http.StatusOK, map[string]interface{}{
 			"ready":     true,
 			"timestamp": time.Now().Unix(),
 		})
 	})
 
 	logger.Info("GraphQL service starting",
-		zap.String("version", "lift-dynamorm"),
+		zap.String("version", "apptheory-dynamorm"),
 		zap.Bool("enabled", true),
 		zap.String("status", "ready"),
 		zap.Bool("playground", cfg.EnablePlayground),
 		zap.Bool("debug", cfg.DebugMode))
 
-	// Use standardized Lambda handler with observability
-	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
-		return app.HandleRequest(ctx, event)
-	})
+	return app
+}
 
-	lambdaStartFn(standardHandler)
+func graphqlPanicRecovery(logger *zap.Logger) apptheory.Middleware {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (resp *apptheory.Response, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error("panic recovered",
+						zap.String("request_id", graphqlContextRequestID(ctx)),
+						zap.Any("panic", r),
+					)
+					resp = graphqlErrorResponse(http.StatusInternalServerError, "Internal server error")
+					err = nil
+				}
+			}()
+			return next(ctx)
+		}
+	}
+}
+
+func graphqlInstanceLockMiddleware() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			if ctx == nil {
+				return next(ctx)
+			}
+			if !strings.EqualFold(ctx.Request.Method, http.MethodPost) {
+				return next(ctx)
+			}
+			if ctx.Request.Path != "/graphql" && ctx.Request.Path != "/api/graphql" {
+				return next(ctx)
+			}
+
+			if repos == nil || repos.Instance() == nil {
+				return graphqlErrorResponse(http.StatusForbidden, "instance is locked"), nil
+			}
+
+			state, err := repos.Instance().GetInstanceState(ctx.Context())
+			if err != nil || state == nil || state.Locked {
+				return graphqlErrorResponse(http.StatusForbidden, "instance is locked"), nil
+			}
+			return next(ctx)
+		}
+	}
+}
+
+func graphqlSecurityHeaders() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			resp, err := next(ctx)
+			if resp == nil {
+				return resp, err
+			}
+			if resp.Headers == nil {
+				resp.Headers = map[string][]string{}
+			}
+			resp.Headers["x-content-type-options"] = []string{"nosniff"}
+			resp.Headers["x-frame-options"] = []string{"DENY"}
+			resp.Headers["referrer-policy"] = []string{"strict-origin-when-cross-origin"}
+			resp.Headers["cross-origin-resource-policy"] = []string{"same-origin"}
+			resp.Headers["x-robots-tag"] = []string{"noindex, nofollow"}
+			return resp, err
+		}
+	}
+}
+
+func graphqlHeaderValue(ctx *apptheory.Context, key string) string {
+	if ctx == nil {
+		return ""
+	}
+	key = strings.ToLower(strings.TrimSpace(key))
+	values := ctx.Request.Headers[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func graphqlExtractAuthHeader(ctx *apptheory.Context) string {
+	return graphqlHeaderValue(ctx, "authorization")
+}
+
+func graphqlPath(ctx *apptheory.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	return ctx.Request.Path
+}
+
+func graphqlRequestID(ctx *apptheory.Context, prefix string) string {
+	if ctx != nil && strings.TrimSpace(ctx.RequestID) != "" {
+		return ctx.RequestID
+	}
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = "graphql"
+	}
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+}
+
+func graphqlContextRequestID(ctx *apptheory.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if rid, ok := ctx.Get("requestID").(string); ok && strings.TrimSpace(rid) != "" {
+		return strings.TrimSpace(rid)
+	}
+	if strings.TrimSpace(ctx.RequestID) != "" {
+		return ctx.RequestID
+	}
+	return ""
+}
+
+func graphqlErrorResponse(status int, message string) *apptheory.Response {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "Internal server error"
+	}
+	return apptheory.MustJSON(status, map[string]any{
+		"errors": []map[string]any{
+			{"message": message},
+		},
+	})
 }
