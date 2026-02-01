@@ -8,7 +8,6 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/storage/converters"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -279,11 +278,6 @@ func registerStorageConverters(db dynamormCore.DB) error {
 	if db == nil {
 		return fmt.Errorf("dynamorm DB is nil")
 	}
-
-	if err := converters.RegisterContextConverters(db); err != nil {
-		return fmt.Errorf("register context converter: %w", err)
-	}
-
 	return nil
 }
 

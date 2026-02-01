@@ -50,7 +50,7 @@ func (db *extendedMockDB) TransactWrite(_ context.Context, fn func(core.Transact
 }
 
 func TestRegisterStorageConverters_NonExtendedDB_Round22(t *testing.T) {
-	require.Error(t, registerStorageConverters(new(mocks.MockDB)))
+	require.NoError(t, registerStorageConverters(new(mocks.MockDB)))
 }
 
 func TestNewRepositoryFactory_Success_Round22(t *testing.T) {
