@@ -3,11 +3,7 @@ package activitypub
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"time"
-
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 // ContextValue wraps the ActivityPub @context field to support both legacy string
@@ -84,64 +80,6 @@ func (c ContextValue) With(values ...any) ContextValue {
 	clone := c.Clone()
 	clone = append(clone, values...)
 	return clone
-}
-
-// MarshalDynamoDBAttributeValue converts the context to the DynamoDB list representation.
-func (c ContextValue) MarshalDynamoDBAttributeValue() (types.AttributeValue, error) {
-	if len(c) == 0 {
-		return &types.AttributeValueMemberNULL{Value: true}, nil
-	}
-
-	items := make([]types.AttributeValue, 0, len(c))
-	for _, value := range c {
-		av, err := attributevalue.Marshal(value)
-		if err != nil {
-			return nil, fmt.Errorf("marshal context entry: %w", err)
-		}
-		items = append(items, av)
-	}
-	return &types.AttributeValueMemberL{Value: items}, nil
-}
-
-// UnmarshalDynamoDBAttributeValue handles both legacy string and modern list encodings.
-func (c *ContextValue) UnmarshalDynamoDBAttributeValue(av types.AttributeValue) error {
-	switch v := av.(type) {
-	case *types.AttributeValueMemberNULL:
-		*c = nil
-		return nil
-	case *types.AttributeValueMemberS:
-		*c = ContextValue{v.Value}
-		return nil
-	case *types.AttributeValueMemberL:
-		if len(v.Value) == 0 {
-			*c = ContextValue{}
-			return nil
-		}
-		values := make(ContextValue, len(v.Value))
-		for i, item := range v.Value {
-			var decoded any
-			if err := attributevalue.Unmarshal(item, &decoded); err != nil {
-				return fmt.Errorf("unmarshal context entry %d: %w", i, err)
-			}
-			values[i] = decoded
-		}
-		*c = values
-		return nil
-	default:
-		var decoded any
-		if err := attributevalue.Unmarshal(av, &decoded); err != nil {
-			return fmt.Errorf("unmarshal context (generic): %w", err)
-		}
-		switch val := decoded.(type) {
-		case []any:
-			*c = ContextValue(val)
-		case string:
-			*c = ContextValue{val}
-		default:
-			*c = ContextValue{val}
-		}
-		return nil
-	}
 }
 
 // DefaultContext represents the bare ActivityStreams context.
