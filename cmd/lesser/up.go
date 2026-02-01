@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	"github.com/theory-cloud/tabletheory"
+	theorydb "github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/session"
 )
 
 type upArgs struct {
@@ -48,7 +50,7 @@ type upEnv struct {
 	accountID         string
 	hostedZone        hostedZone
 	stages            []naming.Stage
-	ddb               *dynamodb.Client
+	newDB             bootstrapDBFactory
 	bootstrap         bootstrapWallet
 	bootstrapRequired bool
 	stateDir          string
@@ -91,9 +93,18 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 	}
 
 	stages := upStages(args.WithStaging)
-	ddb := dynamodb.NewFromConfig(awsCfg)
+	newDB := bootstrapDBFactory(func() (theorydb.DB, error) {
+		db, dbErr := tabletheory.New(session.Config{
+			Region:              awsCfg.Region,
+			CredentialsProvider: awsCfg.Credentials,
+		})
+		if dbErr != nil {
+			return nil, dbErr
+		}
+		return db, nil
+	})
 
-	existingBootstrapAddr, bootstrapRequired, err := inspectBootstrapRequirementsFn(ctx, ddb, app, stages)
+	existingBootstrapAddr, bootstrapRequired, err := inspectBootstrapRequirementsFn(ctx, newDB, app, stages)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +156,7 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		accountID:         accountID,
 		hostedZone:        hostedZone,
 		stages:            stages,
-		ddb:               ddb,
+		newDB:             newDB,
 		bootstrap:         bootstrap,
 		bootstrapRequired: bootstrapRequired,
 		stateDir:          stateDir,
@@ -273,7 +284,7 @@ func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 
 func (e *upEnv) bootstrapStages(ctx context.Context, receipt *upReceipt) error {
 	for _, stage := range e.stages {
-		state, err := ensureStageBootstrapStateFn(ctx, e.ddb, e.app, stage, e.bootstrap.Address)
+		state, err := ensureStageBootstrapStateFn(ctx, e.newDB, e.app, stage, e.bootstrap.Address)
 		if err != nil {
 			return err
 		}

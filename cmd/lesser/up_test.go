@@ -54,7 +54,7 @@ func TestPrepareUpEnv_RequiresOutWhenBootstrapGenerated(t *testing.T) {
 	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
 		return hostedZone{ID: "Z1", Name: "example.com"}, nil
 	}
-	inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+	inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
 		return "", true, nil
 	}
 	determineBootstrapWalletFn = func(string) (bootstrapWallet, error) {
@@ -111,7 +111,7 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
 		return hostedZone{ID: "Z1", Name: "example.com"}, nil
 	}
-	inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+	inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
 		return "0xabc", false, nil
 	}
 
@@ -124,7 +124,7 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 		return cdkDeployResult{StackName: req.StackName, Outputs: map[string]string{"FrontendDistributionId": "DIST"}}, nil
 	}
 
-	ensureStageBootstrapStateFn = func(context.Context, dynamodbAPI, string, naming.Stage, string) (stageBootstrapState, error) {
+	ensureStageBootstrapStateFn = func(context.Context, bootstrapDBFactory, string, naming.Stage, string) (stageBootstrapState, error) {
 		return stageBootstrapState{Locked: true, Address: "0xabc", Updated: true}, nil
 	}
 
@@ -227,7 +227,7 @@ func TestPrepareUpEnv_OutPathLoadsLocalBootstrapMaterial(t *testing.T) {
 	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
 		return hostedZone{ID: "Z1", Name: "example.com"}, nil
 	}
-	inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+	inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
 		return "0xabc", false, nil
 	}
 
@@ -308,7 +308,7 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
 		return hostedZone{ID: "Z1", Name: "example.com"}, nil
 	}
-	inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+	inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
 		return "0xabc", false, nil
 	}
 
@@ -360,18 +360,18 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 	})
 
 	t.Run("inspect bootstrap requirements error", func(t *testing.T) {
-		inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+		inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
 			return "", false, errSentinel
 		}
 		_, err := prepareUpEnv(context.Background(), base)
 		require.ErrorIs(t, err, errSentinel)
-		inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+		inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
 			return "0xabc", false, nil
 		}
 	})
 
 	t.Run("determine bootstrap wallet error", func(t *testing.T) {
-		inspectBootstrapRequirementsFn = func(context.Context, dynamodbAPI, string, []naming.Stage) (string, bool, error) {
+		inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
 			return "", true, nil
 		}
 		determineBootstrapWalletFn = func(string) (bootstrapWallet, error) { return bootstrapWallet{}, errSentinel }
