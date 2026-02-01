@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -16,9 +18,8 @@ import (
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	dynamormMocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	pkgtypes "github.com/pay-theory/dynamorm/pkg/types"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -128,7 +129,9 @@ func (db *extendedMockDB) WithContext(_ context.Context) dynamormCore.DB { retur
 
 func (db *extendedMockDB) AutoMigrateWithOptions(_ any, _ ...any) error { return nil }
 
-func (db *extendedMockDB) RegisterTypeConverter(_ reflect.Type, _ pkgtypes.CustomConverter) error { return nil }
+func (db *extendedMockDB) RegisterTypeConverter(_ reflect.Type, _ pkgtypes.CustomConverter) error {
+	return nil
+}
 
 func (db *extendedMockDB) CreateTable(_ any, _ ...any) error { return nil }
 
@@ -148,6 +151,14 @@ func (db *extendedMockDB) Transact() dynamormCore.TransactionBuilder { return ni
 
 func (db *extendedMockDB) TransactWrite(_ context.Context, fn func(dynamormCore.TransactionBuilder) error) error {
 	return fn(nil)
+}
+
+func mustUnmarshalBody[T any](t *testing.T, resp *apptheory.Response) T {
+	t.Helper()
+	require.NotNil(t, resp)
+	var out T
+	require.NoError(t, json.Unmarshal(resp.Body, &out))
+	return out
 }
 
 func TestCollectionsHelpers_Round12(t *testing.T) {
@@ -181,7 +192,7 @@ func TestHandleLikedCollection_LockedEmpty_Round12(t *testing.T) {
 	logger = zap.NewNop()
 
 	actor := &activitypub.Actor{
-		BaseObject:         activitypub.BaseObject{ID: cfg.ActorURL("alice")},
+		BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice")},
 		PreferredUsername: "alice",
 	}
 
@@ -191,25 +202,29 @@ func TestHandleLikedCollection_LockedEmpty_Round12(t *testing.T) {
 		likeRepo:     &fakeLikeRepo{},
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/users/alice/liked"}))
-	ctx.SetParam("username", "alice")
-	require.NoError(t, handler.handleLikedCollection(ctx))
-	require.Equal(t, contentTypeActivityJSON, ctx.Response.Headers["Content-Type"])
-	require.Equal(t, cacheControlMaxAge300, ctx.Response.Headers["Cache-Control"])
-	collection, ok := ctx.Response.Body.(*activitypub.OrderedCollection)
-	require.True(t, ok)
+	resp, err := handler.handleLikedCollection(&apptheory.Context{
+		Request: apptheory.Request{Method: "GET", Path: "/users/alice/liked"},
+		Params:  map[string]string{"username": "alice"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{contentTypeActivityJSON}, resp.Headers["content-type"])
+	require.Equal(t, []string{cacheControlMaxAge300}, resp.Headers["cache-control"])
+	collection := mustUnmarshalBody[activitypub.OrderedCollection](t, resp)
 	require.Equal(t, 0, collection.TotalItems)
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:      "GET",
-		Path:        "/users/alice/liked",
-		QueryParams: map[string]string{"page": "1"},
-	}))
-	ctx.SetParam("username", "alice")
-	require.NoError(t, handler.handleLikedCollection(ctx))
-	page, ok := ctx.Response.Body.(*activitypub.OrderedCollectionPage)
+	resp, err = handler.handleLikedCollection(&apptheory.Context{
+		Request: apptheory.Request{
+			Method: "GET",
+			Path:   "/users/alice/liked",
+			Query:  map[string][]string{"page": {"1"}},
+		},
+		Params: map[string]string{"username": "alice"},
+	})
+	require.NoError(t, err)
+	page := mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
+	items, ok := page.OrderedItems.([]any)
 	require.True(t, ok)
-	require.Len(t, page.OrderedItems, 0)
+	require.Len(t, items, 0)
 }
 
 func TestReturnCollectionAndPages_Round12(t *testing.T) {
@@ -223,25 +238,23 @@ func TestReturnCollectionAndPages_Round12(t *testing.T) {
 	logger = zap.NewNop()
 
 	actor := &activitypub.Actor{
-		BaseObject:         activitypub.BaseObject{ID: cfg.ActorURL("alice")},
+		BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice")},
 		PreferredUsername: "alice",
 	}
 
 	rel := &fakeRelationshipRepo{countFollowers: 2}
 	ch := &CollectionsHandler{relationshipRepo: rel, likeRepo: &fakeLikeRepo{}, actorRepo: &fakeActorRepo{actor: actor}}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/"}))
-	require.NoError(t, ch.returnCollection(ctx, actor, collectionTypeFollowers))
-	collection, ok := ctx.Response.Body.(*activitypub.OrderedCollection)
-	require.True(t, ok)
+	resp, err := ch.returnCollection(nil, actor, collectionTypeFollowers)
+	require.NoError(t, err)
+	collection := mustUnmarshalBody[activitypub.OrderedCollection](t, resp)
 	require.Equal(t, 2, collection.TotalItems)
 	require.NotEmpty(t, collection.First)
-	require.Equal(t, contentTypeActivityJSON, ctx.Response.Headers["Content-Type"])
+	require.Equal(t, []string{contentTypeActivityJSON}, resp.Headers["content-type"])
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/"}))
-	require.NoError(t, ch.returnCollectionPage(ctx, actor, collectionTypeFollowers, []string{"bob"}, nil, "", "next", 20))
-	page, ok := ctx.Response.Body.(*activitypub.OrderedCollectionPage)
-	require.True(t, ok)
+	resp, err = ch.returnCollectionPage(nil, actor, collectionTypeFollowers, []string{"bob"}, nil, "", "next", 20)
+	require.NoError(t, err)
+	page := mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
 	items, ok := page.OrderedItems.([]any)
 	require.True(t, ok)
 	require.Len(t, items, 1)
@@ -249,19 +262,17 @@ func TestReturnCollectionAndPages_Round12(t *testing.T) {
 	require.Equal(t, "https://example.com/users/bob", items[0])
 
 	cfg.Domain = "https://example.com"
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/"}))
-	require.NoError(t, ch.returnCollectionPage(ctx, actor, collectionTypeFollowers, []string{"bob"}, nil, "cur", "", 10))
-	page, ok = ctx.Response.Body.(*activitypub.OrderedCollectionPage)
-	require.True(t, ok)
+	resp, err = ch.returnCollectionPage(nil, actor, collectionTypeFollowers, []string{"bob"}, nil, "cur", "", 10)
+	require.NoError(t, err)
+	page = mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
 	require.Contains(t, page.Prev, "dir=prev")
 	items, ok = page.OrderedItems.([]any)
 	require.True(t, ok)
 	require.Equal(t, "https://example.com/users/bob", items[0])
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/"}))
-	require.NoError(t, ch.returnCollectionPage(ctx, actor, collectionTypeLiked, nil, []*storage.Like{{ID: "1", Object: "obj-1"}}, "", "", 10))
-	page, ok = ctx.Response.Body.(*activitypub.OrderedCollectionPage)
-	require.True(t, ok)
+	resp, err = ch.returnCollectionPage(nil, actor, collectionTypeLiked, nil, []*storage.Like{{ID: "1", Object: "obj-1"}}, "", "", 10)
+	require.NoError(t, err)
+	page = mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
 	items, ok = page.OrderedItems.([]any)
 	require.True(t, ok)
 	require.Equal(t, "obj-1", items[0])
@@ -278,7 +289,7 @@ func TestHandleReverseDirection_Round12(t *testing.T) {
 	logger = zap.NewNop()
 
 	actor := &activitypub.Actor{
-		BaseObject:         activitypub.BaseObject{ID: cfg.ActorURL("alice")},
+		BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice")},
 		PreferredUsername: "alice",
 	}
 
@@ -293,15 +304,21 @@ func TestHandleReverseDirection_Round12(t *testing.T) {
 		instanceRepo:     &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:      "GET",
-		Path:        "/users/alice/followers",
-		QueryParams: map[string]string{"page": "1", "dir": "prev", "cursor": "before_x", "limit": "2"},
-	}))
-	ctx.SetParam("username", "alice")
-	require.NoError(t, ch.handleFollowersCollection(ctx))
-	page, ok := ctx.Response.Body.(*activitypub.OrderedCollectionPage)
-	require.True(t, ok)
+	resp, err := ch.handleFollowersCollection(&apptheory.Context{
+		Request: apptheory.Request{
+			Method: "GET",
+			Path:   "/users/alice/followers",
+			Query: map[string][]string{
+				"page":   {"1"},
+				"dir":    {"prev"},
+				"cursor": {"before_x"},
+				"limit":  {"2"},
+			},
+		},
+		Params: map[string]string{"username": "alice"},
+	})
+	require.NoError(t, err)
+	page := mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
 	require.Contains(t, page.ID, "dir=prev")
 	require.Equal(t, "x", rel.followersCursor)
 }
@@ -326,7 +343,7 @@ func TestCollectionsMain_Round12(t *testing.T) {
 
 	newCollectionsHandlerFn = func() *CollectionsHandler {
 		actor := &activitypub.Actor{
-			BaseObject:         activitypub.BaseObject{ID: cfg.ActorURL("alice")},
+			BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice")},
 			PreferredUsername: "alice",
 		}
 		return &CollectionsHandler{
@@ -340,32 +357,32 @@ func TestCollectionsMain_Round12(t *testing.T) {
 	called := false
 	lambdaStartFn = func(handler any) {
 		called = true
-		fn, ok := handler.(func(context.Context, interface{}) (interface{}, error))
+		fn, ok := handler.(func(context.Context, json.RawMessage) (any, error))
 		require.True(t, ok)
 
-		event := map[string]any{
-			"version":         "2.0",
-			"routeKey":        "GET /users/alice/followers",
-			"rawPath":         "/users/alice/followers",
-			"rawQueryString":  "page=1",
-			"queryStringParameters": map[string]any{
-				"page": "1",
-			},
-			"requestContext": map[string]any{
-				"requestId": "req",
-				"http": map[string]any{
-					"method": "GET",
-					"path":   "/users/alice/followers",
+		event := events.APIGatewayV2HTTPRequest{
+			Version:               "2.0",
+			RouteKey:              "GET /users/alice/followers",
+			RawPath:               "/users/alice/followers",
+			RawQueryString:        "page=1",
+			QueryStringParameters: map[string]string{"page": "1"},
+			RequestContext: events.APIGatewayV2HTTPRequestContext{
+				RequestID: "req",
+				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+					Method: "GET",
+					Path:   "/users/alice/followers",
 				},
 			},
 		}
 
-		resp, err := fn(context.Background(), event)
+		raw, err := json.Marshal(event)
 		require.NoError(t, err)
-		liftResp, ok := resp.(*lift.Response)
+		resp, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+		lambdaResp, ok := resp.(events.APIGatewayV2HTTPResponse)
 		require.True(t, ok)
-		require.Equal(t, 200, liftResp.StatusCode)
-		require.Equal(t, contentTypeActivityJSON, liftResp.Headers["Content-Type"])
+		require.Equal(t, 200, lambdaResp.StatusCode)
+		require.Equal(t, contentTypeActivityJSON, lambdaResp.Headers["content-type"])
 	}
 
 	main()
@@ -383,7 +400,7 @@ func TestHandleCollection_MoreBranches_Round12(t *testing.T) {
 	logger = zap.NewNop()
 
 	actor := &activitypub.Actor{
-		BaseObject:         activitypub.BaseObject{ID: cfg.ActorURL("alice")},
+		BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice")},
 		PreferredUsername: "alice",
 	}
 
@@ -392,13 +409,12 @@ func TestHandleCollection_MoreBranches_Round12(t *testing.T) {
 			actorRepo:    &fakeActorRepo{err: common.ActorNotFoundError{Username: "alice"}},
 			instanceRepo: &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/users/alice/followers"}))
-		ctx.SetParam("username", "alice")
-		err := ch.handleFollowersCollection(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 404, liftErr.StatusCode)
+		resp, err := ch.handleFollowersCollection(&apptheory.Context{
+			Request: apptheory.Request{Method: "GET", Path: "/users/alice/followers"},
+			Params:  map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		require.Equal(t, 404, resp.Status)
 	})
 
 	t.Run("relationship page error", func(t *testing.T) {
@@ -408,17 +424,16 @@ func TestHandleCollection_MoreBranches_Round12(t *testing.T) {
 			instanceRepo:     &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
 			likeRepo:         &fakeLikeRepo{},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:      "GET",
-			Path:        "/users/alice/followers",
-			QueryParams: map[string]string{"page": "1"},
-		}))
-		ctx.SetParam("username", "alice")
-		err := ch.handleFollowersCollection(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 500, liftErr.StatusCode)
+		resp, err := ch.handleFollowersCollection(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: "GET",
+				Path:   "/users/alice/followers",
+				Query:  map[string][]string{"page": {"1"}},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		require.Equal(t, 500, resp.Status)
 	})
 
 	t.Run("liked page converts model likes", func(t *testing.T) {
@@ -432,15 +447,16 @@ func TestHandleCollection_MoreBranches_Round12(t *testing.T) {
 			}}},
 			relationshipRepo: &fakeRelationshipRepo{},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:      "GET",
-			Path:        "/users/alice/liked",
-			QueryParams: map[string]string{"page": "1"},
-		}))
-		ctx.SetParam("username", "alice")
-		require.NoError(t, ch.handleLikedCollection(ctx))
-		page, ok := ctx.Response.Body.(*activitypub.OrderedCollectionPage)
-		require.True(t, ok)
+		resp, err := ch.handleLikedCollection(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: "GET",
+				Path:   "/users/alice/liked",
+				Query:  map[string][]string{"page": {"1"}},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		page := mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
 		items, ok := page.OrderedItems.([]any)
 		require.True(t, ok)
 		require.Equal(t, "obj-1", items[0])
@@ -453,13 +469,16 @@ func TestHandleCollection_MoreBranches_Round12(t *testing.T) {
 			instanceRepo:     &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
 			likeRepo:         &fakeLikeRepo{},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:      "GET",
-			Path:        "/users/alice/following",
-			QueryParams: map[string]string{"page": "1"},
-		}))
-		ctx.SetParam("username", "alice")
-		require.NoError(t, ch.handleFollowingCollection(ctx))
+		resp, err := ch.handleFollowingCollection(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: "GET",
+				Path:   "/users/alice/following",
+				Query:  map[string][]string{"page": {"1"}},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		require.Equal(t, 200, resp.Status)
 	})
 
 	t.Run("collection metadata when page not requested", func(t *testing.T) {
@@ -470,11 +489,12 @@ func TestHandleCollection_MoreBranches_Round12(t *testing.T) {
 			instanceRepo:     &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
 			likeRepo:         &fakeLikeRepo{},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/users/alice/followers"}))
-		ctx.SetParam("username", "alice")
-		require.NoError(t, ch.handleFollowersCollection(ctx))
-		collection, ok := ctx.Response.Body.(*activitypub.OrderedCollection)
-		require.True(t, ok)
+		resp, err := ch.handleFollowersCollection(&apptheory.Context{
+			Request: apptheory.Request{Method: "GET", Path: "/users/alice/followers"},
+			Params:  map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		collection := mustUnmarshalBody[activitypub.OrderedCollection](t, resp)
 		require.Equal(t, 1, collection.TotalItems)
 	})
 }
@@ -512,9 +532,9 @@ func TestInitializeCollectionsAndNewHandler_Round12(t *testing.T) {
 
 	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
 		return &common.LambdaContext{
-			Config:   cfg,
-			Logger:   nil,
-			Repos:    repos,
+			Config:    cfg,
+			Logger:    nil,
+			Repos:     repos,
 			StartTime: time.Now(),
 		}
 	}
@@ -534,7 +554,7 @@ func TestReturnCollection_MoreBranches_Round12(t *testing.T) {
 	logger = zap.NewNop()
 
 	actor := &activitypub.Actor{
-		BaseObject:         activitypub.BaseObject{ID: cfg.ActorURL("alice")},
+		BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice")},
 		PreferredUsername: "alice",
 	}
 
@@ -543,40 +563,37 @@ func TestReturnCollection_MoreBranches_Round12(t *testing.T) {
 		likeRepo:         &fakeLikeRepo{count: 2},
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/"}))
-	require.NoError(t, ch.returnCollection(ctx, actor, collectionTypeFollowing))
-	collection, ok := ctx.Response.Body.(*activitypub.OrderedCollection)
-	require.True(t, ok)
+	resp, err := ch.returnCollection(nil, actor, collectionTypeFollowing)
+	require.NoError(t, err)
+	collection := mustUnmarshalBody[activitypub.OrderedCollection](t, resp)
 	require.Equal(t, 1, collection.TotalItems)
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/"}))
-	require.NoError(t, ch.returnCollection(ctx, actor, collectionTypeLiked))
-	collection, ok = ctx.Response.Body.(*activitypub.OrderedCollection)
-	require.True(t, ok)
+	resp, err = ch.returnCollection(nil, actor, collectionTypeLiked)
+	require.NoError(t, err)
+	collection = mustUnmarshalBody[activitypub.OrderedCollection](t, resp)
 	require.Equal(t, 2, collection.TotalItems)
 
 	ch.relationshipRepo = &fakeRelationshipRepo{countFollowers: 0}
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/"}))
-	require.NoError(t, ch.returnCollection(ctx, actor, collectionTypeFollowers))
-	collection, ok = ctx.Response.Body.(*activitypub.OrderedCollection)
-	require.True(t, ok)
+	resp, err = ch.returnCollection(nil, actor, collectionTypeFollowers)
+	require.NoError(t, err)
+	collection = mustUnmarshalBody[activitypub.OrderedCollection](t, resp)
 	require.Empty(t, collection.First)
 
 	ch.relationshipRepo = &fakeRelationshipRepo{err: errors.New("boom")}
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/"}))
-	err := ch.returnCollection(ctx, actor, collectionTypeFollowers)
-	require.Error(t, err)
+	resp, err = ch.returnCollection(nil, actor, collectionTypeFollowers)
+	require.NoError(t, err)
+	require.Equal(t, 500, resp.Status)
 
 	ch.relationshipRepo = &fakeRelationshipRepo{err: errors.New("boom")}
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/"}))
-	err = ch.returnCollection(ctx, actor, collectionTypeFollowing)
-	require.Error(t, err)
+	resp, err = ch.returnCollection(nil, actor, collectionTypeFollowing)
+	require.NoError(t, err)
+	require.Equal(t, 500, resp.Status)
 
 	ch.relationshipRepo = &fakeRelationshipRepo{countFollowers: 1}
 	ch.likeRepo = &fakeLikeRepo{err: errors.New("boom")}
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/"}))
-	err = ch.returnCollection(ctx, actor, collectionTypeLiked)
-	require.Error(t, err)
+	resp, err = ch.returnCollection(nil, actor, collectionTypeLiked)
+	require.NoError(t, err)
+	require.Equal(t, 500, resp.Status)
 }
 
 func TestHandleReverseDirection_MoreBranches_Round12(t *testing.T) {
@@ -590,7 +607,7 @@ func TestHandleReverseDirection_MoreBranches_Round12(t *testing.T) {
 	logger = zap.NewNop()
 
 	actor := &activitypub.Actor{
-		BaseObject:         activitypub.BaseObject{ID: cfg.ActorURL("alice")},
+		BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice")},
 		PreferredUsername: "alice",
 	}
 
@@ -603,15 +620,20 @@ func TestHandleReverseDirection_MoreBranches_Round12(t *testing.T) {
 			instanceRepo:     &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
 		}
 
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:      "GET",
-			Path:        "/users/alice/following",
-			QueryParams: map[string]string{"page": "1", "dir": "prev", "cursor": "before_y"},
-		}))
-		ctx.SetParam("username", "alice")
-		require.NoError(t, ch.handleFollowingCollection(ctx))
-		page, ok := ctx.Response.Body.(*activitypub.OrderedCollectionPage)
-		require.True(t, ok)
+		resp, err := ch.handleFollowingCollection(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: "GET",
+				Path:   "/users/alice/following",
+				Query: map[string][]string{
+					"page":   {"1"},
+					"dir":    {"prev"},
+					"cursor": {"before_y"},
+				},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		page := mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
 		require.Contains(t, page.ID, "dir=prev")
 		require.Equal(t, "y", rel.followingCursor)
 	})
@@ -627,15 +649,20 @@ func TestHandleReverseDirection_MoreBranches_Round12(t *testing.T) {
 			relationshipRepo: &fakeRelationshipRepo{},
 		}
 
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:      "GET",
-			Path:        "/users/alice/liked",
-			QueryParams: map[string]string{"page": "1", "dir": "prev", "cursor": "before_l1"},
-		}))
-		ctx.SetParam("username", "alice")
-		require.NoError(t, ch.handleLikedCollection(ctx))
-		page, ok := ctx.Response.Body.(*activitypub.OrderedCollectionPage)
-		require.True(t, ok)
+		resp, err := ch.handleLikedCollection(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: "GET",
+				Path:   "/users/alice/liked",
+				Query: map[string][]string{
+					"page":   {"1"},
+					"dir":    {"prev"},
+					"cursor": {"before_l1"},
+				},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		page := mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
 		items, ok := page.OrderedItems.([]any)
 		require.True(t, ok)
 		require.Equal(t, []any{"o2", "o1"}, items)
@@ -653,15 +680,14 @@ func TestReturnCollectionPageReverse_Links_Round12(t *testing.T) {
 	logger = zap.NewNop()
 
 	actor := &activitypub.Actor{
-		BaseObject:         activitypub.BaseObject{ID: cfg.ActorURL("alice")},
+		BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice")},
 		PreferredUsername: "alice",
 	}
 
 	ch := &CollectionsHandler{}
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/"}))
-	require.NoError(t, ch.returnCollectionPageReverse(ctx, actor, collectionTypeFollowers, []string{"bob"}, nil, "before_bob", "prev", "next", 10))
-	page, ok := ctx.Response.Body.(*activitypub.OrderedCollectionPage)
-	require.True(t, ok)
+	resp, err := ch.returnCollectionPageReverse(nil, actor, collectionTypeFollowers, []string{"bob"}, nil, "before_bob", "prev", "next", 10)
+	require.NoError(t, err)
+	page := mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
 	require.NotEmpty(t, page.Next)
 	require.NotEmpty(t, page.Prev)
 }
