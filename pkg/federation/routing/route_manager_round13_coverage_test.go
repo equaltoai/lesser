@@ -287,7 +287,7 @@ func newTestManager(t *testing.T) (*Manager, *FakeFederationInstanceRepository, 
 		loadBalancer:     NewAdaptiveLoadBalancer(logger),
 		thresholdManager: NewRouteThresholdManager(logger, DefaultThresholdConfig()),
 		httpClient:       fakeHTTPDoer{},
-		metrics:          NewRoutingMetrics(nil, "", logger),
+		metrics:          NewRoutingMetrics(nil, logger),
 		cacheTTL:         1 * time.Minute,
 	}
 

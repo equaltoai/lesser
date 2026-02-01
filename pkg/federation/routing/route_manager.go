@@ -243,7 +243,7 @@ func NewManager(
 	)
 
 	// Create routing metrics
-	metrics := NewRoutingMetrics(nil, "", logger)
+	metrics := NewRoutingMetrics(nil, logger)
 
 	var costRecorder federationCostRecorder
 	if costTrackingRepo != nil {

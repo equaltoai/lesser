@@ -2,15 +2,15 @@ package routing
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	fedTypes "github.com/equaltoai/lesser/pkg/federation/types"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -18,17 +18,11 @@ import (
 //
 //nolint:revive // Routing prefix clarifies this is routing-specific metrics
 type RoutingMetrics struct {
-	db        dynamoDBClient
-	tableName string
-	logger    *zap.Logger
+	db     core.DB
+	logger *zap.Logger
 
 	// Local aggregation (synchronous)
 	aggregator *metricsAggregator
-}
-
-type dynamoDBClient interface {
-	Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
-	BatchWriteItem(ctx context.Context, params *dynamodb.BatchWriteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error)
 }
 
 type metricEvent struct {
@@ -117,16 +111,10 @@ type aggregatedGlobalMetrics struct {
 }
 
 // NewRoutingMetrics creates a new metrics tracker
-func NewRoutingMetrics(db *dynamodb.Client, tableName string, logger *zap.Logger) *RoutingMetrics {
-	var client dynamoDBClient
-	if db != nil {
-		client = db
-	}
-
+func NewRoutingMetrics(db core.DB, logger *zap.Logger) *RoutingMetrics {
 	rm := &RoutingMetrics{
-		db:        client,
-		tableName: tableName,
-		logger:    logger,
+		db:     db,
+		logger: logger,
 		aggregator: &metricsAggregator{
 			windowStart:     time.Now(),
 			windowSize:      5 * time.Minute,
@@ -191,52 +179,71 @@ func (rm *RoutingMetrics) RecordHealthCheck(instanceID string, health *fedTypes.
 
 // GetRouteMetrics retrieves metrics for a specific route
 func (rm *RoutingMetrics) GetRouteMetrics(ctx context.Context, routeID string, window time.Duration) (*fedTypes.RouteMetrics, error) {
-	// Query from DynamoDB
-	since := time.Now().Add(-window)
-
-	queryInput := &dynamodb.QueryInput{
-		TableName:              aws.String(rm.tableName),
-		KeyConditionExpression: aws.String("PK = :pk AND SK > :since"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk":    &types.AttributeValueMemberS{Value: fmt.Sprintf("METRICS#ROUTE#%s", routeID)},
-			":since": &types.AttributeValueMemberS{Value: fmt.Sprintf("WINDOW#%d", since.Unix())},
-		},
-		Limit: aws.Int32(100),
+	if rm == nil || rm.db == nil {
+		return nil, errors.Join(ErrQueryRouteMetricsFailed, fmt.Errorf("routing metrics DB is not configured"))
 	}
 
-	result, err := rm.db.Query(ctx, queryInput)
+	since := time.Now().Add(-window)
+	pk := fmt.Sprintf("METRICS#ROUTE#%s", routeID)
+	sinceKey := fmt.Sprintf("WINDOW#%d", since.Unix())
+
+	var windows []*storagemodels.RouteMetricsWindow
+	err := rm.db.WithContext(ctx).Model(&storagemodels.RouteMetricsWindow{}).
+		Where("PK", "=", pk).
+		Where("SK", ">", sinceKey).
+		Limit(100).
+		All(&windows)
 	if err != nil {
-		rm.logger.Error("query route metrics failed",
-			zap.String("route_id", routeID),
-			zap.Duration("window", window),
-			zap.String("operation", "query_route_metrics"),
-			zap.Error(err))
+		if rm.logger != nil {
+			rm.logger.Error("query route metrics failed",
+				zap.String("route_id", routeID),
+				zap.Duration("window", window),
+				zap.String("operation", "query_route_metrics"),
+				zap.Error(err))
+		}
 		return nil, errors.Join(ErrQueryRouteMetricsFailed, err)
 	}
 
-	// Aggregate results
-	metrics := &fedTypes.RouteMetrics{
-		LastUpdated: time.Now(),
-	}
+	metrics := &fedTypes.RouteMetrics{LastUpdated: time.Now()}
 
-	for _, item := range result.Items {
-		rm.aggregateRouteMetric(metrics, item)
+	var weightedLatencyMs int64
+	var successCount int64
+
+	for _, w := range windows {
+		if w == nil {
+			continue
+		}
+
+		metrics.TotalMessages += w.MessageCount
+		metrics.SuccessfulCount += w.SuccessCount
+		metrics.FailedCount += w.FailureCount
+		metrics.TotalBytes += w.TotalBytes
+		metrics.TotalCost += w.TotalCost
+
+		if w.SuccessCount > 0 {
+			successCount += w.SuccessCount
+			weightedLatencyMs += w.AvgLatency * w.SuccessCount
+		}
 	}
 
 	// Add current window data
 	rm.aggregator.mu.RLock()
-	if current, ok := rm.aggregator.routeMetrics[routeID]; ok {
+	if current, ok := rm.aggregator.routeMetrics[routeID]; ok && current != nil {
 		metrics.TotalMessages += current.MessageCount
 		metrics.SuccessfulCount += current.SuccessCount
 		metrics.FailedCount += current.FailureCount
 		metrics.TotalBytes += current.TotalBytes
 		metrics.TotalCost += current.TotalCost
+
+		if current.SuccessCount > 0 {
+			successCount += current.SuccessCount
+			weightedLatencyMs += current.TotalLatency.Milliseconds()
+		}
 	}
 	rm.aggregator.mu.RUnlock()
 
-	// Calculate percentiles
-	if metrics.SuccessfulCount > 0 {
-		metrics.AvgLatency = time.Duration(metrics.TotalMessages) / time.Duration(metrics.SuccessfulCount)
+	if successCount > 0 {
+		metrics.AvgLatency = time.Duration(weightedLatencyMs/successCount) * time.Millisecond
 	}
 
 	return metrics, nil
@@ -244,25 +251,29 @@ func (rm *RoutingMetrics) GetRouteMetrics(ctx context.Context, routeID string, w
 
 // GetInstanceMetrics retrieves metrics for a specific instance
 func (rm *RoutingMetrics) GetInstanceMetrics(ctx context.Context, instanceID string, window time.Duration) (*InstanceMetrics, error) {
-	since := time.Now().Add(-window)
-
-	queryInput := &dynamodb.QueryInput{
-		TableName:              aws.String(rm.tableName),
-		KeyConditionExpression: aws.String("PK = :pk AND SK > :since"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk":    &types.AttributeValueMemberS{Value: fmt.Sprintf("METRICS#INSTANCE#%s", instanceID)},
-			":since": &types.AttributeValueMemberS{Value: fmt.Sprintf("WINDOW#%d", since.Unix())},
-		},
-		Limit: aws.Int32(100),
+	if rm == nil || rm.db == nil {
+		return nil, errors.Join(ErrQueryInstanceMetricsFailed, fmt.Errorf("routing metrics DB is not configured"))
 	}
 
-	result, err := rm.db.Query(ctx, queryInput)
+	since := time.Now().Add(-window)
+	pk := fmt.Sprintf("METRICS#INSTANCE#%s", instanceID)
+	sinceKey := fmt.Sprintf("WINDOW#%d", since.Unix())
+
+	var windows []*storagemodels.InstanceMetricsWindow
+	err := rm.db.WithContext(ctx).Model(&storagemodels.InstanceMetricsWindow{}).
+		Where("PK", "=", pk).
+		Where("SK", ">", sinceKey).
+		Limit(100).
+		OrderBy("SK", "DESC").
+		All(&windows)
 	if err != nil {
-		rm.logger.Error("query instance metrics failed",
-			zap.String("instance_id", instanceID),
-			zap.Duration("window", window),
-			zap.String("operation", "query_instance_metrics"),
-			zap.Error(err))
+		if rm.logger != nil {
+			rm.logger.Error("query instance metrics failed",
+				zap.String("instance_id", instanceID),
+				zap.Duration("window", window),
+				zap.String("operation", "query_instance_metrics"),
+				zap.Error(err))
+		}
 		return nil, errors.Join(ErrQueryInstanceMetricsFailed, err)
 	}
 
@@ -273,36 +284,75 @@ func (rm *RoutingMetrics) GetInstanceMetrics(ctx context.Context, instanceID str
 		MessageTypes: make(map[fedTypes.MessageType]int64),
 	}
 
-	for _, item := range result.Items {
-		rm.aggregateInstanceMetric(metrics, item)
+	availabilitySet := false
+	for _, w := range windows {
+		if w == nil {
+			continue
+		}
+
+		metrics.TotalMessages += w.TotalMessages
+		metrics.TotalBytes += w.TotalBytes
+		metrics.TotalCost += w.TotalCost
+
+		if !availabilitySet {
+			metrics.Availability = w.Availability
+			availabilitySet = true
+		}
+
+		if w.MessageTypes != "" {
+			var msgTypes map[string]int64
+			if jsonErr := json.Unmarshal([]byte(w.MessageTypes), &msgTypes); jsonErr == nil {
+				for mt, count := range msgTypes {
+					metrics.MessageTypes[fedTypes.MessageType(mt)] += count
+				}
+			}
+		}
 	}
+
+	// Add current window (in-memory) instance metrics, if present.
+	rm.aggregator.mu.RLock()
+	if current, ok := rm.aggregator.instanceMetrics[instanceID]; ok && current != nil {
+		metrics.TotalMessages += current.TotalMessages
+		metrics.TotalBytes += current.TotalBytes
+		metrics.TotalCost += current.TotalCost
+		if !availabilitySet {
+			metrics.Availability = current.Availability
+			availabilitySet = true
+		}
+		for mt, count := range current.MessageTypes {
+			metrics.MessageTypes[mt] += count
+		}
+	}
+	rm.aggregator.mu.RUnlock()
 
 	return metrics, nil
 }
 
 // GetGlobalMetrics retrieves system-wide metrics
 func (rm *RoutingMetrics) GetGlobalMetrics(ctx context.Context, window time.Duration) (*GlobalMetrics, error) {
-	// Query global metrics
-	since := time.Now().Add(-window)
-
-	queryInput := &dynamodb.QueryInput{
-		TableName:              aws.String(rm.tableName),
-		IndexName:              aws.String("gsi1"),
-		KeyConditionExpression: aws.String("gsi1PK = :pk AND gsi1SK > :since"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk":    &types.AttributeValueMemberS{Value: "METRICS#GLOBAL"},
-			":since": &types.AttributeValueMemberS{Value: fmt.Sprintf("%d", since.Unix())},
-		},
-		Limit: aws.Int32(100),
+	if rm == nil || rm.db == nil {
+		return nil, errors.Join(ErrQueryGlobalMetricsFailed, fmt.Errorf("routing metrics DB is not configured"))
 	}
 
-	result, err := rm.db.Query(ctx, queryInput)
+	since := time.Now().Add(-window)
+	sinceKey := fmt.Sprintf("%d", since.Unix())
+
+	var windows []*storagemodels.GlobalMetricsWindow
+	err := rm.db.WithContext(ctx).Model(&storagemodels.GlobalMetricsWindow{}).
+		Index("gsi1").
+		Where("gsi1PK", "=", "METRICS#GLOBAL").
+		Where("gsi1SK", ">", sinceKey).
+		Limit(100).
+		OrderBy("gsi1SK", "DESC").
+		All(&windows)
 	if err != nil {
-		rm.logger.Error("query global metrics failed",
-			zap.Duration("window", window),
-			zap.String("operation", "query_global_metrics"),
-			zap.Time("since", since),
-			zap.Error(err))
+		if rm.logger != nil {
+			rm.logger.Error("query global metrics failed",
+				zap.Duration("window", window),
+				zap.String("operation", "query_global_metrics"),
+				zap.Time("since", since),
+				zap.Error(err))
+		}
 		return nil, errors.Join(ErrQueryGlobalMetricsFailed, err)
 	}
 
@@ -312,8 +362,30 @@ func (rm *RoutingMetrics) GetGlobalMetrics(ctx context.Context, window time.Dura
 		HourlyVolume: make(map[int]int64),
 	}
 
-	for _, item := range result.Items {
-		rm.aggregateGlobalMetric(metrics, item)
+	activeSet := false
+	for _, w := range windows {
+		if w == nil {
+			continue
+		}
+
+		metrics.TotalMessages += w.TotalMessages
+		metrics.TotalBytes += w.TotalBytes
+		metrics.TotalCost += w.TotalCost
+
+		if !activeSet {
+			metrics.ActiveRoutes = w.ActiveRoutes
+			metrics.ActiveInstances = w.UniqueInstances
+			activeSet = true
+		}
+
+		if w.HourlyVolume != "" {
+			var hourly []int64
+			if jsonErr := json.Unmarshal([]byte(w.HourlyVolume), &hourly); jsonErr == nil {
+				for i := 0; i < len(hourly) && i < 24; i++ {
+					metrics.HourlyVolume[i] += hourly[i]
+				}
+			}
+		}
 	}
 
 	// Add current window
@@ -321,12 +393,15 @@ func (rm *RoutingMetrics) GetGlobalMetrics(ctx context.Context, window time.Dura
 	metrics.TotalMessages += rm.aggregator.globalMetrics.TotalMessages
 	metrics.TotalBytes += rm.aggregator.globalMetrics.TotalBytes
 	metrics.TotalCost += rm.aggregator.globalMetrics.TotalCost
+	for hour, count := range rm.aggregator.globalMetrics.HourlyVolume {
+		metrics.HourlyVolume[hour] += count
+	}
 	rm.aggregator.mu.RUnlock()
 
 	return metrics, nil
 }
 
-// Flush manually flushes accumulated metrics to DynamoDB
+// Flush manually flushes accumulated metrics to DynamoDB (via TableTheory).
 // This should be called at the end of Lambda invocations
 func (rm *RoutingMetrics) Flush(ctx context.Context) error {
 	rm.aggregator.mu.Lock()
@@ -336,13 +411,16 @@ func (rm *RoutingMetrics) Flush(ctx context.Context) error {
 	if time.Since(rm.aggregator.windowStart) > rm.aggregator.windowSize {
 		// Persist current window to DynamoDB
 		if err := rm.persistWindow(ctx); err != nil {
-			rm.logger.Error("persist metrics window failed",
-				zap.Time("window_start", rm.aggregator.windowStart),
-				zap.Duration("window_size", rm.aggregator.windowSize),
-				zap.Int("route_metrics_count", len(rm.aggregator.routeMetrics)),
-				zap.Int("instance_metrics_count", len(rm.aggregator.instanceMetrics)),
-				zap.String("operation", "persist_metrics_window"),
-				zap.Error(err))
+			if rm.logger != nil {
+				rm.logger.Error("persist metrics window failed",
+					zap.Time("window_start", rm.aggregator.windowStart),
+					zap.Duration("window_size", rm.aggregator.windowSize),
+					zap.Int("route_metrics_count", len(rm.aggregator.routeMetrics)),
+					zap.Int("instance_metrics_count", len(rm.aggregator.instanceMetrics)),
+					zap.String("operation", "persist_metrics_window"),
+					zap.Error(err),
+				)
+			}
 			return errors.Join(ErrPersistMetricsWindowFailed, err)
 		}
 
@@ -457,192 +535,132 @@ func (rm *RoutingMetrics) processHealthCheck(event *metricEvent) {
 }
 
 func (rm *RoutingMetrics) persistWindow(ctx context.Context) error {
-	windowID := rm.aggregator.windowStart.Unix()
-
-	// Batch write all metrics
-	writeRequests := make([]types.WriteRequest, 0, 100)
-
-	// Persist route metrics
-	for _, metrics := range rm.aggregator.routeMetrics {
-		item := map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("METRICS#ROUTE#%s", metrics.RouteID)},
-			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("WINDOW#%d", windowID)},
-
-			"MessageCount":   &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", metrics.MessageCount)},
-			"SuccessCount":   &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", metrics.SuccessCount)},
-			"FailureCount":   &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", metrics.FailureCount)},
-			"TotalBytes":     &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", metrics.TotalBytes)},
-			"TotalCost":      &types.AttributeValueMemberN{Value: fmt.Sprintf("%.6f", metrics.TotalCost)},
-			"AvgLatency":     &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", metrics.TotalLatency.Milliseconds()/metrics.SuccessCount)},
-			"CircuitChanges": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", metrics.CircuitChanges)},
-
-			// TTL for cleanup (30 days)
-			"TTL": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Add(30*24*time.Hour).Unix())},
-		}
-
-		// Add latency histogram
-		if len(metrics.LatencyBuckets) > 0 {
-			histogram := &types.AttributeValueMemberM{Value: make(map[string]types.AttributeValue)}
-			for bucket, count := range metrics.LatencyBuckets {
-				histogram.Value[fmt.Sprintf("%d", bucket)] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", count)}
-			}
-			item["LatencyHistogram"] = histogram
-		}
-
-		writeRequests = append(writeRequests, types.WriteRequest{
-			PutRequest: &types.PutRequest{Item: item},
-		})
-
-		// Flush batch if full
-		if len(writeRequests) >= 25 {
-			if err := rm.writeBatch(ctx, writeRequests); err != nil {
-				return err
-			}
-			writeRequests = writeRequests[:0]
-		}
+	if rm == nil || rm.db == nil {
+		return errors.Join(ErrPersistMetricsWindowFailed, fmt.Errorf("routing metrics DB is not configured"))
 	}
 
-	// Persist global metrics
-	globalItem := map[string]types.AttributeValue{
-		"PK": &types.AttributeValueMemberS{Value: "METRICS#GLOBAL#SUMMARY"},
-		"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("WINDOW#%d", windowID)},
+	windowStart := rm.aggregator.windowStart
+	windowSizeMinutes := int64(rm.aggregator.windowSize / time.Minute)
 
-		"TotalMessages":   &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", rm.aggregator.globalMetrics.TotalMessages)},
-		"TotalBytes":      &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", rm.aggregator.globalMetrics.TotalBytes)},
-		"TotalCost":       &types.AttributeValueMemberN{Value: fmt.Sprintf("%.6f", rm.aggregator.globalMetrics.TotalCost)},
-		"UniqueInstances": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", len(rm.aggregator.instanceMetrics))},
-		"ActiveRoutes":    &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", len(rm.aggregator.routeMetrics))},
+	routeWindows := make([]*storagemodels.RouteMetricsWindow, 0, len(rm.aggregator.routeMetrics))
+	for _, m := range rm.aggregator.routeMetrics {
+		if m == nil {
+			continue
+		}
 
-		// GSI for time-based queries
-		"gsi1PK": &types.AttributeValueMemberS{Value: "METRICS#GLOBAL"},
-		"gsi1SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("%d", windowID)},
+		avgLatencyMs := int64(0)
+		if m.SuccessCount > 0 {
+			avgLatencyMs = m.TotalLatency.Milliseconds() / m.SuccessCount
+		}
 
-		"TTL": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", time.Now().Add(30*24*time.Hour).Unix())},
-	}
+		latencyHistogram, err := json.Marshal(m.LatencyBuckets)
+		if err != nil && rm.logger != nil {
+			rm.logger.Warn("failed to encode latency histogram", zap.String("route_id", m.RouteID), zap.Error(err))
+		}
 
-	writeRequests = append(writeRequests, types.WriteRequest{
-		PutRequest: &types.PutRequest{Item: globalItem},
-	})
+		errorTypes, err := json.Marshal(m.ErrorTypes)
+		if err != nil && rm.logger != nil {
+			rm.logger.Warn("failed to encode error types", zap.String("route_id", m.RouteID), zap.Error(err))
+		}
 
-	// Write remaining batch
-	if len(writeRequests) > 0 {
-		if err := rm.writeBatch(ctx, writeRequests); err != nil {
+		window := &storagemodels.RouteMetricsWindow{
+			RouteID:     m.RouteID,
+			WindowStart: windowStart,
+			WindowSize:  windowSizeMinutes,
+
+			MessageCount:   m.MessageCount,
+			SuccessCount:   m.SuccessCount,
+			FailureCount:   m.FailureCount,
+			TotalBytes:     m.TotalBytes,
+			TotalCost:      m.TotalCost,
+			AvgLatency:     avgLatencyMs,
+			CircuitChanges: m.CircuitChanges,
+
+			LatencyHistogram: string(latencyHistogram),
+			ErrorTypes:       string(errorTypes),
+		}
+		if err := window.UpdateKeys(); err != nil {
 			return err
 		}
+		routeWindows = append(routeWindows, window)
 	}
 
-	rm.logger.Info("flushed metrics window",
-		zap.Time("windowStart", rm.aggregator.windowStart),
-		zap.Int("routeMetrics", len(rm.aggregator.routeMetrics)),
-		zap.Int("instanceMetrics", len(rm.aggregator.instanceMetrics)))
+	instanceWindows := make([]*storagemodels.InstanceMetricsWindow, 0, len(rm.aggregator.instanceMetrics))
+	for _, m := range rm.aggregator.instanceMetrics {
+		if m == nil {
+			continue
+		}
 
-	return nil
-}
+		messageTypes, err := json.Marshal(m.MessageTypes)
+		if err != nil && rm.logger != nil {
+			rm.logger.Warn("failed to encode message types", zap.String("instance_id", m.InstanceID), zap.Error(err))
+		}
 
-func (rm *RoutingMetrics) writeBatch(ctx context.Context, requests []types.WriteRequest) error {
-	batchInput := &dynamodb.BatchWriteItemInput{
-		RequestItems: map[string][]types.WriteRequest{
-			rm.tableName: requests,
-		},
+		window := &storagemodels.InstanceMetricsWindow{
+			InstanceID:  m.InstanceID,
+			WindowStart: windowStart,
+			WindowSize:  windowSizeMinutes,
+
+			TotalMessages: m.TotalMessages,
+			TotalBytes:    m.TotalBytes,
+			TotalCost:     m.TotalCost,
+			HealthChecks:  m.HealthChecks,
+			Availability:  m.Availability,
+
+			MessageTypes: string(messageTypes),
+		}
+		if err := window.UpdateKeys(); err != nil {
+			return err
+		}
+		instanceWindows = append(instanceWindows, window)
 	}
 
-	_, err := rm.db.BatchWriteItem(ctx, batchInput)
-	if err != nil {
-		rm.logger.Error("batch write metrics failed",
-			zap.Int("batch_size", len(requests)),
-			zap.String("table_name", rm.tableName),
-			zap.String("operation", "batch_write_metrics"),
-			zap.Error(err))
+	hourlyVolume, err := json.Marshal(rm.aggregator.globalMetrics.HourlyVolume)
+	if err != nil && rm.logger != nil {
+		rm.logger.Warn("failed to encode hourly volume", zap.Error(err))
+	}
+
+	globalWindow := &storagemodels.GlobalMetricsWindow{
+		WindowStart: windowStart,
+		WindowSize:  windowSizeMinutes,
+
+		TotalMessages:   rm.aggregator.globalMetrics.TotalMessages,
+		TotalBytes:      rm.aggregator.globalMetrics.TotalBytes,
+		TotalCost:       rm.aggregator.globalMetrics.TotalCost,
+		UniqueInstances: int64(len(rm.aggregator.instanceMetrics)),
+		ActiveRoutes:    int64(len(rm.aggregator.routeMetrics)),
+
+		HourlyVolume: string(hourlyVolume),
+	}
+	if err := globalWindow.UpdateKeys(); err != nil {
+		return err
+	}
+
+	if len(routeWindows) > 0 {
+		if err := rm.db.WithContext(ctx).Model(&storagemodels.RouteMetricsWindow{}).BatchCreate(routeWindows); err != nil {
+			return errors.Join(ErrBatchWriteMetricsFailed, err)
+		}
+	}
+
+	if len(instanceWindows) > 0 {
+		if err := rm.db.WithContext(ctx).Model(&storagemodels.InstanceMetricsWindow{}).BatchCreate(instanceWindows); err != nil {
+			return errors.Join(ErrBatchWriteMetricsFailed, err)
+		}
+	}
+
+	if err := rm.db.WithContext(ctx).Model(globalWindow).CreateOrUpdate(); err != nil {
 		return errors.Join(ErrBatchWriteMetricsFailed, err)
 	}
+
+	if rm.logger != nil {
+		rm.logger.Info("flushed metrics window",
+			zap.Time("windowStart", rm.aggregator.windowStart),
+			zap.Int("routeMetrics", len(rm.aggregator.routeMetrics)),
+			zap.Int("instanceMetrics", len(rm.aggregator.instanceMetrics)),
+		)
+	}
+
 	return nil
-}
-
-func (rm *RoutingMetrics) aggregateRouteMetric(metrics *fedTypes.RouteMetrics, item map[string]types.AttributeValue) {
-	// Parse and aggregate stored metrics
-	if v, ok := item["MessageCount"].(*types.AttributeValueMemberN); ok {
-		var count int64
-		if _, err := fmt.Sscanf(v.Value, "%d", &count); err != nil {
-			rm.logger.Warn("failed to parse MessageCount", zap.String("value", v.Value), zap.Error(err))
-		}
-		metrics.TotalMessages += count
-	}
-	if v, ok := item["SuccessCount"].(*types.AttributeValueMemberN); ok {
-		var count int64
-		if _, err := fmt.Sscanf(v.Value, "%d", &count); err != nil {
-			rm.logger.Warn("failed to parse SuccessCount", zap.String("value", v.Value), zap.Error(err))
-		}
-		metrics.SuccessfulCount += count
-	}
-	if v, ok := item["FailureCount"].(*types.AttributeValueMemberN); ok {
-		var count int64
-		if _, err := fmt.Sscanf(v.Value, "%d", &count); err != nil {
-			rm.logger.Warn("failed to parse FailureCount", zap.String("value", v.Value), zap.Error(err))
-		}
-		metrics.FailedCount += count
-	}
-	if v, ok := item["TotalBytes"].(*types.AttributeValueMemberN); ok {
-		var bytes int64
-		if _, err := fmt.Sscanf(v.Value, "%d", &bytes); err != nil {
-			rm.logger.Warn("failed to parse TotalBytes", zap.String("value", v.Value), zap.Error(err))
-		}
-		metrics.TotalBytes += bytes
-	}
-	if v, ok := item["TotalCost"].(*types.AttributeValueMemberN); ok {
-		var cost float64
-		if _, err := fmt.Sscanf(v.Value, "%f", &cost); err != nil {
-			rm.logger.Warn("failed to parse TotalCost", zap.String("value", v.Value), zap.Error(err))
-		}
-		metrics.TotalCost += cost
-	}
-}
-
-func (rm *RoutingMetrics) aggregateInstanceMetric(metrics *InstanceMetrics, item map[string]types.AttributeValue) {
-	// Parse and aggregate instance metrics
-	if v, ok := item["TotalMessages"].(*types.AttributeValueMemberN); ok {
-		var count int64
-		if _, err := fmt.Sscanf(v.Value, "%d", &count); err != nil {
-			rm.logger.Warn("failed to parse TotalMessages", zap.String("value", v.Value), zap.Error(err))
-		}
-		metrics.TotalMessages += count
-	}
-	if v, ok := item["TotalBytes"].(*types.AttributeValueMemberN); ok {
-		var bytes int64
-		if _, err := fmt.Sscanf(v.Value, "%d", &bytes); err != nil {
-			rm.logger.Warn("failed to parse TotalBytes", zap.String("value", v.Value), zap.Error(err))
-		}
-		metrics.TotalBytes += bytes
-	}
-	if v, ok := item["Availability"].(*types.AttributeValueMemberN); ok {
-		if _, err := fmt.Sscanf(v.Value, "%f", &metrics.Availability); err != nil {
-			rm.logger.Warn("failed to parse Availability", zap.String("value", v.Value), zap.Error(err))
-		}
-	}
-}
-
-func (rm *RoutingMetrics) aggregateGlobalMetric(metrics *GlobalMetrics, item map[string]types.AttributeValue) {
-	// Parse and aggregate global metrics
-	if v, ok := item["TotalMessages"].(*types.AttributeValueMemberN); ok {
-		var count int64
-		if _, err := fmt.Sscanf(v.Value, "%d", &count); err != nil {
-			rm.logger.Warn("failed to parse TotalMessages", zap.String("value", v.Value), zap.Error(err))
-		}
-		metrics.TotalMessages += count
-	}
-	if v, ok := item["TotalBytes"].(*types.AttributeValueMemberN); ok {
-		var bytes int64
-		if _, err := fmt.Sscanf(v.Value, "%d", &bytes); err != nil {
-			rm.logger.Warn("failed to parse TotalBytes", zap.String("value", v.Value), zap.Error(err))
-		}
-		metrics.TotalBytes += bytes
-	}
-	if v, ok := item["TotalCost"].(*types.AttributeValueMemberN); ok {
-		var cost float64
-		if _, err := fmt.Sscanf(v.Value, "%f", &cost); err != nil {
-			rm.logger.Warn("failed to parse TotalCost", zap.String("value", v.Value), zap.Error(err))
-		}
-		metrics.TotalCost += cost
-	}
 }
 
 // InstanceMetrics represents metrics for a specific instance
