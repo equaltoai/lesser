@@ -15,9 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"github.com/pay-theory/lift/pkg/streamer"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -440,50 +439,35 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	}, nil
 }
 
-// HandleStream processes DynamoDB stream events for routing to subscribers.
-func (h *StreamRouterHandler) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
-	h.logger.Info("processing stream router batch",
-		zap.String("request_id", ctx.GetRequestID()),
-		zap.Int("record_count", len(event.Records)),
-	)
-
-	// Process all records, collecting errors but not failing fast
-	var errs []error
-	for _, record := range event.Records {
-		if err := h.processRecord(ctx, record); err != nil {
-			h.logger.Error("failed to process record",
-				zap.String("request_id", ctx.GetRequestID()),
-				zap.String("event_id", record.EventID),
-				zap.Error(err),
-			)
-			errs = append(errs, err)
-			// Continue processing other records
-		}
+func (h *StreamRouterHandler) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = strings.TrimSpace(ctx.RequestID)
+		runCtx = ctx.Context()
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		requestID = "unknown"
 	}
 
-	// Return error only if all records failed
-	if len(errs) == len(event.Records) {
-		if err := common.ValidateSliceNotEmpty("errs", errs); err == nil {
-			return AllRecordsFailedProcessing()
-		}
-	}
-
-	// Log partial failures but don't return error
-	if err := common.ValidateSliceNotEmpty("errs", errs); err == nil {
-		h.logger.Warn("partial batch failure",
-			zap.String("request_id", ctx.GetRequestID()),
-			zap.Int("failed_count", len(errs)),
-			zap.Int("total_count", len(event.Records)),
+	if err := h.processRecord(runCtx, requestID, record); err != nil {
+		h.logger.Error("failed to process record",
+			zap.String("request_id", requestID),
+			zap.String("event_id", record.EventID),
+			zap.Error(err),
 		)
+		// Match previous Lift behavior: log and continue; do not fail the batch.
+		return nil
 	}
 
 	return nil
 }
 
 // processRecord processes a single DynamoDB stream record using DynamORM patterns
-func (h *StreamRouterHandler) processRecord(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (h *StreamRouterHandler) processRecord(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	logger := h.logger.With(
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("event_name", record.EventName),
 		zap.String("event_id", record.EventID),
 	)
@@ -505,13 +489,13 @@ func (h *StreamRouterHandler) processRecord(ctx *lift.Context, record events.Dyn
 	// Route to appropriate handler based on entity type
 	switch entityType {
 	case "STATUS", "OBJECT":
-		return h.processStatusEvent(ctx, record)
+		return h.processStatusEvent(ctx, requestID, record)
 	case "NOTIFICATION":
-		return h.processNotificationEvent(ctx, record)
+		return h.processNotificationEvent(ctx, requestID, record)
 	case "USER", "ACTOR":
-		return h.processAccountEvent(ctx, record)
+		return h.processAccountEvent(ctx, requestID, record)
 	case "TOMBSTONE":
-		return h.processTombstoneEvent(ctx, record)
+		return h.processTombstoneEvent(ctx, requestID, record)
 	default:
 		logger.Debug("ignoring event for unknown entity type")
 		return nil
@@ -519,12 +503,12 @@ func (h *StreamRouterHandler) processRecord(ctx *lift.Context, record events.Dyn
 }
 
 // processStatusEvent processes status/object events using DynamORM stream utilities
-func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (h *StreamRouterHandler) processStatusEvent(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	// Use DynamORM stream utilities to unmarshal the status
 	var status models.Status
 	if err := stream.UnmarshalItem(record, &status); err != nil {
 		h.logger.Debug("failed to unmarshal status from stream",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.Error(err))
 		return nil // Skip records we can't unmarshal
 	}
@@ -532,7 +516,7 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 	// Validate that we have a proper status
 	if err := common.ValidateRequiredParam("statusID", status.StatusID); err != nil || status.Note == nil {
 		h.logger.Debug("invalid status record, missing required fields",
-			zap.String("request_id", ctx.GetRequestID()))
+			zap.String("request_id", requestID))
 		return nil
 	}
 
@@ -649,15 +633,15 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 	}
 
 	// Record for SSE fanout (independent of WebSocket subscriptions).
-	sseStreams := h.buildSSEStatusStreams(ctx, &status)
+	sseStreams := h.buildSSEStatusStreams(ctx, requestID, &status)
 	for _, streamName := range sseStreams {
-		h.appendStreamEvent(ctx, streamName, eventType, string(payload))
+		h.appendStreamEvent(ctx, requestID, streamName, eventType, string(payload))
 	}
 
 	for _, streamName := range wsStreams {
-		if err := h.broadcastToStream(ctx, streamName, eventType, payload); err != nil {
+		if err := h.broadcastToStream(ctx, requestID, streamName, eventType, payload); err != nil {
 			h.logger.Error("failed to broadcast to stream",
-				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("request_id", requestID),
 				zap.String("stream", streamName),
 				zap.Error(err))
 			// Continue with other streams
@@ -665,9 +649,9 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 	}
 
 	// Publish to internal event bus for GraphQL subscriptions
-	if err := h.publishStatusEventToInternalBus(ctx, record, &status, wsStreams); err != nil {
+	if err := h.publishStatusEventToInternalBus(requestID, record, &status, wsStreams); err != nil {
 		h.logger.Warn("failed to publish status event to internal bus",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("status_id", status.StatusID),
 			zap.Error(err))
 		// Don't return error - this is not critical for WebSocket functionality
@@ -677,7 +661,7 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 }
 
 // processNotificationEvent processes notification events using DynamORM stream utilities
-func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (h *StreamRouterHandler) processNotificationEvent(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	// Extract the notification from the DynamoDB image
 	if record.EventName != eventNameInsert {
 		return nil
@@ -716,7 +700,7 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record
 
 	if err := attributevalue.UnmarshalMap(notifItem, &notifRecord); err != nil {
 		h.logger.Error("failed to unmarshal notification record",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.Error(err))
 		return nil
 	}
@@ -762,21 +746,21 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record
 	streamName := streaming.UserNotificationStreamName(username)
 
 	// Record for SSE fanout (Mastodon user stream includes notifications too).
-	h.appendStreamEvent(ctx, streaming.UserStreamName(username), streamEventNotification, string(payload))
-	h.appendStreamEvent(ctx, streamName, streamEventNotification, string(payload))
+	h.appendStreamEvent(ctx, requestID, streaming.UserStreamName(username), streamEventNotification, string(payload))
+	h.appendStreamEvent(ctx, requestID, streamName, streamEventNotification, string(payload))
 
-	if err := h.broadcastToStream(ctx, streamName, streamEventNotification, payload); err != nil {
+	if err := h.broadcastToStream(ctx, requestID, streamName, streamEventNotification, payload); err != nil {
 		h.logger.Error("failed to broadcast notification to stream",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("stream", streamName),
 			zap.Error(err))
 		// Continue with internal event bus
 	}
 
 	// Publish to internal event bus for GraphQL subscriptions
-	if err := h.publishNotificationEventToInternalBus(ctx, notification, []string{streamName}); err != nil {
+	if err := h.publishNotificationEventToInternalBus(requestID, notification, []string{streamName}); err != nil {
 		h.logger.Warn("failed to publish notification event to internal bus",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("notification_id", notification.ID),
 			zap.Error(err))
 		// Don't return error - this is not critical for WebSocket functionality
@@ -786,7 +770,7 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record
 }
 
 // processAccountEvent processes account/user events using DynamORM stream utilities
-func (h *StreamRouterHandler) processAccountEvent(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (h *StreamRouterHandler) processAccountEvent(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	// Account updates (profile changes, etc.)
 	if record.EventName != eventNameModify {
 		return nil
@@ -822,25 +806,25 @@ func (h *StreamRouterHandler) processAccountEvent(ctx *lift.Context, record even
 	}
 
 	// Send account update to followers' streams
-	if err := broadcastToFollowers(accountID, payload); err != nil {
+	if err := h.broadcastToFollowers(ctx, requestID, accountID, payload); err != nil {
 		h.logger.Error("failed to broadcast to followers",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.Error(err))
 		// Don't return error - logging is sufficient for broadcast failures
 	}
 
 	// Publish to internal event bus for GraphQL subscriptions
 	streams := []string{fmt.Sprintf("account:%s", accountID)}
-	if err := h.publishAccountEventToInternalBus(ctx, accountID, record.EventName, streams); err != nil {
+	if err := h.publishAccountEventToInternalBus(requestID, accountID, record.EventName, streams); err != nil {
 		h.logger.Warn("failed to publish account event to internal bus",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("account_id", accountID),
 			zap.Error(err))
 		// Don't return error - this is not critical for WebSocket functionality
 	}
 
 	h.logger.Info("account update event",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("account_id", accountID),
 		zap.Int("payload_size", len(payload)))
 
@@ -909,27 +893,18 @@ func createAccountPayload(accountID, eventType string) (map[string]any, error) {
 }
 
 // broadcastToFollowers sends updates to all followers of an account
-func broadcastToFollowers(accountID string, payload []byte) error {
+func (h *StreamRouterHandler) broadcastToFollowers(ctx context.Context, requestID, accountID string, payload []byte) error {
 	// Extract username from account ID for follower lookup
 	username := extractUsernameFromActorID(accountID)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return CouldNotExtractUsername()
 	}
 
-	// Get the handler instance to access repositories
-	if handler == nil {
-		lambdaCtx.Logger.Error("handler not initialized, cannot broadcast to followers")
-		return HandlerNotInitialized()
-	}
-
-	// Create a context for the operation
-	ctx := &lift.Context{}
-	ctx.SetRequestID(fmt.Sprintf("broadcast-%d", time.Now().Unix()))
-
 	// Get followers for this account (limit to reasonable batch size for stream processing)
-	followers, _, err := handler.getFollowersForUser(ctx, username, 200)
+	followers, _, err := h.getFollowersForUser(ctx, requestID, username, 200)
 	if err != nil {
-		lambdaCtx.Logger.Error("failed to get followers for broadcast",
+		h.logger.Error("failed to get followers for broadcast",
+			zap.String("request_id", requestID),
 			zap.String("account_id", accountID),
 			zap.String("username", username),
 			zap.Error(err))
@@ -937,13 +912,15 @@ func broadcastToFollowers(accountID string, payload []byte) error {
 	}
 
 	if err := common.ValidateSliceNotEmpty("followers", followers); err != nil {
-		lambdaCtx.Logger.Debug("no followers found for account",
+		h.logger.Debug("no followers found for account",
+			zap.String("request_id", requestID),
 			zap.String("account_id", accountID),
 			zap.String("username", username))
 		return nil
 	}
 
-	lambdaCtx.Logger.Info("broadcasting account update to followers",
+	h.logger.Info("broadcasting account update to followers",
+		zap.String("request_id", requestID),
 		zap.String("account_id", accountID),
 		zap.String("username", username),
 		zap.Int("follower_count", len(followers)),
@@ -963,8 +940,9 @@ func broadcastToFollowers(accountID string, payload []byte) error {
 			Stream:  streamName,
 		}
 
-		if err := handler.broadcastMessage(ctx, message); err != nil {
-			lambdaCtx.Logger.Warn("failed to broadcast to follower",
+		if err := h.broadcastMessage(ctx, requestID, message); err != nil {
+			h.logger.Warn("failed to broadcast to follower",
+				zap.String("request_id", requestID),
 				zap.String("account_id", accountID),
 				zap.String("follower", followerUsername),
 				zap.String("stream", streamName),
@@ -975,7 +953,8 @@ func broadcastToFollowers(accountID string, payload []byte) error {
 		}
 	}
 
-	lambdaCtx.Logger.Info("completed follower broadcast",
+	h.logger.Info("completed follower broadcast",
+		zap.String("request_id", requestID),
 		zap.String("account_id", accountID),
 		zap.Int("total_followers", len(followers)),
 		zap.Int("successful", successCount),
@@ -994,7 +973,7 @@ func broadcastToFollowers(accountID string, payload []byte) error {
 // Helper methods for StreamRouterHandler
 
 // publishStatusEventToInternalBus publishes a status event to the internal event bus
-func (h *StreamRouterHandler) publishStatusEventToInternalBus(ctx *lift.Context, record events.DynamoDBEventRecord, status *models.Status, streams []string) error {
+func (h *StreamRouterHandler) publishStatusEventToInternalBus(requestID string, record events.DynamoDBEventRecord, status *models.Status, streams []string) error {
 	// Determine event type and action
 	var eventType streaming.EventType
 	var action streaming.EventAction
@@ -1041,7 +1020,7 @@ func (h *StreamRouterHandler) publishStatusEventToInternalBus(ctx *lift.Context,
 	// Add metadata for filtering
 	event.WithMetadata("visibility", status.Visibility)
 	event.WithMetadata("entity_type", entityTypeStatus)
-	event.WithMetadata("request_id", ctx.GetRequestID())
+	event.WithMetadata("request_id", requestID)
 
 	if status.Language != "" {
 		event.WithMetadata("language", status.Language)
@@ -1057,7 +1036,7 @@ func (h *StreamRouterHandler) publishStatusEventToInternalBus(ctx *lift.Context,
 	// Note: Event routing to WebSocket connections happens via the publisher
 	// which is called by routeEventToWebSockets() in the main routing logic
 	h.logger.Debug("status event ready for routing",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("event_id", event.ID),
 		zap.String("status_id", status.StatusID),
 		zap.String("event_type", string(eventType)),
@@ -1067,7 +1046,7 @@ func (h *StreamRouterHandler) publishStatusEventToInternalBus(ctx *lift.Context,
 }
 
 // publishNotificationEventToInternalBus publishes a notification event to the internal event bus
-func (h *StreamRouterHandler) publishNotificationEventToInternalBus(ctx *lift.Context, notification *Notification, streams []string) error {
+func (h *StreamRouterHandler) publishNotificationEventToInternalBus(requestID string, notification *Notification, streams []string) error {
 	// Create notification event payload
 	notificationPayload := &streaming.NotificationEventPayload{
 		NotificationID: notification.ID,
@@ -1091,7 +1070,7 @@ func (h *StreamRouterHandler) publishNotificationEventToInternalBus(ctx *lift.Co
 	event.WithMetadata("notification_type", notification.Type)
 	event.WithMetadata("entity_type", entityTypeNotification)
 	event.WithMetadata("recipient", notification.Username)
-	event.WithMetadata("request_id", ctx.GetRequestID())
+	event.WithMetadata("request_id", requestID)
 
 	if notification.StatusID != "" {
 		event.WithMetadata("status_id", notification.StatusID)
@@ -1100,7 +1079,7 @@ func (h *StreamRouterHandler) publishNotificationEventToInternalBus(ctx *lift.Co
 	// Note: Event routing to WebSocket connections happens via the publisher
 	// which is called by routeEventToWebSockets() in the main routing logic
 	h.logger.Debug("notification event ready for routing",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("event_id", event.ID),
 		zap.String("notification_id", notification.ID),
 		zap.String("notification_type", notification.Type),
@@ -1110,7 +1089,7 @@ func (h *StreamRouterHandler) publishNotificationEventToInternalBus(ctx *lift.Co
 }
 
 // publishAccountEventToInternalBus publishes an account event to the internal event bus
-func (h *StreamRouterHandler) publishAccountEventToInternalBus(ctx *lift.Context, accountID, eventName string, streams []string) error {
+func (h *StreamRouterHandler) publishAccountEventToInternalBus(requestID, accountID, eventName string, streams []string) error {
 	// Determine event type and action
 	var eventType streaming.EventType
 	var action streaming.EventAction
@@ -1148,12 +1127,12 @@ func (h *StreamRouterHandler) publishAccountEventToInternalBus(ctx *lift.Context
 	// Add metadata for filtering
 	event.WithMetadata("entity_type", "account")
 	event.WithMetadata("account_id", accountID)
-	event.WithMetadata("request_id", ctx.GetRequestID())
+	event.WithMetadata("request_id", requestID)
 
 	// Note: Event routing to WebSocket connections happens via the publisher
 	// which is called by routeEventToWebSockets() in the main routing logic
 	h.logger.Debug("account event ready for routing",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("event_id", event.ID),
 		zap.String("account_id", accountID),
 		zap.String("event_type", string(eventType)),
@@ -1163,16 +1142,16 @@ func (h *StreamRouterHandler) publishAccountEventToInternalBus(ctx *lift.Context
 }
 
 // broadcastToStream sends a message to a specific stream
-func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, eventType string, payload []byte) error {
+func (h *StreamRouterHandler) broadcastToStream(ctx context.Context, requestID, streamName, eventType string, payload []byte) error {
 	// Query subscriptions for this stream from DynamoDB
-	subscriptions, err := h.getStreamSubscriptions(ctx, streamName)
+	subscriptions, err := h.getStreamSubscriptions(ctx, requestID, streamName)
 	if err != nil {
 		return FailedToGetSubscriptionsForStream(err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("subscriptions", subscriptions); err != nil {
 		h.logger.Debug("no active subscriptions for stream",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("stream", streamName))
 		return nil
 	}
@@ -1197,7 +1176,7 @@ func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, e
 		err := h.apiClient.PostToConnection(ctx, connectionID, messageData)
 		if err != nil {
 			h.logger.Warn("failed to send to connection",
-				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("request_id", requestID),
 				zap.String("connection_id", connectionID),
 				zap.String("stream", streamName),
 				zap.Error(err))
@@ -1205,7 +1184,7 @@ func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, e
 
 			// Remove stale connections
 			if isStaleConnection(err) {
-				h.removeSubscription(ctx, streamName, connectionID)
+				h.removeSubscription(ctx, requestID, streamName, connectionID)
 			}
 		} else {
 			successCount++
@@ -1213,7 +1192,7 @@ func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, e
 	}
 
 	h.logger.Info("broadcast completed",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("stream", streamName),
 		zap.String("event", eventType),
 		zap.Int("total_connections", len(subscriptions)),
@@ -1227,7 +1206,7 @@ func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, e
 	return nil
 }
 
-func (h *StreamRouterHandler) appendStreamEvent(ctx *lift.Context, streamName, eventType, data string) {
+func (h *StreamRouterHandler) appendStreamEvent(ctx context.Context, requestID, streamName, eventType, data string) {
 	if h.streamEventLog == nil || !h.streamEventLog.Enabled() {
 		return
 	}
@@ -1237,14 +1216,14 @@ func (h *StreamRouterHandler) appendStreamEvent(ctx *lift.Context, streamName, e
 
 	if _, err := h.streamEventLog.Append(ctx, streamName, eventType, data); err != nil {
 		h.logger.Warn("failed to append stream event",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("stream", streamName),
 			zap.String("event", eventType),
 			zap.Error(err))
 	}
 }
 
-func (h *StreamRouterHandler) buildSSEStatusStreams(ctx *lift.Context, status *models.Status) []string {
+func (h *StreamRouterHandler) buildSSEStatusStreams(ctx context.Context, requestID string, status *models.Status) []string {
 	if status == nil {
 		return []string{}
 	}
@@ -1288,10 +1267,10 @@ func (h *StreamRouterHandler) buildSSEStatusStreams(ctx *lift.Context, status *m
 				add(streaming.UserStreamName(username))
 			}
 		} else {
-			followers, _, err := h.getFollowersForUser(ctx, status.AuthorUsername, 100)
+			followers, _, err := h.getFollowersForUser(ctx, requestID, status.AuthorUsername, 100)
 			if err != nil {
 				h.logger.Warn("failed to get followers for status fanout",
-					zap.String("request_id", ctx.GetRequestID()),
+					zap.String("request_id", requestID),
 					zap.String("username", status.AuthorUsername),
 					zap.Error(err))
 			} else {
@@ -1433,16 +1412,16 @@ func mapAttachmentType(apType string) string {
 }
 
 // getStreamSubscriptions retrieves active subscriptions for a stream
-func (h *StreamRouterHandler) getStreamSubscriptions(ctx *lift.Context, streamName string) ([]string, error) {
+func (h *StreamRouterHandler) getStreamSubscriptions(ctx context.Context, requestID, streamName string) ([]string, error) {
 	h.logger.Debug("getting subscriptions for stream",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("stream", streamName))
 
 	// Use the StreamingConnectionRepository to get subscriptions for the stream
 	subscriptions, err := h.streamingRepo.GetSubscriptionsForStream(ctx, streamName)
 	if err != nil {
 		h.logger.Error("failed to get subscriptions from repository",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("stream", streamName),
 			zap.Error(err))
 		return nil, FailedToGetSubscriptions(err)
@@ -1457,7 +1436,7 @@ func (h *StreamRouterHandler) getStreamSubscriptions(ctx *lift.Context, streamNa
 	}
 
 	h.logger.Debug("found subscriptions for stream",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("stream", streamName),
 		zap.Int("subscription_count", len(subscriptions)),
 		zap.Int("connection_count", len(connectionIDs)))
@@ -1466,9 +1445,9 @@ func (h *StreamRouterHandler) getStreamSubscriptions(ctx *lift.Context, streamNa
 }
 
 // removeSubscription removes a stale subscription
-func (h *StreamRouterHandler) removeSubscription(ctx *lift.Context, streamName, connectionID string) {
+func (h *StreamRouterHandler) removeSubscription(ctx context.Context, requestID, streamName, connectionID string) {
 	h.logger.Info("removing stale subscription",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("stream", streamName),
 		zap.String("connection_id", connectionID))
 
@@ -1476,7 +1455,7 @@ func (h *StreamRouterHandler) removeSubscription(ctx *lift.Context, streamName, 
 	err := h.streamingRepo.DeleteSubscription(ctx, connectionID, streamName)
 	if err != nil {
 		h.logger.Error("failed to remove subscription",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("stream", streamName),
 			zap.String("connection_id", connectionID),
 			zap.Error(err))
@@ -1484,7 +1463,7 @@ func (h *StreamRouterHandler) removeSubscription(ctx *lift.Context, streamName, 
 	}
 
 	h.logger.Info("successfully removed stale subscription",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("stream", streamName),
 		zap.String("connection_id", connectionID))
 
@@ -1492,7 +1471,7 @@ func (h *StreamRouterHandler) removeSubscription(ctx *lift.Context, streamName, 
 	err = h.streamingRepo.DeleteConnection(ctx, connectionID)
 	if err != nil {
 		h.logger.Warn("failed to remove stale connection, but subscription was removed",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.String("connection_id", connectionID),
 			zap.Error(err))
 		// This is not critical - the subscription removal is what matters
@@ -1533,9 +1512,9 @@ func isStaleConnection(err error) bool {
 }
 
 // processTombstoneEvent processes tombstone events and removes deleted objects from timelines
-func (h *StreamRouterHandler) processTombstoneEvent(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (h *StreamRouterHandler) processTombstoneEvent(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	logger := h.logger.With(
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("event_name", record.EventName),
 	)
 
@@ -1580,13 +1559,13 @@ func (h *StreamRouterHandler) processTombstoneEvent(ctx *lift.Context, record ev
 	}
 
 	// Send deletion events to relevant streams based on the former object type
-	if err := h.broadcastDeletionToStreams(ctx, &tombstone, deletionMessage); err != nil {
+	if err := h.broadcastDeletionToStreams(ctx, requestID, &tombstone, deletionMessage); err != nil {
 		logger.Error("failed to broadcast deletion to streams", zap.Error(err))
 		// Don't return error - this is not critical
 	}
 
 	// Remove the object from user timelines (followers of the deleter)
-	if err := h.removeFromFollowerTimelines(ctx, tombstone.DeletedBy, tombstone.ID); err != nil {
+	if err := h.removeFromFollowerTimelines(ctx, requestID, tombstone.DeletedBy, tombstone.ID); err != nil {
 		logger.Warn("failed to remove from follower timelines", zap.Error(err))
 	}
 
@@ -1595,7 +1574,7 @@ func (h *StreamRouterHandler) processTombstoneEvent(ctx *lift.Context, record ev
 }
 
 // broadcastDeletionToStreams sends deletion events to appropriate streams
-func (h *StreamRouterHandler) broadcastDeletionToStreams(ctx *lift.Context, tombstone *models.Tombstone, message StreamMessage) error {
+func (h *StreamRouterHandler) broadcastDeletionToStreams(ctx context.Context, requestID string, tombstone *models.Tombstone, message StreamMessage) error {
 	objectID := tombstone.ID
 
 	// Based on the former object type, determine which streams to update
@@ -1603,20 +1582,20 @@ func (h *StreamRouterHandler) broadcastDeletionToStreams(ctx *lift.Context, tomb
 	case "Note", "Article", "Status":
 		// Public timeline
 		message.Stream = "public"
-		if err := h.broadcastMessage(ctx, message); err != nil {
+		if err := h.broadcastMessage(ctx, requestID, message); err != nil {
 			h.logger.Warn("failed to broadcast deletion to public stream", zap.Error(err))
 		}
-		h.appendStreamEvent(ctx, streaming.PublicStream, "delete", objectID)
+		h.appendStreamEvent(ctx, requestID, streaming.PublicStream, "delete", objectID)
 
 		// Local timeline (if it was a local object)
 		message.Stream = "public:local"
-		if err := h.broadcastMessage(ctx, message); err != nil {
+		if err := h.broadcastMessage(ctx, requestID, message); err != nil {
 			h.logger.Warn("failed to broadcast deletion to local stream", zap.Error(err))
 		}
-		h.appendStreamEvent(ctx, streaming.PublicLocalStream, "delete", objectID)
+		h.appendStreamEvent(ctx, requestID, streaming.PublicLocalStream, "delete", objectID)
 
 		// Hashtag streams - extract hashtags from the deleted object if available
-		if err := h.removeFromHashtagStreams(ctx, objectID); err != nil {
+		if err := h.removeFromHashtagStreams(ctx, requestID, objectID); err != nil {
 			h.logger.Warn("failed to remove from hashtag streams", zap.Error(err))
 		}
 
@@ -1631,12 +1610,12 @@ func (h *StreamRouterHandler) broadcastDeletionToStreams(ctx *lift.Context, tomb
 }
 
 // removeFromFollowerTimelines removes the deleted object from followers' home timelines
-func (h *StreamRouterHandler) removeFromFollowerTimelines(ctx *lift.Context, actorID, objectID string) error {
+func (h *StreamRouterHandler) removeFromFollowerTimelines(ctx context.Context, requestID, actorID, objectID string) error {
 	// Extract username from actor ID
 	username := h.extractUsernameFromActorID(actorID)
 
 	// Get followers (limited batch for stream processing efficiency)
-	followers, _, err := h.getFollowersForUser(ctx, username, 100)
+	followers, _, err := h.getFollowersForUser(ctx, requestID, username, 100)
 	if err != nil {
 		return FailedToGetFollowers(err)
 	}
@@ -1652,10 +1631,11 @@ func (h *StreamRouterHandler) removeFromFollowerTimelines(ctx *lift.Context, act
 		streamName := streaming.UserStreamName(follower)
 		deletionMessage.Stream = streamName
 
-		h.appendStreamEvent(ctx, streamName, "delete", objectID)
+		h.appendStreamEvent(ctx, requestID, streamName, "delete", objectID)
 
-		if err := h.broadcastMessage(ctx, deletionMessage); err != nil {
+		if err := h.broadcastMessage(ctx, requestID, deletionMessage); err != nil {
 			h.logger.Warn("failed to send deletion to follower timeline",
+				zap.String("request_id", requestID),
 				zap.String("follower", follower),
 				zap.String("object_id", objectID),
 				zap.Error(err))
@@ -1667,8 +1647,11 @@ func (h *StreamRouterHandler) removeFromFollowerTimelines(ctx *lift.Context, act
 }
 
 // removeFromHashtagStreams removes objects from hashtag streams when content is deleted
-func (h *StreamRouterHandler) removeFromHashtagStreams(ctx *lift.Context, objectID string) error {
-	logger := h.logger.With(zap.String("object_id", objectID))
+func (h *StreamRouterHandler) removeFromHashtagStreams(ctx context.Context, requestID, objectID string) error {
+	logger := h.logger.With(
+		zap.String("request_id", requestID),
+		zap.String("object_id", objectID),
+	)
 
 	// Step 1: Get the status content to extract hashtags
 	status, err := h.statusRepo.GetStatus(ctx, objectID)
@@ -1709,9 +1692,9 @@ func (h *StreamRouterHandler) removeFromHashtagStreams(ctx *lift.Context, object
 	for _, hashtag := range hashtags {
 		streamName := streaming.HashtagStreamName(hashtag)
 
-		h.appendStreamEvent(ctx, streamName, "delete", objectID)
+		h.appendStreamEvent(ctx, requestID, streamName, "delete", objectID)
 		if isLocalAuthor {
-			h.appendStreamEvent(ctx, localHashtagStreamName(hashtag), "delete", objectID)
+			h.appendStreamEvent(ctx, requestID, localHashtagStreamName(hashtag), "delete", objectID)
 		}
 
 		if err := h.publisher.PublishToStream(ctx, streamName, deletionEvent); err != nil {
@@ -1744,8 +1727,9 @@ func (h *StreamRouterHandler) removeFromHashtagStreams(ctx *lift.Context, object
 }
 
 // getFollowersForUser gets a limited list of followers for an actor
-func (h *StreamRouterHandler) getFollowersForUser(ctx *lift.Context, username string, limit int) ([]string, string, error) {
+func (h *StreamRouterHandler) getFollowersForUser(ctx context.Context, requestID, username string, limit int) ([]string, string, error) {
 	logger := h.logger.With(
+		zap.String("request_id", requestID),
 		zap.String("username", username),
 		zap.Int("limit", limit))
 
@@ -1817,7 +1801,7 @@ func (h *StreamRouterHandler) extractUsernameFromActorID(actorID string) string 
 }
 
 // broadcastMessage broadcasts a message to WebSocket connections
-func (h *StreamRouterHandler) broadcastMessage(ctx *lift.Context, message StreamMessage) error {
+func (h *StreamRouterHandler) broadcastMessage(ctx context.Context, requestID string, message StreamMessage) error {
 	// Marshal the message
 	payload, err := json.Marshal(message)
 	if err != nil {
@@ -1825,21 +1809,21 @@ func (h *StreamRouterHandler) broadcastMessage(ctx *lift.Context, message Stream
 	}
 
 	// Use existing broadcast method
-	return h.broadcastToStream(ctx, message.Stream, message.Event, payload)
+	return h.broadcastToStream(ctx, requestID, message.Stream, message.Event, payload)
 }
 
 func main() {
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+	app := apptheory.New()
+	app.DynamoDB(lambdaCtx.Config.DynamoTableName, handleStreamRouterStreamRecord)
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return handler.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+	startLambda(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
+}
 
-	startLambda(app.HandleRequest)
+func handleStreamRouterStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if handler == nil {
+		return HandlerNotInitialized()
+	}
+	return handler.HandleDynamoDBRecord(ctx, record)
 }

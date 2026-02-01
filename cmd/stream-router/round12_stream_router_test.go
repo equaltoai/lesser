@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	stdErrors "errors"
 	"testing"
 	"time"
@@ -17,7 +18,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -136,10 +136,6 @@ func (r fakeStatusRepo) GetStatus(_ context.Context, statusID string) (*models.S
 		return nil, nil
 	}
 	return r.statusByID[statusID], nil
-}
-
-func newLiftContext(requestID string) *lift.Context {
-	return &lift.Context{Request: &lift.Request{}, RequestID: requestID}
 }
 
 func newUserModifyRecordWithoutID() events.DynamoDBEventRecord {
@@ -303,23 +299,16 @@ func TestConnectionRepositoryAdapter_Round12(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestStreamRouterHandler_HandleStream_Round12(t *testing.T) {
+func TestStreamRouterHandler_HandleDynamoDBRecord_Round12(t *testing.T) {
 	h := &StreamRouterHandler{logger: zap.NewNop(), domain: "example.com"}
-	ctx := newLiftContext("req-1")
 
-	t.Run("partial failure returns nil", func(t *testing.T) {
-		event := events.DynamoDBEvent{
-			Records: []events.DynamoDBEventRecord{
-				newUserModifyRecordWithoutID(),                    // returns an error
-				{EventID: "evt-skip", EventName: eventNameRemove}, // ignored
-			},
-		}
-		require.NoError(t, h.HandleStream(ctx, event))
+	t.Run("processRecord returns errors", func(t *testing.T) {
+		err := h.processRecord(context.Background(), "req-1", newUserModifyRecordWithoutID())
+		require.Error(t, err)
 	})
 
-	t.Run("all failures returns batch error", func(t *testing.T) {
-		event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{newUserModifyRecordWithoutID()}}
-		require.Error(t, h.HandleStream(ctx, event))
+	t.Run("HandleDynamoDBRecord swallows errors", func(t *testing.T) {
+		require.NoError(t, h.HandleDynamoDBRecord(nil, newUserModifyRecordWithoutID()))
 	})
 }
 
@@ -359,17 +348,18 @@ func TestStreamRouterHandler_StatusAndNotification_Round12(t *testing.T) {
 		accountRepo:   accountRepo,
 		domain:        "example.com",
 	}
-	ctx := newLiftContext("req-2")
+	ctx := context.Background()
+	requestID := "req-2"
 
-	require.NoError(t, h.processRecord(ctx, newStatusInsertRecord(eventNameInsert)))
-	require.NoError(t, h.processRecord(ctx, newStatusInsertRecord(eventNameModify)))
+	require.NoError(t, h.processRecord(ctx, requestID, newStatusInsertRecord(eventNameInsert)))
+	require.NoError(t, h.processRecord(ctx, requestID, newStatusInsertRecord(eventNameModify)))
 
 	// Notification: missing username yields a typed error
-	require.Error(t, h.processRecord(ctx, newNotificationInsertRecord("")))
+	require.Error(t, h.processRecord(ctx, requestID, newNotificationInsertRecord("")))
 
 	// Notification: broadcast failure is logged but does not fail processing
 	streamRepo.getSubscriptionsErr = stdErrors.New("repo down")
-	require.NoError(t, h.processRecord(ctx, newNotificationInsertRecord("alice")))
+	require.NoError(t, h.processRecord(ctx, requestID, newNotificationInsertRecord("alice")))
 
 	require.GreaterOrEqual(t, len(client.postCalls), 1)
 	require.NotEmpty(t, streamRepo.deleteSubscriptionCalls)
@@ -377,7 +367,8 @@ func TestStreamRouterHandler_StatusAndNotification_Round12(t *testing.T) {
 }
 
 func TestStreamRouterHandler_BroadcastToStream_Round12(t *testing.T) {
-	ctx := newLiftContext("req-3")
+	ctx := context.Background()
+	requestID := "req-3"
 
 	t.Run("empty subscriptions returns nil", func(t *testing.T) {
 		h := &StreamRouterHandler{
@@ -385,7 +376,7 @@ func TestStreamRouterHandler_BroadcastToStream_Round12(t *testing.T) {
 			apiClient:     &fakeStreamerClient{},
 			streamingRepo: &fakeStreamRepo{},
 		}
-		require.NoError(t, h.broadcastToStream(ctx, "stream", "update", []byte(`{"ok":true}`)))
+		require.NoError(t, h.broadcastToStream(ctx, requestID, "stream", "update", []byte(`{"ok":true}`)))
 	})
 
 	t.Run("all failures returns SendToAllConnectionsFailed", func(t *testing.T) {
@@ -404,7 +395,7 @@ func TestStreamRouterHandler_BroadcastToStream_Round12(t *testing.T) {
 			},
 		}
 		h := &StreamRouterHandler{logger: zap.NewNop(), apiClient: client, streamingRepo: repo}
-		require.Error(t, h.broadcastToStream(ctx, "stream", "update", []byte(`{"ok":true}`)))
+		require.Error(t, h.broadcastToStream(ctx, requestID, "stream", "update", []byte(`{"ok":true}`)))
 	})
 
 	t.Run("subscription query error returns error", func(t *testing.T) {
@@ -413,78 +404,45 @@ func TestStreamRouterHandler_BroadcastToStream_Round12(t *testing.T) {
 			apiClient:     &fakeStreamerClient{},
 			streamingRepo: &fakeStreamRepo{getSubscriptionsErr: stdErrors.New("db down")},
 		}
-		require.Error(t, h.broadcastToStream(ctx, "stream", "update", []byte(`{"ok":true}`)))
+		require.Error(t, h.broadcastToStream(ctx, requestID, "stream", "update", []byte(`{"ok":true}`)))
 	})
 }
 
 func TestBroadcastToFollowers_Round12(t *testing.T) {
 	t.Run("invalid account id fails fast", func(t *testing.T) {
-		require.Error(t, broadcastToFollowers("not-a-url", []byte(`{}`)))
-	})
-
-	t.Run("handler not initialized returns error", func(t *testing.T) {
-		origLambda := lambdaCtx
-		origHandler := handler
-		t.Cleanup(func() {
-			lambdaCtx = origLambda
-			handler = origHandler
-		})
-
-		lambdaCtx = &common.LambdaContext{Logger: zap.NewNop()}
-		handler = nil
-		require.Error(t, broadcastToFollowers("https://example.com/users/alice", []byte(`{}`)))
+		h := &StreamRouterHandler{
+			logger: zap.NewNop(),
+			domain: "example.com",
+		}
+		require.Error(t, h.broadcastToFollowers(context.Background(), "req-followers-invalid", "not-a-url", []byte(`{}`)))
 	})
 
 	t.Run("follower query error is surfaced", func(t *testing.T) {
-		origLambda := lambdaCtx
-		origHandler := handler
-		t.Cleanup(func() {
-			lambdaCtx = origLambda
-			handler = origHandler
-		})
-
-		lambdaCtx = &common.LambdaContext{Logger: zap.NewNop()}
-		handler = &StreamRouterHandler{
+		h := &StreamRouterHandler{
 			logger:      zap.NewNop(),
 			accountRepo: fakeFollowerRepo{err: stdErrors.New("followers failed")},
 			domain:      "example.com",
 		}
-		require.Error(t, broadcastToFollowers("https://example.com/users/alice", []byte(`{}`)))
+		require.Error(t, h.broadcastToFollowers(context.Background(), "req-followers-err", "https://example.com/users/alice", []byte(`{}`)))
 	})
 
 	t.Run("no followers returns nil", func(t *testing.T) {
-		origLambda := lambdaCtx
-		origHandler := handler
-		t.Cleanup(func() {
-			lambdaCtx = origLambda
-			handler = origHandler
-		})
-
-		lambdaCtx = &common.LambdaContext{Logger: zap.NewNop()}
-		handler = &StreamRouterHandler{
+		h := &StreamRouterHandler{
 			logger:      zap.NewNop(),
 			accountRepo: fakeFollowerRepo{},
 			domain:      "example.com",
 		}
-		require.NoError(t, broadcastToFollowers("https://example.com/users/alice", []byte(`{}`)))
+		require.NoError(t, h.broadcastToFollowers(context.Background(), "req-followers-none", "https://example.com/users/alice", []byte(`{}`)))
 	})
 
 	t.Run("successful broadcasts return nil", func(t *testing.T) {
-		origLambda := lambdaCtx
-		origHandler := handler
-		t.Cleanup(func() {
-			lambdaCtx = origLambda
-			handler = origHandler
-		})
-
-		lambdaCtx = &common.LambdaContext{Logger: zap.NewNop()}
 		client := &fakeStreamerClient{}
 		streamRepo := &fakeStreamRepo{
 			subsByStream: map[string][]models.WebSocketSubscription{
 				streaming.UserStreamName("bob"): {{ConnectionID: "c1"}},
 			},
 		}
-		handler = &StreamRouterHandler{
+		h := &StreamRouterHandler{
 			logger:        zap.NewNop(),
 			domain:        "example.com",
 			apiClient:     client,
@@ -496,19 +454,11 @@ func TestBroadcastToFollowers_Round12(t *testing.T) {
 			},
 		}
 
-		require.NoError(t, broadcastToFollowers("https://example.com/users/alice", []byte(`{"ok":true}`)))
+		require.NoError(t, h.broadcastToFollowers(context.Background(), "req-followers-ok", "https://example.com/users/alice", []byte(`{"ok":true}`)))
 		require.Contains(t, client.postCalls, "c1")
 	})
 
 	t.Run("all broadcast failures returns error", func(t *testing.T) {
-		origLambda := lambdaCtx
-		origHandler := handler
-		t.Cleanup(func() {
-			lambdaCtx = origLambda
-			handler = origHandler
-		})
-
-		lambdaCtx = &common.LambdaContext{Logger: zap.NewNop()}
 		client := &fakeStreamerClient{
 			postErrByID: map[string]error{
 				"c1": stdErrors.New("boom"),
@@ -519,7 +469,7 @@ func TestBroadcastToFollowers_Round12(t *testing.T) {
 				streaming.UserStreamName("bob"): {{ConnectionID: "c1"}},
 			},
 		}
-		handler = &StreamRouterHandler{
+		h := &StreamRouterHandler{
 			logger:        zap.NewNop(),
 			domain:        "example.com",
 			apiClient:     client,
@@ -531,7 +481,7 @@ func TestBroadcastToFollowers_Round12(t *testing.T) {
 			},
 		}
 
-		require.Error(t, broadcastToFollowers("https://example.com/users/alice", []byte(`{"ok":true}`)))
+		require.Error(t, h.broadcastToFollowers(context.Background(), "req-followers-fail", "https://example.com/users/alice", []byte(`{"ok":true}`)))
 	})
 }
 
@@ -597,18 +547,13 @@ func TestStreamRouterErrors_Constructors_Round12(t *testing.T) {
 }
 
 func TestStreamRouterHandler_ProcessAccountEvent_Success_Round12(t *testing.T) {
-	origLambda := lambdaCtx
-	origHandler := handler
-	t.Cleanup(func() {
-		lambdaCtx = origLambda
-		handler = origHandler
-	})
-
-	lambdaCtx = &common.LambdaContext{Logger: zap.NewNop()}
-	handler = nil
-
-	h := &StreamRouterHandler{logger: zap.NewNop()}
-	ctx := newLiftContext("req-4")
+	h := &StreamRouterHandler{
+		logger:      zap.NewNop(),
+		domain:      "example.com",
+		accountRepo: fakeFollowerRepo{},
+	}
+	ctx := context.Background()
+	requestID := "req-4"
 	record := events.DynamoDBEventRecord{
 		EventID:   "evt-account-1",
 		EventName: eventNameModify,
@@ -619,7 +564,7 @@ func TestStreamRouterHandler_ProcessAccountEvent_Success_Round12(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, h.processAccountEvent(ctx, record))
+	require.NoError(t, h.processAccountEvent(ctx, requestID, record))
 }
 
 func TestConvertEventAttributeValue_Round12(t *testing.T) {
@@ -690,7 +635,8 @@ func TestStreamRouterHandler_ProcessTombstoneEvent_Round12(t *testing.T) {
 		domain:    "example.com",
 	}
 
-	ctx := newLiftContext("req-5")
+	ctx := context.Background()
+	requestID := "req-5"
 	record := events.DynamoDBEventRecord{
 		EventID:   "evt-tomb-1",
 		EventName: eventNameInsert,
@@ -705,7 +651,7 @@ func TestStreamRouterHandler_ProcessTombstoneEvent_Round12(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, h.processTombstoneEvent(ctx, record))
+	require.NoError(t, h.processTombstoneEvent(ctx, requestID, record))
 	require.NotEmpty(t, publisher.calls)
 }
 
@@ -715,14 +661,15 @@ func TestStreamRouterHandler_ProcessTombstoneEvent_ErrorBranches_Round12(t *test
 		domain:      "example.com",
 		accountRepo: fakeFollowerRepo{err: stdErrors.New("followers failed")},
 	}
-	ctx := newLiftContext("req-err-tomb")
+	ctx := context.Background()
+	requestID := "req-err-tomb"
 
 	// Non-insert events are ignored.
 	modify := events.DynamoDBEventRecord{
 		EventID:   "evt-tomb-mod",
 		EventName: eventNameModify,
 	}
-	require.NoError(t, h.processTombstoneEvent(ctx, modify))
+	require.NoError(t, h.processTombstoneEvent(ctx, requestID, modify))
 
 	// Unmarshal failures are logged but do not fail the batch.
 	bad := events.DynamoDBEventRecord{
@@ -739,7 +686,7 @@ func TestStreamRouterHandler_ProcessTombstoneEvent_ErrorBranches_Round12(t *test
 			},
 		},
 	}
-	require.NoError(t, h.processTombstoneEvent(ctx, bad))
+	require.NoError(t, h.processTombstoneEvent(ctx, requestID, bad))
 
 	// Follower removal errors are logged but not returned.
 	erringFollowers := events.DynamoDBEventRecord{
@@ -754,18 +701,19 @@ func TestStreamRouterHandler_ProcessTombstoneEvent_ErrorBranches_Round12(t *test
 			},
 		},
 	}
-	require.NoError(t, h.processTombstoneEvent(ctx, erringFollowers))
+	require.NoError(t, h.processTombstoneEvent(ctx, requestID, erringFollowers))
 }
 
 func TestStreamRouterHandler_RemoveFromHashtagStreams_Round12(t *testing.T) {
-	ctx := newLiftContext("req-hashtags")
+	ctx := context.Background()
+	requestID := "req-hashtags"
 
 	t.Run("status not found is ignored", func(t *testing.T) {
 		h := &StreamRouterHandler{
 			logger:     zap.NewNop(),
 			statusRepo: fakeStatusRepo{err: stdErrors.New("not found")},
 		}
-		require.NoError(t, h.removeFromHashtagStreams(ctx, "1"))
+		require.NoError(t, h.removeFromHashtagStreams(ctx, requestID, "1"))
 	})
 
 	t.Run("status retrieval failure is returned", func(t *testing.T) {
@@ -773,7 +721,7 @@ func TestStreamRouterHandler_RemoveFromHashtagStreams_Round12(t *testing.T) {
 			logger:     zap.NewNop(),
 			statusRepo: fakeStatusRepo{err: stdErrors.New("boom")},
 		}
-		require.Error(t, h.removeFromHashtagStreams(ctx, "1"))
+		require.Error(t, h.removeFromHashtagStreams(ctx, requestID, "1"))
 	})
 
 	t.Run("no hashtags returns nil", func(t *testing.T) {
@@ -783,7 +731,7 @@ func TestStreamRouterHandler_RemoveFromHashtagStreams_Round12(t *testing.T) {
 				statusByID: map[string]*models.Status{"1": {StatusID: "1", AuthorID: "https://example.com/users/alice", Content: "hello"}},
 			},
 		}
-		require.NoError(t, h.removeFromHashtagStreams(ctx, "1"))
+		require.NoError(t, h.removeFromHashtagStreams(ctx, requestID, "1"))
 	})
 
 	t.Run("successful publish returns nil", func(t *testing.T) {
@@ -795,7 +743,7 @@ func TestStreamRouterHandler_RemoveFromHashtagStreams_Round12(t *testing.T) {
 			},
 			publisher: pub,
 		}
-		require.NoError(t, h.removeFromHashtagStreams(ctx, "1"))
+		require.NoError(t, h.removeFromHashtagStreams(ctx, requestID, "1"))
 		require.Contains(t, pub.calls, streaming.HashtagStreamName("golang"))
 	})
 }
@@ -806,17 +754,18 @@ func TestStreamRouterHandler_processRecord_MoreBranches_Round12(t *testing.T) {
 		domain:      "example.com",
 		accountRepo: fakeFollowerRepo{},
 	}
-	ctx := newLiftContext("req-records")
+	ctx := context.Background()
+	requestID := "req-records"
 
 	// Missing PK => unidentifiable record is skipped.
-	require.NoError(t, h.processRecord(ctx, events.DynamoDBEventRecord{
+	require.NoError(t, h.processRecord(ctx, requestID, events.DynamoDBEventRecord{
 		EventID:   "evt-missing-pk",
 		EventName: eventNameInsert,
 		Change:    events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{}},
 	}))
 
 	// Unknown entity type is ignored.
-	require.NoError(t, h.processRecord(ctx, events.DynamoDBEventRecord{
+	require.NoError(t, h.processRecord(ctx, requestID, events.DynamoDBEventRecord{
 		EventID:   "evt-unknown",
 		EventName: eventNameInsert,
 		Change: events.DynamoDBStreamRecord{
@@ -825,7 +774,7 @@ func TestStreamRouterHandler_processRecord_MoreBranches_Round12(t *testing.T) {
 	}))
 
 	// Tombstone entity routes to tombstone handler.
-	require.NoError(t, h.processRecord(ctx, events.DynamoDBEventRecord{
+	require.NoError(t, h.processRecord(ctx, requestID, events.DynamoDBEventRecord{
 		EventID:   "evt-tomb-route",
 		EventName: eventNameInsert,
 		Change: events.DynamoDBStreamRecord{
@@ -842,19 +791,19 @@ func TestStreamRouterHandler_processRecord_MoreBranches_Round12(t *testing.T) {
 
 func TestStreamRouterHandler_PublishAccountEventToInternalBus_Round12(t *testing.T) {
 	h := &StreamRouterHandler{logger: zap.NewNop()}
-	ctx := newLiftContext("req-internal")
+	requestID := "req-internal"
 
-	require.NoError(t, h.publishAccountEventToInternalBus(ctx, "https://example.com/users/alice", eventNameInsert, []string{"account:alice"}))
-	require.NoError(t, h.publishAccountEventToInternalBus(ctx, "https://example.com/users/alice", eventNameRemove, []string{"account:alice"}))
-	require.Error(t, h.publishAccountEventToInternalBus(ctx, "https://example.com/users/alice", "WAT", nil))
+	require.NoError(t, h.publishAccountEventToInternalBus(requestID, "https://example.com/users/alice", eventNameInsert, []string{"account:alice"}))
+	require.NoError(t, h.publishAccountEventToInternalBus(requestID, "https://example.com/users/alice", eventNameRemove, []string{"account:alice"}))
+	require.Error(t, h.publishAccountEventToInternalBus(requestID, "https://example.com/users/alice", "WAT", nil))
 }
 
 func TestStreamRouterHandler_PublishStatusEventToInternalBus_Round12(t *testing.T) {
 	h := &StreamRouterHandler{logger: zap.NewNop()}
-	ctx := newLiftContext("req-status-internal")
+	requestID := "req-status-internal"
 	record := events.DynamoDBEventRecord{EventName: "WAT"}
 
-	require.Error(t, h.publishStatusEventToInternalBus(ctx, record, &models.Status{StatusID: "1"}, nil))
+	require.Error(t, h.publishStatusEventToInternalBus(requestID, record, &models.Status{StatusID: "1"}, nil))
 }
 
 func TestStreamRouterHandler_MiscHelpers_Round12(t *testing.T) {
@@ -880,7 +829,7 @@ func TestStreamRouterHandler_RemoveSubscription_Round12(t *testing.T) {
 			logger:        zap.NewNop(),
 			streamingRepo: repo,
 		}
-		h.removeSubscription(newLiftContext("req-remove-sub"), "stream", "conn")
+		h.removeSubscription(context.Background(), "req-remove-sub", "stream", "conn")
 		require.NotEmpty(t, repo.deleteSubscriptionCalls)
 		require.NotEmpty(t, repo.deleteConnectionCalls)
 	})
@@ -891,7 +840,7 @@ func TestStreamRouterHandler_RemoveSubscription_Round12(t *testing.T) {
 			logger:        zap.NewNop(),
 			streamingRepo: repo,
 		}
-		h.removeSubscription(newLiftContext("req-remove-sub"), "stream", "conn")
+		h.removeSubscription(context.Background(), "req-remove-sub", "stream", "conn")
 		require.NotEmpty(t, repo.deleteSubscriptionCalls)
 		require.Empty(t, repo.deleteConnectionCalls)
 	})
@@ -899,16 +848,17 @@ func TestStreamRouterHandler_RemoveSubscription_Round12(t *testing.T) {
 
 func TestStreamRouterHandler_ProcessNotificationEvent_EarlyReturns_Round12(t *testing.T) {
 	h := &StreamRouterHandler{logger: zap.NewNop()}
-	ctx := newLiftContext("req-notif")
+	ctx := context.Background()
+	requestID := "req-notif"
 
 	// Non-insert notifications are ignored.
-	require.NoError(t, h.processNotificationEvent(ctx, events.DynamoDBEventRecord{
+	require.NoError(t, h.processNotificationEvent(ctx, requestID, events.DynamoDBEventRecord{
 		EventID:   "evt-notif-mod",
 		EventName: eventNameModify,
 	}))
 
 	// Non-notification PKs are ignored.
-	require.NoError(t, h.processNotificationEvent(ctx, events.DynamoDBEventRecord{
+	require.NoError(t, h.processNotificationEvent(ctx, requestID, events.DynamoDBEventRecord{
 		EventID:   "evt-notif-skip",
 		EventName: eventNameInsert,
 		Change: events.DynamoDBStreamRecord{
@@ -919,7 +869,7 @@ func TestStreamRouterHandler_ProcessNotificationEvent_EarlyReturns_Round12(t *te
 	}))
 
 	// Missing Notification field yields nil (unmarshal produces nil pointer).
-	require.NoError(t, h.processNotificationEvent(ctx, events.DynamoDBEventRecord{
+	require.NoError(t, h.processNotificationEvent(ctx, requestID, events.DynamoDBEventRecord{
 		EventID:   "evt-notif-missing",
 		EventName: eventNameInsert,
 		Change: events.DynamoDBStreamRecord{
@@ -944,19 +894,21 @@ func TestStreamRouterHandler_GetFollowersForUser_EdgeCases_Round12(t *testing.T)
 			},
 		},
 	}
-	ctx := newLiftContext("req-followers")
+	ctx := context.Background()
+	requestID := "req-followers"
 
-	_, _, err := h.getFollowersForUser(ctx, "", 10)
+	_, _, err := h.getFollowersForUser(ctx, requestID, "", 10)
 	require.Error(t, err)
 
-	followers, _, err := h.getFollowersForUser(ctx, "alice", 1000)
+	followers, _, err := h.getFollowersForUser(ctx, requestID, "alice", 1000)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"carol", "bob"}, followers)
 }
 
 func TestStreamRouterHandler_BuildSSEStatusStreams_Direct_Round12(t *testing.T) {
 	h := &StreamRouterHandler{logger: zap.NewNop(), domain: "example.com"}
-	ctx := newLiftContext("req-sse")
+	ctx := context.Background()
+	requestID := "req-sse"
 	status := &models.Status{
 		AuthorUsername: "alice",
 		AuthorID:       "https://example.com/users/alice",
@@ -964,16 +916,16 @@ func TestStreamRouterHandler_BuildSSEStatusStreams_Direct_Round12(t *testing.T) 
 		ToRecipients:   []string{"acct:bob@example.com", "acct:eve@remote.example"},
 	}
 
-	streams := h.buildSSEStatusStreams(ctx, status)
+	streams := h.buildSSEStatusStreams(ctx, requestID, status)
 	require.Contains(t, streams, streaming.UserStreamName("alice"))
 	require.Contains(t, streams, streaming.DirectStreamName("bob"))
 	require.Contains(t, streams, streaming.UserStreamName("bob"))
 }
 
 func TestStreamRouterHandler_ProcessAccountEvent_EarlyReturn_Round12(t *testing.T) {
-	h := &StreamRouterHandler{logger: zap.NewNop()}
-	ctx := newLiftContext("req-account")
-	require.NoError(t, h.processAccountEvent(ctx, events.DynamoDBEventRecord{EventName: eventNameInsert}))
+	h := &StreamRouterHandler{logger: zap.NewNop(), domain: "example.com", accountRepo: fakeFollowerRepo{}}
+	ctx := context.Background()
+	require.NoError(t, h.processAccountEvent(ctx, "req-account", events.DynamoDBEventRecord{EventName: eventNameInsert}))
 }
 
 func TestNewStreamRouterHandler_StreamClientFailure_Round12(t *testing.T) {
@@ -1023,11 +975,53 @@ func TestNewStreamRouterHandler_ManualInitFailure_Round12(t *testing.T) {
 }
 
 func TestStreamRouterMain_Round12(t *testing.T) {
+	origLambdaCtx := lambdaCtx
+	origHandler := handler
 	origStart := startLambda
-	t.Cleanup(func() { startLambda = origStart })
-	startLambda = func(interface{}) {}
+	t.Cleanup(func() {
+		lambdaCtx = origLambdaCtx
+		handler = origHandler
+		startLambda = origStart
+	})
+
+	lambdaCtx = &common.LambdaContext{
+		Logger: zap.NewNop(),
+		Config: &appconfig.Config{
+			DynamoTableName: "test-table",
+		},
+	}
+	handler = &StreamRouterHandler{logger: zap.NewNop(), domain: "example.com"}
+
+	called := false
+	startLambda = func(h any) {
+		called = true
+
+		fn, ok := h.(func(context.Context, json.RawMessage) (any, error))
+		require.True(t, ok)
+
+		event := events.DynamoDBEvent{
+			Records: []events.DynamoDBEventRecord{
+				{
+					EventID:        "1",
+					EventName:      eventNameRemove,
+					EventSource:    "aws:dynamodb",
+					EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/test-table/stream/2024-01-01T00:00:00.000",
+					Change:         events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{}},
+				},
+			},
+		}
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
+
+		respAny, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+		resp, ok := respAny.(events.DynamoDBEventResponse)
+		require.True(t, ok)
+		require.Empty(t, resp.BatchItemFailures)
+	}
 
 	main()
+	require.True(t, called)
 }
 
 func TestNewStreamRouterHandler_ErrorBranches_Round12(t *testing.T) {
