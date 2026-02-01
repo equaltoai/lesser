@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -11,9 +12,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -21,26 +21,28 @@ type fakeQuery struct {
 	db *fakeDynamoDB
 }
 
-func (f *fakeQuery) Where(string, string, any) dynamormCore.Query                     { return f }
-func (f *fakeQuery) Index(string) dynamormCore.Query                                  { return f }
-func (f *fakeQuery) Filter(string, string, any) dynamormCore.Query                    { return f }
-func (f *fakeQuery) OrFilter(string, string, any) dynamormCore.Query                  { return f }
-func (f *fakeQuery) FilterGroup(func(dynamormCore.Query)) dynamormCore.Query          { return f }
-func (f *fakeQuery) OrFilterGroup(func(dynamormCore.Query)) dynamormCore.Query        { return f }
-func (f *fakeQuery) IfNotExists() dynamormCore.Query                                  { return f }
-func (f *fakeQuery) IfExists() dynamormCore.Query                                     { return f }
-func (f *fakeQuery) WithCondition(string, string, any) dynamormCore.Query             { return f }
+func (f *fakeQuery) Where(string, string, any) dynamormCore.Query                      { return f }
+func (f *fakeQuery) Index(string) dynamormCore.Query                                   { return f }
+func (f *fakeQuery) Filter(string, string, any) dynamormCore.Query                     { return f }
+func (f *fakeQuery) OrFilter(string, string, any) dynamormCore.Query                   { return f }
+func (f *fakeQuery) FilterGroup(func(dynamormCore.Query)) dynamormCore.Query           { return f }
+func (f *fakeQuery) OrFilterGroup(func(dynamormCore.Query)) dynamormCore.Query         { return f }
+func (f *fakeQuery) IfNotExists() dynamormCore.Query                                   { return f }
+func (f *fakeQuery) IfExists() dynamormCore.Query                                      { return f }
+func (f *fakeQuery) WithCondition(string, string, any) dynamormCore.Query              { return f }
 func (f *fakeQuery) WithConditionExpression(string, map[string]any) dynamormCore.Query { return f }
-func (f *fakeQuery) OrderBy(string, string) dynamormCore.Query                        { return f }
-func (f *fakeQuery) Limit(int) dynamormCore.Query                                     { return f }
-func (f *fakeQuery) Offset(int) dynamormCore.Query                                    { return f }
-func (f *fakeQuery) Select(...string) dynamormCore.Query                              { return f }
-func (f *fakeQuery) ConsistentRead() dynamormCore.Query                               { return f }
-func (f *fakeQuery) WithRetry(int, time.Duration) dynamormCore.Query                  { return f }
-func (f *fakeQuery) First(any) error                                                  { return nil }
-func (f *fakeQuery) All(any) error                                                    { return nil }
-func (f *fakeQuery) AllPaginated(any) (*dynamormCore.PaginatedResult, error)          { return &dynamormCore.PaginatedResult{}, nil }
-func (f *fakeQuery) Count() (int64, error)                                            { return 0, nil }
+func (f *fakeQuery) OrderBy(string, string) dynamormCore.Query                         { return f }
+func (f *fakeQuery) Limit(int) dynamormCore.Query                                      { return f }
+func (f *fakeQuery) Offset(int) dynamormCore.Query                                     { return f }
+func (f *fakeQuery) Select(...string) dynamormCore.Query                               { return f }
+func (f *fakeQuery) ConsistentRead() dynamormCore.Query                                { return f }
+func (f *fakeQuery) WithRetry(int, time.Duration) dynamormCore.Query                   { return f }
+func (f *fakeQuery) First(any) error                                                   { return nil }
+func (f *fakeQuery) All(any) error                                                     { return nil }
+func (f *fakeQuery) AllPaginated(any) (*dynamormCore.PaginatedResult, error) {
+	return &dynamormCore.PaginatedResult{}, nil
+}
+func (f *fakeQuery) Count() (int64, error) { return 0, nil }
 
 func (f *fakeQuery) Create() error {
 	f.db.createCalls++
@@ -50,38 +52,40 @@ func (f *fakeQuery) Create() error {
 	return f.db.createErr
 }
 
-func (f *fakeQuery) CreateOrUpdate() error                                     { return nil }
-func (f *fakeQuery) Update(...string) error                                    { return nil }
-func (f *fakeQuery) UpdateBuilder() dynamormCore.UpdateBuilder                 { return nil }
-func (f *fakeQuery) Delete() error                                             { return nil }
-func (f *fakeQuery) Scan(any) error                                            { return nil }
-func (f *fakeQuery) ParallelScan(int32, int32) dynamormCore.Query              { return f }
-func (f *fakeQuery) ScanAllSegments(any, int32) error                          { return nil }
-func (f *fakeQuery) BatchGet([]any, any) error                                 { return nil }
+func (f *fakeQuery) CreateOrUpdate() error                        { return nil }
+func (f *fakeQuery) Update(...string) error                       { return nil }
+func (f *fakeQuery) UpdateBuilder() dynamormCore.UpdateBuilder    { return nil }
+func (f *fakeQuery) Delete() error                                { return nil }
+func (f *fakeQuery) Scan(any) error                               { return nil }
+func (f *fakeQuery) ParallelScan(int32, int32) dynamormCore.Query { return f }
+func (f *fakeQuery) ScanAllSegments(any, int32) error             { return nil }
+func (f *fakeQuery) BatchGet([]any, any) error                    { return nil }
 func (f *fakeQuery) BatchGetWithOptions([]any, any, *dynamormCore.BatchGetOptions) error {
 	return nil
 }
-func (f *fakeQuery) BatchGetBuilder() dynamormCore.BatchGetBuilder             { return nil }
-func (f *fakeQuery) BatchCreate(any) error                                     { return nil }
-func (f *fakeQuery) BatchDelete([]any) error                                   { return nil }
-func (f *fakeQuery) BatchWrite([]any, []any) error                             { return nil }
-func (f *fakeQuery) BatchUpdateWithOptions([]any, []string, ...any) error      { return nil }
-func (f *fakeQuery) Cursor(string) dynamormCore.Query                          { return f }
-func (f *fakeQuery) SetCursor(string) error                                    { return nil }
-func (f *fakeQuery) WithContext(context.Context) dynamormCore.Query            { return f }
+func (f *fakeQuery) BatchGetBuilder() dynamormCore.BatchGetBuilder        { return nil }
+func (f *fakeQuery) BatchCreate(any) error                                { return nil }
+func (f *fakeQuery) BatchDelete([]any) error                              { return nil }
+func (f *fakeQuery) BatchWrite([]any, []any) error                        { return nil }
+func (f *fakeQuery) BatchUpdateWithOptions([]any, []string, ...any) error { return nil }
+func (f *fakeQuery) Cursor(string) dynamormCore.Query                     { return f }
+func (f *fakeQuery) SetCursor(string) error                               { return nil }
+func (f *fakeQuery) WithContext(context.Context) dynamormCore.Query       { return f }
 
 type fakeDynamoDB struct {
-	createCalls         int
-	createErr           error
+	createCalls           int
+	createErr             error
 	failCreatesAfterFirst bool
 }
 
-func (f *fakeDynamoDB) Model(any) dynamormCore.Query                                     { return &fakeQuery{db: f} }
-func (f *fakeDynamoDB) Transaction(fn func(tx *dynamormCore.Tx) error) error            { return fn(&dynamormCore.Tx{}) }
-func (f *fakeDynamoDB) Migrate() error                                                  { return nil }
-func (f *fakeDynamoDB) AutoMigrate(...any) error                                        { return nil }
-func (f *fakeDynamoDB) Close() error                                                    { return nil }
-func (f *fakeDynamoDB) WithContext(context.Context) dynamormCore.DB                     { return f }
+func (f *fakeDynamoDB) Model(any) dynamormCore.Query { return &fakeQuery{db: f} }
+func (f *fakeDynamoDB) Transaction(fn func(tx *dynamormCore.Tx) error) error {
+	return fn(&dynamormCore.Tx{})
+}
+func (f *fakeDynamoDB) Migrate() error                              { return nil }
+func (f *fakeDynamoDB) AutoMigrate(...any) error                    { return nil }
+func (f *fakeDynamoDB) Close() error                                { return nil }
+func (f *fakeDynamoDB) WithContext(context.Context) dynamormCore.DB { return f }
 
 func TestInitializeFederationTimeseries_WiresGlobals(t *testing.T) {
 	origMustInit := mustInitializeLambdaFn
@@ -95,8 +99,8 @@ func TestInitializeFederationTimeseries_WiresGlobals(t *testing.T) {
 
 	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
 		return &common.LambdaContext{
-			Config:  &config.Config{DynamoTableName: "table"},
-			Logger:  zap.NewNop(),
+			Config:     &config.Config{DynamoTableName: "table"},
+			Logger:     zap.NewNop(),
 			LambdaType: common.LambdaTypeProcessor,
 		}
 	}
@@ -139,13 +143,13 @@ func TestInitializeFederationTimeseries_UsesNopLoggerWhenNil(t *testing.T) {
 }
 
 func TestTimeseriesProcessor_StoreMetrics(t *testing.T) {
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{TriggerType: lift.TriggerEventBus}))
-	ctx.SetRequestID("req")
+	ctx := context.Background()
+	requestID := "req"
 
 	t.Run("returns error when base record store fails", func(t *testing.T) {
 		db := &fakeDynamoDB{createErr: errors.New("nope")}
 		tp := &TimeseriesProcessor{db: db, tableName: "table", logger: zap.NewNop()}
-		err := tp.storeMetrics(ctx, time.Unix(0, 0).UTC(), &FederationMetrics{
+		err := tp.storeMetrics(ctx, requestID, time.Unix(0, 0).UTC(), &FederationMetrics{
 			UniqueActors:    map[string]bool{},
 			UniqueInstances: map[string]bool{},
 		})
@@ -165,7 +169,7 @@ func TestTimeseriesProcessor_StoreMetrics(t *testing.T) {
 			UniqueInstances: map[string]bool{"example.com": true, "remote.example": true},
 		}
 
-		require.NoError(t, tp.storeMetrics(ctx, time.Unix(0, 0).UTC(), metrics))
+		require.NoError(t, tp.storeMetrics(ctx, requestID, time.Unix(0, 0).UTC(), metrics))
 		require.GreaterOrEqual(t, db.createCalls, 1)
 	})
 }
@@ -231,13 +235,9 @@ func TestTimeseriesProcessor_GroupingAndAggregation_Branches(t *testing.T) {
 	require.Equal(t, "", tp.extractInstance("http://remote.example/users/alice"))
 }
 
-func TestTimeseriesProcessor_HandleStream_LogsAndContinuesOnWindowErrors(t *testing.T) {
+func TestTimeseriesProcessor_HandleDynamoDBRecord_LogsAndContinuesOnWindowErrors(t *testing.T) {
 	db := &fakeDynamoDB{createErr: errors.New("nope")}
 	tp := &TimeseriesProcessor{db: db, tableName: "table", logger: zap.NewNop()}
-
-	req := lift.NewRequest(&adapters.Request{TriggerType: lift.TriggerEventBus})
-	ctx := lift.NewContext(context.Background(), req)
-	ctx.SetRequestID("req")
 
 	record := events.DynamoDBEventRecord{
 		EventName: "INSERT",
@@ -251,10 +251,10 @@ func TestTimeseriesProcessor_HandleStream_LogsAndContinuesOnWindowErrors(t *test
 		},
 	}
 
-	require.NoError(t, tp.HandleStream(ctx, events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{record}}))
+	require.NoError(t, tp.HandleDynamoDBRecord(&apptheory.EventContext{RequestID: "req"}, record))
 }
 
-func TestHandleDynamoDBStream_DecodeAndDispatch(t *testing.T) {
+func TestHandleFederationTimeseriesStreamRecord_DecodeAndDispatch(t *testing.T) {
 	origProcessor := processor
 	t.Cleanup(func() { processor = origProcessor })
 
@@ -262,38 +262,57 @@ func TestHandleDynamoDBStream_DecodeAndDispatch(t *testing.T) {
 	processor = &TimeseriesProcessor{db: db, tableName: "table", logger: zap.NewNop()}
 
 	record := events.DynamoDBEventRecord{
-			EventName: "INSERT",
-			Change: events.DynamoDBStreamRecord{
-				NewImage: map[string]events.DynamoDBAttributeValue{
-					"PK":         events.NewStringAttribute("ACTIVITY#1"),
-					"type":       events.NewStringAttribute("Follow"),
-					"actor_id":   events.NewStringAttribute("https://remote.example/users/alice"),
-					"created_at": events.NewStringAttribute("2024-01-01T00:01:00Z"),
-				},
+		EventName: "INSERT",
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK":         events.NewStringAttribute("ACTIVITY#1"),
+				"type":       events.NewStringAttribute("Follow"),
+				"actor_id":   events.NewStringAttribute("https://remote.example/users/alice"),
+				"created_at": events.NewStringAttribute("2024-01-01T00:01:00Z"),
 			},
-		}
+		},
+	}
 
-	req := lift.NewRequest(&adapters.Request{
-		TriggerType: lift.TriggerEventBus,
-		Records:     []any{record},
-	})
-	ctx := lift.NewContext(context.Background(), req)
-	ctx.SetRequestID("req")
-
-	require.NoError(t, handleDynamoDBStream(ctx))
+	require.NoError(t, handleFederationTimeseriesStreamRecord(&apptheory.EventContext{RequestID: "req"}, record))
 	require.GreaterOrEqual(t, db.createCalls, 1)
-
-	badReq := lift.NewRequest(&adapters.Request{TriggerType: lift.TriggerSQS})
-	badCtx := lift.NewContext(context.Background(), badReq)
-	require.Error(t, handleDynamoDBStream(badCtx))
 }
 
 func TestMain_InvokesLambdaStart(t *testing.T) {
 	origStart := lambdaStartFn
+	origProcessor := processor
 	t.Cleanup(func() { lambdaStartFn = origStart })
+	t.Cleanup(func() { processor = origProcessor })
+
+	processor = &TimeseriesProcessor{logger: zap.NewNop()}
 
 	var called bool
-	lambdaStartFn = func(_ interface{}) { called = true }
+	lambdaStartFn = func(h any) {
+		called = true
+		fn, ok := h.(func(context.Context, json.RawMessage) (any, error))
+		require.True(t, ok)
+
+		event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{
+			{
+				EventID:        "evt1",
+				EventName:      "INSERT",
+				EventSource:    "aws:dynamodb",
+				EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/lesser-dev-main-table/stream/2024-01-01T00:00:00.000",
+				Change:         events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{}},
+			},
+		}}
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
+
+		respAny, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+		resp, ok := respAny.(events.DynamoDBEventResponse)
+		require.True(t, ok)
+		require.Empty(t, resp.BatchItemFailures)
+	}
+
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
 	main()
 	require.True(t, called)
